@@ -22,6 +22,7 @@ import {
   shareTranscript,
   shareLabelTrusted } from './shareFormat';
 import { recordOrigin, resolveOrigin } from './shareOrigin';
+import { askIncludeTotp } from './shareTotpQuestion';
 import { snapshotForRevision } from './revisionSnapshot';
 import type { SharePin } from './sharePin';
 import {
@@ -32,7 +33,7 @@ import {
 } from './transitPinPrompt';
 import { redactArrivedPayment } from './paymentRedaction';
 import { withheldNoteFor } from './shareWithheld';
-import { OwnedShare, SharePayload, TeamMember, TreeNode } from './types';
+import { OwnedShare, SharePayload, TeamMember, TreeNode, withOwnId } from './types';
 
 /**
  * Sharing, as one object: sealing and delivering shares to teammates, and receiving
@@ -250,7 +251,7 @@ export class ShareInbox {
 
   async shareNodes(accountId: string, nodes: TreeNode[]): Promise<void> {
     // Asked BEFORE anything is read: a seed nobody chose to send is never fetched at all.
-    const includeTotp = await this.askIncludeTotp(await countTotpEntries(this.deps.storage, accountId, nodes));
+    const includeTotp = await askIncludeTotp(await countTotpEntries(this.deps.storage, accountId, nodes));
     if (includeTotp === undefined) {
       return;
     }
@@ -316,38 +317,6 @@ export class ShareInbox {
     if (pin !== undefined) {
       await this.deliverBatch(accountId, [...payloads], recipients, pin);
     }
-  }
-
-  /**
-   * The one-time-code question, asked once per share and only when there is one to ask about.
-   *
-   * <p>A checkbox rather than a confirmation, because the honest default is <b>off</b>: not
-   * sending a seed leaves the recipient asking for it, while sending one they did not need hands
-   * over a second factor that keeps working. Cancelling the list cancels the share, like every
-   * other step of this conversation.</p>
-   */
-  private async askIncludeTotp(count: number): Promise<boolean | undefined> {
-    if (count === 0) {
-      return false;
-    }
-    const chosen = await vscode.window.showQuickPick(
-      [
-        {
-          label: 'Include the one-time code (TOTP) seed',
-          detail:
-            `${count === 1 ? 'One selected entry carries' : `${count} selected entries carry`} one. ` +
-            'The recipient will be able to produce codes for that login until the seed is changed.',
-          picked: false,
-        },
-      ],
-      {
-        canPickMany: true,
-        ignoreFocusOut: true,
-        title: 'What travels with this share?',
-        placeHolder: 'Leave it unticked to share everything else and keep the second factor here',
-      },
-    );
-    return chosen === undefined ? undefined : chosen.length > 0;
   }
 
   /** Collect every entity in a folder subtree, with its folder chain. */
@@ -501,6 +470,7 @@ export class ShareInbox {
     // did not happen — carrying the wrong sender's PIN shape at that.
     const attempted = new Map<string, ShareAttempt>();
     let imported = 0;
+    let declined = 0; // opened, then left in the inbox: no PIN chosen, or the wrap failed
     while (remaining.length > 0) {
       const next = remaining[0];
       const pin = await vscode.window.showInputBox({
@@ -529,10 +499,9 @@ export class ShareInbox {
         (owned) => this.deps.sharing.serverStamped(owned),
         (owned, f, reason) => rememberAttempt(attempted, owned.item.id, attemptOf(f, reason, pin)),
       );
-      for (const o of opened) {
-        await this.importShared(o, o.payload);
-        imported++;
-      }
+      const round = await this.importOpened(opened);
+      imported += round.imported;
+      declined += round.declined;
       if (opened.length === 0) {
         void vscode.window.showWarningMessage('That PIN did not open any of the items.');
       }
@@ -543,9 +512,40 @@ export class ShareInbox {
       this.deps.onMutated();
     }
     void this.deps.sharing.reload();
+    // A declined item is STILL PENDING: opened, so not in `remaining`; not imported, so not in
+    // `imported`. Counted nowhere, it would vanish from the tally that says whether this is done.
+    const pending = remaining.length + declined;
     void vscode.window.showInformationMessage(
-      `Accepted ${imported} item(s)${remaining.length > 0 ? `, ${remaining.length} still pending` : ''}.`,
+      `Accepted ${imported} item(s)${pending > 0 ? `, ${pending} still pending` : ''}.`,
     );
+  }
+
+  /**
+   * One round's opened shares, imported through the SAME recipient-PIN wrap the single accept uses.
+   *
+   * <p>This loop imported the opened payload RAW, so a batch accept spent no `pinAskOnImport`: an
+   * entry its sender had protected landed here unprotected, and the one instruction that travels
+   * with such an entry was honoured on one of the two accept paths. Clearing an inbox in one go is
+   * the ordinary way to accept, so this was the common route past the protection, not a corner.</p>
+   *
+   * <p>Declined, or a wrap that failed: `sealedForRecipient` has said which, the share is NOT
+   * consumed, and it is COUNTED — an item neither imported nor still locked is counted nowhere.</p>
+   */
+  private async importOpened(
+    opened: readonly (OwnedShare & { payload: SharePayload })[],
+  ): Promise<{ imported: number; declined: number }> {
+    let imported = 0;
+    let declined = 0;
+    for (const share of opened) {
+      const arriving = await this.sealedForRecipient(share, share.payload);
+      if (arriving === undefined) {
+        declined++;
+        continue;
+      }
+      await this.importShared(share, arriving);
+      imported++;
+    }
+    return { imported, declined };
   }
 
   /**
@@ -685,22 +685,23 @@ After this, a share signed by any other key is refused.`,
             details: existing?.details ?? payload.node.details!,
           }),
         );
-        node = {
+        node = withOwnId({
           ...payload.node,
           id: previousId,
           parentId: existing?.parentId ?? parentId,
           createdAt: existing?.createdAt,
           children: undefined,
-        };
+        });
         writeNode = () => this.deps.storage.updateNode(share.accountId, node);
       } else {
-        node = { ...payload.node, id: StorageManager.newId(), parentId, children: undefined };
+        node = withOwnId({ ...payload.node, id: StorageManager.newId(), parentId, children: undefined });
         writeNode = () => this.deps.storage.addNode(share.accountId, node);
       }
     } else {
-      // A fresh local id: a peer must never address (and thus silently overwrite) an
-      // entity that already exists in our vault.
-      node = { ...payload.node, id: StorageManager.newId(), parentId, children: undefined };
+      // A fresh local id: a peer must never address (and thus silently overwrite) an entity that
+      // already exists in our vault. Through `withOwnId`, like both branches above: the new id has
+      // to reach the record INSIDE the node too, or nothing can read what this import writes.
+      node = withOwnId({ ...payload.node, id: StorageManager.newId(), parentId, children: undefined });
       writeNode = () => this.deps.storage.addNode(share.accountId, node);
     }
     const { password, privateKey, vpnConfig, dbConnection } = payload.secrets;

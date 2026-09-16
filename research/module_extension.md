@@ -299,7 +299,7 @@ tombstoned, which the sweep deliberately refuses to touch: the deletion is merel
 | edit (`entityEditCommands`) | additions → node → removals | the case a single call cannot serve |
 | delete (`storageManager`) | tombstone → node → secrets | Rule B |
 | **restore / sync-apply (`importBundle`)** | **secrets → record vanishing → tree → drop-vanished → clear** | had it backwards in BOTH halves; the record is LOCAL, not a tombstone |
-| share accept (`shareInbox`) | node, then secrets — a fresh id, so nothing pre-exists to claim | |
+| share accept (`shareInbox`) | node, then secrets — a fresh id, so nothing pre-exists to claim | the fresh id must reach `details.id` too — see *An arriving entry must NAME ITSELF* |
 | **import (`importCommands`)** | **secrets → node, per entity, compensated** | inverted; every entry in a file had its own window |
 | **agent create (`mcpHooks`)** | **secret → node, compensated** | the secret may have been GENERATED here, so a lost one is a value nobody asked for |
 | **account removal (`storageManager`)** | **record intent → unlist → secrets → tree/tombstones/horizon → clear** | the record is LOCAL. See `pendingCleanup.ts` |
@@ -1078,6 +1078,8 @@ inherited at read time.
 | `pinFolderPlan.ts` | what a folder run would do, and the sentences it says before doing it |
 | `pinOnCreate.ts` | a new entry in a folder whose entries are protected |
 | `sharePayloadBuild.ts` | the payload builder, lifted out of `shareInbox` when this pushed it over its ceiling |
+| `shareTotpQuestion.ts` | *"What travels with this share?"* — the same lift, for the same ceiling |
+| `nodeOwnId.ts` | `withOwnId`: the node's record names the node it is in, at the import and at every read |
 
 **The entry PIN has its own floor (issue #55, 2026-09-12).** `pinPolicy.ts` carries a `PinScope` —
 `'vault' | 'entry'` — and `pinFeedback` / `pinInput.pinValidator` take it as a third argument that
@@ -2806,6 +2808,51 @@ CONVERSATION — recipient picking, delivery and its error report, the sender ch
 round-robin, and the import into the tree (fresh local id; same-sender update recorded as a
 revision first). The `activate()` handlers only resolve what was clicked.
 `shareInbox.test.ts` drives the accept paths through the REAL seal/open crypto.
+
+### An arriving entry must NAME ITSELF, or it arrives empty
+
+`TreeNode.id` and `TreeNode.details.id` are two spellings of one fact, and nothing in the product
+reads them as two. A `TreeElement` carries `details`, so every READ of a secret is keyed on
+`details.id` — the viewer (`entityViewerCommands.ts`), the tree's copy commands
+(`commands/entityCommands.ts`), the env binder (`envApply.ts`), the agent surfaces — while every
+WRITE is keyed on `node.id`. Let the two disagree and the entry still lists, still has its name and
+its dates, and has **nothing behind it**: no password, no login, no URL, no one-time code. The values
+are on disk the whole time, under the id nobody reads.
+
+Which is exactly what an accepted share did until 2026-09-16. The import mints a FRESH local id — a
+sender must never be able to address an entry in our vault — and spread `details` unchanged beside
+it, so the arriving copy pointed at the SENDER's id forever. Reported as *"I shared a password with
+its one-time code and only the name arrived"*; the seed had travelled and been written correctly, and
+the checkbox that decides whether it travels was never involved.
+
+`nodeOwnId.ts` holds the one function, `withOwnId`, and it is applied at BOTH ends:
+
+- **`shareInbox.importShared`**, on all three branches (fresh entry, *Keep both*, *Update it*), so the
+  mismatch cannot be created. It was the third site that re-ids a node and the only one that forgot —
+  `commands/treeMutationCommands.ts` (clone) and `importFormats.ts` (file import) fix the id by hand,
+  and `idQuarantine.remapDetails` does it for restore and sync.
+- **`storageManager.nodeEntry`**, the single door every node read passes through, which makes this a
+  REPAIR and not only a guard: a vault already holding entries broken by an older build is corrected
+  as it loads, and they become readable again with nothing to re-share. Deliberately a read-time
+  normalisation rather than a migration write — rewriting every node would bump the version vectors
+  and push a sync of records whose stored bytes need no change. It is re-exported through `types.ts`
+  because `storageManager.ts` is under the size ratchet, where an import line is growth.
+
+**Why the suite could not see it.** Every existing accept test read the arriving secret back through
+`node.id` — the one id the product never uses for a secret read — so an entry that arrives empty
+passed all of them. `shareArrivalReadable.test.ts` reads the way the product reads, and its first
+assertion is that the two ids agree: the sharing harness gives sender and recipient one account, so a
+stale `details.id` still names the SENDER's entry, whose secrets answer every read and turn the test
+green against a vault the recipient cannot open.
+
+### The batch accept is the same decision, asked once per item
+
+`acceptMany` imported each opened payload RAW, so it spent no `pinAskOnImport`: an entry its sender
+had protected with a PIN of their own landed unprotected, and the instruction that travels with such
+an entry was honoured on `acceptOne` alone. Clearing an inbox in one go is the ordinary way to
+accept, so this was the common route past the protection, not a corner. Both paths now go through
+`sealedForRecipient`; a declined or failed wrap consumes nothing, and is COUNTED as still pending —
+an item neither imported nor still locked is counted nowhere and vanishes from the tally.
 
 ### The transit PIN is drawn before it is asked for, and lands on the clipboard
 
