@@ -200,3 +200,72 @@ test('declining the PIN in a batch imports nothing, and keeps the share to accep
     'counted where the person reads it: ' + ui.infos.join(' | '),
   );
 });
+
+/**
+ * The repair has to SURVIVE being written back — the reviewers' sharpest question.
+ *
+ * <p>A read-time normalisation would be worth little if the next save undid it, so this drives the
+ * ordinary edit path over a repaired entry: read it (repaired), write a field through the storage
+ * API, and read it again. What lands on disk must carry the corrected record, and the secret must
+ * still be reachable through it.</p>
+ */
+test('an entry repaired on read stays repaired after an ordinary edit, and keeps its secret', async () => {
+  const w = world();
+  await w.storage.addNode(RECIPIENT.accountId, {
+    id: 'local-id',
+    name: 'accepted by an older build',
+    type: 'entity',
+    parentId: null,
+    details: { id: 'sender-side-id', name: 'accepted by an older build', isSshEnabled: false },
+  });
+  await w.storage.setPassword(RECIPIENT.accountId, 'local-id', 'still here');
+
+  await w.storage.updateDetailsFields(RECIPIENT.accountId, 'local-id', { host: 'example.com' });
+
+  const after = w.storage.getNode(RECIPIENT.accountId, 'local-id');
+  assert.equal(after?.details?.id, 'local-id', 'the write did not put the stale id back');
+  assert.equal(after?.details?.host, 'example.com', 'and it is the same record, edited');
+  assert.equal(await w.storage.getPassword(RECIPIENT.accountId, after!.details!.id), 'still here');
+});
+
+test('a repaired entry keeps its own node id — nothing mints a new one on write', async () => {
+  // The drift the reviewers described needs a write path that RE-IDS a node. There is none:
+  // `withOwnId` moves the record onto the node's id, never the node onto a new one.
+  const w = world();
+  await w.storage.addNode(RECIPIENT.accountId, {
+    id: 'local-id',
+    name: 'one entry',
+    type: 'entity',
+    parentId: null,
+    details: { id: 'sender-side-id', name: 'one entry', isSshEnabled: false },
+  });
+
+  await w.storage.updateDetailsFields(RECIPIENT.accountId, 'local-id', { user: 'root' });
+
+  const nodes = w.storage.getNodes(RECIPIENT.accountId);
+  assert.equal(nodes.length, 1, 'one entry in, one entry out — no duplicate under a second id');
+  assert.equal(nodes[0].id, 'local-id');
+});
+
+/**
+ * A batch is several PINs, and declining ONE must not cost the others.
+ *
+ * <p>The alternative the gate proposed — ask once and wrap the whole batch under a single PIN — is
+ * deliberately not taken: a batch routinely holds entries from different senders, and one PIN across
+ * all of them is a protection the person did not choose. So the prompt is per item, and what has to
+ * be true is that a cancel is local to the item it was asked for.</p>
+ */
+test('declining one item’s PIN in a batch still imports the others', async () => {
+  const w = world();
+  // Share PIN; then Esc on the first entry's own PIN; then the second entry's, typed twice.
+  ui.inputs = [PIN, undefined, 'recipient-pin-2222', 'recipient-pin-2222'];
+
+  await w.inbox.acceptMany([
+    sealedShare(protectedPayload('first'), PIN),
+    sealedShare(protectedPayload('second'), PIN),
+  ]);
+
+  const names = w.storage.getNodes(RECIPIENT.accountId).map((n) => n.name);
+  assert.deepEqual(names, ['second'], 'the cancel was local to the item it was asked for');
+  assert.deepEqual(w.removed.map((s) => s.item.entityName), ['second'], 'and the declined one is kept');
+});
