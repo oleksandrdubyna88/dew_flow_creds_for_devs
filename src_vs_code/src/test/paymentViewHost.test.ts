@@ -6,6 +6,7 @@ import { PaymentFields } from '../paymentFields';
 import { PHRASE_VISIBLE_MS } from '../revealGate';
 import { SHUFFLE_CODES, shuffleTokens } from '../shuffle';
 import { RowOrderStore } from '../rowFlip';
+import { phraseColumns } from '../phraseLayout';
 
 /**
  * The host half of the payment card: what is asked before a value is answered.
@@ -250,10 +251,23 @@ test('no message carries the order — the answer has the same shape either way'
   // number, and an inspector reading that would know which row is the person's without reading
   // either. So the payload is compared whole, with only `first` and `second` taken out.
   const withoutRows = (m: Record<string, unknown>): Record<string, unknown> => {
-    const { first: _f, second: _s, ...rest } = m;
+    const { first: _f, second: _s, woven: _w, ...rest } = m;
     return rest;
   };
   assert.deepEqual(withoutRows(one), withoutRows(two), 'everything but the rows is the same message');
+  // The picture is excluded above because its TAGS follow the rows — so it is checked here instead,
+  // and checked for the property that matters: the same tokens in the same places, tagged the other
+  // way round. A picture whose texts differed between orders would be leaking through its content.
+  const texts = (m: Record<string, unknown>): string[] =>
+    (m.woven as { text: string }[]).map((t) => t.text);
+  const sides = (m: Record<string, unknown>): string[] =>
+    (m.woven as { side: string }[]).map((t) => t.side);
+  assert.deepEqual(texts(one), texts(two), 'the stored value is painted identically either way');
+  assert.deepEqual(
+    sides(one),
+    sides(two).map((side) => (side === 'first' ? 'second' : 'first')),
+    'and the tags are the exact mirror, which is what following the rows means',
+  );
   assert.notDeepEqual(one.first, two.first, 'and the rows really did come out the other way round');
   assert.deepEqual([one.first, one.second].sort(), [two.first, two.second].sort(), 'same pair, reordered');
   assert.ok(!/real|decoy|swap|flip|order/i.test(JSON.stringify([one, two])));
@@ -301,6 +315,56 @@ test('a Copy whose question is answered during a re-render still follows the ord
   assert.equal(copied.length, 1, 'the copy happened');
   assert.deepEqual(copied, ['9137'], 'the row that was shown, not the one a fresh draw would name');
   assert.equal(at, 1, 'and the clear did not cause a second draw for this copy');
+});
+
+/**
+ * The picture that travels with a reading, and the one property it must have.
+ *
+ * <p>Every token of the stored value is tagged with the ROW it is in. Asserted by MEMBERSHIP per
+ * row rather than by counting tags, under both orders: a count passes for a colouring that is
+ * exactly backwards, which would paint column three as the negative of the rows above it.</p>
+ */
+for (const [name, order] of [['as-read', AS_READ], ['swapped', SWAPPED]] as const) {
+  test(`a reading's picture agrees with its own rows — ${name}`, async () => {
+    const h = harness({ pin: WOVEN_PIN, shuffledFields: ['pin'] }, 'card', orderStore(order));
+
+    await h.host.handle('reassemble', `pin|${CODE}`);
+
+    const message = h.posted[0] as Record<string, unknown>;
+    const rows = { first: message.first as string[], second: message.second as string[] };
+    const woven = message.woven as { text: string; side: 'first' | 'second' }[];
+    assert.equal(woven.length, WOVEN_PIN.length, 'one painted token per stored character');
+    for (const token of woven) {
+      const claimed = token.side === 'first' ? rows.first : rows.second;
+      assert.ok(claimed.includes(token.text), `${token.text} is painted as the ${token.side} row, which lacks it`);
+    }
+    assert.equal(message.methodName, 'Method 3', 'named as a person sees it, never as f3');
+    assert.ok(!/real|decoy/i.test(JSON.stringify(message)), 'and it names neither row');
+  });
+}
+
+test('a woven PHRASE paints its picture by the ROWS, not by the woven columns', async () => {
+  // Horizontal is where a naive colouring disagrees with the rows for every record: each woven
+  // column is half of each phrase, so the columns are not the rows.
+  const real = ['alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot'];
+  const second = ['zulu', 'yankee', 'xray', 'whiskey', 'victor', 'uniform'];
+  const columns = phraseColumns(real, second, 'horizontal');
+  const h = harness(
+    { mixed: shuffleTokens(columns.first, columns.secondColumn, CODE), layout: 'horizontal', shuffledFields: ['mixed'] },
+    'phrase',
+    orderStore(SWAPPED),
+  );
+
+  await h.host.handle('reassemble', `mixed|${CODE}`);
+
+  const message = h.posted[0] as Record<string, unknown>;
+  const rows = { first: message.first as string[], second: message.second as string[] };
+  const woven = message.woven as { text: string; side: 'first' | 'second' }[];
+  assert.equal(woven.length, real.length + second.length, 'every woven word is painted');
+  for (const token of woven) {
+    const claimed = token.side === 'first' ? rows.first : rows.second;
+    assert.ok(claimed.includes(token.text), `${token.text} is painted as the ${token.side} row, which lacks it`);
+  }
 });
 
 test('a reading says which method it is FOR, so a late answer can be dropped', async () => {

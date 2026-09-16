@@ -264,6 +264,31 @@ test('a Copy that arrives as the panel re-renders still follows the order the ro
   assert.equal(at, 1, 'and exactly one draw happened: the clear did not cause a second');
 });
 
+test('a woven password’s answer carries its picture, tagged by the row each character is in', async () => {
+  const posted: Record<string, unknown>[] = [];
+  const stored = weaveSecret('hunter2!', SHUFFLE_CODES[3], () => 0.37);
+
+  await handleWovenPassword('reassemble', `password|${SHUFFLE_CODES[3]}`, {
+    entityId: () => 'e1',
+    read: () => Promise.resolve(stored),
+    post: (m) => posted.push(m as Record<string, unknown>),
+    copy: () => Promise.resolve(),
+    orders: new RowOrderStore(() => 0.9),
+  });
+
+  const answer = posted[0];
+  const rows = { first: answer.first as string[], second: answer.second as string[] };
+  const woven = answer.woven as { text: string; side: 'first' | 'second' }[];
+  assert.equal(woven.length, stored.length, 'one painted token per stored character');
+  for (const token of woven) {
+    const claimed = token.side === 'first' ? rows.first : rows.second;
+    assert.ok(claimed.includes(token.text), `${token.text} is painted as the ${token.side} row, which lacks it`);
+  }
+  assert.equal(answer.methodName, 'Method 4', 'named as a person sees it, never as f4');
+  // The existing rule, now covering the two new fields for free.
+  assert.ok(!/real|decoy/i.test(JSON.stringify(answer)));
+});
+
 test('a method this build has no name for is refused, and says nothing was changed', async () => {
   const posted: Record<string, unknown>[] = [];
 
