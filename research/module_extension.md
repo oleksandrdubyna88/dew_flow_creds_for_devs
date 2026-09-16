@@ -668,7 +668,7 @@ Only one of these is caught by a test today, and it is worth copying rather than
 covered by construction — that test is the only reason the vault read-back was noticed, and its own
 comment says it was written for exactly this. The other three needed a reviewer.
 
-#### The twelfth kind: a second value the person typed (#52, PR A)
+#### The twelfth kind: a second value the person typed (#52)
 
 The weave has always had two halves. Until now the other one was a DECOY this product generated, and
 the person never saw it. #52 asks for the half to be theirs — two passwords, two seed phrases, "seed
@@ -746,6 +746,98 @@ not add a line to it. That is the situation `secretKeys.ts` was extracted in, an
 `nodesKey`, `tombstonesKey`, `horizonKey` and `siblingOrder` are pure, `vscode`-free and read nothing
 off the manager. The file went 1029 → 1001, the four accessors brought it to 1023, and the baseline
 is locked at the smaller number so it cannot grow back.
+
+##### What a person actually does with it (PR B)
+
+**One control, and it is the phrase form's.** Under the method picker sits *The other half* —
+*A decoy, generated for you* against *My own second value*. That control is `phraseSecondMode`
+widened rather than copied: the phrase form has offered exactly this choice since phrases shipped,
+and a second shape for one decision three fields away is the drift the reuse rule exists to stop.
+A plan round's reviewers asking for "an explicit toggle" were asking for the one this product
+already had; the first answer written here — the box as its own switch — was wrong for that reason
+and is recorded in the plan's deviations.
+
+**One mode per FORM, a box per field.** Whose the other half is, is decided once for what is being
+saved; which value goes opposite which field is per field. A page carries TWO of these controls —
+the password's and the payment section's — so the fragment scopes each `.secondMode` to its own
+fieldset. Taking the first one would let the password's answer decide whether a card's boxes are
+shown, and EMPTY them when it said decoy, with the person watching what they typed disappear.
+
+**Two conditions, two scripts, neither answering for the other.** A box appears when its FIELD is
+being woven (`cardFormScript.refreshSecondRows`) and when the person asked to supply the half
+(`secondModeScript`). A box under an unticked weave box is a box for nothing, whatever the mode
+says. A hidden box is also an EMPTIED box, because a value left in a field nobody can see would
+still be read by the save.
+
+###### The state table, which is the whole design
+
+| weaving | mode | the box | what is stored |
+|---|---|---|---|
+| ON, not yet woven | own | filled | Woven with THEIR value; `ownSecond` / `passwordSecondOwn` marked, and the typed half stored nowhere else |
+| ON, not yet woven | own | blank | **Refused.** They chose to supply a half and supplied none; a decoy drawn behind their back would store something they did not choose |
+| ON, not yet woven | decoy | — | A generated decoy, exactly as before |
+| ON, ALREADY woven | — | — | Nothing. `weavePaymentFields` filters a key already in `shuffledFields`, `wovenSave` keeps `wasWoven`, and neither control is read |
+| OFF | — | filled | Stored in the record, exactly as typed |
+| OFF, something stored | — | blank | **Kept** — the rule an empty password box already follows, so an unrelated edit cannot silently delete a secret |
+| any, something stored | — | *Clear* ticked | Deleted, through the `clearPassword` affordance |
+
+**The pair is judged BEFORE anything is woven**, on both sides: `weaveProblem` for the password and
+a gate ahead of the checksums for a payment. A refused pair means nothing was woven, rather than a
+value woven under a method whose partner was then rejected. And the confirm dialog takes the same
+second half as the save, because its own note says the two must never disagree about which state a
+save is in — a refusal the dialog did not mention would be a person clicking Save and getting
+something else.
+
+**There is no path from woven back to un-woven through the form.** Unticking the weave box on a
+woven entry does nothing on its own, which `weaveNotice` already says in a sentence, so no partner
+secret has to be restored or discarded.
+
+###### The viewer, and the rung a second value inherits
+
+A stored second value gets a masked row with Copy. A second CVV and a second PIN ask the same
+question the first ones do — `gated` reads `needsReveal` about the FIELD the key belongs to rather
+than adding `cvv2` to `GATED_FIELDS`, which answers about the fields of a card. **The copy path asks
+too**: copying is showing, to the clipboard, and a variant suffix cannot slip past it because the KEY
+is what is gated.
+
+A WOVEN field has no second row, and not because anything filters it: the save consumed that half
+into the woven string and stored nothing, so the record has no key. Where the person's own woven
+second value comes back is the method picker — both rows of the reading are their own real values,
+which is what "seed 1, seed 2" asked for. What does not exist, and must not, is a product that can
+hand over either row by itself.
+
+###### Out of the vault
+
+A share withholds every second value, for every kind and not only for payments: a share names one
+credential for a colleague, and a second value is something the person added for themselves. It is
+asserted at the BOUNDARY — a real payload built from a vault holding one of every kind — because an
+allowlist unit test passes for a payload a generic serializer picked the slot up into. The decided
+case is pinned beside it: a woven field still travels exactly as it does today, because a woven value
+is ONE value with its other half inside it and withholding it would mean withholding the field.
+
+The sender is told by NAME what stayed behind, once per kind however many entries a folder share
+carries. `shareWithheld.ts` holds that answer because the two withholdings have different reasons and
+belong in one sentence — and because `shareInbox.ts` was at its line ceiling.
+
+An export keeps them and says how many, and its sentence changed shape: *"3 values a share would
+remove, across 1 entry"* rather than *"3 CVV/PIN values across 1 payment record"*. A second value
+belongs to credentials as well as to cards, so the old words would have understated the file — the
+one direction a warning must never be wrong in.
+
+###### The help, and the check that it was written
+
+All five languages changed in the same commit, and a test asserts each one mentions the control.
+`bodyFor` marks a MISSING translation and never a STALE one, so a language still explaining the old
+behaviour is a complete, non-fallback body that the coverage test rewards. This is not the full
+answer — a content-version check across languages is — but it catches the failure that actually
+happens: four languages changed and the fifth forgotten.
+
+###### What this story cost in extractions, and why each is a seam
+
+`entityFormShape.ts` (the form's two interfaces, out of a file at 799 lines), `shareWithheld.ts`,
+`secondCollectorScript` and `secondRowScript` in `cardFormScript.ts`. None is line-shuffling: the
+collectors read BOTH forms' boxes because the save writes one record, and the row switch is about
+which FIELD is being woven rather than about the mode.
 
 #### The six directions, and why they have no common answer
 

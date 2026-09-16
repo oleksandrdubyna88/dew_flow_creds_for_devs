@@ -1,18 +1,17 @@
 # PLAN — a second value of your own, everywhere a value can be woven
 
-> Status: **PR A implemented 2026-09-16; PR B not started.** What is built: the pair rule, the
-> two weaving choke points, and the storage slot with every seam a secret kind touches — all of it
-> invisible to the user. What is NOT built: the form controls, the save gates, the viewer rows, the
-> share/export policy and the help translations, which are PR B on a branch of its own. The plan
-> stays here until PR B lands. Scope: `src_vs_code/src` — a new
+> Status: **IMPLEMENTED, 2026-09-16.** Both pull requests are built: PR A the pair rule, the
+> two weaving choke points and the storage slot with every seam a secret kind touches, invisible to
+> the user; PR B the form controls and their state table, the save gates, the viewer rows, the
+> share and export policy, and the five help languages. Scope: `src_vs_code/src` — a new
 > secret slot, the two weaving choke points, the six forms that offer weaving, the viewer, and the
 > save gates. Extension only; no HTTP contract, no server change.
 >
 > Closes [#52](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/52).
 >
-> Related docs: [module_extension.md](../research/module_extension.md),
-> [PLAN_payment_instruments.md](../research/PLAN_payment_instruments.md),
-> [PLAN_woven_passwords_and_entity_pin.md](../research/PLAN_woven_passwords_and_entity_pin.md).
+> Related docs: [module_extension.md](module_extension.md),
+> [PLAN_payment_instruments.md](PLAN_payment_instruments.md),
+> [PLAN_woven_passwords_and_entity_pin.md](PLAN_woven_passwords_and_entity_pin.md).
 > Also `PLAN_viewer_unweave_picture.md` (issue #58) — not linked because it is still on its own
 > branch; it lands in `research/` when that pull request merges.
 
