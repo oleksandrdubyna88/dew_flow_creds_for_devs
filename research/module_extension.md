@@ -4167,6 +4167,7 @@ and not the other stops the build instead of every window's startup. Record:
 | `mcpAccess.ts` | the ladder, inheritance from a folder **per axis**, nothing at all inside the Trash — and the ask policy a record carries beside its rungs |
 | `mcpConsentPolicy.ts` | whether a use call has to raise a dialog, and this machine's record of the ones answered on it |
 | `mcpEntries.ts` | what an agent may SEE, field by field; which switch each action needs; and both halves of whether a use call's dialog has already been answered |
+| `mcpHooks.ts` | the vault's answers to the MCP door, and **the one stamp store per window** — `mcpUseHooks` builds the read and the write over a single `ConsentStamps`, memoized on the `Memento` (S2.4) |
 | `mcpCreate.ts` | which folders are open to creation, and what a request becomes |
 | `secretRotation.ts` / `rotateAction.ts` | the placeholder, and the order a rotation happens in |
 | `secretKinds.ts` | what this extension can generate — and, named one at a time, what it cannot |
@@ -4199,7 +4200,17 @@ written to the same audit file whatever happens at the dialog, and an entry whos
 refused *before anybody is asked* — a prompt raised for something the switches already forbid is how
 a person learns to click Allow without reading.
 
-**Whether the modal is RAISED is the entry's own answer** (issue #95). `handleMcpUse` reads
+**Whether the modal is RAISED is the entry's own answer** (issue #95), and since S2.4 that is true
+in a real window: `extension.ts` builds `resolveMcpUse` and `rememberMcpConsent` from one
+`mcpUseHooks(storage, context.globalState)`, so the side that reads a consent and the side that
+writes one mean the same store — before it, the window handed the broker a lookup with no store and
+no clock, and nothing was ever pre-consented outside a test. The store is memoized per `Memento`
+because two `ConsentStamps` over one are two `SerialQueue`s, and the queue is what stops one
+window's concurrent writes composing onto a stale map. Across WINDOWS there is no such lock:
+`globalState` is machine-wide and the last update wins, so two windows remembering different
+entries in the same moment can cost one of them its stamp — one more dialog, never a consent that
+should not have been granted, and a stale window cannot resurrect what a Forget cleared because the
+tombstone goes down first. `handleMcpUse` reads
 `preConsented` off the lookup — the one side holding both halves, this entry's synced policy and
 this machine's record of the dialogs answered on it — and when the policy has already spoken it
 settles the grant before `perform`, so `consent()`'s existing "already allowed" short-circuit skips

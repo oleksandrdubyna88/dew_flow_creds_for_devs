@@ -9,8 +9,9 @@ import { creatableFolders } from './mcpCreate';
 import { chooseTarget } from './mcpCreate';
 import { summarizeCreate } from './mcpCreate';
 import { McpUseLookup } from './brokerRequests';
-import { McpVaultSource, findUsableEntry, preConsentedFor } from './mcpEntries';
-import { ConsentStamps } from './mcpConsentPolicy';
+import { McpVaultSource, findUsableEntry, preConsentedFor, rememberMcpConsent } from './mcpEntries';
+import { ConsentStampStore, ConsentStamps } from './mcpConsentPolicy';
+import type { BrokerHooks } from './brokerHooks';
 import { ladderKey } from './mcpAccess';
 import { resolveKind } from './entityKind';
 import { CreateRequest } from './mcpCreate';
@@ -137,6 +138,64 @@ export function mcpUseLookup(
     // Without a store there is nothing remembered, so every call asks — which is what a window
     // with no writable storage should do, and what every existing caller of this function gets.
     preConsented: preConsentedFor(found, stamps, now),
+  };
+}
+
+/**
+ * The one stamp store this window uses, per `Memento`.
+ *
+ * <p><b>The memo is not an optimisation.</b> Two `ConsentStamps` over one `Memento` are two
+ * `SerialQueue`s, and the queue is the whole of what stops the second of two concurrent writes
+ * composing onto a map read before the first one ran — `mcpConsentPolicy.ts` says so at `remember`.
+ * It is also how the Forget command reaches the same instance without a handle threaded through
+ * `extension.ts`.</p>
+ *
+ * <p>A `WeakMap`, so a `Memento` belonging to a window that has gone is not held alive by this
+ * module — and keyed on the store's own identity, which is what two hooks have to share. A caller
+ * handing a fresh object each time gets a fresh store, correctly: it is a different store.</p>
+ *
+ * <p><b>What one window cannot do is serialise against another.</b> `globalState` is machine-wide,
+ * each window holds its own copy, and the last update written wins — so two windows remembering
+ * different entries in the same moment can cost one of them its stamp. The consequence is one more
+ * dialog, never a consent that should not have been granted, and the dangerous direction is already
+ * closed: a stale window writing its map back cannot resurrect what a Forget cleared, because the
+ * tombstone is written first and `readStamps` drops everything at or before it.</p>
+ */
+const STAMP_STORES = new WeakMap<ConsentStampStore, ConsentStamps>();
+
+export function consentStampsFor(state: ConsentStampStore): ConsentStamps {
+  const known = STAMP_STORES.get(state);
+  if (known !== undefined) {
+    return known;
+  }
+  const made = new ConsentStamps(state);
+  STAMP_STORES.set(state, made);
+  return made;
+}
+
+/**
+ * The two hooks the MCP use route needs, built over ONE store and ONE clock.
+ *
+ * <p>Both from one factory because they are two halves of a single fact: the side that READS a
+ * stamp and the side that WRITES one must mean the same store, and wiring them at two call sites
+ * is how a window ends up reading a store nobody writes. Until this is called, `resolveMcpUse` has
+ * no store at all — so every call asks and no answer is remembered, which is what a real window did
+ * through all of S2.1–S2.3.</p>
+ *
+ * <p>The clock is a FUNCTION rather than a moment, and evaluated per call: the two hooks run at
+ * different times — the write happens after somebody has answered a dialog — so what they share is
+ * the clock, not the reading. A test freezes it and both halves answer to the same frozen time.</p>
+ */
+export function mcpUseHooks(
+  storage: Pick<McpVaultSource, 'getAccounts' | 'getNode'>,
+  state: ConsentStampStore,
+  now: () => number = Date.now,
+): Required<Pick<BrokerHooks, 'resolveMcpUse' | 'rememberMcpConsent'>> {
+  const stamps = consentStampsFor(state);
+  return {
+    resolveMcpUse: (entryId, action) => mcpUseLookup(storage, entryId, action, stamps, now()),
+    rememberMcpConsent: (accountId, entityId, rungs) =>
+      rememberMcpConsent(storage, stamps, accountId, entityId, rungs, now()),
   };
 }
 

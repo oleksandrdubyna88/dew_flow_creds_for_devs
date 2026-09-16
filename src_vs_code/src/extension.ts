@@ -97,7 +97,7 @@ import {
   vpnAction,
 } from './agentUseActions';
 import { StoredAccount, EntityMetadata, TreeNode } from './types';
-import { mcpUseLookup } from './mcpHooks';
+import { mcpUseHooks } from './mcpHooks';
 import { moveEntryToTrash } from './mcpHooks';
 import { mcpCreateHooks } from './mcpHooks';
 import { runVpn } from './vpnRun';
@@ -542,10 +542,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // The snippet route's supplier (T10): the same visibility wall as the listing, answered for
     // ONE id. A config an agent cannot list is a config this cannot name.
     visibleConfig: (entityId) => visibleConfigDetails(storage, entityId),
-    // The same question one rung up: may an agent USE this entry. A single hook because the
-    // lookup and the permission are one answer, and splitting them is how a route ends up asking
-    // the first and forgetting the second.
-    resolveMcpUse: (entryId, action) => mcpUseLookup(storage, entryId, action),
+    // The same question one rung up: may an agent USE this entry — and, since #95, how often to
+    // ask before it does. Both halves from ONE factory over this window's own globalState: the
+    // side that reads a consent and the side that writes one must mean the same store.
+    ...mcpUseHooks(storage, context.globalState),
     // An agent deleting. To the Trash, always — `deleteNodeRecursive` is the one real deletion
     // path and an agent never reaches it, which is what made this permission grantable.
     moveToTrash: async (accountId, entityId) => {
