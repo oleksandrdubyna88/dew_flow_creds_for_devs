@@ -1145,7 +1145,10 @@ screenshot, a backup file. It does not hold against devtools. That is not a regr
 work row one was always the person's value for EVERY reader — but it is the honest bound, and the
 note on the row says it in those words rather than promising more. The only thing that would close
 it is randomising which column holds the real value at WEAVE time, which changes what is stored and
-helps nothing already saved; it belongs in its own plan.
+helps nothing already saved; it is tracked as
+[PLAN_weave_time_column_choice.md](../todo/PLAN_weave_time_column_choice.md), which records the one
+fact that makes it buildable — nothing automatic unweaves, so no consumer depends on the real half
+being first — and the two owner decisions it cannot be built without.
 
 `rowOf`, `copyTextFor` and the password's copy all take a **`DisplayedPair`** — `ReadingPair` with a
 type-only brand — so an arithmetic pair cannot reach them by accident. The compiler refused four call
