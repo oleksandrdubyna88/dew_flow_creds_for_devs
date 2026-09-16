@@ -88,6 +88,8 @@ function world(options: {
   mcpEntries?: Record<string, unknown>[];
   /** How an entry id resolves for an MCP use call. Absent means this window serves none. */
   mcpUse?: 'usable' | 'closed';
+  /** Whether the vault says this call's dialog has already been answered (issue #95). */
+  mcpPreConsented?: boolean;
   /**
    * Where the window stores things — and, because it is what `socketPathFor` needs, the switch
    * that makes the server open its SECOND listener (a unix socket, or a named pipe on Windows).
@@ -198,7 +200,7 @@ function hooksFor(w: World, options: Parameters<typeof world>[0]): Record<string
     listAliases: options.aliasList === undefined ? undefined : () => options.aliasList ?? [],
     listMcpEntries: mcpEntriesFor(options.mcpEntries),
     visibleConfig: options.visibleConfig,
-    resolveMcpUse: mcpUseFor(options.mcpUse),
+    resolveMcpUse: mcpUseFor(options.mcpUse, options.mcpPreConsented),
     moveToTrash: trashFor(w, options.trash),
     mcpCreate: createFor(w, options.create),
   };
@@ -325,6 +327,7 @@ function mcpEntriesFor(
  */
 function mcpUseFor(
   verdict: 'usable' | 'closed' | undefined,
+  preConsented = false,
 ): ((id: string, action: string) => McpUseLookup) | undefined {
   if (verdict === undefined) {
     return undefined;
@@ -335,7 +338,7 @@ function mcpUseFor(
     }
     return verdict === 'closed'
       ? { kind: 'closed', entityName: 'prod', needed: action === 'rotate' ? 'edit' : 'use' }
-      : { kind: 'usable', target: { accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh' } };
+      : { kind: 'usable', target: { accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh' }, preConsented };
   };
 }
 

@@ -1,4 +1,5 @@
-import { McpAccess, McpRung, ResolvedMcpAccess, accessMask, mayDelete, resolveMcpInTree } from './mcpAccess';
+import { McpAccess, McpRung, ResolvedMcpAccess, accessMask, ladderKey, mayDelete, resolveMcpInTree } from './mcpAccess';
+import { ConsentStamps, consentDue, stampKey } from './mcpConsentPolicy';
 import { EntityMetadata, TreeNode } from './types';
 import { resolveKind } from './entityKind';
 import { withoutPassword } from './dbConnString';
@@ -310,9 +311,12 @@ async function storedSecrets(
  * account to name — it got the id from a list that had already merged them.</p>
  */
 export type UsableEntry =
-  | { kind: 'usable'; accountId: string; node: TreeNode }
+  | { kind: 'usable'; accountId: string; node: TreeNode; access: McpAccess }
   | { kind: 'closed'; node: TreeNode; needed: McpRung }
   | undefined;
+
+/** The usable arm, named, so a guard can narrow to it without restating its fields. */
+export type UsableFound = Extract<UsableEntry, { kind: 'usable' }>;
 
 /**
  * Find an entry by id and say whether an agent may use it.
@@ -392,7 +396,57 @@ function verdictFor(
 ): UsableEntry {
   const access = resolveMcpInTree(node, byId).access;
   const needed = switchForAction(action);
-  return granted(access, needed, node) ? { kind: 'usable', accountId, node } : { kind: 'closed', node, needed };
+  // The access is carried out rather than recomputed by whoever needs it next: the consent policy
+  // and the ladder fingerprint both come from this same resolve, and a second walk is a second
+  // chance to resolve it differently.
+  return granted(access, needed, node) ? { kind: 'usable', accountId, node, access } : { kind: 'closed', node, needed };
+}
+
+/**
+ * Has this call's dialog already been answered — and may it be skipped at all?
+ *
+ * <p>Here rather than in `mcpHooks.ts`, which imports `vscode` and so cannot be a unit test. This
+ * decides whether a credential is used with nobody watching, which is exactly the kind of rule this
+ * repository keeps on the testable side of that line.</p>
+ *
+ * <p><b>A delete is never pre-consented, and the answer is not COMPUTED for one.</b> Deleting always
+ * asks whatever the policy says, and `switchForAction` answers `'delete'` both for the delete verb
+ * and for every verb it has never heard of — so a route added to the broker and forgotten in that
+ * table fails closed here too, rather than inheriting a quiet path nobody meant to give it.</p>
+ */
+export function preConsentedFor(
+  found: UsableEntry,
+  action: string,
+  stamps: ConsentStamps | undefined,
+  now: number,
+): boolean {
+  if (!mayBeQuiet(found, action) || stamps === undefined) {
+    return false;
+  }
+  const key = stampKey(found.accountId, found.node.id);
+  return !consentDue(found.access.ask ?? 'always', stamps.get(key, now), ladderKey(found.access), now);
+}
+
+/** Is this even a call a policy may speak for? A delete — and an unknown verb — never is. */
+function mayBeQuiet(found: UsableEntry, action: string): found is UsableFound {
+  return found?.kind === 'usable' && switchForAction(action) !== 'delete';
+}
+
+/**
+ * The access one entry resolves to right now — for the side that WRITES a stamp.
+ *
+ * <p>The reader gets its answer from the lookup it already made; the writer runs after a dialog and
+ * has only ids, so it resolves again. The same road either way, which is the point: a stamp
+ * recorded against a ladder resolved differently from the one the next call resolves would ask
+ * again forever, and one resolved more loosely would cover a grant nobody agreed to.</p>
+ */
+export function entryAccessFor(
+  source: Pick<McpVaultSource, 'getNode'>,
+  accountId: string,
+  entityId: string,
+): McpAccess | undefined {
+  const node = source.getNode(accountId, entityId);
+  return node === undefined ? undefined : resolveMcpInTree(node, (id) => source.getNode(accountId, id)).access;
 }
 
 /**

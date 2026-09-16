@@ -3,11 +3,14 @@ import { test } from 'node:test';
 import {
   McpVaultSource,
   capabilitiesOf,
+  entryAccessFor,
   findUsableEntry,
   mcpEntryFor,
+  preConsentedFor,
   visibleMcpEntries,
 } from '../mcpEntries';
-import { normalizeMcpAccess, resolveMcpInTree } from '../mcpAccess';
+import { McpAccess, ladderKey, normalizeMcpAccess, resolveMcpInTree } from '../mcpAccess';
+import { ConsentStamps, STAMPS_KEY, stampKey } from '../mcpConsentPolicy';
 import type { TreeNode } from '../types';
 
 /**
@@ -370,4 +373,122 @@ test('a payment instrument opened to an agent carries no payment field, and ther
     );
   }
   assert.equal('getPaymentRaw' in source, false, 'no reader exists on this surface, so none can be called');
+});
+
+/**
+ * Whether a call's dialog has already been answered (issue #95).
+ *
+ * <p>Two of these are the "deleting always asks" guarantee, observed at the producer: the flag is
+ * not merely ignored for a delete, it is never COMPUTED for one — so a handler that started
+ * reading it could not turn a deletion quiet.</p>
+ */
+
+const QUIET_RUNGS = 'true,true,false,false,,false,false,';
+
+/** A store holding one live stamp for `e1`, keyed the way the code keys it. */
+function stampedStore(rungs = QUIET_RUNGS, at = NOW_S21): ConsentStamps {
+  const held = new Map<string, unknown>([[STAMPS_KEY, { [stampKey('a1', 'e1')]: { at, rungs } }]]);
+  return new ConsentStamps({
+    get: <T,>(key: string): T | undefined => held.get(key) as T | undefined,
+    update: (key: string, value: unknown): Thenable<void> => Promise.resolve(void held.set(key, value)),
+  });
+}
+
+/** The access a usable verdict was decided from, or an empty one — keeps the assertions flat. */
+function accessOf(found: ReturnType<typeof findUsableEntry>): McpAccess {
+  return found?.kind === 'usable' ? found.access : {};
+}
+
+const NOW_S21 = 1_700_000_000_000;
+
+test('a usable verdict carries the access it was decided from', () => {
+  const source = vault([folder('f1', 'F', { mcp: { use: true, ask: 'never' } }), entity('e1', 'prod', {})]);
+
+  const found = findUsableEntry(source, 'e1', 'exec');
+
+  assert.equal(found?.kind, 'usable');
+  assert.equal(accessOf(found).use, true);
+  assert.equal(accessOf(found).ask, 'never');
+});
+
+test('a never-ask entry is pre-consented for a use call', () => {
+  const source = vault([folder('f1', 'F', { mcp: { use: true, ask: 'never' } }), entity('e1', 'prod', {})]);
+
+  const found = findUsableEntry(source, 'e1', 'exec');
+
+  assert.equal(preConsentedFor(found, 'exec', stampedStore(), NOW_S21), true);
+});
+
+test('an ask-every-time entry is never pre-consented, whatever is stored', () => {
+  // Including a live stamp with matching rungs: the policy is read fresh and it outranks the record.
+  const source = vault([folder('f1', 'F', { mcp: { use: true } }), entity('e1', 'prod', {})]);
+
+  const found = findUsableEntry(source, 'e1', 'exec');
+
+  assert.equal(preConsentedFor(found, 'exec', stampedStore(), NOW_S21), false);
+});
+
+test('pre-consent is never COMPUTED for a delete, however the entry is set', () => {
+  // The producer half of "deleting always asks". The consumer half is that the delete handler
+  // never reads the flag; having both means neither alone has to be remembered.
+  const source = vault([folder('f1', 'F', { mcp: { delete: 'any', ask: 'never' } }), entity('e1', 'prod', {})]);
+
+  const found = findUsableEntry(source, 'e1', 'delete');
+
+  assert.equal(found?.kind, 'usable', 'the fixture must actually be allowed to delete');
+  assert.equal(preConsentedFor(found, 'delete', stampedStore(), NOW_S21), false);
+});
+
+test('a verb nobody has heard of is treated as a delete, and is never pre-consented', () => {
+  // `switchForAction` answers 'delete' for an unknown verb, so a route added to the broker and
+  // forgotten in that table fails closed here too rather than inheriting a quiet path.
+  const source = vault([folder('f1', 'F', { mcp: { delete: 'any', ask: 'never' } }), entity('e1', 'prod', {})]);
+
+  const found = findUsableEntry(source, 'e1', 'teleport');
+
+  assert.equal(preConsentedFor(found, 'teleport', stampedStore(), NOW_S21), false);
+});
+
+test('an every-12h entry is pre-consented only by a live stamp whose rungs match the ladder NOW', () => {
+  const source = vault([folder('f1', 'F', { mcp: { use: true, ask: 'every12h' } }), entity('e1', 'prod', {})]);
+  const found = findUsableEntry(source, 'e1', 'exec');
+  const rungsNow = ladderKey(accessOf(found));
+
+  assert.equal(preConsentedFor(found, 'exec', stampedStore(rungsNow), NOW_S21), true);
+  assert.equal(preConsentedFor(found, 'exec', stampedStore('something else'), NOW_S21), false, 'a widened grant');
+  assert.equal(
+    preConsentedFor(found, 'exec', stampedStore(rungsNow, NOW_S21 - 13 * 60 * 60_000), NOW_S21),
+    false,
+    'an expired window',
+  );
+});
+
+test('with no store at all, nothing is pre-consented', () => {
+  // A window with no writable storage remembers nothing, so every call asks. That is also what
+  // every existing caller of `mcpUseLookup` gets until the wiring story hands it a store.
+  const source = vault([folder('f1', 'F', { mcp: { use: true, ask: 'never' } }), entity('e1', 'prod', {})]);
+
+  assert.equal(preConsentedFor(findUsableEntry(source, 'e1', 'exec'), 'exec', undefined, NOW_S21), false);
+});
+
+test('a closed entry is not pre-consented, because it is not usable at all', () => {
+  const source = vault([folder('f1', 'F', { mcp: { view: true, ask: 'never' } }), entity('e1', 'prod', {})]);
+
+  const found = findUsableEntry(source, 'e1', 'exec');
+
+  assert.equal(found?.kind, 'closed');
+  assert.equal(preConsentedFor(found, 'exec', stampedStore(), NOW_S21), false);
+});
+
+test('the access a writer resolves is the same one the reader compared against', () => {
+  // A stamp recorded against a ladder resolved differently from the one the next call resolves
+  // would ask again forever; one resolved more loosely would cover a grant nobody agreed to.
+  const source = vault([folder('f1', 'F', { mcp: { use: true, ask: 'every12h' } }), entity('e1', 'prod', {})]);
+  const found = findUsableEntry(source, 'e1', 'exec');
+
+  assert.equal(
+    ladderKey(entryAccessFor(source, 'a1', 'e1') ?? {}),
+    ladderKey(accessOf(found)),
+  );
+  assert.equal(entryAccessFor(source, 'a1', 'gone'), undefined);
 });
