@@ -4,6 +4,20 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.1] — 2026-09-16 — a patched dependency, and nothing you can see
+
+### Security
+
+- **`js-yaml` moves to 4.3.2**, which closes a high-severity advisory: `maxTotalMergeKeys` did not
+  limit the work done for empty merge sources, so a crafted YAML document could burn CPU without
+  hitting the limit that exists to stop it.
+
+  **It does not reach you, and that is worth saying plainly rather than implying a scare.** This is a
+  build-time dependency — it arrives through `@vscode/vsce`, the tool that packages the extension —
+  and nothing in the shipped `.vsix` loads it or parses YAML at all. What changes is the dependency
+  graph GitHub warns about on this repository. There is no behaviour in the extension to re-test, and
+  nothing to do on your side.
+
 ## [1.8.0] — a second value of your own, and an accepted share arrives whole again
 
 ### Fixed
