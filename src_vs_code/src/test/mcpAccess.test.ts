@@ -574,5 +574,10 @@ test('a policy stored as null keeps climbing, because it is an answer taken back
  * and a fixture the type system has sanitised could not put that to the test.</p>
  */
 function synced(json: string): TreeNode['mcp'] {
-  return JSON.parse(json);
+  const record = JSON.parse(json);
+  // Run the REAL admission check, not a reading of it. `isMcpAccess` is what decides whether a
+  // synced record reaches the vault at all, and a fixture it would have rejected proves nothing
+  // about the resolver — the test would pass against a node that can never exist.
+  assert.equal(isMcpAccess(record), true, `the vault would reject this record: ${json}`);
+  return record;
 }
