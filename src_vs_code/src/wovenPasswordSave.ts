@@ -1,6 +1,7 @@
 import { Random } from './decoyDigits';
 import { isShuffleCode } from './shuffle';
 import { weaveRefusal, weaveSecret } from './wovenSecret';
+import { pairRefusal } from './secondPair';
 
 /**
  * What a save writes for the password, and what the entry then says about it.
@@ -40,29 +41,65 @@ export function wovenSave(
   method: string,
   wasWoven: boolean,
   random: Random,
+  second: SecondHalf = NO_SECOND,
 ): WovenSave {
   if (typed.length === 0) {
     return { value: '', woven: wasWoven, refusal: '' };
   }
-  return weave ? marked(typed, method, random) : { value: typed, woven: false, refusal: '' };
+  return weave ? marked(typed, method, random, second) : { value: typed, woven: false, refusal: '' };
 }
 
+/**
+ * Whose the other half is, and what they typed for it.
+ *
+ * <p>Carried as a pair rather than as a bare string, because "" has to mean two different things
+ * depending on the mode — nothing typed under `own` is a refusal, and nothing typed under `decoy` is
+ * the ordinary case. A bare string cannot say which, which is the ambiguity the plan round found in
+ * the form and settled with a mode control.</p>
+ */
+export interface SecondHalf {
+  readonly own: boolean;
+  readonly typed: string;
+}
+
+const NO_SECOND: SecondHalf = { own: false, typed: '' };
+
 /** A password the person asked to weave: woven, or stored as typed with the reason it was not. */
-function marked(typed: string, method: string, random: Random): WovenSave {
-  const refusal = weaveProblem(typed, method);
+function marked(typed: string, method: string, random: Random, second: SecondHalf): WovenSave {
+  const refusal = weaveProblem(typed, method, second);
   return refusal === ''
-    ? { value: weaveSecret(typed, method as never, random), woven: true, refusal: '' }
+    ? { value: weaveSecret(typed, method as never, random, second.own ? second.typed : ''), woven: true, refusal: '' }
     : { value: typed, woven: false, refusal };
 }
 
-/** Too short to weave, or a method this build does not have. Either way, said rather than silent. */
-function weaveProblem(typed: string, method: string): string {
+/**
+ * Too short to weave, a method this build does not have, or a second half that cannot pair.
+ *
+ * <p>The order matters and is the plan's: the PAIR is judged before anything is woven, so a refused
+ * pair means nothing was woven rather than a password woven with a partner that was then rejected.
+ * All three answers come back the same way — stored as typed, with the reason said out loud — which
+ * is the rule four reviewers found missing the first time: a refused weave that says nothing leaves
+ * a ticked box, a saved entry, and a secret in the clear that looks woven.</p>
+ */
+function weaveProblem(typed: string, method: string, second: SecondHalf): string {
   const tooShort = weaveRefusal(typed);
   if (tooShort !== '') {
     return tooShort;
   }
-  return isShuffleCode(method) ? '' : NO_METHOD;
+  return isShuffleCode(method) ? secondProblem(typed, second) : NO_METHOD;
 }
+
+/** A decoy has nothing to judge. An own half has to be there, and has to pair. */
+function secondProblem(typed: string, second: SecondHalf): string {
+  if (!second.own) {
+    return '';
+  }
+  return second.typed.length === 0 ? NO_SECOND_TYPED : pairRefusal(typed, second.typed, 'password');
+}
+
+const NO_SECOND_TYPED =
+  'You chose to supply the second password yourself and the box is empty. Type it, or choose a '
+  + 'decoy and one will be made for you. The password was stored as you typed it, unwoven.';
 
 const NO_METHOD =
   'No weaving method was chosen, so the password was stored as you typed it. Pick one of the twelve '
@@ -87,12 +124,13 @@ export function unwovenWarning(
   weave: boolean,
   method: string,
   wasWoven: boolean,
+  second: SecondHalf = NO_SECOND,
 ): string | undefined {
-  return weave ? refusedWeave(typed, method) : untickedButWoven(typed, wasWoven);
+  return weave ? refusedWeave(typed, method, second) : untickedButWoven(typed, wasWoven);
 }
 
-function refusedWeave(typed: string, method: string): string | undefined {
-  const problem = typed.length === 0 ? '' : weaveProblem(typed, method);
+function refusedWeave(typed: string, method: string, second: SecondHalf): string | undefined {
+  const problem = typed.length === 0 ? '' : weaveProblem(typed, method, second);
   return problem === '' ? undefined : `${problem}\n\nSave the password in the clear?`;
 }
 

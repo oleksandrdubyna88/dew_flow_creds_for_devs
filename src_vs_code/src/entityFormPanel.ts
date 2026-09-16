@@ -5,6 +5,8 @@ import { readDependsOnRows, readForwardRows } from './formRowReaders';
 import { addressBlockFor, addressSplitAnswer, cardTypedAnswer } from './cardFormFields';
 import { exampleAnswer } from './weaveExample';
 import { unwovenWarning, wovenSave } from './wovenPasswordSave';
+import { secondModeOf } from './secondModeMarkup';
+import { secondRecordFor } from './secondSave';
 import { cryptoRandom, generatePhraseAnswer } from './phraseGenerate';
 import * as vscode from 'vscode';
 import { applyLifetime } from './entityExpiry';
@@ -268,6 +270,10 @@ async function confirmUnwovenSave(
     bool(data, 'weavePassword'),
     str(data, 'weaveMethod'),
     options.initial?.passwordWoven === true,
+    // The dialog has to know about the other half too, or a refused pair would be a person
+    // clicking Save and getting something the dialog never mentioned. The module's own comment:
+    // one says what gets STORED, the other says what to SAY about it, and the two must not disagree.
+    { own: secondModeOf(data.weaveSecondMode) === 'own', typed: str(data, 'secondPassword') },
   );
   if (warning === undefined) {
     return true;
@@ -500,7 +506,14 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
   // password, and an entry cannot go on claiming a property of a value that is no longer there.
   const clearsPassword = keepsPassword(kind) ? bool(data, 'clearPassword') : options.hasStoredPassword;
   // The four states a password save can be in, decided once: see wovenPasswordSave.ts.
-  const saved = wovenSave(password, bool(data, 'weavePassword'), str(data, 'weaveMethod'), options.initial?.passwordWoven === true, cryptoRandom);
+  // Whose the other half is, and what they typed for it. Read before the weave, because the PAIR
+  // is judged first: a refused pair must mean nothing was woven rather than a password woven with
+  // a partner that was then rejected.
+  const secondHalf = {
+    own: secondModeOf(data.weaveSecondMode) === 'own',
+    typed: str(data, 'secondPassword'),
+  };
+  const saved = wovenSave(password, bool(data, 'weavePassword'), str(data, 'weaveMethod'), options.initial?.passwordWoven === true, cryptoRandom, secondHalf);
   const privateKey = str(data, 'privateKey');
   const keyEntity = str(data, 'sshKeyEntityId');
   const vpnConfig = str(data, 'vpnConfigContent');
@@ -622,6 +635,17 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
     // the refusal it answers with when something was asked for and could not be done.
     newPassword: !isDb && saved.value.length > 0 ? saved.value : undefined,
     wovenRefusal: saved.refusal,
+    // What the record should hold afterwards. A value the weave CONSUMED is not in it — that is
+    // the rule the whole feature stands on, and `secondRecordFor` is where it is true.
+    newSecond: secondRecordFor({
+      mode: secondHalf.own ? 'own' : 'decoy',
+      typed: { password2: secondHalf.typed },
+      cleared: bool(data, 'clearSecondPassword') ? ['password2'] : [],
+      // Only when the weave actually happened: a refused one consumed nothing, so a value typed
+      // beside it is an ordinary second password and belongs in the record.
+      weaving: saved.woven && saved.refusal === '' ? ['password'] : [],
+      stored: options.storedSecond ?? {},
+    }),
     // A config has no password slot, so a stored one is invisible and uneditable — and, until this
     // line, enough to make the entry shareable. Scrubbed on write, exactly as a TOTP seed is when
     // an entity moves to a kind that cannot hold one.

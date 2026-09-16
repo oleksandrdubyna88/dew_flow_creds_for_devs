@@ -1,4 +1,5 @@
 import { EntityKind, EntityMetadata } from './types';
+import { SecondValues } from './secondValues';
 import { EntityFields } from './entityFields';
 import { PaymentFields } from './paymentFields';
 import { AgentDoors } from './agentDoors';
@@ -36,6 +37,22 @@ export interface EntityFormOptions {
   entityId: string;
   initial?: EntityMetadata;
   hasStoredPassword: boolean;
+  /**
+   * Whether a SECOND password is stored (#52) — the fact, never the value.
+   *
+   * <p>It decides one thing: whether the form offers to CLEAR it. An empty box means keep what is
+   * stored, so deleting has to be something a person says, and there is nothing to say it about
+   * when nothing is held.</p>
+   */
+  hasStoredSecondPassword?: boolean;
+  /**
+   * The second values the entry holds NOW, so an untouched box can keep them.
+   *
+   * <p>The one place a stored secret reaches this shape, and it never reaches the PAGE: the save
+   * needs to know what is held in order to leave it alone, and the markup is emitted without it.
+   * `secondRecordFor` is what reads this.</p>
+   */
+  storedSecond?: SecondValues;
   hasStoredPrivateKey: boolean;
   hasStoredAttachment: boolean;
   hasStoredImage: boolean;
@@ -104,6 +121,8 @@ export interface EntityFormValues {
   details: EntityMetadata;
   newPassword?: string;
   clearPassword: boolean;
+  /** The second-values record to store (#52). An empty record DELETES the key. */
+  newSecond?: SecondValues;
   /** Why a password the form was told to weave was stored plain instead, or `''`. */
   wovenRefusal?: string;
   newPrivateKey?: string;

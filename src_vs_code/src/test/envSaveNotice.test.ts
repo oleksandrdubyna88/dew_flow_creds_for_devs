@@ -176,6 +176,8 @@ function memoryVault(nodes: TreeNode[], secrets: Map<string, string>): unknown {
     getPaymentRaw: get('paymentRaw'),
     setPaymentRaw: set('paymentRaw'),
     setPayment: done,
+    setSecond: done,
+    getSecond: () => Promise.resolve({}),
     getAttachment: get('attachment'),
     setAttachment: set('attachment'),
     getImage: get('image'),

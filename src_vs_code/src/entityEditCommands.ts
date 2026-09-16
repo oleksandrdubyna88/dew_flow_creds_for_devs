@@ -67,6 +67,10 @@ export async function editNode(
     initial: node.details,
     lockedKind: folderKindOf(storage, accountId, node.parentId ?? null),
     hasStoredPassword: (await storage.getPassword(accountId, node.id)) !== undefined,
+    // The record itself, because an untouched box KEEPS what is stored and the save needs to know
+    // what that is. It reaches the panel and stops there: nothing stored is written into the page.
+    storedSecond: await storage.getSecond(accountId, node.id),
+    hasStoredSecondPassword: (await storage.getSecond(accountId, node.id)).password2 !== undefined,
     hasStoredPrivateKey: (await storage.getPrivateKey(accountId, node.id)) !== undefined,
     hasStoredAttachment: (await storage.getAttachment(accountId, node.id)) !== undefined,
     createdAt: node.createdAt,
