@@ -100,8 +100,8 @@ test('renaming folders lights the bottom rung and nothing on the entry ladder', 
 });
 
 test('an unknown folder delete scope reads as no deleting, exactly like the entry one', () => {
-  assert.equal(normalizeMcpAccess({ folderDelete: 'everything' as never }).folderDelete, undefined);
-  assert.equal(normalizeMcpAccess({ folderDelete: 'everything' as never }).folderCreate, false);
+  assert.equal(normalizeMcpAccess({ folderDelete: 'everything' }).folderDelete, undefined);
+  assert.equal(normalizeMcpAccess({ folderDelete: 'everything' }).folderCreate, false);
 });
 
 test('folder deletion honours its own scope, not the entry one', () => {
@@ -133,7 +133,7 @@ test('a lone view stays a lone view — the ladder only ever fills DOWNWARDS', (
 test('an unknown delete scope reads as no deleting rather than as permission', () => {
   // A record from a newer build could carry a scope this one has never heard of. Refusing is the
   // only safe reading; accepting the record and ignoring the word would be worse than both.
-  assert.equal(normalizeMcpAccess({ delete: 'everything' as never }).delete, undefined);
+  assert.equal(normalizeMcpAccess({ delete: 'everything' }).delete, undefined);
 });
 
 test("the entry's own setting wins, and the folder is inherited when it has none", () => {
@@ -332,7 +332,7 @@ test('an unrecognised policy word reads as ask-every-time, never as inherit', ()
   // folder", so reading a strange word as absence would let it inherit a folder's "never" — a word
   // this build has never seen would turn the dialog off.
   assert.equal(readMcpAccess({ ask: 'weekly' })?.ask, 'always');
-  assert.equal(normalizeMcpAccess({ ask: 'weekly' as never }).ask, 'always');
+  assert.equal(normalizeMcpAccess({ ask: 'weekly' }).ask, 'always');
   assert.equal(readMcpAccess({ ask: 7 })?.ask, 'always');
 });
 

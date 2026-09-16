@@ -28,8 +28,12 @@ export type McpDeleteScope = 'any' | 'own';
  * child under a folder set to `never` had no way to say "ask me anyway", because saying nothing is
  * how you say "inherit". The safe answer is kept where it belongs, at the end of the walk: when
  * nothing at any level answers, the effective policy is `always`.</p>
+ *
+ * <p>Derived from `ASK_POLICIES` below rather than written out beside it: a fourth answer added to
+ * a hand-written union but not to that array would type-check everywhere and then normalise to
+ * `always` at run time, which is a setting a person chose being quietly ignored.</p>
  */
-export type McpAskPolicy = 'always' | 'every12h' | 'never';
+export type McpAskPolicy = (typeof ASK_POLICIES)[number];
 
 export interface McpAccess {
   view?: boolean;
@@ -56,31 +60,18 @@ export interface McpAccess {
 }
 
 /**
- * One rung of the ladder, by name.
- *
- * <p>`keyof McpAccess` used to say this, and it stopped being true the moment the record gained a
- * field that is not a rung: `switchForAction` would have been allowed to answer `'ask'`, and a
- * refusal would have named a control that grants nothing. The compiler said so on the first build,
- * which is the argument for naming the set rather than casting past it.</p>
- */
-export type McpRung =
-  | 'view'
-  | 'use'
-  | 'edit'
-  | 'create'
-  | 'delete'
-  | 'folderCreate'
-  | 'folderEdit'
-  | 'folderDelete';
-
-/**
- * The eight keys that make up the LADDER half of this record.
+ * The eight keys that make up the LADDER half of this record, and the type of one of them.
  *
  * <p>Written out because the two halves are now read, stored and inherited apart, and "does this
  * object answer the ladder" is a question with a wrong answer available: an object carrying only a
  * policy must not be mistaken for a ladder that says no to everything.</p>
+ *
+ * <p><b>The list is the source and the type is derived from it</b>, rather than the two being
+ * written out beside each other. A ninth rung added to a hand-written union but not to this array
+ * would make every message naming it read as claiming nothing — a permission silently ignored,
+ * which is the failure mode a duplicate allowlist always has and never announces.</p>
  */
-const LADDER_KEYS: readonly McpRung[] = [
+const LADDER_KEYS = [
   'view',
   'use',
   'edit',
@@ -89,7 +80,17 @@ const LADDER_KEYS: readonly McpRung[] = [
   'folderCreate',
   'folderEdit',
   'folderDelete',
-];
+] as const;
+
+/**
+ * One rung of the ladder, by name.
+ *
+ * <p>`keyof McpAccess` used to say this, and it stopped being true the moment the record gained a
+ * field that is not a rung: `switchForAction` would have been allowed to answer `'ask'`, and a
+ * refusal would have named a control that grants nothing. The compiler said so on the first build,
+ * which is the argument for naming the set rather than casting past it.</p>
+ */
+export type McpRung = (typeof LADDER_KEYS)[number];
 
 /** Nothing allowed — what an entry with no setting anywhere resolves to. */
 export const NO_MCP_ACCESS: McpAccess = {};
@@ -108,12 +109,20 @@ export interface ResolvedMcpAccess {
  * <p>Applied on the way IN as well as on the way out: a record arriving from sync or from an
  * older build can carry `edit` without `view`, and expanding it here means every reader sees a
  * consistent answer without repeating the ladder.</p>
+ *
+ * <p><b>It takes `unknown`, and the docblock above is why.</b> A record that arrives from sync was
+ * written by a build that is not this one, so `McpAccess` was always a description of what it
+ * OUGHT to contain rather than of what it does — and a signature that says otherwise pushes the
+ * dishonesty outwards, where every test of a word this build has never heard of had to write
+ * `as never` to get past it. The one cast lives here, at the boundary, in the shape
+ * `readMcpAccess` has always had.</p>
  */
-export function normalizeMcpAccess(raw: McpAccess | undefined): McpAccess {
-  if (raw === undefined) {
+export function normalizeMcpAccess(raw: unknown): McpAccess {
+  if (raw === undefined || raw === null || typeof raw !== 'object') {
     return NO_MCP_ACCESS;
   }
-  return climb(raw, deleteScope(raw.delete), deleteScope(raw.folderDelete));
+  const r = raw as Record<string, unknown>;
+  return climb(r, deleteScope(r.delete), deleteScope(r.folderDelete));
 }
 
 /**
@@ -130,7 +139,8 @@ function deleteScope(raw: unknown): McpDeleteScope | undefined {
   return raw === 'any' || raw === 'own' ? raw : undefined;
 }
 
-const ASK_POLICIES: readonly McpAskPolicy[] = ['always', 'every12h', 'never'];
+/** The three answers, and the source `McpAskPolicy` is derived from so the two cannot drift. */
+const ASK_POLICIES = ['always', 'every12h', 'never'] as const;
 
 /**
  * An unknown policy word reads as "ask every time" — and it is an ANSWER, not silence.
@@ -221,11 +231,11 @@ function policyHalf(r: Record<string, unknown>): McpAccess {
  * credential in one, and neither is the reverse.</p>
  */
 function climb(
-  raw: McpAccess,
+  raw: Record<string, unknown>,
   del: McpDeleteScope | undefined,
   folderDel: McpDeleteScope | undefined,
 ): McpAccess {
-  const on = (flag: boolean | undefined, below: boolean): boolean => flag === true || below;
+  const on = (flag: unknown, below: boolean): boolean => flag === true || below;
   const create = on(raw.create, del !== undefined);
   const edit = on(raw.edit, create);
   const use = on(raw.use, edit);
