@@ -700,7 +700,7 @@ export function formPageScript(
       scriptLanguage: val('scriptLanguage'), scriptBody: val('scriptBody'), scriptVars: scriptVarRows,
       configFormat: val('configFormat'), configFileName: val('configFileName'),
       configBody: val('configBody'),
-      paymentForm: val('paymentForm'), weavePassword: chk('weavePassword'), weaveMethod: val('weaveMethod'),
+      paymentForm: val('paymentForm'), weavePassword: chk('weavePassword'), weaveMethod: val('weaveMethod'), weaveSecondMode: val('weaveSecondMode'), secondPassword: val('second_password2'), clearSecondPassword: chk('clearSecond_password2'),
       cardNumber: val('cardNumber'), cardExpiry: val('cardExpiry'), cardHolder: val('cardHolder'),
       cardCvv: val('cardCvv'), cardPin: val('cardPin'),
       cardAddress: val('cardAddress'), cardPhone: val('cardPhone'), cardCountry: val('cardCountry'),

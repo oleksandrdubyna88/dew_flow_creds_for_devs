@@ -1,4 +1,3 @@
-import { PaymentFields } from './paymentFields';
 import type { StorageManager } from './storageManager';
 import type { EntityFormValues } from './entityFormPanel';
 
@@ -70,6 +69,9 @@ export async function applyAdditions(
   // prevent, and a code review found it: every naive edit-save of a payment produces `{}`.
   await applyWhenDefined(nonEmptyRecord(result.newPayment), (v) => storage.setPayment(accountId, entityId, v));
   await applyWhenDefined(result.newConfigBody, (v) => storage.setConfigBody(accountId, entityId, v));
+  // A record, so the same rule the payment record needed: an emptied-but-defined `{}` serialises to
+  // nothing and DELETES, which is a removal and must not run before the node write.
+  await applyWhenDefined(nonEmptyRecord(result.newSecond), (v) => storage.setSecond(accountId, entityId, v));
   await applyOptional(false, result.newAttachment, noop, (v) => storage.setAttachment(accountId, entityId, v));
   await applyOptional(false, result.newImage, noop, (v) => storage.setImage(accountId, entityId, v));
   // The form already canonicalised the seed (`toValues`), so this is a store, not a parse.
@@ -100,6 +102,7 @@ export async function applyRemovals(
   // …and the removals pass takes both cases: no record at all, and a record emptied to nothing.
   await applyWhenAbsent(nonEmptyRecord(result.newPayment), () => storage.setPayment(accountId, entityId, undefined));
   await applyWhenAbsent(result.newConfigBody, () => storage.setConfigBody(accountId, entityId, undefined));
+  await applyWhenAbsent(nonEmptyRecord(result.newSecond), () => storage.setSecond(accountId, entityId, undefined));
 }
 
 /** A setter that also deletes, called only for its ADDING behaviour. */
@@ -150,6 +153,6 @@ export async function applySecrets(
  * same thing to the additions/removals split as well. Otherwise an emptied form deletes on the wrong
  * side of the node write.</p>
  */
-function nonEmptyRecord(record: PaymentFields | undefined): PaymentFields | undefined {
+function nonEmptyRecord<T extends object>(record: T | undefined): T | undefined {
   return record !== undefined && Object.keys(record).length > 0 ? record : undefined;
 }

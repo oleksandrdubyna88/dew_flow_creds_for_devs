@@ -101,3 +101,78 @@ test('a weave that succeeds asks nothing, and neither does an ordinary save', ()
   assert.equal(unwovenWarning('', true, SHUFFLE_CODES[0], false), undefined, 'nothing typed is nothing to weave');
   assert.equal(unwovenWarning('plain-one', false, '', false), undefined);
 });
+
+/* ── the person's OWN second half (#52) ───────────────────────────────────────────────────── */
+
+test('a typed second half is woven in, and BOTH values come back under the method', () => {
+  // The whole point of #52: not "a value and a decoy" but "two values of mine". Both halves of the
+  // reading are real, which is what "seed 1, seed 2" asks for.
+  const saved = wovenSave('hunter2x', true, SHUFFLE_CODES[3], false, pinnedRandom(), {
+    own: true,
+    typed: 'flyfish7',
+  });
+
+  assert.equal(saved.woven, true);
+  assert.equal(saved.refusal, '');
+  const reading = unweaveSecret(saved.value, SHUFFLE_CODES[3]);
+  assert.deepEqual(
+    [reading?.first, reading?.second].sort(),
+    ['flyfish7', 'hunter2x'],
+    'the pair, and nothing says which row is which',
+  );
+});
+
+test('with a typed second half the decoy generator is NEVER reached', () => {
+  // "We did not call it" is a claim only a throwing random can settle.
+  const explode = (): number => {
+    throw new Error('a decoy was drawn for a second value the person typed');
+  };
+
+  assert.doesNotThrow(() => wovenSave('hunter2x', true, SHUFFLE_CODES[0], false, explode, {
+    own: true,
+    typed: 'flyfish7',
+  }));
+});
+
+test('choosing to supply the half and supplying none refuses, and stores the password AS TYPED', () => {
+  // Not woven under a decoy drawn behind their back — that would store a value they did not choose,
+  // in a field they will later be asked to recognise. Stored plain, and said out loud.
+  const saved = wovenSave('hunter2x', true, SHUFFLE_CODES[0], false, pinnedRandom(), { own: true, typed: '' });
+
+  assert.equal(saved.woven, false);
+  assert.equal(saved.value, 'hunter2x');
+  assert.match(saved.refusal, /box is empty/);
+  assert.match(saved.refusal, /stored as you typed it, unwoven/);
+});
+
+test('a second half that cannot PAIR refuses with the pair rule’s own sentence', () => {
+  const saved = wovenSave('hunter2!', true, SHUFFLE_CODES[0], false, pinnedRandom(), {
+    own: true,
+    typed: 'hunter2x',
+  });
+
+  assert.equal(saved.woven, false, 'and nothing was woven — the pair is judged BEFORE the weave');
+  assert.equal(saved.value, 'hunter2!');
+  assert.match(saved.refusal, /different kinds of character/);
+});
+
+test('an empty box under a DECOY is the ordinary case, and weaves', () => {
+  const saved = wovenSave('hunter2x', true, SHUFFLE_CODES[0], false, pinnedRandom(), { own: false, typed: '' });
+
+  assert.equal(saved.woven, true);
+  assert.equal(saved.refusal, '');
+});
+
+test('the warning and the save agree about the second half, as they must about everything else', () => {
+  // Their own comment: one says what gets STORED, the other says what to SAY about it, and the two
+  // must never disagree about which state a save is in. A refusal the dialog did not mention would
+  // be a person clicking Save and getting something else.
+  const refused = { own: true, typed: '' };
+
+  assert.match(String(unwovenWarning('hunter2x', true, SHUFFLE_CODES[0], false, refused)), /box is empty/);
+  assert.equal(
+    unwovenWarning('hunter2x', true, SHUFFLE_CODES[0], false, { own: true, typed: 'flyfish7' }),
+    undefined,
+    'a good pair asks nothing',
+  );
+});

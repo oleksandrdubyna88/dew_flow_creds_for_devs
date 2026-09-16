@@ -7,6 +7,7 @@ import { formHeaderHtml } from './pageChrome';
 import { methodLabel } from './shuffle';
 import { methodOrder } from './phraseLayout';
 import { Random } from './decoyDigits';
+import { clearSecondBox, secondBox, secondModeControl } from './secondModeMarkup';
 import { pinState, wovenState } from './generalNotes';
 import { formStyleSheet } from './entityFormStyles';
 import { AgentDoors, agentDoorRows } from './agentDoors';
@@ -168,7 +169,7 @@ const ENV_ROW_HINT =
  * <p>The paragraph is deliberately in the FORM rather than only in the help: somebody about to
  * make a value unrecoverable should read what they are buying at the moment they choose it.</p>
  */
-function weaveControls(woven: boolean, random: Random = Math.random): string {
+function weaveControls(woven: boolean, hasSecond: boolean, random: Random = Math.random): string {
   return `<div class="check"><input id="weavePassword" type="checkbox"${woven ? ' checked' : ''}>
       <label for="weavePassword">Store this password woven with a decoy</label></div>
     <div id="weaveControls" style="display:${woven ? '' : 'none'}">
@@ -184,10 +185,13 @@ function weaveControls(woven: boolean, random: Random = Math.random): string {
       <b>A woven password cannot be used automatically.</b> Nothing here — this build included —
       knows which of the two halves is yours, so the terminal, the environment variable and any
       agent stop being offered it. You read it from the card and use it yourself.</p>
+      ${secondModeControl('weaveSecondMode')}
+      ${secondBox('password2', true)}
       <p class="hint">What the method does, on two values made up for the picture. Your own
       password is never drawn here.</p>
       <div id="weaveExampleHost"></div>
-    </div>`;
+    </div>
+    ${clearSecondBox('password2', hasSecond)}`;
 }
 
 /** The twelve methods: a fresh ORDER every time, and a NAME that belongs to the code. */
@@ -666,7 +670,7 @@ ${formHeaderHtml({
            <label for="clearPassword">Clear the stored password</label></div>`
         : ''
     }
-    ${weaveControls(d?.passwordWoven === true)}
+    ${weaveControls(d?.passwordWoven === true, options.hasStoredSecondPassword === true)}
   </fieldset>
 
   ${openSection('scriptSection')}
