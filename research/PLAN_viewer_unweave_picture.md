@@ -1,15 +1,44 @@
 # PLAN — the viewer says an entry is woven, and shows what the method did
 
-> Status: **plan only, nothing implemented yet, 2026-09-15.** Scope: `src_vs_code/src` — the entity
-> viewer's woven row and the page script that drives it, plus two adjacent corrections the owner
-> asked for in the same pass. Extension only; no HTTP contract, no storage change, no migration.
+> Status: **IMPLEMENTED, 2026-09-16.** Scope: `src_vs_code/src` — the entity viewer's woven row and
+> the page script that drives it, plus two adjacent corrections the owner asked for in the same pass.
+> Extension only; no HTTP contract, no storage change, no migration.
 >
 > Closes [#58](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/58).
 >
-> Related docs: [module_extension.md](../research/module_extension.md),
-> [PLAN_woven_passwords_and_entity_pin.md](../research/PLAN_woven_passwords_and_entity_pin.md),
-> [PLAN_payment_ui_tail.md](../research/PLAN_payment_ui_tail.md),
-> [PLAN_form_chrome_and_weave_example.md](../research/PLAN_form_chrome_and_weave_example.md).
+> Built as six stories, each through its own multi-model code round: 3 + 12 reviewers on the plan and
+> on S1–S3. **Six deviations worth reading before the plan itself.**
+>
+> - **The row order is cleared when the ENTRY changes, not on every render.** The plan said per
+>   render, and a code round showed why that is wrong: re-rendering the same entry while a keychain
+>   read is in flight posts rows under the old order into a page whose Copy resolves the new one —
+>   the display and the clipboard disagreeing about the same secret, with nothing on screen saying
+>   so. Re-rendering the same entry is not a new viewing.
+> - **The order is sampled before EVERY await, and there were two of them.** The keychain read on the
+>   password path and the confirmation modal on the card path. The password one was fixed first and
+>   the card one was found by a reviewer noticing the asymmetry — the RED was the real PIN reaching
+>   the clipboard when the row on screen showed the other reading.
+> - **The draw is the house CSPRNG, not `Math.random`.** One bit, but a predictable bit is one a
+>   reader who has watched a few opens carries into the next. `cryptoRandom` already existed.
+> - **The form's raw-code title had THREE sites, not the two this plan named** — card, password and
+>   phrase. Fixing two would have left the phrase form saying `f4` while its own picker said
+>   `Method 4`, which is the exact defect the change was for.
+> - **`miniDom` had the bug this feature is about.** Its matcher returned `true` for any selector it
+>   could not parse, so `[data-woven-host]` — the selector the viewer's page script binds by —
+>   matched the FIRST element in the document. A test driving the page would have bound it to the
+>   wrong node and passed. Fixed, with its own tests, before the page tests were trusted.
+> - **Two types the plan did not anticipate**: `DisplayedPair`, a branded `ReadingPair` so an
+>   arithmetic pair cannot reach a display consumer (the compiler refused four call sites the moment
+>   it landed), and `rowIn`, the single mapping of `a`/`b` to a row shared by both hosts.
+>
+> **Not built, because the owner did not ask for them** (2026-09-15): a per-row Show/Hide toggle, and
+> renaming the Show button to *Unweave*. The button still says Show, and nothing in the build claims
+> to undo a weave.
+>
+> Related docs: [module_extension.md](module_extension.md),
+> [PLAN_woven_passwords_and_entity_pin.md](PLAN_woven_passwords_and_entity_pin.md),
+> [PLAN_payment_ui_tail.md](PLAN_payment_ui_tail.md),
+> [PLAN_form_chrome_and_weave_example.md](PLAN_form_chrome_and_weave_example.md).
 
 ## The goal, and what is already built
 
