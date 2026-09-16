@@ -575,6 +575,9 @@ inherited `use` rung reading false.
 | quiet calls spend no modal slot, so a prompting call still gets its five | **broker** | releasing a slot never taken would free another call's |
 | an entry INHERITING never-ask from its folder runs quiet through the REAL lookup | **broker** | the only test here that builds the answer the way production does — `mcpUseLookup` over a real tree and a real stamp store — with an ask-every-time control beside it, so it cannot pass by resolving nothing |
 | a remembered write that FAILS does not fail the call somebody allowed | **broker** | it costs one more dialog next time and says so in the journal |
+| a runaway loop leaves ONE journal line a window, not one a call | **unit** | the ceiling bounds actions, not refusals; a line each would be a journal nobody can read |
+| the ceiling is one per WINDOW, shared by every tokenless caller | **unit** | deliberate: the only caller identity this route has is a LABEL the body supplies, so keying on it would hand an attacker as many quotas as it invented |
+| a refused PROMPT is still never written down | **unit** | unchanged and pinned, so the gap stays visible — widening it is a decision, not a side effect of this story |
 
 **The ceiling (S2.3)** — the quiet path's own limiter, since the prompt was the old one. The unit half
 is `test/aliasThrottle.test.ts` with the clock injected, so sixty calls cost under a millisecond; the

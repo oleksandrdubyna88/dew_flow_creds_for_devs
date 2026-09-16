@@ -199,3 +199,68 @@ test('the silent ceiling is high enough for an agent and low enough to bound a l
   assert.ok(SILENT_CEILING >= 30, 'and not so low that a busy agent session is refused');
   assert.ok(SILENT_CEILING > MAX_PROMPTS, 'a ceiling below the modal budget would refuse quiet calls a prompt would have got');
 });
+
+test('a runaway loop leaves ONE line a window, not one line a call', () => {
+  // The ceiling bounds actions and not refusals: a loop calling a thousand times a minute is
+  // refused nine hundred and forty times, and a line each would be a journal nobody can read
+  // about a machine nobody can diagnose. One line says everything the second one would.
+  const c = new TokenlessCeilings();
+  for (let i = 0; i < SILENT_CEILING; i += 1) {
+    assert.equal(c.admit(false, NOW + i), undefined, `quiet call ${i + 1}`);
+  }
+
+  const first = refusal(c, NOW + SILENT_CEILING);
+  const second = refusal(c, NOW + SILENT_CEILING + 1);
+  const hundredth = refusal(c, NOW + SILENT_CEILING + 100);
+
+  assert.equal(first.report, true, 'the first refusal of a window is the one worth recording');
+  assert.equal(second.report, false);
+  assert.equal(hundredth.report, false);
+  assert.match(first.message, /silent calls/, 'and it says which ceiling fired');
+
+  // A NEW window is a new fact — the loop is still going, or it started again. The window has to
+  // be FILLED again to be refused again, because a minute later the count has slid off.
+  const next = NOW + WINDOW_MS + 1;
+  for (let i = 0; i < SILENT_CEILING; i += 1) {
+    assert.equal(c.admit(false, next + i), undefined, 'a new window admits its own sixty');
+  }
+
+  assert.equal(refusal(c, next + SILENT_CEILING).report, true, 'a second window of refusals is worth one line too');
+});
+
+/** The refusal, or a failure that says the call was admitted — so no assertion reads `undefined`. */
+function refusal(c: TokenlessCeilings, at: number): { message: string; report: boolean } {
+  const answer = c.admit(false, at);
+  assert.notEqual(answer, undefined, `the call at ${at - NOW}ms was admitted, not refused`);
+  return answer ?? { message: '', report: false };
+}
+
+test('a refused PROMPT is answered but never written down, which is unchanged and deliberate', () => {
+  // S2.3 audits the silent refusal only. The modal budget's refusal has never been audited — the
+  // same root cause, `respondError` logging nothing without a grant — and widening that is a
+  // decision rather than a side effect of this one. Pinned so the gap is visible, not forgotten.
+  const c = new TokenlessCeilings();
+  for (let i = 0; i < MAX_PROMPTS; i += 1) {
+    c.admit(true, NOW);
+    c.for(true).release();
+  }
+
+  const refused = c.admit(true, NOW);
+
+  assert.notEqual(refused, undefined, 'the modal budget still refuses');
+  assert.equal(refused === undefined ? true : refused.report, false, 'and still says nothing to the journal');
+});
+
+test('the ceiling is one per WINDOW, shared by every tokenless caller — and that is the choice', () => {
+  // Deliberate, and the trade is real: one runaway agent can spend the window on everybody else's
+  // behalf. The alternative is worse. A per-caller quota needs a caller identity, and the only one
+  // this route has is a LABEL the body supplies — `brokerCaller.ts` says so in as many words — so
+  // keying on it would hand an attacker as many quotas as it cared to invent. What this ceiling
+  // answers is "how much may this window do unattended", which is a question about the window.
+  const c = new TokenlessCeilings();
+  for (let i = 0; i < SILENT_CEILING; i += 1) {
+    c.admit(false, NOW + i);
+  }
+
+  assert.notEqual(c.admit(false, NOW + SILENT_CEILING), undefined, 'a second caller shares the same window');
+});
