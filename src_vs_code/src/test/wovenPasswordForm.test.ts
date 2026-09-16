@@ -21,6 +21,7 @@ import { weaveSecret } from '../wovenSecret';
 import { automaticRefusal } from '../envApply';
 import { wovenSave } from '../wovenPasswordSave';
 import { shareableDetails } from '../shareFormat';
+import { exampleAnswer } from '../weaveExample';
 import { EntityViewOptions, renderEntityViewHtml } from '../entityViewPage';
 import { RowOrderStore } from '../rowFlip';
 
@@ -663,4 +664,38 @@ test('the picture’s colours are defined once and reach both stylesheets', () =
       `the ${name} sheet carries the token colour exactly once — twice means a copy came back`,
     );
   }
+});
+
+/**
+ * The example is titled with the method's NAME, on all THREE form surfaces.
+ *
+ * <p>The plan named two of them. There are three — the card's, the password's and the phrase's —
+ * and fixing two would have left the phrase form saying `f4` while its own picker said `Method 4`.
+ * `shuffle.ts` records why that is the worst defect this feature can carry: the label is the only
+ * route back to a woven value, so a surface that names a method differently from the picker the
+ * person chose it in can cost them the value.</p>
+ */
+test('every form titles its example with the method NAME, and none with the raw code', () => {
+  const scripts = {
+    card: cardFormScript(),
+    password: wovenFormScript(),
+    phrase: phraseFormScript(),
+  };
+
+  for (const [surface, script] of Object.entries(scripts)) {
+    assert.match(script, /answer\.methodName/, `${surface}: the title is the name`);
+    assert.ok(
+      !/' — ' \+ answer\.method\b(?!Name)/.test(script),
+      `${surface}: and never the raw code in a title`,
+    );
+    // The companion: the raw code is STILL read, because it is what the stale-answer guard compares.
+    assert.match(script, /answer\.method !==/, `${surface}: the guard still compares the code`);
+  }
+});
+
+test('the example answer carries the method’s name beside its code', () => {
+  const answer = exampleAnswer('password', SHUFFLE_CODES[3], () => 0.42) as Record<string, unknown>;
+
+  assert.equal(answer.methodName, 'Method 4', 'named as every picker names it');
+  assert.equal(answer.method, SHUFFLE_CODES[3], 'and the code is still there for the stale guard');
 });

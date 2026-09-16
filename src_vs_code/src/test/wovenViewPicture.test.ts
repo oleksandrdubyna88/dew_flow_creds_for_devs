@@ -3,6 +3,8 @@ import { test } from 'node:test';
 import { MiniDocument, MiniWindow, runFragment } from './miniDom';
 import { viewWeaveScripts } from '../viewWeaveScripts';
 import { SHUFFLE_CODES } from '../shuffle';
+import { EntityViewOptions, renderEntityViewHtml } from '../entityViewPage';
+import { paymentCardFor } from '../paymentViewMessages';
 
 /**
  * The picture, RUN rather than string-matched.
@@ -183,3 +185,59 @@ test('the viewer inlines the painter exactly ONCE, ahead of everything that call
   assert.equal(script.split('function payPicture(').length - 1, 1, 'one picture fragment too');
   assert.match(script, /querySelector\('\[data-woven-host\]'\)/, 'the card script is in here as well');
 });
+
+/**
+ * Main says it — the half of issue #58 that was missing outright.
+ *
+ * <p>The FORM has said "Woven — on" since the woven password shipped; the viewer said nothing, so
+ * the one surface where a person goes to READ a value never told them it was woven. One sentence,
+ * in Main, for every kind of entry.</p>
+ */
+test('Main states a woven password as a fact, and a plain entry says nothing', () => {
+  const woven = renderEntityViewHtml(viewOptions({ passwordWoven: true }));
+  const plain = renderEntityViewHtml(viewOptions({}));
+
+  assert.match(woven, /Woven — on/, 'said, in Main');
+  assert.match(woven, /the password/, 'and it names what is woven');
+  assert.ok(!/Woven — on/.test(plain), 'an ordinary entry says nothing about it');
+  // The viewer's mirror of the form's rule: nothing here claims to undo a weave.
+  assert.ok(!/id="unweave|id="clearWoven/.test(woven), 'no control claims to undo it');
+  assert.match(woven, /Nothing here can unweave/, 'it says so in words as well');
+});
+
+test('Main names a payment record’s woven fields by their LABELS, not their keys', () => {
+  const html = renderEntityViewHtml(
+    viewOptions({ isPayment: true, paymentForm: 'card' }, { number: '4111', pin: '1234', shuffledFields: ['pin'] }),
+  );
+
+  assert.match(html, /Woven — on/);
+  assert.match(html, /PIN/, 'the label a person has seen');
+  assert.ok(!/\bpin\b interleaved/.test(html), 'never the record’s own key');
+});
+
+/** The fixture for the two tests above: a viewer page, optionally holding a payment record. */
+function viewOptions(
+  details: Record<string, unknown>,
+  payment?: Record<string, unknown>,
+): EntityViewOptions {
+  return {
+    details: { id: 'e1', name: 'x', kind: payment ? 'payment' : 'credential', isSshEnabled: false, ...details },
+    hasPassword: true,
+    hasPrivateKey: false,
+    hasVpnConfig: false,
+    hasDbConnection: false,
+    dbPortIsDefault: false,
+    dbHasPassword: false,
+    hasAttachment: false,
+    history: [],
+    payment: payment
+      ? paymentCardFor('e1', 'card', payment as never, () => 0.5)
+      : undefined,
+    resolveSecret: async () => undefined,
+    copyAllText: async () => '',
+    saveVpnConfig: async () => {},
+    saveAttachment: async () => {},
+    setEnv: async () => true,
+    checkEnv: () => {},
+  } as unknown as EntityViewOptions;
+}

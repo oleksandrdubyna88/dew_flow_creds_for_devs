@@ -28,6 +28,8 @@ import { PaymentFields } from './paymentFields';
 import { PaymentCardView } from './paymentViewMessages';
 import { viewWeaveScripts } from './viewWeaveScripts';
 import { paymentCardMarkup } from './paymentViewCard';
+import { wovenViewNote } from './generalNotes';
+import { PAYMENT_FIELD_LABELS } from './paymentFields';
 import { WOVEN_ROW_NOTE, wovenRowMarkup } from './wovenRow';
 import { methodOrder } from './phraseLayout';
 import { entityViewStyles } from './entityViewStyles';
@@ -432,6 +434,12 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
       ? ''
       : `<div class="row"><label>Lifetime</label><div class="value">${escapeHtml(options.lifetime)}</div></div>`;
   const mainRows = [
+    // Said once, in Main, for every kind of entry — a payment record's woven fields are drawn in
+    // the Payment instrument frame, and "is this entry woven" should have one place to look.
+    wovenViewNote(
+      d.passwordWoven === true,
+      (options.payment?.woven ?? []).map((key) => PAYMENT_FIELD_LABELS[key]),
+    ),
     row('Name', 'name', d.name),
     lifetimeRow,
     row('Login', 'login', options.fields?.login),

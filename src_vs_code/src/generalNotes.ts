@@ -24,6 +24,30 @@ export function wovenState(d: EntityMetadata | undefined): string {
        store the new password in the clear.</p>`;
 }
 
+/**
+ * The VIEWER's twin of `wovenState`: one sentence in Main naming what is stored woven.
+ *
+ * <p>Here rather than in `entityViewPage.ts` so the form's sentence and the viewer's cannot drift
+ * into contradicting each other, which is this module's stated job and the reason it exists. ONE
+ * statement, in one place, for every kind of entry: a payment record's woven fields are drawn in
+ * the *Payment instrument* frame, and somebody asking "is this entry woven" should not have to know
+ * which frame to look in.</p>
+ *
+ * <p>It names what is woven and says what to do about it. It offers no CONTROL, because nothing
+ * here can undo a weave — that needs the method, and nothing in this build has it.</p>
+ */
+export function wovenViewNote(password: boolean, fields: readonly string[]): string {
+  const named = [...(password ? ['the password'] : []), ...fields];
+  if (named.length === 0) {
+    return '';
+  }
+  const list = named.length === 1 ? named[0] : `${named.slice(0, -1).join(', ')} and ${named.at(-1)}`;
+  return `<p class="hint woven"><b>Woven — on.</b> This entry stores ${list} interleaved with a
+     second value, under a method only you know. Pick that method below and press Show: both rows
+     come back, and you read the one you recognise. Nothing here can unweave the stored value — that
+     needs the method, and nothing in this build has it.</p>`;
+}
+
 /** A PIN, stated — with where to change it, and what it costs to forget it. */
 export function pinState(d: EntityMetadata | undefined): string {
   return d?.pinProtected !== true

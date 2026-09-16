@@ -82,7 +82,7 @@ function phraseExampleScript(): string {
       paintExample(
         'phraseExample',
         'mixed',
-        'Seed phrase — ' + answer.method,
+        'Seed phrase — ' + answer.methodName,
         answer,
         'Your phrase (made up here)'
       );

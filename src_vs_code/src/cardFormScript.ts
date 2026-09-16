@@ -289,7 +289,7 @@ function examplePaintScript(): string {
     paintExample(
       'mixExample',
       answer.field,
-      (FIELD_LABELS[answer.field] || answer.field) + ' — ' + answer.method,
+      (FIELD_LABELS[answer.field] || answer.field) + ' — ' + answer.methodName,
       answer
     );
   });
