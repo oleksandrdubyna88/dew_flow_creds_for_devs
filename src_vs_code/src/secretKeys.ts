@@ -81,6 +81,18 @@ export function notesSecretKey(accountId: string, entityId: string): string {
   return suffixed(accountId, entityId, 'notes');
 }
 
+/**
+ * SecretStorage key for an entity's SECOND values (JSON) — a secret, exactly like the notes.
+ *
+ * <p>One key for all of them rather than one per field, so a seventh second value is a key inside
+ * the record instead of a tenth secret kind. What is NOT in it: the second half of a field that was
+ * WOVEN — that half lives inside the woven string and nowhere else, because storing it beside the
+ * pair would hand a reader the half to subtract.</p>
+ */
+export function secondSecretKey(accountId: string, entityId: string): string {
+  return suffixed(accountId, entityId, 'second');
+}
+
 /** SecretStorage key for a credential's login and URL (JSON) — a secret, exactly like the notes. */
 export function fieldsSecretKey(accountId: string, entityId: string): string {
   return suffixed(accountId, entityId, 'fields');
@@ -127,6 +139,7 @@ const ENTITY_KEY_BUILDERS: ReadonlyArray<(accountId: string, entityId: string) =
   privateKeySecretKey,
   vpnConfigSecretKey,
   notesSecretKey,
+  secondSecretKey,
   fieldsSecretKey,
   configSecretKey,
   paymentSecretKey,

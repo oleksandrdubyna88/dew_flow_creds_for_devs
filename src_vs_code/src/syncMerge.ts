@@ -66,6 +66,16 @@ export interface ProfileSnapshot {
    * it DELETES.</p>
    */
   payments?: Record<string, string>;
+  /**
+   * entityId -> an entry's SECOND values as JSON. A secret, merged exactly like the notes; absent
+   * before the `seconds` kind.
+   *
+   * <p>Added in the SAME commit as its `SECRET_KINDS` row, which is the whole lesson of the
+   * paragraph above: a kind in that table and not in this interface does not fail to sync, it
+   * DELETES. Optional, and read through `?? {}` at the merge, so a snapshot from a build that
+   * predates the kind contributes nothing rather than erasing the other side's values.</p>
+   */
+  seconds?: Record<string, string>;
   /** id -> soft-delete record (object form; legacy number is normalized in). */
   tombstones: Record<string, Tombstone | number>;
   /** Element-wise max of every vector ever observed for this profile. */
@@ -94,6 +104,7 @@ export function emptySnapshot(): ProfileSnapshot {
     configs: {},
     fields: {},
     payments: {},
+    seconds: {},
     tombstones: {},
     horizon: {},
   };
@@ -157,6 +168,7 @@ function fingerprint(snapshot: ProfileSnapshot): string {
     configs: sortRecord(snapshot.configs),
     fields: sortRecord(snapshot.fields),
     payments: sortRecord(snapshot.payments),
+    seconds: sortRecord(snapshot.seconds),
     tombstones: sortRecord(
       Object.fromEntries(
         Object.entries(normalizeTombstones(snapshot.tombstones)).map(([id, t]) => [
@@ -208,6 +220,7 @@ export function mergeProfiles(
   const configs: Record<string, string> = {};
   const fields: Record<string, string> = {};
   const payments: Record<string, string> = {};
+  const seconds: Record<string, string> = {};
   const nodes: TreeNode[] = [];
   const allIds = new Set([...localById.keys(), ...remoteById.keys()]);
 
@@ -268,6 +281,9 @@ export function mergeProfiles(
     // The same guard the two lines above need: a snapshot from a vault written before the payment
     // kind carries no payments record at all, and must not delete the other side's.
     copySecret(payments, id, primary.payments ?? {}, fallback.payments ?? {});
+    // And the same guard again, for the same reason: a snapshot written by a build from before the
+    // `seconds` kind carries no record at all, and must not delete the other side's.
+    copySecret(seconds, id, primary.seconds ?? {}, fallback.seconds ?? {});
   }
 
   // Re-parent children whose parent did not survive the merge.
@@ -306,6 +322,7 @@ export function mergeProfiles(
     configs,
     fields,
     payments,
+    seconds,
     tombstones,
     horizon,
   };

@@ -505,6 +505,11 @@ export class SyncManager implements vscode.Disposable {
           // reason this line exists; four hand-maintained lists now have to agree about a secret
           // kind, and this is the fourth.
           payments: payload.payments ?? {},
+          // And forgotten a THIRD time, when `seconds` was added — caught by that same derived test
+          // before it could ship, which is the entire reason the two comments above exist. The count
+          // they keep is now five hand-maintained lists that have to agree about one secret kind:
+          // SECRET_KINDS, ProfileSnapshot, the merge, the backup bundle, and this reader.
+          seconds: payload.seconds ?? {},
           attachments: payload.attachments ?? {},
           images: payload.images ?? {},
           totps: payload.totps ?? {},
