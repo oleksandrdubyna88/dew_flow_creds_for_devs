@@ -1,0 +1,71 @@
+# The formatting rules this repository already follows, written down so a tool can check them.
+#
+# Requirement 1 of the family CI hardening plan: CI fails a pull request whose code is not formatted
+# to the repository's rules, WITHOUT reformatting anything. `dotnet format --verify-no-changes`
+# reads this file; nothing else here changes what the compiler does.
+#
+# The style preferences below are `suggestion`, deliberately — see the note above that block.
+
+root = true
+
+[*]
+charset = utf-8
+# MEASURED, not chosen: the files on disk carry LF and CI runs on ubuntu. Writing `crlf` here — the
+# instinct on a Windows checkout — made `dotnet format` report 6110 ENDOFLINE errors, one per line
+# of the repository, because it would have rewritten every file. There is no `.gitattributes`, so
+# what each developer gets is at the mercy of their `core.autocrlf`; this states the intent in one
+# place that both the formatter and the editor read.
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{json,yml,yaml,md,js,mjs,cjs,ts}]
+indent_size = 2
+
+[*.md]
+# Two trailing spaces are a hard line break in markdown; trimming them changes the rendering.
+trim_trailing_whitespace = false
+
+[*.cs]
+indent_size = 4
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+csharp_new_line_before_members_in_object_initializers = true
+csharp_new_line_between_query_expression_clauses = true
+csharp_indent_case_contents = true
+csharp_indent_switch_labels = true
+csharp_space_after_cast = false
+csharp_space_after_keywords_in_control_flow_statements = true
+csharp_space_between_method_declaration_parameter_list_parentheses = false
+csharp_space_between_method_call_parameter_list_parentheses = false
+csharp_preserve_single_line_blocks = true
+
+# THE HOUSE STYLE, AND WHY IT IS `suggestion` RATHER THAN `error`.
+#
+# These four are what the repository's own instructions ask for — file-scoped namespaces, `var`,
+# expression bodies, records for data containers. At `error` they are not a check, they are a
+# REWRITE: `dotnet format` would restructure every file that predates the preference, in one commit
+# nobody can review, mixed in with the whitespace fixes that are the actual subject.
+#
+# At `suggestion` the editor prompts, the analyser stays quiet in CI, and the formatting gate
+# gates FORMATTING. Raising any of them to `warning` or `error` is a deliberate change with its own
+# reformat commit and its own review — which is the shape this plan asks for everywhere else, and
+# there is no reason for style to be the exception.
+csharp_style_namespace_declarations = file_scoped:suggestion
+csharp_style_var_for_built_in_types = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = true:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = true:suggestion
+csharp_style_expression_bodied_accessors = true:suggestion
+csharp_style_prefer_primary_constructors = true:suggestion
+dotnet_style_collection_initializer = true:suggestion
+dotnet_style_object_initializer = true:suggestion
+dotnet_style_prefer_collection_expression = true:suggestion
+
+[*.{csproj,props,targets,slnx}]
+indent_size = 2
