@@ -61,6 +61,20 @@ export interface RemoteWindowDeps {
    * are: this function decides, and everything it decides on is handed to it.</p>
    */
   readonly windowsClient?: string;
+  /**
+   * The platform the EXTENSION HOST runs on — the machine this extension is on, which is the one a
+   * refusal has to name and the one a local window composes for.
+   *
+   * <p><b>The last implicit `process.platform` on this path, and it was caught by CI rather than by
+   * me.</b> A test pinning the refusal's heading to "(Windows)" passes on the machine the report came
+   * from and fails on the Linux runner, because the sentence is generated from whatever the host
+   * happens to be. Reading the environment where the decision is made is the exact shape of defect
+   * this whole change is about; it was left in one corner and the corner was the wording.</p>
+   *
+   * <p>Absent is `process.platform`, which is what every caller meant — so a local window is
+   * unchanged and the host module is the only place the environment is read.</p>
+   */
+  readonly hostPlatform?: NodeJS.Platform;
 }
 
 const LOCAL_WINDOW: RemoteWindowDeps = {
@@ -105,6 +119,7 @@ export async function connectEntity(
   const agentServesKey = connect.agentServesKey === true;
   const remote = connect.remote ?? LOCAL_WINDOW;
   const side = remote.side;
+  const hostPlatform = remote.hostPlatform ?? process.platform;
   // The retry re-READS the window: the remedy it follows exists to change the very state the first
   // attempt refused on.
   const retry =
@@ -166,7 +181,7 @@ export async function connectEntity(
   const options: ConnectionOptions =
     route.kind === 'windowsClient' ? { ...translated, program: windowsClient } : translated;
 
-  const platform = terminalPlatform(side, process.platform);
+  const platform = terminalPlatform(side, hostPlatform);
   if (platform === undefined) {
     // Unreachable: `remoteRoute` refuses every side whose shell cannot be named. Kept as a refusal
     // rather than a cast, so a future route that forgets says so instead of composing for a guess.
@@ -322,12 +337,12 @@ async function refuseAndOfferTheFix(
    */
   retry: (() => Promise<boolean>) | undefined,
 ): Promise<boolean> {
-  const action = await askAndPick(refusalFor(reasons, refusalContext(remote.side)));
+  const action = await askAndPick(refusalFor(reasons, refusalContext(remote)));
   if (action === undefined) {
     return false;
   }
   if (action === 'copyWindowsCommand') {
-    await copyTheWindowsCommand(entity);
+    await copyTheWindowsCommand(entity, remote.hostPlatform ?? process.platform);
     return false;
   }
   return runRemedyAndRetry(action, remote, retry);
@@ -360,11 +375,12 @@ async function runRemedyAndRetry(
 }
 
 /** Which two machines the wording names, read off the window once. */
-function refusalContext(side: WindowSide): RefusalContext {
+function refusalContext(remote: RemoteWindowDeps): RefusalContext {
+  const side = remote.side;
   return {
     distro: side.kind === 'wsl' ? side.distro : '',
     remoteName: side.kind === 'other' ? side.remoteName : 'wsl',
-    hostPlatform: process.platform,
+    hostPlatform: remote.hostPlatform ?? process.platform,
   };
 }
 
@@ -376,8 +392,8 @@ function refusalContext(side: WindowSide): RefusalContext {
  * neither. Pasting a command that silently dropped a bastion or a pin would be worse than one that
  * says it is minimal — a code round asked for the difference to be stated rather than discovered.</p>
  */
-async function copyTheWindowsCommand(entity: EntityMetadata): Promise<void> {
-  const command = buildSshCommand(entity, process.platform);
+async function copyTheWindowsCommand(entity: EntityMetadata, hostPlatform: NodeJS.Platform): Promise<void> {
+  const command = buildSshCommand(entity, hostPlatform);
   if (command === undefined) {
     return;
   }

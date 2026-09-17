@@ -270,6 +270,23 @@ test('in a WSL window with a stored key and no relay, NOTHING is written and no 
   assert.match(w.warnings[0], /terminal runs in WSL \(Ubuntu\)/);
 });
 
+test('the machine in the heading comes from the DEPS, not from whatever runs the test', async () => {
+  // The teeth for the pinned fixture, and they have to be a platform no runner can be: asserting
+  // "(Windows)" cannot tell "it was handed win32" from "it read a Windows process", which is exactly
+  // how the first version passed here and failed on the Ubuntu runner. macOS can be neither, so this
+  // goes red the moment the value comes from the environment again.
+  const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS });
+
+  await w.mod.connectEntity('a1', entity(), {
+    storage: storage,
+    storageDir: '/storage',
+    agentServesKey: false,
+    remote: { ...WSL_NO_RELAY, hostPlatform: 'darwin' as NodeJS.Platform },
+  });
+
+  assert.match(w.warnings[0], /CredsForDevs runs on this computer \(macOS\)/);
+});
+
 test('the refusal offers the button that fixes the FIRST thing missing', async () => {
   const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS });
 
