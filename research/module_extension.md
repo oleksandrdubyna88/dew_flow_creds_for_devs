@@ -151,8 +151,8 @@ The sentence this replaces was `Identity file c:\Users\…\keys\23284\<guid>.key
 true, and useless: the file is exactly where it was put, and the fact worth saying is that the
 extension and the terminal are on two different computers. So every message **names both machines**
 before it names anything else. The module yields an `action` rather than a command id, which is what
-keeps it `vscode`-free; **the call site that maps an action to `credSshManager.setUpWslRelay` and
-friends is not built yet** — it is the plan's S6, and until then these two modules have no consumer.
+keeps it `vscode`-free; `remoteConnectHost.ts` is the call site that maps an action to
+`credSshManager.setUpWslRelay` and friends.
 Its button label reads *Set Up the Relay and Connect* rather than *Turn It On and Connect* because
 the command it runs opens a distribution picker and a readiness check first, and it drops the
 promise entirely — to *Set Up the WSL Agent Relay* — whenever switching the relay on is not the whole

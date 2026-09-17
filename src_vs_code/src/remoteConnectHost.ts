@@ -24,7 +24,15 @@ export function remoteWindowDeps(
   const configured = configuredDistros();
   const serving = relays.serving();
   const side = windowSide(vscode.env.remoteName, folderAuthorities(), configured, serving);
-  return { side, relay: readinessFor(side, relays, serving), runRemedy };
+  return {
+    side,
+    relay: readinessFor(side, relays, serving),
+    runRemedy,
+    // Read again after a remedy has run, because the remedy exists to change exactly this. Without
+    // it the retry re-uses a readiness captured BEFORE the relay was switched on and refuses for
+    // the reason that was just fixed — which made "Set Up the Relay and Connect" a false promise.
+    refresh: (): RemoteWindowDeps => remoteWindowDeps(relays, runRemedy),
+  };
 }
 
 /**
@@ -80,6 +88,16 @@ export function remedyRunner(target: unknown): (action: RefusalAction) => Promis
       return true;
     }
     if (action === 'addKeyToAgent') {
+      // That command acts on a TREE ROW. The broker's terminal action has an entity and no row, so
+      // it passes no target — and running the command with `undefined` would open a picker the
+      // person did not ask for, or do nothing while we reported a fix. Say plainly that we could
+      // not, and do not retry.
+      if (target === undefined) {
+        void vscode.window.showInformationMessage(
+          'Add this key to the SSH agent from its row in the CredsForDevs view, then connect again.',
+        );
+        return false;
+      }
       await vscode.commands.executeCommand(`${SECTION}.addKeyToAgent`, target);
       return true;
     }

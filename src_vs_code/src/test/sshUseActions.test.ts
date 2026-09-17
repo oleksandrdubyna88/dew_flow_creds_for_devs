@@ -49,6 +49,8 @@ interface Parts {
   entity?: EntityMetadata | undefined;
   noSlot?: boolean;
   runFails?: boolean;
+  /** The window refuses the connection — a remote one can, and the action must not claim success. */
+  connectRefuses?: boolean;
 }
 
 const ENTITY = {
@@ -111,9 +113,11 @@ function world(parts: Parts): World {
         },
       },
       './sshConnect': {
-        connectEntity: (): Promise<void> => {
+        // It answers whether a terminal actually opened, so the action can stop reporting success
+        // for a connection a remote window refused.
+        connectEntity: (): Promise<boolean> => {
           w.connected += 1;
-          return Promise.resolve();
+          return Promise.resolve(parts.connectRefuses !== true);
         },
       },
       './terminalManager': { describeSshTarget: (e: { host?: string }): string | undefined => e.host },
@@ -433,6 +437,25 @@ test('forwarding asked for with no agent loaded is SAID, not passed over in sile
       w.notes.some((n) => n.includes('nothing will be forwarded')),
       `the audit channel said: ${JSON.stringify(w.notes)}`,
     );
+  } finally {
+    cleanup(w);
+  }
+});
+
+test('the terminal action does NOT report success when the window refused the connection', async () => {
+  // It reported `opened: true` whatever happened, which was harmless while the only failure was an
+  // entity with no host — and is not, now that a WSL window can refuse. An agent told a terminal is
+  // open then waits at one that is not there.
+  const parts: Parts = { source: KEY_SOURCE, connectRefuses: true };
+  const w = world(parts);
+  try {
+    const action = w.mod.sshTerminalAction(deps(w, parts) as never);
+
+    const result = (await action.run(CTX, {})) as { status: number; body: { opened?: boolean } };
+
+    assert.equal(w.connected, 1, 'it still went through the one connect path');
+    assert.notEqual(result.status, 200);
+    assert.notEqual(result.body.opened, true);
   } finally {
     cleanup(w);
   }

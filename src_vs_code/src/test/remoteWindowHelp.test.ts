@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { HELP_ARTICLES, HelpArticle, HelpLanguage, bodyFor } from '../helpContent';
+import { HELP_ARTICLES, HELP_LANGUAGES, HelpArticle, HelpLanguage, bodyFor } from '../helpContent';
 import { BUTTON_LABELS, RELAY_ONLY_LABEL } from '../remoteWindowMessage';
 
 /**
@@ -13,7 +13,9 @@ import { BUTTON_LABELS, RELAY_ONLY_LABEL } from '../remoteWindowMessage';
  */
 
 const ID = 'connect-in-a-remote-window';
-const LANGUAGES: HelpLanguage[] = ['en', 'ru', 'uk', 'de', 'es'];
+// Iterated from the production tuple: a retyped list stops covering the sixth language silently,
+// which is the same rule the reason and credential tables follow.
+const LANGUAGES = HELP_LANGUAGES;
 
 function articleOrThrow(): HelpArticle {
   const found = HELP_ARTICLES.find((a) => a.id === ID);
@@ -40,7 +42,8 @@ test('all five languages are really there — and there are five of them', () =>
   // The loop below is worthless if it iterates nothing, which is exactly what an earlier version
   // of this test did: it read a field that does not exist and passed over an empty object.
   const found = translations();
-  assert.equal(found.length, 5);
+  assert.equal(found.length, HELP_LANGUAGES.length);
+  assert.ok(found.length >= 5, 'the catalog lost a language');
 });
 
 test('every language names the relay as the route, and is long enough to be the article', () => {
