@@ -381,6 +381,10 @@ const WSL_READY = {
   relay: { enabled: true, running: true, socket: '/run/user/1000/creds-agent.sock' },
 };
 
+// The real shape of a pin path: `materializeKnownHosts` writes into `keys/<pid>/`, and the deletion
+// guard is keyed on THAT directory rather than on anything about the file's name.
+const OUR_PIN = `/storage/keys/${process.pid}/known_hosts-e1`;
+
 test('in a WSL window with a stored key and no relay, NOTHING is written and no terminal opens', async () => {
   // The report, as a test. Before the fix this materialised /storage/keys/k1.key and opened a
   // terminal carrying it — a Windows path posted into a shell that cannot read it.
@@ -478,15 +482,30 @@ test('a refused translation deletes the file it had already written, and opens n
   // connection that did not happen must leave nothing behind.
   const w = world({
     source: { kind: 'storedKey', keyEntityId: 'k1', content: 'x' },
-    options: { knownHostsFile: '/storage/keys/known_hosts-e1' },
+    options: { knownHostsFile: OUR_PIN },
     translated: '',
   });
 
   await w.mod.connectEntity('a1', entity(), storage, '/storage', true, WSL_READY);
 
   assert.deepEqual(w.sshTerminals, []);
-  assert.deepEqual(w.forgotten, ['/storage/keys/known_hosts-e1'], 'the pin file was stranded');
+  assert.deepEqual(w.forgotten, [OUR_PIN], 'the pin file was stranded');
   assert.match(w.warnings[0], /pinned/);
+});
+
+test('a known_hosts path OUTSIDE our own directory is never deleted, whatever it is called', async () => {
+  // The guard is the directory we write into, not a name that merely looks like ours: an unguarded
+  // delete on whatever that field holds is one refactor away from removing somebody's own file.
+  const w = world({
+    source: { kind: 'storedKey', keyEntityId: 'k1', content: 'x' },
+    options: { knownHostsFile: '/home/someone/.ssh/known_hosts-e1' },
+    translated: '',
+  });
+
+  await w.mod.connectEntity('a1', entity(), storage, '/storage', true, WSL_READY);
+
+  assert.deepEqual(w.sshTerminals, [], 'it still refused');
+  assert.deepEqual(w.forgotten, [], 'it deleted a file it does not own');
 });
 
 test('a LOCAL window is untouched: the platform is the host and there is no prefix', async () => {

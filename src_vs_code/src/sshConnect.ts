@@ -13,6 +13,8 @@ import {
 } from './keyInstaller';
 import { resolveSshCredential } from './sshCredential';
 import { connectionOptions } from './connectionOptions';
+import * as path from 'node:path';
+import { materializedKeysDir } from './materializedKeys';
 import { WindowSide, terminalPlatform } from './remoteWindow';
 import { RefusalReason, RelayReadiness, remoteRoute } from './remoteRoute';
 import { RefusalAction, refusalFor } from './remoteWindowMessage';
@@ -130,7 +132,7 @@ export async function connectEntity(
   // A pinned host key's known_hosts file is on THIS machine, so the distribution is asked where it
   // is. The pin survives — unlike a private key, `UserKnownHostsFile` has no mode requirement, and
   // /mnt/c cannot hold one anyway.
-  const options = await withTranslatedKnownHosts(resolved, side);
+  const options = await withTranslatedKnownHosts(resolved, side, storageDir);
   if (options === undefined) {
     return refuseAndOfferTheFix(['known-hosts-translation-failed'], entity, remote, retry);
   }
@@ -139,7 +141,7 @@ export async function connectEntity(
   if (platform === undefined) {
     // Unreachable: `remoteRoute` refuses every side whose shell cannot be named. Kept as a refusal
     // rather than a cast, so a future route that forgets says so instead of composing for a guess.
-    forgetOurPin(options.knownHostsFile);
+    forgetOurPin(options.knownHostsFile, storageDir);
     return refuseAndOfferTheFix(['not-wsl'], entity, remote, undefined);
   }
 
@@ -157,7 +159,7 @@ export async function connectEntity(
       // fail: it silently authenticates with whatever keys that shell already has. Refusing is the
       // only honest answer.
       // Late refusal, so the host-pin file `connectionOptions` wrote is ours to take back.
-      forgetOurPin(options.knownHostsFile);
+      forgetOurPin(options.knownHostsFile, storageDir);
       return refuseAndOfferTheFix(['relay-socket-unusable'], entity, remote, retry);
     }
     return openSshTerminal({ ...entity, sshKeyPath: undefined }, options, platform, prefix) !== undefined;
@@ -245,13 +247,14 @@ export async function connectEntity(
 async function withTranslatedKnownHosts(
   options: Awaited<ReturnType<typeof connectionOptions>>,
   side: WindowSide,
+  storageDir: string,
 ): Promise<typeof options> {
   if (options === undefined || side.kind !== 'wsl' || options.knownHostsFile === undefined) {
     return options;
   }
   const inside = await translateWindowsPath(side.distro, options.knownHostsFile);
   if (inside.length === 0) {
-    forgetOurPin(options.knownHostsFile);
+    forgetOurPin(options.knownHostsFile, storageDir);
     return undefined;
   }
 
@@ -334,8 +337,14 @@ async function copyTheWindowsCommand(entity: EntityMetadata): Promise<void> {
  * there because a code round was right that an unguarded `rm` on whatever path the field holds is
  * one future refactor away from deleting somebody's own `known_hosts`.</p>
  */
-function forgetOurPin(knownHostsFile: string | undefined): void {
-  if (knownHostsFile === undefined || !knownHostsFile.includes('known_hosts-')) {
+function forgetOurPin(knownHostsFile: string | undefined, storageDir: string): void {
+  if (knownHostsFile === undefined) {
+    return;
+  }
+  // Inside the directory we write into, decided by the same function that builds it — not a name
+  // that merely LOOKS like ours. A substring match is a guess about somebody else's file.
+  const ours = materializedKeysDir(storageDir);
+  if (path.relative(ours, knownHostsFile).startsWith('..')) {
     return;
   }
   forgetMaterializedKey(knownHostsFile);
