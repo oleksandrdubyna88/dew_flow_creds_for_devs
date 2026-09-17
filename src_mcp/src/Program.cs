@@ -462,10 +462,10 @@ internal static class Program
         are not obtainable through this server by any request — the window holds them, uses them
         on your behalf, and answers with the result.
 
-        An action asks the person first, in their editor, showing them the real entry and the real
-        command. How often depends on the entry you are USING — every time, once every 12 hours, or
-        never, as that entry says. Creating, deleting and every folder verb always ask. Plan for the
-        dialog: make one call, not twenty, and expect a few seconds when it comes.
+        An action may ask the person first, in their editor, showing them the real entry and the
+        real command. How often is the entry you are USING — every time (the default), once every
+        12 hours, or never, as that entry says. Creating, deleting and every folder verb always
+        ask. Plan for the dialog: make one call, not twenty, and expect a few seconds when it comes.
 
         An empty list means nothing has been opened to you yet — not that they have no
         credentials. Tell them they can open one in VS Code: right-click the entry, Edit, and the

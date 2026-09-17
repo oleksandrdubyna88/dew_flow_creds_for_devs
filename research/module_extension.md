@@ -4090,11 +4090,17 @@ and "this answer" both visible and saveable; ten checkboxes cannot. The sentence
 is per half — `mcpSetSentence(answersLadder, answersPolicy)`, four states in one line — because a
 record holding only a cadence used to make it claim the switches were set here.
 
-**Per axis on the DISPLAY side too.** A record of just `{ ask: 'never' }` answers the cadence and
-leaves the ladder inherited, so the form shows the ladder that is in force from above and says where
-it comes from — `answersLadder(options.mcp)`, not "has an `mcp` object", decides both the ticks and
-the sentence. Shown the other way, somebody would tick one switch believing they were adding to
-nothing while the folder above already granted more. And what the group shows is run through
+**Per axis on the DISPLAY side too, and the two halves are shown DIFFERENTLY.** A record of just
+`{ ask: 'never' }` answers the cadence and leaves the ladder inherited — so what that record changes
+is the SENTENCE above the section, not the ticks: `answersLadder(options.mcp)`, not "has an `mcp`
+object", decides whether the form says the switches were set here. The ten switches keep rendering
+the LOCAL value and nothing else, which is the paragraph above this one — they are saved by posting
+what they show, so a resolved ladder could not be saved back without adopting it. **The resolved
+value with its source named is shown for `ask` alone**, through `options.inheritedAsk`, because a
+radio group can carry *Inherit* as a selectable state and ten checkboxes cannot. This paragraph used
+to claim the form showed the inherited ladder, which contradicted its own predecessor; CodeRabbit
+caught it on PR #106, and the tests that pin it are the `neither` and `policyOnly` cases, which
+assert the switches follow the folder without displaying its ladder. And what the group shows is run through
 `askPolicy`, the same reader the resolver uses: a stored word this build does not know reads as
 `always` on the form because that is what the door will enforce, and a stored `null` reads as
 Inherit.

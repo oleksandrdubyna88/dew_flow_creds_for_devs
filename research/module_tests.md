@@ -560,7 +560,7 @@ inherited `use` rung reading false.
 | a word from a newer build stops the climb instead of inheriting a `never` | **unit** | fixture is JSON, so the type system cannot sanitise the case away |
 | a stored `null` hands the answer back to the folder | **unit** | what the form sends for *Inherit* |
 | nothing in the Trash answers on either axis | **unit** | a never-ask policy surviving a delete would be the sharpest form of this bug |
-| the same, end to end through the real `creds-mcp` binary | **NOT COVERED YET** | and it cannot be, honestly: nothing can WRITE a policy until the form lands (story S3.1). The harness leg is owned by story S4.2, which drives six quiet calls and one forced prompt through the real binary. Recorded here rather than left implicit, because a gap nobody wrote down is a gap nobody closes |
+| the same, end to end through the real `creds-mcp` binary | **binary** | **closed by S4.2** — see *The quiet path through the REAL binary* below, which drives six quiet calls, one forced prompt and a delete through the real executable. It was written here as `NOT COVERED YET` while it was true, because nothing could WRITE a policy until the form landed in S3.1, and a gap nobody writes down is a gap nobody closes; leaving that marker standing once S4.2 had closed it would have been the same failure in the other direction, and it stood for one story too long |
 
 **The door's half (S2.2)**, driven through the real broker over loopback by
 `test/brokerMcpRoutes.test.ts`:

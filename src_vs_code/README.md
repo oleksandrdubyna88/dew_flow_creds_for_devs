@@ -673,8 +673,9 @@ writes the client config; the extension itself keeps its zero runtime dependenci
   there is no field in any request it can make that carries them. Folder editing means the name,
   the place and the type. A move needs the grant at *both* ends, because a folder passes its
   answers to everything inside it — so moving one is a permission change for its contents.
-- **The switch is not consent.** It says an agent *may ask*; an action raises the
-  modal with the real entry and the real command.
+- **The switch is not consent.** It says an agent *may ask*. Whether the modal appears — with
+  the real entry and the real command — is that entry's consent setting: every time, once every
+  12 hours, or never.
 - **How often it asks is yours to set**, on the entry or on a folder it inherits from: ask every
   time (the default), ask once every 12 hours, or never ask. It covers *using* an entry only —
   creating and deleting always ask, whatever it says — and never-ask makes the switches the whole
