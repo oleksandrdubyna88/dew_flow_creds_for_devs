@@ -100,6 +100,28 @@ function replies(text) {
   return byId;
 }
 
+/**
+ * Every newline as `\n`, whoever generated it.
+ *
+ * <p>The prose in these strings is a C# raw string literal, so it carries the LINE ENDINGS of
+ * `Program.cs` on the machine that built the binary — CRLF on Windows, LF on CI. Without this, a
+ * regeneration on the other platform rewrites fifteen strings that nobody touched, and the real
+ * change hides inside the churn. It also made `--check` a platform test rather than a contract
+ * test: the file could be byte-different from a correct regeneration for no reason at all.</p>
+ */
+function withUnixNewlines(value) {
+  if (typeof value === 'string') {
+    return value.replace(/\r\n/g, '\n');
+  }
+  if (Array.isArray(value)) {
+    return value.map(withUnixNewlines);
+  }
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, withUnixNewlines(inner)]));
+  }
+  return value;
+}
+
 /** Sorted by name, so a diff shows what changed rather than how the SDK ordered them today. */
 function surfaceOf(byId) {
   const initialize = byId.get(1)?.result;
@@ -135,7 +157,7 @@ if (!existsSync(BINARY)) {
   process.exit(2);
 }
 
-const surface = surfaceOf(await ask());
+const surface = withUnixNewlines(surfaceOf(await ask()));
 const text = `${JSON.stringify(surface, null, 2)}\n`;
 
 if (!checking) {

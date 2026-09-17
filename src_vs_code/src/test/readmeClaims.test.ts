@@ -102,6 +102,26 @@ const BANNED: readonly (readonly [RegExp, string])[] = [
   [/seven kinds of entry/i, 'there are nine'],
   [/six switches/i, 'there are ten — six over entries, four over folders'],
   [/completely standalone offline/i, 'creating an account profile signs in with Microsoft or Google'],
+  // Issue #95 made these false. An entry can be set to ask once every twelve hours or never, and a
+  // README that still promises a dialog every time is promising a defence the product no longer
+  // offers unconditionally — which is worse than saying nothing, because somebody would rely on it.
+  [/prompts? on every (single )?call/i, 'an entry can be set to ask every 12h or never — #95'],
+  [/every (single )?call (still )?asks/i, 'an entry can be set to ask every 12h or never — #95'],
+  [/every (single )?action (still )?(asks|raises)/i, 'an entry can be set to ask every 12h or never — #95'],
+];
+
+/**
+ * The sentences these bans were written for.
+ *
+ * <p>A prohibition that matches nothing passes forever. Each of these is real text this product
+ * shipped, so the patterns are proved against what they were written to catch rather than against
+ * the reviewer's memory of it.</p>
+ */
+const RETIRED_CLAIMS: readonly string[] = [
+  'Ten permission switches, every one off by default, and a prompt on every single call',
+  'the switch is not consent: every single call still asks you, in your editor',
+  'Every action still raises the consent modal.',
+  'Every action asks the person first, in their editor',
 ];
 
 test('neither README makes a claim the code says is false', () => {
@@ -315,4 +335,19 @@ test('the manifest carries the description and the keywords the plan settled on'
       `"${required}" is how a reader searching for this product spells it`,
     );
   }
+});
+
+test('each retired claim is still caught by a ban — a pattern that matches nothing guards nothing', () => {
+  // The companion to the prohibition above. These four sentences are the real text this product
+  // shipped before #95; if a rewording of a PATTERN stops matching what it was written for, the ban
+  // becomes decoration and the claim can come back under its own words.
+  for (const claim of RETIRED_CLAIMS) {
+    const caught = BANNED.some(([pattern]) => pattern.test(claim));
+    assert.equal(caught, true, `no ban catches: ${claim}`);
+  }
+  assert.equal(
+    BANNED.some(([pattern]) => pattern.test('a prompt as often as the entry says, and always for a delete')),
+    false,
+    'a ban is catching the replacement text too, which would make the fix impossible',
+  );
 });

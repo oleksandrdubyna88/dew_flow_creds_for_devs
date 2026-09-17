@@ -1,15 +1,32 @@
 # PLAN — how often a person is asked before an agent uses an entry
 
-> Status: **plan only, nothing implemented yet, 2026-09-16.** Scope: the extension's MCP use door —
+> Status: **IMPLEMENTED, 2026-09-17.** Built as thirteen stories on thirteen branches, each one
+> commit with its own red-first tests and its own `coai` code round — the build order, the per-story
+> verdicts and the **twelve places this plan's §8 could not be built as written** are in
+> [PLAN_agent_consent_policy_stories.md](PLAN_agent_consent_policy_stories.md), which is this plan's
+> record of deviations and is promoted with it.
+>
+> **What shipped differently from this document**, in one place, for a reader who will not open the
+> other file: the pure consent rule lives in `mcpEntries.ts`, not in `mcpHooks.ts`, because
+> `mcpHooks.ts` imports `vscode` and could not be unit-tested (§8 step 6); `answersLadder` means
+> *the only key is `ask`* rather than "any ladder key present", because `mcp: {}` is an answer and
+> the plan's definition would have silently re-opened every branch closed that way (§2); Inherit
+> emits `ask: null` rather than `undefined`, which JSON drops (§5.3); the §4.5 ceiling widened the
+> existing `AliasThrottle` instead of adding a class; `release(prompts)` became a `Slot` the door
+> hands back, because naming the ceiling twice is two decisions that can disagree; and
+> `resolveMcpAccess`, which this plan never mentions, was retired rather than left behind as a
+> second resolver with the old single-axis semantics. Nothing in §1–§7 was reversed.
+>
+> Scope: the extension's MCP use door —
 > `mcpAccess.ts`, `mcpEntries.ts`, `mcpHooks.ts`, `brokerRequests.ts`, `brokerMcpDoor.ts`,
 > `credsAgentServer.ts`, the two forms, and one new pure module. The server, the C# relay's logic and
 > the HTTP contract are untouched (`src_mcp` changes prose only).
 >
 > Issue: [#95](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/95).
-> Related docs: [module_extension.md](../research/module_extension.md),
-> [module_tests.md](../research/module_tests.md),
-> [PLAN_agent_folder_ops.md](../research/PLAN_agent_folder_ops.md) (the last time this section grew),
-> [PLAN_caller_identity_in_consent.md](../research/PLAN_caller_identity_in_consent.md) (the last change
+> Related docs: [module_extension.md](module_extension.md),
+> [module_tests.md](module_tests.md),
+> [PLAN_agent_folder_ops.md](PLAN_agent_folder_ops.md) (the last time this section grew),
+> [PLAN_caller_identity_in_consent.md](PLAN_caller_identity_in_consent.md) (the last change
 > to this modal).
 >
 > **Revised 2026-09-16 after the `coai` plan round** — verdict `good_enough`, all three reviewers
@@ -403,7 +420,7 @@ corrected in the same task, since the change edits that footer anyway.
 | A second authentication gate on the MCP use door | Gate finding 12, rejected with reasons. That gate exists — it is the token door — and adding a second would re-implement it and contradict D1/the owner's decision. What the finding was right about is done instead: the §4.5 ceiling, the §5.4 footer row, the §4.6 audit line, and an integration test that shows an unapproved local caller succeeding against a never-ask entry, recorded in `research/module_tests.md` under *what it does not prove*. |
 | Resolved rendering for the ten switches | §5.2 — the policy gets it because the policy is the thing that can act silently. The switches stay as they are in this task. |
 | A sixth icon bit or a new badge stripe | Every bit doubles the generated glyph set (`mcpAccess.ts:283-287`), and a stripe is a ladder position. The disclosure goes to the form, the viewer card, the doors footer and the log. |
-| A grants / consents revocation **screen** | [PLAN_product_improvements.md](PLAN_product_improvements.md) — see §11. |
+| A grants / consents revocation **screen** | [PLAN_product_improvements.md](../todo/PLAN_product_improvements.md) — see §11. |
 | A policy on the create and folder doors | D2. The seam is in place; it is a one-line change when asked for. |
 | A confirmation when a person *chooses* "never ask" | Proposed and **not** built: the option's `why` says what it gives up, and a modal to confirm a setting that exists to remove modals needs the owner's word. Carried to the end of the summary as an open question. |
 
@@ -531,7 +548,7 @@ reason`, plus what the harness does **not** prove.
 
 ## 11. Boundaries with other open plans
 
-**[PLAN_product_improvements.md](PLAN_product_improvements.md)** (the shared screen of active grants and
+**[PLAN_product_improvements.md](../todo/PLAN_product_improvements.md)** (the shared screen of active grants and
 code-access keys with revocation): this plan owns the stored policy, the machine-local stamp store and
 its retirement, the form control, the doors-footer row and the Forget command. That plan owns the
 cross-cutting screen; when built it lists live consent windows as a **third row type** beside grants and
@@ -539,7 +556,7 @@ code-access keys, reading them from this module rather than re-deriving them, an
 policy control. This plan adds no list view and touches nothing about code-access keys. The same
 paragraph is in that plan.
 
-**[PLAN_tails_2.md](PLAN_tails_2.md)** §1.1 proposes an **eleventh** switch, reasoning that the form is
+**[PLAN_tails_2.md](../todo/PLAN_tails_2.md)** §1.1 proposes an **eleventh** switch, reasoning that the form is
 built from `MCP_SWITCHES` so the cost is one catalog entry. The two collide only at the guards: this plan
 leaves `MCP_SWITCHES` at ten and adds a second, separately-guarded builder, so that plan still only adds
 a row — and must not reuse the ask-choices catalog for a permission. The same paragraph is in that plan.

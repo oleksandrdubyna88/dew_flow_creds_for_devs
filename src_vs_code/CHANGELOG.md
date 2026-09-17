@@ -4,6 +4,38 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — how often an agent has to ask is yours to set
+
+### Added
+
+- **A consent cadence on every entry and folder (#95): ask every time, ask once every 12 hours, or
+  never ask.** Until now every MCP call raised a dialog, which is the right default and the wrong
+  only option — an agent doing real work in a folder you opened for it asked once a command, and the
+  twentieth identical dialog is the one somebody clicks through to make it stop. The setting sits in
+  **Agent access**, on the entity form and the folder form, and is inherited from the folder exactly
+  as the ten switches are.
+
+  Three things hold whatever it says. **Creating and deleting always ask** — the cadence covers
+  USING an entry and nothing else. **Every call is still recorded**, in ⋯ → MCP logs, including the
+  ones nobody was asked about; the journal can be filtered for exactly those. And **never-ask makes
+  the switches the whole gate**, which the form says in those words beside the option, and which the
+  entry's own footer names as a door: *No consent prompt — an agent may USE this entry without being
+  asked.*
+
+  The twelve-hour window is remembered **on this machine only**. It is never synced and never
+  travels in a share, because a remembered answer that arrived with the entity would be a trust flag
+  the sender controls. **CredsForDevs: Forget Agent Consents on This Machine** takes every such
+  window back at once; changing the setting itself takes effect on the very next call.
+
+  A quiet call raises no dialog, so it answers to its own ceiling instead — sixty a minute, apart
+  from the five-prompts-a-minute budget — because on this route the prompt was the rate limit, and
+  removing the prompt would otherwise have removed the limit.
+
+- **Compatibility.** An entry with no cadence set behaves exactly as before: it asks every time.
+  Nothing changes for any existing vault until somebody chooses otherwise. An OLDER build that saves
+  an entry does not know the field and drops it, and the entry goes back to inheriting from its
+  folder — it never becomes quieter than it was, which is the direction that matters.
+
 ## [1.8.1] — 2026-09-16 — a patched dependency, and nothing you can see
 
 ### Security

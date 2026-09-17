@@ -28,7 +28,8 @@ it can read all of it.
 - [x] Config files kept out of git, read back from code in twenty languages
 - [x] Payment instruments, one-time codes, seed phrases
 - [x] A broker for AI agents — act on a credential, never receive it
-- [x] Ten permission switches, every one off by default, and a prompt on every single call
+- [x] Ten permission switches, every one off by default, and a prompt as often as you say — every
+      call, once every 12 hours, or never; creating and deleting always ask
 - [x] A single-binary CLI, 6.8 MB, no runtime to install first
 - [x] Optional self-hosted team sync the server cannot decrypt
 
