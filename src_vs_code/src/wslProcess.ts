@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import { killChild } from './childKill';
 import { withTimeout } from './withTimeout';
 import { wslPathArgv } from './wslMcpInstall';
+import { SOCKET_ALIVE, socketAliveArgv } from './wslRelay';
 
 /**
  * Running `wsl.exe` and reading what it said.
@@ -162,4 +163,33 @@ function onlyAbsolutePath(text: string): string {
   const lines = text.split('\n').map((line) => line.trim()).filter((line) => line.length > 0);
   const only = lines.length === 1 ? lines[0] : '';
   return only.startsWith('/') ? only : '';
+}
+
+/** How long a socket probe may take before the adopted relay is treated as gone. */
+export const SOCKET_PROBE_TIMEOUT_MS = 3_000;
+
+/**
+ * Whether an ADOPTED relay's socket is still there.
+ *
+ * <p>Asked only for a socket this window did not open — our own child is watched, and its exit
+ * removes the entry. An adopted one belongs to another window, which can close at any time without
+ * telling us; `serving()` would go on advertising a socket that is gone and Connect would point
+ * `SSH_AUTH_SOCK` at nothing. Raised by a review of the adoption change.</p>
+ *
+ * <p>One `wsl.exe`, bounded, and only on a click that would actually use the socket — so the cost
+ * lands on the rare case rather than on every connection. Every failure answers `false`: the probe
+ * has to be positively told the socket is there, because "it said nothing" is what a stopped
+ * distribution, a timeout and a dead socket all look like from here.</p>
+ */
+export async function socketIsAlive(
+  distro: string,
+  socket: string,
+  ms: number = SOCKET_PROBE_TIMEOUT_MS,
+  spawn?: WslSpawner,
+): Promise<boolean> {
+  const argv = socketAliveArgv(distro, socket);
+  if (argv.length === 0) {
+    return false; // a path we cannot put in a command safely is not a path we can vouch for
+  }
+  return (await runWslBounded(argv, ms, spawn)).includes(SOCKET_ALIVE);
 }

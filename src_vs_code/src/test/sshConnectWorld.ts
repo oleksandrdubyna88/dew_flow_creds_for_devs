@@ -64,6 +64,8 @@ export interface Parts {
   existingNamed?: string;
   /** What the fake distribution answers when asked where a Windows path is. */
   translated?: string;
+  /** What the distribution answers when asked whether an adopted socket is still there. */
+  socketAlive?: boolean;
   /** Press the button every refusal offers, so the remedy-and-retry path runs. */
   chooseButton?: boolean;
 }
@@ -156,6 +158,8 @@ export function world(parts: Parts): World {
       },
       './wslProcess': {
         // Never a real `wsl.exe` in a unit test. '' is the module's own "it would not say".
+        // An adopted relay is probed before its socket is used; a world says so with `socketAlive`.
+        socketIsAlive: (): Promise<boolean> => Promise.resolve(parts.socketAlive !== false),
         translateWindowsPath: (distro: string, windowsPath: string): Promise<string> => {
           // RECORDED, because what is handed to the distribution is half the contract: a review found
           // a translation test whose Windows path had lost its separators to `\k` and `\s` before it
