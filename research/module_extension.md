@@ -116,6 +116,23 @@ The agent broker added a second reason to stay on that side: `grantToken`, `gran
 A `vscode` import anywhere in that graph is not a testing inconvenience there; it is a CLI that
 cannot start.
 
+`remoteWindow` joined the list for a third reason: it answers **which machine will run the command
+this window composes**, and that answer has to be exhaustively table-tested because every branch of
+it is a different operating system. `extensionKind: ["ui"]` pins the extension host to the local
+computer, so in a window attached to WSL the extension is on Windows while the integrated terminal is
+in the distribution — which is why Connect SSH handed a WSL shell
+`ssh -i "c:\Users\…\keys\<pid>\<guid>.key"`. Two things in it are measured rather than reasoned, and
+both would be invisible in a comment. **The authority is lower-cased**: VS Code records `wsl+ubuntu`
+while `wsl -l -q` answers `Ubuntu`, and `WslRelayManager.socketPathFor` is an exact-key `Map.get`, so
+handing it the authority's spelling finds no relay and the window is told the relay is not running —
+`windowSide` therefore returns the CONFIGURED spelling, preferring the one a relay is actually
+serving under. And **the distribution is a ladder rather than a lookup**, because one workspace folder
+is not a reliable source: folders spanning two distributions answer `problem: 'ambiguous'`, and a
+window with no folder at all falls back to the single distribution that is known or says `'unknown'`
+— never a guess, because guessing points `SSH_AUTH_SOCK` at a socket that does not serve this key,
+which is a wrong answer that looks like a working one. Record:
+[PLAN_connect_in_a_remote_window.md](../todo/PLAN_connect_in_a_remote_window.md).
+
 ## Data model
 
 `TreeNode` is stored **flat**; the tree is derived from `parentId` at render time.
