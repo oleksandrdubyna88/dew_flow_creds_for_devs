@@ -103,15 +103,15 @@ jobs:
         run: |
           IMAGE=ghcr.io/${{ github.repository_owner }}/cred-vault-server
           VERSION="${GITHUB_REF_NAME#server-v}"
-          TAGS="-t $IMAGE:$VERSION"
+          TAGS=(-t "$IMAGE:$VERSION")
           # `latest` moves only on a real tag, so an operator who pinned :latest never
           # picks up a workflow_dispatch trial build.
           if [[ "$GITHUB_REF" == refs/tags/server-v* ]]; then
-            TAGS="$TAGS -t $IMAGE:latest"
+            TAGS+=(-t "$IMAGE:latest")
           else
-            TAGS="-t $IMAGE:manual-$(date +%Y%m%d%H%M 2>/dev/null || echo run)"
+            TAGS=(-t "$IMAGE:manual-$(date +%Y%m%d%H%M 2>/dev/null || echo run)")
           fi
-          docker buildx imagetools create $TAGS             "$IMAGE@${{ needs.server-image.outputs.digest-amd64 }}"             "$IMAGE@${{ needs.server-image.outputs.digest-arm64 }}"
+          docker buildx imagetools create "${TAGS[@]}" "$IMAGE@${{ needs.server-image.outputs.digest-amd64 }}" "$IMAGE@${{ needs.server-image.outputs.digest-arm64 }}"
 
   # Standalone Native AOT binaries, one per OS/architecture, attached to the release.
   # Each builds on a machine of its own kind — AOT links with the host toolchain.
@@ -164,11 +164,13 @@ jobs:
 
       - name: Package
         shell: bash
+        env:
+          RID: ${{ matrix.rid }}
         run: |
           VERSION="${GITHUB_REF_NAME#server-v}"
-          NAME="cred-vault-server-$VERSION-${{ matrix.rid }}"
+          NAME="cred-vault-server-$VERSION-$RID"
           mkdir "$NAME"
-          if [[ "${{ matrix.rid }}" == win-* ]]; then
+          if [[ "$RID" == win-* ]]; then
             cp out/CredVaultServer.exe "$NAME/"
             cp src_minimalapi_server/src/appsettings.json "$NAME/"
             7z a "$NAME.zip" "$NAME" > /dev/null
@@ -324,11 +326,13 @@ jobs:
 
       - name: Package
         shell: bash
+        env:
+          RID: ${{ matrix.rid }}
         run: |
           VERSION="${GITHUB_REF_NAME#cli-v}"
-          NAME="creds-$VERSION-${{ matrix.rid }}"
+          NAME="creds-$VERSION-$RID"
           mkdir "$NAME"
-          if [[ "${{ matrix.rid }}" == win-* ]]; then
+          if [[ "$RID" == win-* ]]; then
             cp out/creds.exe "$NAME/"
             7z a "$NAME.zip" "$NAME" > /dev/null
             echo "ASSET=$NAME.zip" >> "$GITHUB_ENV"
@@ -478,11 +482,13 @@ jobs:
 
       - name: Package
         shell: bash
+        env:
+          RID: ${{ matrix.rid }}
         run: |
           VERSION="${GITHUB_REF_NAME#mcp-v}"
-          NAME="creds-mcp-$VERSION-${{ matrix.rid }}"
+          NAME="creds-mcp-$VERSION-$RID"
           mkdir "$NAME"
-          if [[ "${{ matrix.rid }}" == win-* ]]; then
+          if [[ "$RID" == win-* ]]; then
             cp out/creds-mcp.exe "$NAME/"
             7z a "$NAME.zip" "$NAME" > /dev/null
             echo "ASSET=$NAME.zip" >> "$GITHUB_ENV"
