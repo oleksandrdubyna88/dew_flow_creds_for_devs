@@ -4038,6 +4038,18 @@ forms come to disagree about one ancestry. When nothing above answers, the optio
 word inherit at all — it says so, and stays selectable, because taking back a local answer is what
 it is for.
 
+**The entity form shows the RESOLVED cadence** (S3.2): the same group, filled by the same
+`inheritedAskFor`, with Inherit checked when the entry has no answer of its own and the folder's
+answer named beside it. The guard that story exists for is what it must NOT show — an entry under a
+folder set to `never` showing *Ask every time*, which is the default belonging to the end of the
+walk being displayed as though somebody had chosen it. **The ten switches are different and stay
+local**: they are edited in place and a save posts what they show, so rendering a resolved ladder
+would turn "open the form and press Save" into "adopt everything the folder granted". A radio group
+can show a resolved value *with Inherit selected* and keep the difference between "no answer here"
+and "this answer" both visible and saveable; ten checkboxes cannot. The sentence above the section
+is per half — `mcpSetSentence(answersLadder, answersPolicy)`, four states in one line — because a
+record holding only a cadence used to make it claim the switches were set here.
+
 **Per axis on the DISPLAY side too.** A record of just `{ ask: 'never' }` answers the cadence and
 leaves the ladder inherited, so the form shows the ladder that is in force from above and says where
 it comes from — `answersLadder(options.mcp)`, not "has an `mcp` object", decides both the ticks and

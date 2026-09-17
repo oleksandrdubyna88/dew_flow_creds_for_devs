@@ -102,6 +102,10 @@ export async function editNode(
     jumpCandidates: collectJumpCandidates(storage, accountId, node.id),
     hasStoredHostKey: storedHostKey !== undefined,
     hostKeyFingerprint: storedHostKey === undefined ? undefined : hostKeyFingerprint(storedHostKey),
+    // What this entry would inherit if it answered no cadence of its own (#95) — the same helper
+    // and the same one-line `byId` the folder branch uses, so the two forms cannot come to disagree
+    // about one ancestry.
+    inheritedAsk: named(inheritedAskFor(node, (id) => storage.getNode(accountId, id))),
     ...doorsFor(accountId, node),
   });
   if (result === undefined) {

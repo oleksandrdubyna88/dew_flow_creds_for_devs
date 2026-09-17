@@ -211,6 +211,27 @@ export function mcpAskHtml(local: unknown, inherited?: { ask: McpAskPolicy; from
   return `<p class="hint">${escapeHtml(MCP_ASK_HINT)}</p>${rows}`;
 }
 
+/**
+ * What this record has decided, said PER AXIS in one line (#95).
+ *
+ * <p>Four states, because there are two axes and each is answered on its own: an entry can hold its
+ * own switches while taking its cadence from a folder three levels up. One line rather than two, so
+ * an untouched entry reads as one sentence instead of the same sentence twice.</p>
+ *
+ * <p>It replaced `mcp !== undefined`, which is true for a record holding only a cadence — so a form
+ * driven by it claimed the SWITCHES were set here while they were inherited, which is the defect the
+ * folder form's code round found on the other side of the same question.</p>
+ */
+export function mcpSetSentence(ladder: boolean, policy: boolean): string {
+  if (ladder) {
+    return policy ? 'Set on this entry.' : 'Switches set on this entry. Its consent setting follows the folder.';
+  }
+  return policy ? 'Consent set on this entry. Its switches follow the folder.' : NOTHING_SET_HERE;
+}
+
+const NOTHING_SET_HERE =
+  'Not set here — this entry follows its folder. Touching a switch or the consent setting decides that half here.';
+
 /** The Inherit option's label: what it would inherit, or that there is nothing above to inherit. */
 function inheritLabel(inherited: { ask: McpAskPolicy; from: string } | undefined): string {
   if (inherited === undefined) {

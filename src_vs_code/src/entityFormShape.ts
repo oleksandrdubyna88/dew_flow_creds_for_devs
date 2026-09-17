@@ -3,6 +3,7 @@ import { SecondValues } from './secondValues';
 import { EntityFields } from './entityFields';
 import { PaymentFields } from './paymentFields';
 import { AgentDoors } from './agentDoors';
+import type { McpAskPolicy } from './mcpAccess';
 import { DependencyFolderCandidate } from './depGraph';
 
 /**
@@ -32,6 +33,16 @@ export interface EntityFormOptions {
   imageDataUri?: string;
   /** The other ways an agent can reach this entry, for the MCP section's footer (T24b). */
   agentDoors?: AgentDoors;
+  /**
+   * What CADENCE this entry would inherit, and from where (#95).
+   *
+   * <p>The same shape the folder form takes, filled by the same `inheritedAskFor` — one question,
+   * one resolver, two forms, so the two cannot come to disagree about one ancestry. It is what the
+   * Inherit option NAMES, and it is resolved from the PARENT, so it is true whatever this entry
+   * says itself. Absent when nothing above answers, which the option then says instead of naming a
+   * folder that does not exist.</p>
+   */
+  inheritedAsk?: { ask: McpAskPolicy; from: string };
   /** The tree element the footer's commands act on — the same argument the context menu passes. */
   entityTarget?: unknown;
   entityId: string;

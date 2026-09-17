@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
 import { ENTITY_KINDS, EntityKind } from '../types';
+import { HOST_CHK, chooseAsk, mcpPage } from './mcpFormFixture';
+import { runFragment } from './miniDom';
+import { mcpSwitchScript } from '../mcpSwitchScript';
+import type { McpAccess } from '../mcpAccess';
 
 /**
  * What the form's posted data becomes — and specifically, which fields survive the entity's KIND.
@@ -179,4 +183,34 @@ test('the preference is absent whenever there is no code for it to be about', ()
   );
   assert.equal(removed.details.hasTotp, undefined, 'the seed was removed');
   assert.equal(removed.details.totpShowNext, undefined, 'so the preference goes with it');
+});
+
+/**
+ * The cadence round trip on the entity form (#95, S3.2).
+ *
+ * <p>What the page POSTS is asserted next door, in `mcpSwitchScript.test.ts`. This is what that
+ * becomes after `toValues` — the shape written to the vault, which is the only place the per-axis
+ * regression is visible: an entry handed an all-off ladder because somebody chose a cadence is an
+ * entry that has silently stopped inheriting rights from its folder.</p>
+ */
+function storedMcp(mcp: McpAccess | undefined, pick: string): unknown {
+  const document = mcpPage(mcp);
+  const lifted = runFragment(`${HOST_CHK}\n${mcpSwitchScript(mcp)}`, document, ['collectMcp']);
+  chooseAsk(document, pick);
+  // Through JSON, which is where an `undefined` would vanish on the way to the host.
+  const data = JSON.parse(JSON.stringify({ ...posted('credential'), mcp: lifted.collectMcp() }));
+  return world().toValues(data, { entityId: 'e1' } as never).details.mcp;
+}
+
+test('saving with only the cadence touched updates ask and leaves the entry ladder ABSENT', () => {
+  const stored = storedMcp(undefined, 'never');
+
+  assert.deepEqual(stored, { ask: 'never' }, 'an all-off ladder was written because a cadence was chosen');
+});
+
+test('an entry taking its cadence back keeps the switches it had', () => {
+  const stored = storedMcp({ view: true, use: true, ask: 'never' }, 'inherit');
+
+  assert.equal((stored as { use?: unknown } | undefined)?.use, true, 'the ladder went with the cadence');
+  assert.equal((stored as { ask?: unknown } | undefined)?.ask, undefined, 'and the cadence stayed');
 });
