@@ -217,6 +217,21 @@ Windows child per connection does not leak. Closing the WSL side closes the chil
 reads end-of-stream and exits — five real connections left zero processes behind and no log noise
 from the abandoned copy task.
 
+## Boundary with the connect-in-a-remote-window plan (2026-09-17)
+
+Recorded on BOTH sides, because a boundary written down once is a boundary the other plan's
+implementer never reads.
+
+| item | owner |
+|---|---|
+| the relay itself: the unix socket, its lifetime, `creds` inside the distribution, the `~/.bashrc` export, `WslRelayManager`'s restarts | **this plan** (shipped) |
+| making the CONNECT action remote-aware: which window, which route, the refusal wording, `-i`, `UserKnownHostsFile`, the askpass branch, the program word | [PLAN_connect_in_a_remote_window.md](../todo/PLAN_connect_in_a_remote_window.md) |
+| the broker reaching a remote window over HTTP (`CREDS_BROKER_SOCKET`, the Remote-SSH `ssh -R`) | [PLAN_remote_broker_bridge.md](PLAN_remote_broker_bridge.md), phase 4 |
+| naming which machine to fix in the KEYRING diagnosis, and stating `extensionKind: ui` in the README | [PLAN_tails_2.md](../todo/PLAN_tails_2.md) §2.3 |
+
+The connect plan only READS `socketPathFor` from here; it changes nothing in the relay. It is
+independent of the broker bridge's phase 4 and could ship before it.
+
 ## Definition of Done
 
 - [x] `creds relay` serves a unix socket in WSL that a real `ssh-add -l` lists the key through.
