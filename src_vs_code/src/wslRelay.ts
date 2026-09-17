@@ -114,6 +114,26 @@ export function socketFromExportLine(line: string): string {
   return match === null ? '' : match[1];
 }
 
+/**
+ * The socket a relay names when it REFUSES to start because one is already serving that path.
+ *
+ * <p>Found by a person clicking the button, 2026-09-17. A relay was up and working — `ssh-add -l`
+ * through it listed the key, and it had a dozen live connections — and starting a second one is
+ * correctly refused rather than allowed to hijack the socket. But the refusal goes to STDERR, which
+ * the manager forwarded to the log without reading, so it learned no socket and the setup said
+ * <i>the relay in Ubuntu reported no socket. Check that `creds` is installed there</i>: a false
+ * statement, pointing at the wrong thing, about a relay that was working.</p>
+ *
+ * <p>The refusal NAMES the path and its own advice is "use that one", so it is read rather than
+ * discarded — the same rule as `socketFromExportLine`: the CLI decides the path, this side reads
+ * the answer instead of deriving it. If the CLI ever rewords that sentence this returns `''` and
+ * the behaviour falls back to exactly what it was, which is why it is a parse and not a contract.</p>
+ */
+export function socketFromBusyLine(line: string): string {
+  const match = /(\S+) is already served by a live relay/.exec(line.trim());
+  return match === null ? '' : match[1];
+}
+
 /** The block to append to a shell rc. */
 export function rcSnippet(socketPath: string): string {
   return `\n${RC_MARKER}\nexport SSH_AUTH_SOCK=${socketPath}\n`;

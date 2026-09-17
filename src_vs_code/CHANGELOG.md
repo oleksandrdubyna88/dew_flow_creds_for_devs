@@ -4,6 +4,20 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.2] — 2026-09-17 — a working relay is used, not declared missing
+
+### Fixed
+
+- **"The relay in Ubuntu reported no socket. Check that `creds` is installed there."** — said about
+  a relay that was running perfectly, with a key loaded and a dozen live connections through it.
+  Starting a second relay on a socket somebody is already serving is correctly REFUSED rather than
+  allowed to hijack it, and the refusal names the path and says *use that one* — but it goes to
+  standard error, which was forwarded to the diagnostics log without being read. So the extension
+  learned no socket, reported a failure, and pointed at an installation that was fine.
+- That refusal is now read: the socket it names is adopted, the relay serving it is left alone and
+  not restarted into the same collision, and the attempt is not counted against the restart budget.
+  Found by clicking the button rather than by a test, which is why the version moved again.
+
 ## [1.9.1] — 2026-09-17 — Connect SSH knows which machine your terminal is on
 
 ### Fixed
