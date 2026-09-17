@@ -4,6 +4,26 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.4] — 2026-09-17 — the agent says which keys it cannot read, and why
+
+### Fixed
+
+- **`error:0900006e:PEM routines:OPENSSL_internal:NO_START_LINE`** when adding a key to the SSH
+  agent. Accurate and useless. The key was in the OpenSSH format
+  (`-----BEGIN OPENSSH PRIVATE KEY-----`), which the agent cannot read — and since `ssh-keygen` has
+  written that format BY DEFAULT since OpenSSH 7.8, most keys are in it. The refusal now names the
+  format, says that `ssh -i` with a key file is unaffected and only the agent needs this, and gives
+  the one command that converts a copy.
+
+### Known limitation, now stated instead of implied
+
+- **The agent serves PEM keys only** (`BEGIN RSA PRIVATE KEY`, PKCS#8). This module's own
+  documentation claimed the OpenSSH format was supported "since Node 12"; it is not, and measuring
+  it is what found this — in the extension host, which is Electron/BoringSSL, and in plain Node 24,
+  which refuses it with a different message. Teaching the agent to read `openssh-key-v1` is real
+  work and is a separate change; until then, a key in that format can be used with `ssh -i` but not
+  through the agent — which is what a WSL window needs.
+
 ## [1.9.3] — 2026-09-17 — Add Key to Agent follows the key an entry points at
 
 ### Fixed
