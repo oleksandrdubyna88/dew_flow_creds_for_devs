@@ -4,28 +4,81 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.9.7] — 2026-09-17 — what four review rounds found in 1.9.6
 
-### Fixed
+> **Why this is 1.9.7 and not a re-cut 1.9.6.** A build of 1.9.6 was installed on the reporting
+> machine before these fixes existed, so the number is already attached to bytes. A version names a
+> build, and renumbering one that somebody is running would make the number mean two things.
 
-- **The keyring warning stayed silent on the machines that most need it.** It asked one question —
-  is there a D-Bus session address? — and a WSL distribution with `systemd=true` answers yes. Measured
-  on one: a session bus, and at the same time no `org.freedesktop.secrets` on it (not even
-  activatable), no libsecret anywhere on disk, no kwalletd, and an empty `XDG_CURRENT_DESKTOP`. VS
-  Code picks the basic store there with certainty and the check said nothing, which is worse than no
-  check: the silence reads as an answer.
+### Fixed — the Windows-client route, where it did not work
 
-  It now asks three questions and reports **every** one that holds, ordered by what has to be fixed
-  first — no Secret Service client installed, no session bus, no desktop environment advertised. The
-  third is the one that was missing and the one that matters most: Chromium picks the store **from
-  the desktop environment, before it tries anything**, so a session advertising none gets the basic
-  store however much is installed. Told only about the missing library, a reader installs
-  `gnome-keyring`, sees no change, and concludes the warning was noise.
+- **An unnameable distribution now CONNECTS through it.** The route was chosen correctly and killed
+  one step later: `terminalPlatform` answered `undefined` whenever the distribution could not be
+  named, so the connect path refused — as *not-wsl*, inside a WSL window. Two questions were being
+  answered with one value. Which shell parses the line is bash for **every** WSL window; which
+  distribution to ASK is what an unresolved name blocks, and it blocks translation, which this route
+  does not do. The route's own test passed throughout, because it proved the route was chosen and
+  not that a terminal opened.
+- **The Remote Bridge button is offered only where the bridge is the answer.** The sentence for a dev
+  container, an attached container or a Codespace has always said "connect from a window running on
+  this computer"; the button beside it offered the bridge anyway.
+- **A pinned host key left behind by a late refusal is now actually deleted.** The deletion was given
+  the TRANSLATED path, which can never be under the directory the guard compares against, so the file
+  stayed on disk. Found by writing an honest assertion for something else.
 
-- **The warning now says WHICH machine to fix.** `extensionKind: ["ui"]` keeps the extension host on
-  the computer running the VS Code window, so a reader attached to WSL or a Remote-SSH host who
-  installs a keyring on the machine they connected *to* finds it did nothing. (`PLAN_tails_2.md` §2.3;
-  the live diagnosis and the install command are still that plan's.)
+### Fixed — the relay, which had two states it could not see
+
+- **An adopted relay is asked whether it is still there.** A window that finds the socket already
+  served adopts it rather than declaring a working relay broken — and is exactly the window that
+  cannot observe the owner's exit. It would go on advertising a socket that is gone, and the composed
+  line carries no `-i`, so ssh does not fail: it falls back to whatever keys that shell has. A dead
+  socket now refuses instead of connecting, checked with one bounded probe and only for a relay this
+  window did not start.
+- **The relay's stderr is assembled into lines before it is read.** A `data` event is a slice of a
+  stream, not a line, so a refusal delivered in two pieces matched nothing — and the consequence was
+  not a missed log line but a live relay declared broken and a retry budget spent restarting
+  something that was never down.
+- **`removeKeyFromAgent` follows the key an entry points at**, as *Add Key to Agent* already did. It
+  was unloading an id the agent never held and clearing the flag on the connection row while the key
+  row went on claiming to be served.
+- **A cancelled relay setup no longer produces a retry.** *Set Up the Relay and Connect* ran the
+  setup, read nothing back, and retried even when the person had cancelled the picker — so the same
+  refusal appeared twice.
+- **The retry asks the AGENT again, not only the window.** *Add Key to Agent* loaded the key and the
+  second attempt read the answer from before it ran.
+
+### Fixed — security and CI
+
+- **`wsl.exe` is launched by its full path** (`%SystemRoot%\System32\wsl.exe`), at every call site.
+  `CreateProcess` searches the current directory before `PATH`, so a `wsl.exe` left in the extension
+  host's working directory was the program that ran, with our arguments — CWE-426, the same defect
+  this repository already fixed for `ssh.exe`.
+- **The host platform is handed in rather than read where the sentence is built.** A refusal names the
+  machine the extension host runs on, and generating that from `process.platform` at the point of use
+  made the test that asserts it depend on which operating system ran it.
+
+### Fixed — the keyring warning, which stayed silent where it was needed
+
+- **It asked one question and a WSL distribution with `systemd=true` answers it "fine".** Measured on
+  one: a session bus present, and at the same time no `org.freedesktop.secrets` on it, no libsecret
+  anywhere, no kwalletd and an empty `XDG_CURRENT_DESKTOP`. VS Code picks the basic store there with
+  certainty and the check said nothing — which is worse than no check, because the silence reads as an
+  answer. It now asks three and reports every one that holds. The third is the one that was missing
+  and matters most: the store is chosen **from the desktop environment, before anything is tried**, so
+  a session advertising none gets the basic store however much is installed.
+- **The warning says WHICH machine to fix.** `extensionKind: ["ui"]` keeps the extension host on the
+  computer running the window, so a reader attached to WSL or a Remote-SSH host who installs a keyring
+  on the machine they connected *to* finds it did nothing.
+
+### Known gaps, stated rather than discovered
+
+- **A non-default `[automount] root`** makes the `/mnt/c/…` client path wrong. The route is chosen
+  from a check on the Windows side and the path is a constant, so that machine gets a command that
+  cannot run — visibly, in the terminal, not silently. Asking `wslpath` would close it at the cost of
+  a `wsl.exe` on every click.
+- **A password in a WSL window still refuses.** Its askpass helper is a shell script the distribution
+  holds, a Windows process cannot exec it, and the environment carrying the password does not cross
+  interop unless `WSLENV` names it.
 
 ## [1.9.6] — 2026-09-17 — Connect in a WSL window just connects
 
@@ -73,37 +126,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unless `WSLENV` names it.
 - **Remote-SSH, dev containers, Codespaces.** The Windows client is reachable from WSL because WSL
   runs on this machine. There is no interop to borrow across a network.
-
-### Fixed after review
-
-- **An unnameable distribution now CONNECTS through the Windows client instead of refusing.** The
-  route was chosen correctly and then killed one step later: `terminalPlatform` answered `undefined`
-  whenever the distribution could not be named, so `connectEntity` refused — as *not-wsl*, inside a
-  WSL window. The route's own test passed throughout, because it proved the route was chosen and not
-  that a terminal opened. Two different questions were being answered with one value; which shell
-  parses the line is `bash` for every WSL window, and which distribution to ASK is what blocks
-  translation and nothing else.
-- **The Remote Bridge button is offered only where the bridge is the answer.** The sentence for a
-  dev container, an attached container or a Codespace has always said "connect from a window running
-  on this computer"; the button beside it offered the bridge anyway. Third time this exact defect —
-  a button promising a fix it cannot deliver — has been caught in this file.
-- **`wsl.exe` is launched by its full path** (`%SystemRoot%\System32\wsl.exe`), at all four call
-  sites. `CreateProcess` searches the current directory before `PATH`, so a `wsl.exe` left in the
-  extension host's working directory was the program that ran, with our arguments — CWE-426, the
-  same defect this repository already fixed for `ssh.exe`, and with no fallback to the bare name
-  because falling back is handing the search straight back.
-
-### Known gaps, stated rather than discovered
-
-- **A non-default `[automount] root`** makes the `/mnt/c/…` client path wrong. The route is chosen
-  from a check on the Windows side and the path is a constant, so that machine gets a command that
-  cannot run — visibly, in the terminal, not silently. Asking `wslpath` would close it at the cost
-  of a `wsl.exe` on every click.
-- **An adopted relay is believed until the window reloads.** When a second window finds the socket
-  already served, it adopts it rather than reporting a working relay broken — but nothing tells it
-  if that external relay later exits, so `serving()` keeps reporting a socket that is gone and
-  Connect can point `SSH_AUTH_SOCK` at nothing. Closing it means verifying the socket at the moment
-  of use.
 
 ## [1.9.5] — 2026-09-17 — a domain login reaches the host it was typed for
 
