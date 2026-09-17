@@ -4,6 +4,29 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **The keyring warning stayed silent on the machines that most need it.** It asked one question —
+  is there a D-Bus session address? — and a WSL distribution with `systemd=true` answers yes. Measured
+  on one: a session bus, and at the same time no `org.freedesktop.secrets` on it (not even
+  activatable), no libsecret anywhere on disk, no kwalletd, and an empty `XDG_CURRENT_DESKTOP`. VS
+  Code picks the basic store there with certainty and the check said nothing, which is worse than no
+  check: the silence reads as an answer.
+
+  It now asks three questions and reports **every** one that holds, ordered by what has to be fixed
+  first — no Secret Service client installed, no session bus, no desktop environment advertised. The
+  third is the one that was missing and the one that matters most: Chromium picks the store **from
+  the desktop environment, before it tries anything**, so a session advertising none gets the basic
+  store however much is installed. Told only about the missing library, a reader installs
+  `gnome-keyring`, sees no change, and concludes the warning was noise.
+
+- **The warning now says WHICH machine to fix.** `extensionKind: ["ui"]` keeps the extension host on
+  the computer running the VS Code window, so a reader attached to WSL or a Remote-SSH host who
+  installs a keyring on the machine they connected *to* finds it did nothing. (`PLAN_tails_2.md` §2.3;
+  the live diagnosis and the install command are still that plan's.)
+
 ## [1.9.6] — 2026-09-17 — Connect in a WSL window just connects
 
 ### Added
@@ -177,6 +200,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > 1.9.0 then shipped from the server, so the branch was rebased onto it and the build renumbered
 > 1.9.1 — a version identifies bytes, it takes its own string even when nobody else ever sees it,
 > and a 1.9.1 built on top of 1.8.1 would have been a regression wearing a higher number.
+
 ## [1.9.0] — 2026-09-17 — how often an agent has to ask is yours to set
 
 ### Added
