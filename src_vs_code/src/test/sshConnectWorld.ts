@@ -192,14 +192,24 @@ export const OPTIONS = { knownHostsFile: undefined };
 /** The shape materializeKnownHosts actually writes: keys/<pid>/, which is what the deletion guard keys on. */
 export const OUR_PIN = `/storage/keys/${process.pid}/known_hosts-e1`;
 
+/**
+ * `hostPlatform` is PINNED, and CI is why.
+ *
+ * <p>The refusal's heading names the machine the extension host is on. Left to `process.platform`,
+ * the assertion reads "(Windows)" on the machine the report came from and "(Linux)" on the Ubuntu
+ * runner — green here, red there, for a reason that is about neither the window nor the code. A WSL
+ * window already means the host is Windows, so pinning it states a fact rather than arranging one.</p>
+ */
 export const WSL_NO_RELAY = {
   side: { kind: 'wsl' as const, distro: 'Ubuntu' },
   relay: { enabled: false, running: false, socket: '' },
+  hostPlatform: 'win32' as NodeJS.Platform,
 };
 
 export const WSL_READY = {
   side: { kind: 'wsl' as const, distro: 'Ubuntu' },
   relay: { enabled: true, running: true, socket: '/run/user/1000/creds-agent.sock' },
+  hostPlatform: 'win32' as NodeJS.Platform,
 };
 
 /** A machine with the built-in Windows OpenSSH, which is every Windows 10/11 since 2018. */

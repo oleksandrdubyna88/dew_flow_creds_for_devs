@@ -31,6 +31,9 @@ export function remoteWindowDeps(
     // Read once per click, and it is one `existsSync` on this machine. Not gated on `side`: a local
     // window ignores it, and gating it here would put the same condition in two files.
     windowsClient: wslWindowsSshClient(),
+    // Read HERE and nowhere below. This module is the one place that touches the environment, so
+    // everything downstream is decided from a value it was handed.
+    hostPlatform: process.platform,
     runRemedy,
     // Read again after a remedy has run, because the remedy exists to change exactly this. Without
     // it the retry re-uses a readiness captured BEFORE the relay was switched on and refuses for
