@@ -1,16 +1,26 @@
 import { DepColorKey } from './depColors';
-import { McpAccess } from './mcpAccess';
+import { McpAccess, McpAskPolicy } from './mcpAccess';
+import { escapeHtml } from './webviewHtml';
 
 /**
- * The six switches of the Agent access section, in ladder order — the one list the form's
- * markup, its page script and the viewer's summary are all built from.
+ * The ten switches of the Agent access section, in ladder order — the one list the form's
+ * markup, its page script and the viewer's summary are all built from. (Six when this was
+ * written; the four folder rungs joined them, and the count in this sentence had not.)
  *
- * <p>Six switches, five colours: the two delete scopes share one, because the tree's five
- * stripes answer "can an agent delete here" and the scope is a question only the form asks. That
- * sharing is deliberate and is why `color` is a field here rather than an index.</p>
+ * <p>Six of them are in the bar, and those six carry five colours: the two delete scopes share
+ * one, because the tree's five stripes answer "can an agent delete here" and the scope is a
+ * question only the form asks. That sharing is deliberate and is why `color` is a field here
+ * rather than an index.</p>
  *
  * <p>Each carries its own <b>why</b>. A permission whose consequence is not written beside it is
  * a permission granted by shrug, and this is the section where that matters most.</p>
+ *
+ * <p><b>The ask policy (#95) is NOT in this list</b>, and that is load-bearing rather than tidy.
+ * `searchPredicates.ts` maps every entry here to a search predicate name and THROWS at module load
+ * for one it does not know, so a cadence added to this list would break every search in the product
+ * at startup; `MCP_BAR_COLORS` and `accessMask` are the width of the tree icon's stripes. A switch
+ * says what an agent MAY do; the policy says how often a person is asked before it does. Two
+ * questions, two lists, and {@link MCP_ASK_CHOICES} is the other one.</p>
  */
 
 export interface McpSwitch {
@@ -107,6 +117,96 @@ export const MCP_SWITCHES: readonly McpSwitch[] = [
     on: (a) => a.folderDelete === 'any',
   },
 ];
+
+/**
+ * One of the four answers to *how often should I be asked before an agent uses this* (#95).
+ *
+ * <p>Shaped like {@link McpSwitch} and deliberately apart from it: same `why`-beside-the-control
+ * discipline, but a cadence is not a permission and the two lists are read by different code.</p>
+ */
+export interface McpAskChoice {
+  id: string;
+  /**
+   * What this choice stores. `undefined` is Inherit — no answer of its own.
+   *
+   * <p>Absence is the model's way of saying "ask the folder", so Inherit is not a fourth policy
+   * but the removal of one. What the PAGE posts for it is `null`, because `JSON.stringify` drops
+   * `undefined` and the reader has to see the key to know the answer was taken back.</p>
+   */
+  value: McpAskPolicy | undefined;
+  label: string;
+  why: string;
+}
+
+/** The hint above the group: what the cadence covers, and what it never covers. */
+export const MCP_ASK_HINT =
+  'How often to confirm before an agent USES this — running a command, a query, a VPN, an export. ' +
+  'Creating and deleting always ask, whatever this says.';
+
+export const MCP_ASK_CHOICES: readonly McpAskChoice[] = [
+  {
+    id: 'mcpAskInherit',
+    value: undefined,
+    label: 'Inherit from the folder',
+    why: 'No answer of its own. Whatever the folder above says applies here, and it keeps applying when that changes.',
+  },
+  {
+    id: 'mcpAskAlways',
+    value: 'always',
+    label: 'Ask every time',
+    why: 'Today’s behaviour, and the default. Every use raises a dialog naming the entry and the command.',
+  },
+  {
+    id: 'mcpAskEvery12h',
+    value: 'every12h',
+    label: 'Ask once every 12 hours',
+    why: 'One dialog covers the next twelve hours on this machine only — it is never synced or shared. Turning a switch on afterwards asks again, because a wider grant is not the one you agreed to.',
+  },
+  {
+    id: 'mcpAskNever',
+    value: 'never',
+    label: 'Never ask',
+    why: 'The switches above become the whole gate: nothing else stands between an agent and this entry. Every call is still recorded in the journal, and creating and deleting still ask.',
+  },
+];
+
+/**
+ * The radio group, with exactly one checked and the Inherit option saying what it inherits.
+ *
+ * <p>A control labelled "Inherit" that does not name what it inherits is one a person has to leave
+ * the page to understand — and when nothing above answers it does not say "inherit" at all, because
+ * there is nothing to inherit from. It is never disabled even then: taking back a local answer is
+ * what that option is for, including on a folder with no parent.</p>
+ */
+export function mcpAskHtml(
+  local: McpAskPolicy | undefined,
+  inherited?: { ask: McpAskPolicy; from: string },
+): string {
+  const rows = MCP_ASK_CHOICES.map((choice) => {
+    const label = choice.value === undefined ? inheritLabel(inherited) : choice.label;
+    return `<div class="check">
+      <input id="${choice.id}" name="mcpAsk" type="radio" class="mcpSwitch depColor4"
+             value="${choice.value ?? 'inherit'}"${choice.value === local ? ' checked' : ''}>
+      <label for="${choice.id}">${escapeHtml(label)}</label>
+    </div>
+    <p class="hint mcpWhy">${escapeHtml(choice.why)}</p>`;
+  }).join('');
+  return `<p class="hint">${escapeHtml(MCP_ASK_HINT)}</p>${rows}`;
+}
+
+/** The Inherit option's label: what it would inherit, or that there is nothing above to inherit. */
+function inheritLabel(inherited: { ask: McpAskPolicy; from: string } | undefined): string {
+  if (inherited === undefined) {
+    return 'Not set here — nothing above answers, so: ask every time';
+  }
+  return `Inherit from the folder — "${inherited.from}" says: ${askWords(inherited.ask)}`;
+}
+
+/** One wording for each policy, taken from the labels, so a rename cannot leave two spellings. */
+export function askWords(ask: McpAskPolicy): string {
+  const choice = MCP_ASK_CHOICES.find((one) => one.value === ask);
+  return (choice?.label ?? 'ask every time').toLowerCase();
+}
 
 /**
  * The stripes, in ladder order, with the two delete scopes merged into one.

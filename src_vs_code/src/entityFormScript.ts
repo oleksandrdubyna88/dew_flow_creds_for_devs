@@ -128,7 +128,7 @@ export function formPageScript(
     }
   }
 
-  ${mcpSwitchScript(d?.mcp !== undefined)}
+  ${mcpSwitchScript(d?.mcp)}
 
   ${dependencyPickerScript(picker)}
 

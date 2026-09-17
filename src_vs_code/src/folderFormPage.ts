@@ -1,6 +1,6 @@
 import * as crypto from 'node:crypto';
-import { McpAccess, accessMask, normalizeMcpAccess } from './mcpAccess';
-import { MCP_SWITCHES, mcpBarHtml, mcpSwitchStyles } from './mcpSwitches';
+import { McpAccess, McpAskPolicy, accessMask, normalizeMcpAccess } from './mcpAccess';
+import { MCP_SWITCHES, mcpAskHtml, mcpBarHtml, mcpSwitchStyles } from './mcpSwitches';
 import { escapeHtml } from './webviewHtml';
 import { formHeaderHtml, pageChromeCss } from './pageChrome';
 import { zoomApplyScript, zoomButtonsScript } from './zoomControl';
@@ -43,6 +43,15 @@ export interface FolderFormOptions {
    * trusting the switch.</p>
    */
   inherited?: { access: McpAccess; from: string };
+  /**
+   * What CADENCE this folder would inherit, and from where (#95).
+   *
+   * <p>A field of its own rather than a member of {@link inherited}, because the two axes are
+   * resolved by two walks and can be answered by two different folders — that is what per-axis
+   * inheritance means. Absent when nothing above answers, and the Inherit option then says so
+   * instead of naming a folder that does not exist.</p>
+   */
+  inheritedAsk?: { ask: McpAskPolicy; from: string };
   /**
    * The text-zoom offset (T28), from `credSshManager.uiScale` — filled in by the panel, exactly
    * as `mountForm` fills the entity form's in. Optional for the same reason it is optional on
@@ -91,12 +100,12 @@ ${formHeaderHtml({ heading: `Edit: ${options.name}`, chip: 'folder', uiScale })}
            value="${escapeHtml(options.name)}">
   </fieldset>
 
-  ${options.inTrash ? trashNotice() : accessFieldset(mcp, decided, options.entryCount, inheritedFrom)}
+  ${options.inTrash ? trashNotice() : accessFieldset(options, mcp, decided, inheritedFrom)}
 
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
   const chk = (id) => document.getElementById(id)?.checked === true;
-  ${options.inTrash ? 'function collectMcp() { return undefined; }' : mcpSwitchScript(decided)}
+  ${options.inTrash ? 'function collectMcp() { return undefined; }' : mcpSwitchScript(options.mcp)}
   function save() {
     vscode.postMessage({ type: 'save', data: {
       name: document.getElementById('name').value,
@@ -154,11 +163,12 @@ function accessSentence(decided: boolean, inheritedFrom: string | undefined, cov
 }
 
 function accessFieldset(
+  options: FolderFormOptions,
   mcp: McpAccess,
   decided: boolean,
-  entryCount: number,
   inheritedFrom: string | undefined,
 ): string {
+  const entryCount = options.entryCount;
   const reach = entryCount === 1 ? '1 entry' : `${entryCount} entries`;
   const covers = `each of the ${reach} in this folder and the folders inside it that has no answer of its own, and everything created here afterwards`;
   const said = accessSentence(decided, inheritedFrom, covers);
@@ -173,6 +183,7 @@ function accessFieldset(
     </div>
     <p class="hint mcpWhy">${escapeHtml(s.why)}</p>`,
     ).join('')}
+    ${mcpAskHtml(options.mcp?.ask, options.inheritedAsk)}
   </fieldset>`;
 }
 

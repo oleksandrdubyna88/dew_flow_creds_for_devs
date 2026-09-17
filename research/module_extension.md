@@ -4022,6 +4022,25 @@ inherited apart: `readMcpAccess` writes the ladder only when the message names a
 only when it names one, so changing a folder's consent setting cannot write an all-off ladder that
 closes every entry beneath it.
 
+**The control is a four-option group on the folder form** (S3.1): *Inherit*, *ask every time*, *ask
+once every 12 hours*, *never ask*, each with the sentence that says what it costs — never-ask's says
+in those words that the switches above become the whole gate and that the call is still recorded.
+It is `MCP_ASK_CHOICES`, deliberately NOT a member of `MCP_SWITCHES`: that list is mapped to search
+predicate names by `searchPredicates.ts`, which throws at module load for an id it does not know, so
+a cadence appended there would break every search in the product at startup. The Inherit option
+NAMES what it would inherit ("Projects says: never ask"), resolved from the PARENT so it is true
+whatever the folder says itself, and when nothing above answers it does not use the word inherit at
+all — it says so, and stays selectable, because taking back a local answer is what it is for.
+
+**The page script tracks the two axes as two touched flags**, which is where the regression above
+would actually happen. `collectMcp` emits the ladder when the ladder was touched or was already
+decided here, and `ask` when the policy was, so choosing a cadence on an inheriting folder posts
+`{ ask: … }` and nothing else. Inherit posts **`ask: null`**, not `undefined` — `JSON.stringify`
+drops `undefined`, and a key that never arrives cannot be distinguished from one nobody touched, so
+the answer would never be taken back; `readMcpAccess` turns the null back into no record at all. And
+a page with **no radio group** — the entity form, until S3.2 — keeps posting the policy the record
+already had: answering `null` there would clear a policy on a form that never offered to change it.
+
 **Inheritance walks each axis on its own, and `resolveMcpInTree` is where both walks meet.** It used
 to walk once — climb until a node has an `mcp` object, because *an answer stops the walk* is how a
 sub-folder closes a branch its parent opened. With two axes on one record that single walk was a
@@ -4168,6 +4187,7 @@ and not the other stops the build instead of every window's startup. Record:
 | `mcpConsentPolicy.ts` | whether a use call has to raise a dialog, this machine's record of the ones answered on it, and **the one store per `Memento`** that the broker's hooks and the Forget command must share (S2.4) |
 | `mcpEntries.ts` | what an agent may SEE, field by field; which switch each action needs; and both halves of whether a use call's dialog has already been answered |
 | `mcpHooks.ts` | the vault's answers to the MCP door — `mcpUseHooks` builds the read and the write over a single `ConsentStamps` it asks the policy module for (S2.4) |
+| `mcpSwitches.ts` / `mcpSwitchScript.ts` | the ten switches and the four cadence choices, each with the sentence that says what it costs — and the browser half that keeps the two axes apart when a form is saved |
 | `mcpCreate.ts` | which folders are open to creation, and what a request becomes |
 | `secretRotation.ts` / `rotateAction.ts` | the placeholder, and the order a rotation happens in |
 | `secretKinds.ts` | what this extension can generate — and, named one at a time, what it cannot |
