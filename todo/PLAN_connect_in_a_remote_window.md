@@ -1,8 +1,14 @@
 # PLAN — Connect SSH composes for the WRONG machine in a remote window
 
-> Status: **in progress, 2026-09-17 — S1–S7 shipped and S8's documentation with them; S8's ONE
-> remaining item is the integration test, which has never been run.** Until it has, the relay route
-> is proven against stubs only and this plan must not be promoted — see §Definition of Done.
+> Status: **built and verified, 2026-09-17 — NOT yet promoted, because it is not yet on `main`.**
+> Every story is written, the suite is green (4391 tests, 4387 pass, 0 fail, 4 skipped) and the
+> integration test has been RUN on a real Windows + WSL machine: twenty checks, all `ok`, quoted in
+> §Test plan. It stays in `todo/` deliberately — `research/` describes the system as it IS, and this
+> lives on `fix/ssh-connect-in-a-remote-window`, which has not been pushed. **Promote it when the
+> branch lands**, carrying the open tail with it: nobody has clicked *Connect* in a real VS Code
+> window attached to WSL, so the last centimetre — VS Code creating the terminal and posting the
+> line into it — has only ever been exercised by a stub; and the viewer's copyable `ssh` line is
+> still composed for the host (§What this deliberately does NOT change).
 >
 > Four `coai` rounds so far: the plan round (2 of 3 reviewers; 12 findings, all accepted), S1's code
 > round (12 reviewers; 24 findings, 11 accepted), Epic 2/3's plan round (3 reviewers; 17 findings,
