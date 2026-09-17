@@ -463,9 +463,9 @@ internal static class Program
         on your behalf, and answers with the result.
 
         An action asks the person first, in their editor, showing them the real entry and the real
-        command — as often as that entry says: every time, once every 12 hours, or never. Creating
-        and deleting always ask. Plan for the dialog: make one call, not twenty, and expect a few
-        seconds when it comes.
+        command. How often depends on the entry you are USING — every time, once every 12 hours, or
+        never, as that entry says. Creating, deleting and every folder verb always ask. Plan for the
+        dialog: make one call, not twenty, and expect a few seconds when it comes.
 
         An empty list means nothing has been opened to you yet — not that they have no
         credentials. Tell them they can open one in VS Code: right-click the entry, Edit, and the
@@ -526,7 +526,9 @@ internal static class Program
         Tools: creds_list and creds_folders, then creds_exec / creds_query / creds_run /
         creds_open_terminal / creds_vpn_up / creds_vpn_down / creds_export_env, and the folder
         verbs creds_create_folder / creds_edit_folder / creds_delete_folder — each gated by that
-        entry or folder's own switch, and by the person's approval as often as that entry asks for
-        it. Creating and deleting always ask.
+        entry or folder's own switch, and by the person's approval. How often they are asked is the
+        consent setting of the ENTRY you are using: every time, once every 12 hours, or never.
+        Creating and deleting an entry always ask, and so does every folder verb — a folder can
+        carry that setting for the entries inside it, but acting on the folder itself always asks.
         """;
 }

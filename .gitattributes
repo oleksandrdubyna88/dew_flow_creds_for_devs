@@ -8,3 +8,14 @@
 # Deliberately narrow: no `* text=auto`, which would renormalize the whole repository in one
 # commit and bury real changes under thousands of line-ending diffs.
 *.sh text eol=lf
+
+# The generated contracts are written by a script and read back by it.
+#
+# `scripts/emit-mcp-tools.mjs` writes LF and `--check` re-reads the file; with `core.autocrlf=true`
+# and no rule here, every checkout and every rebase handed it CRLF, so the check answered *the MCP
+# surface has changed* after a rebase that changed nothing. The comparison normalises now — that is
+# the real fix and it holds however the file arrives — but a working copy that differs from what
+# the generator writes also makes `git diff` noisy for a file nobody edits by hand. Same narrowness
+# as the rule above: two named files, not a directory glob that would pull in whatever lands there.
+contract/mcp-tools-v1.json text eol=lf
+contract/broker-v1.json text eol=lf

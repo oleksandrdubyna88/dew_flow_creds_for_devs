@@ -24,18 +24,11 @@ import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import mcpBinary from './mcpBinary.cjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const TARGET = join(ROOT, 'contract', 'mcp-tools-v1.json');
-const BINARY = join(
-  ROOT,
-  'src_mcp',
-  'src',
-  'bin',
-  'Debug',
-  'net10.0',
-  process.platform === 'win32' ? 'creds-mcp.exe' : 'creds-mcp',
-);
+const { EXE: BINARY, BUILD, binaryIsFresherThanItsSource } = mcpBinary;
 
 const HANDSHAKE = [
   {
@@ -153,17 +146,43 @@ const checking = process.argv.includes('--check');
 
 if (!existsSync(BINARY)) {
   console.error(`creds-mcp is not built: ${BINARY}`);
-  console.error('Run: dotnet build src_mcp/src/CredsMcp.csproj');
+  console.error(`Run: ${BUILD}`);
+  process.exit(2);
+}
+
+// A STALE binary is the same failure as a missing one, and quieter: this script's whole output is
+// whatever that process answers, so an executable older than `Program.cs` regenerates the contract
+// from prose nobody wrote any more — and `--check` then agrees with it, because both asked the same
+// stale process. Observed while writing this guard: a `Program.cs` edit followed by
+// `dotnet build dew_flow_creds_for_devs.slnx` printed *Build succeeded, 0 Warning(s)* without
+// rebuilding anything here, because that solution file lists the minimal-API server alone.
+const fresh = binaryIsFresherThanItsSource();
+if (!fresh.fresh) {
+  console.error(`creds-mcp is older than the C# it answers for — ${fresh.why}`);
   process.exit(2);
 }
 
 const surface = withUnixNewlines(surfaceOf(await ask()));
 const text = `${JSON.stringify(surface, null, 2)}\n`;
 
+/**
+ * The file as CONTENT, not as bytes.
+ *
+ * <p>Normalising the values was half the job and the half that was visible. The other half is the
+ * FILE: this repository sets `core.autocrlf=true` and its `.gitattributes` is deliberately narrow,
+ * so every checkout, rebase or branch switch writes `contract/mcp-tools-v1.json` back with CRLF
+ * while the generator writes LF. A byte comparison then reports *the MCP surface has changed* after
+ * a rebase that touched nothing — which is the same failure the docblock above rejects, one level
+ * up: the check becomes a test of which platform materialised the file. Observed, not predicted —
+ * `--check` was green, a rebase onto `origin/main` landed, and it went red with an identical
+ * surface. Both sides are normalised, so only a real difference is a difference.</p>
+ */
+const asContent = (value) => value.replace(/\r\n/g, '\n');
+
 if (!checking) {
   writeFileSync(TARGET, text);
   console.log(`wrote ${TARGET} — ${surface.tools.length} tools`);
-} else if (!existsSync(TARGET) || readFileSync(TARGET, 'utf8') !== text) {
+} else if (!existsSync(TARGET) || asContent(readFileSync(TARGET, 'utf8')) !== text) {
   console.error('the MCP surface has changed and contract/mcp-tools-v1.json was not regenerated.');
   console.error('Run: npm run contract:mcp');
   process.exit(1);

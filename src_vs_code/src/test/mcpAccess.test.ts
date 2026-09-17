@@ -442,6 +442,29 @@ test('a folder that only sets a policy does not close the branch its parent open
   assert.equal(resolved.askFolder?.id, 'mid', 'and the policy from the one that answered THAT');
 });
 
+test('an older build that drops the policy can make an entry QUIETER, not only louder', () => {
+  // The CHANGELOG promised the opposite — *it never becomes quieter than it was* — and the gate's
+  // code round was right that the promise does not hold. Losing the field is losing an ANSWER, and
+  // absence means "ask the folder": under a folder set to never, an entry that deliberately said
+  // *ask every time* comes back inheriting never, and the next MCP use runs with no dialog.
+  //
+  // This pins the hazard rather than closing it, because closing it is a different change: the
+  // reader cannot tell a field an old build dropped from one nobody ever set, so failing closed
+  // here would mean "an entry under a never-ask folder can no longer inherit it", which is the
+  // feature. If someone does decide to fail closed, the second assertion goes red and the
+  // compatibility note has to be rewritten in the same commit — which is the point of the test.
+  const parent = folder('root', { view: true, use: true, ask: 'never' });
+  const decided = entity('e1', 'root', { ask: 'always' });
+  const afterOldSave = entity('e1', 'root', {});
+
+  assert.equal(resolveMcpInTree(decided, tree(parent, decided)).access.ask, 'always', 'the answer the person gave');
+  assert.equal(
+    resolveMcpInTree(afterOldSave, tree(parent, afterOldSave)).access.ask,
+    'never',
+    'dropping the field inherited the folder — quieter than the person chose',
+  );
+});
+
 test('an empty object on a folder still closes the branch', () => {
   // The other half of the same predicate, and the reason it is not "does it name any rung": a
   // branch closed on purpose is stored with NO keys at all, so the obvious test would read it as

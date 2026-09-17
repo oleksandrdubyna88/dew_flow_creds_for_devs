@@ -141,6 +141,9 @@ test('the CLI row no longer claims there is no consent modal — because there i
   assert.match(detailOf(rows, 'Code access'), /no consent modal/, 'the key really has none — that one is true');
 });
 
+/** The hook as the door object names it — `preConsentX` must not satisfy a search for `preConsent`. */
+const PRE_CONSENT = /\bpreConsent\s*:/;
+
 test('the CLI row does not hand the alias door to a cadence that cannot reach it', () => {
   // The replacement for "no consent modal" was false in the other direction. `preConsent` is wired
   // into ONE door — `mcpDoor`, the `/v1/mcp/use/*` funnel (owner decision D1, #95) — while
@@ -154,17 +157,44 @@ test('the CLI row does not hand the alias door to a cadence that cannot reach it
   assert.match(detail, /asks every time/i, 'and it must say what DOES happen, not merely drop the claim');
 
   // The claim is only true while the route stays that way — so read the route, not just the text.
-  const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'credsAgentServer.ts'), 'utf8');
-  const from = source.indexOf('private async handleAlias');
-  const to = source.indexOf('private announce()');
+  const alias = memberOf('handleAlias');
 
-  assert.ok(from > 0 && to > from, 'handleAlias / announce not found — the slice below would prove nothing');
-  assert.equal(
-    source.slice(from, to).includes('preConsent'),
-    false,
+  assert.match(alias, /'alias'/, 'the slice is not the alias route at all, so the check below would prove nothing');
+  assert.doesNotMatch(
+    alias,
+    PRE_CONSENT,
     'handleAlias now pre-consents: the alias door and D1 need re-deciding before this row is written again',
   );
+
+  // A prohibition needs a KNOWN instance beside it, or a renamed hook makes it pass by matching
+  // nothing. `preConsent` is wired in exactly one place — the `door` getter that builds `mcpDoor`.
+  // Watched: renaming that key to `preConsentX` left a bare `/preConsent/` GREEN on both halves,
+  // which is this repository's recurring shape of dead structural test. The pattern is the whole
+  // property now — the name, the colon, and nothing allowed between them.
+  assert.match(memberOf('get door()'), PRE_CONSENT, 'the scan no longer finds the sanctioned wiring: rename, or a real removal');
 });
+
+/**
+ * One member of `credsAgentServer.ts`, from its signature to the next member's.
+ *
+ * <p>Sliced to the NEXT member rather than to a named neighbour: the first version ran to
+ * `private announce()`, so renaming or moving a method this test says nothing about would have
+ * broken it — and, worse, moving one BETWEEN them would have widened the window silently, which is
+ * the failure mode the gate's code round named. The boundary is the shape of a class member at this
+ * indentation, and a slice that does not reach one is a failure rather than the rest of the file.</p>
+ */
+function memberOf(signature: string): string {
+  const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'credsAgentServer.ts'), 'utf8');
+  const from = source.indexOf(signature);
+
+  assert.ok(from > 0, `${signature} is not in credsAgentServer.ts — renamed, or this test is stale`);
+
+  const rest = source.slice(from + signature.length);
+  const next = rest.search(/\n {2}(private|public|readonly|async|get |set |[A-Za-z_])/);
+
+  assert.ok(next > 0, `no member follows ${signature}; the slice would run to the end of the file`);
+  return signature + rest.slice(0, next);
+}
 
 test('the footer still says nothing when nothing is live', () => {
   assert.deepEqual(agentDoorRows({ ...NO_DOORS, standingConsent: false }), []);

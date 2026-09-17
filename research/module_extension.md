@@ -4195,6 +4195,22 @@ input schema and behaviour hints — all of it text a model acts on, so a change
 change to the product. The assembly version is deliberately excluded: it moves on every build, and
 a file that churns is a file nobody reads the diff of.
 
+**Three ways that file could lie, all closed in S4.3's code round** (#95), and each was observed
+rather than predicted. **A stale binary**: the script's entire output is whatever the executable
+answers, and `dotnet build dew_flow_creds_for_devs.slnx` does NOT build `src_mcp` — that solution
+lists the minimal-API server and its tests and nothing else — so a `Program.cs` edit followed by
+that command prints *Build succeeded, 0 Warning(s)*, regenerates the contract from yesterday's
+prose, and `--check` agrees, because both asked the same stale process. The freshness check the
+integration harness already had is now shared (`scripts/mcpBinary.cjs`, CJS so the `.cjs` harness
+can require it and the `.mjs` emitter can import it) and the emitter refuses a binary older than
+its newest `.cs`. **Line endings in the VALUES**: the instructions are a C# raw string literal, so
+they carry the endings of the machine that built the binary; `withUnixNewlines` normalises them.
+**Line endings of the FILE**: `core.autocrlf=true` and a deliberately narrow `.gitattributes` mean
+every checkout hands the generated file back as CRLF, so a byte comparison answered *the MCP
+surface has changed* after a rebase that changed nothing. The comparison normalises both sides —
+that is the real fix, since it holds however the file arrives — and `.gitattributes` pins the two
+`contract/*.json` files to LF as well, so `git diff` stays quiet for a file nobody edits by hand.
+
 **It is not `broker-v1.json`, and the two are easy to confuse.** That one describes the HTTP routes
 between `creds-mcp` and this window and contains the string `creds_` zero times; this one describes
 what an AGENT is offered. Different wire, different readers.

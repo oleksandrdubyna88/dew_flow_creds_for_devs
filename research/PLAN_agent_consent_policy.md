@@ -137,7 +137,7 @@ reason. `askPolicy()` supplies the safety.
 | situation | result | direction |
 |---|---|---|
 | older build **reads** `ask: 'never'` | ignores it, prompts every call | safe |
-| older build **saves** the entry | `readMcpAccess` rebuilds without `ask` → policy lost, back to inheriting, and with nothing above, to asking | safe; goes in the CHANGELOG |
+| older build **saves** the entry | `readMcpAccess` rebuilds without `ask` → policy lost, back to **inheriting**: with nothing above, to asking — but under a `never` folder, to never | **not uniformly safe.** Corrected in S4.3's code round: this row read *safe*, and an entry deliberately set to *ask every time* inside a never-ask folder comes back silent. Nothing can detect it — a dropped answer and an answer nobody gave are the same absence. Pinned by `an older build that drops the policy can make an entry QUIETER, not only louder` and stated in the CHANGELOG |
 | older build **syncs** the node | `isMcpAccess` accepts; the field rides through | lossless |
 | this build reads a word from a later one | `'always'`, and the climb stops there | fail-closed |
 | share / accept share | whole `mcp` object dropped (`shareFormat.ts:535`) | already correct |

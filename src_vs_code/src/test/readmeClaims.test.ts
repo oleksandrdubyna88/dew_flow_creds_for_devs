@@ -124,9 +124,34 @@ const RETIRED_CLAIMS: readonly string[] = [
   'Every action asks the person first, in their editor',
 ];
 
+/**
+ * The other place the same claim lives — and the one an AGENT reads.
+ *
+ * <p>Two of the four sentences #95 retired were not in a README at all: they were in the MCP
+ * server's `instructions`, which is the first thing a model is told about this vault, and in
+ * `contract/mcp-tools-v1.json`, which is that text as it actually ships. A guard that watched the
+ * READMEs only would have stayed green while `Program.cs` drifted back to *Every action asks the
+ * person first* — the gate's code round said so in three roles, and it was right: the claim has two
+ * owners and only one of them was watched. The contract is included as well as its source because
+ * it is generated, so it can be stale in its own right.</p>
+ */
+const MCP_INSTRUCTIONS = path.join(REPO, 'src_mcp', 'src', 'Program.cs');
+const MCP_CONTRACT = path.join(REPO, 'contract', 'mcp-tools-v1.json');
+
 test('neither README makes a claim the code says is false', () => {
   for (const file of [ROOT_README, LISTING]) {
     const text = flat(file);
+    for (const [pattern, why] of BANNED) {
+      assert.equal(pattern.test(text), false, `${path.relative(REPO, file)}: ${why}`);
+    }
+  }
+});
+
+test('nor does the text an AGENT is handed — the MCP instructions and the shipped contract', () => {
+  for (const file of [MCP_INSTRUCTIONS, MCP_CONTRACT]) {
+    const text = flat(file);
+
+    assert.match(text, /consent|asks the person/i, `${path.relative(REPO, file)}: read nothing about consent — wrong file, or a scan of empty text`);
     for (const [pattern, why] of BANNED) {
       assert.equal(pattern.test(text), false, `${path.relative(REPO, file)}: ${why}`);
     }

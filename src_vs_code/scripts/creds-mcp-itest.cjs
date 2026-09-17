@@ -140,58 +140,17 @@ const check = (what, ok, extra) => {
   if (!ok) fails += 1;
 };
 
-const EXE = path.join(
-  __dirname,
-  '..',
-  '..',
-  'src_mcp',
-  'src',
-  'bin',
-  'Debug',
-  'net10.0',
-  process.platform === 'win32' ? 'creds-mcp.exe' : 'creds-mcp',
-);
-
 /**
- * Is the binary under test newer than the C# it is supposed to embody?
+ * The binary and its freshness check, shared with `emit-mcp-tools.mjs`.
  *
  * <p>`npm run itest:mcp` compiles the TypeScript and NOT the .NET server, so an executable built
  * last week passes every check in this file while proving nothing about today's code. Logging its
- * age is not enough — a number nobody reads is not a check — so this compares it against the
- * newest source under `src_mcp/src` and FAILS when the binary is older.</p>
+ * age is not enough — a number nobody reads is not a check — so the check compares it against the
+ * newest source under `src_mcp/src` and FAILS when the binary is older. It moved to
+ * `mcpBinary.cjs` when the contract emitter turned out to need the same guard and to have had the
+ * same path written out a second time; see that file for what the asymmetry cost.</p>
  */
-function binaryIsFresherThanItsSource() {
-  const root = path.join(__dirname, '..', '..', 'src_mcp', 'src');
-  if (!fs.existsSync(EXE) || !fs.existsSync(root)) {
-    return { fresh: false, why: `missing: ${fs.existsSync(EXE) ? root : EXE}` };
-  }
-  const built = fs.statSync(EXE).mtimeMs;
-  let newest = 0;
-  let newestPath = '';
-  const walk = (dir) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      // `bin` and `obj` are the build's own output — comparing the binary against them would be
-      // comparing it against itself, and would pass for any binary that exists.
-      if (entry.isDirectory()) {
-        if (entry.name !== 'bin' && entry.name !== 'obj') walk(full);
-        continue;
-      }
-      if (!/\.(cs|csproj|json)$/.test(entry.name)) continue;
-      const at = fs.statSync(full).mtimeMs;
-      if (at > newest) {
-        newest = at;
-        newestPath = full;
-      }
-    }
-  };
-  walk(root);
-  const hours = (built - newest) / 3_600_000;
-  return {
-    fresh: built >= newest,
-    why: `built ${hours >= 0 ? `${hours.toFixed(1)}h after` : `${(-hours).toFixed(1)}h BEFORE`} ${path.basename(newestPath)} — run: dotnet build src_mcp/src/CredsMcp.csproj`,
-  };
-}
+const { EXE, binaryIsFresherThanItsSource } = require('./mcpBinary.cjs');
 
 const SECRET = 'hunter2-SUPER-SECRET-VALUE';
 
