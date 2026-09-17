@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { isSafeShellWord, relayArgv, socketFromExportLine } from './wslRelay';
+import { isSafeShellWord, relayArgv, socketFromBusyLine, socketFromExportLine } from './wslRelay';
 
 /**
  * The `creds relay` processes this window is holding open inside WSL — one per distribution.
@@ -30,7 +30,13 @@ export interface RelayProcess {
   kill(): void;
   /** Resolves when the process ends, with its exit code when there was one. */
   readonly exited: Promise<number | null>;
-  /** Called for each line the relay writes to stdout; the first names the socket. */
+  /**
+   * Called for each line the relay writes, on EITHER stream.
+   *
+   * <p>Its first stdout line names the socket it opened. Its refusal to take a socket somebody else
+   * already serves goes to stderr and names that one — both are answers to "where is it", which is
+   * why stderr is read here and not only logged.</p>
+   */
   onLine(handler: (line: string) => void): void;
 }
 
@@ -53,6 +59,13 @@ interface Relay {
   child: RelayProcess;
   socket: string;
   startedAt: number;
+  /**
+   * True when this socket belongs to a relay somebody else already had running.
+   *
+   * <p>Our child refused to start and named the path; we use it and must NOT restart the child,
+   * count the refusal as a failure, or kill what is serving it.</p>
+   */
+  adopted: boolean;
 }
 
 export class WslRelayManager {
@@ -124,17 +137,30 @@ export class WslRelayManager {
       return;
     }
     const child = this.spawn(relayArgv(wanted.command, distro, wanted.windowsBinary));
-    this.open.set(distro, { child, socket: '', startedAt: this.now() });
+    this.open.set(distro, { child, socket: '', startedAt: this.now(), adopted: false });
     child.onLine((line) => this.readSocket(distro, child, line));
     void child.exited.then((code) => this.onExit(distro, child, code));
   }
 
   private readSocket(distro: string, child: RelayProcess, line: string): void {
     const relay = this.open.get(distro);
-    const path = socketFromExportLine(line);
-    if (relay?.child === child && path.length > 0) {
-      relay.socket = path;
-      this.log(`wsl relay for ${name(distro)} listening on ${path}`);
+    if (relay?.child !== child) {
+      return;
+    }
+    const ours = socketFromExportLine(line);
+    if (ours.length > 0) {
+      relay.socket = ours;
+      this.log(`wsl relay for ${name(distro)} listening on ${ours}`);
+      return;
+    }
+    // Somebody else's relay is already serving that path. That is the state we wanted, reached by
+    // another route — so it is adopted rather than reported as "no socket", which is what this
+    // said before and which sent a person to check an installation that was fine.
+    const theirs = socketFromBusyLine(line);
+    if (theirs.length > 0) {
+      relay.socket = theirs;
+      relay.adopted = true;
+      this.log(`wsl relay for ${name(distro)}: using the one already serving ${theirs}`);
     }
   }
 
@@ -148,6 +174,13 @@ export class WslRelayManager {
   private onExit(distro: string, child: RelayProcess, code: number | null): void {
     const relay = this.open.get(distro);
     if (relay?.child !== child) {
+      return;
+    }
+    if (relay.adopted) {
+      // Our child exited because it refused to hijack a live socket. The entry STAYS, so
+      // `socketPathFor` and `serving()` keep answering with the relay that is actually there;
+      // restarting would only collide again, and counting it as a failure would burn the budget
+      // three times and then declare a working relay broken.
       return;
     }
     this.open.delete(distro);
@@ -219,7 +252,18 @@ export function spawnWslRelay(args: readonly string[], onStderr: (text: string) 
     lines.forEach((line) => handlers.forEach((handler) => handler(line)));
   });
   child.stderr.setEncoding('utf8');
-  child.stderr.on('data', (chunk: string) => onStderr(chunk.trimEnd()));
+  child.stderr.on('data', (chunk: string) => {
+    onStderr(chunk.trimEnd());
+    // ALSO to the line handlers. The relay announces where it is listening on stdout, but it
+    // refuses a socket somebody else is already serving on STDERR — and that refusal names the
+    // path, which is the one thing the manager needs to adopt it instead of declaring a working
+    // relay broken. Both streams carry lines about the same thing; only one was being read.
+    chunk.split(/\r?\n/).forEach((line) => {
+      if (line.trim().length > 0) {
+        handlers.forEach((handler) => handler(line));
+      }
+    });
+  });
   return {
     kill: () => child.kill(),
     exited: new Promise((resolve) => {

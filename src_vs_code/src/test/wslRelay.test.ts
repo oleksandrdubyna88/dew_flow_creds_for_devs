@@ -8,6 +8,7 @@ import {
   rcAlreadyHasIt,
   rcSnippet,
   relayArgv,
+  socketFromBusyLine,
   socketFromExportLine,
   toWslPath,
 } from '../wslRelay';
@@ -364,4 +365,75 @@ test('an empty value yields no prefix', () => {
 
 test('the prefix ends in a space, so a command can be concatenated straight onto it', () => {
   assert.ok(envPrefix('X', 'y').endsWith(' '));
+});
+
+// --- adopting a relay somebody else already had running ------------------------------------
+//
+// Found by a person clicking the button, 2026-09-17. A relay was up and WORKING — `ssh-add -l`
+// through it listed the key and it had a dozen live connections — and a second one is correctly
+// refused rather than allowed to hijack the socket. But that refusal goes to stderr, which the
+// manager forwarded to the log without reading, so it learned no socket and the setup said
+// "the relay in Ubuntu reported no socket. Check that `creds` is installed there" — a false
+// statement, pointing at the wrong thing, about a relay that was fine.
+
+test('the refusal NAMES the live socket, and that name is read rather than logged away', () => {
+  assert.equal(
+    socketFromBusyLine(
+      '[creds-for-devs] /run/user/1000/creds-agent.sock is already served by a live relay. ' +
+        'Use that one, or set CREDS_RELAY_SOCKET to a different path.',
+    ),
+    '/run/user/1000/creds-agent.sock',
+  );
+});
+
+test('any other line yields nothing, so a reworded CLI degrades to what it did before', () => {
+  assert.equal(socketFromBusyLine('[creds-for-devs] relay listening on /run/x.sock'), '');
+  assert.equal(socketFromBusyLine('export SSH_AUTH_SOCK=/run/x.sock'), '');
+  assert.equal(socketFromBusyLine(''), '');
+});
+
+test('a relay that is already served is ADOPTED, not reported as missing', async () => {
+  const { spawner, started } = fakes();
+  const manager = new WslRelayManager(spawner, () => undefined);
+  manager.start('creds', ['']);
+
+  started[0].say('[creds-for-devs] /run/user/1000/creds-agent.sock is already served by a live relay.');
+  started[0].end(1); // our child refuses and exits
+  await settled();
+
+  assert.equal(
+    manager.socketPathFor(''),
+    '/run/user/1000/creds-agent.sock',
+    'the working relay was declared missing',
+  );
+  assert.deepEqual(manager.serving(), [''], 'and the distribution is still being served');
+  manager.dispose();
+});
+
+test('an adopted relay is not restarted — a second child would collide with the same socket', async () => {
+  const { spawner, started } = fakes();
+  const manager = new WslRelayManager(spawner, () => undefined);
+  manager.start('creds', ['']);
+
+  started[0].say('[creds-for-devs] /run/user/1000/creds-agent.sock is already served by a live relay.');
+  started[0].end(1);
+  await settled();
+
+  assert.equal(started.length, 1, 'it spawned again into the same collision');
+  manager.dispose();
+});
+
+test('adopting does not kill what is serving the socket — it is somebody else’s process', async () => {
+  const { spawner, started } = fakes();
+  const manager = new WslRelayManager(spawner, () => undefined);
+  manager.start('creds', ['']);
+  started[0].say('[creds-for-devs] /run/user/1000/creds-agent.sock is already served by a live relay.');
+  started[0].end(1);
+  await settled();
+
+  manager.stop();
+
+  // Our own child had already exited; `kill` on it is a no-op, and nothing else is reachable from
+  // here. What must NOT happen is the manager believing it owns the other relay's lifetime.
+  assert.equal(manager.socketPathFor(''), '', 'stopping forgets the socket, as it always did');
 });
