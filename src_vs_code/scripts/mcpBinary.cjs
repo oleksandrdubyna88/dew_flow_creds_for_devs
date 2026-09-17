@@ -66,8 +66,13 @@ function binaryIsFresherThanItsSource() {
   const hours = (built - newest) / 3_600_000;
   return {
     fresh: built >= newest,
-    why: `built ${hours >= 0 ? `${hours.toFixed(1)}h after` : `${(-hours).toFixed(1)}h BEFORE`} ${path.basename(newestPath)} — run: ${BUILD}`,
+    why: `built ${age(hours)} ${path.basename(newestPath)} — run: ${BUILD}`,
   };
+}
+
+/** How far the binary is from the source, said in the direction that matters. */
+function age(hours) {
+  return hours >= 0 ? `${hours.toFixed(1)}h after` : `${(-hours).toFixed(1)}h BEFORE`;
 }
 
 module.exports = { EXE, BUILD, binaryIsFresherThanItsSource };
