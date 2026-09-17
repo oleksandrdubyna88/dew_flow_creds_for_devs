@@ -70,7 +70,7 @@ const { StorageManager } = require(path.join(OUT, 'storageManager.js'));
 const { folderHooks } = require(path.join(OUT, 'mcpFolderHooks.js'));
 // The REAL lookup for the quiet leg (#95): the policy resolved through a tree and a stamp store,
 // not a stub answering `preConsented: true`. A stub would prove the door forwards a flag.
-const { mcpUseHooks } = require(path.join(OUT, 'mcpHooks.js'));
+const { mcpUseHooks, moveEntryToTrash } = require(path.join(OUT, 'mcpHooks.js'));
 const { consentStampsFor, stampKey } = require(path.join(OUT, 'mcpConsentPolicy.js'));
 const { ladderKey, normalizeMcpAccess } = require(path.join(OUT, 'mcpAccess.js'));
 
@@ -151,6 +151,47 @@ const EXE = path.join(
   'net10.0',
   process.platform === 'win32' ? 'creds-mcp.exe' : 'creds-mcp',
 );
+
+/**
+ * Is the binary under test newer than the C# it is supposed to embody?
+ *
+ * <p>`npm run itest:mcp` compiles the TypeScript and NOT the .NET server, so an executable built
+ * last week passes every check in this file while proving nothing about today's code. Logging its
+ * age is not enough — a number nobody reads is not a check — so this compares it against the
+ * newest source under `src_mcp/src` and FAILS when the binary is older.</p>
+ */
+function binaryIsFresherThanItsSource() {
+  const root = path.join(__dirname, '..', '..', 'src_mcp', 'src');
+  if (!fs.existsSync(EXE) || !fs.existsSync(root)) {
+    return { fresh: false, why: `missing: ${fs.existsSync(EXE) ? root : EXE}` };
+  }
+  const built = fs.statSync(EXE).mtimeMs;
+  let newest = 0;
+  let newestPath = '';
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      // `bin` and `obj` are the build's own output — comparing the binary against them would be
+      // comparing it against itself, and would pass for any binary that exists.
+      if (entry.isDirectory()) {
+        if (entry.name !== 'bin' && entry.name !== 'obj') walk(full);
+        continue;
+      }
+      if (!/\.(cs|csproj|json)$/.test(entry.name)) continue;
+      const at = fs.statSync(full).mtimeMs;
+      if (at > newest) {
+        newest = at;
+        newestPath = full;
+      }
+    }
+  };
+  walk(root);
+  const hours = (built - newest) / 3_600_000;
+  return {
+    fresh: built >= newest,
+    why: `built ${hours >= 0 ? `${hours.toFixed(1)}h after` : `${(-hours).toFixed(1)}h BEFORE`} ${path.basename(newestPath)} — run: dotnet build src_mcp/src/CredsMcp.csproj`,
+  };
+}
 
 const SECRET = 'hunter2-SUPER-SECRET-VALUE';
 
@@ -235,6 +276,190 @@ const HANDSHAKE = [
   },
   { jsonrpc: '2.0', method: 'notifications/initialized' },
 ];
+
+/** How many checks {@link quietLeg} owns BEFORE its own contribution assertion, which does not count itself. */
+const EXPECTED_QUIET_CHECKS = 10;
+
+/**
+ * Level 6 — the quiet path (#95), through the REAL binary.
+ *
+ * <p>Everything else that covers the consent cadence stops at the extension's own loopback surface.
+ * This asks the same question of the binary: an entry a person set to never-ask is used with no
+ * dialog, one answered inside the last twelve hours is too, deleting either still asks, and a local
+ * process with no token at all reaches the first of them.</p>
+ *
+ * <p>The lookup is the REAL `mcpUseHooks` over a REAL `StorageManager` and a REAL stamp store, not
+ * a stub answering `preConsented: true`. A stub would prove the door forwards a flag, which is
+ * already a unit test; what had never been shown is that the POLICY, resolved through a tree,
+ * survives the trip through the binary.</p>
+ *
+ * <p>Its OWN window and its own function, and both for the same reason as level 5: an
+ * unauthenticated caller may make a window prompt five times a minute, the levels above have spent
+ * that budget, and the delete check needs a prompt of its own. The `finally` is not tidiness — a
+ * throw with a listener still open leaves Node alive forever, which is what the outer catch already
+ * records having cost four minutes of watching nothing.</p>
+ */
+async function quietLeg() {
+  const before = checksRun;
+  const fresh = binaryIsFresherThanItsSource();
+  check('the binary under test is newer than the C# it embodies', fresh.fresh, fresh.why);
+
+  const storage = new StorageManager(memento(), secretStore());
+  await storage.upsertAccount({ accountId: 'a-1', email: 'me@corp.com', provider: 'google' });
+  // Never ask: the whole ladder open, and the cadence set on the FOLDER, so the entry inherits it
+  // exactly as one would in a vault.
+  await storage.addNode('a-1', {
+    id: 'f-never', name: 'Unattended', type: 'folder', parentId: null,
+    mcp: { view: true, use: true, edit: true, delete: 'any', ask: 'never' },
+  });
+  await storage.addNode('a-1', {
+    id: 'e-never', name: 'batch-db', type: 'entity', parentId: 'f-never',
+    details: { id: 'e-never', name: 'batch-db', kind: 'db', isSshEnabled: false, dbType: 'mysql' },
+  });
+  // Ask once every twelve hours, with an answer already on record — the other way to be quiet.
+  await storage.addNode('a-1', {
+    id: 'f-12h', name: 'Daily', type: 'folder', parentId: null,
+    mcp: { view: true, use: true, delete: 'any', ask: 'every12h' },
+  });
+  await storage.addNode('a-1', {
+    id: 'e-12h', name: 'report-db', type: 'entity', parentId: 'f-12h',
+    details: { id: 'e-12h', name: 'report-db', kind: 'db', isSshEnabled: false, dbType: 'mysql' },
+  });
+  // And one more under the never-ask folder, for the no-token check further down.
+  await storage.addNode('a-1', {
+    id: 'e-open', name: 'open-db', type: 'entity', parentId: 'f-never',
+    details: { id: 'e-open', name: 'open-db', kind: 'db', isSshEnabled: false, dbType: 'mysql' },
+  });
+
+  // The clock is an argument, so the twelve-hour boundary is a value rather than a wait. Nothing
+  // compares it to the real one: this leg lives entirely inside its own timeline.
+  const AT = 1_700_000_000_000;
+  let clock = AT;
+  const stampState = memento();
+  await consentStampsFor(stampState).remember(
+    stampKey('a-1', 'e-12h'),
+    ladderKey(normalizeMcpAccess({ view: true, use: true, delete: 'any' })),
+    AT,
+  );
+
+  const actions = new UseActionRegistry();
+  actions.register({
+    kind: 'db', action: 'query', verb: 'run a query on',
+    validate: () => ({ ok: true }),
+    summarize: (body) => String(body.query ?? ''),
+    describeOutcome: () => 'done',
+    run: (_ctx, body) => Promise.resolve({ status: 200, body: { exitCode: 0, rows: 1, stdout: String(body.query ?? '') } }),
+  });
+  const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mcp-itest-quiet-'));
+  const hooks = mcpUseHooks(storage, stampState, () => clock);
+  const quietServer = new CredsAgentServer(actions, () => {}, {
+    storageDir,
+    listMcpEntries: () => Promise.resolve([]),
+    resolveMcpUse: hooks.resolveMcpUse,
+    rememberMcpConsent: hooks.rememberMcpConsent,
+    // The REAL move, over the REAL storage — so the delete check reads the tree afterwards rather
+    // than a spy array agreeing with itself, which is what level 5 does one screen up.
+    moveToTrash: (accountId, entityId) => moveEntryToTrash(storage, accountId, entityId),
+  });
+  try {
+    await quietServer.ensureStarted();
+    const env = { CREDS_ENDPOINT_DIR: path.join(storageDir, 'endpoints') };
+
+    // Primed for the prompts the LATER checks raise — the past-twelve-hours call and the delete.
+    // The six calls below raise none, which is what they are here to show.
+    consent.answers = ['Allow', 'Allow', 'Allow'];
+    consent.asked = 0;
+    const queries = ['select 1', 'select 2', 'select 3', 'select 4', 'select 5', 'select 6'];
+    const answers = [];
+    for (const [i, query] of queries.entries()) {
+      const said = await speak(env, [
+        ...HANDSHAKE,
+        { jsonrpc: '2.0', id: 60 + i, method: 'tools/call', params: { name: 'creds_query', arguments: { entry: 'e-never', query } } },
+      ]);
+      answers.push(said.byId.get(60 + i)?.result?.content?.[0]?.text ?? '');
+    }
+    check(
+      'six quiet calls on a never-ask entry all succeed, end to end through the binary',
+      answers.every((text, i) => text.includes('"rows":1') && text.includes(queries[i])),
+      answers.map((t) => t.slice(0, 60)).join(' | '),
+    );
+    check('and the human was asked ZERO times', consent.asked === 0, `asked ${consent.asked}`);
+
+    const within = await speak(env, [
+      ...HANDSHAKE,
+      { jsonrpc: '2.0', id: 70, method: 'tools/call', params: { name: 'creds_query', arguments: { entry: 'e-12h', query: 'select 7' } } },
+    ]);
+    check(
+      'an entry answered inside its twelve hours is quiet too',
+      (within.byId.get(70)?.result?.content?.[0]?.text ?? '').includes('"rows":1'),
+      (within.byId.get(70)?.result?.content?.[0]?.text ?? '').slice(0, 200),
+    );
+    check('and still nobody was asked', consent.asked === 0, `asked ${consent.asked}`);
+
+    // Twelve hours and a millisecond later the same entry asks again — the boundary, not a wait.
+    clock = AT + 12 * 60 * 60_000 + 1;
+    const askedBeforeWindow = consent.asked;
+    const past = await speak(env, [
+      ...HANDSHAKE,
+      { jsonrpc: '2.0', id: 71, method: 'tools/call', params: { name: 'creds_query', arguments: { entry: 'e-12h', query: 'select 8' } } },
+    ]);
+    check(
+      'past twelve hours the same entry asks again, and runs once allowed',
+      consent.asked === askedBeforeWindow + 1
+        && (past.byId.get(71)?.result?.content?.[0]?.text ?? '').includes('"rows":1'),
+      `asked ${consent.asked - askedBeforeWindow}: ${(past.byId.get(71)?.result?.content?.[0]?.text ?? '').slice(0, 120)}`,
+    );
+    clock = AT;
+
+    // Deleting a NEVER-ASK entry still asks. The policy says never; `handleMcpDelete` passes
+    // `prompts: true` whatever it says and `mayBeQuiet` refuses a delete verb — owner decision D2,
+    // through the binary rather than by a fixture agreeing with itself. The count is taken around
+    // this call alone, so a prompt elsewhere cannot stand in for it.
+    const askedBeforeDelete = consent.asked;
+    const deleted = await speak(env, [
+      ...HANDSHAKE,
+      { jsonrpc: '2.0', id: 72, method: 'tools/call', params: { name: 'creds_delete', arguments: { entry: 'e-never' } } },
+    ]);
+    check(
+      'deleting a never-ask entry still asks — exactly once, for this call',
+      consent.asked === askedBeforeDelete + 1,
+      `asked ${consent.asked - askedBeforeDelete} for the delete`,
+    );
+    check(
+      'and it really moved, in the TREE — not in a spy',
+      storage.getNode('a-1', 'e-never')?.parentId !== 'f-never',
+      `${(deleted.byId.get(72)?.result?.content?.[0]?.text ?? '').slice(0, 160)} · parent now ${storage.getNode('a-1', 'e-never')?.parentId}`,
+    );
+
+    // The boundary the parent plan asked to SEE rather than assume. Deliberately NOT through the
+    // binary: the scenario is a local process that is not an MCP client at all — no handshake, no
+    // token, no approval, no session — reaching the loopback port directly. The binary's own
+    // unattended path is what the six calls above already exercise.
+    const askedBeforeUnattended = consent.asked;
+    const unattended = await postJson(quietServer.port, '/v1/mcp/use/query', { entry: 'e-open', query: 'select 9' });
+    check(
+      'a bare local process — no token, no approval, no session, not even an MCP client — reaches a never-ask entry',
+      unattended.status === 200 && unattended.body.includes('"rows":1'),
+      `${unattended.status}: ${unattended.body.slice(0, 200)}`,
+    );
+    check(
+      'and nobody was asked about it — the boundary this feature buys, recorded rather than assumed',
+      consent.asked === askedBeforeUnattended,
+      `asked ${consent.asked - askedBeforeUnattended}`,
+    );
+  } finally {
+    // Before any assertion can throw past it. A listener left open keeps Node alive, and a crashed
+    // check then looks exactly like a hung test.
+    quietServer.dispose();
+    fs.rmSync(storageDir, { recursive: true, force: true });
+  }
+
+  check(
+    'the quiet leg contributed every check it owns',
+    checksRun - before === EXPECTED_QUIET_CHECKS,
+    `ran ${checksRun - before} of ${EXPECTED_QUIET_CHECKS}`,
+  );
+}
 
 (async () => {
   if (!fs.existsSync(EXE)) {
@@ -945,203 +1170,8 @@ const HANDSHAKE = [
   );
   check('and it is still in the tree', storage.getNode('a-1', 'f-open') !== undefined);
 
-  // ---- level 6: the quiet path (#95) ---------------------------------------
-  //
-  // Everything else that covers the consent cadence stops at the extension's own boundary. This
-  // is the same question asked through the REAL binary: an entry a person set to never-ask is
-  // used with no dialog, one answered inside the last twelve hours is too, deleting either still
-  // asks, and a caller with no token and no approval reaches the first of them.
-  //
-  // The lookup is the REAL `mcpUseHooks` over a REAL StorageManager and a REAL stamp store — not
-  // a stub answering `preConsented: true`. A stub would prove the door forwards a flag, which is
-  // already a unit test; what has never been shown is that the POLICY, resolved through a tree,
-  // survives the trip through the binary.
-  //
-  // Its own window, for the reason level 5 has one: an unauthenticated caller may make a window
-  // prompt five times a minute, the levels above have spent that budget, and the delete check
-  // below needs a prompt of its own. A fresh window has a fresh ceiling, which is what a person
-  // opening one would get.
-  // The binary this whole script speaks to is BUILT SEPARATELY — `npm run itest:mcp` compiles the
-  // TypeScript and nothing else — so a `creds-mcp.exe` older than the C# it is supposed to embody
-  // would pass every check above while proving nothing about today's server. Named rather than
-  // assumed, with its age, so a stale one is visible in the log instead of silent.
-  const exeAgeHours = fs.existsSync(EXE) ? (Date.now() - fs.statSync(EXE).mtimeMs) / 3_600_000 : Number.NaN;
-  check(
-    'the binary under test exists, and the log says how old it is',
-    fs.existsSync(EXE),
-    `${EXE} — built ${exeAgeHours.toFixed(1)}h ago`,
-  );
+  await quietLeg();
 
-  const quietChecksBefore = checksRun;
-  const quietStorage = new StorageManager(memento(), secretStore());
-  await quietStorage.upsertAccount({ accountId: 'a-1', email: 'me@corp.com', provider: 'google' });
-  // Never ask: the whole ladder open, and the cadence a person chose on the FOLDER, so the entry
-  // inherits it exactly as one would in a vault.
-  await quietStorage.addNode('a-1', {
-    id: 'f-never',
-    name: 'Unattended',
-    type: 'folder',
-    parentId: null,
-    mcp: { view: true, use: true, edit: true, delete: 'any', ask: 'never' },
-  });
-  await quietStorage.addNode('a-1', {
-    id: 'e-never',
-    name: 'batch-db',
-    type: 'entity',
-    parentId: 'f-never',
-    details: { id: 'e-never', name: 'batch-db', kind: 'db', isSshEnabled: false, dbType: 'mysql' },
-  });
-  // Ask once every twelve hours, with an answer already on record — the other way to be quiet,
-  // and the one with a boundary worth driving.
-  await quietStorage.addNode('a-1', {
-    id: 'f-12h',
-    name: 'Daily',
-    type: 'folder',
-    parentId: null,
-    mcp: { view: true, use: true, delete: 'any', ask: 'every12h' },
-  });
-  await quietStorage.addNode('a-1', {
-    id: 'e-12h',
-    name: 'report-db',
-    type: 'entity',
-    parentId: 'f-12h',
-    details: { id: 'e-12h', name: 'report-db', kind: 'db', isSshEnabled: false, dbType: 'mysql' },
-  });
-
-  // The clock is an argument, so the twelve-hour boundary is a value rather than a wait.
-  const QUIET_NOW = 1_700_000_000_000;
-  let quietClock = QUIET_NOW;
-  const stampState = memento();
-  await consentStampsFor(stampState).remember(
-    stampKey('a-1', 'e-12h'),
-    ladderKey(normalizeMcpAccess({ view: true, use: true, delete: 'any' })),
-    QUIET_NOW,
-  );
-
-  const quietActions = new UseActionRegistry();
-  quietActions.register({
-    kind: 'db',
-    action: 'query',
-    verb: 'run a query on',
-    validate: () => ({ ok: true }),
-    summarize: (body) => String(body.query ?? ''),
-    describeOutcome: () => 'done',
-    run: (_ctx, body) => Promise.resolve({ status: 200, body: { exitCode: 0, rows: 1, stdout: String(body.query ?? '') } }),
-  });
-  const quietStorageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mcp-itest-quiet-'));
-  const quietHooks = mcpUseHooks(quietStorage, stampState, () => quietClock);
-  const quietTrashed = [];
-  const quietServer = new CredsAgentServer(quietActions, () => {}, {
-    storageDir: quietStorageDir,
-    listMcpEntries: () => Promise.resolve([]),
-    resolveMcpUse: quietHooks.resolveMcpUse,
-    rememberMcpConsent: quietHooks.rememberMcpConsent,
-    moveToTrash: (_accountId, entityId) => {
-      quietTrashed.push(entityId);
-      return Promise.resolve(true);
-    },
-  });
-  await quietServer.ensureStarted();
-  const quietEnv = { CREDS_ENDPOINT_DIR: path.join(quietStorageDir, 'endpoints') };
-
-  // Six calls, each a real query with its own text, so a leg that answered the same thing six
-  // times — or answered nothing — cannot pass. The prompt count is read immediately around them.
-  consent.answers = ['Allow', 'Allow', 'Allow', 'Allow', 'Allow'];
-  consent.asked = 0;
-  const QUIET_QUERIES = ['select 1', 'select 2', 'select 3', 'select 4', 'select 5', 'select 6'];
-  const quietAnswers = [];
-  for (const [i, query] of QUIET_QUERIES.entries()) {
-    const said = await speak(quietEnv, [
-      ...HANDSHAKE,
-      { jsonrpc: '2.0', id: 60 + i, method: 'tools/call', params: { name: 'creds_query', arguments: { entry: 'e-never', query } } },
-    ]);
-    quietAnswers.push(said.byId.get(60 + i)?.result?.content?.[0]?.text ?? '');
-  }
-  check(
-    'six quiet calls on a never-ask entry all succeed, end to end through the binary',
-    quietAnswers.every((text, i) => text.includes('"rows":1') && text.includes(QUIET_QUERIES[i])),
-    quietAnswers.map((t) => t.slice(0, 60)).join(' | '),
-  );
-  check('and the human was asked ZERO times', consent.asked === 0, `asked ${consent.asked}`);
-
-  // The other way to be quiet: a dialog answered inside the last twelve hours, on record.
-  const within = await speak(quietEnv, [
-    ...HANDSHAKE,
-    { jsonrpc: '2.0', id: 70, method: 'tools/call', params: { name: 'creds_query', arguments: { entry: 'e-12h', query: 'select 7' } } },
-  ]);
-  check(
-    'an entry answered inside its twelve hours is quiet too',
-    (within.byId.get(70)?.result?.content?.[0]?.text ?? '').includes('"rows":1'),
-    (within.byId.get(70)?.result?.content?.[0]?.text ?? '').slice(0, 200),
-  );
-  check('and still nobody was asked', consent.asked === 0, `asked ${consent.asked}`);
-
-  // Twelve hours and a millisecond later the same entry asks again — the boundary, not a wait.
-  quietClock = QUIET_NOW + 12 * 60 * 60_000 + 1;
-  const askedBeforeWindow = consent.asked;
-  const past = await speak(quietEnv, [
-    ...HANDSHAKE,
-    { jsonrpc: '2.0', id: 71, method: 'tools/call', params: { name: 'creds_query', arguments: { entry: 'e-12h', query: 'select 8' } } },
-  ]);
-  check(
-    'past twelve hours the same entry asks again, and runs once allowed',
-    consent.asked === askedBeforeWindow + 1
-      && (past.byId.get(71)?.result?.content?.[0]?.text ?? '').includes('"rows":1'),
-    `asked ${consent.asked - askedBeforeWindow}: ${(past.byId.get(71)?.result?.content?.[0]?.text ?? '').slice(0, 120)}`,
-  );
-  quietClock = QUIET_NOW;
-
-  // Deleting a NEVER-ASK entry still asks. The policy says never; `handleMcpDelete` passes
-  // `prompts: true` whatever it says, and `mayBeQuiet` refuses a delete verb — owner decision D2,
-  // proven here through the binary rather than by a fixture agreeing with itself. The count is
-  // taken immediately around this call, so a later prompt elsewhere cannot stand in for it.
-  const askedBeforeDelete = consent.asked;
-  const deleted = await speak(quietEnv, [
-    ...HANDSHAKE,
-    { jsonrpc: '2.0', id: 72, method: 'tools/call', params: { name: 'creds_delete', arguments: { entry: 'e-never' } } },
-  ]);
-  const deletedText = deleted.byId.get(72)?.result?.content?.[0]?.text ?? '';
-  check(
-    'deleting a never-ask entry still asks — exactly once, for this call',
-    consent.asked === askedBeforeDelete + 1,
-    `asked ${consent.asked - askedBeforeDelete} for the delete`,
-  );
-  check('and the delete went through to the Trash', quietTrashed.includes('e-never'), deletedText.slice(0, 200));
-
-  // The boundary the parent plan asked to SEE rather than assume: a local process with no token,
-  // no approval and no session reaches a never-ask entry over the loopback port and is served,
-  // with nobody asked. That is the feature working as designed, and it is the cost of it.
-  await quietStorage.addNode('a-1', {
-    id: 'e-open',
-    name: 'open-db',
-    type: 'entity',
-    parentId: 'f-never',
-    details: { id: 'e-open', name: 'open-db', kind: 'db', isSshEnabled: false, dbType: 'mysql' },
-  });
-  const askedBeforeUnattended = consent.asked;
-  const unattended = await postJson(quietServer.port ?? 0, '/v1/mcp/use/query', { entry: 'e-open', query: 'select 9' });
-  check(
-    'a caller with no token, no approval and no session reaches a never-ask entry',
-    unattended.status === 200 && unattended.body.includes('"rows":1'),
-    `${unattended.status}: ${unattended.body.slice(0, 200)}`,
-  );
-  check(
-    'and nobody was asked about it — the boundary this feature buys, recorded rather than assumed',
-    consent.asked === askedBeforeUnattended,
-    `asked ${consent.asked - askedBeforeUnattended}`,
-  );
-
-  // The leg owns nine checks before this one. Asserted as a NUMBER because a green run is not the
-  // same claim as a run that happened: an early return or a lost branch leaves the rest unexecuted
-  // and the script still reports success. The count is read while this call's own argument is being
-  // evaluated, so it does not include itself. Change it when you add a check here, deliberately.
-  check(
-    'the quiet leg contributed every check it owns',
-    checksRun - quietChecksBefore === 9,
-    `ran ${checksRun - quietChecksBefore} of 9`,
-  );
-
-  quietServer.dispose();
   folderServer.dispose();
   server.dispose();
   console.log(`\n${checksRun} checks run`);
