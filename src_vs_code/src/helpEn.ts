@@ -212,6 +212,14 @@ export const EN_BODIES: Readonly<Record<string, HelpBody>> = {
     usage: "Nothing to type: new WSL shells get SSH_AUTH_SOCK. Every signature asks you first, naming the key and what it signs.",
     whatCanGoWrong: "The relay needs `creds` reachable inside the distribution (the setup says so if not). If signatures stop, the relay process died with its window — any new VS Code window restarts it.",
   },
+  'connect-in-a-remote-window': {
+    title: "Connect SSH from a WSL window",
+    whatItIs: "What happens when you click Connect in a VS Code window attached to WSL — or to a Remote-SSH host or a container — rather than one running on this computer.",
+    why: "CredsForDevs is pinned to your local machine, while the window’s terminal runs on the other side. A key path this extension knows is a path that shell cannot open, which is why the command used to fail with “Identity file … not accessible”. Translating the path does not help either: on `/mnt/c` every file reads as 0777 and `chmod` does nothing, so OpenSSH refuses the key as too open.",
+    setup: "For WSL: “Set Up the WSL Agent Relay”, then load the key into the SSH agent. Connect then runs `ssh` with no `-i` at all and points it at the relay for that one command — the key never enters the distribution.",
+    usage: "Click Connect as usual. If something is missing you get ONE message naming both machines and every missing piece at once, with a button for the first of them.",
+    whatCanGoWrong: "A password-only entry, and one pointing at a key FILE on this computer, cannot cross — connect from a window on this computer, or give the entry a vault key. Folders from two distributions in one window, or a window with no folder while several distributions are set up, cannot be tied to one agent socket: open a folder in the distribution you mean. Remote-SSH hosts and containers are not bridged for Connect — install `creds` there and use the Remote Bridge instead.",
+  },
   'sharing': {
     title: "Sharing — team, external, and taking it back",
     whatItIs: "Send one entity or a folder, sealed, to a colleague on the same vault location — or export a sealed file for someone outside. A share nobody accepted yet can be withdrawn.",

@@ -212,6 +212,14 @@ export const DE_BODIES: Readonly<Record<string, HelpBody>> = {
     usage: "Nichts zu tippen: neue WSL-Shells bekommen `SSH_AUTH_SOCK`. Jede Signatur fragt Sie zuerst und nennt den Schlüssel und das, was er signiert.",
     whatCanGoWrong: "Das Relay braucht ein innerhalb der Distribution erreichbares `creds` (die Einrichtung sagt es, wenn nicht). Hören Signaturen auf, ist der Relay-Prozess mit seinem Fenster gestorben — jedes neue VS-Code-Fenster startet ihn neu.",
   },
+  'connect-in-a-remote-window': {
+    title: "Connect SSH aus einem WSL-Fenster",
+    whatItIs: "Was passiert, wenn Sie in einem VS-Code-Fenster auf Connect klicken, das mit WSL verbunden ist — oder mit einem Remote-SSH-Host oder einem Container — statt auf diesem Rechner zu laufen.",
+    why: "CredsForDevs ist an den lokalen Rechner gebunden, während das Terminal des Fensters auf der anderen Seite läuft. Ein Schlüsselpfad, den diese Erweiterung kennt, ist ein Pfad, den jene Shell nicht öffnen kann — daher scheiterte der Befehl mit „Identity file … not accessible“. Den Pfad zu übersetzen hilft ebenfalls nicht: auf `/mnt/c` liest sich jede Datei als 0777 und `chmod` bewirkt nichts, also lehnt OpenSSH den Schlüssel als zu offen ab.",
+    setup: "Für WSL: „Set Up the WSL Agent Relay“, dann den Schlüssel in den SSH-Agenten laden. Connect startet `ssh` danach ganz ohne `-i` und richtet es nur für diesen einen Befehl auf das Relay — der Schlüssel gelangt nie in die Distribution.",
+    usage: "Klicken Sie Connect wie gewohnt. Fehlt etwas, erhalten Sie EINE Meldung, die beide Rechner nennt und alle fehlenden Teile auf einmal, mit einer Schaltfläche für den ersten davon.",
+    whatCanGoWrong: "Ein Eintrag mit nur einem Passwort und einer, der auf eine Schlüssel-DATEI auf diesem Rechner zeigt, können die Grenze nicht überqueren — verbinden Sie sich aus einem Fenster auf diesem Rechner oder geben Sie dem Eintrag einen Tresorschlüssel. Ordner aus zwei Distributionen in einem Fenster, ebenso ein Fenster ohne Ordner bei mehreren eingerichteten Distributionen, lassen sich keinem einzelnen Agenten-Socket zuordnen: öffnen Sie einen Ordner in der gemeinten Distribution. Remote-SSH-Hosts und Container werden für Connect nicht überbrückt — installieren Sie dort `creds` und nutzen Sie die Remote Bridge.",
+  },
   'sharing': {
     title: "Teilen — im Team, nach außen, und wieder zurückholen",
     whatItIs: "Einen Eintrag oder einen Ordner versiegelt an eine Kollegin am selben Tresorort senden — oder eine versiegelte Datei für jemanden draußen exportieren. Eine Freigabe, die noch niemand angenommen hat, lässt sich zurückziehen.",

@@ -212,6 +212,14 @@ export const ES_BODIES: Readonly<Record<string, HelpBody>> = {
     usage: "Nada que escribir: las shells nuevas de WSL reciben `SSH_AUTH_SOCK`. Cada firma le pregunta antes, nombrando la clave y lo que firma.",
     whatCanGoWrong: "El relé necesita que `creds` sea alcanzable dentro de la distribución (la configuración lo dice si no lo es). Si las firmas se detienen, el proceso del relé murió con su ventana — cualquier ventana nueva de VS Code lo reinicia.",
   },
+  'connect-in-a-remote-window': {
+    title: "Connect SSH desde una ventana WSL",
+    whatItIs: "Qué ocurre cuando pulsa Connect en una ventana de VS Code conectada a WSL — o a un host Remote-SSH o a un contenedor — en lugar de una que se ejecuta en este equipo.",
+    why: "CredsForDevs está anclado a la máquina local, mientras que el terminal de la ventana vive al otro lado. Una ruta de clave que esta extensión conoce es una ruta que ese shell no puede abrir, por lo que el comando fallaba con «Identity file … not accessible». Traducir la ruta tampoco sirve: en `/mnt/c` todo archivo se lee como 0777 y `chmod` no hace nada, así que OpenSSH rechaza la clave por demasiado abierta.",
+    setup: "Para WSL: «Set Up the WSL Agent Relay» y luego cargue la clave en el agente SSH. A partir de ahí Connect ejecuta `ssh` sin `-i` alguno y lo apunta al relé solo para ese comando — la clave nunca entra en la distribución.",
+    usage: "Pulse Connect como siempre. Si falta algo, recibirá UN mensaje que nombra ambas máquinas y todas las piezas que faltan a la vez, con un botón para la primera de ellas.",
+    whatCanGoWrong: "Una entrada solo con contraseña, y una que apunta a un ARCHIVO de clave en este equipo, no pueden cruzar: conéctese desde una ventana de este equipo o dé a la entrada una clave del baúl. Carpetas de dos distribuciones en una misma ventana, igual que una ventana sin carpeta con varias distribuciones configuradas, no pueden asociarse a un único socket de agente: abra una carpeta en la distribución que quiere. Los hosts Remote-SSH y los contenedores no se puentean para Connect: instale `creds` allí y use el Remote Bridge.",
+  },
   'sharing': {
     title: "Compartir — en el equipo, hacia fuera, y recuperarlo",
     whatItIs: "Enviar una entrada o una carpeta, selladas, a un colega en la misma ubicación de caja fuerte — o exportar un archivo sellado para alguien de fuera. Lo compartido que nadie ha aceptado todavía puede retirarse.",
