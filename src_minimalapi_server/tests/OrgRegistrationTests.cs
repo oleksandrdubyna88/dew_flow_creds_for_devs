@@ -92,7 +92,8 @@ public sealed class OrgRegistrationTests
         {
             Directory.CreateDirectory(MembersDir);
             var record = MemberRecord.DefaultFor(email, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
-                with { Role = MemberRole.Dev, UpdatedBy = Admin };
+                with
+            { Role = MemberRole.Dev, UpdatedBy = Admin };
             File.WriteAllBytes(RecordPath(email), JsonSerializer.SerializeToUtf8Bytes(record, AppJsonContext.Default.MemberRecord));
         }
 

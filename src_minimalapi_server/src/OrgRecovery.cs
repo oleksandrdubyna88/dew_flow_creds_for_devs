@@ -40,7 +40,7 @@ public sealed record OrgRecoveryConfig
     /// </summary>
     public string RosterFingerprint()
     {
-        var canonical = string.Join('\n', [..OfficerEmails.Order(StringComparer.Ordinal), $"threshold={Threshold}"]);
+        var canonical = string.Join('\n', [.. OfficerEmails.Order(StringComparer.Ordinal), $"threshold={Threshold}"]);
         return Convert.ToHexStringLower(
             System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical)));
     }
