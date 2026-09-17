@@ -133,7 +133,7 @@ export function buildSshCommand(
   // parser, as this file's header explains.
   parts.push(...sshOptionArgv(entity, options.jump));
   parts.push(...hostKeyArgv(options.knownHostsFile, platform));
-  parts.push(entity.user ? `${entity.user}@${host}` : host);
+  parts.push(quotedDestination(entity.user ? `${entity.user}@${host}` : host, platform));
   return parts.join(' ');
 }
 
@@ -144,6 +144,30 @@ export function buildSshCommand(
  * changed key then FAILS the connection. Without one, `accept-new` as before — but the caller is
  * expected to have shown the fingerprint first, which is the half that was missing.</p>
  */
+/**
+ * `user@host`, quoted only when the shell would otherwise change it.
+ *
+ * <p><b>This was the one argument on the line pushed on unquoted</b>, and it was survivable only
+ * while every composed line went to a Windows shell, where a backslash is literal. A Windows domain
+ * login is `CORP\alice`, `isSafeSshUser` admits `\` and `$` for exactly that reason, and composing
+ * for a POSIX shell turns both into connecting as somebody else without a word. Measured in bash:</p>
+ *
+ * <pre>
+ *   printf '&lt;%s&gt;' CORP\alice@host   -&gt;  &lt;CORPalice@host&gt;   the backslash is eaten
+ *   printf '&lt;%s&gt;' a$HOME@host       -&gt;  &lt;a/root@host&gt;      the variable is expanded
+ * </pre>
+ *
+ * <p>Conditional rather than always, and that is a deliberate trade. This line is READ and pasted
+ * by people — the whole reason `openSshProgram` composes the program word here rather than at five
+ * call sites — and `ssh "deploy@host"` on every ordinary connection is noise charged to everybody
+ * for a case almost nobody has. The condition is not a judgement about danger: it asks whether the
+ * text survives the round trip unchanged, which is the same question the quoting would answer.</p>
+ */
+function quotedDestination(destination: string, platform: NodeJS.Platform): string {
+  const survives = platform === 'win32' ? !/["]/.test(destination) : !/[\\"$`]/.test(destination);
+  return survives ? destination : shellQuote(destination, platform);
+}
+
 function hostKeyArgv(knownHostsFile: string | undefined, platform: NodeJS.Platform): string[] {
   if (knownHostsFile === undefined) {
     // NOTHING, deliberately — and this is the difference between the two paths. A human

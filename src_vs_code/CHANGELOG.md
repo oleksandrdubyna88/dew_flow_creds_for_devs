@@ -4,6 +4,22 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.5] — 2026-09-17 — a domain login reaches the host it was typed for
+
+### Fixed
+
+- **A login containing a backslash or a dollar reached a Linux shell changed.** `CORP\alice@host`
+  arrived as `CORPalice@host` and `a$HOME@host` as `a/root@host` — connecting as somebody else,
+  silently. The destination was the one argument on the composed line that carried no quoting, which
+  was survivable only while every line went to a Windows shell, where a backslash is literal; the
+  remote-window change composes for the distribution's shell. It is quoted now when, and only when,
+  the text would not survive the shell unchanged, so an ordinary `ssh deploy@host` still reads as
+  one. Raised by an independent review of the remote-window work and then measured in a real shell.
+- **The conversion command the agent suggests is `-m PKCS8`, not `-m PEM`.** `-m PEM` has no
+  Ed25519 form at all — `ssh-keygen` answers *invalid format* — so the first wording sent most
+  people to a command that cannot run. `-m PKCS8` works for Ed25519, ECDSA and RSA, and the
+  extension host reads and signs with all three.
+
 ## [1.9.4] — 2026-09-17 — the agent says which keys it cannot read, and why
 
 ### Fixed

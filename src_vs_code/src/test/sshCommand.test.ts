@@ -146,3 +146,56 @@ test('off Windows the word is unchanged — PATH was never the problem there', (
 
   assert.equal(line, 'ssh -A deploy@example.com');
 });
+
+// --- the destination is a shell word too ----------------------------------------------------
+//
+// Raised by a consultant reviewing the remote-window change, then measured in a real bash:
+//
+//   printf '<%s>' CORP\alice@host   ->  <CORPalice@host>     the backslash is eaten
+//   printf '<%s>' a$HOME@host       ->  <a/root@host>        the variable is expanded
+//
+// `isSafeSshUser` allows both `\` and `$` — a Windows domain login is `CORP\alice` — and the
+// destination was the one argument pushed onto the line UNQUOTED. It was survivable while every
+// composed line went to a Windows shell, where a backslash is literal; the remote-window change
+// composes for a POSIX shell, which turns it into connecting as a different user without a word.
+
+test('a domain login survives a POSIX shell — the destination is quoted like every other argument', () => {
+  const line = buildSshCommand(
+    { id: 'e', name: 'n', isSshEnabled: true, host: 'h.example.com', user: 'CORP\\alice' } as never,
+    'linux',
+  );
+
+  // The WHOLE line, not a fragment: what matters is the bytes bash will see.
+  assert.equal(line, 'ssh "CORP\\\\alice@h.example.com"');
+});
+
+test('and a dollar in a login is not an environment lookup', () => {
+  const line = buildSshCommand(
+    { id: 'e', name: 'n', isSshEnabled: true, host: 'h.example.com', user: 'a$HOME' } as never,
+    'linux',
+  );
+
+  assert.equal(line, 'ssh "a\\$HOME@h.example.com"');
+});
+
+test('an ordinary login gets NO quotes — this line is read and pasted by people', () => {
+  // The condition is not a judgement about danger; it asks whether the text survives the round
+  // trip unchanged. `ssh "deploy@host"` on every connection is noise charged to everybody for a
+  // case almost nobody has.
+  const line = buildSshCommand(
+    { id: 'e', name: 'n', isSshEnabled: true, host: 'h.example.com', user: 'deploy' } as never,
+    'linux',
+  );
+
+  assert.match(String(line), /ssh deploy@h\.example\.com$/);
+});
+
+test('a domain login on a WINDOWS shell is left alone, where a backslash is literal', () => {
+  // The same value, the other shell: quoting it there would change nothing and read worse.
+  const line = buildSshCommand(
+    { id: 'e', name: 'n', isSshEnabled: true, host: 'h.example.com', user: 'CORP\\alice' } as never,
+    'win32',
+  );
+
+  assert.match(String(line), /CORP\\alice@h\.example\.com$/);
+});
