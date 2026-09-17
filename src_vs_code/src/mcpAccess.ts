@@ -151,7 +151,7 @@ function deleteScope(raw: unknown): McpDeleteScope | undefined {
 }
 
 /** The three answers, and the source `McpAskPolicy` is derived from so the two cannot drift. */
-const ASK_POLICIES = ['always', 'every12h', 'never'] as const;
+export const ASK_POLICIES = ['always', 'every12h', 'never'] as const;
 
 /**
  * An unknown policy word reads as "ask every time" — and it is an ANSWER, not silence.
@@ -165,7 +165,7 @@ const ASK_POLICIES = ['always', 'every12h', 'never'] as const;
  * program — a synced record, or a message from a webview. `null` is separated from a strange word
  * on purpose: it is how the form says "I am taking my answer back", which is silence.</p>
  */
-function askPolicy(raw: unknown): McpAskPolicy | undefined {
+export function askPolicy(raw: unknown): McpAskPolicy | undefined {
   if (raw === undefined || raw === null) {
     return undefined;
   }
@@ -357,6 +357,47 @@ function effectivePolicy(answer: AxisAnswer): McpAskPolicy {
  */
 function answeringFolder(answer: AxisAnswer, parent: TreeNode | undefined): TreeNode | undefined {
   return answer.source === 'folder' ? answer.node : parent;
+}
+
+/**
+ * The cadence a node would take if it answered none of its own, and which node says it (#95).
+ *
+ * <p>Asked of the PARENT, because "what would I inherit" is a question about the ancestry and has
+ * the same answer whether or not this node overrides it. Resolved from the node instead, a folder
+ * saying `always` under a parent saying `never` would be told that nothing above answers — and the
+ * option offering to inherit would then do the opposite of what its label promised.</p>
+ *
+ * <p><b>`undefined` is nothing above answering</b>, which is a different thing from the default
+ * `always`: only one of the two can name a folder, and the control says so either way. Here rather
+ * than beside the folder form because the entity form asks the same question one story later, and
+ * a second copy of a tree walk is how two forms come to disagree about one ancestry.</p>
+ */
+export function inheritedAskFor(
+  node: TreeNode,
+  byId: (id: string) => TreeNode | undefined,
+): { ask: McpAskPolicy; from: TreeNode } | undefined {
+  const parent = parentOf(node, byId);
+  return parent === undefined ? undefined : askFromParent(parent, byId);
+}
+
+function askFromParent(
+  parent: TreeNode,
+  byId: (id: string) => TreeNode | undefined,
+): { ask: McpAskPolicy; from: TreeNode } | undefined {
+  const above = resolveMcpInTree(parent, byId);
+  const from = askAnswerer(above, parent);
+  return from === undefined || above.access.ask === undefined ? undefined : { ask: above.access.ask, from };
+}
+
+/** Who answered: the parent itself ('entity' is the resolver's word for the node it was asked about). */
+function askAnswerer(
+  above: { askSource: McpSource; askFolder: TreeNode | undefined },
+  parent: TreeNode,
+): TreeNode | undefined {
+  if (above.askSource === 'none') {
+    return undefined;
+  }
+  return above.askSource === 'entity' ? parent : above.askFolder;
 }
 
 /** One axis's answer: what was found, who gave it, and whether that was the node or a folder. */

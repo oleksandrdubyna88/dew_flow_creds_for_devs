@@ -13,6 +13,7 @@ import {
   McpAccess,
   normalizeMcpAccess,
   readMcpAccess,
+  inheritedAskFor,
   resolveMcpInTree,
 } from '../mcpAccess';
 import { TreeNode } from '../types';
@@ -604,4 +605,51 @@ test('the ladder key changes when any rung or scope changes, and is stable acros
 
   // The policy is not part of the grant: changing how often you are asked does not re-ask.
   assert.equal(ladderKey(normalizeMcpAccess({ view: true, ask: 'never' })), ladderKey(normalizeMcpAccess({ view: true })));
+});
+
+/**
+ * What a node WOULD inherit, and from whom (#95, S3.1).
+ *
+ * <p>Asked of the parent rather than the node, because the answer is the same whether or not the
+ * node overrides it — and a form that resolved from the node would tell a folder saying `always`
+ * under a parent saying `never` that nothing above answers, then do the opposite when its Inherit
+ * option was chosen.</p>
+ */
+test('what a node would inherit is what the ANCESTRY says, whatever the node says itself', () => {
+  const top = folder('top', { ask: 'never' });
+  const mid = child('mid', 'top', { ask: 'always' });
+  const byId = tree(top, mid);
+
+  const answer = inheritedAskFor(mid, byId);
+
+  assert.equal(answer?.ask, 'never', 'the node answering for itself hid what it would inherit');
+  assert.equal(answer?.from.id, 'top');
+});
+
+test('a policy two levels up is still what would be inherited', () => {
+  const top = folder('top', { ask: 'every12h' });
+  const mid = child('mid', 'top');
+  const leaf = child('leaf', 'mid');
+
+  const answer = inheritedAskFor(leaf, tree(top, mid, leaf));
+
+  assert.equal(answer?.ask, 'every12h');
+  assert.equal(answer?.from.id, 'top', 'the folder that ANSWERED is the one named, not the one above');
+});
+
+test('nothing above answering is nothing — not the default, which names no folder', () => {
+  // The two are different to a person reading the option: one says "Projects says ask every time",
+  // the other says nothing above answers. Only one of them can name a folder.
+  const top = folder('top');
+  const mid = child('mid', 'top');
+
+  assert.equal(inheritedAskFor(mid, tree(top, mid)), undefined);
+  assert.equal(inheritedAskFor(top, tree(top)), undefined, 'a root folder has nothing above it at all');
+});
+
+test('a node inside the Trash inherits nothing, because nothing there grants anything', () => {
+  const bin: TreeNode = { id: 'bin', name: 'Trash', type: 'folder', parentId: null, isTrash: true, mcp: { ask: 'never' } };
+  const inside = child('inside', 'bin');
+
+  assert.equal(inheritedAskFor(inside, tree(bin, inside)), undefined);
 });

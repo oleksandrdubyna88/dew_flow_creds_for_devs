@@ -65,8 +65,8 @@ test('an untouched form on an undecided folder saves nothing — absent stays ab
   // pinned since #95 — a condition half-checked is one that can change in the half nobody looks
   // at. What they DO is executed next door, in `mcpSwitchScript.test.ts`.
   const html = renderFolderHtml(options());
-  assert.match(html, /var ladder = mcpLadderTouched \|\| false;/);
-  assert.match(html, /var policy = mcpPolicyTouched \|\| false;/);
+  assert.match(html, /var ladder = mcpLadderTouched\s*\|\|\s*false;/);
+  assert.match(html, /var policy = mcpPolicyTouched\s*\|\|\s*false;/);
   // And the read side agrees: no object means no setting. Both forms post the same message and
   // share this reader, so this is the folder form's read path too.
   assert.equal(readMcpAccess(undefined), undefined);
@@ -76,8 +76,8 @@ test('a folder that has decided keeps its decision through a Save that changes n
   // `{}` answers the LADDER — "decided here, and the answer is nothing" — and answers the cadence
   // not at all, which is what per-axis means: one object, two questions, two answers.
   const html = renderFolderHtml(options({ mcp: {} }));
-  assert.match(html, /var ladder = mcpLadderTouched \|\| true;/);
-  assert.match(html, /var policy = mcpPolicyTouched \|\| false;/);
+  assert.match(html, /var ladder = mcpLadderTouched\s*\|\|\s*true;/);
+  assert.match(html, /var policy = mcpPolicyTouched\s*\|\|\s*false;/);
   assert.deepEqual(checkedIds(html), []);
   assert.match(html, /Applies to each of the 3 entries/);
 });
@@ -243,4 +243,32 @@ test('the Trash has no cadence group either — it would be a control that decid
     assert.ok(!html.includes(`id="${choice.id}"`), `${choice.id} is offered inside the Trash`);
   }
   assert.ok(!html.includes(MCP_ASK_HINT));
+});
+
+test('a folder that has answered only the CADENCE still shows the ladder it inherits', () => {
+  // Per-axis, on the DISPLAY side. A record of just `{ ask: 'never' }` answers the cadence and
+  // nothing else, so the switches must show what is in force from above — not an all-off ladder
+  // under a sentence claiming this folder decided it. Somebody ticking one switch from that screen
+  // would think they were adding to nothing.
+  const html = renderFolderHtml(
+    options({
+      mcp: { ask: 'never' },
+      inherited: { access: normalizeMcpAccess({ use: true }), from: 'project' },
+    }),
+  );
+
+  assert.deepEqual(checkedIds(html), ['mcpView', 'mcpUse'], 'the inherited ladder was shown as all off');
+  assert.match(html, /Inherited from &quot;project&quot;/, 'and the sentence claimed this folder had decided');
+  assert.deepEqual(checkedAsk(html), ['mcpAskNever'], 'while its own cadence is still its own');
+});
+
+test('a stored cadence that is not one of the three words shows the one actually in force', () => {
+  // Records arrive by sync and by import, so the stored value is not guaranteed to be a word this
+  // build knows. The resolver maps an unrecognised one to `always`; a form showing nothing checked
+  // — or Inherit — would tell somebody the opposite of what the door is going to do.
+  const junk = renderFolderHtml(options({ mcp: JSON.parse('{"use":true,"ask":"whenever"}') }));
+  assert.deepEqual(checkedAsk(junk), ['mcpAskAlways']);
+
+  const nulled = renderFolderHtml(options({ mcp: JSON.parse('{"use":true,"ask":null}') }));
+  assert.deepEqual(checkedAsk(nulled), ['mcpAskInherit'], 'a null is no answer, which is what Inherit means');
 });
