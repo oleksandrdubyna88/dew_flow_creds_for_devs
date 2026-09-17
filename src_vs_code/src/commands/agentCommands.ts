@@ -550,17 +550,15 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = asElement(target);
     if (element?.kind === 'node' && element.node.details) {
-      await connectEntity(
-        element.accountId,
-        element.node.details,
+      await connectEntity(element.accountId, element.node.details, {
         storage,
         storageDir,
-        sshAgent.servesKeyFor(element.node),
+        agentServesKey: sshAgent.servesKeyFor(element.node),
         // Which window this was clicked in. In a WSL one the line would otherwise be composed for
         // Windows and posted into the distribution's shell — the defect this carries the fix for.
         // `target` rides along so *Add Key to Agent* acts on the row that was clicked.
-        remoteWindowDeps(wslRelay, remedyRunner(target)),
-      );
+        remote: remoteWindowDeps(wslRelay, remedyRunner(target)),
+      });
     }
   });
 

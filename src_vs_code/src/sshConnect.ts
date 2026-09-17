@@ -12,7 +12,7 @@ import {
   writeAskpassScriptFile,
 } from './keyInstaller';
 import { resolveSshCredential } from './sshCredential';
-import { connectionOptions } from './connectionOptions';
+import { ConnectionOptions, connectionOptions } from './connectionOptions';
 import * as path from 'node:path';
 import { materializedKeysDir } from './materializedKeys';
 import { WindowSide, terminalPlatform } from './remoteWindow';
@@ -59,19 +59,17 @@ const LOCAL_WINDOW: RemoteWindowDeps = {
  * terminal. Moved out of `extension.ts` so the agent broker's terminal action
  * can call the exact same code the tree's Connect button runs.
  */
-// eslint-disable-next-line complexity, max-lines-per-function
-export async function connectEntity(
-  accountId: string,
-  entity: EntityMetadata,
-  storage: StorageManager,
-  storageDir: string,
+export interface ConnectOptions {
+  readonly storage: StorageManager;
+  readonly storageDir: string;
   /**
    * True when the SSH agent already serves the key this entity would use. Then no `-i` and no
-   * file: `ssh` finds the key through SSH_AUTH_SOCK, and the key never touches the disk for
-   * the human path either. Optional so the agent-free callers are unchanged.
+   * file: `ssh` finds the key through SSH_AUTH_SOCK, and the key never touches the disk for the
+   * human path either. Absent is `false`, which is what the agent-free callers meant.
    */
-  agentServesKey = false,
-  remote: RemoteWindowDeps = LOCAL_WINDOW,
+  readonly agentServesKey?: boolean;
+  /** What the WINDOW is. Absent is a local window, which is what every caller meant before this. */
+  readonly remote?: RemoteWindowDeps;
   /**
    * The retry budget, spent by the one recursive call this function makes.
    *
@@ -79,23 +77,31 @@ export async function connectEntity(
    * another retry, or the pair becomes a ride a person can stay on indefinitely. A code round
    * pointed out that the plan claimed "at most once" while nothing enforced it.</p>
    */
-  allowRetry = true,
+  readonly allowRetry?: boolean;
+}
+
+/** @returns whether a terminal was actually opened — a remote window can refuse. */
+// eslint-disable-next-line complexity, max-lines-per-function
+export async function connectEntity(
+  accountId: string,
+  entity: EntityMetadata,
+  connect: ConnectOptions,
 ): Promise<boolean> {
+  const { storage, storageDir } = connect;
+  const agentServesKey = connect.agentServesKey === true;
+  const remote = connect.remote ?? LOCAL_WINDOW;
   const side = remote.side;
   // The retry re-READS the window: the remedy it follows exists to change the very state the first
   // attempt refused on.
-  const retry = allowRetry
-    ? (): Promise<boolean> =>
-        connectEntity(
-          accountId,
-          entity,
-          storage,
-          storageDir,
-          agentServesKey,
-          remote.refresh?.() ?? remote,
-          false,
-        )
-    : undefined;
+  const retry =
+    connect.allowRetry === false
+      ? undefined
+      : (): Promise<boolean> =>
+          connectEntity(accountId, entity, {
+            ...connect,
+            remote: remote.refresh?.() ?? remote,
+            allowRetry: false,
+          });
   // The terminal ssh opens in would only say "command not found" AFTER a key may have been
   // materialised; checking first costs one stat and produces an offer instead of a corpse
   // (tails T20).
@@ -245,11 +251,11 @@ export async function connectEntity(
  * `UserKnownHostsFile`, which is just as well, since /mnt/c cannot hold one.</p>
  */
 async function withTranslatedKnownHosts(
-  options: Awaited<ReturnType<typeof connectionOptions>>,
+  options: ConnectionOptions,
   side: WindowSide,
   storageDir: string,
-): Promise<typeof options> {
-  if (options === undefined || side.kind !== 'wsl' || options.knownHostsFile === undefined) {
+): Promise<ConnectionOptions | undefined> {
+  if (side.kind !== 'wsl' || options.knownHostsFile === undefined) {
     return options;
   }
   const inside = await translateWindowsPath(side.distro, options.knownHostsFile);

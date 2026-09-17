@@ -195,7 +195,11 @@ test('when the AGENT serves the key, nothing is written to disk and no -i is pas
   // person can see it working.
   const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage', true);
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+        agentServesKey: true,
+      });
 
   assert.deepEqual(w.materialised, [], 'no key file');
   assert.equal(w.sshTerminals.length, 1);
@@ -209,7 +213,10 @@ test('a stored key is materialised and passed to the terminal', async () => {
     sshTerminal: {},
   });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage');
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+      });
 
   assert.deepEqual(w.materialised, ['/storage/keys/k1.key']);
   assert.equal(w.sshTerminals[0].keyPath, '/storage/keys/k1.key');
@@ -223,7 +230,10 @@ test('the decrypted key is WIPED when the terminal closes', async () => {
     options: OPTIONS,
     sshTerminal: {},
   });
-  await w.mod.connectEntity('a1', entity(), storage, '/storage');
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+      });
   assert.deepEqual(w.forgotten, [], 'not while the session is alive');
 
   w.closeTerminal({ name: 'somebody else' });
@@ -242,7 +252,10 @@ test('a terminal that could not be opened wipes the key IMMEDIATELY', async () =
     sshTerminal: undefined,
   });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage');
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+      });
 
   assert.deepEqual(w.forgotten, ['/storage/keys/k1.key']);
 });
@@ -256,7 +269,10 @@ test('a key that cannot be written is reported, and no terminal is opened', asyn
     materialiseFails: true,
   });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage');
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+      });
 
   assert.match(w.errors[0], /Could not write the stored key/);
   assert.deepEqual(w.sshTerminals, []);
@@ -270,7 +286,10 @@ test('a REFUSED host key stops before anything is written or opened', async () =
     options: undefined,
   });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage');
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+      });
 
   assert.deepEqual(w.materialised, []);
   assert.deepEqual(w.sshTerminals, []);
@@ -280,7 +299,10 @@ test('a REFUSED host key stops before anything is written or opened', async () =
 test('a key PATH on the entity is used as it is — nothing is materialised', async () => {
   const w = world({ source: { kind: 'keyPath', path: '/home/me/.ssh/id_ed25519' }, options: OPTIONS, sshTerminal: {} });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage');
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+      });
 
   assert.deepEqual(w.materialised, []);
   assert.equal(w.sshTerminals[0].keyPath, '/home/me/.ssh/id_ed25519');
@@ -291,7 +313,10 @@ test('a password rides the ENVIRONMENT, never the command line', async () => {
   // everyone on the box.
   const w = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage');
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+      });
 
   assert.equal(w.created.length, 1);
   assert.equal(w.created[0].env?.CREDS_PASSWORD, 'hunter2');
@@ -307,7 +332,10 @@ test('a password session gets a FRESH terminal — an old one with that name is 
     existingNamed: 'SSH: prod.corp.com',
   });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage');
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+      });
 
   assert.equal(w.existing[0].disposed, true, 'the stale one is gone');
   assert.equal(w.created.length, 1);
@@ -318,10 +346,16 @@ test('without a pinned host key, accept-new is added — with one, it is NOT', a
   // program, with the password. A pinned host needs no such question and must not have its
   // checking softened.
   const unpinned = world({ source: { kind: 'password', password: 'p' }, options: { knownHostsFile: undefined } });
-  await unpinned.mod.connectEntity('a1', entity(), storage, '/storage');
+  await unpinned.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+      });
 
   const pinned = world({ source: { kind: 'password', password: 'p' }, options: { knownHostsFile: '/storage/known_hosts' } });
-  await pinned.mod.connectEntity('a1', entity(), storage, '/storage');
+  await pinned.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+      });
 
   assert.match(unpinned.created[0].sent[0], /StrictHostKeyChecking=accept-new/);
   assert.ok(!pinned.created[0].sent[0].includes('accept-new'), pinned.created[0].sent[0]);
@@ -330,7 +364,10 @@ test('without a pinned host key, accept-new is added — with one, it is NOT', a
 test('a password entity with no host says so instead of starting a broken session', async () => {
   const w = world({ source: { kind: 'password', password: 'p' }, options: OPTIONS });
 
-  await w.mod.connectEntity('a1', entity({ host: undefined }), storage, '/storage');
+  await w.mod.connectEntity('a1', entity({ host: undefined }), {
+        storage: storage,
+        storageDir: '/storage',
+      });
 
   assert.match(w.warnings[0], /no host configured/);
   assert.deepEqual(w.created, []);
@@ -345,7 +382,10 @@ test('a warning from the credential resolver is surfaced, and the connection sti
     sshTerminal: {},
   });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage');
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+      });
 
   assert.match(w.warnings[0], /key entity is gone/);
   assert.equal(w.sshTerminals.length, 1, 'and it still connected');
@@ -356,7 +396,10 @@ test('an entity with NO credential at all still opens a terminal for an agent or
   // the setups that never stored anything in the vault.
   const w = world({ source: { kind: 'none' }, options: OPTIONS, sshTerminal: {} });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage');
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+      });
 
   assert.equal(w.sshTerminals.length, 1);
   assert.equal(w.sshTerminals[0].keyPath, undefined);
@@ -390,7 +433,12 @@ test('in a WSL window with a stored key and no relay, NOTHING is written and no 
   // terminal carrying it — a Windows path posted into a shell that cannot read it.
   const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage', false, WSL_NO_RELAY);
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+        agentServesKey: false,
+        remote: WSL_NO_RELAY,
+      });
 
   assert.deepEqual(w.materialised, [], 'a decrypted key was written for a shell that cannot read it');
   assert.deepEqual(w.sshTerminals, [], 'a command was composed for the wrong machine');
@@ -402,7 +450,12 @@ test('in a WSL window with a stored key and no relay, NOTHING is written and no 
 test('the refusal offers the button that fixes the FIRST thing missing', async () => {
   const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage', false, WSL_NO_RELAY);
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+        agentServesKey: false,
+        remote: WSL_NO_RELAY,
+      });
 
   assert.deepEqual(w.offered, [['Set Up the WSL Agent Relay']]);
 });
@@ -411,7 +464,12 @@ test('with the relay up and the agent serving the key, the line goes through the
   // The working route: no -i, nothing on disk, and the key never enters the distribution.
   const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS, sshTerminal: {} });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage', true, WSL_READY);
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+        agentServesKey: true,
+        remote: WSL_READY,
+      });
 
   assert.deepEqual(w.materialised, []);
   assert.equal(w.sshTerminals.length, 1);
@@ -428,7 +486,12 @@ test('a PASSWORD in a WSL window refuses before any askpass file is written', as
   // The askpass helper is a script on THIS machine; no relay carries it across.
   const w = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage', false, WSL_NO_RELAY);
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+        agentServesKey: false,
+        remote: WSL_NO_RELAY,
+      });
 
   assert.deepEqual(w.created, [], 'no terminal, so no password in its environment');
   assert.match(w.warnings[0], /authenticates with a PASSWORD/);
@@ -438,7 +501,12 @@ test('a PASSWORD in a WSL window refuses before any askpass file is written', as
 test('a key PATH in a WSL window refuses rather than passing a Windows path', async () => {
   const w = world({ source: { kind: 'keyPath', path: 'C:\keys\id_ed25519' }, options: OPTIONS });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage', false, WSL_NO_RELAY);
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+        agentServesKey: false,
+        remote: WSL_NO_RELAY,
+      });
 
   assert.deepEqual(w.sshTerminals, []);
   assert.match(w.warnings[0], /points at a key FILE on this computer/);
@@ -448,10 +516,15 @@ test('every other remote window kind refuses, naming the machine that holds the 
   for (const remoteName of ['ssh-remote', 'dev-container', 'codespaces']) {
     const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'x' }, options: OPTIONS });
 
-    await w.mod.connectEntity('a1', entity(), storage, '/storage', true, {
+    await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+        agentServesKey: true,
+        remote: {
       side: { kind: 'other', remoteName },
       relay: { enabled: true, running: true, socket: '/run/s.sock' },
-    });
+    },
+      });
 
     assert.deepEqual(w.materialised, [], `${remoteName} wrote a key`);
     assert.deepEqual(w.sshTerminals, [], `${remoteName} opened a terminal`);
@@ -469,7 +542,12 @@ test('a pinned host key is translated by ASKING the distribution', async () => {
     sshTerminal: {},
   });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage', true, WSL_READY);
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+        agentServesKey: true,
+        remote: WSL_READY,
+      });
 
   assert.equal(w.sshTerminals.length, 1);
   assert.deepEqual(w.sshTerminals[0].options, {
@@ -486,7 +564,12 @@ test('a refused translation deletes the file it had already written, and opens n
     translated: '',
   });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage', true, WSL_READY);
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+        agentServesKey: true,
+        remote: WSL_READY,
+      });
 
   assert.deepEqual(w.sshTerminals, []);
   assert.deepEqual(w.forgotten, [OUR_PIN], 'the pin file was stranded');
@@ -502,7 +585,12 @@ test('a known_hosts path OUTSIDE our own directory is never deleted, whatever it
     translated: '',
   });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage', true, WSL_READY);
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+        agentServesKey: true,
+        remote: WSL_READY,
+      });
 
   assert.deepEqual(w.sshTerminals, [], 'it still refused');
   assert.deepEqual(w.forgotten, [], 'it deleted a file it does not own');
@@ -511,7 +599,11 @@ test('a known_hosts path OUTSIDE our own directory is never deleted, whatever it
 test('a LOCAL window is untouched: the platform is the host and there is no prefix', async () => {
   const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'x' }, options: OPTIONS, sshTerminal: {} });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage', false);
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+        agentServesKey: false,
+      });
 
   assert.deepEqual(w.materialised, ['/storage/keys/k1.key']);
   assert.equal(w.sshTerminals[0].platform, process.platform);
@@ -523,14 +615,23 @@ test('THE REPORT, both halves: the same click writes a key when the window is no
   // `remote` absent is exactly the code path every caller took before this change, and it is what a
   // WSL window used to get: a decrypted key on the Windows disk and a terminal carrying its path.
   const before = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS, sshTerminal: {} });
-  await before.mod.connectEntity('a1', entity(), storage, '/storage', false);
+  await before.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+        agentServesKey: false,
+      });
 
   assert.deepEqual(before.materialised, ['/storage/keys/k1.key']);
   assert.deepEqual(before.sshTerminals.map((t) => t.keyPath), ['/storage/keys/k1.key']);
 
   // The same inputs, with the window identified. Nothing is written, nothing is opened.
   const after = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS, sshTerminal: {} });
-  await after.mod.connectEntity('a1', entity(), storage, '/storage', false, WSL_NO_RELAY);
+  await after.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+        agentServesKey: false,
+        remote: WSL_NO_RELAY,
+      });
 
   assert.deepEqual(after.materialised, []);
   assert.deepEqual(after.sshTerminals, []);
@@ -543,10 +644,15 @@ test('a relay socket that cannot be quoted REFUSES rather than running ssh witho
   // authenticates with whatever keys that shell already has.
   const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'x' }, options: OPTIONS, sshTerminal: {} });
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage', true, {
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+        agentServesKey: true,
+        remote: {
     side: { kind: 'wsl', distro: 'Ubuntu' },
     relay: { enabled: true, running: true, socket: "/tmp/it's/creds.sock" },
-  });
+  },
+      });
 
   assert.deepEqual(w.sshTerminals, [], 'an unprefixed ssh command was posted');
   assert.deepEqual(w.materialised, []);
@@ -563,13 +669,18 @@ test('the remedy retries the connect exactly ONCE, however often it keeps failin
   });
   const remedies: string[] = [];
 
-  await w.mod.connectEntity('a1', entity(), storage, '/storage', false, {
+  await w.mod.connectEntity('a1', entity(), {
+        storage: storage,
+        storageDir: '/storage',
+        agentServesKey: false,
+        remote: {
     ...WSL_NO_RELAY,
     runRemedy: async (action): Promise<boolean> => {
       remedies.push(action);
       return true; // it always claims to have fixed it, and never does
     },
-  });
+  },
+      });
 
   // Two modals — the first click and its one retry — and then it stops, even though the button was
   // pressed on the second one too. Without the budget this recurses until the stack gives out.
