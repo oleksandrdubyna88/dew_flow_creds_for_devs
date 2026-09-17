@@ -196,3 +196,49 @@ test('encodeString is the only framing these modules share', () => {
   const encoded = encodeString('abc');
   assert.deepEqual([...encoded], [0, 0, 0, 3, 97, 98, 99]);
 });
+
+// --- the format `ssh-keygen` actually writes ------------------------------------------------
+//
+// Measured 2026-09-17 in the extension host itself (Electron, which is BoringSSL) after a person
+// hit it with a real key:
+//
+//   -----BEGIN OPENSSH PRIVATE KEY-----  FAIL  PEM routines:OPENSSL_internal:NO_START_LINE
+//   -----BEGIN RSA PRIVATE KEY-----      OK    rsa
+//
+// Plain Node 24 refuses it too, with a different sentence, so it is not an Electron quirk. This
+// file's header used to claim the format WAS supported, which is what let it go unnoticed:
+// `ssh-keygen` has written it by default since OpenSSH 7.8, so almost every key is in it.
+
+/** The header of an UNENCRYPTED openssh-key-v1 container — no key material, just the preamble. */
+const OPENSSH_HEADER =
+  '-----BEGIN OPENSSH PRIVATE KEY-----\n' +
+  'b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZWQyNTUx\n' +
+  '-----END OPENSSH PRIVATE KEY-----';
+
+test('an OpenSSH-format key is refused by NAME, not by an OpenSSL error code', () => {
+  // "NO_START_LINE" is accurate and tells a person nothing they can do about it.
+  const result = parseSshPrivateKey(OPENSSH_HEADER, 'server key 2');
+
+  assert.equal(result.ok, false);
+  assert.doesNotMatch(result.ok ? '' : result.reason, /NO_START_LINE|PEM routines/);
+});
+
+test('the refusal names the format, says ssh -i is unaffected, and gives the command', () => {
+  // Everything a person needs to get unstuck, in the sentence they are already reading.
+  const result = parseSshPrivateKey(OPENSSH_HEADER, 'server key 2');
+  const reason = result.ok ? '' : result.reason;
+
+  assert.match(reason, /OPENSSH PRIVATE KEY/);
+  assert.match(reason, /ssh-keygen -p -m PEM/);
+  assert.match(reason, /ssh -i/, 'it must say what still works, or it reads as "your key is broken"');
+});
+
+test('an ENCRYPTED one still gets the passphrase reason, which is a different problem', () => {
+  // Checked first, and it must stay first: telling somebody to convert the format when the real
+  // obstacle is a passphrase sends them round a loop.
+  const encrypted = OPENSSH_HEADER.replace('BG5vbmUAAAAEbm9uZQ', 'BmFlczI1NgAAAAthZXMyNTYtY3Ry');
+  const result = parseSshPrivateKey(encrypted, 'server key 2');
+
+  assert.equal(result.ok, false);
+  assert.match(result.ok ? '' : result.reason, /passphrase/);
+});

@@ -6,10 +6,24 @@ import { ByteReader, encodeString } from './sshAgentProtocol';
  * Reading a stored private key into something that can sign, and deriving the public blob the
  * agent protocol advertises.
  *
- * <p>Node's `crypto.createPrivateKey` reads PKCS#8 and PKCS#1 PEM, and — since Node 12 — the
- * `openssh-key-v1` format `ssh-keygen` writes by default. So the private half needs no
- * hand-rolled parser. What Node will NOT give us is the SSH wire-format public key, which is
- * what an agent must publish, so that is derived here from the key's own numbers.</p>
+ * <p>`crypto.createPrivateKey` reads PKCS#8 and PKCS#1 PEM. What it will NOT give us is the SSH
+ * wire-format public key, which is what an agent must publish, so that is derived here from the
+ * key's own numbers.</p>
+ *
+ * <p><b>It does NOT read `openssh-key-v1`, and this file used to say it did.</b> That sentence was
+ * wrong and cost an evening: `ssh-keygen` has written that format BY DEFAULT since OpenSSH 7.8, so
+ * the claim amounted to "the agent serves the keys people actually have" while it served none of
+ * them. Measured 2026-09-17 in the extension host itself — Electron, which is BoringSSL, not the
+ * OpenSSL a plain `node` has:</p>
+ *
+ * <pre>
+ *   -----BEGIN OPENSSH PRIVATE KEY-----  FAIL  PEM routines:OPENSSL_internal:NO_START_LINE
+ *   -----BEGIN RSA PRIVATE KEY-----      OK    rsa
+ * </pre>
+ *
+ * <p>Plain Node 24 refuses it too, with a different sentence (`DECODER routines::unsupported`), so
+ * this is not an Electron quirk — it is simply not supported anywhere. The refusal below says so
+ * and gives the one command that converts a copy, instead of surfacing an OpenSSL error code.</p>
  *
  * <p><b>A passphrase-protected key is refused, with the reason.</b> OpenSSH encrypts its own
  * format with bcrypt_pbkdf, which Node does not implement, and a credential manager guessing at
@@ -67,6 +81,11 @@ function encodeMpint(value: Buffer): Buffer {
   }
   const trimmed = value.subarray(start);
   return encodeString(trimmed[0] & 0x80 ? Buffer.concat([Buffer.from([0]), trimmed]) : trimmed);
+}
+
+/** The container `ssh-keygen` writes by default, which `crypto.createPrivateKey` cannot read. */
+export function isOpenSshFormat(text: string): boolean {
+  return text.includes('OPENSSH PRIVATE KEY');
 }
 
 export function isEncryptedOpenSsh(text: string): boolean {
@@ -149,6 +168,13 @@ export function keyFingerprintOf(publicBlob: Buffer): string {
   return `SHA256:${digest}`;
 }
 
+const OPENSSH_FORMAT_REASON =
+  'it is stored in the OpenSSH format (`-----BEGIN OPENSSH PRIVATE KEY-----`), which this agent ' +
+  'cannot read — `ssh-keygen` has written that format by default since OpenSSH 7.8, so most keys ' +
+  'are in it. `ssh -i` with a key FILE is unaffected; only the agent needs this. To convert a ' +
+  'copy: save the key to a file, run `ssh-keygen -p -m PEM -N "" -f <file>`, and paste the result ' +
+  'back into this entry with Edit. It will then begin `-----BEGIN RSA PRIVATE KEY-----`';
+
 const PASSPHRASE_REASON =
   'the key is protected by its own passphrase, which this agent cannot open (OpenSSH uses ' +
   'bcrypt_pbkdf, and Node has no implementation of it). Store the key without a passphrase — ' +
@@ -158,6 +184,12 @@ const PASSPHRASE_REASON =
 function readPrivateKey(text: string): { ok: true; key: crypto.KeyObject } | { ok: false; reason: string } {
   if (isEncryptedOpenSsh(text)) {
     return { ok: false, reason: PASSPHRASE_REASON };
+  }
+  // Checked BEFORE `createPrivateKey`, which answers this case with `NO_START_LINE` — an accurate
+  // sentence that tells a person nothing they can act on, about the format their key is most
+  // likely to be in.
+  if (isOpenSshFormat(text)) {
+    return { ok: false, reason: OPENSSH_FORMAT_REASON };
   }
   try {
     return { ok: true, key: crypto.createPrivateKey(text) };
