@@ -110,7 +110,10 @@ export function consentDue(
 
 /** Does this stamp still cover a call — the same grant, and inside its window? */
 function covers(stamp: ConsentStamp | undefined, rungsNow: string, now: number): boolean {
-  if (stamp === undefined || stamp.rungs !== rungsNow) {
+  // `stamp?.rungs` rather than a two-clause guard: with no stamp it is `undefined`, which never
+  // equals a fingerprint, so both "nothing was answered" and "answered against another ladder"
+  // fall out of one comparison — and neither can accidentally be written as the looser test.
+  if (stamp?.rungs !== rungsNow) {
     return false;
   }
   return stillOpen(stamp, now);

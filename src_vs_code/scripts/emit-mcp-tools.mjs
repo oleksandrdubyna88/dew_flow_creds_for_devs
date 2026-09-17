@@ -107,7 +107,7 @@ function replies(text) {
  */
 function withUnixNewlines(value) {
   if (typeof value === 'string') {
-    return value.replace(/\r\n/g, '\n');
+    return value.replaceAll('\r\n', '\n');
   }
   if (Array.isArray(value)) {
     return value.map(withUnixNewlines);
@@ -180,7 +180,7 @@ const text = `${JSON.stringify(surface, null, 2)}\n`;
  * `--check` was green, a rebase onto `origin/main` landed, and it went red with an identical
  * surface. Both sides are normalised, so only a real difference is a difference.</p>
  */
-const asContent = (value) => value.replace(/\r\n/g, '\n');
+const asContent = (value) => value.replaceAll('\r\n', '\n');
 
 if (!checking) {
   writeFileSync(TARGET, text);

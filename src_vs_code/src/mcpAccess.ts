@@ -460,6 +460,11 @@ export function answersLadder(mcp: McpAccess | undefined): boolean {
   // the same today and rots the first time a second policy-only field is added: a folder carrying
   // `{ ask, window }` would stop matching the exception, stop the ladder walk, and take the
   // inherited rights of everything beneath it with it — this bug again, one field later.
+  //
+  // The inner `.some` is not a missed `.includes` — SonarCloud suggests one (typescript:S7765) and
+  // it does not compile: `LADDER_KEYS` is `as const`, so `.includes` demands the literal union and
+  // `key` here is a `string` off `Object.keys`. Measured, rather than assumed:
+  // `error TS2345: Argument of type 'string' is not assignable to parameter of type '"view" | …'`.
   return keys.length === 0 || keys.some((key) => LADDER_KEYS.some((rung) => rung === key));
 }
 
