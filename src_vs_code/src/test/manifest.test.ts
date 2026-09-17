@@ -45,6 +45,10 @@ const PALETTE_ONLY = new Set([
   'credSshManager.setUpWslRelay',
   // Troubleshooting, used about once per machine.
   'credSshManager.resetGoogleOAuth',
+  // It clears every remembered consent on this MACHINE, not the entry somebody right-clicked —
+  // and a destructive-sounding item on an entry's menu would be read as being about that entry.
+  // The per-entry control is the consent setting on the form, which is where it belongs.
+  'credSshManager.forgetAgentConsents',
   // Older aliases of backupToNas / restoreBackup, kept so muscle memory and any
   // keybindings people already have keep working.
   'extension.exportSecrets',

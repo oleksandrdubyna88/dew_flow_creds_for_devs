@@ -3,6 +3,7 @@
    was. The ceilings are a boundary for NEW code here; a handler meets them when it is next touched. */
 import { Machine } from '../installCommand';
 import { anyAgentAccess } from '../mcpAccess';
+import { ConsentStampStore, consentStampsFor } from '../mcpConsentPolicy';
 import { folderHooks } from '../mcpFolderHooks';
 import { CredsAgentServer } from '../credsAgentServer';
 import { AliasMap } from '../cliAliases';
@@ -72,13 +73,14 @@ export interface AgentCommandsHost {
   readonly register: (command: string, handler: (...args: unknown[]) => unknown) => void;
   readonly setAliasMap: (next: AliasMap) => Thenable<void>;
   readonly sshAgent: SshAgentManager;
+  readonly state: ConsentStampStore;
   readonly storage: StorageManager;
   readonly storageDir: string;
   readonly vaultKeys: VaultKeys;
 }
 
 export function registerAgentCommands(host: AgentCommandsHost): void {
-  const { MACHINES, agentServer, aliasMap, bridges, log, mutated, offerInstall, provider, register, setAliasMap, sshAgent, storage, storageDir, vaultKeys } = host;
+  const { MACHINES, agentServer, aliasMap, bridges, log, mutated, offerInstall, provider, register, setAliasMap, sshAgent, state, storage, storageDir, vaultKeys } = host;
 
   /**
    * Point a WSL shell at the relay, once, and turn the relay on.
@@ -470,6 +472,36 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
     );
     if (answer !== undefined) {
       await vscode.env.clipboard.writeText(instructions);
+    }
+  });
+
+  /**
+   * Take back every twelve-hour consent window this machine has open (#95).
+   *
+   * <p>Changing an entry's policy takes effect on the next call — it is read fresh every time — but
+   * it does not undo a window somebody already opened by clicking Allow. This is what does, and it
+   * is machine-wide because the record is: the stamps never sync, so there is nothing per-entry to
+   * revoke anywhere else.</p>
+   *
+   * <p>Asked first, because it is not recoverable and the cost is a dialog per entry afterwards.
+   * AWAITED before anything is claimed: `forgetAll` writes a tombstone and then clears, and a
+   * message shown before those land would tell somebody the windows are gone while they are still
+   * in flight. A failed write says so instead — silence would be the worst of the three.</p>
+   */
+  register('credSshManager.forgetAgentConsents', async () => {
+    const answer = await vscode.window.showWarningMessage(
+      'Forget every agent consent remembered on this machine?',
+      { modal: true, detail: 'Entries set to "ask once every 12 hours" will ask again on their next use. Entries set to "never ask" are unaffected — that is a setting, not a remembered answer.' },
+      'Forget them',
+    );
+    if (answer !== 'Forget them') {
+      return;
+    }
+    try {
+      await consentStampsFor(state).forgetAll(Date.now());
+      void vscode.window.showInformationMessage('Agent consents on this machine have been forgotten.');
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Could not forget agent consents: ${describeError(error)}`);
     }
   });
 
