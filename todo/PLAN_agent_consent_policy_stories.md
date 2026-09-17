@@ -1,9 +1,14 @@
 # PLAN — the agent consent policy, broken into epics and stories
 
 > Status: **twelve of thirteen stories built, 2026-09-17** — S1.1–S1.3, S2.1–S2.4, S3.1–S3.3, S4.1
-> and S4.2 are on their branches, each with its own gate rounds and commits. **S4.3 is the only one
-> outstanding**, and it is the story that retires the remaining "asks on every call" claims and
-> promotes both plans to `research/`; until it runs, this document stays in `todo/`. Two of those
+> and S4.2 are on their branches. Every one went through the coai gate twice, a plan round and a
+> code round, with all reviewers answering: the plan rounds returned `good_enough` (the stage's
+> round budget is one, so that IS the pass) with 3 reviewers each; the code rounds returned
+> `proceed` or `good_enough` with 12 reviewers each — 11 answering plus the un-prompted Role2 the
+> server names in its own reply. Every finding of every round has a recorded accept or a reasoned
+> rejection. **S4.3 is the only story outstanding**, and it is the one that retires the remaining
+> "asks on every call" claims and promotes both plans to `research/`; until it runs, this document
+> stays in `todo/`. Two of those
 > claims were retired early, in S4.1, because a README coverage guard forced that story into the same
 > paragraphs — recorded there rather than quietly re-scoped. Scope: the BUILD ORDER for
 > [PLAN_agent_consent_policy.md](PLAN_agent_consent_policy.md) (issue #95) — 4 epics, 13 stories, each
