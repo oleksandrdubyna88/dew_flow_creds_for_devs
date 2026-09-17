@@ -75,6 +75,19 @@ jobs:
           # This does NOT exempt the shipped extension: the rule still applies to every file under
           # `src_vs_code/src` that is not in `test/`, which is where a real one would be. Nothing is
           # excluded from ANALYSIS here, only this one rule in one folder.
+          #
+          # `typescript:S2068` — "review this potentially hard-coded password" — is ignored in
+          # `remoteWindowMessage.ts` and nowhere else. That module is WORDING: it maps each reason a
+          # remote-window connection can be refused to the sentence and the button that answer it, and
+          # one of those reasons is `credential-is-a-password` — a connection that authenticates with a
+          # password rather than a key, which no relay can carry. The rule sees a key whose name ends
+          # in "password" with a string beside it and reports the shape it is looking for; the string
+          # is `copyWindowsCommand`, the name of a command. The file holds no credential of any kind,
+          # reads none and is `vscode`-free, so there is nothing in it for the rule to be right about.
+          #
+          # Narrow on purpose, and the reason it is not `src_vs_code/src/**`: a hard-coded password in
+          # a module that actually handles them is exactly the finding worth having, and every other
+          # file here keeps it.
           dotnet-sonarscanner begin \
             /k:"remsoftdev_dew_flow_creds_for_devs" \
             /o:"remsoftdev" \
@@ -86,7 +99,7 @@ jobs:
             /d:sonar.exclusions="**/bin/**,**/obj/**,**/node_modules/**,deploy/**" \
             /d:sonar.coverage.exclusions="**/tests/**,**/*.Tests/**,**/scripts/**,**/http/**" \
             /d:sonar.cpd.exclusions="src_vs_code/src/help*.ts" \
-            /d:sonar.issue.ignore.multicriteria="e1,e2,e3,e4" \
+            /d:sonar.issue.ignore.multicriteria="e1,e2,e3,e4,e5" \
             /d:sonar.issue.ignore.multicriteria.e1.ruleKey="typescript:S1523" \
             /d:sonar.issue.ignore.multicriteria.e1.resourceKey="src_vs_code/src/test/miniDom.ts" \
             /d:sonar.issue.ignore.multicriteria.e2.ruleKey="typescript:S1523" \
@@ -94,7 +107,9 @@ jobs:
             /d:sonar.issue.ignore.multicriteria.e3.ruleKey="typescript:S1523" \
             /d:sonar.issue.ignore.multicriteria.e3.resourceKey="src_vs_code/src/test/entityFormScript.test.ts" \
             /d:sonar.issue.ignore.multicriteria.e4.ruleKey="typescript:S1523" \
-            /d:sonar.issue.ignore.multicriteria.e4.resourceKey="src_vs_code/src/test/depPickerScript.test.ts"
+            /d:sonar.issue.ignore.multicriteria.e4.resourceKey="src_vs_code/src/test/depPickerScript.test.ts" \
+            /d:sonar.issue.ignore.multicriteria.e5.ruleKey="typescript:S2068" \
+            /d:sonar.issue.ignore.multicriteria.e5.resourceKey="src_vs_code/src/remoteWindowMessage.ts"
       - name: Build
         run: |
           dotnet build dew_flow_creds_for_devs.slnx -c Release --no-incremental

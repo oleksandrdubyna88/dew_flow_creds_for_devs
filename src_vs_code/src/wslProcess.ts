@@ -1,4 +1,6 @@
 import * as childProcess from 'node:child_process';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { killChild } from './childKill';
 import { withTimeout } from './withTimeout';
 import { wslPathArgv } from './wslMcpInstall';
@@ -15,10 +17,40 @@ import { wslPathArgv } from './wslMcpInstall';
  * catch. Every failure therefore reads as "it said nothing".</p>
  */
 
+/**
+ * The launcher to spawn — by its full path, never by the bare name.
+ *
+ * <p><b>CWE-426, and this repository has already had it once.</b> `spawn(name, …, { shell: false })`
+ * resolves a relative name the way `CreateProcess` does, and `CreateProcess` searches the CURRENT
+ * DIRECTORY **before** `PATH`. A `wsl.exe` left in the extension host's working directory is then the
+ * program that runs — with our arguments, on every distribution listing, path translation and relay
+ * start. `sshProgram.ts` names the same defect for `ssh.exe` and fixes it the same way; flagged here
+ * by SonarCloud (`typescript:S4036`) on the one new call site, and fixed at all four, because leaving
+ * three behind would be fixing the instance and not the class.</p>
+ *
+ * <p>Falls back to the bare name when the absolute one is not there — the difference between a
+ * machine without WSL answering "it said nothing", which every caller here is built for, and a spawn
+ * that throws. `SystemRoot` is read rather than hard-coded, and `windir` after it, because a Windows
+ * that is not on C: is unusual and not impossible.</p>
+ */
+export function wslBinary(
+  env: NodeJS.ProcessEnv = process.env,
+  exists: (candidate: string) => boolean = fs.existsSync,
+): string {
+  return wslBinaryIn(env, exists);
+}
+
+/** Split from its defaults exactly as `wslWindowsSshClient` is, and for the same ceiling. */
+function wslBinaryIn(env: NodeJS.ProcessEnv, exists: (candidate: string) => boolean): string {
+  const root = env.SystemRoot ?? env.windir ?? 'C:\\Windows';
+  const absolute = path.win32.join(root, 'System32', 'wsl.exe');
+  return exists(absolute) ? absolute : 'wsl.exe';
+}
+
 /** Text out of a WSL child, with whatever it wrote to stdin first. Empty when it could not run. */
 export function runWsl(args: readonly string[], stdin?: string): Promise<string> {
   return new Promise((resolve) => {
-    const child = childProcess.spawn('wsl.exe', [...args], {
+    const child = childProcess.spawn(wslBinary(), [...args], {
       stdio: ['pipe', 'pipe', 'ignore'],
       windowsHide: true,
     });
@@ -42,7 +74,7 @@ export function runWsl(args: readonly string[], stdin?: string): Promise<string>
  */
 export function runWslRaw(args: readonly string[]): Promise<Buffer> {
   return new Promise((resolve) => {
-    const child = childProcess.spawn('wsl.exe', [...args], {
+    const child = childProcess.spawn(wslBinary(), [...args], {
       stdio: ['ignore', 'pipe', 'ignore'],
       windowsHide: true,
     });
@@ -63,7 +95,7 @@ export function runWslRaw(args: readonly string[]): Promise<Buffer> {
 export type WslSpawner = (args: readonly string[]) => childProcess.ChildProcess;
 
 const spawnWsl: WslSpawner = (args) =>
-  childProcess.spawn('wsl.exe', [...args], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
+  childProcess.spawn(wslBinary(), [...args], { stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true });
 
 /**
  * `runWsl` with a deadline, and a child that is actually killed when the deadline passes.

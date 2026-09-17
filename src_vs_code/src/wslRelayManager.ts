@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { isSafeShellWord, relayArgv, socketFromBusyLine, socketFromExportLine } from './wslRelay';
+import { wslBinary } from './wslProcess';
 
 /**
  * The `creds relay` processes this window is holding open inside WSL — one per distribution.
@@ -250,7 +251,7 @@ function refuse(command: string, distros: readonly string[]): string | undefined
  * useful rather than decorative.</p>
  */
 export function spawnWslRelay(args: readonly string[], onStderr: (text: string) => void): RelayProcess {
-  const child = spawn('wsl.exe', [...args], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  const child = spawn(wslBinary(), [...args], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   let pending = '';
   const handlers: ((line: string) => void)[] = [];
   child.stdout.setEncoding('utf8');
