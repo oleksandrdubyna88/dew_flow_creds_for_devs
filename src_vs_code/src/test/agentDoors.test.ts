@@ -1,8 +1,10 @@
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { test } from 'node:test';
 import { renderHtml } from '../entityFormPage';
-import { agentDoorRows, standingConsentFor } from '../agentDoors';
-import type { McpAskPolicy } from '../mcpAccess';
+import { agentDoorRows } from '../agentDoors';
+import { McpAskPolicy, standingConsentFor } from '../mcpAccess';
 import type { TreeNode } from '../types';
 import type { EntityFormOptions } from '../entityFormPanel';
 
@@ -94,16 +96,20 @@ function consentOf(mcp: TreeNode['mcp'], folderMcp?: TreeNode['mcp']): boolean {
   return standingConsentFor(child, tree(folder('f1', folderMcp), child));
 }
 
-test('a never-ask entry renders a standing-consent row FIRST, naming the command that changes it', () => {
-  const rows = agentDoorRows({ ...NO_DOORS, standingConsent: true, codeAccess: true });
+test('a never-ask entry renders a standing-consent row FIRST, with the modal-free doors', () => {
+  // Position, not presence: implemented at the end of the table it would still exist and still be
+  // wrong — this row belongs with the other door that raises no dialog, not below three that do.
+  const rows = agentDoorRows({ ...NO_DOORS, standingConsent: true, codeAccess: true, cliAliases: ['prod'] });
 
-  assert.equal(rows[0].command, 'credSshManager.editNode', `first row was ${rows[0].label}`);
-  assert.match(rows[0].label, /No consent prompt/);
+  assert.match(rows[0].label, /No consent prompt/, `first row was ${rows[0].label}`);
   assert.match(rows[0].detail, /without being asked/);
+  assert.match(rows[0].detail, /Change it in Agent access/, 'and it says where, since it offers no link');
+  assert.equal(rows[0].command, undefined);
 });
 
 test('an entry that still asks renders no such row', () => {
-  for (const ask of ['always', 'every12h'] as McpAskPolicy[]) {
+  const asks: McpAskPolicy[] = ['always', 'every12h'];
+  for (const ask of asks) {
     const consent = consentOf({ use: true, ask });
 
     assert.equal(consent, false, ask);
@@ -130,6 +136,7 @@ test('the CLI row no longer claims there is no consent modal — because there i
   // that sentence was the opposite of the truth.
   const rows = agentDoorRows({ ...NO_DOORS, cliAliases: ['prod'], codeAccess: true });
 
+  assert.ok(rows.some((row) => row.label.startsWith('CLI')), 'no CLI row at all, so the check below proves nothing');
   assert.doesNotMatch(detailOf(rows, 'CLI'), /no consent modal/);
   assert.match(detailOf(rows, 'Code access'), /no consent modal/, 'the key really has none — that one is true');
 });
@@ -143,5 +150,28 @@ test('the rendered form carries the standing-consent row, not just the row build
   const html = renderHtml(form({ agentDoors: { ...NO_DOORS, standingConsent: true } }));
 
   assert.match(html, /No consent prompt/);
-  assert.match(html, /credSshManager\.editNode/);
+  assert.match(html, /without being asked/);
+});
+
+test('the standing-consent row offers no manage link, because its control is on this very page', () => {
+  // `editNode` from inside the entity form re-opens the form and throws away what somebody had
+  // typed. The detail says where the setting is instead, which is what the viewer needs anyway.
+  const html = renderHtml(form({ agentDoors: { ...NO_DOORS, standingConsent: true, cliAliases: ['prod'] } }));
+
+  assert.doesNotMatch(html, /data-command="credSshManager\.editNode"/);
+  assert.match(html, /data-command="credSshManager\.enableCliAccess"/, 'the doors that ARE elsewhere keep their link');
+  assert.doesNotMatch(html, /data-command=""/, 'an empty command is a manage… that does nothing');
+});
+
+test('the window computes the door, rather than the tests supplying it', () => {
+  // Every other test here hands `standingConsent` in. Delete the computation from `extension.ts`
+  // and all of them stay green while no real window ever renders the row — so this reads the wiring.
+  const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'extension.ts'), 'utf8');
+  const wired = source
+    .split('\n')
+    .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
+    .filter((line) => /doorsOf\(/.test(line) && /standingConsentFor\(/.test(line));
+
+  assert.equal(wired.length, 1, `extension.ts does not pass the computed door into doorsOf; doorsOf lines: ${
+    source.split('\n').filter((l) => l.includes('doorsOf(')).map((l) => l.trim()).join(' | ')}`);
 });

@@ -389,6 +389,23 @@ function askFromParent(
   return from === undefined || above.access.ask === undefined ? undefined : { ask: above.access.ask, from };
 }
 
+/**
+ * Is this node reachable by an agent with no dialog at all (#95)?
+ *
+ * <p>Both halves of the question, and the `use` half is not belt-and-braces: what the answer is used
+ * to say is that an agent may USE this entry without being asked, and with the use rung off no agent
+ * can use it at all. Inheritance counts on both — a node under a never-ask folder is reached without
+ * a dialog exactly as one that says so itself, because the door resolves the same way.</p>
+ *
+ * <p>Here rather than beside the footer that first rendered it: this is a question about POLICY, and
+ * a broker check or a command needing the same answer must not have to import a UI module to get
+ * it — or, worse, re-spell `ask === 'never' && use === true` and let the two drift.</p>
+ */
+export function standingConsentFor(node: TreeNode, byId: (id: string) => TreeNode | undefined): boolean {
+  const access = resolveMcpInTree(node, byId).access;
+  return access.ask === 'never' && access.use === true;
+}
+
 /** Who answered: the parent itself ('entity' is the resolver's word for the node it was asked about). */
 function askAnswerer(
   above: { askSource: McpSource; askFolder: TreeNode | undefined },

@@ -1,14 +1,15 @@
-import { TreeNode } from './types';
-import { resolveMcpInTree } from './mcpAccess';
 /**
  * The other ways an agent can reach an entry — the ones the six MCP switches do not show
  * (tails T24b, the owner's yes on 2026-08-28).
  *
  * <p>The switches cover the broker's entry-level actions. Five more doors exist and each has
- * its own lifecycle: a CLI alias (`creds ssh <name>` — reachable from an agent's terminal, and
- * confirmed by the same dialog a token call raises), the Remote Bridge, the WSL agent relay, a
- * config's code-access key (a standing door, no modal at all), and — since #95 — an entry whose
- * consent policy is `never`, which is a standing door of its own. Duplicating their on/off here would make
+ * its own lifecycle. Two of them are genuinely modal-free and are listed first: a config's
+ * code-access key (a key, not a grant — no dialog at all) and, since #95, an entry whose consent
+ * policy resolves to `never`. The other three go through the ordinary consent check, and what that
+ * check does is the entry's own setting: a CLI alias (`creds ssh <name>`, reachable from an agent's
+ * terminal), the Remote Bridge, and the WSL agent relay. The CLI row used to claim it had no
+ * consent modal, which was never true — `handleAlias` mints a grant and calls `perform`, which
+ * calls `consent`. Duplicating their on/off here would make
  * two owners for one door; what the form does instead is REFUSE TO HIDE THEM: a read-only
  * footer under the switches lists whichever are live for this entry, each with the command
  * that manages it. Nothing agent-reachable is invisible from the place a person reasons about
@@ -40,8 +41,15 @@ export interface AgentDoors {
 export interface AgentDoorRow {
   readonly label: string;
   readonly detail: string;
-  /** The command that manages this door — the "go there" the footer offers. */
-  readonly command: string;
+  /**
+   * The command that manages this door — the "go there" the footer offers.
+   *
+   * <p>Absent for a door managed on the page the footer is ON. The consent cadence is the only one
+   * so far: its control is a few lines above this row on the entity form, and offering `editNode`
+   * there would re-open the form somebody is filling in and throw away what they had typed. The
+   * detail says where to change it instead, which is what the viewer needs too.</p>
+   */
+  readonly command?: string;
 }
 
 /** Every door, in the order a person should read them — the modal-free ones first. */
@@ -56,7 +64,6 @@ const DOORS: ReadonlyArray<{ live: (d: AgentDoors) => boolean; row: (d: AgentDoo
       detail:
         'Saved as: an agent may USE this entry without being asked. Change it in Agent access, '
         + 'under the consent setting. Creating and deleting still ask, and every call is still recorded.',
-      command: 'credSshManager.editNode',
     }),
   },
   {
@@ -71,7 +78,11 @@ const DOORS: ReadonlyArray<{ live: (d: AgentDoors) => boolean; row: (d: AgentDoo
     live: (d) => d.cliAliases.length > 0,
     row: (d) => ({
       label: `CLI: ${d.cliAliases.map((name) => `creds … ${name}`).join(', ')}`,
-      detail: 'Usable from any terminal on this machine while this window is open — an agent in a terminal included. Each use is confirmed by the same dialog a token call raises.',
+      // Not "no consent modal", which was false, and not "every use is confirmed", which would be
+      // false for an entry saved as never-ask and would contradict the row above it. The alias
+      // route goes through the SAME consent check as any other use — what that check does is the
+      // entry's own setting.
+      detail: 'Usable from any terminal on this machine while this window is open — an agent in a terminal included. It goes through the same consent check as any other use, so whether a dialog appears follows this entry’s consent setting.',
       command: 'credSshManager.enableCliAccess',
     }),
   },
@@ -116,8 +127,9 @@ export function doorsOf(
    * Whether an agent may use this entry with no dialog (#95).
    *
    * <p>A BOOLEAN rather than a node and a tree walk, so this function stays what it is — state in,
-   * rows out — and its tests need no synthetic hierarchy. {@link standingConsentFor} is the walk,
-   * and it is exported beside this so the one caller can do both on one line.</p>
+   * rows out — and its tests need no synthetic hierarchy. The walk is `standingConsentFor` in
+   * `mcpAccess.ts`, where the policy lives: a broker or a command that needs the same answer must
+   * not have to import this UI module to get it.</p>
    */
   standingConsent: boolean,
 ): AgentDoors {
@@ -130,15 +142,3 @@ export function doorsOf(
   };
 }
 
-/**
- * Is this entry reachable with no dialog at all — resolved through the tree, like the door itself?
- *
- * <p>Both halves of the question, and the `use` half is not belt-and-braces: the row says an agent
- * may USE this entry without being asked, and with the use rung off no agent can use it at all.
- * Inheritance counts on both — an entry under a never-ask folder is reached without a dialog exactly
- * as one that says so itself, because the door resolves the same way.</p>
- */
-export function standingConsentFor(node: TreeNode, byId: (id: string) => TreeNode | undefined): boolean {
-  const access = resolveMcpInTree(node, byId).access;
-  return access.ask === 'never' && access.use === true;
-}
