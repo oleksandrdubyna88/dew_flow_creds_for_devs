@@ -767,9 +767,16 @@ all on a Linux CI runner that has no `wsl.exe`.
 **What none of this proves, and the DoD says so out loud.** No unit test opens a real WSL shell.
 `scripts/wsl-agent-relay-itest.cjs` is the only thing that drives the real relay with the real
 OpenSSH tools, and it prints its reason and passes when WSL is absent — which is every CI run, since
-CI is Linux. **A green CI run is therefore not evidence for the relay route.** The plan's DoD
-requires that script to have been RUN on a machine with WSL and its output quoted; until that has
-happened the route is proven against stubs only.
+CI is Linux. **A green CI run is therefore not evidence for the relay route.**
+
+It was RUN on 2026-09-17 on a Windows machine with WSL: twenty checks, all `ok`. Three of them are
+this change's, and they end with a CONTROL rather than a claim — the composed line is built by the
+real `envPrefix`, it is run in a shell that does not export `SSH_AUTH_SOCK`, it reaches the agent,
+and the same shell without it reaches nothing. That is what makes the first two a measurement.
+
+**The last centimetre is still unobserved**: nobody has clicked *Connect* in a real VS Code window
+attached to WSL, so VS Code creating the terminal and posting the line into it has only ever been
+exercised by a stub. Closing that means building the `.vsix` and clicking once.
 
 ## What none of them covers
 
