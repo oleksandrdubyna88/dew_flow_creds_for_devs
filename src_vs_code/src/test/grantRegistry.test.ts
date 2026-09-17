@@ -11,6 +11,10 @@ import { GrantRegistry, MAX_DENIED_TOMBSTONES } from '../grantRegistry';
 const mint = (registry: GrantRegistry) =>
   registry.mint('acct-1', 'entity-1', 'prod-db', 'ssh');
 
+/** What the MCP door and the alias route mint: one request's capability, never handed out. */
+const mintForOneCall = (registry: GrantRegistry) =>
+  registry.mint('acct-1', 'entity-1', 'prod-db', 'ssh', Date.now(), 'call');
+
 test('a minted grant is pending and addressable by its secret', () => {
   const registry = new GrantRegistry();
   const grant = mint(registry);
@@ -143,4 +147,57 @@ test('the 256-grant cap reclaims pending grants but keeps a live allowed one', (
   }
 
   assert.equal(registry.get(live.secret)?.status, 'allowed', 'the live token must not be evicted');
+});
+
+test('a shared token survives sustained SILENT mcp use, which mints allowed grants', () => {
+  // The row above passes because its overflow is PENDING, and pending is what the cap prefers to
+  // reclaim. Issue #95 broke that assumption: the MCP door mints a fresh grant per call and a
+  // pre-consented call marks it ALLOWED immediately, at up to sixty calls a minute. So the map
+  // fills with allowed grants, `oldestEvictable` runs out of pending victims and falls back to the
+  // oldest ALLOWED — which is the long-lived token somebody shared with Claude Code, because map
+  // order is insertion order and using a grant does not move it.
+  //
+  // 256 at 60/min is about four minutes of unattended agent work, and this registry's own docblock
+  // says the cap was a backstop that "in practice only the denied-grant sweep ever fires". It fires
+  // routinely now. Reported by CodeRabbit on PR #106 as a merge risk, and it was right.
+  const registry = new GrantRegistry();
+  const shared = mint(registry); // the token an integration is still using
+  registry.allow(shared.secret);
+
+  for (let i = 0; i < 300; i += 1) {
+    const quiet = mintForOneCall(registry);
+    registry.allow(quiet.secret); // what `preConsent` does on every silent use call
+  }
+
+  assert.equal(
+    registry.get(shared.secret)?.status,
+    'allowed',
+    'sustained silent use evicted a live shared token — the integration stops working with no event anywhere',
+  );
+});
+
+test('and the window still bounds itself — the call grants are what went', () => {
+  // The other half of the same guarantee, and the reason the fix is a preference rather than an
+  // exemption: if call grants were merely spared, 256 would become a floor that nothing reclaims.
+  const registry = new GrantRegistry();
+  const shared = mint(registry);
+  registry.allow(shared.secret);
+  const first = mintForOneCall(registry);
+  registry.allow(first.secret);
+
+  for (let i = 0; i < 300; i += 1) {
+    registry.allow(mintForOneCall(registry).secret);
+  }
+
+  assert.equal(registry.get(shared.secret)?.status, 'allowed', 'the token stays');
+  assert.equal(registry.get(first.secret), undefined, 'the oldest call grant is what the cap reclaimed');
+});
+
+test('a door that mints per call says so; everything else is a token by default', () => {
+  // The default is the conservative one on purpose: a new door that forgets to declare its scope
+  // gets a grant the cap protects, not one it throws away first.
+  const registry = new GrantRegistry();
+
+  assert.equal(mint(registry).scope, 'token');
+  assert.equal(mintForOneCall(registry).scope, 'call');
 });

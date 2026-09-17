@@ -3501,6 +3501,20 @@ sensibly ask for a fresh token — reopening the dialog the person just refused.
 tombstones bounded by `MAX_DENIED_TOMBSTONES` (64, oldest dropped first), which also makes them the
 cheapest thing the 256-grant cap can reclaim.
 
+**The cap gained a middle tier when silent calls arrived** (#95, and the defect was reported on the
+pull request rather than found here). `MAX_GRANTS` was written as a backstop — its own docblock said
+"in practice only the denied-grant sweep ever fires" — because grants accumulated one per SHARE. The
+MCP door mints one per CALL, and a pre-consented call marks it `allowed` immediately, at up to sixty
+a minute: the map fills with allowed grants in about four minutes of unattended agent work,
+`oldestEvictable` runs out of pending victims, and the oldest allowed grant is a token an
+integration is still holding — because map order is insertion order and USING a token does not move
+it. A live capability revoked by a rate nobody was watching, with no event anywhere. So a grant now
+carries `scope`: a **token** is handed out and looked up again, a **call** grant is one request's
+capability whose secret appears in no response body. Eviction takes the oldest non-allowed, then the
+oldest allowed CALL grant, then — only when neither exists, which is the case the cap was written
+for — the oldest allowed token. The default is `'token'`, so a new door that forgets to declare
+itself gets the protected kind rather than the disposable one.
+
 `scripts/agent-broker-itest.cjs` now runs in `ci-extension.yml`. Its `keyFiles()` helper had read
 `keys/` without recursing while materialized keys live in `keys/<pid>/` — so it always returned an
 empty list, which made one assertion impossible to pass and the two around it impossible to fail.
@@ -4209,13 +4223,16 @@ a file that churns is a file nobody reads the diff of.
 
 **Three ways that file could lie, all closed in S4.3's code round** (#95), and each was observed
 rather than predicted. **A stale binary**: the script's entire output is whatever the executable
-answers, and `dotnet build dew_flow_creds_for_devs.slnx` does NOT build `src_mcp` — that solution
-lists the minimal-API server and its tests and nothing else — so a `Program.cs` edit followed by
-that command prints *Build succeeded, 0 Warning(s)*, regenerates the contract from yesterday's
-prose, and `--check` agrees, because both asked the same stale process. The freshness check the
-integration harness already had is now shared (`scripts/mcpBinary.cjs`, CJS so the `.cjs` harness
-can require it and the `.mjs` emitter can import it) and the emitter refuses a binary older than
-its newest `.cs`. **Line endings in the VALUES**: the instructions are a C# raw string literal, so
+answers, and `dew_flow_creds_for_devs.slnx` used to list the minimal-API server and its tests and
+nothing else — so a `Program.cs` edit followed by `dotnet build dew_flow_creds_for_devs.slnx`
+printed *Build succeeded, 0 Warning(s)* without rebuilding anything, regenerated the contract from
+yesterday's prose, and `--check` agreed, because both had asked the same stale process. **The
+solution file now carries `src_mcp/src` and `src_mcp/tests`**, which is the real repair and makes
+the command in `CLAUDE.md`'s Definition of Done true; CI was never affected, because all four
+workflows that touch the relay name its `.csproj` directly. The emitter keeps the belt as well as
+the braces: the freshness check the integration harness already had is now shared
+(`scripts/mcpBinary.cjs`, CJS so the `.cjs` harness can require it and the `.mjs` emitter can
+import it) and it refuses a binary older than its newest `.cs`, whatever anyone built. **Line endings in the VALUES**: the instructions are a C# raw string literal, so
 they carry the endings of the machine that built the binary; `withUnixNewlines` normalises them.
 **Line endings of the FILE**: `core.autocrlf=true` and a deliberately narrow `.gitattributes` mean
 every checkout hands the generated file back as CRLF, so a byte comparison answered *the MCP
