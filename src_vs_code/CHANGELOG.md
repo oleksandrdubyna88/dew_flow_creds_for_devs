@@ -15,8 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   **Agent access**, on the entity form and the folder form, and is inherited from the folder exactly
   as the ten switches are.
 
-  Three things hold whatever it says. **Creating and deleting always ask** — the cadence covers
-  USING an entry and nothing else. **Every call is still recorded**, in ⋯ → MCP logs, including the
+  Three things hold whatever it says. **Creating and deleting always ask** — the cadence covers an
+  agent USING an entry over MCP and nothing else, so every folder verb still asks too, and so does
+  `creds ssh <alias>` from a terminal, which mints a fresh grant for every call. The entry's own
+  footer says that where you would otherwise assume it. **Every call is still recorded**, in ⋯ → MCP logs, including the
   ones nobody was asked about; the journal can be filtered for exactly those. And **never-ask makes
   the switches the whole gate**, which the form says in those words beside the option, and which the
   entry's own footer names as a door: *No consent prompt — an agent may USE this entry without being
