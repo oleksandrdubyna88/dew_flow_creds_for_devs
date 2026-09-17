@@ -133,6 +133,29 @@ window with no folder at all falls back to the single distribution that is known
 which is a wrong answer that looks like a working one. Record:
 [PLAN_connect_in_a_remote_window.md](../todo/PLAN_connect_in_a_remote_window.md).
 
+`remoteRoute` and `remoteWindowMessage` are the other two halves of that decision, and both are on
+the `vscode`-free side for the same reason. **`remoteRoute` is one total function over
+(side × credential × agent × relay readiness)**, enumerated as a table test rather than sampled,
+because this defect surfaced one argument at a time: fix the `-i` and the pinned `UserKnownHostsFile`
+breaks identically, fix that and the askpass script does. Two shapes in it are deliberate. Readiness
+arrives as a **record** (`enabled`, `running`, `socket`) rather than a socket string, because a
+string cannot tell "the relay is switched off" from "it is on but has not started yet" — two
+different sentences with two different buttons. And a refusal carries **every** reason, ordered by
+what must be fixed first, so the one case that can list several (a stored key) says "the relay is off
+AND the agent does not hold this key" in one go; a credential that no relay can carry — a password's
+askpass script, a key path on the Windows disk — refuses ALONE, because listing relay problems beside
+it would point at a button that cannot help.
+
+`remoteWindowMessage` carries the wording, and it is the lesson of `wslRelayReadiness` one layer up.
+The sentence this replaces was `Identity file c:\Users\…\keys\23284\<guid>.key not accessible` —
+true, and useless: the file is exactly where it was put, and the fact worth saying is that the
+extension and the terminal are on two different computers. So every message **names both machines**
+before it names anything else. The module yields an `action` rather than a command id, which is what
+keeps it `vscode`-free; the call site maps the action to `credSshManager.setUpWslRelay` and friends.
+Its button label reads *Set Up the Relay and Connect* rather than *Turn It On and Connect* because
+the command it runs opens a distribution picker and a readiness check first — a label may not promise
+a silence it will not deliver.
+
 ## Data model
 
 `TreeNode` is stored **flat**; the tree is derived from `parentId` at render time.
