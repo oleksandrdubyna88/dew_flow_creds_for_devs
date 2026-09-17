@@ -30,6 +30,7 @@ export const HELP_ARTICLE_IDS: readonly string[] = [
   'cli',
   'remote-bridge',
   'wsl-relay',
+  'connect-in-a-remote-window',
   'sharing',
   'corporate-recovery',
   'corporate-roles',
