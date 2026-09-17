@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { WindowSide } from '../remoteWindow';
 import {
+  CREDENTIAL_KINDS,
   ConnectRoute,
-  CredentialKind,
   RelayReadiness,
   remoteRoute,
 } from '../remoteRoute';
@@ -23,7 +23,9 @@ const UNKNOWN: WindowSide = { kind: 'wsl', distro: '', problem: 'unknown' };
 const SSH_REMOTE: WindowSide = { kind: 'other', remoteName: 'ssh-remote' };
 
 const ALL_SIDES = [LOCAL, WSL, AMBIGUOUS, UNKNOWN, SSH_REMOTE];
-const ALL_CREDENTIALS: CredentialKind[] = ['storedKey', 'keyPath', 'password', 'none'];
+// Iterated from the production tuple, never retyped: a test that holds its own copy of a list will
+// not notice the fifth entry, and this matrix is exactly the test that has to.
+const ALL_CREDENTIALS = CREDENTIAL_KINDS;
 const ALL_RELAYS = [READY, OFF, STARTING];
 
 const refusals = (route: ConnectRoute): readonly string[] =>
@@ -135,10 +137,27 @@ test('…but an unresolved distribution still refuses, because a pinned host key
   assert.deepEqual(refusals(remoteRoute(UNKNOWN, 'none', false, READY)), ['distro-unknown']);
 });
 
-test('the distribution problem is named FIRST, before the relay it makes unanswerable', () => {
+test('an unresolved distribution refuses ALONE — we cannot report a relay we never asked about', () => {
+  // Found by the code round. Readiness is read for ONE distribution, so when the distribution
+  // could not be named, `running` is false and `socket` empty whatever the machine is doing.
+  // Adding `relay-off` there tells somebody their relay is off while it may be running, which is
+  // worse than saying one thing at a time.
   assert.deepEqual(remoteRoute(AMBIGUOUS, 'storedKey', false, OFF), {
     kind: 'refuse',
-    reasons: ['distro-ambiguous', 'relay-off', 'agent-has-no-key'],
+    reasons: ['distro-ambiguous'],
+  });
+  assert.deepEqual(remoteRoute(UNKNOWN, 'storedKey', true, READY), {
+    kind: 'refuse',
+    reasons: ['distro-unknown'],
+  });
+});
+
+test('a ready relay that is not serving THIS key refuses for the key alone', () => {
+  // The combination the matrix could otherwise have let slip: everything about the transport is
+  // right, and the agent simply does not hold this key.
+  assert.deepEqual(remoteRoute(WSL, 'storedKey', false, READY), {
+    kind: 'refuse',
+    reasons: ['agent-has-no-key'],
   });
 });
 

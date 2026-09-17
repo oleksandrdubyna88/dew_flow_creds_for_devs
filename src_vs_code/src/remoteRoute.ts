@@ -22,8 +22,16 @@ import { DistroProblem, WindowSide } from './remoteWindow';
  * <p>Pure, and imports no `vscode`.</p>
  */
 
-/** What the connection would authenticate with — `sshCredential.ts`'s four answers. */
-export type CredentialKind = 'storedKey' | 'keyPath' | 'password' | 'none';
+/**
+ * What the connection would authenticate with — `sshCredential.ts`'s four answers.
+ *
+ * <p>A runtime tuple with the type derived from it, not the other way round: a test that retypes a
+ * list the code also holds will not notice the fifth entry, and the route matrix is exactly such a
+ * test. It iterates this.</p>
+ */
+export const CREDENTIAL_KINDS = ['storedKey', 'keyPath', 'password', 'none'] as const;
+
+export type CredentialKind = (typeof CREDENTIAL_KINDS)[number];
 
 /** Everything known about the relay for THIS window's distribution, read in one pass. */
 export interface RelayReadiness {
@@ -35,16 +43,29 @@ export interface RelayReadiness {
   readonly socket: string;
 }
 
-export type RefusalReason =
-  | 'not-wsl'
-  | 'distro-ambiguous'
-  | 'distro-unknown'
-  | 'relay-off'
-  | 'relay-not-running'
-  | 'agent-has-no-key'
-  | 'credential-is-a-password'
-  | 'credential-is-a-key-path'
-  | 'known-hosts-translation-failed';
+/**
+ * Every way a Connect click can be refused, as a runtime tuple so tests iterate the SAME list the
+ * code holds rather than a copy of it.
+ *
+ * <p>`known-hosts-translation-failed` is the one entry `remoteRoute` never returns: it is raised by
+ * the CALL SITE after this function has already answered `agent` or `compose`, when asking the
+ * distribution where a pinned `known_hosts` file lives gets no answer. It lives in this union
+ * because the wording module takes one kind of reason, not two — flagged by the code round, and
+ * named here rather than left to be rediscovered.</p>
+ */
+export const REFUSAL_REASONS = [
+  'not-wsl',
+  'distro-ambiguous',
+  'distro-unknown',
+  'relay-off',
+  'relay-not-running',
+  'agent-has-no-key',
+  'credential-is-a-password',
+  'credential-is-a-key-path',
+  'known-hosts-translation-failed',
+] as const;
+
+export type RefusalReason = (typeof REFUSAL_REASONS)[number];
 
 export type ConnectRoute =
   /** Compose the line as always — for the platform `terminalPlatform` names, which may be linux. */
@@ -99,18 +120,29 @@ function wslRoute(
   return storedKeyRoute(distro, agentServesKey, relay);
 }
 
-/** The stored-key case: the only one the relay can serve, and the only one that can list several. */
+/**
+ * The stored-key case: the only one the relay can serve, and the only one that can list several.
+ *
+ * <p><b>An unresolved distribution short-circuits.</b> The code round caught this: readiness is read
+ * for ONE distribution, so when we could not name it, `running` is false and `socket` is empty
+ * whatever the machine is actually doing — and reporting `relay-off` there states something about a
+ * relay we never asked about. Telling somebody their relay is off while it is running is worse than
+ * telling them one thing at a time, which is the only rule it appears to break.</p>
+ */
 function storedKeyRoute(
   distro: RefusalReason | undefined,
   agentServesKey: boolean,
   relay: RelayReadiness,
 ): ConnectRoute {
-  const reasons = [distro, relayProblem(relay), agentServesKey ? undefined : ('agent-has-no-key' as const)];
-  const missing = reasons.filter((reason): reason is RefusalReason => reason !== undefined);
-  if (missing.length > 0) {
-    return { kind: 'refuse', reasons: missing };
+  if (distro !== undefined) {
+    return { kind: 'refuse', reasons: [distro] };
   }
-  return { kind: 'agent', socketPath: relay.socket };
+  const missing = [
+    relayProblem(relay),
+    agentServesKey ? undefined : ('agent-has-no-key' as const),
+  ].filter((reason): reason is RefusalReason => reason !== undefined);
+
+  return missing.length > 0 ? { kind: 'refuse', reasons: missing } : { kind: 'agent', socketPath: relay.socket };
 }
 
 function credentialCannotCross(credential: CredentialKind): RefusalReason | undefined {

@@ -75,7 +75,7 @@ export function refusalFor(
 ): RemoteRefusal {
   const lines = reasons.map((reason) => `• ${sentenceFor(reason, context)}`);
   return {
-    message: [whichMachineIsWhich(context), ...lines].join('\n'),
+    message: [whichMachineIsWhich(context, reasons), ...lines].join('\n'),
     buttons: buttonsFor(reasons),
   };
 }
@@ -86,19 +86,38 @@ export function refusalFor(
  * <p>"Identity file … not accessible" is true and useless: the file is exactly where it was put. The
  * fact worth saying is that the extension and the terminal are on two different computers.</p>
  */
-function whichMachineIsWhich(context: RefusalContext): string {
+function whichMachineIsWhich(
+  context: RefusalContext,
+  reasons: readonly RefusalReason[],
+): string {
+  // Only which machine is which. The key sentence used to live here too, and the code round was
+  // right that it is a claim: a refusal for an unresolved distribution, or for an entity with no
+  // credential at all, is not about a key, and sending that reader looking for one wastes the very
+  // attention this heading exists to direct. It belongs to the reasons that are about a key.
   return (
     `CredsForDevs runs on this computer (${machineName(context.hostPlatform)}), ` +
-    `while this window's terminal runs in ${whereTheTerminalIs(context)}. ` +
-    'Your keys are held on this computer, so a path to one means nothing to that shell.'
+    `while this window's terminal runs in ${whereTheTerminalIs(context, reasons)}.`
   );
 }
 
-function whereTheTerminalIs(context: RefusalContext): string {
+/**
+ * Where the terminal is, named as precisely as the refusal allows.
+ *
+ * <p>The distribution is deliberately NOT named when the refusal is that we could not work out
+ * which distribution this is: a heading reading "WSL (Ubuntu)" above a line reading "this window
+ * has folders in more than one distribution" points the reader at the one thing the message has
+ * just said it cannot identify.</p>
+ */
+function whereTheTerminalIs(
+  context: RefusalContext,
+  reasons: readonly RefusalReason[],
+): string {
   if (context.remoteName !== 'wsl') {
-    return `a ${context.remoteName} window`;
+    return `a remote window (${context.remoteName})`;
   }
-  return context.distro.length > 0 ? `WSL (${context.distro})` : 'WSL';
+  const unresolved =
+    reasons.includes('distro-ambiguous') || reasons.includes('distro-unknown');
+  return context.distro.length > 0 && !unresolved ? `WSL (${context.distro})` : 'WSL';
 }
 
 /** `win32` → `Windows`. Said the way a person says it, not the way Node spells it. */
@@ -116,10 +135,11 @@ function sentenceFor(reason: RefusalReason, context: RefusalContext): string {
 }
 
 const SENTENCES: Readonly<Record<RefusalReason, (context: RefusalContext) => string>> = {
+  // The remedy differs by remote kind, so the sentence is built from it rather than assuming
+  // Remote-SSH — a person in a dev container was being told to install `creds` on an SSH host.
   'not-wsl': (context) =>
-    `Nothing bridges a ${context.remoteName} window to the keys on this computer yet — only WSL is ` +
-    'reachable, through the agent relay. For a Remote-SSH host, install `creds` there and open the ' +
-    'Remote Bridge instead.',
+    `Your keys are held on this computer, and nothing bridges a ${context.remoteName} window to ` +
+    `them yet — only WSL is reachable, through the agent relay. ${remedyForRemote(context.remoteName)}`,
   'distro-ambiguous':
     () =>
       'This window has folders in more than one WSL distribution, so there is no single one to ask ' +
@@ -134,12 +154,13 @@ const SENTENCES: Readonly<Record<RefusalReason, (context: RefusalContext) => str
     'possible without the key ever entering the distribution.',
   'relay-not-running':
     () =>
-      'The WSL agent relay is switched on but is not listening yet — usually `creds` is not ' +
-      'installed inside the distribution, which the setup command checks and says.',
+      'The WSL agent relay is switched on but is not listening. It may still be starting, so trying ' +
+      'again in a moment is worth one attempt; if it keeps saying this, `creds` is most likely not ' +
+      'installed inside the distribution — the setup command checks that and names what is missing.',
   'agent-has-no-key':
     () =>
-      'This key is not loaded into the SSH agent. The relay carries the agent, not the file, so the ' +
-      'key has to be in the agent for the connection to use it.',
+      'This key is not loaded into the SSH agent. The relay carries the agent, not the file, so your ' +
+      'key stays on this computer and has to be IN the agent for the connection to use it.',
   'credential-is-a-password':
     () =>
       'This entry authenticates with a PASSWORD, which is supplied through a helper script written ' +
@@ -150,11 +171,22 @@ const SENTENCES: Readonly<Record<RefusalReason, (context: RefusalContext) => str
       'This entry points at a key FILE on this computer rather than one held in the vault. Only a ' +
       'vault key can be served through the agent, and a Windows path is not readable as a key from ' +
       'that shell.',
+  // "Try Again" on its own is a loop, which the code round was right to call out: say what would
+  // have to change between the two attempts.
   'known-hosts-translation-failed': (context) =>
     `This host's key is pinned, and ${context.distro.length > 0 ? context.distro : 'the distribution'} ` +
-    'did not answer when asked where that file is. Connecting without the pin would drop the very ' +
-    'check the pin exists for, so the connection was refused instead.',
+    'did not answer when asked where that file is — usually it is stopped or still starting. ' +
+    'Connecting without the pin would drop the very check the pin exists for, so the connection was ' +
+    'refused instead. Open a terminal there to wake it, then try again.',
 };
+
+/** What to do instead, per remote kind — only Remote-SSH has a bridge to point at. */
+function remedyForRemote(remoteName: string): string {
+  if (remoteName === 'ssh-remote') {
+    return 'Install `creds` on that host and open the Remote Bridge instead.';
+  }
+  return 'Connect from a window running on this computer, or use an entry that needs no key.';
+}
 
 /**
  * The button, from the FIRST reason.
@@ -172,20 +204,26 @@ function buttonsFor(reasons: readonly RefusalReason[]): readonly RefusalButton[]
 }
 
 /**
- * The relay button drops its promise when the relay is NOT the last thing missing.
+ * The relay button promises a connection only when switching the relay ON is the whole fix.
  *
- * <p>Found by the plan round, and it is the kind of defect a label invites: `setUpWslRelay` starts
- * the relay, it does not put this key into the agent. So on a refusal that reads "the relay is off
- * AND the agent does not hold this key", a button saying <i>and Connect</i> would set the relay up,
- * retry, and land the person on a second refusal — having promised the opposite. When the relay is
- * the only thing missing the promise is true and worth making; otherwise the button says what it
- * does and the next refusal offers the next button.</p>
+ * <p>Found twice, by both gate rounds, and it is the kind of defect a label invites.</p>
+ *
+ * <p>First: `setUpWslRelay` starts the relay, it does not put this key into the agent. So on a
+ * refusal reading "the relay is off AND the agent does not hold this key", <i>and Connect</i> would
+ * set the relay up, retry, and land the person on a second refusal — having promised the
+ * opposite.</p>
+ *
+ * <p>Second, and the one the first fix missed: `relay-not-running` means the relay is ALREADY
+ * switched on and still is not listening — usually because something inside the distribution is
+ * wrong. Running the setup again may well not fix it, so that reason never promises a connection
+ * even when it stands alone.</p>
  */
 function labelFor(action: RefusalAction, reasons: readonly RefusalReason[]): string {
-  if (action !== 'setUpRelay' || reasons.length === 1) {
+  if (action !== 'setUpRelay') {
     return BUTTON_LABELS[action];
   }
-  return RELAY_ONLY_LABEL;
+  const relayIsTheWholeFix = reasons.length === 1 && reasons[0] === 'relay-off';
+  return relayIsTheWholeFix ? BUTTON_LABELS.setUpRelay : RELAY_ONLY_LABEL;
 }
 
 /** What the relay button says when fixing it will NOT be enough to connect. */

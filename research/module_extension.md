@@ -151,10 +151,13 @@ The sentence this replaces was `Identity file c:\Users\…\keys\23284\<guid>.key
 true, and useless: the file is exactly where it was put, and the fact worth saying is that the
 extension and the terminal are on two different computers. So every message **names both machines**
 before it names anything else. The module yields an `action` rather than a command id, which is what
-keeps it `vscode`-free; the call site maps the action to `credSshManager.setUpWslRelay` and friends.
+keeps it `vscode`-free; **the call site that maps an action to `credSshManager.setUpWslRelay` and
+friends is not built yet** — it is the plan's S6, and until then these two modules have no consumer.
 Its button label reads *Set Up the Relay and Connect* rather than *Turn It On and Connect* because
-the command it runs opens a distribution picker and a readiness check first — a label may not promise
-a silence it will not deliver.
+the command it will run opens a distribution picker and a readiness check first, and it drops the
+promise entirely — to *Set Up the WSL Agent Relay* — whenever switching the relay on is not the whole
+fix: beside a key the agent does not hold, or for `relay-not-running`, which means the relay is
+already on and still silent. A label may not promise a silence it will not deliver.
 
 ## Data model
 
