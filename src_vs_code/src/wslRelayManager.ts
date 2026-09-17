@@ -1,5 +1,11 @@
 import { spawn } from 'node:child_process';
-import { isSafeShellWord, relayArgv, socketFromBusyLine, socketFromExportLine } from './wslRelay';
+import {
+  isSafeShellWord,
+  lineAssembler,
+  relayArgv,
+  socketFromBusyLine,
+  socketFromExportLine,
+} from './wslRelay';
 import { wslBinary } from './wslProcess';
 
 /**
@@ -252,28 +258,26 @@ function refuse(command: string, distros: readonly string[]): string | undefined
  */
 export function spawnWslRelay(args: readonly string[], onStderr: (text: string) => void): RelayProcess {
   const child = spawn(wslBinary(), [...args], { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
-  let pending = '';
   const handlers: ((line: string) => void)[] = [];
+  const deliver = (line: string): void => handlers.forEach((handler) => handler(line));
+  // ONE assembler per stream, never one shared: the two interleave, and half a line of one must
+  // not be completed by the other. Both go to the same handlers because both carry lines about the
+  // same thing — stdout says where the relay listens, stderr says somebody else already does.
+  const out = lineAssembler(deliver);
+  const err = lineAssembler(deliver);
   child.stdout.setEncoding('utf8');
-  child.stdout.on('data', (chunk: string) => {
-    pending += chunk;
-    const lines = pending.split(/\r?\n/);
-    pending = lines.pop() ?? '';
-    lines.forEach((line) => handlers.forEach((handler) => handler(line)));
-  });
+  child.stdout.on('data', (chunk: string) => out.push(chunk));
+  child.stdout.on('end', () => out.end());
   child.stderr.setEncoding('utf8');
   child.stderr.on('data', (chunk: string) => {
     onStderr(chunk.trimEnd());
-    // ALSO to the line handlers. The relay announces where it is listening on stdout, but it
-    // refuses a socket somebody else is already serving on STDERR — and that refusal names the
-    // path, which is the one thing the manager needs to adopt it instead of declaring a working
-    // relay broken. Both streams carry lines about the same thing; only one was being read.
-    chunk.split(/\r?\n/).forEach((line) => {
-      if (line.trim().length > 0) {
-        handlers.forEach((handler) => handler(line));
-      }
-    });
+    // ALSO to the line handlers, and assembled rather than split per chunk — a review caught the
+    // first version doing the latter. The refusal that names an already-served socket is the one
+    // thing the manager needs to adopt a working relay instead of declaring it broken, and a `data`
+    // event can cut it in half.
+    err.push(chunk);
   });
+  child.stderr.on('end', () => err.end());
   return {
     kill: () => child.kill(),
     exited: new Promise((resolve) => {

@@ -11,6 +11,7 @@ import {
   socketFromBusyLine,
   socketFromExportLine,
   toWslPath,
+  lineAssembler,
 } from '../wslRelay';
 import { MAX_QUICK_FAILURES, QUICK_FAILURE_MS, RelayProcess, WslRelayManager } from '../wslRelayManager';
 
@@ -436,4 +437,59 @@ test('adopting does not kill what is serving the socket â€” it is somebody elseâ
   // Our own child had already exited; `kill` on it is a no-op, and nothing else is reachable from
   // here. What must NOT happen is the manager believing it owns the other relay's lifetime.
   assert.equal(manager.socketPathFor(''), '', 'stopping forgets the socket, as it always did');
+});
+
+// --- whole lines out of a stream that arrives in slices ---------------------------------------
+//
+// Raised by a review of the adoption change, and the consequence is not a missed log line: a
+// refusal cut in half matches nothing, so the manager declares a LIVE relay broken, drops the entry
+// on exit and spends the retry budget restarting something that was never down.
+
+test('a refusal split across two chunks is still ONE line', () => {
+  const seen: string[] = [];
+  const assembler = lineAssembler((line) => seen.push(line));
+
+  assembler.push('/run/user/1000/creds.sock is alre');
+  assert.deepEqual(seen, [], 'half a line is not a line');
+  assembler.push('ady served by a live relay\n');
+
+  assert.deepEqual(seen, ['/run/user/1000/creds.sock is already served by a live relay']);
+  assert.equal(
+    socketFromBusyLine(seen[0]),
+    '/run/user/1000/creds.sock',
+    'and the reassembled line is the one the manager can act on',
+  );
+});
+
+test('a chunk carrying several lines delivers every one of them', () => {
+  const seen: string[] = [];
+  const assembler = lineAssembler((line) => seen.push(line));
+
+  assembler.push('first\nsecond\r\nthird\n');
+
+  assert.deepEqual(seen, ['first', 'second', 'third'], 'and CRLF counts as one ending, not two');
+});
+
+test('a last line with no newline is released when the stream ends', () => {
+  // The case that matters most: a relay which refuses and exits writes exactly one line, and
+  // nothing guarantees it ends in a newline.
+  const seen: string[] = [];
+  const assembler = lineAssembler((line) => seen.push(line));
+
+  assembler.push('/tmp/x.sock is already served by a live relay');
+  assert.deepEqual(seen, []);
+  assembler.end();
+
+  assert.deepEqual(seen, ['/tmp/x.sock is already served by a live relay']);
+});
+
+test('end() releases nothing twice, and blank lines are never delivered', () => {
+  const seen: string[] = [];
+  const assembler = lineAssembler((line) => seen.push(line));
+
+  assembler.push('one\n\n   \n');
+  assembler.end();
+  assembler.end();
+
+  assert.deepEqual(seen, ['one'], 'both streams emit blank lines and no handler wants one');
 });

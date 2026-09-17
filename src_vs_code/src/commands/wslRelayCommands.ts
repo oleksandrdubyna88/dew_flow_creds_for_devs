@@ -25,21 +25,30 @@ export interface WslRelayCommandsHost {
 export function registerWslRelayCommands(host: WslRelayCommandsHost): void {
   const { register, relaySettings, sshAgent, windowsCredsForWsl, wslRelay } = host;
 
+  /**
+   * Set the relay up, and ANSWER whether it is now set up.
+   *
+   * <p>Every early return here is a NO — cancelled at the picker, a distribution that is not ready,
+   * a relay that would not start, or the wrong platform entirely. `remedyRunner` retries the
+   * connection after this command and was reading nothing, so cancelling the picker still produced
+   * a second attempt and a second identical refusal. Raised by a review; it is the same answer the
+   * add-key command already had to learn to give.</p>
+   */
   register('credSshManager.setUpWslRelay', async () => {
     if (process.platform !== 'win32') {
       void vscode.window.showInformationMessage(
         'The WSL relay is a Windows-only bridge — elsewhere ssh reaches the agent directly.',
       );
-      return;
+      return false;
     }
     const chosen = await chooseDistros();
     if (chosen === undefined) {
-      return;
+      return false;
     }
     const missing = await whatIsNotReady(chosen);
     if (missing.length > 0) {
       void vscode.window.showWarningMessage(missing, { modal: true });
-      return;
+      return false;
     }
     const config = vscode.workspace.getConfiguration('credSshManager');
     await config.update('wslRelayDistros', chosen, vscode.ConfigurationTarget.Global);
@@ -49,11 +58,12 @@ export function registerWslRelayCommands(host: WslRelayCommandsHost): void {
     const started = wslRelay.start(command, chosen, windowsCredsForWsl());
     if (!started.ok) {
       void vscode.window.showErrorMessage(`CredsForDevs: ${started.reason}`);
-      return;
+      return false;
     }
     for (const distro of chosen) {
       await setUpOneDistro(distro);
     }
+    return true;
   });
 
   /**

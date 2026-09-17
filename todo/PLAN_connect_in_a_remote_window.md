@@ -179,11 +179,19 @@ platform as an argument.
 
 > **`undefined`, not `'linux'`, for everything else** — corrected by S1's code round. The first
 > draft answered `'linux'` for every non-local window on the reasoning that the route refuses the
-> other kinds first. That hard-codes one caller's policy into a general function, and it is wrong on
-> its own terms twice: a Remote-SSH host can be Windows, and a WSL window whose distribution could
-> not be resolved has no shell to name either. An answer that is correct only because somebody else
-> remembered to refuse first is the exact shape of defect this plan exists to fix, so the refusal is
-> carried by the type instead.
+> other kinds first. That hard-codes one caller's policy into a general function, and a Remote-SSH
+> host can be Windows — an answer that is correct only because somebody else remembered to refuse
+> first is the exact shape of defect this plan exists to fix, so the refusal is carried by the type
+> instead.
+>
+> **Corrected 2026-09-17, after a review found this reasoning half wrong.** The paragraph above also
+> claimed that *"a WSL window whose distribution could not be resolved has no shell to name either"*,
+> and answered `undefined` for it. That conflates two questions: which shell parses the line, which
+> is bash for **every** WSL window because `remoteName` already said so, and which distribution to
+> ASK, which is what an unresolved `problem` blocks. Only the second is in doubt, and it blocks
+> TRANSLATION rather than composition — so the Windows-client route, which translates nothing, was
+> answered `windowsClient` by `remoteRoute` and then refused by `connectEntity` anyway, as `not-wsl`,
+> inside a WSL window. `terminalPlatform` now answers `linux` for any `wsl` side.
 
 ### D3. The route decision, also pure — and it reports EVERY missing piece
 

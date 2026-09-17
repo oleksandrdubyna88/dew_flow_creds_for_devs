@@ -554,6 +554,10 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
         storage,
         storageDir,
         agentServesKey: sshAgent.servesKeyFor(element.node),
+        // Asked AGAIN for the retry: *Add Key to Agent* is one of the remedies a refusal offers, so
+        // without this the second attempt reads the answer from before the remedy ran and refuses
+        // for the very reason it has just fixed.
+        refreshAgentServesKey: (): boolean => sshAgent.servesKeyFor(element.node),
         // Which window this was clicked in. In a WSL one the line would otherwise be composed for
         // Windows and posted into the distribution's shell — the defect this carries the fix for.
         // `target` rides along so *Add Key to Agent* acts on the row that was clicked.
@@ -610,6 +614,24 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
     );
   });
 
+  /**
+   * The row that actually HOLDS the key, which is not always the row that was clicked.
+   *
+   * <p>An SSH connection usually points at the key it uses rather than carrying one, through
+   * `sshKeyEntityId` — the same reference `sshCredential.ts` follows. Shared by add and remove
+   * because a pair of operations that disagree about which row they mean is worse than either being
+   * wrong alone: remove was unloading the connection's id, which the agent never held, and clearing
+   * the flag on the connection while the key row went on claiming to be served.</p>
+   */
+  const keyRowFor = (accountId: string, node: { id: string; details?: { sshKeyEntityId?: string } }):
+    | ReturnType<typeof storage.getNode>
+    | undefined => {
+    const referenced = node.details?.sshKeyEntityId;
+    return referenced === undefined
+      ? (node as ReturnType<typeof storage.getNode>)
+      : storage.getNode(accountId, referenced);
+  };
+
   // Serve this key through the extension's own SSH agent — the alternative to writing it out
   // as a file, and the only door to Git commit signing with a vault-held key.
   /**
@@ -635,9 +657,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
     if (element?.kind !== 'node' || !element.node.details) {
       return false;
     }
-    const referenced = element.node.details.sshKeyEntityId;
-    const keyNode =
-      referenced === undefined ? element.node : storage.getNode(element.accountId, referenced);
+    const keyNode = keyRowFor(element.accountId, element.node);
     if (keyNode?.details === undefined) {
       void vscode.window.showWarningMessage(
         `"${element.node.name}" points at a key entry that is no longer in the vault.`,
@@ -667,12 +687,19 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
     if (element?.kind !== 'node' || !element.node.details) {
       return;
     }
-    sshAgent.unload(element.node.details.id);
-    await storage.updateDetailsFields(element.accountId, element.node.id, { sshAgent: undefined });
+    // The SAME row `addKeyToAgent` acted on. A connection entry can borrow another entity's key
+    // through `sshKeyEntityId`, and the add side follows that reference — this side did not, so it
+    // asked the agent to unload an id it never held and cleared the flag on the connection row while
+    // the key row kept claiming to be served. Raised by a review of the add-side fix; a pair of
+    // operations that disagree about which row they mean is worse than either being wrong alone.
+    const keyNode = keyRowFor(element.accountId, element.node);
+    if (keyNode?.details === undefined) {
+      return;
+    }
+    sshAgent.unload(keyNode.details.id);
+    await storage.updateDetailsFields(element.accountId, keyNode.id, { sshAgent: undefined });
     mutated();
-    void vscode.window.showInformationMessage(
-      `"${element.node.name}" is no longer served by the agent.`,
-    );
+    void vscode.window.showInformationMessage(`"${keyNode.name}" is no longer served by the agent.`);
   });
 
   /**

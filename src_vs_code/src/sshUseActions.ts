@@ -255,6 +255,7 @@ export function sshTerminalAction(deps: SshUseDeps): UseAction {
         storage: deps.storage,
         storageDir: deps.storageDir,
         agentServesKey: deps.servesKeyForEntity?.(entity) === true,
+        refreshAgentServesKey: (): boolean => deps.servesKeyForEntity?.(entity) === true,
         remote: brokerWindow(deps),
       });
       // It used to report `opened: true` whatever happened, which was harmless while the only

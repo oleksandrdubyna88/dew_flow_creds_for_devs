@@ -175,3 +175,54 @@ export function parseDistros(raw: Buffer): string[] {
     .map((line) => line.trim())
     .filter((name) => name.length > 0 && !SYSTEM_DISTROS.has(name));
 }
+
+/** Feeds whole lines out of a stream that arrives in arbitrary slices. */
+export interface LineAssembler {
+  /** A chunk as `data` delivered it — any number of lines, or part of one. */
+  push(chunk: string): void;
+  /** The stream ended: release whatever was left, newline or not. */
+  end(): void;
+}
+
+/**
+ * Whole lines out of a byte stream, which is not what a `data` event gives you.
+ *
+ * <p><b>Why this exists as one thing rather than twice inside a spawn.</b> A relay's stdout is read
+ * for the line that says where it listens, and its STDERR for the line that says somebody else is
+ * already listening there. The first was assembled from a buffer; the second was split chunk by
+ * chunk as it arrived, so a refusal delivered as</p>
+ *
+ * <pre>
+ *   "/run/user/1000/creds.sock is alre"   "ady served by a live relay"
+ * </pre>
+ *
+ * <p>matched nothing in either half — and the consequence is not a missed log line: the manager
+ * then declares a working relay broken, drops the entry on exit, and spends the retry budget
+ * restarting something that was never down. Raised by a review of the adoption change; the first
+ * fix read stderr and the second had to read it correctly.</p>
+ *
+ * <p>Blank lines are dropped: both streams emit them and no handler here has anything to do with
+ * one. `end()` releases a trailing fragment, because a stream's last line need not end in a
+ * newline — and a relay that refuses and exits writes exactly one line.</p>
+ */
+export function lineAssembler(deliver: (line: string) => void): LineAssembler {
+  let pending = '';
+  const emit = (line: string): void => {
+    if (line.trim().length > 0) {
+      deliver(line);
+    }
+  };
+  return {
+    push(chunk: string): void {
+      pending += chunk;
+      const lines = pending.split(/\r?\n/);
+      pending = lines.pop() ?? '';
+      lines.forEach(emit);
+    },
+    end(): void {
+      const last = pending;
+      pending = '';
+      emit(last);
+    },
+  };
+}
