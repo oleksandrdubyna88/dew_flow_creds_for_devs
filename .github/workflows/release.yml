@@ -49,11 +49,13 @@ jobs:
       digest-amd64: ${{ steps.export.outputs.digest-amd64 }}
       digest-arm64: ${{ steps.export.outputs.digest-arm64 }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - uses: docker/setup-buildx-action@v4
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
 
-      - uses: docker/login-action@v4
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -69,7 +71,7 @@ jobs:
           fi
 
       - id: build
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: .
           file: src_minimalapi_server/Dockerfile
@@ -91,7 +93,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: docker/login-action@v4
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -144,9 +146,11 @@ jobs:
     permissions:
       contents: write   # attach binaries to the release
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           global-json-file: global.json
 
@@ -178,7 +182,7 @@ jobs:
 
       # The leg hands its asset to the publish job and does NOT touch the release. See the comment on
       # `server-release` for what that changed.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: server-${{ matrix.rid }}
           path: ${{ env.ASSET }}
@@ -205,7 +209,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: server-*
           path: assets
@@ -281,9 +285,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           global-json-file: global.json
 
@@ -347,7 +353,7 @@ jobs:
         shell: bash
         run: sha256sum "$ASSET" > "$ASSET.sha256"
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: cli-${{ matrix.rid }}
           path: |
@@ -367,7 +373,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: cli-*
           path: assets
@@ -437,9 +443,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-dotnet@v6
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           global-json-file: global.json
 
@@ -491,7 +499,7 @@ jobs:
         shell: bash
         run: sha256sum "$ASSET" > "$ASSET.sha256"
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: mcp-${{ matrix.rid }}
           path: |
@@ -508,7 +516,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: mcp-*
           path: assets
@@ -554,9 +562,11 @@ jobs:
       run:
         working-directory: src_vs_code
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22.x
           cache: npm
@@ -609,7 +619,7 @@ jobs:
           fi
           npx vsce publish --packagePath creds-for-devs.vsix --pat "${VSCE_PAT}"
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: extension-vsix
           path: src_vs_code/creds-for-devs.vsix

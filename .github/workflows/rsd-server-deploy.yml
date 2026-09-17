@@ -99,7 +99,9 @@ jobs:
 
       # This workflow is otherwise pure SSH and checks nothing out. The checklist and its runner
       # live in the repository, so it needs them — and only from here down.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
       - run: git submodule update --init --depth 1 .claude/rules/shared
 
       - name: Run the post-deploy checklist against what is now running
