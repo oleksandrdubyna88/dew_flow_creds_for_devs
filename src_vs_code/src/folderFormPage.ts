@@ -1,5 +1,5 @@
 import * as crypto from 'node:crypto';
-import { McpAccess, McpAskPolicy, accessMask, normalizeMcpAccess } from './mcpAccess';
+import { McpAccess, McpAskPolicy, accessMask, answersLadder, normalizeMcpAccess } from './mcpAccess';
 import { MCP_SWITCHES, mcpAskHtml, mcpBarHtml, mcpSwitchStyles } from './mcpSwitches';
 import { escapeHtml } from './webviewHtml';
 import { formHeaderHtml, pageChromeCss } from './pageChrome';
@@ -70,7 +70,11 @@ export interface FolderFormOptions {
 export function renderFolderHtml(options: FolderFormOptions): string {
   const nonce = crypto.randomBytes(16).toString('base64url');
   const uiScale = options.uiScale ?? 0;
-  const decided = options.mcp !== undefined;
+  // PER AXIS, on the display side too. A record of just `{ ask: 'never' }` answers the cadence and
+  // nothing else, so this folder has not decided its ladder — showing an all-off one under a
+  // sentence claiming it had would invite somebody to tick a switch believing they were adding to
+  // nothing, when the folder above already grants more.
+  const decided = answersLadder(options.mcp);
   const mcp = shownAccess(options);
   const inheritedFrom = inheritedName(options);
   return `<!DOCTYPE html>
@@ -136,9 +140,9 @@ ${formHeaderHtml({ heading: `Edit: ${options.name}`, chip: 'folder', uiScale })}
  * ticking a box grants something to entries nobody is looking at — including entries that do
  * not exist yet.</p>
  */
-/** Its own answer when it has one, otherwise whatever is in force from above. */
+/** Its own answer to the LADDER when it has one, otherwise whatever is in force from above. */
 function shownAccess(options: FolderFormOptions): McpAccess {
-  return normalizeMcpAccess(options.mcp ?? options.inherited?.access);
+  return normalizeMcpAccess(answersLadder(options.mcp) ? options.mcp : options.inherited?.access);
 }
 
 function inheritedName(options: FolderFormOptions): string | undefined {

@@ -1,5 +1,5 @@
 import { DepColorKey } from './depColors';
-import { McpAccess, McpAskPolicy } from './mcpAccess';
+import { ASK_POLICIES, McpAccess, McpAskPolicy, askPolicy } from './mcpAccess';
 import { escapeHtml } from './webviewHtml';
 
 /**
@@ -143,31 +143,46 @@ export const MCP_ASK_HINT =
   'How often to confirm before an agent USES this — running a command, a query, a VPN, an export. ' +
   'Creating and deleting always ask, whatever this says.';
 
-export const MCP_ASK_CHOICES: readonly McpAskChoice[] = [
-  {
-    id: 'mcpAskInherit',
-    value: undefined,
-    label: 'Inherit from the folder',
-    why: 'No answer of its own. Whatever the folder above says applies here, and it keeps applying when that changes.',
-  },
-  {
+/** The value the Inherit radio carries on the wire. One spelling, read by the page script. */
+export const MCP_ASK_INHERIT = 'inherit';
+
+/**
+ * Every policy, each with its control — and a fourth one added to {@link McpAskPolicy} without a
+ * row here is a COMPILE error rather than a label that quietly reads "ask every time".
+ *
+ * <p>A `Record` keyed by the policy is what buys that. It was a `find` over a list with a `??`
+ * fallback, which is the shape where a policy the door enforces and a label the form shows drift
+ * apart in silence — an older build would have told somebody `every24h` meant ask every time while
+ * the door asked once a day.</p>
+ */
+const ASK_CONTROLS: Record<McpAskPolicy, Omit<McpAskChoice, 'value'>> = {
+  always: {
     id: 'mcpAskAlways',
-    value: 'always',
     label: 'Ask every time',
     why: 'Today’s behaviour, and the default. Every use raises a dialog naming the entry and the command.',
   },
-  {
+  every12h: {
     id: 'mcpAskEvery12h',
-    value: 'every12h',
     label: 'Ask once every 12 hours',
     why: 'One dialog covers the next twelve hours on this machine only — it is never synced or shared. Turning a switch on afterwards asks again, because a wider grant is not the one you agreed to.',
   },
-  {
+  never: {
     id: 'mcpAskNever',
-    value: 'never',
     label: 'Never ask',
     why: 'The switches above become the whole gate: nothing else stands between an agent and this entry. Every call is still recorded in the journal, and creating and deleting still ask.',
   },
+};
+
+const INHERIT_CHOICE: McpAskChoice = {
+  id: 'mcpAskInherit',
+  value: undefined,
+  label: 'Inherit from the folder',
+  why: 'No answer of its own. Whatever the folder above says applies here, and it keeps applying when that changes.',
+};
+
+export const MCP_ASK_CHOICES: readonly McpAskChoice[] = [
+  INHERIT_CHOICE,
+  ...ASK_POLICIES.map((policy) => ({ value: policy, ...ASK_CONTROLS[policy] })),
 ];
 
 /**
@@ -178,15 +193,17 @@ export const MCP_ASK_CHOICES: readonly McpAskChoice[] = [
  * there is nothing to inherit from. It is never disabled even then: taking back a local answer is
  * what that option is for, including on a folder with no parent.</p>
  */
-export function mcpAskHtml(
-  local: McpAskPolicy | undefined,
-  inherited?: { ask: McpAskPolicy; from: string },
-): string {
+export function mcpAskHtml(local: unknown, inherited?: { ask: McpAskPolicy; from: string }): string {
+  // Through the SAME reader the resolver uses. The stored value arrives by sync and by import, so
+  // it is not guaranteed to be a word this build knows — and `askPolicy` maps an unrecognised one
+  // to `always`, which is what the door will enforce. A form checking nothing, or checking Inherit,
+  // would be telling somebody the opposite of what is about to happen.
+  const shown = askPolicy(local);
   const rows = MCP_ASK_CHOICES.map((choice) => {
     const label = choice.value === undefined ? inheritLabel(inherited) : choice.label;
     return `<div class="check">
       <input id="${choice.id}" name="mcpAsk" type="radio" class="mcpSwitch depColor4"
-             value="${choice.value ?? 'inherit'}"${choice.value === local ? ' checked' : ''}>
+             value="${choice.value ?? MCP_ASK_INHERIT}"${choice.value === shown ? ' checked' : ''}>
       <label for="${choice.id}">${escapeHtml(label)}</label>
     </div>
     <p class="hint mcpWhy">${escapeHtml(choice.why)}</p>`;
@@ -202,10 +219,15 @@ function inheritLabel(inherited: { ask: McpAskPolicy; from: string } | undefined
   return `Inherit from the folder — "${inherited.from}" says: ${askWords(inherited.ask)}`;
 }
 
-/** One wording for each policy, taken from the labels, so a rename cannot leave two spellings. */
+/**
+ * One wording for each policy, taken from its own label, so a rename cannot leave two spellings.
+ *
+ * <p>No fallback, and none is reachable: the key is `McpAskPolicy` and {@link ASK_CONTROLS} is
+ * exhaustive over it, so a policy with no wording does not compile. A fallback here would be the
+ * silent half of the drift the `Record` exists to prevent.</p>
+ */
 export function askWords(ask: McpAskPolicy): string {
-  const choice = MCP_ASK_CHOICES.find((one) => one.value === ask);
-  return (choice?.label ?? 'ask every time').toLowerCase();
+  return ASK_CONTROLS[ask].label.toLowerCase();
 }
 
 /**

@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { MiniDocument, MiniElement } from './miniDom';
-import { MCP_ASK_CHOICES, MCP_SWITCHES } from '../mcpSwitches';
+import { MCP_ASK_CHOICES, MCP_BAR_COLORS, MCP_SWITCHES, MCP_ASK_INHERIT } from '../mcpSwitches';
 import { normalizeMcpAccess } from '../mcpAccess';
 import type { McpAccess } from '../mcpAccess';
 
@@ -19,7 +19,7 @@ export const HOST_CHK =
   'var chk = function (id) { var el = document.getElementById(id); return el ? el.checked === true : false; };';
 
 /** How many stripes the bar has; the script repaints them and would throw on nothing to repaint. */
-const SEGMENTS = 5;
+const SEGMENTS = MCP_BAR_COLORS.length;
 
 export interface McpPageOptions {
   /** Which cadence the markup rendered as checked. Defaults to the record's own, then Inherit. */
@@ -56,12 +56,12 @@ function placeRadios(document: MiniDocument, checked: string): void {
 }
 
 function checkedValue(mcp: McpAccess | undefined, options: McpPageOptions): string {
-  return options.checked ?? mcp?.ask ?? 'inherit';
+  return options.checked ?? mcp?.ask ?? MCP_ASK_INHERIT;
 }
 
 /** The wire value of a choice: its policy, or the word the Inherit radio carries. */
 export function askValue(policy: string | undefined): string {
-  return policy ?? 'inherit';
+  return policy ?? MCP_ASK_INHERIT;
 }
 
 export function askIdFor(value: string): string {

@@ -4027,10 +4027,25 @@ once every 12 hours*, *never ask*, each with the sentence that says what it cost
 in those words that the switches above become the whole gate and that the call is still recorded.
 It is `MCP_ASK_CHOICES`, deliberately NOT a member of `MCP_SWITCHES`: that list is mapped to search
 predicate names by `searchPredicates.ts`, which throws at module load for an id it does not know, so
-a cadence appended there would break every search in the product at startup. The Inherit option
-NAMES what it would inherit ("Projects says: never ask"), resolved from the PARENT so it is true
-whatever the folder says itself, and when nothing above answers it does not use the word inherit at
-all — it says so, and stays selectable, because taking back a local answer is what it is for.
+a cadence appended there would break every search in the product at startup. The catalog behind it
+is a `Record<McpAskPolicy, …>`, so **a fourth policy that gains no control is a compile error** —
+`askWords` has no fallback, because a fallback is exactly how a policy the door enforces and a label
+the form shows come to disagree in silence. The Inherit option NAMES what it would inherit
+("Projects says: never ask"), resolved from the PARENT by `inheritedAskFor` so it is true whatever
+the folder says itself — that helper lives in `mcpAccess.ts` beside the resolver it calls, because
+the entity form asks the same question one story later and two copies of a tree walk are how two
+forms come to disagree about one ancestry. When nothing above answers, the option does not use the
+word inherit at all — it says so, and stays selectable, because taking back a local answer is what
+it is for.
+
+**Per axis on the DISPLAY side too.** A record of just `{ ask: 'never' }` answers the cadence and
+leaves the ladder inherited, so the form shows the ladder that is in force from above and says where
+it comes from — `answersLadder(options.mcp)`, not "has an `mcp` object", decides both the ticks and
+the sentence. Shown the other way, somebody would tick one switch believing they were adding to
+nothing while the folder above already granted more. And what the group shows is run through
+`askPolicy`, the same reader the resolver uses: a stored word this build does not know reads as
+`always` on the form because that is what the door will enforce, and a stored `null` reads as
+Inherit.
 
 **The page script tracks the two axes as two touched flags**, which is where the regression above
 would actually happen. `collectMcp` emits the ladder when the ladder was touched or was already

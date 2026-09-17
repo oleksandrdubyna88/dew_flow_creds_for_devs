@@ -1,6 +1,6 @@
 import { McpAccess, answersLadder, answersPolicy } from './mcpAccess';
 import { jsonForScript } from './webviewHtml';
-import { MCP_ASK_CHOICES } from './mcpSwitches';
+import { MCP_ASK_CHOICES, MCP_ASK_INHERIT } from './mcpSwitches';
 /**
  * The Agent-access switches, as the browser runs them.
  *
@@ -35,7 +35,7 @@ export function mcpSwitchScript(mcp: McpAccess | undefined): string {
   // Through `jsonForScript`, not `JSON.stringify`: the type says `McpAskPolicy` but the VALUE comes
   // off a vault record that arrived by sync or by import, and `JSON.stringify` escapes quotes while
   // leaving `</script>` alone — which ends the inline script tag and parses the rest as markup.
-  const decidedAsk = mcp?.ask === undefined ? 'null' : jsonForScript(mcp.ask);
+  const storedAsk = mcp?.ask === undefined ? 'null' : jsonForScript(mcp.ask);
   return `
   // ---- agent access ------------------------------------------------------
   // TWO ladders over two objects, meeting at the bottom rung. Ticking a rung turns on everything
@@ -96,6 +96,8 @@ export function mcpSwitchScript(mcp: McpAccess | undefined): string {
   // The consent cadence (#95): a SECOND axis over the same object, and the reason there are two
   // touched flags below rather than one.
   var MCP_ASK_IDS = ${jsonForScript(MCP_ASK_CHOICES.map((choice) => choice.id))};
+  // The word the Inherit radio carries, from the one place that spells it — the markup builder.
+  var ASK_INHERIT = ${jsonForScript(MCP_ASK_INHERIT)};
 
   // Three answers, and the third is the one that matters. The chosen policy; null when Inherit is
   // picked, because JSON.stringify DROPS undefined and the reader has to see the key to know the
@@ -107,7 +109,7 @@ export function mcpSwitchScript(mcp: McpAccess | undefined): string {
       var el = document.getElementById(MCP_ASK_IDS[i]);
       if (el) {
         present = true;
-        if (el.checked) { return el.value === 'inherit' ? null : el.value; }
+        if (el.checked) { return el.value === ASK_INHERIT ? null : el.value; }
       }
     }
     return present ? null : undefined;
@@ -117,7 +119,7 @@ export function mcpSwitchScript(mcp: McpAccess | undefined): string {
   // answering null there would take back a policy nobody was offered the chance to change.
   function mcpAsk() {
     var chosen = mcpAskValue();
-    return chosen === undefined ? ${decidedAsk} : chosen;
+    return chosen === undefined ? ${storedAsk} : chosen;
   }
 
   // Absent means "ask the folder"; an object with everything off means "decided here, and the

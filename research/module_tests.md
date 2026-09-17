@@ -618,6 +618,10 @@ real markup uses.
 | a stored cadence that is not one of the three words cannot close the script tag | **executed** | `jsonForScript`, not `JSON.stringify`, which escapes quotes and leaves `</script>` alone. Found by the repository's own interpolation scan going red |
 | a save that only chose a cadence leaves the ladder ABSENT · Inherit clears a stored cadence · a ladder survives its cadence being taken back | **round trip** | page script → JSON → `readValues`, which is the shape written to the vault and the only place the regression is visible |
 | the group renders under the switches, with its hint; the Trash has neither | **page** | same rule as the switches: in the Trash they would be controls that decide nothing |
+| a folder that answered only the CADENCE still shows the ladder it inherits | **page** | the code round's find, and a real defect: `{ ask: 'never' }` was read as "this folder decided", so the form drew an all-off ladder under a sentence claiming so. Watched red — *the inherited ladder was shown as all off* |
+| a stored cadence that is not one of the three words shows the one actually in force | **page** | records arrive by sync and by import; the form runs the stored value through `askPolicy`, the reader the resolver uses, so an unknown word shows `always` and a `null` shows Inherit. Watched red |
+| what a node would inherit is what the ANCESTRY says, whatever the node says itself | **unit** | `inheritedAskFor`, moved into `mcpAccess.ts` so S3.2 shares it rather than copying a tree walk: two levels up, nothing above, and a node in the Trash inheriting nothing |
+| a fourth policy with no control does not compile | **observed, not a test** | `ASK_CONTROLS` is a `Record<McpAskPolicy, …>`; adding `every24h` to `ASK_POLICIES` fails with *Property 'every24h' is missing*, which is why `askWords` needs no fallback |
 
 **The ceiling (S2.3)** — the quiet path's own limiter, since the prompt was the old one. The unit half
 is `test/aliasThrottle.test.ts` with the clock injected, so sixty calls cost under a millisecond; the
