@@ -30,7 +30,26 @@ export interface Grant {
   readonly lastUsedAt: number;
   /** Calls that reached an action through this grant. */
   readonly uses: number;
+  /**
+   * What this grant IS: a token somebody holds, or one call's worth of capability.
+   *
+   * <p>A **token** grant is handed out — the Authorization header of a shared session — and is
+   * looked up again by whoever holds it, for as long as the window lives. A **call** grant is
+   * minted by the MCP door or the alias route for one request and never leaves the window: the
+   * secret is in no response body, so nothing can ever present it again.</p>
+   *
+   * <p>Only the cap reads this, and it exists because of what issue #95 changed. The MCP door
+   * mints per call and a pre-consented call marks its grant `allowed` at once, at up to sixty
+   * calls a minute — so the map fills with allowed grants in about four minutes of unattended
+   * work, `oldestEvictable` runs out of pending victims, and the oldest allowed one is a token an
+   * integration is still using. That was a live capability revoked with no event anywhere, and it
+   * was reported on PR #106 rather than found here.</p>
+   */
+  readonly scope: GrantScope;
 }
+
+/** @see Grant.scope */
+export type GrantScope = 'token' | 'call';
 
 /**
  * How long a token stays good without being used, and how many calls it buys. Zero means
@@ -104,13 +123,19 @@ export class GrantRegistry {
    */
   private static readonly MAX_GRANTS = 256;
 
-  /** Mint a fresh pending grant and return it (its `secret` is the key). */
+  /**
+   * Mint a fresh pending grant and return it (its `secret` is the key).
+   *
+   * <p>`scope` defaults to `'token'` — the conservative answer, because a token is the thing the
+   * cap protects. A door that mints per call says so and gets its grant reclaimed first.</p>
+   */
   mint(
     accountId: string,
     entityId: string,
     entityName: string,
     kind: string,
     now: number = Date.now(),
+    scope: GrantScope = 'token',
   ): Grant {
     this.prune();
     const grant: Grant = {
@@ -123,6 +148,7 @@ export class GrantRegistry {
       mintedAt: now,
       lastUsedAt: now,
       uses: 0,
+      scope,
     };
     this.grants.set(grant.secret, grant);
     return grant;
@@ -242,20 +268,37 @@ export class GrantRegistry {
   }
 
   /**
-   * The grant the cap should reclaim next: the oldest NON-allowed (a pending grant awaiting
-   * or abandoned by consent), and only when every grant is allowed does it fall back to the
-   * oldest allowed one. An allowed grant is a live capability; preferring pending victims
-   * keeps the cap from silently revoking a token an agent is still using.
+   * The grant the cap should reclaim next, in three tiers.
+   *
+   * <p>First the oldest NON-allowed — a pending grant awaiting or abandoned by consent, which
+   * nobody holds. Then the oldest allowed **call** grant: one request's capability, whose secret
+   * was never in any response, so dropping it can cost nothing. Only when neither exists does it
+   * fall back to the oldest allowed TOKEN, which is the case the cap was originally written for —
+   * a window that has genuinely shared 256 credentials.</p>
+   *
+   * <p>The middle tier is issue #95's doing and the reason this is three tiers rather than two:
+   * silent MCP calls mint allowed grants at sixty a minute, so "every grant is allowed" stopped
+   * being the rare case and a live shared token became the first thing evicted, in about four
+   * minutes of unattended agent work.</p>
    */
   private oldestEvictable(): string | undefined {
-    let oldestAllowed: string | undefined;
+    return this.oldestWhere((grant) => grant.status !== 'allowed')
+      ?? this.oldestWhere((grant) => grant.scope === 'call')
+      ?? this.oldestWhere((grant) => grant.scope === 'token');
+  }
+
+  /**
+   * The oldest grant that fits, by insertion order — three cheap passes over at most 256 entries
+   * rather than one pass carrying three running answers, which the complexity ceiling refused and
+   * which read worse anyway: the tiers ARE the policy, and here they are three readable lines.
+   */
+  private oldestWhere(fits: (grant: Grant) => boolean): string | undefined {
     for (const [secret, grant] of this.grants) {
-      if (grant.status !== 'allowed') {
+      if (fits(grant)) {
         return secret;
       }
-      oldestAllowed ??= secret;
     }
-    return oldestAllowed;
+    return undefined;
   }
 
   /** Only a pending grant settles; a settled one is never revisited. */

@@ -270,7 +270,9 @@ export class CredsAgentServer implements vscode.Disposable {
       // the modal is skipped by machinery that was already there rather than by a second path —
       // and everything after it, the mask, the audit line and the one-use burn, is unchanged.
       preConsent: (grant) => this.grants.allow((grant as Grant).secret),
-      mint: (t) => this.grants.mint(t.accountId, t.entityId, t.entityName, t.kind),
+      // `'call'`: this door mints per REQUEST and the secret is in no response body, so the cap
+      // must reclaim these before any token somebody is holding — see `Grant.scope`.
+      mint: (t) => this.grants.mint(t.accountId, t.entityId, t.entityName, t.kind, Date.now(), 'call'),
       describe: (grant) => GrantRegistry.describe(grant as Grant),
       note: (entry) => this.log(entry),
       perform: (res, grant, action, body, caller, rungs) =>
@@ -323,7 +325,8 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
 
-    const grant = this.grants.mint(target.accountId, target.entityId, target.entityName, target.kind);
+    // `'call'` for the same reason as the MCP door: one request's capability, never handed out.
+    const grant = this.grants.mint(target.accountId, target.entityId, target.entityName, target.kind, Date.now(), 'call');
     this.log({
       grant: GrantRegistry.describe(grant),
       entityName: target.entityName,
