@@ -43,7 +43,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # Build the commit that actually passed, not whatever main points at now.
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
