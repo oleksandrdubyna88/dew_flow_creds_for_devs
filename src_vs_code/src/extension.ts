@@ -28,7 +28,7 @@ import { StorageManager } from './storageManager';
 import { SyncManager } from './syncManager';
 import { CredsAgentServer } from './credsAgentServer';
 import { UseActionRegistry } from './useActions';
-import { sshExecAction, sshTerminalAction } from './sshUseActions';
+import { sshDepsFor, sshExecAction, sshTerminalAction } from './sshUseActions';
 import { ShareInbox } from './shareInbox';
 import { SharingManager } from './sharingManager';
 import { TransportFactory } from './transportFactory';
@@ -641,16 +641,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   }
 
-  const sshDeps = {
-    storage,
-    storageDir,
-    signal: agentServer.signal,
-    acquireExecSlot: agentServer.acquireExecSlot,
-    note: agentServer.note,
-    // What makes `-A` real rather than decorative: the child needs SSH_AUTH_SOCK in its own
-    // environment, and the collection above reaches terminals only. See `sshProgram.ts`.
-    agentSocket: (): string | undefined => sshAgent.socketPath,
-  };
+  const sshDeps = sshDepsFor({ storage, storageDir, agentServer, sshAgent, relays: wslRelay });
   useActions.register(sshExecAction(sshDeps));
   useActions.register(sshTerminalAction(sshDeps));
 
@@ -955,7 +946,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   registerViewCommands({ announceArrival, clicks, doorsAt, log, moveFolder, provider, register, scanText, sharing, storage, treeView, vaultKeys });
 
-  registerAgentCommands({ MACHINES, agentServer, aliasMap, bridges, log, mutated, offerInstall, provider, register, setAliasMap, sshAgent, state: context.globalState, storage, storageDir, vaultKeys });
+  registerAgentCommands({ MACHINES, agentServer, aliasMap, bridges, log, mutated, offerInstall, provider, register, setAliasMap, sshAgent, state: context.globalState, storage, storageDir, vaultKeys, wslRelay });
   registerWslRelayCommands({ register, relaySettings, sshAgent, windowsCredsForWsl, wslRelay });
 
   // ---------- sharing ----------

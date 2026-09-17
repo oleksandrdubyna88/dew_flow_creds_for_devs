@@ -61,6 +61,8 @@ import { gitSigningClipboardText } from '../gitSigningConfig';
 import { showMcpLog } from '../mcpLogPanel';
 import { CREDS_MCP } from '../credsInstall';
 import { CREDS_CLI } from '../credsInstall';
+import { WslRelayManager } from '../wslRelayManager';
+import { remedyRunner, remoteWindowDeps } from '../remoteConnectHost';
 export interface AgentCommandsHost {
   readonly MACHINES: ReadonlyArray<{ label: string; description: string; machine: Machine }>;
   readonly agentServer: CredsAgentServer;
@@ -74,13 +76,15 @@ export interface AgentCommandsHost {
   readonly setAliasMap: (next: AliasMap) => Thenable<void>;
   readonly sshAgent: SshAgentManager;
   readonly state: ConsentStampStore;
+  /** The WSL relays this window runs, so Connect can tell which machine its terminal is on. */
+  readonly wslRelay: WslRelayManager;
   readonly storage: StorageManager;
   readonly storageDir: string;
   readonly vaultKeys: VaultKeys;
 }
 
 export function registerAgentCommands(host: AgentCommandsHost): void {
-  const { MACHINES, agentServer, aliasMap, bridges, log, mutated, offerInstall, provider, register, setAliasMap, sshAgent, state, storage, storageDir, vaultKeys } = host;
+  const { MACHINES, agentServer, aliasMap, bridges, log, mutated, offerInstall, provider, register, setAliasMap, sshAgent, state, storage, storageDir, vaultKeys, wslRelay } = host;
 
   /**
    * Point a WSL shell at the relay, once, and turn the relay on.
@@ -552,6 +556,10 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
         storage,
         storageDir,
         sshAgent.servesKeyFor(element.node),
+        // Which window this was clicked in. In a WSL one the line would otherwise be composed for
+        // Windows and posted into the distribution's shell — the defect this carries the fix for.
+        // `target` rides along so *Add Key to Agent* acts on the row that was clicked.
+        remoteWindowDeps(wslRelay, remedyRunner(target)),
       );
     }
   });
