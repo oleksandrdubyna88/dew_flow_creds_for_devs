@@ -32,12 +32,20 @@
 > | S3.3 | `feat/consent-s3-3` | `good_enough` · 8 | `proceed` · 15 |
 > | S4.1 | `feat/consent-s4-1` | `good_enough` · 8 | `good_enough` · 14 |
 > | S4.2 | `feat/consent-s4-2` | `good_enough` · 12 | `good_enough` · 18 |
-> | S4.3 | `feat/consent-s4-3` | `good_enough` · 10 | *(this story's own, on the commit that carries this promotion)* |
+> | S4.3 | `feat/consent-s4-3` | `good_enough` · 10 | `proceed` · 16 |
 >
-> The number after each verdict is the round's gating findings: **126** across the plan rounds and
-> **160** across the twelve code rounds that had run when this line was written. S1.1 was built on the
-> parent plan's own branch before the per-story branches began, which is why it shares that session —
-> a `coai` session is per repo **and** branch, so every later story needed one of its own.
+> The number after each verdict is the round's gating findings: **126** across the thirteen plan
+> rounds and **176** across the thirteen code rounds. S1.1 was built on the parent plan's own branch
+> before the per-story branches began, which is why it shares that session — a `coai` session is per
+> repo **and** branch, so every later story needed one of its own.
+>
+> S4.3's own row was written from its round rather than before it, which the round itself insisted
+> on: four reviewers in three roles said a promoted plan claiming thirteen completed code rounds
+> while its last row held a placeholder lets a maintainer read an unrecorded review as a finished
+> one. They were right, and the same round found three defects worth naming here — a compatibility
+> note that promised something the code does not do, a claims guard watching the READMEs while the
+> agent-facing copy of the same claim had no guard at all, and a contract check that answered *the
+> surface has changed* after a rebase that changed nothing.
 >
 > Shape: `src_vs_code` plus prose in `src_mcp/src/Program.cs`, `README.md` and the regenerated
 > `contract/mcp-tools-v1.json`. The server, the C# relay's logic and the HTTP contract are untouched.

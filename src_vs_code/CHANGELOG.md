@@ -31,10 +31,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from the five-prompts-a-minute budget — because on this route the prompt was the rate limit, and
   removing the prompt would otherwise have removed the limit.
 
-- **Compatibility.** An entry with no cadence set behaves exactly as before: it asks every time.
-  Nothing changes for any existing vault until somebody chooses otherwise. An OLDER build that saves
-  an entry does not know the field and drops it, and the entry goes back to inheriting from its
-  folder — it never becomes quieter than it was, which is the direction that matters.
+- **Compatibility, including the case that is not free.** An entry with no cadence set behaves
+  exactly as before: it asks every time, and nothing changes for any existing vault until somebody
+  chooses otherwise. An older build **reads** a cadence it does not know by ignoring it and asking
+  every call, and **syncs** it through untouched.
+
+  But an older build that **saves** an entry drops the field, and the entry goes back to
+  **inheriting** — which is quieter, not louder, whenever the folder above it says *never ask*. So
+  an entry you deliberately set to *ask every time* inside a never-ask folder comes back silent if
+  an older build edits it. Nothing detects that, because a dropped answer and an answer nobody gave
+  are the same absence on the record. If you mix builds across machines, keep the two settings from
+  disagreeing — or check the entry after an older build has touched it.
 
 ## [1.8.1] — 2026-09-16 — a patched dependency, and nothing you can see
 
