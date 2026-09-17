@@ -1,33 +1,50 @@
 # PLAN — the agent consent policy, broken into epics and stories
 
-> Status: **twelve of thirteen stories built, 2026-09-17** — S1.1–S1.3, S2.1–S2.4, S3.1–S3.3, S4.1
-> and S4.2 are on their branches. Every one went through the coai gate twice, a plan round and a
-> code round, with all reviewers answering: the plan rounds returned `good_enough` (the stage's
-> round budget is one, so that IS the pass) with 3 reviewers each; the code rounds returned
-> `proceed` or `good_enough` with 12 reviewers each — 11 answering plus the un-prompted Role2 the
-> server names in its own reply. Every finding of every round has a recorded accept or a reasoned
-> rejection. **S4.3 is the only story outstanding**, and it is the one that retires the remaining
-> "asks on every call" claims and promotes both plans to `research/`; until it runs, this document
-> stays in `todo/`. Two of those
-> claims were retired early, in S4.1, because a README coverage guard forced that story into the same
-> paragraphs — recorded there rather than quietly re-scoped. Scope: the BUILD ORDER for
+> Status: **IMPLEMENTED, 2026-09-17** — all thirteen stories built, each one commit on its own
+> branch, each through the `coai` gate twice. Two of the "asks on every call" claims were retired
+> early, in S4.1, because a README coverage guard forced that story into the same paragraphs —
+> recorded there rather than quietly re-scoped. Scope: the BUILD ORDER for
 > [PLAN_agent_consent_policy.md](PLAN_agent_consent_policy.md) (issue #95) — 4 epics, 13 stories, each
 > one commit with its own red-first tests, its own documentation duty and its own `review_code` round.
 > It decides nothing the parent did not decide; where the two disagree the parent's `§` is the
-> authority, except in §Deviations below, which names the eleven places the parent's §8 cannot be built
-> as written and what is built instead.
+> authority, except in §Deviations below, which names the **twelve** places the parent's §8 cannot be
+> built as written and what is built instead. Eleven were known when this file was written; the
+> twelfth (`release(prompts)` → the returned `Slot`) came out of S2.2's code round, which is the kind
+> of thing a deviations list is for.
+>
+> **Every round, as the gate recorded it.** Plan rounds ran with 3 reviewers and code rounds with 12
+> — 11 answering plus the un-prompted Role2 the server names in its own reply. The plan stage's round
+> budget is one, so `good_enough` IS its pass. Every finding of every round has a recorded accept or
+> a reasoned rejection; nothing was accepted to be agreeable and nothing was left unanswered.
+>
+> | story | branch | plan round | code round |
+> |---|---|---|---|
+> | the parent plan | `feat/agent-consent-policy` | `good_enough` · 14 | — |
+> | S1.1 | `feat/agent-consent-policy` | *(the parent's round above)* | `proceed` · 13 |
+> | S1.2 | `feat/consent-s1-2` | `good_enough` · 8 | `proceed` · 9 |
+> | S1.3 | `feat/consent-s1-3` | `good_enough` · 8 | `proceed` · 12 |
+> | S2.1 | `feat/consent-s2-1` | `good_enough` · 7 | `proceed` · 15 |
+> | S2.2 | `feat/consent-s2-2` | `good_enough` · 11 | `proceed` · 15 |
+> | S2.3 | `feat/consent-s2-3` | `good_enough` · 12 | `proceed` · 10 |
+> | S2.4 | `feat/consent-s2-4` | `good_enough` · 8 | `proceed` · 12 |
+> | S3.1 | `feat/consent-s3-1` | `good_enough` · 11 | `proceed` · 13 |
+> | S3.2 | `feat/consent-s3-2` | `good_enough` · 9 | `good_enough` · 14 |
+> | S3.3 | `feat/consent-s3-3` | `good_enough` · 8 | `proceed` · 15 |
+> | S4.1 | `feat/consent-s4-1` | `good_enough` · 8 | `good_enough` · 14 |
+> | S4.2 | `feat/consent-s4-2` | `good_enough` · 12 | `good_enough` · 18 |
+> | S4.3 | `feat/consent-s4-3` | `good_enough` · 10 | *(this story's own, on the commit that carries this promotion)* |
+>
+> The number after each verdict is the round's gating findings: **126** across the plan rounds and
+> **160** across the twelve code rounds that had run when this line was written. S1.1 was built on the
+> parent plan's own branch before the per-story branches began, which is why it shares that session —
+> a `coai` session is per repo **and** branch, so every later story needed one of its own.
 >
 > Shape: `src_vs_code` plus prose in `src_mcp/src/Program.cs`, `README.md` and the regenerated
 > `contract/mcp-tools-v1.json`. The server, the C# relay's logic and the HTTP contract are untouched.
 >
-> Related docs: [module_extension.md](../research/module_extension.md),
-> [module_tests.md](../research/module_tests.md), the precedent this file is shaped on —
-> [PLAN_payment_instruments_epics.md](../research/PLAN_payment_instruments_epics.md).
->
-> **Before this file is committed:** `plan-lifecycle.mjs` indexes `todo/` against the README's open
-> table in BOTH directions (`checkTodoIndex`), so this row must be added to
-> [todo/README.md](README.md) *Currently open* in the same commit:
-> `| [PLAN_agent_consent_policy_stories.md](PLAN_agent_consent_policy_stories.md) | plan only, 2026-09-16 | The build order for PLAN_agent_consent_policy.md: 4 epics, 13 stories, each one commit with red-first tests and its own review round. Names the eleven places §8 cannot be built as written. |`
+> Related docs: [module_extension.md](module_extension.md),
+> [module_tests.md](module_tests.md), the precedent this file is shaped on —
+> [PLAN_payment_instruments_epics.md](PLAN_payment_instruments_epics.md).
 
 ## The story contract (the operator's rule, restated as checks)
 

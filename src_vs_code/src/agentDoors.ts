@@ -5,11 +5,12 @@
  * <p>The switches cover the broker's entry-level actions. Five more doors exist and each has
  * its own lifecycle. Two of them are genuinely modal-free and are listed first: a config's
  * code-access key (a key, not a grant — no dialog at all) and, since #95, an entry whose consent
- * policy resolves to `never`. The other three go through the ordinary consent check, and what that
- * check does is the entry's own setting: a CLI alias (`creds ssh <name>`, reachable from an agent's
- * terminal), the Remote Bridge, and the WSL agent relay. The CLI row used to claim it had no
- * consent modal, which was never true — `handleAlias` mints a grant and calls `perform`, which
- * calls `consent`. Duplicating their on/off here would make
+ * policy resolves to `never`. The other three raise a dialog on every call and the consent policy
+ * does not change that: a CLI alias (`creds ssh <name>`, reachable from an agent's terminal), the
+ * Remote Bridge, and the WSL agent relay. The CLI row used to claim it had no consent modal, which
+ * was never true — `handleAlias` mints a grant and calls `perform`, which calls `consent` — and the
+ * sentence that replaced it went the other way, handing the alias route to a cadence that is wired
+ * into the MCP use door alone. Duplicating their on/off here would make
  * two owners for one door; what the form does instead is REFUSE TO HIDE THEM: a read-only
  * footer under the switches lists whichever are live for this entry, each with the command
  * that manages it. Nothing agent-reachable is invisible from the place a person reasons about
@@ -78,11 +79,12 @@ const DOORS: ReadonlyArray<{ live: (d: AgentDoors) => boolean; row: (d: AgentDoo
     live: (d) => d.cliAliases.length > 0,
     row: (d) => ({
       label: `CLI: ${d.cliAliases.map((name) => `creds … ${name}`).join(', ')}`,
-      // Not "no consent modal", which was false, and not "every use is confirmed", which would be
-      // false for an entry saved as never-ask and would contradict the row above it. The alias
-      // route goes through the SAME consent check as any other use — what that check does is the
-      // entry's own setting.
-      detail: 'Usable from any terminal on this machine while this window is open — an agent in a terminal included. It goes through the same consent check as any other use, so whether a dialog appears follows this entry’s consent setting.',
+      // Not "no consent modal", which was false — and not "follows this entry's consent setting",
+      // which was false the other way. `preConsent` is wired into the MCP use door alone (D1);
+      // `handleAlias` mints a fresh grant per call and hands it to `perform`, so `consent` asks
+      // even for a never-ask entry. Said plainly, because a person reading the row above it will
+      // otherwise carry "without being asked" over to their terminal.
+      detail: 'Usable from any terminal on this machine while this window is open — an agent in a terminal included. It asks every time, whatever the consent setting above says: the cadence governs what an agent does through MCP, and this route mints a fresh grant per call.',
       command: 'credSshManager.enableCliAccess',
     }),
   },

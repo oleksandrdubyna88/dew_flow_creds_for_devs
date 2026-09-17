@@ -141,6 +141,31 @@ test('the CLI row no longer claims there is no consent modal — because there i
   assert.match(detailOf(rows, 'Code access'), /no consent modal/, 'the key really has none — that one is true');
 });
 
+test('the CLI row does not hand the alias door to a cadence that cannot reach it', () => {
+  // The replacement for "no consent modal" was false in the other direction. `preConsent` is wired
+  // into ONE door — `mcpDoor`, the `/v1/mcp/use/*` funnel (owner decision D1, #95) — while
+  // `handleAlias` mints a fresh grant per call and hands it straight to `perform`, so nothing has
+  // marked it allowed and `consent` asks. An entry saved as never-ask is therefore STILL asked on
+  // `creds ssh <alias>`, and a row saying the dialog follows the entry's consent setting tells a
+  // person the opposite of what their terminal will do.
+  const detail = detailOf(agentDoorRows({ ...NO_DOORS, cliAliases: ['prod'] }), 'CLI');
+
+  assert.doesNotMatch(detail, /follows this entry.s consent setting/i);
+  assert.match(detail, /asks every time/i, 'and it must say what DOES happen, not merely drop the claim');
+
+  // The claim is only true while the route stays that way — so read the route, not just the text.
+  const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'credsAgentServer.ts'), 'utf8');
+  const from = source.indexOf('private async handleAlias');
+  const to = source.indexOf('private announce()');
+
+  assert.ok(from > 0 && to > from, 'handleAlias / announce not found — the slice below would prove nothing');
+  assert.equal(
+    source.slice(from, to).includes('preConsent'),
+    false,
+    'handleAlias now pre-consents: the alias door and D1 need re-deciding before this row is written again',
+  );
+});
+
 test('the footer still says nothing when nothing is live', () => {
   assert.deepEqual(agentDoorRows({ ...NO_DOORS, standingConsent: false }), []);
 });
