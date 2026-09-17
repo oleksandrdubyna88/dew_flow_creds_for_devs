@@ -64,6 +64,8 @@ interface Parts {
   existingNamed?: string;
   /** What the fake distribution answers when asked where a Windows path is. */
   translated?: string;
+  /** Press the button every refusal offers, so the remedy-and-retry path runs. */
+  chooseButton?: boolean;
 }
 
 function world(parts: Parts): World {
@@ -117,10 +119,12 @@ function world(parts: Parts): World {
           closeListeners.push(listener);
           return { dispose: (): void => undefined };
         },
-        showWarningMessage: (m: string, ...rest: unknown[]): Promise<undefined> => {
+        showWarningMessage: (m: string, ...rest: unknown[]): Promise<string | undefined> => {
           w.warnings.push(m);
-          w.offered.push(rest.filter((r): r is string => typeof r === 'string'));
-          return Promise.resolve(undefined);
+          const labels = rest.filter((r): r is string => typeof r === 'string');
+          w.offered.push(labels);
+          // `chooseButton` presses the offered button, so the remedy-and-retry path is drivable.
+          return Promise.resolve(parts.chooseButton === true ? labels[0] : undefined);
         },
         showErrorMessage: (m: string): Promise<undefined> => {
           w.errors.push(m);
@@ -511,4 +515,46 @@ test('THE REPORT, both halves: the same click writes a key when the window is no
 
   assert.deepEqual(after.materialised, []);
   assert.deepEqual(after.sshTerminals, []);
+});
+
+test('a relay socket that cannot be quoted REFUSES rather than running ssh without the agent', async () => {
+  // The worst failure this file could have had, found by a code round. `envPrefix` drops a value it
+  // cannot single-quote — right for its original caller, where the relay falls back to the PATH.
+  // Here the fallback would be `ssh` with no agent and no -i, which does not fail: it silently
+  // authenticates with whatever keys that shell already has.
+  const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'x' }, options: OPTIONS, sshTerminal: {} });
+
+  await w.mod.connectEntity('a1', entity(), storage, '/storage', true, {
+    side: { kind: 'wsl', distro: 'Ubuntu' },
+    relay: { enabled: true, running: true, socket: "/tmp/it's/creds.sock" },
+  });
+
+  assert.deepEqual(w.sshTerminals, [], 'an unprefixed ssh command was posted');
+  assert.deepEqual(w.materialised, []);
+  assert.match(w.warnings[0], /contains a quote/);
+});
+
+test('the remedy retries the connect exactly ONCE, however often it keeps failing', async () => {
+  // The plan claimed "at most once" and nothing enforced it: the retry re-entered with a full
+  // budget, so a remedy that never fixes anything could be ridden indefinitely.
+  const w = world({
+    source: { kind: 'storedKey', keyEntityId: 'k1', content: 'x' },
+    options: OPTIONS,
+    chooseButton: true, // the person presses it every time it is offered
+  });
+  const remedies: string[] = [];
+
+  await w.mod.connectEntity('a1', entity(), storage, '/storage', false, {
+    ...WSL_NO_RELAY,
+    runRemedy: async (action): Promise<boolean> => {
+      remedies.push(action);
+      return true; // it always claims to have fixed it, and never does
+    },
+  });
+
+  // Two modals — the first click and its one retry — and then it stops, even though the button was
+  // pressed on the second one too. Without the budget this recurses until the stack gives out.
+  assert.equal(w.warnings.length, 2, `modals shown: ${w.warnings.length}`);
+  assert.deepEqual(remedies, ['setUpRelay', 'setUpRelay']);
+  assert.deepEqual(w.materialised, [], 'and still nothing was written');
 });
