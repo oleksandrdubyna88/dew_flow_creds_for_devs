@@ -4,6 +4,37 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.1] — 2026-09-17 — Connect SSH knows which machine your terminal is on
+
+### Fixed
+
+- **Connect SSH from a VS Code window attached to WSL.** It used to compose the command for the
+  machine the extension runs on — always this computer, because the extension is pinned here — and
+  post it into the window's terminal, which is the distribution's shell. So a bash prompt was handed
+  `ssh -i "c:\Users\…\keys\<pid>\<guid>.key"` and answered *Identity file … not accessible*.
+  Translating that path is not a fix either, and this was measured rather than argued: `/mnt/c` is
+  mounted without `metadata`, every file on it reads as 0777, `chmod` there does nothing, and
+  OpenSSH refuses such a key as too open. The route is the WSL agent relay that already shipped —
+  the command carries no `-i` at all and is pointed at the relay for that one command, so the key
+  stays on this computer and every signature still asks here.
+- Five things broke the same way and are fixed together: the key path, a pinned host key's
+  `UserKnownHostsFile`, the askpass helper, the program word under agent forwarding, and a client
+  check that stat'ed the wrong machine's `PATH`.
+
+### Changed
+
+- **Where the relay cannot serve the connection it is refused and said out loud**, instead of a
+  command being produced that cannot work. One message names BOTH machines and every missing piece
+  at once, with a button for the first of them — and no button at all where nothing this extension
+  runs would fix it. A password-only entry, an entry pointing at a key file on this computer, a
+  window with folders in two distributions, and every non-WSL remote window are each named
+  separately.
+- A new help article, *Connect SSH from a WSL window*, in all five languages.
+
+> On the version: this work was first packaged as 1.8.2 and installed by hand for verification.
+> 1.9.0 then shipped from the server, so the branch was rebased onto it and the build renumbered
+> 1.9.1 — a version identifies bytes, it takes its own string even when nobody else ever sees it,
+> and a 1.9.1 built on top of 1.8.1 would have been a regression wearing a higher number.
 ## [1.9.0] — 2026-09-17 — how often an agent has to ask is yours to set
 
 ### Added
