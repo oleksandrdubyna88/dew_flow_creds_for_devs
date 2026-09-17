@@ -154,24 +154,25 @@ test('the default bound is short enough that a person does not think the editor 
 // working directory would then run with our arguments. `sshProgram.ts` records the same defect for
 // `ssh.exe`; SonarCloud flagged it here (typescript:S4036) on a new call site.
 
-test('the launcher is named by its full path under the real Windows directory', () => {
-  const asked: string[] = [];
-  const answer = wslBinary({ SystemRoot: 'C:\\Windows' }, (candidate) => {
-    asked.push(candidate);
-    return true;
-  });
-
-  assert.equal(answer, 'C:\\Windows\\System32\\wsl.exe');
-  assert.deepEqual(asked, ['C:\\Windows\\System32\\wsl.exe'], 'and it is the path that was CHECKED');
+test('the launcher is named by its full path, never by a name Windows would search for', () => {
+  // CWE-426: spawn(name, …, { shell: false }) resolves a relative name the way CreateProcess does,
+  // and CreateProcess searches the CURRENT DIRECTORY before PATH. A wsl.exe left in the extension
+  // host working directory would then run with our arguments. sshProgram.ts records the same defect
+  // for ssh.exe; SonarCloud flagged it here (typescript:S4036) on one new call site.
+  assert.equal(wslBinary({ SystemRoot: 'C:\\Windows' }), 'C:\\Windows\\System32\\wsl.exe');
 });
 
 test('a Windows that is not on C: is followed, not assumed', () => {
-  assert.equal(wslBinary({ SystemRoot: 'D:\\Win' }, () => true), 'D:\\Win\\System32\\wsl.exe');
-  assert.equal(wslBinary({ windir: 'E:\\Windows' }, () => true), 'E:\\Windows\\System32\\wsl.exe');
+  assert.equal(wslBinary({ SystemRoot: 'D:\\Win' }), 'D:\\Win\\System32\\wsl.exe');
+  assert.equal(wslBinary({ windir: 'E:\\Windows' }), 'E:\\Windows\\System32\\wsl.exe', 'the older spelling counts too');
 });
 
-test('with no launcher there the BARE name comes back, so a machine without WSL still answers', () => {
-  // Every caller here is built for "it said nothing"; a spawn that throws is a different shape.
-  assert.equal(wslBinary({ SystemRoot: 'C:\\Windows' }, () => false), 'wsl.exe');
-  assert.equal(wslBinary({}, () => false), 'wsl.exe');
+test('with nothing to go on it is STILL absolute — there is no bare name to fall back to', () => {
+  // A review caught the first version answering 'wsl.exe' when the file was missing, which hands the
+  // search straight back to CreateProcess in the one case the guard exists for. A machine with no
+  // wsl.exe in System32 has no WSL, and spawning a path that is not there emits an error event —
+  // which every caller in this module already answers with the empty result it is built for.
+  const answer = wslBinary({});
+  assert.equal(answer, 'C:\\Windows\\System32\\wsl.exe');
+  assert.equal(answer.includes('\\System32\\'), true, 'and it is a PATH, not a name');
 });

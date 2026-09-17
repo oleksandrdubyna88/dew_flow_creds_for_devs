@@ -76,7 +76,7 @@ export function refusalFor(
   const lines = reasons.map((reason) => `• ${sentenceFor(reason, context)}`);
   return {
     message: [whichMachineIsWhich(context, reasons), ...lines].join('\n'),
-    buttons: buttonsFor(reasons),
+    buttons: buttonsFor(reasons, context),
   };
 }
 
@@ -203,13 +203,31 @@ function remedyForRemote(remoteName: string): string {
  * <p>One primary action, never a row of them: the list is ordered by what must be fixed first, and
  * offering the third fix beside the first invites someone to start in the wrong place.</p>
  */
-function buttonsFor(reasons: readonly RefusalReason[]): readonly RefusalButton[] {
+function buttonsFor(
+  reasons: readonly RefusalReason[],
+  context: RefusalContext,
+): readonly RefusalButton[] {
   const first = reasons[0];
   const action = first === undefined ? undefined : ACTIONS[first];
-  if (action === undefined) {
+  if (action === undefined || !canDeliver(action, context)) {
     return [];
   }
   return [{ label: labelFor(action, reasons), action }];
+}
+
+/**
+ * Whether the action this reason maps to can actually do anything in THIS window.
+ *
+ * <p>Raised by a review, and it is the third time this exact defect has been caught in this file: a
+ * button that promises a fix it cannot deliver. `not-wsl` covers Remote-SSH, dev containers, attached
+ * containers and Codespaces, and the SENTENCE has always said the right thing for each — the Remote
+ * Bridge for an ssh-remote host, "connect from a window running on this computer" for the rest.
+ * `ACTIONS` did not: it offered the bridge to all four, so a container showed a button beside a
+ * sentence that had just said the bridge is not the answer. The wording knew; the buttons did not
+ * ask it.</p>
+ */
+function canDeliver(action: RefusalAction, context: RefusalContext): boolean {
+  return action !== 'openRemoteBridge' || context.remoteName === 'ssh-remote';
 }
 
 /**

@@ -454,6 +454,35 @@ test('a key PATH goes straight to it — that path was already what this client 
   assert.equal(w.sshTerminals[0].keyPath, 'C:\\keys\\id_ed25519');
 });
 
+test('an unnameable distribution CONNECTS through it, which is the whole claim', async () => {
+  // Raised by a review, and it was right: `remoteRoute` returned `windowsClient` here — nothing on
+  // this route is translated, so the distribution's name is not needed — and then `terminalPlatform`
+  // answered `undefined` for a `problem`, and `connectEntity` refused as `not-wsl` in a WSL window.
+  // The route test passed throughout: it proved the ROUTE was chosen, not that a terminal opened.
+  for (const problem of ['ambiguous', 'unknown'] as const) {
+    const w = world({
+      source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' },
+      options: OPTIONS,
+      sshTerminal: {},
+    });
+
+    await w.mod.connectEntity('a1', entity(), {
+      storage: storage,
+      storageDir: '/storage',
+      agentServesKey: false,
+      remote: { ...WSL_WINDOWS_CLIENT, side: { kind: 'wsl' as const, distro: '', problem } },
+    });
+
+    assert.equal(w.sshTerminals.length, 1, `${problem}: refused instead of connecting`);
+    assert.equal(
+      (w.sshTerminals[0].options as { program?: string }).program,
+      '/mnt/c/Windows/System32/OpenSSH/ssh.exe',
+      `${problem}: opened without naming the client`,
+    );
+    assert.deepEqual(w.warnings, [], `${problem}: warned about something it did fine`);
+  }
+});
+
 test('a PASSWORD still refuses, Windows client or not', async () => {
   const w = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
 
@@ -519,9 +548,16 @@ test('every other remote window kind refuses, naming the machine that holds the 
 });
 
 test('a pinned host key is translated by ASKING the distribution', async () => {
+  // A REAL Windows path, with its backslashes doubled. The first version wrote them singly — `\s`
+  // and `\k` are not escapes, so JavaScript dropped them and the test round-tripped
+  // `storagekeysknown_hosts-e1`, a string no Windows machine produces and the separator handling
+  // never exercised. Found by a review; the answer is now pinned on both sides, what goes IN and
+  // what comes back.
+  const windowsPin = 'C:\\Users\\me\\AppData\\Roaming\\Code\\keys\\known_hosts-e1';
   const w = world({
     source: { kind: 'storedKey', keyEntityId: 'k1', content: 'x' },
-    options: { knownHostsFile: '\storage\keys\known_hosts-e1' },
+    options: { knownHostsFile: windowsPin },
+    translated: '/mnt/c/Users/me/AppData/Roaming/Code/keys/known_hosts-e1',
     sshTerminal: {},
   });
 
@@ -533,8 +569,13 @@ test('a pinned host key is translated by ASKING the distribution', async () => {
       });
 
   assert.equal(w.sshTerminals.length, 1);
+  assert.deepEqual(
+    w.translated,
+    [{ distro: 'Ubuntu', windowsPath: windowsPin }],
+    'the distribution was asked about the path as Windows spells it, separators and all',
+  );
   assert.deepEqual(w.sshTerminals[0].options, {
-    knownHostsFile: '/mnt/c\storage\keys\known_hosts-e1',
+    knownHostsFile: '/mnt/c/Users/me/AppData/Roaming/Code/keys/known_hosts-e1',
   });
 });
 

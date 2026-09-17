@@ -105,14 +105,22 @@ test('a remote window NEVER composes for win32, whatever the extension host is',
 });
 
 test('a window we cannot name a shell for gets NO platform, so nothing can be composed for it', () => {
-  // The refusal is carried by the type rather than by a caller remembering to refuse first. A
-  // Remote-SSH host can be Windows, and a WSL window whose distribution could not be resolved has
-  // no shell to name either — answering 'linux' for those was correct only by coincidence.
+  // The refusal is carried by the type rather than by a caller remembering to refuse first: a
+  // Remote-SSH host can be Windows, so answering 'linux' for one would be correct by coincidence.
   assert.equal(terminalPlatform({ kind: 'other', remoteName: 'ssh-remote' }, 'win32'), undefined);
   assert.equal(terminalPlatform({ kind: 'other', remoteName: 'dev-container' }, 'win32'), undefined);
-  assert.equal(
-    terminalPlatform({ kind: 'wsl', distro: '', problem: 'ambiguous' }, 'win32'),
-    undefined,
-  );
-  assert.equal(terminalPlatform({ kind: 'wsl', distro: '', problem: 'unknown' }, 'win32'), undefined);
+});
+
+test('a WSL window gets linux even when we could not NAME the distribution', () => {
+  // Corrected after a review found that the earlier answer made a shipped route unreachable. Two
+  // different questions were being answered with one value:
+  //
+  //   which shell parses this line  —  bash, for EVERY WSL window; `remoteName` already said so
+  //   which distribution to ask     —  unknown, and that is what blocks TRANSLATION, nothing else
+  //
+  // The Windows-client route translates nothing, so `remoteRoute` returns `windowsClient` for an
+  // unnameable distribution on purpose. With `undefined` here `connectEntity` refused anyway — and
+  // refused as `not-wsl`, inside a WSL window. The route was right and the platform killed it.
+  assert.equal(terminalPlatform({ kind: 'wsl', distro: '', problem: 'ambiguous' }, 'win32'), 'linux');
+  assert.equal(terminalPlatform({ kind: 'wsl', distro: '', problem: 'unknown' }, 'win32'), 'linux');
 });

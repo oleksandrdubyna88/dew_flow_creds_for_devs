@@ -442,9 +442,23 @@ Order: **S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8.** S4 and S5 are le
 
 ## Test plan
 
-- **The RED test that reproduces the report**: `sshConnect` with a stored key, a WSL window and no
-  relay → asserts that **nothing is written to disk** and **no terminal is created**, and that the
-  message names the key's machine. Against today's code it fails by producing the `-i "c:\…"` line.
+- **The RED test that reproduces the report**: `sshConnect` with a stored key, a WSL window, no
+  relay **and no Windows OpenSSH installed** → asserts that **nothing is written to disk** and **no
+  terminal is created**, and that the message names the key's machine. Against the code as it was it
+  fails by producing the `-i "c:\…"` line.
+
+  > **Amended after S9, and a review flagged it before I did.** The clause in bold is the amendment:
+  > on a machine that HAS the Windows client — every Windows 10/11 since 2018 — that same click now
+  > connects through it, and demanding a refusal there would pin the behaviour this change exists to
+  > remove. The refusal is still right where there is no client to lend, which is what it now says.
+
+- **The Windows-client counterpart**: the same stored key with the client present → the key IS
+  materialised, the line names `/mnt/c/Windows/System32/OpenSSH/ssh.exe`, the `-i` path and the
+  pinned `UserKnownHostsFile` are **not** translated, the shell platform is still `linux`, the agent
+  is not trusted, and **an unnameable distribution connects rather than refusing**. That last one is
+  what a route-level test cannot see: `remoteRoute` answered `windowsClient` correctly while
+  `terminalPlatform` answered `undefined` for a `problem`, so `connectEntity` refused anyway — as
+  `not-wsl`, inside a WSL window. Green route test, dead feature, until a review looked past it.
 - **The positive counterpart**: with the relay running and the agent serving the key, the composed
   line is `env SSH_AUTH_SOCK=… ssh …` — **no `-i`**, and `-p`, `-J`, `-L/-R`, `-A` and `user@host`
   all preserved in their existing order.

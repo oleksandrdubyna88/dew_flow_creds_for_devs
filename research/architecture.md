@@ -400,15 +400,34 @@ a bash prompt was handed a `c:\Users\…\keys\<pid>\<guid>.key` after `-i`.
 
 **Translating the path is not the answer, and that is measured rather than argued**: `/mnt/c` is
 DrvFs without `metadata`, every file on it reads as 0777, `chmod` there does nothing, and OpenSSH
-refuses such a key as too open. So there is no route in which a Windows-side private key is used by
-`ssh` inside WSL. The one that works is the agent relay that already existed: the command carries no
-`-i` at all and is prefixed with `env SSH_AUTH_SOCK='<the relay socket>' ` for that one command, so
-the key stays on Windows and every signature still raises the consent dialog there.
+refuses such a key as too open. What that rules out is precisely one thing — the DISTRIBUTION's `ssh`
+using a Windows-side key — and an early draft of this paragraph over-read it into "there is no route
+at all". There are two.
 
-Everything else about a remote window is refused, by name, with the remedy as a button: a password
-(its askpass helper is a script on this machine), a key path on this machine, a distribution that
-cannot be identified, a relay that is off or silent, a relay socket that cannot be quoted, and every
-non-WSL remote kind — Remote-SSH and containers are the broker bridge's territory, not this one. The
+**The agent relay**, which already existed, is preferred wherever it can serve: the command carries
+no `-i` at all and is prefixed with `env SSH_AUTH_SOCK='<the relay socket>' ` for that one command,
+so the key stays on Windows, every signature still raises the consent dialog there, and the client is
+the distribution's own — its `~/.ssh/config`, its resolver, its network namespace.
+
+**The Windows client**, otherwise. WSL launches `/mnt/c/Windows/System32/OpenSSH/ssh.exe` through
+interop, and that process reads the same key file under the Windows ACLs where its permissions are
+real — measured with an Ed25519 key in `openssh-key-v1`, the format the extension's own agent cannot
+parse at all. It needs no agent, no relay, no parser and not even the distribution's NAME, because
+nothing on this route is translated: the `-i` path and the pinned `UserKnownHostsFile` stay spelled
+the Windows way. What it costs is said at the moment of the click and only where it applies — a `-L`
+forward binds on WINDOWS, and `-A` carries the Windows agent's keys, because `SSH_AUTH_SOCK` does not
+cross interop unless `WSLENV` names it.
+
+The order is the decision: the relay is the one that FITS, the Windows client is the one that always
+WORKS, so the second takes what the first cannot serve — which today is nearly everything, because
+nearly every key is in a format the agent cannot read.
+
+What remains is refused by name, with the remedy as a button: a password (its askpass helper is a
+script on this machine and a Windows process cannot exec it), a key of either kind where no Windows
+OpenSSH is installed, a distribution that cannot be identified *when something has to be translated
+against it*, a relay that is off or silent, a relay socket that cannot be quoted, and every non-WSL
+remote kind — Remote-SSH and containers are the broker bridge's territory, not this one, and the
+bridge BUTTON is offered only to an `ssh-remote` window, because nothing here reaches a container. The
 decision is four `vscode`-free modules (`remoteWindow`, `remoteRoute`, `remoteWindowMessage`, and
 `wslProcess`'s bounded ask) with one thin reader, `remoteConnectHost`, which BOTH connect call sites
 use — the tree's button and the broker's terminal action — so one window cannot take two routes.

@@ -74,3 +74,20 @@ test('every language names the command that fixes it, spelled as the command is'
     assert.match(body.setup, /Set Up the WSL Agent Relay/, `${language} does not name the command`);
   }
 });
+
+test('every language names the OTHER route, the one that answers when the agent cannot', () => {
+  // Added after a review found the article still describing the relay as the only way through: the
+  // Windows-client route shipped in the same change and the five translations were not updated with
+  // it. The path is the assertion because it is the thing a reader can check against their own
+  // terminal — a paraphrase of "the Windows client" would pass while saying nothing usable.
+  for (const { language, body } of translations()) {
+    const whole = Object.values(body).join(' ');
+
+    assert.match(
+      whole,
+      /\/mnt\/c\/Windows\/System32\/OpenSSH\/ssh\.exe/,
+      `${language} never names the client WSL actually launches`,
+    );
+    assert.match(whole, /interop/i, `${language} does not say how it is reached`);
+  }
+});

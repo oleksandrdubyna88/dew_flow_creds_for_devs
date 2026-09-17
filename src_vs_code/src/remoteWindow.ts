@@ -90,7 +90,13 @@ export function terminalPlatform(
   if (side.kind === 'local') {
     return hostPlatform;
   }
-  return side.kind === 'wsl' && side.problem === undefined ? 'linux' : undefined;
+  // EVERY WSL window, named distribution or not. `remoteName === 'wsl'` has already settled which
+  // shell parses the line, and no WSL distribution has a shell that is not Linux. Which distribution
+  // to ASK is a different question, it is the one `problem` answers, and it blocks TRANSLATION —
+  // not composition. Conflating the two made the Windows-client route unreachable for exactly the
+  // windows it was best at: it needs no translation, `remoteRoute` returns it for an unnameable
+  // distribution on purpose, and `connectEntity` then refused as `not-wsl` inside a WSL window.
+  return side.kind === 'wsl' ? 'linux' : undefined;
 }
 
 /** The four rungs, in order. */
