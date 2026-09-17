@@ -647,6 +647,8 @@ four, and the footer's promise is that what it lists is LIVE.
 | an entry that INHERITS never from its folder has the door too | **unit** | the row is about what the door will do, not where the answer was written |
 | the CLI row no longer claims there is no consent modal, and the code-access row still does | **unit** | one of the two was false — `handleAlias` → `perform` → `consent` — in the module whose job is saying which doors have no modal |
 | the rendered FORM carries the row | **page** | the builder can be right while the form never shows it |
+| the standing-consent row offers no manage link, while the doors that ARE elsewhere keep theirs | **page** | `editNode` from inside the entity form re-opens it and discards unsaved edits; `command` is optional on `AgentDoorRow` now, and an empty `data-command` is asserted absent too |
+| the window COMPUTES the door rather than the tests supplying it | **scan** | every other row here hands `standingConsent` in, so deleting the computation from `extension.ts` would leave them all green. Watched red by replacing it with `false` |
 
 **The ceiling (S2.3)** — the quiet path's own limiter, since the prompt was the old one. The unit half
 is `test/aliasThrottle.test.ts` with the clock injected, so sixty calls cost under a millisecond; the

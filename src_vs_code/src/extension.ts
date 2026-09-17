@@ -49,7 +49,7 @@ import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { ArrivalHighlights } from './arrivalHighlight';
 import { ViewerClicks } from './viewerClicks';
 import { warnIfKeyringMissing } from './keyringWarningHost';
-import { AgentDoors, DoorSources, doorsOf, standingConsentFor } from './agentDoors';
+import { AgentDoors, DoorSources, doorsOf } from './agentDoors';
 import { ARRIVAL_WINDOW_MS } from './arrivalHighlight';
 import { DepDecorationProvider } from './depDecorations';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
@@ -97,9 +97,8 @@ import {
   vpnAction,
 } from './agentUseActions';
 import { StoredAccount, EntityMetadata, TreeNode } from './types';
-import { mcpUseHooks } from './mcpHooks';
-import { moveEntryToTrash } from './mcpHooks';
-import { mcpCreateHooks } from './mcpHooks';
+import { mcpCreateHooks, mcpUseHooks, moveEntryToTrash } from './mcpHooks';
+import { standingConsentFor } from './mcpAccess';
 import { runVpn } from './vpnRun';
 import { nodeAt } from './entityViewerCommands';
 import { openRevisionViewer } from './entityViewerCommands';

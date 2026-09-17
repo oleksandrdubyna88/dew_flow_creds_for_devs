@@ -34,8 +34,10 @@ function agentDoorsHtml(doors: AgentDoors | undefined): string {
       <p class="hint agentDoorsHead">Other ways agents can reach this entry</p>
       ${rows
         .map(
+          // No link for a door managed on this very page — see `AgentDoorRow.command`. A
+          // `data-command=""` anchor would be a "manage…" that does nothing when pressed.
           (row) => `<div class="agentDoor"><b>${escapeHtml(row.label)}</b> — ${escapeHtml(row.detail)}
-        <a class="doorLink" data-command="${escapeHtml(row.command)}">manage…</a></div>`,
+        ${row.command === undefined ? '' : `<a class="doorLink" data-command="${escapeHtml(row.command)}">manage…</a>`}</div>`,
         )
         .join('')}
     </div>`;
