@@ -193,18 +193,23 @@ jobs:
   # ---------------------------------------------------------------------------
   # The workflows themselves are code, and nothing checked them until now.
   #
-  # actionlint reads every file under .github/workflows and, because ubuntu runners ship
-  # shellcheck, lints the `run:` blocks too. The rule that earns its place on its own is the
-  # script-injection one: a `${{ }}` expression written inline in a `run:` is pasted into the
-  # shell source before bash parses it, and this family has already had to fix that by hand.
+  # actionlint reads every file under .github/workflows. The rule that earns its place on its own
+  # is the script-injection one: a `${{ }}` expression written inline in a `run:` is pasted into
+  # the shell source before bash parses it, and this family has already had to fix that by hand.
+  # Separately, because ubuntu runners ship shellcheck, it lints the `run:` blocks as shell.
   #
   # NO NEW ACTION. actionlint publishes none — only a release binary — and every `uses:` line here
   # was just pinned to a commit SHA so the supply chain stays auditable. Pulling in an unpinnable
   # third-party action to get a linter would undo that. The binary is pinned by VERSION and verified
   # by CHECKSUM, which is the same promise a SHA pin makes: what runs is what was reviewed.
   #
-  # Measured when this was added: zero findings across all seven repositories. It guards what comes
-  # next rather than clearing a backlog.
+  # Measured when this was added: five here and eighteen across the family, every one of them in a
+  # release or deploy workflow, and all eighteen fixed before this job was allowed to fail on them.
+  #
+  # THE FIRST MEASUREMENT SAID ZERO EVERYWHERE AND WAS WRONG, which is why the step below asserts
+  # shellcheck is present before linting. Without it actionlint keeps its OWN rules — the injection
+  # check included — and silently drops the shell analysis of every `run:` block. No warning, exit
+  # zero, a green check, and eighteen findings left standing.
   workflows:
     name: workflows · actionlint
     runs-on: ubuntu-latest
@@ -220,6 +225,11 @@ jobs:
           ACTIONLINT_SHA256: '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8'
         run: |
           set -euo pipefail
+          # The dependency this gate is quietly useless without — see the note above the job.
+          command -v shellcheck > /dev/null || {
+            echo "shellcheck is not on PATH: actionlint would skip every run: block and pass"
+            exit 1
+          }
           curl -fsSL -o actionlint.tar.gz \
             "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
           echo "$ACTIONLINT_SHA256  actionlint.tar.gz" | sha256sum -c -
