@@ -390,6 +390,30 @@ Four things about it are decided ACROSS modules rather than inside one:
 | The broker client | `src_broker_client/` | Discovery, the health probe, the wire contract and the WSL bridge — shared by both binaries, so a fix to any of it is made once. The bridge is an instance per binary (`WslInterop.Creds`, `WslInterop.CredsMcp`), each with its own override variable, because one shared `creds.exe` would have sent an MCP handshake to the CLI |
 | The MCP server | `src_mcp/` | `creds-mcp` — what an AI agent talks to. **Sixteen tools** over the same broker, across two objects: entries (list, use, rotate, create, delete, export-env, and `creds_config_snippet` — read-only public text, how code reads a config, from the viewer's own catalog) and folders (list, create, edit, delete, since 0.85.0). Every one is gated by a switch that is off by default — **two ladders, ten switches, inherited down the whole tree** — and by the same consent prompt. Holds no secret and can obtain none, and no request it can compose has a field the switches could arrive in. **Inside WSL it carries the session rather than serving it** — see below |
 
+### Connecting over SSH from a remote window (2026-09-17)
+
+The same boundary as the MCP crossing below, met by a different feature and answered differently.
+`extensionKind: ["ui"]` keeps the extension host on the local computer, so in a window attached to
+WSL the extension is on Windows while `createTerminal` opens the DISTRIBUTION's shell. Connect SSH
+composed its line from `process.platform` — the host's — and posted it into that shell, which is why
+a bash prompt was handed a `c:\Users\…\keys\<pid>\<guid>.key` after `-i`.
+
+**Translating the path is not the answer, and that is measured rather than argued**: `/mnt/c` is
+DrvFs without `metadata`, every file on it reads as 0777, `chmod` there does nothing, and OpenSSH
+refuses such a key as too open. So there is no route in which a Windows-side private key is used by
+`ssh` inside WSL. The one that works is the agent relay that already existed: the command carries no
+`-i` at all and is prefixed with `env SSH_AUTH_SOCK='<the relay socket>' ` for that one command, so
+the key stays on Windows and every signature still raises the consent dialog there.
+
+Everything else about a remote window is refused, by name, with the remedy as a button: a password
+(its askpass helper is a script on this machine), a key path on this machine, a distribution that
+cannot be identified, a relay that is off or silent, a relay socket that cannot be quoted, and every
+non-WSL remote kind — Remote-SSH and containers are the broker bridge's territory, not this one. The
+decision is four `vscode`-free modules (`remoteWindow`, `remoteRoute`, `remoteWindowMessage`, and
+`wslProcess`'s bounded ask) with one thin reader, `remoteConnectHost`, which BOTH connect call sites
+use — the tree's button and the broker's terminal action — so one window cannot take two routes.
+Record: [PLAN_connect_in_a_remote_window.md](../todo/PLAN_connect_in_a_remote_window.md).
+
 ### The MCP server inside WSL (2026-08-28)
 
 An MCP client usually runs inside the distribution and starts `creds-mcp` as its own child, which

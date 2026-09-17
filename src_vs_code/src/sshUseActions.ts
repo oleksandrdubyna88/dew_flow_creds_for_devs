@@ -251,7 +251,7 @@ export function sshTerminalAction(deps: SshUseDeps): UseAction {
       // The human's own Connect path, verbatim: same terminal name, same askpass env, same key
       // cleanup on close — and, since this window may be attached to WSL, the same remote-window
       // decision and the same answer about whether the agent already holds the key.
-      await connectEntity(
+      const opened = await connectEntity(
         ctx.accountId,
         entity,
         deps.storage,
@@ -259,6 +259,15 @@ export function sshTerminalAction(deps: SshUseDeps): UseAction {
         deps.servesKeyForEntity?.(entity) === true,
         deps.relays === undefined ? undefined : remoteWindowDeps(deps.relays, remedyRunner(undefined)),
       );
+      // It used to report `opened: true` whatever happened, which was harmless while the only
+      // failure was an entity with no host — and is not, now that a remote window can REFUSE. An
+      // agent told a terminal is open waits at one that is not there.
+      if (!opened) {
+        return fail(
+          'internal',
+          `Could not open an SSH terminal for "${ctx.entityName}" — the window said why.`,
+        );
+      }
       void vscode.window.showInformationMessage(
         `Claude Code opened an SSH terminal for "${ctx.entityName}"${
           describeSshTarget(entity) === undefined ? '' : ` (${describeSshTarget(entity)})`

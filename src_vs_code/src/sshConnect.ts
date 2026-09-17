@@ -36,6 +36,15 @@ export interface RemoteWindowDeps {
    * shown and do nothing, which no production caller does.</p>
    */
   readonly runRemedy?: (action: RefusalAction) => Promise<boolean>;
+  /**
+   * The window, read again — because the remedy has just CHANGED it.
+   *
+   * <p>Found by a code round, and without it the whole *Set Up the Relay and Connect* promise was
+   * false: the retry closed over this same record, so it re-read a relay readiness captured before
+   * the relay was switched on and refused for exactly the reason that had just been fixed. Absent
+   * means the snapshot is reused, which is right for a test and wrong for a window.</p>
+   */
+  readonly refresh?: () => RemoteWindowDeps;
 }
 
 const LOCAL_WINDOW: RemoteWindowDeps = {
@@ -69,11 +78,21 @@ export async function connectEntity(
    * pointed out that the plan claimed "at most once" while nothing enforced it.</p>
    */
   allowRetry = true,
-): Promise<void> {
+): Promise<boolean> {
   const side = remote.side;
+  // The retry re-READS the window: the remedy it follows exists to change the very state the first
+  // attempt refused on.
   const retry = allowRetry
-    ? (): Promise<void> =>
-        connectEntity(accountId, entity, storage, storageDir, agentServesKey, remote, false)
+    ? (): Promise<boolean> =>
+        connectEntity(
+          accountId,
+          entity,
+          storage,
+          storageDir,
+          agentServesKey,
+          remote.refresh?.() ?? remote,
+          false,
+        )
     : undefined;
   // The terminal ssh opens in would only say "command not found" AFTER a key may have been
   // materialised; checking first costs one stat and produces an offer instead of a corpse
@@ -86,7 +105,7 @@ export async function connectEntity(
   // the person is already looking at.
   if (side.kind === 'local' && !sshClientPresent()) {
     await offerToInstall('ssh');
-    return;
+    return false;
   }
   const source = await resolveSshCredential(storage, accountId, entity);
   if (source.warning !== undefined) {
@@ -97,8 +116,7 @@ export async function connectEntity(
   // before anything materialises a key — so a refused window leaves nothing on disk at all.
   const route = remoteRoute(side, source.kind, agentServesKey, remote.relay);
   if (route.kind === 'refuse') {
-    await refuseAndOfferTheFix(route.reasons, entity, remote, retry);
-    return;
+    return refuseAndOfferTheFix(route.reasons, entity, remote, retry);
   }
 
   // The connection-manager half (audit D7/B10): which bastion to go through, and whether this
@@ -106,7 +124,7 @@ export async function connectEntity(
   // opened, so a refused host key costs nothing and leaves nothing behind.
   const resolved = await connectionOptions(accountId, entity, storage, storageDir);
   if (resolved === undefined) {
-    return;
+    return false;
   }
 
   // A pinned host key's known_hosts file is on THIS machine, so the distribution is asked where it
@@ -114,16 +132,15 @@ export async function connectEntity(
   // /mnt/c cannot hold one anyway.
   const options = await withTranslatedKnownHosts(resolved, side);
   if (options === undefined) {
-    await refuseAndOfferTheFix(['known-hosts-translation-failed'], entity, remote, retry);
-    return;
+    return refuseAndOfferTheFix(['known-hosts-translation-failed'], entity, remote, retry);
   }
 
   const platform = terminalPlatform(side, process.platform);
   if (platform === undefined) {
     // Unreachable: `remoteRoute` refuses every side whose shell cannot be named. Kept as a refusal
     // rather than a cast, so a future route that forgets says so instead of composing for a guess.
-    await refuseAndOfferTheFix(['not-wsl'], entity, remote, undefined);
-    return;
+    forgetOurPin(options.knownHostsFile);
+    return refuseAndOfferTheFix(['not-wsl'], entity, remote, undefined);
   }
 
   let keyPath: string | undefined;
@@ -139,17 +156,16 @@ export async function connectEntity(
       // back to the PATH — but here the fallback is `ssh` with no agent and no `-i`, which does not
       // fail: it silently authenticates with whatever keys that shell already has. Refusing is the
       // only honest answer.
-      await refuseAndOfferTheFix(['relay-socket-unusable'], entity, remote, undefined);
-      return;
+      // Late refusal, so the host-pin file `connectionOptions` wrote is ours to take back.
+      forgetOurPin(options.knownHostsFile);
+      return refuseAndOfferTheFix(['relay-socket-unusable'], entity, remote, retry);
     }
-    openSshTerminal({ ...entity, sshKeyPath: undefined }, options, platform, prefix);
-    return;
+    return openSshTerminal({ ...entity, sshKeyPath: undefined }, options, platform, prefix) !== undefined;
   }
   if (agentServesKey && source.kind === 'storedKey') {
     // Deliberately nothing: the agent answers, and writing the key out would defeat the
     // feature exactly where a person can see it working.
-    openSshTerminal({ ...entity, sshKeyPath: undefined }, options, platform);
-    return;
+    return openSshTerminal({ ...entity, sshKeyPath: undefined }, options, platform) !== undefined;
   }
   if (source.kind === 'storedKey') {
     try {
@@ -159,7 +175,7 @@ export async function connectEntity(
       void vscode.window.showErrorMessage(
         `Could not write the stored key to disk: ${describeError(error)}`,
       );
-      return;
+      return false;
     }
   } else if (source.kind === 'keyPath') {
     keyPath = source.path;
@@ -176,7 +192,7 @@ export async function connectEntity(
     const target = describeSshTarget(entity);
     if (command === undefined || target === undefined) {
       void vscode.window.showWarningMessage(`"${entity.name}" has no host configured — cannot start SSH.`);
-      return;
+      return false;
     }
     const scriptPath = writeAskpassScriptFile(storageDir, platform);
     // A FRESH terminal every time: the env carries this entity's password, and reusing
@@ -196,7 +212,7 @@ export async function connectEntity(
         ? command.replace(/^ssh /, 'ssh -o StrictHostKeyChecking=accept-new ')
         : command;
     passTerminal.sendText(line, true);
-    return;
+    return true;
   }
 
   const terminal = openSshTerminal({ ...entity, sshKeyPath: keyPath }, options, platform);
@@ -213,6 +229,7 @@ export async function connectEntity(
       });
     }
   }
+  return terminal !== undefined;
 }
 
 /**
@@ -234,9 +251,10 @@ async function withTranslatedKnownHosts(
   }
   const inside = await translateWindowsPath(side.distro, options.knownHostsFile);
   if (inside.length === 0) {
-    forgetMaterializedKey(options.knownHostsFile);
+    forgetOurPin(options.knownHostsFile);
     return undefined;
   }
+
   return { ...options, knownHostsFile: inside };
 }
 
@@ -258,8 +276,8 @@ async function refuseAndOfferTheFix(
    * button and then stops rather than handing the person a modal they can ride round for ever. The
    * plan claimed "at most once" before a code round pointed out that nothing enforced it.</p>
    */
-  retry: (() => Promise<void>) | undefined,
-): Promise<void> {
+  retry: (() => Promise<boolean>) | undefined,
+): Promise<boolean> {
   const side = remote.side;
   const refusal = refusalFor(reasons, {
     distro: side.kind === 'wsl' ? side.distro : '',
@@ -273,21 +291,29 @@ async function refuseAndOfferTheFix(
   );
   const action = refusal.buttons.find((button) => button.label === chosen)?.action;
   if (action === undefined) {
-    return;
+    return false;
   }
   if (action === 'copyWindowsCommand') {
     await copyTheWindowsCommand(entity);
-    return;
+    return false;
   }
   // ONE retry, never a loop: the remedy either made the connection possible or it did not, and a
   // second refusal is information rather than a failure to report. The retry itself passes
   // `undefined`, which is what spends the budget.
   if ((await remote.runRemedy?.(action)) === true && retry !== undefined) {
-    await retry();
+    return retry();
   }
+  return false;
 }
 
-/** The line to paste into a terminal on the machine that actually holds the key. */
+/**
+ * The line to paste into a terminal on the machine that actually holds the key.
+ *
+ * <p>It is the BARE connection, and the message says so: the refusal happens before
+ * `connectionOptions` has resolved a jump host or pinned a host key, so the copied line carries
+ * neither. Pasting a command that silently dropped a bastion or a pin would be worse than one that
+ * says it is minimal — a code round asked for the difference to be stated rather than discovered.</p>
+ */
 async function copyTheWindowsCommand(entity: EntityMetadata): Promise<void> {
   const command = buildSshCommand(entity, process.platform);
   if (command === undefined) {
@@ -295,6 +321,22 @@ async function copyTheWindowsCommand(entity: EntityMetadata): Promise<void> {
   }
   await vscode.env.clipboard.writeText(command);
   void vscode.window.showInformationMessage(
-    `Copied. Run it in a terminal on this computer: ${command}`,
+    `Copied, and it is the bare connection — any jump host or pinned host key this entry uses is ` +
+      `NOT in it. Run it in a terminal on this computer: ${command}`,
   );
+}
+
+/**
+ * Delete a host-pin file THIS connection created — and only such a file.
+ *
+ * <p>`connectionOptions` writes it through `materializeKnownHosts`, into the same per-window
+ * `keys/<pid>/` directory the decrypted key goes to, so a refusal can take it back. The guard is
+ * there because a code round was right that an unguarded `rm` on whatever path the field holds is
+ * one future refactor away from deleting somebody's own `known_hosts`.</p>
+ */
+function forgetOurPin(knownHostsFile: string | undefined): void {
+  if (knownHostsFile === undefined || !knownHostsFile.includes('known_hosts-')) {
+    return;
+  }
+  forgetMaterializedKey(knownHostsFile);
 }
