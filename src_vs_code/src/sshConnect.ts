@@ -13,6 +13,35 @@ import {
 } from './keyInstaller';
 import { resolveSshCredential } from './sshCredential';
 import { connectionOptions } from './connectionOptions';
+import { WindowSide, terminalPlatform } from './remoteWindow';
+import { RefusalReason, RelayReadiness, remoteRoute } from './remoteRoute';
+import { RefusalAction, refusalFor } from './remoteWindowMessage';
+import { envPrefix } from './wslRelay';
+import { translateWindowsPath } from './wslProcess';
+
+/**
+ * What the WINDOW is, handed in rather than read here so the decision stays testable.
+ *
+ * <p>Defaulted to a local window, so every caller not yet taught about remote windows behaves
+ * exactly as it did — which is also the DoD's "byte-identical locally" clause.</p>
+ */
+export interface RemoteWindowDeps {
+  readonly side: WindowSide;
+  readonly relay: RelayReadiness;
+  /**
+   * Run the remedy a refusal offers, and say whether the connection is worth trying again.
+   *
+   * <p>A callback, because the remedies need things this function has no business knowing: the tree
+   * node for *Add Key to Agent*, the command registry for the rest. Absent means the buttons are
+   * shown and do nothing, which no production caller does.</p>
+   */
+  readonly runRemedy?: (action: RefusalAction) => Promise<boolean>;
+}
+
+const LOCAL_WINDOW: RemoteWindowDeps = {
+  side: { kind: 'local' },
+  relay: { enabled: false, running: false, socket: '' },
+};
 
 /**
  * The human Connect path: open an SSH session for an entity in a VS Code
@@ -31,11 +60,19 @@ export async function connectEntity(
    * the human path either. Optional so the agent-free callers are unchanged.
    */
   agentServesKey = false,
+  remote: RemoteWindowDeps = LOCAL_WINDOW,
 ): Promise<void> {
+  const side = remote.side;
   // The terminal ssh opens in would only say "command not found" AFTER a key may have been
   // materialised; checking first costs one stat and produces an offer instead of a corpse
   // (tails T20).
-  if (!sshClientPresent()) {
+  //
+  // SKIPPED in a remote window, deliberately: it stats the extension HOST's PATH, which is the
+  // wrong machine — it would vouch for a client the terminal will not use, and offer to install one
+  // where the person is not working. Probing the right machine costs a `wsl -e command -v ssh` on
+  // every click, and the failure it guards against (`ssh: command not found`) lands in a terminal
+  // the person is already looking at.
+  if (side.kind === 'local' && !sshClientPresent()) {
     await offerToInstall('ssh');
     return;
   }
@@ -44,20 +81,61 @@ export async function connectEntity(
     void vscode.window.showWarningMessage(source.warning);
   }
 
+  // The route decision comes BEFORE `connectionOptions`, which writes a known_hosts file, and
+  // before anything materialises a key — so a refused window leaves nothing on disk at all.
+  const route = remoteRoute(side, source.kind, agentServesKey, remote.relay);
+  if (route.kind === 'refuse') {
+    await refuseAndOfferTheFix(route.reasons, entity, remote, () =>
+      connectEntity(accountId, entity, storage, storageDir, agentServesKey, remote),
+    );
+    return;
+  }
+
   // The connection-manager half (audit D7/B10): which bastion to go through, and whether this
   // host is the one it claims to be. Resolved BEFORE anything is written to disk or a terminal
   // opened, so a refused host key costs nothing and leaves nothing behind.
-  const options = await connectionOptions(accountId, entity, storage, storageDir);
+  const resolved = await connectionOptions(accountId, entity, storage, storageDir);
+  if (resolved === undefined) {
+    return;
+  }
+
+  // A pinned host key's known_hosts file is on THIS machine, so the distribution is asked where it
+  // is. The pin survives — unlike a private key, `UserKnownHostsFile` has no mode requirement, and
+  // /mnt/c cannot hold one anyway.
+  const options = await withTranslatedKnownHosts(resolved, side);
   if (options === undefined) {
+    await refuseAndOfferTheFix(['known-hosts-translation-failed'], entity, remote, () =>
+      connectEntity(accountId, entity, storage, storageDir, agentServesKey, remote),
+    );
+    return;
+  }
+
+  const platform = terminalPlatform(side, process.platform);
+  if (platform === undefined) {
+    // Unreachable: `remoteRoute` refuses every side whose shell cannot be named. Kept as a refusal
+    // rather than a cast, so a future route that forgets says so instead of composing for a guess.
+    await refuseAndOfferTheFix(['not-wsl'], entity, remote, async () => undefined);
     return;
   }
 
   let keyPath: string | undefined;
   let materialized: string | undefined;
+  if (route.kind === 'agent') {
+    // The WSL route: no `-i` and nothing on disk, with this ONE command pointed at the relay's
+    // socket. A per-command prefix rather than the window's environment collection, which is a
+    // single namespace for every terminal and so cannot serve a Windows shell and a WSL one at once.
+    openSshTerminal(
+      { ...entity, sshKeyPath: undefined },
+      options,
+      platform,
+      envPrefix('SSH_AUTH_SOCK', route.socketPath),
+    );
+    return;
+  }
   if (agentServesKey && source.kind === 'storedKey') {
     // Deliberately nothing: the agent answers, and writing the key out would defeat the
     // feature exactly where a person can see it working.
-    openSshTerminal({ ...entity, sshKeyPath: undefined }, options);
+    openSshTerminal({ ...entity, sshKeyPath: undefined }, options, platform);
     return;
   }
   if (source.kind === 'storedKey') {
@@ -78,20 +156,23 @@ export async function connectEntity(
   // dedicated terminal, so nobody retypes what the vault already knows. The password
   // rides the terminal's ENVIRONMENT — not a file, not the command line.
   if (source.kind === 'password') {
-    const command = buildSshCommand(entity, process.platform, options);
+    // `platform` rather than `process.platform`, although the route refuses a password in every
+    // remote window and so this can only be a local one today: reading the host's platform HERE is
+    // the defect the whole change is about, and leaving one copy of it behind is how it comes back.
+    const command = buildSshCommand(entity, platform, options);
     const target = describeSshTarget(entity);
     if (command === undefined || target === undefined) {
       void vscode.window.showWarningMessage(`"${entity.name}" has no host configured — cannot start SSH.`);
       return;
     }
-    const scriptPath = writeAskpassScriptFile(storageDir, process.platform);
+    const scriptPath = writeAskpassScriptFile(storageDir, platform);
     // A FRESH terminal every time: the env carries this entity's password, and reusing
     // one would run the new session with the previous entity's credentials.
     const name = `SSH: ${target}`;
     vscode.window.terminals.find((t) => t.name === name && t.exitStatus === undefined)?.dispose();
     const passTerminal = vscode.window.createTerminal({
       name,
-      env: askpassEnv(scriptPath, source.password, process.platform),
+      env: askpassEnv(scriptPath, source.password, platform),
     });
     passTerminal.show();
     // accept-new: with SSH_ASKPASS_REQUIRE=force even the host-key yes/no question would be
@@ -105,7 +186,7 @@ export async function connectEntity(
     return;
   }
 
-  const terminal = openSshTerminal({ ...entity, sshKeyPath: keyPath }, options);
+  const terminal = openSshTerminal({ ...entity, sshKeyPath: keyPath }, options, platform);
   // Wipe the decrypted key from disk as soon as the session ends.
   if (materialized !== undefined) {
     if (terminal === undefined) {
@@ -119,4 +200,80 @@ export async function connectEntity(
       });
     }
   }
+}
+
+/**
+ * The pinned host key's file, as the distribution can open it — or `undefined`, meaning refuse.
+ *
+ * <p>`materializeKnownHosts` has already written a file on THIS machine by the time we get here, so
+ * every refusal path deletes it: a connection that did not happen must leave nothing behind, which
+ * is the same guarantee the materialised key has had since it was written.</p>
+ *
+ * <p>Unlike a private key the pin survives translation — OpenSSH imposes no mode requirement on
+ * `UserKnownHostsFile`, which is just as well, since /mnt/c cannot hold one.</p>
+ */
+async function withTranslatedKnownHosts(
+  options: Awaited<ReturnType<typeof connectionOptions>>,
+  side: WindowSide,
+): Promise<typeof options> {
+  if (options === undefined || side.kind !== 'wsl' || options.knownHostsFile === undefined) {
+    return options;
+  }
+  const inside = await translateWindowsPath(side.distro, options.knownHostsFile);
+  if (inside.length === 0) {
+    forgetMaterializedKey(options.knownHostsFile);
+    return undefined;
+  }
+  return { ...options, knownHostsFile: inside };
+}
+
+/**
+ * Say what is wrong, name both machines, and offer the one button that fixes the first thing.
+ *
+ * <p>Modal, because it replaces a command that would otherwise have been typed into a terminal and
+ * failed there — a notification in the corner would be read after the person had already gone
+ * looking for the missing file, which is exactly the wasted trip this message exists to prevent.</p>
+ */
+async function refuseAndOfferTheFix(
+  reasons: readonly RefusalReason[],
+  entity: EntityMetadata,
+  remote: RemoteWindowDeps,
+  retry: () => Promise<void>,
+): Promise<void> {
+  const side = remote.side;
+  const refusal = refusalFor(reasons, {
+    distro: side.kind === 'wsl' ? side.distro : '',
+    remoteName: side.kind === 'other' ? side.remoteName : 'wsl',
+    hostPlatform: process.platform,
+  });
+  const chosen = await vscode.window.showWarningMessage(
+    refusal.message,
+    { modal: true },
+    ...refusal.buttons.map((button) => button.label),
+  );
+  const action = refusal.buttons.find((button) => button.label === chosen)?.action;
+  if (action === undefined) {
+    return;
+  }
+  if (action === 'copyWindowsCommand') {
+    await copyTheWindowsCommand(entity);
+    return;
+  }
+  // ONE retry, never a loop: the remedy either made the connection possible or it did not, and a
+  // second refusal is information rather than a failure to report.
+  if ((await remote.runRemedy?.(action)) === true) {
+    await retry();
+  }
+}
+
+/** The line to paste into a terminal on the machine that actually holds the key. */
+async function copyTheWindowsCommand(entity: EntityMetadata): Promise<void> {
+  const command = buildSshCommand(entity, process.platform);
+  if (command === undefined) {
+    return;
+  }
+  await vscode.env.clipboard.writeText(command);
+  void vscode.window.showInformationMessage(
+    `Copied. Run it in a terminal on this computer: ${command}`,
+  );
 }

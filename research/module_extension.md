@@ -154,10 +154,33 @@ before it names anything else. The module yields an `action` rather than a comma
 keeps it `vscode`-free; **the call site that maps an action to `credSshManager.setUpWslRelay` and
 friends is not built yet** — it is the plan's S6, and until then these two modules have no consumer.
 Its button label reads *Set Up the Relay and Connect* rather than *Turn It On and Connect* because
-the command it will run opens a distribution picker and a readiness check first, and it drops the
+the command it runs opens a distribution picker and a readiness check first, and it drops the
 promise entirely — to *Set Up the WSL Agent Relay* — whenever switching the relay on is not the whole
 fix: beside a key the agent does not hold, or for `relay-not-running`, which means the relay is
 already on and still silent. A label may not promise a silence it will not deliver.
+
+`connectEntity` is where those three meet the window, and the ORDER inside it is the fix. The route
+is decided **before `connectionOptions` writes a known_hosts file and before any key is
+materialised**, so a refused window leaves nothing on disk at all; `sshClientPresent()` is skipped
+off-local, because it stats the extension host's PATH and would vouch for a client the terminal will
+not use; `openSshTerminal` is handed `terminalPlatform(side, process.platform)` instead of reading
+`process.platform` itself; and the WSL route emits **no `-i`** with
+`env SSH_AUTH_SOCK='…' ` in front of that one command. A per-command prefix rather than
+`EnvironmentVariableCollection`, which is a single namespace per window and so cannot serve a Windows
+terminal and a WSL one at once — the same limitation `PLAN_wsl_agent_relay.md` recorded when it
+declined to export the variable for you.
+
+A **pinned host key survives** the WSL route: `UserKnownHostsFile` has no mode requirement, so the
+file is translated by asking the distribution (`translateWindowsPath` → `wslpath -a`, bounded and
+tree-killed), and a translation that fails deletes the file it had already written rather than
+stranding a host pin on disk. Two call sites reach all of this — the tree's button
+(`agentCommands.ts`) and the broker's terminal action (`sshUseActions.ts`) — and the second had
+never passed `agentServesKey` at all, which was invisible while it only meant materialising a key
+the agent could have served, and is not invisible in a WSL window, where it refuses as
+`agent-has-no-key` while the agent is holding the key. `remoteConnectHost.ts` does the `vscode`
+reads for both, and `sshDepsFor` now assembles the broker's dependency record, because
+`extension.ts` is under a size ratchet that only moves down — growing it to wire a feature is the
+move that ratchet exists to refuse.
 
 ## Data model
 

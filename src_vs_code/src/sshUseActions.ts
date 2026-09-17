@@ -19,6 +19,8 @@ import { agentForwardEnv, openSshBinary } from './sshProgram';
 import { resolveExecAuth } from './sshExecAuth';
 import { describeSshTarget } from './terminalManager';
 import { connectEntity } from './sshConnect';
+import { remedyRunner, remoteWindowDeps } from './remoteConnectHost';
+import { WslRelayManager } from './wslRelayManager';
 import { EntityMetadata } from './types';
 
 /**
@@ -51,6 +53,21 @@ export interface SshUseDeps {
    * a snapshot taken at construction would be a stale answer for the rest of the session.</p>
    */
   agentSocket(): string | undefined;
+  /**
+   * The WSL relays this window is running, for the remote-window decision.
+   *
+   * <p>Optional so the broker's own tests need not build one. Absent means the connect path treats
+   * the window as local, which is exactly what it did before this existed.</p>
+   */
+  relays?: WslRelayManager;
+  /**
+   * Whether the agent already serves this entity's key.
+   *
+   * <p>This action used to call `connectEntity` with the default `false`, which was invisible while
+   * the only consequence was materialising a key that the agent could have served. In a WSL window
+   * it is not invisible: the route refuses as `agent-has-no-key` while the agent is serving it.</p>
+   */
+  servesKeyForEntity?(entity: EntityMetadata): boolean;
 }
 
 /**
@@ -231,9 +248,17 @@ export function sshTerminalAction(deps: SshUseDeps): UseAction {
       if (entity === undefined) {
         return fail('not_found', `"${ctx.entityName}" no longer exists in the vault.`);
       }
-      // The human's own Connect path, verbatim: same terminal name, same
-      // askpass env, same key cleanup on close.
-      await connectEntity(ctx.accountId, entity, deps.storage, deps.storageDir);
+      // The human's own Connect path, verbatim: same terminal name, same askpass env, same key
+      // cleanup on close — and, since this window may be attached to WSL, the same remote-window
+      // decision and the same answer about whether the agent already holds the key.
+      await connectEntity(
+        ctx.accountId,
+        entity,
+        deps.storage,
+        deps.storageDir,
+        deps.servesKeyForEntity?.(entity) === true,
+        deps.relays === undefined ? undefined : remoteWindowDeps(deps.relays, remedyRunner(undefined)),
+      );
       void vscode.window.showInformationMessage(
         `Claude Code opened an SSH terminal for "${ctx.entityName}"${
           describeSshTarget(entity) === undefined ? '' : ` (${describeSshTarget(entity)})`
@@ -242,5 +267,37 @@ export function sshTerminalAction(deps: SshUseDeps): UseAction {
       const response: TerminalResponseBody = { opened: true };
       return { status: 200, body: response };
     },
+  };
+}
+
+/**
+ * Everything the two SSH actions need, assembled in one place instead of in `activate()`.
+ *
+ * <p>Extracted when the remote-window fix gave this record two more fields: `extension.ts` is
+ * under a size ratchet that only moves DOWN, which is its whole point — the file is being
+ * dismantled (audit A1), and growing it to wire a feature is exactly the move the ratchet exists to
+ * refuse. The literal moved here whole, beside the type it satisfies.</p>
+ */
+export function sshDepsFor(parts: {
+  storage: StorageManager;
+  storageDir: string;
+  agentServer: { signal: AbortSignal; acquireExecSlot(): (() => void) | undefined; note(message: string): void };
+  sshAgent: { socketPath: string | undefined; servesKeyForEntity(entity: EntityMetadata): boolean };
+  relays: WslRelayManager;
+}): SshUseDeps {
+  return {
+    storage: parts.storage,
+    storageDir: parts.storageDir,
+    signal: parts.agentServer.signal,
+    acquireExecSlot: parts.agentServer.acquireExecSlot,
+    note: parts.agentServer.note,
+    // What makes `-A` real rather than decorative: the child needs SSH_AUTH_SOCK in its own
+    // environment, and the window's collection reaches terminals only. See `sshProgram.ts`.
+    agentSocket: (): string | undefined => parts.sshAgent.socketPath,
+    // The broker's "open a terminal" action reaches the SAME connect path as the tree's button, so
+    // it needs the same two facts: which window this is, and whether the agent already holds this
+    // key. Without the second it would ask for a route that always refuses as `agent-has-no-key`.
+    relays: parts.relays,
+    servesKeyForEntity: (entity): boolean => parts.sshAgent.servesKeyForEntity(entity),
   };
 }

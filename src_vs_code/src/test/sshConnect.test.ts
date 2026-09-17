@@ -41,10 +41,12 @@ interface World {
   materialised: string[];
   forgotten: string[];
   /** Terminals opened through `openSshTerminal`, with the key path each was given. */
-  sshTerminals: { keyPath: string | undefined; options: unknown }[];
+  sshTerminals: { keyPath: string | undefined; options: unknown; platform?: string; prefix?: string }[];
   created: Terminal[];
   existing: Terminal[];
   warnings: string[];
+  /** The button labels each warning offered, in order. */
+  offered: string[][];
   errors: string[];
   /** Fires the onDidCloseTerminal listeners with a terminal. */
   closeTerminal(t: unknown): void;
@@ -60,6 +62,8 @@ interface Parts {
   /** What `openSshTerminal` hands back; undefined = it could not open one. */
   sshTerminal?: unknown;
   existingNamed?: string;
+  /** What the fake distribution answers when asked where a Windows path is. */
+  translated?: string;
 }
 
 function world(parts: Parts): World {
@@ -72,6 +76,7 @@ function world(parts: Parts): World {
     created: [],
     existing: [],
     warnings: [],
+    offered: [],
     errors: [],
     closeTerminal: (t: unknown): void => closeListeners.forEach((l) => l(t)),
   };
@@ -112,8 +117,9 @@ function world(parts: Parts): World {
           closeListeners.push(listener);
           return { dispose: (): void => undefined };
         },
-        showWarningMessage: (m: string): Promise<undefined> => {
+        showWarningMessage: (m: string, ...rest: unknown[]): Promise<undefined> => {
           w.warnings.push(m);
+          w.offered.push(rest.filter((r): r is string => typeof r === 'string'));
           return Promise.resolve(undefined);
         },
         showErrorMessage: (m: string): Promise<undefined> => {
@@ -143,9 +149,19 @@ function world(parts: Parts): World {
         },
         writeAskpassScriptFile: (): string => '/storage/keys/askpass.sh',
       },
+      './wslProcess': {
+        // Never a real `wsl.exe` in a unit test. '' is the module's own "it would not say".
+        translateWindowsPath: (_distro: string, windowsPath: string): Promise<string> =>
+          Promise.resolve(parts.translated ?? `/mnt/c${windowsPath}`),
+      },
       './terminalManager': {
-        openSshTerminal: (entity: { sshKeyPath?: string }, options: unknown): unknown => {
-          w.sshTerminals.push({ keyPath: entity.sshKeyPath, options });
+        openSshTerminal: (
+          entity: { sshKeyPath?: string },
+          options: unknown,
+          platform?: string,
+          prefix?: string,
+        ): unknown => {
+          w.sshTerminals.push({ keyPath: entity.sshKeyPath, options, platform, prefix });
           return opened;
         },
         buildSshCommand: (entity: { host?: string }): string | undefined =>
@@ -340,4 +356,159 @@ test('an entity with NO credential at all still opens a terminal for an agent or
 
   assert.equal(w.sshTerminals.length, 1);
   assert.equal(w.sshTerminals[0].keyPath, undefined);
+});
+
+// --- the remote window, and the report this whole change came from -------------------------
+//
+// Reported with a screenshot: Connect SSH works from a VS Code window on Windows and, from one
+// attached to WSL, posts
+//   ssh -i "c:\Users\strug\...\keys\23284\<guid>.key" ubuntu@10.120.39.139
+// into a bash shell, which answers "Identity file ... not accessible: No such file or directory".
+// Measured on that machine: translating the path is not a fix either — /mnt/c is DrvFs without
+// `metadata`, every file on it is 0777, `chmod 600` there is a silent no-op, and `ssh-keygen -y -f`
+// answers "Permissions 0777 ... are too open. ... This private key will be ignored."
+
+const WSL_NO_RELAY = {
+  side: { kind: 'wsl' as const, distro: 'Ubuntu' },
+  relay: { enabled: false, running: false, socket: '' },
+};
+const WSL_READY = {
+  side: { kind: 'wsl' as const, distro: 'Ubuntu' },
+  relay: { enabled: true, running: true, socket: '/run/user/1000/creds-agent.sock' },
+};
+
+test('in a WSL window with a stored key and no relay, NOTHING is written and no terminal opens', async () => {
+  // The report, as a test. Before the fix this materialised /storage/keys/k1.key and opened a
+  // terminal carrying it — a Windows path posted into a shell that cannot read it.
+  const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS });
+
+  await w.mod.connectEntity('a1', entity(), storage, '/storage', false, WSL_NO_RELAY);
+
+  assert.deepEqual(w.materialised, [], 'a decrypted key was written for a shell that cannot read it');
+  assert.deepEqual(w.sshTerminals, [], 'a command was composed for the wrong machine');
+  assert.equal(w.warnings.length, 1);
+  assert.match(w.warnings[0], /CredsForDevs runs on this computer \(Windows\)/);
+  assert.match(w.warnings[0], /terminal runs in WSL \(Ubuntu\)/);
+});
+
+test('the refusal offers the button that fixes the FIRST thing missing', async () => {
+  const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS });
+
+  await w.mod.connectEntity('a1', entity(), storage, '/storage', false, WSL_NO_RELAY);
+
+  assert.deepEqual(w.offered, [['Set Up the WSL Agent Relay']]);
+});
+
+test('with the relay up and the agent serving the key, the line goes through the socket', async () => {
+  // The working route: no -i, nothing on disk, and the key never enters the distribution.
+  const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS, sshTerminal: {} });
+
+  await w.mod.connectEntity('a1', entity(), storage, '/storage', true, WSL_READY);
+
+  assert.deepEqual(w.materialised, []);
+  assert.equal(w.sshTerminals.length, 1);
+  assert.equal(w.sshTerminals[0].keyPath, undefined, 'no -i');
+  assert.equal(w.sshTerminals[0].platform, 'linux', 'composed for the shell that will parse it');
+  assert.equal(
+    w.sshTerminals[0].prefix,
+    "env SSH_AUTH_SOCK='/run/user/1000/creds-agent.sock' ",
+    'an env WORD, so fish and pwsh can run it too',
+  );
+});
+
+test('a PASSWORD in a WSL window refuses before any askpass file is written', async () => {
+  // The askpass helper is a script on THIS machine; no relay carries it across.
+  const w = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
+
+  await w.mod.connectEntity('a1', entity(), storage, '/storage', false, WSL_NO_RELAY);
+
+  assert.deepEqual(w.created, [], 'no terminal, so no password in its environment');
+  assert.match(w.warnings[0], /authenticates with a PASSWORD/);
+  assert.deepEqual(w.offered, [['Copy the Windows Command']]);
+});
+
+test('a key PATH in a WSL window refuses rather than passing a Windows path', async () => {
+  const w = world({ source: { kind: 'keyPath', path: 'C:\keys\id_ed25519' }, options: OPTIONS });
+
+  await w.mod.connectEntity('a1', entity(), storage, '/storage', false, WSL_NO_RELAY);
+
+  assert.deepEqual(w.sshTerminals, []);
+  assert.match(w.warnings[0], /points at a key FILE on this computer/);
+});
+
+test('every other remote window kind refuses, naming the machine that holds the key', async () => {
+  for (const remoteName of ['ssh-remote', 'dev-container', 'codespaces']) {
+    const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'x' }, options: OPTIONS });
+
+    await w.mod.connectEntity('a1', entity(), storage, '/storage', true, {
+      side: { kind: 'other', remoteName },
+      relay: { enabled: true, running: true, socket: '/run/s.sock' },
+    });
+
+    assert.deepEqual(w.materialised, [], `${remoteName} wrote a key`);
+    assert.deepEqual(w.sshTerminals, [], `${remoteName} opened a terminal`);
+    assert.ok(
+      w.warnings[0].includes(`a remote window (${remoteName})`),
+      `${remoteName} was not named: ${w.warnings[0]}`,
+    );
+  }
+});
+
+test('a pinned host key is translated by ASKING the distribution', async () => {
+  const w = world({
+    source: { kind: 'storedKey', keyEntityId: 'k1', content: 'x' },
+    options: { knownHostsFile: '\storage\keys\known_hosts-e1' },
+    sshTerminal: {},
+  });
+
+  await w.mod.connectEntity('a1', entity(), storage, '/storage', true, WSL_READY);
+
+  assert.equal(w.sshTerminals.length, 1);
+  assert.deepEqual(w.sshTerminals[0].options, {
+    knownHostsFile: '/mnt/c\storage\keys\known_hosts-e1',
+  });
+});
+
+test('a refused translation deletes the file it had already written, and opens nothing', async () => {
+  // `materializeKnownHosts` has written a Windows file by the time translation is attempted. A
+  // connection that did not happen must leave nothing behind.
+  const w = world({
+    source: { kind: 'storedKey', keyEntityId: 'k1', content: 'x' },
+    options: { knownHostsFile: '/storage/keys/known_hosts-e1' },
+    translated: '',
+  });
+
+  await w.mod.connectEntity('a1', entity(), storage, '/storage', true, WSL_READY);
+
+  assert.deepEqual(w.sshTerminals, []);
+  assert.deepEqual(w.forgotten, ['/storage/keys/known_hosts-e1'], 'the pin file was stranded');
+  assert.match(w.warnings[0], /pinned/);
+});
+
+test('a LOCAL window is untouched: the platform is the host and there is no prefix', async () => {
+  const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'x' }, options: OPTIONS, sshTerminal: {} });
+
+  await w.mod.connectEntity('a1', entity(), storage, '/storage', false);
+
+  assert.deepEqual(w.materialised, ['/storage/keys/k1.key']);
+  assert.equal(w.sshTerminals[0].platform, process.platform);
+  assert.equal(w.sshTerminals[0].prefix, undefined);
+});
+
+test('THE REPORT, both halves: the same click writes a key when the window is not known to be WSL', async () => {
+  // This pair is the regression evidence, kept rather than produced once by breaking the source.
+  // `remote` absent is exactly the code path every caller took before this change, and it is what a
+  // WSL window used to get: a decrypted key on the Windows disk and a terminal carrying its path.
+  const before = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS, sshTerminal: {} });
+  await before.mod.connectEntity('a1', entity(), storage, '/storage', false);
+
+  assert.deepEqual(before.materialised, ['/storage/keys/k1.key']);
+  assert.deepEqual(before.sshTerminals.map((t) => t.keyPath), ['/storage/keys/k1.key']);
+
+  // The same inputs, with the window identified. Nothing is written, nothing is opened.
+  const after = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS, sshTerminal: {} });
+  await after.mod.connectEntity('a1', entity(), storage, '/storage', false, WSL_NO_RELAY);
+
+  assert.deepEqual(after.materialised, []);
+  assert.deepEqual(after.sshTerminals, []);
 });

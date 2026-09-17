@@ -263,12 +263,19 @@ export class SshAgentManager implements vscode.Disposable {
 
   /** Whether this entity's key would be served by the agent rather than written to disk. */
   servesKeyFor(node: TreeNode): boolean {
-    const details = node.details;
-    if (details === undefined) {
-      return false;
-    }
-    const keyEntityId = details.sshKeyEntityId ?? details.id;
-    return this.keys.has(keyEntityId);
+    return node.details !== undefined && this.servesKeyForEntity(node.details);
+  }
+
+  /**
+   * The same question asked of the entity alone.
+   *
+   * <p>The broker's terminal action holds an `EntityMetadata` and no tree node, and it reaches the
+   * same connect path as the tree's button — so it needs this answer too, or in a WSL window its
+   * route refuses as `agent-has-no-key` while the agent is in fact serving the key. Widened rather
+   * than copied: the node variant was already only reading `details`.</p>
+   */
+  servesKeyForEntity(details: EntityMetadata): boolean {
+    return this.keys.has(details.sshKeyEntityId ?? details.id);
   }
 
   dispose(): void {
