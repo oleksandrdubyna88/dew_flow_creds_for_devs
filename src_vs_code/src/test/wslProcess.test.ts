@@ -7,6 +7,7 @@ import {
   WslSpawner,
   runWslBounded,
   translateWindowsPath,
+  wslBinary,
 } from '../wslProcess';
 
 // `runWsl` never rejects, which is right for "which distributions are there" — and it also never
@@ -144,4 +145,33 @@ test('a hung translation is refused within the bound, not waited on', async () =
 
 test('the default bound is short enough that a person does not think the editor froze', () => {
   assert.ok(TRANSLATE_TIMEOUT_MS <= 5_000, 'a click may not wait longer than five seconds');
+});
+
+// --- which binary is actually launched (CWE-426) -----------------------------------------------
+//
+// `spawn(name, …, { shell: false })` resolves a relative name the way CreateProcess does, and
+// CreateProcess searches the CURRENT DIRECTORY before PATH. A `wsl.exe` left in the extension host's
+// working directory would then run with our arguments. `sshProgram.ts` records the same defect for
+// `ssh.exe`; SonarCloud flagged it here (typescript:S4036) on a new call site.
+
+test('the launcher is named by its full path under the real Windows directory', () => {
+  const asked: string[] = [];
+  const answer = wslBinary({ SystemRoot: 'C:\\Windows' }, (candidate) => {
+    asked.push(candidate);
+    return true;
+  });
+
+  assert.equal(answer, 'C:\\Windows\\System32\\wsl.exe');
+  assert.deepEqual(asked, ['C:\\Windows\\System32\\wsl.exe'], 'and it is the path that was CHECKED');
+});
+
+test('a Windows that is not on C: is followed, not assumed', () => {
+  assert.equal(wslBinary({ SystemRoot: 'D:\\Win' }, () => true), 'D:\\Win\\System32\\wsl.exe');
+  assert.equal(wslBinary({ windir: 'E:\\Windows' }, () => true), 'E:\\Windows\\System32\\wsl.exe');
+});
+
+test('with no launcher there the BARE name comes back, so a machine without WSL still answers', () => {
+  // Every caller here is built for "it said nothing"; a spawn that throws is a different shape.
+  assert.equal(wslBinary({ SystemRoot: 'C:\\Windows' }, () => false), 'wsl.exe');
+  assert.equal(wslBinary({}, () => false), 'wsl.exe');
 });
