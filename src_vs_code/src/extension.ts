@@ -49,7 +49,7 @@ import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
 import { ArrivalHighlights } from './arrivalHighlight';
 import { ViewerClicks } from './viewerClicks';
 import { warnIfKeyringMissing } from './keyringWarningHost';
-import { AgentDoors, DoorSources, doorsOf } from './agentDoors';
+import { AgentDoors, DoorSources, doorsOf, standingConsentFor } from './agentDoors';
 import { ARRIVAL_WINDOW_MS } from './arrivalHighlight';
 import { DepDecorationProvider } from './depDecorations';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
@@ -209,7 +209,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     wslRelayOn: () => vscode.workspace.getConfiguration('credSshManager').get<boolean>('wslAgentRelay', false),
     isKeyEntity: (details) => resolveKind(details as never) === 'sshkey',
   };
-  const doorsAt = (accountId: string, node: TreeNode): AgentDoors => doorsOf(doorSources, accountId, node.id, node.details);
+  const doorsAt = (accountId: string, node: TreeNode): AgentDoors => doorsOf(doorSources, accountId, node.id, node.details, standingConsentFor(node, (id) => storage.getNode(accountId, id)));
   const doorsFor: DoorsFor = (accountId, node) => ({ agentDoors: doorsAt(accountId, node), entityTarget: { kind: 'node', accountId, node } });
   // T23: the has:cli filter and the viewer's CLI row ask the SAME reverse lookup.
   provider.hasCliAlias = (accountId, nodeId) =>

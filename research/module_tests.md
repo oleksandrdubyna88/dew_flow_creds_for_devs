@@ -636,6 +636,18 @@ trip through `toValues`.
 | the sentence is per HALF | **page** | four states in one line. Watched red with both halves driven by `mcp !== undefined` — *The input did not match /Switches set on this entry/* |
 | saving with only the cadence touched leaves the entry's ladder absent; taking a cadence back keeps the switches | **round trip** | the §2 regression on the entity side, through the real page script, JSON, and `toValues` |
 
+**The doors footer (S3.3)** — `test/agentDoors.test.ts`. A never-ask entry is a door like the other
+four, and the footer's promise is that what it lists is LIVE.
+
+| flow | covered | note |
+|---|---|---|
+| a never-ask entry renders a standing-consent row FIRST, naming the command | **unit** | position asserted, not presence: implemented at the end of the table it would still exist and still be wrong |
+| an entry that still asks renders no such row | **unit** | both `always` and `every12h` |
+| a never-ask entry agents may NOT use is not a door | **unit** | the row says an agent may USE this entry without asking; with `use` off nothing can walk through it. Watched red with the `use` half dropped |
+| an entry that INHERITS never from its folder has the door too | **unit** | the row is about what the door will do, not where the answer was written |
+| the CLI row no longer claims there is no consent modal, and the code-access row still does | **unit** | one of the two was false — `handleAlias` → `perform` → `consent` — in the module whose job is saying which doors have no modal |
+| the rendered FORM carries the row | **page** | the builder can be right while the form never shows it |
+
 **The ceiling (S2.3)** — the quiet path's own limiter, since the prompt was the old one. The unit half
 is `test/aliasThrottle.test.ts` with the clock injected, so sixty calls cost under a millisecond; the
 broker half drives the ceiling for real over loopback, and the two sixty-call tests cost 863 ms and

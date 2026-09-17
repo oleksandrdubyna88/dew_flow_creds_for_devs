@@ -679,7 +679,7 @@ test('the group sits after the tenth switch and before the doors footer', () => 
   // empty string and the only `agentDoors` in the page is a CSS class in the stylesheet above it,
   // which would make this assertion pass or fail for a reason that has nothing to do with order.
   const html = renderHtml(
-    options({ agentDoors: { cliAliases: ['prod'], codeAccess: false, bridgeOpen: false, wslRelay: false } }),
+    options({ agentDoors: { cliAliases: ['prod'], codeAccess: false, bridgeOpen: false, wslRelay: false, standingConsent: false } }),
   );
 
   const lastSwitch = html.indexOf(`id="${MCP_SWITCHES[MCP_SWITCHES.length - 1].id}"`);
