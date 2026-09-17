@@ -98,8 +98,11 @@ export function remedyRunner(target: unknown): (action: RefusalAction) => Promis
         );
         return false;
       }
-      await vscode.commands.executeCommand(`${SECTION}.addKeyToAgent`, target);
-      return true;
+      // ANSWERED, not assumed. The command can fail — a key entry that has gone, a key the agent
+      // cannot parse — and reporting success regardless is what put a second identical dialog on
+      // screen the instant the first was dismissed: the retry fired, refused for the same reason,
+      // and said so again. It returns a boolean for exactly this caller.
+      return (await vscode.commands.executeCommand(`${SECTION}.addKeyToAgent`, target)) === true;
     }
     if (action === 'openRemoteBridge') {
       await vscode.commands.executeCommand(`${SECTION}.openRemoteBridge`, target);

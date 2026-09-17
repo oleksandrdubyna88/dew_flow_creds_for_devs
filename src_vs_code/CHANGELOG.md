@@ -4,6 +4,20 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.3] — 2026-09-17 — Add Key to Agent follows the key an entry points at
+
+### Fixed
+
+- **"`<your connection>` has no private key stored in the vault"** — said about a connection whose
+  **Key source** is another entry, with that key sitting in the vault beside it. An SSH connection
+  usually POINTS AT the key it uses rather than carrying one, and *Add Key to Agent* was handing the
+  agent the connection, which indeed has no key of its own. It follows `sshKeyEntityId` now, exactly
+  as the connect path already did, and the agent is given the key. A reference to an entry that has
+  been deleted is refused by name instead of loaded blindly.
+- **The same refusal appearing twice, the second the instant you dismissed the first.** The remedy
+  behind the button reported success whatever happened, so the connection retried, refused for the
+  same reason, and said so again. The command answers now, and a refusal is shown once.
+
 ## [1.9.2] — 2026-09-17 — a working relay is used, not declared missing
 
 ### Fixed
