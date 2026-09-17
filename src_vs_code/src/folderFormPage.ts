@@ -1,6 +1,6 @@
 import * as crypto from 'node:crypto';
-import { McpAccess, McpAskPolicy, accessMask, answersLadder, normalizeMcpAccess } from './mcpAccess';
-import { MCP_SWITCHES, mcpAskHtml, mcpBarHtml, mcpSwitchStyles } from './mcpSwitches';
+import { McpAccess, accessMask, answersLadder, normalizeMcpAccess } from './mcpAccess';
+import { InheritedAsk, MCP_SWITCHES, mcpAskHtml, mcpBarHtml, mcpSwitchStyles } from './mcpSwitches';
 import { escapeHtml } from './webviewHtml';
 import { formHeaderHtml, pageChromeCss } from './pageChrome';
 import { zoomApplyScript, zoomButtonsScript } from './zoomControl';
@@ -51,7 +51,7 @@ export interface FolderFormOptions {
    * inheritance means. Absent when nothing above answers, and the Inherit option then says so
    * instead of naming a folder that does not exist.</p>
    */
-  inheritedAsk?: { ask: McpAskPolicy; from: string };
+  inheritedAsk?: InheritedAsk;
   /**
    * The text-zoom offset (T28), from `credSshManager.uiScale` — filled in by the panel, exactly
    * as `mountForm` fills the entity form's in. Optional for the same reason it is optional on

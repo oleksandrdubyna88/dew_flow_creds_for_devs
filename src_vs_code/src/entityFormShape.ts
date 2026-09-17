@@ -3,7 +3,7 @@ import { SecondValues } from './secondValues';
 import { EntityFields } from './entityFields';
 import { PaymentFields } from './paymentFields';
 import { AgentDoors } from './agentDoors';
-import type { McpAskPolicy } from './mcpAccess';
+import type { InheritedAsk } from './mcpSwitches';
 import { DependencyFolderCandidate } from './depGraph';
 
 /**
@@ -42,7 +42,7 @@ export interface EntityFormOptions {
    * says itself. Absent when nothing above answers, which the option then says instead of naming a
    * folder that does not exist.</p>
    */
-  inheritedAsk?: { ask: McpAskPolicy; from: string };
+  inheritedAsk?: InheritedAsk;
   /** The tree element the footer's commands act on — the same argument the context menu passes. */
   entityTarget?: unknown;
   entityId: string;
