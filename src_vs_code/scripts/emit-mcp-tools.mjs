@@ -18,8 +18,11 @@
 // acts on, and a change to any of them is a change to the product. NOT the assembly version:
 // it moves on every build, and a file that churns is a file nobody reads a diff of.
 //
-// The one failure worth being loud about is a missing binary. `--check` in CI must not pass
-// because nothing ran.
+// Two failures are worth being loud about, and they are the same failure: a MISSING binary and a
+// STALE one. `--check` must not pass because nothing ran, and it must not pass because what ran
+// was last week's executable — this script's whole output is whatever that process answers, so an
+// exe older than `Program.cs` regenerates the contract from prose nobody wrote any more and the
+// check agrees with it. Both exit 2, naming the one command that rebuilds it.
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
