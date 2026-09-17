@@ -683,6 +683,46 @@ test('a relay socket that cannot be quoted REFUSES rather than running ssh witho
   assert.match(w.warnings[0], /contains a quote/);
 });
 
+test('the retry asks the AGENT again, not only the window', async () => {
+  // Raised by a review, and it is the same defect as the window snapshot one layer along: the retry
+  // rebuilt `remote` and kept every other field, including `agentServesKey` read before *Add Key to
+  // Agent* ran. The remedy loaded the key, the retry read the old `false`, and the refusal came back
+  // naming the thing that had just been fixed.
+  //
+  // No Windows client in this world, deliberately: with one the second attempt would connect through
+  // it and the stale answer would be invisible again — which is exactly how this survived.
+  const w = world({
+    source: { kind: 'storedKey', keyEntityId: 'k1', content: 'x' },
+    options: OPTIONS,
+    chooseButton: true,
+    sshTerminal: {},
+  });
+  let loaded = false;
+
+  await w.mod.connectEntity('a1', entity(), {
+    storage: storage,
+    storageDir: '/storage',
+    agentServesKey: false,
+    refreshAgentServesKey: (): boolean => loaded,
+    remote: {
+      ...WSL_READY,
+      runRemedy: async (): Promise<boolean> => {
+        loaded = true; // the remedy did what it said
+        return true;
+      },
+    },
+  });
+
+  assert.equal(w.warnings.length, 1, 'one refusal, then the retry succeeded');
+  assert.equal(w.sshTerminals.length, 1, 'the retry connected instead of refusing again');
+  assert.equal(w.sshTerminals[0].keyPath, undefined, 'and through the agent, which is what was fixed');
+  assert.equal(
+    w.sshTerminals[0].prefix,
+    "env SSH_AUTH_SOCK='/run/user/1000/creds-agent.sock' ",
+    'the relay route, which is what the remedy was for',
+  );
+});
+
 test('the remedy retries the connect exactly ONCE, however often it keeps failing', async () => {
   // The plan claimed "at most once" and nothing enforced it: the retry re-entered with a full
   // budget, so a remedy that never fixes anything could be ridden indefinitely.

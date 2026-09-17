@@ -96,6 +96,18 @@ export interface ConnectOptions {
    * human path either. Absent is `false`, which is what the agent-free callers meant.
    */
   readonly agentServesKey?: boolean;
+  /**
+   * The agent, asked AGAIN — because the remedy has just changed it.
+   *
+   * <p>The exact counterpart of `RemoteWindowDeps.refresh`, and it was missing for the same reason
+   * that one was: the retry rebuilt the window and kept every other field of this record, including
+   * a snapshot taken before *Add Key to Agent* ran. So the remedy loaded the key, the retry read
+   * `false`, and the refusal came back naming the thing that had just been fixed — the second
+   * identical dialog, one layer along from where it was first fixed. Raised by a review.</p>
+   *
+   * <p>Absent means the snapshot is reused, which is right for a test and wrong for a window.</p>
+   */
+  readonly refreshAgentServesKey?: () => boolean;
   /** What the WINDOW is. Absent is a local window, which is what every caller meant before this. */
   readonly remote?: RemoteWindowDeps;
   /**
@@ -125,12 +137,7 @@ export async function connectEntity(
   const retry =
     connect.allowRetry === false
       ? undefined
-      : (): Promise<boolean> =>
-          connectEntity(accountId, entity, {
-            ...connect,
-            remote: remote.refresh?.() ?? remote,
-            allowRetry: false,
-          });
+      : (): Promise<boolean> => retryAfterRemedy(accountId, entity, connect);
   // The terminal ssh opens in would only say "command not found" AFTER a key may have been
   // materialised; checking first costs one stat and produces an offer instead of a corpse
   // (tails T20).
@@ -372,6 +379,38 @@ async function runRemedyAndRetry(
     return retry();
   }
   return false;
+}
+
+/**
+ * The second attempt, with BOTH halves of the state read again.
+ *
+ * <p>A remedy exists to change what the first attempt refused on, so a retry that reuses the
+ * snapshot refuses for the reason that was just fixed. The window half was found by a code round;
+ * the agent half by a review of that fix, one layer along and for the same reason — everything
+ * else in the record was carried over untouched by the spread.</p>
+ *
+ * <p>`allowRetry: false` is what spends the budget: the second refusal shows its button and stops.</p>
+ */
+function retryAfterRemedy(
+  accountId: string,
+  entity: EntityMetadata,
+  connect: ConnectOptions,
+): Promise<boolean> {
+  return connectEntity(accountId, entity, {
+    ...connect,
+    remote: freshWindow(connect),
+    agentServesKey: freshAgent(connect),
+    allowRetry: false,
+  });
+}
+
+function freshWindow(connect: ConnectOptions): RemoteWindowDeps {
+  const remote = connect.remote ?? LOCAL_WINDOW;
+  return remote.refresh?.() ?? remote;
+}
+
+function freshAgent(connect: ConnectOptions): boolean {
+  return connect.refreshAgentServesKey?.() ?? connect.agentServesKey === true;
 }
 
 /** Which two machines the wording names, read off the window once. */

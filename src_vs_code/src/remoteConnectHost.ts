@@ -91,8 +91,11 @@ function readinessFor(
 export function remedyRunner(target: unknown): (action: RefusalAction) => Promise<boolean> {
   return async (action) => {
     if (RELAY_SETUP.includes(action)) {
-      await vscode.commands.executeCommand(`${SECTION}.setUpWslRelay`);
-      return true;
+      // ANSWERED, not assumed — the same lesson as *Add Key to Agent* one button along. That command
+      // returns early on a cancelled picker, a distribution that is not ready and a relay that would
+      // not start; reading `true` regardless meant cancelling the picker still produced a retry and
+      // a second identical refusal. Raised by a review.
+      return (await vscode.commands.executeCommand(`${SECTION}.setUpWslRelay`)) === true;
     }
     return action === 'addKeyToAgent' ? addKeyToAgent(target) : otherRemedy(action, target);
   };
