@@ -14,9 +14,15 @@ namespace CredsMcp;
 /// routes were "gated by the consent modal alone, not by the per-entry switches", and publishing
 /// them before they honoured those switches would have let an agent use an entry the switches say
 /// it may not. That was true when it was written and stopped being true when the routes landed:
-/// the surface is sixteen tools, every one of them behind its entry's or folder's own switch, and
-/// since issue #95 behind that entry's consent cadence as well. Corrected on PR #106 — a comment
-/// promising a restraint the code no longer has is worse than no comment.</para>
+/// the surface is sixteen tools, every one of them behind its entry's or folder's own switch.
+/// Corrected on PR #106 — a comment promising a restraint the code no longer has is worse than no
+/// comment.</para>
+/// <para><b>The consent cadence issue #95 added reaches the USE routes only.</b>
+/// <c>handleMcpUse</c> lets a call through without a dialog when the entry's policy already
+/// answered (<c>prompts = !read.preConsented</c>); <c>handleMcpCreate</c>, <c>handleMcpDelete</c>
+/// and every folder verb call <c>door.admit(res, true)</c> and raise one every time. Saying it the
+/// looser way — "behind that entry's cadence as well" — is the mistake this pull request spent its
+/// review correcting elsewhere, and it was caught here too.</para>
 /// <para>Every answer is a JSON string rather than a structured object. That keeps the tool
 /// schema trivial — no reflection over our own types, which is what an AOT binary with
 /// reflection-based JSON turned off wants — and it is what agents read anyway.</para>
