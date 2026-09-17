@@ -6,6 +6,7 @@ import {
   RELAY_ONLY_LABEL,
   RefusalContext,
   refusalFor,
+  windowsClientCaveat,
 } from '../remoteWindowMessage';
 
 // The message this replaces was "Identity file c:\Users\...\keys\23284\<guid>.key not accessible:
@@ -154,24 +155,23 @@ test('each reason maps to the action that actually fixes it', () => {
   // The ACTION is what this test pins; the LABEL has its own test, because one action deliberately
   // carries two labels depending on whether it is the whole fix.
   for (const reason of ALL_REASONS) {
-    const buttons = refusalFor([reason], IN_WSL).buttons;
-
-    assert.equal(
-      buttons.length,
-      expected[reason] === undefined ? 0 : 1,
-      `${reason} offered ${buttons.length} buttons`,
-    );
-    if (expected[reason] === undefined) {
-      continue;
-    }
-    assert.equal(buttons[0].action, expected[reason], `${reason} offered the wrong action`);
-    assert.ok(
-      Object.values(BUTTON_LABELS).includes(buttons[0].label) ||
-        buttons[0].label === RELAY_ONLY_LABEL,
-      `${reason} invented a label`,
-    );
+    checkTheButton(reason, expected[reason]);
   }
 });
+
+const knownLabel = (label: string): boolean =>
+  Object.values(BUTTON_LABELS).includes(label) || label === RELAY_ONLY_LABEL;
+
+function checkTheButton(reason: RefusalReason, action: string | undefined): void {
+  const buttons = refusalFor([reason], IN_WSL).buttons;
+
+  assert.equal(buttons.length, action === undefined ? 0 : 1, `${reason} offered ${buttons.length} buttons`);
+  if (action === undefined) {
+    return;
+  }
+  assert.equal(buttons[0].action, action, `${reason} offered the wrong action`);
+  assert.ok(knownLabel(buttons[0].label), `${reason} invented a label`);
+}
 
 test('the relay button does not promise a silence it cannot deliver', () => {
   // DEC-1 wanted "Turn It On and Connect". The command it runs opens a distribution picker and a
@@ -191,4 +191,37 @@ test('the host machine is named the way a person says it, not the way Node spell
   assert.match(refusalFor(['relay-off'], IN_WSL).message, /\(Windows\)/);
   assert.match(refusalFor(['relay-off'], onMac).message, /\(macOS\)/);
   assert.doesNotMatch(refusalFor(['relay-off'], IN_WSL).message, /win32/);
+});
+
+// --- the caveat that rides the Windows-client route -----------------------------------------
+//
+// Not a refusal: the connection works. Two of its properties move to the other machine, and only
+// a connection that ASKS for one of them can be surprised by it.
+
+test('an ordinary connection is told nothing, and that is the point', () => {
+  assert.equal(windowsClientCaveat({ name: 'prod' }), '');
+  assert.equal(windowsClientCaveat({ name: 'prod', portForwards: [], agentForward: false }), '');
+});
+
+test('a forward is told WHOSE localhost it binds, because the answer changed machines', () => {
+  const note = windowsClientCaveat({ name: 'prod', portForwards: [{}] });
+
+  assert.match(note, /binds on WINDOWS/);
+  assert.match(note, /One thing behaves/, 'one fact, counted as one');
+  assert.match(note, /"prod"/, 'named, because a person may have several open');
+});
+
+test('agent forwarding is told whose agent it carries', () => {
+  const note = windowsClientCaveat({ name: 'prod', agentForward: true });
+
+  assert.match(note, /WINDOWS agent/);
+  assert.match(note, /One thing behaves/);
+});
+
+test('and both together are counted, rather than read as one sentence about the other', () => {
+  const note = windowsClientCaveat({ name: 'prod', portForwards: [{}], agentForward: true });
+
+  assert.match(note, /Two things behave/);
+  assert.match(note, /binds on WINDOWS/);
+  assert.match(note, /WINDOWS agent/);
 });

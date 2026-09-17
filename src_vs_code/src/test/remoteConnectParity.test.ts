@@ -47,20 +47,35 @@ const read = (file: string): string => fs.readFileSync(path.join(SRC, file), 'ut
  */
 function callSites(): string[] {
   const found: string[] = [];
-  const walk = (dir: string): void => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory() && entry.name !== 'test') {
-        walk(full);
-      } else if (entry.isFile() && entry.name.endsWith('.ts') && entry.name !== 'sshConnect.ts') {
-        if (/[^a-zA-Z]connectEntity\(/.test(fs.readFileSync(full, 'utf8'))) {
-          found.push(path.relative(SRC, full).split(path.sep).join('/'));
-        }
-      }
-    }
-  };
-  walk(SRC);
+  walk(SRC, found);
   return found;
+}
+
+/** Its own tests are excluded: a test file calling `connectEntity` is not a call site to fix. */
+const recursable = (entry: fs.Dirent): boolean => entry.isDirectory() && entry.name !== 'test';
+
+/** `sshConnect.ts` is excluded too: it is the CALLEE, and its own recursive retry decides nothing. */
+const searchable = (entry: fs.Dirent): boolean =>
+  entry.isFile() && entry.name.endsWith('.ts') && entry.name !== 'sshConnect.ts';
+
+const calls = (full: string): boolean =>
+  /[^a-zA-Z]connectEntity\(/.test(fs.readFileSync(full, 'utf8'));
+
+function walk(dir: string, found: string[]): void {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    visit(dir, entry, found);
+  }
+}
+
+function visit(dir: string, entry: fs.Dirent, found: string[]): void {
+  const full = path.join(dir, entry.name);
+  if (recursable(entry)) {
+    walk(full, found);
+    return;
+  }
+  if (searchable(entry) && calls(full)) {
+    found.push(path.relative(SRC, full).split(path.sep).join('/'));
+  }
 }
 
 const CALL_SITES = callSites();

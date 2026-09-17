@@ -652,3 +652,75 @@ than adding detail:
    now requires it to have been run where WSL exists, with its output quoted.
 
 Two decisions the round refused to let the plan leave open are settled above as DEC-1 and DEC-2.
+
+### S9 — the route the plan did not have: the WINDOWS client, launched from the WSL shell (2026-09-17)
+
+The plan above is built on one premise, stated in D3 and repeated in the route table's own comment:
+a Windows-side key cannot be used from a WSL shell, so it is the agent relay or a refusal. **Half of
+that is wrong, and it took shipping the honest refusal to find out.**
+
+What is true: the DISTRIBUTION'S `ssh` cannot use it. /mnt/c reports 0777, `chmod` there is a no-op,
+and OpenSSH refuses a key whose permissions it cannot trust.
+
+What is not: WSL can *launch the Windows client*, which reads that same file under the Windows ACLs
+where the permissions are real. Measured on the reporting machine:
+
+```
+$ /mnt/c/Windows/System32/OpenSSH/ssh.exe -V
+OpenSSH_for_Windows_9.5p2, LibreSSL 3.8.2
+$ wslpath -u 'C:\Windows\System32\OpenSSH\ssh.exe'
+/mnt/c/Windows/System32/OpenSSH/ssh.exe
+```
+
+and, earlier in the same session, an ed25519 key in `openssh-key-v1` format — the format our own
+agent cannot parse at all — authenticated through it. So the route needs **no agent, no relay, no
+key parser, and not even the distribution's name**, and the key does not merely stay out of the
+distribution: it never leaves Windows.
+
+**How it was found.** Not by review and not by a test. The person who reported the original defect
+clicked Connect on 1.9.5, was told in careful, correct, measured prose to convert their key with
+`ssh-keygen -p -m PKCS8`, and said what the product is actually for: it should work out where it is
+running and do what is needed. A refusal that is accurate is still a refusal. A consultant reading
+this branch raised the same route independently; both were right.
+
+**What was built** (`kind: 'windowsClient'` in `remoteRoute.ts`):
+
+| | |
+|---|---|
+| the program word | `/mnt/c/Windows/System32/OpenSSH/ssh.exe`, from `wslWindowsSshClient()` |
+| `-i` | the Windows path, **untranslated** — this client reads Windows paths |
+| `UserKnownHostsFile` | likewise untranslated; `withTranslatedKnownHosts` is skipped on this route |
+| quoting | still the SHELL's, which is bash — the client's OS and the shell's are two facts |
+| the distribution's name | not consulted, so `distro-ambiguous`/`distro-unknown` no longer block a key |
+
+**The order is the decision, and the relay still wins.** Where the agent can serve the key and the
+relay is up, the route is unchanged: the distribution's own client uses the distribution's
+`~/.ssh/config`, resolver, network namespace and idea of `localhost`. The Windows client is the one
+that always *works*, not the one that always *fits*, so it takes the cases the relay cannot serve —
+which today is nearly all of them, because nearly every key is in the format the agent cannot read.
+
+**What it costs, said out loud rather than hidden.** A `-L` forward binds on the CLIENT, and the
+client is now a Windows process: `localhost:5432` typed into that very terminal does not reach it.
+`-A` carries the WINDOWS agent's keys, because `SSH_AUTH_SOCK` does not cross interop unless
+`WSLENV` names it. `windowsClientCaveat` says so at the moment of the click, and **only for an entity
+that actually asks for one of the two** — a note everybody sees on every connection is a note nobody
+reads by the third day, and then it is not there for the one connection it was written for.
+
+**Still refused, and the reasons did not change.** A password: the askpass helper is a shell script
+the distribution holds and a Windows program cannot exec it, and the environment carrying the
+password does not cross interop either. Remote-SSH, containers, Codespaces: the Windows client is
+reachable from WSL because WSL runs on *this* machine; there is no interop to borrow across a
+network.
+
+**Red first, with real symptoms.** The new route branch was disabled and the suite re-run: 8 red
+across `remoteRoute.test.ts` and `sshConnect.test.ts`, the leading failure reading
+`+ kind: 'refuse' / - kind: 'windowsClient'` — which is the screenshot, as a diff.
+
+**Two known gaps this route has of its own**, recorded rather than discovered later:
+
+1. **A non-default `[automount] root`** makes the `/mnt/c` constant wrong. `wslpath` is the general
+   answer and this repository already asks it, but it costs a `wsl.exe` subprocess on a path that
+   runs on every click to translate a string that is fixed on every default machine. What a custom
+   root gets is a terminal saying the file does not exist, in front of a person looking at it.
+2. **Interop disabled** (`[interop] enabled=false`) makes the client unlaunchable. Same shape: the
+   failure is visible in the terminal, not silent.

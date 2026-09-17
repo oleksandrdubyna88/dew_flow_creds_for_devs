@@ -190,6 +190,40 @@ test('an ordinary login gets NO quotes — this line is read and pasted by peopl
   assert.match(String(line), /ssh deploy@h\.example\.com$/);
 });
 
+// --- the client and the shell are two different machines ------------------------------------
+//
+// In a WSL window bash parses the line and a WINDOWS ssh.exe runs it, reached through interop at
+// /mnt/c. Every other caller has one platform because every other caller has one machine.
+
+test('an explicit program is the first word, and the arguments are still quoted for the SHELL', () => {
+  const line = buildSshCommand(
+    entity({ sshKeyPath: 'C:\\Users\\me\\AppData\\Roaming\\Code\\keys\\e1.key' }),
+    'linux',
+    { program: '/mnt/c/Windows/System32/OpenSSH/ssh.exe' },
+  );
+
+  // The key path keeps its Windows spelling — this client reads Windows paths — while the
+  // backslashes are escaped so bash hands them over unchanged.
+  assert.equal(
+    line,
+    '/mnt/c/Windows/System32/OpenSSH/ssh.exe -i "C:\\\\Users\\\\me\\\\AppData\\\\Roaming\\\\Code\\\\keys\\\\e1.key" deploy@example.com',
+  );
+});
+
+test('the program override outranks the PATH probe, which is about a different machine', () => {
+  const line = buildSshCommand(entity({ agentForward: true }), 'linux', {
+    program: '/mnt/c/Windows/System32/OpenSSH/ssh.exe',
+    builtInExists: () => true,
+    pathProbe: pathWith(BUILT_IN_DIR),
+  });
+
+  assert.equal(line, '/mnt/c/Windows/System32/OpenSSH/ssh.exe -A deploy@example.com');
+});
+
+test('and with no override nothing changed at all', () => {
+  assert.equal(buildSshCommand(entity(), 'linux', {}), 'ssh deploy@example.com');
+});
+
 test('a domain login on a WINDOWS shell is left alone, where a backslash is literal', () => {
   // The same value, the other shell: quoting it there would change nothing and read worse.
   const line = buildSshCommand(

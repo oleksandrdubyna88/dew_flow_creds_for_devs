@@ -153,15 +153,24 @@ export class WslRelayManager {
       this.log(`wsl relay for ${name(distro)} listening on ${ours}`);
       return;
     }
-    // Somebody else's relay is already serving that path. That is the state we wanted, reached by
-    // another route — so it is adopted rather than reported as "no socket", which is what this
-    // said before and which sent a person to check an installation that was fine.
+    this.adoptIfBusy(distro, relay, line);
+  }
+
+  /**
+   * Somebody else's relay is already serving that path.
+   *
+   * <p>That is the state we wanted, reached by another route — so it is adopted rather than reported
+   * as "no socket", which is what this said before and which sent a person to check an installation
+   * that was fine. The refusal arrives on STDERR, which is why it was logged and never read.</p>
+   */
+  private adoptIfBusy(distro: string, relay: Relay, line: string): void {
     const theirs = socketFromBusyLine(line);
-    if (theirs.length > 0) {
-      relay.socket = theirs;
-      relay.adopted = true;
-      this.log(`wsl relay for ${name(distro)}: using the one already serving ${theirs}`);
+    if (theirs.length === 0) {
+      return;
     }
+    relay.socket = theirs;
+    relay.adopted = true;
+    this.log(`wsl relay for ${name(distro)}: using the one already serving ${theirs}`);
   }
 
   /**

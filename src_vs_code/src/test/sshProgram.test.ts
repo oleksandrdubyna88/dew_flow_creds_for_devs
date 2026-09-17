@@ -9,6 +9,7 @@ import {
   openSshProgram,
   pathDirsOf,
   pathSshIsBuiltIn,
+  wslWindowsSshClient,
 } from '../sshProgram';
 
 const present = (): boolean => true;
@@ -182,4 +183,37 @@ test('a spawn that does not need our agent is still the bare word', () => {
 test('a Windows without the built-in client falls back rather than failing to spawn', () => {
   // The difference between a connection that forwards nothing and no connection at all.
   assert.equal(openSshBinary('ssh', true, 'win32', () => false), 'ssh');
+});
+
+// --- the client WSL can borrow ----------------------------------------------------------------
+//
+// A WSL shell cannot use a Windows-side key with its own ssh: /mnt/c reports 0777, chmod there is a
+// no-op, and OpenSSH refuses a key whose permissions it cannot trust. It can LAUNCH the Windows
+// client through interop, which reads the same file under the ACLs that make those permissions
+// real. Measured: /mnt/c/Windows/System32/OpenSSH/ssh.exe -V -> OpenSSH_for_Windows_9.5p2.
+
+test('the client WSL borrows is the built-in one, spelled the way that shell must spell it', () => {
+  assert.equal(wslWindowsSshClient('win32', present), '/mnt/c/Windows/System32/OpenSSH/ssh.exe');
+});
+
+test('it is judged by the WINDOWS file, because that is the side this code runs on', () => {
+  // The path asked about is the Windows one; the path handed back is the Linux one. A test that
+  // let those be the same string would not notice the translation going missing.
+  const asked: string[] = [];
+  const answer = wslWindowsSshClient('win32', (candidate) => {
+    asked.push(candidate);
+    return true;
+  });
+
+  assert.deepEqual(asked, ['C:/Windows/System32/OpenSSH/ssh.exe']);
+  assert.equal(answer.startsWith('/mnt/c/'), true);
+});
+
+test('a Windows without it lends nothing, and says so as an empty string', () => {
+  assert.equal(wslWindowsSshClient('win32', absent), '');
+});
+
+test('and no other host has one to lend — WSL runs on Windows or nowhere', () => {
+  assert.equal(wslWindowsSshClient('linux', present), '');
+  assert.equal(wslWindowsSshClient('darwin', present), '');
 });

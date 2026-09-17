@@ -4,6 +4,7 @@ import { RefusalAction } from './remoteWindowMessage';
 import { WindowSide, windowSide } from './remoteWindow';
 import { WslRelayManager } from './wslRelayManager';
 import { RemoteWindowDeps } from './sshConnect';
+import { wslWindowsSshClient } from './sshProgram';
 
 /**
  * The `vscode` reads behind the remote-window decision, kept in one thin place.
@@ -27,6 +28,9 @@ export function remoteWindowDeps(
   return {
     side,
     relay: readinessFor(side, relays, serving),
+    // Read once per click, and it is one `existsSync` on this machine. Not gated on `side`: a local
+    // window ignores it, and gating it here would put the same condition in two files.
+    windowsClient: wslWindowsSshClient(),
     runRemedy,
     // Read again after a remedy has run, because the remedy exists to change exactly this. Without
     // it the retry re-uses a readiness captured BEFORE the relay was switched on and refuses for
@@ -83,33 +87,45 @@ function readinessFor(
  */
 export function remedyRunner(target: unknown): (action: RefusalAction) => Promise<boolean> {
   return async (action) => {
-    if (action === 'setUpRelay' || action === 'chooseDistribution') {
+    if (RELAY_SETUP.includes(action)) {
       await vscode.commands.executeCommand(`${SECTION}.setUpWslRelay`);
       return true;
     }
-    if (action === 'addKeyToAgent') {
-      // That command acts on a TREE ROW. The broker's terminal action has an entity and no row, so
-      // it passes no target — and running the command with `undefined` would open a picker the
-      // person did not ask for, or do nothing while we reported a fix. Say plainly that we could
-      // not, and do not retry.
-      if (target === undefined) {
-        void vscode.window.showInformationMessage(
-          'Add this key to the SSH agent from its row in the CredsForDevs view, then connect again.',
-        );
-        return false;
-      }
-      // ANSWERED, not assumed. The command can fail — a key entry that has gone, a key the agent
-      // cannot parse — and reporting success regardless is what put a second identical dialog on
-      // screen the instant the first was dismissed: the retry fired, refused for the same reason,
-      // and said so again. It returns a boolean for exactly this caller.
-      return (await vscode.commands.executeCommand(`${SECTION}.addKeyToAgent`, target)) === true;
-    }
-    if (action === 'openRemoteBridge') {
-      await vscode.commands.executeCommand(`${SECTION}.openRemoteBridge`, target);
-      return false;
-    }
-    // `retry` is the whole remedy for a distribution that was merely asleep; `copyWindowsCommand`
-    // never reaches here, because it is answered without running a command at all.
-    return action === 'retry';
+    return action === 'addKeyToAgent' ? addKeyToAgent(target) : otherRemedy(action, target);
   };
+}
+
+/** Both are answered by the setup walkthrough: it is where a distribution is chosen. */
+const RELAY_SETUP: readonly RefusalAction[] = ['setUpRelay', 'chooseDistribution'];
+
+async function otherRemedy(action: RefusalAction, target: unknown): Promise<boolean> {
+  if (action === 'openRemoteBridge') {
+    await vscode.commands.executeCommand(`${SECTION}.openRemoteBridge`, target);
+    return false;
+  }
+  // `retry` is the whole remedy for a distribution that was merely asleep; `copyWindowsCommand`
+  // never reaches here, because it is answered without running a command at all.
+  return action === 'retry';
+}
+
+/**
+ * Load this entity's key into the agent, and say whether connecting is now worth retrying.
+ *
+ * <p>That command acts on a TREE ROW. The broker's terminal action has an entity and no row, so it
+ * passes no target — and running the command with `undefined` would open a picker nobody asked for,
+ * or do nothing while we reported a fix. Say plainly that we could not, and do not retry.</p>
+ *
+ * <p><b>ANSWERED, not assumed.</b> The command can fail — a key entry that has gone, a key in a
+ * format the agent cannot read — and reporting success regardless is what put a second identical
+ * dialog on screen the instant the first was dismissed: the retry fired, refused for the same
+ * reason, and said so again. It returns a boolean for exactly this caller.</p>
+ */
+async function addKeyToAgent(target: unknown): Promise<boolean> {
+  if (target === undefined) {
+    void vscode.window.showInformationMessage(
+      'Add this key to the SSH agent from its row in the CredsForDevs view, then connect again.',
+    );
+    return false;
+  }
+  return (await vscode.commands.executeCommand(`${SECTION}.addKeyToAgent`, target)) === true;
 }

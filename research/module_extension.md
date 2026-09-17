@@ -145,6 +145,26 @@ what must be fixed first, so the one case that can list several (a stored key) s
 AND the agent does not hold this key" in one go; a credential that no relay can carry — a password's
 askpass script, a key path on the Windows disk — refuses ALONE, because listing relay problems beside
 it would point at a button that cannot help.
+**A WSL window has a third route, and it is the one that usually answers: the WINDOWS client.** The
+premise the table was first built on — a key on the Windows disk cannot be used from a WSL shell —
+is only half true. The DISTRIBUTION'S `ssh` cannot use it (0777 on /mnt/c, `chmod` a no-op). The
+WINDOWS `ssh`, launched through interop at `/mnt/c/Windows/System32/OpenSSH/ssh.exe`
+(`wslWindowsSshClient` in `sshProgram.ts`), reads the same file under the ACLs that make those
+permissions real — measured with an Ed25519 key in the `openssh-key-v1` format the agent cannot
+parse at all. So `kind: 'windowsClient'` needs no agent, no relay, no parser and not even the
+distribution's NAME: nothing is translated on it, which is why `distro-ambiguous` and
+`distro-unknown` stop blocking a key-backed connection, and why `withTranslatedKnownHosts` is
+SKIPPED there — a `/mnt/c/…` path is precisely what that client cannot open.
+
+The ORDER is the decision: the relay is tried first, because it runs the distribution's own client
+with the distribution's config, resolver and network namespace; the Windows client is the one that
+always works, not the one that always fits. What it costs is said out loud by `windowsClientCaveat`
+and only where it applies — a `-L` forward binds on WINDOWS, and `-A` carries the Windows agent's
+keys, because `SSH_AUTH_SOCK` does not cross interop unless `WSLENV` names it. And `buildSshCommand`
+grew a `program` option for it rather than a second platform: **the client's operating system and
+the shell's are two facts**, and everywhere else in the codebase they were one value. Quoting still
+follows the SHELL; only the first word and the untranslated paths follow the client.
+
 
 `remoteWindowMessage` carries the wording, and it is the lesson of `wslRelayReadiness` one layer up.
 The sentence this replaces was `Identity file c:\Users\…\keys\23284\<guid>.key not accessible` —

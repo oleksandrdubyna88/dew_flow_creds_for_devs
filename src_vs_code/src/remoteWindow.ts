@@ -53,13 +53,20 @@ export function windowSide(
   configuredDistros: readonly string[] = [],
   servingDistros: readonly string[] = [],
 ): WindowSide {
+  return (
+    sideWithoutADistribution(remoteName) ?? {
+      kind: 'wsl',
+      ...resolveDistro(authorities, configuredDistros, servingDistros),
+    }
+  );
+}
+
+/** The two answers that need no distribution — or `undefined`, meaning this window has one. */
+function sideWithoutADistribution(remoteName: string | undefined): WindowSide | undefined {
   if (remoteName === undefined || remoteName.length === 0) {
     return { kind: 'local' };
   }
-  if (remoteName !== 'wsl') {
-    return { kind: 'other', remoteName };
-  }
-  return { kind: 'wsl', ...resolveDistro(authorities, configuredDistros, servingDistros) };
+  return remoteName === 'wsl' ? undefined : { kind: 'other', remoteName };
 }
 
 /**
