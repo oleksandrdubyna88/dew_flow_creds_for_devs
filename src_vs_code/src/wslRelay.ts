@@ -65,8 +65,33 @@ export function relayArgv(command: string, distro: string, windowsBinary = ''): 
  * relay then falls back to the PATH, which is exactly where it was before.</p>
  */
 function binaryPrefix(windowsBinary: string): string {
-  const usable = windowsBinary.length > 0 && !windowsBinary.includes("'");
-  return usable ? `env CREDS_WINDOWS_BINARY='${windowsBinary}' ` : '';
+  return envPrefix(WINDOWS_BINARY_VARIABLE, windowsBinary);
+}
+
+/** The variable this file's own prefix sets, named rather than spelled inside a template. */
+const WINDOWS_BINARY_VARIABLE = 'CREDS_WINDOWS_BINARY';
+
+/**
+ * One environment variable in front of a command, for a shell line somebody else will run.
+ *
+ * <p>Extracted when the SSH connect path needed the same thing for `SSH_AUTH_SOCK`. It was this
+ * file's private `binaryPrefix` and is now its only implementation, because two copies of an
+ * escaping rule are two escaping rules.</p>
+ *
+ * <p><b>`env NAME=value command`, never a bare `NAME=value command` assignment prefix.</b> Measured
+ * in a real shell before it was first written this way, and confirmed from the other direction by
+ * the connect path's plan round: a bare assignment is not a command, so `exec` rejects it — and so
+ * do `fish` and `pwsh`, either of which can be a WSL window's default terminal profile. `env` is an
+ * ordinary command word that every one of them runs.</p>
+ *
+ * <p>A value containing a single quote cannot be single-quoted, and building a line out of one would
+ * be the escaping question this file refuses everywhere else. It is DROPPED instead: the caller gets
+ * no prefix, so the command runs with whatever the environment already had rather than as a broken
+ * line.</p>
+ */
+export function envPrefix(name: string, value: string): string {
+  const usable = value.length > 0 && !value.includes("'");
+  return usable ? `env ${name}='${value}' ` : '';
 }
 
 /**
