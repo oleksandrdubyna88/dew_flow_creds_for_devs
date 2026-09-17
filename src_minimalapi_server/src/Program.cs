@@ -1831,7 +1831,7 @@ try
 {
     app.Run();
 
-return 0;
+    return 0;
 }
 catch (Exception ex)
 {
