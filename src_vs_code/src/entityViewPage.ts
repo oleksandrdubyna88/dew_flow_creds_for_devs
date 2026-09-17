@@ -223,7 +223,7 @@ function codePanelFor(options: EntityViewOptions): string {
  * the same colour as the form's General section on every kind, and a colour renamed in
  * `formSections.ts` fails this file's tests instead of silently unframing the page.</p>
  */
-const NO_DOORS: AgentDoors = { cliAliases: [], codeAccess: false, bridgeOpen: false, wslRelay: false };
+const NO_DOORS: AgentDoors = { cliAliases: [], codeAccess: false, bridgeOpen: false, wslRelay: false, standingConsent: false };
 
 /**
  * A woven password: the two-column row it is read through, in a host of its own.

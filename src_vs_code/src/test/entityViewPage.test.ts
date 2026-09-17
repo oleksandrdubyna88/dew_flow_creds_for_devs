@@ -289,7 +289,7 @@ test('agent access is its own frame in the agent column — with the CLI row and
   const html = renderEntityViewHtml(
     options({
       cliAliases: ['prod-db'],
-      agentDoors: { cliAliases: ['prod-db'], codeAccess: false, bridgeOpen: true, wslRelay: false },
+      agentDoors: { cliAliases: ['prod-db'], codeAccess: false, bridgeOpen: true, wslRelay: false, standingConsent: false },
     }),
   );
   const agent = html.indexOf('id="agentGroup"');
