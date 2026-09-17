@@ -229,8 +229,22 @@ test('the refusal names the format, says ssh -i is unaffected, and gives the com
   const reason = result.ok ? '' : result.reason;
 
   assert.match(reason, /OPENSSH PRIVATE KEY/);
-  assert.match(reason, /ssh-keygen -p -m PEM/);
   assert.match(reason, /ssh -i/, 'it must say what still works, or it reads as "your key is broken"');
+});
+
+test('the conversion it names is PKCS8, because -m PEM works for RSA ONLY', () => {
+  // Measured after a consultant challenged the first wording, which said `-m PEM` for everything:
+  //   ssh-keygen -p -m PEM   on ed25519 -> Saving key "…" failed: invalid format
+  //   ssh-keygen -p -m PKCS8 on ed25519 -> -----BEGIN PRIVATE KEY-----, and the extension host
+  //                                         then READS it and SIGNS with it (checked under Electron)
+  // Ed25519 has no legacy PEM form at all, so the first wording told most people to run a command
+  // that cannot work — the same defect, inside the sentence written to explain a defect.
+  const result = parseSshPrivateKey(OPENSSH_HEADER, 'server key 2');
+  const reason = result.ok ? '' : result.reason;
+
+  assert.match(reason, /ssh-keygen -p -m PKCS8/);
+  assert.doesNotMatch(reason, /-m PEM/);
+  assert.match(reason, /BEGIN PRIVATE KEY/, 'and it must name the header the person will then see');
 });
 
 test('an ENCRYPTED one still gets the passphrase reason, which is a different problem', () => {

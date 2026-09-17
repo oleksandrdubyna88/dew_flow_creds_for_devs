@@ -172,8 +172,8 @@ const OPENSSH_FORMAT_REASON =
   'it is stored in the OpenSSH format (`-----BEGIN OPENSSH PRIVATE KEY-----`), which this agent ' +
   'cannot read — `ssh-keygen` has written that format by default since OpenSSH 7.8, so most keys ' +
   'are in it. `ssh -i` with a key FILE is unaffected; only the agent needs this. To convert a ' +
-  'copy: save the key to a file, run `ssh-keygen -p -m PEM -N "" -f <file>`, and paste the result ' +
-  'back into this entry with Edit. It will then begin `-----BEGIN RSA PRIVATE KEY-----`';
+  'copy: save the key to a file, run `ssh-keygen -p -m PKCS8 -N "" -f <file>`, and paste the ' +
+  'result back into this entry with Edit. It will then begin `-----BEGIN PRIVATE KEY-----`';
 
 const PASSPHRASE_REASON =
   'the key is protected by its own passphrase, which this agent cannot open (OpenSSH uses ' +
