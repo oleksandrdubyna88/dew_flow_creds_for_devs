@@ -188,3 +188,40 @@ jobs:
           # unfinished-restore check sitting after `docker compose down`, so a retry took the running
           # stack offline before refusing; scenario 4 in here is what catches that class.
           bash deploy/restore-archive-itest.sh
+
+
+  # ---------------------------------------------------------------------------
+  # The workflows themselves are code, and nothing checked them until now.
+  #
+  # actionlint reads every file under .github/workflows and, because ubuntu runners ship
+  # shellcheck, lints the `run:` blocks too. The rule that earns its place on its own is the
+  # script-injection one: a `${{ }}` expression written inline in a `run:` is pasted into the
+  # shell source before bash parses it, and this family has already had to fix that by hand.
+  #
+  # NO NEW ACTION. actionlint publishes none — only a release binary — and every `uses:` line here
+  # was just pinned to a commit SHA so the supply chain stays auditable. Pulling in an unpinnable
+  # third-party action to get a linter would undo that. The binary is pinned by VERSION and verified
+  # by CHECKSUM, which is the same promise a SHA pin makes: what runs is what was reviewed.
+  #
+  # Measured when this was added: zero findings across all seven repositories. It guards what comes
+  # next rather than clearing a backlog.
+  workflows:
+    name: workflows · actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Lint every workflow
+        env:
+          ACTIONLINT_VERSION: '1.7.12'
+          ACTIONLINT_SHA256: '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8'
+        run: |
+          set -euo pipefail
+          curl -fsSL -o actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "$ACTIONLINT_SHA256  actionlint.tar.gz" | sha256sum -c -
+          tar -xzf actionlint.tar.gz actionlint
+          ./actionlint -color
