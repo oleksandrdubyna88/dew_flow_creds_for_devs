@@ -63,15 +63,27 @@ export function windowSide(
 }
 
 /**
- * The platform whose SHELL will parse the composed line.
+ * The platform whose SHELL will parse the composed line — or `undefined` when NOTHING may be
+ * composed for this window.
  *
- * <p>The host platform is passed in rather than read here, so the module stays pure. A remote
- * window is not necessarily Linux — a Remote-SSH host could be anything — but every route that
- * reaches a terminal is WSL, and every other remote kind is refused before a command is composed,
- * so `linux` is the honest answer for every case that survives.</p>
+ * <p>The host platform is passed in rather than read here, so the module stays pure.</p>
+ *
+ * <p><b>Why `undefined` rather than a guess.</b> The first version answered `linux` for every
+ * non-local window, reasoning that the route refuses the other kinds before composing. The code
+ * review was right that this hard-codes one caller's policy into a general function: a Remote-SSH
+ * host can be Windows, and a WSL window whose distribution could not be resolved has no shell to
+ * name either. An answer that is only correct because somebody else remembered to refuse first is
+ * the shape of defect this whole plan is about. So the type carries the refusal: a caller cannot
+ * compose a line for a window this function will not name a platform for.</p>
  */
-export function terminalPlatform(side: WindowSide, hostPlatform: NodeJS.Platform): NodeJS.Platform {
-  return side.kind === 'local' ? hostPlatform : 'linux';
+export function terminalPlatform(
+  side: WindowSide,
+  hostPlatform: NodeJS.Platform,
+): NodeJS.Platform | undefined {
+  if (side.kind === 'local') {
+    return hostPlatform;
+  }
+  return side.kind === 'wsl' && side.problem === undefined ? 'linux' : undefined;
 }
 
 /** The four rungs, in order. */
@@ -92,18 +104,35 @@ function resolveDistro(
   return withoutAFolder(configured, serving);
 }
 
-/** Rungs 3 and 4: a window with no folder, so nothing names the distribution. */
+/**
+ * Rungs 3 and 4: a window with no folder, so nothing names the distribution.
+ *
+ * <p>A RUNNING relay is consulted before the configured list, and that order was a review finding
+ * rather than the first draft: someone with two distributions configured and a relay started in the
+ * one they are working in was refused and sent to a picker, while the socket they wanted was the
+ * only one that existed. A running relay is the least ambiguous fact available — it is a socket
+ * that is actually there.</p>
+ */
 function withoutAFolder(
   configured: readonly string[],
   serving: readonly string[],
 ): { distro: string; problem?: DistroProblem } {
+  if (serving.length === 1) {
+    return { distro: serving[0] };
+  }
   const known = distinct([...configured, ...serving]);
   if (known.length === 1) {
-    return { distro: known[0] };
+    // Through `preferredSpelling` like every other rung: `distinct` keeps the FIRST spelling it
+    // saw, which is the configured one, and an exact-key `socketPathFor` would then miss a relay
+    // serving the same distribution under another case.
+    return { distro: preferredSpelling(known[0], configured, serving) };
   }
   if (known.length === 0) {
-    // Nothing configured and nothing running: '' is `WslRelayManager`'s own "whatever WSL calls
-    // default" sentinel, and the route refuses on the relay before the name is ever used.
+    // Nothing configured and nothing running. '' is `WslRelayManager`'s own "whatever WSL calls
+    // default" sentinel, and it deliberately carries NO problem: the person here has never set the
+    // relay up, so the honest message is the relay's own ("it is off"), not a distribution picker.
+    // Naming it `unknown` would send them to choose between distributions for a feature they have
+    // not switched on — the circle `wslRelayReadiness` exists to avoid.
     return { distro: '' };
   }
   return { distro: '', problem: 'unknown' };

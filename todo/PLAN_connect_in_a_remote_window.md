@@ -1,7 +1,8 @@
 # PLAN — Connect SSH composes for the WRONG machine in a remote window
 
-> Status: **plan only, nothing implemented yet, 2026-09-17.** Revised the same day after the `coai`
-> plan round (2 of 3 reviewers answered; 12 findings, all accepted — §What the plan round changed).
+> Status: **in progress, 2026-09-17 — S1 shipped, S2–S8 open.** Revised the same day after the
+> `coai` plan round (2 of 3 reviewers answered; 12 findings, all accepted — §What the plan round
+> changed) and again after S1's code round (all 12 reviewers answered; §Story log).
 > Scope: `src_vs_code/src/sshConnect.ts`, `terminalManager.ts`, `wslProcess.ts`, three new pure
 > modules, and the five help translations.
 >
@@ -118,7 +119,12 @@ export type WindowSide =
   | { kind: 'wsl'; distro: string }
   | { kind: 'other'; remoteName: string };
 
-export function windowSide(remoteName: string | undefined, authorities: readonly string[]): WindowSide;
+export function windowSide(
+  remoteName: string | undefined,
+  authorities: readonly string[],
+  configuredDistros?: readonly string[],   // credSshManager.wslRelayDistros
+  servingDistros?: readonly string[],      // WslRelayManager.serving()
+): WindowSide;
 ```
 
 `remoteName` is `undefined` locally, `'wsl'`, `'ssh-remote'`, `'dev-container'`,
@@ -131,8 +137,8 @@ workspace folder is not a reliable source:
 |---|---|---|
 | 1 | every workspace folder authority (`vscode-remote://wsl+ubuntu/…` → `ubuntu`, measured) | the ordinary case |
 | 2 | **all folders must agree** | a multi-root workspace spanning two distributions yields `{ kind: 'wsl', distro: '' }` **and a distinct refusal reason** (`'distro-ambiguous'`) — connecting to an arbitrary one of them would be a guess about which agent socket to use |
-| 3 | the single configured `wslRelayDistros` entry | a rootless window (a single file, an empty window): no authority exists, and one configured distribution is an unambiguous answer |
-| 4 | `''` — the "whatever WSL calls default" sentinel `WslRelayManager` already uses (`wslRelayManager.ts:44`) | nothing else answered **and** exactly one relay is running; otherwise `'distro-unknown'` |
+| 3 | the ONE relay that is running, else the single known distribution | a rootless window (a single file, an empty window): no authority exists. A running relay is consulted **first** and outranks the configured list — S1's code round found that two configured distributions with one relay up was refused into a picker while the socket wanted was the only one that existed |
+| 4 | `''` — the "whatever WSL calls default" sentinel `WslRelayManager` already uses (`wslRelayManager.ts:44`), carrying **no** problem | nothing is configured and nothing is running. Deliberately not `'distro-unknown'`: the person here has never switched the relay on, so the honest message is the relay's own, not a distribution picker — the circle `wslRelayReadiness` exists to avoid. Several known and none running is `'distro-unknown'` |
 
 Every comparison lowercases both sides (measurement 5). `distro: ''` is never allowed to *silently*
 pick a socket when more than one relay is running — that was the plan round's sharpest catch.
@@ -143,18 +149,26 @@ This is the core of the fix and it changes no signature: the parameter already e
 fed the wrong value.
 
 ```ts
-export function terminalPlatform(side: WindowSide): NodeJS.Platform;   // 'linux' unless local
+export function terminalPlatform(
+  side: WindowSide,
+  hostPlatform: NodeJS.Platform,
+): NodeJS.Platform | undefined;   // undefined = nothing may be composed for this window
 ```
 
 [terminalManager.ts:13](../src_vs_code/src/terminalManager.ts) and
-[sshConnect.ts:81](../src_vs_code/src/sshConnect.ts) pass `terminalPlatform(side)`. That one
-substitution fixes the quoting branch ([sshCommand.ts:80](../src_vs_code/src/sshCommand.ts)) and the
-program word ([sshProgram.ts:171](../src_vs_code/src/sshProgram.ts)) together, because both already
-take the platform as an argument.
+[sshConnect.ts:81](../src_vs_code/src/sshConnect.ts) pass `terminalPlatform(side, process.platform)`.
+That one substitution fixes the quoting branch
+([sshCommand.ts:80](../src_vs_code/src/sshCommand.ts)) and the program word
+([sshProgram.ts:171](../src_vs_code/src/sshProgram.ts)) together, because both already take the
+platform as an argument.
 
-> A remote window is not necessarily Linux — a Remote-SSH host could be anything. But every route
-> this plan lets REACH a terminal is Linux (WSL), and every other remote kind is refused before a
-> command is composed, so `'linux'` is the honest answer for every case that survives to D2.
+> **`undefined`, not `'linux'`, for everything else** — corrected by S1's code round. The first
+> draft answered `'linux'` for every non-local window on the reasoning that the route refuses the
+> other kinds first. That hard-codes one caller's policy into a general function, and it is wrong on
+> its own terms twice: a Remote-SSH host can be Windows, and a WSL window whose distribution could
+> not be resolved has no shell to name either. An answer that is correct only because somebody else
+> remembered to refuse first is the exact shape of defect this plan exists to fix, so the refusal is
+> carried by the type instead.
 
 ### D3. The route decision, also pure — and it reports EVERY missing piece
 
@@ -414,6 +428,45 @@ Order: **S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8.** S4 and S5 are le
 - [ ] The `coai` gate: the `review_plan` round is recorded below, a `review_code` round ran on EVERY
       story, every finding resolved, and the summary reports the verdicts and how many reviewers
       answered.
+
+## Story log
+
+### S1 — `remoteWindow.ts` (2026-09-17)
+
+`coai` code round, verdict `proceed`, **all 12 reviewers answered**, 24 findings: **11 accepted, 13
+rejected with reasons**. The three that changed the code:
+
+1. **The no-folder rung bypassed the spelling rule.** `distinct([...configured, ...serving])` keeps
+   the FIRST spelling seen — the configured one — so `configured: ['UBUNTU']` with a relay serving
+   `Ubuntu` returned `UBUNTU`, which an exact-key `socketPathFor` never finds. The very trap the
+   module was written for, on the one rung that had been left out of it.
+2. **A running relay now outranks the configured list.** Two distributions configured and a relay up
+   in one of them was refused into a picker, while that socket was the only one that existed.
+3. **`terminalPlatform` answers `undefined` rather than `'linux'`** for a window whose shell cannot
+   be named — see D2.
+
+The 13 rejections, with the reason each was rejected, because a rejection without one is just
+agreement postponed:
+
+- **Four were the local engine's own reasoning, committed as findings.** Their text ends mid-thought
+  ("Wait, let's re-read the plan's", "Check whether distinct handles it or if there is another
+  defect"), and two of them state outright that the code matches the plan. One, filed **Blocking /
+  Security**, claims `WSL_AUTHORITY` has a trailing space and offers a fix character-identical to
+  the current line; the constant is `'wsl+'`.
+- **`''` for a WSL window with nothing configured and nothing running should stay problem-free**
+  (raised three times). Naming it `'unknown'` would show a distribution picker to someone who has
+  never switched the relay on, when the honest message is the relay's own.
+- **An empty `remoteName` stays local.** `vscode.env.remoteName` is `string | undefined` and never
+  `''`; treating a blank as remote would refuse every local connect if it ever were.
+- **No `null` guard on `remoteName`**, for the same reason — the value comes from a typed VS Code
+  API, and a guard against a value it cannot produce is a comment pretending to be code.
+- **The `Set` in `distinct` and the linear `find` in `preferredSpelling` stay** (raised twice). The
+  arrays are a handful of distribution names, read once per click; a `Map` here is more code for no
+  measurable gain.
+- **`withoutAFolder` keeps its name** — it is the no-folder branch of the ladder and is named for
+  its precondition, which is how the ladder reads top to bottom.
+- **The `'unknown'` case IS covered by a test** that asserts the whole value; the finding says so
+  itself.
 
 ## What the plan round changed (2026-09-17)
 
