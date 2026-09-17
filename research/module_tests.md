@@ -663,6 +663,8 @@ a title in the help and a handler under another id is a palette entry that throw
 | the person is told only after both writes land, and the truth when one fails | **command** | `forgetAll` is awaited; a message shown while a tombstone is in flight says the windows are gone when they are not |
 | the command the manifest contributes is the command that is registered | **command** | the two halves of a palette entry, pinned together |
 | each of the five languages names the command, drops the obsolete *every action raises the modal*, and says never-ask leaves the journal | **help ×5** | `helpCoverage.test.ts` checks the ENGLISH corpus only, and a STALE translation is invisible to a coverage test that can only spot a missing one. Watched red by reinstating the Russian sentence |
+| the stale-claim scan still finds a known obsolete sentence | **companion** | the other half of a prohibition: a scan that matches nothing passes forever, so the predicate is fed each obsolete sentence and asserted to recognise it |
+| a store that refuses the write says so, through the REGISTERED handler | **command** | driven through the command rather than through `forgetAll`, because the handler's catch branch is the subject and calling the store directly never reaches it. Watched red by removing the error message |
 
 **The ceiling (S2.3)** — the quiet path's own limiter, since the prompt was the old one. The unit half
 is `test/aliasThrottle.test.ts` with the clock injected, so sixty calls cost under a millisecond; the

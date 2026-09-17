@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { loadWithVscode } from './vscodeStub';
+import { EN_BODIES } from '../helpEn';
+import { RU_BODIES } from '../helpRu';
+import { UK_BODIES } from '../helpUk';
+import { DE_BODIES } from '../helpDe';
+import { ES_BODIES } from '../helpEs';
 import {
   ASK_WINDOW_MS,
   ConsentStamp,
@@ -59,12 +66,12 @@ function memento(): ConsentStampStore & { keys: () => string[] } {
  * `'Forget them'` and called with an explicit `undefined` takes the DEFAULT — so the dismiss case
  * silently tested the confirm case, and this test caught it by failing.</p>
  */
-function registered(confirm = true): Captured {
+function registered(confirm = true, store = memento()): Captured {
   const answer = confirm ? 'Forget them' : undefined;
   const warned: string[] = [];
   const told: string[] = [];
   const handlers = new Map<string, Handler>();
-  const state = memento();
+  const state = store;
   const mod = loadWithVscode<{ registerAgentCommands(host: Record<string, unknown>): void }>(
     '../commands/agentCommands',
     {
@@ -181,30 +188,44 @@ test('the person is told only after the writes land, and told the truth when the
   });
 });
 
-test('a store that refuses the write says so instead of claiming success', () => {
-  const world = registered();
-  const refusing: ConsentStampStore = {
+/** A `globalState` that cannot be written — what a locked or read-only profile answers. */
+function refusing(): ConsentStampStore & { keys: () => string[] } {
+  return {
+    keys: () => [],
     get: () => undefined,
     update: (): Thenable<void> => Promise.reject(new Error('globalState is read-only')),
   };
-  // The same handler, over a store that cannot be written: `consentStampsFor` memoizes per store,
-  // so this is a different instance and a different queue, which is exactly the real case of a
-  // second window with its own.
-  return consentStampsFor(refusing)
-    .forgetAll(NOW)
-    .then(
-      () => assert.fail('the rejected write was swallowed'),
-      (error: unknown) => assert.match(String(error), /read-only/),
-    )
-    .then(() => {
-      assert.equal(world.handlers.has('credSshManager.forgetAgentConsents'), true);
-    });
+}
+
+test('a store that refuses the write says so, through the REGISTERED handler', () => {
+  // Driven through the command rather than through `forgetAll`, because the thing under test is the
+  // handler's catch branch: a rejected write that escaped it would be an unhandled command failure,
+  // and calling the store directly would never reach that code at all.
+  const world = registered(true, refusing());
+
+  return forget(world).then(() => {
+    assert.equal(world.told.length, 1, 'the person was told nothing at all');
+    assert.match(world.told[0], /Could not forget agent consents/);
+    assert.match(world.told[0], /read-only/, 'and not told what went wrong');
+    assert.doesNotMatch(world.told[0], /have been forgotten/, 'it claimed success over a failed write');
+  });
 });
+
+interface Manifest {
+  contributes: { commands: { command: string; title: string }[] };
+}
+
+/** The manifest as `listingCoverage.test.ts` reads it — `JSON.parse` answers `any`, so no cast. */
+function manifest(): Manifest {
+  const text = fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8');
+  return JSON.parse(text);
+}
 
 test('the command the manifest contributes is the command that is registered', () => {
   // A title in the help and a handler under another id is a palette entry that throws when pressed.
-  const manifest = require('../../package.json') as { contributes: { commands: { command: string; title: string }[] } };
-  const contributed = manifest.contributes.commands.find((one) => one.command === 'credSshManager.forgetAgentConsents');
+  const contributed = manifest().contributes.commands.find(
+    (one) => one.command === 'credSshManager.forgetAgentConsents',
+  );
 
   assert.ok(contributed !== undefined, 'the command is not in the manifest');
   assert.equal(contributed.title, 'Forget Agent Consents on This Machine');
@@ -219,34 +240,50 @@ test('the command the manifest contributes is the command that is registered', (
  * coverage test that only knows how to spot a missing one: a person reading the Russian article
  * would have been told every call raises a modal, which stopped being true in S2.2.</p>
  */
-const LANGUAGES = ['helpEn', 'helpRu', 'helpUk', 'helpDe', 'helpEs'];
+/** Every catalog, imported rather than required by name — a typo is a compile error this way. */
+const CATALOGS = { helpEn: EN_BODIES, helpRu: RU_BODIES, helpUk: UK_BODIES, helpDe: DE_BODIES, helpEs: ES_BODIES };
 
-function article(language: string): string {
-  const mod = require(`../${language}`) as { [key: string]: Record<string, Record<string, string>> };
-  const corpus = Object.values(mod).find((value) => typeof value === 'object' && value !== null);
-  const found = corpus?.['agents-mcp'];
+/**
+ * The obsolete claim, in each language's own words.
+ *
+ * <p>It was true until S2.2 and it is the one sentence a stale translation would keep while looking
+ * complete — which is exactly what a coverage test cannot see, since it only knows how to spot a
+ * MISSING article.</p>
+ */
+const STALE_CLAIMS = [
+  'Every action still raises the consent modal',
+  'Каждое действие всё равно поднимает модал согласия',
+  'Кожна дія все одно піднімає вікно згоди',
+  'Jede Handlung löst weiterhin die Zustimmungsabfrage aus',
+  'Toda acción sigue levantando la ventana de consentimiento',
+];
+
+function staleClaimIn(text: string): string | undefined {
+  return STALE_CLAIMS.find((claim) => text.includes(claim));
+}
+
+function article(language: keyof typeof CATALOGS): string {
+  const found = CATALOGS[language]['agents-mcp'];
   assert.ok(found !== undefined, `${language} has no agents-mcp article`);
   return Object.values(found).join('\n');
 }
 
-for (const language of LANGUAGES) {
+test('the stale-claim scan still finds a known obsolete sentence', () => {
+  // The companion to the prohibitions below: a scan that matches nothing passes forever, and these
+  // sentences are exactly the kind a rewording would quietly move out of reach.
+  for (const claim of STALE_CLAIMS) {
+    assert.equal(staleClaimIn(`before. ${claim}. after`), claim, 'the scan no longer recognises its own subject');
+  }
+  assert.equal(staleClaimIn('a paragraph that says nothing of the sort'), undefined);
+});
+
+for (const language of Object.keys(CATALOGS) as (keyof typeof CATALOGS)[]) {
   test(`the ${language} article names the command that takes a consent window back`, () => {
     assert.match(article(language), /Forget Agent Consents on This Machine/);
   });
 
   test(`the ${language} article no longer says every action raises the modal`, () => {
-    // The obsolete claim, in each language's own words. It was true until S2.2 and is the single
-    // sentence a stale translation would keep while looking complete.
-    const text = article(language);
-    for (const stale of [
-      'Every action still raises the consent modal',
-      'Каждое действие всё равно поднимает модал согласия',
-      'Кожна дія все одно піднімає вікно згоди',
-      'Jede Handlung löst weiterhin die Zustimmungsabfrage aus',
-      'Toda acción sigue levantando la ventana de consentimiento',
-    ]) {
-      assert.ok(!text.includes(stale), `${language} still claims: ${stale}`);
-    }
+    assert.equal(staleClaimIn(article(language)), undefined, `${language} still carries the obsolete claim`);
   });
 
   test(`the ${language} article says never-ask makes the switches the whole gate`, () => {
