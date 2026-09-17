@@ -54,6 +54,8 @@ export const BUTTON_LABELS: Readonly<Record<RefusalAction, string>> = {
   // idempotent and asks before touching anything, and the call site retries the connect once when it
   // returns. It is not called "Turn It On and Connect" because that command opens a distribution
   // picker and a readiness check first, and a label may not promise a silence it will not deliver.
+  //
+  // It says "and Connect" ONLY when the relay is the last thing missing — see `relayLabel`.
   setUpRelay: 'Set Up the Relay and Connect',
   addKeyToAgent: 'Add Key to Agent',
   copyWindowsCommand: 'Copy the Windows Command',
@@ -163,8 +165,31 @@ const SENTENCES: Readonly<Record<RefusalReason, (context: RefusalContext) => str
 function buttonsFor(reasons: readonly RefusalReason[]): readonly RefusalButton[] {
   const first = reasons[0];
   const action = first === undefined ? undefined : ACTIONS[first];
-  return action === undefined ? [] : [{ label: BUTTON_LABELS[action], action }];
+  if (action === undefined) {
+    return [];
+  }
+  return [{ label: labelFor(action, reasons), action }];
 }
+
+/**
+ * The relay button drops its promise when the relay is NOT the last thing missing.
+ *
+ * <p>Found by the plan round, and it is the kind of defect a label invites: `setUpWslRelay` starts
+ * the relay, it does not put this key into the agent. So on a refusal that reads "the relay is off
+ * AND the agent does not hold this key", a button saying <i>and Connect</i> would set the relay up,
+ * retry, and land the person on a second refusal — having promised the opposite. When the relay is
+ * the only thing missing the promise is true and worth making; otherwise the button says what it
+ * does and the next refusal offers the next button.</p>
+ */
+function labelFor(action: RefusalAction, reasons: readonly RefusalReason[]): string {
+  if (action !== 'setUpRelay' || reasons.length === 1) {
+    return BUTTON_LABELS[action];
+  }
+  return RELAY_ONLY_LABEL;
+}
+
+/** What the relay button says when fixing it will NOT be enough to connect. */
+export const RELAY_ONLY_LABEL = 'Set Up the WSL Agent Relay';
 
 const ACTIONS: Readonly<Record<RefusalReason, RefusalAction | undefined>> = {
   'not-wsl': 'openRemoteBridge',

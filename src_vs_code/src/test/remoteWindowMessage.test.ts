@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { RefusalReason } from '../remoteRoute';
 import {
   BUTTON_LABELS,
+  RELAY_ONLY_LABEL,
   RefusalContext,
   refusalFor,
 } from '../remoteWindowMessage';
@@ -86,9 +87,21 @@ test('the button comes from the FIRST reason and there is exactly one', () => {
   // someone to start in the wrong place.
   const refusal = refusalFor(['relay-off', 'agent-has-no-key'], IN_WSL);
 
-  assert.deepEqual(refusal.buttons, [
-    { label: BUTTON_LABELS.setUpRelay, action: 'setUpRelay' },
+  assert.equal(refusal.buttons.length, 1);
+  assert.equal(refusal.buttons[0].action, 'setUpRelay');
+});
+
+test('the relay button promises a connection ONLY when the relay is the last thing missing', () => {
+  // Found by the plan round: `setUpWslRelay` starts the relay, it does not put this key into the
+  // agent. A button saying "and Connect" on a refusal that also names a missing key would set the
+  // relay up, retry, and land the person on a second refusal — having promised the opposite.
+  assert.deepEqual(refusalFor(['relay-off'], IN_WSL).buttons, [
+    { label: 'Set Up the Relay and Connect', action: 'setUpRelay' },
   ]);
+  assert.deepEqual(refusalFor(['relay-off', 'agent-has-no-key'], IN_WSL).buttons, [
+    { label: RELAY_ONLY_LABEL, action: 'setUpRelay' },
+  ]);
+  assert.equal(RELAY_ONLY_LABEL, 'Set Up the WSL Agent Relay');
 });
 
 test('each reason maps to the action that actually fixes it', () => {

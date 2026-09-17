@@ -211,6 +211,28 @@ Ordered by what the person must fix **first**, following `whatIsMissing`
 (`wslRelayReadiness.ts:39`) — an operator who fixes one thing and is then told about the next is an
 operator who stops reading.
 
+**The precedence, stated rather than left to a helper** (asked for by S2/S3's plan round):
+
+| input | route | reasons, in this order |
+|---|---|---|
+| `local`, anything | `compose` | — (no relay state may change a local answer) |
+| `other` | `refuse` | `not-wsl`, alone |
+| wsl, `password` | `refuse` | `credential-is-a-password`, **alone**, even with a distro problem |
+| wsl, `keyPath` | `refuse` | `credential-is-a-key-path`, alone |
+| wsl, `none`, distro resolved | `compose` | — |
+| wsl, `none`, distro unresolved | `refuse` | `distro-ambiguous` or `distro-unknown` |
+| wsl, `storedKey`, all present | `agent` | — |
+| wsl, `storedKey`, otherwise | `refuse` | `distro-*`, then `relay-off` or `relay-not-running`, then `agent-has-no-key` — every one that applies |
+
+Two rules inside that table are worth naming. **A credential no relay can carry refuses alone**,
+because listing relay problems beside it points at a button that cannot help. And **the distribution
+comes first**, because an unresolved one makes the relay question unanswerable rather than merely
+unanswered.
+
+The `agent` route requires a **non-empty socket**, not merely `running: true`: the relay announces
+its address on its first line of stdout, so until it has said, there is nothing to point
+`SSH_AUTH_SOCK` at and `relay-not-running` is the honest answer.
+
 ### D4. What the agent route actually emits
 
 `ssh user@host` with no `-i`, with the relay socket set for that one command:
@@ -277,7 +299,8 @@ the list is ordered rather than a set.
 
 | first reason | primary button |
 |---|---|
-| `relay-off` | *Turn It On and Connect* — DEC-1, runs `credSshManager.setUpWslRelay` then retries |
+| `relay-off`, and it is the ONLY reason | *Set Up the Relay and Connect* — DEC-1: runs `credSshManager.setUpWslRelay`, then retries the connect once |
+| `relay-off` **beside** another reason | *Set Up the WSL Agent Relay* — the promise is dropped, because `setUpWslRelay` starts the relay and does not put this key into the agent; a button promising a connection would set the relay up, retry, and land the person on a second refusal. Found by S2/S3's plan round |
 | `relay-not-running` | *Set Up the WSL Agent Relay* |
 | `agent-has-no-key` | *Add Key to Agent* (`credSshManager.addKeyToAgent`) |
 | `credential-is-a-password` / `credential-is-a-key-path` | *Copy the Windows Command* |
