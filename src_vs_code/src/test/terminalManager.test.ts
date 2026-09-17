@@ -127,3 +127,51 @@ test('two different hosts get two terminals', () => {
   assert.equal(w.created.length, 2);
   assert.notEqual(w.created[0].name, w.created[1].name);
 });
+
+// Added with the remote-window fix. Until then this function read `process.platform` — the
+// EXTENSION HOST's — and posted the result into the WINDOW's terminal. In a WSL window those are
+// two different operating systems, which is how a bash shell came to be handed
+// `ssh -i "c:\Users\...\keys\23284\<guid>.key"`.
+
+test('a terminal told its shell is linux gets POSIX quoting and the bare ssh word', () => {
+  const w = world();
+
+  w.mod.openSshTerminal(
+    entity({ sshKeyPath: '/run/user/1000/k', agentForward: true }),
+    {},
+    'linux',
+  );
+
+  const line = w.created[0].sent[0];
+  assert.match(line, /^ssh /, 'a Windows program path cannot start a line meant for bash');
+  assert.doesNotMatch(line, /\.exe/);
+  assert.doesNotMatch(line, /C:\//i);
+});
+
+test('the same entity on a win32 host still composes for Windows — local is unchanged', () => {
+  const w = world();
+
+  w.mod.openSshTerminal(entity({ sshKeyPath: 'c:\keys\k.key' }), {}, 'win32');
+
+  assert.match(w.created[0].sent[0], /-i "c:\keys\k\.key"/);
+});
+
+test('a prefix is sent as an env WORD in front of the line, so fish and pwsh can run it', () => {
+  // A bare `SSH_AUTH_SOCK=... ssh ...` assignment prefix is a parse error in fish and in pwsh,
+  // either of which can be a WSL window's default profile — and `createTerminal` uses that profile.
+  const w = world();
+
+  w.mod.openSshTerminal(entity(), {}, 'linux', "env SSH_AUTH_SOCK='/run/user/1000/creds.sock' ");
+
+  const line = w.created[0].sent[0];
+  assert.match(line, /^env SSH_AUTH_SOCK='\/run\/user\/1000\/creds\.sock' ssh /);
+  assert.doesNotMatch(line, /^SSH_AUTH_SOCK=/, 'a bare assignment is not a command');
+});
+
+test('no prefix leaves the line exactly as it was — the local path is byte-identical', () => {
+  const w = world();
+
+  w.mod.openSshTerminal(entity());
+
+  assert.match(w.created[0].sent[0], /^ssh /);
+});

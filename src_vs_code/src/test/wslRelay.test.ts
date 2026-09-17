@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   RC_MARKER,
+  envPrefix,
   isSafeShellWord,
   parseDistros,
   rcAlreadyHasIt,
@@ -339,4 +340,28 @@ test('every distribution is told the same path', () => {
   assert.ok(argv[0].join(' ').includes("CREDS_WINDOWS_BINARY='/mnt/c/bin/creds.exe'"));
   assert.ok(argv[1].join(' ').includes("CREDS_WINDOWS_BINARY='/mnt/c/bin/creds.exe'"));
   manager.dispose();
+});
+
+// `envPrefix` was this file's private `binaryPrefix` until the SSH connect path needed the same
+// thing for SSH_AUTH_SOCK. Two copies of an escaping rule are two escaping rules, so it was
+// extracted rather than repeated — these assert the rule that made it worth extracting.
+
+test('a variable is set with env, never as a bare assignment prefix', () => {
+  // A bare `NAME=value command` is not a command, so `exec` rejects it — and so do fish and pwsh,
+  // either of which can be a WSL window's default terminal profile.
+  assert.equal(envPrefix('SSH_AUTH_SOCK', '/run/user/1000/creds.sock'), "env SSH_AUTH_SOCK='/run/user/1000/creds.sock' ");
+});
+
+test('a value holding a single quote yields NO prefix rather than a broken line', () => {
+  // It cannot be single-quoted, and building a line out of one would be the escaping question this
+  // file refuses everywhere. Dropping it leaves the command running with the environment it had.
+  assert.equal(envPrefix('SSH_AUTH_SOCK', "/tmp/it's/creds.sock"), '');
+});
+
+test('an empty value yields no prefix', () => {
+  assert.equal(envPrefix('SSH_AUTH_SOCK', ''), '');
+});
+
+test('the prefix ends in a space, so a command can be concatenated straight onto it', () => {
+  assert.ok(envPrefix('X', 'y').endsWith(' '));
 });
