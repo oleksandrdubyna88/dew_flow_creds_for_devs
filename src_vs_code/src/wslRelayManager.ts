@@ -100,6 +100,18 @@ export class WslRelayManager {
     return this.open.get(distro)?.socket ?? '';
   }
 
+  /**
+   * Whether that distribution is served by a relay we ADOPTED rather than one we started.
+   *
+   * <p>The difference matters to a caller about to use the socket: our own child is watched and
+   * its exit removes the entry, while an adopted one belongs to another window that can close
+   * without telling us. Raised by a review — the window that adopts is the one that cannot
+   * observe the exit, so it has to ask before it trusts the path.</p>
+   */
+  isAdopted(distro: string): boolean {
+    return this.open.get(distro)?.adopted === true;
+  }
+
   /** The distributions currently being served. */
   serving(): string[] {
     return [...this.open.keys()];

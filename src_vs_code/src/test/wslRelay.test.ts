@@ -11,7 +11,9 @@ import {
   socketFromBusyLine,
   socketFromExportLine,
   toWslPath,
+  SOCKET_ALIVE,
   lineAssembler,
+  socketAliveArgv,
 } from '../wslRelay';
 import { MAX_QUICK_FAILURES, QUICK_FAILURE_MS, RelayProcess, WslRelayManager } from '../wslRelayManager';
 
@@ -492,4 +494,34 @@ test('end() releases nothing twice, and blank lines are never delivered', () => 
   assembler.end();
 
   assert.deepEqual(seen, ['one'], 'both streams emit blank lines and no handler wants one');
+});
+
+// --- asking whether an adopted socket is still there --------------------------------------------
+
+test('the probe echoes a WORD, so silence can never read as success', () => {
+  // Every failure on this path — a stopped distribution, a timeout, a killed child — collapses to
+  // empty output. A probe that took the exit code alone would call a dead socket alive the first
+  // time anything hiccupped.
+  const argv = socketAliveArgv('Ubuntu', '/run/user/1000/creds.sock');
+
+  assert.deepEqual(argv, [
+    '-d',
+    'Ubuntu',
+    '-e',
+    'sh',
+    '-c',
+    `test -S /run/user/1000/creds.sock && echo ${SOCKET_ALIVE}`,
+  ]);
+});
+
+test('the default distribution takes no -d, exactly as relayArgv does', () => {
+  assert.deepEqual(socketAliveArgv('', '/tmp/x.sock').slice(0, 2), ['-e', 'sh']);
+});
+
+test('a socket path that cannot be a shell word yields NO argv at all', () => {
+  // The caller must read this as "not alive" rather than "not checked" — the same refusal an
+  // unquotable socket already gets before the line is composed.
+  for (const bad of ['/tmp/a b.sock', '/tmp/$(id).sock', '/tmp/x;rm -rf ~', '']) {
+    assert.deepEqual(socketAliveArgv('Ubuntu', bad), [], bad);
+  }
 });

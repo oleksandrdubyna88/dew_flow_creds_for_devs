@@ -25,7 +25,7 @@ import {
   windowsClientCaveat,
 } from './remoteWindowMessage';
 import { envPrefix } from './wslRelay';
-import { translateWindowsPath } from './wslProcess';
+import { socketIsAlive, translateWindowsPath } from './wslProcess';
 
 /**
  * What the WINDOW is, handed in rather than read here so the decision stays testable.
@@ -192,7 +192,7 @@ export async function connectEntity(
   if (platform === undefined) {
     // Unreachable: `remoteRoute` refuses every side whose shell cannot be named. Kept as a refusal
     // rather than a cast, so a future route that forgets says so instead of composing for a guess.
-    forgetOurPin(options.knownHostsFile, storageDir);
+    forgetOurPin(resolved.knownHostsFile, storageDir);
     return refuseAndOfferTheFix(['not-wsl'], entity, remote, undefined);
   }
 
@@ -209,9 +209,21 @@ export async function connectEntity(
       // back to the PATH — but here the fallback is `ssh` with no agent and no `-i`, which does not
       // fail: it silently authenticates with whatever keys that shell already has. Refusing is the
       // only honest answer.
-      // Late refusal, so the host-pin file `connectionOptions` wrote is ours to take back.
-      forgetOurPin(options.knownHostsFile, storageDir);
+      // Late refusal, so the host-pin file `connectionOptions` wrote is ours to take back — and it
+    // is `resolved`, not `options`: on the relay route the latter has already been TRANSLATED, so
+    // deleting by that name would hand the guard a /mnt/c path that can never be under our own
+    // directory and leave the real file behind. Found by writing the adopted-socket test.
+      forgetOurPin(resolved.knownHostsFile, storageDir);
       return refuseAndOfferTheFix(['relay-socket-unusable'], entity, remote, retry);
+    }
+    // An ADOPTED relay is asked whether it is still there. It belongs to another window, and this
+    // one cannot observe its exit — so `serving()` would go on advertising a socket that is gone,
+    // and the line above would point `SSH_AUTH_SOCK` at nothing while carrying no `-i`, which does
+    // not fail: ssh falls back to whatever keys that shell has. The same reasoning as the empty
+    // prefix two lines up, for a state that arrives later. Raised by a review of the adoption fix.
+    if (!(await adoptedSocketStillThere(remote.relay, side))) {
+      forgetOurPin(resolved.knownHostsFile, storageDir);
+      return refuseAndOfferTheFix(['relay-not-running'], entity, remote, retry);
     }
     return openSshTerminal({ ...entity, sshKeyPath: undefined }, options, platform, prefix) !== undefined;
   }
@@ -411,6 +423,20 @@ function freshWindow(connect: ConnectOptions): RemoteWindowDeps {
 
 function freshAgent(connect: ConnectOptions): boolean {
   return connect.refreshAgentServesKey?.() ?? connect.agentServesKey === true;
+}
+
+/**
+ * Whether the socket may be used — trivially true unless it was ADOPTED.
+ *
+ * <p>One `wsl.exe` on a click that would otherwise have used a path nobody checked, and only for the
+ * case that needs it: a relay this window started is watched, and its exit takes the entry with it.
+ * An adopted one has no such witness.</p>
+ */
+async function adoptedSocketStillThere(relay: RelayReadiness, side: WindowSide): Promise<boolean> {
+  if (relay.adopted !== true || side.kind !== 'wsl') {
+    return true;
+  }
+  return socketIsAlive(side.distro, relay.socket);
 }
 
 /** Which two machines the wording names, read off the window once. */

@@ -226,3 +226,31 @@ export function lineAssembler(deliver: (line: string) => void): LineAssembler {
     },
   };
 }
+
+/** What a live socket answers with, so a probe cannot mistake silence for success. */
+export const SOCKET_ALIVE = 'creds-socket-alive';
+
+/**
+ * Ask a distribution whether that socket is still there — argv only, no process.
+ *
+ * <p><b>Why an ADOPTED relay has to be asked at all.</b> When a second window finds the socket
+ * already served it keeps the entry and uses it rather than declaring a working relay broken. But
+ * nothing tells it when that external relay exits: `serving()` and `socketPathFor()` go on reporting
+ * a socket that is gone, and Connect then points `SSH_AUTH_SOCK` at nothing — no `-i` either, so ssh
+ * quietly falls back to whatever keys that shell has. Raised by a review of the adoption change; the
+ * window that adopted is exactly the window that cannot observe the exit.</p>
+ *
+ * <p>It echoes a WORD rather than relying on the exit code, because every failure on this path — a
+ * stopped distribution, a timeout, a killed child — already collapses to empty output, and a probe
+ * that reads success from an empty answer would report a dead socket as alive on the first hiccup.</p>
+ *
+ * <p>Returns `[]` for a path this cannot put in a command safely, which the caller must treat as
+ * "not alive" rather than as "not checked".</p>
+ */
+export function socketAliveArgv(distro: string, socket: string): string[] {
+  if (!isSafeShellWord(socket)) {
+    return [];
+  }
+  const distroArgv = distro.length > 0 ? ['-d', distro] : [];
+  return [...distroArgv, '-e', 'sh', '-c', `test -S ${socket} && echo ${SOCKET_ALIVE}`];
+}

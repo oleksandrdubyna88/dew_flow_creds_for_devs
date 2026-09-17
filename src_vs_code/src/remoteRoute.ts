@@ -39,6 +39,15 @@ export interface RelayReadiness {
   readonly enabled: boolean;
   /** `WslRelayManager.serving()` names this distribution. */
   readonly running: boolean;
+  /**
+   * True when this socket belongs to a relay ANOTHER window started and we adopted.
+   *
+   * <p>Does not change the route — an adopted relay is a working relay — but the caller must ask
+   * the distribution whether the socket is still there before using it, because nothing tells this
+   * window when the relay that owns it exits. Absent is false, which is what every caller predating
+   * the adoption change meant.</p>
+   */
+  readonly adopted?: boolean;
   /** `WslRelayManager.socketPathFor(distro)` — empty until the relay has said where it listens. */
   readonly socket: string;
 }

@@ -75,6 +75,7 @@ function readinessFor(
     enabled: vscode.workspace.getConfiguration(SECTION).get<boolean>('wslAgentRelay', false),
     running: serving.some((distro) => distro.toLowerCase() === side.distro.toLowerCase()),
     socket: relays.socketPathFor(side.distro),
+    adopted: relays.isAdopted(side.distro),
   };
 }
 
