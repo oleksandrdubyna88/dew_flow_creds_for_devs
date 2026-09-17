@@ -108,6 +108,16 @@ const BANNED: readonly (readonly [RegExp, string])[] = [
   [/prompts? on every (single )?call/i, 'an entry can be set to ask every 12h or never — #95'],
   [/every (single )?call (still )?asks/i, 'an entry can be set to ask every 12h or never — #95'],
   [/every (single )?action (still )?(asks|raises)/i, 'an entry can be set to ask every 12h or never — #95'],
+  // The second wave, and the lesson in it: the three bans above are PHRASINGS, and the same claim
+  // said in other words walked straight past them. CodeRabbit found eight of those on PR #106, all
+  // in `UseTools.cs` — the per-tool descriptions, which is the text an agent actually reads before
+  // deciding how to behave — plus one in the listing. A tool that promises the person will approve
+  // this call is telling a model the opposite of what a never-ask entry does.
+  [/approves? (it|each|the|every)[^.]{0,40}(every|each) call/i, 'the use tools follow the entry’s cadence — #95'],
+  [/approves each /i, 'the use tools follow the entry’s cadence — #95'],
+  [/as they do every action/i, 'the use tools follow the entry’s cadence — #95'],
+  [/the person approves the (run|opening|statement|write)\./i, 'unconditional on a route the cadence governs — #95'],
+  [/an action raises the\s+modal/i, 'it raises one when the entry’s cadence says to — #95'],
 ];
 
 /**
@@ -122,6 +132,12 @@ const RETIRED_CLAIMS: readonly string[] = [
   'the switch is not consent: every single call still asks you, in your editor',
   'Every action still raises the consent modal.',
   'Every action asks the person first, in their editor',
+  // The second wave, verbatim from `UseTools.cs` and the listing before PR #106's review.
+  'shown the entry and the exact command and must approve it, every call',
+  'The person approves each query, and sees it in full before doing so',
+  'The person approves the run.',
+  'the person approves the opening, as they do every action here',
+  'It says an agent may ask; an action raises the\n  modal with the real entry',
 ];
 
 /**
@@ -137,6 +153,18 @@ const RETIRED_CLAIMS: readonly string[] = [
  */
 const MCP_INSTRUCTIONS = path.join(REPO, 'src_mcp', 'src', 'Program.cs');
 const MCP_CONTRACT = path.join(REPO, 'contract', 'mcp-tools-v1.json');
+/**
+ * The per-tool descriptions, which are where the claim actually lived.
+ *
+ * <p>Scanning `Program.cs` and the generated contract was not enough, and the gap is worth stating:
+ * the contract only carries what the LAST regeneration captured, and `Program.cs` holds the
+ * instructions rather than the tool text. Eight unconditional approval claims sat in `UseTools.cs`
+ * through the whole of #95 and were found by a reviewer on the pull request, not here. The source
+ * files are scanned now, so the guard does not depend on somebody having regenerated anything.</p>
+ */
+const MCP_TOOL_TEXT = ['UseTools.cs', 'Tools.cs', 'FolderTools.cs']
+  .map((name) => path.join(REPO, 'src_mcp', 'src', name))
+  .filter((file) => fs.existsSync(file));
 
 test('neither README makes a claim the code says is false', () => {
   for (const file of [ROOT_README, LISTING]) {
@@ -147,11 +175,26 @@ test('neither README makes a claim the code says is false', () => {
   }
 });
 
-test('nor does the text an AGENT is handed — the MCP instructions and the shipped contract', () => {
-  for (const file of [MCP_INSTRUCTIONS, MCP_CONTRACT]) {
+/**
+ * The word each corpus must contain before its bans mean anything.
+ *
+ * <p>So "the scan read nothing" can never pass as "the scan found nothing wrong". The instructions
+ * and the contract must talk about CONSENT — it is their subject. A tool source need only mention
+ * approval or consent, because `FolderTools.cs` describes verbs that always ask and so has no
+ * cadence to describe, and `Tools.cs` names the consent modal without ever saying "approve".</p>
+ */
+function subjectOf(file: string): RegExp {
+  const isNarrative = file === MCP_INSTRUCTIONS || file === MCP_CONTRACT;
+  return isNarrative ? /consent|asks the person/i : /approve|consent/i;
+}
+
+test('nor does the text an AGENT is handed — the MCP instructions, the tools and the shipped contract', () => {
+  assert.ok(MCP_TOOL_TEXT.length >= 1, 'no tool-description source was found; the scan below would prove nothing');
+  for (const file of [MCP_INSTRUCTIONS, MCP_CONTRACT, ...MCP_TOOL_TEXT]) {
     const text = flat(file);
 
-    assert.match(text, /consent|asks the person/i, `${path.relative(REPO, file)}: read nothing about consent — wrong file, or a scan of empty text`);
+    assert.match(text, subjectOf(file), `${path.relative(REPO, file)}: read nothing on its subject — wrong path, or a scan of empty text`);
+
     for (const [pattern, why] of BANNED) {
       assert.equal(pattern.test(text), false, `${path.relative(REPO, file)}: ${why}`);
     }

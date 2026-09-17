@@ -7,13 +7,16 @@ namespace CredsMcp;
 /// The tool catalog: what an agent may ask this binary to do.
 /// </summary>
 /// <remarks>
-/// <para>One tool so far, and deliberately: <c>creds_list</c> answers level 1 of the ladder —
-/// what a person opened to agents, and what may be done with each. The verbs of level 2 (use a
-/// credential, replace a secret, create, delete) exist in the broker already but are reached
-/// today through routes that are gated by the consent modal alone, not by the per-entry
-/// switches. Publishing them here before they honour those switches would mean an agent could
-/// use an entry the switches say it may not, which is the one thing this whole design is for.
-/// They arrive when the routes do.</para>
+/// <para>This file holds level 1 of the ladder — <c>creds_list</c>, what a person opened to
+/// agents and what may be done with each — plus <c>creds_config_snippet</c>. Level 2 lives in
+/// <see cref="UseTools"/> and the folder verbs in <see cref="FolderTools"/>.</para>
+/// <para><b>This paragraph used to say there was one tool, deliberately</b>, because level 2's
+/// routes were "gated by the consent modal alone, not by the per-entry switches", and publishing
+/// them before they honoured those switches would have let an agent use an entry the switches say
+/// it may not. That was true when it was written and stopped being true when the routes landed:
+/// the surface is sixteen tools, every one of them behind its entry's or folder's own switch, and
+/// since issue #95 behind that entry's consent cadence as well. Corrected on PR #106 — a comment
+/// promising a restraint the code no longer has is worse than no comment.</para>
 /// <para>Every answer is a JSON string rather than a structured object. That keeps the tool
 /// schema trivial — no reflection over our own types, which is what an AOT binary with
 /// reflection-based JSON turned off wants — and it is what agents read anyway.</para>

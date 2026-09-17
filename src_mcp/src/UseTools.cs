@@ -14,8 +14,10 @@ namespace CredsMcp;
 /// <para>Two gates stand in front of each, and they are not the same gate. The entry's
 /// <b>Usable by agents</b> switch says an agent may ask at all — off by default, and off for
 /// every entry that existed before the feature. The consent modal in the window says whether
-/// this particular call happens, every time, showing the person the real entry and the real
-/// command. Turning the switch on does not pre-authorise anything.</para>
+/// this particular call happens, showing the person the real entry and the real command — and
+/// how often it appears is the entry's own consent setting (#95): every time, once every 12
+/// hours, or never. Turning the switch on does not pre-authorise anything, and a never-ask entry
+/// is still bounded by the switches and recorded in the journal.</para>
 /// <para>The tool descriptions say both of those out loud. A model that does not know a human
 /// will be asked writes a different, worse plan — one that batches twenty calls, or apologises
 /// in advance for something that is going to work.</para>
@@ -55,9 +57,11 @@ internal static class UseTools
             Run a shell command on an SSH host from the person's vault. Give the entry's `id` from
             creds_list and the `command` to run; you get its stdout, stderr and exit code back.
 
-            You never receive the key or the password — the window connects with it. The person is
-            shown the entry and the exact command and must approve it, every call. Assume a few
-            seconds of waiting, and do not batch: twenty calls is twenty prompts.
+            You never receive the key or the password — the window connects with it. When a dialog
+            is due the person is shown the entry and the exact command and must approve it; how
+            often that happens is this entry's consent setting — every time, once every 12 hours,
+            or never. Assume a few seconds of waiting whenever one is due, and do not batch: on the
+            default setting twenty calls is twenty prompts.
             """),
         new(
             "creds_query",
@@ -68,8 +72,8 @@ internal static class UseTools
             `id` from creds_list and the `query`; you get the result back as text.
 
             The password never reaches you or the command line — it goes to the client through its
-            environment. The person approves each query, and sees it in full before doing so, so
-            write queries you would be comfortable showing them.
+            environment. When this entry's consent setting asks, the person approves the query and
+            sees it in full before doing so — so write queries you would be comfortable showing them.
             """),
         new(
             "creds_run",
@@ -80,7 +84,8 @@ internal static class UseTools
             not one you supply. Give the entry's `id` from creds_list.
 
             Use this when creds_list showed you an entry of kind `terminal` or `script`: its own
-            `command` field tells you what it will do. The person approves the run.
+            `command` field tells you what it will do. The person approves the run when this
+            entry’s consent setting asks for one.
             """),
         new(
             "creds_open_terminal",
@@ -92,7 +97,8 @@ internal static class UseTools
 
             This is for THEM, not for you: you get back only whether it opened. You cannot read
             what happens in it or type into it. Use it when the next step needs a human at a
-            prompt — and the person approves the opening, as they do every action here.
+            prompt — and the person approves the opening whenever this entry’s consent setting
+            asks for one.
             """),
         new(
             "creds_vpn_up",
@@ -104,8 +110,8 @@ internal static class UseTools
 
             Reach for this when an entry's `dependsOn` names a VPN and the host it fronts is not
             answering: that dependency is the person saying "this needs that first". You get back
-            whether it came up, never the configuration. The person approves it, as they do every
-            action here.
+            whether it came up, never the configuration. The person approves it whenever this
+            entry's consent setting asks — every time, once every 12 hours, or never.
             """),
         new(
             "creds_vpn_down",
@@ -113,7 +119,8 @@ internal static class UseTools
             "Take a VPN down",
             """
             Take down a VPN connection you or the person brought up. Give the entry's `id` from
-            creds_list. Courtesy after a task that needed one; the person still approves it.
+            creds_list. Courtesy after a task that needed one; the person approves it when this
+            entry’s consent setting asks.
             """),
         new(
             "creds_rotate",
@@ -133,8 +140,8 @@ internal static class UseTools
 
             Only a statement that SUCCEEDS updates the vault, so a refusal on the far side leaves
             everything as it was. Needs the entry's "Agents may replace the secret" switch, which
-            is a rung above using it, and the person approves the statement — they see it with
-            {{creds:new}} still in it, which is what makes it safe to show them.
+            is a rung above using it, and when a dialog is due the person approves the statement —
+            they see it with {{creds:new}} still in it, which is what makes it safe to show them.
 
             `secretKind` picks what gets made: "password" (the default) or "passphrase". Key pairs
             and certificates are not made here — ask for one and you get a refusal saying why,
@@ -204,7 +211,8 @@ internal static class UseTools
 
             You are told the variable NAMES that were written and never their values — that is the
             whole point of the verb: the person's own shell gets the secret, you get the names to
-            refer to. Existing terminals are unaffected, and the person approves the write.
+            refer to. Existing terminals are unaffected, and the person approves the write when this
+            entry's consent setting asks for one.
             """),
     ];
 

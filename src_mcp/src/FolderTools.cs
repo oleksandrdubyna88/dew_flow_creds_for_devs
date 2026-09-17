@@ -8,9 +8,10 @@ namespace CredsMcp;
 /// </summary>
 /// <remarks>
 /// <para>Entries were the first, and everything structural about them is repeated here on
-/// purpose: nothing is reachable until a person turns a switch on, every action raises the modal
-/// in their editor, and a refusal comes back in the window's own words naming the control to
-/// turn on.</para>
+/// purpose: nothing is reachable until a person turns a switch on, every FOLDER action raises the
+/// modal in their editor, and a refusal comes back in the window's own words naming the control to
+/// turn on. The word FOLDER is load-bearing since issue #95 — an entry's consent cadence can let a
+/// USE call through without a dialog, and no folder verb has ever been able to.</para>
 /// <para><b>There is no request here that can change a permission.</b> The edit tool takes a
 /// name, a parent and a folder type — the switches are not among them, and no other shape is
 /// sent. A permission that could change permissions would be a permission to grant itself every
