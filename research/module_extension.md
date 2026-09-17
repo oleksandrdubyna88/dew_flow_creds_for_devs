@@ -182,6 +182,8 @@ reads for both, and `sshDepsFor` now assembles the broker's dependency record, b
 `extension.ts` is under a size ratchet that only moves down — growing it to wire a feature is the
 move that ratchet exists to refuse.
 
+**Two refusals are raised by the call site rather than by the route**, and the second is the one worth knowing about. `envPrefix` DROPS a value it cannot single-quote — correct for its original caller, where the relay then falls back to the PATH. Here the fallback would be `ssh` with no agent and no `-i`, which does not fail: it silently authenticates with whatever keys that shell already has. So a relay socket holding a quote refuses as `relay-socket-unusable` instead of connecting. The other is `known-hosts-translation-failed`. And the refusal's retry has a **budget of one**: the recursive call passes `allowRetry: false`, so a remedy that never fixes anything shows two modals and stops rather than becoming a ride. Both were found by a code round, which is also why `remoteConnectParity.test.ts` exists: the two call sites must decide about the window in the same place, and they had already diverged once over `agentServesKey`.
+
 ## Data model
 
 `TreeNode` is stored **flat**; the tree is derived from `parentId` at render time.

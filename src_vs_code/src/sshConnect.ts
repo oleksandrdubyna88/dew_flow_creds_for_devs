@@ -61,8 +61,20 @@ export async function connectEntity(
    */
   agentServesKey = false,
   remote: RemoteWindowDeps = LOCAL_WINDOW,
+  /**
+   * The retry budget, spent by the one recursive call this function makes.
+   *
+   * <p>A refusal's button runs a remedy and then tries again; the second attempt must NOT offer
+   * another retry, or the pair becomes a ride a person can stay on indefinitely. A code round
+   * pointed out that the plan claimed "at most once" while nothing enforced it.</p>
+   */
+  allowRetry = true,
 ): Promise<void> {
   const side = remote.side;
+  const retry = allowRetry
+    ? (): Promise<void> =>
+        connectEntity(accountId, entity, storage, storageDir, agentServesKey, remote, false)
+    : undefined;
   // The terminal ssh opens in would only say "command not found" AFTER a key may have been
   // materialised; checking first costs one stat and produces an offer instead of a corpse
   // (tails T20).
@@ -85,9 +97,7 @@ export async function connectEntity(
   // before anything materialises a key — so a refused window leaves nothing on disk at all.
   const route = remoteRoute(side, source.kind, agentServesKey, remote.relay);
   if (route.kind === 'refuse') {
-    await refuseAndOfferTheFix(route.reasons, entity, remote, () =>
-      connectEntity(accountId, entity, storage, storageDir, agentServesKey, remote),
-    );
+    await refuseAndOfferTheFix(route.reasons, entity, remote, retry);
     return;
   }
 
@@ -104,9 +114,7 @@ export async function connectEntity(
   // /mnt/c cannot hold one anyway.
   const options = await withTranslatedKnownHosts(resolved, side);
   if (options === undefined) {
-    await refuseAndOfferTheFix(['known-hosts-translation-failed'], entity, remote, () =>
-      connectEntity(accountId, entity, storage, storageDir, agentServesKey, remote),
-    );
+    await refuseAndOfferTheFix(['known-hosts-translation-failed'], entity, remote, retry);
     return;
   }
 
@@ -114,7 +122,7 @@ export async function connectEntity(
   if (platform === undefined) {
     // Unreachable: `remoteRoute` refuses every side whose shell cannot be named. Kept as a refusal
     // rather than a cast, so a future route that forgets says so instead of composing for a guess.
-    await refuseAndOfferTheFix(['not-wsl'], entity, remote, async () => undefined);
+    await refuseAndOfferTheFix(['not-wsl'], entity, remote, undefined);
     return;
   }
 
@@ -124,12 +132,17 @@ export async function connectEntity(
     // The WSL route: no `-i` and nothing on disk, with this ONE command pointed at the relay's
     // socket. A per-command prefix rather than the window's environment collection, which is a
     // single namespace for every terminal and so cannot serve a Windows shell and a WSL one at once.
-    openSshTerminal(
-      { ...entity, sshKeyPath: undefined },
-      options,
-      platform,
-      envPrefix('SSH_AUTH_SOCK', route.socketPath),
-    );
+    const prefix = envPrefix('SSH_AUTH_SOCK', route.socketPath);
+    if (prefix.length === 0) {
+      // Found by a code round, and it is the worst failure this file could have had. `envPrefix`
+      // DROPS a value it cannot quote — right for its original caller, where the relay then falls
+      // back to the PATH — but here the fallback is `ssh` with no agent and no `-i`, which does not
+      // fail: it silently authenticates with whatever keys that shell already has. Refusing is the
+      // only honest answer.
+      await refuseAndOfferTheFix(['relay-socket-unusable'], entity, remote, undefined);
+      return;
+    }
+    openSshTerminal({ ...entity, sshKeyPath: undefined }, options, platform, prefix);
     return;
   }
   if (agentServesKey && source.kind === 'storedKey') {
@@ -238,7 +251,14 @@ async function refuseAndOfferTheFix(
   reasons: readonly RefusalReason[],
   entity: EntityMetadata,
   remote: RemoteWindowDeps,
-  retry: () => Promise<void>,
+  /**
+   * What to do after the remedy — or `undefined` when there is to be no retry.
+   *
+   * <p>`undefined` is how the budget is spent: the retry passes it, so a second refusal offers its
+   * button and then stops rather than handing the person a modal they can ride round for ever. The
+   * plan claimed "at most once" before a code round pointed out that nothing enforced it.</p>
+   */
+  retry: (() => Promise<void>) | undefined,
 ): Promise<void> {
   const side = remote.side;
   const refusal = refusalFor(reasons, {
@@ -260,8 +280,9 @@ async function refuseAndOfferTheFix(
     return;
   }
   // ONE retry, never a loop: the remedy either made the connection possible or it did not, and a
-  // second refusal is information rather than a failure to report.
-  if ((await remote.runRemedy?.(action)) === true) {
+  // second refusal is information rather than a failure to report. The retry itself passes
+  // `undefined`, which is what spends the budget.
+  if ((await remote.runRemedy?.(action)) === true && retry !== undefined) {
     await retry();
   }
 }

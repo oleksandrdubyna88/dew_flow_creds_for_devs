@@ -134,6 +134,7 @@ test('each reason maps to the action that actually fixes it', () => {
     'agent-has-no-key': 'addKeyToAgent',
     'credential-is-a-password': 'copyWindowsCommand',
     'credential-is-a-key-path': 'copyWindowsCommand',
+    'relay-socket-unusable': 'setUpRelay',
     'known-hosts-translation-failed': 'retry',
   };
 

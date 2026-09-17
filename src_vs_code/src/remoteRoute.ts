@@ -47,11 +47,12 @@ export interface RelayReadiness {
  * Every way a Connect click can be refused, as a runtime tuple so tests iterate the SAME list the
  * code holds rather than a copy of it.
  *
- * <p>`known-hosts-translation-failed` is the one entry `remoteRoute` never returns: it is raised by
- * the CALL SITE after this function has already answered `agent` or `compose`, when asking the
- * distribution where a pinned `known_hosts` file lives gets no answer. It lives in this union
- * because the wording module takes one kind of reason, not two — flagged by the code round, and
- * named here rather than left to be rediscovered.</p>
+ * <p>Two entries `remoteRoute` never returns are raised by the CALL SITE after this function has
+ * already answered `agent` or `compose`: `known-hosts-translation-failed`, when asking the
+ * distribution where a pinned `known_hosts` file lives gets no answer, and `relay-socket-unusable`,
+ * when the socket path cannot be put in front of a command safely. They live in this union because
+ * the wording module takes one kind of reason, not three — flagged by a code round, and named here
+ * rather than left to be rediscovered.</p>
  */
 export const REFUSAL_REASONS = [
   'not-wsl',
@@ -62,6 +63,7 @@ export const REFUSAL_REASONS = [
   'agent-has-no-key',
   'credential-is-a-password',
   'credential-is-a-key-path',
+  'relay-socket-unusable',
   'known-hosts-translation-failed',
 ] as const;
 

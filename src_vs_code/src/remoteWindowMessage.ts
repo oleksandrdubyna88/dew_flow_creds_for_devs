@@ -171,6 +171,12 @@ const SENTENCES: Readonly<Record<RefusalReason, (context: RefusalContext) => str
       'This entry points at a key FILE on this computer rather than one held in the vault. Only a ' +
       'vault key can be served through the agent, and a Windows path is not readable as a key from ' +
       'that shell.',
+  'relay-socket-unusable':
+    () =>
+      'The relay is listening, but at a path this connection cannot safely put in front of a ' +
+      'command — it contains a quote. Rather than run `ssh` without the agent, which would silently ' +
+      'fall back to whatever keys that shell already has, the connection was refused. Set ' +
+      '`CREDS_RELAY_SOCKET` to a path without quotes and start the relay again.',
   // "Try Again" on its own is a loop, which the code round was right to call out: say what would
   // have to change between the two attempts.
   'known-hosts-translation-failed': (context) =>
@@ -238,5 +244,6 @@ const ACTIONS: Readonly<Record<RefusalReason, RefusalAction | undefined>> = {
   'agent-has-no-key': 'addKeyToAgent',
   'credential-is-a-password': 'copyWindowsCommand',
   'credential-is-a-key-path': 'copyWindowsCommand',
+  'relay-socket-unusable': 'setUpRelay',
   'known-hosts-translation-failed': 'retry',
 };
