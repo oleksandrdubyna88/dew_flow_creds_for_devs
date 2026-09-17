@@ -612,27 +612,53 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
 
   // Serve this key through the extension's own SSH agent — the alternative to writing it out
   // as a file, and the only door to Git commit signing with a vault-held key.
+  /**
+   * Load a key into the agent — and ANSWER whether it worked.
+   *
+   * <p>Two things here were found by a person clicking the refusal button this extension now shows
+   * when a WSL window has no key in the agent.</p>
+   *
+   * <p><b>It follows a reference.</b> The button hands over the row that was clicked, which is an
+   * SSH CONNECTION — and a connection usually points at the key it uses rather than carrying one.
+   * Loading the connection's own id then failed with <i>"project-tools" has no private key stored
+   * in the vault</i>, which is true of the connection, false of the question, and doubly confusing
+   * because the key was right there. It resolves `sshKeyEntityId` the same way `sshCredential.ts`
+   * does, and the agent gets the KEY.</p>
+   *
+   * <p><b>It returns a boolean</b>, because a caller that retries after a remedy must know whether
+   * the remedy happened. Reporting success regardless is what put a second identical dialog on the
+   * screen the moment the first was dismissed.</p>
+   */
   register('credSshManager.addKeyToAgent', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = asElement(target);
     if (element?.kind !== 'node' || !element.node.details) {
-      return;
+      return false;
     }
-    const details = element.node.details;
-    const result = await sshAgent.load(element.accountId, details);
+    const referenced = element.node.details.sshKeyEntityId;
+    const keyNode =
+      referenced === undefined ? element.node : storage.getNode(element.accountId, referenced);
+    if (keyNode?.details === undefined) {
+      void vscode.window.showWarningMessage(
+        `"${element.node.name}" points at a key entry that is no longer in the vault.`,
+      );
+      return false;
+    }
+    const result = await sshAgent.load(element.accountId, keyNode.details);
     if (!result.ok) {
       void vscode.window.showWarningMessage(result.reason);
-      return;
+      return false;
     }
-    await storage.updateDetailsFields(element.accountId, element.node.id, { sshAgent: true });
+    await storage.updateDetailsFields(element.accountId, keyNode.id, { sshAgent: true });
     mutated();
     void vscode.window.showInformationMessage(
-      `"${element.node.name}" (${result.fingerprint}) is served by the agent. New terminals get ` +
+      `"${keyNode.name}" (${result.fingerprint}) is served by the agent. New terminals get ` +
         'SSH_AUTH_SOCK automatically; every use of the key asks first.' +
         (process.platform === 'win32'
           ? ' On Windows the built-in OpenSSH client reaches it; the ssh that ships with Git for Windows cannot.'
           : ''),
     );
+    return true;
   });
 
   register('credSshManager.removeKeyFromAgent', async (target) => {
