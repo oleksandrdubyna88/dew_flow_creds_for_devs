@@ -45,6 +45,12 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      # BEFORE the build: a formatting complaint is cheaper to read than a build log, and it
+      # costs seconds. `--verify-no-changes` REPORTS and never rewrites — CI must not push a
+      # reformat into somebody's branch, it must say the branch is not formatted and stop.
+      - name: Formatted
+        run: dotnet format dew_flow_creds_for_devs.slnx --verify-no-changes --no-restore
+
       - name: Build
         run: dotnet build dew_flow_creds_for_devs.slnx -c Release
 
