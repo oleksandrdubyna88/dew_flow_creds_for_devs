@@ -7,6 +7,7 @@ import {
   MCP_SWITCHES,
   askWords,
   mcpAskHtml,
+  mcpSetSentence,
 } from '../mcpSwitches';
 import { matchesPredicates } from '../searchPredicates';
 import type { McpAskPolicy } from '../mcpAccess';
@@ -126,4 +127,17 @@ test('MCP_SWITCHES still has ten entries and five bar colours, and no ask id is 
     assert.ok(!switchIds.includes(choice.id), `${choice.id} entered the switch list`);
   }
   assert.equal(typeof matchesPredicates, 'function', 'searchPredicates loaded without throwing');
+});
+
+test('the per-half sentence says exactly one of four things', () => {
+  // Asserted as whole strings, not as fragments: a sentence matched by /follows its folder/ would
+  // still pass if the half naming WHICH axis follows the folder disappeared, and that half is the
+  // entire point of splitting it.
+  assert.equal(mcpSetSentence(true, true), 'Set on this entry.');
+  assert.equal(mcpSetSentence(true, false), 'Switches set on this entry. Its consent setting follows the folder.');
+  assert.equal(mcpSetSentence(false, true), 'Consent set on this entry. Its switches follow the folder.');
+  assert.equal(
+    mcpSetSentence(false, false),
+    'Not set here — this entry follows its folder. Touching a switch or the consent setting decides that half here.',
+  );
 });

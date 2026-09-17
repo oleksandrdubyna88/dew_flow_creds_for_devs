@@ -412,6 +412,8 @@ export function renderHtml(options: EntityFormOptions): string {
   const mcp = normalizeMcpAccess(d?.mcp);
   const mcpHtml = `${openSection('mcpSection')}
     ${mcpBarHtml(accessMask(mcp))}
+    <!-- Per AXIS, not "has an mcp object": a record holding only a cadence used to make this line
+         claim the SWITCHES were set here while they were inherited. -->
     <p class="hint">${escapeHtml(mcpSetSentence(answersLadder(d?.mcp), answersPolicy(d?.mcp)))}</p>
     ${MCP_SWITCHES.map(
       (s) => `<div class="check">

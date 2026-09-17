@@ -147,6 +147,19 @@ export const MCP_ASK_HINT =
 export const MCP_ASK_INHERIT = 'inherit';
 
 /**
+ * What a record would inherit, and from where — the shape BOTH forms take.
+ *
+ * <p>One exported type rather than the same anonymous object written in three places. Structural
+ * typing would let a field be added on one side and silently omitted by the other, which for this
+ * shape means the entity form and the folder form telling a person different things about one
+ * ancestry.</p>
+ */
+export interface InheritedAsk {
+  ask: McpAskPolicy;
+  from: string;
+}
+
+/**
  * Every policy, each with its control — and a fourth one added to {@link McpAskPolicy} without a
  * row here is a COMPILE error rather than a label that quietly reads "ask every time".
  *
@@ -193,7 +206,7 @@ export const MCP_ASK_CHOICES: readonly McpAskChoice[] = [
  * there is nothing to inherit from. It is never disabled even then: taking back a local answer is
  * what that option is for, including on a folder with no parent.</p>
  */
-export function mcpAskHtml(local: unknown, inherited?: { ask: McpAskPolicy; from: string }): string {
+export function mcpAskHtml(local: unknown, inherited?: InheritedAsk): string {
   // Through the SAME reader the resolver uses. The stored value arrives by sync and by import, so
   // it is not guaranteed to be a word this build knows — and `askPolicy` maps an unrecognised one
   // to `always`, which is what the door will enforce. A form checking nothing, or checking Inherit,
@@ -233,7 +246,7 @@ const NOTHING_SET_HERE =
   'Not set here — this entry follows its folder. Touching a switch or the consent setting decides that half here.';
 
 /** The Inherit option's label: what it would inherit, or that there is nothing above to inherit. */
-function inheritLabel(inherited: { ask: McpAskPolicy; from: string } | undefined): string {
+function inheritLabel(inherited: InheritedAsk | undefined): string {
   if (inherited === undefined) {
     return 'Not set here — nothing above answers, so: ask every time';
   }

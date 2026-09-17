@@ -6,6 +6,7 @@ import { HOST_CHK, chooseAsk, mcpPage } from './mcpFormFixture';
 import { runFragment } from './miniDom';
 import { mcpSwitchScript } from '../mcpSwitchScript';
 import type { McpAccess } from '../mcpAccess';
+import type { EntityFormOptions } from '../entityFormShape';
 
 /**
  * What the form's posted data becomes — and specifically, which fields survive the entity's KIND.
@@ -199,7 +200,7 @@ function storedMcp(mcp: McpAccess | undefined, pick: string): unknown {
   chooseAsk(document, pick);
   // Through JSON, which is where an `undefined` would vanish on the way to the host.
   const data = JSON.parse(JSON.stringify({ ...posted('credential'), mcp: lifted.collectMcp() }));
-  return world().toValues(data, { entityId: 'e1' } as never).details.mcp;
+  return world().toValues(data, formOptions()).details.mcp;
 }
 
 test('saving with only the cadence touched updates ask and leaves the entry ladder ABSENT', () => {
@@ -213,4 +214,37 @@ test('an entry taking its cadence back keeps the switches it had', () => {
 
   assert.equal((stored as { use?: unknown } | undefined)?.use, true, 'the ladder went with the cadence');
   assert.equal((stored as { ask?: unknown } | undefined)?.ask, undefined, 'and the cadence stayed');
+});
+
+/**
+ * A real `EntityFormOptions`, with no cast.
+ *
+ * <p>The file's older tests reach `toValues` with `{ entityId: 'e1' } as never`, which is what the
+ * TypeScript rule forbids: a cast is a promise to keep a shape by hand, and it comes due silently
+ * when the shape gains a required field. This one is checked, so it breaks instead.</p>
+ */
+function formOptions(): EntityFormOptions {
+  return {
+    mode: 'edit',
+    entityId: 'e1',
+    hasStoredPassword: false,
+    hasStoredPrivateKey: false,
+    hasStoredAttachment: false,
+    hasStoredImage: false,
+    hasStoredVpnConfig: false,
+    hasStoredDbConnection: false,
+    hasStoredTotp: false,
+    hasStoredHostKey: false,
+    keyCandidates: [],
+    jumpCandidates: [],
+    dependencyFolders: [],
+    dependencyColors: {},
+  };
+}
+
+test('an entry that touched nothing stores no mcp record at all', () => {
+  // The fourth quadrant: no local answer, and Inherit is what the markup already showed — so
+  // nothing was touched and nothing was decided, and an untouched save must leave the entry
+  // inheriting rather than converting it into one that opted out.
+  assert.equal(storedMcp(undefined, 'inherit'), undefined);
 });

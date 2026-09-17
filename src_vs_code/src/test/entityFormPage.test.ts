@@ -705,3 +705,13 @@ test('the sentence is per HALF: an entry can set one axis and inherit the other'
   assert.match(policyOnly, /switches follow the folder/);
   assert.match(both, /Set on this entry\./);
 });
+
+test('the default is never merely UNCHECKED under a never-ask folder — it is not the answer shown', () => {
+  // The negative half of the guard, said on its own: "Inherit is checked" and "Ask every time is
+  // not" are two claims, and a rendering that checked both would satisfy only the first.
+  const html = renderHtml(options({ inheritedAsk: { ask: 'never', from: 'Projects' } }));
+
+  assert.equal(checkedTag(html, 'mcpAskAlways'), false, 'the default was offered as the chosen answer');
+  assert.equal(checkedTag(html, 'mcpAskNever'), false, 'the inherited value was shown as a LOCAL choice');
+  assert.equal(checkedTag(html, 'mcpAskInherit'), true);
+});
