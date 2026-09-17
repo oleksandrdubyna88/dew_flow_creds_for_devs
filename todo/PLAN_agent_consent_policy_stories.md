@@ -1,6 +1,11 @@
 # PLAN — the agent consent policy, broken into epics and stories
 
-> Status: **plan only, nothing implemented yet, 2026-09-16.** Scope: the BUILD ORDER for
+> Status: **twelve of thirteen stories built, 2026-09-17** — S1.1–S1.3, S2.1–S2.4, S3.1–S3.3, S4.1
+> and S4.2 are on their branches, each with its own gate rounds and commits. **S4.3 is the only one
+> outstanding**, and it is the story that retires the remaining "asks on every call" claims and
+> promotes both plans to `research/`; until it runs, this document stays in `todo/`. Two of those
+> claims were retired early, in S4.1, because a README coverage guard forced that story into the same
+> paragraphs — recorded there rather than quietly re-scoped. Scope: the BUILD ORDER for
 > [PLAN_agent_consent_policy.md](PLAN_agent_consent_policy.md) (issue #95) — 4 epics, 13 stories, each
 > one commit with its own red-first tests, its own documentation duty and its own `review_code` round.
 > It decides nothing the parent did not decide; where the two disagree the parent's `§` is the

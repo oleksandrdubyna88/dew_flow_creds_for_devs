@@ -34,7 +34,7 @@ is node throughout because what these need is process control, not a test runner
 | `src_vs_code/scripts/agent-broker-itest.cjs` | the broker over its own loopback HTTP surface, `vscode` stubbed | **yes** — *Integration test (agent broker)* | pass |
 | `src_vs_code/scripts/git-transport-itest.cjs` | the encrypted vault in a real git repository: commit, clone, delete | **yes** — *Integration test (git transport)* | pass |
 | `src_vs_code/scripts/creds-cli-itest.cjs` | the real `creds` binary against a live broker | **yes** — *Integration test (creds CLI against the broker)* | pass |
-| `src_vs_code/scripts/creds-mcp-itest.cjs` | `creds-mcp` over stdio, the full tool surface and both switch ladders | **yes, added 2026-09-06** | pass |
+| `src_vs_code/scripts/creds-mcp-itest.cjs` | `creds-mcp` over stdio, the full tool surface, both switch ladders and the quiet path (#95) | **yes, added 2026-09-06** | pass |
 | `src_vs_code/scripts/masked-run-itest.cjs` | a masked run through a real pty, asserting no whole secret appears | **yes, added 2026-09-06** | pass |
 | `src_minimalapi_server/scripts/backup-archive-itest.cjs` | the REAL server binary sealing, verifying and opening a backup archive | **yes, added 2026-09-07** — in `ci · server`, on the server's own path filter | pass |
 | `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | the same MCP surface, bridged from inside a WSL distribution | no — see below | pass |
@@ -691,12 +691,47 @@ until the clock caught up.
 | an entry that prompts is still refused at the sixth | **broker** | the modal defence on the MCP door, intact beside the new ceiling |
 | the wire contract is unchanged | **contract** | `too_many_requests` already existed; `npm run contract` leaves `contract/broker-v1.json` with an empty diff |
 
-**What this does not prove** *(rewritten once S2.2 landed — the door reads the policy now, and the
-sentence that said it did not was the obsolete half of this section)*. Two things. The real
-`creds-mcp` binary is not driven against any of this: every row above stops at the extension's own
-loopback surface, and the end-to-end leg is owned by S4.2. And nothing here is reachable by a
-PERSON — no control writes a policy until the form lands in S3.1, and no window hands the lookup a
-store until S2.4 — so what is covered is the machinery, not yet the feature somebody can use.
+**What this does not prove** *(rewritten twice — once when S2.2 made the door read the policy, and
+again when S4.2 drove it through the binary; each time the obsolete half of this section was the
+sentence that had stopped being true)*. Everything above stops at the extension's own loopback
+surface. The leg below is what crosses it.
+
+### The quiet path through the REAL binary (S4.2)
+
+`src_vs_code/scripts/creds-mcp-itest.cjs`, level 6 — ten checks of a run that is **93** (82 before
+this story). The lookup is the real `mcpUseHooks` over a real `StorageManager` and a real stamp
+store, not a stub answering `preConsented: true`: a stub would prove the door forwards a flag, which
+is already a unit test, and what had never been shown is that the POLICY, resolved through a tree,
+survives the trip through the binary. Its own window, because the levels above have spent the
+five-prompt budget and a fresh window has a fresh ceiling.
+
+| flow | covered | note |
+|---|---|---|
+| six calls on a never-ask entry succeed end to end, and the human is asked ZERO times | **binary** | six distinct queries, each asserted by its own text, so a leg answering the same thing six times cannot pass |
+| an entry answered inside its twelve hours is quiet too | **binary** | the other way to be quiet, from a stamp the real store holds |
+| twelve hours and a millisecond later it asks again, and runs once allowed | **binary** | the boundary as a value, not a wait — the clock is an argument to the factory |
+| deleting a never-ask entry still asks, exactly once for that call | **binary** | owner decision D2 through the binary. The count is taken immediately around the delete, so a prompt elsewhere cannot stand in for it |
+| a caller with no token, no approval and no session reaches a never-ask entry, and nobody is asked | **binary** | the boundary this feature buys, demonstrated rather than assumed — the parent plan's finding 12 asked to SEE it |
+| the binary under test exists, and the log says how old it is | **binary** | `npm run itest:mcp` compiles the TypeScript and NOT the .NET binary, so a stale `creds-mcp.exe` would pass every check above while proving nothing about today's server |
+| the quiet leg contributed every check it owns | **binary** | a green run and a run that happened are different claims: an early return leaves the rest unexecuted and the script still reports success |
+
+**Watched red**, by returning `preConsented: false` from the real lookup — and the failure is the
+feature's own argument. Each of the six calls then raised a dialog, the fifth spent the
+five-a-minute modal budget, and the SIXTH was refused outright with `too_many_requests`. Without the
+quiet path, six agent calls in a minute are not merely noisy; they are impossible.
+
+**What this leg still does not prove.** Three things, named because a reader will look here.
+
+- **The caller is the script**, not a real MCP client: the handshake is hand-written, and the client
+  the binary believes it is talking to is this file.
+- **The sixty-a-minute silent ceiling is not exercised here.** It is unit-covered in S2.3, and sixty
+  calls through a spawned binary would take the leg well past the script's timeouts. That is a cost
+  accepted deliberately, not an oversight.
+- **The idle auto-lock is unchanged**, and this leg shows what that means: a never-ask entry on an
+  idle machine is usable by anything that can reach the loopback port. The check above demonstrates
+  exactly that and calls it the boundary rather than a bug, because it is what the setting says.
+
+And nothing here is reachable by a PERSON until Epic 3's controls, which landed in S3.1–S3.3.
 
 ## What none of them covers
 
