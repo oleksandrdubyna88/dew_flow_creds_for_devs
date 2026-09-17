@@ -11,6 +11,7 @@ import {
   TWO_COLUMN_AT,
 } from '../webviewHtml';
 import { ENTITY_KINDS, EntityMetadata } from '../types';
+import { MCP_ASK_CHOICES, MCP_SWITCHES } from '../mcpSwitches';
 import type { EntityFormOptions } from '../entityFormPanel';
 
 /**
@@ -616,4 +617,91 @@ test('the shared header carries the three ids both forms bind', () => {
   for (const id of ['save', 'cancel', 'error']) {
     assert.ok(html.includes(`id="${id}"`), `the entity form's header lost id="${id}"`);
   }
+});
+
+/**
+ * The consent cadence on the entity form (#95, S3.2).
+ *
+ * <p>One guard carries this story: an entry under a folder set to never-ask must NOT show *Ask
+ * every time* selected. The default belongs to the END of the walk, so an entry with no answer of
+ * its own is subject to the folder's — and a form saying otherwise would be telling somebody the
+ * opposite of what the door is about to do, on the screen they check before trusting it.</p>
+ */
+/** A typed entity, with no cast: a new required field must break this file rather than pass through. */
+function entity(extra: Partial<EntityMetadata>): EntityMetadata {
+  return { id: 'e1', name: 'prod', kind: 'credential', isSshEnabled: false, ...extra };
+}
+
+function askedIds(html: string): string[] {
+  return MCP_ASK_CHOICES.map((one) => one.id).filter((id) => checkedTag(html, id));
+}
+
+/** The whole `<input>` tag for one id, and whether it carries `checked`. */
+function checkedTag(html: string, id: string): boolean {
+  const at = html.indexOf(`<input id="${id}"`);
+  return at >= 0 && html.slice(at, html.indexOf('>', at)).includes(' checked');
+}
+
+function askLabel(html: string, id: string): string {
+  return new RegExp(`<label for="${id}">([^<]*)</label>`).exec(html)?.[1] ?? '(no label)';
+}
+
+test('an inheriting entry under a never-ask folder shows Inherit — never Ask every time', () => {
+  const html = renderHtml(options({ inheritedAsk: { ask: 'never', from: 'Projects' } }));
+
+  assert.deepEqual(askedIds(html), ['mcpAskInherit'], 'the default was shown where a folder had answered');
+  assert.match(askLabel(html, 'mcpAskInherit'), /Projects/);
+  assert.match(askLabel(html, 'mcpAskInherit'), /never ask/);
+});
+
+test('an entry with its own answer shows it checked, and Inherit still names what it would inherit', () => {
+  const html = renderHtml(
+    options({
+      initial: entity({ mcp: { ask: 'every12h' } }),
+      inheritedAsk: { ask: 'never', from: 'Projects' },
+    }),
+  );
+
+  assert.deepEqual(askedIds(html), ['mcpAskEvery12h']);
+  assert.match(askLabel(html, 'mcpAskInherit'), /Projects&quot; says: never ask|Projects" says: never ask/);
+});
+
+test('with nothing above, the Inherit option names no folder and says what happens instead', () => {
+  const html = renderHtml(options());
+
+  assert.deepEqual(askedIds(html), ['mcpAskInherit']);
+  assert.doesNotMatch(askLabel(html, 'mcpAskInherit'), /Inherit from/);
+  assert.match(askLabel(html, 'mcpAskInherit'), /ask every time/);
+});
+
+test('the group sits after the tenth switch and before the doors footer', () => {
+  // With a door actually live, so the footer is RENDERED — with none, `agentDoorsHtml` answers an
+  // empty string and the only `agentDoors` in the page is a CSS class in the stylesheet above it,
+  // which would make this assertion pass or fail for a reason that has nothing to do with order.
+  const html = renderHtml(
+    options({ agentDoors: { cliAliases: ['prod'], codeAccess: false, bridgeOpen: false, wslRelay: false } }),
+  );
+
+  const lastSwitch = html.indexOf(`id="${MCP_SWITCHES[MCP_SWITCHES.length - 1].id}"`);
+  const group = html.indexOf('id="mcpAskInherit"');
+  const doors = html.indexOf('class="agentDoors"');
+  assert.ok(lastSwitch > 0 && group > lastSwitch, 'the cadence is not below the switches it qualifies');
+  assert.ok(doors > 0, 'the doors footer did not render, so this proves nothing about order');
+  assert.ok(group < doors, 'the cadence is below the doors footer that summarises them');
+});
+
+test('the sentence is per HALF: an entry can set one axis and inherit the other', () => {
+  // One line, four states. A record of `{ ask: 'never' }` used to make the whole section claim it
+  // was set on this entry, switches included — the same defect the folder form's code round found.
+  const neither = renderHtml(options());
+  const ladderOnly = renderHtml(options({ initial: entity({ mcp: { use: true } }) }));
+  const policyOnly = renderHtml(options({ initial: entity({ mcp: { ask: 'never' } }) }));
+  const both = renderHtml(options({ initial: entity({ mcp: { use: true, ask: 'never' } }) }));
+
+  assert.match(neither, /follows its folder/);
+  assert.match(ladderOnly, /Switches set on this entry/);
+  assert.match(ladderOnly, /consent setting follows the folder/);
+  assert.match(policyOnly, /Consent set on this entry/);
+  assert.match(policyOnly, /switches follow the folder/);
+  assert.match(both, /Set on this entry\./);
 });

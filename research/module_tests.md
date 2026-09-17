@@ -623,6 +623,19 @@ real markup uses.
 | what a node would inherit is what the ANCESTRY says, whatever the node says itself | **unit** | `inheritedAskFor`, moved into `mcpAccess.ts` so S3.2 shares it rather than copying a tree walk: two levels up, nothing above, and a node in the Trash inheriting nothing |
 | a fourth policy with no control does not compile | **observed, not a test** | `ASK_CONTROLS` is a `Record<McpAskPolicy, …>`; adding `every24h` to `ASK_POLICIES` fails with *Property 'every24h' is missing*, which is why `askWords` needs no fallback |
 
+**The entity form (S3.2)** — the same group on the other form, over a value the resolver already
+computes. `test/entityFormPage.test.ts` for the markup, `test/entityFormPanel.test.ts` for the round
+trip through `toValues`.
+
+| flow | covered | note |
+|---|---|---|
+| an inheriting entry under a never-ask folder shows Inherit — never *Ask every time* | **page** | the guard the story exists for: the default belongs to the end of the walk, and showing it as a choice tells somebody the opposite of what the door will do. Watched red by rendering the resolved value as the local one — *the default was shown where a folder had answered* |
+| an entry with its own answer shows it checked, and Inherit still names what it would inherit | **page** | which is why the label comes from `inheritedAskFor` (the parent) and the tick from the record |
+| with nothing above, the Inherit option names no folder | **page** | the same two labels the folder form has, from one builder |
+| the group sits after the tenth switch and before the doors footer | **page** | with a door actually live, so the footer is rendered — with none, the only `agentDoors` in the page is a CSS class above it, and the assertion would pass for the wrong reason |
+| the sentence is per HALF | **page** | four states in one line. Watched red with both halves driven by `mcp !== undefined` — *The input did not match /Switches set on this entry/* |
+| saving with only the cadence touched leaves the entry's ladder absent; taking a cadence back keeps the switches | **round trip** | the §2 regression on the entity side, through the real page script, JSON, and `toValues` |
+
 **The ceiling (S2.3)** — the quiet path's own limiter, since the prompt was the old one. The unit half
 is `test/aliasThrottle.test.ts` with the clock injected, so sixty calls cost under a millisecond; the
 broker half drives the ceiling for real over loopback, and the two sixty-call tests cost 863 ms and

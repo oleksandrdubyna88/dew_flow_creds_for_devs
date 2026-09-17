@@ -15,8 +15,8 @@ import { describeAttachment } from './attachmentMeta';
 import { escapeHtml } from './webviewHtml';
 import { formPageScript } from './entityFormScript';
 import { initialDependencyRows } from './depGraph';
-import { accessMask, normalizeMcpAccess } from './mcpAccess';
-import { MCP_SWITCHES, mcpBarHtml } from './mcpSwitches';
+import { accessMask, answersLadder, answersPolicy, normalizeMcpAccess } from './mcpAccess';
+import { MCP_SWITCHES, mcpAskHtml, mcpBarHtml, mcpSetSentence } from './mcpSwitches';
 import { FORM_SECTIONS } from './formSections';
 
 /**
@@ -410,14 +410,9 @@ export function renderHtml(options: EntityFormOptions): string {
   // leaves the label and the description at the theme's own foreground, which is what keeps the
   // section from becoming six coloured captions.
   const mcp = normalizeMcpAccess(d?.mcp);
-  const mcpSet = d?.mcp !== undefined;
   const mcpHtml = `${openSection('mcpSection')}
     ${mcpBarHtml(accessMask(mcp))}
-    <p class="hint">${
-      mcpSet
-        ? 'Set on this entry.'
-        : 'Not set here — this entry follows its folder. Touching any switch decides it here instead.'
-    }</p>
+    <p class="hint">${escapeHtml(mcpSetSentence(answersLadder(d?.mcp), answersPolicy(d?.mcp)))}</p>
     ${MCP_SWITCHES.map(
       (s) => `<div class="check">
       <input id="${s.id}" type="checkbox" class="mcpSwitch ${s.color}" ${s.on(mcp) ? 'checked' : ''}>
@@ -425,6 +420,7 @@ export function renderHtml(options: EntityFormOptions): string {
     </div>
     <p class="hint mcpWhy">${escapeHtml(s.why)}</p>`,
     ).join('')}
+    ${mcpAskHtml(d?.mcp?.ask, options.inheritedAsk)}
     ${agentDoorsHtml(options.agentDoors)}
   </fieldset>`;
 
