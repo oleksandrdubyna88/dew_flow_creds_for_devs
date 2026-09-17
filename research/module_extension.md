@@ -1818,6 +1818,18 @@ raised *after* it, and `warnedAccounts` has already deduped the account by then,
 that hangs would otherwise mean no offer at all and nothing asking again until the window is
 reloaded — a timeout counts as `unknown` and the unlock is offered anyway.
 
+**`withTimeout`'s `unref` option has cost a CI run twice now**, and the second time is worth the
+sentence because the first is already written in its docblock. An unrefd timer does not hold the
+event loop, so a caller awaiting it with nothing else running gets **no answer at all** rather than
+a late `undefined` — the process reaches an empty loop and exits. Under the broker or this offer
+that is invisible, because a listening socket or the extension host holds the process; in a unit
+test it shows up as `cancelled`, not as a failure, beside `fail 0`. `recordConsent` passed it for
+six stories (#95) and CI cancelled three tests with *Promise resolution is still pending but the
+event loop has already resolved*. It is refed now, because the bound IS that function's guarantee:
+a store that never answers must not hold a call the person already allowed. **The rule stands as
+the docblock states it** — pass `unref` only where something else is keeping the process alive on
+purpose, and never where the timeout is the guarantee rather than a courtesy.
+
 Nothing here goes quiet. A refused lookup, a timed-out one, a rejected notification and an
 abandoned "which vault" pick each write a line to the diagnostic channel: every one of them
 leaves the person with the same silent screen, and the log is what tells them apart afterwards.
