@@ -18,7 +18,7 @@ import { runSshExec } from './sshExecRunner';
 import { agentForwardEnv, openSshBinary } from './sshProgram';
 import { resolveExecAuth } from './sshExecAuth';
 import { describeSshTarget } from './terminalManager';
-import { connectEntity } from './sshConnect';
+import { RemoteWindowDeps, connectEntity } from './sshConnect';
 import { remedyRunner, remoteWindowDeps } from './remoteConnectHost';
 import { WslRelayManager } from './wslRelayManager';
 import { EntityMetadata } from './types';
@@ -255,7 +255,7 @@ export function sshTerminalAction(deps: SshUseDeps): UseAction {
         storage: deps.storage,
         storageDir: deps.storageDir,
         agentServesKey: deps.servesKeyForEntity?.(entity) === true,
-        remote: deps.relays === undefined ? undefined : remoteWindowDeps(deps.relays, remedyRunner(undefined)),
+        remote: brokerWindow(deps),
       });
       // It used to report `opened: true` whatever happened, which was harmless while the only
       // failure was an entity with no host — and is not, now that a remote window can REFUSE. An
@@ -266,15 +266,28 @@ export function sshTerminalAction(deps: SshUseDeps): UseAction {
           `Could not open an SSH terminal for "${ctx.entityName}" — the window said why.`,
         );
       }
-      void vscode.window.showInformationMessage(
-        `Claude Code opened an SSH terminal for "${ctx.entityName}"${
-          describeSshTarget(entity) === undefined ? '' : ` (${describeSshTarget(entity)})`
-        }.`,
-      );
+      void vscode.window.showInformationMessage(openedMessage(ctx.entityName, entity));
       const response: TerminalResponseBody = { opened: true };
       return { status: 200, body: response };
     },
   };
+}
+
+/** The target named where it can be — an entity with no host still opened something. */
+function openedMessage(entityName: string, entity: EntityMetadata): string {
+  const target = describeSshTarget(entity);
+  return `Claude Code opened an SSH terminal for "${entityName}"${target === undefined ? '' : ` (${target})`}.`;
+}
+
+/**
+ * What the broker knows about this window — or `undefined` where it was given no relay manager,
+ * which is every test and every caller predating remote windows.
+ *
+ * <p>`remedyRunner(undefined)`: the broker has an entity and no tree row, so a refusal's *Add Key to
+ * Agent* button says so plainly rather than opening a picker nobody asked for.</p>
+ */
+function brokerWindow(deps: SshUseDeps): RemoteWindowDeps | undefined {
+  return deps.relays === undefined ? undefined : remoteWindowDeps(deps.relays, remedyRunner(undefined));
 }
 
 /**

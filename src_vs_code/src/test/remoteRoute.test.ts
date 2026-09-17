@@ -31,29 +31,53 @@ const ALL_RELAYS = [READY, OFF, STARTING];
 const refusals = (route: ConnectRoute): readonly string[] =>
   route.kind === 'refuse' ? route.reasons : [];
 
-test('every combination lands on exactly one route, and a refusal is never empty', () => {
-  for (const side of ALL_SIDES) {
-    for (const credential of ALL_CREDENTIALS) {
-      for (const agentServesKey of [true, false]) {
-        for (const relay of ALL_RELAYS) {
-          const route = remoteRoute(side, credential, agentServesKey, relay);
-          const where = `${side.kind}/${credential}/agent=${agentServesKey}/relay=${relay.enabled}${relay.running}`;
+interface Case {
+  readonly side: WindowSide;
+  readonly credential: (typeof ALL_CREDENTIALS)[number];
+  readonly agentServesKey: boolean;
+  readonly relay: RelayReadiness;
+  readonly windowsClient: boolean;
+}
 
-          assert.ok(
-            route.kind === 'compose' || route.kind === 'agent' || route.kind === 'refuse',
-            `${where} produced no route`,
-          );
-          if (route.kind === 'refuse') {
-            assert.ok(route.reasons.length > 0, `${where} refused without saying why`);
-            assert.equal(
-              new Set(route.reasons).size,
-              route.reasons.length,
-              `${where} repeated a reason`,
-            );
-          }
-        }
-      }
-    }
+/**
+ * Every input this function can be given, built ONCE and iterated by name.
+ *
+ * <p>A cartesian product rather than five nested `for`s, and not only for the ceiling the linter
+ * puts on a function: the five dimensions are what the table IS, and naming them once means a sixth
+ * is added in one place instead of in every test that sweeps them.</p>
+ */
+const EVERY_CASE: readonly Case[] = ALL_SIDES.flatMap((side) =>
+  ALL_CREDENTIALS.flatMap((credential) =>
+    [true, false].flatMap((agentServesKey) =>
+      ALL_RELAYS.flatMap((relay) =>
+        [true, false].map((windowsClient) => ({ side, credential, agentServesKey, relay, windowsClient })),
+      ),
+    ),
+  ),
+);
+
+const ROUTE_KINDS = ['compose', 'agent', 'windowsClient', 'refuse'];
+
+const describeCase = (c: Case): string =>
+  `${c.side.kind}/${c.credential}/agent=${c.agentServesKey}/relay=${c.relay.enabled}${c.relay.running}/win=${c.windowsClient}`;
+
+const routeFor = (c: Case, windowsClient = c.windowsClient): ConnectRoute =>
+  remoteRoute(c.side, c.credential, c.agentServesKey, c.relay, windowsClient);
+
+function checkOneRoute(c: Case): void {
+  const route = routeFor(c);
+  const where = describeCase(c);
+
+  assert.ok(ROUTE_KINDS.includes(route.kind), `${where} produced no route`);
+  if (route.kind === 'refuse') {
+    assert.ok(route.reasons.length > 0, `${where} refused without saying why`);
+    assert.equal(new Set(route.reasons).size, route.reasons.length, `${where} repeated a reason`);
+  }
+}
+
+test('every combination lands on exactly one route, and a refusal is never empty', () => {
+  for (const c of EVERY_CASE) {
+    checkOneRoute(c);
   }
 });
 
@@ -167,6 +191,82 @@ test('every other remote kind refuses as not-wsl, whatever else is true', () => 
     for (const relay of ALL_RELAYS) {
       assert.deepEqual(refusals(remoteRoute(SSH_REMOTE, credential, true, relay)), ['not-wsl']);
     }
+  }
+});
+
+// --- the Windows client, launched from inside WSL -------------------------------------------
+//
+// The premise the table above was built on turned out to be half true, and measuring it is what
+// found that. `ssh -i <windows path>` cannot work with the DISTRIBUTION'S client — /mnt/c reports
+// 0777, `chmod` there is a no-op, and OpenSSH refuses a key whose permissions it cannot trust. It
+// works perfectly with the WINDOWS client, which WSL launches through interop and which reads that
+// same file under Windows ACLs, where the permissions are real. Measured on the reporting machine
+// with the very ed25519 key our own agent cannot parse:
+//
+//   /mnt/c/Windows/System32/OpenSSH/ssh.exe -V   ->  OpenSSH_for_Windows_9.5p2, LibreSSL 3.8.2
+//
+// So a key in a WSL window has two working answers, and the refusal is now the third.
+
+test('a stored key the agent cannot serve runs the WINDOWS client instead of refusing', () => {
+  // The report, as a row: relay off, agent empty, and until now a modal.
+  assert.deepEqual(remoteRoute(WSL, 'storedKey', false, OFF, true), { kind: 'windowsClient' });
+  assert.deepEqual(remoteRoute(WSL, 'storedKey', false, READY, true), { kind: 'windowsClient' });
+  assert.deepEqual(remoteRoute(WSL, 'storedKey', true, STARTING, true), { kind: 'windowsClient' });
+});
+
+test('the relay still WINS where it can serve — a native client beats a borrowed one', () => {
+  // Not a preference for the older code: the distribution's own ssh uses the distribution's
+  // ~/.ssh/config, resolver, network namespace and idea of `localhost`. The Windows client is the
+  // one that always WORKS, not the one that always fits, so it takes what the relay cannot.
+  assert.deepEqual(remoteRoute(WSL, 'storedKey', true, READY, true), {
+    kind: 'agent',
+    socketPath: READY.socket,
+  });
+});
+
+test('a key PATH is what the Windows client is best at — it already IS a Windows path', () => {
+  // And the one case no relay can ever serve: there is nothing in the vault to load into an agent.
+  for (const relay of ALL_RELAYS) {
+    assert.deepEqual(remoteRoute(WSL, 'keyPath', true, relay, true), { kind: 'windowsClient' });
+  }
+});
+
+test('an unnameable distribution stops mattering — this route asks the distribution nothing', () => {
+  // Nothing is translated on it, so `distro-ambiguous` and `distro-unknown` have nothing to block.
+  for (const side of [AMBIGUOUS, UNKNOWN]) {
+    assert.deepEqual(remoteRoute(side, 'storedKey', false, OFF, true), { kind: 'windowsClient' });
+    assert.deepEqual(remoteRoute(side, 'keyPath', false, READY, true), { kind: 'windowsClient' });
+  }
+});
+
+test('a PASSWORD still refuses: the askpass helper is a script only this shell could run', () => {
+  // A Windows program cannot exec a shell script the distribution holds, and the environment the
+  // password would ride does not cross interop unless WSLENV names it.
+  for (const relay of ALL_RELAYS) {
+    assert.deepEqual(refusals(remoteRoute(WSL, 'password', true, relay, true)), [
+      'credential-is-a-password',
+    ]);
+  }
+});
+
+test('with no Windows client installed, every answer is byte-for-byte what it was', () => {
+  // The clause that keeps this change from being a rewrite of the table above: the new parameter
+  // can only ADD answers, never move one.
+  for (const c of EVERY_CASE) {
+    assert.deepEqual(
+      routeFor(c, false),
+      remoteRoute(c.side, c.credential, c.agentServesKey, c.relay),
+      `${describeCase(c)} moved with no client installed`,
+    );
+  }
+});
+
+test('a LOCAL window composes whatever clients are installed, and no other window borrows one', () => {
+  for (const credential of ALL_CREDENTIALS) {
+    assert.deepEqual(remoteRoute(LOCAL, credential, false, OFF, true), { kind: 'compose' });
+    // Remote-SSH and containers are somewhere ELSE: the Windows client is reachable from WSL only
+    // because WSL runs on this machine, and there is no interop to borrow across a network.
+    assert.deepEqual(refusals(remoteRoute(SSH_REMOTE, credential, false, READY, true)), ['not-wsl']);
   }
 });
 

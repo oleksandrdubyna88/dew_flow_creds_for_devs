@@ -4,6 +4,53 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.6] — 2026-09-17 — Connect in a WSL window just connects
+
+### Added
+
+- **A WSL window now uses the Windows OpenSSH client instead of refusing.** The whole remote-window
+  change was built on one premise — a key on the Windows disk cannot be used from a WSL shell — and
+  only half of it is true. The DISTRIBUTION'S `ssh` cannot use it: /mnt/c reports 0777, `chmod`
+  there is a no-op, and OpenSSH refuses a key whose permissions it cannot trust. The WINDOWS `ssh`,
+  which WSL launches through interop at `/mnt/c/Windows/System32/OpenSSH/ssh.exe`, reads the same
+  file under the ACLs that make those permissions real. Measured with an Ed25519 key in the
+  `openssh-key-v1` format that the extension's own agent cannot parse at all: it authenticated.
+
+  So Connect in a WSL window works with **every key format**, needs **no agent, no relay and no
+  conversion**, and does not even need the distribution's name — nothing is translated on this
+  route. The key never enters the distribution; it never leaves Windows. `ssh-keygen -p -m PKCS8`
+  is still worth doing if you want the agent to serve a key, and it is no longer the price of
+  connecting.
+
+- **The relay route still wins where it can serve.** With the agent holding the key and the relay
+  running, a WSL window gets the distribution's own client, as before — its `~/.ssh/config`, its
+  resolver, its network namespace. The Windows client is the one that always works, not the one
+  that always fits, so it takes what the relay cannot.
+
+- **What changes meaning is said at the moment of the click, and only where it applies.** A `-L`
+  forward binds on the CLIENT, and the client is now a Windows process, so `localhost:<port>` typed
+  into that same terminal does not reach it; `-A` carries the Windows agent's keys. An entity that
+  asks for neither is told nothing.
+
+### Fixed
+
+- **A distribution that could not be named no longer blocks a key-backed connection.** Two folders
+  in two distributions, or none at all, used to refuse; this route asks the distribution nothing.
+- **A key PATH in a WSL window connects** rather than refusing — that path was already spelled the
+  way this client wants it.
+- **`npm run lint` passes.** Fifteen violations had accumulated across the remote-window work and
+  none of them was ever run: CI fails that step on a NEW violation, so the branch would have gone
+  red on arrival. The functions were split rather than suppressed, and the connect test's fixture
+  moved into `sshConnectWorld.ts`, which is also what put that file back under the 800-line ceiling.
+
+### Still refused, and deliberately
+
+- **A password in a WSL window.** The askpass helper is a shell script the distribution holds; a
+  Windows program cannot exec it, and the environment carrying the password does not cross interop
+  unless `WSLENV` names it.
+- **Remote-SSH, dev containers, Codespaces.** The Windows client is reachable from WSL because WSL
+  runs on this machine. There is no interop to borrow across a network.
+
 ## [1.9.5] — 2026-09-17 — a domain login reaches the host it was typed for
 
 ### Fixed

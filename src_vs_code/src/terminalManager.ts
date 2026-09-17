@@ -5,7 +5,6 @@ import { SshCommandOptions, buildSshCommand, describeSshTarget } from './sshComm
 // Re-exported so existing callers keep one import site.
 export { buildSshCommand, describeSshTarget };
 
-// eslint-disable-next-line complexity -- pre-existing guards plus the options parameter; each clause is an independent usability check
 /**
  * @param platform the platform whose SHELL will parse this line — the TERMINAL's, not the extension
  *   host's. They are the same machine only in a local window: `extensionKind: ["ui"]` keeps the host
@@ -16,6 +15,7 @@ export { buildSshCommand, describeSshTarget };
  *   the WSL agent relay's socket without touching the window-wide environment collection, which has
  *   no per-shell scope and so cannot serve a Windows terminal and a WSL one at the same time.
  */
+// eslint-disable-next-line complexity -- pre-existing guards plus the options parameter; each clause is an independent usability check
 export function openSshTerminal(
   entity: EntityMetadata,
   options: SshCommandOptions = {},

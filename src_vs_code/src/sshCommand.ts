@@ -43,6 +43,23 @@ export interface SshCommandOptions {
   builtInExists?: (candidate: string) => boolean;
   /** How the PATH is probed for the built-in ssh. Injected only by tests, same reason. */
   pathProbe?: PathProbe;
+  /**
+   * The client to launch, when it is NOT the one this shell's platform implies.
+   *
+   * <p><b>The client's operating system and the shell's are two facts, and this is where they came
+   * apart.</b> Everywhere else in this function `platform` answers both — which shell will parse the
+   * line, and which `ssh` should run it — because everywhere else they are the same machine. In a
+   * WSL window they are not: bash parses the line and a Windows `ssh.exe` runs it, reached through
+   * interop at `/mnt/c/…`. Raised by a consultant in exactly those words, and it is the reason this
+   * is a program WORD rather than a second platform: `openSshProgram` can pick between two Windows
+   * spellings, but it has no vocabulary for a Windows binary named from inside Linux.</p>
+   *
+   * <p>Quoting is unaffected and must stay so: the arguments are still parsed by the shell, so they
+   * are still quoted for `platform`. What changes is only which program the first word names — and
+   * the paths the caller puts in `-i` and `UserKnownHostsFile`, which it leaves spelled the Windows
+   * way because that is what this client reads.</p>
+   */
+  program?: string;
 }
 
 /**
@@ -118,7 +135,8 @@ export function buildSshCommand(
   // open a named pipe. Composed here rather than at the five call sites so the command SHOWN
   // in the viewer is the command that runs. See `sshProgram.ts`.
   const parts: string[] = [
-    openSshProgram('ssh', entity.agentForward === true, platform, options.builtInExists, options.pathProbe),
+    options.program ??
+      openSshProgram('ssh', entity.agentForward === true, platform, options.builtInExists, options.pathProbe),
   ];
   if (entity.sshKeyPath) {
     parts.push('-i', shellQuote(entity.sshKeyPath, platform));

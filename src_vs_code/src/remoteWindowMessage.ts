@@ -115,9 +115,12 @@ function whereTheTerminalIs(
   if (context.remoteName !== 'wsl') {
     return `a remote window (${context.remoteName})`;
   }
-  const unresolved =
-    reasons.includes('distro-ambiguous') || reasons.includes('distro-unknown');
-  return context.distro.length > 0 && !unresolved ? `WSL (${context.distro})` : 'WSL';
+  const nameable = context.distro.length > 0 && !distroUnresolved(reasons);
+  return nameable ? `WSL (${context.distro})` : 'WSL';
+}
+
+function distroUnresolved(reasons: readonly RefusalReason[]): boolean {
+  return reasons.includes('distro-ambiguous') || reasons.includes('distro-unknown');
 }
 
 /** `win32` → `Windows`. Said the way a person says it, not the way Node spells it. */
@@ -234,6 +237,59 @@ function labelFor(action: RefusalAction, reasons: readonly RefusalReason[]): str
 
 /** What the relay button says when fixing it will NOT be enough to connect. */
 export const RELAY_ONLY_LABEL = 'Set Up the WSL Agent Relay';
+
+/** Only what this function reads — so a test cannot be made to pass by inventing a field. */
+export interface CaveatEntity {
+  readonly name: string;
+  readonly portForwards?: readonly unknown[];
+  readonly agentForward?: boolean;
+}
+
+/**
+ * What changes meaning when the WINDOWS client answers a Connect click from a WSL shell — or `''`
+ * when nothing does, which is the ordinary case and must stay silent.
+ *
+ * <p><b>Why a note and not a refusal.</b> Both facts below are consequences of running a Windows
+ * program, and the connection itself is fine: it authenticates, it opens, and for a session at a
+ * prompt it is indistinguishable from the distribution's own client. Refusing would take away a
+ * connection that works; saying nothing would let a forward listen on the wrong machine for as long
+ * as somebody kept typing `curl localhost:…` into the wrong shell and reading the wrong error. A
+ * sentence at the moment of the click is the only one of the three that respects both.</p>
+ *
+ * <p><b>Why it is keyed on the entity rather than shown every time.</b> A note every person sees on
+ * every connection is a note nobody reads by the third day — and then it is not there for the one
+ * connection it was written for. Only a connection that actually asks for a forward can be
+ * surprised by where the forward lands.</p>
+ */
+export function windowsClientCaveat(entity: CaveatEntity): string {
+  const notes = caveatNotes(entity);
+  if (notes.length === 0) {
+    return '';
+  }
+  const count = notes.length > 1 ? 'Two things behave' : 'One thing behaves';
+  return (
+    `"${entity.name}" connects through the Windows OpenSSH client, because the key is on this ` +
+    `computer and the distribution cannot read it there. ${count} accordingly: ${notes.join('; and ')}.`
+  );
+}
+
+function caveatNotes(entity: CaveatEntity): string[] {
+  const notes: string[] = [];
+  if ((entity.portForwards ?? []).length > 0) {
+    // `-L 5432:db:5432` binds on the CLIENT, and the client is now a Windows process: the listening
+    // socket is Windows's, so `localhost:5432` typed in this very terminal does NOT reach it.
+    notes.push(
+      'a port forward binds on WINDOWS, not inside the distribution — reach it at the Windows ' +
+        'localhost rather than at this shell’s',
+    );
+  }
+  if (entity.agentForward === true) {
+    // SSH_AUTH_SOCK does not cross interop unless WSLENV names it, so `-A` here forwards whatever
+    // the WINDOWS agent holds — a different set of keys from the one this shell can see.
+    notes.push('agent forwarding carries the WINDOWS agent’s keys, not this shell’s');
+  }
+  return notes;
+}
 
 const ACTIONS: Readonly<Record<RefusalReason, RefusalAction | undefined>> = {
   'not-wsl': 'openRemoteBridge',

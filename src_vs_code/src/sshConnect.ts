@@ -17,7 +17,13 @@ import * as path from 'node:path';
 import { materializedKeysDir } from './materializedKeys';
 import { WindowSide, terminalPlatform } from './remoteWindow';
 import { RefusalReason, RelayReadiness, remoteRoute } from './remoteRoute';
-import { RefusalAction, refusalFor } from './remoteWindowMessage';
+import {
+  RefusalAction,
+  RefusalContext,
+  RemoteRefusal,
+  refusalFor,
+  windowsClientCaveat,
+} from './remoteWindowMessage';
 import { envPrefix } from './wslRelay';
 import { translateWindowsPath } from './wslProcess';
 
@@ -47,6 +53,14 @@ export interface RemoteWindowDeps {
    * means the snapshot is reused, which is right for a test and wrong for a window.</p>
    */
   readonly refresh?: () => RemoteWindowDeps;
+  /**
+   * The Windows OpenSSH client as this window's shell must spell it to launch it — `/mnt/c/…` from
+   * WSL — or absent when there is none to lend.
+   *
+   * <p>Read once by the host module rather than probed here, for the same reason `side` and `relay`
+   * are: this function decides, and everything it decides on is handed to it.</p>
+   */
+  readonly windowsClient?: string;
 }
 
 const LOCAL_WINDOW: RemoteWindowDeps = {
@@ -122,7 +136,8 @@ export async function connectEntity(
 
   // The route decision comes BEFORE `connectionOptions`, which writes a known_hosts file, and
   // before anything materialises a key — so a refused window leaves nothing on disk at all.
-  const route = remoteRoute(side, source.kind, agentServesKey, remote.relay);
+  const windowsClient = remote.windowsClient ?? '';
+  const route = remoteRoute(side, source.kind, agentServesKey, remote.relay, windowsClient.length > 0);
   if (route.kind === 'refuse') {
     return refuseAndOfferTheFix(route.reasons, entity, remote, retry);
   }
@@ -138,10 +153,18 @@ export async function connectEntity(
   // A pinned host key's known_hosts file is on THIS machine, so the distribution is asked where it
   // is. The pin survives — unlike a private key, `UserKnownHostsFile` has no mode requirement, and
   // /mnt/c cannot hold one anyway.
-  const options = await withTranslatedKnownHosts(resolved, side, storageDir);
-  if (options === undefined) {
+  // NOT on the Windows-client route, and that exception is the route in one line: nothing it hands
+  // over is read by the distribution, so nothing it hands over may be translated. A `/mnt/c/…` path
+  // is precisely what `ssh.exe` cannot open.
+  const translated =
+    route.kind === 'windowsClient' ? resolved : await withTranslatedKnownHosts(resolved, side, storageDir);
+  if (translated === undefined) {
     return refuseAndOfferTheFix(['known-hosts-translation-failed'], entity, remote, retry);
   }
+  // The client is a separate fact from the shell: `platform` below still says which shell parses
+  // this line, and it is still the distribution's.
+  const options: ConnectionOptions =
+    route.kind === 'windowsClient' ? { ...translated, program: windowsClient } : translated;
 
   const platform = terminalPlatform(side, process.platform);
   if (platform === undefined) {
@@ -170,10 +193,22 @@ export async function connectEntity(
     }
     return openSshTerminal({ ...entity, sshKeyPath: undefined }, options, platform, prefix) !== undefined;
   }
-  if (agentServesKey && source.kind === 'storedKey') {
+  if (agentServesKey && source.kind === 'storedKey' && route.kind === 'compose') {
     // Deliberately nothing: the agent answers, and writing the key out would defeat the
     // feature exactly where a person can see it working.
+    //
+    // `route.kind === 'compose'` is what keeps that true rather than merely hopeful. The agent this
+    // trusts is reached through the extension host's own environment, which a WSL shell does not
+    // share — so on the Windows-client route the same `-i`-less line would authenticate with
+    // whatever the WINDOWS agent happened to hold, and the whole point of naming this entity's key
+    // would be gone. That route materialises instead, below.
     return openSshTerminal({ ...entity, sshKeyPath: undefined }, options, platform) !== undefined;
+  }
+  if (route.kind === 'windowsClient') {
+    const caveat = windowsClientCaveat(entity);
+    if (caveat.length > 0) {
+      void vscode.window.showWarningMessage(caveat);
+    }
   }
   if (source.kind === 'storedKey') {
     try {
@@ -287,18 +322,7 @@ async function refuseAndOfferTheFix(
    */
   retry: (() => Promise<boolean>) | undefined,
 ): Promise<boolean> {
-  const side = remote.side;
-  const refusal = refusalFor(reasons, {
-    distro: side.kind === 'wsl' ? side.distro : '',
-    remoteName: side.kind === 'other' ? side.remoteName : 'wsl',
-    hostPlatform: process.platform,
-  });
-  const chosen = await vscode.window.showWarningMessage(
-    refusal.message,
-    { modal: true },
-    ...refusal.buttons.map((button) => button.label),
-  );
-  const action = refusal.buttons.find((button) => button.label === chosen)?.action;
+  const action = await askAndPick(refusalFor(reasons, refusalContext(remote.side)));
   if (action === undefined) {
     return false;
   }
@@ -306,13 +330,42 @@ async function refuseAndOfferTheFix(
     await copyTheWindowsCommand(entity);
     return false;
   }
-  // ONE retry, never a loop: the remedy either made the connection possible or it did not, and a
-  // second refusal is information rather than a failure to report. The retry itself passes
-  // `undefined`, which is what spends the budget.
+  return runRemedyAndRetry(action, remote, retry);
+}
+
+/** Show the modal and turn the label the person pressed back into the action it stands for. */
+async function askAndPick(refusal: RemoteRefusal): Promise<RefusalAction | undefined> {
+  const chosen = await vscode.window.showWarningMessage(
+    refusal.message,
+    { modal: true },
+    ...refusal.buttons.map((button) => button.label),
+  );
+  return refusal.buttons.find((button) => button.label === chosen)?.action;
+}
+
+/**
+ * ONE retry, never a loop: the remedy either made the connection possible or it did not, and a
+ * second refusal is information rather than a failure to report. The retry itself passes
+ * `undefined` for its own retry, which is what spends the budget.
+ */
+async function runRemedyAndRetry(
+  action: RefusalAction,
+  remote: RemoteWindowDeps,
+  retry: (() => Promise<boolean>) | undefined,
+): Promise<boolean> {
   if ((await remote.runRemedy?.(action)) === true && retry !== undefined) {
     return retry();
   }
   return false;
+}
+
+/** Which two machines the wording names, read off the window once. */
+function refusalContext(side: WindowSide): RefusalContext {
+  return {
+    distro: side.kind === 'wsl' ? side.distro : '',
+    remoteName: side.kind === 'other' ? side.remoteName : 'wsl',
+    hostPlatform: process.platform,
+  };
 }
 
 /**

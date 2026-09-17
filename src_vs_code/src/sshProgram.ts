@@ -49,6 +49,53 @@ export function builtInOpenSsh(tool: OpenSshTool): string {
   return `${WINDOWS_OPENSSH_DIR}/${tool}.exe`;
 }
 
+/**
+ * The same directory as a WSL distribution sees it, under the default automount root.
+ *
+ * <p>A constant rather than a `wslpath` call, and that is a trade worth naming. `wslpath -a` is the
+ * general answer and this repository already asks it (`translateWindowsPath`), but it costs a
+ * `wsl.exe` subprocess on a path that runs on every Connect click, to translate a string that is
+ * fixed on every machine with the default `[automount] root`. Verified on the reporting machine:
+ * `wslpath -u 'C:\Windows\System32\OpenSSH\ssh.exe'` answers exactly this.</p>
+ *
+ * <p>What a non-default automount root gets is a terminal saying the file does not exist, in front
+ * of a person who is looking at it — visible, not silent, which is the property that matters.</p>
+ */
+export const WSL_WINDOWS_OPENSSH_DIR = '/mnt/c/Windows/System32/OpenSSH';
+
+/**
+ * The Windows OpenSSH client as the WSL shell must spell it to launch it, or `''` when this machine
+ * has no such client to lend.
+ *
+ * <p><b>Why a Windows client is worth launching from a Linux shell at all.</b> A vault key lives on
+ * Windows, and the whole defect this answers is that the distribution's own `ssh` cannot use it:
+ * /mnt/c reports 0777, `chmod` there is a no-op, and OpenSSH refuses a key whose permissions it
+ * cannot trust. The Windows client reads the same file under Windows ACLs, where those permissions
+ * are real — so the key stays exactly where it already is, which is also the strongest thing that
+ * can be said about it.</p>
+ *
+ * <p>Checked from the WINDOWS side, because that is the side the extension host runs on and a stat
+ * there costs nothing. The distribution's ability to launch it needs interop, which is on by default
+ * and whose absence, again, lands in a terminal rather than in silence.</p>
+ */
+export function wslWindowsSshClient(
+  platform: NodeJS.Platform = process.platform,
+  exists: (candidate: string) => boolean = fs.existsSync,
+): string {
+  return wslWindowsSshClientOn(platform, exists);
+}
+
+/** Split from its defaults exactly as `sshClientPresent` is, and for the same ceiling. */
+function wslWindowsSshClientOn(
+  platform: NodeJS.Platform,
+  exists: (candidate: string) => boolean,
+): string {
+  if (platform !== 'win32') {
+    return ''; // WSL runs on Windows; no other host has one to lend
+  }
+  return exists(builtInOpenSsh('ssh')) ? `${WSL_WINDOWS_OPENSSH_DIR}/ssh.exe` : '';
+}
+
 /** How the probe sees the PATH: injectable, so the decision is a unit test. */
 export interface PathProbe {
   readonly pathDirs: readonly string[];
