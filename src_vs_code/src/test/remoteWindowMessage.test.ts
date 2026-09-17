@@ -162,8 +162,19 @@ test('each reason maps to the action that actually fixes it', () => {
 const knownLabel = (label: string): boolean =>
   Object.values(BUTTON_LABELS).includes(label) || label === RELAY_ONLY_LABEL;
 
+/**
+ * The window each reason can actually ARISE in.
+ *
+ * <p>not-wsl was being checked against a context whose remoteName is "wsl", which production cannot
+ * produce: refusalContext fills that field from side.remoteName, and this reason exists only for a
+ * side that is NOT WSL. The contradiction was invisible while the button ignored the context, and
+ * became a failure the moment it stopped — the fixture was wrong, not the rule.</p>
+ */
+const contextFor = (reason: RefusalReason): RefusalContext =>
+  reason === 'not-wsl' ? { distro: '', remoteName: 'ssh-remote', hostPlatform: 'win32' } : IN_WSL;
+
 function checkTheButton(reason: RefusalReason, action: string | undefined): void {
-  const buttons = refusalFor([reason], IN_WSL).buttons;
+  const buttons = refusalFor([reason], contextFor(reason)).buttons;
 
   assert.equal(buttons.length, action === undefined ? 0 : 1, `${reason} offered ${buttons.length} buttons`);
   if (action === undefined) {
@@ -224,4 +235,31 @@ test('and both together are counted, rather than read as one sentence about the 
   assert.match(note, /Two things behave/);
   assert.match(note, /binds on WINDOWS/);
   assert.match(note, /WINDOWS agent/);
+});
+
+// --- a button is offered only where it can deliver -------------------------------------------
+//
+// Raised by a review. The SENTENCE for not-wsl already says the right thing per remote kind — the
+// Remote Bridge for an ssh-remote host, and for everything else connect from a window on this
+// computer. The BUTTON did not: ACTIONS maps not-wsl to openRemoteBridge unconditionally, so a dev
+// container offered a bridge beside a sentence that had just said the bridge is not the answer.
+// That is the same defect two earlier rounds caught here twice.
+
+test('an ssh-remote host is offered the bridge, because there the bridge is the answer', () => {
+  const ssh: RefusalContext = { distro: '', remoteName: 'ssh-remote', hostPlatform: 'win32' };
+  const refusal = refusalFor(['not-wsl'], ssh);
+
+  assert.equal(refusal.buttons.length, 1);
+  assert.equal(refusal.buttons[0].action, 'openRemoteBridge');
+  assert.match(refusal.message, /Remote Bridge/);
+});
+
+test('a container or a Codespace gets NO button, because nothing here reaches one', () => {
+  for (const remoteName of ['dev-container', 'attached-container', 'codespaces']) {
+    const context: RefusalContext = { distro: '', remoteName, hostPlatform: 'win32' };
+    const refusal = refusalFor(['not-wsl'], context);
+
+    assert.deepEqual(refusal.buttons, [], remoteName + ' was offered a fix it cannot run');
+    assert.match(refusal.message, /window running on this computer/, remoteName);
+  }
 });

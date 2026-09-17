@@ -1,5 +1,4 @@
 import * as childProcess from 'node:child_process';
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { killChild } from './childKill';
 import { withTimeout } from './withTimeout';
@@ -28,23 +27,17 @@ import { wslPathArgv } from './wslMcpInstall';
  * by SonarCloud (`typescript:S4036`) on the one new call site, and fixed at all four, because leaving
  * three behind would be fixing the instance and not the class.</p>
  *
- * <p>Falls back to the bare name when the absolute one is not there — the difference between a
- * machine without WSL answering "it said nothing", which every caller here is built for, and a spawn
- * that throws. `SystemRoot` is read rather than hard-coded, and `windir` after it, because a Windows
+ * <p><b>ALWAYS absolute, with no fallback to the bare name</b> — a review caught the first version
+ * returning `'wsl.exe'` when the absolute file was missing, which hands the search back to
+ * `CreateProcess` in precisely the case the guard exists for. There is nothing to fall back TO: a
+ * machine with no `wsl.exe` in System32 has no WSL, and pointing `spawn` at a path that is not there
+ * produces an `error` event, which every caller in this module already answers with "it said
+ * nothing". `SystemRoot` is read rather than hard-coded, and `windir` after it, because a Windows
  * that is not on C: is unusual and not impossible.</p>
  */
-export function wslBinary(
-  env: NodeJS.ProcessEnv = process.env,
-  exists: (candidate: string) => boolean = fs.existsSync,
-): string {
-  return wslBinaryIn(env, exists);
-}
-
-/** Split from its defaults exactly as `wslWindowsSshClient` is, and for the same ceiling. */
-function wslBinaryIn(env: NodeJS.ProcessEnv, exists: (candidate: string) => boolean): string {
+export function wslBinary(env: NodeJS.ProcessEnv = process.env): string {
   const root = env.SystemRoot ?? env.windir ?? 'C:\\Windows';
-  const absolute = path.win32.join(root, 'System32', 'wsl.exe');
-  return exists(absolute) ? absolute : 'wsl.exe';
+  return path.win32.join(root, 'System32', 'wsl.exe');
 }
 
 /** Text out of a WSL child, with whatever it wrote to stdin first. Empty when it could not run. */

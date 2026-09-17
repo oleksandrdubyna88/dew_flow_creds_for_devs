@@ -46,6 +46,8 @@ export interface World {
   /** The button labels each warning offered, in order. */
   offered: string[][];
   errors: string[];
+  /** Every path handed to the distribution for translation, in order. */
+  translated: { distro: string; windowsPath: string }[];
   /** Fires the onDidCloseTerminal listeners with a terminal. */
   closeTerminal(t: unknown): void;
   /** What `openSshTerminal` returned — the terminal the wipe is registered against. */
@@ -78,6 +80,7 @@ export function world(parts: Parts): World {
     warnings: [],
     offered: [],
     errors: [],
+    translated: [],
     closeTerminal: (t: unknown): void => closeListeners.forEach((l) => l(t)),
   };
   if (parts.existingNamed !== undefined) {
@@ -153,8 +156,13 @@ export function world(parts: Parts): World {
       },
       './wslProcess': {
         // Never a real `wsl.exe` in a unit test. '' is the module's own "it would not say".
-        translateWindowsPath: (_distro: string, windowsPath: string): Promise<string> =>
-          Promise.resolve(parts.translated ?? `/mnt/c${windowsPath}`),
+        translateWindowsPath: (distro: string, windowsPath: string): Promise<string> => {
+          // RECORDED, because what is handed to the distribution is half the contract: a review found
+          // a translation test whose Windows path had lost its separators to `\k` and `\s` before it
+          // ever reached here, so it asserted a round trip of a string no Windows machine produces.
+          w.translated.push({ distro, windowsPath });
+          return Promise.resolve(parts.translated ?? `/mnt/c${windowsPath}`);
+        },
       },
       './terminalManager': {
         openSshTerminal: (

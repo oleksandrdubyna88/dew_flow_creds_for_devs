@@ -151,9 +151,15 @@ test('a terminal told its shell is linux gets POSIX quoting and the bare ssh wor
 test('the same entity on a win32 host still composes for Windows — local is unchanged', () => {
   const w = world();
 
-  w.mod.openSshTerminal(entity({ sshKeyPath: 'c:\keys\k.key' }), {}, 'win32');
+  // The backslashes are DOUBLED on purpose, in the literal and in the pattern. Written singly, `\k`
+  // is an identity escape in both — the test ran against `c:keysk.key` and would have kept passing
+  // through a regression that ate every separator out of a Windows path, which is the one thing it
+  // is here to catch. Found by a review.
+  w.mod.openSshTerminal(entity({ sshKeyPath: 'c:\\keys\\k.key' }), {}, 'win32');
 
-  assert.match(w.created[0].sent[0], /-i "c:\keys\k\.key"/);
+  const line = w.created[0].sent[0];
+  assert.match(line, /-i "c:\\keys\\k\.key"/);
+  assert.equal(line.includes('c:\\keys\\k.key'), true, 'the separators survived, as bytes');
 });
 
 test('a prefix is sent as an env WORD in front of the line, so fish and pwsh can run it', () => {

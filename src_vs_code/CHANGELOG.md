@@ -51,6 +51,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Remote-SSH, dev containers, Codespaces.** The Windows client is reachable from WSL because WSL
   runs on this machine. There is no interop to borrow across a network.
 
+### Fixed after review
+
+- **An unnameable distribution now CONNECTS through the Windows client instead of refusing.** The
+  route was chosen correctly and then killed one step later: `terminalPlatform` answered `undefined`
+  whenever the distribution could not be named, so `connectEntity` refused — as *not-wsl*, inside a
+  WSL window. The route's own test passed throughout, because it proved the route was chosen and not
+  that a terminal opened. Two different questions were being answered with one value; which shell
+  parses the line is `bash` for every WSL window, and which distribution to ASK is what blocks
+  translation and nothing else.
+- **The Remote Bridge button is offered only where the bridge is the answer.** The sentence for a
+  dev container, an attached container or a Codespace has always said "connect from a window running
+  on this computer"; the button beside it offered the bridge anyway. Third time this exact defect —
+  a button promising a fix it cannot deliver — has been caught in this file.
+- **`wsl.exe` is launched by its full path** (`%SystemRoot%\System32\wsl.exe`), at all four call
+  sites. `CreateProcess` searches the current directory before `PATH`, so a `wsl.exe` left in the
+  extension host's working directory was the program that ran, with our arguments — CWE-426, the
+  same defect this repository already fixed for `ssh.exe`, and with no fallback to the bare name
+  because falling back is handing the search straight back.
+
+### Known gaps, stated rather than discovered
+
+- **A non-default `[automount] root`** makes the `/mnt/c/…` client path wrong. The route is chosen
+  from a check on the Windows side and the path is a constant, so that machine gets a command that
+  cannot run — visibly, in the terminal, not silently. Asking `wslpath` would close it at the cost
+  of a `wsl.exe` on every click.
+- **An adopted relay is believed until the window reloads.** When a second window finds the socket
+  already served, it adopts it rather than reporting a working relay broken — but nothing tells it
+  if that external relay later exits, so `serving()` keeps reporting a socket that is gone and
+  Connect can point `SSH_AUTH_SOCK` at nothing. Closing it means verifying the socket at the moment
+  of use.
+
 ## [1.9.5] — 2026-09-17 — a domain login reaches the host it was typed for
 
 ### Fixed
