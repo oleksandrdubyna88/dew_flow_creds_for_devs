@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { spawnSync } from 'node:child_process';
+import * as path from 'node:path';
 import { REMEMBER_TIMEOUT_MS, answeredHere, recordConsent } from '../brokerConsentMemory';
 
 /**
@@ -111,6 +113,44 @@ test('a write that never ANSWERS does not hold the call either', async () => {
   assert.equal(notes[0].outcome, 'not remembered');
   assert.match(notes[0].detail, /did not answer/);
 });
+
+test('the bound still answers when NOTHING else is keeping the process alive', () => {
+  // The test above passes for the wrong reason when the suite around it happens to hold the event
+  // loop. It did: with an unrefd timer, `recordConsent` never resolved at all on CI, and node's
+  // runner cancelled that test and the two after it — *Promise resolution is still pending but the
+  // event loop has already resolved*, with no failure to point at. A bound that only fires while
+  // something else is running is not a bound, and under the broker a listening socket hides it
+  // forever.
+  //
+  // So this runs the real function in a process that holds nothing open, which is the condition
+  // the guarantee is about. A spawn in a unit test is worth it here: it is the only way to observe
+  // an empty event loop, and it costs a few hundred milliseconds.
+  const child = spawnSync(process.execPath, ['-e', PROBE], { encoding: 'utf8', timeout: 20_000 });
+
+  assert.equal(child.status, 0, child.stderr);
+  assert.match(
+    child.stdout,
+    /BOUND ANSWERED/,
+    'recordConsent never returned in an otherwise idle process — the timer does not hold the loop',
+  );
+});
+
+/**
+ * `recordConsent` with a write that never answers, and nothing else alive.
+ *
+ * <p>Built from `__dirname` so it reads the same compiled module this file imports, rather than a
+ * second copy of the path that could drift.</p>
+ */
+const PROBE = `
+  const { recordConsent } = require(${JSON.stringify(path.join(__dirname, '..', 'brokerConsentMemory'))});
+  recordConsent({
+    remember: () => new Promise(() => undefined),
+    accountId: 'a1', entityId: 'e1', entityName: 'prod', via: 'mcp', asked: true,
+    rungs: ${JSON.stringify(RUNGS)},
+    note: () => undefined,
+    timeoutMs: 5,
+  }).then(() => console.log('BOUND ANSWERED'));
+`;
 
 test('two seconds is the stated bound', () => {
   // Far more than a Memento write needs, far less than an agent will wait.
