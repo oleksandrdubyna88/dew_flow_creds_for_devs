@@ -90,7 +90,7 @@ jobs:
             echo "RSD_PUBLIC_URL not set — skipping the external probe."
             exit 0
           fi
-          for i in $(seq 1 10); do
+          for _ in $(seq 1 10); do
             code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 8 "$URL/api/health" || true)
             [ "$code" = "200" ] && { echo "healthy from the internet"; exit 0; }
             sleep 5
