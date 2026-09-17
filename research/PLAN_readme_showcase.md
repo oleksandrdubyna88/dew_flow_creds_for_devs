@@ -161,6 +161,9 @@ all of it.
 - [x] Payment instruments, one-time codes, seed phrases
 - [x] An MCP broker for Claude Code — execute, never read
 - [x] Ten permission switches, all off by default, and a consent prompt every time
+      *(the bullet as this plan shipped it. Superseded 2026-09-17 by issue #95 — the README now
+      says "a prompt as often as you say"; `readmeClaims.test.ts` bans the old sentence. Left
+      standing because this is the record of what was built, not a live specification.)*
 - [x] A single-binary CLI, 6.8 MB, no runtime
 - [x] Optional self-hosted team sync the server cannot decrypt
 
