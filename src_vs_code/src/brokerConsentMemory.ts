@@ -71,7 +71,14 @@ export async function recordConsent(record: ConsentRecord): Promise<void> {
     return;
   }
   const bound = record.timeoutMs ?? REMEMBER_TIMEOUT_MS;
-  const outcome = await withTimeout(attempt(record, record.rungs), bound, { unref: true });
+  // NOT unrefd, and `withTimeout`'s own docblock is why: an unrefd timer does not hold the loop, so
+  // a caller awaiting it with nothing else running gets no answer at all rather than a late
+  // `undefined`. That is invisible under the broker, where a listening socket always holds the
+  // process — and it ended a CI run here, cancelling this module's never-answers test and the two
+  // after it with `Promise resolution is still pending but the event loop has already resolved`.
+  // The bound IS the guarantee this function exists for; a timer that may never fire is not one.
+  // At most two seconds of held loop, only while a write is actually outstanding.
+  const outcome = await withTimeout(attempt(record, record.rungs), bound);
   reportUnlessWritten(record, outcome, bound);
 }
 
