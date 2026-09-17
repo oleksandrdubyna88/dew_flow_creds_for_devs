@@ -1067,6 +1067,11 @@
         "category": "CredsForDevs"
       },
       {
+        "command": "credSshManager.forgetAgentConsents",
+        "title": "Forget Agent Consents on This Machine",
+        "category": "CredsForDevs"
+      },
+      {
         "command": "credSshManager.installRemoteCli",
         "title": "Install `creds` on the Host…",
         "category": "CredsForDevs"

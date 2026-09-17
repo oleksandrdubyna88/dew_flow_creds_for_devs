@@ -650,6 +650,20 @@ four, and the footer's promise is that what it lists is LIVE.
 | the standing-consent row offers no manage link, while the doors that ARE elsewhere keep theirs | **page** | `editNode` from inside the entity form re-opens it and discards unsaved edits; `command` is optional on `AgentDoorRow` now, and an empty `data-command` is asserted absent too |
 | the window COMPUTES the door rather than the tests supplying it | **scan** | every other row here hands `standingConsent` in, so deleting the computation from `extension.ts` would leave them all green. Watched red by replacing it with `false` |
 
+**The way out (S4.1)** — `test/forgetAgentConsents.test.ts`. The handler is CAPTURED from a
+`commands.registerCommand` stub rather than imported, so what runs is what the extension registered:
+a title in the help and a handler under another id is a palette entry that throws when pressed.
+
+| flow | covered | note |
+|---|---|---|
+| the registered command empties the real `credSshManager.mcpConsentStamps` key | **command** | with a stamp written first, so the clear is not passing against an empty store |
+| after forgetting, a call inside the OLD twelve-hour window asks again | **command** | the emptiness is not the guarantee — this is, asked through `consentDue` the way the door asks it |
+| forgetting writes the two machine-local keys and nothing else | **command** | the map and the tombstone; a third key would be a record this feature never said it kept |
+| dismissing the confirmation forgets nothing | **command** | it is not recoverable. This test caught a real trap in ITSELF first: a helper parameter defaulted to the confirm answer and called with an explicit `undefined` takes the DEFAULT, so the dismiss case was silently testing the confirm case |
+| the person is told only after both writes land, and the truth when one fails | **command** | `forgetAll` is awaited; a message shown while a tombstone is in flight says the windows are gone when they are not |
+| the command the manifest contributes is the command that is registered | **command** | the two halves of a palette entry, pinned together |
+| each of the five languages names the command, drops the obsolete *every action raises the modal*, and says never-ask leaves the journal | **help ×5** | `helpCoverage.test.ts` checks the ENGLISH corpus only, and a STALE translation is invisible to a coverage test that can only spot a missing one. Watched red by reinstating the Russian sentence |
+
 **The ceiling (S2.3)** — the quiet path's own limiter, since the prompt was the old one. The unit half
 is `test/aliasThrottle.test.ts` with the clock injected, so sixty calls cost under a millisecond; the
 broker half drives the ceiling for real over loopback, and the two sixty-call tests cost 863 ms and

@@ -193,11 +193,18 @@ including ones created there later.
 
 Two things hold at every level. **A secret is never handed over**: the window holds the value, uses
 it, and answers with the result — there is no field in the protocol one could travel in. And **the
-switch is not consent**: every single call still asks you, in your editor, showing the real entry,
+switch is not consent**: a call asks you, in your editor, showing the real entry,
 the real command — and **who is asking**: the agent and its version, which of its sessions, and the
 folder it works in (*Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in ClaudeRag wants
 to…*), as the caller reports them. That name is a label, and the dialog says so in its own sentence;
 a caller that reports nothing is *An agent*, never a product by default.
+
+**How often it asks is yours to set**, on the entry or on a folder it inherits from: ask every time
+(the default), ask once every 12 hours, or never ask. It covers USING an entry only — creating and
+deleting always ask, whatever it says — and never-ask makes the switches the whole gate, which the
+form says in those words beside the option. The twelve-hour window is remembered on this machine
+alone and is never synced or shared; **Forget Agent Consents on This Machine** takes every such
+window back at once. Every call is recorded either way, in **⋯ → MCP logs**.
 
 **Where that guarantee ends, stated rather than glossed.** The structural half — no response field
 can carry a secret — holds absolutely. The second half is different: if an approved command *prints*

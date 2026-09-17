@@ -955,7 +955,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   registerViewCommands({ announceArrival, clicks, doorsAt, log, moveFolder, provider, register, scanText, sharing, storage, treeView, vaultKeys });
 
-  registerAgentCommands({ MACHINES, agentServer, aliasMap, bridges, log, mutated, offerInstall, provider, register, setAliasMap, sshAgent, storage, storageDir, vaultKeys });
+  registerAgentCommands({ MACHINES, agentServer, aliasMap, bridges, log, mutated, offerInstall, provider, register, setAliasMap, sshAgent, state: context.globalState, storage, storageDir, vaultKeys });
   registerWslRelayCommands({ register, relaySettings, sshAgent, windowsCredsForWsl, wslRelay });
 
   // ---------- sharing ----------

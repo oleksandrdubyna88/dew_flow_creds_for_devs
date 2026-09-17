@@ -4104,7 +4104,16 @@ pruned expired-first and then capped at 256, so the worst case is about 30 KB. *
 and that is the design rather than an omission: a second window holding a stale map would both
 suppress prompts with a stamp that had been forgotten and, on its next write, restore that stamp
 over the emptied store — silent use after an explicit revocation, which is a different thing from
-being asked once too often, and the reason the Forget command means anything. **Forget also leaves a
+being asked once too often, and the reason the Forget command means anything. **That command exists
+since S4.1**: `CredsForDevs: Forget Agent Consents on This Machine`, palette-only because it acts on
+the machine rather than on the entry somebody right-clicked, and a destructive-sounding item on an
+entry's menu would be read as being about that entry. It confirms first — this is not recoverable —
+and it **awaits both writes** before telling anybody anything, because a message shown while a
+tombstone is still in flight says the windows are gone when they are not; a rejected write says so
+instead. It asks `consentStampsFor(context.globalState)` for the store, which is the same instance
+the broker's hooks hold and therefore the same queue: that is what the memo is for. Changing an
+entry's POLICY is the other half and a different thing — it takes effect on the next call, because
+the policy is read fresh, but it does not take back a window already opened. **Forget also leaves a
 mark**, under its own key, and every stamp at or before it is ignored for good: clearing the map
 does not stop a window whose READ happened before the revocation from finishing its write
 afterwards, and that is the one residue a fresh read cannot remove. The mark is written before the
