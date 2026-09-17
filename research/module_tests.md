@@ -749,6 +749,26 @@ guards turned out to be the interesting part, each found by the code round and e
 | a shared token survives sustained SILENT mcp use | **unit** | `grantRegistry.test.ts`. The cap's existing test overflows with PENDING grants, which is what eviction prefers, so it passed while the real path — allowed grants at sixty a minute — evicted the oldest allowed TOKEN in about four minutes. Watched red, `undefined !== 'allowed'`; two companions beside it require that the window still bounds itself (the oldest CALL grant is what went) and that the scope defaults to the protected kind. Teeth re-proved by flipping the tiers |
 | the contract is regenerated from a FRESH binary | **script guard** | `emit-mcp-tools.mjs` refuses a `creds-mcp` older than its newest `.cs`. The solution file used not to list `src_mcp` at all, so a `Program.cs` edit plus `dotnet build …slnx` reported success and regenerated the contract from the previous binary — observed exactly that way, mid-story. The solution carries both MCP projects now, which is the repair; this guard stays because it holds whatever anybody built. Watched red by `touch`ing `Program.cs`: *built 0.0h BEFORE Program.cs*. The check is the harness's own, moved to `scripts/mcpBinary.cjs` so both drivers share one copy |
 | `--check` answers about the CONTRACT, not the platform | **script guard** | with `core.autocrlf=true` every checkout rewrites the generated file as CRLF while the generator writes LF, so a byte comparison reported *the MCP surface has changed* after a rebase that changed nothing. Observed on this branch. Both sides are normalised now, and `.gitattributes` pins the two `contract/*.json` files to LF |
+## Connecting from a remote window (2026-09-17)
+
+Four pure modules and one wiring, and the split between them is what makes the WSL case testable at
+all on a Linux CI runner that has no `wsl.exe`.
+
+| what | where | what it proves |
+|---|---|---|
+| which machine the terminal is on | `remoteWindow.test.ts` (16) | the four-rung distribution ladder, and that a relay serving `Ubuntu` is found from a `wsl+ubuntu` authority — the exact-key `Map.get` trap, measured |
+| what a click may do | `remoteRoute.test.ts` (16) | a loop over **every** (side × credential × agent × readiness) combination lands on exactly one route, no refusal is empty, no reason repeats; plus the named cases, as whole values |
+| what it says | `remoteWindowMessage.test.ts` (12) | one assertion per reason that its sentence exists and leaks no `undefined`; that the heading names both machines; that the button follows the FIRST reason and drops its "and Connect" promise when fixing the relay is not the whole fix |
+| asking the distribution | `wslProcess.test.ts` (10) | an answer, a non-zero exit, empty output, junk output, and a HUNG child that is bounded and observed killed — through an injected spawner, which is the only reason the hang case runs on CI |
+| the connect path itself | `sshConnect.test.ts` (+11) | the report, both halves: nothing written and no terminal for a WSL window; the `env SSH_AUTH_SOCK=…` line with no `-i` when the relay serves it; a refused translation deleting the `known_hosts` file it had already written |
+| the article | `remoteWindowHelp.test.ts` (5) | all five translations are real (`fallback === false`), quote the error people arrive with, carry the 0777 measurement, and name the command by its exported label |
+
+**What none of this proves, and the DoD says so out loud.** No unit test opens a real WSL shell.
+`scripts/wsl-agent-relay-itest.cjs` is the only thing that drives the real relay with the real
+OpenSSH tools, and it prints its reason and passes when WSL is absent — which is every CI run, since
+CI is Linux. **A green CI run is therefore not evidence for the relay route.** The plan's DoD
+requires that script to have been RUN on a machine with WSL and its output quoted; until that has
+happened the route is proven against stubs only.
 
 ## What none of them covers
 
