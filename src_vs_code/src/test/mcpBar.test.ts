@@ -59,7 +59,7 @@ test('every stripe the form draws is one the page script can reach', () => {
   // The defect this file was written for: the script walks five, the markup drew six, and the
   // last one was frozen at its opening value. Counting both is the only assertion that fails.
   const drawn = segments(renderHtml(options())).length;
-  const painted = mcpSwitchScript(false).match(/chk\('mcp/g);
+  const painted = mcpSwitchScript(undefined).match(/chk\('mcp/g);
   assert.ok(painted !== null);
   // Five entries in the paint array; the sixth switch shares the fifth stripe by design.
   assert.equal(drawn, MCP_BAR_COLORS.length);

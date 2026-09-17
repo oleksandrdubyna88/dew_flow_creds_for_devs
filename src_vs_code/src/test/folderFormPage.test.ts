@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { FolderFormOptions, renderFolderHtml } from '../folderFormPage';
-import { MCP_SWITCHES } from '../mcpSwitches';
+import { MCP_ASK_CHOICES, MCP_ASK_HINT, MCP_SWITCHES } from '../mcpSwitches';
 import { PAGE_MAX_WIDTH_PX } from '../webviewHtml';
 import { zoomApplyScript, zoomButtonsScript, zoomStyle } from '../zoomControl';
 import { accessMask, normalizeMcpAccess, readMcpAccess, resolveMcpInTree } from '../mcpAccess';
@@ -32,10 +32,25 @@ function options(overrides: Partial<FolderFormOptions> = {}): FolderFormOptions 
   return { name: 'Databases', entryCount: 3, inTrash: false, uiScale: 0, ...overrides };
 }
 
+/**
+ * Which SWITCHES are ticked.
+ *
+ * <p>Drawn from `MCP_SWITCHES` rather than from a pattern over every `mcp*` id, since the cadence
+ * group (#95) also renders inputs whose ids start that way — and one of them is ALWAYS checked,
+ * which is the point of a radio group. A pattern would have quietly folded that into every
+ * "nothing is ticked" assertion in this file.</p>
+ */
 function checkedIds(html: string): string[] {
-  return [...html.matchAll(/<input id="(mcp[A-Za-z]+)"[^>]*>/g)]
-    .filter((m) => m[0].includes(' checked'))
-    .map((m) => m[1]);
+  return MCP_SWITCHES.map((one) => one.id).filter((id) =>
+    new RegExp(`<input id="${id}"[\\s\\S]*?>`).exec(html)?.[0].includes(' checked') === true,
+  );
+}
+
+/** Which cadence is checked — exactly one, whenever the group is on the page at all. */
+function checkedAsk(html: string): string[] {
+  return MCP_ASK_CHOICES.map((one) => one.id).filter((id) =>
+    new RegExp(`<input id="${id}"[\\s\\S]*?>`).exec(html)?.[0].includes(' checked') === true,
+  );
 }
 
 test('a folder with no setting opens with nothing ticked and says so', () => {
@@ -45,18 +60,24 @@ test('a folder with no setting opens with nothing ticked and says so', () => {
 });
 
 test('an untouched form on an undecided folder saves nothing — absent stays absent', () => {
-  // The page script is what decides this; the assertion is on the flag it is generated with,
-  // because a false here is the difference between "follows nobody" and "opted out".
+  // The page script is what decides this; the assertion is on the flags it is generated with,
+  // because a false here is the difference between "follows nobody" and "opted out". BOTH are
+  // pinned since #95 — a condition half-checked is one that can change in the half nobody looks
+  // at. What they DO is executed next door, in `mcpSwitchScript.test.ts`.
   const html = renderFolderHtml(options());
-  assert.match(html, /if \(!mcpTouched && !false\)/);
+  assert.match(html, /var ladder = mcpLadderTouched \|\| false;/);
+  assert.match(html, /var policy = mcpPolicyTouched \|\| false;/);
   // And the read side agrees: no object means no setting. Both forms post the same message and
   // share this reader, so this is the folder form's read path too.
   assert.equal(readMcpAccess(undefined), undefined);
 });
 
 test('a folder that has decided keeps its decision through a Save that changes nothing', () => {
+  // `{}` answers the LADDER — "decided here, and the answer is nothing" — and answers the cadence
+  // not at all, which is what per-axis means: one object, two questions, two answers.
   const html = renderFolderHtml(options({ mcp: {} }));
-  assert.match(html, /if \(!mcpTouched && !true\)/);
+  assert.match(html, /var ladder = mcpLadderTouched \|\| true;/);
+  assert.match(html, /var policy = mcpPolicyTouched \|\| false;/);
   assert.deepEqual(checkedIds(html), []);
   assert.match(html, /Applies to each of the 3 entries/);
 });
@@ -188,4 +209,38 @@ test('the folder form is headed like the entity form, with its kind beside the n
   for (const id of ['save', 'cancel', 'error']) {
     assert.ok(html.includes(`id="${id}"`), `the folder form's header lost id="${id}"`);
   }
+});
+
+test('the cadence group is rendered under the switches, with its hint (#95)', () => {
+  // Under them, because the question it answers is about the permissions above it: how often to
+  // confirm before the "usable by agents" switch is acted on.
+  const html = renderFolderHtml(options());
+
+  const lastSwitch = html.indexOf(`id="${MCP_SWITCHES[MCP_SWITCHES.length - 1].id}"`);
+  const firstRadio = html.indexOf('id="mcpAskInherit"');
+  assert.ok(lastSwitch > 0 && firstRadio > lastSwitch, 'the group is not below the switches');
+  assert.ok(html.includes(MCP_ASK_HINT), 'the group hint is missing, so nothing says creating and deleting always ask');
+  for (const choice of MCP_ASK_CHOICES) {
+    assert.ok(html.includes(`id="${choice.id}"`), `${choice.id} is not on the page`);
+  }
+});
+
+test('the local cadence is the one checked, and an inherited one names its folder', () => {
+  const own = renderFolderHtml(options({ mcp: { use: true, ask: 'every12h' } }));
+  assert.deepEqual(checkedAsk(own), ['mcpAskEvery12h']);
+
+  const below = renderFolderHtml(options({ inheritedAsk: { ask: 'never', from: 'Projects' } }));
+  assert.deepEqual(checkedAsk(below), ['mcpAskInherit']);
+  assert.match(below, /Projects&quot; says: never ask|Projects" says: never ask/);
+});
+
+test('the Trash has no cadence group either — it would be a control that decides nothing', () => {
+  // Same rule as the switches: nothing in the Trash is reachable, so a cadence for it is a
+  // question with no answer. And the page's collectMcp still returns undefined there.
+  const html = renderFolderHtml(options({ inTrash: true }));
+
+  for (const choice of MCP_ASK_CHOICES) {
+    assert.ok(!html.includes(`id="${choice.id}"`), `${choice.id} is offered inside the Trash`);
+  }
+  assert.ok(!html.includes(MCP_ASK_HINT));
 });

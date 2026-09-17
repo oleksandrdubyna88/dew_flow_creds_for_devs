@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { configStub, loadWithVscode, settingsVscode } from './vscodeStub';
+import { runFragment } from './miniDom';
+import { HOST_CHK, chooseAsk, mcpPage } from './mcpFormFixture';
+import { mcpSwitchScript } from '../mcpSwitchScript';
+import type { McpAccess } from '../mcpAccess';
 import { scalePx, zoomStyle } from '../zoomControl';
 
 /**
@@ -151,4 +155,46 @@ test('a malformed press never resets the size to the base', async () => {
 
   assert.deepEqual(config.updates, [], 'a delta that is not a finite number wrote the setting');
   assert.equal(config.values.uiScale, 4, 'the size somebody set was lost');
+});
+
+/**
+ * The round trip (#95, S3.1): what the page posts, read back the way the panel reads it.
+ *
+ * <p>The page script's own tests assert what it POSTS; these assert what that becomes after
+ * `readValues` — which is the shape written to the vault, and the only place the §2 regression is
+ * visible. A folder handed an all-off ladder because somebody chose a cadence is a folder whose
+ * children have stopped inheriting rights from above, and nothing on screen would say so.</p>
+ */
+function saved(mcp: McpAccess | undefined, pick: string): unknown {
+  const document = mcpPage(mcp);
+  const lifted = runFragment(`${HOST_CHK}\n${mcpSwitchScript(mcp)}`, document, ['collectMcp']);
+  chooseAsk(document, pick);
+  // The wire is JSON, and JSON is where an `undefined` would vanish — so the round trip goes
+  // through it rather than handing the object over in-process.
+  const { readValues } = loadWithVscode<Panel>('../folderFormPanel', { window: {} });
+  return readValues(JSON.parse(JSON.stringify({ name: 'Databases', mcp: lifted.collectMcp() }))).mcp;
+}
+
+test('a save that only chose a cadence leaves the ladder ABSENT, so children still inherit from above', () => {
+  // The regression the whole per-axis model exists for, observed at the point of storage.
+  const stored = saved(undefined, 'never');
+
+  assert.deepEqual(stored, { ask: 'never' });
+  assert.equal((stored as { view?: unknown }).view, undefined, 'an all-off ladder was written');
+});
+
+test('choosing Inherit on a folder that had a cadence clears it back to nothing at all', () => {
+  // `ask: null` is what survives the wire; the reader turns it into no record, which is what
+  // "inherit" means. A folder left holding `{ }` would be one that has decided nothing HERE —
+  // a different state, and the wrong one.
+  const stored = saved({ ask: 'never' }, 'inherit');
+
+  assert.equal(stored, undefined);
+});
+
+test('a folder with a ladder keeps it when its cadence is taken back', () => {
+  const stored = saved({ view: true, use: true, ask: 'never' }, 'inherit');
+
+  assert.equal((stored as { view?: unknown } | undefined)?.view, true, 'the ladder went with the cadence');
+  assert.equal((stored as { ask?: unknown } | undefined)?.ask, undefined, 'and the cadence stayed');
 });

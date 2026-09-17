@@ -596,6 +596,29 @@ window rather than only in a test. Five behavioural rows through the factory, an
 | the scan still finds the line it is about | **scan** | a prohibition that matches nothing passes forever, so the sanctioned instance gets its own test |
 | the window wires BOTH hooks into the live broker, from the one factory | **scan** | there is no VS Code to activate here, and the defect is a call site: a broker left on the store-less resolver keeps every unit test green. Both branches watched red — the old line restored, and a later `resolveMcpUse:` key shadowing the spread, which is the same trap `brokerWorld` sprang earlier in this feature. Failures name `extension.ts:<line>` |
 
+**The control (S3.1)** — `test/mcpAskChoices.test.ts` for the words and the markup,
+`test/mcpSwitchScript.test.ts` for the page script RUN under `miniDom`, and the round trip in
+`test/folderFormPanel.test.ts`. The fixture both script tests build on is `test/mcpFormFixture.ts`:
+one builder, because two copies of a fixture that must mirror one piece of markup are two copies
+that drift, and its controls and their state come from the same lists and the same predicate the
+real markup uses.
+
+| flow | covered | note |
+|---|---|---|
+| four choices, each with a why, and never-ask says the switches become the whole gate | **unit** | the one control that can remove a confirmation; the sentence beside it is part of it |
+| exactly one radio is checked, and it is the local answer | **unit** | over all four values, including absent — Inherit is what absence checks |
+| an inheriting folder names the folder above and its answer; with nothing above, the option does not use the word | **unit** | and is still offered either way: taking back a local answer is what it is for |
+| a folder name in the Inherit label is escaped | **unit** | names arrive by sync and by import, and this extension has shipped one such interpolation before |
+| `MCP_SWITCHES` still has ten entries and five bar colours, and no ask id is among them | **unit** | the separation as a number — `searchPredicates.ts` throws at module load for an id it does not know, so a cadence in that list breaks every search at startup |
+| each choice posts its OWN value, and Inherit posts null | **executed** | table-driven, one row per control: a test asserting only "a policy was posted" passes for a page that serializes `always` whichever radio was picked |
+| touching only a radio posts a policy and NO ladder · touching only a switch posts a ladder and NO policy | **executed** | the §2 regression from both sides. Watched red with the flags merged: *a ladder was written because a cadence was chosen* |
+| a form opened on a decided ladder keeps posting it when only the policy is touched | **executed** | opening a form must not silently narrow what is stored |
+| nothing touched and nothing decided posts `undefined` | **executed** | the oldest guarantee in this script, and the two flags did not cost it |
+| a page with NO radios keeps the policy the record already had, and never marks it touched | **executed** | the entity form until S3.2. Watched red: *a form with no control for it silently cleared the policy* — the sharpest finding of the plan round, and a real defect in the first design |
+| a stored cadence that is not one of the three words cannot close the script tag | **executed** | `jsonForScript`, not `JSON.stringify`, which escapes quotes and leaves `</script>` alone. Found by the repository's own interpolation scan going red |
+| a save that only chose a cadence leaves the ladder ABSENT · Inherit clears a stored cadence · a ladder survives its cadence being taken back | **round trip** | page script → JSON → `readValues`, which is the shape written to the vault and the only place the regression is visible |
+| the group renders under the switches, with its hint; the Trash has neither | **page** | same rule as the switches: in the Trash they would be controls that decide nothing |
+
 **The ceiling (S2.3)** — the quiet path's own limiter, since the prompt was the old one. The unit half
 is `test/aliasThrottle.test.ts` with the clock injected, so sixty calls cost under a millisecond; the
 broker half drives the ceiling for real over loopback, and the two sixty-call tests cost 863 ms and

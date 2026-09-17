@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 import { hasMixedField, mixedEditRefusal } from './mixedFieldGuard';
 import { parsePaymentFields } from './paymentFields';
 import { TreeNode } from './types';
-import { entriesUnder, resolveMcpInTree } from './mcpAccess';
+import { McpAskPolicy, entriesUnder, resolveMcpInTree } from './mcpAccess';
 import { StorageManager } from './storageManager';
 import { parseHostKey } from './hostKeyPin';
 import { parseTotpSecret } from './totp';
@@ -184,6 +184,11 @@ export async function editFolder(
       node.mcp === undefined && resolved.source === 'folder' && resolved.folder !== undefined
         ? { access: resolved.access, from: resolved.folder.name }
         : undefined,
+    // Resolved from the PARENT rather than from this node, so the Inherit option tells the truth
+    // whatever this folder says itself: a folder that answers `always` under a parent that says
+    // `never` would otherwise be told nothing above answers, and picking Inherit would give it the
+    // opposite of what the label promised.
+    inheritedAsk: askFromAbove(node, byId),
     inTrash: isInTrash(node, byId),
   });
   if (result === undefined) {
@@ -194,6 +199,32 @@ export async function editFolder(
     mcp: result.mcp,
   });
   onMutated();
+}
+
+/**
+ * The consent cadence this folder would take if it answered nothing, and who says it (#95).
+ *
+ * <p>Asked of the PARENT, because that is the question: "what would I inherit" is what the
+ * ancestry answers, and it is the same answer whether or not this folder overrides it. Nothing
+ * above answering is `undefined` rather than the default `always` — the two are different things
+ * to a person reading the option, and only one of them names a folder.</p>
+ */
+function askFromAbove(
+  node: TreeNode,
+  byId: (id: string) => TreeNode | undefined,
+): { ask: McpAskPolicy; from: string } | undefined {
+  const parent = node.parentId === null || node.parentId === undefined ? undefined : byId(node.parentId);
+  if (parent === undefined) {
+    return undefined;
+  }
+  const above = resolveMcpInTree(parent, byId);
+  // 'entity' here means the PARENT itself answered — the resolver's word for "this node", whatever
+  // kind of node it was asked about.
+  const from = above.askSource === 'entity' ? parent : above.askFolder;
+  if (above.askSource === 'none' || from === undefined || above.access.ask === undefined) {
+    return undefined;
+  }
+  return { ask: above.access.ask, from: from.name };
 }
 
 export async function collectKeyCandidates(
