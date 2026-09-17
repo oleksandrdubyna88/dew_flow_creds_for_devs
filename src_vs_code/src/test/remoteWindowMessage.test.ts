@@ -124,8 +124,19 @@ test('the relay button promises a connection ONLY when switching it on is the wh
   assert.equal(RELAY_ONLY_LABEL, 'Set Up the WSL Agent Relay');
 });
 
+test('a reason nothing we can run would fix offers NO button', () => {
+  // The relay's socket path comes from `CREDS_RELAY_SOCKET` by way of the CLI; no command here
+  // changes it, so *Set Up the WSL Agent Relay* would restart the relay at the same unusable path.
+  // A button that cannot deliver its promise is the defect this module has already been corrected
+  // for twice — the sentence names the variable instead.
+  const refusal = refusalFor(['relay-socket-unusable'], IN_WSL);
+
+  assert.deepEqual(refusal.buttons, []);
+  assert.match(refusal.message, /CREDS_RELAY_SOCKET/);
+});
+
 test('each reason maps to the action that actually fixes it', () => {
-  const expected: Record<RefusalReason, string> = {
+  const expected: Record<RefusalReason, string | undefined> = {
     'not-wsl': 'openRemoteBridge',
     'distro-ambiguous': 'chooseDistribution',
     'distro-unknown': 'chooseDistribution',
@@ -134,7 +145,9 @@ test('each reason maps to the action that actually fixes it', () => {
     'agent-has-no-key': 'addKeyToAgent',
     'credential-is-a-password': 'copyWindowsCommand',
     'credential-is-a-key-path': 'copyWindowsCommand',
-    'relay-socket-unusable': 'setUpRelay',
+    // `undefined` means NO button, and it is a decision rather than an omission: see the test
+    // above. Written here too so a new reason cannot be added without choosing one way or another.
+    'relay-socket-unusable': undefined,
     'known-hosts-translation-failed': 'retry',
   };
 
@@ -143,7 +156,14 @@ test('each reason maps to the action that actually fixes it', () => {
   for (const reason of ALL_REASONS) {
     const buttons = refusalFor([reason], IN_WSL).buttons;
 
-    assert.equal(buttons.length, 1, `${reason} offered ${buttons.length} buttons`);
+    assert.equal(
+      buttons.length,
+      expected[reason] === undefined ? 0 : 1,
+      `${reason} offered ${buttons.length} buttons`,
+    );
+    if (expected[reason] === undefined) {
+      continue;
+    }
     assert.equal(buttons[0].action, expected[reason], `${reason} offered the wrong action`);
     assert.ok(
       Object.values(BUTTON_LABELS).includes(buttons[0].label) ||

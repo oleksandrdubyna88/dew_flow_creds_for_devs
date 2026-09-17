@@ -757,10 +757,11 @@ all on a Linux CI runner that has no `wsl.exe`.
 | what | where | what it proves |
 |---|---|---|
 | which machine the terminal is on | `remoteWindow.test.ts` (16) | the four-rung distribution ladder, and that a relay serving `Ubuntu` is found from a `wsl+ubuntu` authority — the exact-key `Map.get` trap, measured |
-| what a click may do | `remoteRoute.test.ts` (16) | a loop over **every** (side × credential × agent × readiness) combination lands on exactly one route, no refusal is empty, no reason repeats; plus the named cases, as whole values |
-| what it says | `remoteWindowMessage.test.ts` (12) | one assertion per reason that its sentence exists and leaks no `undefined`; that the heading names both machines; that the button follows the FIRST reason and drops its "and Connect" promise when fixing the relay is not the whole fix |
+| what a click may do | `remoteRoute.test.ts` (15) | a loop over **every** (side × credential × agent × readiness) combination lands on exactly one route, no refusal is empty, no reason repeats; plus the named cases, as whole values |
+| what it says | `remoteWindowMessage.test.ts` (15) | one assertion per reason that its sentence exists and leaks no `undefined`; that the heading names both machines; that the button follows the FIRST reason, drops its "and Connect" promise when fixing the relay is not the whole fix, and is ABSENT for the one reason no command here can fix |
 | asking the distribution | `wslProcess.test.ts` (10) | an answer, a non-zero exit, empty output, junk output, and a HUNG child that is bounded and observed killed — through an injected spawner, which is the only reason the hang case runs on CI |
-| the connect path itself | `sshConnect.test.ts` (+11) | the report, both halves: nothing written and no terminal for a WSL window; the `env SSH_AUTH_SOCK=…` line with no `-i` when the relay serves it; a refused translation deleting the `known_hosts` file it had already written |
+| the connect path itself | `sshConnect.test.ts` (26, of which 13 are new) | the report, both halves: nothing written and no terminal for a WSL window; the `env SSH_AUTH_SOCK=…` line with no `-i` when the relay serves it; a refused translation deleting the `known_hosts` file it wrote — and NOT deleting one outside the directory we write into |
+| both call sites agreeing | `remoteConnectParity.test.ts` (4) | the call sites are FOUND rather than listed; each must use the shared builder, and none may read `remoteName`, the relay setting, the configured distributions or a socket path itself — with every forbidden pattern asserted to MATCH in the builder, so a typo cannot make the guard pass forever |
 | the article | `remoteWindowHelp.test.ts` (5) | all five translations are real (`fallback === false`), quote the error people arrive with, carry the 0777 measurement, and name the command by its exported label |
 
 **What none of this proves, and the DoD says so out loud.** No unit test opens a real WSL shell.

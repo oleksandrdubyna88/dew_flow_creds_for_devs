@@ -1,10 +1,19 @@
 # PLAN — Connect SSH composes for the WRONG machine in a remote window
 
-> Status: **in progress, 2026-09-17 — S1 shipped, S2–S8 open.** Revised the same day after the
-> `coai` plan round (2 of 3 reviewers answered; 12 findings, all accepted — §What the plan round
-> changed) and again after S1's code round (all 12 reviewers answered; §Story log).
-> Scope: `src_vs_code/src/sshConnect.ts`, `terminalManager.ts`, `wslProcess.ts`, three new pure
-> modules, and the five help translations.
+> Status: **in progress, 2026-09-17 — S1–S7 shipped and S8's documentation with them; S8's ONE
+> remaining item is the integration test, which has never been run.** Until it has, the relay route
+> is proven against stubs only and this plan must not be promoted — see §Definition of Done.
+>
+> Four `coai` rounds so far: the plan round (2 of 3 reviewers; 12 findings, all accepted), S1's code
+> round (12 reviewers; 24 findings, 11 accepted), Epic 2/3's plan round (3 reviewers; 17 findings,
+> 6 accepted) and its code round (12 reviewers; 49 findings, 14 accepted). Every round is recorded
+> in §Story log with what it changed and what was declined.
+>
+> Scope, as built: four new modules — `remoteWindow.ts`, `remoteRoute.ts`, `remoteWindowMessage.ts`
+> (all `vscode`-free) and `remoteConnectHost.ts` (the thin `vscode` reader); changes to
+> `sshConnect.ts`, `terminalManager.ts`, `wslProcess.ts`, `wslRelay.ts`, `sshAgentManager.ts`,
+> `sshUseActions.ts`, `commands/agentCommands.ts` and `extension.ts`; and the help article in five
+> languages.
 >
 > Related: [PLAN_wsl_agent_relay.md](../research/PLAN_wsl_agent_relay.md) (the crossing this rides),
 > [PLAN_remote_broker_bridge.md](../research/PLAN_remote_broker_bridge.md) (the parent plan; this is
@@ -311,6 +320,35 @@ the list is ordered rather than a set.
 Every message names **which machine** is which — the open DoD item of
 [PLAN_tails_2.md](PLAN_tails_2.md) §2.3, discharged here for this surface.
 
+## What this deliberately does NOT change, and what it leaves open
+
+Named, because each of these looks from a distance like the same defect, and a reader who cannot
+tell them apart will either "fix" something correct or assume the rest was missed.
+
+**The broker's `ssh exec` is correct as it stands and is untouched.** It does not post a line into a
+terminal — `sshExecAction` SPAWNS `ssh` as a child of the extension host
+(`sshUseActions.ts:95`, `openSshBinary('ssh', wanted, process.platform)`), so it runs on the machine
+the extension runs on, reads the key file that machine holds, and is unaffected by what the window
+is attached to. Composing it for the terminal's platform would be the defect, not the fix.
+
+**The viewer's copyable `ssh` line is still composed for the host** — `entityViewerCommands.ts:131`
+and `:242`, `entityText.ts:95`, all `buildSshCommand(details)` with the platform defaulted. In a WSL
+window that text is a Windows command. It is the same FAMILY as this defect and it is not fixed
+here: that line is a thing to read and paste rather than a thing this extension runs, the entity
+view is reached from several places with no window context threaded, and doing it properly means
+deciding what a *Copy* button in a remote window should even produce — a question worth its own
+change. Recorded here so it is a known gap rather than an oversight.
+
+**`ssh -A` keeps its existing meaning and its existing warning** (DEC-2). On the relay route it
+forwards the relay onward, which `PLAN_wsl_agent_relay.md` §Security already covers.
+
+**The agent route does not constrain `ssh` to the entity's own key.** With `SSH_AUTH_SOCK` set and
+no `IdentitiesOnly`, `ssh` may offer every key the agent holds and then the shell's own
+`~/.ssh/id_*`. That is true of the LOCAL agent route too and has been since the agent shipped — the
+WSL route is deliberately the same command — so narrowing it is a change to the agent feature on
+both routes at once, with its own failure mode (a host that accepts a different loaded key would
+stop connecting). Raised by a code round, rejected as out of scope, and listed as an open question.
+
 ## Boundary with the related plans
 
 Written into each of those documents too, in the same change — a boundary recorded on one side only
@@ -438,7 +476,10 @@ Order: **S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8.** S4 and S5 are le
 - [ ] A pinned host key survives the WSL route, translated by asking `wslpath` with a bound; a
       refusal leaves no `known_hosts` file behind.
 - [ ] The password and key-path branches refuse rather than writing Windows paths into a WSL shell.
-- [ ] The emitted prefix is `env VAR=…`, and a `fish` default profile is covered by a test.
+- [ ] The emitted prefix is `env VAR=…` rather than a bare assignment, asserted by a test that also
+      refuses the bare form. **No test runs `fish`** — the claim rests on `env` being an ordinary
+      command word, which is why the assertion is about the SHAPE of the line and the DoD says so
+      instead of implying coverage nobody has.
 - [ ] Help updated in all five languages in the same commit.
 - [ ] `npm test` green in `src_vs_code`; the red test above was watched failing first and its message
       reported.
@@ -490,6 +531,67 @@ agreement postponed:
   its precondition, which is how the ladder reads top to bottom.
 - **The `'unknown'` case IS covered by a test** that asserts the whole value; the finding says so
   itself.
+
+### S2–S3 — `remoteRoute.ts` and `remoteWindowMessage.ts` (2026-09-17)
+
+Two rounds on one branch. The **plan** round (3 reviewers, 13 findings, 3 accepted) found the button
+defect: `setUpWslRelay` starts the relay and does not put the key into the agent, so *and Connect*
+beside a missing key would set up, retry and land on a second refusal. The **code** round (12
+reviewers, 37 findings, 12 accepted) found two more, both mine:
+
+1. `storedKeyRoute` reported relay state even when the DISTRIBUTION was unresolved. Readiness is
+   read for one distribution, so with none named `running` is false whatever the machine is doing —
+   and the refusal then said "the relay is off" about a relay that may well be running.
+2. `relay-not-running` alone still carried *and Connect*. That reason means the relay is ALREADY on
+   and still silent, so running setup again may not fix it. Five reviewers raised it independently.
+
+Also from that round: the tests retyped the reason and credential lists the code holds, so a tenth
+entry would have left the coverage loops green — both are exported tuples now with the unions
+derived from them. Twenty-five findings were declined, including four that were the local engine's
+own reasoning committed as findings (one, filed **Blocking / Security**, claimed a trailing space in
+`WSL_AUTHORITY` and offered a fix character-identical to the existing line) and seven citing a
+`readonly`-on-parameters rule that does not exist in `typescript/doctrine.md` — verified by grep,
+zero occurrences — and would not be valid TypeScript.
+
+### S4–S7 plus S8's documentation (2026-09-17)
+
+The **plan** round (3 reviewers, 17 findings, 6 accepted) found the worst defect of the whole
+change: `envPrefix` DROPS a value it cannot single-quote, which is right for its original caller
+where the relay falls back to the PATH — and on this path the fallback was `ssh` with no agent and
+no `-i`, which does not fail. It silently authenticates with whatever keys that shell already has.
+It refuses as `relay-socket-unusable` now. The same round found the retry had no budget at all,
+although the plan claimed "at most once".
+
+The **code** round (12 reviewers, 49 findings, 14 accepted) found the one that made the whole button
+a lie: the retry closed over the SAME window snapshot the first attempt refused on, so *Set Up the
+Relay and Connect* set the relay up and then refused again for the reason it had just fixed.
+`RemoteWindowDeps.refresh` re-reads the window. It also found that `connectEntity` returned `void`
+while the broker reported `opened: true` whatever happened — harmless when the only failure was an
+entity with no host, not harmless now that a window can refuse — and that two late refusals left the
+host-pin file `connectionOptions` had already written.
+
+**A test of mine was silently dead, and the assertion I had added for exactly that reason caught
+it.** A python-written regex turned `\b` into a literal BACKSPACE (0x08), so the call-site scan
+matched nothing and two loops ran zero times while passing. Found on the way and NOT fixed here
+because it is not this change's: `src/scriptRender.ts:197` carries the same 0x08 in
+`/^\s*import\s+os<BS>/m`, in `origin/main` since e28c7b7 — that regex cannot match, so `needsImport`
+is always false and `import os` is never added to a python script.
+
+### The self-review after the rounds (2026-09-17)
+
+Re-reading the finished work found four things no round had:
+
+1. **A button that could not deliver its promise — mine, and the third instance of the pattern two
+   rounds had already corrected here.** `relay-socket-unusable` offered *Set Up the WSL Agent
+   Relay*, which restarts the relay at the same unusable path: the socket comes from
+   `CREDS_RELAY_SOCKET` by way of the CLI, and nothing this extension runs changes it. That reason
+   now offers NO button, and the sentence names the variable.
+2. **The pin deletion was a substring sniff** (`.includes('known_hosts-')`) when the precise answer,
+   `materializedKeysDir(storageDir)`, was in scope. A path outside it is now never deleted, with a
+   test that hands it `/home/someone/.ssh/known_hosts-e1`.
+3. **`module_tests.md` stated test counts that were wrong** — 16 and 12 against the real 15 and 15.
+4. **The DoD claimed a `fish` default profile was "covered by a test"**, and no test runs `fish`.
+   It says what is actually asserted now.
 
 ## What the plan round changed (2026-09-17)
 

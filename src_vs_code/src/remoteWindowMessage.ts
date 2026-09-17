@@ -244,6 +244,12 @@ const ACTIONS: Readonly<Record<RefusalReason, RefusalAction | undefined>> = {
   'agent-has-no-key': 'addKeyToAgent',
   'credential-is-a-password': 'copyWindowsCommand',
   'credential-is-a-key-path': 'copyWindowsCommand',
-  'relay-socket-unusable': 'setUpRelay',
+  // NO button, deliberately — and caught re-reading my own work rather than by a round. Nothing
+  // this extension can run changes the relay's socket path: it is decided by the CLI from
+  // `CREDS_RELAY_SOCKET`, so *Set Up the WSL Agent Relay* would restart the relay at the SAME
+  // unusable path. Offering it would be the exact defect two rounds already caught here — a button
+  // promising a fix it cannot deliver. The sentence names the variable instead, which is the thing
+  // that actually has to change.
+  'relay-socket-unusable': undefined,
   'known-hosts-translation-failed': 'retry',
 };
