@@ -313,6 +313,18 @@ function main(argv) {
       console.log(`branch-protection: applied to ${repo}@${branch}`);
       return 0;
     } catch (error) {
+      // The same answer the check path gives, for the same reason — and it was missing here, so
+      // `--apply` on the one repository that CANNOT have protection reported a generic failure
+      // while `--check` explained it. A tool that explains a state in one command and not the
+      // other teaches people the explanation was luck.
+      const said = `${error.stderr ?? ''}${error.stdout ?? ''}${error.message ?? ''}`;
+      if (/Upgrade to GitHub Pro|make this repository public/i.test(said)) {
+        console.error('branch-protection: this repository cannot have branch protection.');
+        console.error('  GitHub answers 403: it is PRIVATE and the plan does not include the');
+        console.error('  feature. Nothing in this file can be applied until the repository is');
+        console.error('  public or the plan includes it. That is a decision, not a task.');
+        return 3;
+      }
       console.error(`branch-protection: could not write — ${error.message.split('\n')[0]}`);
       return 3;
     }
