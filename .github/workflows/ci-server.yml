@@ -230,7 +230,13 @@ jobs:
             echo "shellcheck is not on PATH: actionlint would skip every run: block and pass"
             exit 1
           }
-          curl -fsSL --proto '=https' --tlsv1.2 -o actionlint.tar.gz \
+          # Retried, because one HTTP 500 from the release host failed an unrelated Dependabot
+          # pull request — measured on dew_flow_mcp #23. `--retry-all-errors` is the part that
+          # matters: curl retries transport failures on its own, but treats a 500 as a final
+          # answer. The checksum below still decides what runs, so this widens the window without
+          # widening what is trusted.
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 --retry-delay 2 --retry-all-errors \
+            -o actionlint.tar.gz \
             "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
           echo "$ACTIONLINT_SHA256  actionlint.tar.gz" | sha256sum -c -
           tar -xzf actionlint.tar.gz actionlint
