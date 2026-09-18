@@ -31,9 +31,7 @@
  * real logic here, and `--selftest` is what holds it.</p>
  */
 import { execFileSync } from 'node:child_process';
-import { accessSync, chmodSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync,
-  statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { accessSync, constants, existsSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -335,48 +333,60 @@ const CASES = [
 function lookupCases() {
   const out = [];
 
+  // RUNNABLE, not merely present. `existsSync` on the answer was the first version of this, and it
+  // proves the weaker half of what the caller needs: every use of `resolved()` in this file hands
+  // its answer straight to `execFileSync`, so a path that exists and cannot be started is a pass
+  // here and a crash there. The assertion is therefore what the program PRINTS.
   try {
     const found = resolved('git');
+    const shown = execFileSync(found, ['--version'], { encoding: 'utf8' }).trim();
     out.push({
-      name: 'a program that is installed resolves to a path that exists',
-      ok: path.isAbsolute(found) && existsSync(found),
-      detail: found,
+      name: 'a program that is installed resolves to a path that RUNS',
+      ok: path.isAbsolute(found) && shown.startsWith('git version'),
+      detail: `${found} -> ${shown}`,
     });
   } catch (error) {
-    out.push({ name: 'git resolves', ok: false, detail: error.message });
+    out.push({ name: 'git resolves and runs', ok: false, detail: error.message });
   }
 
   // A relative PATH entry must still resolve to an absolute answer, because the caller spawns it
   // from ITS working directory and not from wherever PATH was written.
   //
-  // The fixture is BUILT rather than borrowed, and the first version of this case is why. It took
-  // the real `git`, made a relative path to it with `path.relative(cwd, dir)` and set PATH to that
-  // — and on Windows, where cwd and git sit on different DRIVES, `path.relative` cannot express a
-  // relative path at all and hands back an absolute one. The case then tested the thing it was
-  // written to catch not happening: it stayed green with the fix deliberately removed.
+  // The fixture is the RUNNING INTERPRETER, and two rejected versions are why.
+  //
+  // The first borrowed the real `git`, made a relative path to it with `path.relative(cwd, dir)` and
+  // set PATH to that — and on Windows, where cwd and git sit on different DRIVES, `path.relative`
+  // cannot express a relative path at all and hands back an absolute one. The case then tested the
+  // thing it was written to catch not happening: it stayed green with the fix deliberately removed.
+  //
+  // The second BUILT a fixture — an empty `probe-4f2b9c[.exe]`, chmod 0755 — which fixed the drive
+  // problem and introduced a quieter one: an empty file passes `existsSync` and passes `X_OK`, and
+  // is not a program on any platform. It could only ever prove the path, never the spawn.
+  //
+  // `process.execPath` is both: a real executable, on every platform, whose own directory can be
+  // reached by a RELATIVE entry from its parent without `path.relative` and without a copy. What it
+  // prints is checkable against `process.version` — so this case proves the resolved path is not
+  // merely absolute and present, but IS the runnable program that was looked up.
   const realPath = process.env.PATH;
   const realCwd = process.cwd();
   try {
-    const home = mkdtempSync(path.join(tmpdir(), 'bp-lookup-'));
-    const bin = path.join(home, 'bin');
-    mkdirSync(bin);
-    const probe = path.join(bin, process.platform === 'win32' ? 'probe-4f2b9c.exe' : 'probe-4f2b9c');
-    writeFileSync(probe, '');
-    if (process.platform !== 'win32') {
-      chmodSync(probe, 0o755);
-    }
+    const dir = path.dirname(process.execPath);
+    const parent = path.dirname(dir);
+    const entry = path.basename(dir);
+    const programme = path.basename(process.execPath, path.extname(process.execPath));
 
-    process.chdir(home);
-    process.env.PATH = 'bin';
-    const found = resolved('probe-4f2b9c');
+    process.chdir(parent);
+    process.env.PATH = entry;
+    const found = resolved(programme);
+    const shown = execFileSync(found, ['--version'], { encoding: 'utf8' }).trim();
     out.push({
-      name: 'a RELATIVE entry on PATH still resolves to an absolute path',
-      ok: path.isAbsolute(found) && existsSync(found),
-      detail: `PATH=bin -> ${found}`,
+      name: 'a RELATIVE entry on PATH resolves to an absolute path that RUNS',
+      ok: path.isAbsolute(found) && shown === process.version,
+      detail: `PATH=${entry} -> ${found} -> ${shown}`,
     });
   } catch (error) {
     out.push({
-      name: 'a RELATIVE entry on PATH still resolves to an absolute path',
+      name: 'a RELATIVE entry on PATH resolves to an absolute path that RUNS',
       ok: false,
       detail: error.message,
     });
