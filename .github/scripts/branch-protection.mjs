@@ -31,7 +31,9 @@
  * real logic here, and `--selftest` is what holds it.</p>
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { accessSync, chmodSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync,
+  statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -164,15 +166,36 @@ export function differences(want, have) {
  * problem one level down.</p>
  */
 function resolved(name) {
-  const suffixes = process.platform === 'win32'
-    ? (process.env.PATHEXT ?? '.EXE;.CMD;.BAT').split(';').map((one) => one.toLowerCase())
-    : [''];
-  for (const dir of (process.env.PATH ?? '').split(path.delimiter).filter(Boolean)) {
-    for (const suffix of ['', ...suffixes]) {
+  // ONLY what `execFileSync` can start directly, which is narrower than PATHEXT. Node refuses
+  // `.cmd` and `.bat` without `shell: true` — the 2024 argument-injection fix — and `.ps1`/`.vbs`
+  // are not executables at all. The first version walked PATHEXT and would have returned such a
+  // file happily, SHADOWING a working `gh.exe` further along PATH and failing at the spawn with a
+  // message about neither. Refusing here says the true thing. (CodeRabbit, creds_for_devs #116.)
+  const suffixes = process.platform === 'win32' ? ['.exe', '.com'] : [''];
+
+  for (const entry of (process.env.PATH ?? '').split(path.delimiter).filter(Boolean)) {
+    // A RELATIVE PATH entry is legal and common enough (`tools`, `.`), and joining onto it yields a
+    // relative answer — which the caller then spawns relative to ITS working directory rather than
+    // the one PATH meant. It also made the selftest's `isAbsolute` assertion fail in an environment
+    // that was perfectly correct.
+    const dir = path.resolve(entry);
+
+    for (const suffix of suffixes) {
       const candidate = path.join(dir, name + suffix);
-      if (existsSync(candidate) && statSync(candidate).isFile()) {
-        return candidate;
+      if (!existsSync(candidate) || !statSync(candidate).isFile()) {
+        continue;
       }
+      // On POSIX a readable file without the execute bit is not a program, and returning it only
+      // moves the failure to the spawn. Windows has no equivalent bit; the extension list above is
+      // what stands in for it there.
+      if (process.platform !== 'win32') {
+        try {
+          accessSync(candidate, constants.X_OK);
+        } catch {
+          continue;
+        }
+      }
+      return candidate;
     }
   }
   throw new Error(`${name} is not on PATH, and this tool cannot ask GitHub anything without it`);
@@ -321,6 +344,45 @@ function lookupCases() {
     });
   } catch (error) {
     out.push({ name: 'git resolves', ok: false, detail: error.message });
+  }
+
+  // A relative PATH entry must still resolve to an absolute answer, because the caller spawns it
+  // from ITS working directory and not from wherever PATH was written.
+  //
+  // The fixture is BUILT rather than borrowed, and the first version of this case is why. It took
+  // the real `git`, made a relative path to it with `path.relative(cwd, dir)` and set PATH to that
+  // — and on Windows, where cwd and git sit on different DRIVES, `path.relative` cannot express a
+  // relative path at all and hands back an absolute one. The case then tested the thing it was
+  // written to catch not happening: it stayed green with the fix deliberately removed.
+  const realPath = process.env.PATH;
+  const realCwd = process.cwd();
+  try {
+    const home = mkdtempSync(path.join(tmpdir(), 'bp-lookup-'));
+    const bin = path.join(home, 'bin');
+    mkdirSync(bin);
+    const probe = path.join(bin, process.platform === 'win32' ? 'probe-4f2b9c.exe' : 'probe-4f2b9c');
+    writeFileSync(probe, '');
+    if (process.platform !== 'win32') {
+      chmodSync(probe, 0o755);
+    }
+
+    process.chdir(home);
+    process.env.PATH = 'bin';
+    const found = resolved('probe-4f2b9c');
+    out.push({
+      name: 'a RELATIVE entry on PATH still resolves to an absolute path',
+      ok: path.isAbsolute(found) && existsSync(found),
+      detail: `PATH=bin -> ${found}`,
+    });
+  } catch (error) {
+    out.push({
+      name: 'a RELATIVE entry on PATH still resolves to an absolute path',
+      ok: false,
+      detail: error.message,
+    });
+  } finally {
+    process.chdir(realCwd);
+    process.env.PATH = realPath;
   }
 
   let refused = '';
