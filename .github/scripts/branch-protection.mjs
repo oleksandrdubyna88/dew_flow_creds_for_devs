@@ -163,13 +163,47 @@ export function wanted(file) {
  */
 export function branchesOf(file) {
   if (!file || !Object.hasOwn(file, 'branches')) {
-    return [{ branch: 'main', body: file }];
+    return [{ branch: 'main', body: checked('the file', file) }];
   }
   const named = file.branches;
   if (!named || typeof named !== 'object' || Array.isArray(named) || Object.keys(named).length === 0) {
     throw new Error('`branches` must be an object mapping branch names to protection bodies, naming at least one');
   }
-  return Object.entries(named).map(([branch, body]) => ({ branch, body }));
+  // THE MIXED FORM, refused — and it is the worse of the two silent losses, because unlike a `null`
+  // body it reads as a perfectly sensible file. Measured: `{ enforce_admins: true, allow_deletions:
+  // false, branches: { main: {…} } }` came back as ONE target whose body is the branch's alone, and
+  // both root opinions were dropped without a word — never compared, never sent by `--apply`.
+  // Anything that is not `branches` or a `$` note is therefore refused here, including a MISSPELLED
+  // field: `enforce_admin` at the root is exactly the case a "only real fields count" rule would
+  // wave through. (CodeRabbit, creds_for_devs #118.)
+  const stray = Object.keys(file).filter((key) => key !== 'branches' && !key.startsWith('$'));
+  if (stray.length > 0) {
+    throw new Error(`a file with \`branches\` must put every protection field inside a branch body — found ${stray.join(', ')} at the root, which would be silently ignored`);
+  }
+  // EVERY body is validated here, before any branch is checked or applied — one bad entry refuses
+  // the whole file rather than leaving a run half-applied across branches.
+  return Object.entries(named).map(([branch, body]) => ({ branch, body: checked(`\`branches.${branch}\``, body) }));
+}
+
+/**
+ * A body that could not possibly say anything, refused where it is written rather than where it
+ * shows.
+ *
+ * <p>MEASURED, and it is the failure this tool exists to prevent, produced BY this tool: a branch
+ * whose body is `null`, `42`, `"main"` or `{}` reaches `wanted()`, which asks it for each field in
+ * turn, is told nothing about any of them, and reports <b>no drift</b>. The run then prints
+ * <i>"@release matches branch-protection.json"</i> and exits 0 for a branch with no protection at
+ * all. Silence about a FIELD legitimately means "no opinion"; silence about every field at once is
+ * somebody having named a branch and then said nothing, which is a typo rather than a position.</p>
+ */
+function checked(what, body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new Error(`${what} must be an object — a protection body, not ${JSON.stringify(body) ?? 'undefined'}`);
+  }
+  if (!FIELDS.some((field) => Object.hasOwn(body, field))) {
+    throw new Error(`${what} names no protection field at all, so it would report "matches" for a branch it says nothing about`);
+  }
+  return body;
 }
 
 /** Every field where the two disagree, named, with both values. Empty means they agree. */
@@ -209,13 +243,16 @@ function resolved(name) {
 
   // `filter(Boolean)` DROPS EMPTY ENTRIES, and on POSIX an empty entry — `PATH=:/usr/bin`, a
   // trailing colon, `::` — means the CURRENT DIRECTORY. That is a deliberate divergence from
-  // `execvp`, not an oversight, and it is kept for the reason the legacy is deprecated: the current
-  // directory here is a REPOSITORY CHECKOUT, and this tool spawns `gh` holding a token that can
-  // rewrite branch protection. Honouring an empty entry would let a file named `git` committed to a
-  // pull request be the `git` that runs. The cost is a machine where the program exists ONLY in the
-  // working directory and nowhere on PATH, which refuses with a message naming the program instead
-  // of running something from the tree. That trade is not close. (CodeRabbit, creds_for_devs #117 —
-  // correct about POSIX, and the selftest below pins the refusal so this is not re-litigated.)
+  // `execvp`: the current directory when this tool runs is a REPOSITORY CHECKOUT, and it spawns `gh`
+  // holding a token that can rewrite branch protection, so the legacy that is deprecated everywhere
+  // else is not worth honouring here either. (CodeRabbit, creds_for_devs #117 — correct about POSIX.)
+  //
+  // WHAT THIS DOES NOT DO, measured rather than assumed, because the first version of this comment
+  // claimed more than the code delivers: an EXPLICIT `.` on PATH still resolves out of the working
+  // directory, because `path.resolve('.')` is the working directory and `.` is a legal relative
+  // entry like any other. So this refuses the IMPLICIT form — a typo, a trailing colon, a PATH
+  // inherited from something that built it by concatenation — and not cwd lookup in general. Both
+  // halves are pinned by cases below, so the boundary is stated rather than implied.
   for (const entry of (process.env.PATH ?? '').split(path.delimiter).filter(Boolean)) {
     // A RELATIVE PATH entry is legal and common enough (`tools`, `.`), and joining onto it yields a
     // relative answer — which the caller then spawns relative to ITS working directory rather than
@@ -462,6 +499,28 @@ function lookupCases() {
     detail: refusedCwd,
   });
 
+  // THE OTHER HALF OF THE SAME DECISION, and it is here because the comment in `resolved()` used to
+  // claim the refusal above protected against cwd lookup generally. It does not: an explicit `.` is
+  // a legal relative entry and resolves out of the working directory like any other. Pinning that
+  // keeps the boundary honest — remove `filter(Boolean)` and the case above goes red; make `.`
+  // refuse and this one does.
+  let dotted = '';
+  try {
+    process.chdir(path.dirname(process.execPath));
+    process.env.PATH = '.';
+    dotted = resolved(path.basename(process.execPath, path.extname(process.execPath)));
+  } catch (error) {
+    dotted = error.message;
+  } finally {
+    process.chdir(realCwd);
+    process.env.PATH = realPath;
+  }
+  out.push({
+    name: 'an EXPLICIT `.` on PATH still resolves from the current directory, which is NOT refused',
+    ok: path.isAbsolute(dotted) && existsSync(dotted),
+    detail: dotted,
+  });
+
   let refused = '';
   try {
     resolved('no-such-program-4f2b9c');
@@ -511,6 +570,44 @@ function branchCases() {
       name: 'a `branches` written as an ARRAY is refused, not read as "just main"',
       ok: refused({ branches: ['main', 'release'] }).includes('mapping branch names'),
       detail: refused({ branches: ['main', 'release'] }) || 'it returned instead of throwing',
+    },
+    // The false green this tool produced itself. All four of these used to report NO DRIFT, so the
+    // run printed "@release matches branch-protection.json" and exited 0 for a branch that had no
+    // protection whatsoever.
+    ...[null, 42, '"main"', '{}'].map((_, index) => {
+      const body = [null, 42, 'main', {}][index];
+      const said = refused({ branches: { release: body } });
+      return {
+        name: `a branch body of ${JSON.stringify(body)} is refused, never read as "everything matches"`,
+        ok: said.includes('branches.release'),
+        detail: said || 'it returned instead of throwing — this is the false green',
+      };
+    }),
+    {
+      name: 'a file with no `branches` key and no protection field is refused the same way',
+      ok: refused({ $note: 'only prose' }).includes('the file'),
+      detail: refused({ $note: 'only prose' }) || 'it returned instead of throwing',
+    },
+    // The MIXED form: a root opinion beside `branches` used to be dropped without a word.
+    {
+      name: 'a protection field at the ROOT beside `branches` is refused, never silently dropped',
+      ok: refused({ enforce_admins: true, branches: { main: { lock_branch: false } } })
+        .includes('enforce_admins'),
+      detail: refused({ enforce_admins: true, branches: { main: { lock_branch: false } } })
+        || 'it returned instead of throwing — the root opinion was lost',
+    },
+    {
+      name: 'a MISSPELLED field at the root is refused too, which "only real fields count" would not catch',
+      ok: refused({ enforce_admin: true, branches: { main: { lock_branch: false } } })
+        .includes('enforce_admin'),
+      detail: refused({ enforce_admin: true, branches: { main: { lock_branch: false } } })
+        || 'it returned instead of throwing',
+    },
+    {
+      name: '`$` notes at the root are NOT stray — they are how this file carries its prose',
+      ok: shape({ $note: 'why', $decided: ['…'], branches: { main: { lock_branch: false } } })
+        === JSON.stringify([['main', { lock_branch: false }]]),
+      detail: shape({ $note: 'why', $decided: ['…'], branches: { main: { lock_branch: false } } }),
     },
   ];
 }
@@ -590,13 +687,24 @@ function current(repo, branch) {
       return null;
     }
     const said = `${error.stderr ?? ''}${error.stdout ?? ''}${error.message ?? ''}`;
-    // A 404 is the interesting case and it is NOT "could not look": GitHub answers 404 for a branch
-    // with no protection at all, which is the loudest possible drift. The 404 is in the child's
-    // STDERR, not in the Error's message, which reads only "Command failed: gh api …" — testing the
-    // message alone made this tool answer "could not ask GitHub" for the repository it most needed
-    // to speak about.
-    if (/HTTP 404|Not Found|Branch not protected/i.test(said)) {
+    // ONE of the 404s is the interesting case and it is NOT "could not look": GitHub answers
+    // `Branch not protected` for a branch with no protection at all, which is the loudest possible
+    // drift. The 404 is in the child's STDERR, not in the Error's message, which reads only
+    // "Command failed: gh api …" — testing the message alone made this tool answer "could not ask
+    // GitHub" for the repository it most needed to speak about.
+    if (/Branch not protected/i.test(said)) {
       return {};
+    }
+    // THE OTHER 404s ARE NOT THAT, and lumping them in was wrong. GitHub answers `Branch not found`
+    // for a branch that is not there, and a bare `Not Found` for a repository the token cannot see —
+    // measured 2026-09-18, the two messages are distinct. Reading either as "no protection" turns "I
+    // could not look" into "it is definitely wrong", which is the one confusion this tool's exit
+    // codes exist to prevent, in the direction that produces a confident false report.
+    if (/Branch not found/i.test(said)) {
+      console.error(`branch-protection: this repository has no branch \`${branch}\`.`);
+      console.error('  The file names it, so one of the two is out of date — and which is not');
+      console.error('  something this tool can decide. Nothing is known about it: exit 3, not 1.');
+      return null;
     }
     console.error(`branch-protection: could not ask GitHub — ${error.message.split('\n')[0]}`);
     console.error('  this is exit 3, not 1: nothing is known about the branch, which is not the');
