@@ -39,6 +39,16 @@ jobs:
       # that has drifted from the folder.
       - name: Plan lifecycle
         run: node .claude/rules/shared/tools/plan-lifecycle.mjs
+      # The protection `main` is supposed to have is a FILE now — `.github/branch-protection.json` —
+      # because branch protection is the one part of a repository's CI that is not IN the repository.
+      # Nothing makes GitHub read it; what it buys is that the intent is reviewed, and that the drift
+      # from it is something a command prints rather than something nobody finds.
+      #
+      # This step is the half that needs no token: the comparison logic, against fixtures. It caught
+      # three real bugs in that logic the first time it ran. Comparing to the REAL branch needs
+      # repository admin, so `node .github/scripts/branch-protection.mjs` is run by hand.
+      - name: Branch protection selftest
+        run: node .github/scripts/branch-protection.mjs --selftest
 
       # Every submodule pin must equal its remote's tip — "a rule change and the pin
       # bumps are one task" is a check, not a habit.
