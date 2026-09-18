@@ -1,0 +1,47 @@
+{
+  "$note": [
+    "The protection `main` is supposed to have. GitHub does not read this file — nothing can, because",
+    "branch protection is settings rather than content. What it does is make the intent reviewable:",
+    "`node .github/scripts/branch-protection.mjs` prints the drift between this and reality and exits 1,",
+    "`--apply` writes this file to GitHub, and `--selftest` checks the comparison logic without a token."
+  ],
+  "$decided": [
+    "The contexts are the check names GitHub ACTUALLY reported on recent merged pull requests, not names",
+    "read out of the workflows: a required check that never reports blocks every pull request forever.",
+    "Deliberately NOT here: `ask CodeRabbit` (a third-party free tier that runs out — requiring it puts",
+    "every merge behind somebody else’s quota), `github-advanced-security` and the `Analyze (…)` legs",
+    "(umbrella and per-language parts of CodeQL, which is required), and `SonarCloud Code Analysis`",
+    "(Sonar’s own gate, distinct from the `SonarCloud Scan` job — making the gate blocking is its own",
+    "decision)."
+  ],
+  "required_status_checks": {
+    "strict": true,
+    "contexts": [
+      "build · test",
+      "clients · build · test (ubuntu-latest)",
+      "clients · build · test (macos-latest)",
+      "typecheck · test · package",
+      "http · contract suite",
+      "compose · scripts",
+      "plan lifecycle · submodule pin",
+      "CodeQL",
+      "SonarCloud Scan",
+      "pr · semantic title",
+      "workflows · actionlint"
+    ]
+  },
+  "enforce_admins": true,
+  "required_pull_request_reviews": {
+    "dismiss_stale_reviews": false,
+    "require_code_owner_reviews": false,
+    "require_last_push_approval": false,
+    "required_approving_review_count": 0
+  },
+  "required_linear_history": true,
+  "allow_force_pushes": false,
+  "allow_deletions": false,
+  "block_creations": false,
+  "required_conversation_resolution": true,
+  "lock_branch": false,
+  "allow_fork_syncing": false
+}
