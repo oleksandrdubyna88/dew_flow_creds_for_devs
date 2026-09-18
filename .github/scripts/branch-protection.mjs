@@ -85,7 +85,12 @@ export function normalise(got) {
   if (got.required_status_checks) {
     out.required_status_checks = {
       strict: got.required_status_checks.strict === true,
-      contexts: [...(got.required_status_checks.contexts ?? [])].sort(),
+      // Sorted by CODE POINT, explicitly. Both sides go through this same function, so any
+      // consistent order would do for the comparison — but `.sort()` with no comparator is
+      // documented as implementation-defined for non-strings, and `localeCompare` would make the
+      // result depend on the machine's locale. Neither is a property this should have.
+      contexts: [...(got.required_status_checks.contexts ?? [])]
+        .sort((a, b) => (a < b ? -1 : Number(a > b))),
     };
   }
 
@@ -151,11 +156,16 @@ function repository() {
     return process.env.GITHUB_REPOSITORY;
   }
   const url = execFileSync('git', ['remote', 'get-url', 'origin'], { encoding: 'utf8' }).trim();
-  const match = /[:/]([^/]+\/[^/]+?)(?:\.git)?$/.exec(url);
-  if (!match) {
+
+  // Split rather than match. The regex this replaces — `/[:/]([^/]+\/[^/]+?)(?:\.git)?$/` — has
+  // two adjacent variable-length groups and a lazy one, which is super-linear on input that nearly
+  // matches: a pathological remote URL could hang the tool. Splitting on the separators and taking
+  // the last two segments is the same answer in linear time, and it reads as what it does.
+  const segments = url.replace(/\.git$/, '').split(/[:/]/).filter(Boolean);
+  if (segments.length < 2) {
     throw new Error(`cannot read owner/name out of the origin remote: ${url}`);
   }
-  return match[1];
+  return segments.slice(-2).join('/');
 }
 
 function ask(repo, branch) {
@@ -278,80 +288,76 @@ function selftest() {
   return failed === 0 ? 0 : 1;
 }
 
-function main(argv) {
-  if (argv.includes('--selftest')) {
-    return selftest();
+/**
+ * The 403 a PRIVATE repository on a plan without GitHub Pro gets, said in words.
+ *
+ * <p>MEASURED, and it is the answer this tool was written to stop somebody guessing at. That
+ * repository cannot have branch protection AT ALL — it is not drift and it is not a broken token,
+ * it is the feature being unavailable. Saying so is the difference between "somebody forgot" and
+ * "this costs money or publicity to fix". Shared by both commands, because it was copied into one
+ * and missing from the other, and a tool that explains a state in one command and not the other
+ * teaches people the explanation was luck.</p>
+ */
+function unavailable(error) {
+  const said = `${error.stderr ?? ''}${error.stdout ?? ''}${error.message ?? ''}`;
+  if (!/Upgrade to GitHub Pro|make this repository public/i.test(said)) {
+    return false;
   }
+  console.error('branch-protection: this repository cannot have branch protection.');
+  console.error('  GitHub answers 403: it is PRIVATE and the plan does not include the feature.');
+  console.error('  Nothing in this file can be applied until the repository is public or the');
+  console.error('  plan includes it. That is a decision, not a task.');
+  return true;
+}
 
-  const branch = 'main';
-  let file;
+function applyTo(file, repo, branch) {
   try {
-    file = JSON.parse(readFileSync(DEFAULT_FILE, 'utf8'));
+    // JSON has no comments and this file has things to say, so it carries them under `$` keys.
+    // They are for the reader; the API would reject them.
+    const sent = Object.fromEntries(
+      Object.entries(file).filter(([key]) => !key.startsWith('$')));
+    // PUT refuses the call without these two keys even when they are null.
+    sent.restrictions = sent.restrictions ?? null;
+    sent.required_pull_request_reviews = sent.required_pull_request_reviews ?? null;
+    put(repo, branch, sent);
+    console.log(`branch-protection: applied to ${repo}@${branch}`);
+    return 0;
   } catch (error) {
-    console.error(`branch-protection: cannot read ${DEFAULT_FILE} — ${error.message}`);
-    return 2;
-  }
-
-  let repo;
-  try {
-    repo = repository();
-  } catch (error) {
-    console.error(`branch-protection: ${error.message}`);
-    return 2;
-  }
-
-  if (argv.includes('--apply')) {
-    try {
-      // JSON has no comments and this file has things to say, so it carries them under `$` keys.
-      // They are for the reader; the API would reject them.
-      const sent = Object.fromEntries(
-        Object.entries(file).filter(([key]) => !key.startsWith('$')));
-      // PUT refuses the call without these two keys even when they are null.
-      sent.restrictions = sent.restrictions ?? null;
-      sent.required_pull_request_reviews = sent.required_pull_request_reviews ?? null;
-      put(repo, branch, sent);
-      console.log(`branch-protection: applied to ${repo}@${branch}`);
-      return 0;
-    } catch (error) {
+    if (!unavailable(error)) {
       console.error(`branch-protection: could not write — ${error.message.split('\n')[0]}`);
-      return 3;
     }
+    return 3;
   }
+}
 
-  let got;
+/** What GitHub says the branch has, or `null` when the answer is "stop here". */
+function current(repo, branch) {
   try {
-    got = ask(repo, branch);
+    return ask(repo, branch);
   } catch (error) {
-    // A 404 here is the interesting case and it is NOT "could not look": GitHub answers 404 for a
-    // branch with no protection at all, which is the loudest possible drift — and it is the state
-    // `dew_flow_rag_qln` was actually in when this was written.
-    //
-    // The 404 is in the child's STDERR, not in the Error's message, which reads only "Command
-    // failed: gh api …". Testing the message alone made this tool answer "could not ask GitHub" for
-    // the one repository it most needed to speak about.
+    if (unavailable(error)) {
+      return null;
+    }
     const said = `${error.stderr ?? ''}${error.stdout ?? ''}${error.message ?? ''}`;
-
-    // MEASURED, and it is the answer this tool was written to stop somebody guessing at. A PRIVATE
-    // repository on a plan without GitHub Pro cannot have branch protection AT ALL: the API answers
-    // 403 "Upgrade to GitHub Pro or make this repository public to enable this feature". That is not
-    // drift and it is not a broken token — it is the feature being unavailable, and saying so is the
-    // difference between "somebody forgot" and "this costs money or publicity to fix".
-    if (/Upgrade to GitHub Pro|make this repository public/i.test(said)) {
-      console.error('branch-protection: this repository cannot have branch protection.');
-      console.error('  GitHub answers 403: it is PRIVATE and the plan does not include the feature.');
-      console.error('  Nothing in this file can be applied until the repository is public or the');
-      console.error('  plan includes it. That is a decision, not a task.');
-      return 3;
-    }
-
+    // A 404 is the interesting case and it is NOT "could not look": GitHub answers 404 for a branch
+    // with no protection at all, which is the loudest possible drift. The 404 is in the child's
+    // STDERR, not in the Error's message, which reads only "Command failed: gh api …" — testing the
+    // message alone made this tool answer "could not ask GitHub" for the repository it most needed
+    // to speak about.
     if (/HTTP 404|Not Found|Branch not protected/i.test(said)) {
-      got = {};
-    } else {
-      console.error(`branch-protection: could not ask GitHub — ${error.message.split('\n')[0]}`);
-      console.error('  this is exit 3, not 1: nothing is known about the branch, which is not the');
-      console.error('  same as knowing it is wrong.');
-      return 3;
+      return {};
     }
+    console.error(`branch-protection: could not ask GitHub — ${error.message.split('\n')[0]}`);
+    console.error('  this is exit 3, not 1: nothing is known about the branch, which is not the');
+    console.error('  same as knowing it is wrong.');
+    return null;
+  }
+}
+
+function checkAgainst(file, repo, branch) {
+  const got = current(repo, branch);
+  if (got === null) {
+    return 3;
   }
 
   const drift = differences(wanted(file), normalise(got));
@@ -368,6 +374,27 @@ function main(argv) {
   }
   console.error('  `--apply` writes the file to GitHub; it needs a token with repository admin.');
   return 1;
+}
+
+function main(argv) {
+  if (argv.includes('--selftest')) {
+    return selftest();
+  }
+
+  const branch = 'main';
+  let file;
+  let repo;
+  try {
+    file = JSON.parse(readFileSync(DEFAULT_FILE, 'utf8'));
+    repo = repository();
+  } catch (error) {
+    console.error(`branch-protection: ${error.message}`);
+    return 2;
+  }
+
+  return argv.includes('--apply')
+    ? applyTo(file, repo, branch)
+    : checkAgainst(file, repo, branch);
 }
 
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replaceAll('\\', '/'))) {
