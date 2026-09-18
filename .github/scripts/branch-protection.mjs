@@ -171,6 +171,15 @@ function resolved(name) {
   // message about neither. Refusing here says the true thing. (CodeRabbit, creds_for_devs #116.)
   const suffixes = process.platform === 'win32' ? ['.exe', '.com'] : [''];
 
+  // `filter(Boolean)` DROPS EMPTY ENTRIES, and on POSIX an empty entry — `PATH=:/usr/bin`, a
+  // trailing colon, `::` — means the CURRENT DIRECTORY. That is a deliberate divergence from
+  // `execvp`, not an oversight, and it is kept for the reason the legacy is deprecated: the current
+  // directory here is a REPOSITORY CHECKOUT, and this tool spawns `gh` holding a token that can
+  // rewrite branch protection. Honouring an empty entry would let a file named `git` committed to a
+  // pull request be the `git` that runs. The cost is a machine where the program exists ONLY in the
+  // working directory and nowhere on PATH, which refuses with a message naming the program instead
+  // of running something from the tree. That trade is not close. (CodeRabbit, creds_for_devs #117 —
+  // correct about POSIX, and the selftest below pins the refusal so this is not re-litigated.)
   for (const entry of (process.env.PATH ?? '').split(path.delimiter).filter(Boolean)) {
     // A RELATIVE PATH entry is legal and common enough (`tools`, `.`), and joining onto it yields a
     // relative answer — which the caller then spawns relative to ITS working directory rather than
@@ -394,6 +403,28 @@ function lookupCases() {
     process.chdir(realCwd);
     process.env.PATH = realPath;
   }
+
+  // The EMPTY entry, refused on purpose — see the note in `resolved()`. The fixture makes the
+  // difference visible rather than arguable: the working directory IS the interpreter's own
+  // directory, so the program being looked for is unquestionably there, and an implementation that
+  // honoured the empty entry the way `execvp` does would find it. This case asserts it does not.
+  let refusedCwd = '';
+  try {
+    process.chdir(path.dirname(process.execPath));
+    process.env.PATH = '';
+    resolved(path.basename(process.execPath, path.extname(process.execPath)));
+    refusedCwd = 'it searched the current directory, which an empty PATH entry must not mean here';
+  } catch (error) {
+    refusedCwd = error.message;
+  } finally {
+    process.chdir(realCwd);
+    process.env.PATH = realPath;
+  }
+  out.push({
+    name: 'an EMPTY entry on PATH does not mean the current directory, even when the program is in it',
+    ok: refusedCwd.includes('not on PATH'),
+    detail: refusedCwd,
+  });
 
   let refused = '';
   try {
