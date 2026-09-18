@@ -31,7 +31,7 @@
  * real logic here, and `--selftest` is what holds it.</p>
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -151,11 +151,38 @@ export function differences(want, have) {
   return out;
 }
 
+/**
+ * Where a program actually is, resolved once, rather than a bare name handed to the spawner.
+ *
+ * <p>Spawning `gh` by name delegates the choice of what runs to whatever `PATH` happens to say —
+ * SonarCloud calls it out (S4036) and it is right that the decision should be visible. Resolving it
+ * here does not make PATH trustworthy; what it buys is that the lookup is one explicit step with an
+ * error somebody can act on, instead of an opaque spawn failure at the moment the tool was supposed
+ * to answer a question.</p>
+ *
+ * <p>Done in JavaScript rather than by shelling out to `which`, because `which` would be the same
+ * problem one level down.</p>
+ */
+function resolved(name) {
+  const suffixes = process.platform === 'win32'
+    ? (process.env.PATHEXT ?? '.EXE;.CMD;.BAT').split(';').map((one) => one.toLowerCase())
+    : [''];
+  for (const dir of (process.env.PATH ?? '').split(path.delimiter).filter(Boolean)) {
+    for (const suffix of ['', ...suffixes]) {
+      const candidate = path.join(dir, name + suffix);
+      if (existsSync(candidate) && statSync(candidate).isFile()) {
+        return candidate;
+      }
+    }
+  }
+  throw new Error(`${name} is not on PATH, and this tool cannot ask GitHub anything without it`);
+}
+
 function repository() {
   if (process.env.GITHUB_REPOSITORY) {
     return process.env.GITHUB_REPOSITORY;
   }
-  const url = execFileSync('git', ['remote', 'get-url', 'origin'], { encoding: 'utf8' }).trim();
+  const url = execFileSync(resolved('git'), ['remote', 'get-url', 'origin'], { encoding: 'utf8' }).trim();
 
   // Split rather than match. The regex this replaces — `/[:/]([^/]+\/[^/]+?)(?:\.git)?$/` — has
   // two adjacent variable-length groups and a lazy one, which is super-linear on input that nearly
@@ -170,13 +197,14 @@ function repository() {
 
 function ask(repo, branch) {
   return JSON.parse(execFileSync(
-    'gh', ['api', `repos/${repo}/branches/${branch}/protection`],
+    resolved('gh'), ['api', `repos/${repo}/branches/${branch}/protection`],
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }));
 }
 
 function put(repo, branch, body) {
   return JSON.parse(execFileSync(
-    'gh', ['api', '--method', 'PUT', `repos/${repo}/branches/${branch}/protection`, '--input', '-'],
+    resolved('gh'),
+    ['api', '--method', 'PUT', `repos/${repo}/branches/${branch}/protection`, '--input', '-'],
     { encoding: 'utf8', input: JSON.stringify(body), stdio: ['pipe', 'pipe', 'pipe'] }));
 }
 
@@ -274,6 +302,43 @@ const CASES = [
   },
 ];
 
+/**
+ * The program lookup, checked both ways.
+ *
+ * <p>It runs on every real invocation, so a break would be loud — but "loud" here means the tool
+ * stops answering the question it exists for, and the REFUSAL is the half that would otherwise
+ * never be exercised until somebody's machine was already misconfigured.</p>
+ */
+function lookupCases() {
+  const out = [];
+
+  try {
+    const found = resolved('git');
+    out.push({
+      name: 'a program that is installed resolves to a path that exists',
+      ok: path.isAbsolute(found) && existsSync(found),
+      detail: found,
+    });
+  } catch (error) {
+    out.push({ name: 'git resolves', ok: false, detail: error.message });
+  }
+
+  let refused = '';
+  try {
+    resolved('no-such-program-4f2b9c');
+    refused = 'it returned instead of throwing';
+  } catch (error) {
+    refused = error.message;
+  }
+  out.push({
+    name: 'a program that is NOT installed is refused, by name, rather than spawned',
+    ok: refused.includes('no-such-program-4f2b9c') && refused.includes('not on PATH'),
+    detail: refused,
+  });
+
+  return out;
+}
+
 function selftest() {
   let failed = 0;
   for (const one of CASES) {
@@ -284,7 +349,17 @@ function selftest() {
       console.error(`  FAIL  ${one.name}\n        wanted ${JSON.stringify(one.expect)}, got ${JSON.stringify(got)}`);
     }
   }
-  console.log(`branch-protection selftest: ${CASES.length - failed}/${CASES.length} passed`);
+
+  const lookups = lookupCases();
+  for (const one of lookups) {
+    if (!one.ok) {
+      failed += 1;
+      console.error(`  FAIL  ${one.name}\n        ${one.detail}`);
+    }
+  }
+
+  const total = CASES.length + lookups.length;
+  console.log(`branch-protection selftest: ${total - failed}/${total} passed`);
   return failed === 0 ? 0 : 1;
 }
 
