@@ -25,6 +25,13 @@
  * permission, no network. THREE IS NOT ONE: "the protection is wrong" and "I could not look" are
  * different answers, and a check that conflates them teaches people to ignore it.</p>
  *
+ * <p><b>One branch or several.</b> A file with no `branches` key IS the body, and it speaks for
+ * `main` — which is every repository here but one. A file that names `branches` maps each branch to
+ * its OWN body, every one of them is checked, and the exit code is the worst of them, because
+ * answering 0 on the strength of the branch that happened to be fine is the lie these codes exist to
+ * prevent. `dew_flow_conventions` is why: its `release` ref is moved by a workflow pushing directly,
+ * so it cannot carry `main`'s pull-request requirement and needs a body of its own.</p>
+ *
  * <p>The JSON is exactly the PUT body the API takes, so `--apply` sends the file and nothing
  * translates it on the way. What DOES need translating is the answer: a GET comes back with URLs,
  * `{enabled: true}` wrappers and a `checks` array beside `contexts`. That normalisation is the only
@@ -134,6 +141,35 @@ export function wanted(file) {
     }
   }
   return out;
+}
+
+/**
+ * The branches this file speaks about, each with the body that applies to it.
+ *
+ * <p>A repository with one protected branch says nothing and gets `main` — which is every file in
+ * this family but one, so the common shape stays a plain PUT body with no wrapper. A repository
+ * with more says so under `branches`, a map from branch name to its own body.</p>
+ *
+ * <p><b>A map rather than a list of names sharing one body</b>, and measuring `dew_flow_conventions`
+ * is what settled that. Its `release` ref cannot carry `main`'s protection: `main` requires a pull
+ * request, and `release` is moved by `promote-release.yml` pushing `&lt;sha&gt;:refs/heads/release`
+ * directly — a pull-request requirement there would break the only supported way to move it. The two
+ * branches need DIFFERENT protection for a reason, so a shape that could only express "the same"
+ * would have been wrong the first time it was used.</p>
+ *
+ * <p>A `branches` that is empty, or an array, is refused rather than quietly read as "just main":
+ * both are plausible ways to write this by mistake, and the failure would be a branch nobody
+ * noticed was unprotected — the exact thing this tool exists to make impossible.</p>
+ */
+export function branchesOf(file) {
+  if (!file || !Object.hasOwn(file, 'branches')) {
+    return [{ branch: 'main', body: file }];
+  }
+  const named = file.branches;
+  if (!named || typeof named !== 'object' || Array.isArray(named) || Object.keys(named).length === 0) {
+    throw new Error('`branches` must be an object mapping branch names to protection bodies, naming at least one');
+  }
+  return Object.entries(named).map(([branch, body]) => ({ branch, body }));
 }
 
 /** Every field where the two disagree, named, with both values. Empty means they agree. */
@@ -442,6 +478,43 @@ function lookupCases() {
   return out;
 }
 
+/** Which branches a file speaks for — including the two shapes that must be REFUSED. */
+function branchCases() {
+  const refused = (file) => {
+    try {
+      branchesOf(file);
+      return '';
+    } catch (error) {
+      return error.message;
+    }
+  };
+  const shape = (file) => JSON.stringify(branchesOf(file).map((one) => [one.branch, one.body]));
+
+  return [
+    {
+      name: 'a file with no `branches` key is the body for main, exactly as before',
+      ok: shape({ enforce_admins: true }) === JSON.stringify([['main', { enforce_admins: true }]]),
+      detail: shape({ enforce_admins: true }),
+    },
+    {
+      name: 'each named branch gets its OWN body, not a shared one',
+      ok: shape({ branches: { main: { lock_branch: false }, release: { lock_branch: true } } })
+        === JSON.stringify([['main', { lock_branch: false }], ['release', { lock_branch: true }]]),
+      detail: shape({ branches: { main: { lock_branch: false }, release: { lock_branch: true } } }),
+    },
+    {
+      name: 'an EMPTY `branches` is refused, not read as "just main"',
+      ok: refused({ branches: {} }).includes('naming at least one'),
+      detail: refused({ branches: {} }) || 'it returned instead of throwing',
+    },
+    {
+      name: 'a `branches` written as an ARRAY is refused, not read as "just main"',
+      ok: refused({ branches: ['main', 'release'] }).includes('mapping branch names'),
+      detail: refused({ branches: ['main', 'release'] }) || 'it returned instead of throwing',
+    },
+  ];
+}
+
 function selftest() {
   let failed = 0;
   for (const one of CASES) {
@@ -453,15 +526,15 @@ function selftest() {
     }
   }
 
-  const lookups = lookupCases();
-  for (const one of lookups) {
+  const others = [...branchCases(), ...lookupCases()];
+  for (const one of others) {
     if (!one.ok) {
       failed += 1;
       console.error(`  FAIL  ${one.name}\n        ${one.detail}`);
     }
   }
 
-  const total = CASES.length + lookups.length;
+  const total = CASES.length + others.length;
   console.log(`branch-protection selftest: ${total - failed}/${total} passed`);
   return failed === 0 ? 0 : 1;
 }
@@ -559,20 +632,26 @@ function main(argv) {
     return selftest();
   }
 
-  const branch = 'main';
-  let file;
+  let targets;
   let repo;
   try {
-    file = JSON.parse(readFileSync(DEFAULT_FILE, 'utf8'));
+    targets = branchesOf(JSON.parse(readFileSync(DEFAULT_FILE, 'utf8')));
     repo = repository();
   } catch (error) {
     console.error(`branch-protection: ${error.message}`);
     return 2;
   }
 
-  return argv.includes('--apply')
-    ? applyTo(file, repo, branch)
-    : checkAgainst(file, repo, branch);
+  const apply = argv.includes('--apply');
+  let worst = 0;
+  for (const { branch, body } of targets) {
+    // The codes are ordered by how little is known, which is why the worst is the largest: 0 both
+    // branches match, 1 one of them drifts, 3 one of them could not be looked at. Reporting 0
+    // because the OTHER branch was fine would be the lie this tool's exit codes exist to prevent,
+    // and stopping at the first bad one would hide the second.
+    worst = Math.max(worst, apply ? applyTo(body, repo, branch) : checkAgainst(body, repo, branch));
+  }
+  return worst;
 }
 
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replaceAll('\\', '/'))) {
