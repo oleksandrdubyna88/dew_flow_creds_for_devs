@@ -1,0 +1,63 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "$note": [
+    "How a release is decided here: release-please reads the conventional commits since a component's",
+    "last tag, opens a pull request that bumps that component's version and writes its RELEASES.md,",
+    "and cutting the tag is what MERGING that pull request does. `release.yml` already in this",
+    "repository is what the tag then starts.",
+    "",
+    "THE NARRATIVE CHANGELOG IS NOT TOUCHED. `src_vs_code/CHANGELOG.md` is 127 entries of",
+    "hand-written prose and it stays the human record: `changelog-path` sends every generated file to",
+    "RELEASES.md instead. This is option A of",
+    "todo/PLAN_release_please_meets_a_narrative_changelog.md in dew_flow_connect_other_ais, and the",
+    "reason it is not negotiable here is measured: release.yml extracts the release notes with",
+    "`text.indexOf('## [' + v + ']')` and FALLS BACK TO A LINK rather than failing. A release-please",
+    "heading is `## [1.9.7](…compare…) (date)`, and that probe matches it at index 0 — a markdown link",
+    "is [text](url), so the probe is a prefix. Point release-please at CHANGELOG.md and it would",
+    "overwrite the prose while the extraction kept working and the build stayed green."
+  ],
+  "$decided": [
+    "SEPARATE PULL REQUESTS, one per component, and it is not a preference. These four ship at",
+    "genuinely different cadences — extension 1.9.7 against cli 0.1.6 — so a combined pull request",
+    "would tie a cli patch to an extension release nobody asked for. It also keeps the tags coming one",
+    "at a time: GitHub creates NO events at all when more than three tags arrive in a single git push,",
+    "and four components is exactly the count that would test that rule.",
+    "",
+    "RELEASE TYPES ARE NOT UNIFORM, because the components are not. The extension's package.json IS",
+    "its version and release.yml REFUSES a tag that disagrees with it, so `node` fits it exactly and",
+    "the guard then passes by construction. Server, cli and mcp carry no version anywhere in the tree",
+    "— the build injects it from the tag (-p:Version=\"${GITHUB_REF_NAME#server-v}\") — so `simple`",
+    "with a version.txt is what gives them one. That file is a RECORD, not a new input: the build",
+    "still takes the version from the tag, and release-please keeps the two in step.",
+    "",
+    "The sidecar's Cargo.toml drifted for two releases (0.1.0 in the file, v0.1.2 on the tag) and",
+    "nobody noticed because nothing read the file. That is an argument against an UNMANAGED duplicate,",
+    "not against a managed one — and the blindness it describes is the state these three are in today.",
+    "",
+    "include-component-in-tag is TRUE here, unlike the sidecar. Four products share one tag namespace,",
+    "so `server-v0.7.1` and `cli-v0.1.7` have to be distinguishable; the sidecar ships one product and",
+    "its release workflow triggers on a bare `v*`."
+  ],
+  "separate-pull-requests": true,
+  "include-component-in-tag": true,
+  "tag-separator": "-",
+  "changelog-path": "RELEASES.md",
+  "packages": {
+    "src_minimalapi_server": {
+      "component": "server",
+      "release-type": "simple"
+    },
+    "src_vs_code": {
+      "component": "extension",
+      "release-type": "node"
+    },
+    "src_cli": {
+      "component": "cli",
+      "release-type": "simple"
+    },
+    "src_mcp": {
+      "component": "mcp",
+      "release-type": "simple"
+    }
+  }
+}

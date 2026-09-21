@@ -1,0 +1,103 @@
+name: release-please
+
+# ---------------------------------------------------------------------------
+# WHY THIS RUNS ON A BUTTON AND NOT ON `push: main` YET.
+#
+# The mechanism itself is proven — `dew_flow_sidecar_rust` shipped v0.2.0 through it end to end on
+# 2026-09-21, and the tag it cut started that repository's release workflow, which is the whole
+# reason a GitHub App mints the token here instead of `GITHUB_TOKEN`. From release-please's README:
+#
+#   > all resources created by `release-please` (release tag or release pull request) will not
+#   > trigger future GitHub actions workflows
+#
+# So with the default token the tag would stand there with no build, no artefacts and NO ERROR.
+#
+# WHAT IS NOT PROVEN IS THIS REPOSITORY. The sidecar ships ONE product and had no changelog to
+# damage. Here there are FOUR components and 127 entries of hand-written prose in
+# `src_vs_code/CHANGELOG.md` that release-please must never touch — and the way it would touch them
+# is silent (see the $note in release-please-config.json: the release-notes extractor in release.yml
+# keeps working against a release-please heading, so the prose would be overwritten under a green
+# build). The first release pull request gets READ before this goes automatic.
+#
+# TURNING IT ON is then one line: uncomment the `push: branches: [main]` trigger below.
+#
+# ONE THING THE SHAPE HIDES, and on the sidecar it cost a puzzled minute: the tag is NOT cut by
+# merging the release pull request. It is cut by the NEXT run of this workflow, which the merge
+# itself triggers. On workflow_dispatch that means dispatching TWICE, and the first time looks
+# exactly like "merged and nothing happened".
+#
+# AND THE COMMIT TYPE IS THE VERSION. `feat:` is a minor release, `fix:` a patch, and `ci:` or
+# `chore:` release nothing. A workflow-only change written `feat(ci): …` proposes a minor release of
+# a product whose code did not move — that happened on the sidecar the hour the trigger went on.
+# ---------------------------------------------------------------------------
+
+on:
+  # push:
+  #   branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    name: release · propose
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      # What the action needs to open and update the release pull requests, and to cut the tags when
+      # they merge. Narrower than the release workflow's, and — unlike that one — this job is started
+      # by a push to main rather than by a tag, so it never runs code a tag points at. That
+      # distinction is the subject of Epic 5.
+      contents: write
+      pull-requests: write
+    steps:
+      # SAY WHAT IS MISSING, rather than letting the mint below fail on an empty input. Without this,
+      # `create-github-app-token` answers an absent secret with a message about a MALFORMED PRIVATE
+      # KEY — which reads like a broken secret rather than one that was never set, and sends whoever
+      # dispatched this looking in the wrong place.
+      - name: The app must be installed here before anything can be minted from it
+        env:
+          # `secrets` is NOT one of the contexts a step's `if:` can read, so this is a step that
+          # always runs and decides in the shell. The PRIVATE KEY never reaches the environment: the
+          # expression compares it and hands over `true` or `false`, which is the only thing this
+          # step has any business knowing about it.
+          APP_ID_SET: ${{ secrets.RELEASE_PLEASE_APP_ID != '' }}
+          APP_KEY_SET: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY != '' }}
+        run: |
+          if [ "$APP_ID_SET" = "true" ] && [ "$APP_KEY_SET" = "true" ]; then
+            echo "release-please: app credentials present."
+            exit 0
+          fi
+          echo "release-please: this repository has no app credentials yet." >&2
+          echo "  RELEASE_PLEASE_APP_ID          set: $APP_ID_SET" >&2
+          echo "  RELEASE_PLEASE_APP_PRIVATE_KEY set: $APP_KEY_SET" >&2
+          echo "  The app is dew-flow-release-please. Installing it on a repository needs a browser:" >&2
+          echo "  the manifest route has a REST endpoint, but the code it consumes comes only from a" >&2
+          echo "  browser redirect. The four steps are in" >&2
+          echo "  PLAN_release_please_meets_a_narrative_changelog.md in dew_flow_connect_other_ais." >&2
+          echo "  Nothing here is broken; it is not set up yet." >&2
+          exit 1
+
+      # A token that lives for an hour and is scoped to this installation, minted here rather than
+      # stored anywhere. That is the whole reason an app was chosen over a PAT: what a leak would
+      # cost is bounded by the app's four permissions and by the hour, not by whatever the person who
+      # minted the PAT happens to have access to.
+      - id: token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          # THE POINT OF THE WHOLE FILE. With `GITHUB_TOKEN` the tags this cuts start nothing, so the
+          # releases produce nothing and say nothing. An app installation token is an ordinary actor
+          # to GitHub, so `release.yml` runs when a release pull request merges.
+          token: ${{ steps.token.outputs.token }}
