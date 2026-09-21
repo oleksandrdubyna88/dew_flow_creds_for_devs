@@ -200,9 +200,17 @@ jobs:
   #
   # That is not hypothetical here: server-v0.5.0 shipped 4 assets, v0.5.1 shipped 5, v0.5.2 shipped 5
   # — every server release this repository has ever made was missing osx-x64, and each one read as a
-  # success in every list. `needs:` makes a single failed leg keep the release from existing at all,
-  # and the count assertion below makes a silently shrinking matrix a red build rather than an
+  # success in every list. `needs:` makes a single failed leg keep the release from being PUBLISHED at
+  # all, and the count assertion below makes a silently shrinking matrix a red build rather than an
   # absence a user discovers on the download page.
+  #
+  # SINCE 2026-09-21 THE RELEASE IS NOT CREATED HERE — release-please creates it when it cuts the tag,
+  # which is how it cuts one. The guarantee is unchanged and the mechanism moved by one word: it makes
+  # a DRAFT, this job uploads onto it, the assertion runs against the real release, and the last step
+  # flips the draft off. A failure anywhere leaves a draft, which is invisible rather than misleading.
+  # `draft: true` in release-please-config.json is the other half, and it is not optional: without it
+  # `gh release create` fails outright and the release sits PUBLISHED AND EMPTY. That is not a guess —
+  # server-v0.8.0 and cli-v0.2.0 did exactly that.
   server-release:
     name: publish server release
     needs: server-binaries
@@ -217,17 +225,30 @@ jobs:
           path: assets
           merge-multiple: true
 
-      - name: Create the release with every asset at once
+      - name: Every asset onto the draft release at once
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
         shell: bash
         run: |
           set -euo pipefail
           VERSION="${GITHUB_REF_NAME#server-v}"
-          gh release create "$GITHUB_REF_NAME" assets/* \
-            --title "cred-vault-server $VERSION" \
-            --notes "Native AOT builds. Docker: ghcr.io/${{ github.repository_owner }}/cred-vault-server:$VERSION"
+          # UPLOAD, not create: release-please already made this release when it cut the tag, as a
+          # DRAFT nobody can download. Creating it again fails with "a release with the same tag name
+          # already exists" — which is how this was found, with two releases already public and empty.
+          # The draft is flipped off in the step after the asset assertion, so the guarantee this job
+          # was built for survives: nothing is downloadable until every target has an asset.
+          gh release upload "$GITHUB_REF_NAME" assets/* --clobber
+          # release-please's notes are the generated changelog, which says more than the sentence
+          # that used to be here — so they are KEPT and the coordinate is appended to them.
+          {
+            gh release view "$GITHUB_REF_NAME" --json body --jq .body
+            # shellcheck disable=SC2016  # the backticks are MARKDOWN, wanted literal; the values come
+            # through %s precisely so the string never has to expand anything.
+            printf '\n\nNative AOT builds. Docker: `ghcr.io/%s/cred-vault-server:%s`\n' "$OWNER" "$VERSION"
+          } > notes.md
+          gh release edit "$GITHUB_REF_NAME" --title "cred-vault-server $VERSION" --notes-file notes.md
 
       # Asserted from the RELEASE, not from this workflow's opinion of itself: a matrix that silently
       # shrinks — a runner image retired, a leg skipped by an `if:` — passes every job-level check.
@@ -251,6 +272,17 @@ jobs:
             exit 1
           fi
           echo "all six RIDs present: $NAMES"
+
+      # ONLY NOW does it become downloadable. This is the step that carries the guarantee the job
+      # above was built for: release-please cut the tag and left a draft, the assets went on, the
+      # assertion passed against the REAL release, and publishing is the last thing that happens.
+      # A failure anywhere above leaves a draft, which is invisible rather than misleading.
+      - name: Publish it
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false
 
   # The headless CLI, same technology and same four RIDs as the server: one toolchain in the
   # repository, and the AOT analyzers already run on every ordinary build so an incompatible
@@ -390,9 +422,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "$GITHUB_REF_NAME" assets/* \
-            --title "creds ${GITHUB_REF_NAME#cli-v}" \
-            --notes "Native AOT builds of the headless CLI."
+          # Upload onto release-please's DRAFT, never create — see the server job's header.
+          gh release upload "$GITHUB_REF_NAME" assets/* --clobber
+          {
+            gh release view "$GITHUB_REF_NAME" --json body --jq .body
+            printf '\n\nNative AOT builds of the headless CLI.\n'
+          } > notes.md
+          gh release edit "$GITHUB_REF_NAME" --title "creds ${GITHUB_REF_NAME#cli-v}" --notes-file notes.md
 
       - name: Every target has an asset
         env:
@@ -412,6 +448,14 @@ jobs:
             exit 1
           fi
           echo "all six RIDs present: $NAMES"
+
+      # Only now downloadable — see the server job. A failure above leaves a draft, not a lie.
+      - name: Publish it
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false
 
   # The MCP server: same technology, same four RIDs, its own tag line. Versioned apart from the
   # CLI because they are two binaries with two audiences — a person installs `creds` for their
@@ -535,9 +579,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "$GITHUB_REF_NAME" assets/* \
-            --title "creds-mcp ${GITHUB_REF_NAME#mcp-v}" \
-            --notes "Native AOT builds of the MCP server."
+          # Upload onto release-please's DRAFT, never create — see the server job's header.
+          gh release upload "$GITHUB_REF_NAME" assets/* --clobber
+          {
+            gh release view "$GITHUB_REF_NAME" --json body --jq .body
+            printf '\n\nNative AOT builds of the MCP server.\n'
+          } > notes.md
+          gh release edit "$GITHUB_REF_NAME" --title "creds-mcp ${GITHUB_REF_NAME#mcp-v}" --notes-file notes.md
 
       - name: Every target has an asset
         env:
@@ -557,6 +605,14 @@ jobs:
             exit 1
           fi
           echo "all six RIDs present: $NAMES"
+
+      # Only now downloadable — see the server job. A failure above leaves a draft, not a lie.
+      - name: Publish it
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false
 
   extension:
     name: publish extension
@@ -651,6 +707,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "$GITHUB_REF_NAME" creds-for-devs.vsix \
+          # Upload onto release-please's DRAFT, never create — see the server job's header.
+          #
+          # The NOTES are the one place this leg differs from the other three: it keeps its own
+          # RELEASE_NOTES.md, extracted from the hand-written CHANGELOG.md, and does NOT append
+          # release-please's generated list. A paragraph of prose written by a person is better
+          # release notes than a list of commit subjects, and protecting exactly that prose is why
+          # release-please writes to RELEASES.md here instead.
+          gh release upload "$GITHUB_REF_NAME" creds-for-devs.vsix --clobber
+          gh release edit "$GITHUB_REF_NAME" \
             --title "CredsForDevs ${{ steps.version.outputs.version }}" \
-            --notes-file RELEASE_NOTES.md
+            --notes-file RELEASE_NOTES.md \
+            --draft=false
