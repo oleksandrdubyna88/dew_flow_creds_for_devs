@@ -57,6 +57,18 @@
     "The sidecar never showed this because it publishes with `softprops/action-gh-release`, which",
     "UPDATES an existing release instead of refusing. It worked there by luck, not by design."
   ],
+  "$force-tag-creation": [
+    "WITHOUT THIS, `draft: true` DEADLOCKS THE WHOLE CHAIN, and the action's own schema says why:",
+    "\"GitHub does not create a Git tag for draft releases until they are published. This 'lazy tag",
+    "creation' causes release-please to fail to find the previous release… Setting this to `true`",
+    "ensures the tag is created immediately.\"",
+    "",
+    "So: no tag, and `release.yml` triggers on `push: tags`. It would never run, the draft would",
+    "never get its assets, and nothing would ever publish it — a fix worse than the defect it",
+    "replaced, and silent in the same way. Caught in review before it shipped, verified against the",
+    "schema rather than taken on trust."
+  ],
+  "force-tag-creation": true,
   "draft": true,
   "separate-pull-requests": true,
   "include-component-in-tag": true,

@@ -242,12 +242,18 @@ jobs:
           gh release upload "$GITHUB_REF_NAME" assets/* --clobber
           # release-please's notes are the generated changelog, which says more than the sentence
           # that used to be here — so they are KEPT and the coordinate is appended to them.
-          {
-            gh release view "$GITHUB_REF_NAME" --json body --jq .body
-            # shellcheck disable=SC2016  # the backticks are MARKDOWN, wanted literal; the values come
-            # through %s precisely so the string never has to expand anything.
-            printf '\n\nNative AOT builds. Docker: `ghcr.io/%s/cred-vault-server:%s`\n' "$OWNER" "$VERSION"
-          } > notes.md
+          #
+          # APPENDED ONCE, however often this runs. Re-running a release job is ordinary (a flaky
+          # upload, a retried leg), and an append that does not check would leave the same paragraph
+          # twice, then three times. The body is read back and tested for the line before adding it.
+          BODY="$(gh release view "$GITHUB_REF_NAME" --json body --jq .body)"
+          # shellcheck disable=SC2016  # the backticks are MARKDOWN, wanted literal; the values come
+          # through %s precisely so the string never has to expand anything.
+          COORD="$(printf 'Native AOT builds. Docker: `ghcr.io/%s/cred-vault-server:%s`' "$OWNER" "$VERSION")"
+          case "$BODY" in
+            *"$COORD"*) printf '%s\n' "$BODY" > notes.md ;;
+            *)          { printf '%s' "$BODY"; printf '\n\n%s\n' "$COORD"; } > notes.md ;;
+          esac
           gh release edit "$GITHUB_REF_NAME" --title "cred-vault-server $VERSION" --notes-file notes.md
 
       # Asserted from the RELEASE, not from this workflow's opinion of itself: a matrix that silently
@@ -424,10 +430,13 @@ jobs:
           set -euo pipefail
           # Upload onto release-please's DRAFT, never create — see the server job's header.
           gh release upload "$GITHUB_REF_NAME" assets/* --clobber
-          {
-            gh release view "$GITHUB_REF_NAME" --json body --jq .body
-            printf '\n\nNative AOT builds of the headless CLI.\n'
-          } > notes.md
+          # Appended once, however often this runs — see the server leg.
+          BODY="$(gh release view "$GITHUB_REF_NAME" --json body --jq .body)"
+          LINE="Native AOT builds of the headless CLI."
+          case "$BODY" in
+            *"$LINE"*) printf '%s\n' "$BODY" > notes.md ;;
+            *)         { printf '%s' "$BODY"; printf '\n\n%s\n' "$LINE"; } > notes.md ;;
+          esac
           gh release edit "$GITHUB_REF_NAME" --title "creds ${GITHUB_REF_NAME#cli-v}" --notes-file notes.md
 
       - name: Every target has an asset
@@ -581,10 +590,13 @@ jobs:
           set -euo pipefail
           # Upload onto release-please's DRAFT, never create — see the server job's header.
           gh release upload "$GITHUB_REF_NAME" assets/* --clobber
-          {
-            gh release view "$GITHUB_REF_NAME" --json body --jq .body
-            printf '\n\nNative AOT builds of the MCP server.\n'
-          } > notes.md
+          # Appended once, however often this runs — see the server leg.
+          BODY="$(gh release view "$GITHUB_REF_NAME" --json body --jq .body)"
+          LINE="Native AOT builds of the MCP server."
+          case "$BODY" in
+            *"$LINE"*) printf '%s\n' "$BODY" > notes.md ;;
+            *)         { printf '%s' "$BODY"; printf '\n\n%s\n' "$LINE"; } > notes.md ;;
+          esac
           gh release edit "$GITHUB_REF_NAME" --title "creds-mcp ${GITHUB_REF_NAME#mcp-v}" --notes-file notes.md
 
       - name: Every target has an asset
