@@ -68,6 +68,33 @@
     "replaced, and silent in the same way. Caught in review before it shipped, verified against the",
     "schema rather than taken on trust."
   ],
+  "$exclude": [
+    "A COMMIT THAT ONLY TOUCHES CI IS NOT A RELEASE, and this is the mechanism rather than the",
+    "reminder. From the action's own schema: \"Path of commits to be excluded from parsing. If ALL",
+    "files from commit belong to one of the paths it will be skipped.\"",
+    "",
+    "Why it is here: the very commit that set release-please up in this repository was written",
+    "`feat(ci): …` and added a version.txt inside each component directory, so all three .NET lines",
+    "proposed a MINOR release for a configuration change. The same mistake had already been made in",
+    "the sidecar and written into the plan as a rule — and then made again here, and once more in",
+    "connect_other_ais. A note that fails three times is not a rule.",
+    "",
+    "The version.txt paths are listed because they are exactly how a configuration commit reaches a",
+    "component's path in the first place. They are release-please's own bookkeeping; nothing else",
+    "reads them.",
+    "",
+    "THE TRADE, said out loud: a change to `.github` that genuinely alters a product — a compiler",
+    "flag, a build argument — is skipped too. It rides along with the next real change, or its author",
+    "adds a `Release-As:` footer. That is the smaller of the two errors."
+  ],
+  "exclude-paths": [
+    ".github",
+    "release-please-config.json",
+    ".release-please-manifest.json",
+    "src_minimalapi_server/version.txt",
+    "src_cli/version.txt",
+    "src_mcp/version.txt"
+  ],
   "force-tag-creation": true,
   "draft": true,
   "separate-pull-requests": true,
