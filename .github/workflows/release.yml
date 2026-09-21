@@ -273,8 +273,15 @@ jobs:
           done
           if [ -n "$MISSING" ]; then
             echo "::error::the release is missing an asset for:$MISSING"
-            echo "A user on that platform finds an absence, not an error. Delete the release and the"
-            echo "tag, fix the leg, and ship the next patch version — never move a tag."
+            # THE REPAIR CHANGED when release-please took over the release. It used to be "delete the
+            # release and the tag" — correct when this job CREATED a published release and a partial
+            # one could therefore exist. It cannot now: the publish step below is the only thing that
+            # takes the draft down, and it never runs if this line fails. So there is nothing public
+            # to delete, and deleting the tag is the one move this family forbids everywhere else.
+            echo "Nothing is public: the release is still a DRAFT, and the step that publishes it"
+            echo "runs only after this line passes. Fix the leg and re-run this workflow — the"
+            echo "upload is --clobber, so a repeat is safe. If the version has to be abandoned, ship"
+            echo "the next patch; never move or delete the tag."
             exit 1
           fi
           echo "all six RIDs present: $NAMES"
