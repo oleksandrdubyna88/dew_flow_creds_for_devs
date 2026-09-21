@@ -1,0 +1,67 @@
+{
+  "$note": [
+    "The protection the RELEASE TAGS are supposed to have, as a file. GitHub does not read this file —",
+    "nothing can, because a ruleset is settings rather than content. What it does is make the intent",
+    "reviewable, exactly as .github/branch-protection.json does for the branch.",
+    "",
+    "Applied 2026-09-21 to ruleset id 23780086 via `POST /repos/{repo}/rulesets`. This is the body,",
+    "verbatim, so re-applying it is `gh api --method PUT repos/.../rulesets/23780086 --input` and",
+    "nothing translates it on the way.",
+    "",
+    "Classic branch protection CANNOT do this: it does not govern tags. That is why Epic 5 step 3 of",
+    "PLAN_family_ci_hardening.md names a ruleset specifically.",
+    "",
+    "FOUR PATTERNS, because four products share one tag namespace here — the same four release.yml",
+    "triggers on and the same four release-please cuts."
+  ],
+  "$decided": [
+    "THE BYPASS LIST IS THE WHOLE DESIGN, and the operator chose on 2026-09-21: the GitHub App and",
+    "NOBODY ELSE. Not the operator, not a repository admin. A release tag can only be created by",
+    "`dew-flow-release-please`, which cuts it from a MERGED — therefore reviewed — release pull",
+    "request. That is what closes CWE-522 here rather than narrowing it.",
+    "",
+    "The alternative considered and rejected was App-plus-operator, which leaves an emergency exit and",
+    "reduces the exposure to \"an actor we trust\" instead of removing it. It was rejected because the",
+    "exit is no longer needed: the release is held as a DRAFT until every target has an asset, so the",
+    "one repair that used to require touching a tag — a release published incomplete — cannot happen.",
+    "A bypass can be added in one line later; the reverse order never happens.",
+    "",
+    "CREATION, UPDATE AND DELETION are all restricted. Creation alone would leave a protected tag that",
+    "can simply be MOVED to another commit, which is the same exposure with extra steps.",
+    "",
+    "THE HONEST LIMIT, said rather than discovered: a ruleset restricts WHO may create a tag, not which",
+    "commit it points at. The commit becomes trustworthy because the only permitted creator cuts it",
+    "from a merged pull request — that chain, not the ruleset alone, is the guarantee.",
+    "",
+    "VERIFIED, not assumed. Reading a ruleset back is not evidence it acts. A probe pattern",
+    "(`refs/tags/zz-ruleset-probe-*`) was added, a tag creation attempted with the operator's own",
+    "token, and refused — HTTP 422 `Reference update failed`. The pattern was then removed and no tag",
+    "was created."
+  ],
+  "name": "release tags",
+  "target": "tag",
+  "enforcement": "active",
+  "bypass_actors": [
+    {
+      "actor_id": 5018284,
+      "actor_type": "Integration",
+      "bypass_mode": "always"
+    }
+  ],
+  "conditions": {
+    "ref_name": {
+      "include": [
+        "refs/tags/server-v*",
+        "refs/tags/extension-v*",
+        "refs/tags/cli-v*",
+        "refs/tags/mcp-v*"
+      ],
+      "exclude": []
+    }
+  },
+  "rules": [
+    { "type": "creation" },
+    { "type": "update" },
+    { "type": "deletion" }
+  ]
+}
