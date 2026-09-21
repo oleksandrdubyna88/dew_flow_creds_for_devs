@@ -36,6 +36,7 @@ jobs:
   build-test:
     name: build · test
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -82,6 +83,7 @@ jobs:
   contract:
     name: http · contract suite
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -144,6 +146,7 @@ jobs:
   deployment:
     name: compose · scripts
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -235,7 +238,15 @@ jobs:
           # matters: curl retries transport failures on its own, but treats a 500 as a final
           # answer. The checksum below still decides what runs, so this widens the window without
           # widening what is trusted.
-          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 --retry-delay 2 --retry-all-errors \
+          #
+          # AND THE WINDOW WAS TWO ORDERS OF MAGNITUDE TOO SHORT, measured on
+          # dew_flow_connect_other_ais 2026-09-21: four consecutive 504s between 14:53:19.86 and
+          # 14:53:25.89 - 6.08 seconds for the whole budget, because `--retry-delay 2` REPLACES
+          # curl's exponential backoff with a flat two seconds. A 504 from a CDN is a server-side
+          # outage measured in minutes. The guard was built for exactly this and then given six
+          # seconds to do it in, so it failed looking like it worked. Dropping the fixed delay
+          # restores the backoff (1, 2, 4, 8, 16 s); `--retry-max-time` is the ceiling.
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 5 --retry-max-time 120 --retry-all-errors \
             -o actionlint.tar.gz \
             "https://github.com/rhysd/actionlint/releases/download/v$ACTIONLINT_VERSION/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
           echo "$ACTIONLINT_SHA256  actionlint.tar.gz" | sha256sum -c -

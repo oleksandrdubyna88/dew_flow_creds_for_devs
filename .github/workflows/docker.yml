@@ -28,6 +28,7 @@ jobs:
   image:
     name: build · smoke · publish
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # A failed or cancelled server pipeline produces no image.
     # Only a PUSH to main builds and publishes. `ci · server` also runs for pull requests, and a
     # workflow_run chained to it would otherwise check out a pull request's head — from a fork,
