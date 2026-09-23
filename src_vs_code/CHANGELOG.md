@@ -42,7 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   menu of an entry that has a URL. Copy stays. Only http and https addresses open — a stored URL can
   arrive by sync, share or import, so `file:`, `vscode:`, `javascript:` and the rest are refused by
   name, as is a URL with a user name or password in it; a bare host is taken to be https. A
-  PIN-protected entry asks for its PIN first.
+  PIN-protected credential always offers the menu item — its URL is sealed until the PIN — and says
+  "has no URL" after the PIN if it has none.
 
 ### Added — the person says what runs, where, and in which order (#103)
 
