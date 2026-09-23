@@ -1442,10 +1442,56 @@ at the prompt and left Enter to the user; the operator overruled that, and it is
 overrule — these are commands the user wrote and saved, not commands arriving from elsewhere.
 `Copy Command` covers "let me edit it before it runs".
 
+**Runs on — the OS a command is written for (issue #103).** `terminalOs` (`windows` / `macos` /
+`linux`, a LOOSE string in the guard so a newer build's value never drops the entity) is set by the
+*Runs on* dropdown (`execFormFields.ts`): a new entry starts on this machine's OS, an existing one
+stays unset. With an OS recorded, *Run in Terminal* and the agent's `creds_run` refuse on another OS
+(`hostShell.osMismatch`, checked BEFORE the trust modal) and run in that OS's native shell —
+`entryTerminal` pins the terminal, `capturedRun` spawns the same shell for the agent. Without one,
+nothing changed: the default profile for the human, Node's `shell: true` for the agent. The viewer's
+command row reads `Command · runs on Linux` (`commandRowLabel`).
+
+### Which shell parses the line (issue #103)
+
+A line composed for the **host** platform used to be typed into whatever terminal the window opens
+**by default**. On a Windows machine whose default profile is WSL bash that is `Start-Process -Verb
+RunAs …` reaching bash — `command not found`, the reported defect. Two questions had been answered as
+one: which OS the line is for, and which shell will read it.
+
+- `hostShell.ts` (pure) answers both: `osOf`, `hostShell` (PowerShell on Windows, `/bin/bash` else
+  `/bin/sh`), `quoteFor` per family (proved against the real bash and Windows PowerShell in
+  `hostShell.test.ts`), and the ONE `shellFamily` detector — `runPlan.ts` and `envProbe.ts` each used
+  to carry a copy.
+- `pinnedTerminal.ts` is the only way a line the extension COMPOSES reaches a terminal: VPN start/stop,
+  the OpenVPN Connect import, the install offer (`toolEnsure.ts`), *Run Script*, the dependency chain.
+  It passes `shellPath`, reuses a terminal only when its shell matches, and refuses in a remote window
+  that is not WSL (`pinnedShellRefusal`) — Remote-SSH and containers have their terminals on another
+  computer. A WSL window is allowed: interop resolves `powershell.exe` there (measured 2026-09-23:
+  `/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe`), and where interop is off the
+  terminal closes at once, which the chain reports by name rather than waiting on.
+- The environment probe after an env write deliberately still reads `vscode.env.shell`: it asks what
+  the person's OWN next terminal will see.
+
 ### VPN start and stop
 
-`vpnCommand.ts` (pure, `vscode`-free) composes the line; `runVpn` in `extension.ts` writes the config
-out and shows it in a terminal.
+`vpnCommand.ts` (pure, `vscode`-free) composes the line; `runVpn` in `vpnRun.ts` writes the config
+out and shows it in a terminal pinned to the host's shell (above). `runVpn` returns whether it started
+anything, and the agent's `creds_vpn_up` reports that value — it used to be told "opened" about a
+refusal the person saw as a warning.
+
+**A launcher of your own (issue #103).** `vpnLauncherEntityId` names a same-account Terminal entry
+(*Started by*, a `<select>` like the SSH key picker; candidates from `collectLauncherCandidates`).
+`vpnLauncherRun.ts` then runs THAT entry's command instead of the built-in composition: its OS is
+checked first, its line is confirmed once per exact TEMPLATE (the substituted path contains the
+process id), the dependency chain the VPN and the launcher ask for runs and is awaited, and only then
+is the config written — under `launcherConfigFileName`, which keeps a plain uploaded extension — and
+`{config}` replaced by its path quoted for the shell that reads it (`vpnLauncher.ts`). A launcher
+makes ANY VPN type startable, so `:vpnrun` comes from `canStartVpn`. Stop with a launcher explains
+where to stop it; the extension does not guess a process. A launcher that no longer exists falls back
+to the built-in one with a warning. The reference is stripped from a share and remapped on import.
+
+On macOS the launcher probe also checks the Homebrew `sbin`/`bin` directories (`vpnExec.ts`), and the
+install offer is a `brew install` recipe (`toolCheck.ts`) — a Mac is no longer "a Linux without apt".
 
 **Elevation is deliberately the OS's.** Both tools create a network interface, which an editor
 extension cannot be granted, so the command is *shown* and the prompt is UAC (`Start-Process -Verb
@@ -1462,8 +1508,9 @@ Three constraints that are encoded rather than remembered:
 - **Stop never needs the vault.** A locked vault must not be able to strand a tunnel that is up,
   which is why only start re-materializes the config and stop works from the tunnel name.
 
-Only WireGuard and OpenVPN get a button — the tree adds `:vpnrun` to `contextValue` for those. IKEv2
-and L2TP are OS-level profiles; a button for them could only ever explain itself.
+Only WireGuard and OpenVPN get a built-in launcher — the tree adds `:vpnrun` to `contextValue` for
+those, and for any VPN that names a launcher of its own (above). IKEv2 and L2TP are OS-level
+profiles; without a launcher a button for them could only ever explain itself.
 
 #### Paired tokens, where an action has two directions
 
@@ -1957,7 +2004,21 @@ suffixes and nothing else — so the `^entity`, `:shareable` and `:pwd` menus ne
 
 ### Depends on — a relationship the vault can see (0.62.0)
 
-> Design record: [PLAN_depends_on.md](PLAN_depends_on.md).
+> Design record: [PLAN_depends_on.md](PLAN_depends_on.md). The execute half (issue #103):
+> [PLAN_os_aware_execution.md](../todo/PLAN_os_aware_execution.md).
+
+**Since issue #103 it can also be an execution chain — only where an entry asks.** *Execute what is
+executable first* (`runDependencies`, inside the Depends-on body) turns that entry's OWN edges into a
+chain: `dependencyRun.ts` (pure) plans it — executable means a Terminal entry with a command, a
+dependency's own dependencies are followed only when it ticks the same box, dependencies-first and each
+once, a cycle / a chain deeper than 16 / a step for another OS refuses the whole run, a dangling id is
+reported as *missing* for the person to decide. `dependencyRunHost.ts` shows the chain in ONE modal
+before anything runs, opens one pinned terminal, runs each step through shell integration and awaits
+its exit code (`engines.vscode ^1.93.0` for that API), stops at the first failure, and asks
+*Continue / Cancel* in a notification — not a modal, a step may be at a sudo prompt — when the shell
+reports no integration or no exit code. Callers: *Run in Terminal*, *Run Script*, *Start VPN* (and
+through it `creds_vpn_up`). The one-hop, cycles-allowed rules below still govern the ANNOTATION; the
+mark is stripped from a share, so a chain can only be armed by the vault's owner.
 
 An SSH host is useless without the VPN that reaches its network. The vault knew all three
 entries and nothing about the sentence joining them, so it was re-derived by hand, usually while
