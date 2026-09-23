@@ -3,7 +3,7 @@ import { hasLifetime } from './entityExpiry';
 import { normalizeTags } from './sshOptions';
 import { EntityMetadata, TreeNode } from './types';
 import { canConnectSsh } from './entityKind';
-import { isVpnStartable } from './vpnCommand';
+import { canStartVpn } from './vpnLauncher';
 
 /**
  * The grey text beside an entity's name in the tree: what it connects to, and its tags.
@@ -127,7 +127,8 @@ export function entityContextValue(
   }
   if (details?.isVpn) {
     contextValue += ':vpn';
-    if (isVpnStartable(details.vpnType)) {
+    // A launcher makes ANY type startable (issue #103) — that is what naming one is for.
+    if (canStartVpn(details)) {
       contextValue += ':vpnrun';
     }
   }
@@ -180,7 +181,7 @@ function isShareable(details: EntityMetadata | undefined, hasPassword: boolean):
     details.isSshKey !== true &&
     (Boolean(details.host) ||
       details.isDb === true ||
-      (details.isVpn === true && isVpnStartable(details.vpnType)) ||
+      (details.isVpn === true && canStartVpn(details)) ||
       details.isTerminal === true ||
       details.isScript === true ||
       // Named explicitly rather than left to follow from `hasPassword`: a config HAS no password,

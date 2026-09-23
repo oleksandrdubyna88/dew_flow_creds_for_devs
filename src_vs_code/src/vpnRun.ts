@@ -12,7 +12,10 @@ import {
   vpnStopCommand,
   vpnTunnelName,
 } from './vpnCommand';
-import { materializedKeyPath, materializeVpnConfig } from './keyInstaller';
+import { materializedKeyPath } from './keyInstaller';
+import { TrustStore } from './commandTrust';
+import { runDependenciesFirst } from './dependencyRunHost';
+import { VpnRunContext, runWithLauncher, writeVpnConfig } from './vpnLauncherRun';
 import { resolveVpnLauncher } from './vpnExec';
 import { onPath } from './installFlow';
 import { offerToInstall } from './toolEnsure';
@@ -41,6 +44,7 @@ export async function runVpn(
   storage: StorageManager,
   storageDir: string,
   vaultKeys: VaultKeys,
+  trust: TrustStore,
 ): Promise<boolean> {
   vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
   const entry = vpnEntry(target);
@@ -50,7 +54,7 @@ export async function runVpn(
   // Refused BEFORE the config is written: in a Remote-SSH window the terminal is another
   // computer's, and a tunnel there is not the one the person asked for.
   const refusal = pinnedRefusal();
-  return refusal === undefined ? runVpnEntry({ ...entry, storage, storageDir }, action) : refuse(refusal);
+  return refusal === undefined ? runVpnEntry({ ...entry, storage, storageDir, trust }, action) : refuse(refusal);
 }
 
 function vpnEntry(target: unknown): { accountId: string; details: EntityMetadata } | undefined {
@@ -62,24 +66,60 @@ function vpnEntry(target: unknown): { accountId: string; details: EntityMetadata
   return details === undefined ? undefined : { accountId: element.accountId, details };
 }
 
-interface VpnRunContext {
-  readonly accountId: string;
-  readonly details: EntityMetadata;
-  readonly storage: StorageManager;
-  readonly storageDir: string;
+/** A launcher the person named wins over the built-in one; see `vpnLauncherRun.ts`. */
+function runVpnEntry(ctx: VpnRunContext, action: 'start' | 'stop'): Promise<boolean> {
+  const launcher = launcherOf(ctx);
+  return launcher === undefined ? runBuiltIn(ctx, action) : runWithLauncher(ctx, launcher, action);
 }
 
-async function runVpnEntry(ctx: VpnRunContext, action: 'start' | 'stop'): Promise<boolean> {
+/**
+ * The named launcher's record — or `undefined` for none, and for one that no longer exists, which
+ * falls back to the built-in launcher with a warning (the `sshKeyEntityId` precedent).
+ */
+function launcherOf(ctx: VpnRunContext): EntityMetadata | undefined {
+  const id = ctx.details.vpnLauncherEntityId ?? '';
+  if (id === '') {
+    return undefined;
+  }
+  const launcher = detailsOf(ctx, id);
+  if (launcher === undefined) {
+    void vscode.window.showWarningMessage(
+      `The launcher of "${ctx.details.name}" no longer exists — using the built-in one. Edit the VPN to pick another.`,
+    );
+  }
+  return launcher;
+}
+
+function detailsOf(ctx: VpnRunContext, id: string): EntityMetadata | undefined {
+  return ctx.storage.getNode(ctx.accountId, id)?.details;
+}
+
+async function runBuiltIn(ctx: VpnRunContext, action: 'start' | 'stop'): Promise<boolean> {
   const type = startableType(ctx.details);
   if (type === undefined) {
     return refuse(notStartable(ctx.details));
   }
   // Stop does not need the config re-written; start does. Asking for the vault on a Stop
   // would mean a locked vault could leave a tunnel up with no way to bring it down.
-  if (action === 'start' && !(await writeConfig(ctx, type))) {
+  if (action === 'start' && !(await prepareStart(ctx, type))) {
     return false;
   }
   return settle(ctx.details.name, await launchFor(ctx, type, action));
+}
+
+/**
+ * Before a built-in start: the dependencies this VPN asks to run (an installer, in the owner's
+ * example) — BEFORE the launcher is looked for, so an install that just ran is found — then the
+ * config written where the tool will read it.
+ */
+async function prepareStart(ctx: VpnRunContext, type: VpnType): Promise<boolean> {
+  const ready = await runDependenciesFirst({
+    roots: [ctx.details],
+    nodeOf: (id) => ctx.storage.getNode(ctx.accountId, id)?.details,
+    ownerName: ctx.details.name,
+    trust: ctx.trust,
+  });
+  return ready && (await writeVpnConfig(ctx, vpnConfigFileName(type, ctx.details.name))) !== undefined;
 }
 
 function startableType(details: EntityMetadata): VpnType | undefined {
@@ -113,15 +153,6 @@ async function launchFor(ctx: VpnRunContext, type: VpnType, action: 'start' | 's
   return action === 'start'
     ? vpnStartCommand(type, hostVpnPlatform(), configPath, launcher.exe)
     : vpnStopCommand(type, hostVpnPlatform(), vpnTunnelName(ctx.details.name), configPath);
-}
-
-async function writeConfig(ctx: VpnRunContext, type: VpnType): Promise<boolean> {
-  const config = await ctx.storage.getVpnConfig(ctx.accountId, ctx.details.id);
-  if (config === undefined || config.trim().length === 0) {
-    return refuse(`"${ctx.details.name}" has no stored VPN config — open Edit and upload the file first.`);
-  }
-  materializeVpnConfig(ctx.storageDir, vpnConfigFileName(type, ctx.details.name), config);
-  return true;
 }
 
 async function noCli(
