@@ -23,28 +23,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Start VPN typed PowerShell into bash.** The line was composed for the machine (`Start-Process -Verb
   RunAs …` on Windows) and typed into the window's DEFAULT terminal — WSL bash in the report, so
-  `Start-Process: command not found`. Every line the extension composes — VPN start and stop, the
-  OpenVPN Connect import, the install offer, *Run Script* — now runs in a terminal opened with the
-  machine's own shell (PowerShell on Windows, bash on macOS and Linux), whatever the default is. In a
-  Remote-SSH or container window it refuses instead of typing into another computer.
+  `Start-Process: command not found`. The lines the extension composes for this machine — VPN start
+  and stop, the OpenVPN Connect import, the install offer, *Run Script*, *Run with Secrets* for a
+  script, and SSH connect in a local window — now run in a terminal opened with the machine's own
+  shell (PowerShell 7 when installed, else Windows PowerShell; bash on macOS and Linux), whatever the
+  default is. In a Remote-SSH or container window a VPN or an install refuses instead of typing into
+  another computer, and it says so before offering anything.
 - **An agent was told a VPN "opened" when nothing started.** `creds_vpn_up` answered success for a
-  missing config, a missing tool or an unsupported type; it now reports the refusal.
+  missing config, a missing tool or an unsupported type; it now reports the refusal (and
+  `creds_vpn_down` says "stopped", not "started").
 - **macOS is its own platform.** OpenVPN and WireGuard installed by Homebrew are found in
   `/opt/homebrew` and `/usr/local`, and a missing tool is offered as `brew install …` instead of an apt
   command.
 
 ### Added — the person says what runs, where, and in which order (#103)
 
-- **Runs on**, for a Terminal entry: Windows, macOS or Linux (a new entry starts on this machine's).
-  The command then runs in that system's own shell and is refused on any other — for *Run in
-  Terminal* and for an agent's `creds_run` alike. Entries without it behave as before.
+- **Runs on**, for a Terminal entry: Windows, macOS or Linux (a new entry starts on the system of the
+  window's terminal — Linux in a WSL window, unset in a Remote-SSH one). Your default terminal runs it
+  when it is a shell of that system, so pwsh 7 and zsh with its aliases keep working; otherwise that
+  system's own shell does. On any other system it is refused, with the way back to "not set" — for
+  *Run in Terminal*, *Run with Secrets* and an agent's `creds_run` alike. Entries without it behave as
+  before.
 - **Started by**, for a VPN: pick one of your Terminal entries instead of the built-in launcher. Its
   command runs with `{config}` replaced by the path of the stored config, so any kind of VPN — IKEv2,
   L2TP, a vendor client — becomes startable from the tree.
-- **Depends on → Execute what is executable first.** Before the entry is used, its Terminal
-  dependencies run in order, each one awaited, and a failure stops the rest; a dependency's own
-  dependencies run too when it asks for the same. The whole chain is shown before anything runs, a
-  circular chain is refused, and a deleted dependency is named rather than skipped in silence.
+- **Depends on → Execute what is executable first.** Before *Run in Terminal*, *Run Script*, *Run
+  with Secrets* or *Start VPN*, the entry's Terminal dependencies run in order, each one awaited; a
+  dependency's own dependencies run too when it asks for the same. The chain is listed before its
+  first run and whenever a line changes. A step that ends with an error asks whether to go on — an
+  installer that finds its tool already there often exits that way — and closing the terminal stops
+  the rest. A circular chain is refused, a dependency that uses `{config}` is sent to *Started by*,
+  and a deleted or trashed dependency is named rather than skipped in silence.
 
 ### Changed
 
