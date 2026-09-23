@@ -330,7 +330,12 @@ function hasValidRunFields(v: Record<string, unknown>): boolean {
     (v.scriptVars === undefined || isCommandArgArray(v.scriptVars)) &&
     (v.command === undefined || typeof v.command === 'string') &&
     (v.commandNote === undefined || typeof v.commandNote === 'string') &&
-    (v.commandArgs === undefined || isCommandArgArray(v.commandArgs))
+    (v.commandArgs === undefined || isCommandArgArray(v.commandArgs)) &&
+    // Issue #103. `terminalOs` is loose (any string) for `kind`'s reason: a value a newer build
+    // writes must not make this one drop the entity.
+    (v.terminalOs === undefined || typeof v.terminalOs === 'string') &&
+    (v.vpnLauncherEntityId === undefined || typeof v.vpnLauncherEntityId === 'string') &&
+    (v.runDependencies === undefined || typeof v.runDependencies === 'boolean')
   );
 }
 

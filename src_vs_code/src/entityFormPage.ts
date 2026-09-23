@@ -9,6 +9,7 @@ import { methodOrder } from './phraseLayout';
 import { Random } from './decoyDigits';
 import { clearSecondBox, secondBox, secondModeControl } from './secondModeMarkup';
 import { pinState, wovenState } from './generalNotes';
+import { runDependenciesField, terminalOsField, vpnLauncherField } from './execFormFields';
 import { formStyleSheet } from './entityFormStyles';
 import { AgentDoors, agentDoorRows } from './agentDoors';
 import { describeAttachment } from './attachmentMeta';
@@ -449,6 +450,7 @@ export function renderHtml(options: EntityFormOptions): string {
       <div class="genRow">
         <button type="button" id="addDependency">+ Add dependency</button>
       </div>
+      ${runDependenciesField(d)}
       <p class="hint">Both ends are marked with the same colour in the tree, and the entry you depend on grows a list of everything that needs it. The colour belongs to that entry — change it here and every entry depending on the same thing follows.</p>
     </div>
   </fieldset>`;
@@ -544,6 +546,7 @@ ${formHeaderHtml({
   ${openSection('vpnSection')}
     <label for="vpnType">VPN type</label>
     <select id="vpnType">${vpnTypeOptions}</select>
+    ${vpnLauncherField(d, options.launcherCandidates ?? [])}
     <label for="vpnConfigFile">Config file (.ovpn / .conf / …)</label>
     <input id="vpnConfigFile" type="file">
     <p class="hint">${vpnConfigHint}</p>
@@ -589,6 +592,7 @@ ${formHeaderHtml({
     <input id="command" type="text" autocomplete="off" spellcheck="false"
            placeholder="aws sso login" value="${escapeHtml(d?.command ?? '')}">
     <p class="hint">The verb only. Arguments go in their own rows below, so each one can carry its own explanation.</p>
+    ${terminalOsField(d, options.mode, options.hostOs)}
 
     <label for="commandNote">What this command is for</label>
     <textarea id="commandNote" rows="2" spellcheck="false"

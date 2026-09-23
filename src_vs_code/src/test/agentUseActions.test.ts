@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { commandFingerprint } from '../commandTrust';
 import {
   dbQueryAction,
   scriptRunAction,
@@ -166,4 +167,35 @@ test('a script action returns its child output RAW — masking belongs to the br
 
   assert.equal(out.exitCode, 0, JSON.stringify(out));
   assert.match(out.stdout, /plain output/, 'the action passes its child output through untouched');
+});
+
+// Issue #103 — the agent's captured run of a Terminal entry follows the entry's OS, as the human
+// Run button does: refused on another OS, the host's native shell on its own.
+const hostOs = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux';
+const otherOs = hostOs === 'windows' ? 'linux' : 'windows';
+
+function terminalDeps(command: string, terminalOs: string | undefined) {
+  const details = { id: 'e1', name: 'echoer', isTerminal: true, command, terminalOs };
+  return fakeDeps({
+    storage: { getNode: () => ({ details }) },
+    // Vouched for, so the run reaches the spawn: this is about WHICH shell, not about trust.
+    trustStore: { get: () => [commandFingerprint('e1', command)], update: async () => undefined },
+  });
+}
+
+test('an entry written for another OS is refused before anything runs (#103)', async () => {
+  const result = await terminalRunAction(terminalDeps('echo hi', otherOs)).run(ctx, {});
+
+  assert.equal(code(result), 'not_supported');
+  assert.match(message(result), /is written for/);
+});
+
+test('an entry written for THIS OS runs in the native shell — PowerShell syntax works on Windows (#103)', async () => {
+  // `Write-Output` exists only in PowerShell; under the old `shell: true` it reached cmd.exe and
+  // failed. On POSIX the same test uses a bash-only construct instead.
+  const line = hostOs === 'windows' ? 'Write-Output ("a" + "b")' : 'x=ab; echo "${x}"';
+  const result = await terminalRunAction(terminalDeps(line, hostOs)).run(ctx, {});
+
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.match((result.body as { stdout?: string }).stdout ?? '', /ab/);
 });

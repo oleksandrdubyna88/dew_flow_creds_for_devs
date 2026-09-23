@@ -1,5 +1,6 @@
 import { EntityKind, TreeElement, TreeNode } from './types';
 import { KeyCandidate } from './entityFormPanel';
+import type { LauncherCandidate } from './entityFormShape';
 import { SelectedNode, describeSkips, resolveSelection } from './selectionResolver';
 import { inheritedFolderType } from './defaultFolders';
 import { StorageManager } from './storageManager';
@@ -91,6 +92,29 @@ function canBeJumpHost(node: TreeNode, excludeEntityId: string): boolean {
     return false;
   }
   return isSshReachable(node.details);
+}
+
+/**
+ * The Terminal entries a VPN could be started by (issue #103) — the same shape as the jump-host
+ * list, for the same reason: "point at another entity" is a `<select>`, never a place to type a
+ * command. Only an entry with a command can launch anything.
+ */
+export function collectLauncherCandidates(
+  storage: StorageManager,
+  accountId: string,
+  excludeEntityId: string,
+): LauncherCandidate[] {
+  return storage
+    .getNodes(accountId)
+    .filter((node) => canLaunch(node, excludeEntityId))
+    .map((node) => ({ id: node.id, name: node.name, os: node.details?.terminalOs }));
+}
+
+function canLaunch(node: TreeNode, excludeEntityId: string): boolean {
+  if (node.type !== 'entity' || node.id === excludeEntityId) {
+    return false;
+  }
+  return node.details?.isTerminal === true && (node.details.command ?? '').trim().length > 0;
 }
 
 // eslint-disable-next-line complexity

@@ -1,4 +1,13 @@
 import { CommandArg } from './types';
+import { osLabel } from './hostShell';
+
+/**
+ * The viewer's label for a command row — with the OS it is written for, when one is recorded
+ * (issue #103). A label rather than a row of its own: an OS is not a value anybody copies.
+ */
+export function commandRowLabel(terminalOs: string | undefined): string {
+  return terminalOs === undefined || terminalOs === '' ? 'Command' : `Command · runs on ${osLabel(terminalOs)}`;
+}
 
 /**
  * CLI commands, assembled from a base command and a list of arguments.

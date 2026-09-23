@@ -24,7 +24,8 @@ import { showEntityForm } from '../entityFormPanel';
 import { collectKeyCandidates } from '../entityEditCommands';
 import { buildDependencyCandidates } from '../depGraph';
 import { buildDependencyColorMap } from '../depGraph';
-import { collectJumpCandidates } from '../commandTargets';
+import { collectJumpCandidates, collectLauncherCandidates } from '../commandTargets';
+import { osOf } from '../hostShell';
 import { carryThroughDetails } from '../attachmentMeta';
 import { applyAdditions, applyRemovals } from '../applyFormSecrets';
 import { EntryLandedError } from '../entityWrite';
@@ -272,6 +273,8 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
       dependencyFolders: buildDependencyCandidates(storage.getNodes(location.accountId), id),
       dependencyColors: buildDependencyColorMap(storage.getNodes(location.accountId)),
       jumpCandidates: collectJumpCandidates(storage, location.accountId, id),
+      launcherCandidates: collectLauncherCandidates(storage, location.accountId, id),
+      hostOs: osOf(process.platform),
     });
     if (result === undefined) {
       return;

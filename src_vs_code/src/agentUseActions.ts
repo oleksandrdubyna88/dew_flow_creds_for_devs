@@ -16,6 +16,7 @@ import { runBounded } from './sshExecRunner';
 import { resolveScriptEnv } from './scriptRender';
 import { scriptRunPlan } from './scriptRun';
 import { buildCommandLine } from './commandLine';
+import { capturedRun, osMismatch } from './hostShell';
 import { isCommandTrusted } from './commandTrust';
 import { lockToOwner, materializedKeyPath } from './materializedKeys';
 import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from './dbCliLauncher';
@@ -186,6 +187,11 @@ export function terminalRunAction(deps: AgentUseDeps): UseAction {
       if (line.trim().length === 0) {
         return fail('no_credential', `"${ctx.entityName}" has no command.`);
       }
+      // Issue #103: an entry written for another OS is refused here exactly as on the human path.
+      const mismatch = osMismatch(ctx.entityName, entity.terminalOs, process.platform);
+      if (mismatch !== undefined) {
+        return fail('not_supported', mismatch);
+      }
       if (!isCommandTrusted(deps.trustStore, ctx.entityId, line)) {
         return untrusted(ctx.entityName, 'the line');
       }
@@ -194,7 +200,8 @@ export function terminalRunAction(deps: AgentUseDeps): UseAction {
         return fail('too_many_requests', 'Too many commands are already running.');
       }
       try {
-        const outcome = await runBounded(line, [], true, {
+        const run = capturedRun(entity.terminalOs, line, process.platform, fs.existsSync);
+        const outcome = await runBounded(run.program, run.args, run.shell, {
           env: process.env,
           timeoutMs: clampExecTimeout(undefined),
           signal: deps.signal,

@@ -26,8 +26,8 @@ import { buildCommandLineWithRefs } from '../runPlan';
 import { refField } from '../runPlan';
 import { runInMaskedTerminal } from '../maskedTerminal';
 import { maskingBanner } from '../extension';
-import { pinnedTerminal } from '../pinnedTerminal';
-import { quoteFor } from '../hostShell';
+import { entryTerminal, pinnedTerminal } from '../pinnedTerminal';
+import { osMismatch, quoteFor } from '../hostShell';
 export interface RunCommandsHost {
   readonly context: vscode.ExtensionContext;
   readonly refSource: RefSource;
@@ -54,6 +54,13 @@ export function registerRunCommands(host: RunCommandsHost): void {
       );
       return;
     }
+    // Issue #103: a line written for macOS is refused on Windows BEFORE the person is asked to
+    // trust it — confirming something that then cannot run is a question with no answer.
+    const mismatch = osMismatch(element.node.name, d?.terminalOs, process.platform);
+    if (mismatch !== undefined) {
+      void vscode.window.showWarningMessage(mismatch);
+      return;
+    }
     // Read before it runs, once per exact line per machine. The justification for
     // running unconfirmed was "these are commands you wrote yourself" — true until
     // sync and Accept Share, both of which can deliver a command entry from
@@ -73,15 +80,18 @@ export function registerRunCommands(host: RunCommandsHost): void {
     // A dedicated terminal per entry, reused: running the same command twice should not
     // leave two panels behind, and mixing it into whatever terminal happened to be open
     // loses the association between the entry and its output.
-    const name = `CredsForDevs: ${element.node.name}`;
-    const existing = vscode.window.terminals.find((t) => t.name === name);
-    const terminal = existing ?? vscode.window.createTerminal({ name });
-    terminal.show();
+    // With an OS recorded it is that OS's native shell (issue #103); without one, the default
+    // profile, exactly as before the field existed. See `entryTerminal`.
+    const opened = entryTerminal(element.node.name, d?.terminalOs);
+    if (!opened.ok) {
+      void vscode.window.showWarningMessage(opened.reason);
+      return;
+    }
     // Runs it. The first version put the line on the prompt and left Enter to the user;
     // the operator asked for the button to do the whole job, which is theirs to decide —
     // these are commands they wrote and saved themselves, not something arriving from
     // elsewhere. `Copy Command` remains for the times you want to edit before running.
-    terminal.sendText(line, true);
+    opened.terminal.sendText(line, true);
   });
 
   register('credSshManager.runScript', async (target) => {
