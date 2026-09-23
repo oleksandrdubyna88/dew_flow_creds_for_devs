@@ -36,11 +36,11 @@ test('a protocol-relative //host is https, never a way around the scheme check',
 
 test('surrounding whitespace is trimmed; nothing at all is refused', () => {
   assert.equal(opened('  https://a.example  '), 'https://a.example/');
-  assert.match(refused(''), /no URL/);
-  assert.match(refused('   '), /no URL/);
+  assert.equal(refused(''), 'has no URL.');
+  assert.equal(refused('   '), 'has no URL.');
 });
 
-test('a query string survives as stored — tokens, %20 and & included', () => {
+test('the judge keeps a query string as stored — tokens, %20 and & included', () => {
   assert.equal(
     opened('https://app.example.com/cb?token=abc%20def&next=%2Fhome#frag'),
     'https://app.example.com/cb?token=abc%20def&next=%2Fhome#frag',
@@ -69,4 +69,22 @@ test('credentials inside the address are refused — the browser would send them
 test('text that is not an address at all is refused, not guessed at', () => {
   assert.match(refused('not a url with spaces'), /not a web address/);
   assert.match(refused('https://'), /not a web address/);
+});
+
+test('a host with a port opens as https; a scheme followed by digits stays a scheme and is refused', () => {
+  assert.equal(opened('grafana.internal:3000/d/x'), 'https://grafana.internal:3000/d/x');
+  assert.equal(opened('LOCALHOST:8080'), 'https://localhost:8080/');
+  // The port exception is for a HOST: `tel:911` and `javascript:1` are not hosts, and used to be
+  // read as `https://tel:911/` — harmless, but not the refusal by name every other scheme gets.
+  assert.match(refused('tel:911'), /"tel:"/);
+  assert.match(refused('javascript:1'), /"javascript:"/);
+  assert.match(refused('mailto:a@b.example'), /"mailto:"/);
+});
+
+test('a one-word host with a port is told what to store, not that a scheme is refused', () => {
+  assert.equal(
+    refused('grafana:3000'),
+    '"grafana:3000" looks like a host and a port — store it with its scheme, e.g. https://grafana:3000, to open it.',
+  );
+  assert.equal(opened('https://grafana:3000'), 'https://grafana:3000/', 'and stored that way, it opens');
 });

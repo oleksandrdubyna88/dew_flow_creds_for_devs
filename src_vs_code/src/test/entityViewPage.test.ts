@@ -331,7 +331,7 @@ test('the URL row offers Copy and then Open in the browser — Copy first, the t
   const openAt = html.indexOf('data-field="url" data-action="open"');
   assert.ok(copyAt > 0, 'Copy stays');
   assert.ok(openAt > copyAt, 'Open is ADDITIONAL, and after Copy — the "copied" tick matches the first button');
-  assert.ok(html.includes('aria-label="Open the site in the browser"'));
+  assert.ok(html.includes('aria-label="Open Site in Browser"'), 'the same words as the menu item');
   assert.equal(renderEntityViewHtml(options({ fields: { login: 'me' } })).includes('data-action="open"'), false, 'no URL, no Open');
 });
 
@@ -504,4 +504,10 @@ test('copying either half binds the OTHER one to that pair, and leaves itself li
     !script.includes('anchored'),
     'a latch that is never released is what made the button dead — the binding must come from the click',
   );
+});
+
+test('a long URL wraps in the viewer, as every long value does (#104 kept it)', () => {
+  const long = `https://login.example.com/oauth/authorize?client_id=abc&redirect_uri=${'x'.repeat(40)}`;
+  const html = renderEntityViewHtml(options({ fields: { url: long } }));
+  assert.ok(html.includes(`<textarea readonly rows="3">${long.replace(/&/g, '&amp;')}</textarea>`), html);
 });

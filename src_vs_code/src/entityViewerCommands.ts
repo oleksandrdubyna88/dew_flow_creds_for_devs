@@ -35,8 +35,8 @@ import { paymentCardFor } from './paymentViewMessages';
 import { parsePaymentFields } from './paymentFields';
 import { parseSecondValues } from './secondValues';
 import { formOf } from './paymentSaveGate';
-import { admit, openedText } from './pinAdmission';
-import { entryPinGate } from './pinPrompt';
+import { openedText } from './pinAdmission';
+import { admitEntry } from './pinPrompt';
 /** Double-click target: the read-only viewer with per-field Copy buttons. */
 export async function openEntityViewer(
   accountId: string,
@@ -55,12 +55,8 @@ export async function openEntityViewer(
   // than field by field — four of the values below are read eagerly to build the page, and a value
   // that slipped past a per-field gate would reach it as envelope JSON. Declining does not open a
   // viewer full of empty boxes; it does not open a viewer.
-  const gate = entryPinGate(accountId, details.id, details.name);
-  const admission = await admit(storage, accountId, details.id, gate);
-  if (admission.kind !== 'in') {
-    if (admission.kind === 'refused') {
-      void vscode.window.showWarningMessage(admission.reason);
-    }
+  const gate = await admitEntry(storage, accountId, details.id, details.name);
+  if (gate === undefined) {
     return;
   }
   const hasPassword = (await storage.getPassword(accountId, details.id)) !== undefined;

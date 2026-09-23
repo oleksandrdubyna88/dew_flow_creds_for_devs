@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { PinGate } from './pinGate';
 import { pinValidator } from './pinInput';
 import { PinScope } from './pinPolicy';
+import { admit } from './pinAdmission';
+import { StorageManager } from './storageManager';
 
 /**
  * The one place an entry's PIN is asked for, in `vscode`'s words.
@@ -82,3 +84,23 @@ const NEW_PIN =
   'This PIN wraps every secret this entry holds. It is stored NOWHERE — not here, not in a backup, '
   + 'not in the sync — so a forgotten PIN means the values are gone. The vault recovery code opens '
   + 'the VAULT; it does not open an entry.';
+
+/**
+ * The door before a read: ask this entry's PIN when it has one, and answer the gate that opens its
+ * values — or `undefined`, having said why. Declining says nothing more (the person chose); a wrong
+ * PIN says the gate's own reason. The viewer and *Open Site in Browser* (issue #104) both stand here;
+ * it was written out at each until then.
+ */
+export async function admitEntry(
+  storage: StorageManager,
+  accountId: string,
+  entityId: string,
+  entryName: string,
+): Promise<PinGate | undefined> {
+  const gate = entryPinGate(accountId, entityId, entryName);
+  const admission = await admit(storage, accountId, entityId, gate);
+  if (admission.kind === 'refused') {
+    void vscode.window.showWarningMessage(admission.reason);
+  }
+  return admission.kind === 'in' ? gate : undefined;
+}

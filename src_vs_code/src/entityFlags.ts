@@ -7,10 +7,11 @@ import type { EntityMetadata } from './types';
 import type { StorageManager } from './storageManager';
 
 /**
- * The two per-entity answers the tree cannot await while it renders: does this entry keep
- * previous versions, and does it have a stored password.
+ * The per-entity answers the tree cannot await while it renders: does this entry keep previous
+ * versions, does it have a stored password, is its config body still valid, and — since issue #104 —
+ * would its URL open in a browser.
  *
- * <p>Both live in SecretStorage, which `getTreeItem` cannot read synchronously — so they are
+ * <p>They live in SecretStorage, which `getTreeItem` cannot read synchronously — so they are
  * cached on the provider and refreshed at the moments they can change (startup, an edit, an
  * accepted share, a restore, a pulled sync, another window's keychain write). Extracted from
  * `activate()` (audit 2026-08-25, A1) so the two rules that make the cache trustworthy are
@@ -89,7 +90,7 @@ export class EntityFlagsRefresher {
   ) {}
 
   /**
-   * Rebuild both caches from the keychain, then repaint.
+   * Rebuild every cache from the keychain, then repaint.
    *
    * <p>Runs are SERIALIZED: a request that arrives while a walk is in flight sets a rerun flag
    * instead of starting a second walk. Two concurrent walks would race to swap their results,
@@ -144,7 +145,13 @@ export class EntityFlagsRefresher {
     if (node.details?.pinProtected === true) {
       return true;
     }
-    return siteUrlToOpen(parseFields(await this.storage.getFieldsRaw(accountId, node.id)).url).ok;
+    try {
+      return siteUrlToOpen(parseFields(await this.storage.getFieldsRaw(accountId, node.id)).url).ok;
+    } catch {
+      // A HINT that cannot be read is a hint not given — it must not stop the walk publishing every
+      // other flag (gate code round, #18). The command reads again, and says what it finds.
+      return false;
+    }
   }
 
   /**
@@ -207,7 +214,7 @@ export class EntityFlagsRefresher {
   }
 
   /**
-   * Publish both answers at once. Swapped at the end rather than cleared at the start, so a
+   * Publish every answer at once. Swapped at the end rather than cleared at the start, so a
    * repaint landing mid-walk never shows a tree with every flag briefly off.
    */
   private swapIn(history: Map<string, RevisionHead[]>, sets: Record<FlagSet, Set<string>>): void {

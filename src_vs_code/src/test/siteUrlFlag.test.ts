@@ -12,6 +12,8 @@ import { EntityMetadata } from '../types';
 interface Entry {
   details: EntityMetadata;
   fields?: string;
+  /** The keychain read fails for this entry. */
+  unreadable?: boolean;
 }
 
 interface Walk {
@@ -33,12 +35,12 @@ function walk(entries: Record<string, Entry>): Walk {
     getAccounts: () => [{ accountId: 'acc' }],
     getNodes: () => Object.entries(entries).map(([id, e]) => ({ id, type: 'entity' as const, details: e.details })),
     getHistory: () => Promise.resolve([]),
-    getPassword: () => Promise.resolve(undefined),
     getConfigBody: () => Promise.resolve(undefined),
     getFieldsRaw: (_a, id) => {
       reads.push(id);
-      return Promise.resolve(entries[id]?.fields);
+      return entries[id]?.unreadable === true ? Promise.reject(new Error('keychain says no')) : Promise.resolve(entries[id]?.fields);
     },
+    getPassword: (_a, id) => Promise.resolve(id === 'site' ? 'pw' : undefined),
   };
   return { target, walker: new EntityFlagsRefresher(source, target), reads };
 }
@@ -91,4 +93,16 @@ test('only credentials are read — the kind whose save writes the URL', async (
 test('the row wears :url exactly when the walk said so', () => {
   assert.match(entityContextValue(credential('a'), true, false, false, true), /:pwd:url/);
   assert.doesNotMatch(entityContextValue(credential('a'), true, false, false, false), /:url/);
+});
+
+test('one unreadable record costs its own hint, never the walk — every other flag still lands', async () => {
+  // Gate code round #18: a keychain read that rejected used to abort the whole walk, and the tree
+  // kept its OLD flags for everything until some later walk happened to succeed.
+  const w = walk({
+    site: { details: credential('site'), fields: JSON.stringify({ url: 'https://ok.example' }) },
+    broken: { details: credential('broken'), unreadable: true },
+  });
+  await w.walker.refresh();
+  assert.deepEqual([...w.target.urlIds], [entityKey('acc', 'site')]);
+  assert.deepEqual([...w.target.passwordIds], [entityKey('acc', 'site')], 'the password flags were published too');
 });
