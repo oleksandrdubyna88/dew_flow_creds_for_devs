@@ -57,7 +57,8 @@ test('every other scheme is refused BY NAME — a stored URL is untrusted input'
     ['ftp://files.example.com', 'ftp:'],
     ['JAVASCRIPT:alert(1)', 'javascript:'],
   ]) {
-    assert.match(refused(raw), new RegExp(`"${scheme}"`), raw);
+    // A substring, not a RegExp built from the table: the `.` in an address is not a wildcard here.
+    assert.ok(refused(raw).includes(`"${scheme}"`), `${raw}: ${refused(raw)}`);
   }
 });
 
