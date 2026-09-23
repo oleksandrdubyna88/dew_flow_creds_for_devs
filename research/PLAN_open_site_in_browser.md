@@ -1,11 +1,44 @@
 # PLAN — an entry with a URL opens its site in the browser (issue #104)
 
-> Status: **plan only, nothing implemented yet, 2026-09-23.** Scope: `src_vs_code` — the View Details
-> page and panel, the tree's context menu and its flag cache, one new command. No server, CLI or MCP
-> change.
+> Status: **IMPLEMENTED, 2026-09-23.** Scope: `src_vs_code` — the View Details page and panel, the
+> tree's context menu and its flag cache, one new command. No server, CLI or MCP change.
 >
-> Related docs: [module_extension.md](../research/module_extension.md) §Login and URL, §the per-entity
-> flag caches; [architecture.md](../research/architecture.md).
+> Related docs: [module_extension.md](module_extension.md) §Login and URL, §the per-entity flag
+> caches; [module_tests.md](module_tests.md) §What none of them covers; [architecture.md](architecture.md).
+
+## What shipped differently — read this first
+
+1. **The menu handler is `openEntrySite` in `openSite.ts`**, not written into `entityCommands.ts`
+   (§3); the command there is three lines. And the PIN step became `pinPrompt.admitEntry`, shared with
+   the viewer, which used to write the same gate-then-say block out for itself (review, reuse-first).
+2. **No `hasUrl` accessor** on the tree provider — `urlIds.has(…)` at the one call site; the three
+   key sets are swapped in together through `FLAG_SETS`.
+3. **A host and a port are a host only when they look like one** (`localhost`, or a dotted name).
+   The first build read `tel:911` and `javascript:1` as a host and port and opened
+   `https://tel:911/` — harmless, never non-web, but not the refusal by name everything else gets.
+   A one-word host with a port (`grafana:3000`) is now refused with the sentence that says to store
+   it as `https://grafana:3000`.
+4. **An unreadable keychain record costs only its own hint** — the first build let one rejected
+   `getFieldsRaw` abort the whole flag walk and freeze every other flag (gate code round #18; red
+   observed with the fix removed).
+5. **The viewer's panel test drives the REAL message loop** (`viewerOpenSite.test.ts`) instead of the
+   source-text match first written — the text match stayed green with the branch moved below the
+   copy-only return; the behaviour test goes red (observed).
+6. **The one-door scan is recursive and reads code, not comments** — the first version looked only
+   at the top of `src/`, so `commands/` could have grown a second door unseen.
+7. **A long URL wraps**, as it did through `row()`; the first `urlRow` drew a one-line input only.
+8. **The encoding claim is narrowed**: the judge keeps a query as stored; what VS Code's `Uri`
+   re-serialization hands the OS is stated as unverified (`module_tests.md`), not claimed.
+
+**The gate.** Plan round `good_enough`, 3/3 reviewers; 8 of 12 accepted. Code round `good_enough`,
+12/12 reviewers; 7 of 29 accepted — four of the rejected claimed a duplicate `cliCommandFor`, a dead
+open branch and a keychain read for every entity, none of which the branch contains (the diff's minus
+side read as present). Own reviewers: Fable (correctness/security — no critical finding, it could
+not get anything but http/https to `openExternal`) and Opus (conventions/UX/tests), whose findings
+are items 1–8 above.
+
+**Open tail.** Nothing drives a real browser hand-off (`module_tests.md`); a menu tie at
+`2_actions@4` with *Toggle SSH* is harmless because `:ssh` and `:url` do not meet on one row.
 
 ## 1. The goal
 

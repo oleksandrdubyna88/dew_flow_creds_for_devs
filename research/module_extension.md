@@ -5060,12 +5060,20 @@ one line the new kind costs there.
 rules:
 
 - **Only a web address leaves.** `siteUrl.ts` (pure) is the judge: `http:` and `https:` open, a bare
-  host and a protocol-relative `//host` are taken to be https, and everything else — `file:`,
-  `vscode:`, `command:`, `javascript:`, `data:` — is refused by name, as is a URL carrying a user name
-  or password. A stored URL arrives by sync, share and import; it is untrusted input.
+  host and a protocol-relative `//host` are taken to be https — and `localhost:3000` or
+  `grafana.internal:3000` are a host and a port — while everything else, `tel:911` and
+  `javascript:1` included, is refused by name, as is a URL carrying a user name or password. A
+  one-word host with a port (`grafana:3000`) cannot be told from a scheme, so it is refused with the
+  sentence that says to store it as `https://grafana:3000`. A stored URL arrives by sync, share and
+  import; it is untrusted input.
 - **One door.** `openSite.ts` is the only place a STORED url reaches `vscode.env.openExternal`;
-  `openSite.test.ts` pins the set of files that call it at all. The panel opens
-  `state.options.fields.url` — the page names the field, never the value.
+  `openSite.test.ts` scans every source file at every depth (code, not comments) for the name and
+  pins the four that use it. The panel opens `state.options.fields.url` — the page names the field,
+  never the value — and `viewerOpenSite.test.ts` drives the REAL panel's message loop to prove it.
+  The judge returns the query exactly as stored; what VS Code's `Uri` re-serialization then hands the
+  OS is not observed (see `module_tests.md`).
+- **One PIN door too.** `pinPrompt.admitEntry` is the gate-then-say step the viewer and
+  `openEntrySite` share; it used to be written out at each.
 - **The menu token is a hint.** `:url` comes from the flag walk (`urlIds`, beside `passwordIds`),
   which reads the fields of credentials only and offers a PIN-protected credential unread. The command
   re-reads the CURRENT url through the same PIN gate the viewer uses (`openEntrySite`), so a URL a sync

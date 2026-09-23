@@ -800,6 +800,15 @@ Named rather than implied, because the rule asks for exactly this.
   this bullet. It exists because this feature once shipped ten modules reachable from nothing but
   their own tests — a test that asserts the CALL is the answer to that — and every scan in it
   carries a companion proving the pattern still matches a known instance.
+- **Open Site in Browser (issue #104).** No harness clicks the menu item or the viewer's button, and
+  none lets a real VS Code hand the address to a real browser. What stands in: the judge
+  (`siteUrl.test.ts`), the PIN-gated command path and the one-door scan (`openSite.test.ts`), the
+  REAL viewer panel's message loop under the stub (`viewerOpenSite.test.ts`, which goes red if the
+  open branch falls below the copy-only return), and the flag walk (`siteUrlFlag.test.ts`). **The
+  limit is exact**: what `vscode.Uri.parse` and `openExternal` finally give the OS is not observed —
+  VS Code re-serializes a `Uri`, so a percent-encoded `%26`, `%2F` or `%2B` inside a query value may
+  not reach the browser as stored. The judge keeps the query as stored; the editor's last step is
+  unverified.
 - **The Marketplace artefact.** `npm run package` runs in CI, and nothing installs the resulting
   `.vsix` into a real editor and opens it. The publish step is verified by reading the release run.
 - **The server and the extension end to end.** `server-transport-itest.cjs` would do it, and it is
