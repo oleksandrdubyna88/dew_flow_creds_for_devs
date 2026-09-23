@@ -343,10 +343,9 @@ test('editing an entry whose password is already woven, without retyping it, is 
   // Raised at the plan gate: an edit to the notes must not demand the second half again. The
   // password box is never prefilled, so an untouched password arrives empty — nothing to weave.
   const { panel, dialogs } = gatedPanel();
-  const options: EntityFormOptions = {
-    ...formOptions(),
-    initial: { id: 'e1', name: 'an entry', passwordWoven: true } as EntityMetadata,
-  };
+  // Checked, not cast: a required field added to EntityMetadata breaks this line instead of hiding.
+  const initial: EntityMetadata = { id: 'e1', name: 'an entry', isSshEnabled: false, passwordWoven: true };
+  const options: EntityFormOptions = { ...formOptions(), initial };
 
   assert.equal(await panel.agreed(ownHalf('', ''), options), true);
   assert.deepEqual(dialogs, []);
