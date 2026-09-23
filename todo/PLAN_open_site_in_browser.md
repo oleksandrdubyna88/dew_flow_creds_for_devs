@@ -45,9 +45,21 @@ Facts the design rests on:
    `www.godaddy.com/login`) gets `https://`. An address with credentials in it (`https://u:p@host`) is
    refused — a browser would send them, and a vault that stores the password separately has no reason
    to put it in a URL.
+   A protocol-relative `//host` is read as `https://host`; any other text with a scheme is judged by
+   that scheme. Query strings survive exactly as stored — `?token=…`, `%20`, `&` — only userinfo in
+   the authority is refused (gate plan round, findings 6 and 8).
 4. **The value opened is the stored one**, read on the host (panel: `state.options.fields.url`;
-   command: through the PIN gate), never a value the webview posts.
-5. Help, `module_extension.md`, the Marketplace README and the CHANGELOG say so.
+   command: through the PIN gate), never a value the webview posts. The menu token is an
+   AVAILABILITY HINT computed by the walk; the handler always re-reads and re-validates the current
+   URL, so a URL changed by a sync after the walk is judged as it is now (finding 9).
+5. **Every outcome is said.** No URL stored (including a PIN-protected credential that turns out to
+   have none, after the PIN): "has no URL". A refused scheme: its reason. `openExternal` answering
+   `false` or throwing: a warning naming the address. A declined or wrong PIN: the gate's own message
+   and nothing opens — the same modal flow the viewer uses, so a second click while the PIN box is
+   open is the gate's existing single-prompt behaviour (findings 2, 5, 11).
+6. **One door.** `openSite.ts` is the only place a STORED url reaches `vscode.env.openExternal`; a
+   structural test pins the set of files that call `openExternal` at all (finding 1).
+7. Help, `module_extension.md`, the Marketplace README and the CHANGELOG say so.
 
 ## 3. Design
 
@@ -88,6 +100,14 @@ Facts the design rests on:
   credential; `treeRowText` exact-token tests updated.
 - `commandsRegistered.test.ts`, `helpCoverage.test.ts`, `manifestIcons.test.ts` pass with the new
   command.
+- The command under the vscode stub: a plain credential opens its stored URL; a PIN-protected one
+  opens only after admission, and a declined or wrong PIN opens nothing; no URL says so; a refused
+  scheme warns; `openExternal` answering `false` warns (findings 10, 11).
+- The structural test: the files that call `openExternal` are exactly the known extension-built ones
+  plus `openSite.ts`.
+- Known limitation, stated not tested: what `vscode.Uri.parse` + `openExternal` hand the OS cannot be
+  asserted under `node:test` (the real `vscode` module does not load); the URL passed is the WHATWG
+  serialization `siteUrlToOpen` returns, which the tests do pin.
 
 ## 6. Risks
 

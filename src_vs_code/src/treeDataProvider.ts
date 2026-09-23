@@ -157,6 +157,9 @@ export class CredTreeDataProvider
     return this.passwordIds.has(entityKey(accountId, entityId));
   }
 
+  /** Entries offered *Open Site in Browser* (#104) — filled by the same walk; a hint, re-judged on use. */
+  readonly urlIds = new Set<string>();
+
   /** Configs whose stored body does not parse. Why it marks the LABEL: `markInvalid` says. */
   readonly invalidConfigIds = new Set<string>();
 
@@ -631,6 +634,7 @@ export class CredTreeDataProvider
       this.hasPassword(accountId, node.id),
       this.isBridged?.(accountId, node.id) ?? false,
       isInTrash(node, (id) => this.storage.getNode(accountId, id)),
+      this.urlIds.has(entityKey(accountId, node.id)),
     );
     // Both the kind glyph and — where an agent may reach this entry — the access ladder, because
     // a row has exactly one icon slot. See `entityIcon` for what that costs and why.

@@ -720,6 +720,11 @@
         "category": "CredsForDevs"
       },
       {
+        "command": "credSshManager.openSiteInBrowser",
+        "title": "Open Site in Browser",
+        "category": "CredsForDevs"
+      },
+      {
         "command": "credSshManager.runWithSecrets",
         "title": "Run with Secrets (creds:// references, output masked)",
         "category": "CredsForDevs"
@@ -1201,6 +1206,10 @@
     "menus": {
       "commandPalette": [
         {
+          "command": "credSshManager.openSiteInBrowser",
+          "when": "false"
+        },
+        {
           "command": "credSshManager.newProject",
           "when": "false"
         },
@@ -1424,6 +1433,11 @@
           "command": "credSshManager.copyPassword",
           "when": "view == credSshManagerView && viewItem =~ /:pwd/",
           "group": "2_actions@3"
+        },
+        {
+          "command": "credSshManager.openSiteInBrowser",
+          "when": "view == credSshManagerView && viewItem =~ /:url/",
+          "group": "2_actions@4"
         },
         {
           "command": "credSshManager.copyTotpCode",

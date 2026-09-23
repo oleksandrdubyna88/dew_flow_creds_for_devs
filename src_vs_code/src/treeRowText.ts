@@ -95,6 +95,15 @@ function mixedToken(details: EntityMetadata | undefined): string {
   return details?.hasMixedField === true ? ':mixed' : '';
 }
 
+/**
+ * The two tokens that come from the KEYCHAIN rather than the record — both through the flag walk's
+ * caches, since a row cannot read a secret while it is drawn: `:pwd` (*Copy Password*) and, since
+ * issue #104, `:url` (*Open Site in Browser*).
+ */
+function secretTokens(hasPassword: boolean, hasUrl: boolean): string {
+  return (hasPassword ? ':pwd' : '') + (hasUrl ? ':url' : '');
+}
+
 // eslint-disable-next-line complexity -- one branch per capability; moved verbatim from treeDataProvider
 export function entityContextValue(
   details: EntityMetadata | undefined,
@@ -103,6 +112,8 @@ export function entityContextValue(
   bridged: boolean = false,
   /** In the Trash: *Restore* leads the menu (the owner, 2026-08-28). */
   trashed: boolean = false,
+  /** A URL that would open, per the flag walk (issue #104) — `:url`, *Open Site in Browser*. */
+  hasUrl: boolean = false,
 ): string {
   let contextValue = trashed ? 'entity:trashed' : 'entity';
   // One named predicate instead of two spellings of "is this SSH?" — the tree used to ask
@@ -150,9 +161,7 @@ export function entityContextValue(
   if (details?.isPayment) {
     contextValue += ':payment';
   }
-  if (hasPassword) {
-    contextValue += ':pwd';
-  }
+  contextValue += secretTokens(hasPassword, hasUrl);
   // From the plaintext flag, never from SecretStorage: the seed's presence is metadata,
   // the seed is not.
   if (details?.hasTotp === true) {

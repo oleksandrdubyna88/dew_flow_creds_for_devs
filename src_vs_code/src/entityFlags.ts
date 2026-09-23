@@ -1,6 +1,8 @@
 import { RevisionHead, revisionHead } from './revisionHistory';
 import { ConfigFormat, describeConfigProblem } from './configFormat';
 import { resolveKind } from './entityKind';
+import { parseFields } from './entityFields';
+import { siteUrlToOpen } from './siteUrl';
 import type { EntityMetadata } from './types';
 import type { StorageManager } from './storageManager';
 
@@ -28,6 +30,12 @@ export function entityKey(accountId: string, entityId: string): string {
 export interface EntityFlagTarget {
   readonly historyById: Map<string, RevisionHead[]>;
   readonly passwordIds: Set<string>;
+  /**
+   * Entries whose *Open Site in Browser* is offered (issue #104): a stored URL that would open, or a
+   * PIN-protected credential, whose URL cannot be read without the PIN. An availability HINT — the
+   * command re-reads and re-judges the URL when it runs.
+   */
+  readonly urlIds: Set<string>;
   /** Config entries whose stored body does not parse as what it claims to be. */
   readonly invalidConfigIds: Set<string>;
   refresh(): void;
@@ -41,6 +49,7 @@ export interface EntityFlagSource {
   ): readonly { id: string; type: 'folder' | 'entity'; details?: EntityMetadata }[];
   getHistory(accountId: string, entityId: string): Promise<{ secrets: unknown }[]>;
   getPassword(accountId: string, entityId: string): Thenable<string | undefined>;
+  getFieldsRaw(accountId: string, entityId: string): Thenable<string | undefined>;
   getConfigBody(accountId: string, entityId: string): Thenable<string | undefined>;
 }
 
@@ -53,6 +62,18 @@ export interface EntityFlagSource {
  */
 function formatOf(details: EntityMetadata | undefined): ConfigFormat {
   return details?.configFormat ?? 'json';
+}
+
+/** The caches that are plain sets of entity keys, swapped in together. */
+type FlagSet = 'passwordIds' | 'invalidConfigIds' | 'urlIds';
+
+const FLAG_SETS: readonly FlagSet[] = ['passwordIds', 'invalidConfigIds', 'urlIds'];
+
+function replaceAll(target: Set<string>, source: Set<string>): void {
+  target.clear();
+  for (const key of source) {
+    target.add(key);
+  }
 }
 
 /** One entity as the walk sees it — its id and whatever the tree stored about it. */
@@ -97,11 +118,33 @@ export class EntityFlagsRefresher {
     const history = new Map<string, RevisionHead[]>();
     const withPassword = new Set<string>();
     const invalidConfigs = new Set<string>();
+    const withUrl = new Set<string>();
     for (const [accountId, node] of this.entities()) {
       await this.read(accountId, node, history, withPassword);
       await this.readConfigVerdict(accountId, node, invalidConfigs);
+      await this.readUrl(accountId, node, withUrl);
     }
-    this.swapIn(history, withPassword, invalidConfigs);
+    this.swapIn(history, { passwordIds: withPassword, invalidConfigIds: invalidConfigs, urlIds: withUrl });
+  }
+
+  /**
+   * Would *Open Site in Browser* do anything for this entry? Read for credentials only — the one
+   * kind whose save writes the login-and-URL record — so the walk pays one keychain read per
+   * credential, the order of cost it already pays for the password. A PIN-protected credential is
+   * offered unread: its URL is sealed, and the command asks for the PIN the way the viewer does.
+   */
+  private async readUrl(accountId: string, node: FlagNode, withUrl: Set<string>): Promise<void> {
+    if (resolveKind(node.details) === 'credential' && (await this.urlOpens(accountId, node))) {
+      withUrl.add(entityKey(accountId, node.id));
+    }
+  }
+
+  /** A sealed (PIN-protected) record counts as "may open"; an open one is judged by `siteUrl.ts`. */
+  private async urlOpens(accountId: string, node: FlagNode): Promise<boolean> {
+    if (node.details?.pinProtected === true) {
+      return true;
+    }
+    return siteUrlToOpen(parseFields(await this.storage.getFieldsRaw(accountId, node.id)).url).ok;
   }
 
   /**
@@ -167,22 +210,13 @@ export class EntityFlagsRefresher {
    * Publish both answers at once. Swapped at the end rather than cleared at the start, so a
    * repaint landing mid-walk never shows a tree with every flag briefly off.
    */
-  private swapIn(
-    history: Map<string, RevisionHead[]>,
-    withPassword: Set<string>,
-    invalidConfigs: Set<string>,
-  ): void {
+  private swapIn(history: Map<string, RevisionHead[]>, sets: Record<FlagSet, Set<string>>): void {
     this.target.historyById.clear();
     for (const [key, heads] of history) {
       this.target.historyById.set(key, heads);
     }
-    this.target.passwordIds.clear();
-    for (const key of withPassword) {
-      this.target.passwordIds.add(key);
-    }
-    this.target.invalidConfigIds.clear();
-    for (const key of invalidConfigs) {
-      this.target.invalidConfigIds.add(key);
+    for (const name of FLAG_SETS) {
+      replaceAll(this.target[name], sets[name]);
     }
     this.target.refresh();
   }

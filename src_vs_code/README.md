@@ -1155,6 +1155,8 @@ also on the right-click menu where it applies.
 - **SSH** — Connect SSH · Toggle SSH (on/off) · Copy Password · Install SSH Key to System
   (~/.ssh) · Add to SSH Agent · Remove from SSH Agent · Copy Git Signing Config
 - **One-time codes** — Copy One-Time Code
+- **Websites** — Open Site in Browser (an entry's URL, http and https only; also a button beside the
+  URL in *View Details*)
 - **Secrets in a run** — Run with Secrets (`creds://` references, output masked)
 - **Getting started and getting around** — Go to Credential… (`Ctrl+Alt+P`) · Generate Password or
   Passphrase… · Health Report · Import from ~/.ssh/config or another manager…
