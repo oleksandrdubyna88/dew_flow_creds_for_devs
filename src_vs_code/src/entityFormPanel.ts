@@ -590,6 +590,9 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
       // Set by the create path when an agent makes an entry, and carried through every later
       // edit: a delete permission scoped to `own` needs to know which entries those are.
       mcpCreatedByAgent: options.initial?.mcpCreatedByAgent,
+      // #122. Never for an entry authored for someone else: that form draws no box, and a posted
+      // value must not mark a record the person never saw the switch for.
+      notForExport: options.forSomeoneElse !== true && bool(data, 'notForExport') ? true : undefined,
       // The entity's OWN colour is never edited here — it is set on whichever record is the
       // target of somebody else's dependency, by `dependsOnColors` above. Carrying it through
       // untouched is what keeps an edit from erasing a colour other rows are painted in.

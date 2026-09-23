@@ -14,6 +14,7 @@ import { pickAccount, pickEntityKind } from '../dialogs';
 import { showEntityForm } from '../entityFormPanel';
 import { SharePayload } from '../types';
 import { serializeFields } from '../entityFields';
+import { admitLeaving, isNotForExport } from '../exportScope';
 export interface ShareCommandsHost {
   readonly register: (command: string, handler: (...args: unknown[]) => unknown) => void;
   readonly shareInbox: ShareInbox;
@@ -32,9 +33,17 @@ export function registerShareCommands(host: ShareCommandsHost): void {
     if (skippedNote !== '') {
       void vscode.window.showWarningMessage(skippedNote);
     }
+    // Entries marked *Not for export* (issue #122) stay behind — refused when that is everything,
+    // named before the first prompt otherwise. A selected FOLDER still goes: its marked entries are
+    // skipped inside the walk (`shareInbox.payloadsFor`), whichever transport delivers it.
+    const roots = targets.map((t) => t.node);
+    const say = (message: string): void => void vscode.window.showWarningMessage(message);
+    if (admitLeaving('share', storage.getNodes(targets[0].accountId), roots, say) === undefined) {
+      return;
+    }
     await shareInbox.shareNodes(
       targets[0].accountId,
-      targets.map((t) => t.node),
+      roots.filter((node) => !isNotForExport(node)),
     );
   });
 
@@ -77,6 +86,7 @@ export function registerShareCommands(host: ShareCommandsHost): void {
       // the folder's type", which is false here and would force a wrong pick back through account
       // and recipients. The form opens on the pick and the selector stays alive.
       initialKind: kind,
+      forSomeoneElse: true,
       keyCandidates: [],
       // Authoring an entity for somebody else: a dependency on an entry in THIS vault would
       // name an id their vault has never heard of. Same call the key and jump candidates make.

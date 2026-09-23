@@ -213,6 +213,12 @@ export interface EntityMetadata {
    * every value at share time. Spent by the accept flow. Why, at length: `secretClaims.ts`.
    */
   pinAskOnImport?: boolean;
+  /**
+   * *Not for export* (issue #122): *Share with…* and *Export / Share Externally…* leave this entry
+   * behind — refused when it is the whole selection, left out and named inside a folder. Agents,
+   * backup, sync and local use are unaffected. See `exportScope.ts`.
+   */
+  notForExport?: boolean;
   /** Display name of the encrypted attachment (content in SecretStorage). */
   attachmentFileName?: string;
   /** Write-time stamps (T27) — they move only when the FILE does; see attachmentMeta.ts. */

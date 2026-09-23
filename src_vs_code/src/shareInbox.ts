@@ -1,6 +1,7 @@
 import { CorpPolicyState } from './corpPolicy';
 import { deliverToRecipient, projectsOfPayloads, refuseForRecipient } from './shareDelivery';
 import { buildSharePayload, countTotpEntries, nothingToShare } from './sharePayloadBuild';
+import { isNotForExport } from './exportScope';
 import { admit } from './pinAdmission';
 import { declinedMessage, forThisRecipient } from './shareRecipientPin';
 import { entryPinGate } from './pinPrompt';
@@ -228,6 +229,9 @@ export class ShareInbox {
     node: TreeNode,
     includeTotp: boolean,
   ): Promise<SharePayload[] | undefined> {
+    if (isNotForExport(node)) {
+      return []; // #122: never leaves, whichever transport; the handler already named it
+    }
     if (node.type !== 'entity') {
       return this.collectFolderPayloads(accountId, node, includeTotp);
     }

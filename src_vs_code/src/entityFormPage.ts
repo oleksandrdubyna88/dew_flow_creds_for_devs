@@ -8,7 +8,7 @@ import { methodLabel } from './shuffle';
 import { methodOrder } from './phraseLayout';
 import { Random } from './decoyDigits';
 import { clearSecondBox, secondBox, secondModeControl } from './secondModeMarkup';
-import { pinState, wovenState } from './generalNotes';
+import { notForExportField, pinState, wovenState } from './generalNotes';
 import { runDependenciesField, terminalOsField, vpnLauncherField } from './execFormFields';
 import { formStyleSheet } from './entityFormStyles';
 import { AgentDoors, agentDoorRows } from './agentDoors';
@@ -491,6 +491,7 @@ ${formHeaderHtml({
         ? `<p class="hint">Type is fixed by the folder's type.</p>`
         : ''
     }
+    ${notForExportField(d, options.forSomeoneElse === true)}
     ${wovenState(d)}
     ${pinState(d)}
   </fieldset>

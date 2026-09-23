@@ -718,7 +718,7 @@ export function formPageScript(
       clearPassword: chk('clearPassword'), clearPrivateKey: chk('clearPrivateKey'),
       totp: val('totp'), totpSteam: chk('totpSteam'), totpShowNext: chk('totpShowNext'), clearTotp: chk('clearTotp'),
       jumpHostEntityId: val('jumpHostEntityId'), tags: val('tags'),
-      agentForward: chk('agentForward'), clearHostKey: chk('clearHostKey'),
+      agentForward: chk('agentForward'), clearHostKey: chk('clearHostKey'), notForExport: chk('notForExport'),
       portForwards: forwardRows,
       dependsOn: collectDependsOn(), runDependencies: chk('dependsOnOn') && chk('runDependencies'),
       mcp: collectMcp(),
