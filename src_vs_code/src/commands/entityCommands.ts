@@ -26,7 +26,6 @@ import { runVpn } from '../vpnRun';
 import { withoutPassword } from '../dbConnString';
 import { openInDbExtension } from '../dbLauncher';
 import { TrustStore } from '../commandTrust';
-
 import { openEntrySite } from '../openSite';
 export interface EntityCommandsHost {
   readonly doorsAt: (accountId: string, node: TreeNode) => AgentDoors;
