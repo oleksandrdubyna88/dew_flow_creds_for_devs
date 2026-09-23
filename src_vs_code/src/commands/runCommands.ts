@@ -27,6 +27,9 @@ import { refField } from '../runPlan';
 import { runInMaskedTerminal } from '../maskedTerminal';
 import { maskingBanner } from '../extension';
 import { entryTerminal, pinnedTerminal } from '../pinnedTerminal';
+import { confirmTrusted } from '../trustPrompt';
+import { DependencyRunRequest, runDependenciesFirst } from '../dependencyRunHost';
+import { EntityMetadata } from '../types';
 import { osMismatch, quoteFor } from '../hostShell';
 export interface RunCommandsHost {
   readonly context: vscode.ExtensionContext;
@@ -39,6 +42,14 @@ export interface RunCommandsHost {
 
 export function registerRunCommands(host: RunCommandsHost): void {
   const { context, refSource, register, storage, storageDir, vaultKeys } = host;
+
+  /** The chain an entry asks for, resolved against its own account (issue #103). */
+  const dependencyRequest = (accountId: string, details: EntityMetadata | undefined, ownerName: string): DependencyRunRequest => ({
+    roots: details === undefined ? [] : [details],
+    nodeOf: (id) => storage.getNode(accountId, id)?.details,
+    ownerName,
+    trust: context.globalState,
+  });
 
   register('credSshManager.runCommand', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
@@ -61,20 +72,14 @@ export function registerRunCommands(host: RunCommandsHost): void {
       void vscode.window.showWarningMessage(mismatch);
       return;
     }
-    // Read before it runs, once per exact line per machine. The justification for
-    // running unconfirmed was "these are commands you wrote yourself" — true until
-    // sync and Accept Share, both of which can deliver a command entry from
-    // somewhere else, under a name the reader has no reason to distrust.
-    if (!isCommandTrusted(context.globalState, element.node.id, line)) {
-      const choice = await vscode.window.showWarningMessage(
-        confirmCommandMessage(element.node.name, line),
-        { modal: true },
-        'Run',
-      );
-      if (choice !== 'Run') {
-        return;
-      }
-      await trustCommand(context.globalState, element.node.id, line);
+    // Read before it runs, once per exact line per machine — see `trustPrompt.ts`.
+    if (!(await confirmTrusted(context.globalState, element.node.id, element.node.name, line))) {
+      return;
+    }
+    // Issue #103: what this entry asks to run first (an installer before the tool) runs and is
+    // awaited; a failure there stops this line from running at all.
+    if (!(await runDependenciesFirst(dependencyRequest(element.accountId, d, element.node.name)))) {
+      return;
     }
 
     // A dedicated terminal per entry, reused: running the same command twice should not
@@ -146,6 +151,10 @@ export function registerRunCommands(host: RunCommandsHost): void {
         }
         await trustCommand(context.globalState, key, details.script);
       }
+    }
+    // Issue #103: the dependencies this script asks to run first, awaited, before it is written out.
+    if (!(await runDependenciesFirst(dependencyRequest(element.accountId, details, element.node.name)))) {
+      return;
     }
 
     // The values go into the terminal's ENVIRONMENT; the file gets a body that reads

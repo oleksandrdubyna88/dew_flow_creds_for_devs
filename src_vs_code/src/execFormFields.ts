@@ -17,27 +17,44 @@ import { escapeHtml } from './webviewHtml';
  * stamping an OS on it at the next save would change how its command runs.
  */
 export function terminalOsField(d: EntityMetadata | undefined, mode: 'create' | 'edit', hostOs: OsName | undefined): string {
-  const selected = d?.terminalOs ?? (mode === 'create' ? hostOs : undefined) ?? '';
+  const selected = initialOs(d, mode, hostOs);
   const known = OS_NAMES.map((os) => option(os, OS_LABELS[os], selected));
   // A value a newer build wrote stays selectable — dropping it would rewrite the entry on save.
-  const foreign = selected !== '' && asOsName(selected) === undefined ? [option(selected, selected, selected)] : [];
+  const foreign = isForeignOs(selected) ? [option(selected, selected, selected)] : [];
   return `<label for="terminalOs">Runs on</label>
     <select id="terminalOs">${[option('', '— not set (default terminal) —', selected), ...known, ...foreign].join('')}</select>
     <p class="hint">The command runs in that system's own shell — PowerShell on Windows, bash on macOS and Linux — and is refused on any other.</p>`;
 }
 
+function initialOs(d: EntityMetadata | undefined, mode: 'create' | 'edit', hostOs: OsName | undefined): string {
+  return d?.terminalOs ?? defaultOs(mode, hostOs);
+}
+
+function defaultOs(mode: 'create' | 'edit', hostOs: OsName | undefined): string {
+  return mode === 'create' ? (hostOs ?? '') : '';
+}
+
+function isForeignOs(value: string): boolean {
+  return value !== '' && asOsName(value) === undefined;
+}
+
 /** The launcher picker in the VPN section — a `<select>`, the way an SSH entry picks its key. */
 export function vpnLauncherField(d: EntityMetadata | undefined, candidates: readonly LauncherCandidate[]): string {
   const selected = d?.vpnLauncherEntityId ?? '';
-  const offered = candidates.map((c) =>
-    option(c.id, c.os === undefined ? c.name : `${c.name} · ${osLabel(c.os)}`, selected),
-  );
+  const offered = candidates.map((c) => option(c.id, launcherLabel(c), selected));
   // A launcher that no longer exists is shown as such rather than silently dropped on save.
-  const dangling =
-    selected !== '' && !candidates.some((c) => c.id === selected) ? [option(selected, '(missing entry)', selected)] : [];
+  const dangling = isDangling(selected, candidates) ? [option(selected, '(missing entry)', selected)] : [];
   return `<label for="vpnLauncherEntityId">Started by</label>
     <select id="vpnLauncherEntityId">${[option('', '— built-in (detected) —', selected), ...offered, ...dangling].join('')}</select>
     <p class="hint">A Terminal entry whose command starts this VPN. Write <code>{config}</code> where the path to the stored config file goes.</p>`;
+}
+
+function launcherLabel(c: LauncherCandidate): string {
+  return c.os === undefined ? c.name : `${c.name} · ${osLabel(c.os)}`;
+}
+
+function isDangling(selected: string, candidates: readonly LauncherCandidate[]): boolean {
+  return selected !== '' && !candidates.some((c) => c.id === selected);
 }
 
 /** Inside the Depends-on body, so it is shown exactly while a dependency can be chosen. */
@@ -66,13 +83,25 @@ export function execDetails(
   dependsOnCount: number,
   selfId: string | undefined,
 ): ExecDetails {
-  const os = text(data.terminalOs);
-  const launcher = text(data.vpnLauncherEntityId);
   return {
-    terminalOs: kind === 'terminal' && os !== '' ? os : undefined,
-    vpnLauncherEntityId: kind === 'vpn' && launcher !== '' && launcher !== selfId ? launcher : undefined,
-    runDependencies: dependsOnCount > 0 && data.runDependencies === true ? true : undefined,
+    terminalOs: kind === 'terminal' ? nonEmpty(text(data.terminalOs)) : undefined,
+    vpnLauncherEntityId: kind === 'vpn' ? launcherId(text(data.vpnLauncherEntityId), selfId) : undefined,
+    runDependencies: runMark(dependsOnCount, data.runDependencies),
   };
+}
+
+/** Only while there is something to execute — an unchecked or orphaned mark is simply absent. */
+function runMark(dependsOnCount: number, value: unknown): true | undefined {
+  return dependsOnCount > 0 && value === true ? true : undefined;
+}
+
+function nonEmpty(value: string): string | undefined {
+  return value === '' ? undefined : value;
+}
+
+/** Never itself — the self-reference guard `jumpHostEntityId` applies too. */
+function launcherId(value: string, selfId: string | undefined): string | undefined {
+  return value === '' || value === selfId ? undefined : value;
 }
 
 function text(value: unknown): string {

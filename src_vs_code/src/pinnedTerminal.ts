@@ -78,9 +78,11 @@ export function entryTerminal(entryName: string, terminalOs: string | undefined)
     return { ok: false, reason: mismatch };
   }
   const name = `CredsForDevs: ${entryName}`;
-  if (terminalOs !== undefined && terminalOs !== '') {
-    return pinnedTerminal(name);
-  }
+  return (terminalOs ?? '') === '' ? defaultProfileTerminal(name) : pinnedTerminal(name);
+}
+
+/** Today's behaviour for an entry with no OS: the window's default profile, reused by name. */
+function defaultProfileTerminal(name: string): { ok: true; terminal: vscode.Terminal; shell: undefined } {
   const terminal = vscode.window.terminals.find((t) => t.name === name) ?? vscode.window.createTerminal({ name });
   terminal.show();
   return { ok: true, terminal, shell: undefined };

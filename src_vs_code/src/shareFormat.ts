@@ -532,6 +532,10 @@ export function shareableDetails(
     notes: undefined,
     dependsOn: undefined,
     depColor: undefined,
+    // Issue #103, for `dependsOn`'s reason and one more: the launcher is an id in the SENDER's
+    // vault, and the execute mark would arm a chain of commands the recipient never set up.
+    vpnLauncherEntityId: undefined,
+    runDependencies: undefined,
     mcp: undefined,
     mcpCreatedByAgent: undefined,
     // The one CONDITIONAL claim: the seed may or may not be travelling in this share, and the flag

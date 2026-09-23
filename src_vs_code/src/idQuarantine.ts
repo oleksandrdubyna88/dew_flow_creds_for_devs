@@ -68,18 +68,25 @@ function rekey<T>(
 /** One id, pointed at its replacement when it has one. */
 type Rename = (id: string) => string;
 
-/** The id references inside `details` — a key source, a jump host, and the dependency list. */
+/**
+ * The id references inside `details` — a key source, a jump host, a VPN's launcher (issue #103),
+ * and the dependency list.
+ */
 function remapDetails(details: NonNullable<TreeNode['details']>, to: Rename): TreeNode['details'] {
-  const key = details.sshKeyEntityId;
-  const jump = details.jumpHostEntityId;
   const depends = details.dependsOn;
   return {
     ...details,
     id: to(details.id),
-    ...(key === undefined ? {} : { sshKeyEntityId: to(key) }),
-    ...(jump === undefined ? {} : { jumpHostEntityId: to(jump) }),
+    ...remappedRef('sshKeyEntityId', details.sshKeyEntityId, to),
+    ...remappedRef('jumpHostEntityId', details.jumpHostEntityId, to),
+    ...remappedRef('vpnLauncherEntityId', details.vpnLauncherEntityId, to),
     ...(depends === undefined ? {} : { dependsOn: depends.map(to) }),
   };
+}
+
+/** One single-id reference, renamed — and still ABSENT when it was absent, never `undefined`. */
+function remappedRef<K extends string>(key: K, id: string | undefined, to: Rename): Partial<Record<K, string>> {
+  return id === undefined ? {} : ({ [key]: to(id) } as Record<K, string>);
 }
 
 /** Every id reference a node carries, pointed at the new ids. */

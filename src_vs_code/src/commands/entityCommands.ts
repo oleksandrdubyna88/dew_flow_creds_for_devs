@@ -25,6 +25,7 @@ import { saveVpnConfigToFile } from '../vpnRun';
 import { runVpn } from '../vpnRun';
 import { withoutPassword } from '../dbConnString';
 import { openInDbExtension } from '../dbLauncher';
+import { TrustStore } from '../commandTrust';
 export interface EntityCommandsHost {
   readonly doorsAt: (accountId: string, node: TreeNode) => AgentDoors;
   readonly mutated: () => void;
@@ -32,10 +33,11 @@ export interface EntityCommandsHost {
   readonly storage: StorageManager;
   readonly storageDir: string;
   readonly vaultKeys: VaultKeys;
+  readonly trust: TrustStore;
 }
 
 export function registerEntityCommands(host: EntityCommandsHost): void {
-  const { doorsAt, mutated, register, storage, storageDir, vaultKeys } = host;
+  const { doorsAt, mutated, register, storage, storageDir, vaultKeys, trust } = host;
 
   register('credSshManager.copyCommand', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
@@ -204,9 +206,10 @@ export function registerEntityCommands(host: EntityCommandsHost): void {
     await saveVpnConfigToFile(element.accountId, element.node.details, storage);
   });
 
-  register('credSshManager.startVpn', (target) =>
-    runVpn(target, 'start', storage, storageDir, vaultKeys),
-  );
+  // Start and Stop side by side (Stop used to live in extension.ts). `trust` is the per-line record
+  // a launcher's command and a dependency chain are confirmed against (issue #103).
+  register('credSshManager.startVpn', (target) => runVpn(target, 'start', storage, storageDir, vaultKeys, trust));
+  register('credSshManager.stopVpn', (target) => runVpn(target, 'stop', storage, storageDir, vaultKeys, trust));
 
   // Open a database entity in the matching DB extension.
   register('credSshManager.copyDbConnectionNoPassword', async (target) => {

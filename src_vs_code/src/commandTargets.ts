@@ -1,6 +1,7 @@
 import { EntityKind, TreeElement, TreeNode } from './types';
 import { KeyCandidate } from './entityFormPanel';
 import type { LauncherCandidate } from './entityFormShape';
+import { executableLine } from './dependencyRun';
 import { SelectedNode, describeSkips, resolveSelection } from './selectionResolver';
 import { inheritedFolderType } from './defaultFolders';
 import { StorageManager } from './storageManager';
@@ -111,10 +112,12 @@ export function collectLauncherCandidates(
 }
 
 function canLaunch(node: TreeNode, excludeEntityId: string): boolean {
-  if (node.type !== 'entity' || node.id === excludeEntityId) {
-    return false;
-  }
-  return node.details?.isTerminal === true && (node.details.command ?? '').trim().length > 0;
+  return node.type === 'entity' && node.id !== excludeEntityId && hasCommand(node.details);
+}
+
+/** A Terminal entry with something to run — the same test the dependency chain uses. */
+function hasCommand(details: TreeNode['details']): boolean {
+  return details !== undefined && executableLine(details) !== undefined;
 }
 
 // eslint-disable-next-line complexity

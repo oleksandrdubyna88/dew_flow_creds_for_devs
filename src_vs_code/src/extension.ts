@@ -662,7 +662,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return false;
       }
       // runVpn's own answer: a refusal the person saw must not reach the agent as "opened".
-      return runVpn({ kind: 'node', accountId, node }, action, storage, storageDir, vaultKeys);
+      return runVpn({ kind: 'node', accountId, node }, action, storage, storageDir, vaultKeys, context.globalState);
     },
   };
   useActions.register(scriptRunAction(agentDeps));
@@ -876,10 +876,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   registerPinCommands({ register, storage, refresh: () => mutated() });
 
-  register('credSshManager.stopVpn', (target) =>
-    runVpn(target, 'stop', storage, storageDir, vaultKeys),
-  );
-
   // ---------- security keys (YubiKey / FIDO2) ----------
 
   // The add / re-register flow lives in securityKeyAdd.ts; the host is this scope, by interface.
@@ -964,7 +960,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     onArrived: (accountId, entityId) => void announceArrival(accountId, entityId),
   });
 
-  registerEntityCommands({ doorsAt, mutated, register, storage, storageDir, vaultKeys });
+  registerEntityCommands({ doorsAt, mutated, register, storage, storageDir, vaultKeys, trust: context.globalState });
   registerTreeMutationCommands({ announceArrival, doorsFor, log, mutated, policyOf: corpPolicyOf, register, storage, transports, vaultKeys });
   registerExportCommand({ corpPolicyOf, log, register, storage, vaultKeys });
 
