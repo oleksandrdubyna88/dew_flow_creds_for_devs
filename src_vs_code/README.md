@@ -183,7 +183,14 @@ encrypted vault. The viewer shows exactly the fields that are filled; an empty o
 rather than reported as a missing binary), and the composed line is **shown in a terminal
 rather than run silently**. The extension never elevates itself: Windows raises its own UAC
 prompt, POSIX its own `sudo` password prompt. That dialog is the trust boundary, and it
-should be.
+should be. The terminal it opens runs this machine's own shell (PowerShell on Windows, bash
+elsewhere) whatever your default terminal is — a WSL-bash default no longer receives a
+PowerShell line.
+
+**Started by** lets one of your own Terminal entries start the VPN instead of the built-in
+launcher: its command runs with `{config}` replaced by the path of the stored config. That makes
+any VPN startable from the tree — IKEv2 through `rasdial`, a vendor's own client, OpenVPN from a
+path nobody probes. Stop explains where to stop it; the extension does not guess a process.
 
 ## Database entities
 
@@ -238,6 +245,16 @@ removed and reordered, and a live preview shows exactly what will run.
   you just typed, with no shell and none of our own arguments, and only when every word of the
   command is a plain tool name — anything carrying a shell metacharacter is refused rather than
   probed.
+- **Runs on** (Windows / macOS / Linux) says which system the command is written for. Your default
+  terminal runs it when it is a shell of that system — pwsh 7, zsh with your aliases — and that
+  system's own shell does otherwise; on another system it is refused. *Not set* keeps your default
+  terminal, exactly as before.
+
+**Execute what is executable first** (in *Depends on*) turns an entry's dependencies into a chain:
+before *Run in Terminal*, *Run Script*, *Run with Secrets* or *Start VPN*, its Terminal
+dependencies run in order, each one awaited — "install openvpn", then "start openvpn", then the
+VPN. You read the chain before its first run; a step that fails asks whether to go on; a circular
+chain is refused. Waiting for a step needs VS Code **1.93** or newer.
 
 ## Environment variables in the terminal
 

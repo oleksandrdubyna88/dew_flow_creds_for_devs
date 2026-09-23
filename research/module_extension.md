@@ -1444,11 +1444,25 @@ overrule — these are commands the user wrote and saved, not commands arriving 
 
 **Runs on — the OS a command is written for (issue #103).** `terminalOs` (`windows` / `macos` /
 `linux`, a LOOSE string in the guard so a newer build's value never drops the entity) is set by the
-*Runs on* dropdown (`execFormFields.ts`): a new entry starts on this machine's OS, an existing one
-stays unset. With an OS recorded, *Run in Terminal* and the agent's `creds_run` refuse on another OS
-(`hostShell.osMismatch`, checked BEFORE the trust modal) and run in that OS's native shell —
-`entryTerminal` pins the terminal, `capturedRun` spawns the same shell for the agent. Without one,
-nothing changed: the default profile for the human, Node's `shell: true` for the agent. The viewer's
+*Runs on* dropdown (`execFormFields.ts`): a new entry starts on the system of the window's terminal
+(`newEntryOs` — this machine's locally, Linux in a WSL window, unset in another computer's window);
+an existing one stays unset. Which shell then reads the entry's OWN line is `hostShell.entryShell`,
+one pure decision checked BEFORE the trust modal:
+
+| the entry | the window | reads it |
+|---|---|---|
+| no OS | any | the default profile — exactly as before |
+| any | Remote-SSH / container | the default profile — that computer's OS is not ours to know |
+| the terminal's own OS | local / WSL | the default profile **when it is a shell of that system** (pwsh 7, cmd, zsh with its aliases), else the native shell pinned |
+| this machine's OS | WSL | the native shell, pinned — interop runs Windows' shell there |
+| anything else | local / WSL | refused, naming both systems and the way back to "not set" |
+
+The first review of this change pinned the native shell for every entry with an OS, and three
+reviewers found what that cost: `&&` does not exist in Windows PowerShell 5.1, a macOS entry lost the
+person's zsh aliases, and new entries stopped running in Remote-SSH windows. Keeping a default
+profile that already speaks the entry's system fixes all three without giving back the #103 fix.
+The agent's `creds_run` (`capturedRun`) and *Run with Secrets* spawn on THIS machine, not in a
+window, so for them an OS means: refused on another OS, the native shell on this one. The viewer's
 command row reads `Command · runs on Linux` (`commandRowLabel`).
 
 ### Which shell parses the line (issue #103)
@@ -1458,17 +1472,25 @@ A line composed for the **host** platform used to be typed into whatever termina
 RunAs …` reaching bash — `command not found`, the reported defect. Two questions had been answered as
 one: which OS the line is for, and which shell will read it.
 
-- `hostShell.ts` (pure) answers both: `osOf`, `hostShell` (PowerShell on Windows, `/bin/bash` else
-  `/bin/sh`), `quoteFor` per family (proved against the real bash and Windows PowerShell in
-  `hostShell.test.ts`), and the ONE `shellFamily` detector — `runPlan.ts` and `envProbe.ts` each used
-  to carry a copy.
-- `pinnedTerminal.ts` is the only way a line the extension COMPOSES reaches a terminal: VPN start/stop,
-  the OpenVPN Connect import, the install offer (`toolEnsure.ts`), *Run Script*, the dependency chain.
-  It passes `shellPath`, reuses a terminal only when its shell matches, and refuses in a remote window
-  that is not WSL (`pinnedShellRefusal`) — Remote-SSH and containers have their terminals on another
-  computer. A WSL window is allowed: interop resolves `powershell.exe` there (measured 2026-09-23:
+- `hostShell.ts` (pure) answers both: `osOf`, `hostShell` (PowerShell 7 `pwsh.exe` when installed,
+  else Windows PowerShell; `/bin/bash` else `/bin/sh`), `quoteFor` per family (proved against the real
+  bash and Windows PowerShell in `hostShell.test.ts`; `vpnCommand.ts` and `remoteCliInstall.ts` gave
+  up their private copies for it), `entryShell` (above), and the ONE `shellFamily` detector —
+  `runPlan.ts` and `envProbe.ts` each used to carry a copy. The window classification is
+  `remoteWindow.windowSide`'s, asked rather than re-made (`windowKind`).
+- `pinnedTerminal.ts` is the `vscode` half, and the one way a line the extension COMPOSES for this
+  machine reaches a terminal: VPN start/stop, the OpenVPN Connect import (both words single-quoted now),
+  the install offer (`toolEnsure.ts`, which refuses before offering), *Run Script*, the dependency chain
+  (`sendPinned` / `pinnedTerminal`), and SSH connect in a local window (`composedShellPath` — a WSL
+  window composes for Linux and keeps its Linux default profile). It passes `shellPath`, reuses a
+  terminal only when its shell matches, and refuses in a remote window that is not WSL
+  (`pinnedShellRefusal`) — Remote-SSH and containers have their terminals on another computer. A WSL
+  window is allowed: interop resolves `powershell.exe` there (measured 2026-09-23:
   `/mnt/c/WINDOWS/System32/WindowsPowerShell/v1.0/powershell.exe`), and where interop is off the
   terminal closes at once, which the chain reports by name rather than waiting on.
+- *Run with Secrets* spawns its child from the extension host (`maskedTerminal.ts`), so a script runs
+  under the native shell with its path quoted for it; a command keeps `vscode.env.shell` unless the
+  entry records an OS.
 - The environment probe after an env write deliberately still reads `vscode.env.shell`: it asks what
   the person's OWN next terminal will see.
 
@@ -2005,20 +2027,29 @@ suffixes and nothing else — so the `^entity`, `:shareable` and `:pwd` menus ne
 ### Depends on — a relationship the vault can see (0.62.0)
 
 > Design record: [PLAN_depends_on.md](PLAN_depends_on.md). The execute half (issue #103):
-> [PLAN_os_aware_execution.md](../todo/PLAN_os_aware_execution.md).
+> [PLAN_os_aware_execution.md](PLAN_os_aware_execution.md).
 
 **Since issue #103 it can also be an execution chain — only where an entry asks.** *Execute what is
 executable first* (`runDependencies`, inside the Depends-on body) turns that entry's OWN edges into a
 chain: `dependencyRun.ts` (pure) plans it — executable means a Terminal entry with a command, a
 dependency's own dependencies are followed only when it ticks the same box, dependencies-first and each
 once, a cycle / a chain deeper than 16 / a step for another OS refuses the whole run, a dangling id is
-reported as *missing* for the person to decide. `dependencyRunHost.ts` shows the chain in ONE modal
-before anything runs, opens one pinned terminal, runs each step through shell integration and awaits
-its exit code (`engines.vscode ^1.93.0` for that API), stops at the first failure, and asks
-*Continue / Cancel* in a notification — not a modal, a step may be at a sudo prompt — when the shell
-reports no integration or no exit code. Callers: *Run in Terminal*, *Run Script*, *Start VPN* (and
-through it `creds_vpn_up`). The one-hop, cycles-allowed rules below still govern the ANNOTATION; the
-mark is stripped from a share, so a chain can only be armed by the vault's owner.
+reported as *missing* for the person to decide, and so is an entry in the Trash (`liveDetails`). A
+step that uses `{config}` is refused with a pointer to *Started by* — only a launcher fills it in —
+except the VPN's own launcher, which is excluded DURING the walk (it is the main action, not a step)
+while its own dependencies still run. `dependencyRunHost.ts` lists the chain in ONE modal — with the
+shell it runs in and the single-line modal's warning about synced lines — whenever a line in it is not
+yet trusted or something is missing; a chain already read and run passes straight through, as a
+single trusted line always has. It opens one terminal (the default profile when every step would use
+it, the native shell otherwise), runs each step through shell integration and awaits its exit code
+(`engines.vscode ^1.93.0` for that API). The outcome is `stepVerdict` (pure): 0 goes on; a non-zero
+code or none ASKS *Continue / Stop* in a notification — not a modal, a step may be at a sudo prompt —
+because an installer that finds its tool already there exits non-zero (`winget`), and a hard stop would
+block the owner's chain on every start after the first; a terminal closed mid-chain stops it, checked
+before each step so nothing is typed into a dead terminal. Callers: *Run in Terminal*, *Run Script*,
+*Run with Secrets*, *Start VPN* (and through it `creds_vpn_up`); SSH connect does not run the chain.
+The one-hop, cycles-allowed rules below still govern the ANNOTATION; the mark is stripped from a
+share, so a chain can only be armed by the vault's owner.
 
 An SSH host is useless without the VPN that reaches its network. The vault knew all three
 entries and nothing about the sentence joining them, so it was re-derived by hand, usually while

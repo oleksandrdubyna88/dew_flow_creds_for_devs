@@ -1,13 +1,56 @@
 # PLAN — everything the extension executes knows which OS and shell will parse it (issue #103)
 
-> Status: **plan only, nothing implemented yet, 2026-09-23.** Scope: `src_vs_code` — the VPN run path,
-> the install offer, Terminal entries, the Depends-on section and a new dependency runner. No server,
-> CLI or MCP-binary change; the MCP tool text is untouched.
+> Status: **IMPLEMENTED, 2026-09-23.** Scope: `src_vs_code` — the VPN run path, the install offer,
+> Terminal entries, the Depends-on section and a new dependency runner. No server, CLI or MCP-binary
+> change; the MCP tool text is untouched.
 >
-> Related docs: [module_extension.md](../research/module_extension.md) §Terminal commands, §VPN start and
-> stop, §Depends on, §The form is three modules; [PLAN_depends_on.md](../research/PLAN_depends_on.md);
-> [PLAN_connect_in_a_remote_window.md](PLAN_connect_in_a_remote_window.md) (the same class of defect,
-> fixed for SSH).
+> Related docs: [module_extension.md](module_extension.md) §Terminal commands, §Which shell parses the
+> line, §VPN start and stop, §Depends on; [PLAN_depends_on.md](PLAN_depends_on.md);
+> [PLAN_connect_in_a_remote_window.md](../todo/PLAN_connect_in_a_remote_window.md) (the same class of
+> defect, fixed for SSH).
+
+## What shipped differently — read this first
+
+The body below is the plan as the gate approved it. What changed on the way, and why:
+
+1. **An OS on an entry does NOT always pin the native shell.** §2.4 said an entry with an OS "runs in
+   the pinned native shell". Three reviewers of the first build found what that cost — `&&` does not
+   exist in Windows PowerShell 5.1, a macOS entry lost the person's zsh aliases, and new entries
+   stopped running in Remote-SSH windows. `hostShell.entryShell` now keeps the default profile when it
+   is already a shell of the entry's system, pins only when it is not (the #103 case), treats another
+   computer's window as "not ours to know", and in a WSL window runs Linux entries in WSL and Windows
+   entries through interop. A new entry's OS defaults to the window's terminal (`newEntryOs`).
+2. **PowerShell 7 is preferred** over Windows PowerShell when installed (`pwsh.exe`), for pinned
+   terminals and the agent's captured run.
+3. **A non-zero exit ASKS instead of stopping.** §2.6 said a non-zero exit stops the chain. `winget
+   install` of an already-installed package exits non-zero, so the owner's own chain would have been
+   blocked on every start after the first. `stepVerdict` asks *Continue / Stop*; dismissing stops.
+4. **Two refusals the plan did not foresee.** A dependency that uses `{config}` is refused with a
+   pointer to *Started by* (the owner's example entered through Depends on alone would have typed the
+   braces literally); and the VPN's launcher is excluded DURING the walk, not filtered afterwards —
+   a scenario test caught the planner refusing the owner's exact chain because it judged the launcher
+   as an ordinary step.
+5. **Entries in the Trash are missing**, not runnable, as a dependency or a launcher (`liveDetails`).
+6. **More callers than planned.** *Run with Secrets* honours the OS and the chain; SSH connect's
+   terminal is pinned in a local window (`composedShellPath`) — the same defect class. SSH connect is
+   still not a chain caller (§7).
+7. **The pre-run modal** appears when a line is untrusted or something is missing (not on every run),
+   names the shell the chain runs in, and carries the single-line modal's warning about synced lines.
+8. **Reuse the reviews asked for:** `trustPrompt.ts` (one trust modal; `runCommands.ts` split into
+   small functions and lost its `eslint-disable`), `quoteFor` replaced `vpnCommand.psQuote` and
+   `remoteCliInstall.shellQuote`, `windowKind` asks `remoteWindow.windowSide`, `sendPinned` /
+   `dependencyRequest` built once, Stop VPN registered beside Start (`extension.ts` 1042 → 1038).
+
+**The gate.** Plan round: `proceed`, 2 of 3 reviewers (codex refused the configured model); findings
+0 and 2 accepted. Code round: `proceed`, 7 of 12 reviewers (codex ×4 and one gemini role failed); 2
+of 15 accepted, 13 rejected with reasons. Our own three reviewers (Fable on correctness and security,
+Opus on conventions and on UX/docs/tests) found everything in items 1, 3–8 above; no critical
+security finding.
+
+**Open tail** (not built, recorded): SSH connect as a chain caller; scripts and VPNs as executable
+dependencies; a form-time warning for an unrunnable chain; one measurement of shell integration in
+Windows PowerShell 5.1 on a machine with a default execution policy (the fallback is the
+Continue/Stop question, so a miss degrades rather than breaks).
 
 ## 1. The symptom
 
