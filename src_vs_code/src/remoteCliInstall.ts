@@ -17,6 +17,8 @@
  * prompts when there is no terminal.</p>
  */
 
+import { quoteFor } from './hostShell';
+
 /** Where the installer is published. A raw URL, so no API call and no token is involved. */
 export const INSTALLER_URL =
   'https://raw.githubusercontent.com/oleksandrdubyna88/dew_flow_creds_for_devs/main/install.sh';
@@ -116,17 +118,12 @@ export function blockerFor(facts: RemoteFacts): string {
  * whose leftovers nobody would come back for.</p>
  */
 export function installCommand(prefix: string = ''): string {
-  const env = prefix.length > 0 ? `CREDS_PREFIX=${shellQuote(prefix)} ` : '';
+  const env = prefix.length > 0 ? `CREDS_PREFIX=${quoteFor('posix', prefix)} ` : '';
   const script = '/tmp/creds-install.$$.sh';
   return (
     `curl -fsSL ${INSTALLER_URL} -o ${script} && ` +
     `${env}sh ${script} < /dev/null; rm -f ${script}`
   );
-}
-
-/** Single-quote for a POSIX shell; the only characters that need it here are the quotes. */
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\''`)}'`;
 }
 
 export type InstallOutcome =

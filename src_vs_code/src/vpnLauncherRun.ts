@@ -4,9 +4,9 @@ import { TrustStore } from './commandTrust';
 import { EntityMetadata } from './types';
 import { materializedKeyPath, materializeVpnConfig } from './keyInstaller';
 import { executableLine } from './dependencyRun';
-import { runDependenciesFirst } from './dependencyRunHost';
-import { HostShell, osMismatch, shellFamily } from './hostShell';
-import { entryTerminal } from './pinnedTerminal';
+import { dependencyRequest, runDependenciesFirst } from './dependencyRunHost';
+import { ShellFamily, entryShell } from './hostShell';
+import { entryTerminal, shellContext } from './pinnedTerminal';
 import { confirmTrusted } from './trustPrompt';
 import { launcherConfigFileName, launcherStopNote, substituteConfig, usesConfig } from './vpnLauncher';
 
@@ -44,10 +44,7 @@ export async function runWithLauncher(ctx: VpnRunContext, launcher: EntityMetada
 /** The launcher's line — or `undefined`, having said why, when it cannot run here at all. */
 function launcherLine(launcher: EntityMetadata): string | undefined {
   const line = executableLine(launcher);
-  const why =
-    line === undefined
-      ? `The launcher "${launcher.name}" has no command — edit it and fill one in.`
-      : osMismatch(launcher.name, launcher.terminalOs, process.platform);
+  const why = line === undefined ? `The launcher "${launcher.name}" has no command — edit it and fill one in.` : refusedHere(launcher);
   if (why !== undefined) {
     void vscode.window.showWarningMessage(why);
     return undefined;
@@ -55,17 +52,19 @@ function launcherLine(launcher: EntityMetadata): string | undefined {
   return line;
 }
 
+/** The launcher's OS against THIS window's terminal — the rule every Terminal entry follows. */
+function refusedHere(launcher: EntityMetadata): string | undefined {
+  const choice = entryShell(launcher.name, launcher.terminalOs, shellContext());
+  return choice.kind === 'refused' ? choice.reason : undefined;
+}
+
 async function dependenciesThenLaunch(ctx: VpnRunContext, launcher: EntityMetadata, line: string): Promise<boolean> {
-  const ready = await runDependenciesFirst({
-    // Both ask for themselves: the VPN's own dependencies when it ticked the box, and the
-    // launcher's (the installer, in the owner's example) when IT did. The launcher is the main
-    // action, so it is excluded from the chain even when the VPN also lists it as a dependency.
-    roots: [ctx.details, launcher],
-    nodeOf: (id) => ctx.storage.getNode(ctx.accountId, id)?.details,
-    exclude: new Set([launcher.id]),
-    ownerName: ctx.details.name,
-    trust: ctx.trust,
-  });
+  // Both ask for themselves: the VPN's own dependencies when it ticked the box, and the launcher's
+  // (the installer, in the owner's example) when IT did. The launcher is the main action, so it is
+  // excluded from the chain even when the VPN also lists it as a dependency.
+  const ready = await runDependenciesFirst(
+    dependencyRequest(ctx.storage, ctx.accountId, [ctx.details, launcher], ctx.details.name, ctx.trust, new Set([launcher.id])),
+  );
   return ready && launch(ctx, launcher, line);
 }
 
@@ -80,20 +79,14 @@ async function launch(ctx: VpnRunContext, launcher: EntityMetadata, line: string
     void vscode.window.showWarningMessage(opened.reason);
     return false;
   }
-  opened.terminal.sendText(withConfig(line, configPath, opened.shell), true);
+  // `{config}` quoted for the shell that will READ the line (`readerFamily`) — quoting for another
+  // one would be #103 again.
+  opened.terminal.sendText(withConfig(line, configPath, opened.family), true);
   return true;
 }
 
-/**
- * The line with `{config}` quoted for the shell that will READ it: the pinned one when the
- * launcher has an OS, the window's default profile when it has none — quoting for the wrong one
- * would be #103 again.
- */
-function withConfig(line: string, configPath: string, pinned: HostShell | undefined): string {
-  if (configPath === '') {
-    return line;
-  }
-  return substituteConfig(line, configPath, pinned?.family ?? shellFamily(process.platform, vscode.env.shell));
+function withConfig(line: string, configPath: string, family: ShellFamily): string {
+  return configPath === '' ? line : substituteConfig(line, configPath, family);
 }
 
 /**

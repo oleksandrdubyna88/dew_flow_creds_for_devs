@@ -25,7 +25,7 @@ import { collectKeyCandidates } from '../entityEditCommands';
 import { buildDependencyCandidates } from '../depGraph';
 import { buildDependencyColorMap } from '../depGraph';
 import { collectJumpCandidates, collectLauncherCandidates } from '../commandTargets';
-import { osOf } from '../hostShell';
+import { newEntryOs } from '../hostShell';
 import { carryThroughDetails } from '../attachmentMeta';
 import { applyAdditions, applyRemovals } from '../applyFormSecrets';
 import { EntryLandedError } from '../entityWrite';
@@ -274,7 +274,7 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
       dependencyColors: buildDependencyColorMap(storage.getNodes(location.accountId)),
       jumpCandidates: collectJumpCandidates(storage, location.accountId, id),
       launcherCandidates: collectLauncherCandidates(storage, location.accountId, id),
-      hostOs: osOf(process.platform),
+      hostOs: newEntryOs(vscode.env.remoteName, process.platform),
     });
     if (result === undefined) {
       return;

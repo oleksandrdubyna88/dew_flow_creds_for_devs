@@ -24,9 +24,7 @@ export function refVarName(index: number): string {
   return `CREDS_REF_${index + 1}`;
 }
 
-// The shell-family detector moved to `hostShell.ts` (issue #103), so there is ONE; it is
-// re-exported here so the callers that always imported it from this module keep doing so.
-export { shellFamily } from './hostShell';
+// The shell-family detector lives in `hostShell.ts` since issue #103 — one, not a copy per module.
 
 export function shellRead(name: string, platform: NodeJS.Platform, shellPath?: string): string {
   const family = shellFamily(platform, shellPath);

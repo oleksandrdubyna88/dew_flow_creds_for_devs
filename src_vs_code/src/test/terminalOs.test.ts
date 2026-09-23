@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { test } from 'node:test';
 import { execDetails, runDependenciesField, terminalOsField, vpnLauncherField } from '../execFormFields';
-import { osMismatch, capturedRun } from '../hostShell';
+import { osMismatch, capturedRun, hostShell } from '../hostShell';
 import { commandRowLabel } from '../commandLine';
 import { isEntityMetadata } from '../typeGuards';
 
@@ -43,20 +45,20 @@ test('the guard accepts any OS string and refuses a non-string — the counter-e
 });
 
 test('a line written for another OS is refused with both OS names; none recorded means no refusal', () => {
-  assert.match(osMismatch('deploy', 'macos', 'win32') ?? '', /"deploy" is written for macOS, and this machine runs Windows/);
+  assert.match(osMismatch('deploy', 'macos', 'win32') ?? '', /"deploy" is written for macOS, and this terminal runs Windows.*"not set"/);
   assert.equal(osMismatch('deploy', 'windows', 'win32'), undefined);
   assert.equal(osMismatch('deploy', undefined, 'win32'), undefined);
   assert.equal(osMismatch('deploy', '', 'linux'), undefined);
 });
 
 test('the captured run: no OS keeps Node\'s shell:true, an OS gets the native shell', () => {
-  assert.deepEqual(capturedRun(undefined, 'ls -la', 'linux', () => true), { program: 'ls -la', args: [], shell: true });
-  assert.deepEqual(capturedRun('windows', 'Get-ChildItem', 'win32', () => false), {
+  assert.deepEqual(capturedRun(undefined, 'ls -la', hostShell('linux', () => true)), { program: 'ls -la', args: [], shell: true });
+  assert.deepEqual(capturedRun('windows', 'Get-ChildItem', hostShell('win32', () => false)), {
     program: 'powershell.exe',
     args: ['-NoProfile', '-NonInteractive', '-Command', 'Get-ChildItem'],
     shell: false,
   });
-  assert.deepEqual(capturedRun('linux', 'ls', 'linux', (p) => p === '/bin/bash'), {
+  assert.deepEqual(capturedRun('linux', 'ls', hostShell('linux', (p) => p === '/bin/bash')), {
     program: '/bin/bash',
     args: ['-c', 'ls'],
     shell: false,
@@ -95,3 +97,14 @@ test('the execute mark is kept only while there is a dependency to execute', () 
   assert.equal(execDetails({ runDependencies: 'true' }, 'vpn', 1, 'v1').runDependencies, undefined);
   assert.match(runDependenciesField({ id: 'e', name: 'x', isSshEnabled: false, runDependencies: true }), /id="runDependencies" type="checkbox" checked/);
 });
+
+test('the page posts all three #103 controls on save — the whole expression, not a fragment', () => {
+  // The save payload is one object literal in the page script; a key missing from it never reaches
+  // `toValues`, and nothing else would fail. Pinned as the complete expressions the page evaluates,
+  // so a changed condition (the execute mark only while Depends on is ticked) goes red too.
+  const script = fs.readFileSync(path.resolve(__dirname, '..', '..', 'src', 'entityFormScript.ts'), 'utf8');
+  assert.ok(script.includes("terminalOs: val('terminalOs')"), 'the OS dropdown');
+  assert.ok(script.includes("vpnLauncherEntityId: val('vpnLauncherEntityId')"), 'the launcher picker');
+  assert.ok(script.includes("runDependencies: chk('dependsOnOn') && chk('runDependencies')"), 'the execute mark');
+});
+

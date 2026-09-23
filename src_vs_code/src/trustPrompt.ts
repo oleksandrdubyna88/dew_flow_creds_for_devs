@@ -9,11 +9,18 @@ import { TrustStore, confirmCommandMessage, isCommandTrusted, trustCommand } fro
  * yourself" — true until sync and Accept Share, both of which can deliver a command entry from
  * somewhere else, under a name the reader has no reason to distrust.</p>
  */
-export async function confirmTrusted(store: TrustStore, entityId: string, entityName: string, line: string): Promise<boolean> {
+export async function confirmTrusted(
+  store: TrustStore,
+  entityId: string,
+  entityName: string,
+  line: string,
+  /** What the modal says, when it is not the standard "read this line" — the script-print warning. */
+  message: string = confirmCommandMessage(entityName, line),
+): Promise<boolean> {
   if (isCommandTrusted(store, entityId, line)) {
     return true;
   }
-  const choice = await vscode.window.showWarningMessage(confirmCommandMessage(entityName, line), { modal: true }, 'Run');
+  const choice = await vscode.window.showWarningMessage(message, { modal: true }, 'Run');
   if (choice !== 'Run') {
     return false;
   }

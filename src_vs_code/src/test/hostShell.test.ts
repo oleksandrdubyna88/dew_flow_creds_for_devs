@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { test } from 'node:test';
-import { asOsName, hostShell, osLabel, osOf, pinnedShellRefusal, quoteFor, shellFamily } from '../hostShell';
+import { asOsName, entryShell, hostShell, newEntryOs, osLabel, osOf, pinnedShellRefusal, quoteFor, readerFamily, shellFamily } from '../hostShell';
 
 /**
  * Which shell parses a composed line (issue #103). The defect was a line for one shell typed into
@@ -87,4 +87,65 @@ test('a local window and a WSL window may run a composed line; another computer 
   for (const remote of ['ssh-remote', 'dev-container', 'attached-container', 'codespaces']) {
     assert.match(pinnedShellRefusal(remote) ?? '', new RegExp(`another computer \\(${remote}\\)`));
   }
+});
+
+// ---------- entryShell: which shell reads a Terminal entry's OWN line (issue #103) ----------
+
+const local = (platform: NodeJS.Platform, defaultShell?: string) => ({ platform, remoteName: undefined, defaultShell });
+
+test('no OS recorded: the default profile, exactly as before — whatever the window', () => {
+  assert.deepEqual(entryShell('e', undefined, local('win32', 'C:/Windows/System32/wsl.exe')), { kind: 'default' });
+  assert.deepEqual(entryShell('e', '', { platform: 'win32', remoteName: 'ssh-remote', defaultShell: '/bin/bash' }), { kind: 'default' });
+});
+
+test('the #103 case: a Windows entry with a WSL-bash default profile gets the native shell pinned', () => {
+  assert.deepEqual(entryShell('e', 'windows', local('win32', 'C:/Windows/System32/wsl.exe')), { kind: 'pinned' });
+  assert.deepEqual(entryShell('e', 'windows', local('win32', 'C:/Program Files/Git/bin/bash.exe')), { kind: 'pinned' });
+});
+
+test('a default profile of the RIGHT system is kept — pwsh 7, cmd, zsh with its aliases', () => {
+  assert.deepEqual(entryShell('e', 'windows', local('win32', 'C:/Program Files/PowerShell/7/pwsh.exe')), { kind: 'default' });
+  assert.deepEqual(entryShell('e', 'windows', local('win32', 'C:/Windows/System32/cmd.exe')), { kind: 'default' });
+  assert.deepEqual(entryShell('e', 'macos', local('darwin', '/bin/zsh')), { kind: 'default' });
+  assert.deepEqual(entryShell('e', 'linux', local('linux', '/usr/bin/fish')), { kind: 'default' });
+});
+
+test('a WSL window: its terminal is Linux, and Windows lines still reach Windows through interop', () => {
+  const wsl = { platform: 'win32' as NodeJS.Platform, remoteName: 'wsl', defaultShell: '/bin/bash' };
+  assert.deepEqual(entryShell('e', 'linux', wsl), { kind: 'default' });
+  assert.deepEqual(entryShell('e', 'windows', wsl), { kind: 'pinned' });
+  const mac = entryShell('mac thing', 'macos', wsl);
+  assert.equal(mac.kind, 'refused');
+  assert.match(mac.kind === 'refused' ? mac.reason : '', /written for macOS, and this terminal runs Linux/);
+});
+
+test('another computer\'s window: the default profile — that OS is not ours to know', () => {
+  const remote = { platform: 'win32' as NodeJS.Platform, remoteName: 'ssh-remote', defaultShell: '/bin/bash' };
+  assert.deepEqual(entryShell('e', 'windows', remote), { kind: 'default' });
+  assert.deepEqual(entryShell('e', 'linux', remote), { kind: 'default' });
+});
+
+test('an entry for another system is refused locally, naming both and the way back to "not set"', () => {
+  const choice = entryShell('deploy', 'macos', local('win32'));
+  assert.equal(choice.kind, 'refused');
+  assert.match(choice.kind === 'refused' ? choice.reason : '', /"deploy" is written for macOS, and this terminal runs Windows.*"not set"/);
+});
+
+test('{config} is quoted for the shell that READS the line: pinned or the default profile', () => {
+  const pinned = hostShell('win32', () => false);
+  const wslDefault = local('win32', 'C:/Windows/System32/wsl.exe');
+  assert.equal(readerFamily({ kind: 'pinned' }, pinned, wslDefault), 'powershell');
+  assert.equal(readerFamily({ kind: 'default' }, pinned, wslDefault), 'posix');
+  assert.equal(readerFamily({ kind: 'default' }, pinned, local('win32', 'cmd.exe')), 'cmd');
+});
+
+test('a NEW entry starts on the OS of the window\'s terminal — none in another computer\'s window', () => {
+  assert.equal(newEntryOs(undefined, 'win32'), 'windows');
+  assert.equal(newEntryOs('wsl', 'win32'), 'linux');
+  assert.equal(newEntryOs('ssh-remote', 'win32'), undefined);
+});
+
+test('pwsh 7 is pinned when this Windows has it — a person\'s && works there, not in 5.1', () => {
+  assert.equal(hostShell('win32', () => false, true).shellPath, 'pwsh.exe');
+  assert.equal(hostShell('win32', () => false).shellPath, 'powershell.exe');
 });

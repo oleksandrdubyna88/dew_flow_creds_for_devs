@@ -113,10 +113,7 @@ test('a WireGuard stop runs in a terminal whose shell is PINNED, not the default
 
   assert.equal(started, true);
   assert.equal(s.created.length, 1);
-  const expected = process.platform === 'win32' ? 'powershell.exe' : /^\/bin\/(ba)?sh$/;
-  if (typeof expected === 'string') {
-    assert.equal(s.created[0].shellPath, expected);
-  } else {
-    assert.match(s.created[0].shellPath ?? '', expected);
-  }
+  // PowerShell 7 when this Windows has it, else Windows PowerShell; bash (or sh) elsewhere.
+  const expected = process.platform === 'win32' ? /^(pwsh|powershell)\.exe$/ : /^\/bin\/(ba)?sh$/;
+  assert.match(s.created[0].shellPath ?? '', expected);
 });

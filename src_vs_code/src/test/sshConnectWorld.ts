@@ -168,6 +168,9 @@ export function world(parts: Parts): World {
           return Promise.resolve(parts.translated ?? `/mnt/c${windowsPath}`);
         },
       },
+      // Which shell a composed ssh line gets (issue #103) is `pinnedTerminal`'s question and its own
+      // tests'; here it is a fixed answer, so no real `where pwsh.exe` runs inside an SSH scenario.
+      './pinnedTerminal': { composedShellPath: (): string | undefined => undefined },
       './terminalManager': {
         openSshTerminal: (
           entity: { sshKeyPath?: string },
