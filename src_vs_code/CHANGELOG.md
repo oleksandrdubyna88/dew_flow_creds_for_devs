@@ -19,6 +19,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   short to weave and a method this build does not know are unchanged — still a question, because
   there the pair is not what stops the weave.
 
+### Fixed — a composed line reached the wrong shell (#103)
+
+- **Start VPN typed PowerShell into bash.** The line was composed for the machine (`Start-Process -Verb
+  RunAs …` on Windows) and typed into the window's DEFAULT terminal — WSL bash in the report, so
+  `Start-Process: command not found`. Every line the extension composes — VPN start and stop, the
+  OpenVPN Connect import, the install offer, *Run Script* — now runs in a terminal opened with the
+  machine's own shell (PowerShell on Windows, bash on macOS and Linux), whatever the default is. In a
+  Remote-SSH or container window it refuses instead of typing into another computer.
+- **An agent was told a VPN "opened" when nothing started.** `creds_vpn_up` answered success for a
+  missing config, a missing tool or an unsupported type; it now reports the refusal.
+- **macOS is its own platform.** OpenVPN and WireGuard installed by Homebrew are found in
+  `/opt/homebrew` and `/usr/local`, and a missing tool is offered as `brew install …` instead of an apt
+  command.
+
+### Added — the person says what runs, where, and in which order (#103)
+
+- **Runs on**, for a Terminal entry: Windows, macOS or Linux (a new entry starts on this machine's).
+  The command then runs in that system's own shell and is refused on any other — for *Run in
+  Terminal* and for an agent's `creds_run` alike. Entries without it behave as before.
+- **Started by**, for a VPN: pick one of your Terminal entries instead of the built-in launcher. Its
+  command runs with `{config}` replaced by the path of the stored config, so any kind of VPN — IKEv2,
+  L2TP, a vendor client — becomes startable from the tree.
+- **Depends on → Execute what is executable first.** Before the entry is used, its Terminal
+  dependencies run in order, each one awaited, and a failure stops the rest; a dependency's own
+  dependencies run too when it asks for the same. The whole chain is shown before anything runs, a
+  circular chain is refused, and a deleted dependency is named rather than skipped in silence.
+
+### Changed
+
+- **Requires VS Code 1.93** (August 2024) or newer — the version whose terminal can report when a
+  command finished, which is what waiting for one step before the next needs.
+
 ## [1.9.7] — 2026-09-17 — what four review rounds found in 1.9.6
 
 > **Why this is 1.9.7 and not a re-cut 1.9.6.** A build of 1.9.6 was installed on the reporting
