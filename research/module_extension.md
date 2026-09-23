@@ -1478,6 +1478,10 @@ one: which OS the line is for, and which shell will read it.
   up their private copies for it), `entryShell` (above), and the ONE `shellFamily` detector —
   `runPlan.ts` and `envProbe.ts` each used to carry a copy. The window classification is
   `remoteWindow.windowSide`'s, asked rather than re-made (`windowKind`).
+  **Standing decision:** CodeQL's `js/shell-command-constructed-from-input` flags `quoteFor`'s three
+  return lines, because an exported function's parameter reaches a shell. It is the escaping step
+  itself, so the alerts (41–43, PR #137) are dismissed as false positives with that reason on each —
+  do not re-open them for a new caller; a caller that bypasses `quoteFor` is the thing to look for.
 - `pinnedTerminal.ts` is the `vscode` half, and the one way a line the extension COMPOSES for this
   machine reaches a terminal: VPN start/stop, the OpenVPN Connect import (both words single-quoted now),
   the install offer (`toolEnsure.ts`, which refuses before offering), *Run Script*, the dependency chain
