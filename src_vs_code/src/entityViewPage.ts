@@ -5,7 +5,7 @@ import { describeMcpSource } from './viewerOptions';
 import { mcpBarHtml } from './mcpSwitches';
 import { DbConnParts } from './dbConnString';
 import { CommandArg, EntityMetadata } from './types';
-import { buildCommandLine, normalizeArgs } from './commandLine';
+import { buildCommandLine, commandRowLabel, normalizeArgs } from './commandLine';
 import { highlightScript, resolveScriptEnv } from './scriptRender';
 import { configCodePanel, highlightSnippet } from './configCodePanel';
 import {
@@ -510,7 +510,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     // A command entry: the verb, what it is for, every argument with its own note, and
     // the line that actually runs. The viewer previously knew nothing about this kind,
     // so it rendered a Name and stopped.
-    row('Command', 'command', d.isTerminal ? d.command : undefined),
+    row(commandRowLabel(d.terminalOs), 'command', d.isTerminal ? d.command : undefined),
     row('What it is for', 'commandNote', d.isTerminal ? d.commandNote : undefined),
     ...(d.isTerminal ? normalizeArgs(d.commandArgs).map((a, i) => argRow(a, i)) : []),
     row(

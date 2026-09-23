@@ -16,7 +16,8 @@ import { folderKindOf } from './commandTargets';
 import { imageMime } from './attachment';
 import { buildDependencyCandidates } from './depGraph';
 import { buildDependencyColorMap } from './depGraph';
-import { collectJumpCandidates } from './commandTargets';
+import { collectJumpCandidates, collectLauncherCandidates } from './commandTargets';
+import { osOf } from './hostShell';
 import { hostKeyFingerprint } from './hostKeyPin';
 import { snapshotForRevision } from './revisionSnapshot';
 import { carryThroughDetails } from './attachmentMeta';
@@ -100,6 +101,8 @@ export async function editNode(
     dependencyFolders: buildDependencyCandidates(storage.getNodes(accountId), node.id),
     dependencyColors: buildDependencyColorMap(storage.getNodes(accountId)),
     jumpCandidates: collectJumpCandidates(storage, accountId, node.id),
+    launcherCandidates: collectLauncherCandidates(storage, accountId, node.id),
+    hostOs: osOf(process.platform),
     hasStoredHostKey: storedHostKey !== undefined,
     hostKeyFingerprint: storedHostKey === undefined ? undefined : hostKeyFingerprint(storedHostKey),
     // What this entry would inherit if it answered no cadence of its own (#95) — the same helper

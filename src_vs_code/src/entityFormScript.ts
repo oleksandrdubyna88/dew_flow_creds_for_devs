@@ -693,9 +693,9 @@ export function formPageScript(
       privateKey: currentKind() === 'vpn' ? val('vpnKey') : val('privateKey'),
       clearVpnKey: chk('clearVpnKey'),
       vpnType: val('vpnType'), vpnConfigContent, vpnConfigFileName: val('vpnConfigFileName'),
-      clearVpnConfig: chk('clearVpnConfig'),
+      clearVpnConfig: chk('clearVpnConfig'), vpnLauncherEntityId: val('vpnLauncherEntityId'),
       dbType: val('dbType'), dbConnection: val('dbConnection'),
-      command: val('command'), commandNote: val('commandNote'), commandArgs: argRows,
+      command: val('command'), commandNote: val('commandNote'), commandArgs: argRows, terminalOs: val('terminalOs'),
       envBindings: collectEnvBindings(), lifetime: val('lifetime'),
       scriptLanguage: val('scriptLanguage'), scriptBody: val('scriptBody'), scriptVars: scriptVarRows,
       configFormat: val('configFormat'), configFileName: val('configFileName'),
@@ -720,7 +720,7 @@ export function formPageScript(
       jumpHostEntityId: val('jumpHostEntityId'), tags: val('tags'),
       agentForward: chk('agentForward'), clearHostKey: chk('clearHostKey'),
       portForwards: forwardRows,
-      dependsOn: collectDependsOn(),
+      dependsOn: collectDependsOn(), runDependencies: chk('dependsOnOn') && chk('runDependencies'),
       mcp: collectMcp(),
     }});
   });

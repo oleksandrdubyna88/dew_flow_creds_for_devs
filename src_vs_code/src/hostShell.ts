@@ -119,6 +119,49 @@ export function quoteFor(family: ShellFamily, value: string): string {
 }
 
 /**
+ * Why a command written for `terminalOs` may NOT run on this platform — or `undefined` when it
+ * may (no OS recorded, which is every entry written before the field existed, or the same OS).
+ */
+export function osMismatch(entryName: string, terminalOs: string | undefined, platform: NodeJS.Platform): string | undefined {
+  if (terminalOs === undefined || terminalOs === '' || terminalOs === osOf(platform)) {
+    return undefined;
+  }
+  return `"${entryName}" is written for ${osLabel(terminalOs)}, and this machine runs ${OS_LABELS[osOf(platform)]}. Edit it and change "Runs on", or run it on a ${osLabel(terminalOs)} machine.`;
+}
+
+/**
+ * How to hand one line to `shell` WITHOUT a terminal — the agent's captured run. The same shell
+ * the human path pins, so a line behaves the same whichever door ran it.
+ */
+export function shellInvocation(shell: HostShell, line: string): { program: string; args: string[] } {
+  if (shell.family === 'powershell') {
+    return { program: shell.shellPath, args: ['-NoProfile', '-NonInteractive', '-Command', line] };
+  }
+  return shell.family === 'posix'
+    ? { program: shell.shellPath, args: ['-c', line] }
+    : { program: shell.shellPath, args: ['/d', '/s', '/c', line] };
+}
+
+/**
+ * The captured (terminal-less) run of a Terminal entry's line — what an agent's `creds_run` spawns.
+ *
+ * <p>With an OS recorded, the host's native shell, as the human Run button now uses. Without one,
+ * exactly what it always was — Node's `shell: true` (cmd.exe on Windows, /bin/sh elsewhere) — so no
+ * entry an agent already runs changes under it.</p>
+ */
+export function capturedRun(
+  terminalOs: string | undefined,
+  line: string,
+  platform: NodeJS.Platform,
+  exists: (path: string) => boolean,
+): { program: string; args: string[]; shell: boolean } {
+  if (terminalOs === undefined || terminalOs === '') {
+    return { program: line, args: [], shell: true };
+  }
+  return { ...shellInvocation(hostShell(platform, exists), line), shell: false };
+}
+
+/**
  * Why a pinned terminal may NOT be opened in this window — or `undefined` when it may.
  *
  * <p>The extension runs on the machine the editor runs on (`extensionKind: ui`), so a line it

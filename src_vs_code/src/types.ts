@@ -106,6 +106,13 @@ export interface EntityMetadata {
   dbType?: DbType;
   /** Original filename of the uploaded VPN config (content is a secret). */
   vpnConfigFileName?: string;
+  /**
+   * A same-account Terminal entry that starts this VPN instead of the built-in composition
+   * (issue #103) — its command, with `{config}` replaced by the materialized config path. A typed
+   * reference like `sshKeyEntityId`: it can dangle (sync, import), and a dangling one falls back to
+   * the built-in launcher with a warning. Stripped from a share; remapped on import.
+   */
+  vpnLauncherEntityId?: string;
   /** Marks this entity as a CLI command (the `terminal` kind). */
   isTerminal?: boolean;
   /** Marks this entity as a stored script (the `script` kind). */
@@ -150,6 +157,13 @@ export interface EntityMetadata {
   commandArgs?: CommandArg[];
   /** What the command is for, shown under the input. */
   commandNote?: string;
+  /**
+   * The OS this command is written for — `windows`, `macos` or `linux` (issue #103). Set, it runs
+   * in that OS's native shell and is refused on any other; absent (every entry written before
+   * it existed), it keeps the window's default profile. A LOOSE string, never a closed list, so a
+   * value a newer build writes does not make this one reject the entity — see `hostShell.asOsName`.
+   */
+  terminalOs?: string;
   /**
    * When this entry stops existing (ms epoch). Absent means it lives until deleted.
    *
@@ -254,6 +268,13 @@ export interface EntityMetadata {
    * a target that no longer exists is skipped at render time, never thrown on.</p>
    */
   dependsOn?: string[];
+  /**
+   * Run this entry's EXECUTABLE dependencies (Terminal entries with a command) before using it —
+   * installer before launcher, launcher before the VPN (issue #103). Transitive only through a
+   * dependency that says the same; see `dependencyRun.ts`. Stripped from a share, so a chain can
+   * only be armed by the vault's own owner.
+   */
+  runDependencies?: boolean;
   /**
    * The shared tint, stamped on the entity that is DEPENDED ON — never on the edge, and never
    * on the dependent.

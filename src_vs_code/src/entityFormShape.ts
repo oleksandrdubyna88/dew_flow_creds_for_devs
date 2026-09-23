@@ -5,6 +5,7 @@ import { PaymentFields } from './paymentFields';
 import { AgentDoors } from './agentDoors';
 import type { InheritedAsk } from './mcpSwitches';
 import { DependencyFolderCandidate } from './depGraph';
+import type { OsName } from './hostShell';
 
 /**
  * What the entity form is GIVEN and what it answers with — two interfaces and nothing else.
@@ -23,6 +24,12 @@ import { DependencyFolderCandidate } from './depGraph';
 export interface KeyCandidate {
   id: string;
   name: string;
+}
+
+/** A Terminal entry a VPN can name as its launcher, with the OS it is written for (issue #103). */
+export interface LauncherCandidate extends KeyCandidate {
+  /** The entry's `terminalOs` as stored — shown beside the name, never interpreted here. */
+  os?: string;
 }
 
 export interface EntityFormOptions {
@@ -109,6 +116,14 @@ export interface EntityFormOptions {
   keyCandidates: KeyCandidate[];
   /** Other SSH entities of the same account usable as a jump host (audit D7). */
   jumpCandidates: KeyCandidate[];
+  /**
+   * Terminal entries of the same account a VPN can be started by (issue #103). OPTIONAL, like
+   * `hostOs`, so the fixtures that build these options with a cast keep compiling — the trap
+   * `PLAN_depends_on.md` recorded; absent means "none offered".
+   */
+  launcherCandidates?: LauncherCandidate[];
+  /** This machine's OS — what a NEW Terminal entry's OS dropdown starts on. The webview cannot know it. */
+  hostOs?: OsName;
   /** A host key is pinned for this entity, and this is its fingerprint (audit B10). */
   hasStoredHostKey: boolean;
   hostKeyFingerprint?: string;

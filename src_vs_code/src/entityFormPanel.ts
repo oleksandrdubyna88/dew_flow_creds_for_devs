@@ -65,6 +65,7 @@ import { pickFields } from './entityFields';
 // learn a second place to import from.
 export type { KeyCandidate, EntityFormOptions, EntityFormValues } from './entityFormShape';
 import type { EntityFormOptions, EntityFormValues } from './entityFormShape';
+import { execDetails } from './execFormFields';
 
 /**
  * The argument rows, as the webview posts them.
@@ -619,6 +620,7 @@ export function toValues(data: Record<string, unknown>, options: EntityFormOptio
       agentForward: isSsh && bool(data, 'agentForward') ? true : undefined,
       hostKey: isSsh && !bool(data, 'clearHostKey') ? options.initial?.hostKey : undefined,
       tags: isSsh && tags.length > 0 ? tags : undefined,
+      ...execDetails(data, kind, dependsOn.length, options.entityId), // issue #103: OS, launcher, execute
       isSshEnabled: isSsh,
       isSshKey: isKey || undefined,
       // A key-only preference; kept as it was, because it is set from the tree menu rather

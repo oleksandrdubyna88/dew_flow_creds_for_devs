@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
-import { HostShell, hostShell, pinnedShellRefusal } from './hostShell';
+import { HostShell, hostShell, osMismatch, pinnedShellRefusal } from './hostShell';
 
 /**
  * The one way this extension opens a terminal for a line it COMPOSED (issue #103).
@@ -62,6 +62,28 @@ function reusableTerminal(name: string, shell: HostShell, options: PinnedOptions
     return undefined;
   }
   return options.env === undefined ? live.find((t) => shellPathOf(t) === shell.shellPath) : undefined;
+}
+
+/**
+ * The terminal a Terminal ENTRY's own line runs in (issue #103).
+ *
+ * <p>With an OS recorded, the line is the person's syntax FOR that OS: refused on another OS, and
+ * run in that OS's native shell when it matches. With none recorded — every entry written before
+ * the field existed — it keeps today's behaviour exactly: the window's default profile, the
+ * dedicated terminal of this name reused.</p>
+ */
+export function entryTerminal(entryName: string, terminalOs: string | undefined): PinnedTerminal | { ok: true; terminal: vscode.Terminal; shell: undefined } {
+  const mismatch = osMismatch(entryName, terminalOs, process.platform);
+  if (mismatch !== undefined) {
+    return { ok: false, reason: mismatch };
+  }
+  const name = `CredsForDevs: ${entryName}`;
+  if (terminalOs !== undefined && terminalOs !== '') {
+    return pinnedTerminal(name);
+  }
+  const terminal = vscode.window.terminals.find((t) => t.name === name) ?? vscode.window.createTerminal({ name });
+  terminal.show();
+  return { ok: true, terminal, shell: undefined };
 }
 
 function shellPathOf(terminal: vscode.Terminal): string | undefined {
