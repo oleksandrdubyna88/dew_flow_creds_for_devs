@@ -16,26 +16,56 @@ export type SiteUrl = { ok: true; url: string } | { ok: false; reason: string };
 
 const WEB_SCHEMES: readonly string[] = ['http:', 'https:'];
 
+/** What an entry with nothing stored in its URL field is told. */
+export const NO_URL = 'has no URL.';
+
+/** Anything that starts like a scheme: `word:` — judged by that scheme unless it is a host and port. */
+const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+
 /**
- * A scheme at the start — but not `host:3000`, whose colon introduces a PORT. Without that
- * exception `localhost:3000` would be read as a `localhost:` scheme and refused.
+ * `localhost:3000` or `grafana.internal:3000/d` — a HOST and a port, not a scheme. Only a word that
+ * looks like a host (`localhost`, or one with a dot) qualifies, so `tel:911` and `javascript:1` stay
+ * schemes and are refused by name rather than opened as `https://tel:911/` (gate code round, #8).
  */
-const SCHEME = /^[a-z][a-z0-9+.-]*:(?!\d+(?:[/?#]|$))/i;
+const HOST_AND_PORT = /^(?:localhost|[a-z0-9-]+(?:\.[a-z0-9-]+)+):\d+(?:[/?#]|$)/i;
 
 export function siteUrlToOpen(raw: string | undefined): SiteUrl {
   const text = (raw ?? '').trim();
-  if (text === '') {
-    return { ok: false, reason: 'This entry has no URL.' };
-  }
+  return text === '' ? { ok: false, reason: NO_URL } : judgeText(text);
+}
+
+function judgeText(text: string): SiteUrl {
   const parsed = parse(withScheme(text));
-  return parsed === undefined ? { ok: false, reason: `"${text}" is not a web address.` } : judge(parsed);
+  if (parsed === undefined) {
+    return { ok: false, reason: `"${text}" is not a web address.` };
+  }
+  const judged = judge(parsed);
+  return !judged.ok && looksLikeHostAndPort(text) ? { ok: false, reason: hostAndPortHint(text) } : judged;
+}
+
+/**
+ * `grafana:3000` reads as a `grafana:` scheme (a one-word host is indistinguishable from one), and
+ * being told `"grafana:" addresses are not opened` blames a scheme nobody typed. Say what to store —
+ * unless the word IS a scheme people write with digits after it (`tel:911`), which is refused by name.
+ */
+const ONE_WORD_AND_PORT = /^([a-z0-9-]+):\d+(?:[/?#]|$)/i;
+
+const DIGIT_SCHEMES: readonly string[] = ['tel', 'sms', 'fax', 'callto', 'javascript', 'data', 'mailto', 'urn'];
+
+function looksLikeHostAndPort(text: string): boolean {
+  const word = ONE_WORD_AND_PORT.exec(text)?.[1].toLowerCase();
+  return word !== undefined && !DIGIT_SCHEMES.includes(word);
+}
+
+function hostAndPortHint(text: string): string {
+  return `"${text}" looks like a host and a port — store it with its scheme, e.g. https://${text}, to open it.`;
 }
 
 function withScheme(text: string): string {
   if (text.startsWith('//')) {
     return `https:${text}`;
   }
-  return SCHEME.test(text) ? text : `https://${text}`;
+  return SCHEME.test(text) && !HOST_AND_PORT.test(text) ? text : `https://${text}`;
 }
 
 function parse(candidate: string): URL | undefined {

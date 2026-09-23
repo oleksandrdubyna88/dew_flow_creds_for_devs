@@ -22,9 +22,19 @@ export function urlRow(url: string | undefined): string {
   }
   return `<div class="row">
       <label>URL</label>
-      <div class="line"><input readonly value="${escapeHtml(url)}">
+      <div class="line">${urlControl(url)}
         <button data-field="url" data-action="copy" class="icon" title="Copy URL" aria-label="Copy URL">${COPY_ICON}</button>
-        <button data-field="url" data-action="open" class="icon" title="Open the site in the browser" aria-label="Open the site in the browser">${OPEN_ICON}</button>
+        <button data-field="url" data-action="open" class="icon" title="Open Site in Browser" aria-label="Open Site in Browser">${OPEN_ICON}</button>
       </div>
     </div>`;
+}
+
+/**
+ * The value box, drawn as `row()` draws every other value: a one-line input, or a wrapping textarea
+ * past 60 characters — a login URL with its query string is often that long, and it wrapped before.
+ */
+function urlControl(url: string): string {
+  return url.length > 60
+    ? `<textarea readonly rows="${Math.min(6, Math.ceil(url.length / 60) + 1)}">${escapeHtml(url)}</textarea>`
+    : `<input readonly value="${escapeHtml(url)}">`;
 }
