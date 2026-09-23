@@ -4,7 +4,8 @@ import { hasMixedField } from './mixedFieldGuard';
 import { readDependsOnRows, readForwardRows } from './formRowReaders';
 import { addressBlockFor, addressSplitAnswer, cardTypedAnswer } from './cardFormFields';
 import { exampleAnswer } from './weaveExample';
-import { unwovenWarning, wovenSave } from './wovenPasswordSave';
+import { passwordPairRefusal, unwovenWarning, wovenSave } from './wovenPasswordSave';
+import { refuse } from './dialogs';
 import { secondModeOf } from './secondModeMarkup';
 import { secondInputFrom, secondTyped } from './secondFormInput';
 import { secondRecordFor } from './secondSave';
@@ -247,13 +248,40 @@ const ROUND_TRIPS: Record<string, (message: FormMessage, options: EntityFormOpti
   }),
 };
 
-/** Every save gate, in order — see `paymentSaveGate.paymentGates` for the first two. */
-async function agreed(data: Record<string, unknown>, options: EntityFormOptions): Promise<boolean> {
+/**
+ * Every save gate, in order — see `paymentSaveGate.paymentGates` for the first two.
+ *
+ * <p>Exported for one reason: a gate is only a gate once it is proven to RUN, and this chain is
+ * where that can be observed (`entityFormPanel.test.ts`).</p>
+ */
+export async function agreed(data: Record<string, unknown>, options: EntityFormOptions): Promise<boolean> {
   return (
-    (await paymentGates(data, options))
+    passwordPairAccepted(data)
+    && (await paymentGates(data, options))
     && (await confirmInvalidSave(data, options))
     && (await confirmUnwovenSave(data, options))
   );
+}
+
+/**
+ * Refuse a password whose own second half cannot pair — the payment fields' rule, owner decision 4.
+ *
+ * <p>FIRST, because a refusal asks nothing: put after the questions, it would spend a "Save anyway"
+ * the person then learns did not count. Returning `false` leaves the form open with everything typed,
+ * exactly as `paymentSaveGate.confirmSecondPairs` does for a card.</p>
+ */
+function passwordPairAccepted(data: Record<string, unknown>): boolean {
+  const refusal = passwordPairRefusal(
+    str(data, 'password'),
+    bool(data, 'weavePassword'),
+    str(data, 'weaveMethod'),
+    { own: secondModeOf(data.weaveSecondMode) === 'own', typed: secondTyped(data).password2 ?? '' },
+  );
+  if (refusal === '') {
+    return true;
+  }
+  refuse(refusal);
+  return false;
 }
 
 /**
@@ -272,10 +300,6 @@ async function confirmUnwovenSave(
     bool(data, 'weavePassword'),
     str(data, 'weaveMethod'),
     options.initial?.passwordWoven === true,
-    // The dialog has to know about the other half too, or a refused pair would be a person
-    // clicking Save and getting something the dialog never mentioned. The module's own comment:
-    // one says what gets STORED, the other says what to SAY about it, and the two must not disagree.
-    { own: secondModeOf(data.weaveSecondMode) === 'own', typed: secondTyped(data).password2 ?? '' },
   );
   if (warning === undefined) {
     return true;

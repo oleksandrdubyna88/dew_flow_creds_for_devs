@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { unwovenWarning, wovenSave } from '../wovenPasswordSave';
+import { passwordPairRefusal, unwovenWarning, wovenSave } from '../wovenPasswordSave';
+import { ownHalfRefusal } from '../secondSave';
 import { unweaveSecret } from '../wovenSecret';
 import { SHUFFLE_CODES } from '../shuffle';
 
@@ -163,16 +164,43 @@ test('an empty box under a DECOY is the ordinary case, and weaves', () => {
   assert.equal(saved.refusal, '');
 });
 
-test('the warning and the save agree about the second half, as they must about everything else', () => {
-  // Their own comment: one says what gets STORED, the other says what to SAY about it, and the two
-  // must never disagree about which state a save is in. A refusal the dialog did not mention would
-  // be a person clicking Save and getting something else.
-  const refused = { own: true, typed: '' };
+/* ── owner decision 4: a pair that cannot pair is REFUSED, never put as a question ─────────── */
 
-  assert.match(String(unwovenWarning('hunter2x', true, SHUFFLE_CODES[0], false, refused)), /box is empty/);
-  assert.equal(
-    unwovenWarning('hunter2x', true, SHUFFLE_CODES[0], false, { own: true, typed: 'flyfish7' }),
-    undefined,
-    'a good pair asks nothing',
-  );
+const OWN = (typed: string): { own: boolean; typed: string } => ({ own: true, typed });
+
+test('a second half that cannot pair is refused, in the sentence a payment field refuses with', () => {
+  // The dialog used to offer "Save the password in the clear?" for these — a way through a refusal,
+  // under a sentence that already ended "Nothing has been saved".
+  const mismatched = passwordPairRefusal('hunter2!', true, SHUFFLE_CODES[0], OWN('hunter2x'));
+  const empty = passwordPairRefusal('hunter2x', true, SHUFFLE_CODES[0], OWN(''));
+  const blank = passwordPairRefusal('hunter2x', true, SHUFFLE_CODES[0], OWN('   '));
+
+  assert.equal(mismatched, ownHalfRefusal('hunter2!', 'hunter2x', 'password'), 'ONE sentence, shared with payment');
+  assert.match(mismatched, /different kinds of character.*Nothing has been saved/s);
+  assert.match(empty, /second password yourself and the box is empty.*Nothing has been saved/s);
+  assert.equal(blank, empty, 'whitespace is no second half, exactly as for a card');
+});
+
+test('nothing is refused where no weave would happen, or where the pair is fine', () => {
+  // The companions: without them, a gate that refused every save would pass the test above.
+  const cases: ReadonlyArray<[string, string, boolean, string, { own: boolean; typed: string }]> = [
+    ['a good pair', 'hunter2x', true, SHUFFLE_CODES[0], OWN('flyfish7')],
+    ['a decoy', 'hunter2x', true, SHUFFLE_CODES[0], { own: false, typed: '' }],
+    ['weaving unticked', 'hunter2x', false, SHUFFLE_CODES[0], OWN('')],
+    ['nothing typed (an untouched woven entry)', '', true, SHUFFLE_CODES[0], OWN('')],
+    ['too short to weave — a question, not this', 'a', true, SHUFFLE_CODES[0], OWN('')],
+    ['a method this build does not know — a question, not this', 'hunter2x', true, 'f99', OWN('')],
+  ];
+
+  for (const [name, typed, weave, method, second] of cases) {
+    assert.equal(passwordPairRefusal(typed, weave, method, second), '', name);
+  }
+});
+
+test('the question never speaks for the pair: it cannot even be told about one', () => {
+  // `unwovenWarning` lost its second-half parameter, so it can only be about the password and the
+  // method. What it still asks is unchanged — pinned so the split did not drop a question.
+  assert.match(String(unwovenWarning('a', true, SHUFFLE_CODES[0], false)), /cannot be woven[\s\S]*in the clear\?/);
+  assert.match(String(unwovenWarning('hunter2x', true, 'f99', false)), /No weaving method/);
+  assert.equal(unwovenWarning('hunter2x', true, SHUFFLE_CODES[0], false), undefined);
 });

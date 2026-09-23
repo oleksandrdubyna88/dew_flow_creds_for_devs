@@ -64,7 +64,7 @@ export function refuseSecondPairs(
 ): string {
   // The FIRST refusal is the answer: a person fixes one thing at a time, and a paragraph listing
   // every field at once is a paragraph nobody reads to the end.
-  return input.ownWoven.map((point) => onePair(
+  return input.ownWoven.map((point) => ownHalfRefusal(
     first[point] ?? '',
     input.typed[secondKeyOf(point)] ?? '',
     labels[point] ?? point,
@@ -78,8 +78,12 @@ export function refuseSecondPairs(
  * half and supplied none, and the alternative — drawing a decoy behind their back — would store a
  * value they did not choose, in a field they will later be asked to recognise. A form left on `decoy`
  * contributes nothing to `ownWoven`, so the same empty box never reaches here.</p>
+ *
+ * <p>Exported because the password's gate (`wovenPasswordSave.passwordPairRefusal`) refuses with these
+ * same sentences. It used to have its own copy of the empty-box one, which said the password "was
+ * stored as you typed it" — and then the form offered to do exactly that.</p>
  */
-function onePair(first: string, second: string, label: string): string {
+export function ownHalfRefusal(first: string, second: string, label: string): string {
   if (second.trim().length === 0) {
     return `You chose to supply the second ${label} yourself and the box is empty. Type it, or `
       + 'choose a decoy and one will be made for you. Nothing has been saved.';

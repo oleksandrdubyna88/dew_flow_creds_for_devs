@@ -2,6 +2,7 @@ import { Random } from './decoyDigits';
 import { isShuffleCode } from './shuffle';
 import { weaveRefusal, weaveSecret } from './wovenSecret';
 import { pairRefusal } from './secondPair';
+import { ownHalfRefusal } from './secondSave';
 
 /**
  * What a save writes for the password, and what the entry then says about it.
@@ -82,11 +83,39 @@ function marked(typed: string, method: string, random: Random, second: SecondHal
  * a ticked box, a saved entry, and a secret in the clear that looks woven.</p>
  */
 function weaveProblem(typed: string, method: string, second: SecondHalf): string {
+  return methodProblem(typed, method) || secondProblem(typed, second);
+}
+
+/** The two reasons a weave cannot happen that have nothing to do with the other half. */
+function methodProblem(typed: string, method: string): string {
   const tooShort = weaveRefusal(typed);
   if (tooShort !== '') {
     return tooShort;
   }
-  return isShuffleCode(method) ? secondProblem(typed, second) : NO_METHOD;
+  return isShuffleCode(method) ? '' : NO_METHOD;
+}
+
+/**
+ * Why this save must NOT happen because of the other half, in the sentence a payment field refuses
+ * with — or `''`.
+ *
+ * <p>Owner decision 4 of `research/PLAN_second_values.md`: a mismatched pair is REFUSED, not
+ * confirmed. The payment fields have done that since #52 shipped (`paymentSaveGate.confirmSecondPairs`);
+ * the password put the same problem to the person as "Save the password in the clear?", which is a
+ * way through a refusal — under a sentence that already ended "Nothing has been saved".</p>
+ *
+ * <p>Judged only where a weave would otherwise HAPPEN, in `weaveProblem`'s order: a password too short
+ * to weave, or a method this build does not know, is not woven at all, so there is no pair to refuse
+ * and those stay a question (`unwovenWarning`). Nothing typed is nothing to weave — an edit that did
+ * not retype a woven password never reaches here, because the password box is never prefilled.</p>
+ */
+export function passwordPairRefusal(typed: string, weave: boolean, method: string, second: SecondHalf): string {
+  return second.own && weavesNow(typed, weave, method) ? ownHalfRefusal(typed, second.typed, 'password') : '';
+}
+
+/** Ticked, typed, and nothing about the password or the method stopping the weave. */
+function weavesNow(typed: string, weave: boolean, method: string): boolean {
+  return weave && typed.length > 0 && methodProblem(typed, method) === '';
 }
 
 /** A decoy has nothing to judge. An own half has to be there, and has to pair. */
@@ -118,19 +147,22 @@ const NO_METHOD =
  * <p>The same four arguments `wovenSave` takes, in the same order, and beside it: one says what
  * gets STORED, the other says what to SAY about it, and the two must never disagree about which of
  * the four states a save is in.</p>
+ *
+ * <p>It takes no second half, on purpose. A second half that cannot pair is not a question with a
+ * "Save anyway" behind it — it is refused, by `passwordPairRefusal`, before this is ever asked. With
+ * no parameter for it, this cannot start offering a way through that refusal again.</p>
  */
 export function unwovenWarning(
   typed: string,
   weave: boolean,
   method: string,
   wasWoven: boolean,
-  second: SecondHalf = NO_SECOND,
 ): string | undefined {
-  return weave ? refusedWeave(typed, method, second) : untickedButWoven(typed, wasWoven);
+  return weave ? refusedWeave(typed, method) : untickedButWoven(typed, wasWoven);
 }
 
-function refusedWeave(typed: string, method: string, second: SecondHalf): string | undefined {
-  const problem = typed.length === 0 ? '' : weaveProblem(typed, method, second);
+function refusedWeave(typed: string, method: string): string | undefined {
+  const problem = typed.length === 0 ? '' : methodProblem(typed, method);
   return problem === '' ? undefined : `${problem}\n\nSave the password in the clear?`;
 }
 
