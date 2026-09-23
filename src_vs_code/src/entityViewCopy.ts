@@ -1,5 +1,6 @@
 import { isSecondKey } from './secondValues';
-import { EntityViewOptions, cliCommandFor, portableSshCommand } from './entityViewPage';
+import { EntityViewOptions, portableSshCommand } from './entityViewPage';
+import { cliCommandFor } from './cliCommandText';
 import { DEFAULT_SNIPPET_LANGUAGE, snippetFor } from './configSnippet';
 import { CONFIG_KEY_ENV } from './configKey';
 import { configFileNameFor } from './configFile';

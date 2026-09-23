@@ -26,6 +26,8 @@ import { runVpn } from '../vpnRun';
 import { withoutPassword } from '../dbConnString';
 import { openInDbExtension } from '../dbLauncher';
 import { TrustStore } from '../commandTrust';
+
+import { openEntrySite } from '../openSite';
 export interface EntityCommandsHost {
   readonly doorsAt: (accountId: string, node: TreeNode) => AgentDoors;
   readonly mutated: () => void;
@@ -99,6 +101,16 @@ export function registerEntityCommands(host: EntityCommandsHost): void {
     void vscode.window.showInformationMessage(
       copiedMessage(`Password of "${element.node.name}"`),
     );
+  });
+
+  // Issue #104: the entry's stored URL in the default browser — http/https only (`siteUrl.ts`),
+  // read through the PIN gate, re-judged now rather than trusted from the menu's hint.
+  register('credSshManager.openSiteInBrowser', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const element = asElement(target);
+    if (element?.kind === 'node' && element.node.details !== undefined) {
+      await openEntrySite(storage, element.accountId, element.node.details);
+    }
   });
 
   // The current one-time code, computed from the stored seed at this moment. The seed

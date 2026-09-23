@@ -38,6 +38,7 @@ function fake(tree: Record<string, string[]>): Fake {
   const target = {
     historyById: new Map<string, RevisionHead[]>(),
     passwordIds: new Set<string>(),
+    urlIds: new Set<string>(),
     invalidConfigIds: new Set<string>(),
     refreshes: 0,
     refresh(): void {
@@ -69,6 +70,7 @@ function fake(tree: Record<string, string[]>): Fake {
         }));
       },
       getPassword: (accountId, id) => Promise.resolve(passwords.get(key(accountId, id))),
+      getFieldsRaw: () => Promise.resolve(undefined),
     },
     setPassword: (a, i, v) => {
       if (v === undefined) {

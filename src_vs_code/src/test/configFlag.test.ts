@@ -33,6 +33,7 @@ function fake(nodes: readonly { id: string; details?: EntityMetadata }[], bodies
   const target: EntityFlagTarget = {
     historyById: new Map<string, RevisionHead[]>(),
     passwordIds: new Set<string>(),
+    urlIds: new Set<string>(),
     invalidConfigIds: new Set<string>(),
     refresh: () => undefined,
   };
@@ -44,6 +45,7 @@ function fake(nodes: readonly { id: string; details?: EntityMetadata }[], bodies
       getNodes: () => nodes.map((n) => ({ ...n, type: 'entity' as const })),
       getHistory: () => Promise.resolve([]),
       getPassword: () => Promise.resolve(undefined),
+      getFieldsRaw: () => Promise.resolve(undefined),
       getConfigBody: (_accountId, entityId) => {
         self.bodyReads.push(entityId);
         return Promise.resolve(bodies[entityId]);

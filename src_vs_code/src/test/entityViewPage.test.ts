@@ -2,11 +2,11 @@ import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   EntityViewOptions,
-  cliCommandFor,
   copyValueFor,
   portableSshCommand,
   renderEntityViewHtml,
 } from '../entityViewPage';
+import { cliCommandFor } from '../cliCommandText';
 import { EntityMetadata } from '../types';
 import { PAGE_MAX_WIDTH_PX, TWO_COLUMN_AT } from '../webviewHtml';
 import { snippetFor } from '../configSnippet';
@@ -323,6 +323,16 @@ test('login and URL are on the card in clear — copyable, never masked (the own
   assert.equal(await copyValueFor(options({ fields: { login: 'admin' } }), 'login'), 'admin');
   assert.equal(await copyValueFor(options({ fields: { url: 'https://x' } }), 'url'), 'https://x');
   assert.ok(!renderEntityViewHtml(options({})).includes('<label>Login</label>'), 'no fields, no rows');
+});
+
+test('the URL row offers Copy and then Open in the browser — Copy first, the tick finds it (#104)', () => {
+  const html = renderEntityViewHtml(options({ fields: { url: 'https://www.godaddy.com' } }));
+  const copyAt = html.indexOf('data-field="url" data-action="copy"');
+  const openAt = html.indexOf('data-field="url" data-action="open"');
+  assert.ok(copyAt > 0, 'Copy stays');
+  assert.ok(openAt > copyAt, 'Open is ADDITIONAL, and after Copy — the "copied" tick matches the first button');
+  assert.ok(html.includes('aria-label="Open the site in the browser"'));
+  assert.equal(renderEntityViewHtml(options({ fields: { login: 'me' } })).includes('data-action="open"'), false, 'no URL, no Open');
 });
 
 test('no aliases, no row — a capability line about nothing is noise', () => {

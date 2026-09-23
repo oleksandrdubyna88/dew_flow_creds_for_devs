@@ -9,6 +9,7 @@ import { applyZoomDelta, currentUiScale, pushUiScaleTo } from './uiScaleHost';
 import { ViewerTab } from './viewerClicks';
 import { BINDABLE_FIELDS, BindableField } from './envBinding';
 import { isPairedCodeField } from './entityViewCopy';
+import { openSite } from './openSite';
 import {
   CopyMessage,
   EntityViewOptions,
@@ -222,6 +223,12 @@ function mountEntityView(
     }
     if (message.type === 'download' && (message.field === 'attachment' || message.field === 'image')) {
       await options.saveAttachment(message.field);
+      return;
+    }
+    if (message.type === 'open' && message.field === 'url') {
+      // Issue #104: the STORED url of the entry this panel shows — the page names the field, never
+      // the value, so nothing the webview sends can choose what the browser opens.
+      await openSite(d.name, options.fields?.url);
       return;
     }
     if (message.type !== 'copy') {
