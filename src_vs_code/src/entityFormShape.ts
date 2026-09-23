@@ -52,6 +52,11 @@ export interface EntityFormOptions {
   inheritedAsk?: InheritedAsk;
   /** The tree element the footer's commands act on — the same argument the context menu passes. */
   entityTarget?: unknown;
+  /**
+   * *Create for user*: the entry is authored FOR someone and nothing stays here, so a *Not for export*
+   * box would contradict the action — it is not drawn, and a posted value is ignored (#122).
+   */
+  forSomeoneElse?: boolean;
   entityId: string;
   initial?: EntityMetadata;
   hasStoredPassword: boolean;

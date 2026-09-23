@@ -1,3 +1,4 @@
+import { isNotForExport } from './exportScope';
 import { StorageManager } from './storageManager';
 import { PinGate } from './pinGate';
 import { openedText } from './pinAdmission';
@@ -121,7 +122,8 @@ function entitiesIn(
   for (const node of nodes) {
     walk(node);
   }
-  return entities;
+  // An entry marked Not for export (#122) is not shared, so its seed is not a question to ask about.
+  return entities.filter((entity) => !isNotForExport(entity));
 }
 
 /** The flag if it vouches for one; otherwise the keychain, which is the truth. */

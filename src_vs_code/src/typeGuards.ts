@@ -360,7 +360,8 @@ function hasValidSecretMarks(v: Record<string, unknown>): boolean {
     (v.passwordWoven === undefined || typeof v.passwordWoven === 'boolean') &&
     (v.passwordSecondOwn === undefined || typeof v.passwordSecondOwn === 'boolean') &&
     (v.pinProtected === undefined || typeof v.pinProtected === 'boolean') &&
-    (v.pinAskOnImport === undefined || typeof v.pinAskOnImport === 'boolean')
+    (v.pinAskOnImport === undefined || typeof v.pinAskOnImport === 'boolean') &&
+    (v.notForExport === undefined || typeof v.notForExport === 'boolean')
   );
 }
 

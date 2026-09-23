@@ -53,6 +53,23 @@ export function wovenViewNote(password: boolean, fields: readonly string[]): str
      needs the method, and nothing in this build has it.</p>`;
 }
 
+/**
+ * *Not for export* (#122) — the one CONTROL in this module, because unlike the two facts around it
+ * the mark costs nothing to set or clear. Not drawn when the form authors an entry for someone else.
+ * The hint says what the mark does NOT stop, so nobody reads it as more than it is.
+ */
+export function notForExportField(d: EntityMetadata | undefined, forSomeoneElse: boolean): string {
+  if (forSomeoneElse) {
+    return '';
+  }
+  return `<div class="check"><input id="notForExport" type="checkbox"${d?.notForExport === true ? ' checked' : ''}>
+       <label for="notForExport">Not for export</label></div>
+    <p class="hint">This entry is never sent by <i>Share with…</i> or written by <i>Export / Share
+       Externally…</i>; inside a shared or exported folder it is left out and named. Agents, backup,
+       sync and your own use are unaffected. An older version of this extension does not know the
+       mark and drops it when it saves or syncs the entry.</p>`;
+}
+
 /** A PIN, stated — with where to change it, and what it costs to forget it. */
 export function pinState(d: EntityMetadata | undefined): string {
   return d?.pinProtected !== true

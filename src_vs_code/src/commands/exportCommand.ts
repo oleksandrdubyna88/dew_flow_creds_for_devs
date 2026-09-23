@@ -5,6 +5,7 @@ import { CorpPolicyState } from '../corpPolicy';
 import { refuseExit } from '../corpExits';
 import { StorageManager } from '../storageManager';
 import { TreeNode } from '../types';
+import { admitLeaving } from '../exportScope';
 import { VaultKeys } from '../vaultKeys';
 import { buildExternalBundle } from '../externalBundle';
 import { exportSensitiveNote, paymentFieldsInExport } from '../paymentRedaction';
@@ -82,7 +83,17 @@ async function runExport(host: ExportCommandHost, target: unknown, selected: unk
   if (skippedNote !== '') {
     void vscode.window.showWarningMessage(skippedNote);
   }
-  await writeExport(host, targets);
+  // What goes into the file: the selection's subtrees without the entries marked *Not for export*
+  // (issue #122) — decided and SAID before the first prompt, so nobody picks a form and types a
+  // password for a file that will be partial, or, when every entry is marked, for no file at all.
+  const scope = admitLeaving('export', host.storage.getNodes(targets[0].accountId), targets.map((t) => t.node), warn);
+  if (scope !== undefined) {
+    await writeExport(host, targets, scope.kept);
+  }
+}
+
+function warn(message: string): void {
+  void vscode.window.showWarningMessage(message);
 }
 
 /** The ban, said out loud. True when this export must not happen. */
@@ -99,10 +110,10 @@ function refused(host: ExportCommandHost, accountId: string): boolean {
 async function writeExport(
   host: ExportCommandHost,
   targets: readonly { accountId: string; node: TreeNode }[],
+  picked: readonly TreeNode[],
 ): Promise<void> {
   const accountId = targets[0].accountId;
   const exportName = targets.length === 1 ? targets[0].node.name : `${targets.length}-items`;
-  const picked = subtreeOf(host.storage, accountId, targets);
   const secrets = await host.storage.exportSecretsFor(
     accountId,
     picked.filter((n) => n.type === 'entity').map((n) => n.id),
@@ -123,43 +134,6 @@ async function writeExport(
   if (file !== undefined) {
     await save(host.log, file, exportName, picked.length);
   }
-}
-
-/**
- * A folder exports its whole subtree; an entity exports itself. The resolver already dropped any
- * target contained by another, so the union cannot repeat a node.
- */
-function subtreeOf(
-  storage: StorageManager,
-  accountId: string,
-  targets: readonly { node: TreeNode }[],
-): TreeNode[] {
-  // Indexed once rather than filtered per folder: the filter form is O(nodes x folders), which on a
-  // vault of ten thousand nodes is the difference between an instant prompt and a visible pause.
-  const children = indexByParent(storage.getNodes(accountId));
-  const picked: TreeNode[] = [];
-  const collect = (n: TreeNode): void => {
-    picked.push(n);
-    for (const child of children.get(n.id) ?? []) {
-      collect(child);
-    }
-  };
-  for (const t of targets) {
-    collect(t.node);
-  }
-  return picked;
-}
-
-/** Every node's children, in one pass — the index that keeps the walk above linear. */
-function indexByParent(nodes: readonly TreeNode[]): Map<string, TreeNode[]> {
-  const children = new Map<string, TreeNode[]>();
-  for (const node of nodes) {
-    const parent = node.parentId ?? '';
-    const siblings = children.get(parent) ?? [];
-    siblings.push(node);
-    children.set(parent, siblings);
-  }
-  return children;
 }
 
 /** The file this export becomes: protected under a password, or plain JSON the person insisted on. */
