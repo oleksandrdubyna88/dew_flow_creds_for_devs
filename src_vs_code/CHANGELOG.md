@@ -36,6 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/opt/homebrew` and `/usr/local`, and a missing tool is offered as `brew install …` instead of an apt
   command.
 
+### Added — open an entry's site in the browser (#104)
+
+- **Open Site in Browser**: a button beside the URL in *View Details*, and an item in the right-click
+  menu of an entry that has a URL. Copy stays. Only http and https addresses open — a stored URL can
+  arrive by sync, share or import, so `file:`, `vscode:`, `javascript:` and the rest are refused by
+  name, as is a URL with a user name or password in it; a bare host is taken to be https. A
+  PIN-protected entry asks for its PIN first.
+
 ### Added — the person says what runs, where, and in which order (#103)
 
 - **Runs on**, for a Terminal entry: Windows, macOS or Linux (a new entry starts on the system of the

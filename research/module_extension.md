@@ -3884,7 +3884,9 @@ any other build for a before/after.
   the same walk that refreshes `historyById` — on startup, `mutated()`, restore, accepted
   share, and now also on a pulled sync. Both caches are swapped at the end of the walk, not
   cleared at the start, so a repaint mid-walk never shows a tree with every flag off.
-  `getTreeItem` is synchronous now.
+  `getTreeItem` is synchronous now. Since issue #104 the same walk fills `urlIds` (`:url`, *Open Site
+  in Browser*) — one more keychain read per CREDENTIAL, the only kind whose save writes a URL; the
+  three sets are swapped in together (`FLAG_SETS`).
 - **C2 — debounce + `FilterMemo`.** `setSearchQuery` applies the term synchronously (so
   Escape-restore cannot be overtaken by a late keystroke) and coalesces the repaint by 50 ms.
   Within a render, `FilterMemo` (in `treeSearch.ts`, pure) remembers per-term subtree verdicts
@@ -5051,6 +5053,25 @@ stopped walking the kinds by hand. `SECRET_KINDS` is the table; export, import, 
 delete-with-the-entry walk it, and a kind is a row (the audit's "seven kinds walked by hand",
 closed). `revisionSnapshot.ts`, `shareInbox.ts`, `exportSecrets.ts` and `syncMerge.ts` each carry the
 one line the new kind costs there.
+
+**Open Site in Browser (issue #104).** The URL row in *View Details* carries Open beside Copy
+(`siteUrlView.urlRow`; Copy first, because the page's "copied" tick finds the first
+`button[data-field="url"]`), and the tree offers *Open Site in Browser* on rows wearing `:url`. Three
+rules:
+
+- **Only a web address leaves.** `siteUrl.ts` (pure) is the judge: `http:` and `https:` open, a bare
+  host and a protocol-relative `//host` are taken to be https, and everything else — `file:`,
+  `vscode:`, `command:`, `javascript:`, `data:` — is refused by name, as is a URL carrying a user name
+  or password. A stored URL arrives by sync, share and import; it is untrusted input.
+- **One door.** `openSite.ts` is the only place a STORED url reaches `vscode.env.openExternal`;
+  `openSite.test.ts` pins the set of files that call it at all. The panel opens
+  `state.options.fields.url` — the page names the field, never the value.
+- **The menu token is a hint.** `:url` comes from the flag walk (`urlIds`, beside `passwordIds`),
+  which reads the fields of credentials only and offers a PIN-protected credential unread. The command
+  re-reads the CURRENT url through the same PIN gate the viewer uses (`openEntrySite`), so a URL a sync
+  changed since the walk is judged as it is now, and an entry that turns out to have none says so.
+
+`cliCommandFor` moved to `cliCommandText.ts` to give `entityViewPage.ts` the line for the row.
 
 ## The ephemeral tail (2026-08-28, `PLAN_ephemeral_secrets_tail.md`)
 
