@@ -6,7 +6,12 @@ than by the code: the reverse proxy, the certificate, an environment variable, a
 happened at all. Twelve is the cap; there are seven.
 
 Target: the deployed vault, as an origin — `--target https://vault.example.com`
-Last verified: 2026-09-08 · **the deployment**, immediately after `rsd server deploy` shipped **0.6.0** · all five automated items PASS, run by the deploy workflow itself — including item 2 at its new expectation (see below). The certificate had 75 days left. Items 6 and 7 are a person's and were not covered by that run.
+Last verified: 2026-09-23 · **the deployment**, immediately after `rsd server deploy` shipped **0.8.0** · all five automated items PASS, run by the deploy workflow itself; the certificate had 60 days left. Item 7 read from the startup log: neither `CORPORATE RECOVERY` line, which is the unconfigured state this deployment is meant to be in (no officers in its `.env`, see below). Item 6 is a person's and was not covered. *(Previously: 2026-09-08, 0.6.0, the same five PASS.)*
+
+> **Item 7 used to promise a line in every state, and there is none in the unconfigured one.**
+> Since the roster was introduced (`173189a`) the server logs `IS ON` for a working roster and `IS OFF`
+> for a broken one, and nothing at all when no roster is configured. Reading the 0.8.0 log for the
+> line and not finding it looked like a regression; it is the designed default, and the item now says so.
 
 > **Item 2's new expectation has now been watched passing.** Epic 3 raised the contract floor to 4,
 > so `EXPECTED_CONTRACT` defaults to `4` here — and between 2026-09-06 and the 0.6.0 deploy that value
@@ -31,7 +36,7 @@ Last verified: 2026-09-08 · **the deployment**, immediately after `rsd server d
 | 4 | Somebody's token travels in the clear because the plaintext port answers instead of redirecting | `node -e "const u=new URL(process.env.TARGET);fetch('http://'+u.hostname+'/api/health',{redirect:'manual'}).then(r=>process.exitCode=+(r.status>=300&&r.status<400?0:1)).catch(()=>process.exitCode=+(0))"` | auto |
 | 5 | Sign-in appears to work and the Team is empty with no error — the scope the server advertises is unset, so every developer must paste it into their own settings | `node -e "fetch(process.env.TARGET+'/api/client-config').then(r=>r.json()).then(c=>process.exitCode=+(c.microsoftScope?0:1))"` | auto |
 | 6 | The backups are not being written, and nobody finds out until a restore is needed | **Both of them, since epic 5.** (a) `BACKUP_DIR` on the host: last night's tar exists and its size is in the usual range — `deploy/restore.sh` reads it. (b) The server's own encrypted backup: open ***Server Backup…*** on an admin account and press **Back up now** — a SUCCESSFUL run after this deploy, not the last one on the page. A stale success survives a deploy that lost `Vault:LoginKey:Kek`, and in that state the server writes `LOGIN KEYS ARE OFF` at startup, mints no key and refuses every scheduled run while the page still shows last week's green | manual |
-| 7 | Every vault on the server is (or is not) sealed to a recovery quorum, against the operator's intention — an escrow nobody meant to enable, or one they did | `docker compose logs vault` names `CORPORATE RECOVERY IS ON/OFF` at startup: read it and confirm it matches what this deployment is meant to do | manual |
+| 7 | Every vault on the server is (or is not) sealed to a recovery quorum, against the operator's intention — an escrow nobody meant to enable, or one they did | Read `docker compose logs vault` from startup. **Three states, and one of them is silence:** a roster that works logs `CORPORATE RECOVERY IS ON: …` (Warning, naming the officers); a roster that is written but cannot reach quorum logs `CORPORATE RECOVERY IS OFF: <reason>` (Error); **no roster at all logs nothing** — that is the unconfigured default, not a lost line. Confirm the state matches what this deployment is meant to do. The authoritative answer is `GET /api/org-recovery/config` with a signed-in caller: `enabled` is the operator's intent, and `setupComplete` whether the officers finished the ceremony for the current roster — `IS ON` in the log is logged for the first without the second | manual |
 
 ## What is deliberately not here
 
