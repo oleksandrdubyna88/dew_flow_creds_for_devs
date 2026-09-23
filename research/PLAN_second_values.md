@@ -330,6 +330,28 @@ sent" test carries a positive companion proving the scan still finds a known ins
    makes, and there is no form to make it in until S4. `pairRefusal` returns no refusal for a blank
    second and says so in a test; the rest lands with the save gates.
 
+## Correction after release — the password's pair gate (2026-09-23)
+
+PR B shipped S5's "the password's equivalent" as a **question**, not a refusal, and nothing recorded
+it as a deviation. For the password, a mismatched own pair or an empty own box reached
+`confirmUnwovenSave`, which asked *"Save the password in the clear?"* with **Save anyway** — and taking
+it stored the password unwoven, under a `pairRefusal` sentence that already ended "Nothing has been
+saved". That contradicts decision 4 and the help text, which both say the save does not happen. The
+payment fields were right all along (`paymentSaveGate.confirmSecondPairs`).
+
+Found by an audit of the closed #52 against `main`; the owner confirmed on 2026-09-23 that the
+password refuses exactly as the payment fields do. The fix:
+
+- `wovenPasswordSave.passwordPairRefusal` decides it, only where a weave would otherwise happen (too
+  short and no method are judged first and stay a question — there the pair does not stop anything).
+- Its sentences are `secondSave.ownHalfRefusal`'s — the private `onePair` the payment gate already
+  used, exported and renamed — so the two kinds cannot refuse in different words.
+- `entityFormPanel.agreed` runs it FIRST: a refusal asks nothing, so no "Save anyway" is spent before
+  it. `unwovenWarning` lost its second-half parameter, so it structurally cannot offer a way through
+  the refusal again.
+- `wovenSave` keeps its own pair check as a backstop (a bad partner is never woven even by a caller
+  that skipped the gate); the panel can no longer reach it.
+
 ## Definition of Done
 
 - [ ] `npm run typecheck`, `npm test` and `npx eslint src` green, the reported run after a cleared `out/`.

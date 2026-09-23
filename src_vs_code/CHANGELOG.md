@@ -4,6 +4,21 @@ All notable changes to **CredsForDevs** are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **A second password that cannot pair is refused, the way a card's already was.** With weaving
+  ticked and *My own second value* chosen, a second password of another length, the same as the
+  first, or drawn on different kinds of character — or an empty box — offered *Save the password in
+  the clear?* with a **Save anyway** button, and taking it stored the password unwoven. The sentence
+  above the button already ended "Nothing has been saved". A card's, an IBAN's and an account
+  number's pair has been refused outright since 1.8.0, and the help has always promised the same for
+  the password (#52, owner decision 4). The save now does not happen, the form keeps everything
+  typed, and the refusal is the payment fields' own sentence rather than a copy of it. A password too
+  short to weave and a method this build does not know are unchanged — still a question, because
+  there the pair is not what stops the weave.
+
 ## [1.9.7] — 2026-09-17 — what four review rounds found in 1.9.6
 
 > **Why this is 1.9.7 and not a re-cut 1.9.6.** A build of 1.9.6 was installed on the reporting

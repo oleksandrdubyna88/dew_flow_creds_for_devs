@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
-import { ENTITY_KINDS, EntityKind } from '../types';
+import { ENTITY_KINDS, EntityKind, EntityMetadata } from '../types';
+import { SHUFFLE_CODES } from '../shuffle';
 import { HOST_CHK, chooseAsk, mcpPage } from './mcpFormFixture';
 import { runFragment } from './miniDom';
 import { mcpSwitchScript } from '../mcpSwitchScript';
@@ -247,4 +248,106 @@ test('an entry that touched nothing stores no mcp record at all', () => {
   // nothing was touched and nothing was decided, and an untouched save must leave the entry
   // inheriting rather than converting it into one that opted out.
   assert.equal(storedMcp(undefined, 'inherit'), undefined);
+});
+
+/* ── the password's own second half is REFUSED, not confirmed (#52, owner decision 4) ──────── */
+
+/**
+ * Every dialog the save chain opens, with the buttons it offered. The stub answers each one with
+ * "Save anyway" — the worst case: a question with a way through is taken, so only a REFUSAL can
+ * stop the save.
+ */
+interface Dialog {
+  readonly text: string;
+  readonly buttons: readonly string[];
+}
+
+function gatedPanel(): { panel: Panel; dialogs: Dialog[] } {
+  const dialogs: Dialog[] = [];
+  const panel = loadWithVscode<Panel>('../entityFormPanel', {
+    window: {
+      createWebviewPanel: () => ({}),
+      showErrorMessage: () => Promise.resolve(undefined),
+      showWarningMessage: (text: string, ...rest: unknown[]) => {
+        const buttons = rest.filter((one): one is string => typeof one === 'string');
+        dialogs.push({ text, buttons });
+        return Promise.resolve(buttons.includes('Save anyway') ? 'Save anyway' : undefined);
+      },
+    },
+    workspace: { getConfiguration: () => ({ get: (_k: string, d: unknown) => d }) },
+    Uri: { file: (p: string) => ({ fsPath: p }), joinPath: () => ({ fsPath: '' }) },
+    ViewColumn: { One: 1 },
+    EventEmitter: class {
+      event = (): void => undefined;
+      fire(): void {}
+      dispose(): void {}
+    },
+  });
+  return { panel, dialogs };
+}
+
+/** A password save with weaving on and the person supplying the other half themselves. */
+const ownHalf = (password: string, password2: string): Record<string, unknown> =>
+  posted('credential', {
+    password,
+    weavePassword: true,
+    weaveMethod: SHUFFLE_CODES[0],
+    weaveSecondMode: 'own',
+    secondValues: { password2 },
+  });
+
+test('a password pair that cannot pair is REFUSED — no "Save anyway", and the save does not happen', async () => {
+  // Payment fields have refused a mismatched pair since #52 shipped; the password offered to save
+  // itself IN THE CLEAR instead, under a sentence that ended "Nothing has been saved".
+  const { panel, dialogs } = gatedPanel();
+
+  const saved = await panel.agreed(ownHalf('hunter2!', 'hunter2x'), formOptions());
+
+  assert.equal(saved, false, 'the save must not happen');
+  assert.equal(dialogs.length, 1, 'one message, and it is the refusal');
+  assert.match(dialogs[0].text, /different kinds of character/);
+  assert.match(dialogs[0].text, /Nothing has been saved/);
+  assert.deepEqual(dialogs[0].buttons, [], 'a refusal offers no way through');
+});
+
+test('choosing to supply the second password and leaving the box empty is refused the same way', async () => {
+  const { panel, dialogs } = gatedPanel();
+
+  const saved = await panel.agreed(ownHalf('hunter2x', ''), formOptions());
+
+  assert.equal(saved, false);
+  assert.equal(dialogs.length, 1);
+  assert.match(dialogs[0].text, /box is empty/);
+  assert.match(dialogs[0].text, /Nothing has been saved/);
+  assert.deepEqual(dialogs[0].buttons, []);
+});
+
+test('a pair that DOES pair saves, and nothing is asked', async () => {
+  // The companion: without it, a gate that refused every own-half save would pass the two above.
+  const { panel, dialogs } = gatedPanel();
+
+  assert.equal(await panel.agreed(ownHalf('hunter2x', 'flyfish7'), formOptions()), true);
+  assert.deepEqual(dialogs, []);
+});
+
+test('a password too short to weave is still a QUESTION, not a refusal — only the pair changed', async () => {
+  const { panel, dialogs } = gatedPanel();
+
+  assert.equal(await panel.agreed(ownHalf('a', 'b'), formOptions()), true, '"Save anyway" was taken');
+  assert.equal(dialogs.length, 1);
+  assert.match(dialogs[0].text, /cannot be woven/);
+  assert.deepEqual(dialogs[0].buttons, ['Save anyway']);
+});
+
+test('editing an entry whose password is already woven, without retyping it, is never refused', async () => {
+  // Raised at the plan gate: an edit to the notes must not demand the second half again. The
+  // password box is never prefilled, so an untouched password arrives empty — nothing to weave.
+  const { panel, dialogs } = gatedPanel();
+  const options: EntityFormOptions = {
+    ...formOptions(),
+    initial: { id: 'e1', name: 'an entry', passwordWoven: true } as EntityMetadata,
+  };
+
+  assert.equal(await panel.agreed(ownHalf('', ''), options), true);
+  assert.deepEqual(dialogs, []);
 });

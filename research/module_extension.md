@@ -1326,7 +1326,7 @@ export, the share and the hygiene scan needed no change, and `storageManager.ts`
 | Module | What it holds |
 |---|---|
 | `wovenSecret.ts` | `weaveSecret` / `unweaveSecret` / `weaveRefusal` — a password and its decoy, and the two readings a method gives back |
-| `wovenPasswordSave.ts` | the four states a save meets, and `unwovenWarning` — what to SAY when the form will not do what it appears to promise |
+| `wovenPasswordSave.ts` | the four states a save meets; `passwordPairRefusal` — an own second half that cannot pair REFUSES the save (the first gate in `entityFormPanel.agreed`, with `secondSave.ownHalfRefusal`'s sentences, the ones a payment field refuses with); and `unwovenWarning` — what to ASK when the form will not do what it appears to promise (too short, no method, unticked-but-woven — never the pair) |
 | `wovenPasswordHost.ts` | the viewer's half: what a Show or a Copy on the two rows is answered with |
 | `wovenRow.ts` | the two-column row itself, serving the card and the password from one implementation |
 | `rowFlip.ts` | `RowOrderStore` / `displayed` / `rowIn` — which of a reading's two halves is shown first, drawn once per entry and held only in the host |
