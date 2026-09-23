@@ -661,8 +661,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (node === undefined) {
         return false;
       }
-      await runVpn({ kind: 'node', accountId, node }, action, storage, storageDir, vaultKeys);
-      return true;
+      // runVpn's own answer: a refusal the person saw must not reach the agent as "opened".
+      return runVpn({ kind: 'node', accountId, node }, action, storage, storageDir, vaultKeys);
     },
   };
   useActions.register(scriptRunAction(agentDeps));

@@ -22,6 +22,19 @@ export type VpnLauncher =
   /** Nothing usable. `looked` names every place that was tried. */
   | { kind: 'missing'; looked: string[] };
 
+/**
+ * Where Homebrew puts these tools — Apple silicon first, then Intel. `openvpn` lands in `sbin`,
+ * `wg-quick` in `bin`, and a GUI-launched editor's PATH rarely has either, which is why "on PATH"
+ * alone called an installed macOS OpenVPN missing (issue #103).
+ */
+const HOMEBREW_DIRS = ['/opt/homebrew/sbin', '/opt/homebrew/bin', '/usr/local/sbin', '/usr/local/bin'];
+
+function homebrewLauncher(bare: string, exists: (absolutePath: string) => boolean, looked: string[]): VpnLauncher {
+  const candidates = HOMEBREW_DIRS.map((dir) => `${dir}/${bare}`);
+  const found = candidates.find((candidate) => exists(candidate));
+  return found === undefined ? { kind: 'missing', looked: [...looked, ...candidates] } : { kind: 'cli', exe: found };
+}
+
 function programDirs(env: Readonly<Record<string, string | undefined>>): string[] {
   const dirs = [env.ProgramFiles, env['ProgramFiles(x86)'], env.ProgramW6432];
   return [...new Set(dirs.filter((d): d is string => d !== undefined && d.length > 0))];
@@ -45,7 +58,7 @@ export function resolveVpnLauncher(
 
   const looked: string[] = [bare + ' (on PATH)'];
   if (platform !== 'win32') {
-    return { kind: 'missing', looked };
+    return platform === 'darwin' ? homebrewLauncher(bare, exists, looked) : { kind: 'missing', looked };
   }
 
   const sub = type === 'wireguard' ? 'WireGuard\\wireguard.exe' : 'OpenVPN\\bin\\openvpn.exe';

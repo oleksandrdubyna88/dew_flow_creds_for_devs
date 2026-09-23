@@ -68,3 +68,35 @@ test('a resolved absolute path survives quoting in the elevated command', () => 
   if (r.kind !== 'run') return;
   assert.match(r.command, /'C:\\Program Files\\OpenVPN\\bin\\openvpn\.exe'/);
 });
+
+test('macOS finds a Homebrew OpenVPN in sbin even when the editor PATH has no sbin (issue #103)', () => {
+  const exists = (p: string) => p === '/opt/homebrew/sbin/openvpn';
+
+  const r = resolveVpnLauncher('openvpn', 'darwin', noEnv, never, exists);
+
+  assert.deepEqual(r, { kind: 'cli', exe: '/opt/homebrew/sbin/openvpn' });
+});
+
+test('macOS on Intel: /usr/local is checked after /opt/homebrew', () => {
+  const exists = (p: string) => p === '/usr/local/bin/wg-quick';
+
+  assert.deepEqual(resolveVpnLauncher('wireguard', 'darwin', noEnv, never, exists), {
+    kind: 'cli',
+    exe: '/usr/local/bin/wg-quick',
+  });
+});
+
+test('a Mac with nothing installed names every Homebrew place it looked', () => {
+  const r = resolveVpnLauncher('openvpn', 'darwin', noEnv, never, never);
+
+  assert.equal(r.kind, 'missing');
+  if (r.kind !== 'missing') return;
+  assert.ok(r.looked.includes('/opt/homebrew/sbin/openvpn'));
+  assert.ok(r.looked.includes('/usr/local/sbin/openvpn'));
+});
+
+test('Linux still looks only on PATH — the Homebrew probe is macOS-only', () => {
+  const r = resolveVpnLauncher('openvpn', 'linux', noEnv, never, () => true);
+
+  assert.deepEqual(r, { kind: 'missing', looked: ['openvpn (on PATH)'] });
+});

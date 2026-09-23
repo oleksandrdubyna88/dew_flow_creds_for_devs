@@ -83,14 +83,25 @@ Decisions taken with the owner on 2026-09-23 (the questions asked before this pl
    - a dependency's OWN dependencies are included only when that dependency also has
      `runDependencies: true` — which is exactly the owner's example;
    - order is dependencies-first (post-order DFS), each entry once; a **cycle refuses the whole
-     run**, naming the cycle; depth is capped at 16; a dangling id is skipped and named;
-   - every step runs in one terminal with the pinned shell, is awaited through shell integration,
-     and a **non-zero exit stops the chain** with the step's name and code;
+     run**, naming the cycle; depth is capped at 16;
+   - a **dangling id** (the dependency was deleted) cannot run and is never silently dropped: the
+     pre-run modal names it as *missing* and the person chooses *Run the rest* or *Cancel*; the modal
+     appears for this reason even when every present line is already trusted (gate round 1, finding 2);
+   - every step runs in **one** terminal with the pinned shell — deliberately: the chain is what the
+     person would type into one terminal by hand, and a later step may rely on an earlier one (a PATH
+     refreshed by an installer). Each step is awaited through shell integration, and a **non-zero
+     exit stops the chain** with the step's name and code;
    - a step whose OS is not this machine's refuses the chain before anything runs;
    - untrusted lines (`commandTrust.ts`) are confirmed in **one** modal listing every step, before
      the first one runs;
-   - if shell integration does not activate within 10 s, or reports no exit code, the person is
-     asked *Continue / Cancel* for that step — never a silent guess.
+   - the 10 s budget bounds only the **activation** of shell integration, never a step's duration —
+     an active step is awaited on its own end event with no timeout. When activation misses the
+     budget, or a step ends with no exit code, the person is asked *Continue / Cancel* before the
+     next step starts — never a silent guess;
+   - if the pinned terminal **closes on its own** before integration activates (the shell could not
+     be started — e.g. `powershell.exe` unreachable from a WSL window), the run stops with a sentence
+     naming the shell that failed, instead of waiting for an integration that will never come
+     (gate round 1, finding 0).
 7. `runVpn` tells its caller whether it started anything. Today `extension.ts:664-665` returns `true`
    after `runVpn` refused (no config, missing launcher, unsupported type), so an agent is told
    "opened" about a tunnel that never started — fixed with a red test first.
@@ -225,6 +236,9 @@ checks (`plan-lifecycle`, `pin-check`).
    `powershell.exe` only when `appendWindowsPath` is on. Step 0 of S1 measures it on this machine;
    if it does not open, the WSL window gets the same refusal as the other remote kinds, with a
    sentence saying to start the tunnel from a local window. The plan does not depend on either answer.
+   And because one machine's measurement is not every machine's configuration, the runtime guard
+   stands regardless of it: a pinned terminal that exits before it is usable is reported by name
+   (`onDidCloseTerminal` with its exit status), never waited on (gate round 1, finding 0).
 1. **Pinning changes behaviour for people whose default profile is Git-bash** and who relied on the
    VPN line being typed there. On Windows that line never worked in bash; nothing working is lost.
 2. **An older build saving a Terminal/VPN entry drops the new fields** (`toValues` rebuilds details

@@ -26,6 +26,8 @@ import { buildCommandLineWithRefs } from '../runPlan';
 import { refField } from '../runPlan';
 import { runInMaskedTerminal } from '../maskedTerminal';
 import { maskingBanner } from '../extension';
+import { pinnedTerminal } from '../pinnedTerminal';
+import { quoteFor } from '../hostShell';
 export interface RunCommandsHost {
   readonly context: vscode.ExtensionContext;
   readonly refSource: RefSource;
@@ -155,11 +157,15 @@ export function registerRunCommands(host: RunCommandsHost): void {
     // A FRESH terminal every run: VS Code can only set a terminal's environment when it
     // is created, so a reused one would run this script with the PREVIOUS entry's values
     // — the same reasoning the SSH password path already follows.
-    const name = `CredsForDevs: ${element.node.name}`;
-    vscode.window.terminals.find((t) => t.name === name && t.exitStatus === undefined)?.dispose();
-    const terminal = vscode.window.createTerminal({ name, env: resolved.env });
-    terminal.show();
-    terminal.sendText([plan.command, ...plan.args, `"${scriptPath}"`].join(' '), true);
+    // The interpreter line is composed for THIS platform (`scriptRunPlan(…, process.platform)`),
+    // so it runs in this platform's shell, with the path quoted for that shell — a Windows path
+    // typed into a WSL-bash default profile is the #103 defect in another costume.
+    const opened = pinnedTerminal(`CredsForDevs: ${element.node.name}`, { env: resolved.env, fresh: true });
+    if (!opened.ok) {
+      void vscode.window.showWarningMessage(opened.reason);
+      return;
+    }
+    opened.terminal.sendText([plan.command, ...plan.args, quoteFor(opened.shell.family, scriptPath)].join(' '), true);
   });
 
   /**
