@@ -1,30 +1,56 @@
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
-import { HostShell, hostShell, osMismatch, pinnedShellRefusal } from './hostShell';
+import {
+  HostShell,
+  ShellContext,
+  ShellFamily,
+  entryShell,
+  hostShell,
+  pinnedShellRefusal,
+  readerFamily,
+  windowKind,
+} from './hostShell';
+import { onPath } from './installFlow';
 
 /**
- * The one way this extension opens a terminal for a line it COMPOSED (issue #103).
+ * The `vscode` half of "which shell reads this line" (issue #103); the decisions are `hostShell.ts`.
  *
- * <p>`createTerminal({ name })` opens the window's default profile, which is the person's
- * choice for their own typing — WSL bash, Git-bash, cmd — and says nothing about the syntax of a
- * line composed for this platform. Every such terminal is opened here, with the host's native
- * shell passed as `shellPath`, so `Start-Process` reaches PowerShell whatever the default is.</p>
- *
- * <p>A terminal the person's own entry runs in with no OS recorded keeps the default profile; that
- * decision belongs to the caller, not to this helper.</p>
+ * <p>`createTerminal({ name })` opens the window's default profile, which is the person's choice for
+ * their own typing — WSL bash, Git-bash, cmd — and says nothing about the syntax of a line composed
+ * for this platform. Every terminal that runs a line the extension COMPOSES is opened here with the
+ * host's native shell as `shellPath`, so `Start-Process` reaches PowerShell whatever the default is.
+ * A Terminal entry's OWN line goes through `entryTerminal`, which asks `entryShell` instead.</p>
  */
 export type PinnedTerminal =
   | { ok: true; terminal: vscode.Terminal; shell: HostShell }
   | { ok: false; reason: string };
 
-/** The shell a composed line is for on this machine. */
+let cachedShell: HostShell | undefined;
+
+/** The shell a composed line is for on this machine — `pwsh` looked up once per session. */
 export function pinnedShell(): HostShell {
-  return hostShell(process.platform, fs.existsSync);
+  cachedShell ??= hostShell(process.platform, fs.existsSync, process.platform === 'win32' && onPath('pwsh.exe'));
+  return cachedShell;
+}
+
+/** The editor's three facts `entryShell` decides from. */
+export function shellContext(): ShellContext {
+  return { platform: process.platform, remoteName: vscode.env.remoteName, defaultShell: vscode.env.shell };
 }
 
 /** Why a pinned terminal cannot be opened in this window, or `undefined` when it can. */
 export function pinnedRefusal(): string | undefined {
   return pinnedShellRefusal(vscode.env.remoteName);
+}
+
+/**
+ * The shell to pin for a line composed for THIS platform in this window — or `undefined` for the
+ * default profile. Local: the native shell. A WSL window composes for Linux (`terminalPlatform`), and
+ * its default profile is that Linux shell, so nothing is pinned there. Used by SSH connect, whose
+ * refusal of another computer's window is its own (`remoteRoute`).
+ */
+export function composedShellPath(): string | undefined {
+  return windowKind(vscode.env.remoteName) === 'local' ? pinnedShell().shellPath : undefined;
 }
 
 export interface PinnedOptions {
@@ -48,6 +74,20 @@ export function pinnedTerminal(name: string, options: PinnedOptions = {}): Pinne
 }
 
 /**
+ * Open a pinned terminal and type one composed line into it — `false`, having said why, when this
+ * window may not. The shape every composed-line caller had written out for itself.
+ */
+export function sendPinned(name: string, line: string, options: PinnedOptions = {}): boolean {
+  const opened = pinnedTerminal(name, options);
+  if (!opened.ok) {
+    void vscode.window.showWarningMessage(opened.reason);
+    return false;
+  }
+  opened.terminal.sendText(line, true);
+  return true;
+}
+
+/**
  * A live terminal of this name that runs the SAME shell — or `undefined` when a new one is owed.
  *
  * <p>One of this name opened by an older build runs the default profile, and may be holding a
@@ -64,28 +104,30 @@ function reusableTerminal(name: string, shell: HostShell, options: PinnedOptions
   return options.env === undefined ? live.find((t) => shellPathOf(t) === shell.shellPath) : undefined;
 }
 
+export type EntryTerminal =
+  | { ok: true; terminal: vscode.Terminal; family: ShellFamily }
+  | { ok: false; reason: string };
+
 /**
- * The terminal a Terminal ENTRY's own line runs in (issue #103).
- *
- * <p>With an OS recorded, the line is the person's syntax FOR that OS: refused on another OS, and
- * run in that OS's native shell when it matches. With none recorded — every entry written before
- * the field existed — it keeps today's behaviour exactly: the window's default profile, the
- * dedicated terminal of this name reused.</p>
+ * The terminal a Terminal ENTRY's own line runs in — see `entryShell` for the rule, and `family`
+ * for the shell that will read what is typed (what `{config}` is quoted for).
  */
-export function entryTerminal(entryName: string, terminalOs: string | undefined): PinnedTerminal | { ok: true; terminal: vscode.Terminal; shell: undefined } {
-  const mismatch = osMismatch(entryName, terminalOs, process.platform);
-  if (mismatch !== undefined) {
-    return { ok: false, reason: mismatch };
+export function entryTerminal(entryName: string, terminalOs: string | undefined): EntryTerminal {
+  const ctx = shellContext();
+  const choice = entryShell(entryName, terminalOs, ctx);
+  if (choice.kind === 'refused') {
+    return { ok: false, reason: choice.reason };
   }
   const name = `CredsForDevs: ${entryName}`;
-  return (terminalOs ?? '') === '' ? defaultProfileTerminal(name) : pinnedTerminal(name);
+  const opened = choice.kind === 'pinned' ? pinnedTerminal(name) : defaultProfileTerminal(name);
+  return opened.ok ? { ok: true, terminal: opened.terminal, family: readerFamily(choice, pinnedShell(), ctx) } : opened;
 }
 
-/** Today's behaviour for an entry with no OS: the window's default profile, reused by name. */
-function defaultProfileTerminal(name: string): { ok: true; terminal: vscode.Terminal; shell: undefined } {
+/** The behaviour before the field existed: the window's default profile, reused by name. */
+function defaultProfileTerminal(name: string): { ok: true; terminal: vscode.Terminal } {
   const terminal = vscode.window.terminals.find((t) => t.name === name) ?? vscode.window.createTerminal({ name });
   terminal.show();
-  return { ok: true, terminal, shell: undefined };
+  return { ok: true, terminal };
 }
 
 function shellPathOf(terminal: vscode.Terminal): string | undefined {

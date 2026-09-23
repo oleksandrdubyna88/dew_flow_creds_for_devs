@@ -15,10 +15,14 @@ type Manager = typeof import('../terminalManager');
 
 interface FakeTerminal {
   name: string;
+  shellPath?: string;
   exitStatus?: { code: number };
   shown: number;
   sent: string[];
 }
+
+/** What `composedShellPath` answers here — a local window pins; a WSL one keeps its default. */
+const PINNED = 'pinned-native-shell';
 
 interface World {
   mod: Manager;
@@ -27,15 +31,15 @@ interface World {
   warnings: string[];
 }
 
-function world(existing: FakeTerminal[] = []): World {
+function world(existing: FakeTerminal[] = [], local = true): World {
   const terminals = [...existing];
   const created: FakeTerminal[] = [];
   const warnings: string[] = [];
   const mod = loadWithVscode<Manager>('../terminalManager', {
     window: {
       terminals,
-      createTerminal: ({ name }: { name: string }): FakeTerminal => {
-        const t: FakeTerminal = { name, shown: 0, sent: [] };
+      createTerminal: ({ name, shellPath: pinned }: { name: string; shellPath?: string }): FakeTerminal => {
+        const t: FakeTerminal = { name, shellPath: pinned, shown: 0, sent: [] };
         Object.assign(t, {
           show: (): void => {
             t.shown += 1;
@@ -54,9 +58,22 @@ function world(existing: FakeTerminal[] = []): World {
       },
     },
     workspace: { getConfiguration: () => ({ get: <T>(_k: string, d: T): T => d }) },
-  });
+  }, { './pinnedTerminal': { composedShellPath: (): string | undefined => (local ? PINNED : undefined) } });
   return { mod, terminals, created, warnings };
 }
+
+test('the ssh line is typed into the shell it was composed for, never the default profile (#103)', () => {
+  // A local window: the line is composed for this machine, so the terminal gets its native shell —
+  // a Windows ssh line in a WSL-bash default profile is the reported defect in another place.
+  const local = world();
+  local.mod.openSshTerminal(entity(), {}, process.platform);
+  assert.equal(local.created[0].shellPath, PINNED);
+
+  // A WSL window composes for Linux and keeps its Linux default profile.
+  const wsl = world([], false);
+  wsl.mod.openSshTerminal(entity(), {}, 'linux');
+  assert.equal(wsl.created[0].shellPath, undefined);
+});
 
 function fake(name: string, exited = false): FakeTerminal {
   const t: FakeTerminal = { name, shown: 0, sent: [], exitStatus: exited ? { code: 0 } : undefined };

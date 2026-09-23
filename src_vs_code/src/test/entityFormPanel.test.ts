@@ -350,3 +350,26 @@ test('editing an entry whose password is already woven, without retyping it, is 
   assert.equal(await panel.agreed(ownHalf('', ''), options), true);
   assert.deepEqual(dialogs, []);
 });
+
+test('the #103 fields survive a save WHOLE — the literal toValues writes is what the entry keeps', () => {
+  // `toValues` rebuilds `details` from a literal on every save; a field missing from it is deleted
+  // by the next unrelated edit. These are the three this issue added, round-tripped.
+  const panel = world();
+
+  const terminal = panel.toValues(posted('terminal', { command: 'ls', terminalOs: 'linux' }), { entityId: 't1' } as never);
+  assert.equal(terminal.details.terminalOs, 'linux');
+
+  const vpn = panel.toValues(
+    posted('vpn', {
+      vpnType: 'ikev2',
+      vpnLauncherEntityId: 't1',
+      dependsOn: [{ targetId: 't1', color: '' }],
+      runDependencies: true,
+    }),
+    { entityId: 'v1' } as never,
+  );
+  assert.equal(vpn.details.vpnLauncherEntityId, 't1');
+  assert.equal(vpn.details.runDependencies, true);
+  assert.deepEqual(vpn.details.dependsOn, ['t1']);
+});
+

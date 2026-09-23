@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { EntityMetadata } from './types';
 import { SshCommandOptions, buildSshCommand, describeSshTarget } from './sshCommand';
+import { composedShellPath } from './pinnedTerminal';
 
 // Re-exported so existing callers keep one import site.
 export { buildSshCommand, describeSshTarget };
@@ -40,7 +41,9 @@ export function openSshTerminal(
     return existing;
   }
 
-  const terminal = vscode.window.createTerminal({ name });
+  // The line is composed for `platform`; in a local window that is this machine, so its shell is
+  // pinned — a Windows ssh line typed into a WSL-bash default profile is issue #103 again.
+  const terminal = vscode.window.createTerminal({ name, shellPath: composedShellPath() });
   terminal.show();
   terminal.sendText(`${prefix}${command}`, true);
   return terminal;

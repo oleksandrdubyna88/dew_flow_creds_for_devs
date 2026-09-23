@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as vscode from 'vscode';
 import { InstallRecipe, installRecipe } from './toolCheck';
 import { onPath } from './installFlow';
-import { pinnedTerminal } from './pinnedTerminal';
+import { pinnedRefusal, sendPinned } from './pinnedTerminal';
 
 /**
  * The `vscode` half of the missing-tool story (tails T20): the modal and the terminal.
@@ -14,19 +14,22 @@ import { pinnedTerminal } from './pinnedTerminal';
  * eyes are.</p>
  */
 export async function offerToInstall(tool: string): Promise<void> {
+  // Asked BEFORE the offer: accepting an install this window then cannot run is a question with
+  // no answer (another computer's window — see `pinnedShellRefusal`).
+  const refusal = pinnedRefusal();
+  if (refusal !== undefined) {
+    void vscode.window.showWarningMessage(`"${tool}" is not installed on this machine. ${refusal}`);
+    return;
+  }
   const recipe = recipeHere(tool);
   if (recipe === undefined) {
     void vscode.window.showErrorMessage(`"${tool}" is not installed on this machine.`);
     return;
   }
-  const note = recipe.note === '' ? '' : ` ${recipe.note}`;
-  const choice = await vscode.window.showWarningMessage(
-    `${recipe.display} is not installed. Install it?${note}`,
-    { modal: true },
-    'Install',
-  );
-  if (choice === 'Install') {
-    runRecipe(tool, recipe.command);
+  if (await confirmInstall(recipe)) {
+    // The recipe is composed for THIS platform (winget, apt, brew), so it runs in this platform's
+    // shell — never typed into a default profile that may be WSL bash (issue #103).
+    sendPinned(`Install ${tool}`, recipe.command);
   }
 }
 
@@ -35,13 +38,12 @@ function recipeHere(tool: string): InstallRecipe | undefined {
   return installRecipe(tool, process.platform, fs.existsSync('/usr/bin/apt'), hasBrew);
 }
 
-function runRecipe(tool: string, command: string): void {
-  // The recipe is composed for THIS platform (winget/PowerShell, apt, brew), so it runs in this
-  // platform's shell — never typed into a default profile that may be WSL bash (issue #103).
-  const opened = pinnedTerminal(`Install ${tool}`);
-  if (opened.ok) {
-    opened.terminal.sendText(command, true);
-  } else {
-    void vscode.window.showWarningMessage(opened.reason);
-  }
+async function confirmInstall(recipe: InstallRecipe): Promise<boolean> {
+  const note = recipe.note === '' ? '' : ` ${recipe.note}`;
+  const choice = await vscode.window.showWarningMessage(
+    `${recipe.display} is not installed. Install it?${note}`,
+    { modal: true },
+    'Install',
+  );
+  return choice === 'Install';
 }

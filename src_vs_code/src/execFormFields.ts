@@ -23,7 +23,7 @@ export function terminalOsField(d: EntityMetadata | undefined, mode: 'create' | 
   const foreign = isForeignOs(selected) ? [option(selected, selected, selected)] : [];
   return `<label for="terminalOs">Runs on</label>
     <select id="terminalOs">${[option('', '— not set (default terminal) —', selected), ...known, ...foreign].join('')}</select>
-    <p class="hint">The command runs in that system's own shell — PowerShell on Windows, bash on macOS and Linux — and is refused on any other.</p>`;
+    <p class="hint">Your default terminal is used when it is a shell of that system; otherwise the system's own — PowerShell (7 when installed) on Windows, bash on macOS and Linux. On any other system it is refused. "Not set" always uses your default terminal, as before.</p>`;
 }
 
 function initialOs(d: EntityMetadata | undefined, mode: 'create' | 'edit', hostOs: OsName | undefined): string {
@@ -63,11 +63,11 @@ export function runDependenciesField(d: EntityMetadata | undefined): string {
         <input id="runDependencies" type="checkbox" ${d?.runDependencies === true ? 'checked' : ''}>
         <label for="runDependencies">Execute what is executable first</label>
       </div>
-      <p class="hint">Before this entry is used, its Terminal dependencies run in order, each waiting for the one before — and theirs too, where they ask for the same.</p>`;
+      <p class="hint">Before Run in Terminal, Run Script, Run with Secrets or Start VPN, this entry's Terminal dependencies run in order, each waiting for the one before — and theirs too, where they ask for the same. Other dependencies stay notes; SSH connect does not run them.</p>`;
 }
 
 /** The three fields as the save writes them — the host half of the controls above. */
-export type ExecDetails = Pick<EntityMetadata, 'terminalOs' | 'vpnLauncherEntityId' | 'runDependencies'>;
+type ExecDetails = Pick<EntityMetadata, 'terminalOs' | 'vpnLauncherEntityId' | 'runDependencies'>;
 
 /**
  * Read the three fields from a posted form, scrubbed by kind the way every field around them in

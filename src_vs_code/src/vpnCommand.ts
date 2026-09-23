@@ -1,4 +1,5 @@
 import { VpnType } from './types';
+import { quoteFor } from './hostShell';
 
 /**
  * Composing the line that brings a VPN tunnel up or down.
@@ -55,14 +56,10 @@ export function vpnConfigFileName(type: VpnType, entityName: string): string {
   return type === 'openvpn' ? base + '.ovpn' : base + '.conf';
 }
 
-/** PowerShell single-quoted string escaping — a path may legitimately contain an apostrophe. */
-function psQuote(value: string): string {
-  return "'" + value.replace(/'/g, "''") + "'";
-}
-
 /** `Start-Process -Verb RunAs` — the only way to reach Administrator without an elevated shell. */
 function elevatedWindows(exe: string, args: string): string {
-  return 'Start-Process -Verb RunAs -FilePath ' + psQuote(exe) + ' -ArgumentList ' + psQuote(args);
+  // Single-quoted by the one PowerShell quoter (`hostShell.quoteFor`) — a path may hold an apostrophe.
+  return 'Start-Process -Verb RunAs -FilePath ' + quoteFor('powershell', exe) + ' -ArgumentList ' + quoteFor('powershell', args);
 }
 
 const WG_WINDOWS_NOTE =

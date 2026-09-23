@@ -6,6 +6,7 @@ import { askpassEnv } from './sshAskpass';
 import { buildSshCommand, describeSshTarget, openSshTerminal } from './terminalManager';
 import { sshClientPresent } from './sshProgram';
 import { offerToInstall } from './toolEnsure';
+import { composedShellPath } from './pinnedTerminal';
 import {
   forgetMaterializedKey,
   materializePrivateKey,
@@ -278,6 +279,8 @@ export async function connectEntity(
     vscode.window.terminals.find((t) => t.name === name && t.exitStatus === undefined)?.dispose();
     const passTerminal = vscode.window.createTerminal({
       name,
+      // Composed for `platform` — pinned in a local window, as `openSshTerminal` is (issue #103).
+      shellPath: composedShellPath(),
       env: askpassEnv(scriptPath, source.password, platform),
     });
     passTerminal.show();

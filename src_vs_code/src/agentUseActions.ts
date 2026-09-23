@@ -16,7 +16,7 @@ import { runBounded } from './sshExecRunner';
 import { resolveScriptEnv } from './scriptRender';
 import { scriptRunPlan } from './scriptRun';
 import { buildCommandLine } from './commandLine';
-import { capturedRun, osMismatch } from './hostShell';
+import { capturedRun, hostShell, osMismatch } from './hostShell';
 import { isCommandTrusted } from './commandTrust';
 import { lockToOwner, materializedKeyPath } from './materializedKeys';
 import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from './dbCliLauncher';
@@ -168,7 +168,7 @@ export function scriptRunAction(deps: AgentUseDeps): UseAction {
  * chained commands — and is byte-for-byte what the human Run button already hands to a
  * shell. Nothing the agent sends contributes to it.</p>
  */
-export function terminalRunAction(deps: AgentUseDeps): UseAction {
+export function terminalRunAction(deps: AgentUseDeps & { onPath?: (exe: string) => boolean }): UseAction {
   return {
     kind: 'terminal',
     action: 'run',
@@ -200,7 +200,9 @@ export function terminalRunAction(deps: AgentUseDeps): UseAction {
         return fail('too_many_requests', 'Too many commands are already running.');
       }
       try {
-        const run = capturedRun(entity.terminalOs, line, process.platform, fs.existsSync);
+        // The same native shell the human path pins — pwsh 7 when this Windows has it.
+        const hasPwsh = process.platform === 'win32' && deps.onPath?.('pwsh.exe') === true;
+        const run = capturedRun(entity.terminalOs, line, hostShell(process.platform, fs.existsSync, hasPwsh));
         const outcome = await runBounded(run.program, run.args, run.shell, {
           env: process.env,
           timeoutMs: clampExecTimeout(undefined),
@@ -365,6 +367,7 @@ export function vpnAction(
   },
   action: 'up' | 'down',
 ): UseAction {
+  const doneVerb = action === 'up' ? 'started' : 'stopped';
   return {
     kind: 'vpn',
     action,
@@ -384,7 +387,7 @@ export function vpnAction(
       const opened = await deps.open(ctx.accountId, ctx.entityId, action === 'up' ? 'start' : 'stop');
       return opened
         ? { status: 200, body: { opened: true } }
-        : fail('no_credential', `"${ctx.entityName}" could not be started — see the notification.`);
+        : fail('no_credential', `"${ctx.entityName}" could not be ${doneVerb} — see the notification.`);
     },
   };
 }

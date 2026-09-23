@@ -14,14 +14,15 @@ import {
 } from './vpnCommand';
 import { materializedKeyPath } from './keyInstaller';
 import { TrustStore } from './commandTrust';
-import { runDependenciesFirst } from './dependencyRunHost';
+import { dependencyRequest, liveDetails, runDependenciesFirst } from './dependencyRunHost';
+import { quoteFor } from './hostShell';
 import { VpnRunContext, runWithLauncher, writeVpnConfig } from './vpnLauncherRun';
 import { resolveVpnLauncher } from './vpnExec';
 import { onPath } from './installFlow';
 import { offerToInstall } from './toolEnsure';
 import { EntityMetadata, VpnType } from './types';
 import { saveTextAs } from './saveTextAs';
-import { pinnedRefusal, pinnedTerminal } from './pinnedTerminal';
+import { pinnedRefusal, sendPinned } from './pinnedTerminal';
 
 /**
  * Bring a VPN tunnel up or down.
@@ -81,17 +82,14 @@ function launcherOf(ctx: VpnRunContext): EntityMetadata | undefined {
   if (id === '') {
     return undefined;
   }
-  const launcher = detailsOf(ctx, id);
+  // A launcher in the Trash counts as gone: its line is not run however trusted it once was.
+  const launcher = liveDetails(ctx.storage, ctx.accountId, id);
   if (launcher === undefined) {
     void vscode.window.showWarningMessage(
       `The launcher of "${ctx.details.name}" no longer exists — using the built-in one. Edit the VPN to pick another.`,
     );
   }
   return launcher;
-}
-
-function detailsOf(ctx: VpnRunContext, id: string): EntityMetadata | undefined {
-  return ctx.storage.getNode(ctx.accountId, id)?.details;
 }
 
 async function runBuiltIn(ctx: VpnRunContext, action: 'start' | 'stop'): Promise<boolean> {
@@ -113,12 +111,7 @@ async function runBuiltIn(ctx: VpnRunContext, action: 'start' | 'stop'): Promise
  * config written where the tool will read it.
  */
 async function prepareStart(ctx: VpnRunContext, type: VpnType): Promise<boolean> {
-  const ready = await runDependenciesFirst({
-    roots: [ctx.details],
-    nodeOf: (id) => ctx.storage.getNode(ctx.accountId, id)?.details,
-    ownerName: ctx.details.name,
-    trust: ctx.trust,
-  });
+  const ready = await runDependenciesFirst(dependencyRequest(ctx.storage, ctx.accountId, [ctx.details], ctx.details.name, ctx.trust));
   return ready && (await writeVpnConfig(ctx, vpnConfigFileName(type, ctx.details.name))) !== undefined;
 }
 
@@ -128,7 +121,7 @@ function startableType(details: EntityMetadata): VpnType | undefined {
 }
 
 function notStartable(details: EntityMetadata): string {
-  return `"${details.name}" is a ${details.vpnType ?? 'VPN'} entry. Only WireGuard and OpenVPN can be started from here — use Save Config and import it where your OS expects it.`;
+  return `"${details.name}" is a ${details.vpnType ?? 'VPN'} entry. The built-in launcher starts only WireGuard and OpenVPN — edit it and pick one of your Terminal entries under "Started by", or use Save Config and import it where your OS expects it.`;
 }
 
 /** What to run — or `settled` when a branch already answered (an install offer, OpenVPN Connect). */
@@ -185,8 +178,10 @@ async function openVpnConnect(exe: string, entryName: string, configPath: string
   if (open !== 'Import profile') {
     return false;
   }
-  // `&` is PowerShell's call operator — correct only because the terminal is pinned to it.
-  return sendToVpnTerminal(entryName, `& "${exe}" --import-profile="${configPath}"`, '');
+  // `&` is PowerShell's call operator — correct only because the terminal is pinned to it — and
+  // both words are single-quoted, which PowerShell never expands (`$`, backtick).
+  const line = `& ${quoteFor('powershell', exe)} ${quoteFor('powershell', `--import-profile=${configPath}`)}`;
+  return sendToVpnTerminal(entryName, line, '');
 }
 
 function hostVpnPlatform(): VpnPlatform {
@@ -194,15 +189,11 @@ function hostVpnPlatform(): VpnPlatform {
 }
 
 function sendToVpnTerminal(entryName: string, line: string, note: string): boolean {
-  const opened = pinnedTerminal(`CredsForDevs VPN: ${entryName}`);
-  if (!opened.ok) {
-    return refuse(opened.reason);
-  }
-  opened.terminal.sendText(line, true);
-  if (note !== '') {
+  const sent = sendPinned(`CredsForDevs VPN: ${entryName}`, line);
+  if (sent && note !== '') {
     void vscode.window.showInformationMessage(note);
   }
-  return true;
+  return sent;
 }
 
 function refuse(message: string, level: 'warning' | 'info' = 'warning'): false {

@@ -121,7 +121,10 @@ test('a quote inside the prefix cannot escape the quoting', () => {
   const cmd = installCommand("/opt/it's/bin");
 
   assert.equal(cmd.includes("/opt/it's/bin "), false, 'the bare value must not appear unquoted');
-  assert.ok(cmd.includes(`'/opt/it'\''s/bin'`), cmd);
+  // The ONE POSIX quoter since issue #103 (`hostShell.quoteFor`, proved against a real bash in
+  // hostShell.test.ts) — close, a double-quoted apostrophe, reopen. `'\''` was the private copy's
+  // spelling of the same thing.
+  assert.ok(cmd.includes(`CREDS_PREFIX='/opt/it'"'"'s/bin'`), cmd);
 });
 
 test('success is read from the installer’s own line, never from the exit code', () => {

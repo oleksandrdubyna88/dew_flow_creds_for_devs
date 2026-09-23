@@ -1,36 +1,24 @@
-/* eslint-disable complexity, max-lines-per-function -- command registrations moved verbatim out of extension.ts
-   (roadmap A1 stage 2, 2026-08-28): one function that registers a family of closures, each the size it
-   was. The ceilings are a boundary for NEW code here; a handler meets them when it is next touched. */
-import { RefSource } from '../secretRef';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as vscode from 'vscode';
+import { RefSource, resolveSecretRefs } from '../secretRef';
 import { StorageManager } from '../storageManager';
 import { VaultKeys } from '../vaultKeys';
 import { nodeAt } from '../entityViewerCommands';
 import { asElement } from '../commandTargets';
 import { buildCommandLine } from '../commandLine';
-import * as vscode from 'vscode';
-import { isCommandTrusted } from '../commandTrust';
-import { confirmCommandMessage } from '../commandTrust';
-import { trustCommand } from '../commandTrust';
-import { scriptRunPlan } from '../scriptRun';
-import { detectSecretPrints } from '../scriptRender';
-import { resolveScriptEnv } from '../scriptRender';
-import { safeFileComponent } from '../materializedKeys';
-import { materializedKeyPath } from '../materializedKeys';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import { lockToOwner } from '../materializedKeys';
-import { planRefs } from '../runPlan';
-import { resolveSecretRefs } from '../secretRef';
-import { rewriteScriptRefs } from '../runPlan';
-import { buildCommandLineWithRefs } from '../runPlan';
-import { refField } from '../runPlan';
+import { ScriptRunPlan, scriptRunPlan } from '../scriptRun';
+import { detectSecretPrints, resolveScriptEnv } from '../scriptRender';
+import { lockToOwner, materializedKeyPath, safeFileComponent } from '../materializedKeys';
+import { RefPlan, buildCommandLineWithRefs, planRefs, refField, rewriteScriptRefs } from '../runPlan';
 import { runInMaskedTerminal } from '../maskedTerminal';
 import { maskingBanner } from '../extension';
-import { entryTerminal, pinnedTerminal } from '../pinnedTerminal';
+import { entryTerminal, pinnedShell, pinnedTerminal, shellContext } from '../pinnedTerminal';
 import { confirmTrusted } from '../trustPrompt';
-import { DependencyRunRequest, runDependenciesFirst } from '../dependencyRunHost';
+import { dependencyRequest, runDependenciesFirst } from '../dependencyRunHost';
 import { EntityMetadata } from '../types';
-import { osMismatch, quoteFor } from '../hostShell';
+import { entryShell, hasOs, osMismatch, quoteFor } from '../hostShell';
+
 export interface RunCommandsHost {
   readonly context: vscode.ExtensionContext;
   readonly refSource: RefSource;
@@ -40,265 +28,345 @@ export interface RunCommandsHost {
   readonly vaultKeys: VaultKeys;
 }
 
+/**
+ * Running what an entry stores: its command, its script, or either with `creds://` references
+ * resolved into the child's environment.
+ *
+ * <p>Each handler is a short sequence of named steps since issue #103, when they were touched
+ * to add the entry's OS, the dependency chain and the pinned shell — the three used to be one
+ * closure each, over the size limits and carrying their own copies of the trust modal.</p>
+ */
 export function registerRunCommands(host: RunCommandsHost): void {
-  const { context, refSource, register, storage, storageDir, vaultKeys } = host;
+  host.register('credSshManager.runCommand', (target) => runCommand(host, target));
+  host.register('credSshManager.runScript', (target) => runScript(host, target));
+  host.register('credSshManager.runWithSecrets', (target) => runWithSecrets(host, target));
+}
 
-  /** The chain an entry asks for, resolved against its own account (issue #103). */
-  const dependencyRequest = (accountId: string, details: EntityMetadata | undefined, ownerName: string): DependencyRunRequest => ({
-    roots: details === undefined ? [] : [details],
-    nodeOf: (id) => storage.getNode(accountId, id)?.details,
-    ownerName,
-    trust: context.globalState,
-  });
+interface Entry {
+  readonly accountId: string;
+  readonly id: string;
+  readonly name: string;
+  readonly details: EntityMetadata;
+}
 
-  register('credSshManager.runCommand', async (target) => {
-    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = await nodeAt(asElement(target), storage);
-    if (element?.kind !== 'node') {
-      return;
-    }
-    const d = element.node.details;
-    const line = buildCommandLine(d?.command ?? '', d?.commandArgs);
-    if (line.length === 0) {
-      void vscode.window.showWarningMessage(
-        `"${element.node.name}" has no command yet — edit it and fill in the command.`,
-      );
-      return;
-    }
-    // Issue #103: a line written for macOS is refused on Windows BEFORE the person is asked to
-    // trust it — confirming something that then cannot run is a question with no answer.
-    const mismatch = osMismatch(element.node.name, d?.terminalOs, process.platform);
-    if (mismatch !== undefined) {
-      void vscode.window.showWarningMessage(mismatch);
-      return;
-    }
-    // Read before it runs, once per exact line per machine — see `trustPrompt.ts`.
-    if (!(await confirmTrusted(context.globalState, element.node.id, element.node.name, line))) {
-      return;
-    }
-    // Issue #103: what this entry asks to run first (an installer before the tool) runs and is
-    // awaited; a failure there stops this line from running at all.
-    if (!(await runDependenciesFirst(dependencyRequest(element.accountId, d, element.node.name)))) {
-      return;
-    }
+async function entryAt(host: RunCommandsHost, target: unknown): Promise<Entry | undefined> {
+  host.vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+  const element = await nodeAt(asElement(target), host.storage);
+  if (element?.kind !== 'node' || element.node.details === undefined) {
+    return undefined;
+  }
+  return { accountId: element.accountId, id: element.node.id, name: element.node.name, details: element.node.details };
+}
 
-    // A dedicated terminal per entry, reused: running the same command twice should not
-    // leave two panels behind, and mixing it into whatever terminal happened to be open
-    // loses the association between the entry and its output.
-    // With an OS recorded it is that OS's native shell (issue #103); without one, the default
-    // profile, exactly as before the field existed. See `entryTerminal`.
-    const opened = entryTerminal(element.node.name, d?.terminalOs);
-    if (!opened.ok) {
-      void vscode.window.showWarningMessage(opened.reason);
-      return;
-    }
-    // Runs it. The first version put the line on the prompt and left Enter to the user;
-    // the operator asked for the button to do the whole job, which is theirs to decide —
-    // these are commands they wrote and saved themselves, not something arriving from
-    // elsewhere. `Copy Command` remains for the times you want to edit before running.
+/** The stored command's line — disabled arguments left out. */
+function commandLineOf(details: EntityMetadata): string {
+  return buildCommandLine(details.command ?? '', details.commandArgs);
+}
+
+function scriptOf(details: EntityMetadata): string {
+  return details.script ?? '';
+}
+
+function languageOf(details: EntityMetadata): string {
+  return details.scriptLanguage ?? 'other';
+}
+
+function warn(message: string): false {
+  void vscode.window.showWarningMessage(message);
+  return false;
+}
+
+/**
+ * What every run passes before anything is typed, in this order: the entry's OS against this
+ * window (refused BEFORE the person is asked to trust a line that then could not run), the
+ * content-trust modal once per exact body — sync and Accept Share made "you wrote this yourself"
+ * untrue — and the dependencies the entry asks to run first (issue #103), each awaited.
+ */
+async function passGates(host: RunCommandsHost, entry: Entry, body: string, refusal: string | undefined): Promise<boolean> {
+  if (refusal !== undefined) {
+    return warn(refusal);
+  }
+  const trust = host.context.globalState;
+  return (
+    (await confirmTrusted(trust, entry.id, entry.name, body)) &&
+    runDependenciesFirst(dependencyRequest(host.storage, entry.accountId, [entry.details], entry.name, trust))
+  );
+}
+
+/** Why this window's terminal may not run the entry's own line — `entryShell`'s refusal, if any. */
+function windowRefusal(entry: Entry): string | undefined {
+  const choice = entryShell(entry.name, entry.details.terminalOs, shellContext());
+  return choice.kind === 'refused' ? choice.reason : undefined;
+}
+
+// ---------- Run in Terminal ----------
+
+async function runCommand(host: RunCommandsHost, target: unknown): Promise<void> {
+  const entry = await entryAt(host, target);
+  if (entry === undefined) {
+    return;
+  }
+  const line = commandLineOf(entry.details);
+  if (line.length === 0) {
+    warn(`"${entry.name}" has no command yet — edit it and fill in the command.`);
+    return;
+  }
+  if (await passGates(host, entry, line, windowRefusal(entry))) {
+    typeIntoEntryTerminal(entry, line);
+  }
+}
+
+/**
+ * A dedicated terminal per entry, reused — `entryTerminal` decides whose shell (issue #103). The
+ * line runs with Enter: the operator asked for the button to do the whole job, and `Copy Command`
+ * remains for the times you want to edit before running.
+ */
+function typeIntoEntryTerminal(entry: Entry, line: string): void {
+  const opened = entryTerminal(entry.name, entry.details.terminalOs);
+  if (opened.ok) {
     opened.terminal.sendText(line, true);
-  });
+  } else {
+    warn(opened.reason);
+  }
+}
 
-  register('credSshManager.runScript', async (target) => {
-    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = await nodeAt(asElement(target), storage);
-    if (element?.kind !== 'node' || element.node.details === undefined) {
-      return;
-    }
-    const details = element.node.details;
-    if (details.script === undefined || details.script.trim().length === 0) {
-      void vscode.window.showWarningMessage('This script is empty — open Edit and write it first.');
-      return;
-    }
-    const plan = scriptRunPlan(details.scriptLanguage ?? 'other', process.platform);
-    if (plan.kind === 'unsupported') {
-      void vscode.window.showInformationMessage(plan.reason);
-      return;
-    }
-    // Same content-trust gate the saved terminal commands have had since sync and
-    // Accept Share made "you wrote this yourself" untrue. A script arriving from
-    // elsewhere is one click from running; the fingerprint is of the exact body, so an
-    // edit asks again and a re-run of the approved one does not.
-    if (!isCommandTrusted(context.globalState, element.node.id, details.script)) {
-      const approved = await vscode.window.showWarningMessage(
-        confirmCommandMessage(element.node.name, details.script),
-        { modal: true },
-        'Run',
-      );
-      if (approved !== 'Run') {
-        return;
-      }
-      await trustCommand(context.globalState, element.node.id, details.script);
-    }
+// ---------- Run Script ----------
 
-    // Values live in the environment now, but the script is the user's own code and can
-    // print them itself. Notice, say so once per exact body, never block.
-    const printed = detectSecretPrints(
-      details.script,
-      Object.keys(resolveScriptEnv(details.script, details.scriptVars, details.scriptLanguage ?? 'other').env),
-      details.scriptLanguage ?? 'other',
+interface ReadyScript {
+  readonly entry: Entry;
+  readonly script: string;
+  readonly language: string;
+  readonly plan: Extract<ScriptRunPlan, { kind: 'run' }>;
+}
+
+async function runScript(host: RunCommandsHost, target: unknown): Promise<void> {
+  const ready = await readyScriptAt(host, target);
+  if (ready === undefined || !(await passScriptGates(host, ready))) {
+    return;
+  }
+  launchScript(host, ready);
+}
+
+async function readyScriptAt(host: RunCommandsHost, target: unknown): Promise<ReadyScript | undefined> {
+  const entry = await entryAt(host, target);
+  return entry === undefined ? undefined : readyScript(entry);
+}
+
+function readyScript(entry: Entry): ReadyScript | undefined {
+  const script = scriptOf(entry.details);
+  if (script.trim().length === 0) {
+    return void warn('This script is empty — open Edit and write it first.');
+  }
+  const language = languageOf(entry.details);
+  const plan = scriptRunPlan(language, process.platform);
+  if (plan.kind === 'unsupported') {
+    void vscode.window.showInformationMessage(plan.reason);
+    return undefined;
+  }
+  return { entry, script, language, plan };
+}
+
+/**
+ * The gates in their old order — the body trusted, then the one warning only a script has, then the
+ * dependencies (issue #103).
+ */
+async function passScriptGates(host: RunCommandsHost, ready: ReadyScript): Promise<boolean> {
+  const trust = host.context.globalState;
+  const { entry, script } = ready;
+  return (
+    (await confirmTrusted(trust, entry.id, entry.name, script)) &&
+    (await printsConfirmed(host, ready)) &&
+    runDependenciesFirst(dependencyRequest(host.storage, entry.accountId, [entry.details], entry.name, trust))
+  );
+}
+
+/**
+ * Values live in the environment now, but the script is the user's own code and can print them
+ * itself. Notice, say so once per exact body, never block.
+ */
+async function printsConfirmed(host: RunCommandsHost, ready: ReadyScript): Promise<boolean> {
+  const { entry, script, language } = ready;
+  const printed = detectSecretPrints(script, Object.keys(resolveScriptEnv(script, entry.details.scriptVars, language).env), language);
+  return (
+    printed.length === 0 ||
+    confirmTrusted(
+      host.context.globalState,
+      `scriptPrint:${entry.id}`,
+      entry.name,
+      script,
+      `This script prints ${printed.map((n) => '${' + n + '}').join(', ')} — the value will be visible in the terminal and its history. Run anyway?`,
+    )
+  );
+}
+
+/**
+ * The values go into the terminal's ENVIRONMENT; the file gets a body that reads them by name. A
+ * FRESH terminal every run: VS Code sets a terminal's environment only at creation, so a reused one
+ * would run with the PREVIOUS entry's values. The interpreter line is composed for THIS platform,
+ * so it runs in this platform's shell, the path quoted for it — a Windows path typed into a
+ * WSL-bash default profile is the #103 defect in another costume.
+ */
+function launchScript(host: RunCommandsHost, ready: ReadyScript): void {
+  const resolved = resolveScriptEnv(ready.script, ready.entry.details.scriptVars, ready.language);
+  const opened = pinnedTerminal(`CredsForDevs: ${ready.entry.name}`, { env: resolved.env, fresh: true });
+  if (!opened.ok) {
+    warn(opened.reason);
+    return;
+  }
+  // The id is vault data — import and restore write an envelope's ids verbatim — so it is
+  // sanitised before it becomes a path. See `safeFileComponent`.
+  const scriptPath = writeScriptFile(host.storageDir, `script-${safeFileComponent(ready.entry.details.id)}${ready.plan.extension}`, resolved.body);
+  opened.terminal.sendText([ready.plan.command, ...ready.plan.args, quoteFor(opened.shell.family, scriptPath)].join(' '), true);
+}
+
+/** A script body to a private file (0700, owner-only ACL), ending in a newline — its path. */
+function writeScriptFile(storageDir: string, fileName: string, body: string): string {
+  const scriptPath = materializedKeyPath(storageDir, fileName);
+  fs.mkdirSync(path.dirname(scriptPath), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(scriptPath, body.endsWith('\n') ? body : `${body}\n`, { mode: 0o700 });
+  lockToOwner(scriptPath);
+  return scriptPath;
+}
+
+// ---------- Run with Secrets ----------
+
+/**
+ * Run a stored command or script with `creds://` references resolved into the CHILD's
+ * environment, and every resolved value masked in what the child prints.
+ *
+ * <p>The broker's `env` verb writes values into this window's terminal environment, where any
+ * later shell can read them back with `printenv`. This is the stronger shape: the value exists in
+ * one child process, for one run, and never reaches the screen. The child is spawned by the
+ * extension host itself (`maskedTerminal.ts`), so its shell is THIS machine's: the native one for
+ * a script and for an entry with an OS (issue #103), `vscode.env.shell` for an entry without one,
+ * as before.</p>
+ */
+async function runWithSecrets(host: RunCommandsHost, target: unknown): Promise<void> {
+  const job = await secretsJobAt(host, target);
+  if (job === undefined || !(await passGates(host, job.entry, job.body, osMismatch(job.entry.name, job.entry.details.terminalOs, process.platform)))) {
+    return;
+  }
+  const refs = await resolvedRefs(host, job);
+  if (refs !== undefined) {
+    runMasked(host, job, refs);
+  }
+}
+
+interface SecretsJob {
+  readonly entry: Entry;
+  /** The exact text the trust record covers — the script body, or the command line. */
+  readonly body: string;
+  /** Present for a script; its interpreter, file extension and language. */
+  readonly script?: { plan: Extract<ScriptRunPlan, { kind: 'run' }>; language: string };
+  /** The shell that reads the line — and that the reference rewrite spells its reads for. */
+  readonly shell: string | undefined;
+}
+
+async function secretsJobAt(host: RunCommandsHost, target: unknown): Promise<SecretsJob | undefined> {
+  const entry = await entryAt(host, target);
+  if (entry === undefined) {
+    return undefined;
+  }
+  return entry.details.isScript === true ? scriptJob(entry) : commandJob(entry);
+}
+
+function scriptJob(entry: Entry): SecretsJob | undefined {
+  const body = scriptOf(entry.details);
+  const language = languageOf(entry.details);
+  const plan = scriptRunPlan(language, process.platform);
+  if (body.trim().length === 0) {
+    return void warn(`"${entry.name}" has nothing to run yet — open Edit and fill in the script.`);
+  }
+  if (plan.kind === 'unsupported') {
+    return void vscode.window.showInformationMessage(plan.reason);
+  }
+  return { entry, body, script: { plan, language }, shell: pinnedShell().shellPath };
+}
+
+function commandJob(entry: Entry): SecretsJob | undefined {
+  const body = commandLineOf(entry.details);
+  if (body.trim().length === 0) {
+    return void warn(`"${entry.name}" has nothing to run yet — open Edit and fill in the command.`);
+  }
+  return { entry, body, shell: hasOs(entry.details.terminalOs) ? pinnedShell().shellPath : vscode.env.shell };
+}
+
+interface ResolvedRefs {
+  readonly plan: RefPlan;
+  readonly env: Record<string, string>;
+  readonly secrets: { value: string; label: string }[];
+  readonly scriptBody: string;
+}
+
+/** Every reference resolved, and the environment and mask list built — or `undefined`, having said why. */
+async function resolvedRefs(host: RunCommandsHost, job: SecretsJob): Promise<ResolvedRefs | undefined> {
+  const scriptEnv = scriptEnvOf(job);
+  const plan = planRefs(searchedTexts(job, scriptEnv));
+  if (plan.refs.length === 0) {
+    return void warn(
+      `"${job.entry.name}" holds no creds:// reference. Write one as a value — creds://<account email>/<entity>/<field> — then run this again. Nothing was run.`,
     );
-    if (printed.length > 0) {
-      const key = `scriptPrint:${element.node.id}`;
-      if (!isCommandTrusted(context.globalState, key, details.script)) {
-        const go = await vscode.window.showWarningMessage(
-          `This script prints ${printed.map((n) => '${' + n + '}').join(', ')} — the value will be visible in the terminal and its history. Run anyway?`,
-          { modal: true },
-          'Run',
-        );
-        if (go !== 'Run') {
-          return;
-        }
-        await trustCommand(context.globalState, key, details.script);
-      }
-    }
-    // Issue #103: the dependencies this script asks to run first, awaited, before it is written out.
-    if (!(await runDependenciesFirst(dependencyRequest(element.accountId, details, element.node.name)))) {
-      return;
-    }
+  }
+  const resolution = await resolveSecretRefs(plan.refs, host.refSource);
+  return resolution.ok ? withValues(plan, resolution.values, scriptEnv) : void vscode.window.showErrorMessage(`Nothing was run: ${resolution.error}`);
+}
 
-    // The values go into the terminal's ENVIRONMENT; the file gets a body that reads
-    // them by name. Before this, the substituted body — values and all — was written to
-    // disk and left there until the next purge.
-    const resolved = resolveScriptEnv(details.script, details.scriptVars, details.scriptLanguage ?? 'other');
-    // The id is vault data — import and restore write an envelope's ids verbatim — so it is
-    // sanitised before it becomes a path. See `safeFileComponent`.
-    const fileName = `script-${safeFileComponent(details.id)}${plan.extension}`;
-    const scriptPath = materializedKeyPath(storageDir, fileName);
-    fs.mkdirSync(path.dirname(scriptPath), { recursive: true, mode: 0o700 });
-    fs.writeFileSync(
-      scriptPath,
-      resolved.body.endsWith('\n') ? resolved.body : resolved.body + '\n',
-      { mode: 0o700 },
-    );
-    lockToOwner(scriptPath);
+/** A script's own variables travel the way they always have; a command has none (empty, never absent). */
+function scriptEnvOf(job: SecretsJob): ScriptEnv {
+  const d = job.entry.details;
+  return job.script === undefined ? { env: {}, body: '' } : resolveScriptEnv(scriptOf(d), d.scriptVars, job.script.language);
+}
 
-    // A FRESH terminal every run: VS Code can only set a terminal's environment when it
-    // is created, so a reused one would run this script with the PREVIOUS entry's values
-    // — the same reasoning the SSH password path already follows.
-    // The interpreter line is composed for THIS platform (`scriptRunPlan(…, process.platform)`),
-    // so it runs in this platform's shell, with the path quoted for that shell — a Windows path
-    // typed into a WSL-bash default profile is the #103 defect in another costume.
-    const opened = pinnedTerminal(`CredsForDevs: ${element.node.name}`, { env: resolved.env, fresh: true });
-    if (!opened.ok) {
-      void vscode.window.showWarningMessage(opened.reason);
-      return;
-    }
-    opened.terminal.sendText([plan.command, ...plan.args, quoteFor(opened.shell.family, scriptPath)].join(' '), true);
+/** Where references may be written: the body and every variable, or the command and every argument. */
+function searchedTexts(job: SecretsJob, scriptEnv: ScriptEnv): string[] {
+  const d = job.entry.details;
+  return job.script === undefined ? commandTexts(d) : [scriptEnv.body, ...(d.scriptVars ?? []).map((v) => v.value)];
+}
+
+function commandTexts(d: EntityMetadata): string[] {
+  return [d.command ?? '', ...(d.commandArgs ?? []).map((a) => a.value)];
+}
+
+type ScriptEnv = { env: Record<string, string>; body: string };
+
+/**
+ * The child's environment and the mask list. Script variable VALUES are masked too: a body may
+ * print those as readily as a reference, and each carries the NAME it is read by, so the
+ * placeholder says which secret stood there.
+ */
+function withValues(plan: RefPlan, values: Readonly<Record<string, string>>, scriptEnv: ScriptEnv): ResolvedRefs {
+  const env: Record<string, string> = { ...scriptEnv.env };
+  for (const ref of plan.refs) {
+    env[plan.names[ref]] = values[ref];
+  }
+  const secrets = [
+    ...plan.refs.map((ref) => ({ value: values[ref], label: plan.names[ref] })),
+    ...Object.entries(scriptEnv.env).map(([label, value]) => ({ value, label })),
+  ];
+  return { plan, env, secrets, scriptBody: scriptEnv.body };
+}
+
+function runMasked(host: RunCommandsHost, job: SecretsJob, refs: ResolvedRefs): void {
+  const described = refs.plan.refs
+    .map((ref) => `${refs.plan.names[ref]} = ${refField(ref) ?? 'value'} of ${ref.replace(/^creds:\/\//, '')}`)
+    .join('; ');
+  runInMaskedTerminal({
+    name: `CredsForDevs run: ${job.entry.name}`,
+    commandLine: maskedCommandLine(host, job, refs),
+    env: refs.env,
+    secrets: refs.secrets,
+    // The same shell the rewrite spelled its variable reads for.
+    shell: job.shell,
+    banner: `${described}\r\n${maskingBanner(refs.secrets)}`,
   });
+}
 
-  /**
-   * Run a stored command or script with `creds://` references resolved into the CHILD's
-   * environment, and every resolved value masked in what the child prints.
-   *
-   * <p>The broker's `env` verb writes values into this window's terminal environment, where any
-   * later shell can read them back with `printenv`. This is the stronger shape: the value exists
-   * in one child process, for one run, and never reaches the screen.</p>
-   */
-  register('credSshManager.runWithSecrets', async (target) => {
-    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = await nodeAt(asElement(target), storage);
-    if (element?.kind !== 'node' || element.node.details === undefined) {
-      return;
-    }
-    const details = element.node.details;
-    const isScript = details.isScript === true;
-    const rawBody = isScript
-      ? (details.script ?? '')
-      : buildCommandLine(details.command ?? '', details.commandArgs);
-    if (rawBody.trim().length === 0) {
-      void vscode.window.showWarningMessage(
-        `"${element.node.name}" has nothing to run yet — open Edit and fill in the ${isScript ? 'script' : 'command'}.`,
-      );
-      return;
-    }
-
-    // The same content-trust gate the ordinary Run has: a body can arrive by sync or by an
-    // accepted share, and resolving secrets into it makes reading it first matter more, not less.
-    if (!isCommandTrusted(context.globalState, element.node.id, rawBody)) {
-      const choice = await vscode.window.showWarningMessage(
-        confirmCommandMessage(element.node.name, rawBody),
-        { modal: true },
-        'Run',
-      );
-      if (choice !== 'Run') {
-        return;
-      }
-      await trustCommand(context.globalState, element.node.id, rawBody);
-    }
-
-    const scriptPlan = isScript
-      ? scriptRunPlan(details.scriptLanguage ?? 'other', process.platform)
-      : undefined;
-    if (scriptPlan?.kind === 'unsupported') {
-      void vscode.window.showInformationMessage(scriptPlan.reason);
-      return;
-    }
-
-    // A script's own variables travel the way they always have; references are the addition.
-    const scriptEnv = isScript
-      ? resolveScriptEnv(details.script ?? '', details.scriptVars, details.scriptLanguage ?? 'other')
-      : undefined;
-    const searched = isScript
-      ? [scriptEnv?.body ?? '', ...(details.scriptVars ?? []).map((v) => v.value)]
-      : [details.command ?? '', ...(details.commandArgs ?? []).map((a) => a.value)];
-    const plan = planRefs(searched);
-    if (plan.refs.length === 0) {
-      void vscode.window.showWarningMessage(
-        `"${element.node.name}" holds no creds:// reference. Write one as a value — ` +
-          'creds://<account email>/<entity>/<field> — then run this again. ' +
-          `Nothing was run.`,
-      );
-      return;
-    }
-
-    const resolution = await resolveSecretRefs(plan.refs, refSource);
-    if (!resolution.ok) {
-      void vscode.window.showErrorMessage(`Nothing was run: ${resolution.error}`);
-      return;
-    }
-
-    const env: Record<string, string> = { ...(scriptEnv?.env ?? {}) };
-    for (const ref of plan.refs) {
-      env[plan.names[ref]] = resolution.values[ref];
-    }
-    // Script variable VALUES are masked too: a body may print those as readily as a reference,
-    // and the point of owning the output is that neither reaches the screen. Each carries the
-    // NAME it is read by, so the placeholder says which secret stood there.
-    const secrets = [
-      ...plan.refs.map((ref) => ({ value: resolution.values[ref], label: plan.names[ref] })),
-      ...Object.entries(scriptEnv?.env ?? {}).map(([label, value]) => ({ value, label })),
-    ];
-
-    let commandLine: string;
-    if (isScript && scriptPlan?.kind === 'run') {
-      const body = rewriteScriptRefs(scriptEnv?.body ?? '', plan, details.scriptLanguage ?? 'other');
-      const scriptPath = materializedKeyPath(storageDir, `run-${details.id}${scriptPlan.extension}`);
-      fs.mkdirSync(path.dirname(scriptPath), { recursive: true, mode: 0o700 });
-      fs.writeFileSync(scriptPath, body.endsWith('\n') ? body : `${body}\n`, { mode: 0o700 });
-      lockToOwner(scriptPath);
-      commandLine = [scriptPlan.command, ...scriptPlan.args, `"${scriptPath}"`].join(' ');
-    } else {
-      commandLine = buildCommandLineWithRefs(
-        details.command ?? '',
-        details.commandArgs,
-        plan,
-        process.platform,
-        vscode.env.shell,
-      );
-    }
-
-    const described = plan.refs
-      .map((ref) => `${plan.names[ref]} = ${refField(ref) ?? 'value'} of ${ref.replace(/^creds:\/\//, '')}`)
-      .join('; ');
-    runInMaskedTerminal({
-      name: `CredsForDevs run: ${element.node.name}`,
-      commandLine,
-      env,
-      secrets,
-      // The same shell the rewrite above spelled its variable reads for.
-      shell: vscode.env.shell,
-      banner: `${described}\r\n${maskingBanner(secrets)}`,
-    });
-  });
+function maskedCommandLine(host: RunCommandsHost, job: SecretsJob, refs: ResolvedRefs): string {
+  const d = job.entry.details;
+  if (job.script === undefined) {
+    return buildCommandLineWithRefs(d.command ?? '', d.commandArgs, refs.plan, process.platform, job.shell);
+  }
+  const body = rewriteScriptRefs(refs.scriptBody, refs.plan, job.script.language);
+  const scriptPath = writeScriptFile(host.storageDir, `run-${d.id}${job.script.plan.extension}`, body);
+  return [job.script.plan.command, ...job.script.plan.args, quoteFor(pinnedShell().family, scriptPath)].join(' ');
 }
