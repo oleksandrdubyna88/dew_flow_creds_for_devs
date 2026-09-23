@@ -1,4 +1,5 @@
 import { isValidEnvName } from './envBinding';
+import { shellFamily } from './hostShell';
 
 /**
  * The probe line typed into a fresh terminal after a variable is written, so the person
@@ -19,15 +20,12 @@ export function envProbeCommand(
   if (!isValidEnvName(name)) {
     return 'echo "CredsForDevs: that variable name is not a valid environment name"';
   }
-  const shell = (shellPath ?? '').toLowerCase().replace(/\\/g, '/');
-  const base = shell.split('/').pop() ?? '';
-  const powershell = base.startsWith('powershell') || base.startsWith('pwsh');
-  const cmd = base.startsWith('cmd');
-
-  if (powershell || (base.length === 0 && platform === 'win32')) {
+  // The one detector (hostShell.ts) — this file used to carry its own copy of the same test.
+  const family = shellFamily(platform, shellPath);
+  if (family === 'powershell') {
     return `if ($env:${name}) { "${name}: SET (len=$($env:${name}.Length))" } else { "${name}: NOT SET" }`;
   }
-  if (cmd) {
+  if (family === 'cmd') {
     // cmd has no cheap string-length primitive; presence only, deliberately asymmetric.
     return `if defined ${name} (echo ${name}: SET) else (echo ${name}: NOT SET)`;
   }

@@ -68,3 +68,21 @@ test('the ssh presence probe: built-in wins on Windows; PATH decides elsewhere',
   );
   assert.equal(sshClientPresent('linux', { PATH: '/usr/bin' }, () => false), false);
 });
+
+test('macOS gets Homebrew, not apt — every launcher tool has a formula (issue #103)', () => {
+  for (const tool of LAUNCHER_TOOLS) {
+    const command = installRecipe(tool, 'darwin', false, true)?.command ?? '';
+    assert.ok(command.startsWith('brew install '), `${tool}: ${command}`);
+    assert.ok(!command.includes('apt'), `${tool} must not be told to apt on a Mac`);
+  }
+});
+
+test('a Mac without Homebrew is told the formula AND where brew comes from', () => {
+  const recipe = installRecipe('openvpn', 'darwin', false, false);
+  assert.equal(recipe?.command, 'brew install openvpn');
+  assert.match(recipe?.note ?? '', /no Homebrew.*brew\.sh/);
+});
+
+test('an apt probe on a Mac changes nothing — macOS is its own platform, not a Linux variant', () => {
+  assert.equal(installRecipe('openvpn', 'darwin', true, true)?.command, 'brew install openvpn');
+});

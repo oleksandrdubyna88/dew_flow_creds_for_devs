@@ -1,5 +1,6 @@
 import { CommandArg } from './types';
 import { SecretRefField, findSecretRefs, parseSecretRef } from './secretRef';
+import { shellFamily } from './hostShell';
 
 /**
  * Turning a stored command or script into something runnable with secrets, without putting a
@@ -23,30 +24,9 @@ export function refVarName(index: number): string {
   return `CREDS_REF_${index + 1}`;
 }
 
-/** How a shell reads a variable. cmd.exe is the one that cannot use `$NAME`. */
-type ShellFamily = 'cmd' | 'powershell' | 'posix';
-
-const SHELL_PREFIXES: ReadonlyArray<[string, ShellFamily]> = [
-  ['cmd', 'cmd'],
-  ['powershell', 'powershell'],
-  ['pwsh', 'powershell'],
-];
-
-/** Which family a shell path belongs to. Windows with nothing reported means PowerShell. */
-export function shellFamily(platform: NodeJS.Platform, shellPath?: string): ShellFamily {
-  const base = basenameOf(shellPath);
-  const known = SHELL_PREFIXES.find(([prefix]) => base.startsWith(prefix));
-  if (known !== undefined) {
-    return known[1];
-  }
-  // No shell reported: on Windows the default is PowerShell in every supported VS Code.
-  return base.length === 0 && platform === 'win32' ? 'powershell' : 'posix';
-}
-
-function basenameOf(shellPath: string | undefined): string {
-  const normalized = (shellPath ?? '').toLowerCase().split('\\').join('/');
-  return normalized.split('/').pop() ?? '';
-}
+// The shell-family detector moved to `hostShell.ts` (issue #103), so there is ONE; it is
+// re-exported here so the callers that always imported it from this module keep doing so.
+export { shellFamily } from './hostShell';
 
 export function shellRead(name: string, platform: NodeJS.Platform, shellPath?: string): string {
   const family = shellFamily(platform, shellPath);
