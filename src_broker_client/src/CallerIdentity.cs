@@ -20,19 +20,26 @@ namespace CredsBroker;
 /// <para>Shared by <c>creds-mcp</c> and <c>creds</c>, which is why it lives in this library. Shape
 /// and ladder follow the sibling repository's <c>CallerIdentity.From</c> (ConnectOtherAIs); the two
 /// share no code.</para>
+/// <para><b><see cref="TabTitle"/></b> (2026-09-24, issue #136) is the text on the caller's Claude Code
+/// tab, read per call by <see cref="CallerIdentity.TabTitle"/> — never by <see cref="CallerIdentity.Current"/>,
+/// so a record computed once at start-up, and therefore every record forwarded across the WSL bridge,
+/// carries none. Last and defaulted, so a four-field object from an older half decodes to an empty
+/// title rather than failing.</para>
 /// </remarks>
 public sealed record CallerRecord(
     [property: JsonPropertyName("agent")] string Agent,
     [property: JsonPropertyName("session")] string Session,
     [property: JsonPropertyName("sessionName")] string SessionName,
-    [property: JsonPropertyName("cwd")] string Cwd)
+    [property: JsonPropertyName("cwd")] string Cwd,
+    [property: JsonPropertyName("tabTitle")] string TabTitle = "")
 {
     /// <summary>Nothing known — what the window renders as "An agent".</summary>
     public static CallerRecord Empty { get; } = new(string.Empty, string.Empty, string.Empty, string.Empty);
 
-    /// <summary>Whether nothing at all was learnt. Not a wire field — the body carries the four named ones and no other.</summary>
+    /// <summary>Whether nothing at all was learnt. Not a wire field — the body carries the five named ones and no other.</summary>
     [JsonIgnore]
-    public bool IsEmpty => Agent.Length == 0 && Session.Length == 0 && SessionName.Length == 0 && Cwd.Length == 0;
+    public bool IsEmpty =>
+        Agent.Length == 0 && Session.Length == 0 && SessionName.Length == 0 && Cwd.Length == 0 && TabTitle.Length == 0;
 
     /// <summary>
     /// The side that spoke to the client names the client — and only when nobody else has.
@@ -48,11 +55,16 @@ public sealed record CallerRecord(
 
     /// <summary>Every field through the one cleaner — what building and decoding both end with.</summary>
     internal CallerRecord Cleaned() =>
-        new(CallerIdentity.Clean(Agent), CallerIdentity.Clean(Session), CallerIdentity.Clean(SessionName), CallerIdentity.Clean(Cwd));
+        new(
+            CallerIdentity.Clean(Agent),
+            CallerIdentity.Clean(Session),
+            CallerIdentity.Clean(SessionName),
+            CallerIdentity.Clean(Cwd),
+            CallerIdentity.Clean(TabTitle));
 }
 
 /// <summary>
-/// The two fields of <c>~/.claude/sessions/&lt;pid&gt;.json</c> this library reads — and nothing else.
+/// The three fields of <c>~/.claude/sessions/&lt;pid&gt;.json</c> this library reads — and nothing else.
 /// </summary>
 /// <remarks>
 /// <para>A property this build does not know is dropped on the way in rather than refused, the
@@ -63,10 +75,11 @@ public sealed record CallerRecord(
 /// </remarks>
 public sealed record SessionFile(
     [property: JsonPropertyName("name")] string? Name,
-    [property: JsonPropertyName("cwd")] string? Cwd);
+    [property: JsonPropertyName("cwd")] string? Cwd,
+    [property: JsonPropertyName("sessionId")] string? SessionId = null);
 
 /// <summary>
-/// Building the caller record from the environment, once at start-up.
+/// Building the caller record from the environment, once at start-up — and the tab title, per call.
 /// </summary>
 /// <remarks>
 /// <para><b>Sources, in order.</b> The session id from the ladder below — first non-blank wins,
@@ -89,14 +102,36 @@ public static class CallerIdentity
     /// <summary>Where the session id comes from; first non-blank wins.</summary>
     /// <remarks>
     /// <c>CREDS_CALLER_SESSION</c> is first so a client with no id of its own can still be given one,
-    /// exactly as the sibling repository's <c>COAI_CALLER_SESSION</c> is.
+    /// exactly as the sibling repository's <c>COAI_CALLER_SESSION</c> is — and it is the way to name a
+    /// Gemini session: set it in the <c>env</c> of the MCP server's entry in the client's config.
+    /// <para><c>GEMINI_CLI_SESSION_ID</c> was a rung until 2026-09-24 and was removed: in Gemini CLI's
+    /// source it is a telemetry attribute KEY and is never exported to a child's environment
+    /// (read, not run — the installed CLI refuses to authenticate here; see
+    /// <c>research/PLAN_consent_shows_the_tab_title.md</c> §2.3).</para>
     /// </remarks>
     public static readonly IReadOnlyList<string> SessionLadder =
     [
         "CREDS_CALLER_SESSION",
         "CLAUDE_CODE_SESSION_ID",
         "CODEX_SESSION_ID",
-        "GEMINI_CLI_SESSION_ID",
+    ];
+
+    /// <summary>
+    /// Variables that say ANOTHER agent is in this process's ancestry — so Claude Code's inherited
+    /// variables may not be the innermost caller's.
+    /// </summary>
+    /// <remarks>
+    /// Measured 2026-09-24 (<c>codex-cli</c> 0.156.1): a shell command Codex runs carries its own
+    /// <c>CODEX_SESSION_ID</c>/<c>CODEX_THREAD_ID</c> AND the <c>CLAUDE_CODE_SESSION_ID</c> of the Claude
+    /// Code session Codex was started from. A Gemini child carries <c>GEMINI_CLI=1</c>. The
+    /// environment cannot say which agent is innermost, so with any of these present the Claude Code
+    /// tab title is not read at all: a missing title is a missing label, a wrong one misleads.
+    /// </remarks>
+    public static readonly IReadOnlyList<string> ForeignAgentMarkers =
+    [
+        "CODEX_SESSION_ID",
+        "CODEX_THREAD_ID",
+        "GEMINI_CLI",
     ];
 
     /// <summary>Claude Code's own pid, which names its entry in the session registry.</summary>
@@ -153,6 +188,65 @@ public static class CallerIdentity
             CapRunes(session, ShortSessionChars),
             Clean(file?.Name),
             Clean(folder.Length > 0 ? folder : Basename(processCwd)));
+    }
+
+    /// <summary>
+    /// The production provider of the tab title: a function that reads it AGAIN every time it is
+    /// asked, from this process's real environment, registry entry and transcript.
+    /// </summary>
+    /// <remarks>
+    /// Per call, never cached: a tab is renamed while its MCP server keeps running, and a session's
+    /// first AI title appears only after its first turn — after that server started.
+    /// </remarks>
+    public static Func<string> TabTitleSource()
+    {
+        var home = HomeDirectory();
+        return () => TabTitle(Environment.GetEnvironmentVariable, ReadBounded, TranscriptSources.Files, home);
+    }
+
+    /// <summary>
+    /// The title on the caller's Claude Code tab, or empty — and nothing is opened unless the caller
+    /// IS a Claude Code session.
+    /// </summary>
+    /// <remarks>
+    /// <para>Gates, in order, each of which leaves the title empty: the answering rung must be
+    /// <see cref="ClaudeSessionVariable"/> (the registry's own rule, <see cref="Build"/>); no
+    /// <see cref="ForeignAgentMarkers">other agent</see> may be in the ancestry; the registry entry must
+    /// be readable and name a folder. The transcript is keyed by the entry's own <c>sessionId</c>
+    /// — what the live session wrote — and by the environment's id only when the entry has none.</para>
+    /// <para>The title text is returned and nothing else: it reaches no log, no note, no exception.</para>
+    /// </remarks>
+    public static string TabTitle(
+        Func<string, string?> env,
+        Func<string, string?> readFile,
+        TranscriptSources sources,
+        string home)
+    {
+        var source = SessionSourceFrom(env);
+        if (!IsClaudeCodeAlone(source, env))
+        {
+            return string.Empty;
+        }
+
+        return ReadSessionFile(env(PidVariable), home, readFile) is { Cwd.Length: > 0 } file
+            ? ReadTitle(home, file, source.Value, sources)
+            : string.Empty;
+    }
+
+    private static bool IsClaudeCodeAlone((string Variable, string Value) source, Func<string, string?> env) =>
+        source.Variable == ClaudeSessionVariable && !ForeignAgentMarkers.Any(name => !string.IsNullOrWhiteSpace(env(name)));
+
+    private static string ReadTitle(string home, SessionFile file, string envSession, TranscriptSources sources)
+    {
+        try
+        {
+            var session = string.IsNullOrWhiteSpace(file.SessionId) ? envSession : file.SessionId.Trim();
+            return SessionTitle.Read(home, file.Cwd!, session, sources);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        {
+            return string.Empty; // a title never fails a call
+        }
     }
 
     /// <summary>The first rung of the ladder that is set and not blank, trimmed — or empty.</summary>

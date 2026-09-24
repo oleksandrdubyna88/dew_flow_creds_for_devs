@@ -163,6 +163,38 @@ public sealed class CallerForwardingTests
         source.Current.Agent.Should().Be("creds-itest 9.9");
     }
 
+    // ---- the tab title, read per call (issue #136) --------------------------------------------
+
+    /// <summary>
+    /// A tab is renamed while its MCP server keeps running, and a session's first AI title appears
+    /// only after its first turn — after this server started. A title cached at start-up would name
+    /// a tab that no longer reads that way.
+    /// </summary>
+    [Fact]
+    public void The_tab_title_is_read_on_every_call_so_a_rename_after_start_up_is_seen()
+    {
+        var title = "first title";
+        var source = new CallerSource(Forwarded with { Agent = "Claude Code 2.1.281" }, () => title);
+
+        source.Current.TabTitle.Should().Be("first title");
+        title = "renamed while the server ran";
+        source.Current.TabTitle.Should().Be("renamed while the server ran");
+        source.Current.Session.Should().Be("98bf9f23", "the rest of the record is unaffected");
+    }
+
+    [Fact]
+    public void A_blank_title_keeps_the_known_record_and_no_provider_means_no_title()
+    {
+        new CallerSource(Forwarded, () => "   ").Current.Should().Be(Forwarded);
+        new CallerSource(Forwarded).Current.TabTitle.Should().BeEmpty("a forwarded record gets no provider (the WSL bridge)");
+    }
+
+    [Fact]
+    public void A_title_from_the_provider_is_cleaned_like_every_other_field()
+    {
+        new CallerSource(Forwarded, () => "X\n\n(verified) → ok").Current.TabTitle.Should().Be("X (verified) ok");
+    }
+
     [Theory]
     [InlineData("Claude Code", "2.1.268", "Claude Code 2.1.268")]
     [InlineData("Claude Code", "", "Claude Code")]

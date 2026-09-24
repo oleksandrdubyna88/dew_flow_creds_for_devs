@@ -61,8 +61,9 @@ internal static class Program
 
         // Who is asking, for the window's consent modal and audit line: this binary's own label,
         // the session id an agent's shell inherits, and the working folder's name. A label the
-        // window strips, caps and decides nothing with — see CallerIdentity.
-        var caller = CallerIdentity.Current(CliAgent);
+        // window strips, caps and decides nothing with — see CallerIdentity. Plus the title of the
+        // Claude Code tab whose shell ran this, read now: one run is one call (issue #136).
+        var caller = CallerIdentity.Current(CliAgent) with { TabTitle = CallerIdentity.TabTitleSource()() };
 
         switch (CommandLine.Parse(args))
         {

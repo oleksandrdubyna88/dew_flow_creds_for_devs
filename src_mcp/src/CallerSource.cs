@@ -23,7 +23,7 @@ namespace CredsMcp;
 /// would attach a different person's session name. The rule, in one sentence: the side that spoke
 /// to the client names the client; the side that spoke to the environment names the session.</para>
 /// </remarks>
-internal sealed class CallerSource(CallerRecord known)
+internal sealed class CallerSource(CallerRecord known, Func<string>? tabTitle = null)
 {
     private Func<Implementation?> _client = static () => null;
 
@@ -33,8 +33,22 @@ internal sealed class CallerSource(CallerRecord known)
     /// <summary>The same, from any source of a client — what the tests drive.</summary>
     internal void Bind(Func<Implementation?> client) => _client = client;
 
-    /// <summary>What a body carries right now: the known half, named by the client if nobody named it yet.</summary>
-    internal CallerRecord Current => known.NamedBy(AgentLabel(_client()));
+    private readonly Func<string> _tabTitle = tabTitle ?? (static () => string.Empty);
+
+    /// <summary>
+    /// What a body carries right now: the known half, named by the client if nobody named it yet,
+    /// with the caller's tab title as it reads AT THIS CALL.
+    /// </summary>
+    /// <remarks>
+    /// The title is asked for on every call, never at start-up (issue #136): a tab is renamed while
+    /// its server runs, and a session's first AI title appears only after its first turn. A blank
+    /// answer keeps the known record. A record forwarded across the WSL bridge is given no provider
+    /// — this half's environment belongs to <c>wsl.exe</c> — so it carries no title.
+    /// </remarks>
+    internal CallerRecord Current => WithTitle(known.NamedBy(AgentLabel(_client())), CallerIdentity.Clean(_tabTitle()));
+
+    private static CallerRecord WithTitle(CallerRecord record, string title) =>
+        title.Length > 0 ? record with { TabTitle = title } : record;
 
     /// <summary>
     /// <c>Claude Code 2.1.268</c> from a client's name and version; whichever half is blank is left out,

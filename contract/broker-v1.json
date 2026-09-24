@@ -78,7 +78,8 @@
       "agent",
       "session",
       "sessionName",
-      "cwd"
+      "cwd",
+      "tabTitle"
     ],
     "flatPrefix": "caller",
     "maxFieldChars": 80,
