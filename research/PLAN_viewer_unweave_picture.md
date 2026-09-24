@@ -57,7 +57,7 @@ so, because the work is widening what is there rather than writing a second impl
 | Asked for | Today |
 |---|---|
 | a dropdown of weaving methods, in a random order | `wovenRow.ts:43-61` — `<select class="mixPick">`, order from `methodOrder(random)` |
-| a button that rebuilds the value | the same row's `Show` (`data-action="reassemble"`, `wovenRow.ts:53`) |
+| a button that rebuilds the value | the same row's button (`data-action="reassemble"`, `wovenRow.ts:53`) — labelled `Show` when this was written, **`Unweave` since 2026-09-24** (#135); every non-woven field still says `Show` |
 | the recovered pair, each with a Copy | `readingRow` (`wovenRow.ts:64-70`), ids `payReading_<key>_a` / `_b` |
 | **the method drawn on two values and the result** | **missing in the viewer** — the FORM paints it (`weaveExample.ts:115`, `weaveExampleScript.ts:80`) |
 | **"this entry is woven" said in Main** | **missing** — the viewer has no equivalent of the form's `wovenState` (`generalNotes.ts:17`) |

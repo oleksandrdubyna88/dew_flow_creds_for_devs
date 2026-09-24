@@ -202,14 +202,14 @@ region are all unchanged is written back as it was, unprobed. The decision moves
 into a pure planner — `BackupTargetPlan.Of(requested, existing)` in a new
 `src_minimalapi_server/src/BackupTargetPlan.cs` — that returns, per requested target, the record to
 save and whether to probe it, or the problem. The endpoint seals, probes the marked ones together
-(`Task.WhenAll`, as now), and writes. Reversing the assumption is one predicate in that planner.
+(`Task.WhenAll`, as now), and writes. Reversing the decision is one predicate in that planner.
 
 *Why this was an owner question and not a finding:* the probe was designed as *"every target is proved
 USABLE before any of them is written"* (`OrgBackupEndpoints.cs:168-172`), and re-proving an untouched
 destination on every schedule edit does catch a key that was revoked since. It also makes editing one
 destination depend on every other one being reachable now, and the nightly run reports a revoked key
-within a day anyway (`targets[].error`, the notice). The owner may prefer the old behaviour; the plan
-states the trade so the choice is theirs.
+within a day anyway (`targets[].error`, the notice). The plan stated that trade so the choice was the
+owner's, and on 2026-09-24 they chose it: only a new or changed destination is probed.
 
 *A guarantee this rule carries, named by the plan gate (gemini):* a destination whose credentials
 this server cannot open (`credentials: "unopenable"`) is, when re-sent unchanged beside an edit to a
