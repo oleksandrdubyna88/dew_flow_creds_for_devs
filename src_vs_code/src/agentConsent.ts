@@ -37,6 +37,14 @@ export const DENY = 'Deny';
 /** How long `ALLOW_WINDOW` covers. */
 export const ALLOW_WINDOW_MS = 10 * 60_000;
 
+/**
+ * How long a consent dialog waits before it refuses — the broker's modal and the SSH agent's signing
+ * prompt alike. One constant for both, because they are the same promise to the person: an
+ * unanswered request does not stay live. Moved here from `credsAgentServer.ts`, where it was private,
+ * when the signing prompt got the same bound (it had none: one found an hour later still signed).
+ */
+export const CONSENT_TIMEOUT_MS = 5 * 60_000;
+
 export interface ConsentDecision {
   /** Whether this signature goes ahead. */
   allow: boolean;

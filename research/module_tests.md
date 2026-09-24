@@ -38,7 +38,7 @@ is node throughout because what these need is process control, not a test runner
 | `src_vs_code/scripts/masked-run-itest.cjs` | a masked run through a real pty, asserting no whole secret appears | **yes, added 2026-09-06** | pass |
 | `src_minimalapi_server/scripts/backup-archive-itest.cjs` | the REAL server binary sealing, verifying and opening a backup archive | **yes, added 2026-09-07** — in `ci · server`, on the server's own path filter | pass |
 | `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | the same MCP surface, bridged from inside a WSL distribution | no — see below | pass |
-| `src_vs_code/scripts/ssh-agent-itest.cjs` | the SSH agent on a named pipe, and which ssh client can reach it | **yes, added 2026-09-11** — the POSIX branch only, see below | pass |
+| `src_vs_code/scripts/ssh-agent-itest.cjs` | the SSH agent on a named pipe, and which ssh client can reach it; since 2026-09-24 the REAL `SshAgentManager` too, with a signing prompt nobody answers — the real `ssh-keygen -Y sign` must fail within the bound, not hang | **yes, added 2026-09-11** — the POSIX branch only, see below | pass |
 | `src_vs_code/scripts/wsl-agent-relay-itest.cjs` | `ssh-keygen -Y sign` inside Linux reaching an agent in a Windows process | no — see below | pass **after repair — see below** |
 | `src_vs_code/scripts/server-transport-itest.cjs` | `ServerTransport` against a RUNNING Cred Vault Server | no — see below | **not run** — needs a server on `127.0.0.1:5113` |
 
