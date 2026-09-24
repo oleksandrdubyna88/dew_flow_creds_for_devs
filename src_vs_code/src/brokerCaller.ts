@@ -32,7 +32,7 @@ export interface CallerLabel {
   /**
    * The text on the caller's Claude Code TAB (issue #136) — its custom or AI title, read per call by
    * the sender from the tail of the session's transcript. Shown in the modal in place of the derived
-   * registry name, and deliberately NOT written to the audit line (see `callerForAudit`).
+   * registry name, and written to the audit line the same way (see `callerForAudit`).
    */
   tabTitle: string;
 }
@@ -173,16 +173,16 @@ function shownName({ sessionName, tabTitle }: CallerLabel): string {
 }
 
 /**
- * The same label for the audit line — WITHOUT the tab title — or nothing, so a line for an unknown
- * caller carries no ` by ` segment rather than ` by An agent`.
+ * The same label for the audit line — the modal's, tab title included — or nothing, so a line for an
+ * unknown caller carries no ` by ` segment rather than ` by An agent`.
  *
- * <p><b>The title stays out of the journal — an assumption awaiting the owner's confirmation (issue #136, D4), and a
- * reversible one.</b> An AI title is a one-line summary of a private conversation; the modal is
- * ephemeral, the Agent Access journal is durable, and it should not accumulate those summaries. The
- * line keeps the registry name and the short id, which is what it carried before the title
- * existed. Reversing it is this function and its test.</p>
+ * <p><b>The title IS in the journal — the owner's decision of 2026-09-24 (issue #136, D4).</b> It
+ * shipped the other way in 1.10.0, as an assumption: an AI title summarises a private conversation
+ * and the journal is durable. The owner chose the other side of that trade: the journal is where
+ * "which session did this" is asked afterwards, and the tab title is the name the person knows that
+ * session by. So the line they read later is the line they allowed, sanitised exactly as the modal
+ * sanitises it (`shownName` neutralises quotes and the separator; `cleanCallerField` strips `→`).</p>
  */
 export function callerForAudit(caller: CallerLabel | undefined): string | undefined {
-  const recorded = caller === undefined ? undefined : { ...caller, tabTitle: '' };
-  return recorded === undefined || CALLER_FIELDS.every((field) => recorded[field] === '') ? undefined : callerLine(recorded);
+  return caller === undefined || CALLER_FIELDS.every((field) => caller[field] === '') ? undefined : callerLine(caller);
 }

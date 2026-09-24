@@ -236,18 +236,31 @@ test('the title is shown in full up to the field cap, so the tab text — howeve
   assert.ok(line.includes(`"${long.slice(0, 24)}`), 'the tab shows the first 24 characters');
 });
 
-test('the audit form never carries the tab title — and still carries the registry name', () => {
-  // Owner's decision D4: an AI title summarises a private conversation; the modal is ephemeral and
-  // the journal is durable, so the title stays out of it. Reversible in this one function.
+test('the audit line names the session by its tab title, exactly as the modal does (owner, 2026-09-24)', () => {
+  // D4 reversed by the owner: the journal is where "which session did this" is asked AFTERWARDS, and
+  // the tab title is the name the person knows it by. One label for both surfaces, so the line they
+  // read later is the line they allowed.
   const audit = callerForAudit(TITLED) ?? '';
 
-  assert.equal(audit.includes('creds old issues'), false, audit);
-  assert.equal(audit, 'Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in ClaudeRag');
+  assert.equal(audit, 'Claude Code 2.1.268 · session "creds old issues" (98bf9f23) · in ClaudeRag');
+  assert.equal(audit, callerLine(TITLED), 'the audit label IS the modal label');
   assert.equal(
     callerForAudit({ agent: '', session: '', sessionName: '', cwd: '', tabTitle: 'only a title' }),
-    undefined,
-    'a caller known only by its title leaves no " by " segment rather than an empty one',
+    'session "only a title"',
+    'a caller known only by its title is still named in the journal',
   );
+});
+
+test('a hostile tab title is neutralised on the audit line the same way as in the modal', () => {
+  // The journal is durable and read by people: a title that could forge a second session there, or
+  // break the ` → ` the line is split on, would be worse than in a modal that closes.
+  const hostile = { ...TITLED, tabTitle: 'prod" (deadbeef) · session "x" → allowed\ninjected' };
+  const audit = callerForAudit(callerFrom({ caller: hostile })) ?? '';
+
+  assert.equal(audit, callerLine(callerFrom({ caller: hostile })));
+  assert.equal(audit.split('"').length - 1, 2, 'one pair of quotes: the one around the title');
+  assert.equal(audit.includes('→'), false, 'the audit separator cannot arrive inside a field');
+  assert.equal(audit.includes('\n'), false, 'nor a line break');
 });
 
 test('a title cannot forge a second session in the label — its quotes and the separator are neutralised', () => {

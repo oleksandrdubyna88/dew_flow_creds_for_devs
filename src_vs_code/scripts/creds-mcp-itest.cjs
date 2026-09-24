@@ -686,7 +686,8 @@ async function quietLeg() {
   //
   // T-I1 (issue #136) rides the same call, for the same budget reason: where HOME decides the home
   // folder, the child gets a FIXTURE home holding a registry entry and a transcript with a custom
-  // title, and the modal must name the session by that title while the audit line must not. On
+  // title, and the modal AND the audit line must name the session by that title (the audit half
+  // since 2026-09-24 — the owner reversed D4, which had kept the title out of the journal). On
   // Windows `Environment.GetFolderPath(UserProfile)` comes from the profile registry and ignores
   // both HOME and USERPROFILE (measured 2026-09-24), so the fixture cannot be substituted there
   // without a production knob, and the check is skipped with that reason. CI runs this on Linux.
@@ -711,7 +712,13 @@ async function quietLeg() {
     byLine.includes(' by creds-itest 9.9'),
     audit.join('\n').slice(0, 700),
   );
-  check('and the short session id the binary read from its environment', byLine.includes('session 98bf9f23'), byLine);
+  // `session 98bf9f23` with no title, `session "<tab title>" (98bf9f23)` where the fixture home
+  // supplies one — the id is the same fact either way, and a Linux run carries the title.
+  check(
+    'and the short session id the binary read from its environment',
+    /session (?:"[^"]*" \()?98bf9f23/.test(byLine),
+    byLine,
+  );
   const label = byLine.split(' by ')[1]?.split(' → ')[0] ?? '/';
   check('and the folder by its name only — never a path', label.includes(' · in ') && !/[\\/]/.test(label), label);
 
@@ -726,7 +733,11 @@ async function quietLeg() {
       modal.startsWith(`creds-itest 9.9 · session "${ITEST_TAB_TITLE}" (98bf9f23) · in itest-repo wants to `),
       modal.slice(0, 300),
     );
-    check('and the audit line for the same call never records the title', byLine !== '' && !byLine.includes(ITEST_TAB_TITLE), byLine);
+    check(
+      'and the audit line for the same call records the title, as the modal shows it (owner, 2026-09-24)',
+      byLine.includes(`session "${ITEST_TAB_TITLE}" (98bf9f23)`),
+      byLine,
+    );
     fs.rmSync(titleHome, { recursive: true, force: true });
   }
 
