@@ -70,6 +70,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says when the mark is on. An older version of the extension does not know the mark and drops it
   when it saves or syncs the entry.
 
+### Added — the consent modal says when the agent asked (#131)
+
+- **`Requested 2026-09-23 14:05:12 (UTC+03:00).`** is the line under the first sentence of the
+  modal an agent's request raises — through every door: a token, an alias, the MCP server, a folder
+  action. Local time with its offset. A dialog found on returning to the desk used to read exactly
+  like one raised a second ago; now a twenty-minute-old request says so. The time is fixed when the
+  dialog is raised, so one left waiting keeps it, and a second call that joins the open dialog
+  changes nothing on it.
+
 ### Added — open an entry's site in the browser (#104)
 
 - **Open Site in Browser**: a button beside the URL in *View Details*, and an item in the right-click

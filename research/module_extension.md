@@ -3320,6 +3320,16 @@ a REQUIRED parameter — `undefined` must be written, never omitted — so every
 funnel says who is asking or does not compile; the `BrokerDoor.consent` hook the MCP and folder
 doors call carries the same requirement.
 
+**When it was asked (issue #131).** The line under the head sentence is *Requested 2026-09-23
+14:05:12 (UTC+03:00).* — `requestTime.localRequestTimeLine(new Date())`, taken as `ask()` builds the
+modal: the machine's local time with the offset in force at that instant. The arithmetic
+(`requestTimeLine(epochMs, offsetMinutes)`) takes the offset as a number, so its tests do not depend
+on the zone of the machine running them; the sign flip of `getTimezoneOffset` is the one trap and has
+its own test. The text is built once and never re-rendered, so a dialog left waiting up to
+`CONSENT_TIMEOUT_MS` keeps the time it was raised, and a second call joining the open dialog through
+`consenting` changes nothing on it. Tests: `requestTime.test.ts`, `brokerConsentTime.test.ts` (the
+real broker). Design record: [PLAN_consent_shows_request_time.md](PLAN_consent_shows_request_time.md).
+
 **Whose session registry, and the rule the code round added.** The session NAME comes from
 `~/.claude/sessions/<CLAUDE_PID>.json`, which is one product's file — and `CLAUDE_PID` is inherited
 by everything Claude Code spawns, a terminal and any other vendor's CLI started inside one included.
