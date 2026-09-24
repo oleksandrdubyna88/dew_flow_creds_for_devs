@@ -578,6 +578,9 @@ a client, a colleague who has not installed anything yet.
 - Right-click an **entity** to export it, or a **folder** to export its whole subtree.
   Secrets travel with it — password, private key, VPN config, connection string, notes,
   the attachment and the image.
+- An entry marked **Not for export** (Edit → General) never travels this way or through
+  *Share with…*: on its own it is refused, inside a folder it is left out and named. Agents,
+  backup and sync are unaffected.
 - You are asked for a **password**. The file is then sealed with the same envelope the
   vault itself uses (scrypt + AES-256-GCM), so what lands on disk is ciphertext and the
   password is what opens it. Choosing to export **plain JSON** is offered and is exactly
