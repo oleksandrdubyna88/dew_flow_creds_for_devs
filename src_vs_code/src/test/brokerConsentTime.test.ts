@@ -47,10 +47,13 @@ test('a second call while the dialog is open joins it — one dialog, one time, 
   const w = world({ answers: [held as unknown as string] });
   try {
     const { port, secret } = await share(w);
+    // A SIGNAL, not a delay (CodeRabbit): count the requests that entered the consent path, and
+    // answer only once both are waiting on it. A second request that arrived after the answer would
+    // find the grant allowed and raise no dialog, and the test would pass with the join broken.
+    const entered = countConsentEntries(w.server);
     const first = call(port, '/v1/use/exec', { token: secret, body: { command: 'uptime' } });
-    await new Promise((resolve) => setTimeout(resolve, 50));
     const second = call(port, '/v1/use/exec', { token: secret, body: { command: 'hostname' } });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await until(() => entered.count === 2);
     answer('Allow');
     await Promise.all([first, second]);
 
@@ -60,3 +63,24 @@ test('a second call while the dialog is open joins it — one dialog, one time, 
     w.server.dispose();
   }
 });
+
+/** Wraps the server's own `consent` — the one path every door takes before a dialog — with a counter. */
+function countConsentEntries(server: object): { count: number } {
+  const counter = { count: 0 };
+  const target = server as unknown as { consent: (...args: unknown[]) => Promise<unknown> };
+  const original = target.consent.bind(server);
+  target.consent = (...args: unknown[]) => {
+    counter.count += 1;
+    return original(...args);
+  };
+  return counter;
+}
+
+/** Resolves once `condition` holds, polling the event loop; fails after two seconds instead of hanging. */
+async function until(condition: () => boolean): Promise<void> {
+  const deadline = Date.now() + 2000;
+  while (!condition()) {
+    assert.ok(Date.now() < deadline, 'the condition never came true');
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
