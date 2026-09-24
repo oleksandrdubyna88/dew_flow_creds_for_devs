@@ -76,9 +76,11 @@ secret and the modal is the whole gate.
 
 The modal also says WHO. Every body `creds` posts carries a `caller` label: **`creds CLI`**, the
 first eight characters of the session id an agent's shell inherits (`CLAUDE_CODE_SESSION_ID`,
-`CODEX_SESSION_ID`, `GEMINI_CLI_SESSION_ID` — or `CREDS_CALLER_SESSION` to set one by hand), the
-session's name from `~/.claude/sessions/<CLAUDE_PID>.json` when there is one, and the NAME of the
-working folder — never its path. A call from an agent's terminal therefore reads *creds CLI ·
+`CODEX_SESSION_ID` — or `CREDS_CALLER_SESSION` to set one by hand, which is also how to name a
+Gemini session), the session's name from `~/.claude/sessions/<CLAUDE_PID>.json` when there is one,
+the title of the Claude Code tab whose shell ran it (read from the last 64 KB of that session's
+transcript, never from its conversation, and never when another agent's variables show it is
+nested inside one), and the NAME of the working folder — never its path. A call from an agent's terminal therefore reads *creds CLI ·
 session 98bf9f23 · in ClaudeRag wants to…* and one from your own reads *creds CLI · in ClaudeRag
 wants to…*. Not versioned, deliberately: the binary is not stamped at publish, and `1.0.0` on every
 release would be worse than nothing. The window renders and records the label and decides nothing

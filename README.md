@@ -195,9 +195,9 @@ including ones created there later.
 Two things hold at every level. **A secret is never handed over**: the window holds the value, uses
 it, and answers with the result — there is no field in the protocol one could travel in. And **the
 switch is not consent**: a call asks you, in your editor, showing the real entry,
-the real command — and **who is asking**: the agent and its version, which of its sessions, and the
-folder it works in (*Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in ClaudeRag wants
-to…*), as the caller reports them. That name is a label, and the dialog says so in its own sentence;
+the real command — and **who is asking**: the agent and its version, which of its sessions — for
+Claude Code, by the title on its tab — and the folder it works in (*Claude Code 2.1.281 · session
+"creds old issues" (98bf9f23) · in ClaudeRag wants to…*), as the caller reports them. That name is a label, and the dialog says so in its own sentence;
 a caller that reports nothing is *An agent*, never a product by default.
 
 **How often it asks is yours to set**, on the entry or on a folder it inherits from: ask every time

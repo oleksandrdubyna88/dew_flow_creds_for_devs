@@ -36,6 +36,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/opt/homebrew` and `/usr/local`, and a missing tool is offered as `brew install …` instead of an apt
   command.
 
+### Added — the consent dialog names a Claude Code session by the title on its tab (#136)
+
+- **The dialog now says which TAB is asking.** It used to name a Claude Code session by the name its
+  registry derives (`clauderag-d6`) and the first eight characters of its id — neither of which is on
+  any tab, so with several sessions open the sentence could not be matched to the screen (#61). It now
+  reads *Claude Code 2.1.281 · session "creds old issues" (52d1b29a) · in ClaudeRag wants to…*: the
+  text on the tab, quoted, in place of the derived name, and in full up to 80 characters so whatever
+  the tab cuts off is still a prefix of it. The title is read fresh on every call, so a tab renamed
+  while its session runs is named by its new title.
+- **Where it comes from, and where it does not.** `creds-mcp` and `creds` read the session's own
+  custom title or AI title from the last 64 KB of its transcript — the same place the tab gets it —
+  and never read a line of the conversation itself. Nothing is read when the caller is not a Claude
+  Code session, or when another agent's variables show Codex or Gemini running inside a Claude Code
+  terminal. Inside WSL there is no title yet.
+- **The Agent Access journal does not record the title**, only the modal shows it: an AI title
+  summarises a private conversation, and the journal keeps what it kept before.
+- Filled by the next `creds-mcp` and `creds` (`contract/broker-v1.json` gained an additive
+  `caller.tabTitle`; the wire version stays 1). Older binaries against this window read as before;
+  these binaries against an older window send a field it ignores. The `GEMINI_CLI_SESSION_ID` rung is
+  gone — Gemini never exports it; name a Gemini session with `CREDS_CALLER_SESSION` in the MCP
+  server's `env`.
+
 ### Added — open an entry's site in the browser (#104)
 
 - **Open Site in Browser**: a button beside the URL in *View Details*, and an item in the right-click
