@@ -31,7 +31,7 @@ import { PaymentCardView } from './paymentViewMessages';
 import { SECOND_LABELS, SecondValues } from './secondValues';
 import { viewWeaveScripts } from './viewWeaveScripts';
 import { paymentCardMarkup } from './paymentViewCard';
-import { wovenViewNote } from './generalNotes';
+import { notForExportViewNote, wovenViewNote } from './generalNotes';
 import { PAYMENT_FIELD_LABELS } from './paymentFields';
 import { WOVEN_ROW_NOTE, wovenRowMarkup } from './wovenRow';
 import { methodOrder } from './phraseLayout';
@@ -424,6 +424,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
       d.passwordWoven === true,
       (options.payment?.woven ?? []).map((key) => PAYMENT_FIELD_LABELS[key]),
     ),
+    notForExportViewNote(d.notForExport === true), // issue #122
     row('Name', 'name', d.name),
     lifetimeRow,
     row('Login', 'login', options.fields?.login),

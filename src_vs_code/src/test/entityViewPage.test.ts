@@ -511,3 +511,9 @@ test('a long URL wraps in the viewer, as every long value does (#104 kept it)', 
   const html = renderEntityViewHtml(options({ fields: { url: long } }));
   assert.ok(html.includes(`<textarea readonly rows="3">${long.replace(/&/g, '&amp;')}</textarea>`), html);
 });
+
+test('issue #122: a marked entry says so in Main; an unmarked one says nothing', () => {
+  const marked = renderEntityViewHtml(options({ details: metadata({ notForExport: true }) }));
+  assert.match(marked, /<b>Not for export — on\.<\/b>/);
+  assert.equal(renderEntityViewHtml(options()).includes('Not for export'), false);
+});

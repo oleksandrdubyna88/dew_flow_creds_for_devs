@@ -70,6 +70,17 @@ export function notForExportField(d: EntityMetadata | undefined, forSomeoneElse:
        mark and drops it when it saves or syncs the entry.</p>`;
 }
 
+/**
+ * The VIEWER's twin of `notForExportField` — one sentence in Main, so somebody wondering why
+ * *Share with…* is missing from this entry's menu can see the reason without opening Edit.
+ */
+export function notForExportViewNote(marked: boolean): string {
+  return marked
+    ? `<p class="hint"><b>Not for export — on.</b> <i>Share with…</i> and <i>Export / Share
+       Externally…</i> leave this entry behind. Untick it in Edit, General section.</p>`
+    : '';
+}
+
 /** A PIN, stated — with where to change it, and what it costs to forget it. */
 export function pinState(d: EntityMetadata | undefined): string {
   return d?.pinProtected !== true
