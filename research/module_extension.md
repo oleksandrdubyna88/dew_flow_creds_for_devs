@@ -3342,7 +3342,7 @@ in ClaudeRag` wants to…* — the quoted title REPLACING the derived registry n
 `'` and any `·` as `-` so it stays visibly ONE value (an AI title is steerable by text the agent read,
 and `prod" (deadbeef) · session "x` would otherwise render as two sessions) — while `callerForAudit` renders
 the label without the title, keeping the registry name. An AI title summarises a private
-conversation and the journal is durable; that is the owner's decision (#136, D4) and a reversible one.
+conversation and the journal is durable; that is an assumption awaiting the owner's confirmation (#136, D4), and a reversible one.
 
 **The entry's ask policy does not reach this door, and that is a decision** (issue #95, owner
 decision D1). The cadence an entry carries — *ask every time*, *ask once every 12 hours*, *never

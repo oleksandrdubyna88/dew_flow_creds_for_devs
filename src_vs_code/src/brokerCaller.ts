@@ -176,7 +176,7 @@ function shownName({ sessionName, tabTitle }: CallerLabel): string {
  * The same label for the audit line — WITHOUT the tab title — or nothing, so a line for an unknown
  * caller carries no ` by ` segment rather than ` by An agent`.
  *
- * <p><b>The title stays out of the journal — the owner's decision (issue #136, D4), and a
+ * <p><b>The title stays out of the journal — an assumption awaiting the owner's confirmation (issue #136, D4), and a
  * reversible one.</b> An AI title is a one-line summary of a private conversation; the modal is
  * ephemeral, the Agent Access journal is durable, and it should not accumulate those summaries. The
  * line keeps the registry name and the short id, which is what it carried before the title
