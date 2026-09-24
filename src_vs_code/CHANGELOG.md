@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the SSH agent's signing prompt expires
+
+- **Unanswered for five minutes, a signature is refused**, the bound the agent consent dialog has
+  always had. It never expired before: a prompt found an hour later still signed, and the `ssh` or
+  `git` that asked waited for it forever — now it fails with the agent's ordinary refusal and the
+  *CredsForDevs: SSH Agent* log says the prompt timed out. VS Code cannot close a modal from code, so
+  the dialog can still be clicked afterwards; that click signs nothing and a late *Allow for 10
+  minutes* opens no window. The prompt says so: *Unanswered, it is refused after 5 minutes.*
+
 ## [1.10.0] — 2026-09-24 — the right shell, Not for export, and when an agent asked
 
 > Issues #103, #104, #122, #131, #133, #134 and #136 in one release: a composed line runs in the machine's own shell and a

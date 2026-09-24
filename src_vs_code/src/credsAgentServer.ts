@@ -1,4 +1,5 @@
 import { withTimeout } from './withTimeout';
+import { CONSENT_TIMEOUT_MS } from './agentConsent';
 import * as http from 'node:http';
 import * as vscode from 'vscode';
 import {
@@ -56,7 +57,6 @@ import { refreshFrom, tableOrFail } from './brokerResponse';
  * of the revocation story — a grant cannot outlive the process holding it.</p>
  */
 
-const CONSENT_TIMEOUT_MS = 5 * 60_000;
 
 export class CredsAgentServer implements vscode.Disposable {
   private readonly grants = new GrantRegistry();

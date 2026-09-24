@@ -165,6 +165,9 @@ async function main() {
     `exit ${refused.code}`,
   );
 
+  // ---- 4. an unanswered prompt refuses, through the REAL manager (2026-09-24) ---------------
+  await unansweredPromptRefuses(pem, publicPath, dir);
+
   // --- what makes `-A` more than a flag (2026-08-26) --------------------------------------
   //
   // Agent forwarding was wired end to end for months and forwarded nothing on Windows: the
@@ -213,6 +216,60 @@ async function main() {
 
   console.log(failures === 0 ? '\nall agent integration checks passed' : `\n${failures} check(s) failed`);
   process.exit(failures === 0 ? 0 : 1);
+}
+
+/**
+ * The signing prompt used to wait forever: a prompt found an hour later still signed, and the
+ * `ssh-keygen` (or `git`) that asked hung. Sections 1-3 drive `SshAgentServer` with a stubbed
+ * `confirm`, so they cannot see where the bound lives — `SshAgentManager.confirm`. This section
+ * builds the REAL manager, `vscode` stubbed with a modal nobody answers and a 1.5 s bound, and
+ * asks the real client to sign: it must fail promptly, not hang until run()'s 15 s kill.
+ */
+async function unansweredPromptRefuses(pem, publicPath, dir) {
+  const Module = require('module');
+  const stubPath = path.join(dir, 'vscode-stub.cjs');
+  fs.writeFileSync(
+    stubPath,
+    `module.exports = { window: {
+       showWarningMessage: () => new Promise(() => {}),
+       createOutputChannel: () => ({ appendLine: (l) => global.__AGENT_LOG__.push(l), dispose() {} }),
+     } };`,
+  );
+  global.__AGENT_LOG__ = [];
+  const original = Module._resolveFilename;
+  Module._resolveFilename = (request, ...rest) => (request === 'vscode' ? stubPath : original.call(Module, request, ...rest));
+  const { SshAgentManager } = require(path.join(OUT, 'sshAgentManager.js'));
+  const published = {};
+  const manager = new SshAgentManager(
+    { getPrivateKey: () => Promise.resolve(pem) },
+    path.join(dir, 'manager'),
+    { replace: (name, value) => { published[name] = value; }, delete: () => undefined, set description(_v) {} },
+    () => undefined,
+    undefined,
+    undefined,
+    1500,
+  );
+  const loaded = await manager.load('a1', { id: 'e-manager', name: 'itest key', isSshEnabled: false, isSshKey: true });
+  check('the real manager loads and serves the key', loaded.ok === true, loaded.reason);
+  const messagePath = path.join(dir, 'unanswered.txt');
+  fs.writeFileSync(messagePath, 'signed by nobody\n');
+  const started = Date.now();
+  const signed = await run(tools.sshKeygen, ['-Y', 'sign', '-f', publicPath, '-n', 'git', messagePath], {
+    env: { ...process.env, SSH_AUTH_SOCK: published.SSH_AUTH_SOCK },
+  });
+  const took = Date.now() - started;
+  check(
+    'an unanswered prompt makes the real client fail promptly, not hang',
+    signed.code !== 0 && took < 10_000,
+    `exit ${signed.code} after ${took} ms`,
+  );
+  check(
+    'the agent log says the prompt timed out',
+    global.__AGENT_LOG__.some((line) => /no answer .*refused/.test(line)),
+    global.__AGENT_LOG__.join(' | '),
+  );
+  manager.dispose();
+  Module._resolveFilename = original;
 }
 
 main().catch((error) => {

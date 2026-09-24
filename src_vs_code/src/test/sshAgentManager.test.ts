@@ -6,7 +6,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
-import { ALLOW_ONCE, ALLOW_WINDOW, DENY } from '../agentConsent';
+import { ALLOW_ONCE, ALLOW_WINDOW, CONSENT_TIMEOUT_MS, DENY } from '../agentConsent';
 import { EntityMetadata, TreeNode } from '../types';
 
 /**
@@ -136,7 +136,12 @@ function world(options: {
 
 function manager(
   w: World,
-  options: { keys?: Record<string, string | undefined>; nodes?: TreeNode[]; clock?: () => Date },
+  options: {
+    keys?: Record<string, string | undefined>;
+    nodes?: TreeNode[];
+    clock?: () => Date;
+    consentTimeoutMs?: number;
+  },
 ): {
   instance: InstanceType<Manager['SshAgentManager']>;
   /** The storage root this manager was given — the socket path is derived from it. */
@@ -171,6 +176,7 @@ function manager(
       },
       undefined,
       options.clock,
+      options.consentTimeoutMs,
     ),
   };
 }
@@ -348,6 +354,58 @@ test('the ten-minute window starts at the CLICK, not when the prompt was raised'
   now += 2 * MIN;
   await server.confirm(key, { kind: 'auth' });
   assert.equal(w.dialogs.length, 2, 'eleven minutes after the click asks again');
+});
+
+/** A modal nobody answers, and a way to answer it LATE — after the bound has already refused. */
+function unanswered(): { answer: Promise<string>; clickLate: (choice: string) => void } {
+  let clickLate: (choice: string) => void = () => undefined;
+  const answer = new Promise<string>((resolve) => {
+    clickLate = resolve;
+  });
+  return { answer, clickLate };
+}
+
+test('an unanswered signing prompt is refused after the consent timeout, and says so', async () => {
+  // It never expired: a prompt found an hour later still signed, and the ssh or git that asked
+  // waited forever. The broker's modal has refused after five minutes since it shipped.
+  const modal = unanswered();
+  const w = world({ answers: [modal.answer as unknown as string] });
+  const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() }, consentTimeoutMs: 20 });
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+
+  const allowed = await (w.server() as FakeServer).confirm({ entityId: KEY_ID, name: 'prod', fingerprint: 'SHA256:abc' }, { kind: 'auth' });
+
+  assert.equal(allowed, false);
+  assert.equal(w.presence, 0, 'nobody answered: that is not presence');
+  assert.ok(w.logs.some((line) => /no answer .*refused/i.test(line)), w.logs.join('\n'));
+});
+
+test('a click AFTER the timeout changes nothing — a late ten-minute Allow opens no window', async () => {
+  const modal = unanswered();
+  const w = world({ answers: [modal.answer as unknown as string, ALLOW_ONCE] });
+  const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() }, consentTimeoutMs: 20 });
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+  const key = { entityId: KEY_ID, name: 'prod', fingerprint: 'SHA256:abc' };
+  const server = w.server() as FakeServer;
+
+  assert.equal(await server.confirm(key, { kind: 'auth' }), false);
+  modal.clickLate(ALLOW_WINDOW); // VS Code cannot close a modal, so it can still be clicked
+  await new Promise((resolve) => setImmediate(resolve));
+
+  await server.confirm(key, { kind: 'auth' });
+  assert.equal(w.dialogs.length, 2, 'the late Allow opened no window: the next signature asked again');
+  assert.equal(w.presence, 1, 'only the answered second dialog counts as presence');
+});
+
+test('the prompt states its deadline, derived from the same constant the broker uses', async () => {
+  const w = world({ answers: [ALLOW_ONCE] });
+  const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() } });
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+
+  await (w.server() as FakeServer).confirm({ entityId: KEY_ID, name: 'prod', fingerprint: 'SHA256:abc' }, { kind: 'auth' });
+
+  assert.equal(CONSENT_TIMEOUT_MS, 5 * 60_000);
+  assert.match(w.dialogs[0], /Unanswered, it is refused after 5 minutes\./);
 });
 
 test('answering a dialog is the one provable moment of human presence', async () => {

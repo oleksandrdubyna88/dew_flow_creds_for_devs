@@ -3,11 +3,13 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { SignPurpose, describePurpose, describeUnknownShape } from './sshAgentProtocol';
 import { localRequestTimeLine } from './requestTime';
+import { withTimeout } from './withTimeout';
 import { AgentKey, SshAgentServer, agentSocketPath } from './sshAgentServer';
 import { parseSshPrivateKey } from './sshKeyParse';
 import {
   ALLOW_ONCE,
   ALLOW_WINDOW,
+  CONSENT_TIMEOUT_MS,
   DENY,
   consentFromChoice,
   withinAllowWindow,
@@ -77,6 +79,8 @@ export class SshAgentManager implements vscode.Disposable {
     private readonly onAddressChanged: (socketPath: string | undefined) => void = () => undefined,
     /** What time it is — an argument so a test about the prompt's time can stop the clock (#131). */
     private readonly clock: () => Date = () => new Date(),
+    /** How long the signing prompt waits before it refuses — the broker's bound; tests shorten it. */
+    private readonly consentTimeoutMs: number = CONSENT_TIMEOUT_MS,
   ) {}
 
   get socketPath(): string | undefined {
@@ -242,16 +246,7 @@ export class SshAgentManager implements vscode.Disposable {
       this.log(`allowed (within the 10-minute window) for ${describePurpose(purpose)}`);
       return true;
     }
-    const choice = await vscode.window.showWarningMessage(
-      `Use the SSH key "${key.name}" to sign ${describePurpose(purpose)}?\n${localRequestTimeLine(asked)}\n\n` +
-        `${key.fingerprint}\n\n` +
-        'The key itself never leaves this window. Allow once, or allow every use of this key for ' +
-        'ten minutes — long enough for a push that signs and authenticates in one go.',
-      { modal: true },
-      ALLOW_ONCE,
-      ALLOW_WINDOW,
-      DENY,
-    );
+    const choice = await this.askToSign(key, purpose, asked);
     // What the answer MEANS is `agentConsent.ts` — pure, and therefore tested. What is left
     // here is applying it: the presence signal and the remembered window.
     const decision = consentFromChoice(choice, this.clock().getTime());
@@ -262,6 +257,37 @@ export class SshAgentManager implements vscode.Disposable {
       this.allowedUntil.set(key.entityId, decision.allowedUntil);
     }
     return decision.allow;
+  }
+
+  /**
+   * The prompt itself, bounded by the broker's consent timeout: unanswered, it refuses — before
+   * #131's tail it waited forever, so a prompt found an hour later still signed and the `ssh` or
+   * `git` that asked hung. A click after the bound changes nothing (VS Code cannot close a modal, so
+   * it can still be clicked): `withTimeout` has already answered `undefined`, which is a dismissal.
+   *
+   * <p>The answer is wrapped so a timeout (no wrapper) can be told from Escape (a wrapper around
+   * `undefined`) — only the timeout gets a line in the log. The timer is NOT unref'd: the extension
+   * host outlives it anyway, and an unref'd timer ends a test run that has nothing else alive
+   * (see `withTimeout.ts`).</p>
+   */
+  private async askToSign(key: AgentKey, purpose: SignPurpose, asked: Date): Promise<string | undefined> {
+    const minutes = Math.round(this.consentTimeoutMs / 60_000);
+    const modal = vscode.window.showWarningMessage(
+      `Use the SSH key "${key.name}" to sign ${describePurpose(purpose)}?\n${localRequestTimeLine(asked)}\n\n` +
+        `${key.fingerprint}\n\n` +
+        'The key itself never leaves this window. Allow once, or allow every use of this key for ' +
+        'ten minutes — long enough for a push that signs and authenticates in one go. ' +
+        `Unanswered, it is refused after ${minutes} minutes.`,
+      { modal: true },
+      ALLOW_ONCE,
+      ALLOW_WINDOW,
+      DENY,
+    );
+    const answered = await withTimeout(Promise.resolve(modal).then((choice) => ({ choice })), this.consentTimeoutMs);
+    if (answered === undefined) {
+      this.log(`no answer in ${minutes} minutes — refused ${describePurpose(purpose)}`);
+    }
+    return answered?.choice;
   }
 
   private log(message: string): void {
