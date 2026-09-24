@@ -65,7 +65,7 @@ access section beside the switches that decide what an agent may do:
 
 | # | Decision |
 |---|---|
-| **D1** | The policy governs the **MCP use door only** — `/v1/mcp/use/*`. Not the SSH signature dialog (`sshAgentManager.ts:231-257`), not the Share-with-Claude-Code token door, not the alias route. |
+| **D1** | The policy governs the **MCP use door only** — `/v1/mcp/use/*`. Not the SSH signature dialog (`SshAgentManager.confirm`), not the Share-with-Claude-Code token door, not the alias route. |
 | **D2** | **Deleting always asks**, whatever the policy says. Creating likewise — it has no entry to carry a policy. |
 | **D3** | The policy VALUE lives on `McpAccess` (`mcpAccess.ts:19-39`): inside the vault, inherited from folders, and already stripped from shares by `shareFormat.ts:535-536`. |
 | **D4** | The "last consented at" STAMP is **machine-local** — `globalState`, never synced, exactly like `commandTrust.ts:30-35`. Consenting on the laptop does not silence the desktop. |

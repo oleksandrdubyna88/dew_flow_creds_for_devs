@@ -326,6 +326,30 @@ test('the prompt says WHEN the signature was asked for, on its second line (#131
   assert.equal(blank, '', 'a blank line still separates the head from the fingerprint');
 });
 
+test('the ten-minute window starts at the CLICK, not when the prompt was raised', async () => {
+  // agentConsent.ts: "ten minutes from that moment". The prompt's time and the window's start are
+  // two facts on purpose; anchoring the window at the request would hand someone who answers a
+  // fifteen-minute-old prompt a window that has already closed.
+  const MIN = 60_000;
+  let now = Date.UTC(2026, 8, 24, 9, 0, 0);
+  const w = world({ answers: [ALLOW_WINDOW, ALLOW_ONCE] });
+  const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() }, clock: () => new Date(now) });
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+  const key = { entityId: KEY_ID, name: 'prod', fingerprint: 'SHA256:abc' };
+  const server = w.server() as FakeServer;
+
+  const answered = server.confirm(key, { kind: 'auth' });
+  now += 15 * MIN; // the prompt sat for fifteen minutes before "Allow for 10 minutes"
+  await answered;
+
+  now += 9 * MIN;
+  await server.confirm(key, { kind: 'auth' });
+  assert.equal(w.dialogs.length, 1, 'nine minutes after the click is inside the window');
+  now += 2 * MIN;
+  await server.confirm(key, { kind: 'auth' });
+  assert.equal(w.dialogs.length, 2, 'eleven minutes after the click asks again');
+});
+
 test('answering a dialog is the one provable moment of human presence', async () => {
   const w = world({ answers: [ALLOW_ONCE] });
   const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() } });
