@@ -270,8 +270,8 @@ already enumerates the record's JSON against the contract, so the two sides cann
 
 `CallerLabel.tabTitle: string`; `CALLER_FIELDS` gains `'tabTitle'` (last); `callerFrom` reads it
 through `cleanCallerField` like the rest (both shapes); `sessionSegment` renders D2; `callerForAudit`
-renders the whole label, title included (D4, as the owner decided on 2026-09-24; it shipped with `tabTitle: ''`). The modal (`credsAgentServer.ts:647`) and the audit call
-(`:746`) do not change.
+renders the whole label, title included (D4, as the owner decided on 2026-09-24; it shipped with `tabTitle: ''`). The CALL SITES — the modal (`credsAgentServer.ts:647`) and the audit line
+(`:746`) — did not change in either version: what the audit line carries is decided in `callerForAudit` alone.
 
 ## 5. Growth and interruption
 
