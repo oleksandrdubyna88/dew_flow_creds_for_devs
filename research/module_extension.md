@@ -1328,7 +1328,7 @@ export, the share and the hygiene scan needed no change, and `storageManager.ts`
 | `wovenSecret.ts` | `weaveSecret` / `unweaveSecret` / `weaveRefusal` — a password and its decoy, and the two readings a method gives back |
 | `wovenPasswordSave.ts` | the four states a save meets; `passwordPairRefusal` — an own second half that cannot pair REFUSES the save (the first gate in `entityFormPanel.agreed`, with `secondSave.ownHalfRefusal`'s sentences, the ones a payment field refuses with); and `unwovenWarning` — what to ASK when the form will not do what it appears to promise (too short, no method, unticked-but-woven — never the pair) |
 | `wovenPasswordHost.ts` | the viewer's half: what a Show or a Copy on the two rows is answered with |
-| `wovenRow.ts` | the two-column row itself, serving the card and the password from one implementation |
+| `wovenRow.ts` | the two-column row itself, serving the card and the password from one implementation; its button reads **Unweave** (#135, owner 2026-09-24) — only a woven row says so, every other field keeps **Show** |
 | `rowFlip.ts` | `RowOrderStore` / `displayed` / `rowIn` — which of a reading's two halves is shown first, drawn once per entry and held only in the host |
 | `wovenPicture.ts` | `wovenPictureTokens` — the stored value token by token, each tagged with the ROW it is shown in, never with which is real |
 | `viewWeaveScripts.ts` | the viewer's page script in its one legal order — painter, then the picture fragment, then the card script (the mirror of `formWeaveScripts.ts`) |
@@ -3356,9 +3356,11 @@ the CLI legitimately probes. **The tab title is shown in the modal and never wri
 in ClaudeRag` wants to…* — the quoted title REPLACING the derived registry name, in full up to the
 80-character field cap so the tab's own cut is always a prefix of it, with any `"` inside it shown as
 `'` and any `·` as `-` so it stays visibly ONE value (an AI title is steerable by text the agent read,
-and `prod" (deadbeef) · session "x` would otherwise render as two sessions) — while `callerForAudit` renders
-the label without the title, keeping the registry name. An AI title summarises a private
-conversation and the journal is durable; that is an assumption awaiting the owner's confirmation (#136, D4), and a reversible one.
+and `prod" (deadbeef) · session "x` would otherwise render as two sessions) — and `callerForAudit`
+renders the SAME label for the Agent Access journal, title included. That is the owner's decision of
+2026-09-24 (#136, D4), reversing what 1.10.0 shipped as an assumption (the title kept out, because an
+AI title summarises a private conversation and the journal is durable): the journal is where "which
+session did this" is asked afterwards, and the tab title is the name the person knows it by.
 
 **The entry's ask policy does not reach this door, and that is a decision** (issue #95, owner
 decision D1). The cadence an entry carries — *ask every time*, *ask once every 12 hours*, *never

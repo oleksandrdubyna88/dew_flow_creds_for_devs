@@ -1653,7 +1653,7 @@ to be written back whole, so a keys-omitted edit of the region wrote the old reg
 S3 signs with the region. **A deployment with no KEK is a sentence, not a 500** (fix 2): `Seal` handed
 an empty key to `AesGcm`; the guard answers `409` naming `Vault:LoginKey:Kek`, as the mint route does —
 and only when the plan actually seals, so a keys-omitted or metadata-only edit still saves on such a
-deployment (plan gate, codex). **Only what changed is probed** (an OWNER ASSUMPTION, recorded so it can
+deployment (plan gate, codex). **Only what changed is probed** (the OWNER'S DECISION, confirmed 2026-09-24 after shipping as an assumption; it can still
 be reversed — `TargetDecision.Probe` is the one predicate): every save used to write-and-delete a probe
 object in every bucket, so editing the prefix of one destination depended on every other being reachable
 now. Re-proving an untouched destination did catch a key revoked since; the nightly run reports that
@@ -1672,7 +1672,7 @@ save's worst case is forty seconds, with the extension waiting three times that 
 `lastRunAt` is when the last run STARTED, failed ones included; `lastSuccessAt` is when the last run
 whose verdict was `ok` finished. Every writer carries it forward through `previous with { … }` on a
 fresh read — Begin, Abandon, Fail, the sweep, Progress — and only a finish with the `ok` verdict
-advances it; **`partial` is not a success** (an owner assumption: a partial run reached some
+advances it; **`partial` is not a success** (the owner's decision, confirmed 2026-09-24: a partial run reached some
 destinations, and "when did the last complete copy leave" is not answered by it). A `status.json`
 written before the field existed reads its `ok` run as its last success at the read, beside the
 `targets` normalisation in `ReadStatusAsync` — a missing positional member is `0`, which would have

@@ -35,6 +35,15 @@
 > renaming the Show button to *Unweave*. The button still says Show, and nothing in the build claims
 > to undo a weave.
 >
+> **Revisited by the owner, 2026-09-24 (issue #135, the tail of #58)** — three answers:
+> - *Rename the button* — **yes, on WOVEN rows only.** The woven row's button (`wovenRow.ts`) reads
+>   **Unweave**, and the three sentences that name it — the row note, the Main note, the edit refusal —
+>   say *press Unweave*. Every non-woven field keeps **Show**, pinned by a companion on one card that
+>   holds both. The Main note stays honest about what the button does: it rebuilds the two readings
+>   and never changes the stored value; without the right method nothing can recover the original.
+> - *Per-row Show/Hide* — **no**: the two readings are only meaningful as a pair.
+> - *Draw the picture when the method is picked* — **no**: it stays on the button press.
+>
 > Related docs: [module_extension.md](module_extension.md),
 > [PLAN_woven_passwords_and_entity_pin.md](PLAN_woven_passwords_and_entity_pin.md),
 > [PLAN_payment_ui_tail.md](PLAN_payment_ui_tail.md),

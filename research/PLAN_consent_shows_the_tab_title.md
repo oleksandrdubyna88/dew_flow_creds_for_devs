@@ -149,7 +149,7 @@ Gemini's behaviour at run time on any machine.
 | D1 | A fifth, additive caller field **`tabTitle`** (flat: `callerTabTitle`). Wire `version` stays 1 | the founding plan predicted exactly this (§12 item 1: "an additive field, not a redesign"). An old window ignores an unknown field (`brokerCaller.ts:74-84` reads four named keys); an old sender omits it and the new window reads `''` |
 | D2 | The modal shows the title INSTEAD of the derived registry name: `session "<tabTitle>" (<id8>)`. With no title, today's `session <name> (<id8>)` is unchanged | two names for one session in a security dialog read as two sessions; the derived name is on no screen the person is looking at. Quoted, because a title is free text and can contain ` · ` — and, since the code round, with `"` shown as `'` and `·` as `-` inside the quotes, so a steered title cannot render as a second session |
 | D3 | The title is shown **in full, up to the 80-code-point field cap**, not cut to the tab's 24 + `…` | whatever cut the tab applies, its text is a PREFIX of ours — so the modal stays matchable if Claude Code changes its cut, and a title that differs only after the 24th character is still told apart. The composed line keeps its 160 cap (`brokerCaller.ts:129-143`): agent (≈19) + separators and the id (≈24) + 80 leaves ≈30 for `in <folder>`, and a longer folder is cut at the end exactly as today |
-| D4 | **The audit line does NOT carry the title** — `callerForAudit` renders the label without it. **An assumption awaiting the owner's confirmation, reversible** | an AI title is a summary of the conversation's content; the audit channel is a durable log of who used which credential, and it should not accumulate one-line summaries of private conversations. The modal is ephemeral. Reversing it is one line in `callerForAudit` and one test |
+| D4 | **Shipped:** the audit line did NOT carry the title (an assumption). **Reversed by the owner, 2026-09-24:** `callerForAudit` now renders the modal's label, title included | the assumption's argument was that an AI title summarises a private conversation and the journal is durable. The owner's answer: the journal is where "which session did this" is asked afterwards, and the tab title is the name the person knows it by. Same sanitising as the modal; the live check (`creds-mcp-itest.cjs`, T-I1) now asserts the title IS on the audit line |
 | D5 | The title is read **per call**, never cached at start-up. MCP: a provider in `CallerSource`, like the agent; CLI: once per run, which is per call | a tab is renamed while the server runs; the first `aiTitle` appears only after the first turn, i.e. after the MCP server started |
 | D6 | **Under the WSL bridge there is no title.** The Linux half forwards a record computed once at start; the Windows half's environment belongs to `wsl.exe` | making it per-call would need a per-call channel back from the Linux half, which is a relay pump that never parses MCP. A stale title is worse than none. Recorded as a tail. Concretely: the Linux half computes `CallerIdentity.Current`, which never reads a title, so the `--caller` record it forwards always carries `tabTitle: ""`; the Windows half gets no title provider for a forwarded record (§4.6). The field crosses the bridge — it is simply always empty there (plan round, finding 6) |
 | D7 | The `GEMINI_CLI_SESSION_ID` rung is removed. `CREDS_CALLER_SESSION` stays first and is the documented way to name a Gemini (or any) session: set it in the MCP server's `env` in the client's config | §2.3: the variable is never exported. `CREDS_CALLER_SESSION` is an independent rung — removing the last rung cannot change what it does, and T-G1 proves the ladder still answers from it |
@@ -270,7 +270,7 @@ already enumerates the record's JSON against the contract, so the two sides cann
 
 `CallerLabel.tabTitle: string`; `CALLER_FIELDS` gains `'tabTitle'` (last); `callerFrom` reads it
 through `cleanCallerField` like the rest (both shapes); `sessionSegment` renders D2; `callerForAudit`
-renders the label with `tabTitle: ''` (D4). The modal (`credsAgentServer.ts:647`) and the audit call
+renders the whole label, title included (D4, as the owner decided on 2026-09-24; it shipped with `tabTitle: ''`). The modal (`credsAgentServer.ts:647`) and the audit call
 (`:746`) do not change.
 
 ## 5. Growth and interruption
@@ -372,7 +372,7 @@ Extracted at promotion into [PLAN_consent_names_codex_and_wsl_sessions.md](../to
 
 ## 10. Questions for the owner (asked in the summary, not answered here)
 
-1. D4 — keep the title out of the audit line? (Chosen: yes.)
+1. D4 — keep the title out of the audit line? (Shipped: yes, as an assumption. **Answered 2026-09-24: no — the owner wants it in the journal**; done in the follow-up PR.)
 2. The pre-existing mis-attribution: `creds` run by Codex inside a Claude Code terminal reports Claude
    Code's session id and registry name today. Apply §4.3's "another agent's marker present" rule to
    the registry read too?
