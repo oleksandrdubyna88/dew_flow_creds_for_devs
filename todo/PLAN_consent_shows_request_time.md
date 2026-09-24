@@ -21,7 +21,7 @@ Decided with the owner on 2026-09-23: **local time with its UTC offset**, e.g.
 Facts the design rests on:
 
 - The modal is built in one place: `credsAgentServer.ts:646-651` (`showWarningMessage(… { modal:
-  true }, 'Allow', 'Deny')`), reached through `consent` (`:596-622`), which shares ONE pending
+  true }, 'Allow', 'Deny')`), reached through `consent` (`:592-622`), which shares ONE pending
   dialog per grant (`this.consenting`), so a second call while the first is on screen shows no
   second modal — the time on it is the FIRST request's.
 - The dialog waits up to `CONSENT_TIMEOUT_MS` unattended; that wait is why the time matters.
