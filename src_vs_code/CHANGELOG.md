@@ -8,9 +8,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.10.0] — 2026-09-24 — the right shell, Not for export, and when an agent asked
 
-> Issues #103, #104, #122, #131, #133 and #136 in one release: a composed line runs in the machine's own shell and a
+> Issues #103, #104, #122, #131, #133, #134 and #136 in one release: a composed line runs in the machine's own shell and a
 > Terminal entry says which OS it is for; an entry's site opens in the browser; an entry can be kept out of
 > sharing and export; and the consent dialogs say when they were asked and which Claude Code tab is asking; and a second password that cannot pair is refused.
+> An administrator configures where the server's backup goes from the Server Backup tab, and the Backup row
+> tells the last run from the last success — against server 0.9 or later.
+
+### Added — backup destinations from the Server Backup tab (#134)
+
+- **Add, edit and remove where the server's backup goes.** The **Server Backup…** tab lists the
+  configured destinations — kind, endpoint, region, bucket or container, prefix, and whether the
+  server can open the sealed credentials — with *Edit* and *Remove* on each row and *Add
+  destination…* below. The form takes an S3-compatible or Azure Blob destination and its two
+  credential halves; the halves are sealed on the server and never shown again, so an edit that keeps a
+  destination's identity (kind, endpoint, bucket or container, prefix) and leaves them empty keeps the
+  ones already there — change the prefix and it is a new destination that needs both halves; a
+  destination whose keys the server cannot open asks for them again. Remove asks first and says what it
+  does: the archives already at that destination stay there, only this server stops sending new ones.
+- **The Backup row tells the last run from the last success.** When the last run failed or only partly
+  succeeded, the row reads `last run … · last success …` (or `never succeeded`) instead of the failed
+  run's time alone — the number that says how much a restore would lose. The tab says the same.
+- **The Vaults row counts pending shares** — `41 · 1.2 GiB · 3 pending shares (12.0 KiB)` — when there
+  are any. The server had reported them all along; the row counted vault files alone.
+- **The Backup row moves the moment the tab acts** — a run started, a schedule saved, a destination
+  added — rather than on the next readiness tick.
+
+### Changed — against an older server (#134)
+
+- A server without `GET /api/org/backup/targets` (before server 0.9) gets no destinations form: a save
+  without the list would silently erase the destinations this build cannot see. The tab says which
+  side is older; the schedule can still be saved. A save that carries destinations waits up to two
+  minutes, because the server proves every new or changed destination with a write at the bucket
+  before it answers.
 
 ### Fixed
 

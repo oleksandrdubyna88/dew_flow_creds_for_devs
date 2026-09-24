@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { afterEach, test } from 'node:test';
 import { CLIENT_CONTRACT_VERSION, CONTRACT_HEADER } from '../contractVersion';
-import { BackupStatus, OrgBackupClient, settingsProblem } from '../orgBackupClient';
+import {
+  BackupStatus,
+  OrgBackupClient,
+  TARGET_SAVE_TIMEOUT_MS,
+  saveDeadlineMs,
+  settingsProblem,
+} from '../orgBackupClient';
 import { StoredAccount } from '../types';
 
 /**
@@ -222,6 +230,168 @@ test('an ordinary filename still comes through untouched', () => {
     assert.equal(download.name, 'cred-vault-20260907-030405Z.cvbk');
   });
 });
+
+/**
+ * The document both halves assert — the EXACT array the route answers, so it is fed in whole.
+ *
+ * <p>The server's own test compares its route's answer to this file byte for byte; this feeds the same
+ * bytes to `readTargets`. The LIVE check between the two is `scripts/backup-targets-live.cjs`, which
+ * drives this compiled client against a running server in the `.http` contract job.</p>
+ */
+function sharedTargets(): unknown[] {
+  const file = path.join(__dirname, '..', '..', '..', 'contract', 'backup-targets-v1.json');
+  return JSON.parse(fs.readFileSync(file, 'utf8')) as unknown[];
+}
+
+test('the destinations are read from the admin route and accepted exactly as the shared fixture spells them', async () => {
+  // contract/backup-targets-v1.json is what the SERVER's own test holds its route to; if a field is
+  // renamed on one side, this goes red on the other (plan gate, codex). One document rather than two
+  // lists — and the wire document itself, not an envelope around it (code gate, gemini).
+  const seen = respondWith(200, sharedTargets());
+
+  const targets = await client().readTargets(account);
+
+  assert.equal(seen[0].url, 'https://vault.corp.com/api/org/backup/targets');
+  assert.deepEqual(targets, sharedTargets(), 'every field, verbatim');
+  assert.equal(targets?.[1].credentials, 'unopenable', 'the row the form says "re-enter" on');
+});
+
+test('a server older than destination editing answers UNDEFINED, which is not an empty list', async () => {
+  // Opposite facts that arrive as the same 404: "this server holds no destination" and "this server
+  // has no such route". The tab must not offer the form on the second — PUT /settings replaces the
+  // whole list, so a save without the list would erase the destinations this build cannot see.
+  respondWith(404, '');
+
+  assert.equal(await client().readTargets(account), undefined);
+});
+
+test('an empty list from a server that HAS the route is an empty list', async () => {
+  respondWith(200, []);
+
+  assert.deepEqual(await client().readTargets(account), []);
+});
+
+test('a row is projected onto the six contract fields, so whatever a server adds never reaches a page', async () => {
+  // A hostile or compromised server answering a row with a credential in it must not hand that
+  // credential to the renderer through this client.
+  respondWith(200, [{ ...(sharedTargets()[0] as object), secretAccessKey: 'leaked', iv: 'AAAA' }]);
+
+  const targets = await client().readTargets(account);
+
+  assert.deepEqual(Object.keys(targets?.[0] ?? {}).sort(), ['bucket', 'credentials', 'endpoint', 'kind', 'prefix', 'region']);
+  assert.ok(!JSON.stringify(targets).includes('leaked'));
+});
+
+test('a destinations shape this build cannot read is a sentence, never undefined fields', async () => {
+  respondWith(200, [{ kind: 's3', bucket: 'vaults' }]);
+  await assert.rejects(() => client().readTargets(account), /shape this build cannot read/);
+
+  respondWith(200, [{ ...(sharedTargets()[0] as object), credentials: '' }]);
+  await assert.rejects(() => client().readTargets(account), /shape this build cannot read/, 'an EMPTY credentials word is no word');
+
+  respondWith(200, { targets: [] });
+  await assert.rejects(() => client().readTargets(account), /shape this build cannot read/, 'and a non-array');
+});
+
+test('a credentials word or a kind this build does not know is passed through, not refused — an older extension is served normally', async () => {
+  // The repository's own rule for a two-half release: an older extension against a newer server must
+  // work. PLAN_corp_backup_drives.md adds a third credentials word (`withdrawn`) and two kinds; a
+  // closed guard here would turn that server's perfectly good list into "shape this build cannot
+  // read" and take the whole tab with it (code gate, gemini).
+  respondWith(200, [
+    ...sharedTargets(),
+    { kind: 'onedrive', endpoint: 'https://graph.microsoft.com', region: '', bucket: '', prefix: 'Backups', credentials: 'withdrawn' },
+  ]);
+
+  const targets = await client().readTargets(account);
+
+  assert.equal(targets?.length, 3);
+  assert.equal(targets?.[2].kind, 'onedrive');
+  assert.equal(targets?.[2].credentials, 'withdrawn', 'the word travels, so the page can say it needs attention');
+});
+
+test('a save whose list carries a kind this build does not know is NOT refused on this side', async () => {
+  // The list is always sent whole, so a newer server's drive destination rides along in every
+  // schedule or destination save from an older extension; refusing it here would make every edit on
+  // that deployment impossible until the extension is updated. The server knows the kind; it decides.
+  const seen = respondWith(204, '');
+
+  await client().saveSettings(account, {
+    scheduleHourUtc: 3,
+    retentionDays: 30,
+    targets: [{ kind: 'onedrive', endpoint: 'https://graph.microsoft.com', region: '', bucket: '', prefix: 'Backups' }],
+  });
+
+  assert.equal(seen.length, 1, 'it reached the network');
+});
+
+test('a refusal on the destinations route carries the server own sentence', async () => {
+  respondWith(403, { error: 'an administrator or a recovery officer may.' });
+
+  await assert.rejects(() => client().readTargets(account), /recovery officer/);
+});
+
+test('a save that carries destinations waits the long deadline; a schedule-only save does not', () => {
+  assert.equal(saveDeadlineMs({ scheduleHourUtc: 3, retentionDays: 30 }, 60_000), 60_000);
+  assert.equal(saveDeadlineMs({ scheduleHourUtc: 3, retentionDays: 30, targets: [] }, 60_000), TARGET_SAVE_TIMEOUT_MS);
+  assert.equal(
+    saveDeadlineMs({ scheduleHourUtc: 3, retentionDays: 30, targets: [] }, TARGET_SAVE_TIMEOUT_MS * 2),
+    TARGET_SAVE_TIMEOUT_MS * 2,
+    'never SHORTER than the client already waits',
+  );
+});
+
+test('the long deadline actually reaches the request — a slow save with destinations lands where a schedule-only one times out', async () => {
+  // The client is built with a twenty-millisecond deadline and the server answers after sixty. The
+  // schedule-only save must give up; the save carrying destinations must not, because the server is
+  // proving a bucket and the wait is the point (#134).
+  respondAfter(60);
+  const impatient = new OrgBackupClient('https://vault.corp.com/', async () => 'token', 20);
+
+  await assert.rejects(
+    () => impatient.saveSettings(account, { scheduleHourUtc: 3, retentionDays: 30 }),
+    /unreachable/,
+  );
+  await impatient.saveSettings(account, { scheduleHourUtc: 3, retentionDays: 30, targets: [] });
+});
+
+test('a destination the server would refuse is refused before any request, and named', async () => {
+  const seen = respondWith(204, '');
+
+  await assert.rejects(
+    () => client().saveSettings(account, {
+      scheduleHourUtc: 3,
+      retentionDays: 30,
+      targets: [{ kind: 's3', endpoint: 'http://s3.example.com', region: 'eu-central-1', bucket: 'vaults', prefix: 'nightly' }],
+    }),
+    /s3 vaults\/nightly: The endpoint must be https/,
+  );
+  assert.equal(seen.length, 0, 'nothing reached the network');
+});
+
+test('lastSuccessAt is optional on the wire and an instant when present', async () => {
+  // An older server omits it and must still be read; a newer one sends a number a Date can render.
+  respondWith(200, { ...STATUS, lastSuccessAt: 1_725_300_000_000 });
+  assert.equal((await client().readStatus(account)).lastSuccessAt, 1_725_300_000_000);
+
+  respondWith(200, STATUS);
+  assert.equal((await client().readStatus(account)).lastSuccessAt, undefined, 'absent stays absent');
+
+  respondWith(200, { ...STATUS, lastSuccessAt: 'yesterday' });
+  await assert.rejects(() => client().readStatus(account), /shape this build cannot read/);
+});
+
+/** A stub that answers 204 after `ms`, and honours the request's abort signal the way real fetch does. */
+function respondAfter(ms: number): void {
+  globalThis.fetch = ((_input: unknown, init: RequestInit = {}) =>
+    new Promise<Response>((resolve, reject) => {
+      const timer = setTimeout(() => resolve(new Response(null, { status: 204 })), ms);
+      init.signal?.addEventListener('abort', () => {
+        clearTimeout(timer);
+        reject(new Error('This operation was aborted'));
+      });
+    })) as typeof fetch;
+}
 
 test('a status missing a field the PAGE reads is refused, not passed on', async () => {
   // The guard used to check five fields and that `targets` was an array. Everything else — the

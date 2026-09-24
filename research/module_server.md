@@ -68,7 +68,8 @@ whole server is ~2,100 lines.
 | `src/BackupStoreRun.cs` | The run's half of the store: the claim held as an OS handle, the interrupted-run sweep, the archive listing, and retention with the shell backup's own floor |
 | `src/BackupRunner.cs` | One run in two halves — claim and announce inside the request, build outside it — and the refusals, each a sentence naming what to do |
 | `src/BackupScheduleService.cs` | The five-minute question, the startup sweep, and a hosted service that never throws out of `ExecuteAsync`. Corp mode only |
-| `src/OrgBackupEndpoints.cs` | The six backup routes, all admin-only, from their own file |
+| `src/OrgBackupEndpoints.cs` | The seven backup routes, all admin-only, from their own file |
+| `src/BackupTargetPlan.cs` | What a settings save does with each requested destination — keep the sealed record or seal afresh, prove it or not — and the words for its event row. Pure, decided before anything is sealed, probed or written |
 | `src/AwsSigV4.cs` | Signature Version 4 as a pure function, returning every intermediate the published vectors pin |
 | `src/AzureSharedKey.cs` | SharedKey the same way: the thirteen-line string to sign, the canonical headers and resource |
 | `src/ArchiveTarget.cs` | What a destination IS — four operations, the retention floor they share, and which endpoints may be used |
@@ -1333,8 +1334,8 @@ Four files under `org/backup/` — the one directory the archive builder refuses
 ```
 org/backup/key.sealed     the derived key, sealed under the deployment KEK, create-if-absent
 org/backup/key.shown      zero bytes; its EXISTENCE is the acknowledgement
-org/backup/settings.json  the schedule hour and the retention window an admin edits
-org/backup/status.json    the last run's outcome
+org/backup/settings.json  the schedule hour, the retention window and the sealed destinations an admin edits
+org/backup/status.json    the last run's outcome, and the instant of the last run that SUCCEEDED
 org/backup/archives/      where story 3 puts them
 ```
 
@@ -1365,15 +1366,16 @@ not name, and a key in the list that nothing reads. It was watched failing: drop
 This is what makes the **backup key the highest-value secret in the system** — higher than the KEK,
 which is inside the archive while the backup key is not. The snapshot says so in its own header, and
 the admin's screen will say it at the moment the key is shown.
-### Taking the backup: the run, the schedule and six routes (2026-09-07, epic 5 story 3)
+### Taking the backup: the run, the schedule and seven routes (2026-09-07, epic 5 story 3; the seventh 2026-09-24, #134)
 
 Everything was in place and nothing took a backup. This is the part that does, on a schedule, with a
 page an administrator can look at.
 
 | Route (all `RequireAdmin`) | Answers |
 |---|---|
-| `GET /api/org/backup/status` | Everything the page draws: the key's state, the schedule, the window, the last run, the local archive — and `configuredTargetKinds`, the kinds of destination that are SAVED |
-| `PUT /api/org/backup/settings` | The hour (0–23) and the window (≥ 1 day), each refused with its range named |
+| `GET /api/org/backup/status` | Everything the page draws: the key's state, the schedule, the window, the last run and — since #134 — the last SUCCESSFUL run (`lastSuccessAt`), the local archive, and `configuredTargetKinds`, the kinds of destination that are SAVED |
+| `GET /api/org/backup/targets` | The configured destinations as the tab edits them: `kind`, `endpoint`, `region`, `bucket`, `prefix` and `credentials` — `sealed` when this server can open the sealed half, `unopenable` when it cannot. Never the sealed half, never a credential. `contract/backup-targets-v1.json` is the sample both halves assert (#134) |
+| `PUT /api/org/backup/settings` | The hour (0–23) and the window (≥ 1 day), each refused with its range named — and the destinations: omitted is unchanged, `[]` removes them all, a non-empty list is the WHOLE set. `409` naming `Vault:LoginKey:Kek` when a destination's credentials would have to be sealed on a deployment that cannot seal |
 | `POST /api/org/backup/key` | Mints the key and hands over its words **once** — delivering them IS the acknowledgement |
 | `POST /api/org/backup/run` | `202` and the build detached, or `409` with the reason it did not start |
 | `GET /api/org/backup/archive` | Streams the newest archive with a length, or `404` saying how to get one |
@@ -1464,7 +1466,10 @@ would start a run per attempt.
 
 **Every run leaves a row** — `backup.taken` naming the archive, `backup.failed` carrying the reason,
 `backup.key_issued` recording that a key was handed over (never the key, and not a fingerprint of it
-either), `backup.settings_changed` with the new hour and window. They go through `OrgEndpoints.Row`
+either), `backup.settings_changed` with the new hour and window and — when the destinations were sent —
+what changed about them: `; destinations +s3 vaults/nightly ~s3 vaults/weekly -azure vaults/old` by
+`SealedTarget.Describe`, or `; destinations unchanged`; never a key, never an endpoint (#134). They go
+through `OrgEndpoints.Row`
 like every other row on this server, which is also what stamps them: building the record by hand is
 how three rows reached the log with `at: 0` and broke the event reader's newest-first ordering. The
 `.http` suite caught that too.
@@ -1596,6 +1601,83 @@ the company's archive to Azure with credentials meant for somebody else. It is a
 implemented kinds with a default that returns nothing, and `BuiltTarget` carries the sentence saying
 which of the two reasons applies — a KEK that changed, or a kind from the future — because both call
 sites used to invent the same wrong advice for the second.
+
+### Editing the destinations from the tab, and the last SUCCESS (2026-09-24, #134)
+
+Epic 5 shipped the whole machinery of an off-machine backup and a tab that edited only the schedule:
+no route returned the configured destinations, `PUT /settings` replaced the whole list, and the
+extension's `BackupTargetInput` was declared and filled by nothing. What changed on this side, and the
+four things reading the save path turned up ([PLAN_backup_destinations_from_vscode.md](PLAN_backup_destinations_from_vscode.md)):
+
+**`GET /api/org/backup/targets` lists where each destination is, never what opens it.** It is the read
+that makes editing ONE destination possible — a client that could not read the list would have to
+retype every destination to change one, or send the one it knew and silently erase the rest. Each row
+carries the five location fields and `credentials`: `sealed` when this server can open the record's
+sealed half, `unopenable` when it cannot (a KEK that changed, a settings file restored from elsewhere,
+no KEK at all) — the one fact a form needs to say *re-enter them* on the right row. It is asked through
+`BackupTargets.Opens`, the same AEAD open `Open` makes but without the error line, because a listing is
+read every time the tab opens. **The status is untouched**: by the 2026-09-12 decision it names KINDS
+and nothing operational, and `TheStatusNeverNamesADestinationsCredentials` still pins that. The
+extension reads the list first and always sends it whole, the untouched ones as key-less requests the
+save keeps by identity; an older server answers `404` and the extension then offers no form at all.
+`contract/backup-targets-v1.json` is the EXACT array this route answers for two seeded destinations,
+and BOTH halves assert it — the endpoint test compares the route's answer to the whole document byte
+for byte, the extension feeds the same bytes to `readTargets` — so a field renamed on one side goes red
+on the other. `credentials` is the one field that is not a location: `sealed` means this server can
+open what is sealed for the destination, `unopenable` means it cannot, and a newer server may add a
+word (the drives plan's `withdrawn`) that an older extension passes through as *needs attention* rather
+than refusing. The values are fixtures — `s3.example.com` and `acct.blob.core.windows.net` are not real
+destinations. **And there is a live check between the two implementations**, because the testing rule
+says two suites agreeing with one file is not one: `src_vs_code/scripts/backup-targets-live.cjs`
+drives the compiled TypeScript client against the running server in the `.http` contract job —
+`module_tests.md` says what it drives and the one branch it cannot.
+
+**A save decides its destinations before it seals, probes or writes** — `BackupTargetPlan`, pure, one
+`TargetDecision` per requested destination — a `KeptTargetDecision` when the identity is already sealed here, a
+`NewTargetDecision` otherwise, each writing its own record (`Record`):
+
+| The request | The decision |
+|---|---|
+| a known identity (kind, endpoint, bucket, prefix), no credentials, same region | **kept as it is** — not sealed, not probed, not marked |
+| a known identity, no credentials, a different region | kept with the REQUESTED region, probed, marked `~` |
+| a known identity with credentials | sealed afresh, probed, marked `~` |
+| an identity this server has not seen, with credentials | sealed, probed, marked `+` |
+| an identity not in the request at all | removed, marked `-` |
+| an unknown identity WITHOUT credentials, half a credential, plain http anywhere but loopback, an unknown kind | refused by name, before any request |
+| two requests with one identity | refused by name: the keep-the-keys rule matches by identity, and an edit could only ever match the first |
+
+Three of those rows are fixes. **The region is carried onto a kept record** (fix 1): the identity does
+not include the region — the same bucket in a different region is the same bucket, and adding it would
+turn a region edit into a delete-plus-add that drops the sealed credentials — and the kept record used
+to be written back whole, so a keys-omitted edit of the region wrote the old region back, silently, and
+S3 signs with the region. **A deployment with no KEK is a sentence, not a 500** (fix 2): `Seal` handed
+an empty key to `AesGcm`; the guard answers `409` naming `Vault:LoginKey:Kek`, as the mint route does —
+and only when the plan actually seals, so a keys-omitted or metadata-only edit still saves on such a
+deployment (plan gate, codex). **Only what changed is probed** (an OWNER ASSUMPTION, recorded so it can
+be reversed — `TargetDecision.Probe` is the one predicate): every save used to write-and-delete a probe
+object in every bucket, so editing the prefix of one destination depended on every other being reachable
+now. Re-proving an untouched destination did catch a key revoked since; the nightly run reports that
+within a day anyway. What the rule also buys is that a destination this server cannot OPEN, re-sent
+unchanged beside an edit to a sibling, is kept as it is and asked nothing — against the probe-all code
+its probe failed with *"cannot open the credentials"* and took the sibling's save with it (plan gate,
+gemini; `EditingOneDestinationLeavesAnUnopenableSiblingInPlaceAndUnprobed`).
+
+**Both halves of the probe run on the probe's deadline.** The PUT ran on the twenty-second
+`ProbeTimeout` and the DELETE on the two-minute `Request` deadline, so one bucket that accepted the
+write and then went quiet held an administrator's save for 140 seconds — past the extension's own
+deadline. `DeleteWithinAsync` takes the deadline; the probe passes its own in both clients, and a
+save's worst case is forty seconds, with the extension waiting three times that when it sends targets.
+
+**`lastSuccessAt` is a second instant, and the difference is the number a restore depends on.**
+`lastRunAt` is when the last run STARTED, failed ones included; `lastSuccessAt` is when the last run
+whose verdict was `ok` finished. Every writer carries it forward through `previous with { … }` on a
+fresh read — Begin, Abandon, Fail, the sweep, Progress — and only a finish with the `ok` verdict
+advances it; **`partial` is not a success** (an owner assumption: a partial run reached some
+destinations, and "when did the last complete copy leave" is not answered by it). A `status.json`
+written before the field existed reads its `ok` run as its last success at the read, beside the
+`targets` normalisation in `ReadStatusAsync` — a missing positional member is `0`, which would have
+told an administrator whose last run was fine that the server had NEVER succeeded (plan gate, codex); a
+legacy `failed` cannot establish a success and stays `0`, *no recorded success*.
 
 ## Authorization
 
@@ -1861,14 +1943,15 @@ environment is global, the suite runs in one non-parallel collection (`ServerCol
 | `BackupArchiveCommandTests` | `--decrypt-archive` restores and names what came out; `--verify-archive` authenticates and writes nothing; a tampered archive, a missing archive, a missing key file and a key file that is not base64 of exactly 32 bytes each answer 1 with a sentence naming the contract; a trailing newline in the key file is still the key; the wrong number of arguments prints the usage and answers 2; the verbs claimed are its own and not `--healthcheck`; and one test leaves an archive plus its key at a fixed path so the PUBLISHED Native AOT binary can be pointed at them |
 | `PrintableKeyTests` | Every vector in `contract/printable-key-v1.json` — checksum, display form and parse — for both forms; the backup vectors' DERIVED 32 bytes, which pin HKDF's salt across languages; a 500-core round trip; a key typed in lower case with spaces and confusables; one altered character as `BadChecksum` and six malformed inputs as `BadFormat`; the entropy as exactly 150 bits; and the two forms not sharing a checksum |
 | `BackupKeyFileTests` | The printable form and base64 of one key reading as the same bytes; the prefix in either case; leading and trailing whitespace; a mistyped printable key answering about the CHECKSUM and never mentioning base64; something that is neither form naming both; base64 of the wrong length; a file the size of a log refused unread; and an archive sealed from the words opening with the bytes |
-| `BackupStoreTests` | A fresh deployment minting once; a minted key NOT usable for a run until its words are acknowledged; minting again before that replacing it and after that changing nothing and handing over no words; a KEK that changed answering `Unreadable` with nothing minted over it; a record from a later build unreadable by VERSION with the number logged; a deployment with no KEK saying which key to set; the sealed key absent from an archive of its own deployment, asserted by listing what came out; settings and status round-tripping and answering defaults when absent or torn; and the words and the bytes being the same key |
+| `BackupStoreTests` | A fresh deployment minting once; a minted key NOT usable for a run until its words are acknowledged; minting again before that replacing it and after that changing nothing and handing over no words; a KEK that changed answering `Unreadable` with nothing minted over it; a record from a later build unreadable by VERSION with the number logged; a deployment with no KEK saying which key to set; the sealed key absent from an archive of its own deployment, asserted by listing what came out; settings and status round-tripping and answering defaults when absent or torn; the words and the bytes being the same key; and a legacy `status.json` reading its `ok` run as its last success while a legacy failure stays *no recorded success* (#134) |
 | `ConfigKeysTests` | Every configuration key the source reads is in the list, and every key in the list is read somewhere — both directions, watched failing on a dropped key; the snapshot carrying every key, its secrets unredacted, and saying so in its header; an unset key written empty rather than omitted; and the environment spelling being the one the compose stack uses |
 | `BackupScheduleTests` | The due-math as a table: due at the hour, not at 02:59, still due at 07:00 after a window the server slept through, not twice in a day, due again tomorrow, the UTC day boundary on both sides, midnight as an ordinary hour; the archive-name round trip and the four names that have no instant (a `.partial`, somebody else's file, an unreadable stamp, a missing `Z`); and the running state derived in one place |
-| `BackupRunnerTests` | A run takes an archive and says it succeeded; the archive opens with the words the administrator wrote down; it carries the configuration snapshot and NOT the backup tree; a second run while the claim is held is refused; the claim is an OS handle released by disposal; the four refusals (no key, unacknowledged key, no KEK, already running); an in-progress status swept into a failure at startup; the sweep leaving a LIVE run alone; only the newest archive kept; retention never emptying the directory, deleting what aged out, and leaving a file it cannot account for; and a row naming the archive |
-| `BackupEndpointTests` | All six routes refused for a developer; a fresh deployment's status; minting once and the refusal for a second; the settings bounds and their row; a run reaching `ok` with an archive and a row; a run with no key refused in the RESPONSE; `409` while one is live; the page reading "running" the instant after the button; `404` with the way to get an archive; the stream with its length, filename and `CVBK` marker; the status after a real restart showing the swept failure and never the spinner; and `501` for rotation |
+| `BackupRunnerTests` | A run takes an archive and says it succeeded; the archive opens with the words the administrator wrote down; it carries the configuration snapshot and NOT the backup tree; a second run while the claim is held is refused; the claim is an OS handle released by disposal; the four refusals (no key, unacknowledged key, no KEK, already running); an in-progress status swept into a failure at startup; the sweep leaving a LIVE run alone; only the newest archive kept; retention never emptying the directory, deleting what aged out, and leaving a file it cannot account for; a row naming the archive; and the last SUCCESS as its own instant (#134): stamped by an `ok` finish, kept by a failed run, a partial run, a run that died with an exception, a run given back before it started, and the crash sweep — each watched failing first against a writer that wrote `0` |
+| `BackupEndpointTests` | All seven routes refused for a developer; a fresh deployment's status; minting once and the refusal for a second; the settings bounds and their row; a run reaching `ok` with an archive and a row; a run with no key refused in the RESPONSE; `409` while one is live; the page reading "running" the instant after the button; `404` with the way to get an archive; the stream with its length, filename and `CVBK` marker; the status after a real restart showing the swept failure and never the spinner; `501` for rotation; and, since #134, over a STUBBED transport the server is built with (`VaultServer` takes service replacements, `Corp.ServerWith`): a region edit that keeps the keys saves the new region and the same sealed bytes; an unchanged destination sends no probe while new keys or a new region send exactly two requests; an unopenable sibling is kept and unprobed beside an edit; a destination with credentials on a deployment with no KEK is `409` naming the setting while a keys-omitted edit there is `204`; two destinations with one identity refused by name; the settings row naming `+`/`-` and never a key; the targets listing with every field and nothing sealed, `unopenable` per row, and byte-equal to `contract/backup-targets-v1.json` |
+| `BackupTargetPlanTests` | The planner's branches, pure: a kept record carrying the requested region and proved for it; an unchanged destination neither sealed nor proved and a plan that needs no KEK; new credentials sealing afresh; a new destination added and proved; the delta naming added, changed and removed and never a key or an endpoint; one identity twice refused by name; the validator's refusal prefixed with the destination; a first save without credentials refused; and an Azure record described without a region in the same words the page uses |
 | `AwsSigV4Tests` | AWS's own published vectors — `get-vanilla`, `get-vanilla-query-order-key-case`, `get-header-value-trim` — each asserted at the canonical request, the string to sign AND the signature; two headers of one name joined in order; a PUT signing the UNSIGNED-PAYLOAD sentinel rather than a body; and a table of five showing that SigV4's percent-encoding is not `Uri.EscapeDataString`'s |
 | `AzureSharedKeyTests` | The documented SharedKey algorithm at both steps, with the expected values produced by an independent implementation: the thirteen lines of a Put Blob, a zero content length as an EMPTY line, the `x-ms-` headers lower-cased and sorted and nothing else canonicalised, the query appended one per line, the account taken from the CREDENTIAL rather than the host, and the pinned version with its ceiling |
-| `BackupTargetTests` | Both clients over a stubbed transport: a path-style PUT that is then verified by a HEAD; an upload the service stored SHORT reported as a failure; a 403 becoming a sentence rather than an exception; both listings following their continuation token; the save-time probe writing and then deleting, and a target that refuses the delete refused with both facts; Azure's two mandatory headers; the endpoint rule over six spellings; and destination retention's floor |
+| `BackupTargetTests` | Both clients over a stubbed transport: a path-style PUT that is then verified by a HEAD; an upload the service stored SHORT reported as a failure; a 403 becoming a sentence rather than an exception; both listings following their continuation token; the save-time probe writing and then deleting, and a target that refuses the delete refused with both facts; the probe's DELETE ending on the probe deadline in both clients rather than the request's (#134, watched waiting five seconds first); Azure's two mandatory headers; the endpoint rule over six spellings; and destination retention's floor |
 
 ## Telling the editor panel where it is
 

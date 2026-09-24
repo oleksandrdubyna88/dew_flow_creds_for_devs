@@ -324,6 +324,40 @@ operator's first configuration runs against their own account and which fails lo
 rather than at 03:00. When somebody does point this at a real bucket, that run IS the missing tier and
 it belongs in this file.
 
+## Editing the destinations, and the last success (2026-09-24, #134)
+
+| Tier | What it drives | Where |
+|---|---|---|
+| Pure, in process | the planner's every branch: a kept record carrying the requested region, an unchanged destination neither sealed nor proved, new keys and new identities sealed and proved, the event row's words, one identity twice refused | `src_minimalapi_server/tests/BackupTargetPlanTests.cs` |
+| In-process, over real HTTP, the cloud STUBBED | the same decisions as a client meets them — `VaultServer` now takes service replacements, so `BackupTargets` is built over `StubTransport` and a probe is a request the test reads rather than a DNS lookup: the region saved, the unchanged destination unprobed, the unopenable sibling kept, `409` without a KEK only when sealing, the settings row naming `+`/`-`, and `GET …/targets` byte-equal to the shared fixture | `src_minimalapi_server/tests/BackupEndpointTests.cs` |
+| Real files | the second instant on `status.json` through every writer, and a legacy file reading its `ok` run as its last success | `src_minimalapi_server/tests/BackupRunnerTests.cs`, `BackupStoreTests.cs` |
+| A hung transport | the probe's DELETE giving up on the probe deadline rather than the request's, in both clients | `src_minimalapi_server/tests/BackupTargetTests.cs` |
+| The wire | the targets route's `403` and its empty `200`, and the status shape with `lastSuccessAt`; the populated listing and a proved save are `@uncovered` with their reasons | `http/org/backup.http` |
+| One fixture, two suites | `contract/backup-targets-v1.json` — the EXACT array the route answers; the server compares the route's answer to the whole document, the extension feeds the same bytes to `readTargets` | `BackupEndpointTests.TheTargetsRouteAnswersTheSharedFixtureShape`, `src_vs_code/src/test/orgBackupClient.test.ts` |
+| **The LIVE check, two implementations against each other** | the REAL compiled TypeScript client (`out/orgBackupClient.js`, the `vscode`-free half) driven over the wire against the REAL server the `.http` contract job starts: `readTargets` answers a list (a `404` is a contract failure, since the server was started from the same commit), the status carries `lastSuccessAt` as an instant, a save with a destination at a host that cannot resolve is REFUSED through the client's own error path naming the destination, and the list is unchanged afterwards. Exit codes as `http-run.mjs`: 0 pass · 1 contract · 3 environment · 4 configuration | `src_vs_code/scripts/backup-targets-live.cjs`, run in `ci · server` › *http · contract suite* after the `.http` run, and by hand with the recipe in its header |
+
+**The flow catalogue for the destinations, honestly.** *Read the destinations* — covered live. *Save a
+destination the server refuses* — covered live (an unreachable host; the refusal reaches the person
+through the client's own path). *Add, edit or remove a destination the server ACCEPTS* — **not covered
+live**: a proved save needs a reachable bucket with credentials nobody should commit; it is covered
+in-process over a stubbed transport (`BackupEndpointTests` with `Corp.ServerWith`) and in the tab's
+own suite, which is a second unit tier and not a scenario. *A run to the new destination* — not
+covered anywhere here, for the same reason; the save-time probe every operator's first configuration
+runs against their own account is the honest substitute, and when somebody points this at a real
+bucket that run IS the missing tier and belongs in this file.
+
+The check exists because the plan gate and then the code gate both quoted `testing.md` back at a plan
+that had written *"not a cross-language live run"* as a deviation: two suites agreeing with one file
+is not the live check the rule mandates, and it took the second round to stop recording the gap and
+close it.
+
+**A Windows-only collision, seen once in four runs of the backup classes.** `AtomicWriteAsync` is a
+`File.Move` over the destination; on Windows that fails with a sharing violation when a reader holds
+the file, and the restart test polls `status.json` every ten milliseconds while the sweep replaces it,
+so the sweep logged *"could not read the backup status at startup"* and the test timed out. On Linux —
+the containers — `rename(2)` succeeds under a reader. Pre-existing, outside this change, and named in
+the report rather than papered over with a retry.
+
 ## The extension's half of the backup (2026-09-07, epic 5 story 5)
 
 | Tier | What it drives | Where |
@@ -334,6 +368,11 @@ it belongs in this file.
 | Pure, in process | the watch: who is polled, what a failed read may change, and one message for several accounts | `src_vs_code/src/test/backupWatch.test.ts` |
 | Real files | a download that fails halfway leaves nothing at the chosen path, and does not destroy the archive already there | `src_vs_code/src/test/archiveDownload.test.ts` |
 | The manifest, enforced | the new command has a help article in five languages and a README entry — `helpCoverage` and `listingCoverage` failed on the commit that added it, which is the moment it is cheap to fix | `src_vs_code/src/test/helpCoverage.test.ts`, `listingCoverage.test.ts` |
+| A stubbed `fetch` (#134) | `readTargets`: the shared fixture accepted verbatim, a `404` as `undefined` and not as an empty list, a row projected onto the six contract fields so a leaked credential never reaches a page, a shape refused with a sentence; the long deadline on a save that carries destinations, proved by a slow stub that a schedule-only save gives up on; `lastSuccessAt` optional and an instant | `src_vs_code/src/test/orgBackupClient.test.ts` |
+| Pure, in process (#134) | the destinations helpers: the server's refusals mirrored, loopback http, both halves or neither, the first save, the region blanked for Azure, empty credentials OMITTED, key-less requests from key-less summaries, the list with one row replaced or removed | `src_vs_code/src/test/backupTargets.test.ts` |
+| Pure, in process (#134) | the tab's destinations half: the list drawn with `re-enter` per row, no form against an older server, the whole list sent with the sealed ones key-less, the HTML after a FAILED save holding the endpoint and none of the four typed credential strings, the list re-read after a failure, an identity change asked for both halves, remove asking first and a dismissed dialog sending nothing, every status handed to the tree seam, a message refused at the door | `src_vs_code/src/test/backupTab.test.ts` |
+| The page script, RUN (#134) | what the destination form posts, the credential halves named for the kind, the region row following the kind, Edit and Remove posting the row they sit on, and the script touching no `setState` | `src_vs_code/src/test/backupPage.test.ts` (over `miniDom.ts`) |
+| Pure, in process (#134) | the Backup row telling the last run from the last success, an older server drawn as before, and the Vaults row naming pending shares only when there are some | `src_vs_code/src/test/serverItems.test.ts` |
 
 **The two tests that exist because their absence would be invisible.** A settings save that names no
 destinations must send NO `targets` member — a client that defaulted the field to `[]` would wipe every

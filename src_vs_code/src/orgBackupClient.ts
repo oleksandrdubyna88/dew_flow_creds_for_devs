@@ -1,3 +1,4 @@
+import { describeTarget, isTargetKind, targetProblem } from './backupTargets';
 import { CorpApiClient } from './corpApiClient';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from './serverTransport';
 import { StoredAccount } from './types';
@@ -54,6 +55,15 @@ export interface BackupStatus {
   readonly scheduleHourUtc: number;
   readonly retentionDays: number;
   readonly lastRunAt: number;
+  /**
+   * When the last run whose verdict was `ok` finished — a DIFFERENT instant from `lastRunAt`, which
+   * a failed run also moves (added 2026-09-24, #134). `0` is "no recorded success".
+   *
+   * <p>Optional for the reason `configuredTargetKinds` is: an older server omits it, and the shape
+   * guard must not reject that server's perfectly good status. Absent means "this server predates the
+   * field", and a row then draws as it did before.</p>
+   */
+  readonly lastSuccessAt?: number;
   readonly lastResult: string;
   readonly lastError: string;
   /** Derived by the server from the persisted result, never a second stored field. */
@@ -98,6 +108,37 @@ export function isNoBackupHere(status: BackupStatus): boolean {
   return status.lastResult === NO_BACKUP_HERE.lastResult;
 }
 
+/**
+ * The two words this build knows for a destination's credentials: the server can open what is sealed,
+ * or it cannot and the form says "re-enter".
+ *
+ * <p>The field itself is a `string`, not this union: a NEWER server may send a word this build does
+ * not know (the drives plan adds `withdrawn`), and an older extension against a newer server must be
+ * served normally — the page draws an unknown word as needing attention rather than refusing the whole
+ * list as a shape it cannot read.</p>
+ */
+export const SEALED = 'sealed';
+
+export const UNOPENABLE = 'unopenable';
+
+/**
+ * A configured destination as `GET /api/org/backup/targets` lists it: where it is, and whether the
+ * server can open its sealed half. Never the sealed half, never a credential.
+ *
+ * <p>`contract/backup-targets-v1.json` is the exact array both halves assert — the server's endpoint
+ * test compares the route's answer to it, and `orgBackupClient.test.ts` feeds it to `readTargets`;
+ * `scripts/backup-targets-live.cjs` drives the two against each other live.</p>
+ */
+export interface BackupTargetSummary {
+  readonly kind: string;
+  readonly endpoint: string;
+  readonly region: string;
+  readonly bucket: string;
+  readonly prefix: string;
+  /** `SEALED`, `UNOPENABLE`, or a word from a server newer than this build — never empty. */
+  readonly credentials: string;
+}
+
 /** A destination as an administrator describes it. Credentials omitted keep the ones already sealed. */
 export interface BackupTargetInput {
   readonly kind: string;
@@ -138,6 +179,7 @@ export const NO_BACKUP_HERE: BackupStatus = {
   scheduleHourUtc: 3,
   retentionDays: 30,
   lastRunAt: 0,
+  lastSuccessAt: 0,
   lastResult: 'no backup here',
   lastError: '',
   running: false,
@@ -148,7 +190,24 @@ export const NO_BACKUP_HERE: BackupStatus = {
 };
 
 /**
- * Drives the six admin-only backup routes — `GET`/`PUT` settings, mint, run, download.
+ * How long a save that carries destinations may take.
+ *
+ * <p>The server proves every NEW or CHANGED destination with a write and a delete at the bucket
+ * before it answers, each half on a twenty-second deadline, all destinations together — so a save's
+ * worst case is forty seconds on the server, behind a reverse proxy, over a corporate VPN. The
+ * client's ordinary sixty is a wall one slow bucket walks into, and a wait cut short here leaves the
+ * person told "unreachable" about a save that then lands. Three times the server's worst case.</p>
+ */
+export const TARGET_SAVE_TIMEOUT_MS = 120_000;
+
+/** The deadline a settings save gets: the long one when it carries destinations, `base` otherwise. */
+export function saveDeadlineMs(settings: BackupSettingsInput, base: number): number {
+  return settings.targets === undefined ? base : Math.max(base, TARGET_SAVE_TIMEOUT_MS);
+}
+
+/**
+ * Drives the seven admin-only backup routes — status, the destinations, `PUT` settings, mint, run,
+ * download, and the one that answers `501`.
  *
  * <p>On `CorpApiClient` like every corporate client since epic 1, never a fourth copy of the
  * bearer/contract/timeout plumbing. What it adds is the three things the transport cannot know: the
@@ -165,12 +224,42 @@ export const NO_BACKUP_HERE: BackupStatus = {
 export class OrgBackupClient {
   private readonly api: CorpApiClient;
 
+  private readonly timeoutMs: number;
+
   constructor(
     readonly location: string,
     tokenFor: (account: StoredAccount) => Promise<string | undefined>,
     timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
   ) {
     this.api = new CorpApiClient(location, tokenFor, timeoutMs);
+    this.timeoutMs = timeoutMs;
+  }
+
+  /**
+   * The configured destinations — or `undefined` for a server older than destination editing.
+   *
+   * <p><b>The two answers are opposite facts and must not be flattened into one.</b> An empty list
+   * is a server that answered and holds no destination; `undefined` is a server with no such route,
+   * and against it the tab must not offer the form at all: `PUT /settings` replaces the whole list,
+   * so a save without the list would silently erase the destinations this build cannot see. The
+   * page names which side is older.</p>
+   *
+   * <p>Every row is PROJECTED onto the six fields the contract names, so whatever a server adds to a
+   * row — and a compromised one could add anything — never reaches a page.</p>
+   */
+  async readTargets(account: StoredAccount): Promise<readonly BackupTargetSummary[] | undefined> {
+    const response = await this.api.request(account, '/api/org/backup/targets');
+    if (response.status === 404) {
+      return undefined;
+    }
+    if (!response.ok) {
+      throw new Error(await this.api.refusal(response));
+    }
+    const body: unknown = await response.json().catch(() => undefined);
+    if (!isTargetSummaries(body)) {
+      throw new Error('The server answered the backup destinations in a shape this build cannot read.');
+    }
+    return body.map(summaryOf);
   }
 
   /** Everything the page draws, or the "no backup here" state for a server that predates it. */
@@ -193,17 +282,20 @@ export class OrgBackupClient {
    * Save the schedule, the window, and — when given — the destinations.
    *
    * <p>Validated HERE first, with the sentences the server would answer, so a typo does not cost a
-   * round trip to a save that also probes every destination over the network.</p>
+   * round trip to a save that also probes every changed destination over the network. A save that
+   * carries destinations waits `TARGET_SAVE_TIMEOUT_MS` for exactly that reason.</p>
    */
   async saveSettings(account: StoredAccount, settings: BackupSettingsInput): Promise<void> {
     const problem = settingsProblem(settings);
     if (problem.length > 0) {
       throw new Error(problem);
     }
-    const response = await this.api.request(account, '/api/org/backup/settings', {
-      method: 'PUT',
-      body: JSON.stringify(settings),
-    });
+    const response = await this.api.request(
+      account,
+      '/api/org/backup/settings',
+      { method: 'PUT', body: JSON.stringify(settings) },
+      saveDeadlineMs(settings, this.timeoutMs),
+    );
     if (!response.ok) {
       throw new Error(await this.api.refusal(response));
     }
@@ -287,10 +379,33 @@ export function settingsProblem(settings: BackupSettingsInput): string {
   if (!wholeNumberWithin(settings.scheduleHourUtc, 0, 23)) {
     return 'The hour must be a whole number from 0 to 23, in UTC — the same clock on every machine.';
   }
-  return wholeNumberWithin(settings.retentionDays, 1, Number.MAX_SAFE_INTEGER)
-    ? ''
-    : 'The retention window must be at least one day. A window of zero would ask this server to '
+  if (!wholeNumberWithin(settings.retentionDays, 1, Number.MAX_SAFE_INTEGER)) {
+    return 'The retention window must be at least one day. A window of zero would ask this server to '
       + 'delete every archive it has.';
+  }
+  return targetsProblem(settings.targets ?? []);
+}
+
+/**
+ * The first destination the server would refuse, named — checked here so a typo costs no probe.
+ *
+ * <p>Whether a destination sent WITHOUT credentials is a first save — which needs them — is a fact
+ * about the server's list, which the tab holds and this layer does not; a key-less request is
+ * therefore accepted here as the "keep the sealed ones" it usually is, and the tab asks the
+ * first-save question at the form.</p>
+ */
+function targetsProblem(targets: readonly BackupTargetInput[]): string {
+  // Only the kinds this build knows are checked here. The list is always sent WHOLE, so a newer
+  // server's drive destination rides along in every save from an older extension; refusing it on this
+  // side would make every edit on that deployment impossible until the extension is updated. The
+  // server knows that kind, and it decides.
+  for (const target of targets.filter((candidate) => isTargetKind(candidate.kind))) {
+    const problem = targetProblem(target, true);
+    if (problem.length > 0) {
+      return `${describeTarget(target)}: ${problem}`;
+    }
+  }
+  return '';
 }
 
 /** Both bounds are the server's own, and both are inclusive. */
@@ -368,11 +483,59 @@ const TARGET_SHAPE: Readonly<Record<string, string>> = {
 function isBackupStatus(body: unknown): body is BackupStatus {
   const status = body as Record<string, unknown> | null;
   return matches(status, STATUS_SHAPE)
-    && isInstant(status.lastRunAt)
+    && instantsOk(status)
     && Array.isArray(status.targets)
     && status.targets.every(
       (target: unknown) => matches(target, TARGET_SHAPE)
         && isInstant((target as Record<string, unknown>).at));
+}
+
+/** The run's instant, and the success's when the server is new enough to send one. */
+function instantsOk(status: Record<string, unknown>): boolean {
+  return isInstant(status.lastRunAt) && optionalInstant(status.lastSuccessAt);
+}
+
+/** Absent on an older server, and an instant on a newer one — never anything else. */
+function optionalInstant(value: unknown): boolean {
+  return value === undefined || isInstant(value);
+}
+
+function isTargetSummaries(body: unknown): body is unknown[] {
+  return Array.isArray(body) && body.every(isTargetSummary);
+}
+
+/** The six fields of one configured destination, and what each must be. */
+const SUMMARY_SHAPE: Readonly<Record<string, string>> = {
+  kind: 'string',
+  endpoint: 'string',
+  region: 'string',
+  bucket: 'string',
+  prefix: 'string',
+  credentials: 'string',
+};
+
+/**
+ * Every field present and of its kind, and a credentials WORD — any non-empty one.
+ *
+ * <p>Not a closed set: a newer server may send a word this build does not know, and refusing its
+ * whole list for it would break the rule that an older extension is served normally. Empty is no
+ * word, and is refused.</p>
+ */
+function isTargetSummary(row: unknown): boolean {
+  return matches(row, SUMMARY_SHAPE) && (row.credentials as string).length > 0;
+}
+
+/** Exactly the contract's six fields, whatever else the row carried. */
+function summaryOf(row: unknown): BackupTargetSummary {
+  const record = row as Record<string, string>;
+  return {
+    kind: record.kind,
+    endpoint: record.endpoint,
+    region: record.region,
+    bucket: record.bucket,
+    prefix: record.prefix,
+    credentials: record.credentials,
+  };
 }
 
 /** The widest instant a `Date` can render, which is what every caller does with these. */

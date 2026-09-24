@@ -51,7 +51,7 @@ Accept: application/json
   const status = response.parsedBody;
   test('the shape a page draws from, with running DERIVED rather than stored twice', () => {
     for (const field of ['configured', 'keyState', 'scheduleHourUtc', 'retentionDays',
-                         'lastRunAt', 'lastResult', 'lastError', 'running',
+                         'lastRunAt', 'lastSuccessAt', 'lastResult', 'lastError', 'running',
                          'localArchiveBytes', 'localArchiveName']) {
       assert.ok(field in status, `${field} is part of the document`);
     }
@@ -59,9 +59,73 @@ Accept: application/json
     assert.equal(status.running, status.lastResult === 'in progress',
       'running is derived from the persisted result — two fields could disagree');
   });
+  test('the last SUCCESS is its own instant, and a server that never ran spells it 0', () => {
+    // lastRunAt is when the last run last changed state (its start while it runs, its end after),
+    // failed ones included; lastSuccessAt is when the last
+    // run whose verdict was ok finished. They are different numbers on a bad night, and the row
+    // that decides how much a restore would lose needs the second one (#134).
+    assert.equal(typeof status.lastSuccessAt, 'number');
+    assert.ok(status.lastSuccessAt >= 0);
+    if (status.lastRunAt === 0) {
+      assert.equal(status.lastSuccessAt, 0, 'no run, no success');
+    }
+  });
   test('the schedule and the window are the shell backup\'s own defaults on a fresh server', () => {
     assert.ok(status.scheduleHourUtc >= 0 && status.scheduleHourUtc <= 23);
     assert.ok(status.retentionDays >= 1);
+  });
+}}
+
+###
+
+# @name org_backup_targets_is_admin_only
+GET {{baseUrl}}/api/org/backup/targets
+Authorization: Bearer {{token}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 403
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('where the archives go is an administrator question, and the refusal says so', () => {
+    assert.ok(typeof response.parsedBody.error === 'string' && response.parsedBody.error.length > 0);
+  });
+}}
+
+###
+
+# @name org_backup_targets_before_any_destination
+GET {{baseUrl}}/api/org/backup/targets
+Authorization: Bearer {{officerToken}}
+X-Creds-Contract: {{contract}}
+Accept: application/json
+
+?? status == 200
+?? header content-type matches ^application\/json
+
+{{
+  const assert = require('node:assert');
+  test('a list — empty on a server with no destination, and never null', () => {
+    // The read that makes editing ONE destination possible: PUT /settings replaces the whole list,
+    // so a client that cannot read it would have to retype every destination to change one — or
+    // send the one it knows and silently erase the rest (#134). An older server has no such route
+    // and answers 404, which the extension reads as "do not offer the form here".
+    assert.ok(Array.isArray(response.parsedBody), `an array, got ${typeof response.parsedBody}`);
+  });
+  test('and no row ever carries a credential or the sealed half, in any spelling', () => {
+    // The populated shape is pinned by contract/backup-targets-v1.json, which
+    // BackupEndpointTests.TheTargetsRouteAnswersTheSharedFixtureShape holds the route to and the
+    // extension holds readTargets to; over the wire this suite can only hold the empty list.
+    const raw = JSON.stringify(response.parsedBody);
+    for (const secret of ['"iv"', '"tag"', '"data"', 'accessKeyId', 'secretAccessKey', 'accountKey']) {
+      assert.ok(!raw.includes(secret), `the listing must not carry ${secret}`);
+    }
+    for (const row of response.parsedBody) {
+      assert.deepEqual(Object.keys(row).sort(), ['bucket', 'credentials', 'endpoint', 'kind', 'prefix', 'region']);
+      assert.ok(['sealed', 'unopenable'].includes(row.credentials));
+    }
   });
 }}
 
@@ -350,13 +414,23 @@ Accept: application/json
   });
 }}
 
-# The two statuses the wire cannot provoke from outside:
+# The statuses the wire cannot provoke from outside:
 #
 # @uncovered 409 POST /api/org/backup/run — a second run while one is live. Provoking it means racing
 #   a real archive build from a request file; the endpoint tests hold the claim directly instead.
 # @uncovered 400 PUT /api/org/backup/settings — a target that is well-formed and UNREACHABLE. The
 #   refusal needs a host that fails to resolve, and a request file that depends on DNS failing is a
 #   request file that fails differently on every network. BackupEndpointTests drives it in-process.
+# @uncovered 409 PUT /api/org/backup/settings — a destination with credentials on a deployment with
+#   no Vault:LoginKey:Kek. This suite's server has one (http/README.md); a second stack without one
+#   would cost more than the branch is worth. BackupEndpointTests drives it on Corp.ServerWithoutKek.
+# @uncovered 204 PUT /api/org/backup/settings with a NON-EMPTY targets list — every saved destination
+#   is proved with a real write-and-delete at the bucket first, so it needs a reachable one with
+#   credentials nobody should commit. The planner's branches (kept keys, the region carried, only the
+#   changed destination probed, an unopenable sibling left alone) run in BackupEndpointTests over a
+#   stubbed transport, and the pure decisions in BackupTargetPlanTests.
+# @uncovered 200 GET /api/org/backup/targets with rows — the same reason: a row exists only after a
+#   proved save. contract/backup-targets-v1.json is the populated shape, asserted by both halves.
 # @uncovered 200 GET /api/org/backup/archive — streaming the archive needs the run above to have
 #   FINISHED, which is a wait this suite has no way to express. Asserted over real HTTP in
 #   BackupEndpointTests, including the CVBK marker and the Content-Length matching the body.

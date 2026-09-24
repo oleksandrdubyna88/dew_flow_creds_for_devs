@@ -3,17 +3,26 @@ import * as vscode from 'vscode';
 import { writeArchiveTo } from './archiveDownload';
 import { isBackupPageMessage } from './backupPage';
 import { BackupTab } from './backupTab';
-import { MintedBackupKey, OrgBackupClient } from './orgBackupClient';
+import { confirmDestructive } from './dialogs';
+import { BackupStatus, MintedBackupKey, OrgBackupClient } from './orgBackupClient';
 import { StoredAccount } from './types';
 
 /**
  * The **Server backup** tab: the `vscode` half, and only that.
  *
  * <p>It creates the panel, routes its messages to `BackupTab`, raises the one modal in this feature
- * that must not be missable, and streams the archive to a path a person chose. Everything that
- * decides anything is in `backupTab.ts` and `backupPage.ts`, which import no `vscode`.</p>
+ * that must not be missable, asks before a destination is removed, and streams the archive to a
+ * path a person chose. Everything that decides anything is in `backupTab.ts` and `backupPage.ts`,
+ * which import no `vscode`.</p>
+ *
+ * <p>`record` is where every status the tab reads is also handed — the tree's Backup row, so it
+ * moves the moment the tab acts rather than on the next readiness tick.</p>
  */
-export function showOrgBackup(client: OrgBackupClient, account: StoredAccount): void {
+export function showOrgBackup(
+  client: OrgBackupClient,
+  account: StoredAccount,
+  record?: (status: BackupStatus) => void,
+): void {
   const panel = vscode.window.createWebviewPanel(
     'credSshOrgBackup',
     `CredsForDevs: Server backup — ${account.email}`,
@@ -35,6 +44,16 @@ export function showOrgBackup(client: OrgBackupClient, account: StoredAccount): 
     },
     showKey: (minted) => showKeyOnce(minted, account),
     saveArchive: () => saveArchive(client, account),
+    // The same modal every other destructive action here goes through. The archives already at the
+    // destination are not touched by this — only this server stops sending new ones — and the
+    // sentence says so before a button that cannot be undone from this screen.
+    confirmRemove: (what) => confirmDestructive(
+      `Remove ${what} from ${account.email}'s backup destinations? Archives already at that destination `
+      + 'stay there; only this server stops sending new ones. Its sealed credentials are removed from '
+      + 'the server and would have to be entered again.',
+      'Remove destination',
+    ),
+    record,
   });
   panel.webview.onDidReceiveMessage((message: unknown) => {
     if (isBackupPageMessage(message)) {

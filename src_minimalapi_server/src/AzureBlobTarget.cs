@@ -71,11 +71,15 @@ public sealed class AzureBlobTarget(
     }
 
     public Task<TargetOutcome> DeleteAsync(string name, CancellationToken ct) =>
+        DeleteWithinAsync(name, _deadlines.Request, ct);
+
+    private Task<TargetOutcome> DeleteWithinAsync(string name, TimeSpan deadline, CancellationToken ct) =>
         SendAsync(
             Signed(HttpMethod.Delete, Blob(name), [], 0, null, blockBlob: false),
-            _deadlines.Request,
+            deadline,
             ct);
 
+    /// <summary>Write a probe blob and delete it — both halves on the probe's deadline, as <see cref="S3Target.UsableAsync"/>.</summary>
     public async Task<TargetOutcome> UsableAsync(CancellationToken ct)
     {
         var probe = Encoding.UTF8.GetBytes("credvault");
@@ -94,7 +98,7 @@ public sealed class AzureBlobTarget(
         {
             return TargetOutcome.Failed($"this container would not accept a write: {put.Why}");
         }
-        var gone = await DeleteAsync(ArchiveTargets.ProbeName, ct);
+        var gone = await DeleteWithinAsync(ArchiveTargets.ProbeName, _deadlines.Probe, ct);
         return gone.Ok
             ? TargetOutcome.Fine
             : TargetOutcome.Failed(

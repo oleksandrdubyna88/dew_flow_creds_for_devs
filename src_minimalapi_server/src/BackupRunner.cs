@@ -109,14 +109,21 @@ public sealed class BackupRunner(
         var startedAt = clock.GetUtcNow();
         try
         {
+            // `previous with`, like every writer of this file: the instant of the last SUCCESS travels
+            // through the in-progress status, the refusal, the failure and the finish untouched, and
+            // only a finish whose verdict is ok advances it. A writer that built the record from
+            // scratch would erase it on the first bad night — which is the night it is needed.
+            var previous = await backups.ReadStatusAsync(ct);
             await backups.WriteStatusAsync(
-                new BackupStatus(
-                    startedAt.ToUnixTimeMilliseconds(),
-                    BackupRunResults.InProgress,
+                previous with
+                {
+                    LastRunAt = startedAt.ToUnixTimeMilliseconds(),
+                    LastResult = BackupRunResults.InProgress,
                     // WHO is running it, so the sweep's message can name the process that stopped.
-                    Owner(),
-                    0,
-                    []),
+                    LastError = Owner(),
+                    Bytes = 0,
+                    Targets = [],
+                },
                 ct);
         }
         catch (Exception e)
@@ -158,9 +165,16 @@ public sealed class BackupRunner(
     {
         using (ticket)
         {
+            var previous = await backups.ReadStatusAsync(ct);
             await backups.WriteStatusAsync(
-                new BackupStatus(
-                    clock.GetUtcNow().ToUnixTimeMilliseconds(), BackupRunResults.Refused, why, 0, []),
+                previous with
+                {
+                    LastRunAt = clock.GetUtcNow().ToUnixTimeMilliseconds(),
+                    LastResult = BackupRunResults.Refused,
+                    LastError = why,
+                    Bytes = 0,
+                    Targets = [],
+                },
                 ct);
             log.LogWarning("a claimed backup run was given back before it started: {Why}", why);
         }
@@ -438,13 +452,22 @@ public sealed class BackupRunner(
         CancellationToken ct)
     {
         var archive = backups.NewestArchive();
+        var finishedAt = clock.GetUtcNow().ToUnixTimeMilliseconds();
+        var verdict = Verdict(uploads);
+        var previous = await backups.ReadStatusAsync(ct);
         await backups.WriteStatusAsync(
-            new BackupStatus(
-                clock.GetUtcNow().ToUnixTimeMilliseconds(),
-                Verdict(uploads),
-                Trouble(uploads),
-                archive.Bytes,
-                [.. uploads]),
+            previous with
+            {
+                LastRunAt = finishedAt,
+                LastResult = verdict,
+                LastError = Trouble(uploads),
+                Bytes = archive.Bytes,
+                Targets = [.. uploads],
+                // Only `ok` is a success. A partial run reached some destinations and not others, and
+                // "when did the last COMPLETE copy leave" is not answered by it — a half-failing
+                // deployment would otherwise show a fresh success for months (owner assumption, #134).
+                LastSuccessAt = verdict == BackupRunResults.Succeeded ? finishedAt : previous.LastSuccessAt,
+            },
             ct);
         log.LogInformation(
             "backup taken: {Files} file(s), {Bytes} bytes sealed into {Name} in {Seconds}s",
@@ -462,13 +485,16 @@ public sealed class BackupRunner(
         IReadOnlyList<BackupTargetStatus> uploads,
         CancellationToken ct)
     {
+        var previous = await backups.ReadStatusAsync(ct);
         await backups.WriteStatusAsync(
-            new BackupStatus(
-                clock.GetUtcNow().ToUnixTimeMilliseconds(),
-                BackupRunResults.Failed,
-                failure.Message,
-                0,
-                [.. uploads]),
+            previous with
+            {
+                LastRunAt = clock.GetUtcNow().ToUnixTimeMilliseconds(),
+                LastResult = BackupRunResults.Failed,
+                LastError = failure.Message,
+                Bytes = 0,
+                Targets = [.. uploads],
+            },
             ct);
         log.LogError(
             failure,

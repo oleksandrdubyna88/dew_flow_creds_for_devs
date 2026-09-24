@@ -307,18 +307,28 @@ public sealed record BackupSettings(
 /// The last run's outcome, in the words a person reads on the page.
 /// </summary>
 /// <remarks>
-/// <c>LastRunAt == 0</c> is "never", not "the epoch": the alternative is a nullable that every caller
-/// has to remember to check, and this repository's rule is that business logic does not carry null.
-/// The distinction is stated here so the page does not have to guess it.
+/// <para><c>LastRunAt == 0</c> is "never", not "the epoch": the alternative is a nullable that every
+/// caller has to remember to check, and this repository's rule is that business logic does not carry
+/// null. The distinction is stated here so the page does not have to guess it.</para>
+/// <para><b><c>LastSuccessAt</c> is a different instant from <c>LastRunAt</c></b>, and the difference is
+/// the number a restore depends on. <c>LastRunAt</c> is when the last run last changed state — its start
+/// while it is in progress, its end (finish, failure or refusal) afterwards — failed ones included;
+/// <c>LastSuccessAt</c> is when the last run whose verdict was <c>ok</c> finished — a <c>partial</c> run
+/// reached some destinations and not others, and "when did the last complete copy leave" is not
+/// answered by it. Every writer carries the previous value forward; only a finish with the <c>ok</c>
+/// verdict advances it. <c>0</c> is "no recorded success": a status file written before this field
+/// existed reads its <c>ok</c> run as its last success at the read (<c>BackupStore.ReadStatusAsync</c>),
+/// and a legacy <c>failed</c> cannot establish one.</para>
 /// </remarks>
 public sealed record BackupStatus(
     long LastRunAt,
     string LastResult,
     string LastError,
     long Bytes,
-    IReadOnlyList<BackupTargetStatus> Targets)
+    IReadOnlyList<BackupTargetStatus> Targets,
+    long LastSuccessAt)
 {
-    public static readonly BackupStatus NeverRun = new(0, "never run", string.Empty, 0, []);
+    public static readonly BackupStatus NeverRun = new(0, "never run", string.Empty, 0, [], 0);
 }
 
 /// <summary>
@@ -342,6 +352,7 @@ public sealed record BackupStatusDto(
     int ScheduleHourUtc,
     int RetentionDays,
     long LastRunAt,
+    long LastSuccessAt,
     string LastResult,
     string LastError,
     bool Running,
@@ -351,12 +362,14 @@ public sealed record BackupStatusDto(
     IReadOnlyList<BackupTargetDto> Targets);
 
 /// <summary>
-/// What an admin may change: when a backup runs, and how long its archives are kept.
+/// What an admin may change: when a backup runs, how long its archives are kept, and where they go.
 /// </summary>
 /// <remarks>
-/// No credential fields, deliberately. The cloud targets are story 4 and there is nothing to hold
-/// credentials for yet; an admin API that accepts secrets it does nothing with is worse than one that
-/// does not accept them.
+/// <c>Targets</c> is nullable because its ABSENCE means something: omitted is "leave the destinations
+/// alone", an empty list is "remove them all", and a non-empty one is the whole new set. A client that
+/// predates destinations sends no member at all, and a shape that defaulted it to empty would wipe every
+/// destination on the next schedule edit. The credentials inside travel here and nowhere back — see
+/// <see cref="BackupTargetRequest"/>.
 /// </remarks>
 public sealed record BackupSettingsRequest(
     int ScheduleHourUtc,
@@ -394,6 +407,29 @@ public sealed record BackupTargetRequest(
     string? SecretAccessKey,
     string? AccountName,
     string? AccountKey);
+
+/// <summary>
+/// A configured destination as <c>GET /api/org/backup/targets</c> lists it: where it is, and whether
+/// this server can open what is sealed for it. Never the sealed half, never a credential.
+/// </summary>
+/// <remarks>
+/// <para><c>Credentials</c> is <c>"sealed"</c> when this server can open the record's credentials and
+/// <c>"unopenable"</c> when it cannot — a KEK that changed, a settings file restored from elsewhere, no
+/// KEK at all. It is the one fact the destinations form needs in order to say <i>re-enter them</i> on
+/// the right row, and it is a WORD rather than the reason: the reason is in the server's log, and a
+/// page polled by administrators is not where a deployment's cipher trouble is explained.</para>
+/// <para>Its own route rather than a field on the status, by the 2026-09-12 decision that the STATUS
+/// names kinds and nothing operational: the status is polled once per readiness cycle for every
+/// administrator, and this is read once, when the backup tab opens, by the same admin gate.
+/// <c>contract/backup-targets-v1.json</c> is the sample both implementations assert.</para>
+/// </remarks>
+public sealed record BackupTargetSummaryDto(
+    string Kind, string Endpoint, string Region, string Bucket, string Prefix, string Credentials)
+{
+    public const string Sealed = "sealed";
+
+    public const string Unopenable = "unopenable";
+}
 
 /// <summary>
 /// A destination as the status page sees it — where it is and how it went, never its keys.

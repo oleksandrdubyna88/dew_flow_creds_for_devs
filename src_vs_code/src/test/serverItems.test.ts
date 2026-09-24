@@ -70,7 +70,9 @@ function world(): Items {
 
 const ACCOUNT: StoredAccount = { accountId: 'a1', email: 'one@example.com', provider: 'microsoft' };
 
-const METRICS = { version: '0.6.0', vaults: 41, vaultBytesOnDisk: 1_288_490_188 } as ServerMetrics;
+const METRICS = {
+  version: '0.6.0', vaults: 41, vaultBytesOnDisk: 1_288_490_188, pendingShares: 0, shareBytesOnDisk: 0,
+} as ServerMetrics;
 
 /** A fixed formatter, so the assertion is about the row and not about the runner's locale. */
 const AT = (at: number): string => `stamped(${at})`;
@@ -206,6 +208,40 @@ test('the footprint reuses the byte formatter the metrics page already has', () 
   assert.equal(item.description, '41 · 1.2 GiB');
 });
 
+test('pending shares are named on the Vaults row only when there are some (#134)', () => {
+  // The server has reported them since 2026-08-28 and the metrics page draws them; the row counted
+  // vault files alone and read as the whole footprint. A share waiting for its recipient is bytes on
+  // the same disk, and a row that says nothing when there are none stays the one-glance row it was.
+  const { serverVaultsItem } = world();
+
+  const some = serverVaultsItem({
+    account: ACCOUNT,
+    metrics: { ...METRICS, pendingShares: 3, shareBytesOnDisk: 12_288 },
+  }) as Item;
+  assert.equal(some.description, '41 · 1.2 GiB · 3 pending shares (12.0 KiB)');
+
+  const one = serverVaultsItem({
+    account: ACCOUNT,
+    metrics: { ...METRICS, pendingShares: 1, shareBytesOnDisk: 512 },
+  }) as Item;
+  assert.equal(one.description, '41 · 1.2 GiB · 1 pending share (512 B)');
+
+  const none = serverVaultsItem({ account: ACCOUNT, metrics: METRICS }) as Item;
+  assert.equal(none.description, '41 · 1.2 GiB', 'nothing pending, nothing said');
+});
+
+test('a pending count that is not a positive number says nothing about shares (#134)', () => {
+  // A malformed document may carry `NaN`, and "could not tell" is spelled negative on this server.
+  // Both must read as "nothing pending" — `Math.max(count, 0)` would print "NaN pending shares",
+  // which is why the row does not use it (SonarCloud S7766 suggested exactly that).
+  const { serverVaultsItem } = world();
+
+  for (const pendingShares of [Number.NaN, -2]) {
+    const item = serverVaultsItem({ account: ACCOUNT, metrics: { ...METRICS, pendingShares } }) as Item;
+    assert.equal(item.description, '41 · 1.2 GiB', `pendingShares = ${String(pendingShares)}`);
+  }
+});
+
 // --- the backup row --------------------------------------------------------------------------
 
 test('nothing cached yet is "checking…", not "not configured"', () => {
@@ -279,6 +315,49 @@ test('a run that failed or only half-ran is not drawn green', () => {
     const item = serverBackupItem({ account: ACCOUNT, read: { value: status({ lastResult }), at: 0 }, at: AT }) as Item;
     assert.equal(item.iconPath?.id, 'warning', `${lastResult} is not a success`);
   }
+});
+
+test('when the last run was NOT a success the row tells the last run from the last success (#134)', () => {
+  // "Last backup" was the last RUN, failed ones included, so an administrator saw when it last tried
+  // and could not see when it last worked — the number that decides how much a restore would lose.
+  const { serverBackupItem } = world();
+
+  const failed = serverBackupItem({
+    account: ACCOUNT,
+    read: { value: status({ lastResult: 'failed', lastSuccessAt: 1_756_000_000_000 }), at: 0 },
+    at: AT,
+  }) as Item;
+  assert.equal(failed.description, 's3, azure-blob · last run stamped(1757000000000) · last success stamped(1756000000000)');
+  assert.equal(failed.iconPath?.id, 'warning');
+
+  const never = serverBackupItem({
+    account: ACCOUNT,
+    read: { value: status({ lastResult: 'partial', lastSuccessAt: 0 }), at: 0 },
+    at: AT,
+  }) as Item;
+  assert.equal(never.description, 's3, azure-blob · last run stamped(1757000000000) · never succeeded');
+});
+
+test('a run that succeeded IS the last success, and an older server that sends no instant draws as before', () => {
+  // Said once, not twice: a green row already says when the last complete copy left. And a server
+  // that predates lastSuccessAt must not be read as "never succeeded" — nothing is said about a fact
+  // it did not send.
+  const { serverBackupItem } = world();
+
+  const ok = serverBackupItem({
+    account: ACCOUNT,
+    read: { value: status({ lastResult: 'ok', lastSuccessAt: 1_757_000_000_000 }), at: 0 },
+    at: AT,
+  }) as Item;
+  assert.equal(ok.description, 's3, azure-blob · stamped(1757000000000)');
+
+  const older = serverBackupItem({
+    account: ACCOUNT,
+    read: { value: status({ lastResult: 'failed' }), at: 0 },
+    at: AT,
+  }) as Item;
+  assert.equal(older.description, 's3, azure-blob · stamped(1757000000000)', 'no lastSuccessAt on the wire, nothing invented');
+  assert.equal(older.iconPath?.id, 'warning', 'the failure is still a warning');
 });
 
 test('a server that predates configuredTargetKinds falls back to the kinds of the last RUN', () => {

@@ -46,7 +46,20 @@ export class CorpApiClient {
     return headers;
   }
 
-  async request(account: StoredAccount, path: string, init: RequestInit = {}): Promise<Response> {
+  /**
+   * One request, under the client's deadline — or under `timeoutMs` when a caller knows better.
+   *
+   * <p>The one request that knows better is a settings save carrying destinations: the server proves
+   * each changed destination with a write-and-delete at the bucket before it answers, and a wait the
+   * client cuts short leaves the person told "unreachable" about a save that then lands. The
+   * widening rather than a second client (reuse-first, step 2.1).</p>
+   */
+  async request(
+    account: StoredAccount,
+    path: string,
+    init: RequestInit = {},
+    timeoutMs?: number,
+  ): Promise<Response> {
     const token = await this.tokenFor(account);
     if (token === undefined) {
       throw new Error(`No usable token for ${account.email} — sign in again.`);
@@ -56,11 +69,16 @@ export class CorpApiClient {
       return await fetch(this.url(path), {
         ...init,
         headers,
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: AbortSignal.timeout(this.deadline(timeoutMs)),
       });
     } catch (error) {
       throw new Error(`Vault server unreachable (${this.location}): ${describeError(error)}`);
     }
+  }
+
+  /** The caller's deadline when it named one, the client's otherwise. */
+  private deadline(timeoutMs: number | undefined): number {
+    return timeoutMs ?? this.timeoutMs;
   }
 
   /**

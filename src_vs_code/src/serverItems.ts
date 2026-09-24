@@ -135,16 +135,42 @@ export interface ServerVaultsRowInput {
   readonly metrics: ServerMetrics | undefined;
 }
 
-/** How many vaults this server holds, and what they weigh. */
+/** How many vaults this server holds, what they weigh — and what is waiting to be delivered. */
 export function serverVaultsItem(input: ServerVaultsRowInput): vscode.TreeItem {
   const item = new vscode.TreeItem('Vaults', vscode.TreeItemCollapsibleState.None);
   item.id = `serverVaults:${input.account.accountId}`;
-  // `formatBytes`, not a second byte formatter: that one already answers `unknown` for a negative,
-  // which is how this server spells "could not tell".
-  item.description = input.metrics === undefined
-    ? CHECKING
-    : `${input.metrics.vaults} · ${formatBytes(input.metrics.vaultBytesOnDisk)}`;
+  item.description = input.metrics === undefined ? CHECKING : footprintOf(input.metrics);
   return item;
+}
+
+/**
+ * `41 · 1.2 GiB`, and `· 3 pending shares (12.0 KiB)` only when there are some.
+ *
+ * <p>The row counted vault files alone and read as the whole footprint (#134); a share waiting for
+ * its recipient is bytes on the same disk, already reported by the server and already drawn on the
+ * metrics page. Said only when non-zero, so the one-glance row stays one glance. `formatBytes`, not
+ * a second byte formatter: that one already answers `unknown` for a negative, which is how this
+ * server spells "could not tell".</p>
+ */
+function footprintOf(metrics: ServerMetrics): string {
+  const vaults = `${metrics.vaults} · ${formatBytes(metrics.vaultBytesOnDisk)}`;
+  const pending = positiveCount(metrics.pendingShares);
+  if (pending === 0) {
+    return vaults;
+  }
+  const noun = pending === 1 ? 'share' : 'shares';
+  return `${vaults} · ${pending} pending ${noun} (${formatBytes(metrics.shareBytesOnDisk)})`;
+}
+
+/**
+ * A positive count, or 0 for anything else — a document from before the field, a `NaN`, or the
+ * negative this server uses for "could not tell".
+ *
+ * <p>Not `Math.max(count, 0)`, which SonarCloud S7766 suggests: that returns `NaN` for `NaN` and the
+ * row then reads "NaN pending shares" (pinned by `serverItems.test.ts`).</p>
+ */
+function positiveCount(count: number): number {
+  return Number.isFinite(count) && count > 0 ? count : 0;
 }
 
 export interface ServerBackupRowInput {
@@ -241,8 +267,28 @@ function configuredBackup(status: BackupStatus, at: (instant: number) => string)
   };
 }
 
+/**
+ * When it last ran — and, when that run was not a success, when one last WAS.
+ *
+ * <p>"Last backup" was the last RUN, failed ones included, so the row said when the deployment last
+ * tried and could not say when it last worked — the number that decides how much a restore would
+ * lose (#134). Two facts only when they differ: a green row already says when the last complete copy
+ * left, and a server that predates `lastSuccessAt` sends none, so nothing is said about it.</p>
+ */
 function whenOf(status: BackupStatus, at: (instant: number) => string): string {
-  return status.lastRunAt === 0 ? 'never' : at(status.lastRunAt);
+  if (status.lastRunAt === 0) {
+    return 'never';
+  }
+  const success = successOf(status, at);
+  return success === '' ? at(status.lastRunAt) : `last run ${at(status.lastRunAt)} · ${success}`;
+}
+
+/** The last success as a second fact, or nothing — see `whenOf`. */
+function successOf(status: BackupStatus, at: (instant: number) => string): string {
+  if (!lastRunFailed(status) || status.lastSuccessAt === undefined) {
+    return '';
+  }
+  return status.lastSuccessAt === 0 ? 'never succeeded' : `last success ${at(status.lastSuccessAt)}`;
 }
 
 export interface CorpSectionsInput {

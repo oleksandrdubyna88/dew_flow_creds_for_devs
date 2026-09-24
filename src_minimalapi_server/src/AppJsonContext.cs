@@ -81,6 +81,8 @@ public sealed record ClientConfigDto(string MicrosoftScope);
 [JsonSerializable(typeof(BackupKeyDto))]
 [JsonSerializable(typeof(BackupTargetRequest))]
 [JsonSerializable(typeof(BackupTargetDto))]
+[JsonSerializable(typeof(BackupTargetSummaryDto))]
+[JsonSerializable(typeof(List<BackupTargetSummaryDto>))]
 [JsonSerializable(typeof(BackupTargetStatus))]
 [JsonSerializable(typeof(SealedTarget))]
 [JsonSerializable(typeof(TargetSecrets))]

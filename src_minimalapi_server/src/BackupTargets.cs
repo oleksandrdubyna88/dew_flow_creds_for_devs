@@ -69,9 +69,14 @@ public sealed record SealedTarget(
     public string Identity => $"{Kind}|{Endpoint}|{Bucket}|{Prefix}";
 
     /// <summary>What a status or a page may see. Never the sealed half.</summary>
-    public string Describe => Kind == TargetKinds.S3
-        ? $"s3 {Bucket}/{Prefix}".TrimEnd('/')
-        : $"azure {Bucket}/{Prefix}".TrimEnd('/');
+    public string Describe => DescribeAs(Kind, Bucket, Prefix);
+
+    /// <summary>
+    /// The same words for a destination that is not sealed yet — a request being decided, an event row
+    /// being written. One spelling, so the history and the page name the same thing the same way.
+    /// </summary>
+    public static string DescribeAs(string kind, string bucket, string prefix) =>
+        (kind == TargetKinds.S3 ? $"s3 {bucket}/{prefix}" : $"azure {bucket}/{prefix}").TrimEnd('/');
 }
 
 /// <summary>
@@ -119,8 +124,33 @@ public sealed class BackupTargets(byte[] kek, IHttpClientFactory clients, TimePr
             Convert.ToBase64String(sealedBytes.Data));
     }
 
-    /// <summary>Open a target's credentials, or nothing when this server cannot.</summary>
+    /// <summary>Open a target's credentials, or nothing when this server cannot — and say so in the log.</summary>
     public TargetSecrets Open(SealedTarget target)
+    {
+        var opened = TryOpen(target);
+        if (opened is null)
+        {
+            log.LogError(
+                "the credentials for backup target {Where} cannot be opened by this server. Its KEK has "
+                + "changed, or the settings file was restored from elsewhere; re-enter them.",
+                target.Describe);
+        }
+        return opened ?? TargetSecrets.None;
+    }
+
+    /// <summary>
+    /// Whether this server can open the target's credentials — the listing's question, asked quietly.
+    /// </summary>
+    /// <remarks>
+    /// The same decrypt <see cref="Open"/> makes and NOT a second one, without the error line: a listing
+    /// is read every time the backup tab opens, and a deployment with one unopenable record would
+    /// otherwise write the same error once per tab open for as long as nobody re-entered the keys. The
+    /// run and the probe still go through <see cref="Open"/>, and they still log.
+    /// </remarks>
+    public bool Opens(SealedTarget target) => TryOpen(target) is not null;
+
+    /// <summary>The one AEAD open for a target's credentials; null is "this server cannot".</summary>
+    private TargetSecrets? TryOpen(SealedTarget target)
     {
         try
         {
@@ -136,11 +166,7 @@ public sealed class BackupTargets(byte[] kek, IHttpClientFactory clients, TimePr
         catch (Exception e) when (e is System.Security.Cryptography.CryptographicException
             or FormatException or ArgumentException or JsonException)
         {
-            log.LogError(
-                "the credentials for backup target {Where} cannot be opened by this server. Its KEK has "
-                + "changed, or the settings file was restored from elsewhere; re-enter them.",
-                target.Describe);
-            return TargetSecrets.None;
+            return null;
         }
     }
 

@@ -52,7 +52,7 @@ in the conventions repository. Until one is chosen, items 1–5 are what runs.
 with it rather than with the server — the two halves are deployed separately, which is the whole reason
 this file exists.
 
-**The six `/api/org/backup/*` routes (epic 5).** Every one is behind `RequireAdmin`, so they fall
+**The seven `/api/org/backup/*` routes (epic 5; the seventh, `GET /targets`, is #134).** Every one is behind `RequireAdmin`, so they fall
 under the exclusion above for the same reason epic 3's do: there is no unattended way to reach them
 today, and inventing one would mean putting a token where CI can read it. They are covered before the
 deploy by the `.http` contract suite against a started stack. What a deploy CAN break and a suite

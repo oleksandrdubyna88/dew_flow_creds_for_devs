@@ -80,16 +80,23 @@ public sealed class S3Target(
     }
 
     public Task<TargetOutcome> DeleteAsync(string name, CancellationToken ct) =>
+        DeleteWithinAsync(name, _deadlines.Request, ct);
+
+    private Task<TargetOutcome> DeleteWithinAsync(string name, TimeSpan deadline, CancellationToken ct) =>
         SendAsync(
             Signed(HttpMethod.Delete, Key(name), [], AwsSigV4.EmptyPayloadHash, 0, null),
-            _deadlines.Request,
+            deadline,
             ct);
 
     /// <summary>Write a probe object and delete it, because reading proves nothing about writing.</summary>
+    /// <remarks>
+    /// BOTH halves run on the probe's deadline, not a run's: somebody is watching this one. The delete
+    /// used to run on the two-minute request deadline, so a bucket that accepted the write and then went
+    /// quiet held an administrator's save for 140 seconds — past the client's own deadline (#134).
+    /// </remarks>
     public async Task<TargetOutcome> UsableAsync(CancellationToken ct)
     {
         var probe = Encoding.UTF8.GetBytes("credvault");
-        // The probe's deadline, not a run's: somebody is watching this one.
         var put = await SendAsync(
             Signed(
                 HttpMethod.Put,
@@ -104,7 +111,7 @@ public sealed class S3Target(
         {
             return TargetOutcome.Failed($"this bucket would not accept a write: {put.Why}");
         }
-        var gone = await DeleteAsync(ArchiveTargets.ProbeName, ct);
+        var gone = await DeleteWithinAsync(ArchiveTargets.ProbeName, _deadlines.Probe, ct);
         return gone.Ok
             ? TargetOutcome.Fine
             : TargetOutcome.Failed(

@@ -1,0 +1,18 @@
+[
+  {
+    "kind": "s3",
+    "endpoint": "https://s3.example.com",
+    "region": "eu-central-1",
+    "bucket": "vaults",
+    "prefix": "nightly",
+    "credentials": "sealed"
+  },
+  {
+    "kind": "azure-blob",
+    "endpoint": "https://acct.blob.core.windows.net",
+    "region": "",
+    "bucket": "vaults",
+    "prefix": "nightly",
+    "credentials": "unopenable"
+  }
+]

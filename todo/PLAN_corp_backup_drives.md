@@ -13,6 +13,19 @@
 > save-time probe), [module_deployment.md](../research/module_deployment.md),
 > [PLAN_corp_control_plane.md](../research/PLAN_corp_control_plane.md) (the umbrella's Boundaries
 > table and its growth budgets).
+>
+> **Boundary with [PLAN_backup_destinations_from_vscode.md](../research/PLAN_backup_destinations_from_vscode.md)
+> (built 2026-09-24, #134)** — named on both sides, per the planning rule:
+>
+> | Item | That plan (built) | This plan |
+> |---|---|---|
+> | The destinations list, the form, add/edit/remove, `GET /api/org/backup/targets` | built | reuses; adds two kinds |
+> | Kinds the form offers | `s3`, `azure-blob` — a static credential the admin types | `onedrive`, `gdrive` — no key to type; *Add* for those kinds starts a consent flow instead |
+> | `credentials: "sealed" \| "unopenable"` on a listed destination | defined there | a revoked grant is a THIRD answer this plan adds (`"withdrawn"`) |
+> | Probe on save | new or changed destinations only (`TargetDecision.Probe`) | a drive's "probe" is the token refresh — same planner, same flag |
+>
+> Order: that plan first; it landed the route and the form this one extends. Disjoint: nothing there
+> reads or writes a refresh token; nothing here changes the S3/Azure form.
 
 ## The symptom
 

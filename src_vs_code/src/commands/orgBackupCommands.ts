@@ -3,6 +3,7 @@ import { accountFromTargetOrPick } from '../accountPick';
 import { showOrgBackup } from '../orgBackupPanel';
 import { StorageManager } from '../storageManager';
 import { TransportFactory } from '../transportFactory';
+import { CredTreeDataProvider } from '../treeDataProvider';
 
 /**
  * The one command of epic 5's last story: open the server backup for an account.
@@ -21,6 +22,12 @@ export interface OrgBackupCommandsHost {
   readonly storage: StorageManager;
   /** Where the backup client for an account's server comes from — nothing for a folder or a git remote. */
   readonly transports: TransportFactory;
+  /**
+   * The tree, for the Backup row: every status the tab reads lands in the same cache the backup
+   * watch fills, and the tree repaints — so the row agrees with the tab the moment it acts rather
+   * than on the next readiness tick (#134).
+   */
+  readonly provider: Pick<CredTreeDataProvider, 'server' | 'refresh'>;
 }
 
 export function registerOrgBackupCommands(host: OrgBackupCommandsHost): void {
@@ -42,5 +49,10 @@ async function runOrgBackup(host: OrgBackupCommandsHost, target: unknown): Promi
     );
     return;
   }
-  showOrgBackup(client, account);
+  showOrgBackup(client, account, (status) => {
+    // The same envelope the backup watch writes (corpPolicyWiring.ts), so the next tick and this
+    // agree on what the row holds; the status came from readStatus, never from a guess.
+    host.provider.server.backup.set(account.accountId, { value: status, at: Date.now() });
+    host.provider.refresh();
+  });
 }

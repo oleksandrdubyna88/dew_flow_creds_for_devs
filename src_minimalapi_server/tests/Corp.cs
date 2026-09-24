@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CredVaultServer.Tests;
@@ -45,6 +46,36 @@ internal static class Corp
         ["Vault__CorpRecovery__Threshold"] = "2",
         ["Vault__LoginKey__Kek"] = Kek,
     });
+
+    /// <summary>
+    /// A corp-mode server whose cloud destinations talk to <paramref name="targets"/> — built over a
+    /// <see cref="StubTransport"/> by <see cref="StubTargets"/> — so a save that probes a bucket is a
+    /// request a test can read rather than a round trip to somebody else's service.
+    /// </summary>
+    /// <remarks>
+    /// The same instance the test seals with: a target sealed under one KEK and probed under another is
+    /// a different fact, and <c>BackupStoreTests</c> already pins that one.
+    /// </remarks>
+    public static VaultServer ServerWith(BackupTargets targets) => new(
+        new Dictionary<string, string?>
+        {
+            ["Vault__CorpRecovery__OfficerEmails"] = Officers,
+            ["Vault__CorpRecovery__Threshold"] = "2",
+            ["Vault__LoginKey__Kek"] = Kek,
+        },
+        services => services.AddSingleton(targets));
+
+    /// <summary>The target factory a <see cref="ServerWith"/> server uses: the test KEK over a stubbed transport.</summary>
+    public static BackupTargets StubTargets(StubTransport stub) => new(
+        Convert.FromBase64String(Kek),
+        new StubClients(stub),
+        TimeProvider.System,
+        NullLogger<BackupTargets>.Instance);
+
+    private sealed class StubClients(StubTransport stub) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new(stub, disposeHandler: false);
+    }
 
     /// <summary>
     /// A SECOND server on the same data directory — a restart, as far as the disk is concerned.

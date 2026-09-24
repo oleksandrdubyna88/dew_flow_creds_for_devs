@@ -98,6 +98,23 @@ jobs:
         working-directory: http
         run: npm ci
 
+      # The extension's compiled client half, for the one LIVE check of a contract with two
+      # implementations (testing.md): scripts/backup-targets-live.cjs drives out/orgBackupClient.js
+      # against the server this job starts. Same node the extension's own CI uses.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.x
+      # `--ignore-scripts`: nothing the compile needs runs a lifecycle script, and a dependency's
+      # postinstall is code from the registry running on the runner. `npm run compile` is the
+      # extension's own `tsc -p ./` from node_modules — never `npx`, which installs on demand.
+      # Verified: with scripts ignored, the install still yields node_modules/.bin/tsc and the
+      # compile still emits out/orgBackupClient.js.
+      - name: Build the extension's client half for the live contract check
+        working-directory: src_vs_code
+        run: |
+          npm ci --ignore-scripts
+          npm run compile
+
       # The environment contract, in one place: http/README.md explains why each value is needed.
       # The signing key is minted per run and never leaves this job — whoever holds one can mint a
       # token for any email on the server it configures.
@@ -130,6 +147,10 @@ jobs:
           done
           node .claude/rules/shared/tools/http-run.mjs \
             --require-env VAULT_LOCAL_SIGNING_KEY --env local --target http://127.0.0.1:5099
+          # The REAL TypeScript client against the REAL server, over the wire — the check two green
+          # suites agreeing with contract/backup-targets-v1.json is not. Same exit-code contract:
+          # 1 is a regression, 3 and 4 mean the contract was NOT exercised.
+          node src_vs_code/scripts/backup-targets-live.cjs
 
       # Exit 1 while a route has no request. Every route has one today, so this starts armed
       # rather than as a warning — the state a repository earns by finishing its backfill.
