@@ -5109,6 +5109,8 @@ rules:
 
 ## Not for export (issue #122)
 
+Design record: [PLAN_not_for_export.md](PLAN_not_for_export.md).
+
 An entry can be marked **Not for export** (`EntityMetadata.notForExport`, a box in the form's General
 section). The mark closes the two exits that hand an entry to another PERSON — *Share with…* (either
 transport: the vault server or a shared folder, which both go through `ShareInbox.shareNodes`) and
