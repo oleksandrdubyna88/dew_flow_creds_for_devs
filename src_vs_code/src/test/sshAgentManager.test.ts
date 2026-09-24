@@ -41,8 +41,7 @@ interface FakeServer {
 interface World {
   mod: Manager;
   server(): FakeServer | undefined;
-  /** Modal answers, consumed in order; undefined means the dialog was dismissed. */
-  /** A pending promise stands for a modal nobody has answered yet. */
+  /** Modal answers, consumed in order; undefined means dismissed, a pending promise means unanswered. */
   answers: (string | undefined | Promise<string>)[];
   dialogs: string[];
   env: Record<string, string>;
@@ -319,7 +318,7 @@ test('every signature asks, and the dialog names the key, the fingerprint and th
 
 test('the prompt says WHEN the signature was asked for, on its second line (#131 tail)', async () => {
   // A stopped clock, so the assertion is exact (testing.md: a test about time freezes the clock the
-  // code reads). This prompt has no timeout: one found an hour later still signs, so the time matters.
+  // code reads). The prompt refuses after CONSENT_TIMEOUT_MS; the time says how stale it is.
   const asked = new Date(Date.UTC(2026, 8, 24, 9, 30, 0));
   const w = world({ answers: [ALLOW_ONCE] });
   const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() }, clock: () => asked });
@@ -399,7 +398,10 @@ test('a click AFTER the timeout changes nothing — a late ten-minute Allow open
 });
 
 test('a modal that REJECTS (the window closing under it) is a refusal, not a crash', async () => {
-  const w = world({ answers: [Promise.reject(new Error('the window is closing'))] });
+  // Handled at once, so a load that one day awaits real I/O cannot turn it into an unhandled rejection.
+  const closing = Promise.reject(new Error('the window is closing'));
+  closing.catch(() => undefined);
+  const w = world({ answers: [closing] });
   const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() }, consentTimeoutMs: 1000 });
   await instance.load('a1', keyEntity(KEY_ID, 'prod'));
 
@@ -407,6 +409,7 @@ test('a modal that REJECTS (the window closing under it) is a refusal, not a cra
 
   assert.equal(allowed, false);
   assert.equal(w.logs.some((line) => /no answer/.test(line)), false, 'a rejection is not a timeout');
+  assert.ok(w.logs.some((line) => /the window is closing/.test(line)), 'but it is said, not swallowed');
 });
 
 test('a bound under a minute is said in seconds, never "0 minutes"', async () => {

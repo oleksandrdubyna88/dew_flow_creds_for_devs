@@ -109,7 +109,7 @@ these cleans up after itself on a normal exit; what follows is what to remove af
 | `src_vs_code/scripts/creds-cli-itest.cjs` | `dotnet build src_cli/src/CredsCli.csproj` | a broker listener, an endpoint file |
 | `src_vs_code/scripts/creds-mcp-itest.cjs` | `dotnet build src_mcp/src/CredsMcp.csproj` | a `creds-mcp` child on stdio |
 | `src_vs_code/scripts/masked-run-itest.cjs` | nothing | nothing — the child dies with the pty |
-| `src_vs_code/scripts/ssh-agent-itest.cjs` | Windows, OpenSSH on PATH | a named pipe, freed when the process exits |
+| `src_vs_code/scripts/ssh-agent-itest.cjs` | OpenSSH (`ssh-add`, `ssh-keygen`) — built-in on Windows, on PATH elsewhere; CI runs it on Ubuntu | a named pipe or socket freed when the process exits, and a `creds-agent-itest-*` temp dir (key, stub, manager dir) |
 | `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | WSL + the .NET SDK inside it | a build tree at `/tmp/creds-relay-itest-build` |
 | `src_vs_code/scripts/wsl-agent-relay-itest.cjs` | the same | a `creds relay` process inside the distribution and `/tmp/creds-itest.*` — `wsl -e pkill -f 'creds relay'` |
 | `src_vs_code/scripts/server-transport-itest.cjs` | a Cred Vault Server on `127.0.0.1:5113`, Local auth | nothing of its own |
