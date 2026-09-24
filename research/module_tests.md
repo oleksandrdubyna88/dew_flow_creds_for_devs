@@ -324,6 +324,29 @@ operator's first configuration runs against their own account and which fails lo
 rather than at 03:00. When somebody does point this at a real bucket, that run IS the missing tier and
 it belongs in this file.
 
+## Editing the destinations, and the last success (2026-09-24, #134)
+
+| Tier | What it drives | Where |
+|---|---|---|
+| Pure, in process | the planner's every branch: a kept record carrying the requested region, an unchanged destination neither sealed nor proved, new keys and new identities sealed and proved, the event row's words, one identity twice refused | `src_minimalapi_server/tests/BackupTargetPlanTests.cs` |
+| In-process, over real HTTP, the cloud STUBBED | the same decisions as a client meets them — `VaultServer` now takes service replacements, so `BackupTargets` is built over `StubTransport` and a probe is a request the test reads rather than a DNS lookup: the region saved, the unchanged destination unprobed, the unopenable sibling kept, `409` without a KEK only when sealing, the settings row naming `+`/`-`, and `GET …/targets` byte-equal to the shared fixture | `src_minimalapi_server/tests/BackupEndpointTests.cs` |
+| Real files | the second instant on `status.json` through every writer, and a legacy file reading its `ok` run as its last success | `src_minimalapi_server/tests/BackupRunnerTests.cs`, `BackupStoreTests.cs` |
+| A hung transport | the probe's DELETE giving up on the probe deadline rather than the request's, in both clients | `src_minimalapi_server/tests/BackupTargetTests.cs` |
+| The wire | the targets route's `403` and its empty `200`, and the status shape with `lastSuccessAt`; the populated listing and a proved save are `@uncovered` with their reasons | `http/org/backup.http` |
+| One fixture, two suites | `contract/backup-targets-v1.json` — the server compares the route's answer to it, the extension feeds it to `readTargets` | `BackupEndpointTests.TheTargetsRouteAnswersTheSharedFixtureShape`, `src_vs_code/src/test/orgBackupClient.test.ts` |
+
+**Not a cross-language live run.** The fixture is what the two halves agree on; nothing starts the
+server and drives the TypeScript client against it, and no route here has that. The `.http` suite is
+the live tier for the server's shape, and the extension's shape guard is asserted against the same
+document.
+
+**A Windows-only collision, seen once in four runs of the backup classes.** `AtomicWriteAsync` is a
+`File.Move` over the destination; on Windows that fails with a sharing violation when a reader holds
+the file, and the restart test polls `status.json` every ten milliseconds while the sweep replaces it,
+so the sweep logged *"could not read the backup status at startup"* and the test timed out. On Linux —
+the containers — `rename(2)` succeeds under a reader. Pre-existing, outside this change, and named in
+the report rather than papered over with a retry.
+
 ## The extension's half of the backup (2026-09-07, epic 5 story 5)
 
 | Tier | What it drives | Where |
