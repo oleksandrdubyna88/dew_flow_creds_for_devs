@@ -449,6 +449,38 @@ test('editing a destination and leaving the keys empty sends it key-less — the
   assert.equal(targets.length, 2, 'the sibling is still there');
 });
 
+test('editing a destination whose keys the server CANNOT open asks for both halves again — nothing is sent', async () => {
+  // CodeRabbit, PR #142. Leaving the fields empty means "keep the sealed ones", and for OLD_AZURE there
+  // is nothing the server can keep: the list would save, the tab would say "Destination saved.", and
+  // the nightly run would go on failing exactly as before. Saving ANOTHER row still carries OLD_AZURE
+  // key-less — that sibling rule is the test above and is unchanged.
+  const w = await started();
+  await w.tab.handle({ type: 'editTarget', index: 1 });
+
+  await w.tab.handle({
+    type: 'saveTarget', kind: 'azure-blob', endpoint: 'https://acct.blob.core.windows.net', region: '', bucket: 'vaults', prefix: 'old',
+    accountName: '', accountKey: '',
+  });
+
+  assert.equal(w.saved.length, 0, 'nothing was sent');
+  assert.match(last(w), /cannot open the credentials saved for this destination/);
+  assert.match(last(w), /Edit destination/, 'the form stays open for the two halves');
+});
+
+test('re-entering both halves for an unopenable destination saves it with them', async () => {
+  const w = await started();
+  await w.tab.handle({ type: 'editTarget', index: 1 });
+
+  await w.tab.handle({
+    type: 'saveTarget', kind: 'azure-blob', endpoint: 'https://acct.blob.core.windows.net', region: '', bucket: 'vaults', prefix: 'old',
+    accountName: 'typed-account', accountKey: 'typed-account-key',
+  });
+
+  const targets = sentTargets(w);
+  assert.equal(targets[1].accountName, 'typed-account');
+  assert.equal(targets[1].accountKey, 'typed-account-key');
+});
+
 test('an edit that changes the identity is a NEW destination to the server, and needs both halves', async () => {
   // The keep-the-keys rule matches by kind, endpoint, bucket and prefix. Change the prefix and the
   // server has nothing sealed for that identity — sending it key-less would be refused as a first save.

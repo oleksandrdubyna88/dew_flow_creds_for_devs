@@ -16,6 +16,7 @@ import {
   BackupTargetSummary,
   MintedBackupKey,
   OrgBackupClient,
+  SEALED,
   settingsProblem,
 } from './orgBackupClient';
 import { StoredAccount } from './types';
@@ -339,7 +340,7 @@ export class BackupTab {
     const draft = this.draft ?? EMPTY_DRAFT;
     const edited = normalizeTarget(inputOf(draft, message));
     this.draft = { ...draft, kind: edited.kind, endpoint: edited.endpoint, region: edited.region, bucket: edited.bucket, prefix: edited.prefix };
-    const problem = targetProblem(edited, this.keepsSealed(edited, draft.index));
+    const problem = this.unopenableRefusal(edited, draft.index) || targetProblem(edited, this.keepsSealed(edited, draft.index));
     if (problem.length > 0) {
       this.refuse(`${describeTarget(edited)}: ${problem}`);
       return;
@@ -349,12 +350,33 @@ export class BackupTab {
 
   /**
    * Whether leaving the credentials out means "keep the sealed ones": only an edit whose identity
-   * is still the server's. A prefix changed during the edit is a NEW destination to the server, and
-   * a new destination needs both halves the first time.
+   * is still the server's AND whose sealed credentials the server can open. A prefix changed during
+   * the edit is a NEW destination to the server, and a new destination needs both halves the first
+   * time; a row the server cannot open has nothing to keep.
    */
   private keepsSealed(edited: BackupTargetInput, index: number | undefined): boolean {
+    const row = this.editedRow(edited, index);
+    return row !== undefined && row.credentials === SEALED;
+  }
+
+  /**
+   * The refusal for editing a destination whose credentials the server cannot open, with both
+   * credential fields left empty — or nothing.
+   *
+   * <p>Found by CodeRabbit on PR #142: "keep the sealed ones" was granted by identity alone, so the
+   * list saved, the tab said "Destination saved.", and the nightly run went on failing for want of
+   * credentials nobody had been asked for. Saving ANOTHER row still carries this one key-less — the
+   * server keeps an unopenable sibling as it is — which is why the rule is the EDITED row's only.</p>
+   */
+  private unopenableRefusal(edited: BackupTargetInput, index: number | undefined): string {
+    const row = this.editedRow(edited, index);
+    return row === undefined || row.credentials === SEALED ? '' : keysForUnopenable(edited);
+  }
+
+  /** The row being edited, while the edit keeps its identity — else nothing. */
+  private editedRow(edited: BackupTargetInput, index: number | undefined): BackupTargetSummary | undefined {
     const row = this.row(index);
-    return row !== undefined && identityOf(row) === identityOf(edited);
+    return row !== undefined && identityOf(row) === identityOf(edited) ? row : undefined;
   }
 
   private async removeTarget(index: number | undefined): Promise<void> {
@@ -466,4 +488,22 @@ function inputOf(draft: TargetDraft, message: BackupPageMessage): BackupTargetIn
     accountName: message.accountName,
     accountKey: message.accountKey,
   };
+}
+
+/**
+ * The refusal for an edit of a destination the server cannot open, or nothing when both halves were
+ * typed. A single half typed keeps its own "is missing" sentence; both left empty is what this is for.
+ */
+function keysForUnopenable(edited: BackupTargetInput): string {
+  if (targetProblem(edited, false) === '') {
+    return '';
+  }
+  return targetProblem(edited, true) || cannotOpen(edited.kind);
+}
+
+/** Why an unopenable destination's edit needs both halves again, in the kind's own words. */
+function cannotOpen(kind: string): string {
+  const halves = kind === 's3' ? 'the access key id and the secret access key' : 'the account name and the account key';
+  return 'This server cannot open the credentials saved for this destination — they were sealed under a key '
+    + `it no longer has — so leaving the fields empty would keep nothing. Enter ${halves} again.`;
 }
