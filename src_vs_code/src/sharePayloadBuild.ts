@@ -136,6 +136,10 @@ async function carriesSeed(storage: StorageManager, accountId: string, entity: T
 
 /** What an empty selection says — one folder named, or the plural nobody has to count. */
 export function nothingToShare(nodes: readonly TreeNode[]): string {
+  // The second guard's sentence (#122): a marked entry that reached the inbox is not a folder.
+  if (nodes.length === 1 && isNotForExport(nodes[0])) {
+    return `"${nodes[0].name}" is marked Not for export — nothing to share.`;
+  }
   return nodes.length === 1
     ? `Folder "${nodes[0].name}" holds no entities — nothing to share.`
     : 'Nothing to share — the selected folders hold no entities.';

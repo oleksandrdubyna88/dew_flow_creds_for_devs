@@ -90,12 +90,23 @@ test('the sentences name what stays and say what happens to the rest', () => {
 test('the refusal says where the mark is changed', () => {
   assert.equal(
     nothingLeavesNote('export', [byId('prod')]),
-    'Nothing to export: "prod" is marked Not for export. Untick "Not for export" in the entry\'s Edit form, General section, to let it leave.',
+    'Nothing to export: "prod" is marked Not for export. Untick it in the entry\'s Edit → General to let it leave.',
   );
-  assert.match(nothingLeavesNote('share', [byId('prod'), byId('vault-key')]), /^Nothing to share: Everything selected \("prod" and "vault-key"\) is marked/);
+  assert.equal(
+    nothingLeavesNote('share', [byId('prod'), byId('vault-key')]),
+    'Nothing to share: everything selected ("prod" and "vault-key") is marked Not for export. Untick it in each entry\'s Edit → General to let them leave.',
+  );
 });
 
 test('a long list is cut at five names and counted', () => {
   const many = Array.from({ length: 7 }, (_, i) => entity(`e${i}`, null, true));
   assert.match(withheldNote('share', many), /^"e0", "e1", "e2", "e3", "e4" and 2 more are marked/);
+});
+
+test('a parent cycle in synced data ends the walk — each node once, no stack overflow', () => {
+  // A and B each name the other as parent: a tree no editor makes, but one a merge or a hand-edited
+  // import can deliver. The walk must stop rather than recurse until the stack gives out.
+  const cycle = [folder('a', 'b'), folder('b', 'a'), entity('inside', 'b', true)];
+  assert.deepEqual(ids(subtreeNodes(cycle, [cycle[0]])), ['a', 'b', 'inside']);
+  assert.equal(nothingLeaves(exportScope(cycle, [cycle[0]])), true);
 });

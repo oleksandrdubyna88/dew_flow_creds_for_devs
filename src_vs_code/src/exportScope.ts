@@ -1,4 +1,5 @@
-import { TreeNode } from './types';
+import { EntityMetadata, TreeNode } from './types';
+import { listOf } from './sentenceList';
 
 /**
  * What may LEAVE this vault for another person — issue #122's *Not for export* mark.
@@ -41,7 +42,14 @@ export function isNotForExport(node: TreeNode): boolean {
 export function subtreeNodes(all: readonly TreeNode[], roots: readonly TreeNode[]): TreeNode[] {
   const children = indexByParent(all);
   const picked: TreeNode[] = [];
+  // Visited, because a parent cycle is a tree no editor makes but a merge or a hand-edited import can
+  // deliver — and without this the walk recursed until the stack gave out (code gate, round 1).
+  const seen = new Set<string>();
   const collect = (node: TreeNode): void => {
+    if (seen.has(node.id)) {
+      return;
+    }
+    seen.add(node.id);
     picked.push(node);
     for (const child of children.get(node.id) ?? []) {
       collect(child);
@@ -60,6 +68,19 @@ export function exportScope(all: readonly TreeNode[], roots: readonly TreeNode[]
     kept: walked.filter((node) => !isNotForExport(node)),
     withheld: walked.filter(isNotForExport),
   };
+}
+
+/**
+ * An accepted UPDATE keeps the mark the recipient set on their own copy. The sender's payload never
+ * carries it — a marked entry does not leave — so rebuilding the node from the payload alone
+ * dropped it silently, and the recipient's next folder share sent the entry on (own review).
+ */
+export function keepingMark(incoming: EntityMetadata | undefined, existing: TreeNode | undefined): EntityMetadata | undefined {
+  return incoming !== undefined && wasMarked(existing) ? { ...incoming, notForExport: true } : incoming;
+}
+
+function wasMarked(node: TreeNode | undefined): boolean {
+  return node?.details?.notForExport === true;
 }
 
 /** True when the selection had marked entries and nothing ELSE that could leave. */
@@ -81,9 +102,10 @@ export function withheldNote(action: LeavingAction, withheld: readonly TreeNode[
 
 /** The refusal when every entry selected is marked — with where the mark is changed. */
 export function nothingLeavesNote(action: LeavingAction, withheld: readonly TreeNode[]): string {
-  const subject = withheld.length === 1 ? `${namesOf(withheld)} is` : `Everything selected (${namesOf(withheld)}) is`;
-  return `Nothing to ${action}: ${subject} marked Not for export. `
-    + 'Untick "Not for export" in the entry\'s Edit form, General section, to let it leave.';
+  const one = withheld.length === 1;
+  const subject = one ? `${namesOf(withheld)} is` : `everything selected (${namesOf(withheld)}) is`;
+  const where = one ? 'the entry\'s Edit → General to let it' : 'each entry\'s Edit → General to let them';
+  return `Nothing to ${action}: ${subject} marked Not for export. Untick it in ${where} leave.`;
 }
 
 /**
@@ -112,8 +134,7 @@ export function admitLeaving(
 function namesOf(nodes: readonly TreeNode[]): string {
   const shown = nodes.slice(0, 5).map((node) => `"${node.name}"`);
   const rest = nodes.length - shown.length;
-  const listed = shown.length === 1 ? shown[0] : `${shown.slice(0, -1).join(', ')} and ${shown.at(-1)}`;
-  return rest > 0 ? `${shown.join(', ')} and ${rest} more` : listed;
+  return rest > 0 ? `${shown.join(', ')} and ${rest} more` : listOf(shown);
 }
 
 /** Every node's children, in one pass — the index that keeps the walk above linear. */

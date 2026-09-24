@@ -9,6 +9,7 @@ import { loadWithVscode } from './vscodeStub';
 /** Issue #122 — the *Not for export* box: drawn in General, posted, kept by the save, admitted by the guard. */
 
 function form(over: Partial<EntityFormOptions> = {}): EntityFormOptions {
+  // No cast: a field the real type starts to require fails to compile here.
   return {
     mode: 'edit',
     entityId: 'e1',
@@ -26,7 +27,7 @@ function form(over: Partial<EntityFormOptions> = {}): EntityFormOptions {
     dependencyColors: {},
     jumpCandidates: [],
     ...over,
-  } as EntityFormOptions;
+  };
 }
 
 /** The General section's markup — from its opening to the section after it. */

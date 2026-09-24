@@ -97,8 +97,8 @@ function mixedToken(details: EntityMetadata | undefined): string {
 
 /**
  * `:noexport` on an entry marked *Not for export* (#122) — what hides *Share with…* and *Export /
- * Share Externally…* on its row. Only a hint: both handlers refuse on their own, since the palette
- * and a multi-selection reach them anyway. A folder never wears it; the rest of it may still leave.
+ * Share Externally…* on its row. Only a hint: both handlers refuse on their own, since a
+ * multi-selection anchored on an unmarked row reaches them anyway. A folder never wears it; the rest of it may still leave.
  */
 function noExportToken(details: EntityMetadata | undefined): string {
   return details?.notForExport === true ? ':noexport' : '';
