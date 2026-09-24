@@ -6,7 +6,7 @@ than by the code: the reverse proxy, the certificate, an environment variable, a
 happened at all. Twelve is the cap; there are seven.
 
 Target: the deployed vault, as an origin — `--target https://vault.example.com`
-Last verified: 2026-09-23 · **the deployment**, immediately after `rsd server deploy` shipped **0.8.0** · all five automated items PASS, run by the deploy workflow itself; the certificate had 60 days left. Item 7 read from the startup log: neither `CORPORATE RECOVERY` line, which is the unconfigured state this deployment is meant to be in (no officers in its `.env`, see below). Item 6 is a person's and was not covered. *(Previously: 2026-09-08, 0.6.0, the same five PASS.)*
+Last verified: 2026-09-24 · **the deployment**, immediately after `rsd server deploy` shipped **0.9.0** (run `36001794754`) · all five automated items PASS, run by the deploy workflow itself; the certificate had 59 days left. **Items 6 and 7 were NOT covered by this run**: the workflow's log carries neither the host's backup directory nor the container's startup lines, and both need a person on the host — until somebody reads them, 0.9.0's recovery state is the one 0.8.0 was last seen in, not one observed. *(Previously: 2026-09-23, 0.8.0, the same five PASS, item 7 read from the startup log — neither `CORPORATE RECOVERY` line; 2026-09-08, 0.6.0, the same five PASS.)*
 
 > **Item 7 used to promise a line in every state, and there is none in the unconfigured one.**
 > Since the roster was introduced (`173189a`) the server logs `IS ON` for a working roster and `IS OFF`
