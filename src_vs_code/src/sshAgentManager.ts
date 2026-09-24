@@ -236,8 +236,8 @@ export class SshAgentManager implements vscode.Disposable {
   }
 
   private async confirm(key: AgentKey, purpose: SignPurpose, data: Buffer): Promise<boolean> {
-    // When the signature was asked for, taken as it enters: the prompt has no timeout, so one found
-    // an hour later still signs — and the time on it is what says how old the request is (#131).
+    // When the signature was asked for, taken as it enters — the time on the prompt is what says how
+    // old the request is (#131), and the prompt refuses after CONSENT_TIMEOUT_MS unanswered.
     const asked = this.clock();
     // The grant's ten minutes still start at the CLICK (`this.clock()` below), as agentConsent.ts
     // documents — the time on the prompt and the start of the window are two facts on purpose.

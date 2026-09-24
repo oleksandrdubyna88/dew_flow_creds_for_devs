@@ -27,8 +27,8 @@ accepted (the joined-dialog test, the promotion ×3, the rename ×2); rejected o
 reviewer: Opus (the dead-dialog wording, the SSH prompt question, the promotion).
 
 **Open tail.** Closed: the owner decided the SSH agent's signing prompt carries the line too —
-[PLAN_ssh_sign_prompt_time.md](PLAN_ssh_sign_prompt_time.md). Whether that prompt should also expire
-is a separate question nobody has asked yet.
+[PLAN_ssh_sign_prompt_time.md](PLAN_ssh_sign_prompt_time.md). That it should also expire was decided the same day:
+[PLAN_ssh_sign_prompt_timeout.md](PLAN_ssh_sign_prompt_timeout.md).
 
 ## 1. The goal
 
