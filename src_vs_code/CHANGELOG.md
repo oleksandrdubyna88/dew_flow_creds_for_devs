@@ -73,11 +73,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added — the consent modal says when the agent asked (#131)
 
 - **`Requested 2026-09-23 14:05:12 (UTC+03:00).`** is the line under the first sentence of the
-  modal an agent's request raises — through every door: a token, an alias, the MCP server, a folder
-  action. Local time with its offset. A dialog found on returning to the desk used to read exactly
-  like one raised a second ago; now a twenty-minute-old request says so. The time is fixed when the
-  dialog is raised, so one left waiting keeps it, and a second call that joins the open dialog
-  changes nothing on it.
+  broker's consent modal — whichever door the agent came through: a token, an alias, the MCP
+  server, a folder action. Local time with its offset. A dialog found on returning to the desk used
+  to read exactly like one raised a second ago. After five minutes the broker has already stopped
+  waiting and told the agent, but a modal cannot be closed from code — so the time is what says
+  that answering it changes nothing. It is fixed when the dialog is raised, and a second call that
+  joins the open dialog changes nothing on it. The SSH agent's signing prompt is unchanged.
 
 ### Added — open an entry's site in the browser (#104)
 

@@ -35,3 +35,28 @@ test('the line right after the head sentence says when the agent asked, in local
     w.server.dispose();
   }
 });
+
+test('a second call while the dialog is open joins it — one dialog, one time, whoever asked next', async () => {
+  // The answer is held: `showWarningMessage` resolves to this promise, so the dialog stays "open"
+  // while a second request arrives a moment later. It must join the pending consent, not raise a
+  // second modal with a later time on it.
+  let answer: (choice: string) => void = () => undefined;
+  const held = new Promise<string>((resolve) => {
+    answer = resolve;
+  });
+  const w = world({ answers: [held as unknown as string] });
+  try {
+    const { port, secret } = await share(w);
+    const first = call(port, '/v1/use/exec', { token: secret, body: { command: 'uptime' } });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const second = call(port, '/v1/use/exec', { token: secret, body: { command: 'hostname' } });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    answer('Allow');
+    await Promise.all([first, second]);
+
+    assert.equal(w.dialogs.length, 1, w.dialogs.join('\n---\n'));
+    assert.match(w.dialogs[0].split('\n')[1], SHAPE);
+  } finally {
+    w.server.dispose();
+  }
+});
