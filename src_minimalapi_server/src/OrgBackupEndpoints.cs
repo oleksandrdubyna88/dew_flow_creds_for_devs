@@ -5,16 +5,22 @@ using Microsoft.AspNetCore.Routing;
 namespace CredVaultServer;
 
 /// <summary>
-/// <c>/api/org/backup/*</c> — the five routes an administrator presses, mapped from their own file.
+/// <c>/api/org/backup/*</c> — the seven routes an administrator presses, mapped from their own file.
 /// </summary>
 /// <remarks>
 /// <para>Its own file for the reason the projects surface has one: <c>Program.cs</c> is past the size a
-/// reader can hold, and this epic adds five more routes. The gates and the refusal shape come from
+/// reader can hold, and this epic added its routes here. The gates and the refusal shape come from
 /// <see cref="OrgEndpoints"/> rather than being written again.</para>
 ///
 /// <para><b>Every route is admin-only.</b> The backup key opens every vault the server holds, and the
 /// download is a copy of all of them; there is no read here that a developer has business making. A
 /// recovery officer administers unconditionally, which is what <c>RequireAdmin</c> already encodes.</para>
+///
+/// <para><b>The status names KINDS; the targets route names destinations.</b> The status is polled
+/// once per readiness cycle for every administrator and, by the 2026-09-12 decision, carries nothing
+/// operational. <c>GET /targets</c> is the backup tab's own read — where each destination is and whether
+/// this server can open what is sealed for it — made once when the tab opens. Neither ever carries a
+/// credential or the sealed half of a record.</para>
 ///
 /// <para><b>The download does not build.</b> Building takes as long as it takes, and a request that
 /// outlives the browser is a download that fails at 90 %. So a run writes the archive and this streams
@@ -35,6 +41,8 @@ public static class OrgBackupEndpoints
     {
         app.MapGet("/api/org/backup/status", (HttpContext ctx, CancellationToken ct) =>
             StatusAsync(ctx, deps, backups, ct));
+        app.MapGet("/api/org/backup/targets", (HttpContext ctx, CancellationToken ct) =>
+            TargetsAsync(ctx, deps, backups, targets, ct));
         app.MapPut("/api/org/backup/settings", (HttpContext ctx, CancellationToken ct) =>
             SettingsAsync(ctx, deps, backups, targets, ct));
         app.MapPost("/api/org/backup/key", (HttpContext ctx, CancellationToken ct) =>
@@ -92,6 +100,41 @@ public static class OrgBackupEndpoints
                             target.At)),
                 ]),
             AppJsonContext.Default.BackupStatusDto,
+            cancellationToken: ct);
+    }
+
+    /// <summary>
+    /// <c>GET /api/org/backup/targets</c> — the configured destinations: where each is, and whether this
+    /// server can open what is sealed for it. Never the sealed half.
+    /// </summary>
+    /// <remarks>
+    /// <para>This is what makes editing ONE destination possible: <c>PUT /settings</c> replaces the whole
+    /// list, so a client that could not read it would have to retype every destination to change one —
+    /// or, worse, send the one it knew and silently erase the rest. The extension reads this first and
+    /// sends the list whole, with the untouched ones as key-less requests the save keeps by identity.</para>
+    /// <para><c>credentials</c> is asked through <see cref="BackupTargets.Opens"/>, which does not log:
+    /// a listing is read every time the tab opens, and one unopenable record would otherwise write the
+    /// same error line each time for as long as nobody re-entered the keys.</para>
+    /// </remarks>
+    private static async Task TargetsAsync(
+        HttpContext ctx, OrgEndpointDeps deps, BackupStore backups, BackupTargets targets, CancellationToken ct)
+    {
+        if (await Admin(ctx, deps) is null)
+        {
+            return;
+        }
+        var settings = await backups.ReadSettingsAsync(ct);
+        await ctx.Response.WriteAsJsonAsync(
+            settings.Targets.Select(
+                target => new BackupTargetSummaryDto(
+                    target.Kind,
+                    target.Endpoint,
+                    target.Region,
+                    target.Bucket,
+                    target.Prefix,
+                    targets.Opens(target) ? BackupTargetSummaryDto.Sealed : BackupTargetSummaryDto.Unopenable))
+                .ToList(),
+            AppJsonContext.Default.ListBackupTargetSummaryDto,
             cancellationToken: ct);
     }
 

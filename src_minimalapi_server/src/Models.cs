@@ -408,6 +408,29 @@ public sealed record BackupTargetRequest(
     string? AccountKey);
 
 /// <summary>
+/// A configured destination as <c>GET /api/org/backup/targets</c> lists it: where it is, and whether
+/// this server can open what is sealed for it. Never the sealed half, never a credential.
+/// </summary>
+/// <remarks>
+/// <para><c>Credentials</c> is <c>"sealed"</c> when this server can open the record's credentials and
+/// <c>"unopenable"</c> when it cannot — a KEK that changed, a settings file restored from elsewhere, no
+/// KEK at all. It is the one fact the destinations form needs in order to say <i>re-enter them</i> on
+/// the right row, and it is a WORD rather than the reason: the reason is in the server's log, and a
+/// page polled by administrators is not where a deployment's cipher trouble is explained.</para>
+/// <para>Its own route rather than a field on the status, by the 2026-09-12 decision that the STATUS
+/// names kinds and nothing operational: the status is polled once per readiness cycle for every
+/// administrator, and this is read once, when the backup tab opens, by the same admin gate.
+/// <c>contract/backup-targets-v1.json</c> is the sample both implementations assert.</para>
+/// </remarks>
+public sealed record BackupTargetSummaryDto(
+    string Kind, string Endpoint, string Region, string Bucket, string Prefix, string Credentials)
+{
+    public const string Sealed = "sealed";
+
+    public const string Unopenable = "unopenable";
+}
+
+/// <summary>
 /// A destination as the status page sees it — where it is and how it went, never its keys.
 /// </summary>
 /// <remarks>

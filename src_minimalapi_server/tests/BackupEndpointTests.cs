@@ -31,6 +31,7 @@ public sealed class BackupEndpointTests
         using var alice = server.ClientFor(Alice);
 
         (await alice.GetAsync("/api/org/backup/status", Ct)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await alice.GetAsync("/api/org/backup/targets", Ct)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await alice.GetAsync("/api/org/backup/archive", Ct)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await alice.PostAsync("/api/org/backup/run", null, Ct)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await alice.PostAsync("/api/org/backup/key", null, Ct)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
@@ -725,6 +726,109 @@ public sealed class BackupEndpointTests
 
         refusal.Should().Contain("s3 vaults/backups").And.Contain("twice");
         stub.Sent.Should().BeEmpty("checkable without a request, so checked without one");
+    }
+
+    [Fact]
+    public async Task AFreshDeploymentListsNoDestinationsAsAnEmptyArrayAndNeverNull()
+    {
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+
+        var listed = await TargetsAsync(cto);
+
+        listed.ValueKind.Should().Be(JsonValueKind.Array, "a list, so a client iterates without a null check");
+        listed.GetArrayLength().Should().Be(0);
+    }
+
+    [Fact]
+    public async Task TheTargetsRouteListsWhereEachDestinationIsAndNeverWhatOpensIt()
+    {
+        // The read that makes editing ONE destination possible — and the property that makes it safe to
+        // exist: where each destination is, whether this server can open its sealed half, and not one
+        // byte of that half or of a credential, in any spelling.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        await Store(server).WriteSettingsAsync(new BackupSettings(3, 30, TwoBucketsAndAContainer()), Ct);
+
+        var response = await cto.GetAsync("/api/org/backup/targets", Ct);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var raw = await response.Content.ReadAsStringAsync(Ct);
+        var listed = JsonDocument.Parse(raw).RootElement;
+        listed.GetArrayLength().Should().Be(3, "every configured destination, in the order they are saved");
+        var first = listed[0];
+        first.GetProperty("kind").GetString().Should().Be("s3");
+        first.GetProperty("endpoint").GetString().Should().Be("https://s3.example.com");
+        first.GetProperty("region").GetString().Should().Be("eu-central-1");
+        first.GetProperty("bucket").GetString().Should().Be("vaults");
+        first.GetProperty("prefix").GetString().Should().Be("nightly");
+        first.GetProperty("credentials").GetString().Should().Be("sealed", "this server sealed them, so it can open them");
+        first.EnumerateObject().Select(field => field.Name).Should().BeEquivalentTo(
+            ["kind", "endpoint", "region", "bucket", "prefix", "credentials"], "and nothing else");
+        raw.Should().NotContain("\"iv\"").And.NotContain("\"tag\"").And.NotContain("\"data\"", "the sealed half stays on disk");
+        raw.Should().NotContain("AKIDEXAMPLE").And.NotContain("shh").And.NotContain("a2V5")
+            .And.NotContain("accessKeyId").And.NotContain("accountKey", "and no credential in any spelling");
+    }
+
+    [Fact]
+    public async Task ATargetSealedUnderAnotherKekIsListedAsUnopenableSoTheFormCanSayReEnter()
+    {
+        // A settings file restored from another deployment, or a KEK that changed under it: the form has
+        // to say "re-enter" on THAT row and nothing about the others. The listing is asked quietly —
+        // BackupTargets.Opens, not Open — so an unopenable record does not write the same error line
+        // every time a tab opens.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        await Store(server).WriteSettingsAsync(
+            new BackupSettings(3, 30, [SealedUnder(Corp.OtherKek, "elsewhere"), SealedUnder(Corp.Kek, "here")]), Ct);
+
+        var listed = await TargetsAsync(cto);
+
+        listed[0].GetProperty("credentials").GetString().Should().Be("unopenable");
+        listed[1].GetProperty("credentials").GetString().Should().Be("sealed", "per row, not all-or-nothing");
+    }
+
+    [Fact]
+    public async Task TheTargetsRouteAnswersTheSharedFixtureShape()
+    {
+        // contract/backup-targets-v1.json is what BOTH implementations assert: this seeds the two
+        // destinations the fixture describes and compares the route's answer to it, and the extension
+        // feeds the same document to readTargets. One file, so a field renamed on one side goes red on
+        // the other (plan gate, codex). It is not a cross-language live run; the plan says so.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        var mine = new BackupTargets(
+            Convert.FromBase64String(Corp.Kek), new OneClient(), TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+        var theirs = new BackupTargets(
+            Convert.FromBase64String(Corp.OtherKek), new OneClient(), TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance);
+        await Store(server).WriteSettingsAsync(
+            new BackupSettings(
+                3,
+                30,
+                [
+                    mine.Seal("s3", "https://s3.example.com", "eu-central-1", "vaults", "nightly", S3Secrets),
+                    theirs.Seal(
+                        "azure-blob", "https://acct.blob.core.windows.net", string.Empty, "vaults", "nightly",
+                        new TargetSecrets(string.Empty, string.Empty, "acct", "a2V5")),
+                ]),
+            Ct);
+        var fixture = JsonDocument.Parse(
+            File.ReadAllText(Path.Combine(PrintableKeyTests.RepoRoot(), "contract", "backup-targets-v1.json")));
+
+        var answered = await TargetsAsync(cto);
+
+        JsonSerializer.Serialize(answered).Should().Be(
+            JsonSerializer.Serialize(fixture.RootElement.GetProperty("targets")),
+            "the route answers exactly the document the extension asserts it can read");
+    }
+
+    private static async Task<JsonElement> TargetsAsync(HttpClient client)
+    {
+        var response = await client.GetAsync("/api/org/backup/targets", Ct);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        return JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct)).RootElement.Clone();
     }
 
     private static readonly TargetSecrets S3Secrets = new("AKIDEXAMPLE", "secret", string.Empty, string.Empty);
