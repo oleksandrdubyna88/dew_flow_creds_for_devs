@@ -791,10 +791,11 @@ public sealed class BackupEndpointTests
     [Fact]
     public async Task TheTargetsRouteAnswersTheSharedFixtureShape()
     {
-        // contract/backup-targets-v1.json is what BOTH implementations assert: this seeds the two
-        // destinations the fixture describes and compares the route's answer to it, and the extension
-        // feeds the same document to readTargets. One file, so a field renamed on one side goes red on
-        // the other (plan gate, codex). It is not a cross-language live run; the plan says so.
+        // contract/backup-targets-v1.json is the EXACT array the route answers, and what BOTH
+        // implementations assert: this seeds the two destinations it describes and compares the
+        // route's answer to the whole document; the extension feeds the same bytes to readTargets.
+        // One file, so a field renamed on one side goes red on the other (plan gate, codex). The LIVE
+        // check between the two is src_vs_code/scripts/backup-targets-live.cjs, in the .http job.
         using var server = Corp.Server();
         using var cto = server.ClientFor(Corp.Cto);
         var mine = new BackupTargets(
@@ -820,7 +821,7 @@ public sealed class BackupEndpointTests
         var answered = await TargetsAsync(cto);
 
         JsonSerializer.Serialize(answered).Should().Be(
-            JsonSerializer.Serialize(fixture.RootElement.GetProperty("targets")),
+            JsonSerializer.Serialize(fixture.RootElement),
             "the route answers exactly the document the extension asserts it can read");
     }
 

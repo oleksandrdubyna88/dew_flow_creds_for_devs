@@ -333,12 +333,23 @@ it belongs in this file.
 | Real files | the second instant on `status.json` through every writer, and a legacy file reading its `ok` run as its last success | `src_minimalapi_server/tests/BackupRunnerTests.cs`, `BackupStoreTests.cs` |
 | A hung transport | the probe's DELETE giving up on the probe deadline rather than the request's, in both clients | `src_minimalapi_server/tests/BackupTargetTests.cs` |
 | The wire | the targets route's `403` and its empty `200`, and the status shape with `lastSuccessAt`; the populated listing and a proved save are `@uncovered` with their reasons | `http/org/backup.http` |
-| One fixture, two suites | `contract/backup-targets-v1.json` — the server compares the route's answer to it, the extension feeds it to `readTargets` | `BackupEndpointTests.TheTargetsRouteAnswersTheSharedFixtureShape`, `src_vs_code/src/test/orgBackupClient.test.ts` |
+| One fixture, two suites | `contract/backup-targets-v1.json` — the EXACT array the route answers; the server compares the route's answer to the whole document, the extension feeds the same bytes to `readTargets` | `BackupEndpointTests.TheTargetsRouteAnswersTheSharedFixtureShape`, `src_vs_code/src/test/orgBackupClient.test.ts` |
+| **The LIVE check, two implementations against each other** | the REAL compiled TypeScript client (`out/orgBackupClient.js`, the `vscode`-free half) driven over the wire against the REAL server the `.http` contract job starts: `readTargets` answers a list (a `404` is a contract failure, since the server was started from the same commit), the status carries `lastSuccessAt` as an instant, a save with a destination at a host that cannot resolve is REFUSED through the client's own error path naming the destination, and the list is unchanged afterwards. Exit codes as `http-run.mjs`: 0 pass · 1 contract · 3 environment · 4 configuration | `src_vs_code/scripts/backup-targets-live.cjs`, run in `ci · server` › *http · contract suite* after the `.http` run, and by hand with the recipe in its header |
 
-**Not a cross-language live run.** The fixture is what the two halves agree on; nothing starts the
-server and drives the TypeScript client against it, and no route here has that. The `.http` suite is
-the live tier for the server's shape, and the extension's shape guard is asserted against the same
-document.
+**The flow catalogue for the destinations, honestly.** *Read the destinations* — covered live. *Save a
+destination the server refuses* — covered live (an unreachable host; the refusal reaches the person
+through the client's own path). *Add, edit or remove a destination the server ACCEPTS* — **not covered
+live**: a proved save needs a reachable bucket with credentials nobody should commit; it is covered
+in-process over a stubbed transport (`BackupEndpointTests` with `Corp.ServerWith`) and in the tab's
+own suite, which is a second unit tier and not a scenario. *A run to the new destination* — not
+covered anywhere here, for the same reason; the save-time probe every operator's first configuration
+runs against their own account is the honest substitute, and when somebody points this at a real
+bucket that run IS the missing tier and belongs in this file.
+
+The check exists because the plan gate and then the code gate both quoted `testing.md` back at a plan
+that had written *"not a cross-language live run"* as a deviation: two suites agreeing with one file
+is not the live check the rule mandates, and it took the second round to stop recording the gap and
+close it.
 
 **A Windows-only collision, seen once in four runs of the backup classes.** `AtomicWriteAsync` is a
 `File.Move` over the destination; on Windows that fails with a sharing violation when a reader holds

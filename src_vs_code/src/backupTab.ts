@@ -2,6 +2,7 @@ import { BackupPageMessage, BackupPageMessageType, TargetDraft, renderBackupPage
 import {
   describeTarget,
   identityOf,
+  isTargetKind,
   normalizeTarget,
   targetProblem,
   toInputs,
@@ -295,13 +296,29 @@ export class BackupTab {
     return Promise.resolve();
   }
 
+  /**
+   * Open the form on a row — for a kind the form can represent.
+   *
+   * <p>A newer server may list a destination of a kind this build does not know (the drives plan).
+   * The form's kind picker has two entries and its fields are a bucket's, so opening it would draw
+   * that destination as something it is not; the refusal names the way out instead. Remove still
+   * works — the list is sent whole with that row left out.</p>
+   */
   private editTarget(index: number | undefined): Promise<void> {
     const row = this.row(index);
-    if (row !== undefined) {
-      this.draft = { index, kind: row.kind, endpoint: row.endpoint, region: row.region, bucket: row.bucket, prefix: row.prefix };
-      this.error = undefined;
-      this.redraw();
+    if (row === undefined) {
+      return Promise.resolve();
     }
+    if (!isTargetKind(row.kind)) {
+      this.refuse(
+        `This build does not know '${row.kind}' destinations, so it cannot edit ${describeTarget(row)}. `
+        + 'Update the extension to edit it; it can still be removed here.',
+      );
+      return Promise.resolve();
+    }
+    this.draft = { index, kind: row.kind, endpoint: row.endpoint, region: row.region, bucket: row.bucket, prefix: row.prefix };
+    this.error = undefined;
+    this.redraw();
     return Promise.resolve();
   }
 

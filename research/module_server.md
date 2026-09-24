@@ -1620,10 +1620,17 @@ read every time the tab opens. **The status is untouched**: by the 2026-09-12 de
 and nothing operational, and `TheStatusNeverNamesADestinationsCredentials` still pins that. The
 extension reads the list first and always sends it whole, the untouched ones as key-less requests the
 save keeps by identity; an older server answers `404` and the extension then offers no form at all.
-`contract/backup-targets-v1.json` is the sample document BOTH halves assert — the endpoint test seeds
-its two destinations and compares the route's answer byte for byte, the extension feeds it to
-`readTargets` — so a field renamed on one side goes red on the other. It is not a cross-language live
-run; none exists for any route here.
+`contract/backup-targets-v1.json` is the EXACT array this route answers for two seeded destinations,
+and BOTH halves assert it — the endpoint test compares the route's answer to the whole document byte
+for byte, the extension feeds the same bytes to `readTargets` — so a field renamed on one side goes red
+on the other. `credentials` is the one field that is not a location: `sealed` means this server can
+open what is sealed for the destination, `unopenable` means it cannot, and a newer server may add a
+word (the drives plan's `withdrawn`) that an older extension passes through as *needs attention* rather
+than refusing. The values are fixtures — `s3.example.com` and `acct.blob.core.windows.net` are not real
+destinations. **And there is a live check between the two implementations**, because the testing rule
+says two suites agreeing with one file is not one: `src_vs_code/scripts/backup-targets-live.cjs`
+drives the compiled TypeScript client against the running server in the `.http` contract job —
+`module_tests.md` says what it drives and the one branch it cannot.
 
 **A save decides its destinations before it seals, probes or writes** — `BackupTargetPlan`, pure, one
 `TargetDecision` per requested destination:

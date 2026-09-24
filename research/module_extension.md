@@ -5856,6 +5856,22 @@ second one. And the route table in `BackupTab.handle` is a `Record` over the who
 message kind added without a handler is a compile error rather than a click that does nothing; the
 page is untrusted input, and every optional field is checked for its kind at the door.
 
+**A newer server is served normally too** (code gate, gemini). The drives plan adds two kinds and a
+third `credentials` word, and this extension will meet that server before it is updated. So
+`readTargets` accepts any non-empty `credentials` word and any kind — projecting each row onto the six
+contract fields, never refusing a list for a word it does not know — the page draws an unknown word as
+*needs attention (word)*, a destination of a kind this build does not know is named by its kind
+verbatim, cannot be **edited** here (the form cannot represent it; the sentence says to update the
+extension) and can still be **removed**, and the client-side validation skips kinds it does not know
+rather than refusing a whole save because one listed row is the server's business. The repository's
+own release doctrine — either half may go first — is what this costs to keep.
+
+**The two implementations are checked against each other live.** `scripts/backup-targets-live.cjs`
+drives the compiled `out/orgBackupClient.js` against the real server the `.http` contract job starts —
+the list read, the status's `lastSuccessAt`, a save the server refuses arriving as the client's own
+refusal, the list unchanged afterwards — and `module_tests.md` names what it drives and the one branch
+it cannot (a proved save needs a bucket).
+
 ## Security hardening (2026-08-25 review)
 
 The coverage pass that followed it ([SECURITY_REVIEW_2026-08-26.md](SECURITY_REVIEW_2026-08-26.md))

@@ -1,22 +1,18 @@
-{
-  "_comment": "What GET /api/org/backup/targets answers, as BOTH implementations assert it: CredVaultServer.Tests.BackupEndpointTests.TheTargetsRouteAnswersTheSharedFixtureShape seeds these two destinations and compares the route's answer to this document; src_vs_code/src/test/orgBackupClient.test.ts feeds `targets` verbatim to readTargets and asserts it is accepted. One file, so a field renamed on one side goes red on the other. `credentials` is the only field that is not a location: `sealed` means this server can open what is sealed for the destination, `unopenable` means it cannot (a KEK that changed, a settings file restored from elsewhere, no KEK at all) and the form says re-enter. Never a key, never iv/tag/data. The values are fixtures — https://s3.example.com and acct.blob.core.windows.net are not real destinations.",
-  "route": "GET /api/org/backup/targets",
-  "targets": [
-    {
-      "kind": "s3",
-      "endpoint": "https://s3.example.com",
-      "region": "eu-central-1",
-      "bucket": "vaults",
-      "prefix": "nightly",
-      "credentials": "sealed"
-    },
-    {
-      "kind": "azure-blob",
-      "endpoint": "https://acct.blob.core.windows.net",
-      "region": "",
-      "bucket": "vaults",
-      "prefix": "nightly",
-      "credentials": "unopenable"
-    }
-  ]
-}
+[
+  {
+    "kind": "s3",
+    "endpoint": "https://s3.example.com",
+    "region": "eu-central-1",
+    "bucket": "vaults",
+    "prefix": "nightly",
+    "credentials": "sealed"
+  },
+  {
+    "kind": "azure-blob",
+    "endpoint": "https://acct.blob.core.windows.net",
+    "region": "",
+    "bucket": "vaults",
+    "prefix": "nightly",
+    "credentials": "unopenable"
+  }
+]

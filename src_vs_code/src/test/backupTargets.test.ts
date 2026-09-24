@@ -39,6 +39,13 @@ const azure = (over: Partial<BackupTargetInput> = {}): BackupTargetInput => ({
   ...over,
 });
 
+test('a kind this build does not know is described by its kind, verbatim, with what it has', () => {
+  // A newer server's drive destination lists with no bucket; the row still needs a name, and the
+  // name must not pretend it is S3 or Azure.
+  assert.equal(describeTarget({ kind: 'onedrive', bucket: '', prefix: 'Backups' }), 'onedrive Backups');
+  assert.equal(describeTarget({ kind: 'onedrive', bucket: '', prefix: '' }), 'onedrive');
+});
+
 test('the server refusals are mirrored, in its own words, before any request', () => {
   assert.match(targetProblem(s3({ kind: 'ftp' }), false), /'ftp' is not a kind of destination/);
   assert.match(targetProblem(s3({ endpoint: 'not a url' }), false), /not a URL/);

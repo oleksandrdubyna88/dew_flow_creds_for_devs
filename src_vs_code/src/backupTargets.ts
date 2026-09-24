@@ -25,10 +25,21 @@ export function isTargetKind(kind: string): boolean {
   return TARGET_KINDS.some((known) => known.kind === kind);
 }
 
-/** The words for a destination — the same ones the server's `SealedTarget.Describe` uses. */
+/**
+ * The words for a destination — the same ones the server's `SealedTarget.Describe` uses for the two
+ * kinds it has, and the kind VERBATIM for one this build does not know.
+ *
+ * <p>A newer server's drive destination lists with no bucket and a kind this build has never seen;
+ * the row still needs a name, and the name must not pretend it is S3 or Azure.</p>
+ */
 export function describeTarget(target: Pick<BackupTargetInput, 'kind' | 'bucket' | 'prefix'>): string {
-  const where = `${target.bucket}/${target.prefix}`.replace(/\/+$/, '');
-  return `${target.kind === 's3' ? 's3' : 'azure'} ${where}`;
+  const where = [target.bucket, target.prefix].map(trimmed).filter((part) => part.length > 0).join('/');
+  return `${kindWord(target.kind)} ${where}`.trimEnd();
+}
+
+/** The server spells Azure Blob as `azure` in a description; every other kind is its own word. */
+function kindWord(kind: string): string {
+  return kind === 'azure-blob' ? 'azure' : kind;
 }
 
 /** What makes an edit an EDIT rather than a new destination: the server's identity, spelled the same. */

@@ -519,6 +519,31 @@ test('every status the tab reads is handed to the tree seam, so the row moves wi
   assert.equal(w.recorded.at(-1)?.lastResult, 'ok', 'the document the server answered, not a guess');
 });
 
+test('a destination of a kind this build does not know is listed, cannot be EDITED here, and can still be removed', async () => {
+  // A newer server (the drives plan) lists a OneDrive destination with the word `withdrawn`. An older
+  // extension must be served normally: the row is drawn and says it needs attention, Edit is refused
+  // with the way out (update the extension) rather than opening a form that cannot represent it, and
+  // Remove still works — the list is sent whole, the unknown row simply left out.
+  const foreign: BackupTargetSummary = {
+    kind: 'onedrive', endpoint: 'https://graph.microsoft.com', region: '', bucket: '', prefix: 'Backups', credentials: 'withdrawn',
+  };
+  const w = await started({ readTargets: () => Promise.resolve([NIGHTLY, foreign]) });
+
+  const drawn = last(w);
+  assert.match(drawn, /onedrive Backups/, 'named by its kind, verbatim');
+  assert.match(drawn, /needs attention \(withdrawn\)/, 'the word the server sent, not a guess');
+
+  await w.tab.handle({ type: 'editTarget', index: 1 });
+  assert.doesNotMatch(last(w), /Edit destination/, 'no form for a kind the form cannot represent');
+  assert.match(last(w), /does not know &#39;onedrive&#39; destinations/);
+  assert.match(last(w), /update the extension/i);
+
+  await w.tab.handle({ type: 'removeTarget', index: 1 });
+  const targets = sentTargets(w);
+  assert.equal(targets.length, 1);
+  assert.equal(targets[0].prefix, 'nightly', 'the known destination travelled key-less; the foreign one was left out');
+});
+
 test('a message is refused at the door when a field is not of its kind', () => {
   assert.equal(isBackupPageMessage({ type: 'saveTarget', kind: 's3', endpoint: 'https://x', region: '', bucket: 'b', prefix: '', accessKeyId: 'a', secretAccessKey: 'b' }), true);
   assert.equal(isBackupPageMessage({ type: 'removeTarget', index: 1 }), true);

@@ -1,4 +1,4 @@
-import { describeTarget, targetProblem } from './backupTargets';
+import { describeTarget, isTargetKind, targetProblem } from './backupTargets';
 import { CorpApiClient } from './corpApiClient';
 import { DEFAULT_REQUEST_TIMEOUT_MS } from './serverTransport';
 import { StoredAccount } from './types';
@@ -108,16 +108,26 @@ export function isNoBackupHere(status: BackupStatus): boolean {
   return status.lastResult === NO_BACKUP_HERE.lastResult;
 }
 
-/** Whether the server can open what is sealed for a destination. The form says "re-enter" on the other. */
-export type TargetCredentials = 'sealed' | 'unopenable';
+/**
+ * The two words this build knows for a destination's credentials: the server can open what is sealed,
+ * or it cannot and the form says "re-enter".
+ *
+ * <p>The field itself is a `string`, not this union: a NEWER server may send a word this build does
+ * not know (the drives plan adds `withdrawn`), and an older extension against a newer server must be
+ * served normally — the page draws an unknown word as needing attention rather than refusing the whole
+ * list as a shape it cannot read.</p>
+ */
+export const SEALED = 'sealed';
+
+export const UNOPENABLE = 'unopenable';
 
 /**
  * A configured destination as `GET /api/org/backup/targets` lists it: where it is, and whether the
  * server can open its sealed half. Never the sealed half, never a credential.
  *
- * <p>`contract/backup-targets-v1.json` is the sample document both halves assert — the server's
- * endpoint test compares the route's answer to it, and `orgBackupClient.test.ts` feeds it to
- * `readTargets`.</p>
+ * <p>`contract/backup-targets-v1.json` is the exact array both halves assert — the server's endpoint
+ * test compares the route's answer to it, and `orgBackupClient.test.ts` feeds it to `readTargets`;
+ * `scripts/backup-targets-live.cjs` drives the two against each other live.</p>
  */
 export interface BackupTargetSummary {
   readonly kind: string;
@@ -125,7 +135,8 @@ export interface BackupTargetSummary {
   readonly region: string;
   readonly bucket: string;
   readonly prefix: string;
-  readonly credentials: TargetCredentials;
+  /** `SEALED`, `UNOPENABLE`, or a word from a server newer than this build — never empty. */
+  readonly credentials: string;
 }
 
 /** A destination as an administrator describes it. Credentials omitted keep the ones already sealed. */
@@ -384,7 +395,11 @@ export function settingsProblem(settings: BackupSettingsInput): string {
  * first-save question at the form.</p>
  */
 function targetsProblem(targets: readonly BackupTargetInput[]): string {
-  for (const target of targets) {
+  // Only the kinds this build knows are checked here. The list is always sent WHOLE, so a newer
+  // server's drive destination rides along in every save from an older extension; refusing it on this
+  // side would make every edit on that deployment impossible until the extension is updated. The
+  // server knows that kind, and it decides.
+  for (const target of targets.filter((candidate) => isTargetKind(candidate.kind))) {
     const problem = targetProblem(target, true);
     if (problem.length > 0) {
       return `${describeTarget(target)}: ${problem}`;
@@ -499,10 +514,15 @@ const SUMMARY_SHAPE: Readonly<Record<string, string>> = {
   credentials: 'string',
 };
 
-const CREDENTIAL_WORDS: ReadonlySet<string> = new Set<TargetCredentials>(['sealed', 'unopenable']);
-
+/**
+ * Every field present and of its kind, and a credentials WORD — any non-empty one.
+ *
+ * <p>Not a closed set: a newer server may send a word this build does not know, and refusing its
+ * whole list for it would break the rule that an older extension is served normally. Empty is no
+ * word, and is refused.</p>
+ */
 function isTargetSummary(row: unknown): boolean {
-  return matches(row, SUMMARY_SHAPE) && CREDENTIAL_WORDS.has(row.credentials as string);
+  return matches(row, SUMMARY_SHAPE) && (row.credentials as string).length > 0;
 }
 
 /** Exactly the contract's six fields, whatever else the row carried. */
@@ -514,7 +534,7 @@ function summaryOf(row: unknown): BackupTargetSummary {
     region: record.region,
     bucket: record.bucket,
     prefix: record.prefix,
-    credentials: record.credentials as TargetCredentials,
+    credentials: record.credentials,
   };
 }
 

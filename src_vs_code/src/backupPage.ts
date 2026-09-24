@@ -1,6 +1,13 @@
 import * as crypto from 'node:crypto';
 import { TARGET_KINDS, describeTarget } from './backupTargets';
-import { BackupStatus, BackupTargetSummary, BackupTargetView, targetKindsOf } from './orgBackupClient';
+import {
+  BackupStatus,
+  BackupTargetSummary,
+  BackupTargetView,
+  SEALED,
+  UNOPENABLE,
+  targetKindsOf,
+} from './orgBackupClient';
 import { escapeHtml } from './webviewHtml';
 
 /**
@@ -369,14 +376,29 @@ function configuredTable(targets: readonly BackupTargetSummary[], busy: boolean)
     <td>${escapeHtml(describeTarget(target))}</td>
     <td>${escapeHtml(target.endpoint)}</td>
     <td>${escapeHtml(target.region)}</td>
-    <td class="trouble">${target.credentials === 'sealed'
-    ? 'sealed'
-    : 'cannot be opened by this server — re-enter them'}</td>
+    <td class="trouble">${credentialsWords(target.credentials)}</td>
     <td class="actions"><button type="button" data-edit="${index}"${busy ? ' disabled' : ''}>Edit</button>
     <button type="button" data-remove="${index}"${busy ? ' disabled' : ''}>Remove</button></td>
   </tr>`).join('');
   return `<table><thead><tr><th>Where</th><th>Endpoint</th><th>Region</th><th>Credentials</th>`
     + `<th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+/**
+ * What the credentials column says for a word — the two this build knows, and any other.
+ *
+ * <p>A newer server may send a word this build has never seen (the drives plan's `withdrawn`); it is
+ * drawn as needing attention, with the word, rather than mistaken for one of the two. Escaped: the
+ * word came off the wire.</p>
+ */
+function credentialsWords(word: string): string {
+  if (word === SEALED) {
+    return 'sealed';
+  }
+  if (word === UNOPENABLE) {
+    return 'cannot be opened by this server — re-enter them';
+  }
+  return `needs attention (${escapeHtml(word)}) — this build does not know that state; update the extension`;
 }
 
 /**

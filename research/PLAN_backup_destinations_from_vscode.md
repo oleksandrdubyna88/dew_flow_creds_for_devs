@@ -41,10 +41,25 @@
 > - **The `.http` suite covers the `403` and the empty `200` of the new route**; a populated listing
 >   and a proved save are `@uncovered` with their reasons (both need a reachable bucket with credentials
 >   nobody should commit). Exit `0` against a started stack, 185 requests, 405 checks; coverage 47/47.
-> - **Not a cross-language live run.** The shared fixture is what the two halves agree on; nothing
->   starts the server and drives the TypeScript client against it, and no route here has that.
->   Checked: the `.http` tier drives the server's shape live; the extension's shape guard is asserted
->   against the same document; the two are not driven against each other.
+> - **The code gate (12 of 12 reviewers, verdict `proceed`; 5 findings taken, 17 refused with reasons)
+>   turned the plan's own deviation into a fix.** The plan had recorded *"not a cross-language live
+>   run"* and both codex and gemini quoted `testing.md` back: two suites agreeing with one file is not
+>   the live check the rule mandates. `src_vs_code/scripts/backup-targets-live.cjs` is that check now —
+>   the REAL compiled client (`out/orgBackupClient.js`) driven against the REAL server the `.http`
+>   contract job already starts: `readTargets` answers a list, the status carries `lastSuccessAt`, a
+>   save with a destination at a host that cannot resolve is REFUSED through the client's own error
+>   path naming the destination, and the list is unchanged afterwards. What it still cannot prove: a
+>   PROVED save, which needs a bucket and credentials nobody should commit; that branch stays
+>   in-process over the stubbed transport. Two more from the same round: the fixture became the exact
+>   wire array rather than an envelope around one, so both suites consume it whole; and the client no
+>   longer refuses a credentials word or a kind it does not know — a newer server's drive destination
+>   is listed by its kind, says it needs attention, cannot be edited here, and can still be removed,
+>   because an older extension against a newer server must be served normally. Refused, with the code
+>   as the reason: a `StringBuilder` preference no rule states; a planner made generic for grant state
+>   the drives plan has not decided; last-writer-wins on `PUT /settings`, which predates this change and
+>   is an owner question; a concurrency cap for single-digit destinations; a duplicate-identity "hole"
+>   the planner refuses by name; an NRE on a path no decision can reach; and several findings whose own
+>   text concluded the code was correct.
 > - **A Windows-only collision, pre-existing, seen once**: `AtomicWriteAsync` is a `File.Move` over the
 >   destination, which fails under a concurrent reader on Windows (`rename(2)` on Linux succeeds), so the
 >   restart test's ten-millisecond poll once made the sweep log *"could not read the backup status"* and

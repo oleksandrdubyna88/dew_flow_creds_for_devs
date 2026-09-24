@@ -231,16 +231,22 @@ test('an ordinary filename still comes through untouched', () => {
   });
 });
 
-/** The document both halves assert: the server compares its route's answer to it, this feeds it in. */
+/**
+ * The document both halves assert — the EXACT array the route answers, so it is fed in whole.
+ *
+ * <p>The server's own test compares its route's answer to this file byte for byte; this feeds the same
+ * bytes to `readTargets`. The LIVE check between the two is `scripts/backup-targets-live.cjs`, which
+ * drives this compiled client against a running server in the `.http` contract job.</p>
+ */
 function sharedTargets(): unknown[] {
   const file = path.join(__dirname, '..', '..', '..', 'contract', 'backup-targets-v1.json');
-  return (JSON.parse(fs.readFileSync(file, 'utf8')) as { targets: unknown[] }).targets;
+  return JSON.parse(fs.readFileSync(file, 'utf8')) as unknown[];
 }
 
 test('the destinations are read from the admin route and accepted exactly as the shared fixture spells them', async () => {
   // contract/backup-targets-v1.json is what the SERVER's own test holds its route to; if a field is
-  // renamed on one side, this goes red on the other (plan gate, codex). Not a live cross-language
-  // run — none exists for any route here — but one document rather than two lists.
+  // renamed on one side, this goes red on the other (plan gate, codex). One document rather than two
+  // lists — and the wire document itself, not an envelope around it (code gate, gemini).
   const seen = respondWith(200, sharedTargets());
 
   const targets = await client().readTargets(account);
@@ -280,11 +286,43 @@ test('a destinations shape this build cannot read is a sentence, never undefined
   respondWith(200, [{ kind: 's3', bucket: 'vaults' }]);
   await assert.rejects(() => client().readTargets(account), /shape this build cannot read/);
 
-  respondWith(200, [{ ...(sharedTargets()[0] as object), credentials: 'plaintext' }]);
-  await assert.rejects(() => client().readTargets(account), /shape this build cannot read/, 'an unknown credentials word too');
+  respondWith(200, [{ ...(sharedTargets()[0] as object), credentials: '' }]);
+  await assert.rejects(() => client().readTargets(account), /shape this build cannot read/, 'an EMPTY credentials word is no word');
 
   respondWith(200, { targets: [] });
   await assert.rejects(() => client().readTargets(account), /shape this build cannot read/, 'and a non-array');
+});
+
+test('a credentials word or a kind this build does not know is passed through, not refused — an older extension is served normally', async () => {
+  // The repository's own rule for a two-half release: an older extension against a newer server must
+  // work. PLAN_corp_backup_drives.md adds a third credentials word (`withdrawn`) and two kinds; a
+  // closed guard here would turn that server's perfectly good list into "shape this build cannot
+  // read" and take the whole tab with it (code gate, gemini).
+  respondWith(200, [
+    ...sharedTargets(),
+    { kind: 'onedrive', endpoint: 'https://graph.microsoft.com', region: '', bucket: '', prefix: 'Backups', credentials: 'withdrawn' },
+  ]);
+
+  const targets = await client().readTargets(account);
+
+  assert.equal(targets?.length, 3);
+  assert.equal(targets?.[2].kind, 'onedrive');
+  assert.equal(targets?.[2].credentials, 'withdrawn', 'the word travels, so the page can say it needs attention');
+});
+
+test('a save whose list carries a kind this build does not know is NOT refused on this side', async () => {
+  // The list is always sent whole, so a newer server's drive destination rides along in every
+  // schedule or destination save from an older extension; refusing it here would make every edit on
+  // that deployment impossible until the extension is updated. The server knows the kind; it decides.
+  const seen = respondWith(204, '');
+
+  await client().saveSettings(account, {
+    scheduleHourUtc: 3,
+    retentionDays: 30,
+    targets: [{ kind: 'onedrive', endpoint: 'https://graph.microsoft.com', region: '', bucket: '', prefix: 'Backups' }],
+  });
+
+  assert.equal(seen.length, 1, 'it reached the network');
 });
 
 test('a refusal on the destinations route carries the server own sentence', async () => {
