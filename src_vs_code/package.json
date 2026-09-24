@@ -1491,7 +1491,7 @@
         },
         {
           "command": "credSshManager.shareEntity",
-          "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/",
+          "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/ && !(viewItem =~ /:noexport/)",
           "group": "2_actions@9"
         },
         {
@@ -1641,7 +1641,7 @@
         },
         {
           "command": "credSshManager.exportExternal",
-          "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/",
+          "when": "view == credSshManagerView && viewItem =~ /^(folder|entity)/ && !(viewItem =~ /:noexport/)",
           "group": "3_manage@6"
         },
         {

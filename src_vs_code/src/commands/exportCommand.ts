@@ -83,9 +83,18 @@ async function runExport(host: ExportCommandHost, target: unknown, selected: unk
   if (skippedNote !== '') {
     void vscode.window.showWarningMessage(skippedNote);
   }
-  // What goes into the file: the selection's subtrees without the entries marked *Not for export*
-  // (issue #122) — decided and SAID before the first prompt, so nobody picks a form and types a
-  // password for a file that will be partial, or, when every entry is marked, for no file at all.
+  await exportWhatMayLeave(host, targets);
+}
+
+/**
+ * What goes into the file: the selection's subtrees without the entries marked *Not for export*
+ * (issue #122) — decided and SAID before the first prompt, so nobody picks a form and types a
+ * password for a file that will be partial, or, when every entry is marked, for no file at all.
+ */
+async function exportWhatMayLeave(
+  host: ExportCommandHost,
+  targets: readonly { accountId: string; node: TreeNode }[],
+): Promise<void> {
   const scope = admitLeaving('export', host.storage.getNodes(targets[0].accountId), targets.map((t) => t.node), warn);
   if (scope !== undefined) {
     await writeExport(host, targets, scope.kept);

@@ -96,6 +96,15 @@ function mixedToken(details: EntityMetadata | undefined): string {
 }
 
 /**
+ * `:noexport` on an entry marked *Not for export* (#122) — what hides *Share with…* and *Export /
+ * Share Externally…* on its row. Only a hint: both handlers refuse on their own, since the palette
+ * and a multi-selection reach them anyway. A folder never wears it; the rest of it may still leave.
+ */
+function noExportToken(details: EntityMetadata | undefined): string {
+  return details?.notForExport === true ? ':noexport' : '';
+}
+
+/**
  * The two tokens that come from the KEYCHAIN rather than the record — both through the flag walk's
  * caches, since a row cannot read a secret while it is drawn: `:pwd` (*Copy Password*) and, since
  * issue #104, `:url` (*Open Site in Browser*).
@@ -168,6 +177,7 @@ export function entityContextValue(
     contextValue += ':totp';
   }
   contextValue += mixedToken(details);
+  contextValue += noExportToken(details);
   // Two tokens, the shape the agent/VPN/bridge pairs use: the menu offers *Protect with a PIN…* or
   // *Remove PIN Protection…*, never both. Read from the METADATA mirror, never from the keychain —
   // a tree row is drawn hundreds of times and a secret read per row per draw is not a tree.
