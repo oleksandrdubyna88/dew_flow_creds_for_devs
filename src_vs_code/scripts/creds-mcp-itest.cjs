@@ -21,8 +21,11 @@ const fs = require('fs');
 const { spawn } = require('child_process');
 const Module = require('module');
 
-/** Consent answers the fake window gives, in order, and how often it was asked. */
-const consent = { answers: ['Allow'], asked: 0 };
+/**
+ * Consent answers the fake window gives, in order, how often it was asked — and the text of every
+ * modal, since the modal is the one place the caller's TAB TITLE is shown (issue #136).
+ */
+const consent = { answers: ['Allow'], asked: 0, messages: [] };
 global.__CREDS_MCP_CONSENT__ = consent;
 /**
  * Every line the broker wrote to its output channel — the audit surface.
@@ -43,9 +46,10 @@ fs.writeFileSync(
   stub,
   `module.exports = {
      window: {
-       showWarningMessage: () => {
+       showWarningMessage: (message) => {
          const c = global.__CREDS_MCP_CONSENT__;
          c.asked += 1;
+         c.messages.push(String(message));
          return Promise.resolve(c.answers.shift());
        },
        showInformationMessage: () => Promise.resolve(undefined),
@@ -174,6 +178,31 @@ const ENTRIES = [
     can: { use: true, edit: false, create: false, delete: false },
   },
 ];
+
+/** The session the T14 call claims, and — where a fixture home can be substituted — its tab's title. */
+const ITEST_SESSION = '98bf9f23-81ff-4bba-beaf-1fd8269ddc97';
+const ITEST_TAB_TITLE = 'creds itest tab';
+const ITEST_CLAUDE_PID = '424242';
+
+/**
+ * A home folder laid out the way Claude Code lays out ~/.claude: a registry entry naming the
+ * session and its folder, and that session's transcript under the folder Claude Code derives from
+ * the cwd (every character outside [a-zA-Z0-9] becomes '-'), whose last line is a custom title.
+ * The conversation line before it carries a decoy title the reader must never take.
+ */
+function claudeHomeWithTitle(root, session, title) {
+  const home = path.join(root, 'title-home');
+  const cwd = path.join(home, 'work', 'itest-repo');
+  const sessions = path.join(home, '.claude', 'sessions');
+  const project = path.join(home, '.claude', 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
+  fs.mkdirSync(sessions, { recursive: true });
+  fs.mkdirSync(project, { recursive: true });
+  fs.writeFileSync(path.join(sessions, `${ITEST_CLAUDE_PID}.json`), JSON.stringify({ pid: Number(ITEST_CLAUDE_PID), sessionId: session, cwd }));
+  const decoy = { type: 'user', message: { role: 'user', content: '{"type":"custom-title","customTitle":"DECOY"}' } };
+  const titled = { type: 'custom-title', customTitle: title, sessionId: session };
+  fs.writeFileSync(path.join(project, `${session}.jsonl`), `${JSON.stringify(decoy)}\n${JSON.stringify(titled)}\n`);
+  return home;
+}
 
 /**
  * Drive the server the way an MCP client does: write requests, hold stdin open, collect replies.
@@ -654,7 +683,17 @@ async function quietLeg() {
   // first written, and what running it found. `CLAUDE_PID` is blanked so the session registry on
   // THIS machine — a real one whenever the script runs under Claude Code — cannot make the label
   // depend on who ran the test.
-  const used = await speak({ ...env, CLAUDE_CODE_SESSION_ID: '98bf9f23-81ff-4bba-beaf-1fd8269ddc97', CLAUDE_PID: '' }, [
+  //
+  // T-I1 (issue #136) rides the same call, for the same budget reason: where HOME decides the home
+  // folder, the child gets a FIXTURE home holding a registry entry and a transcript with a custom
+  // title, and the modal must name the session by that title while the audit line must not. On
+  // Windows `Environment.GetFolderPath(UserProfile)` comes from the profile registry and ignores
+  // both HOME and USERPROFILE (measured 2026-09-24), so the fixture cannot be substituted there
+  // without a production knob, and the check is skipped with that reason. CI runs this on Linux.
+  const titleHome = process.platform === 'win32' ? undefined : claudeHomeWithTitle(storageDir, ITEST_SESSION, ITEST_TAB_TITLE);
+  const whoEnv = titleHome === undefined ? { CLAUDE_PID: '' } : { HOME: titleHome, CLAUDE_PID: ITEST_CLAUDE_PID };
+  consent.messages.length = 0;
+  const used = await speak({ ...env, CLAUDE_CODE_SESSION_ID: ITEST_SESSION, ...whoEnv }, [
     ...HANDSHAKE,
     { jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'creds_query', arguments: { entry: 'e-1', query: 'select 1' } } },
   ]);
@@ -675,6 +714,21 @@ async function quietLeg() {
   check('and the short session id the binary read from its environment', byLine.includes('session 98bf9f23'), byLine);
   const label = byLine.split(' by ')[1]?.split(' → ')[0] ?? '/';
   check('and the folder by its name only — never a path', label.includes(' · in ') && !/[\\/]/.test(label), label);
+
+  // ---- the tab title, C# sender against the TypeScript window (issue #136, T-I1) -------------
+  if (titleHome === undefined) {
+    console.log('SKIP  the tab-title check: on Windows the home folder comes from the profile registry, not from HOME,');
+    console.log('      so a fixture home cannot be substituted; CI runs this harness on Linux, where it can.');
+  } else {
+    const modal = consent.messages.at(-1) ?? '';
+    check(
+      'the modal names the session by its TAB TITLE, read by the real binary from the fixture transcript',
+      modal.startsWith(`creds-itest 9.9 · session "${ITEST_TAB_TITLE}" (98bf9f23) · in itest-repo wants to `),
+      modal.slice(0, 300),
+    );
+    check('and the audit line for the same call never records the title', byLine !== '' && !byLine.includes(ITEST_TAB_TITLE), byLine);
+    fs.rmSync(titleHome, { recursive: true, force: true });
+  }
 
   consent.answers = ['Allow'];
   consent.asked = 0;
