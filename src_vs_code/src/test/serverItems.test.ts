@@ -230,6 +230,18 @@ test('pending shares are named on the Vaults row only when there are some (#134)
   assert.equal(none.description, '41 · 1.2 GiB', 'nothing pending, nothing said');
 });
 
+test('a pending count that is not a positive number says nothing about shares (#134)', () => {
+  // A malformed document may carry `NaN`, and "could not tell" is spelled negative on this server.
+  // Both must read as "nothing pending" — `Math.max(count, 0)` would print "NaN pending shares",
+  // which is why the row does not use it (SonarCloud S7766 suggested exactly that).
+  const { serverVaultsItem } = world();
+
+  for (const pendingShares of [Number.NaN, -2]) {
+    const item = serverVaultsItem({ account: ACCOUNT, metrics: { ...METRICS, pendingShares } }) as Item;
+    assert.equal(item.description, '41 · 1.2 GiB', `pendingShares = ${String(pendingShares)}`);
+  }
+});
+
 // --- the backup row --------------------------------------------------------------------------
 
 test('nothing cached yet is "checking…", not "not configured"', () => {

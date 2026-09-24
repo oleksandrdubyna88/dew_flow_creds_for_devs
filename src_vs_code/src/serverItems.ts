@@ -154,13 +154,23 @@ export function serverVaultsItem(input: ServerVaultsRowInput): vscode.TreeItem {
  */
 function footprintOf(metrics: ServerMetrics): string {
   const vaults = `${metrics.vaults} · ${formatBytes(metrics.vaultBytesOnDisk)}`;
-  // A positive count or nothing: a document from before the field, or a `NaN`, says nothing here.
-  const pending = metrics.pendingShares > 0 ? metrics.pendingShares : 0;
+  const pending = positiveCount(metrics.pendingShares);
   if (pending === 0) {
     return vaults;
   }
   const noun = pending === 1 ? 'share' : 'shares';
   return `${vaults} · ${pending} pending ${noun} (${formatBytes(metrics.shareBytesOnDisk)})`;
+}
+
+/**
+ * A positive count, or 0 for anything else — a document from before the field, a `NaN`, or the
+ * negative this server uses for "could not tell".
+ *
+ * <p>Not `Math.max(count, 0)`, which SonarCloud S7766 suggests: that returns `NaN` for `NaN` and the
+ * row then reads "NaN pending shares" (pinned by `serverItems.test.ts`).</p>
+ */
+function positiveCount(count: number): number {
+  return Number.isFinite(count) && count > 0 ? count : 0;
 }
 
 export interface ServerBackupRowInput {
