@@ -123,7 +123,7 @@ public sealed class UseToolsTests
 
         Keys(body).Should().Equal("entry", "command", "caller");
         using var doc = JsonDocument.Parse(body);
-        doc.RootElement.GetProperty("caller").EnumerateObject().Select(p => p.Name).Should().Equal("agent", "session", "sessionName", "cwd");
+        doc.RootElement.GetProperty("caller").EnumerateObject().Select(p => p.Name).Should().Equal(BrokerContract.Current.Caller!.Fields, "the field list is the contract's, never retyped here");
         doc.RootElement.GetProperty("caller").GetProperty("agent").GetString().Should().Be("Claude Code 2.1.268");
         doc.RootElement.GetProperty("caller").GetProperty("session").GetString().Should().Be("98bf9f23");
     }
@@ -149,6 +149,17 @@ public sealed class UseToolsTests
         var body = UseTools.CreateBody(BrokerContract.Current, Caller, "app-03", "ssh", null, "k", null, "app-03.internal", null, 22, null);
 
         Keys(body).Should().Equal("name", "kind", "secret", "host", "port", "caller");
+    }
+
+    [Fact]
+    public void The_tab_title_a_call_learnt_rides_in_the_caller_object_it_posts()
+    {
+        var source = new CallerSource(Caller, () => "creds old issues");
+
+        var body = UseTools.Body(BrokerContract.Current, source.Current, "e-1", "command", "uname -a");
+
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetProperty("caller").GetProperty("tabTitle").GetString().Should().Be("creds old issues");
     }
 
     [Fact]

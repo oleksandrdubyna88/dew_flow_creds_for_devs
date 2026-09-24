@@ -43,16 +43,26 @@ public sealed class CallerIdentityTests
     // ---- the ladder (T7) --------------------------------------------------------------------
 
     [Fact]
-    public void The_ladder_is_creds_then_claude_then_codex_then_gemini_and_the_first_non_blank_wins()
+    public void The_ladder_is_creds_then_claude_then_codex_and_the_first_non_blank_wins()
     {
-        CallerIdentity.SessionLadder.Should().Equal(
-            "CREDS_CALLER_SESSION", "CLAUDE_CODE_SESSION_ID", "CODEX_SESSION_ID", "GEMINI_CLI_SESSION_ID");
+        CallerIdentity.SessionLadder.Should().Equal("CREDS_CALLER_SESSION", "CLAUDE_CODE_SESSION_ID", "CODEX_SESSION_ID");
 
         CallerIdentity.SessionFrom(Env(("CLAUDE_CODE_SESSION_ID", "claude-1"), ("CODEX_SESSION_ID", "codex-1")))
             .Should().Be("claude-1");
         CallerIdentity.SessionFrom(Env(("CREDS_CALLER_SESSION", "mine"), ("CLAUDE_CODE_SESSION_ID", "claude-1")))
             .Should().Be("mine", "an explicit override comes first so a client without an id of its own can be given one");
-        CallerIdentity.SessionFrom(Env(("GEMINI_CLI_SESSION_ID", "gem-1"))).Should().Be("gem-1");
+    }
+
+    /// <summary>
+    /// <c>GEMINI_CLI_SESSION_ID</c> is a telemetry key in Gemini CLI, never an exported variable, so
+    /// the rung could not answer. The documented way to name a Gemini session is the override, which
+    /// is unaffected by the removal.
+    /// </summary>
+    [Fact]
+    public void A_gemini_session_is_named_through_the_override_and_the_dead_telemetry_rung_no_longer_answers()
+    {
+        CallerIdentity.SessionFrom(Env(("GEMINI_CLI_SESSION_ID", "gem-1"))).Should().BeEmpty();
+        CallerIdentity.SessionFrom(Env(("CREDS_CALLER_SESSION", "gem-by-hand"), ("GEMINI_CLI", "1"))).Should().Be("gem-by-hand");
     }
 
     [Fact]
@@ -272,21 +282,53 @@ public sealed class CallerIdentityTests
     // ---- the wire and the command line ------------------------------------------------------
 
     [Fact]
-    public void The_json_shape_is_the_contract_s_nested_object_with_its_four_fields()
+    public void The_json_shape_is_the_contract_s_nested_object_with_its_five_fields_the_tab_title_last()
     {
-        var record = new CallerRecord("Claude Code 2.1.268", "98bf9f23", "clauderag-d6", "ClaudeRag");
+        var record = new CallerRecord("Claude Code 2.1.268", "98bf9f23", "clauderag-d6", "ClaudeRag", "creds old issues");
 
         var json = CallerIdentity.ToJson(record).ToJsonString();
 
-        json.Should().Be("""{"agent":"Claude Code 2.1.268","session":"98bf9f23","sessionName":"clauderag-d6","cwd":"ClaudeRag"}""");
+        json.Should().Be("""{"agent":"Claude Code 2.1.268","session":"98bf9f23","sessionName":"clauderag-d6","cwd":"ClaudeRag","tabTitle":"creds old issues"}""");
         using var doc = JsonDocument.Parse(json);
-        doc.RootElement.EnumerateObject().Select(p => p.Name).Should().Equal("agent", "session", "sessionName", "cwd");
+        doc.RootElement.EnumerateObject().Select(p => p.Name).Should().Equal("agent", "session", "sessionName", "cwd", "tabTitle");
+    }
+
+    [Fact]
+    public void A_forwarded_record_from_an_older_half_without_a_tab_title_decodes_to_an_empty_title_not_null()
+    {
+        // An old Linux half of the WSL bridge sends the four-field object. The fifth must come back
+        // as "", because every consumer reads it as a string.
+        var older = System.Buffers.Text.Base64Url.EncodeToString(
+            Encoding.UTF8.GetBytes("""{"agent":"","session":"98bf9f23","sessionName":"clauderag-d6","cwd":"ClaudeRag"}"""));
+
+        var record = CallerIdentity.Decode(older);
+
+        record.TabTitle.Should().NotBeNull().And.BeEmpty();
+        record.Session.Should().Be("98bf9f23");
+    }
+
+    [Fact]
+    public void A_record_that_knows_only_the_tab_title_is_not_empty()
+    {
+        CallerRecord.Empty.TabTitle.Should().BeEmpty();
+        (CallerRecord.Empty with { TabTitle = "creds old issues" }).IsEmpty.Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_hostile_tab_title_in_a_forwarded_record_is_cleaned_on_the_way_in()
+    {
+        var hostile = System.Buffers.Text.Base64Url.EncodeToString(
+            Encoding.UTF8.GetBytes("""{"agent":"","session":"98bf9f23","sessionName":"","cwd":"ClaudeRag","tabTitle":"X\n\n(verified) → ​ ok"}"""));
+
+        var record = CallerIdentity.Decode(hostile);
+
+        record.TabTitle.Should().Be("X (verified) ok");
     }
 
     [Fact]
     public void The_record_crosses_a_command_line_as_base64url_and_comes_back_whole()
     {
-        var record = new CallerRecord("Claude Code 2.1.268", "98bf9f23", "clauderag-d6", "ClaudeRag");
+        var record = new CallerRecord("Claude Code 2.1.268", "98bf9f23", "clauderag-d6", "ClaudeRag", "creds old issues");
 
         var encoded = CallerIdentity.Encode(record);
 

@@ -32,7 +32,7 @@ public sealed class FolderToolsTests
         Keys(body).Should().Equal("name", "parent", "caller");
         using var doc = JsonDocument.Parse(body);
         doc.RootElement.GetProperty("name").GetString().Should().Be("staging");
-        doc.RootElement.GetProperty("caller").EnumerateObject().Select(p => p.Name).Should().Equal("agent", "session", "sessionName", "cwd");
+        doc.RootElement.GetProperty("caller").EnumerateObject().Select(p => p.Name).Should().Equal(BrokerContract.Current.Caller!.Fields, "the field list is the contract's, never retyped here");
         doc.RootElement.GetProperty("caller").GetProperty("sessionName").GetString().Should().Be("clauderag-d6");
     }
 

@@ -156,3 +156,25 @@ test('a caller that reports nothing but its own name — the CLI in a plain term
     w.server.dispose();
   }
 });
+
+test('a Claude Code caller is named by its TAB TITLE in the modal — and the audit line never records the title', async () => {
+  // Issue #136: the derived registry name and the short id are on no tab, so the person could not
+  // match the dialog to the screen. The title is shown in the modal, which is ephemeral; the audit
+  // line keeps the registry name, because an AI title summarises a private conversation and the
+  // journal is durable (owner's decision D4, reversible).
+  const w = world({});
+  try {
+    const { port, secret } = await share(w);
+
+    await call(port, '/v1/use/exec', { token: secret, body: { command: 'uptime', caller: { ...CALLER, tabTitle: 'creds old issues' } } });
+
+    assert.ok(
+      w.dialogs[0].startsWith('Claude Code 2.1.268 · session "creds old issues" (98bf9f23) · in ClaudeRag wants to run a command on "prod"'),
+      w.dialogs[0],
+    );
+    assert.ok(w.audit.some((line) => line.includes(` by ${LABEL} → `)), `the audit line keeps the registry name:\n${w.audit.join('\n')}`);
+    assert.equal(w.audit.some((line) => line.includes('creds old issues')), false, w.audit.join('\n'));
+  } finally {
+    w.server.dispose();
+  }
+});

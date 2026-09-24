@@ -29,6 +29,13 @@
 > label promises the registry's name and the short session id, never the tab's summary. Adding it
 > later is an additive field, not a redesign.
 >
+> **Closed for Claude Code, 2026-09-24 (issue #136)** — exactly as predicted, as an additive fifth
+> field `caller.tabTitle`: the tab's text is the session's summary, read from the last 64 KB of its
+> transcript (custom title → `custom-title.json` → AI title), per call, and shown in the modal but not
+> the audit line. Codex and Gemini still carry no name, and the title is absent under the WSL bridge —
+> see [PLAN_consent_shows_the_tab_title.md](PLAN_consent_shows_the_tab_title.md) and the tail it
+> extracted.
+>
 > Scope: `src_vs_code/src` (the broker:
 > consent modal, request parsing, audit line), `src_mcp/src` (`creds-mcp`: caller record, WSL
 > forwarding), `src_broker_client/src` (the shared `CallerIdentity`), `src_cli/src` (`creds`),
@@ -734,7 +741,10 @@ Stated as *what was checked*, per `planning-docs.md`'s rule on negative results.
    **NOT checked:** VS Code's own workspace storage, the extension host's state, and any Claude Code
    IPC surface (`messagingSocketPath` is in the session file and was not opened). The plan therefore
    promises the registry's `name`, and the short session id when there is none. If the tab title is
-   wanted later it is an additive field, not a redesign.
+   wanted later it is an additive field, not a redesign. **Answered 2026-09-24:** it lives in the
+   session's transcript (`~/.claude/projects/<folder>/<sessionId>.jsonl`, the `custom-title` and
+   `ai-title` lines) and in `<sessionId>/custom-title.json` — the place none of the three unchecked
+   surfaces above was; [PLAN_consent_shows_the_tab_title.md](PLAN_consent_shows_the_tab_title.md) §2.1.
 2. **`Directory.GetCurrentDirectory()` inside a `creds-mcp` started by an MCP client.** Not
    measured. This is why §5.1 prefers the session file's `cwd` and treats the process cwd as the
    fallback.

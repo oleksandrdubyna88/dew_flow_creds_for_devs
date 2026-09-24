@@ -114,7 +114,10 @@ internal static class Program
 
         try
         {
-            await RunAsync(contract, caller);
+            // The tab title is read per call, and only from THIS process's own environment: a
+            // record forwarded from the Linux half gets no provider, because here the environment
+            // belongs to wsl.exe and would name somebody else's session (issue #136, D6).
+            await RunAsync(contract, new CallerSource(caller, forwarded is null ? CallerIdentity.TabTitleSource() : null));
             return 0;
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException)
@@ -163,7 +166,7 @@ internal static class Program
         }
     }
 
-    private static async Task RunAsync(BrokerContract contract, CallerRecord caller)
+    private static async Task RunAsync(BrokerContract contract, CallerSource source)
     {
         var options = new McpServerOptions
         {
@@ -175,8 +178,8 @@ internal static class Program
             ServerInstructions = Instructions,
         };
         // The tools capture the holder, not a value: ClientInfo is null until the handshake this
-        // process is about to answer, so the client's name is read per call — see CallerSource.
-        var source = new CallerSource(caller);
+        // process is about to answer, so the client's name and the tab title are read per call
+        // (CallerSource explains why).
         options.ToolCollection ??= [];
         options.ToolCollection.Add(ListTool(contract));
         options.ToolCollection.Add(ConfigSnippetTool(contract));

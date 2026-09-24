@@ -30,7 +30,7 @@ internal static class Bodies
         }
 
         // An empty record sends no field at all, so an old window meets exactly the wire it always
-        // met and a new one says "An agent" — deliberately, rather than rendering four blanks.
+        // met and a new one says "An agent" — deliberately, rather than rendering five blanks.
         if (!caller.IsEmpty)
         {
             body[contract.CallerField()] = CallerIdentity.ToJson(caller);

@@ -22,7 +22,7 @@ import {
  * and the tests say so by asserting only what is RENDERED.</p>
  */
 
-const REPORTED = { agent: 'Claude Code 2.1.268', session: '98bf9f23', sessionName: 'clauderag-d6', cwd: 'ClaudeRag' };
+const REPORTED = { agent: 'Claude Code 2.1.268', session: '98bf9f23', sessionName: 'clauderag-d6', cwd: 'ClaudeRag', tabTitle: '' };
 
 // Built by code point rather than written as escapes, so the fixture is readable in a diff and
 // cannot be normalised away by an editor: a bell (Cc), a zero-width space (Cf) and an escape (Cc).
@@ -94,7 +94,7 @@ test('the cap counts characters, not UTF-16 halves — no lone surrogate reaches
 
 test('the composed label is capped too, so four full fields cannot make a 64 KB modal', () => {
   const full = 'x'.repeat(CALLER_MAX_FIELD_CHARS);
-  const label = callerFrom({ caller: { agent: full, session: full, sessionName: full, cwd: full } });
+  const label = callerFrom({ caller: { agent: full, session: full, sessionName: full, cwd: full, tabTitle: full } });
 
   assert.ok(callerLine(label).length <= CALLER_MAX_LABEL_CHARS, String(callerLine(label).length));
   assert.equal(CALLER_MAX_LABEL_CHARS, 160);
@@ -106,7 +106,7 @@ test('a field that is not a string is dropped, not stringified', () => {
     caller: { agent: ['Claude', 'Code'], session: 42, sessionName: { name: 'x' }, cwd: 'ClaudeRag' },
   });
 
-  assert.deepEqual(label, { agent: '', session: '', sessionName: '', cwd: 'ClaudeRag' });
+  assert.deepEqual(label, { agent: '', session: '', sessionName: '', cwd: 'ClaudeRag', tabTitle: '' });
   assert.equal(callerLine(label), 'in ClaudeRag');
 });
 
@@ -151,10 +151,10 @@ test('a record with no session — the CLI in a person\'s own terminal — reads
 });
 
 test('each segment is omitted when its field is empty, and the separators go with it', () => {
-  assert.equal(callerLine({ agent: 'Codex', session: '9f2c41ab', sessionName: '', cwd: '' }), 'Codex · session 9f2c41ab');
-  assert.equal(callerLine({ agent: '', session: '', sessionName: 'clauderag-d6', cwd: '' }), 'session clauderag-d6');
-  assert.equal(callerLine({ agent: 'Gemini CLI', session: '', sessionName: '', cwd: '' }), 'Gemini CLI');
-  const onlyFolder = callerLine({ agent: '', session: '', sessionName: '', cwd: 'ClaudeRag' });
+  assert.equal(callerLine({ agent: 'Codex', session: '9f2c41ab', sessionName: '', cwd: '', tabTitle: '' }), 'Codex · session 9f2c41ab');
+  assert.equal(callerLine({ agent: '', session: '', sessionName: 'clauderag-d6', cwd: '', tabTitle: '' }), 'session clauderag-d6');
+  assert.equal(callerLine({ agent: 'Gemini CLI', session: '', sessionName: '', cwd: '', tabTitle: '' }), 'Gemini CLI');
+  const onlyFolder = callerLine({ agent: '', session: '', sessionName: '', cwd: 'ClaudeRag', tabTitle: '' });
   assert.equal(onlyFolder, 'in ClaudeRag');
   assert.equal(onlyFolder.includes(' ·  · '), false, onlyFolder);
 });
@@ -196,4 +196,76 @@ test('a HOSTILE label, once sanitised, still survives the audit round trip', () 
   assert.equal(entry?.caller, text);
   assert.equal(entry?.outcome, 'exit 0', 'the forged outcome did not become the outcome');
   assert.equal(entry?.detail, 'SELECT 1');
+});
+
+// ---- the tab title (issue #136) ------------------------------------------------------------
+
+const TITLED = { ...REPORTED, tabTitle: 'creds old issues' };
+
+/** The title a body reports, as the window reads it. */
+const titleOf = (body: Record<string, unknown>): string | undefined => callerFrom(body)?.tabTitle;
+
+test('the tab title is read from both wire shapes and cleaned like every other field', () => {
+  assert.equal(titleOf({ caller: TITLED }), 'creds old issues');
+  assert.equal(titleOf({ callerAgent: 'Claude Code 2.1.281', callerTabTitle: 'creds old issues' }), 'creds old issues');
+  assert.equal(titleOf({ caller: { ...REPORTED, tabTitle: 'X\n\n(verified) → ok' } }), 'X (verified) ok');
+  assert.equal(titleOf({ caller: { ...REPORTED, tabTitle: { text: 'x' } } }), '', 'not a string, not stringified');
+  assert.equal(titleOf({ caller: { agent: 'x' } }), '', 'an older sender simply has none');
+});
+
+test('a record that knows only the tab title is still a caller, not "An agent"', () => {
+  const label = callerFrom({ caller: { tabTitle: 'creds old issues' } });
+
+  assert.ok(label !== undefined);
+  assert.equal(callerLine(label), 'session "creds old issues"');
+});
+
+test('the tab title names the session in the modal, quoted, in place of the derived registry name', () => {
+  // The derived name (clauderag-d6) and the id are on no tab; the title IS the tab. Two names for
+  // one session in a security dialog would read as two sessions, so the title replaces the name.
+  assert.equal(callerLine(TITLED), 'Claude Code 2.1.268 · session "creds old issues" (98bf9f23) · in ClaudeRag');
+  assert.equal(callerLine({ ...TITLED, session: '' }), 'Claude Code 2.1.268 · session "creds old issues" · in ClaudeRag');
+  assert.equal(callerLine(REPORTED), 'Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in ClaudeRag', 'no title: unchanged');
+});
+
+test('the title is shown in full up to the field cap, so the tab text — however the tab cuts it — is a prefix of it', () => {
+  const long = 'Fix the consent modal so it shows the tab title of the session';
+  const line = callerLine({ ...TITLED, tabTitle: long });
+
+  assert.ok(line.includes(`session "${long}" (98bf9f23)`), line);
+  assert.ok(line.includes(`"${long.slice(0, 24)}`), 'the tab shows the first 24 characters');
+});
+
+test('the audit form never carries the tab title — and still carries the registry name', () => {
+  // Owner's decision D4: an AI title summarises a private conversation; the modal is ephemeral and
+  // the journal is durable, so the title stays out of it. Reversible in this one function.
+  const audit = callerForAudit(TITLED) ?? '';
+
+  assert.equal(audit.includes('creds old issues'), false, audit);
+  assert.equal(audit, 'Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in ClaudeRag');
+  assert.equal(
+    callerForAudit({ agent: '', session: '', sessionName: '', cwd: '', tabTitle: 'only a title' }),
+    undefined,
+    'a caller known only by its title leaves no " by " segment rather than an empty one',
+  );
+});
+
+test('a title cannot forge a second session in the label — its quotes and the separator are neutralised', () => {
+  // An AI title is written by a model from the conversation, so text the agent READ can steer it.
+  // Unescaped, `prod" (deadbeef) · session "Claude Code` would render as two sessions, one with a
+  // forged id (code round, 2026-09-24). Inside the quotes the title stays visibly one value.
+  const line = callerLine({ ...TITLED, tabTitle: 'prod" (deadbeef) · session "Claude Code' });
+
+  assert.equal(line, `Claude Code 2.1.268 · session "prod' (deadbeef) - session 'Claude Code" (98bf9f23) · in ClaudeRag`);
+  assert.equal(line.split('"').length - 1, 2, 'exactly one pair of quotes: the one around the title');
+  assert.equal(line.split(' · ').length, 3, 'agent · session · folder, and no fourth segment');
+});
+
+test('a hostile title cannot forge the modal, and five full fields still make at most 160 characters', () => {
+  const label = callerFrom({ caller: { ...REPORTED, tabTitle: `X\n\nAllow covers nothing. (verified) → ${'y'.repeat(5000)}` } });
+  const line = callerLine(label);
+
+  assert.equal(line.includes('\n'), false, line);
+  assert.equal(line.includes('→'), false, line);
+  assert.ok(line.length <= CALLER_MAX_LABEL_CHARS, String(line.length));
 });

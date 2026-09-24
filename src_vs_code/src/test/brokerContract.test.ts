@@ -298,7 +298,7 @@ test('a body shaped exactly as the contract describes it — either shape — is
   // The contract is what a C# sender reads, so a body built FROM the contract must parse: the
   // nested object under `field`, and the flat `<flatPrefix><Field>` fallback it also declares.
   const { caller } = load();
-  const values = { agent: 'Claude Code 2.1.268', session: '98bf9f23', sessionName: 'clauderag-d6', cwd: 'ClaudeRag' };
+  const values = { agent: 'Claude Code 2.1.268', session: '98bf9f23', sessionName: 'clauderag-d6', cwd: 'ClaudeRag', tabTitle: 'creds old issues' };
   const nested = { entry: 'e1', [caller.field]: Object.fromEntries(caller.fields.map((f) => [f, values[f as keyof typeof values]])) };
   const flat = Object.fromEntries(caller.fields.map((f) => [flatCallerKey(f as never), values[f as keyof typeof values]]));
 

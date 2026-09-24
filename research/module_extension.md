@@ -3264,12 +3264,31 @@ token anywhere.
 | `POST /v1/use/terminal` | `{caller?}` | `{opened}` |
 
 **`caller?`** — on every body that performs something (token, alias, MCP use/delete/create, the folder
-verbs): `{agent, session, sessionName, cwd}`, who is asking *as the client reports it* — the product
-and version (`Claude Code 2.1.268`, `creds CLI`), the first eight characters of the agent's own
-session id, the session's name from `~/.claude/sessions/<pid>.json`, and the BASENAME of its working
-folder. The contract's `caller` block declares both shapes the window reads — the nested object and
-the flat `callerAgent` / `callerSession` / `callerSessionName` / `callerCwd` fallback — with
-`maxFieldChars: 80`. **The window is the guard**: `callerFrom` in `brokerCaller.ts` (a `vscode`-free
+verbs): `{agent, session, sessionName, cwd, tabTitle}`, who is asking *as the client reports it* — the
+product and version (`Claude Code 2.1.268`, `creds CLI`), the first eight characters of the agent's
+own session id, the session's name from `~/.claude/sessions/<pid>.json`, the BASENAME of its working
+folder, and — since 2026-09-24, issue #136 — the title on the caller's Claude Code TAB. The contract's
+`caller` block declares both shapes the window reads — the nested object and the flat `callerAgent` /
+`callerSession` / `callerSessionName` / `callerCwd` / `callerTabTitle` fallback — with
+`maxFieldChars: 80`; the fifth field is additive (wire `version` stays 1: an older window ignores it,
+an older sender omits it and the window reads `''`).
+
+**Where the tab title comes from** ([PLAN_consent_shows_the_tab_title.md](PLAN_consent_shows_the_tab_title.md)).
+The tab's text is the session's summary, found by the Claude Code extension in the last 64 KB of the
+session's transcript `~/.claude/projects/<cwd, every non-[a-zA-Z0-9] as '-'>/<sessionId>.jsonl`.
+`SessionTitle` (`src_broker_client`) reads the same window by `Seek` and takes, in the tab's own
+order, the last `custom-title` line, then `<sessionId>/custom-title.json` (≤1 KB), then the last
+`ai-title` line — and STOPS there: the tab's lower rungs (the last prompt, the first prompt) are the
+text of the conversation and are never read. Only a line that STARTS with `{"type":"custom-title"` or
+`{"type":"ai-title"` is parsed at all, its root `type` is checked again, and one string is taken from
+it; a first line the 64 KB cut began inside is dropped. `CallerIdentity.TabTitle` opens nothing unless
+the answering rung is `CLAUDE_CODE_SESSION_ID`, **no other agent's variable** (`CODEX_SESSION_ID`,
+`CODEX_THREAD_ID`, `GEMINI_CLI`) is present — measured: a shell Codex runs inside a Claude Code
+terminal carries both agents' variables — and the registry entry names a folder; the transcript is
+keyed by the entry's own `sessionId`. It is read **per call**: `creds-mcp` asks a provider in
+`CallerSource` on every tool call (a tab is renamed while its server runs), `creds` once per run.
+Under the WSL bridge there is no title: the forwarded record is computed once at start and the Windows
+half gets no provider. Any failure is an empty title, which is the sentence the modal said before. **The window is the guard**: `callerFrom` in `brokerCaller.ts` (a `vscode`-free
 module, so the sanitiser is a unit test) drops any field that is not a string, replaces every Unicode
 control and format character — `\n`, `\r`, `\t`, a zero-width space, a terminal escape — and the
 audit separator `→` with a space, collapses whitespace runs, trims, caps each field at 80 code points
@@ -3316,7 +3335,14 @@ mis-click must not lock an agent out until the window closes. Every call, allowe
 one line to the **CredsForDevs: Agent Access** output channel, with ` by <label>` between the door
 and the outcome when a caller was reported (`agentAuditLog.ts`; the group is optional, so every
 line written before it existed still parses); an unknown token is answered but never logged, since
-the CLI legitimately probes.
+the CLI legitimately probes. **The tab title is shown in the modal and never written to that line**
+(since 2026-09-24): the modal reads *`Claude Code 2.1.281 · session "creds old issues" (52d1b29a) ·
+in ClaudeRag` wants to…* — the quoted title REPLACING the derived registry name, in full up to the
+80-character field cap so the tab's own cut is always a prefix of it, with any `"` inside it shown as
+`'` and any `·` as `-` so it stays visibly ONE value (an AI title is steerable by text the agent read,
+and `prod" (deadbeef) · session "x` would otherwise render as two sessions) — while `callerForAudit` renders
+the label without the title, keeping the registry name. An AI title summarises a private
+conversation and the journal is durable; that is an assumption awaiting the owner's confirmation (#136, D4), and a reversible one.
 
 **The entry's ask policy does not reach this door, and that is a decision** (issue #95, owner
 decision D1). The cadence an entry carries — *ask every time*, *ask once every 12 hours*, *never

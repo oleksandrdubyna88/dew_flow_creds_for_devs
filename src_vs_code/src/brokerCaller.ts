@@ -29,17 +29,23 @@ export interface CallerLabel {
   sessionName: string;
   /** The BASENAME of the working folder — never a full path, which is a leak in a modal. */
   cwd: string;
+  /**
+   * The text on the caller's Claude Code TAB (issue #136) — its custom or AI title, read per call by
+   * the sender from the tail of the session's transcript. Shown in the modal in place of the derived
+   * registry name, and deliberately NOT written to the audit line (see `callerForAudit`).
+   */
+  tabTitle: string;
 }
 
 /** The body field the nested object travels in. */
 export const CALLER_FIELD = 'caller';
 
-/** The four fields, in the order the label composes them. */
-export const CALLER_FIELDS = ['agent', 'session', 'sessionName', 'cwd'] as const;
+/** The five fields — the fifth, `tabTitle`, added 2026-09-24 and last, so the wire stays additive. */
+export const CALLER_FIELDS = ['agent', 'session', 'sessionName', 'cwd', 'tabTitle'] as const;
 
 /**
  * The prefix of the flat fallback shape — `callerAgent`, `callerSession`, `callerSessionName`,
- * `callerCwd`. The nested object is what the senders use (measured under AOT, plan §5.2); the
+ * `callerCwd`, `callerTabTitle`. The nested object is what the senders use (measured under AOT, plan §5.2); the
  * flat shape is read too, because a fallback the parser does not know is one that silently turns
  * every label into "An agent".
  */
@@ -67,7 +73,7 @@ export function flatCallerKey(field: CallerField): string {
 /**
  * The caller a body reports, sanitised — or `undefined` when it reports nothing at all.
  *
- * <p>Both wire shapes: `body.caller` when it is an object, otherwise the four `caller*` string
+ * <p>Both wire shapes: `body.caller` when it is an object, otherwise the five `caller*` string
  * fields. Every field goes through `cleanCallerField`; an all-empty result is `undefined` rather
  * than a label, so the modal falls back deliberately instead of rendering `" ·  · "`.</p>
  */
@@ -79,6 +85,7 @@ export function callerFrom(body: Record<string, unknown>): CallerLabel | undefin
     session: cleanCallerField(source.session),
     sessionName: cleanCallerField(source.sessionName),
     cwd: cleanCallerField(source.cwd),
+    tabTitle: cleanCallerField(source.tabTitle),
   };
   return CALLER_FIELDS.every((field) => label[field] === '') ? undefined : label;
 }
@@ -134,18 +141,48 @@ export function callerLine(caller: CallerLabel | undefined): string {
   return capPoints(segments.filter((segment) => segment !== '').join(' · '), CALLER_MAX_LABEL_CHARS);
 }
 
-/** `session <name> (<id>)`, or whichever half exists — the id alone is never parenthesised. */
-function sessionSegment({ session, sessionName }: CallerLabel): string {
-  if (sessionName === '') {
+/**
+ * `session "<tab title>" (<id>)` when the tab's title is known, else `session <name> (<id>)`, or
+ * whichever half exists — the id alone is never parenthesised.
+ *
+ * <p>The title REPLACES the derived registry name rather than joining it: the name
+ * (`clauderag-d6`) is on no screen the person is looking at, and two names for one session in a
+ * security dialog read as two sessions. It is quoted because it is free text and may contain ` · `.
+ * It is shown whole, up to the field cap, not cut to the tab's 24 characters and `…` — whatever
+ * the tab cuts, its text is then a PREFIX of this one (issue #136, D3).</p>
+ */
+function sessionSegment(caller: CallerLabel): string {
+  const { session } = caller;
+  const name = shownName(caller);
+  if (name === '') {
     return session === '' ? '' : `session ${session}`;
   }
-  return session === '' ? `session ${sessionName}` : `session ${sessionName} (${session})`;
+  return session === '' ? `session ${name}` : `session ${name} (${session})`;
 }
 
 /**
- * The same label for the audit line — or nothing, so a line for an unknown caller carries no
- * ` by ` segment rather than ` by An agent`.
+ * The tab's title, quoted, when there is one; the registry's derived name otherwise.
+ *
+ * <p>Inside the quotes a `"` becomes `'` and the segment separator `·` becomes `-`, so the title is
+ * visibly ONE value. An AI title is written by a model from the conversation — text the agent read
+ * can steer it — and `prod" (deadbeef) · session "Claude Code` would otherwise render as two
+ * sessions, one with a forged id (code round, 2026-09-24).</p>
+ */
+function shownName({ sessionName, tabTitle }: CallerLabel): string {
+  return tabTitle === '' ? sessionName : `"${tabTitle.replaceAll('"', "'").replaceAll('·', '-')}"`;
+}
+
+/**
+ * The same label for the audit line — WITHOUT the tab title — or nothing, so a line for an unknown
+ * caller carries no ` by ` segment rather than ` by An agent`.
+ *
+ * <p><b>The title stays out of the journal — an assumption awaiting the owner's confirmation (issue #136, D4), and a
+ * reversible one.</b> An AI title is a one-line summary of a private conversation; the modal is
+ * ephemeral, the Agent Access journal is durable, and it should not accumulate those summaries. The
+ * line keeps the registry name and the short id, which is what it carried before the title
+ * existed. Reversing it is this function and its test.</p>
  */
 export function callerForAudit(caller: CallerLabel | undefined): string | undefined {
-  return caller === undefined ? undefined : callerLine(caller);
+  const recorded = caller === undefined ? undefined : { ...caller, tabTitle: '' };
+  return recorded === undefined || CALLER_FIELDS.every((field) => recorded[field] === '') ? undefined : callerLine(recorded);
 }
