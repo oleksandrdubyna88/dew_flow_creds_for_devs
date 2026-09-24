@@ -48,7 +48,16 @@ public sealed record TargetDecision(BackupTargetRequest Wanted, SealedTarget? Ke
         BackupTargets.Text(Wanted.Kind), BackupTargets.Text(Wanted.Bucket), BackupTargets.Text(Wanted.Prefix));
 
     /// <summary><c>+</c> added, <c>~</c> re-keyed or re-regioned, nothing when unchanged.</summary>
-    public string Mark => IsNew ? "+" : Probe ? "~" : string.Empty;
+    public string Mark => MarkOf();
+
+    private string MarkOf()
+    {
+        if (IsNew)
+        {
+            return "+";
+        }
+        return Probe ? "~" : string.Empty;
+    }
 }
 
 /// <summary>
@@ -69,7 +78,10 @@ public sealed record BackupTargetPlan(
 {
     public static BackupTargetPlan Of(IReadOnlyList<BackupTargetRequest> wanted, IReadOnlyList<SealedTarget> existing)
     {
-        var decisions = new List<TargetDecision>(wanted.Count);
+        // No capacity hint: `wanted.Count` is the CLIENT's number, and a list sized from user input is
+        // the shape a memory-allocation DoS takes. The request body ceiling already bounds it; the
+        // list grows as it is filled, which for single-digit destinations costs nothing.
+        var decisions = new List<TargetDecision>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var request in wanted)
         {

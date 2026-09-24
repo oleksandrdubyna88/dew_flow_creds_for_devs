@@ -44,7 +44,16 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const KEY = process.env.VAULT_LOCAL_SIGNING_KEY ?? '';
-const BASE = (process.env.VAULT_BASE_URL ?? 'http://127.0.0.1:5099').replace(/\/+$/, '');
+const BASE = withoutTrailingSlashes(process.env.VAULT_BASE_URL ?? 'http://127.0.0.1:5099');
+
+/** A loop rather than `/\/+$/`: that regex backtracks super-linearly on a long run of slashes. */
+function withoutTrailingSlashes(url) {
+  let trimmed = url;
+  while (trimmed.endsWith('/')) {
+    trimmed = trimmed.slice(0, -1);
+  }
+  return trimmed;
+}
 const DOMAIN = process.env.VAULT_TEST_DOMAIN ?? 'example.com';
 const OFFICER = `officer@${DOMAIN}`;
 

@@ -79,16 +79,16 @@ export type BackupPageMessageType =
   | 'refresh' | 'mint' | 'run' | 'download' | 'save'
   | 'addTarget' | 'editTarget' | 'cancelTarget' | 'saveTarget' | 'removeTarget';
 
-const MESSAGE_TYPES: readonly string[] = [
+const MESSAGE_TYPES: ReadonlySet<string> = new Set<BackupPageMessageType>([
   'refresh', 'mint', 'run', 'download', 'save',
   'addTarget', 'editTarget', 'cancelTarget', 'saveTarget', 'removeTarget',
-];
+]);
 
 /** A page is untrusted input: every field it may carry is checked for its kind, not only the type. */
 export function isBackupPageMessage(value: unknown): value is BackupPageMessage {
   const message = value as Record<string, unknown> | null;
   return isRecord(message)
-    && MESSAGE_TYPES.includes(message.type as string)
+    && MESSAGE_TYPES.has(message.type as string)
     && NUMBER_FIELDS.every((field) => optionalNumber(message[field]))
     && STRING_FIELDS.every((field) => optionalString(message[field]));
 }

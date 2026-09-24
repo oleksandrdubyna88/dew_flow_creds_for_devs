@@ -154,11 +154,13 @@ export function serverVaultsItem(input: ServerVaultsRowInput): vscode.TreeItem {
  */
 function footprintOf(metrics: ServerMetrics): string {
   const vaults = `${metrics.vaults} · ${formatBytes(metrics.vaultBytesOnDisk)}`;
-  if (!(metrics.pendingShares > 0)) {
+  // A positive count or nothing: a document from before the field, or a `NaN`, says nothing here.
+  const pending = metrics.pendingShares > 0 ? metrics.pendingShares : 0;
+  if (pending === 0) {
     return vaults;
   }
-  const noun = metrics.pendingShares === 1 ? 'share' : 'shares';
-  return `${vaults} · ${metrics.pendingShares} pending ${noun} (${formatBytes(metrics.shareBytesOnDisk)})`;
+  const noun = pending === 1 ? 'share' : 'shares';
+  return `${vaults} · ${pending} pending ${noun} (${formatBytes(metrics.shareBytesOnDisk)})`;
 }
 
 export interface ServerBackupRowInput {

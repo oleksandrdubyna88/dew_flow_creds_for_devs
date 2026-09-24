@@ -171,9 +171,9 @@ public static class OrgBackupEndpoints
             await OrgEndpoints.FailJson(ctx, StatusCodes.Status400BadRequest, problem);
             return;
         }
-        var existing = await backups.ReadSettingsAsync(ct);
         if (request!.Targets is null)
         {
+            var existing = await backups.ReadSettingsAsync(ct);
             await backups.WriteSettingsAsync(
                 existing with { ScheduleHourUtc = request.ScheduleHourUtc, RetentionDays = request.RetentionDays },
                 ct);
@@ -181,7 +181,7 @@ public static class OrgBackupEndpoints
             ctx.Response.StatusCode = StatusCodes.Status204NoContent;
             return;
         }
-        await SaveWithTargetsAsync(ctx, deps, backups, targets, request, existing, admin.Value.Email, ct);
+        await SaveWithTargetsAsync(ctx, deps, backups, targets, request, admin.Value.Email, ct);
     }
 
     /// <summary>
@@ -204,10 +204,10 @@ public static class OrgBackupEndpoints
         BackupStore backups,
         BackupTargets targets,
         BackupSettingsRequest request,
-        BackupSettings existing,
         string admin,
         CancellationToken ct)
     {
+        var existing = await backups.ReadSettingsAsync(ct);
         var plan = BackupTargetPlan.Of(request.Targets ?? [], existing.Targets);
         if (plan.Problem.Length > 0)
         {
@@ -288,8 +288,8 @@ public static class OrgBackupEndpoints
     /// <see cref="SealedTarget.Describe"/>, never a key, never an endpoint. Empty when the request did
     /// not carry destinations at all, and the row then says what it always said.
     /// </remarks>
-    private static Task RecordAsync(OrgEndpointDeps deps, string admin, BackupSettingsRequest request, string delta) =>
-        deps.Events.AppendAsync(
+    private static async Task RecordAsync(OrgEndpointDeps deps, string admin, BackupSettingsRequest request, string delta) =>
+        await deps.Events.AppendAsync(
             OrgEndpoints.Row(
                 OrgEventKinds.BackupSettingsChanged,
                 admin,

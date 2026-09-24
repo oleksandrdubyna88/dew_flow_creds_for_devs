@@ -390,9 +390,9 @@ export class BackupTab {
     await this.attempt(async () => {
       try {
         await this.client.saveSettings(this.account, { ...this.schedule(), targets });
-      } catch (failure) {
+      } catch (error) {
         await this.rereadTargetsQuietly();
-        throw failure;
+        throw error;
       }
       this.draft = undefined;
       await this.reread();
