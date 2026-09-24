@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { SignPurpose, describePurpose, describeUnknownShape } from './sshAgentProtocol';
+import { localRequestTimeLine } from './requestTime';
 import { AgentKey, SshAgentServer, agentSocketPath } from './sshAgentServer';
 import { parseSshPrivateKey } from './sshKeyParse';
 import {
@@ -74,6 +75,8 @@ export class SshAgentManager implements vscode.Disposable {
      * the session, because the agent runs only while a key is loaded.</p>
      */
     private readonly onAddressChanged: (socketPath: string | undefined) => void = () => undefined,
+    /** What time it is — an argument so a test about the prompt's time can stop the clock (#131). */
+    private readonly clock: () => Date = () => new Date(),
   ) {}
 
   get socketPath(): string | undefined {
@@ -229,13 +232,16 @@ export class SshAgentManager implements vscode.Disposable {
   }
 
   private async confirm(key: AgentKey, purpose: SignPurpose, data: Buffer): Promise<boolean> {
+    // When the signature was asked for, taken as it enters: the prompt has no timeout, so one found
+    // an hour later still signs — and the time on it is what says how old the request is (#131).
+    const asked = this.clock();
     this.noteUnknown(purpose, data);
-    if (withinAllowWindow(this.allowedUntil.get(key.entityId), Date.now())) {
+    if (withinAllowWindow(this.allowedUntil.get(key.entityId), asked.getTime())) {
       this.log(`allowed (within the 10-minute window) for ${describePurpose(purpose)}`);
       return true;
     }
     const choice = await vscode.window.showWarningMessage(
-      `Use the SSH key "${key.name}" to sign ${describePurpose(purpose)}?\n\n` +
+      `Use the SSH key "${key.name}" to sign ${describePurpose(purpose)}?\n${localRequestTimeLine(asked)}\n\n` +
         `${key.fingerprint}\n\n` +
         'The key itself never leaves this window. Allow once, or allow every use of this key for ' +
         'ten minutes — long enough for a push that signs and authenticates in one go.',
@@ -246,7 +252,7 @@ export class SshAgentManager implements vscode.Disposable {
     );
     // What the answer MEANS is `agentConsent.ts` — pure, and therefore tested. What is left
     // here is applying it: the presence signal and the remembered window.
-    const decision = consentFromChoice(choice, Date.now());
+    const decision = consentFromChoice(choice, this.clock().getTime());
     if (decision.present) {
       this.onUserPresent();
     }

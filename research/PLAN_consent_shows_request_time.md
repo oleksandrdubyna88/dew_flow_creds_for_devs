@@ -26,8 +26,9 @@ accepted (the joined-dialog test, the promotion ×3, the rename ×2); rejected o
 "missing" regex period that is there and an epoch-shift "drift" whose own examples are correct. Own
 reviewer: Opus (the dead-dialog wording, the SSH prompt question, the promotion).
 
-**Open tail.** The SSH agent's signing prompt (`sshAgentManager.confirm`) has no timeout and no time —
-a question for the owner, not in #131's screenshot.
+**Open tail.** Closed: the owner decided the SSH agent's signing prompt carries the line too —
+[PLAN_ssh_sign_prompt_time.md](PLAN_ssh_sign_prompt_time.md). Whether that prompt should also expire
+is a separate question nobody has asked yet.
 
 ## 1. The goal
 
