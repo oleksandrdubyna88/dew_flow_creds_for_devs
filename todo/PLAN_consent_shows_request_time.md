@@ -32,8 +32,10 @@ Facts the design rests on:
 ## 2. What must be true when done
 
 1. The modal carries `Requested YYYY-MM-DD HH:MM:SS (UTC±HH:MM).` in the machine's local time, on
-   its own line right after the head sentence — the moment the request that raised the dialog
-   arrived.
+   its own line right after the head sentence — the moment the broker raised the dialog for the
+   request, which is that request's own arrival plus its body read and validation (milliseconds).
+   The text is built once and never re-rendered, so a dialog left waiting keeps the time it was
+   raised, and a second call joining the open dialog changes nothing on it (gate plan round).
 2. The offset is exact for zones off the hour (`UTC+05:30`, `UTC-03:30`) and for UTC itself
    (`UTC+00:00`), and the date is the LOCAL date (23:30 UTC in UTC+03:00 is the next day).
 3. The formatting is a pure function tested without depending on the test machine's time zone.
@@ -42,7 +44,7 @@ Facts the design rests on:
 ## 3. Design
 
 - `src_vs_code/src/requestTime.ts` (pure): `requestTimeLine(epochMs, offsetMinutes)` →
-  `Requested 2026-09-23 14:05:12 (UTC+03:00).`, and `localRequestTime(date)` supplying the offset
+  `Requested 2026-09-23 14:05:12 (UTC+03:00).`, and `localRequestTimeLine(date)` supplying the offset
   from `date.getTimezoneOffset()` (whose sign is the opposite of the offset's — the one trap here).
 - `credsAgentServer.ask`: the line after the head sentence, from a `Date` taken as the dialog is
   built. No clock injection into the server: the broker test asserts the SHAPE, the pure test the
@@ -55,7 +57,8 @@ Facts the design rests on:
 ## 5. Test plan
 
 - `requestTime.test.ts`: a fixed epoch in UTC+03:00, UTC−05:00, UTC+05:30, UTC−03:30 and UTC+00:00;
-  a date that rolls over to the next local day; single-digit fields zero-padded; `localRequestTime`
+  a date that rolls over to the next local day, and one that rolls BACK across a month and a year
+  (00:30 UTC on 1 January in UTC−05:00 is 31 December); single-digit fields zero-padded; `localRequestTimeLine`
   uses the date's own offset with the right sign (checked against `getTimezoneOffset`).
 - `brokerConsentTime.test.ts` (real broker under the stub): the dialog's second line matches the
   shape, and the time on it is within the test's own before/after bracket.

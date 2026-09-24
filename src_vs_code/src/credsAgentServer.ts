@@ -26,6 +26,7 @@ import { McpFolderHooks } from './brokerFolderDoor';
 import { answerMcpRoute } from './brokerMcpRoutes';
 import { aliasTarget, grantForToken, readNamedBody } from './brokerRequests';
 import { CALLER_DISCLAIMER, CallerLabel, callerForAudit, callerFrom, callerLine } from './brokerCaller';
+import { localRequestTimeLine } from './requestTime';
 import { describeLimits, grantLimits } from './grantLimits';
 import { answerConfigRead } from './brokerConfigRoute';
 import { Grant, GrantRegistry } from './grantRegistry';
@@ -645,7 +646,8 @@ export class CredsAgentServer implements vscode.Disposable {
       Promise.resolve(
         vscode.window.showWarningMessage(
           `${callerLine(caller)} wants to ${verb} ` +
-            `"${grant.entityName}" using its stored credential.\n\n${summary}\n\n` +
+            // WHEN (#131): fixed as the dialog is raised, so one left waiting keeps the time it was asked.
+            `"${grant.entityName}" using its stored credential.\n${localRequestTimeLine(new Date())}\n\n${summary}\n\n` +
             `${CALLER_DISCLAIMER}\n\n` +
             `Allowing covers every later call on this token, not just this one: with it the agent can ${everything} "${grant.entityName}" ` +
             `${describeLimits(limits)}. ` +
