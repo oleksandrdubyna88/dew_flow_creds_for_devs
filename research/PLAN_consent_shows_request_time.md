@@ -1,11 +1,32 @@
 # PLAN — the agent consent dialog says when the request was made (issue #131)
 
-> Status: **plan only, nothing implemented yet, 2026-09-24.** Scope: `src_vs_code` — the modal
-> `CredsAgentServer.ask` raises on an agent's first use of a shared token. No broker contract, CLI,
-> MCP or server change.
+> Status: **IMPLEMENTED, 2026-09-24.** Scope: `src_vs_code` — the consent modal `CredsAgentServer.ask`
+> raises, reached from every broker door (token, alias, MCP use/create/delete, folder actions). No
+> broker contract, CLI, MCP or server change.
 >
-> Related docs: [module_extension.md](../research/module_extension.md) §Share with Claude Code;
-> [architecture.md](../research/architecture.md).
+> Related docs: [module_extension.md](module_extension.md) §Consent, *When it was asked*;
+> [architecture.md](architecture.md).
+
+## What shipped differently — read this first
+
+1. **Every broker door, not only a shared token's first use** — they all reach `consent → ask`, so
+   the scope line above was widened to say what shipped.
+2. **The joined dialog has its own test** (gate code round): the modal's answer is held open while a
+   second call arrives, and there is still one dialog. Breaking the `consenting` reuse turns it red.
+3. **The staleness claim was corrected** (own review): the plan spoke of a "twenty-minute-old
+   request", but the broker stops waiting after five minutes and the call is already refused; a modal
+   cannot be closed from code, so what the time actually tells the person is that the dialog is stale.
+4. `utcOffset` became `formatUtcOffset`; the rest shipped as planned.
+
+**The gate.** Plan round `proceed`, 3/3 reviewers; 2 of 8 accepted — the six that asked to thread an
+arrival timestamp through all five doors were rejected (the gap is the body read and validation,
+milliseconds, and the text is never re-rendered). Code round `proceed`, 12/12 reviewers; 6 of 18
+accepted (the joined-dialog test, the promotion ×3, the rename ×2); rejected ones include a
+"missing" regex period that is there and an epoch-shift "drift" whose own examples are correct. Own
+reviewer: Opus (the dead-dialog wording, the SSH prompt question, the promotion).
+
+**Open tail.** The SSH agent's signing prompt (`sshAgentManager.confirm`) has no timeout and no time —
+a question for the owner, not in #131's screenshot.
 
 ## 1. The goal
 
@@ -13,7 +34,7 @@ Issue #131: *"the message must show the date and time"*. The screenshot is the c
 *An agent wants to run a command on "ionos server" using its stored credential.* — the command, the
 caller disclaimer, what Allow covers, and Allow / Deny / Cancel. Nothing on it says WHEN the agent
 asked, so a modal found on returning to the desk reads the same as one raised a second ago — and
-an agent's request from twenty minutes ago is exactly the one a person should look at twice.
+a request whose dialog has already timed out looks exactly like a live one.
 
 Decided with the owner on 2026-09-23: **local time with its UTC offset**, e.g.
 `Requested 2026-09-23 14:05:12 (UTC+03:00).`
@@ -70,8 +91,8 @@ Facts the design rests on:
 
 ## 7. Definition of Done
 
-- [ ] The modal shows the request time in local time with its offset.
-- [ ] Tests above, red first; `npm test`, lint, typecheck, package green.
-- [ ] Docs updated; this plan promoted.
-- [ ] The `coai` gate: plan round and one code round; own review in parallel.
+- [x] The modal shows the request time in local time with its offset.
+- [x] Tests above, red first; `npm test`, lint, typecheck, package green.
+- [x] Docs updated; this plan promoted.
+- [x] The `coai` gate: plan round and one code round; own review in parallel.
 - [ ] PR merged, threads resolved.

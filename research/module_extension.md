@@ -3325,9 +3325,12 @@ doors call carries the same requirement.
 modal: the machine's local time with the offset in force at that instant. The arithmetic
 (`requestTimeLine(epochMs, offsetMinutes)`) takes the offset as a number, so its tests do not depend
 on the zone of the machine running them; the sign flip of `getTimezoneOffset` is the one trap and has
-its own test. The text is built once and never re-rendered, so a dialog left waiting up to
-`CONSENT_TIMEOUT_MS` keeps the time it was raised, and a second call joining the open dialog through
-`consenting` changes nothing on it. Tests: `requestTime.test.ts`, `brokerConsentTime.test.ts` (the
+its own test. The text is built once and never re-rendered, so a dialog keeps the time it was
+raised, and a second call joining the open dialog through `consenting` changes nothing on it (only
+the token route shares a grant across calls; the alias, MCP and folder doors mint one per call).
+After `CONSENT_TIMEOUT_MS` the broker has refused the call as `consent_timeout`, but VS Code cannot
+close a modal from code, so the time is the one sign on screen that the dialog is stale. The SSH
+agent's signing prompt (`sshAgentManager.confirm`) is a different dialog and carries no time. Tests: `requestTime.test.ts`, `brokerConsentTime.test.ts` (the
 real broker). Design record: [PLAN_consent_shows_request_time.md](PLAN_consent_shows_request_time.md).
 
 **Whose session registry, and the rule the code round added.** The session NAME comes from
