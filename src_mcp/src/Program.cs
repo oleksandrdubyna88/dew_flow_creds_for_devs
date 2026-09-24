@@ -178,8 +178,8 @@ internal static class Program
             ServerInstructions = Instructions,
         };
         // The tools capture the holder, not a value: ClientInfo is null until the handshake this
-        // process is about to answer, so the client's name — and the tab title — are read per call;
-        // see CallerSource.
+        // process is about to answer, so the client's name and the tab title are read per call
+        // (CallerSource explains why).
         options.ToolCollection ??= [];
         options.ToolCollection.Add(ListTool(contract));
         options.ToolCollection.Add(ConfigSnippetTool(contract));

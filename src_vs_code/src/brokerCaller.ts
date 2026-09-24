@@ -169,11 +169,8 @@ function sessionSegment(caller: CallerLabel): string {
  * sessions, one with a forged id (code round, 2026-09-24).</p>
  */
 function shownName({ sessionName, tabTitle }: CallerLabel): string {
-  return tabTitle === '' ? sessionName : `"${tabTitle.replace(TITLE_QUOTE, "'").replace(SEGMENT_SEPARATOR, '-')}"`;
+  return tabTitle === '' ? sessionName : `"${tabTitle.replaceAll('"', "'").replaceAll('·', '-')}"`;
 }
-
-const TITLE_QUOTE = /"/g;
-const SEGMENT_SEPARATOR = /·/g;
 
 /**
  * The same label for the audit line — WITHOUT the tab title — or nothing, so a line for an unknown
