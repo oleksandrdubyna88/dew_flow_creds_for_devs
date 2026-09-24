@@ -283,9 +283,9 @@ afterwards, so `ssh` and `git` find it with no configuration — and the `0600` 
 used to write for `ssh -i` stops existing. *Connect SSH* on an agent-served key passes no `-i`.
 
 **Every single use asks.** The dialog names the key, its fingerprint, *what is being signed* —
-an SSH login as a particular user, or a Git commit signature — and when it was asked (*Requested
-2026-09-24 12:30:00 (UTC+03:00).*), because "a key is being used" is not something anyone can
-decide about, and this dialog does not expire: one found an hour later still signs. Three answers: **Allow once**, **Allow for 10 minutes**
+an SSH login as a particular user, or a Git commit signature — and when it was asked
+(*Requested 2026-09-24 12:30:00 (UTC+03:00).*), because "a key is being used" is not something
+anyone can decide about, and this dialog does not expire: one found an hour later still signs. Three answers: **Allow once**, **Allow for 10 minutes**
 (a `git push` signs and authenticates in one breath, and two modals per push is how people learn
 to click without reading), or **Deny**. Every request is a line in **CredsForDevs: SSH Agent**.
 

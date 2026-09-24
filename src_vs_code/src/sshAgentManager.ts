@@ -235,6 +235,8 @@ export class SshAgentManager implements vscode.Disposable {
     // When the signature was asked for, taken as it enters: the prompt has no timeout, so one found
     // an hour later still signs — and the time on it is what says how old the request is (#131).
     const asked = this.clock();
+    // The grant's ten minutes still start at the CLICK (`this.clock()` below), as agentConsent.ts
+    // documents — the time on the prompt and the start of the window are two facts on purpose.
     this.noteUnknown(purpose, data);
     if (withinAllowWindow(this.allowedUntil.get(key.entityId), asked.getTime())) {
       this.log(`allowed (within the 10-minute window) for ${describePurpose(purpose)}`);
