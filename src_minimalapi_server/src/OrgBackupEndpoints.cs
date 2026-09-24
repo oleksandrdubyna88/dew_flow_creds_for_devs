@@ -234,18 +234,7 @@ public static class OrgBackupEndpoints
 
     /// <summary>The records to write: sealed afresh where credentials were sent, kept — with the requested region — everywhere else.</summary>
     private static IReadOnlyList<SealedTarget> Records(BackupTargetPlan plan, BackupTargets targets) =>
-    [
-        .. plan.Decisions.Select(
-            decision => decision.NeedsSeal
-                ? targets.Seal(
-                    decision.Wanted.Kind,
-                    decision.Wanted.Endpoint,
-                    decision.Wanted.Region,
-                    decision.Wanted.Bucket,
-                    decision.Wanted.Prefix,
-                    decision.Secrets)
-                : decision.KeptWithRegion),
-    ];
+        [.. plan.Decisions.Select(decision => decision.Record(targets))];
 
     /// <summary>
     /// Prove the destinations the plan marked, together, and name the first that refused — or nothing.

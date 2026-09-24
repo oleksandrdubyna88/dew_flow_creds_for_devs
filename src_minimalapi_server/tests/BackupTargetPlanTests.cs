@@ -33,7 +33,7 @@ public class BackupTargetPlanTests
         // region wrote the old region back — silently, and S3 signs with the region.
         var plan = BackupTargetPlan.Of([Request("nightly", region: "eu-west-1")], [Nightly]);
 
-        var decision = plan.Decisions.Should().ContainSingle().Subject;
+        var decision = plan.Decisions.Should().ContainSingle().Which.Should().BeOfType<KeptTargetDecision>().Subject;
         decision.NeedsSeal.Should().BeFalse("no credentials were sent, so the sealed ones are kept");
         decision.RegionChanged.Should().BeTrue();
         decision.Probe.Should().BeTrue("what the run will sign with changed");
@@ -48,7 +48,7 @@ public class BackupTargetPlanTests
     {
         var plan = BackupTargetPlan.Of([Request("nightly")], [Nightly]);
 
-        var decision = plan.Decisions.Should().ContainSingle().Subject;
+        var decision = plan.Decisions.Should().ContainSingle().Which.Should().BeOfType<KeptTargetDecision>().Subject;
         decision.NeedsSeal.Should().BeFalse();
         decision.Probe.Should().BeFalse("nothing the run will sign with changed");
         decision.KeptWithRegion.Should().Be(Nightly);
@@ -148,6 +148,29 @@ public class BackupTargetPlanTests
 
         plan.Decisions.Should().ContainSingle().Which.Describe.Should().Be("azure vaults/nightly");
         plan.Delta.Should().Be("destinations +azure vaults/nightly");
+    }
+
+    [Fact]
+    public void ANewDestinationIsSealedWithTheKeysItCarried()
+    {
+        var plan = BackupTargetPlan.Of([Request("weekly", accessKeyId: "AKIDEXAMPLE", secret: "secret")], [Nightly]);
+
+        var decision = plan.Decisions.Should().ContainSingle().Which.Should().BeOfType<NewTargetDecision>().Subject;
+        var written = decision.Record(Sealer);
+        written.Prefix.Should().Be("weekly");
+        Sealer.Opens(written).Should().BeTrue("the record is a fresh seal of the keys that were sent");
+    }
+
+    [Fact]
+    public void ANewDestinationWithoutKeysIsNeverWrittenEvenIfTheRefusalWereSkipped()
+    {
+        // The plan refuses it as a first save (BackupTargets.Problem); this is the backstop that used to be
+        // a `Kept!` — a NullReferenceException far from the cause. Now it names the destination.
+        var decision = new NewTargetDecision(Request("weekly"));
+
+        var write = () => decision.Record(Sealer);
+
+        write.Should().Throw<InvalidOperationException>().WithMessage("*no credentials*");
     }
 
     private static BackupTargetRequest Request(

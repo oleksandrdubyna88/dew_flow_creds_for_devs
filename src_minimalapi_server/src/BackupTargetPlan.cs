@@ -13,8 +13,11 @@ namespace CredVaultServer;
 /// bucket in a different region is the same bucket — so a kept record carries the requested region
 /// rather than its own. Writing the kept record back whole was fix 1 of #134: a save that changed only
 /// the region wrote the old region back, silently, and S3 signs with the region.</para>
+/// <para>Two cases, two types — <see cref="NewTargetDecision"/> and <see cref="KeptTargetDecision"/> —
+/// rather than one record with a nullable <c>Kept</c> and a <c>Kept!</c> behind it (doctrine §4, raised by
+/// CodeRabbit on PR #142). What differs between them is what <see cref="Record"/> writes.</para>
 /// </remarks>
-public sealed record TargetDecision(BackupTargetRequest Wanted, SealedTarget? Kept)
+public abstract record TargetDecision(BackupTargetRequest Wanted)
 {
     /// <summary>The credentials the request carried, nulls flattened.</summary>
     public TargetSecrets Secrets => BackupTargets.Secrets(Wanted);
@@ -23,9 +26,16 @@ public sealed record TargetDecision(BackupTargetRequest Wanted, SealedTarget? Ke
     public bool NeedsSeal => !Secrets.Empty;
 
     /// <summary>Nothing sealed exists for this identity. A new destination always carries its credentials, or was refused.</summary>
-    public bool IsNew => Kept is null;
+    public abstract bool IsNew { get; }
 
-    public bool RegionChanged => Kept is not null && Kept.Region != BackupTargets.Text(Wanted.Region);
+    public abstract bool RegionChanged { get; }
+
+    /// <summary>The record this decision writes: sealed afresh, or the kept one carrying the requested region.</summary>
+    public abstract SealedTarget Record(BackupTargets targets);
+
+    /// <summary>A fresh seal of what was asked, under the deployment KEK.</summary>
+    protected SealedTarget SealWith(BackupTargets targets) => targets.Seal(
+        Wanted.Kind, Wanted.Endpoint, Wanted.Region, Wanted.Bucket, Wanted.Prefix, Secrets);
 
     /// <summary>
     /// Proved before the write when something the run will sign with changed. A destination whose
@@ -39,9 +49,6 @@ public sealed record TargetDecision(BackupTargetRequest Wanted, SealedTarget? Ke
     /// the save of a sibling: unchanged, it is not asked anything, and its own row says re-enter.
     /// </remarks>
     public bool Probe => NeedsSeal || RegionChanged;
-
-    /// <summary>The record to write when nothing needs sealing: the kept one, carrying the requested region.</summary>
-    public SealedTarget KeptWithRegion => Kept! with { Region = BackupTargets.Text(Wanted.Region) };
 
     /// <summary>Where this destination is, in the words the page and the run use. Never what opens it.</summary>
     public string Describe => SealedTarget.DescribeAs(
@@ -58,6 +65,37 @@ public sealed record TargetDecision(BackupTargetRequest Wanted, SealedTarget? Ke
         }
         return Probe ? "~" : string.Empty;
     }
+}
+
+/// <summary>A destination this server has not seen: it is always sealed afresh.</summary>
+public sealed record NewTargetDecision(BackupTargetRequest Wanted) : TargetDecision(Wanted)
+{
+    public override bool IsNew => true;
+
+    public override bool RegionChanged => false;
+
+    /// <remarks>
+    /// A new destination without credentials never reaches here — <see cref="BackupTargets.Problem"/>
+    /// refuses it as a first save — so an empty seal is an invariant broken upstream, and it says so
+    /// rather than writing a record that could never sign a request.
+    /// </remarks>
+    public override SealedTarget Record(BackupTargets targets) => NeedsSeal
+        ? SealWith(targets)
+        : throw new InvalidOperationException(
+            $"{Describe}: a new destination reached the write with no credentials; the plan should have refused it.");
+}
+
+/// <summary>A destination already sealed on this server, under the same identity.</summary>
+public sealed record KeptTargetDecision(BackupTargetRequest Wanted, SealedTarget Kept) : TargetDecision(Wanted)
+{
+    public override bool IsNew => false;
+
+    public override bool RegionChanged => Kept.Region != BackupTargets.Text(Wanted.Region);
+
+    /// <summary>The kept record carrying the requested region — what is written when nothing needs sealing.</summary>
+    public SealedTarget KeptWithRegion => Kept with { Region = BackupTargets.Text(Wanted.Region) };
+
+    public override SealedTarget Record(BackupTargets targets) => NeedsSeal ? SealWith(targets) : KeptWithRegion;
 }
 
 /// <summary>
@@ -90,7 +128,9 @@ public sealed record BackupTargetPlan(
             {
                 return new BackupTargetPlan([], [], problem);
             }
-            decisions.Add(new TargetDecision(request, KeptFor(request, existing)));
+            decisions.Add(KeptFor(request, existing) is { } kept
+                ? new KeptTargetDecision(request, kept)
+                : new NewTargetDecision(request));
         }
         return new BackupTargetPlan(
             decisions, [.. existing.Where(target => !seen.Contains(target.Identity))], string.Empty);
