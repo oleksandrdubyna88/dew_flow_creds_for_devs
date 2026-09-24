@@ -3338,7 +3338,9 @@ line written before it existed still parses); an unknown token is answered but n
 the CLI legitimately probes. **The tab title is shown in the modal and never written to that line**
 (since 2026-09-24): the modal reads *`Claude Code 2.1.281 · session "creds old issues" (52d1b29a) ·
 in ClaudeRag` wants to…* — the quoted title REPLACING the derived registry name, in full up to the
-80-character field cap so the tab's own cut is always a prefix of it — while `callerForAudit` renders
+80-character field cap so the tab's own cut is always a prefix of it, with any `"` inside it shown as
+`'` and any `·` as `-` so it stays visibly ONE value (an AI title is steerable by text the agent read,
+and `prod" (deadbeef) · session "x` would otherwise render as two sessions) — while `callerForAudit` renders
 the label without the title, keeping the registry name. An AI title summarises a private
 conversation and the journal is durable; that is the owner's decision (#136, D4) and a reversible one.
 

@@ -125,6 +125,22 @@ public sealed class SessionTitleTests : IDisposable
         TitleVia(Env(ClaudeEnv)).Should().Be("from the model", "and the AI title is the last rung this reader takes");
     }
 
+    /// <summary>
+    /// The title file is the SECOND rung: with a custom title already in the tail it is not opened
+    /// at all — per call, a missing file would otherwise cost an open and a thrown exception for
+    /// nothing (code round, 2026-09-24).
+    /// </summary>
+    [Fact]
+    public void A_custom_title_in_the_tail_means_the_title_file_is_never_opened()
+    {
+        WriteRegistry();
+        WriteTranscript(Custom("from the tail") + "\n");
+        var recording = new Recording();
+
+        TitleVia(Env(ClaudeEnv), recording).Should().Be("from the tail");
+        recording.Asked.Should().Equal([TranscriptPath], "the transcript and nothing after it");
+    }
+
     // ---- the tail and only the tail (T-S1, T-S5) -------------------------------------------
 
     /// <summary>

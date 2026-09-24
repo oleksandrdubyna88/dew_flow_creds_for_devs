@@ -26,6 +26,13 @@
 > - **Measured against the live session this was written in**: the production provider returned
 >   `creds old issues`, the text on its tab, in 75 ms including JIT.
 > - `sessionSegment` gained a helper (`shownName`) to stay within the complexity limit of 4.
+> - **The code round** (`proceed`, 12 of 12 reviewers, 21 findings: 3 accepted, 18 rejected with
+>   reasons — most of the rejected ones refuted themselves in their own text) changed two things, each
+>   red first: **a title can no longer forge a second session in the label** — an AI title is written
+>   by a model from the conversation, so text the agent read can steer it, and `prod" (deadbeef) ·
+>   session "x` rendered as two sessions; inside the quotes `"` now becomes `'` and `·` becomes `-`
+>   (D2 gained that clause); and **`custom-title.json` is opened only when the tail has no custom
+>   title**, instead of on every call. `CallerRecord.Empty` now names all five fields.
 >
 > **The open tail** — Codex threads (their id arrives only in `tools/call._meta`), the title under the
 > WSL bridge, a title only in a transcript's first 64 KB, and the pre-existing Codex-in-Claude-terminal
@@ -140,7 +147,7 @@ Gemini's behaviour at run time on any machine.
 | # | decision | why |
 |---|---|---|
 | D1 | A fifth, additive caller field **`tabTitle`** (flat: `callerTabTitle`). Wire `version` stays 1 | the founding plan predicted exactly this (§12 item 1: "an additive field, not a redesign"). An old window ignores an unknown field (`brokerCaller.ts:74-84` reads four named keys); an old sender omits it and the new window reads `''` |
-| D2 | The modal shows the title INSTEAD of the derived registry name: `session "<tabTitle>" (<id8>)`. With no title, today's `session <name> (<id8>)` is unchanged | two names for one session in a security dialog read as two sessions; the derived name is on no screen the person is looking at. Quoted, because a title is free text and can contain ` · ` |
+| D2 | The modal shows the title INSTEAD of the derived registry name: `session "<tabTitle>" (<id8>)`. With no title, today's `session <name> (<id8>)` is unchanged | two names for one session in a security dialog read as two sessions; the derived name is on no screen the person is looking at. Quoted, because a title is free text and can contain ` · ` — and, since the code round, with `"` shown as `'` and `·` as `-` inside the quotes, so a steered title cannot render as a second session |
 | D3 | The title is shown **in full, up to the 80-code-point field cap**, not cut to the tab's 24 + `…` | whatever cut the tab applies, its text is a PREFIX of ours — so the modal stays matchable if Claude Code changes its cut, and a title that differs only after the 24th character is still told apart. The composed line keeps its 160 cap (`brokerCaller.ts:129-143`): agent (≈19) + separators and the id (≈24) + 80 leaves ≈30 for `in <folder>`, and a longer folder is cut at the end exactly as today |
 | D4 | **The audit line does NOT carry the title** — `callerForAudit` renders the label without it. **Owner's decision, reversible** | an AI title is a summary of the conversation's content; the audit channel is a durable log of who used which credential, and it should not accumulate one-line summaries of private conversations. The modal is ephemeral. Reversing it is one line in `callerForAudit` and one test |
 | D5 | The title is read **per call**, never cached at start-up. MCP: a provider in `CallerSource`, like the agent; CLI: once per run, which is per call | a tab is renamed while the server runs; the first `aiTitle` appears only after the first turn, i.e. after the MCP server started |

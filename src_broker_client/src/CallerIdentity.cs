@@ -34,7 +34,7 @@ public sealed record CallerRecord(
     [property: JsonPropertyName("tabTitle")] string TabTitle = "")
 {
     /// <summary>Nothing known — what the window renders as "An agent".</summary>
-    public static CallerRecord Empty { get; } = new(string.Empty, string.Empty, string.Empty, string.Empty);
+    public static CallerRecord Empty { get; } = new(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty);
 
     /// <summary>Whether nothing at all was learnt. Not a wire field — the body carries the five named ones and no other.</summary>
     [JsonIgnore]

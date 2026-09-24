@@ -160,10 +160,20 @@ function sessionSegment(caller: CallerLabel): string {
   return session === '' ? `session ${name}` : `session ${name} (${session})`;
 }
 
-/** The tab's title, quoted, when there is one; the registry's derived name otherwise. */
+/**
+ * The tab's title, quoted, when there is one; the registry's derived name otherwise.
+ *
+ * <p>Inside the quotes a `"` becomes `'` and the segment separator `·` becomes `-`, so the title is
+ * visibly ONE value. An AI title is written by a model from the conversation — text the agent read
+ * can steer it — and `prod" (deadbeef) · session "Claude Code` would otherwise render as two
+ * sessions, one with a forged id (code round, 2026-09-24).</p>
+ */
 function shownName({ sessionName, tabTitle }: CallerLabel): string {
-  return tabTitle === '' ? sessionName : `"${tabTitle}"`;
+  return tabTitle === '' ? sessionName : `"${tabTitle.replace(TITLE_QUOTE, "'").replace(SEGMENT_SEPARATOR, '-')}"`;
 }
+
+const TITLE_QUOTE = /"/g;
+const SEGMENT_SEPARATOR = /·/g;
 
 /**
  * The same label for the audit line — WITHOUT the tab title — or nothing, so a line for an unknown

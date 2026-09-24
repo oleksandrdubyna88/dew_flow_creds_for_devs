@@ -78,7 +78,10 @@ public static class SessionTitle
         var (custom, ai) = sources.ReadTail(transcript, MaxTailBytes) is { } tail
             ? FromTail(tail.Bytes, tail.IsWholeFile)
             : (string.Empty, string.Empty);
-        return CallerIdentity.Clean(FirstNonBlank(custom, CustomFromFile(ReadTitleFile(home, cwd, sessionId, sources)), ai));
+        // The title file is the SECOND rung, so it is opened only when the first gave nothing — per
+        // call, a missing file would otherwise cost an open and a thrown exception for nothing.
+        var chosen = custom.Length > 0 ? custom : NonBlankOr(CustomFromFile(ReadTitleFile(home, cwd, sessionId, sources)), ai);
+        return CallerIdentity.Clean(chosen);
     }
 
     /// <summary>The transcript's path, or <c>null</c> when any part of it cannot be trusted or computed.</summary>
@@ -162,9 +165,6 @@ public static class SessionTitle
 
     private static string? ReadTitleFile(string home, string cwd, string sessionId, TranscriptSources sources) =>
         TitleFilePath(home, cwd, sessionId) is { } path ? sources.ReadSmall(path, MaxTitleFileBytes) : null;
-
-    private static string FirstNonBlank(params string[] candidates) =>
-        candidates.FirstOrDefault(candidate => !string.IsNullOrWhiteSpace(candidate)) ?? string.Empty;
 
     private static ReadOnlySpan<byte> AfterFirstLine(ReadOnlySpan<byte> tail)
     {
