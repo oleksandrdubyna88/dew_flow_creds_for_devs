@@ -269,7 +269,7 @@ async function driveUnansweredPrompt(pem, publicPath, dir) {
   const took = Date.now() - started;
   check(
     'an unanswered prompt makes the real client fail promptly, not hang',
-    signed.code !== 0 && took < 10_000,
+    signed.code !== 0 && took >= 1_000 && took < 10_000,
     `exit ${signed.code} after ${took} ms`,
   );
   check(

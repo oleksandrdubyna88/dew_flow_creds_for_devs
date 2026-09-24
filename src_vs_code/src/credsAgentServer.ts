@@ -57,7 +57,6 @@ import { refreshFrom, tableOrFail } from './brokerResponse';
  * of the revocation story — a grant cannot outlive the process holding it.</p>
  */
 
-
 export class CredsAgentServer implements vscode.Disposable {
   private readonly grants = new GrantRegistry();
   /** The two ceilings a caller with NO token answers to — the modal budget, and the silent one (#95). */

@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import { SignPurpose, describePurpose, describeUnknownShape } from './sshAgentProtocol';
 import { localRequestTimeLine } from './requestTime';
 import { withTimeout } from './withTimeout';
+import { describeError } from './describeError';
 import { AgentKey, SshAgentServer, agentSocketPath } from './sshAgentServer';
 import { parseSshPrivateKey } from './sshKeyParse';
 import {
@@ -287,13 +288,19 @@ export class SshAgentManager implements vscode.Disposable {
     // handed a promise that does not reject.
     const settled = Promise.resolve(modal).then(
       (choice) => ({ choice }),
-      () => ({ choice: undefined }),
+      (error: unknown) => this.modalFailed(error),
     );
     const answered = await withTimeout(settled, this.consentTimeoutMs);
     if (answered === undefined) {
       this.log(`no answer in ${bound} — refused ${describePurpose(purpose)}`);
     }
     return answered?.choice;
+  }
+
+  /** A modal that rejected is a dismissal — said in the log, never swallowed. */
+  private modalFailed(error: unknown): { choice: undefined } {
+    this.log(`the signing prompt failed: ${describeError(error)} — refused`);
+    return { choice: undefined };
   }
 
   private log(message: string): void {
