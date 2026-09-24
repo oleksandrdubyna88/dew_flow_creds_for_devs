@@ -1633,7 +1633,8 @@ drives the compiled TypeScript client against the running server in the `.http` 
 `module_tests.md` says what it drives and the one branch it cannot.
 
 **A save decides its destinations before it seals, probes or writes** — `BackupTargetPlan`, pure, one
-`TargetDecision` per requested destination:
+`TargetDecision` per requested destination — a `KeptTargetDecision` when the identity is already sealed here, a
+`NewTargetDecision` otherwise, each writing its own record (`Record`):
 
 | The request | The decision |
 |---|---|
@@ -1642,7 +1643,7 @@ drives the compiled TypeScript client against the running server in the `.http` 
 | a known identity with credentials | sealed afresh, probed, marked `~` |
 | an identity this server has not seen, with credentials | sealed, probed, marked `+` |
 | an identity not in the request at all | removed, marked `-` |
-| an unknown identity WITHOUT credentials, half a credential, plain http, an unknown kind | refused by name, before any request |
+| an unknown identity WITHOUT credentials, half a credential, plain http anywhere but loopback, an unknown kind | refused by name, before any request |
 | two requests with one identity | refused by name: the keep-the-keys rule matches by identity, and an edit could only ever match the first |
 
 Three of those rows are fixes. **The region is carried onto a kept record** (fix 1): the identity does

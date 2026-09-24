@@ -5825,10 +5825,14 @@ message would be a credential in a place that outlives the moment. The owner's d
 retype on a failed probe; the client validates the endpoint, the bucket and both halves before any
 round trip so a typo never reaches the probe.
 
-**Leaving the keys empty means "keep the sealed ones" — only while the identity is the server's.** The
-server matches by kind, endpoint, bucket and prefix. An edit that changes the prefix is a NEW
-destination to it and is asked for both halves on this side, with the server's own first-save sentence,
-rather than being sent key-less and refused. The kind is fixed on an edit for the same reason. A region
+**Leaving the keys empty means "keep the sealed ones" — only while the identity is the server's, and
+only for a row whose credentials it can open.** The server matches by kind, endpoint, bucket and prefix.
+An edit that changes the prefix is a NEW destination to it and is asked for both halves on this side,
+with the server's own first-save sentence, rather than being sent key-less and refused. An edit of an
+`unopenable` row with both fields empty is refused on this side too (`backupTab.unopenableRefusal`,
+CodeRabbit on PR #142): there is nothing sealed the server can keep, so the save would succeed, say
+*Destination saved.*, and leave the nightly run failing. Saving ANOTHER row still carries an unopenable
+sibling key-less — the server keeps it as it is. The kind is fixed on an edit for the same reason. A region
 typed under S3 is blanked when the kind is Azure (plan gate): the hidden input survives the switch and
 would otherwise be stored for a kind that has no region.
 

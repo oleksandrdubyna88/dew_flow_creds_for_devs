@@ -64,6 +64,17 @@
 >   destination, which fails under a concurrent reader on Windows (`rename(2)` on Linux succeeds), so the
 >   restart test's ten-millisecond poll once made the sweep log *"could not read the backup status"* and
 >   time out. Four re-runs clean; recorded in `module_tests.md` rather than papered over with a retry.
+> - **CodeRabbit's review of PR #142 (after the gate)** — five findings, all taken: (1) editing an
+>   `unopenable` destination with both key fields empty was granted "keep the sealed ones" by identity
+>   alone, so the save succeeded and the nightly run went on failing — now refused on the tab, red-green
+>   with a compiling break-it; (2) `TargetDecision` carried a nullable `Kept` and a `Kept!`, now
+>   `NewTargetDecision` / `KeptTargetDecision`, each writing its own record — this REVERSES the code
+>   round's rejection of the same point ("an NRE on a path no decision can reach"): the path is still
+>   unreachable, but doctrine §4 is about the shape, and the backstop now names the destination instead
+>   of throwing a `NullReferenceException` far from the cause; (3) the refusal table said *plain http*
+>   where the rule is *plain http outside loopback*; (4) `LastRunAt` was documented as the START of the
+>   last run, and every writer after the start overwrites it with the moment the run ended; (5) the
+>   changelog promised the keys are kept on any edit, and a prefix edit is a new destination.
 >
 > **Open tail**, none of it this plan's to close: the two drive kinds
 > ([PLAN_corp_backup_drives.md](../todo/PLAN_corp_backup_drives.md), boundary named on both sides);

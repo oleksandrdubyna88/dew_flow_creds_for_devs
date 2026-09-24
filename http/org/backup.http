@@ -60,7 +60,8 @@ Accept: application/json
       'running is derived from the persisted result — two fields could disagree');
   });
   test('the last SUCCESS is its own instant, and a server that never ran spells it 0', () => {
-    // lastRunAt is when the last run started, failed ones included; lastSuccessAt is when the last
+    // lastRunAt is when the last run last changed state (its start while it runs, its end after),
+    // failed ones included; lastSuccessAt is when the last
     // run whose verdict was ok finished. They are different numbers on a bad night, and the row
     // that decides how much a restore would lose needs the second one (#134).
     assert.equal(typeof status.lastSuccessAt, 'number');

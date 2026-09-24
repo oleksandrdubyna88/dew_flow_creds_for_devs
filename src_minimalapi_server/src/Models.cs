@@ -311,7 +311,8 @@ public sealed record BackupSettings(
 /// caller has to remember to check, and this repository's rule is that business logic does not carry
 /// null. The distinction is stated here so the page does not have to guess it.</para>
 /// <para><b><c>LastSuccessAt</c> is a different instant from <c>LastRunAt</c></b>, and the difference is
-/// the number a restore depends on. <c>LastRunAt</c> is when the last run STARTED, failed ones included;
+/// the number a restore depends on. <c>LastRunAt</c> is when the last run last changed state — its start
+/// while it is in progress, its end (finish, failure or refusal) afterwards — failed ones included;
 /// <c>LastSuccessAt</c> is when the last run whose verdict was <c>ok</c> finished — a <c>partial</c> run
 /// reached some destinations and not others, and "when did the last complete copy leave" is not
 /// answered by it. Every writer carries the previous value forward; only a finish with the <c>ok</c>

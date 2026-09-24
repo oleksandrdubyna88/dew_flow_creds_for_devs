@@ -20,8 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   configured destinations — kind, endpoint, region, bucket or container, prefix, and whether the
   server can open the sealed credentials — with *Edit* and *Remove* on each row and *Add
   destination…* below. The form takes an S3-compatible or Azure Blob destination and its two
-  credential halves; the halves are sealed on the server and never shown again, so editing a
-  destination and leaving them empty keeps the ones already there. Remove asks first and says what it
+  credential halves; the halves are sealed on the server and never shown again, so an edit that keeps a
+  destination's identity (kind, endpoint, bucket or container, prefix) and leaves them empty keeps the
+  ones already there — change the prefix and it is a new destination that needs both halves; a
+  destination whose keys the server cannot open asks for them again. Remove asks first and says what it
   does: the archives already at that destination stay there, only this server stops sending new ones.
 - **The Backup row tells the last run from the last success.** When the last run failed or only partly
   succeeded, the row reads `last run … · last success …` (or `never succeeded`) instead of the failed
