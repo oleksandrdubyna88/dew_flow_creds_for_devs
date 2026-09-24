@@ -355,8 +355,7 @@ export class BackupTab {
    * time; a row the server cannot open has nothing to keep.
    */
   private keepsSealed(edited: BackupTargetInput, index: number | undefined): boolean {
-    const row = this.editedRow(edited, index);
-    return row !== undefined && row.credentials === SEALED;
+    return this.editedRow(edited, index)?.credentials === SEALED;
   }
 
   /**
