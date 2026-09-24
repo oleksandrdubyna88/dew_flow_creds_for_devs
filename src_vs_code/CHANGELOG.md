@@ -58,6 +58,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   gone — Gemini never exports it; name a Gemini session with `CREDS_CALLER_SESSION` in the MCP
   server's `env`.
 
+### Added — an entry can be marked Not for export (#122)
+
+- **Edit → General → Not for export.** A marked entry is not offered *Share with…* or *Export / Share
+  Externally…*, and both refuse it if reached from the palette or a multi-selection. Sharing or
+  exporting a FOLDER leaves marked entries out, at any depth, and names them before the first prompt;
+  if nothing else is left, it refuses. A marked entry's secrets are not even read for an export, and
+  its one-time code is not asked about. *Share with Claude Code*, backup, sync and local use are
+  unaffected. *Create Entity for…* draws no box — nothing of that entry stays here to mark. The viewer
+  says when the mark is on. An older version of the extension does not know the mark and drops it
+  when it saves or syncs the entry.
+
 ### Added — open an entry's site in the browser (#104)
 
 - **Open Site in Browser**: a button beside the URL in *View Details*, and an item in the right-click

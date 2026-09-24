@@ -5107,6 +5107,49 @@ rules:
 
 `cliCommandFor` moved to `cliCommandText.ts` to give `entityViewPage.ts` the line for the row.
 
+## Not for export (issue #122)
+
+An entry can be marked **Not for export** (`EntityMetadata.notForExport`, a box in the form's General
+section). The mark closes the two exits that hand an entry to another PERSON — *Share with…* (either
+transport: the vault server or a shared folder, which both go through `ShareInbox.shareNodes`) and
+*Export / Share Externally…*. It deliberately leaves open *Share with Claude Code…* (an agent uses the
+entry through the window and never receives the secret), backup, sync and every local use. It is an
+honest-client control: it stops the product's exits, not the person, who can still read their own
+secret.
+
+```mermaid
+flowchart LR
+  sel[Selection: rows / palette / multi-select] --> admit["exportScope.admitLeaving<br/>(before any prompt)"]
+  admit -- every entry marked --> refuse[Warning: Nothing to share / export]
+  admit -- some marked --> note[Warning naming them] --> go
+  admit -- none marked --> go{which exit}
+  go -- Share with… --> share["shareNodes(roots minus marked)"] --> walk["payloadsFor: marked → []<br/>entitiesIn: no TOTP question"]
+  go -- Export --> export["writeExport(scope.kept)<br/>exportSecretsFor(kept ids only)"]
+```
+
+- **One pure module decides.** `exportScope.ts`: `isNotForExport` (an entity only; a folder carries no
+  mark), `subtreeNodes` (the walk moved out of `exportCommand.ts`), `exportScope` → `{kept, withheld}`,
+  and `admitLeaving`, which both handlers call BEFORE their first prompt — so a refusal comes before a
+  form pick or a password, and a partial result is named before the recipients are chosen.
+- **The walk is the second guard.** `ShareInbox.payloadsFor` returns `[]` for a marked entity, so a
+  folder's walk (`collectFolderPayloads`) skips it at any depth whatever reached the inbox, and
+  `sharePayloadBuild.entitiesIn` leaves it out of the one-time-code count. The export handler asks
+  `exportSecretsFor` for the KEPT ids only — a marked entry's secrets are never decrypted for a file.
+- **The menu is a hint.** `treeRowText.noExportToken` adds `:noexport`; the two menu items carry
+  `!(viewItem =~ /:noexport/)`. Folders never wear it, since the rest of them may still leave.
+- **The form.** `generalNotes.notForExportField`; posted as `notForExport` by `entityFormScript.ts` and
+  kept by `toValues` — never for *Create Entity for…* (`EntityFormOptions.forSomeoneElse`), which
+  draws no box because nothing of that entry stays here. The viewer states the mark in Main
+  (`notForExportViewNote`).
+- **The boundary.** A build older than the mark rebuilds `details` without it on save and its record
+  guard strips it on sync and import, so the mark does not survive a trip through an old client. Said
+  in the help, the form's hint and the CHANGELOG.
+
+Tests: `exportScope.test.ts`, `exportNotForExport.test.ts` (the real export registration: prompt
+order, the ids decrypted), `shareHandlerNotForExport.test.ts`, `shareNotForExport.test.ts` (the real
+`ShareInbox`, opened on the wire), `notForExportForm.test.ts`, `notForExportMenu.test.ts`, and the
+viewer case in `entityViewPage.test.ts`. Each guard was broken in turn and its test went red.
+
 ## The ephemeral tail (2026-08-28, `PLAN_ephemeral_secrets_tail.md`)
 
 | What | Where | The rule it left behind |
