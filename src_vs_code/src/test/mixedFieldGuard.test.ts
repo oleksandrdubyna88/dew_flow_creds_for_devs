@@ -69,15 +69,18 @@ test('the refusal names the fields and never their values', () => {
   assert.ok(!text.includes('123456'), 'the other one did too');
 });
 
-test('the refusal names a route that EXISTS — and never an unweave, because there is none', () => {
+test('the refusal names a route that EXISTS — the viewer\'s Unweave, never an unweave in the form', () => {
   // A refusal with no way forward is a bug report waiting to be filed. A refusal naming a way
   // forward the build does not HAVE is worse: it sends somebody hunting for a control nobody ever
   // wrote. This text ended "or view it and unweave the field first", and there is no unweave —
   // undoing a weave needs the method, which is stored nowhere. The old assertion accepted the word.
   const text = mixedEditRefusal({ pin: 'woven', shuffledFields: ['pin'] });
 
-  assert.ok(!/unweave/i.test(text), 'there is no unweave anywhere in this build');
-  assert.match(text, /press Show/, 'it names the button that does exist');
+  // Since 2026-09-24 the viewer's button on a woven value IS called Unweave (#135, the owner's call),
+  // so the refusal names it — and still never promises to undo the weave IN THE FORM, which is the
+  // false route the old text offered ("or view it and unweave the field first").
+  assert.ok(!/unweave the field/i.test(text), 'no promise that the form can undo the weave');
+  assert.match(text, /press Unweave/, 'it names the button that does exist');
   assert.match(text, /copy the row you recognise/, 'and what to do with what comes back');
   assert.match(text, /delete this one/, 'and how the entry is replaced');
 });

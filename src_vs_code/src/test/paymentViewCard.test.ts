@@ -66,6 +66,16 @@ test('a gated field gets a Show button and a masked box; an ordinary one gets ne
   assert.ok(html.includes('id="pay_cvv" value="••••••••"'), 'and it starts masked');
 });
 
+test('on one card, the woven field\'s button says Unweave and a gated plain field\'s still says Show (#135)', () => {
+  // The owner's split, 2026-09-24: "Unweave" only where a value is woven; everything else keeps Show.
+  const woven: PaymentFields = { ...CARD, shuffledFields: ['pin'] };
+  const html = paymentCardMarkup(paymentCardFor('e1', 'card', woven, random));
+
+  assert.match(html, /data-field="pin" data-action="reassemble"[^>]*aria-label="Unweave PIN">Unweave<\/button>/);
+  assert.match(html, /data-field="cvv" data-action="reveal"[^>]*aria-label="Show CVV">Show<\/button>/);
+  assert.equal((html.match(/>Unweave<\/button>/g) ?? []).length, 1, 'exactly one Unweave: the woven field');
+});
+
 test('a woven field gets a method picker and two rows that start empty', () => {
   const woven: PaymentFields = { ...CARD, shuffledFields: ['pin'] };
 

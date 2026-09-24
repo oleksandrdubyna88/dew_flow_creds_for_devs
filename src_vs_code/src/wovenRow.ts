@@ -50,7 +50,7 @@ export function wovenRowMarkup(options: WovenRowOptions): string {
       <label>${label} — stored woven with a decoy</label>
       <div class="line">
         <select class="mixPick" data-key="${key}" aria-label="Method for ${label}">${picker}</select>
-        <button data-field="${key}" data-action="${REASSEMBLE_ACTION}" class="icon" title="Rebuild ${label} under the chosen method" aria-label="Show ${label}">Show</button>
+        <button data-field="${key}" data-action="${REASSEMBLE_ACTION}" class="icon" title="Rebuild ${label} under the chosen method" aria-label="Unweave ${label}">Unweave</button>
       </div>
       <div class="note payNote" id="payNote_${key}">${escapeHtml(options.note)}</div>
       <div class="readingRows" id="payRows_${key}" hidden>
@@ -84,7 +84,7 @@ function readingRow(key: string, which: 'a' | 'b', label: string): string {
  * more, because the method is still the only thing a person has to remember.</p>
  */
 export const WOVEN_ROW_NOTE =
-  'Pick a method and press Show. Both rows come back the same way whichever method you pick, and '
+  'Pick a method and press Unweave. Both rows come back the same way whichever method you pick, and '
   + 'which of the two is drawn first is decided again each time you open this entry — so somebody '
   + 'reading this screen, a screenshot of it or a backup file cannot tell from the position which '
   + 'row is yours. Somebody with developer tools open on this machine can. Only you can recognise '
