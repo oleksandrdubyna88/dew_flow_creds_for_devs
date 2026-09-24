@@ -1602,6 +1602,75 @@ implemented kinds with a default that returns nothing, and `BuiltTarget` carries
 which of the two reasons applies — a KEK that changed, or a kind from the future — because both call
 sites used to invent the same wrong advice for the second.
 
+### Editing the destinations from the tab, and the last SUCCESS (2026-09-24, #134)
+
+Epic 5 shipped the whole machinery of an off-machine backup and a tab that edited only the schedule:
+no route returned the configured destinations, `PUT /settings` replaced the whole list, and the
+extension's `BackupTargetInput` was declared and filled by nothing. What changed on this side, and the
+four things reading the save path turned up ([PLAN_backup_destinations_from_vscode.md](PLAN_backup_destinations_from_vscode.md)):
+
+**`GET /api/org/backup/targets` lists where each destination is, never what opens it.** It is the read
+that makes editing ONE destination possible — a client that could not read the list would have to
+retype every destination to change one, or send the one it knew and silently erase the rest. Each row
+carries the five location fields and `credentials`: `sealed` when this server can open the record's
+sealed half, `unopenable` when it cannot (a KEK that changed, a settings file restored from elsewhere,
+no KEK at all) — the one fact a form needs to say *re-enter them* on the right row. It is asked through
+`BackupTargets.Opens`, the same AEAD open `Open` makes but without the error line, because a listing is
+read every time the tab opens. **The status is untouched**: by the 2026-09-12 decision it names KINDS
+and nothing operational, and `TheStatusNeverNamesADestinationsCredentials` still pins that. The
+extension reads the list first and always sends it whole, the untouched ones as key-less requests the
+save keeps by identity; an older server answers `404` and the extension then offers no form at all.
+`contract/backup-targets-v1.json` is the sample document BOTH halves assert — the endpoint test seeds
+its two destinations and compares the route's answer byte for byte, the extension feeds it to
+`readTargets` — so a field renamed on one side goes red on the other. It is not a cross-language live
+run; none exists for any route here.
+
+**A save decides its destinations before it seals, probes or writes** — `BackupTargetPlan`, pure, one
+`TargetDecision` per requested destination:
+
+| The request | The decision |
+|---|---|
+| a known identity (kind, endpoint, bucket, prefix), no credentials, same region | **kept as it is** — not sealed, not probed, not marked |
+| a known identity, no credentials, a different region | kept with the REQUESTED region, probed, marked `~` |
+| a known identity with credentials | sealed afresh, probed, marked `~` |
+| an identity this server has not seen, with credentials | sealed, probed, marked `+` |
+| an identity not in the request at all | removed, marked `-` |
+| an unknown identity WITHOUT credentials, half a credential, plain http, an unknown kind | refused by name, before any request |
+| two requests with one identity | refused by name: the keep-the-keys rule matches by identity, and an edit could only ever match the first |
+
+Three of those rows are fixes. **The region is carried onto a kept record** (fix 1): the identity does
+not include the region — the same bucket in a different region is the same bucket, and adding it would
+turn a region edit into a delete-plus-add that drops the sealed credentials — and the kept record used
+to be written back whole, so a keys-omitted edit of the region wrote the old region back, silently, and
+S3 signs with the region. **A deployment with no KEK is a sentence, not a 500** (fix 2): `Seal` handed
+an empty key to `AesGcm`; the guard answers `409` naming `Vault:LoginKey:Kek`, as the mint route does —
+and only when the plan actually seals, so a keys-omitted or metadata-only edit still saves on such a
+deployment (plan gate, codex). **Only what changed is probed** (an OWNER ASSUMPTION, recorded so it can
+be reversed — `TargetDecision.Probe` is the one predicate): every save used to write-and-delete a probe
+object in every bucket, so editing the prefix of one destination depended on every other being reachable
+now. Re-proving an untouched destination did catch a key revoked since; the nightly run reports that
+within a day anyway. What the rule also buys is that a destination this server cannot OPEN, re-sent
+unchanged beside an edit to a sibling, is kept as it is and asked nothing — against the probe-all code
+its probe failed with *"cannot open the credentials"* and took the sibling's save with it (plan gate,
+gemini; `EditingOneDestinationLeavesAnUnopenableSiblingInPlaceAndUnprobed`).
+
+**Both halves of the probe run on the probe's deadline.** The PUT ran on the twenty-second
+`ProbeTimeout` and the DELETE on the two-minute `Request` deadline, so one bucket that accepted the
+write and then went quiet held an administrator's save for 140 seconds — past the extension's own
+deadline. `DeleteWithinAsync` takes the deadline; the probe passes its own in both clients, and a
+save's worst case is forty seconds, with the extension waiting three times that when it sends targets.
+
+**`lastSuccessAt` is a second instant, and the difference is the number a restore depends on.**
+`lastRunAt` is when the last run STARTED, failed ones included; `lastSuccessAt` is when the last run
+whose verdict was `ok` finished. Every writer carries it forward through `previous with { … }` on a
+fresh read — Begin, Abandon, Fail, the sweep, Progress — and only a finish with the `ok` verdict
+advances it; **`partial` is not a success** (an owner assumption: a partial run reached some
+destinations, and "when did the last complete copy leave" is not answered by it). A `status.json`
+written before the field existed reads its `ok` run as its last success at the read, beside the
+`targets` normalisation in `ReadStatusAsync` — a missing positional member is `0`, which would have
+told an administrator whose last run was fine that the server had NEVER succeeded (plan gate, codex); a
+legacy `failed` cannot establish a success and stays `0`, *no recorded success*.
+
 ## Authorization
 
 ```csharp
