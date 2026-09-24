@@ -238,6 +238,15 @@ async function unansweredPromptRefuses(pem, publicPath, dir) {
   global.__AGENT_LOG__ = [];
   const original = Module._resolveFilename;
   Module._resolveFilename = (request, ...rest) => (request === 'vscode' ? stubPath : original.call(Module, request, ...rest));
+  try {
+    await driveUnansweredPrompt(pem, publicPath, dir);
+  } finally {
+    // Restored whatever happens, so a later section never resolves `vscode` to this stub.
+    Module._resolveFilename = original;
+  }
+}
+
+async function driveUnansweredPrompt(pem, publicPath, dir) {
   const { SshAgentManager } = require(path.join(OUT, 'sshAgentManager.js'));
   const published = {};
   const manager = new SshAgentManager(
@@ -269,7 +278,6 @@ async function unansweredPromptRefuses(pem, publicPath, dir) {
     global.__AGENT_LOG__.join(' | '),
   );
   manager.dispose();
-  Module._resolveFilename = original;
 }
 
 main().catch((error) => {

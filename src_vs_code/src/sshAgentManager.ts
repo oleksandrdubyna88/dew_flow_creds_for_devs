@@ -271,21 +271,27 @@ export class SshAgentManager implements vscode.Disposable {
    * (see `withTimeout.ts`).</p>
    */
   private async askToSign(key: AgentKey, purpose: SignPurpose, asked: Date): Promise<string | undefined> {
-    const minutes = Math.round(this.consentTimeoutMs / 60_000);
+    const bound = durationText(this.consentTimeoutMs);
     const modal = vscode.window.showWarningMessage(
       `Use the SSH key "${key.name}" to sign ${describePurpose(purpose)}?\n${localRequestTimeLine(asked)}\n\n` +
         `${key.fingerprint}\n\n` +
         'The key itself never leaves this window. Allow once, or allow every use of this key for ' +
         'ten minutes — long enough for a push that signs and authenticates in one go. ' +
-        `Unanswered, it is refused after ${minutes} minutes.`,
+        `Unanswered, it is refused after ${bound}.`,
       { modal: true },
       ALLOW_ONCE,
       ALLOW_WINDOW,
       DENY,
     );
-    const answered = await withTimeout(Promise.resolve(modal).then((choice) => ({ choice })), this.consentTimeoutMs);
+    // A modal that REJECTS (the window closing under it) is a dismissal — and `withTimeout` must be
+    // handed a promise that does not reject.
+    const settled = Promise.resolve(modal).then(
+      (choice) => ({ choice }),
+      () => ({ choice: undefined }),
+    );
+    const answered = await withTimeout(settled, this.consentTimeoutMs);
     if (answered === undefined) {
-      this.log(`no answer in ${minutes} minutes — refused ${describePurpose(purpose)}`);
+      this.log(`no answer in ${bound} — refused ${describePurpose(purpose)}`);
     }
     return answered?.choice;
   }
@@ -320,4 +326,14 @@ export class SshAgentManager implements vscode.Disposable {
     this.output?.dispose();
     removeSocketFile(this.storageDir);
   }
+}
+
+/** "5 minutes", "1 minute" — or seconds under a minute, so a short bound never reads "0 minutes". */
+function durationText(ms: number): string {
+  const minutes = Math.round(ms / 60_000);
+  if (minutes >= 1) {
+    return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+  }
+  const seconds = Math.max(1, Math.round(ms / 1000));
+  return `${seconds} second${seconds === 1 ? '' : 's'}`;
 }
