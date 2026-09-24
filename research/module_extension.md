@@ -4915,7 +4915,7 @@ this section says where the code went, so a reader of the module can find it.
 | The ratchet (T3) | `sizeRatchet.ts`, `scripts/size-ratchet.mjs`, `.size-baseline.json`, CI | An exempted file may shrink, never grow |
 | One click previews, a double click pins (T11) | `viewerClicks.ts` (`ViewerClicks`, `clickToView` — the state machine), `showPreview`/`pinPreview` in `entityViewPanel.ts` | The editor's own model: ONE shared preview tab for single clicks, a tab of its own on a double click. The workbench's double-click toggle is left alone — two restore attempts (a same-id refresh, then a re-created row) were measured slow and flaky and are deleted |
 | Server Metrics… (server-ops 5) | `serverMetricsPage.ts` (pure), `serverMetricsCommand.ts`, `OrgRecoveryClient.readMetrics` / `.probeMetrics` | An **administrator's or an officer's** row (2026-09-12; it was `account-corpOfficer` alone until `/api/metrics` became `RequireAdminAsync`). `probeMetrics` classifies the refusal — unreachable / refused / older — so the tree's Server section can DRAW it where the tab shows a sentence |
-| The Server section (2026-09-12) | `serverItems.ts` (pure rows + `corpSections`), `githubReleases.ts` (`vscode`-free, injectable fetch), `ServerSection` + `refreshServerMetrics` in `orgPolicyRefresh.ts`, the `record` seam in `backupWatch.ts` | Four rows on an administrator's account row — Server ▸ Version / Vaults / Backup — above Team, because a single row above a list is a header. Read-only; the one action it offers is the EXISTING `credSshManager.orgBackup`. **Both caches hold an ENVELOPE** (`ServerRead`, `BackupRead`): the last value that arrived plus the CURRENT read's outcome, so a row keeps what it knew while saying that the latest attempt did not land — the backup half recorded only successes at first and drew a green check against a server that could not be reached. **A read is fenced against a repoint**: the server it was asked of is captured before the await and checked before the write, because an account keeps its id when it moves. **The release check walks every page** before choosing, since GitHub orders by publication and a backport publishes after a higher version; each request carries a deadline, and a failed check waits `RELEASE_RETRY_MS` rather than walking five pages again on the next readiness tick |
+| The Server section (2026-09-12) | `serverItems.ts` (pure rows + `corpSections`), `githubReleases.ts` (`vscode`-free, injectable fetch), `ServerSection` + `refreshServerMetrics` in `orgPolicyRefresh.ts`, the `record` seam in `backupWatch.ts` | Four rows on an administrator's account row — Server ▸ Version / Vaults / Backup — above Team, because a single row above a list is a header. Read-only; the one action it offers is the EXISTING `credSshManager.orgBackup`. **Both caches hold an ENVELOPE** (`ServerRead`, `BackupRead`): the last value that arrived plus the CURRENT read's outcome, so a row keeps what it knew while saying that the latest attempt did not land — the backup half recorded only successes at first and drew a green check against a server that could not be reached. **A read is fenced against a repoint**: the server it was asked of is captured before the await and checked before the write, because an account keeps its id when it moves. **The release check walks every page** before choosing, since GitHub orders by publication and a backport publishes after a higher version; each request carries a deadline, and a failed check waits `RELEASE_RETRY_MS` rather than walking five pages again on the next readiness tick. **Since #134** the Backup row tells the last run from the last success, the Vaults row names pending shares, and the backup tab writes every status it reads into the same cache, so the row moves with the tab |
 | Restore from the Trash (T34) | `trashedFrom` on `TreeNode`; `restoreTarget()` in `trash.ts`; `moveToTrash`/`restoreFromTrash` over one `relocate()` seam in `storageManager.ts`; `restoreCommand.ts`; `entity:trashed` in `treeRowText.ts` | Deletion remembers the folder in the same write as the move; Restore goes back there or to the root, never into the Trash again |
 | One group grid for both pages (T24/T24b) | `groupsGridCss(className, thirdColumn)`, `COLUMN_MAX_PX`, `THREE_COLUMN_PAGE_MAX_PX` in `webviewHtml.ts`; the viewer's `agentGroup` frame in `entityViewPage.ts` | A column never gets narrower because a third one came: the page widens by a column and a gap, and the third column exists only where the window holds three full ones — and only on the form; the viewer's agent frame stays in the second column |
 | Folder descriptions underlined (T30) | `treeDescriptions.ts` `underlined()` / `plain()` | Marks are woven at render time only; search reads `folderType`, never the marks |
@@ -5735,10 +5735,11 @@ looks. These are the callers, and the sentence that ends that silence.
 
 | File | What it is |
 |---|---|
-| `orgBackupClient.ts` | The six routes, on epic 1's `CorpApiClient` like every corporate client since — never a fourth copy of the bearer/contract/timeout plumbing |
-| `backupPage.ts` | The markup and what it escapes. Pure, `vscode`-free |
-| `backupTab.ts` | The tab's state machine: what is asked for, what a late answer does, and above all when the key's words are handed over. Pure |
-| `orgBackupPanel.ts` | The webview, the modal and the save dialog — the `vscode` half, and only that |
+| `orgBackupClient.ts` | The seven routes, on epic 1's `CorpApiClient` like every corporate client since — never a fourth copy of the bearer/contract/timeout plumbing. `readTargets` answers `undefined` for a server with no destinations route, which is not an empty list |
+| `backupTargets.ts` | The destinations as the tab edits them, pure: the server's refusals spelled once on this side, the key-less requests a save re-sends the sealed ones as, and the list with one row replaced or removed (#134) |
+| `backupPage.ts` | The markup, what it escapes, and the destination form whose credential inputs carry no value. Pure, `vscode`-free; its script is exported and driven under `runFragment` |
+| `backupTab.ts` | The tab's state machine: what is asked for, what a late answer does, above all when the key's words are handed over — and, since #134, that a typed credential lives for one message. Pure |
+| `orgBackupPanel.ts` | The webview, the modal, the remove confirmation and the save dialog — the `vscode` half, and only that |
 | `archiveDownload.ts` | Streaming an archive to disk, atomically. Node, no `vscode` |
 | `backupNotice.ts` | The cadence and the wording. Pure |
 | `backupWatch.ts` | The check that rides epic 1's policy fetch. Pure |
@@ -5797,6 +5798,63 @@ somebody who cannot act on it — the same reading the roster fetch already make
 `account-corpAdmin` **and** `account-corpOfficer`, because an officer passes `RequireAdmin` on the
 server while their row carries the officer contextValue: gating on the admin value alone would have
 hidden the feature from exactly the people who administer unconditionally.
+
+### The destinations, from the tab (2026-09-24, #134)
+
+Story 5 edited the schedule and nothing else: `backupTab.ts` deliberately omitted `targets` from the
+save, `BackupTargetInput` was declared and filled by nothing, and no route returned the configured
+destinations — so an administrator who wanted an S3 bucket had `curl` and the settings file. The tail
+of #56 ([PLAN_backup_destinations_from_vscode.md](PLAN_backup_destinations_from_vscode.md)) is the
+form, and five rules it is built around.
+
+**The list is read first, and always sent whole.** `PUT /settings` REPLACES the destinations, so
+editing one means sending all of them; `GET /api/org/backup/targets` is the read that makes that
+possible, and `toInputs` turns what it answers — where each destination is, never what opens it — into
+key-less requests the server keeps by identity. **Against a server with no such route the form is not
+offered at all**: `readTargets` answers `undefined` for a `404`, which is not an empty list, and the
+page says which side is older. A save without the list would silently erase the destinations this
+build cannot see, which is the whole reason the two answers must not be flattened into one.
+
+**A credential lives for ONE message.** The form's two credential inputs carry no `value`, ever; a
+`saveTarget` message's keys go into the request and nowhere else — not into a field, not into the
+draft, not into a notice, not into a log. After a FAILED save the tab redraws the form from a
+non-secret draft (the endpoint comes back, the keys do not), re-reads the list so the page shows what
+the server holds rather than what the person hoped, and the test asserts the HTML carries none of the
+four typed values. The page script never touches `vscode.setState`: a form value that outlived the
+message would be a credential in a place that outlives the moment. The owner's decision, and it costs a
+retype on a failed probe; the client validates the endpoint, the bucket and both halves before any
+round trip so a typo never reaches the probe.
+
+**Leaving the keys empty means "keep the sealed ones" — only while the identity is the server's.** The
+server matches by kind, endpoint, bucket and prefix. An edit that changes the prefix is a NEW
+destination to it and is asked for both halves on this side, with the server's own first-save sentence,
+rather than being sent key-less and refused. The kind is fixed on an edit for the same reason. A region
+typed under S3 is blanked when the kind is Azure (plan gate): the hidden input survives the switch and
+would otherwise be stored for a kind that has no region.
+
+**Remove asks first**, through `confirmDestructive`, with the fact that matters: the archives already at
+that destination stay there — only this server stops sending new ones — and its sealed credentials go.
+A dismissed dialog sends nothing.
+
+**Every status the tab reads is handed to the tree.** `BackupTabHost.record` is filled by
+`orgBackupCommands.ts` with the same `BackupRead` envelope the backup watch writes
+(`provider.server.backup`), then `provider.refresh()` — so the Backup row agrees with the tab the moment
+it acts rather than on the next readiness tick. Every status handed there came from `readStatus`;
+the tab never holds an optimistic one.
+
+Two rows changed with it. **The Backup row tells the last run from the last success**: when the last run
+was not `ok` and the server sends `lastSuccessAt`, it reads `s3 · last run <at> · last success <at>` or
+`· never succeeded`; a run that succeeded IS the last success and is said once, and an older server
+that sends no instant draws as before, because nothing is invented about a fact it did not send. The
+tab's run sentence does the same. **The Vaults row names pending shares** — `41 · 1.2 GiB · 3 pending
+shares (12.0 KiB)` — only when there are any; the server has reported them since 2026-08-28 and the row
+had counted vault files alone.
+
+A save that carries destinations waits `TARGET_SAVE_TIMEOUT_MS`, three times the server's probe worst
+case, through a per-call deadline on `CorpApiClient.request` — the existing client widened rather than a
+second one. And the route table in `BackupTab.handle` is a `Record` over the whole message union, so a
+message kind added without a handler is a compile error rather than a click that does nothing; the
+page is untrusted input, and every optional field is checked for its kind at the door.
 
 ## Security hardening (2026-08-25 review)
 

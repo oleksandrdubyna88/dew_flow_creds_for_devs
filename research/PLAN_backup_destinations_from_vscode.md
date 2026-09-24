@@ -1,17 +1,67 @@
 # PLAN — configure the backup destinations from VS Code, and tell "last run" from "last success" (#134)
 
-> Status: **plan only, nothing implemented yet, 2026-09-24.** Scope: one new admin-only server route
-> and four server-side fixes under `/api/org/backup/*` (`src_minimalapi_server/src/OrgBackupEndpoints.cs`,
-> `BackupTargets.cs`, `BackupRunner.cs`, `Models.cs`); the extension's Server backup tab
-> (`src_vs_code/src/backupTab.ts`, `backupPage.ts`, `orgBackupClient.ts`, `orgBackupPanel.ts`) and the
-> tree's Server rows (`serverItems.ts`). Issue: oleksandrdubyna88/dew_flow_creds_for_devs#134 — the
-> tail of #56.
+> Status: **IMPLEMENTED, 2026-09-24.** All of S1–S7 and C1–C9 shipped, in one pull request as nine
+> story commits. Scope: one new admin-only server route and four server-side fixes under
+> `/api/org/backup/*` (`src_minimalapi_server/src/OrgBackupEndpoints.cs`, `BackupTargetPlan.cs`,
+> `BackupTargets.cs`, `BackupRunner.cs`, `BackupStore.cs`, `S3Target.cs`, `AzureBlobTarget.cs`,
+> `Models.cs`); the extension's Server backup tab (`src_vs_code/src/backupTab.ts`, `backupPage.ts`,
+> `backupTargets.ts`, `orgBackupClient.ts`, `orgBackupPanel.ts`) and the tree's Server rows
+> (`serverItems.ts`). Issue: oleksandrdubyna88/dew_flow_creds_for_devs#134 — the tail of #56.
 >
-> Related docs: [PLAN_corp_server_backup.md](../research/PLAN_corp_server_backup.md) (epic 5, which
-> built everything below the form), [PLAN_server_section_for_admins.md](../research/PLAN_server_section_for_admins.md)
-> (§2.2 — the decision that the STATUS names kinds only), [PLAN_corp_backup_drives.md](PLAN_corp_backup_drives.md)
-> (the two drive kinds, still open — see *Boundary* below), [module_server.md](../research/module_server.md),
-> [module_extension.md](../research/module_extension.md).
+> **Deviations — what shipped differently, and why.**
+>
+> - **The plan gate rewrote four things before a line was written** (3 of 3 reviewers, verdict
+>   `good_enough` on a one-round budget; 6 findings accepted, 6 rejected with reasons): the probe's
+>   DELETE ran on the two-minute request deadline while its PUT ran on the twenty-second probe deadline,
+>   so one hung bucket held a save for 140 s — both halves now run on the probe's (`DeleteWithinAsync`);
+>   a legacy `status.json` whose last run was `ok` would have read as *never succeeded* — the read
+>   derives `lastSuccessAt` from it; the no-KEK `409` applies only when the plan actually SEALS, so a
+>   keys-omitted edit still saves on such a deployment; an unopenable sibling re-sent unchanged is kept
+>   and unprobed, which against the probe-all code was a real break; a region typed under S3 is blanked
+>   for Azure; and the two-implementation contract got one fixture both suites assert,
+>   `contract/backup-targets-v1.json`. Rejected: a `Task.WhenAll` wrapper (the per-request deadlines are
+>   the bound), a null-status normaliser (`ReadOrDefaultAsync` already answers `NeverRun`), a
+>   mixed-credentials warning (the design was per row), a second partial guard (the test pins it),
+>   keeping typed credentials across a failed save (the owner's rule: a credential lives for one
+>   message), an "optimistic status" warning (every status the tab assigns is a `readStatus` answer), and
+>   Region in the identity (it would turn a region edit into a delete-plus-add that drops the keys).
+> - **`BackupTargets.Open` grew `Opens`**, not a public `TryOpen`: the same AEAD open without the error
+>   line, because a listing is read every time the tab opens.
+> - **Two destinations with one identity are refused by name** — not in the plan; found writing the
+>   planner, since the keep-the-keys rule can only ever match the first.
+> - **The kind is fixed on an edit**, and an edit that changes the prefix is a NEW destination to the
+>   server, asked for both halves on the client with the server's own first-save sentence — the plan had
+>   `hasSealed` as a flag; it is `identityOf(row) === identityOf(edited)`.
+> - **`VaultServer` takes service replacements** (`ConfigureTestServices`) so `BackupTargets` is built
+>   over `StubTransport` in the endpoint tests — the plan said so, and it is what let a probe be a
+>   request a test reads rather than a DNS lookup that fails differently on every network.
+> - **`saveDeadlineMs` never shortens the client's deadline** — `max(base, 120 s)` — the plan said
+>   "passes 120 s"; a client built with a longer one keeps it.
+> - **Singular/plural on the Vaults row** (`1 pending share`) — a detail the plan did not spell.
+> - **The `.http` suite covers the `403` and the empty `200` of the new route**; a populated listing
+>   and a proved save are `@uncovered` with their reasons (both need a reachable bucket with credentials
+>   nobody should commit). Exit `0` against a started stack, 185 requests, 405 checks; coverage 47/47.
+> - **Not a cross-language live run.** The shared fixture is what the two halves agree on; nothing
+>   starts the server and drives the TypeScript client against it, and no route here has that.
+>   Checked: the `.http` tier drives the server's shape live; the extension's shape guard is asserted
+>   against the same document; the two are not driven against each other.
+> - **A Windows-only collision, pre-existing, seen once**: `AtomicWriteAsync` is a `File.Move` over the
+>   destination, which fails under a concurrent reader on Windows (`rename(2)` on Linux succeeds), so the
+>   restart test's ten-millisecond poll once made the sweep log *"could not read the backup status"* and
+>   time out. Four re-runs clean; recorded in `module_tests.md` rather than papered over with a retry.
+>
+> **Open tail**, none of it this plan's to close: the two drive kinds
+> ([PLAN_corp_backup_drives.md](../todo/PLAN_corp_backup_drives.md), boundary named on both sides);
+> the two byte formatters (`humanBytes` in `backupPage.ts`, `formatBytes` in `serverMetricsPage.ts`)
+> this work uses and does not unify; and two owner assumptions recorded so they can be reversed —
+> only a NEW or CHANGED destination is probed on save (`TargetDecision.Probe`), and `partial` is not a
+> success for `lastSuccessAt` (one comparison in `FinishAsync`).
+>
+> Related docs: [PLAN_corp_server_backup.md](PLAN_corp_server_backup.md) (epic 5, which
+> built everything below the form), [PLAN_server_section_for_admins.md](PLAN_server_section_for_admins.md)
+> (§2.2 — the decision that the STATUS names kinds only), [PLAN_corp_backup_drives.md](../todo/PLAN_corp_backup_drives.md)
+> (the two drive kinds, still open — see *Boundary* below), [module_server.md](module_server.md),
+> [module_extension.md](module_extension.md).
 
 ## The symptom
 
@@ -263,7 +313,7 @@ rather than what the person hoped.
 
 ### What is deliberately NOT here
 
-- OneDrive and Google Drive — [PLAN_corp_backup_drives.md](PLAN_corp_backup_drives.md). See *Boundary*.
+- OneDrive and Google Drive — [PLAN_corp_backup_drives.md](../todo/PLAN_corp_backup_drives.md). See *Boundary*.
 - A per-destination "probe now" button. The save probes what changed; a nightly run reports the rest.
 - Reordering destinations; the list is a set to the server (identity-keyed).
 - A second byte formatter: `backupPage.ts` has `humanBytes` and `serverMetricsPage.ts` has

@@ -246,7 +246,7 @@ this size. The per-caller request limiter (`:190-205`) already bounds how often 
 |---|---|---|
 | `src/orgBackupClient.ts` | new | Status, settings, run, and the streamed download to a path from a save dialog — on epic 1's `corpApiClient`, not a fourth copy of its plumbing. |
 | `src/backupNotice.ts` | new, pure | The cadence: once a day while unconfigured, once an hour while the last run failed, silent while healthy; dedupe per account per window, the shape `lockedNotice.ts` uses for its own warnings. |
-| `src/commands/accountCommands.ts` | modify | "Server Backup…" on `account-corpAdmin` rows: status, configure a target, run now, download, show the key once. |
+| `src/commands/accountCommands.ts` | modify | "Server Backup…" on `account-corpAdmin` rows: status, run now, download, show the key once, and the schedule. **Not "configure a target"** — story 5 shipped the tab without a destinations form (`backupTab.ts` deliberately omitted `targets`, and no route returned them); that is issue #134, built 2026-09-24 in [PLAN_backup_destinations_from_vscode.md](PLAN_backup_destinations_from_vscode.md). Corrected 2026-09-24: this row had claimed it since the plan was written. |
 | `package.json` | modify | The command and its `when`, on the corp-admin contextValue only. |
 
 The notice check rides the policy fetch of epic 1 — one more field on the status it already reads,
