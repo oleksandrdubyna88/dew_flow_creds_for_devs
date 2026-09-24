@@ -201,11 +201,11 @@ public class BackupStoreTests
         (await store.ReadStatusAsync(Ct)).Should().BeEquivalentTo(BackupStatus.NeverRun);
 
         await store.WriteSettingsAsync(new BackupSettings(7, 90, []), Ct);
-        await store.WriteStatusAsync(new BackupStatus(1234, "ok", string.Empty, 4096, []), Ct);
+        await store.WriteStatusAsync(new BackupStatus(1234, "ok", string.Empty, 4096, [], 1234), Ct);
 
         (await store.ReadSettingsAsync(Ct)).Should().BeEquivalentTo(new BackupSettings(7, 90, []));
         (await store.ReadStatusAsync(Ct)).Should().BeEquivalentTo(
-            new BackupStatus(1234, "ok", string.Empty, 4096, []));
+            new BackupStatus(1234, "ok", string.Empty, 4096, [], 1234));
     }
 
     [Fact]
@@ -215,7 +215,7 @@ public class BackupStoreTests
         // and it is stated here so that nobody "fixes" it into a throw.
         var dir = TempDir();
         var store = Store(dir, out _);
-        await store.WriteStatusAsync(new BackupStatus(1, "ok", string.Empty, 1, []), Ct);
+        await store.WriteStatusAsync(new BackupStatus(1, "ok", string.Empty, 1, [], 1), Ct);
         File.WriteAllText(Path.Combine(dir, "org", "backup", "status.json"), "{ not json");
 
         (await store.ReadStatusAsync(Ct)).Should().BeEquivalentTo(BackupStatus.NeverRun);
@@ -245,6 +245,46 @@ public class BackupStoreTests
         settings.ScheduleHourUtc.Should().Be(3, "and everything it DID configure is still there");
         status.Targets.Should().NotBeNull().And.BeEmpty();
         status.LastResult.Should().Be("ok");
+    }
+
+    [Fact]
+    public async Task ALegacyStatusWhoseLastRunWasOkReadsThatRunAsItsLastSuccess()
+    {
+        // The upgrade case for the second instant (plan gate, codex): every deployment that ran before
+        // lastSuccessAt existed has a status.json without it, and reading the missing member as 0 would
+        // tell an administrator whose last run was fine that their server has NEVER succeeded — false
+        // history, on the row that decides how much a restore would lose. Derived where the value is
+        // read, beside the targets normalisation, from the only evidence the old file holds.
+        var dir = TempDir();
+        var store = Store(dir, out _);
+        var backup = Path.Combine(dir, "org", "backup");
+        Directory.CreateDirectory(backup);
+        File.WriteAllText(
+            Path.Combine(backup, "status.json"),
+            """{"lastRunAt":1234,"lastResult":"ok","lastError":"","bytes":4096,"targets":[]}""");
+
+        var status = await store.ReadStatusAsync(Ct);
+
+        status.LastSuccessAt.Should().Be(1234, "the ok run it recorded IS its last success");
+    }
+
+    [Fact]
+    public async Task ALegacyStatusWhoseLastRunFailedHasNoRecordedSuccess()
+    {
+        // The other half, so the derivation cannot be "copy lastRunAt": a legacy failure says nothing
+        // about when a success last happened, and 0 — no recorded success — is the honest answer.
+        var dir = TempDir();
+        var store = Store(dir, out _);
+        var backup = Path.Combine(dir, "org", "backup");
+        Directory.CreateDirectory(backup);
+        File.WriteAllText(
+            Path.Combine(backup, "status.json"),
+            """{"lastRunAt":1234,"lastResult":"failed","lastError":"denied","bytes":0,"targets":[]}""");
+
+        var status = await store.ReadStatusAsync(Ct);
+
+        status.LastSuccessAt.Should().Be(0, "a failure is not promoted into a success");
+        status.LastRunAt.Should().Be(1234, "and the run itself is still there");
     }
 
     [Fact]
@@ -320,7 +360,8 @@ public class BackupStoreTests
         await store.MintKeyAsync(Ct);
         (await store.AcknowledgeKeyShownAsync(Ct)).Should().BeTrue();
         var key = (await store.FindKeyAsync(Ct)).Key;
-        await store.WriteStatusAsync(new BackupStatus(1_700_000_000_000, "ok", string.Empty, 4096, []), Ct);
+        await store.WriteStatusAsync(
+            new BackupStatus(1_700_000_000_000, "ok", string.Empty, 4096, [], 1_700_000_000_000), Ct);
         File.Delete(Path.Combine(dir, "org", "backup", "key.shown"));
 
         var again = await store.MintKeyAsync(Ct);

@@ -248,7 +248,7 @@ public class BackupRunnerTests
         // running backup from a dead one.
         var world = await Ready();
         await world.Backups.WriteStatusAsync(
-            new BackupStatus(Noon.ToUnixTimeMilliseconds(), BackupRunResults.InProgress, string.Empty, 0, []), Ct);
+            new BackupStatus(Noon.ToUnixTimeMilliseconds(), BackupRunResults.InProgress, string.Empty, 0, [], 0), Ct);
 
         (await world.Backups.SweepOrphanedRunAsync(Ct)).Should().BeTrue();
 
@@ -264,13 +264,128 @@ public class BackupRunnerTests
         // design rewrote the status whenever a server started, which would have declared that run dead.
         var world = await Ready();
         await world.Backups.WriteStatusAsync(
-            new BackupStatus(Noon.ToUnixTimeMilliseconds(), BackupRunResults.InProgress, string.Empty, 0, []), Ct);
+            new BackupStatus(Noon.ToUnixTimeMilliseconds(), BackupRunResults.InProgress, string.Empty, 0, [], 0), Ct);
         using var held = world.Backups.TryClaim();
 
         (await world.Backups.SweepOrphanedRunAsync(Ct)).Should().BeFalse("something holds the claim");
 
         (await world.Backups.ReadStatusAsync(Ct)).LastResult.Should().Be(BackupRunResults.InProgress);
     }
+
+    [Fact]
+    public async Task AnOkRunStampsTheLastSuccess()
+    {
+        // The number a restore depends on: not when a run last STARTED, which a failed run also moves,
+        // but when the last complete copy left. Written by the finish that produced it and by nothing else.
+        var world = await Ready();
+
+        await world.Runner.RunAsync("admin@corp.com", Ct);
+
+        var status = await world.Backups.ReadStatusAsync(Ct);
+        status.LastResult.Should().Be(BackupRunResults.Succeeded);
+        status.LastSuccessAt.Should().Be(Noon.ToUnixTimeMilliseconds(), "an ok run IS a success");
+    }
+
+    [Fact]
+    public async Task AFailedRunKeepsTheLastSuccessOfTheRunBeforeIt()
+    {
+        // The whole point of the second instant: a bad night must not erase the good one before it. The
+        // previous success is a stamp the frozen clock cannot produce, so "kept", "re-stamped" and
+        // "zeroed" are three different numbers here rather than one.
+        var stub = new StubTransport().Answer(HttpStatusCode.Forbidden, "denied");
+        var world = await Ready(transport: stub);
+        await world.Backups.WriteStatusAsync(Succeeded(Earlier), Ct);
+        await Configured(world);
+
+        await world.Runner.RunAsync("admin@corp.com", Ct);
+
+        var status = await world.Backups.ReadStatusAsync(Ct);
+        status.LastResult.Should().Be(BackupRunResults.Failed, "the destination refused");
+        status.LastRunAt.Should().Be(Noon.ToUnixTimeMilliseconds(), "the run itself is recorded");
+        status.LastSuccessAt.Should().Be(Earlier, "and the success before it is kept, not moved and not erased");
+    }
+
+    [Fact]
+    public async Task APartialRunDoesNotCountAsASuccess()
+    {
+        // A partial run has an archive that reached SOME destinations. "When did the last complete copy
+        // leave" is not answered by it, and a half-failing deployment would otherwise show a fresh
+        // success for months. Owner assumption, recorded in the plan; it is this one comparison.
+        var stub = new StubTransport()
+            .Answer(HttpStatusCode.OK)
+            .AnswerStored()
+            .Answer(HttpStatusCode.Forbidden, "<Error><Code>AccessDenied</Code></Error>");
+        var world = await Ready(transport: stub);
+        await world.Backups.WriteStatusAsync(Succeeded(Earlier), Ct);
+        await Configured(world);
+
+        await world.Runner.RunAsync("admin@corp.com", Ct);
+
+        var status = await world.Backups.ReadStatusAsync(Ct);
+        status.LastResult.Should().Be(BackupRunner.Partial);
+        status.LastSuccessAt.Should().Be(Earlier, "partial is not the last complete copy");
+    }
+
+    [Fact]
+    public async Task ARunThatDiesWithAnExceptionKeepsTheLastSuccessToo()
+    {
+        // The catch-all's status write is the other terminal writer, and the one a genuinely bad night
+        // reaches. It must carry the instant forward like every other writer.
+        var dir = TempDir();
+        var kek = RandomNumberGenerator.GetBytes(Key32.Bytes);
+        var backups = new BackupStore(dir, kek, NullLogger<BackupStore>.Instance);
+        var runner = new BackupRunner(
+            backups, dir, new ThrowingConfig(), null, Targets(kek), Clock(), NullLogger<BackupRunner>.Instance);
+        await backups.MintKeyAsync(Ct);
+        (await backups.AcknowledgeKeyShownAsync(Ct)).Should().BeTrue();
+        await backups.WriteStatusAsync(Succeeded(Earlier), Ct);
+
+        await runner.RunAsync("admin@corp.com", Ct);
+
+        var status = await backups.ReadStatusAsync(Ct);
+        status.LastResult.Should().Be(BackupRunResults.Failed);
+        status.LastSuccessAt.Should().Be(Earlier);
+    }
+
+    [Fact]
+    public async Task ARunGivenBackBeforeItStartedKeepsTheLastSuccess()
+    {
+        // Begin writes "in progress" and Abandon takes it back; neither is a success and neither may
+        // touch the instant of the one before.
+        var world = await Ready();
+        await world.Backups.WriteStatusAsync(Succeeded(Earlier), Ct);
+
+        var start = await world.Runner.BeginAsync("admin@corp.com", Ct);
+        (await world.Backups.ReadStatusAsync(Ct)).LastSuccessAt
+            .Should().Be(Earlier, "carried into the in-progress status a reloaded page reads");
+        await world.Runner.AbandonAsync(start.Ticket!, "nothing to carry it out", Ct);
+
+        var status = await world.Backups.ReadStatusAsync(Ct);
+        status.LastResult.Should().Be(BackupRunResults.Refused);
+        status.LastSuccessAt.Should().Be(Earlier);
+    }
+
+    [Fact]
+    public async Task TheSweepKeepsTheLastSuccessOfTheRunItInterrupts()
+    {
+        // The crash path: a status turned from "in progress" into a failure must not lose the success
+        // before the run that died.
+        var world = await Ready();
+        await world.Backups.WriteStatusAsync(
+            new BackupStatus(Noon.ToUnixTimeMilliseconds(), BackupRunResults.InProgress, string.Empty, 0, [], Earlier),
+            Ct);
+
+        (await world.Backups.SweepOrphanedRunAsync(Ct)).Should().BeTrue();
+
+        (await world.Backups.ReadStatusAsync(Ct)).LastSuccessAt.Should().Be(Earlier);
+    }
+
+    /// <summary>A day before the frozen clock — an instant no writer under test can produce by itself.</summary>
+    private static readonly long Earlier = Noon.AddDays(-1).ToUnixTimeMilliseconds();
+
+    /// <summary>A status whose last run succeeded at <paramref name="at"/>, exactly as a finish writes it.</summary>
+    private static BackupStatus Succeeded(long at) =>
+        new(at, BackupRunResults.Succeeded, string.Empty, 4096, [], at);
 
     [Fact]
     public async Task ASweepOnAFinishedRunChangesNothing()

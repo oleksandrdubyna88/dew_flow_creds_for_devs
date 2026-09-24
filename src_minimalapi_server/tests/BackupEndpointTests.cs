@@ -51,6 +51,7 @@ public sealed class BackupEndpointTests
         status.GetProperty("keyState").GetString().Should().Be(nameof(BackupKeyLookup.Absent));
         status.GetProperty("running").GetBoolean().Should().BeFalse();
         status.GetProperty("lastResult").GetString().Should().Be(BackupRunResults.NeverRun);
+        status.GetProperty("lastSuccessAt").GetInt64().Should().Be(0, "nothing has ever succeeded here, and 0 is how that is spelled");
         status.GetProperty("localArchiveName").GetString().Should().BeEmpty();
     }
 
@@ -119,6 +120,8 @@ public sealed class BackupEndpointTests
         status.GetProperty("localArchiveName").GetString().Should().StartWith("cred-vault-").And.EndWith(".cvbk");
         status.GetProperty("localArchiveBytes").GetInt64().Should().BeGreaterThan(0);
         status.GetProperty("running").GetBoolean().Should().BeFalse();
+        status.GetProperty("lastSuccessAt").GetInt64().Should().BeGreaterThanOrEqualTo(
+            status.GetProperty("lastRunAt").GetInt64(), "an ok run is the last success, stamped when it finished");
         Corp.Rows(server, OrgEventKinds.BackupTaken).Should().ContainSingle();
     }
 
@@ -237,7 +240,8 @@ public sealed class BackupEndpointTests
                     BackupRunResults.InProgress,
                     string.Empty,
                     0,
-                    []),
+                    [],
+                    0),
                 Ct);
             (await StatusAsync(cto)).GetProperty("running").GetBoolean()
                 .Should().BeTrue("that is what a page reloaded mid-run must see");

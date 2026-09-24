@@ -217,13 +217,29 @@ public sealed partial class BackupStore(string dataDir, byte[] kek, ILogger<Back
     public async Task WriteSettingsAsync(BackupSettings settings, CancellationToken ct) =>
         await WriteAsync(SettingsPath, JsonSerializer.SerializeToUtf8Bytes(settings, AppJsonContext.Default.BackupSettings), ct);
 
-    /// <summary>The last run's outcome, or the never-run default. Same normalisation, same reason.</summary>
+    /// <summary>
+    /// The last run's outcome, or the never-run default. Same normalisation, same reason — and one more.
+    /// </summary>
+    /// <remarks>
+    /// <b>A status written before <c>LastSuccessAt</c> existed reads its <c>ok</c> run as its last
+    /// success.</b> The member is missing from every such file and a missing positional member is
+    /// <c>0</c>, which would tell an administrator whose last run was fine that this deployment has
+    /// NEVER succeeded — false history on the row that decides how much a restore would lose. The only
+    /// evidence the old file holds is its verdict, so an <c>ok</c> verdict is promoted and nothing else
+    /// is: a legacy <c>failed</c> says nothing about when a success last happened, and <c>0</c> — no
+    /// recorded success — is the honest answer for it.
+    /// </remarks>
     public async Task<BackupStatus> ReadStatusAsync(CancellationToken ct)
     {
         var status = await ReadOrDefaultAsync(
             StatusPath, AppJsonContext.Default.BackupStatus, BackupStatus.NeverRun, ct);
-        return status.Targets is null ? status with { Targets = [] } : status;
+        return WithLastSuccess(status.Targets is null ? status with { Targets = [] } : status);
     }
+
+    private static BackupStatus WithLastSuccess(BackupStatus status) =>
+        status.LastSuccessAt == 0 && status.LastRunAt > 0 && status.LastResult == BackupRunResults.Succeeded
+            ? status with { LastSuccessAt = status.LastRunAt }
+            : status;
 
     public async Task WriteStatusAsync(BackupStatus status, CancellationToken ct) =>
         await WriteAsync(StatusPath, JsonSerializer.SerializeToUtf8Bytes(status, AppJsonContext.Default.BackupStatus), ct);

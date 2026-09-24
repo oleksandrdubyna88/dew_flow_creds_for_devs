@@ -307,18 +307,27 @@ public sealed record BackupSettings(
 /// The last run's outcome, in the words a person reads on the page.
 /// </summary>
 /// <remarks>
-/// <c>LastRunAt == 0</c> is "never", not "the epoch": the alternative is a nullable that every caller
-/// has to remember to check, and this repository's rule is that business logic does not carry null.
-/// The distinction is stated here so the page does not have to guess it.
+/// <para><c>LastRunAt == 0</c> is "never", not "the epoch": the alternative is a nullable that every
+/// caller has to remember to check, and this repository's rule is that business logic does not carry
+/// null. The distinction is stated here so the page does not have to guess it.</para>
+/// <para><b><c>LastSuccessAt</c> is a different instant from <c>LastRunAt</c></b>, and the difference is
+/// the number a restore depends on. <c>LastRunAt</c> is when the last run STARTED, failed ones included;
+/// <c>LastSuccessAt</c> is when the last run whose verdict was <c>ok</c> finished — a <c>partial</c> run
+/// reached some destinations and not others, and "when did the last complete copy leave" is not
+/// answered by it. Every writer carries the previous value forward; only a finish with the <c>ok</c>
+/// verdict advances it. <c>0</c> is "no recorded success": a status file written before this field
+/// existed reads its <c>ok</c> run as its last success at the read (<c>BackupStore.ReadStatusAsync</c>),
+/// and a legacy <c>failed</c> cannot establish one.</para>
 /// </remarks>
 public sealed record BackupStatus(
     long LastRunAt,
     string LastResult,
     string LastError,
     long Bytes,
-    IReadOnlyList<BackupTargetStatus> Targets)
+    IReadOnlyList<BackupTargetStatus> Targets,
+    long LastSuccessAt)
 {
-    public static readonly BackupStatus NeverRun = new(0, "never run", string.Empty, 0, []);
+    public static readonly BackupStatus NeverRun = new(0, "never run", string.Empty, 0, [], 0);
 }
 
 /// <summary>
@@ -342,6 +351,7 @@ public sealed record BackupStatusDto(
     int ScheduleHourUtc,
     int RetentionDays,
     long LastRunAt,
+    long LastSuccessAt,
     string LastResult,
     string LastError,
     bool Running,

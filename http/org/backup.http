@@ -51,13 +51,23 @@ Accept: application/json
   const status = response.parsedBody;
   test('the shape a page draws from, with running DERIVED rather than stored twice', () => {
     for (const field of ['configured', 'keyState', 'scheduleHourUtc', 'retentionDays',
-                         'lastRunAt', 'lastResult', 'lastError', 'running',
+                         'lastRunAt', 'lastSuccessAt', 'lastResult', 'lastError', 'running',
                          'localArchiveBytes', 'localArchiveName']) {
       assert.ok(field in status, `${field} is part of the document`);
     }
     assert.equal(typeof status.running, 'boolean');
     assert.equal(status.running, status.lastResult === 'in progress',
       'running is derived from the persisted result — two fields could disagree');
+  });
+  test('the last SUCCESS is its own instant, and a server that never ran spells it 0', () => {
+    // lastRunAt is when the last run started, failed ones included; lastSuccessAt is when the last
+    // run whose verdict was ok finished. They are different numbers on a bad night, and the row
+    // that decides how much a restore would lose needs the second one (#134).
+    assert.equal(typeof status.lastSuccessAt, 'number');
+    assert.ok(status.lastSuccessAt >= 0);
+    if (status.lastRunAt === 0) {
+      assert.equal(status.lastSuccessAt, 0, 'no run, no success');
+    }
   });
   test('the schedule and the window are the shell backup\'s own defaults on a fresh server', () => {
     assert.ok(status.scheduleHourUtc >= 0 && status.scheduleHourUtc <= 23);

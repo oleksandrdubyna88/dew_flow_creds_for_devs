@@ -75,6 +75,7 @@ public static class OrgBackupEndpoints
                 settings.ScheduleHourUtc,
                 settings.RetentionDays,
                 status.LastRunAt,
+                status.LastSuccessAt,
                 status.LastResult,
                 status.LastError,
                 BackupRunResults.IsRunning(status.LastResult),
