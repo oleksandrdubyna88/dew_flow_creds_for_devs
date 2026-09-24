@@ -1,8 +1,10 @@
 import { EntityMetadata } from './types';
 import { escapeHtml } from './webviewHtml';
+import { listOf } from './sentenceList';
 
 /**
- * What the General section SAYS about the two protections — facts, not controls.
+ * What the General section SAYS about the two protections — facts, not controls — and, since #122,
+ * the one control that sits beside them: *Not for export*, a mark that costs nothing to set or clear.
  *
  * <p>Both are here for the same reason: neither is a field. Weaving cannot be undone at all (the
  * method is stored nowhere, so a build offering "turn this off" would be claiming something it
@@ -46,7 +48,7 @@ export function wovenViewNote(password: boolean, fields: readonly string[]): str
   // constants of this build; the question a boundary answers is whether it is safe WHATEVER it is
   // handed, and a label list that one day comes from a record would arrive here unannounced.
   const safe = named.map(escapeHtml);
-  const list = safe.length === 1 ? safe[0] : `${safe.slice(0, -1).join(', ')} and ${safe.at(-1)}`;
+  const list = listOf(safe);
   return `<p class="hint woven"><b>Woven — on.</b> This entry stores ${list} interleaved with a
      second value, under a method only you know. Pick that method below and press Show: both rows
      come back, and you read the one you recognise. Nothing here can unweave the stored value — that
@@ -65,7 +67,7 @@ export function notForExportField(d: EntityMetadata | undefined, forSomeoneElse:
   return `<div class="check"><input id="notForExport" type="checkbox"${d?.notForExport === true ? ' checked' : ''}>
        <label for="notForExport">Not for export</label></div>
     <p class="hint">This entry is never sent by <i>Share with…</i> or written by <i>Export / Share
-       Externally…</i>; inside a shared or exported folder it is left out and named. Agents, backup,
+       Externally…</i>; in a folder you share or export, it is left out and named. Agents, backup,
        sync and your own use are unaffected. An older version of this extension does not know the
        mark and drops it when it saves or syncs the entry.</p>`;
 }
@@ -77,7 +79,7 @@ export function notForExportField(d: EntityMetadata | undefined, forSomeoneElse:
 export function notForExportViewNote(marked: boolean): string {
   return marked
     ? `<p class="hint"><b>Not for export — on.</b> <i>Share with…</i> and <i>Export / Share
-       Externally…</i> leave this entry behind. Untick it in Edit, General section.</p>`
+       Externally…</i> leave this entry behind. Untick it in Edit → General.</p>`
     : '';
 }
 

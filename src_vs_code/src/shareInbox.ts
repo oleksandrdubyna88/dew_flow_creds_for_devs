@@ -1,7 +1,7 @@
 import { CorpPolicyState } from './corpPolicy';
 import { deliverToRecipient, projectsOfPayloads, refuseForRecipient } from './shareDelivery';
 import { buildSharePayload, countTotpEntries, nothingToShare } from './sharePayloadBuild';
-import { isNotForExport } from './exportScope';
+import { isNotForExport, keepingMark } from './exportScope';
 import { admit } from './pinAdmission';
 import { declinedMessage, forThisRecipient } from './shareRecipientPin';
 import { entryPinGate } from './pinPrompt';
@@ -690,7 +690,7 @@ After this, a share signed by any other key is refused.`,
           }),
         );
         node = withOwnId({
-          ...payload.node,
+          ...payload.node, details: keepingMark(payload.node.details, existing), // #122
           id: previousId,
           parentId: existing?.parentId ?? parentId,
           createdAt: existing?.createdAt,

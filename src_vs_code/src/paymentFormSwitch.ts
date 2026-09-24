@@ -1,3 +1,4 @@
+import { listOf } from './sentenceList';
 import { PaymentForm } from './paymentForm';
 import { PAYMENT_FIELD_LABELS, PaymentFieldKey, PaymentFields, keysForForm, pickPaymentFields } from './paymentFields';
 
@@ -57,10 +58,3 @@ export function storedKeysLost(
   return keysClearedBy(from, to).filter((key) => stored[key] !== undefined);
 }
 
-/** "a, b and c" — an Oxford-less list, because this is a sentence and not a bullet list. */
-function listOf(names: readonly string[]): string {
-  if (names.length <= 1) {
-    return names[0] ?? '';
-  }
-  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-}

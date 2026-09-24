@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { TreeNode } from '../types';
-import { ui, loaded, RECIPIENT, SENDER, KEY_ID, PIN, TEAM_MEMBER, world } from './shareWorld';
+import { ui, loaded, RECIPIENT, SENDER, KEY_ID, PIN, TEAM_MEMBER, payloadFor, sealedShare, world } from './shareWorld';
 import type { World } from './shareWorld';
 
 /**
@@ -58,4 +58,25 @@ test('a marked entry handed straight to the inbox yields nothing — the walk is
   await w.inbox.shareNodes(RECIPIENT.accountId, [prod]);
 
   assert.deepEqual(w.delivered, []);
+  // Said as what it is — the folder sentence ("holds no entities") would be false about an entry.
+  assert.ok(ui.infos.includes('"prod" is marked Not for export — nothing to share.'), ui.infos.join(' | '));
+});
+
+test('accepting an UPDATE keeps the mark the recipient set on their copy', async () => {
+  // The sender's payload never carries the mark (a marked entry does not leave), so rebuilding the
+  // node from it on "Update it" dropped the recipient's own mark silently — and their next folder
+  // share sent the entry on (own review, correctness).
+  const w = world();
+  ui.inputs = [PIN];
+  await w.inbox.acceptOne(sealedShare(payloadFor('prod api', 'sender-side-id'), PIN));
+  const [mine] = w.storage.getNodes(RECIPIENT.accountId);
+  await w.storage.updateNode(RECIPIENT.accountId, { ...mine, details: { ...mine.details!, notForExport: true } });
+
+  ui.inputs = [PIN];
+  ui.warningAnswer = 'Update it';
+  await w.inbox.acceptOne(sealedShare(payloadFor('prod api v2', 'sender-side-id'), PIN));
+
+  const [updated] = w.storage.getNodes(RECIPIENT.accountId);
+  assert.equal(updated.name, 'prod api v2', 'the update itself landed');
+  assert.equal(updated.details?.notForExport, true);
 });

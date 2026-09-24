@@ -63,7 +63,7 @@ test('a marked entry shared alone is refused — the share conversation never st
   const w = world([ops, prod, stage, loose]);
   await w.run(prod);
   assert.deepEqual(w.events, [
-    'warn:Nothing to share: "prod" is marked Not for export. Untick "Not for export" in the entry\'s Edit form, General section, to let it leave.',
+    'warn:Nothing to share: "prod" is marked Not for export. Untick it in the entry\'s Edit → General to let it leave.',
   ]);
 });
 

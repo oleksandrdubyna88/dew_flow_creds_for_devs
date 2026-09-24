@@ -5,7 +5,7 @@ import { CorpPolicyState } from '../corpPolicy';
 import { refuseExit } from '../corpExits';
 import { StorageManager } from '../storageManager';
 import { TreeNode } from '../types';
-import { admitLeaving } from '../exportScope';
+import { admitLeaving, isNotForExport } from '../exportScope';
 import { VaultKeys } from '../vaultKeys';
 import { buildExternalBundle } from '../externalBundle';
 import { exportSensitiveNote, paymentFieldsInExport } from '../paymentRedaction';
@@ -97,7 +97,8 @@ async function exportWhatMayLeave(
 ): Promise<void> {
   const scope = admitLeaving('export', host.storage.getNodes(targets[0].accountId), targets.map((t) => t.node), warn);
   if (scope !== undefined) {
-    await writeExport(host, targets, scope.kept);
+    // The withheld roots do not name the file either: [marked, loose] exports ONE entry, not "2-items".
+    await writeExport(host, targets.filter((t) => !isNotForExport(t.node)), scope.kept);
   }
 }
 

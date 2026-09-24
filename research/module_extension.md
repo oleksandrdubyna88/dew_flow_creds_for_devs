@@ -5119,7 +5119,7 @@ secret.
 
 ```mermaid
 flowchart LR
-  sel[Selection: rows / palette / multi-select] --> admit["exportScope.admitLeaving<br/>(before any prompt)"]
+  sel[Selection: a row or a multi-select] --> admit["exportScope.admitLeaving<br/>(before any prompt)"]
   admit -- every entry marked --> refuse[Warning: Nothing to share / export]
   admit -- some marked --> note[Warning naming them] --> go
   admit -- none marked --> go{which exit}
@@ -5136,7 +5136,10 @@ flowchart LR
   `sharePayloadBuild.entitiesIn` leaves it out of the one-time-code count. The export handler asks
   `exportSecretsFor` for the KEPT ids only — a marked entry's secrets are never decrypted for a file.
 - **The menu is a hint.** `treeRowText.noExportToken` adds `:noexport`; the two menu items carry
-  `!(viewItem =~ /:noexport/)`. Folders never wear it, since the rest of them may still leave.
+  `!(viewItem =~ /:noexport/)`. Folders never wear it, since the rest of them may still leave. A
+  multi-selection anchored on an unmarked row still reaches the handlers, which is why they refuse.
+- **A recipient's mark survives an update.** The sender's payload never carries the mark, so the
+  inbox's *Update it* branch keeps the one on the recipient's own copy (`exportScope.keepingMark`).
 - **The form.** `generalNotes.notForExportField`; posted as `notForExport` by `entityFormScript.ts` and
   kept by `toValues` — never for *Create Entity for…* (`EntityFormOptions.forSomeoneElse`), which
   draws no box because nothing of that entry stays here. The viewer states the mark in Main
