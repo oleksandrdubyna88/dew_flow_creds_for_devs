@@ -240,6 +240,45 @@ public class BackupTargetTests
     }
 
     [Fact]
+    public async Task TheProbesDeleteRunsOnTheProbeDeadlineForBothClients()
+    {
+        // Plan gate (local, #134): the probe's PUT ran on the twenty-second probe deadline and its
+        // DELETE on the two-minute request deadline, so one bucket that accepted the write and then
+        // went quiet held an administrator's save for 140 seconds — past the client's own deadline.
+        // Both halves are the probe's: somebody is watching both of them.
+        var deadlines = new ArchiveTargets.TargetDeadlines(
+            TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30), TimeSpan.FromMilliseconds(250));
+        using var s3Http = new HttpClient(new HangingDelete());
+        using var azureHttp = new HttpClient(new HangingDelete());
+        IArchiveTarget[] targets =
+        [
+            new S3Target(
+                s3Http,
+                new S3TargetConfig("https://s3.example.com", "eu-central-1", "vaults", "backups", "AKIDEXAMPLE", "secret"),
+                new FrozenClock(),
+                deadlines),
+            new AzureBlobTarget(
+                azureHttp,
+                new AzureTargetConfig(
+                    "https://myaccount.blob.core.windows.net", "vaults", "backups", "myaccount",
+                    "bXlhY2NvdW50a2V5bXlhY2NvdW50a2V5bXlhY2NvdW50a2V5MDA="),
+                new FrozenClock(),
+                deadlines),
+        ];
+
+        foreach (var target in targets)
+        {
+            var usable = target.UsableAsync(Ct);
+            var finished = await Task.WhenAny(usable, Task.Delay(TimeSpan.FromSeconds(5), Ct));
+
+            finished.Should().BeSameAs(
+                usable, "{0}'s delete half waited the probe's quarter second, not the request's thirty", target.Describe);
+            (await usable).Ok.Should().BeFalse();
+            (await usable).Why.Should().Contain("would not accept the matching delete");
+        }
+    }
+
+    [Fact]
     public async Task AServiceThatSendsHEADERSAndThenStallsIsGivenUpOnRatherThanWaitedFor()
     {
         // The failure CodeRabbit found and nothing here could see: the token carried into the body
@@ -318,6 +357,23 @@ public class BackupTargetTests
     private sealed class OneClient(StubTransport transport) : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new(transport, disposeHandler: false);
+    }
+
+    /// <summary>
+    /// A service that accepts every write and never answers a delete — the probe's second half, hung.
+    /// </summary>
+    private sealed class HangingDelete : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Method == HttpMethod.Delete)
+            {
+                // Awaited, so a deadline arrives here as the cancellation it is — see NeverEndingStream.
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(string.Empty) };
+        }
     }
 
     /// <summary>

@@ -490,6 +490,254 @@ public sealed class BackupEndpointTests
             .And.NotContain("nightly", "and neither is a prefix");
     }
 
+    [Fact]
+    public async Task ADestinationCannotBeSavedWithoutAKekAndTheRefusalNamesTheSetting()
+    {
+        // The mint route answers 409 with a sentence naming Vault:LoginKey:Kek for this deployment; the
+        // settings route handed an empty key to AesGcm and answered 500 with a stack trace — for a
+        // request that is well formed by the contract's own documentation.
+        using var server = Corp.ServerWithoutKek();
+        using var cto = server.ClientFor(Corp.Cto);
+
+        var refusal = await Corp.RefusalAsync(
+            await Corp.PutJsonAsync(
+                cto,
+                "/api/org/backup/settings",
+                """
+                {"scheduleHourUtc":3,"retentionDays":30,"targets":[
+                  {"kind":"s3","endpoint":"https://s3.example.com","region":"eu-central-1",
+                   "bucket":"vaults","prefix":"backups",
+                   "accessKeyId":"AKIDEXAMPLE","secretAccessKey":"secret"}]}
+                """),
+            HttpStatusCode.Conflict);
+
+        refusal.Should().Contain("Vault:LoginKey:Kek", "the sentence names what to set");
+        (await Store(server).ReadSettingsAsync(Ct)).Targets.Should().BeEmpty("and nothing was written");
+    }
+
+    [Fact]
+    public async Task AKeysOmittedEditSavesWithoutAKek()
+    {
+        // The other half of the guard (plan gate, codex): a destination re-sent with its keys left out
+        // KEEPS the sealed record and needs no cipher, so a deployment with no KEK may still change its
+        // schedule while re-sending the list a client always sends whole. Refusing here would make
+        // every edit on such a deployment impossible until an operator sets a key the edit never used.
+        using var server = Corp.ServerWithoutKek();
+        using var cto = server.ClientFor(Corp.Cto);
+        var sealedElsewhere = SealedUnder(Corp.Kek, "backups");
+        await Store(server).WriteSettingsAsync(new BackupSettings(3, 30, [sealedElsewhere]), Ct);
+
+        (await Corp.PutJsonAsync(
+            cto,
+            "/api/org/backup/settings",
+            """
+            {"scheduleHourUtc":5,"retentionDays":30,"targets":[
+              {"kind":"s3","endpoint":"https://s3.example.com","region":"eu-central-1",
+               "bucket":"vaults","prefix":"backups"}]}
+            """)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var after = await Store(server).ReadSettingsAsync(Ct);
+        after.ScheduleHourUtc.Should().Be(5);
+        after.Targets.Should().ContainSingle().Which.Should().Be(sealedElsewhere, "kept byte for byte");
+    }
+
+    [Fact]
+    public async Task EditingTheRegionWhileKeepingTheKeysSavesTheNewRegion()
+    {
+        // Fix 1 of #134. The identity that decides "kept" is kind|endpoint|bucket|prefix, and the kept
+        // record used to be written back WHOLE — so a save that changed only the region wrote the old
+        // region back, silently, and S3 signs with the region, so the next run answered 400 from the bucket.
+        var stub = new StubTransport();
+        var targets = Corp.StubTargets(stub);
+        using var server = Corp.ServerWith(targets);
+        using var cto = server.ClientFor(Corp.Cto);
+        var before = targets.Seal("s3", "https://s3.example.com", "eu-central-1", "vaults", "backups", S3Secrets);
+        await Store(server).WriteSettingsAsync(new BackupSettings(3, 30, [before]), Ct);
+
+        (await Corp.PutJsonAsync(
+            cto,
+            "/api/org/backup/settings",
+            """
+            {"scheduleHourUtc":3,"retentionDays":30,"targets":[
+              {"kind":"s3","endpoint":"https://s3.example.com","region":"eu-west-1",
+               "bucket":"vaults","prefix":"backups"}]}
+            """)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var after = (await Store(server).ReadSettingsAsync(Ct)).Targets.Should().ContainSingle().Subject;
+        after.Region.Should().Be("eu-west-1", "the edit is the edit");
+        (after.Iv, after.Tag, after.Data).Should().Be(
+            (before.Iv, before.Tag, before.Data), "and the sealed credentials were kept, not re-sealed");
+    }
+
+    [Fact]
+    public async Task ASaveThatLeavesADestinationUnchangedSendsItNoProbe()
+    {
+        // S3 of #134, an owner assumption recorded in the plan: a destination whose identity, keys and
+        // region are all unchanged is written back as it was and NOT proved again — editing the schedule
+        // used to write-and-delete a probe object in every bucket, and a bucket that was unreachable
+        // for a minute blocked a change to an unrelated setting.
+        var stub = new StubTransport();
+        var targets = Corp.StubTargets(stub);
+        using var server = Corp.ServerWith(targets);
+        using var cto = server.ClientFor(Corp.Cto);
+        await Store(server).WriteSettingsAsync(
+            new BackupSettings(
+                3, 30, [targets.Seal("s3", "https://s3.example.com", "eu-central-1", "vaults", "backups", S3Secrets)]),
+            Ct);
+
+        (await Corp.PutJsonAsync(
+            cto,
+            "/api/org/backup/settings",
+            """
+            {"scheduleHourUtc":5,"retentionDays":30,"targets":[
+              {"kind":"s3","endpoint":"https://s3.example.com","region":"eu-central-1",
+               "bucket":"vaults","prefix":"backups"}]}
+            """)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        stub.Sent.Should().BeEmpty("nothing about this destination changed, so nothing was asked of it");
+        (await Store(server).ReadSettingsAsync(Ct)).ScheduleHourUtc.Should().Be(5);
+    }
+
+    [Fact]
+    public async Task ASaveWithNewKeysOrANewRegionProbesThatDestination()
+    {
+        // The other half, so the test above cannot pass by never probing anything: a change to what
+        // the run will sign with IS proved before it is written.
+        var stub = new StubTransport();
+        var targets = Corp.StubTargets(stub);
+        using var server = Corp.ServerWith(targets);
+        using var cto = server.ClientFor(Corp.Cto);
+        await Store(server).WriteSettingsAsync(
+            new BackupSettings(
+                3, 30, [targets.Seal("s3", "https://s3.example.com", "eu-central-1", "vaults", "backups", S3Secrets)]),
+            Ct);
+
+        (await Corp.PutJsonAsync(
+            cto,
+            "/api/org/backup/settings",
+            """
+            {"scheduleHourUtc":3,"retentionDays":30,"targets":[
+              {"kind":"s3","endpoint":"https://s3.example.com","region":"eu-west-1",
+               "bucket":"vaults","prefix":"backups"}]}
+            """)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        stub.Sent.Should().HaveCount(2, "a region change is proved: the probe's PUT and its DELETE");
+
+        (await Corp.PutJsonAsync(
+            cto,
+            "/api/org/backup/settings",
+            """
+            {"scheduleHourUtc":3,"retentionDays":30,"targets":[
+              {"kind":"s3","endpoint":"https://s3.example.com","region":"eu-west-1",
+               "bucket":"vaults","prefix":"backups","accessKeyId":"AKIDNEW","secretAccessKey":"rotated"}]}
+            """)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        stub.Sent.Should().HaveCount(4, "and so are new credentials");
+        stub.Sent[2].RequestUri!.ToString().Should().Be(
+            "https://s3.example.com/vaults/backups/" + ArchiveTargets.ProbeName);
+    }
+
+    [Fact]
+    public async Task EditingOneDestinationLeavesAnUnopenableSiblingInPlaceAndUnprobed()
+    {
+        // Plan gate (gemini), and against the probe-all code it was a real break: a sibling whose
+        // credentials this server cannot open — a KEK that changed, a settings file restored from
+        // elsewhere — was probed on every save, its probe failed with "cannot open the credentials", and
+        // the save of the UNRELATED destination failed with it. Re-sent unchanged, it is kept as it is
+        // and asked nothing; the form says "re-enter" on its own row.
+        var stub = new StubTransport();
+        var targets = Corp.StubTargets(stub);
+        using var server = Corp.ServerWith(targets);
+        using var cto = server.ClientFor(Corp.Cto);
+        var unopenable = SealedUnder(Corp.OtherKek, "old");
+        await Store(server).WriteSettingsAsync(new BackupSettings(3, 30, [unopenable]), Ct);
+
+        (await Corp.PutJsonAsync(
+            cto,
+            "/api/org/backup/settings",
+            """
+            {"scheduleHourUtc":3,"retentionDays":30,"targets":[
+              {"kind":"s3","endpoint":"https://s3.example.com","region":"eu-central-1",
+               "bucket":"vaults","prefix":"old"},
+              {"kind":"s3","endpoint":"https://s3.example.com","region":"eu-central-1",
+               "bucket":"vaults","prefix":"nightly","accessKeyId":"AKIDEXAMPLE","secretAccessKey":"secret"}]}
+            """)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        stub.Sent.Should().HaveCount(2).And.OnlyContain(
+            request => request.RequestUri!.ToString().Contains("/vaults/nightly/"),
+            "only the new destination was proved");
+        var after = await Store(server).ReadSettingsAsync(Ct);
+        after.Targets.Should().HaveCount(2);
+        after.Targets[0].Should().Be(unopenable, "the sibling nobody touched is exactly what it was");
+    }
+
+    [Fact]
+    public async Task TheSettingsRowNamesTheDestinationsAddedAndRemovedAndNeverAKey()
+    {
+        // S6 of #134: the history said "04:00Z, 14 day(s)" about a save that replaced every
+        // destination. Where each one is — by SealedTarget.Describe, the same words the page uses —
+        // and never what opens it.
+        var stub = new StubTransport();
+        var targets = Corp.StubTargets(stub);
+        using var server = Corp.ServerWith(targets);
+        using var cto = server.ClientFor(Corp.Cto);
+        await Store(server).WriteSettingsAsync(
+            new BackupSettings(
+                3, 30, [targets.Seal("s3", "https://s3.example.com", "eu-central-1", "vaults", "old", S3Secrets)]),
+            Ct);
+
+        (await Corp.PutJsonAsync(
+            cto,
+            "/api/org/backup/settings",
+            """
+            {"scheduleHourUtc":4,"retentionDays":14,"targets":[
+              {"kind":"s3","endpoint":"https://s3.example.com","region":"eu-central-1",
+               "bucket":"vaults","prefix":"nightly","accessKeyId":"AKIDEXAMPLE","secretAccessKey":"secret"}]}
+            """)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var detail = Corp.Rows(server, OrgEventKinds.BackupSettingsChanged).Should().ContainSingle().Subject.Detail!;
+        detail.Should().Contain("04:00Z").And.Contain("14 day(s)", "the schedule half is unchanged");
+        detail.Should().Contain("+s3 vaults/nightly", "what was added");
+        detail.Should().Contain("-s3 vaults/old", "what was removed");
+        detail.Should().NotContain("AKIDEXAMPLE").And.NotContain("secret").And.NotContain("s3.example.com");
+    }
+
+    [Fact]
+    public async Task TwoDestinationsWithOneIdentityAreRefused()
+    {
+        // The keep-the-keys rule matches by identity, so two records with one identity would leave
+        // every later edit matching the first and the second unreachable for ever. Refused before any
+        // probe — the stub is here so a regression fails on the sentence rather than on DNS.
+        var stub = new StubTransport();
+        using var server = Corp.ServerWith(Corp.StubTargets(stub));
+        using var cto = server.ClientFor(Corp.Cto);
+
+        var refusal = await Corp.RefusalAsync(
+            await Corp.PutJsonAsync(
+                cto,
+                "/api/org/backup/settings",
+                """
+                {"scheduleHourUtc":3,"retentionDays":30,"targets":[
+                  {"kind":"s3","endpoint":"https://s3.example.com","region":"eu-central-1",
+                   "bucket":"vaults","prefix":"backups","accessKeyId":"a","secretAccessKey":"b"},
+                  {"kind":"s3","endpoint":"https://s3.example.com","region":"eu-west-1",
+                   "bucket":"vaults","prefix":"backups","accessKeyId":"c","secretAccessKey":"d"}]}
+                """),
+            HttpStatusCode.BadRequest);
+
+        refusal.Should().Contain("s3 vaults/backups").And.Contain("twice");
+        stub.Sent.Should().BeEmpty("checkable without a request, so checked without one");
+    }
+
+    private static readonly TargetSecrets S3Secrets = new("AKIDEXAMPLE", "secret", string.Empty, string.Empty);
+
+    /// <summary>One S3 destination at <c>vaults/{prefix}</c>, sealed under the given KEK — not necessarily the server's.</summary>
+    private static SealedTarget SealedUnder(string kek, string prefix) =>
+        new BackupTargets(
+                Convert.FromBase64String(kek),
+                new OneClient(),
+                TimeProvider.System,
+                Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance)
+            .Seal("s3", "https://s3.example.com", "eu-central-1", "vaults", prefix, S3Secrets);
+
     /// <summary>Two S3 buckets and one Azure container, sealed — three destinations, two kinds.</summary>
     private static IReadOnlyList<SealedTarget> TwoBucketsAndAContainer()
     {

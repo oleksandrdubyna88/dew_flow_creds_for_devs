@@ -69,9 +69,14 @@ public sealed record SealedTarget(
     public string Identity => $"{Kind}|{Endpoint}|{Bucket}|{Prefix}";
 
     /// <summary>What a status or a page may see. Never the sealed half.</summary>
-    public string Describe => Kind == TargetKinds.S3
-        ? $"s3 {Bucket}/{Prefix}".TrimEnd('/')
-        : $"azure {Bucket}/{Prefix}".TrimEnd('/');
+    public string Describe => DescribeAs(Kind, Bucket, Prefix);
+
+    /// <summary>
+    /// The same words for a destination that is not sealed yet — a request being decided, an event row
+    /// being written. One spelling, so the history and the page name the same thing the same way.
+    /// </summary>
+    public static string DescribeAs(string kind, string bucket, string prefix) =>
+        (kind == TargetKinds.S3 ? $"s3 {bucket}/{prefix}" : $"azure {bucket}/{prefix}").TrimEnd('/');
 }
 
 /// <summary>

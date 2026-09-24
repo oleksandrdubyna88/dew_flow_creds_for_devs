@@ -361,12 +361,14 @@ public sealed record BackupStatusDto(
     IReadOnlyList<BackupTargetDto> Targets);
 
 /// <summary>
-/// What an admin may change: when a backup runs, and how long its archives are kept.
+/// What an admin may change: when a backup runs, how long its archives are kept, and where they go.
 /// </summary>
 /// <remarks>
-/// No credential fields, deliberately. The cloud targets are story 4 and there is nothing to hold
-/// credentials for yet; an admin API that accepts secrets it does nothing with is worse than one that
-/// does not accept them.
+/// <c>Targets</c> is nullable because its ABSENCE means something: omitted is "leave the destinations
+/// alone", an empty list is "remove them all", and a non-empty one is the whole new set. A client that
+/// predates destinations sends no member at all, and a shape that defaulted it to empty would wipe every
+/// destination on the next schedule edit. The credentials inside travel here and nowhere back — see
+/// <see cref="BackupTargetRequest"/>.
 /// </remarks>
 public sealed record BackupSettingsRequest(
     int ScheduleHourUtc,

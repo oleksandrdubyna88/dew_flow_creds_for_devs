@@ -96,13 +96,18 @@ public static class OrgBackupEndpoints
     }
 
     /// <summary>
-    /// <c>PUT /api/org/backup/settings</c> — the hour and the window, both bounded.
+    /// <c>PUT /api/org/backup/settings</c> — the hour and the window, both bounded, and the destinations.
     /// </summary>
     /// <remarks>
-    /// No credential fields, and that is a decision rather than an omission: the cloud targets are
-    /// story 4 and there is nothing to hold credentials FOR yet. A shape invented now for a feature
-    /// that does not exist would be a shape story 4 has to change, and an admin API that accepts
-    /// secrets it does nothing with is worse than one that does not accept them.
+    /// <para><b><c>targets</c> OMITTED means unchanged; an empty array means remove them all; a
+    /// non-empty one is the WHOLE set.</b> A client that predates targets — the extension before story
+    /// 5, a script written against story 3 — sends no member at all, and reading that as "remove every
+    /// destination" would silently turn a configured deployment back into a local-only one on the next
+    /// schedule edit. The extension's tab therefore reads the list first (<c>GET …/targets</c>) and
+    /// always sends it whole.</para>
+    /// <para>The destinations are DECIDED by <see cref="BackupTargetPlan"/> before anything is sealed,
+    /// probed or written — which of them keep their sealed credentials, which are sealed afresh, which
+    /// are proved — so that every branch is a unit test and this method is the plumbing.</para>
     /// </remarks>
     private static async Task SettingsAsync(
         HttpContext ctx,
@@ -124,88 +129,100 @@ public static class OrgBackupEndpoints
             return;
         }
         var existing = await backups.ReadSettingsAsync(ct);
-        // OMITTED means unchanged; an empty array means remove them all. A client that predates targets
-        // — the extension before story 5, a script somebody wrote against story 3 — sends no `targets`
-        // member at all, and treating that as "remove every destination" would silently turn a
-        // configured deployment back into a local-only one on the next schedule edit.
         if (request!.Targets is null)
         {
             await backups.WriteSettingsAsync(
                 existing with { ScheduleHourUtc = request.ScheduleHourUtc, RetentionDays = request.RetentionDays },
                 ct);
-            await RecordAsync(deps, admin.Value.Email, request);
+            await RecordAsync(deps, admin.Value.Email, request, string.Empty);
             ctx.Response.StatusCode = StatusCodes.Status204NoContent;
             return;
         }
-        var sealed_ = await SealedAsync(request, existing, targets, ct);
-        if (sealed_.Problem.Length > 0)
+        await SaveWithTargetsAsync(ctx, deps, backups, targets, request, existing, admin.Value.Email, ct);
+    }
+
+    /// <summary>
+    /// The destinations half of a save: decide, seal what needs sealing, prove what changed, write.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>The KEK is needed only to SEAL</b>, and only a destination whose credentials were sent
+    /// seals. A deployment with no KEK may therefore still change its schedule while re-sending the list
+    /// a client always sends whole, and is refused — with the sentence naming the setting, as the mint
+    /// route already does — only when it asks for a cipher it does not have. This used to reach
+    /// <c>AesGcm</c> with an empty key and answer 500 (fix 2 of #134).</para>
+    /// <para><b>Only what changed is proved.</b> Not a HEAD: both clouds routinely grant read while
+    /// denying write, so the probe writes a tiny object and deletes it again, which is exactly what a run
+    /// and a retention pass do. A destination whose identity, keys and region are all unchanged is
+    /// written back as it was — see <see cref="TargetDecision.Probe"/> for why that is an assumption.</para>
+    /// </remarks>
+    private static async Task SaveWithTargetsAsync(
+        HttpContext ctx,
+        OrgEndpointDeps deps,
+        BackupStore backups,
+        BackupTargets targets,
+        BackupSettingsRequest request,
+        BackupSettings existing,
+        string admin,
+        CancellationToken ct)
+    {
+        var plan = BackupTargetPlan.Of(request.Targets ?? [], existing.Targets);
+        if (plan.Problem.Length > 0)
         {
-            await OrgEndpoints.FailJson(ctx, StatusCodes.Status400BadRequest, sealed_.Problem);
+            await OrgEndpoints.FailJson(ctx, StatusCodes.Status400BadRequest, plan.Problem);
+            return;
+        }
+        if (plan.NeedsSeal && !backups.Configured)
+        {
+            await OrgEndpoints.FailJson(ctx, StatusCodes.Status409Conflict, NoKek);
+            return;
+        }
+        var records = Records(plan, targets);
+        var refused = await ProbeAsync(plan, records, targets, ct);
+        if (refused.Length > 0)
+        {
+            await OrgEndpoints.FailJson(ctx, StatusCodes.Status400BadRequest, refused);
             return;
         }
         await backups.WriteSettingsAsync(
-            new BackupSettings(request.ScheduleHourUtc, request.RetentionDays, sealed_.Targets), ct);
-        await RecordAsync(deps, admin.Value.Email, request);
+            new BackupSettings(request.ScheduleHourUtc, request.RetentionDays, records), ct);
+        await RecordAsync(deps, admin, request, plan.Delta);
         ctx.Response.StatusCode = StatusCodes.Status204NoContent;
     }
 
-    private static Task RecordAsync(OrgEndpointDeps deps, string admin, BackupSettingsRequest request) =>
-        deps.Events.AppendAsync(
-            OrgEndpoints.Row(
-                OrgEventKinds.BackupSettingsChanged, admin, subject: null, detail: Said(request)),
-            // The settings are already on disk. A client that hangs up at this instant must not take the
-            // history of the change with it — the same reading every other row on this server makes.
-            CancellationToken.None);
+    /// <summary>The records to write: sealed afresh where credentials were sent, kept — with the requested region — everywhere else.</summary>
+    private static IReadOnlyList<SealedTarget> Records(BackupTargetPlan plan, BackupTargets targets) =>
+    [
+        .. plan.Decisions.Select(
+            decision => decision.NeedsSeal
+                ? targets.Seal(
+                    decision.Wanted.Kind,
+                    decision.Wanted.Endpoint,
+                    decision.Wanted.Region,
+                    decision.Wanted.Bucket,
+                    decision.Wanted.Prefix,
+                    decision.Secrets)
+                : decision.KeptWithRegion),
+    ];
 
     /// <summary>
-    /// Turn the targets a request describes into sealed ones — validating each before any are saved.
+    /// Prove the destinations the plan marked, together, and name the first that refused — or nothing.
     /// </summary>
     /// <remarks>
-    /// <para><b>Credentials that were left out are KEPT</b>, matched by the target's identity: kind,
-    /// endpoint, bucket and prefix. Nothing ever returns them, so an administrator editing a prefix
-    /// cannot copy the secret out of a GET and paste it back — and without this rule, changing the
-    /// schedule would silently wipe the credentials and the next run would answer 403 at three in the
-    /// morning.</para>
-    /// <para><b>Every target is proved USABLE before any of them is written.</b> Not a HEAD: both
-    /// clouds routinely grant read while denying write, so a check that only reads gives false
-    /// confidence at save time and discovers the truth at 03:00 in a log nobody reads. The probe
-    /// writes a tiny object and deletes it again, which is exactly what a run and a retention pass do.</para>
+    /// The probes run TOGETHER. Serially, three destinations whose hosts each accept a connection and
+    /// then say nothing would hold the administrator's request for three probe deadlines — and they would
+    /// be waiting on three independent networks one after another for no reason. Concurrently, the
+    /// worst case is one deadline, and both halves of a probe run on the probe's own.
     /// </remarks>
-    private static async Task<(IReadOnlyList<SealedTarget> Targets, string Problem)> SealedAsync(
-        BackupSettingsRequest request,
-        BackupSettings existing,
-        BackupTargets targets,
-        CancellationToken ct)
+    private static async Task<string> ProbeAsync(
+        BackupTargetPlan plan, IReadOnlyList<SealedTarget> records, BackupTargets targets, CancellationToken ct)
     {
-        var sealed_ = new List<SealedTarget>();
-        foreach (var wanted in request.Targets ?? [])
-        {
-            var kept = existing.Targets.FirstOrDefault(
-                target => target.Identity == BackupTargets.IdentityOf(wanted));
-            var problem = BackupTargets.Problem(wanted, kept is not null);
-            if (problem.Length > 0)
-            {
-                // Everything checkable without a request is checked first, and for ALL targets, so a
-                // typo never costs a round trip to somebody else's service.
-                return ([], $"{Named(wanted)}: {problem}");
-            }
-            var secrets = BackupTargets.Secrets(wanted);
-            sealed_.Add(
-                secrets.Empty && kept is not null
-                    ? kept
-                    : targets.Seal(
-                        wanted.Kind, wanted.Endpoint, wanted.Region, wanted.Bucket, wanted.Prefix, secrets));
-        }
-        // The probes run TOGETHER. Serially, three targets whose hosts each accept a connection and
-        // then say nothing would hold the administrator's request for six minutes — past every browser
-        // and reverse-proxy timeout there is — and they would be waiting on three independent networks
-        // one after another for no reason. Concurrently, the worst case is one deadline.
         var probes = await Task.WhenAll(
-            sealed_.Select(async record => (record, Why: await UsableAsync(targets, record, ct))));
+            plan.Decisions
+                .Zip(records)
+                .Where(pair => pair.First.Probe)
+                .Select(async pair => (pair.Second, Why: await UsableAsync(targets, pair.Second, ct))));
         var refused = probes.FirstOrDefault(probe => probe.Why.Length > 0);
-        return refused.Why is { Length: > 0 }
-            ? ([], $"{refused.record.Describe}: {refused.Why}")
-            : (sealed_, string.Empty);
+        return refused.Why is { Length: > 0 } ? $"{refused.Second.Describe}: {refused.Why}" : string.Empty;
     }
 
     private static async Task<string> UsableAsync(
@@ -220,8 +237,28 @@ public static class OrgBackupEndpoints
         return usable.Ok ? string.Empty : usable.Why;
     }
 
-    private static string Named(BackupTargetRequest target) =>
-        $"{target.Kind} {target.Bucket}/{target.Prefix}".TrimEnd('/');
+    /// <summary>
+    /// One row per save: the schedule, and — when the destinations were sent — what changed about them.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="delta"/> is <see cref="BackupTargetPlan.Delta"/>: added, changed and removed by
+    /// <see cref="SealedTarget.Describe"/>, never a key, never an endpoint. Empty when the request did
+    /// not carry destinations at all, and the row then says what it always said.
+    /// </remarks>
+    private static Task RecordAsync(OrgEndpointDeps deps, string admin, BackupSettingsRequest request, string delta) =>
+        deps.Events.AppendAsync(
+            OrgEndpoints.Row(
+                OrgEventKinds.BackupSettingsChanged,
+                admin,
+                subject: null,
+                detail: delta.Length == 0 ? Said(request) : $"{Said(request)}; {delta}"),
+            // The settings are already on disk. A client that hangs up at this instant must not take the
+            // history of the change with it — the same reading every other row on this server makes.
+            CancellationToken.None);
+
+    private const string NoKek =
+        "Vault:LoginKey:Kek is not configured, so this server cannot seal a destination's credentials. "
+        + "Set it to base64 of 32 random bytes — the same key seals developer login keys and the backup key.";
 
     /// <summary>
     /// <c>POST /api/org/backup/key</c> — mint the key, and hand over its words the only time anybody can.

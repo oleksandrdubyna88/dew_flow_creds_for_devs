@@ -1,4 +1,7 @@
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace CredVaultServer.Tests;
 
@@ -24,10 +27,20 @@ internal sealed class VaultServer : WebApplicationFactory<Program>
 
     private readonly Dictionary<string, string?> _restore = [];
 
+    private readonly Action<IServiceCollection>? _services;
+
     public string DataDir { get; }
 
-    public VaultServer(IDictionary<string, string?>? overrides = null)
+    /// <param name="overrides">Configuration, as environment variables — see the type's remarks.</param>
+    /// <param name="services">
+    /// Registrations applied AFTER <c>Program.cs</c>'s own, so a test can stand a stub in for a
+    /// collaborator that would otherwise reach the network — the cloud transport behind
+    /// <see cref="BackupTargets"/>. The last registration of a type wins, which is what makes this a
+    /// replacement rather than a second instance nothing resolves.
+    /// </param>
+    public VaultServer(IDictionary<string, string?>? overrides = null, Action<IServiceCollection>? services = null)
     {
+        _services = services;
         DataDir = Path.Combine(
             Path.GetTempPath(), "cred-vault-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(DataDir);
@@ -56,6 +69,19 @@ internal sealed class VaultServer : WebApplicationFactory<Program>
         {
             _restore[key] = Environment.GetEnvironmentVariable(key);
             Environment.SetEnvironmentVariable(key, value);
+        }
+    }
+
+    /// <summary>
+    /// Service replacements only. Configuration does NOT go through here — see the type's remarks for
+    /// why it is read before this runs — but services are resolved after <c>Build()</c>, so a test's
+    /// registration made here does land.
+    /// </summary>
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        if (_services is not null)
+        {
+            builder.ConfigureTestServices(_services);
         }
     }
 
