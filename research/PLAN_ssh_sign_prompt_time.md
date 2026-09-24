@@ -22,7 +22,8 @@
 exact assertion). Code round `proceed`, 12/12; 6 of 18 accepted (the promotion ×4, capture before
 the log line). Own reviewer: Opus.
 
-**Open tail.** Whether the signing prompt should EXPIRE is a separate question nobody has asked.
+**Open tail.** Closed: the owner decided (2026-09-24) that the prompt expires after five minutes —
+[PLAN_ssh_sign_prompt_timeout.md](PLAN_ssh_sign_prompt_timeout.md).
 
 ## 1. The goal
 
