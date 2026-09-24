@@ -3330,7 +3330,10 @@ raised, and a second call joining the open dialog through `consenting` changes n
 the token route shares a grant across calls; the alias, MCP and folder doors mint one per call).
 After `CONSENT_TIMEOUT_MS` the broker has refused the call as `consent_timeout`, but VS Code cannot
 close a modal from code, so the time is the one sign on screen that the dialog is stale. The SSH
-agent's signing prompt (`sshAgentManager.confirm`) is a different dialog and carries no time. Tests: `requestTime.test.ts`, `brokerConsentTime.test.ts` (the
+agent's signing prompt (`sshAgentManager.confirm`) carries the same line, from the same formatter —
+there it matters more, because that prompt has no timeout. Its clock is a constructor argument
+(`clock`, default `new Date()`), so its test freezes it and asserts the exact line
+([PLAN_ssh_sign_prompt_time.md](PLAN_ssh_sign_prompt_time.md)). Tests: `requestTime.test.ts`, `brokerConsentTime.test.ts` (the
 real broker). Design record: [PLAN_consent_shows_request_time.md](PLAN_consent_shows_request_time.md).
 
 **Whose session registry, and the rule the code round added.** The session NAME comes from

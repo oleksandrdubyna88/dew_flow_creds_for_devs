@@ -78,7 +78,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to read exactly like one raised a second ago. After five minutes the broker has already stopped
   waiting and told the agent, but a modal cannot be closed from code — so the time is what says
   that answering it changes nothing. It is fixed when the dialog is raised, and a second call that
-  joins the open dialog changes nothing on it. The SSH agent's signing prompt is unchanged.
+  joins the open dialog changes nothing on it. The SSH agent's signing prompt (*Use the SSH key
+  "prod" to sign …?*) carries the same line — it does not expire, so a prompt found an hour later
+  still signs, and the time is what says how old the request is.
 
 ### Added — open an entry's site in the browser (#104)
 

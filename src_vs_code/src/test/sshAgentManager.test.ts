@@ -1,3 +1,4 @@
+import { requestTimeLine } from '../requestTime';
 import * as assert from 'node:assert/strict';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
@@ -133,7 +134,10 @@ function world(options: {
   return w;
 }
 
-function manager(w: World, options: { keys?: Record<string, string | undefined>; nodes?: TreeNode[] }): {
+function manager(
+  w: World,
+  options: { keys?: Record<string, string | undefined>; nodes?: TreeNode[]; clock?: () => Date },
+): {
   instance: InstanceType<Manager['SshAgentManager']>;
   /** The storage root this manager was given — the socket path is derived from it. */
   dir: string;
@@ -158,9 +162,16 @@ function manager(w: World, options: { keys?: Record<string, string | undefined>;
   };
   return {
     dir,
-    instance: new w.mod.SshAgentManager(storage as never, dir, envCollection as never, () => {
-      w.presence += 1;
-    }),
+    instance: new w.mod.SshAgentManager(
+      storage as never,
+      dir,
+      envCollection as never,
+      () => {
+        w.presence += 1;
+      },
+      undefined,
+      options.clock,
+    ),
   };
 }
 
@@ -297,6 +308,22 @@ test('every signature asks, and the dialog names the key, the fingerprint and th
   assert.match(w.dialogs[0], /"prod"/);
   assert.match(w.dialogs[0], /SHA256:abc/);
   assert.match(w.dialogs[0], /never leaves this window/);
+});
+
+test('the prompt says WHEN the signature was asked for, on its second line (#131 tail)', async () => {
+  // A stopped clock, so the assertion is exact (testing.md: a test about time freezes the clock the
+  // code reads). This prompt has no timeout: one found an hour later still signs, so the time matters.
+  const asked = new Date(Date.UTC(2026, 8, 24, 9, 30, 0));
+  const w = world({ answers: [ALLOW_ONCE] });
+  const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() }, clock: () => asked });
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+
+  await (w.server() as FakeServer).confirm({ entityId: KEY_ID, name: 'prod', fingerprint: 'SHA256:abc' }, { kind: 'auth' });
+
+  const [question, when, blank] = w.dialogs[0].split('\n');
+  assert.match(question, /^Use the SSH key "prod" to sign .*\?$/);
+  assert.equal(when, requestTimeLine(asked.getTime(), -asked.getTimezoneOffset()));
+  assert.equal(blank, '', 'a blank line still separates the head from the fingerprint');
 });
 
 test('answering a dialog is the one provable moment of human presence', async () => {
