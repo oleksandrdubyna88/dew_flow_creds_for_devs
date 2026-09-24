@@ -8,9 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.10.0] — 2026-09-24 — the right shell, Not for export, and when an agent asked
 
-> Issues #103, #104, #122, #131 and #136 in one release: a composed line runs in the machine's own shell and a
+> Issues #103, #104, #122, #131, #133 and #136 in one release: a composed line runs in the machine's own shell and a
 > Terminal entry says which OS it is for; an entry's site opens in the browser; an entry can be kept out of
-> sharing and export; and the consent dialogs say when they were asked and which Claude Code tab is asking.
+> sharing and export; and the consent dialogs say when they were asked and which Claude Code tab is asking; and a second password that cannot pair is refused.
 
 ### Fixed
 
