@@ -42,7 +42,8 @@ interface World {
   mod: Manager;
   server(): FakeServer | undefined;
   /** Modal answers, consumed in order; undefined means the dialog was dismissed. */
-  answers: (string | undefined)[];
+  /** A pending promise stands for a modal nobody has answered yet. */
+  answers: (string | undefined | Promise<string>)[];
   dialogs: string[];
   env: Record<string, string>;
   envDescription: string;
@@ -63,7 +64,7 @@ function realPrivateKey(): string {
 function world(options: {
   keys?: Record<string, string | undefined>;
   nodes?: TreeNode[];
-  answers?: (string | undefined)[];
+  answers?: (string | undefined | Promise<string>)[];
 }): World {
   let server: FakeServer | undefined;
   const w: World = {
@@ -369,7 +370,7 @@ test('an unanswered signing prompt is refused after the consent timeout, and say
   // It never expired: a prompt found an hour later still signed, and the ssh or git that asked
   // waited forever. The broker's modal has refused after five minutes since it shipped.
   const modal = unanswered();
-  const w = world({ answers: [modal.answer as unknown as string] });
+  const w = world({ answers: [modal.answer] });
   const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() }, consentTimeoutMs: 20 });
   await instance.load('a1', keyEntity(KEY_ID, 'prod'));
 
@@ -382,7 +383,7 @@ test('an unanswered signing prompt is refused after the consent timeout, and say
 
 test('a click AFTER the timeout changes nothing — a late ten-minute Allow opens no window', async () => {
   const modal = unanswered();
-  const w = world({ answers: [modal.answer as unknown as string, ALLOW_ONCE] });
+  const w = world({ answers: [modal.answer, ALLOW_ONCE] });
   const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() }, consentTimeoutMs: 20 });
   await instance.load('a1', keyEntity(KEY_ID, 'prod'));
   const key = { entityId: KEY_ID, name: 'prod', fingerprint: 'SHA256:abc' };
@@ -395,6 +396,27 @@ test('a click AFTER the timeout changes nothing — a late ten-minute Allow open
   await server.confirm(key, { kind: 'auth' });
   assert.equal(w.dialogs.length, 2, 'the late Allow opened no window: the next signature asked again');
   assert.equal(w.presence, 1, 'only the answered second dialog counts as presence');
+});
+
+test('a modal that REJECTS (the window closing under it) is a refusal, not a crash', async () => {
+  const w = world({ answers: [Promise.reject(new Error('the window is closing'))] });
+  const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() }, consentTimeoutMs: 1000 });
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+
+  const allowed = await (w.server() as FakeServer).confirm({ entityId: KEY_ID, name: 'prod', fingerprint: 'SHA256:abc' }, { kind: 'auth' });
+
+  assert.equal(allowed, false);
+  assert.equal(w.logs.some((line) => /no answer/.test(line)), false, 'a rejection is not a timeout');
+});
+
+test('a bound under a minute is said in seconds, never "0 minutes"', async () => {
+  const w = world({ answers: [ALLOW_ONCE] });
+  const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() }, consentTimeoutMs: 20 });
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+
+  await (w.server() as FakeServer).confirm({ entityId: KEY_ID, name: 'prod', fingerprint: 'SHA256:abc' }, { kind: 'auth' });
+
+  assert.match(w.dialogs[0], /Unanswered, it is refused after 1 second\./);
 });
 
 test('the prompt states its deadline, derived from the same constant the broker uses', async () => {
