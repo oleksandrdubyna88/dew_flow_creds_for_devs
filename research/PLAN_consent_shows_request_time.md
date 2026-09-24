@@ -1,7 +1,8 @@
 # PLAN — the agent consent dialog says when the request was made (issue #131)
 
 > Status: **IMPLEMENTED, 2026-09-24.** Scope: `src_vs_code` — the consent modal `CredsAgentServer.ask`
-> raises, reached from every broker door (token, alias, MCP use/create/delete, folder actions). No
+> raises. Every broker door (token, alias, MCP use/create/delete, folder actions) may raise it when a
+> call needs new consent; a grant already allowed or denied answers in `consent` without one. No
 > broker contract, CLI, MCP or server change.
 >
 > Related docs: [module_extension.md](module_extension.md) §Consent, *When it was asked*;
@@ -9,8 +10,8 @@
 
 ## What shipped differently — read this first
 
-1. **Every broker door, not only a shared token's first use** — they all reach `consent → ask`, so
-   the scope line above was widened to say what shipped.
+1. **Every broker door, not only a shared token's first use** — each may reach `consent → ask` when
+   a call needs new consent, so the scope line above was widened to say what shipped.
 2. **The joined dialog has its own test** (gate code round): the modal's answer is held open while a
    second call arrives, and there is still one dialog. Breaking the `consenting` reuse turns it red.
 3. **The staleness claim was corrected** (own review): the plan spoke of a "twenty-minute-old
