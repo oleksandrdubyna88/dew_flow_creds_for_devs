@@ -465,7 +465,7 @@ public sealed class BackupRunner(
                 Targets = [.. uploads],
                 // Only `ok` is a success. A partial run reached some destinations and not others, and
                 // "when did the last COMPLETE copy leave" is not answered by it — a half-failing
-                // deployment would otherwise show a fresh success for months (owner assumption, #134).
+                // deployment would otherwise show a fresh success for months (the owner's decision, #134, 2026-09-24).
                 LastSuccessAt = verdict == BackupRunResults.Succeeded ? finishedAt : previous.LastSuccessAt,
             },
             ct);

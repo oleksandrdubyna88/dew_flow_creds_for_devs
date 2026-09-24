@@ -42,12 +42,12 @@ export function mixedEditRefusal(fields: PaymentFields): string {
   return (
     `This entry has ${names.length === 1 ? 'a field' : 'fields'} stored woven with a decoy `
     + `(${names.join(', ')}). There is no original to put back in the form — editing it would weave `
-    // It used to end "or view it and unweave the field first", and there is no unweave — not in the
-    // viewer, not anywhere, and deliberately so: undoing a weave needs the method, which is stored
-    // nowhere. A refusal that names an action the build does not have is a bug report waiting to be
-    // filed, which is what this function's own header says it exists to avoid.
+    // It used to end "or view it and unweave the field first", and the FORM cannot do that: undoing a
+    // weave needs the method, which is stored nowhere. A refusal that names an action the build does
+    // not have is a bug report waiting to be filed. The viewer's button that reads the value back IS
+    // called Unweave since 2026-09-24 (#135, the owner's call), and that is the route named here.
     + 'the woven value a second time and destroy it. Open the entry to read the value back: pick your '
-    + 'method, press Show, and copy the row you recognise. Then create a new entry with that value '
+    + 'method, press Unweave, and copy the row you recognise. Then create a new entry with that value '
     + 'and delete this one.'
   );
 }

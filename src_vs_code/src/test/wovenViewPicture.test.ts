@@ -227,9 +227,11 @@ test('Main states a woven password as a fact, and a plain entry says nothing', (
   assert.match(woven, /Woven — on/, 'said, in Main');
   assert.match(woven, /the password/, 'and it names what is woven');
   assert.ok(!/Woven — on/.test(plain), 'an ordinary entry says nothing about it');
-  // The viewer's mirror of the form's rule: nothing here claims to undo a weave.
+  // The viewer's mirror of the form's rule: nothing here changes the stored weave. Since 2026-09-24
+  // the button is CALLED Unweave (#135), so the sentence says what it does and what it never does.
   assert.ok(!/id="unweave|id="clearWoven/.test(woven), 'no control claims to undo it');
-  assert.match(woven, /Nothing here can unweave/, 'it says so in words as well');
+  assert.match(woven, /press Unweave/, 'it names the button by its name');
+  assert.match(woven, /never changes the stored value/, 'and says the weave itself stays');
 });
 
 test('Main names a payment record’s woven fields by their LABELS, not their keys', () => {

@@ -35,6 +35,15 @@
 > renaming the Show button to *Unweave*. The button still says Show, and nothing in the build claims
 > to undo a weave.
 >
+> **Revisited by the owner, 2026-09-24 (issue #135, the tail of #58)** — three answers:
+> - *Rename the button* — **yes, on WOVEN rows only.** The woven row's button (`wovenRow.ts`) reads
+>   **Unweave**, and the three sentences that name it — the row note, the Main note, the edit refusal —
+>   say *press Unweave*. Every non-woven field keeps **Show**, pinned by a companion on one card that
+>   holds both. The Main note stays honest about what the button does: it rebuilds the two readings
+>   and never changes the stored value; without the right method nothing can recover the original.
+> - *Per-row Show/Hide* — **no**: the two readings are only meaningful as a pair.
+> - *Draw the picture when the method is picked* — **no**: it stays on the button press.
+>
 > Related docs: [module_extension.md](module_extension.md),
 > [PLAN_woven_passwords_and_entity_pin.md](PLAN_woven_passwords_and_entity_pin.md),
 > [PLAN_payment_ui_tail.md](PLAN_payment_ui_tail.md),
@@ -48,7 +57,7 @@ so, because the work is widening what is there rather than writing a second impl
 | Asked for | Today |
 |---|---|
 | a dropdown of weaving methods, in a random order | `wovenRow.ts:43-61` — `<select class="mixPick">`, order from `methodOrder(random)` |
-| a button that rebuilds the value | the same row's `Show` (`data-action="reassemble"`, `wovenRow.ts:53`) |
+| a button that rebuilds the value | the same row's button (`data-action="reassemble"`, `wovenRow.ts:53`) — labelled `Show` when this was written, **`Unweave` since 2026-09-24** (#135); every non-woven field still says `Show` |
 | the recovered pair, each with a Copy | `readingRow` (`wovenRow.ts:64-70`), ids `payReading_<key>_a` / `_b` |
 | **the method drawn on two values and the result** | **missing in the viewer** — the FORM paints it (`weaveExample.ts:115`, `weaveExampleScript.ts:80`) |
 | **"this entry is woven" said in Main** | **missing** — the viewer has no equivalent of the form's `wovenState` (`generalNotes.ts:17`) |

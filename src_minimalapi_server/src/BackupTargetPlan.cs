@@ -42,7 +42,7 @@ public abstract record TargetDecision(BackupTargetRequest Wanted)
     /// identity, keys and region are all unchanged is written back as it was, unprobed.
     /// </summary>
     /// <remarks>
-    /// An owner assumption, recorded in the plan for #134 so it can be reversed: re-proving an untouched
+    /// The owner's decision (#134, confirmed 2026-09-24 after shipping as an assumption): re-proving an untouched
     /// destination on every schedule edit catches a key revoked since, at the price of every edit
     /// depending on every other destination being reachable now — and the nightly run reports a revoked
     /// key within a day anyway. It is also what keeps a destination this server cannot OPEN from failing

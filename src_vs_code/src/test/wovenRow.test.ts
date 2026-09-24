@@ -97,3 +97,14 @@ test('the readings start hidden — nothing is on screen until somebody asks', (
 
   assert.match(html, /<div class="readingRows" id="payRows_password" hidden>/);
 });
+
+test('a woven row\'s button says Unweave, and still asks for the reassemble action (#135, owner 2026-09-24)', () => {
+  // The owner's call: on a WOVEN value the button is "Unweave"; every non-woven Show stays "Show"
+  // (the companion is in paymentViewCard.test.ts). The action is what the page script dispatches on,
+  // never the text, so renaming it cannot disconnect the button from the reading.
+  const html = wovenRowMarkup(options());
+
+  assert.match(html, /data-action="reassemble"[^>]*aria-label="Unweave Password">Unweave<\/button>/);
+  assert.ok(!/>Show<\/button>/.test(html), 'no Show left on a woven row');
+  assert.match(WOVEN_ROW_NOTE, /press Unweave/);
+});

@@ -196,7 +196,7 @@ public static class OrgBackupEndpoints
     /// <para><b>Only what changed is proved.</b> Not a HEAD: both clouds routinely grant read while
     /// denying write, so the probe writes a tiny object and deletes it again, which is exactly what a run
     /// and a retention pass do. A destination whose identity, keys and region are all unchanged is
-    /// written back as it was — see <see cref="TargetDecision.Probe"/> for why that is an assumption.</para>
+    /// written back as it was — see <see cref="TargetDecision.Probe"/> for why the owner chose that.</para>
     /// </remarks>
     private static async Task SaveWithTargetsAsync(
         HttpContext ctx,

@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the owner's decisions of 2026-09-24 (#136, #135)
+
+- **The Agent Access journal now records the Claude Code tab title**, exactly as the consent dialog
+  shows it — `session "creds old issues" (52d1b29a)` — sanitised the same way, so a title cannot forge
+  a second session or break the line. 1.10.0 kept it out of the journal as an assumption (an AI title
+  summarises a private conversation); the owner chose the other side: the journal is where "which
+  session did this" is asked afterwards, and the tab title is the name you know it by (#136).
+- **A woven value's button says Unweave.** On a woven password or payment field the viewer's button
+  that rebuilds the two readings is now *Unweave*; every other field keeps *Show*. The notes that say
+  which button to press say *Unweave*, and still say the stored value never changes. Per-row
+  Show/Hide and drawing the picture before the button is pressed were declined — the two readings are
+  only meaningful as a pair (#135).
+
 ### Changed — the SSH agent's signing prompt expires
 
 - **Unanswered for five minutes, a signature is refused**, the bound the agent consent dialog has

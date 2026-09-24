@@ -37,7 +37,10 @@ export function wovenState(d: EntityMetadata | undefined): string {
  * which frame to look in.</p>
  *
  * <p>It names what is woven and says what to do about it. It offers no CONTROL, because nothing
- * here can undo a weave — that needs the method, and nothing in this build has it.</p>
+ * here can undo a weave — that needs the method, and nothing in this build has it. The button that
+ * reads the value back is called <i>Unweave</i> since 2026-09-24 (#135, the owner's call), so the
+ * sentence says what it does and what it never does: it rebuilds the two readings, and the stored
+ * value stays exactly as it was.</p>
  */
 export function wovenViewNote(password: boolean, fields: readonly string[]): string {
   const named = [...(password ? ['the password'] : []), ...fields];
@@ -50,9 +53,9 @@ export function wovenViewNote(password: boolean, fields: readonly string[]): str
   const safe = named.map(escapeHtml);
   const list = listOf(safe);
   return `<p class="hint woven"><b>Woven — on.</b> This entry stores ${list} interleaved with a
-     second value, under a method only you know. Pick that method below and press Show: both rows
-     come back, and you read the one you recognise. Nothing here can unweave the stored value — that
-     needs the method, and nothing in this build has it.</p>`;
+     second value, under a method only you know. Pick that method below and press Unweave: both rows
+     come back, and you read the one you recognise. Unweave never changes the stored value — it reads
+     it under the method you picked, and without the right method nothing can recover the original.</p>`;
 }
 
 /**

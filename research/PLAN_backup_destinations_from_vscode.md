@@ -57,7 +57,7 @@
 >   because an older extension against a newer server must be served normally. Refused, with the code
 >   as the reason: a `StringBuilder` preference no rule states; a planner made generic for grant state
 >   the drives plan has not decided; last-writer-wins on `PUT /settings`, which predates this change and
->   is an owner question; a concurrency cap for single-digit destinations; a duplicate-identity "hole"
+>   was an owner question (answered 2026-09-24: accepted, left as it is); a concurrency cap for single-digit destinations; a duplicate-identity "hole"
 >   the planner refuses by name; an NRE on a path no decision can reach; and several findings whose own
 >   text concluded the code was correct.
 > - **A Windows-only collision, pre-existing, seen once**: `AtomicWriteAsync` is a `File.Move` over the
@@ -79,9 +79,14 @@
 > **Open tail**, none of it this plan's to close: the two drive kinds
 > ([PLAN_corp_backup_drives.md](../todo/PLAN_corp_backup_drives.md), boundary named on both sides);
 > the two byte formatters (`humanBytes` in `backupPage.ts`, `formatBytes` in `serverMetricsPage.ts`)
-> this work uses and does not unify; and two owner assumptions recorded so they can be reversed —
-> only a NEW or CHANGED destination is probed on save (`TargetDecision.Probe`), and `partial` is not a
-> success for `lastSuccessAt` (one comparison in `FinishAsync`).
+> this work uses and does not unify.
+>
+> **The owner's answers, 2026-09-24** — the three questions this plan shipped as assumptions are now
+> decisions: only a NEW or CHANGED destination is probed on save (`TargetDecision.Probe`) — **keep**;
+> `partial` is not a success for `lastSuccessAt` (one comparison in `FinishAsync`) — **keep**, "partial
+> is not success"; and last-writer-wins on `PUT /api/org/backup/settings` (two administrators saving
+> different lists overwrite each other) — **accepted, left as it is**. No code changed for any of the
+> three; the comments that called them assumptions now say whose decision they are.
 >
 > Related docs: [PLAN_corp_server_backup.md](PLAN_corp_server_backup.md) (epic 5, which
 > built everything below the form), [PLAN_server_section_for_admins.md](PLAN_server_section_for_admins.md)
@@ -190,21 +195,21 @@ it is accepted. Not a cross-language live run — none exists for any route here
 The identity stays `Kind|Endpoint|Bucket|Prefix`: region is a *setting* of a destination, not what
 makes it a different one — the same bucket in a different region is the same bucket.
 
-**S3 — probe only what is NEW or CHANGED (fix 3). Owner assumption, recorded so it can be reversed.**
+**S3 — probe only what is NEW or CHANGED (fix 3). Shipped as an owner assumption; confirmed by the owner 2026-09-24.**
 A destination is probed at save time when it has no kept record (new identity), when credentials were
 sent (new keys), or when its region differs from the kept one. A destination whose identity, keys and
 region are all unchanged is written back as it was, unprobed. The decision moves out of the endpoint
 into a pure planner — `BackupTargetPlan.Of(requested, existing)` in a new
 `src_minimalapi_server/src/BackupTargetPlan.cs` — that returns, per requested target, the record to
 save and whether to probe it, or the problem. The endpoint seals, probes the marked ones together
-(`Task.WhenAll`, as now), and writes. Reversing the assumption is one predicate in that planner.
+(`Task.WhenAll`, as now), and writes. Reversing the decision is one predicate in that planner.
 
-*Why this is an assumption and not a finding:* the probe was designed as *"every target is proved
+*Why this was an owner question and not a finding:* the probe was designed as *"every target is proved
 USABLE before any of them is written"* (`OrgBackupEndpoints.cs:168-172`), and re-proving an untouched
 destination on every schedule edit does catch a key that was revoked since. It also makes editing one
 destination depend on every other one being reachable now, and the nightly run reports a revoked key
-within a day anyway (`targets[].error`, the notice). The owner may prefer the old behaviour; the plan
-states the trade so the choice is theirs.
+within a day anyway (`targets[].error`, the notice). The plan stated that trade so the choice was the
+owner's, and on 2026-09-24 they chose it: only a new or changed destination is probed.
 
 *A guarantee this rule carries, named by the plan gate (gemini):* a destination whose credentials
 this server cannot open (`credentials: "unopenable"`) is, when re-sent unchanged beside an edit to a
@@ -230,7 +235,7 @@ developer login keys."* 409 rather than 400 because the request is well formed a
 is what refuses, which is the reading `MintAsync` (`:248`) already makes. `targets: []` (remove all)
 and an omitted `targets` need no KEK and are unaffected.
 
-**S5 — `LastSuccessAt` (issue item 3). Owner assumption: only the verdict `ok` is a success;
+**S5 — `LastSuccessAt` (issue item 3). The owner's decision (confirmed 2026-09-24): only the verdict `ok` is a success;
 `partial` is not.** `BackupStatus` (`Models.cs:314-322`) gains `long LastSuccessAt`, `0` = never, the
 same spelling `LastRunAt` uses. Every writer carries the previous value forward through
 `previous with { … }` on a fresh read — Begin (`BackupRunner.cs:112`), Abandon (`:161`), Fail (`:465`),
