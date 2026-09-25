@@ -82,18 +82,36 @@ test('the order reaches no message the panel posts', () => {
  * entry's page it was copied.</p>
  *
  * <p>The whole SEQUENCE is pinned rather than the count, because a scan that matches a fragment
- * survives its own break: two guards could both sit before the read and this would still pass.</p>
+ * survives its own break: the guard could sit before the read and this would still pass. There used
+ * to be a second guard before the read, for the Show question a Copy asked; a Copy asks nothing now
+ * (#153), so there is no await before the read for a render to land in.</p>
  */
-test('the entry is re-checked after the value is read, not only before it', () => {
+test('the entry is re-checked after the value is read', () => {
   const copyPath = source.slice(source.indexOf("message.type !== 'copy'"));
   const order = [...copyPath.matchAll(/state\.options !== options|await copyValueFor\(|await copySecret\(/g)]
     .map((one) => one[0]);
 
   assert.deepEqual(
-    order.slice(0, 4),
-    ['state.options !== options', 'await copyValueFor(', 'state.options !== options', 'await copySecret('],
-    'guard, read, guard, then the clipboard — in that order',
+    order.slice(0, 3),
+    ['await copyValueFor(', 'state.options !== options', 'await copySecret('],
+    'read, guard, then the clipboard — in that order',
   );
+});
+
+/**
+ * A per-field Copy asks nothing before it reads (#153).
+ *
+ * <p>The copy path used to call `payment.allowCopy`, which opened the Show dialog for a CVV or a PIN:
+ * "Show the CVV?" on a Copy, with the box left masked afterwards. Copy and Show are separate actions
+ * and only Show asks, so nothing between the handler and the clipboard may put up a question.</p>
+ */
+test('the copy path puts up no question between the handler and the clipboard', () => {
+  const copyPath = source.slice(source.indexOf("message.type !== 'copy'"));
+  const beforeClipboard = copyPath.slice(0, copyPath.indexOf('await copySecret('));
+
+  assert.ok(!/allowCopy|confirm\(|showWarningMessage\(\s*[^)]*modal/.test(beforeClipboard), 'no gate on a Copy');
+  // The companion: the slice reaches the read, so an empty slice cannot pass this vacuously.
+  assert.match(beforeClipboard, /await copyValueFor\(/, 'the slice spans the read it guards');
 });
 
 test('and the scan is still reading the copy path it thinks it is', () => {

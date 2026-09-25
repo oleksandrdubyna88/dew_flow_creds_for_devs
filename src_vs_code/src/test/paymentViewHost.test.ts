@@ -187,6 +187,47 @@ test('copying a rebuilt row copies the row, never what is stored', async () => {
 });
 
 /**
+ * Copy and Show are two separate actions, and only Show asks (#153).
+ *
+ * <p>The defect: a Copy of a CVV opened the dialog "Show the CVV?", the value went to the clipboard
+ * and the box stayed masked — the question named an action nobody had taken. Worse, the answer was
+ * remembered as a grant, so the Show that followed never asked at all. The person decided the rung
+ * stands in front of the screen, not the clipboard.</p>
+ */
+test('copying a woven CVV or PIN row asks nothing, even when every question would be declined', async () => {
+  const h = harness({ pin: WOVEN_PIN, shuffledFields: ['pin'] });
+  h.answer = false;
+
+  await h.host.handle('copyReading', `pin|a|${CODE}`);
+
+  assert.deepEqual(h.asked, [], 'a Copy is not a Show, so it does not ask the Show question');
+  assert.deepEqual(h.copied, ['4821'], 'and the row still reached the clipboard');
+});
+
+test('a Copy grants nothing — the Show that follows still asks', async () => {
+  const h = harness({ pin: WOVEN_PIN, shuffledFields: ['pin'] });
+
+  await h.host.handle('copyReading', `pin|a|${CODE}`);
+  assert.deepEqual(h.asked, [], 'the Copy asked nothing');
+  await h.host.handle('reassemble', `pin|${CODE}`);
+
+  assert.equal(h.asked.length, 1, 'the Show asked, because the Copy before it did not answer for it');
+  assert.match(h.asked[0], /^Show the PIN\?/, 'in the Show words');
+});
+
+test('copying a row of an assembled phrase asks nothing either', async () => {
+  const real = ['alpha', 'bravo', 'charlie', 'delta'];
+  const decoy = ['zulu', 'yankee', 'xray', 'whiskey'];
+  const h = harness({ mixed: shuffleTokens(real, decoy, CODE), shuffledFields: ['mixed'] }, 'phrase');
+  h.answer = false;
+
+  await h.host.handle('copyReading', `mixed|a|${CODE}`);
+
+  assert.deepEqual(h.asked, [], 'no "Assemble and show" for a Copy');
+  assert.equal(h.copied.length, 1, 'and the phrase row was copied');
+});
+
+/**
  * The defect: row one was the person's value under every correct method.
  *
  * <p>`weaveSecret` weaves the real value as the first column, `reassemble` returns it as `real`, and
@@ -271,50 +312,6 @@ test('no message carries the order — the answer has the same shape either way'
   assert.notDeepEqual(one.first, two.first, 'and the rows really did come out the other way round');
   assert.deepEqual([one.first, one.second].sort(), [two.first, two.second].sort(), 'same pair, reordered');
   assert.ok(!/real|decoy|swap|flip|order/i.test(JSON.stringify([one, two])));
-});
-
-/**
- * The card's own version of the race the password host was fixed for.
- *
- * <p>A gated field asks before it answers, and that modal is the long await: the panel can render
- * another entry while it is on screen, which clears the store. An order read after the question
- * would be a fresh draw, and the clipboard would hold the row the person did not point at.</p>
- */
-test('a Copy whose question is answered during a re-render still follows the order the rows showed', async () => {
-  const copied: string[] = [];
-  // Swapped first, as-read after the clear — so a redraw is visible rather than silently identical.
-  const draws = [SWAPPED, AS_READ];
-  let at = 0;
-  const orders = new RowOrderStore(() => draws[Math.min(at++, draws.length - 1)] ?? 0);
-  const fields: PaymentFields = { pin: WOVEN_PIN, shuffledFields: ['pin'] };
-  const view = paymentCardFor('entity-1', 'card', fields, random);
-  const host = new PaymentViewHost({
-    view: () => view,
-    record: () => Promise.resolve(fields),
-    post: () => undefined,
-    // The panel loads another entry WHILE the question is on screen, which is what the shared
-    // preview tab does on the next single click.
-    confirm: () => {
-      orders.clear();
-      return Promise.resolve(true);
-    },
-    orders,
-    copy: (text) => {
-      copied.push(text);
-      return Promise.resolve();
-    },
-  });
-
-  // The rows were SHOWN first — that is what puts an order in the store for the copy to follow.
-  // Drawn directly here rather than through a Show, because a Show also grants the field and the
-  // copy would then never reach the question this test needs it to be interrupted by.
-  orders.orderFor('entity-1', 'pin');
-
-  await host.handle('copyReading', `pin|a|${CODE}`);
-
-  assert.equal(copied.length, 1, 'the copy happened');
-  assert.deepEqual(copied, ['9137'], 'the row that was shown, not the one a fresh draw would name');
-  assert.equal(at, 1, 'and the clear did not cause a second draw for this copy');
 });
 
 /**
@@ -406,21 +403,29 @@ test('a post that throws holds nothing — every path out leads to the same plac
 
 test('nothing is copied or shown for a card the panel has since replaced', async () => {
   // The gap the code review found on the panel's own copy path, on the four paths that never reach
-  // it: a payment message is answered by this class and returns before the panel's guard. Both await
-  // boundaries are covered — the record read, and the modal, which is the long one.
+  // it: a payment message is answered by this class and returns before the panel's guard. The await
+  // boundaries BEFORE a value is chosen are covered — the record read, the only one a Copy has before
+  // it picks the row (it asks nothing, #153), and the modal a Show waits on, which is the long one.
+  // The clipboard write after that is not raced here: the value is already fixed by then.
   const fields: PaymentFields = { pin: WOVEN_PIN, cvv: '737', shuffledFields: ['pin'] };
   const posted: unknown[] = [];
   const copied: string[] = [];
   const shown = paymentCardFor('entity-1', 'card', fields, random);
-  const state = { view: shown };
+  const state = { view: shown, reads: 0 };
   const host = new PaymentViewHost({
     view: () => state.view,
-    record: () => Promise.resolve(fields),
+    // The panel re-renders for another entry WHILE the first record read is in flight...
+    record: () => {
+      if (state.reads++ === 0) {
+        state.view = paymentCardFor('entity-2', 'card', fields, random);
+      }
+      return Promise.resolve(fields);
+    },
     post: (message) => posted.push(message),
-    // The panel re-renders for another entry WHILE the question is on screen — which is exactly
-    // what the shared preview tab does on the next single click.
+    // ...and again WHILE the question is on screen — which is exactly what the shared preview tab
+    // does on the next single click.
     confirm: () => {
-      state.view = paymentCardFor('entity-2', 'card', fields, random);
+      state.view = paymentCardFor('entity-3', 'card', fields, random);
       return Promise.resolve(true);
     },
     orders: orderStore(AS_READ),
@@ -436,15 +441,6 @@ test('nothing is copied or shown for a card the panel has since replaced', async
   assert.deepEqual(copied, [], 'the previous entry\'s PIN did not reach the clipboard');
   assert.deepEqual(posted, [], 'and its CVV was not sent to a card showing something else');
   assert.equal(host.holding, 0);
-});
-
-test('a per-field Copy asks exactly what its Show asks', async () => {
-  const h = harness({ cvv: '737', number: '4111' });
-  h.answer = false;
-
-  assert.equal(await h.host.allowCopy('pay_cvv'), false, 'copying is showing, to the clipboard');
-  assert.equal(await h.host.allowCopy('pay_number'), true, 'and an ordinary field is not gated');
-  assert.equal(await h.host.allowCopy('name'), true, 'nor is anything that is not a payment field');
 });
 
 test('a declined reveal posts nothing, and a granted one posts exactly the field asked for', async () => {

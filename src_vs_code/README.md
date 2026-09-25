@@ -454,6 +454,7 @@ A card, a set of bank details, or a phrase you must not lose.
   guess is visible and correctable. The block underneath is assembled in the order the destination
   country writes it, and that block is what a share and an export carry.
 - A **CVV or PIN** asks before it appears, and can be put away again — the button becomes *Hide*.
+  Copying it asks nothing: Copy and Show are separate buttons, and only Show asks.
 - Any of the number, CVV, PIN, IBAN or account number can be stored **woven with a decoy** under
   one of twelve methods, and the controls now SHOW what a method does: a green column, an orange
   one, and the weave of the two. Both are made up for the picture; your own value is never drawn

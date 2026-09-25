@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — Copy no longer asks "Show the CVV?" (#153)
+
+- **Copying a CVV, a PIN, a second CVV/PIN, a woven row or a seed-phrase row asks nothing.** It used
+  to open the *Show* dialog, copy the value, and leave the box masked — the question named an action
+  you had not taken. Copy and Show are now separate: only **Show** asks, and a Copy no longer counts as
+  having answered it, so the Show that follows still asks. The help says so in all five languages.
+
 ### Changed — the owner's decisions of 2026-09-24 (#136, #135)
 
 - **The Agent Access journal now records the Claude Code tab title**, exactly as the consent dialog

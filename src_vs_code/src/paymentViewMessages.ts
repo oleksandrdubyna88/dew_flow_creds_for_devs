@@ -195,8 +195,8 @@ export function revealValue(
 /**
  * What a per-field Copy hands over — and never a woven value.
  *
- * <p>A gated field IS copyable here: the gate is asked by the panel before this is reached, because
- * copying is showing, to the clipboard. A WOVEN field is not, at any point: what is stored under that
+ * <p>A gated field IS copyable here, and nothing is asked first: Copy and Show are separate actions
+ * and only Show asks (#153). A WOVEN field is not, at any point: what is stored under that
  * key is the value shuffled with its decoy, and copying it from a card showing rebuilt digits would
  * hand somebody the one thing on screen they did not ask for. The rebuilt rows have their own button
  * and their own message.</p>

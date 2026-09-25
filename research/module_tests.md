@@ -574,7 +574,7 @@ the section below gives, so each half is covered where it can actually be execut
 | The payment gate | `secondPaymentGate.test.ts` | The REAL `paymentRecordFor` behind a `vscode` stub: a good pair woven, a mismatched one refused, and the typed half absent from the record |
 | The page's half | `secondModeScript.test.ts` | RUN through `miniDom`, not matched as source: a box shown, hidden, emptied when hidden, and each control governing only its own scope |
 | The markup | `secondModeMarkup.test.ts` | Derived from the catalogue, no value in the page, and no backtick that would end the template literal it is pasted into |
-| The viewer's rows | `secondViewerRows.test.ts` | The rows drawn, the gate a second CVV inherits, and `allowCopy` — the surface the panel calls, so the copy path is covered rather than the private predicate |
+| The viewer's rows | `secondViewerRows.test.ts` | The rows drawn, and the gate a second CVV inherits — driven through `reveal`, so the Show path is covered rather than the private predicate. That a Copy asks nothing (#153) is pinned in `entityViewPanelWiring.test.ts` |
 | Out of the vault | `secondShareBoundary.test.ts` | A REAL share payload built and asserted, plus the export counts. Not an allowlist unit test, because that passes for a payload a serializer picked the slot up into |
 | Sync, backup, revision | `secondSurvival.test.ts`, `storageSecond.test.ts`, `secondTravel.test.ts` | The five lists agreeing, an empty record deleting its key, and the agent surface driven with a vault that HOLDS one of every kind |
 | The five help languages | `secondHelpCoverage.test.ts` | That each language mentions the control — the one stale-translation failure that is checkable without a content-version scheme |

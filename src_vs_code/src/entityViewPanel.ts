@@ -234,26 +234,16 @@ function mountEntityView(
     if (message.type !== 'copy') {
       return;
     }
-    // Copying is showing, to the clipboard: a CVV that asked before appearing and not before being
-    // copied would be a rung with a door beside it.
-    if (!(await payment.allowCopy(message.field))) {
-      return;
-    }
-    // The options can change WHILE the question is on screen — this panel is the shared preview tab,
-    // and `show()` re-renders it for another entry. `options` was captured before the await, so
-    // without this the confirmation given for the entry that was showing would copy the previous
-    // entry's CVV. Found by the code review; the identity check is enough because `show` always
-    // assigns a fresh object.
-    if (state.options !== options) {
-      return;
-    }
+    // A Copy asks nothing, a CVV and a PIN included (#153): Copy and Show are separate actions and
+    // only Show asks. `options` was captured synchronously above, so nothing can have re-rendered
+    // the panel before the read below.
     const value = await copyValueFor(options, message.field);
-    // And AGAIN, because reading the value is itself an await: `copyValueFor` goes to the keychain
-    // for a payment field, for a second value and for every ordinary secret. The guard above covers
-    // the CONFIRMATION; this one covers the READ. Without it a render landing in between puts the
+    // Reading the value is an await: `copyValueFor` goes to the keychain for a payment field, for a
+    // second value and for every ordinary secret, and this panel is the shared preview tab that
+    // `show()` re-renders for another entry. Without this guard a render landing in between puts the
     // previous entry's secret on the clipboard and tells the new entry's page it was copied — the
-    // same shape the row-order work was bitten by twice, raised here by the automated reviewer on
-    // the pull request that added a third await to this path.
+    // same shape the row-order work was bitten by twice, raised by the automated reviewer. The
+    // identity check is enough because `show` always assigns a fresh object.
     if (state.options !== options) {
       return;
     }

@@ -17,6 +17,10 @@ import { PaymentFieldKey } from './paymentFields';
  * against the person's own hand, which is how most of these get seen. Promising more would be the kind
  * of overclaim this feature has already had to correct twice.</p>
  *
+ * <p>The rung stands in front of the SCREEN, not the clipboard: a Copy asks nothing and grants nothing
+ * (#153). A Copy that opened "Show the CVV?" and then left the box masked named an action nobody had
+ * taken, and its answer silently opened the next Show.</p>
+ *
  * <p>Pure: no `vscode`. The dialog belongs to the caller.</p>
  */
 export const GATED_FIELDS: readonly PaymentFieldKey[] = ['cvv', 'pin'];
