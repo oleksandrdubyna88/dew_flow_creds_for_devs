@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.11.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.10.0...extension-v1.11.0) (2026-09-25)
+
+
+### Features
+
+* **extension:** the SSH agent's signing prompt refuses after five minutes unanswered ([862c70f](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/862c70f41970da2ef54c825e351274543e44e295))
+* the owner's decisions of 2026-09-24 — the journal names the tab, a woven value says Unweave ([#136](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/136), [#135](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/135)) ([#152](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/152)) ([1c16de5](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/1c16de5018ba5368d19c8962acb6a49c8fc4fc75))
+
+
+### Bug Fixes
+
+* **extension:** what the gate found in the signing-prompt timeout ([ae6ebf0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/ae6ebf0cc2fb25460442a707652fbda99d57e7da))
+* **extension:** what the review of the signing-prompt timeout found; plan promoted ([8885b41](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/8885b4121edbff71c0800339781892d081075350))
+* **viewer:** Copy no longer asks "Show the CVV?" — only Show asks ([#153](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/153)) ([36708a3](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/36708a37b52c057e3aefc607746811ce718e770e))
+* **viewer:** what the review of [#153](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/153) found; CHANGELOG section for 1.11.0 ([b10849d](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/b10849df784d223d8c90e70c215517f7f6cdd073))
+
 ## [1.10.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.9.7...extension-v1.10.0) (2026-09-24)
 
 
