@@ -234,16 +234,10 @@ function mountEntityView(
     if (message.type !== 'copy') {
       return;
     }
-    // A Copy asks nothing, a CVV and a PIN included (#153): Copy and Show are separate actions and
-    // only Show asks. `options` was captured synchronously above, so nothing can have re-rendered
-    // the panel before the read below.
+    // A Copy asks nothing, CVV and PIN included (#153); only Show asks. The read is an await on the
+    // shared preview tab, so a render landing during it must not put the previous entry's secret
+    // on the clipboard — `show` assigns a fresh `options`, so identity is the whole check.
     const value = await copyValueFor(options, message.field);
-    // Reading the value is an await: `copyValueFor` goes to the keychain for a payment field, for a
-    // second value and for every ordinary secret, and this panel is the shared preview tab that
-    // `show()` re-renders for another entry. Without this guard a render landing in between puts the
-    // previous entry's secret on the clipboard and tells the new entry's page it was copied — the
-    // same shape the row-order work was bitten by twice, raised by the automated reviewer. The
-    // identity check is enough because `show` always assigns a fresh object.
     if (state.options !== options) {
       return;
     }
