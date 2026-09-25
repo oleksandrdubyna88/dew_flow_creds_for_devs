@@ -542,8 +542,12 @@ and now says so.
 **The gate covers the picker, not only the button.** `revealGate` decides that a CVV, a PIN and an
 assembled phrase ask a second time; `paymentViewHost` asks it for `reveal` AND for `reassemble`, since
 a woven PIN reached through a method picker is the same value. The grant is per field and per card,
-dropped when the panel re-renders another entry — this viewer is the shared preview tab. The same
-question guards a Copy, because copying is showing, to the clipboard.
+dropped when the panel re-renders another entry — this viewer is the shared preview tab. **A Copy
+asks nothing and grants nothing** (#153, 2026-09-25): Copy and Show are separate actions, and only
+Show asks. Until then a Copy went through the same grant — it opened "Show the CVV?", copied, left the
+box masked, and its answer silently opened the next Show. The owner chose the rung in front of the
+screen, not the clipboard; `entityViewPanelWiring.test.ts` pins that the panel's copy path puts up no
+question, and `paymentViewHost.test.ts` that `copyReading` neither asks nor grants.
 
 #### The four decisions worth knowing before changing any of it
 
@@ -884,9 +888,9 @@ secret has to be restored or discarded.
 
 A stored second value gets a masked row with Copy. A second CVV and a second PIN ask the same
 question the first ones do — `gated` reads `needsReveal` about the FIELD the key belongs to rather
-than adding `cvv2` to `GATED_FIELDS`, which answers about the fields of a card. **The copy path asks
-too**: copying is showing, to the clipboard, and a variant suffix cannot slip past it because the KEY
-is what is gated.
+than adding `cvv2` to `GATED_FIELDS`, which answers about the fields of a card, and a variant suffix
+cannot slip past the Show because the KEY is what is gated. The Copy of a second value asks nothing,
+like every Copy since #153.
 
 A WOVEN field has no second row, and not because anything filters it: the save consumed that half
 into the woven string and stored nothing, so the record has no key. Where the person's own woven
@@ -1095,8 +1099,7 @@ per CHARACTER, so a stored space would be woven in among the digits and the orig
 rebuilt. `cardNumberFormat.ts` formats on the way to the screen and strips on the way to the record,
 the caret is counted in DIGITS so a keystroke in the middle of a saved number does not throw the
 cursor to the end, and the number row carries two clipboard buttons — digits for a form that refuses
-spaces, groups of four for reading it aloud. A copy VARIANT is a shape and never a key: `allowCopy`
-splits on the pipe, so `pay_cvv|anything` asks exactly as `pay_cvv` does.
+spaces, groups of four for reading it aloud. A copy VARIANT is a shape and never a key.
 
 #### The billing address is six cells (2026-09-03)
 

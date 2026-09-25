@@ -78,7 +78,7 @@ ${view.seconds.map((key) => secondValueRow(key)).join('\n')}
  * the one thing that is never true of a WOVEN pair and would teach the wrong shape.</p>
  *
  * <p><b>The gate is inherited.</b> A second CVV is a CVV: it is one of the two values that turn a
- * number somebody saw into a payment somebody made, and copying is showing. So `needsReveal` is asked
+ * number somebody saw into a payment somebody made. So `needsReveal` is asked
  * about the FIELD the key belongs to, and the answer is not decided a second time here — two places
  * deciding one rung is how the two come to disagree.</p>
  *

@@ -85,50 +85,52 @@ test('an entry with no second values draws exactly the card it drew before this 
   assert.ok(plain.includes('id="pay_number"'), 'and still draws its own fields');
 });
 
-/**
- * The gate a COPY meets, which is the half of this story that is easy to leave open.
- *
- * <p>Copying is showing, to the clipboard. A second CVV that asked before appearing on screen and not
- * before being copied would be a rung with a door beside it — the exact defect the card's own note
- * records for the first CVV. `gated` is private, so this drives it through `allowCopy`, which is the
- * surface the panel actually calls.</p>
- */
-test('copying a second CVV asks, and copying a second card number does not', async () => {
+/** A host over the card above, with the second values held and every answer given by `answer`. */
+function secondsHost(answer: boolean) {
   const asked: string[] = [];
+  const posted: unknown[] = [];
   const view = card({ number: '4111111111111111', cvv: '481', pin: '9137' });
   const host = new PaymentViewHost({
     view: () => view,
     record: () => Promise.resolve({}),
     seconds: () => Promise.resolve(HELD),
-    post: () => undefined,
+    post: (message) => posted.push(message),
     confirm: (text: string) => {
       asked.push(text);
-      return Promise.resolve(true);
+      return Promise.resolve(answer);
     },
     copy: () => Promise.resolve(),
     orders: new RowOrderStore(() => 0),
   });
+  return { host, asked, posted };
+}
 
-  assert.equal(await host.allowCopy('pay_number2'), true);
+/**
+ * The gate a second value inherits, driven through the SHOW the panel routes to this host.
+ *
+ * <p>`gated` is private, so it is asked through `reveal`. A Copy of a second value asks nothing, like
+ * every other Copy (#153) — that is pinned over the panel's own copy path in
+ * `entityViewPanelWiring.test.ts`, because the per-field Copy never reaches this class.</p>
+ */
+test('showing a second CVV asks, in the words the first CVV uses; a second card number is never asked about', async () => {
+  const { host, asked, posted } = secondsHost(true);
+
+  await host.handle('reveal', 'number2');
   assert.deepEqual(asked, [], 'a second card number is not one of the two decisive values');
 
-  assert.equal(await host.allowCopy('pay_cvv2'), true);
+  await host.handle('reveal', 'cvv2');
   assert.equal(asked.length, 1, 'a second CVV asked');
-  assert.match(asked[0] ?? '', /Show the/, 'and asked in the words the first CVV uses');
+  assert.match(asked[0] ?? '', /^Show the/, 'and asked in the Show words');
+  assert.deepEqual(posted.at(-1), { type: 'paymentValues', entityId: 'e1', values: { cvv2: '737' } });
 });
 
-test('a declined question copies nothing, and a variant suffix cannot slip past it', async () => {
-  const view = card({ number: '4111111111111111', cvv: '481', pin: '9137' });
-  const host = new PaymentViewHost({
-    view: () => view,
-    record: () => Promise.resolve({}),
-    seconds: () => Promise.resolve(HELD),
-    post: () => undefined,
-    confirm: () => Promise.resolve(false),
-    copy: () => Promise.resolve(),
-    orders: new RowOrderStore(() => 0),
-  });
+test('a declined Show of a second CVV shows nothing, and a suffix cannot slip past the question', async () => {
+  const { host, asked, posted } = secondsHost(false);
 
-  assert.equal(await host.allowCopy('pay_cvv2'), false);
-  assert.equal(await host.allowCopy('pay_cvv2|anything'), false, 'the KEY is what is gated, never the suffix');
+  await host.handle('reveal', 'cvv2');
+  await host.handle('reveal', 'cvv2|anything');
+
+  assert.equal(asked.length, 2, 'the KEY is what is gated, never the suffix');
+  assert.deepEqual(posted, [], 'and nothing was sent to the page');
 });
+

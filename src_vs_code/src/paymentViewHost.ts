@@ -313,6 +313,10 @@ export class PaymentViewHost {
    * <p>`pay_<key>` reads what is STORED, and for a woven field that is the value woven with its
    * decoy: copying it from a row showing rebuilt digits would hand somebody the one thing on screen
    * they did not ask for. So the row's button sends what it is showing and the host rebuilds it.</p>
+   *
+   * <p><b>A Copy asks nothing and grants nothing</b> (#153). Copy and Show are separate actions and
+   * only Show asks — a Copy that opened "Show the PIN?" and then left the rows as they were named an
+   * action nobody had taken, and its answer silently opened the next Show.</p>
    */
   private async copyReading(
     key: string,
@@ -321,12 +325,8 @@ export class PaymentViewHost {
     view: PaymentCardView,
     fields: PaymentFields,
   ): Promise<void> {
-    // Sampled BEFORE the question, which is the long await on this path: the panel can render
-    // another entry while the modal is on screen, and that CLEARS the store — so an order read
-    // afterwards is a fresh draw, and the clipboard holds the row the person did not point at.
-    // The password host samples before its own await for exactly this reason. (Code review, S3.)
     const order = this.deps.orders.orderFor(view.entityId, key);
-    if (!view.woven.includes(key as PaymentFieldKey) || !(await this.grant(key, view))) {
+    if (!view.woven.includes(key as PaymentFieldKey)) {
       return;
     }
     const reading = readingFor(fields, view.form, key, code);
@@ -339,23 +339,7 @@ export class PaymentViewHost {
     }
   }
 
-  /**
-   * Whether a per-field Copy may proceed — the same question the Show button asks.
-   *
-   * <p>Copying is showing, to the clipboard. A CVV that asked before appearing and not before being
-   * copied would be a rung with a door beside it.</p>
-   */
-  async allowCopy(field: string): Promise<boolean> {
-    const view = this.deps.view();
-    if (view === undefined || !field.startsWith('pay_')) {
-      return true;
-    }
-    // The KEY, never the whole field: `pay_cvv|anything` must ask exactly as `pay_cvv` does, or a
-    // variant suffix would be a door beside the one this gate is standing at.
-    return this.grant(field.slice('pay_'.length).split('|')[0], view);
-  }
-
-  /** Asked once per field while this card is on screen; never again, and never for ever. */
+  /** Asked once per field before it is SHOWN while this card is on screen; never for a Copy (#153). */
   private async grant(key: string, view: PaymentCardView): Promise<boolean> {
     if (!gated(key) || this.grants.has(key)) {
       return true;
