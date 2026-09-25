@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.0] — 2026-09-25 — Copy is not Show, Unweave, and a signing prompt that expires
+
+> Issues #135, #136 and #153: a Copy of a CVV or a PIN no longer asks the Show question, a woven
+> value's button says Unweave, the Agent Access journal names the Claude Code tab, and an unanswered
+> SSH signing prompt is refused after five minutes.
+
 ### Fixed — Copy no longer asks "Show the CVV?" (#153)
 
 - **Copying a CVV, a PIN, a second CVV/PIN, a woven row or a seed-phrase row asks nothing.** It used
