@@ -118,6 +118,7 @@ This is the clobber the fail-closed comments at `syncManager.ts:547-558` exist t
 |---|---|
 | every profile in scope failed | nothing — the failure toasts already spoke; **no "finished" line** (fixes 3.3) |
 | some failed, some did work | `Sync finished with errors: pulled changes for 1 profile(s), pushed the vault for 0 profile(s); 1 profile(s) failed — see above.` |
+| some failed, the rest had nothing to do | `Sync finished with errors: 1 profile(s) failed — see above; the other 2 were already in sync.` — `failed > 0` is decided **before** any "nothing to do" row, so a failure is never reported as `Already in sync` (PR #161 review) |
 | work was done | today's sentence, unchanged — it names its units, and `syncManager.test.ts:736-750` guards that |
 | nothing to do, a push is recorded | `Already in sync — nothing to pull or push. This vault was last pushed 2026-09-26 17:15:02 (UTC+03:00), 40 s ago, by background sync.` |
 | nothing to do, several accounts | the most recent push, naming its account's e-mail; the count of accounts checked |
@@ -151,6 +152,11 @@ private next: CycleRequest | undefined;      // everything that arrived while it
 
 - **One entry for everyone.** `syncNow`, `pullAccount`, the debounce, the interval, startup **and `pushAccount`**
   (fixes 3.4) all call `request(…)`. `syncProfile` has no other caller.
+- **One operation, so a request carries no operation type.** Every entry point runs the same two-way `syncProfile`
+  (read the remote, merge, apply locally, write when needed). `pullAccount` is today `syncAll(false, id)` and
+  `pushAccount` is today `syncProfile(account, transport, false)` — the same cycle, differing only in scope, trigger
+  and whether a failure is thrown. The last is a per-waiter property of the outcome (below), not of the request, so
+  folding the two loses nothing.
 - **`request` never starts a second cycle.**
   - If `current` is empty, it becomes `current` and the driver starts.
   - Otherwise it folds into `next` through a pure `foldRequest(next, incoming)` in `syncIdle.ts`, and returns a
@@ -159,16 +165,19 @@ private next: CycleRequest | undefined;      // everything that arrived while it
 
   ```ts
   while (current) {
-    try { run(current); }
+    try { await run(current); }   // the cycle's transport reads and writes are FINISHED here
     finally { resolve(current's waiters); current = next; next = undefined; }
   }
   ```
 
-  The handoff from one cycle to the next is **synchronous**, inside the same loop, so no call can observe "nothing
+  The `await` is the whole point: without it the `finally` would run while the previous cycle's `writeVault` is
+  still in flight, and the next cycle would overlap it (PR #161 review). The handoff from one cycle to the next is
+  **synchronous**, inside the same loop, so no call can observe "nothing
   running" between two cycles and start a parallel one (gate finding 7). A request arriving while cycle 2 runs folds
   into a fresh `next` (finding 6). Waiters are resolved in the `finally` of **their own** cycle, never dropped and
   never resolved early.
-- **What a waiter receives:** `CycleOutcome = { ran: true, perAccount: Map<id, 'ok' | Error> } | { ran: false, stillRunning: true }`.
+- **What a waiter receives:** `CycleOutcome = { ran: true, perAccount: Map<id, 'ok' | Error> } | { ran: false, stillRunning: true, settled: Promise<CycleOutcome> }`.
+  `settled` resolves when that same cycle really ends.
   - `syncNow` awaits it, so `await syncNow()` means what its callers already believe (fixes 3.2).
   - `pushAccount` awaits it and **throws** when its account's entry is an `Error`. This keeps its contract,
     *"reported rather than warned"* (`syncManager.ts:186-192`); the epic-3 ack must not follow a failed push.
@@ -179,6 +188,11 @@ private next: CycleRequest | undefined;      // everything that arrived while it
   - `pushAccount` treats `stillRunning` as a failure and throws (no ack).
   - `syncNow` says `Sync is still running — its result will appear when it ends`, and its verbose summary is still
     shown when the cycle does end.
+  - **Work that needs the cycle's result waits for `settled`, never for the ceiling** (PR #161 review). The person
+    gets their answer at the ceiling, but `refreshReadiness()` after the sync (`keyCommands.ts:299`, `:366`) and
+    `reportTeamRefusals()` (`accountCommands.ts:85`) run on `settled`, so they never read a state the cycle has not
+    produced yet. A test pins it: a hung transport, a released ceiling, then the transport completes — the dependent
+    call runs once, after completion, not before.
 - **A verbose request that had to queue says so at once:** `Sync is already running — yours will follow it.` One
   information toast, only for `manual`, only when it actually queued.
 - **Many debounce ticks during one cycle still fold into ONE rerun.** That is today's `rerunWanted` guarantee, kept.
@@ -273,6 +287,8 @@ private next: CycleRequest | undefined;      // everything that arrived while it
 | Five debounce ticks during one cycle cause ONE rerun | `syncManager.test.ts` + `syncIdle.test.ts` (`foldRequest`) | no — regression guard |
 | Trigger precedence manual > command > background | `syncIdle.test.ts` | new |
 | An all-failed Sync prints no "finished" | `syncManager.test.ts` (step 4) | yes |
+| One failed + the rest idle says "finished with errors", never "Already in sync" | `syncSummary.test.ts` | new |
+| After the wait ceiling, `refreshReadiness` / `reportTeamRefusals` run on `settled`, once, after the cycle ends | `syncManager.test.ts` (fake clock, hung then released transport) | new |
 | Every §5.2 row, including skew and several accounts | `syncSummary.test.ts` | new |
 | `requestTimeLine` output unchanged | `requestTime.test.ts`, untouched | no |
 | An `mcp`-only edit is a remote change | `syncMerge.test.ts` (step 10) | no — closes the coverage gap |

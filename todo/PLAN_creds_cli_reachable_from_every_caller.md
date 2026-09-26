@@ -177,7 +177,7 @@ this out loud reproduces #159 on the first try.
 
 ### 5.3 Saying what is true afterwards (§2.5)
 
-- **Verification is a fresh read, not the command's exit code**, and it has **three** answers, not two:
+- **Verification is a fresh read, not the command's exit code**, and it has **four** results — three that need something said, and the one that is right:
 
   | State | How it is read | What the person is told |
   |---|---|---|
@@ -369,9 +369,9 @@ Branch `feat/159-creds-on-path`. Measures M1–M4. **Releases one extension mino
 
 | Story | Content | Carries |
 |---|---|---|
-| **A1** Pure decisions + tests | `InstallRecord.location` / `installId` / `pathEntryAdded`; the marker; `pathInstallDir` and its test against both one-liners; `userPathEdit` (red-first F1/F2 against `installCommand.ts:111-112`); the §5.3 three-state `verifyPath` interpreter; the §5.1 update state machine and sweep predicate; `foreignChange(record, marker, hashOnDisk)`; the permission-failure sentence; the profile line per shell. M1, M2 measured before any composer runs. | the pure halves of every §5.1–5.3 rule |
+| **A1** Pure decisions + tests | `InstallRecord.location` / `installId` / `pathEntryAdded`; the marker; `pathInstallDir` and its test against both one-liners; `userPathEdit` (red-first F1/F2 against `installCommand.ts:111-112`); the §5.3 four-result `verifyPath` interpreter (`absent` / `installedNotOnPath` / `shadowed` / `onPath`); the §5.1 update state machine and sweep predicate; `foreignChange(record, marker, hashOnDisk)`; the permission-failure sentence; the profile line per shell. M1, M2 measured before any composer runs. | the pure halves of every §5.1–5.3 rule |
 | **A2** The location core, and Linux/macOS complete | `binaryPath()` follows the record; the move and its interrupted-move recovery; the update sequence (after M4, on Windows); re-verify before Update/Remove; EACCES/EPERM changes nothing; unmarked file → Replace/Leave; the Linux/macOS probe and profile line. *Add to PATH* offered on linux/darwin, win32 gated until A3. New harness `scripts/creds-install-itest.cjs`, a sibling of the existing `creds-cli-itest.cjs` (vscode and `fetch` stubbed, temp HOME/LOCALAPPDATA): move, marker mismatch, foreign change, rename-aside while a real `creds` runs (win32 branch), EACCES via `chmod 555` (POSIX branch). | — |
-| **A3** Windows — the PATH entry by consent | `userPathEdit` run through `hostShell.ts:233-252`; `WM_SETTINGCHANGE` per M2; registry re-read → three states; `pathEntryAdded` written only when we wrote the entry; §5.3 message and button (M3); the terminal collection, local windows only; `powershellInstall` on the shared composer; the real composer run against a scratch `HKCU` variable, win32-gated in the harness and recorded here; `cli` help + the interim uninstall line. | **extension minor** |
+| **A3** Windows — the PATH entry by consent | `userPathEdit` run through `hostShell.ts:233-252`; `WM_SETTINGCHANGE` per M2; registry re-read → the four §5.3 results; `pathEntryAdded` written only when we wrote the entry; §5.3 message and button (M3); the terminal collection, local windows only; `powershellInstall` on the shared composer; the real composer run against a scratch `HKCU` variable, win32-gated in the harness and recorded here; `cli` help + the interim uninstall line. | **extension minor** |
 
 **Epic A DoD:**
 - M1–M4 recorded, and any line a measurement contradicted rewritten.
@@ -445,7 +445,7 @@ extension minor (C2 + C3).**
 | A foreign change (another build's `installId`, or a different hash) is surfaced and nothing is acted on | pure `foreignChange` test + harness | new | A |
 | An update that fails at any step leaves a runnable `creds` | the update state machine, every failure point | new | A |
 | EACCES/EPERM changes nothing and names the directory | harness, POSIX branch | new | A |
-| The three verification states, per OS | `verifyPath` tests | new | A |
+| All four verification results (`absent`, `installedNotOnPath`, `shadowed`, `onPath`), per OS | `verifyPath` tests | new | A |
 | The profile line is right per shell, and no file is ever written | pure test | new | A |
 | Terminal collection only in a local window | test over `remoteName` values, as `hostShell.test.ts` does for `windowKind` | new | A |
 | Every snippet body names the PATH prerequisite | a loop over `SNIPPET_BODIES` | **yes** — fails for all 22 today | B |
@@ -490,7 +490,7 @@ verdict `good_enough`, **all 3 reviewers answered** (codex, gemini, local). 11 f
 | # | Finding (reviewer) | Decision |
 |---|---|---|
 | 0 | the stdin pointer write may be lost; echo it in `sh -c` instead (local) | rejected — `runWsl` resolves after the child exits and `cat` reads to EOF; the proposed fix is the shell interpolation §9 forbids |
-| 1 | verification treats "exists but not on PATH" as "not installed" (local) | accepted — §5.3 three states |
+| 1 | verification treats "exists but not on PATH" as "not installed" (local) | accepted — §5.3 four results |
 | 2 | an orphaned marker survives uninstall (local) | accepted — §5.6 |
 | 3 | the probe races the pointer write (local) | rejected — the writer has exited before the probe starts, on one filesystem; a retry would only hide a real fault |
 | 4 | no restart warning (local) | rejected — already §5.3's message |
