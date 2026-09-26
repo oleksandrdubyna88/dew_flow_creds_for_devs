@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/server-v0.9.0...server-v0.10.0) (2026-09-26)
+
+
+### Features
+
+* the owner's decisions of 2026-09-24 — the journal names the tab, a woven value says Unweave ([#136](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/136), [#135](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/135)) ([#152](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/152)) ([1c16de5](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/1c16de5018ba5368d19c8962acb6a49c8fc4fc75))
+
 ## [0.9.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/server-v0.8.0...server-v0.9.0) (2026-09-24)
 
 
