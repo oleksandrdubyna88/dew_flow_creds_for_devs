@@ -2,6 +2,29 @@ import type { StorageManager } from './storageManager';
 import type { EntityFormValues } from './entityFormPanel';
 
 /**
+ * The setters a save's ADDITIONS pass calls — the storage itself for an ordinary entry, and
+ * `editPrefill.sealedWriter` for a protected one, which seals every changed value under the entry's
+ * PIN before the raw setter runs (entry-PIN plan, rule R3). A `Pick` rather than a new interface so
+ * the real `StorageManager` satisfies it with no adapter, and so a setter added to the pass below is
+ * one the writer must implement — the compiler says so.
+ */
+export type SecretWriter = Pick<
+  StorageManager,
+  | 'setPassword'
+  | 'setPrivateKey'
+  | 'setVpnConfig'
+  | 'setDbConnection'
+  | 'setNotes'
+  | 'setFields'
+  | 'setPayment'
+  | 'setConfigBody'
+  | 'setSecond'
+  | 'setAttachment'
+  | 'setImage'
+  | 'setTotp'
+>;
+
+/**
  * Every secret the form can set, cleared or written from its values — one place for the create path
  * and the edit path, so a secret kind added to the form reaches storage from both.
  *
@@ -46,9 +69,14 @@ async function applyOptional(
   }
 }
 
-/** Everything a save WRITES — before the node, so the node never claims what is not there yet. */
+/**
+ * Everything a save WRITES — before the node, so the node never claims what is not there yet.
+ *
+ * <p>`storage` is a `SecretWriter`: for a protected entry the edit path hands in the sealing
+ * writer, so nothing here changes whether a value is sealed — the writer decides, once, per slot.</p>
+ */
 export async function applyAdditions(
-  storage: StorageManager,
+  storage: SecretWriter,
   accountId: string,
   entityId: string,
   result: EntityFormValues,

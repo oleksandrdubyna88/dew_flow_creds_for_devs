@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { EntityFormOptions, EntityFormValues } from '../entityFormPanel';
+import { parseFields, serializeFields } from '../entityFields';
+import { parsePaymentFields, serializePaymentFields } from '../paymentFields';
+import { parseSecondValues, serializeSecondValues } from '../secondValues';
 import { lockSecret, readSecret } from '../secretEnvelope';
 import { EntityMetadata, TreeNode } from '../types';
 import { loadWithVscode } from './vscodeStub';
@@ -94,6 +97,11 @@ function stubbedVscode(inputs: (string | undefined)[], said: { infos: string[]; 
  * two save paths and `protectEntity` call is here, and each behaves as the real one does at the
  * one point that matters — `setPassword` keeps what is stored when handed nothing, so the "empty
  * means keep" rule the edit form relies on is honoured.
+ *
+ * <p>The three TYPED setters and getters are the real serialise-then-raw-write and raw-read-then-
+ * parse, since the entry-PIN plan. They were no-ops and constants here until 2026-09-29, which is
+ * exactly why no test could see D2 — an edit of a locked entry deleting its card, its second
+ * values and its login/URL — while the EDIT cases below ran green over a locked password.</p>
  */
 function memoryVault(nodes: TreeNode[], secrets: Map<string, string>): unknown {
   const key = (slot: string, id: string): string => `${slot}:${id}`;
@@ -168,16 +176,17 @@ function memoryVault(nodes: TreeNode[], secrets: Map<string, string>): unknown {
     getConfigBody: get('configBody'),
     setConfigBody: set('configBody'),
     getFieldsRaw: get('fieldsRaw'),
-    getSecondRaw: get('secondRaw'),
-    setSecondRaw: () => Promise.resolve(),
     setFieldsRaw: set('fieldsRaw'),
-    getFields: (): Promise<undefined> => Promise.resolve(undefined),
-    setFields: done,
+    getFields: async (a: string, id: string) => parseFields(await get('fieldsRaw')(a, id)),
+    setFields: (a: string, id: string, v: Parameters<typeof serializeFields>[0]) => set('fieldsRaw')(a, id, serializeFields(v)),
+    getSecondRaw: get('secondRaw'),
+    setSecondRaw: set('secondRaw'),
+    getSecond: async (a: string, id: string) => parseSecondValues(await get('secondRaw')(a, id)),
+    setSecond: (a: string, id: string, v: Parameters<typeof serializeSecondValues>[0]) => set('secondRaw')(a, id, serializeSecondValues(v)),
     getPaymentRaw: get('paymentRaw'),
     setPaymentRaw: set('paymentRaw'),
-    setPayment: done,
-    setSecond: done,
-    getSecond: () => Promise.resolve({}),
+    getPayment: async (a: string, id: string) => parsePaymentFields(await get('paymentRaw')(a, id)),
+    setPayment: (a: string, id: string, v: Parameters<typeof serializePaymentFields>[0]) => set('paymentRaw')(a, id, serializePaymentFields(v)),
     getAttachment: get('attachment'),
     setAttachment: set('attachment'),
     getImage: get('image'),
@@ -349,14 +358,19 @@ interface EditWorld {
   said: Said;
 }
 
-/** The real `editNode` over the memory vault, with the stored password given and the form's answer fixed. */
-function editWorld(stored: Record<string, string>, details: EntityMetadata, newPassword?: string): EditWorld {
+/**
+ * The real `editNode` over the memory vault, with the stored password given and the form's answer
+ * fixed. `pinInputs` answers the door: since the entry-PIN plan, Edit on an entry with a locked slot
+ * asks for the PIN first (D2), so the two EDIT cases over a locked password queue it — updated
+ * deliberately, not weakened; what they assert about the bindings is unchanged.
+ */
+function editWorld(stored: Record<string, string>, details: EntityMetadata, newPassword?: string, pinInputs: string[] = []): EditWorld {
   const said: Said = { infos: [], warnings: [] };
   const env = fakeEnv();
   const secrets = new Map<string, string>(Object.entries(stored).map(([slot, value]) => [`${slot}:e1`, value]));
   const node = { id: 'e1', name: 'prod-db', type: 'entity', parentId: null, details: { ...details, envBindings: details.envBindings } } as TreeNode;
   const nodes: TreeNode[] = [node];
-  const mod = loadWithVscode<typeof import('../entityEditCommands')>('../entityEditCommands', stubbedVscode([], said), {
+  const mod = loadWithVscode<typeof import('../entityEditCommands')>('../entityEditCommands', stubbedVscode([...pinInputs], said), {
     './entityFormPanel': {
       showEntityForm: (): Promise<EntityFormValues> => Promise.resolve(formResult(details, newPassword)),
     },
@@ -388,7 +402,7 @@ test('EDIT that leaves a PIN-locked password alone: nothing is written and the r
   // D2 — the form carried no password ("empty means keep"), storage holds a locked envelope, and
   // the binding used to be skipped without a word.
   const locked = await lockSecret('hunter2', 'a1', '1234');
-  const w = editWorld({ password: locked }, DETAILS, undefined);
+  const w = editWorld({ password: locked }, DETAILS, undefined, ['1234']);
 
   await w.editNode();
 
@@ -399,9 +413,12 @@ test('EDIT that leaves a PIN-locked password alone: nothing is written and the r
 });
 
 test('EDIT with one writable and one withheld binding says both', async () => {
+  // The entry carries NO `pinProtected` mark — a locked password inside an unmarked entry, the
+  // half-state the mark fallback exists for — so the public key, which only the mark can withhold,
+  // is still written. `editProtected.test.ts` has the marked case, where it is not.
   const locked = await lockSecret('hunter2', 'a1', '1234');
   const details = { ...DETAILS, envBindings: { password: 'PROD_PW', publicKey: 'PUB' }, publicKey: 'ssh-ed25519 BBBB' } as EntityMetadata;
-  const w = editWorld({ password: locked }, details, undefined);
+  const w = editWorld({ password: locked }, details, undefined, ['1234']);
 
   await w.editNode();
 

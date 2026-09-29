@@ -256,12 +256,27 @@ const ROUND_TRIPS: Record<string, (message: FormMessage, options: EntityFormOpti
  * where that can be observed (`entityFormPanel.test.ts`).</p>
  */
 export async function agreed(data: Record<string, unknown>, options: EntityFormOptions): Promise<boolean> {
-  return (
-    passwordPairAccepted(data)
-    && (await paymentGates(data, options))
-    && (await confirmInvalidSave(data, options))
-    && (await confirmUnwovenSave(data, options))
-  );
+  // A list rather than a chain of `&&`: the fifth gate took the chain past the complexity ceiling,
+  // and a list reads as what the comment above says — every gate, in order, the first refusal ends it.
+  const gates: readonly (() => boolean | Promise<boolean>)[] = [
+    () => passwordPairAccepted(data),
+    () => paymentGates(data, options),
+    () => confirmInvalidSave(data, options),
+    () => confirmUnwovenSave(data, options),
+    // LAST: the caller's own check — a protected entry's PIN at Save (`EntityFormOptions.beforeSave`).
+    () => beforeSaveAgreed(options),
+  ];
+  for (const gate of gates) {
+    if (!(await gate())) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/** The caller's gate when it has one; a form with none saves as it always did. */
+function beforeSaveAgreed(options: EntityFormOptions): Promise<boolean> {
+  return options.beforeSave === undefined ? Promise.resolve(true) : options.beforeSave();
 }
 
 /**

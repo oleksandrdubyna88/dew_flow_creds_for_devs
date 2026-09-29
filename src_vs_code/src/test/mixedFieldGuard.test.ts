@@ -100,13 +100,22 @@ test('the refusal reads correctly for one field and for several', () => {
  * test that reads the source rather than trusting a comment.</p>
  */
 test('editNode passes the stored payment record into the form', () => {
+  // Since the entry-PIN plan (2026-09-29) the record is read by `openEntryForEdit`, BEHIND the door
+  // — a protected card used to reach this line as `{}` through the typed getter and be deleted on
+  // Save (D2). The pins below are updated deliberately: the door, then the opened prefill, then the
+  // form, in that order in the source.
   const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'entityEditCommands.ts'), 'utf8');
 
-  assert.match(source, /getPaymentRaw\(/, 'the stored record is read');
+  assert.match(source, /admitEntry\(/, 'the door is asked');
+  assert.match(source, /openEntryForEdit\(/, 'the stored record is read, opened');
   assert.match(source, /initialPayment:/, 'and handed to the form — without this the form opens blank');
   assert.ok(
-    source.indexOf('getPaymentRaw(') < source.indexOf('initialPayment:'),
-    'read before it is passed, or it is passed a promise',
+    source.indexOf('admitEntry(') < source.indexOf('openEntryForEdit('),
+    'the door before the read, or a locked record is read as {}',
+  );
+  assert.ok(
+    source.indexOf('openEntryForEdit(') < source.indexOf('showEntityForm('),
+    'read before the form is shown, or it is passed a promise',
   );
 });
 

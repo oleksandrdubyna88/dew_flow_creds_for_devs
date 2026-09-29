@@ -86,12 +86,22 @@ export function notForExportViewNote(marked: boolean): string {
     : '';
 }
 
-/** A PIN, stated — with where to change it, and what it costs to forget it. */
+/**
+ * A PIN, stated — with where to change it, and what it costs to forget it.
+ *
+ * <p>Every sentence here is a promise the product keeps, checked by `generalNotes.test.ts`. Until
+ * the entry-PIN plan (D17) it made two it did not: that the person "was asked for it to open this
+ * form" — Edit asked nothing, and Save deleted what it could not read — and that "every secret this
+ * entry holds is wrapped", when the attachment and the image deliberately are not
+ * (`entitySlots.ts` says why). Now Edit does ask, Save seals, and the two slots outside the PIN are
+ * named.</p>
+ */
 export function pinState(d: EntityMetadata | undefined): string {
   return d?.pinProtected !== true
     ? ''
-    : `<p class="hint woven"><b>PIN — on.</b> Every secret this entry holds is wrapped under a
-       PIN of its own, and you were asked for it to open this form. Nothing automatic can use this
-       entry while that is true, and agents do not see it at all. Right-click the entry in the tree
-       for <i>Remove PIN Protection…</i>. There is no recovery for a forgotten PIN.</p>`;
+    : `<p class="hint woven"><b>PIN — on.</b> Every secret this entry holds — all but its attachment
+       and image — is wrapped under a PIN of its own, and this form was opened with it. Saving seals
+       every value you change under the same PIN. Nothing automatic can use this entry while that is
+       true, and agents do not see it at all. Right-click the entry in the tree for
+       <i>Remove PIN Protection…</i>. There is no recovery for a forgotten PIN.</p>`;
 }

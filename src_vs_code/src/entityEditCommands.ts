@@ -1,10 +1,6 @@
-/* eslint-disable complexity, max-lines-per-function -- moved verbatim out of extension.ts (roadmap A1, 2026-08-28):
-   the ceilings are a boundary for NEW code here; each function meets them when it is next touched for a reason of its own. */
-export type DoorsFor = (accountId: string, node: TreeNode) => Partial<Pick<EntityFormOptions, 'agentDoors' | 'entityTarget'>>;
-
 import * as vscode from 'vscode';
 import { hasMixedField, mixedEditRefusal } from './mixedFieldGuard';
-import { parsePaymentFields } from './paymentFields';
+import { PaymentFields, parsePaymentFields } from './paymentFields';
 import { TreeNode } from './types';
 import { McpAskPolicy, answersLadder, entriesUnder, inheritedAskFor, resolveMcpInTree } from './mcpAccess';
 import { StorageManager } from './storageManager';
@@ -21,7 +17,7 @@ import { newEntryOs } from './hostShell';
 import { hostKeyFingerprint } from './hostKeyPin';
 import { snapshotForRevision } from './revisionSnapshot';
 import { carryThroughDetails } from './attachmentMeta';
-import { applyAdditions, applyRemovals } from './applyFormSecrets';
+import { SecretWriter, applyAdditions, applyRemovals } from './applyFormSecrets';
 import { warnIfTrackedCopy } from './configCommands';
 import { applyEnvBindings } from './envApply';
 import { heldEnvValues } from './envBinding';
@@ -29,8 +25,29 @@ import { showFolderForm } from './folderFormPanel';
 import { isInTrash } from './trash';
 import { KeyCandidate } from './entityFormPanel';
 import { EntityMetadata } from './types';
-import type { EntityFormOptions } from './entityFormPanel';
+import type { EntityFormOptions, EntityFormValues } from './entityFormPanel';
 import { envCollection, showEnvNotice } from './envCollectionRef';
+import { EditPrefill, openEntryForEdit, pinForSave, sealedWriter } from './editPrefill';
+import { protectEntity } from './entityPin';
+import { parseFields } from './entityFields';
+import { PinGate } from './pinGate';
+import { admitEntry } from './pinPrompt';
+import { parseSecondValues } from './secondValues';
+import { describeError } from './describeError';
+
+export type DoorsFor = (accountId: string, node: TreeNode) => Partial<Pick<EntityFormOptions, 'agentDoors' | 'entityTarget'>>;
+
+/**
+ * Edit an entry, or a folder.
+ *
+ * <p>For an entry, since the entry-PIN plan (2026-09-29, D2-D5), the sequence is a DOOR first:
+ * `admitEntry` asks a protected entry's PIN once, `openEntryForEdit` opens what the form prefills
+ * (a damaged value is a refusal, never text in a box), the woven-field guard sees the REAL record,
+ * the form is shown, and the save seals every changed value under the same PIN before writing it,
+ * carries the mark, and hands the terminal bindings the marked details. Until then Edit asked
+ * nothing: the form opened over `{}` and Save deleted the card, the second values and a
+ * credential's login/URL of every protected entry it touched.</p>
+ */
 export async function editNode(
   accountId: string,
   node: TreeNode,
@@ -42,59 +59,111 @@ export async function editNode(
     await editFolder(accountId, node, storage, onMutated);
     return;
   }
+  if (node.details === undefined) {
+    return;
+  }
+  await editEntry({ accountId, node, details: node.details, storage, onMutated, doorsFor });
+}
 
-  if (!node.details) {
+/** What every step of an entry edit is handed. */
+interface EditContext {
+  readonly accountId: string;
+  readonly node: TreeNode;
+  readonly details: EntityMetadata;
+  readonly storage: StorageManager;
+  readonly onMutated: () => void;
+  readonly doorsFor: DoorsFor;
+}
+
+/** The gate that admitted the entry, and what was opened behind it. */
+interface Door {
+  readonly gate: PinGate;
+  readonly prefill: EditPrefill;
+}
+
+/**
+ * Rule R1 — one door per click. Declined: nothing happens and nothing more is said. Refused — a
+ * wrong PIN, or a value nothing can read (R4) — the reason is said, and the form does not open, so
+ * nothing can overwrite what could not be read.
+ */
+async function openForEdit(ctx: EditContext): Promise<Door | undefined> {
+  const gate = await admitEntry(ctx.storage, ctx.accountId, ctx.node.id, ctx.node.name, 'edit it');
+  if (gate === undefined) {
+    return undefined;
+  }
+  const opened = await openEntryForEdit(ctx.storage, ctx.accountId, ctx.node.id, gate);
+  if (opened.kind === 'refused') {
+    sayRefusal(opened.reason);
+    return undefined;
+  }
+  return { gate, prefill: opened.prefill };
+}
+
+/** A refusal with no words is a decline, and a decline says nothing more. */
+function sayRefusal(reason: string): void {
+  if (reason !== '') {
+    warn(`${reason} Edit is not opened, so nothing can overwrite it.`);
+  }
+}
+
+/** The door, the woven-field guard over the REAL record, the form, the save — each refusal ends it. */
+async function editEntry(ctx: EditContext): Promise<void> {
+  const door = await openForEdit(ctx);
+  if (door === undefined) {
     return;
   }
   // A record with a woven field has no original to put in the form — editing it would weave the woven
   // value a SECOND time and destroy it, silently, one save at a time. The menu item is hidden by a
   // context token as well; this is the guarantee, because a command can also be reached from the
-  // palette, a keybinding, or another extension. See `mixedFieldGuard.ts`.
-  const storedPayment = parsePaymentFields(await storage.getPaymentRaw(accountId, node.id));
+  // palette, a keybinding, or another extension. See `mixedFieldGuard.ts`. Asked of the OPENED record:
+  // a locked one read as `{}` here and walked straight past the guard.
+  const storedPayment = parsePaymentFields(door.prefill.paymentRaw);
   if (hasMixedField(storedPayment)) {
-    void vscode.window.showWarningMessage(mixedEditRefusal(storedPayment));
+    warn(mixedEditRefusal(storedPayment));
     return;
   }
-  const storedHostKey = parseHostKey(node.details.hostKey);
-  // The form is told a seed exists and how it is configured — never the seed itself.
-  const storedTotp = await storage.getTotp(accountId, node.id);
-  const storedTotpParsed = storedTotp === undefined ? undefined : parseTotpSecret(storedTotp);
-  const storedTotpDescription =
-    storedTotpParsed === undefined ? undefined : describeTotp(storedTotpParsed.config);
+  const result = await showEntityForm(await editFormOptions(ctx, door, storedPayment));
+  if (result === undefined) {
+    return;
+  }
+  await saveEdit(ctx, door, result);
+}
+
+/** Everything the form is given — the opened values, the facts about what it is not given, the candidates. */
+async function editFormOptions(ctx: EditContext, door: Door, storedPayment: PaymentFields): Promise<EntityFormOptions> {
+  const { accountId, node, details, storage } = ctx;
+  const { prefill } = door;
+  const storedHostKey = parseHostKey(details.hostKey);
+  const storedTotpDescription = totpDescriptionOf(prefill.totp);
   // ONE read, and both answers come from it: the record itself (so an untouched box keeps what is
-  // stored) and the fact that a second password exists (so the form offers to CLEAR it). Two reads
-  // were two chances for the flag and the record to describe different states.
-  const entrySeconds = await storage.getSecond(accountId, node.id);
-  const result = await showEntityForm({
+  // stored) and the fact that a second password exists (so the form offers to CLEAR it).
+  const storedSecond = parseSecondValues(prefill.secondRaw);
+  return {
     initialPayment: storedPayment,
     mode: 'edit',
     entityId: node.id,
-    initial: node.details,
+    initial: details,
     lockedKind: folderKindOf(storage, accountId, node.parentId ?? null),
-    hasStoredPassword: (await storage.getPassword(accountId, node.id)) !== undefined,
+    hasStoredPassword: prefill.hasPassword,
     // The record itself, because an untouched box KEEPS what is stored and the save needs to know
     // what that is. It reaches the panel and stops there: nothing stored is written into the page.
-    storedSecond: entrySeconds,
-    hasStoredSecondPassword: entrySeconds.password2 !== undefined,
-    hasStoredPrivateKey: (await storage.getPrivateKey(accountId, node.id)) !== undefined,
+    storedSecond,
+    hasStoredSecondPassword: storedSecond.password2 !== undefined,
+    hasStoredPrivateKey: prefill.hasPrivateKey,
     hasStoredAttachment: (await storage.getAttachment(accountId, node.id)) !== undefined,
     createdAt: node.createdAt,
     updatedAt: node.updatedAt,
     hasStoredImage: (await storage.getImage(accountId, node.id)) !== undefined,
     // T27: the edit form shows WHAT is stored, not only that something is.
-    imageDataUri: await (async () => {
-      const b64 = await storage.getImage(accountId, node.id);
-      const mime = node.details?.imageFileName === undefined ? undefined : imageMime(node.details.imageFileName);
-      return b64 !== undefined && mime !== undefined ? `data:${mime};base64,${b64}` : undefined;
-    })(),
-    hasStoredVpnConfig: (await storage.getVpnConfig(accountId, node.id)) !== undefined,
-    hasStoredDbConnection: (await storage.getDbConnection(accountId, node.id)) !== undefined,
-    initialDbConnection: await storage.getDbConnection(accountId, node.id),
-    initialNotes: (await storage.getNotes(accountId, node.id)) ?? node.details?.notes,
-    initialFields: await storage.getFields(accountId, node.id),
+    imageDataUri: await imageDataUriOf(storage, accountId, details),
+    hasStoredVpnConfig: prefill.hasVpnConfig,
+    hasStoredDbConnection: prefill.dbConnection !== undefined,
+    initialDbConnection: prefill.dbConnection,
+    initialNotes: prefill.notes ?? details.notes,
+    initialFields: parseFields(prefill.fieldsRaw),
     // Prefilled, unlike the password and the key: a config is a document somebody opens Edit to
     // change one line of, and a blank box would make every edit a retype from memory.
-    initialConfigBody: await storage.getConfigBody(accountId, node.id),
+    initialConfigBody: prefill.configBody,
     hasStoredTotp: storedTotpDescription !== undefined,
     storedTotpDescription,
     keyCandidates: await collectKeyCandidates(storage, accountId, node.id),
@@ -109,57 +178,133 @@ export async function editNode(
     // and the same one-line `byId` the folder branch uses, so the two forms cannot come to disagree
     // about one ancestry.
     inheritedAsk: named(inheritedAskFor(node, (id) => storage.getNode(accountId, id))),
-    ...doorsFor(accountId, node),
-  });
-  if (result === undefined) {
+    beforeSave: saveGateFor(storage, door),
+    ...ctx.doorsFor(accountId, node),
+  };
+}
+
+/**
+ * The form's LAST gate for a protected entry: the PIN, re-checked at Save (`pinForSave`). A decline
+ * keeps the form open with everything typed. It only gates — the save fetches the PIN it seals with
+ * for itself, a moment later, so a form that never ran this gate still cannot write in the clear.
+ */
+function saveGateFor(storage: StorageManager, door: Door): EntityFormOptions['beforeSave'] {
+  return door.prefill.locked ? () => pinForSave(storage, door.gate, warn).then((pin) => pin !== undefined) : undefined;
+}
+
+/** The form is told a seed exists and how it is configured — never the seed itself. */
+function totpDescriptionOf(seed: string | undefined): string | undefined {
+  const parsed = seed === undefined ? undefined : parseTotpSecret(seed);
+  return parsed === undefined ? undefined : describeTotp(parsed.config);
+}
+
+async function imageDataUriOf(storage: StorageManager, accountId: string, details: EntityMetadata): Promise<string | undefined> {
+  const b64 = await storage.getImage(accountId, details.id);
+  const mime = details.imageFileName === undefined ? undefined : imageMime(details.imageFileName);
+  return b64 !== undefined && mime !== undefined ? `data:${mime};base64,${b64}` : undefined;
+}
+
+function warn(message: string): void {
+  void vscode.window.showWarningMessage(message);
+}
+
+/** Whether this save seals, and with what — or that it must not happen at all. */
+type Sealing = { readonly kind: 'plain' } | { readonly kind: 'sealed'; readonly pin: string } | { readonly kind: 'stopped' };
+
+/**
+ * The PIN a protected entry's save seals with, fetched at the moment of use (`pinForSave`): the
+ * window's grant when it still opens the entry, a fresh question when it does not. `stopped` means
+ * the person declined, or was told why — and the form has already closed, so what was typed is
+ * gone; the gate above makes that a moment's race, not the ordinary road.
+ */
+async function sealingFor(ctx: EditContext, door: Door): Promise<Sealing> {
+  if (!door.prefill.locked) {
+    return { kind: 'plain' };
+  }
+  const pin = await pinForSave(ctx.storage, door.gate, warn);
+  return pin === undefined ? { kind: 'stopped' } : { kind: 'sealed', pin };
+}
+
+async function saveEdit(ctx: EditContext, door: Door, result: EntityFormValues): Promise<void> {
+  const sealing = await sealingFor(ctx, door);
+  if (sealing.kind === 'stopped') {
     return;
   }
-  // Snapshot what is there before it is replaced — the whole point of history is being
-  // able to see what a change changed, which is only knowable from the old state.
+  const writer: SecretWriter =
+    sealing.kind === 'sealed' ? sealedWriter(ctx.storage, ctx.accountId, ctx.node.id, sealing.pin, door.prefill) : ctx.storage;
+  const written = await writeEdit(ctx, result, writer, sealing);
+  if (written === undefined) {
+    return;
+  }
+  await afterSave(ctx, result, written);
+}
+
+/**
+ * The writes, in the one order that keeps the invariant: an orphaned secret is the only torn state
+ * allowed to exist. The snapshot first — the whole point of history is being able to see what a
+ * change changed, which is only knowable from the old state. Then ADDITIONS, so the node never
+ * claims a value that was not written; then the node; then REMOVALS, so no node outlives a value it
+ * still claims. Two rounds of the plan gate shaped this, including finding that the first version
+ * of the rule destroyed data on delete and that a single `applySecrets` call cannot be right for a
+ * save that both adds and clears.
+ *
+ * <p>For a protected entry every addition goes through the sealing writer, and `protectEntity` runs
+ * afterwards as an idempotent sweep. A seal that throws part-way leaves every slot either sealed or
+ * not yet written, never plaintext — which is what the sentence says.</p>
+ */
+async function writeEdit(
+  ctx: EditContext,
+  result: EntityFormValues,
+  writer: SecretWriter,
+  sealing: Sealing,
+): Promise<EntityMetadata | undefined> {
+  const { accountId, node, storage } = ctx;
   await storage.recordRevision(
     accountId,
     node.id,
-    await snapshotForRevision(storage, accountId, {
-      id: node.id,
-      name: node.name,
-      details: node.details,
-    }),
+    await snapshotForRevision(storage, accountId, { id: node.id, name: node.name, details: ctx.details }),
   );
-  // The three writes, in the one order that keeps the invariant: an orphaned secret is the only torn
-  // state allowed to exist. ADDITIONS first, so the node never claims a value that was not written;
-  // then the node; then REMOVALS, so no node outlives a value it still claims. Two rounds of the plan
-  // gate shaped this, including finding that the first version of the rule destroyed data on delete
-  // and that a single `applySecrets` call cannot be right for a save that both adds and clears.
-  await applyAdditions(storage, accountId, node.id, result);
-  await storage.updateNodeFields(accountId, node.id, {
-    name: result.details.name,
-    details: carryThroughDetails(
-      result,
-      node.details,
-      storage.getAccount(accountId)?.email,
-      Date.now(),
-    ),
-  });
-  await applyRemovals(storage, accountId, node.id, result);
+  // The form's answer plus everything an edit must not lose — the PIN mark among it (D3).
+  const written = carryThroughDetails(result, ctx.details, storage.getAccount(accountId)?.email, Date.now());
+  try {
+    await applyAdditions(writer, accountId, node.id, result);
+    await storage.updateNodeFields(accountId, node.id, { name: result.details.name, details: written });
+    await applyRemovals(storage, accountId, node.id, result);
+    await sweepIfSealed(ctx, sealing);
+  } catch (error) {
+    warn(
+      `Saving "${node.name}" stopped part-way: ${describeError(error)}. Nothing was stored in the clear; `
+      + 'open it again to check what was saved.',
+    );
+    return undefined;
+  }
+  return written;
+}
+
+/** Idempotent, and cheap when everything is already sealed: it reads the slots and wraps only a plain one. */
+async function sweepIfSealed(ctx: EditContext, sealing: Sealing): Promise<void> {
+  if (sealing.kind === 'sealed') {
+    await protectEntity(ctx.storage, ctx.accountId, ctx.node.id, sealing.pin);
+  }
+}
+
+/**
+ * After the secrets land, so the values written are the ones just saved — and FROM the values the
+ * form carried, so a field the person just typed is written from what they typed, while a field
+ * they left alone is read from storage and, if that value is PIN-locked, reported as withheld
+ * rather than skipped (issue #48). The WRITTEN details, not the form's: the form's carry no PIN
+ * mark, and the mark is what withholds a value the wrap cannot (D5). The old bindings are passed so
+ * a renamed or switched-off variable is deleted, not orphaned. What was written and what was not is
+ * SAID: the checkbox used to write in silence, and the person looked at an already-open terminal
+ * and saw nothing.
+ */
+async function afterSave(ctx: EditContext, result: EntityFormValues, written: EntityMetadata): Promise<void> {
   void warnIfTrackedCopy(result.details);
-  await applyDependencyColors(storage, accountId, result.dependsOnColors);
-  // AFTER the secrets land, so the values written are the ones just saved — and FROM the values the
-  // form carried, so a field the person just typed is written from what they typed, while a field
-  // they left alone is read from storage and, if that value is PIN-locked, reported as withheld
-  // rather than skipped (issue #48). The old bindings are passed so a renamed or switched-off
-  // variable is deleted, not orphaned. What was written and what was not is SAID: the checkbox used
-  // to write in silence, and the person looked at an already-open terminal and saw nothing.
+  await applyDependencyColors(ctx.storage, ctx.accountId, result.dependsOnColors);
   showEnvNotice(
-    await applyEnvBindings(
-      envCollection(),
-      storage,
-      accountId,
-      result.details,
-      node.details.envBindings,
-      heldEnvValues(result),
-    ),
+    await applyEnvBindings(envCollection(), ctx.storage, ctx.accountId, written, ctx.details.envBindings, heldEnvValues(result)),
   );
-  onMutated();
+  ctx.onMutated();
 }
 
 /**
@@ -172,6 +317,7 @@ export async function editNode(
  * <p>An empty name leaves the folder alone rather than blanking it: the box comes back empty when
  * somebody clears it and saves, and a nameless folder is not a thing anyone asked for.</p>
  */
+// eslint-disable-next-line complexity -- moved verbatim out of extension.ts (roadmap A1, 2026-08-28); it meets the ceiling when it is next touched for a reason of its own
 export async function editFolder(
   accountId: string,
   node: TreeNode,
@@ -215,6 +361,7 @@ function named(
   return answer === undefined ? undefined : { ask: answer.ask, from: answer.from.name };
 }
 
+// eslint-disable-next-line complexity -- moved verbatim out of extension.ts (roadmap A1, 2026-08-28); it meets the ceiling when it is next touched for a reason of its own
 export async function collectKeyCandidates(
   storage: StorageManager,
   accountId: string,
@@ -256,10 +403,15 @@ export async function applyDependencyColors(
 ): Promise<void> {
   for (const pick of picks) {
     const target = storage.getNode(accountId, pick.targetId);
-    if (target?.details !== undefined && target.details.depColor !== pick.color) {
+    if (needsColor(target, pick.color)) {
       await storage.updateDetailsFields(accountId, target.id, { depColor: pick.color });
     }
   }
+}
+
+/** An entry that exists and does not already carry this colour — the only target worth a write. */
+function needsColor(target: TreeNode | undefined, color: string): target is TreeNode {
+  return target?.details !== undefined && target.details.depColor !== color;
 }
 
 /** Persist the password/private-key changes coming out of the form. */

@@ -108,6 +108,20 @@ test('EditingAConfigsName_KeepsItsCodeAccessKey — the bug this seam surfaced',
   assert.equal(converted.configKeyHash, undefined);
 });
 
+test('an edit never takes an entry\'s PIN mark off — the mark follows the values (D3)', () => {
+  // The form rebuilds `details` from an allow-list that knows nothing of `pinProtected`, so every
+  // Edit+Save dropped it: the row went :pinoff, Remove PIN Protection… disappeared while the slots
+  // stayed locked, and agents saw the entry again. A save never DECIDES protection; it carries it.
+  const old = { id: 'e', name: 'n', pinProtected: true } as EntityMetadata;
+
+  const renamed = carryThroughDetails({ details: { id: 'e', name: 'renamed' } as EntityMetadata }, old, 'a@b', 1);
+
+  assert.equal(renamed.pinProtected, true);
+  // And the other direction: an unprotected entry is not marked by the carry.
+  const plain = carryThroughDetails({ details: { id: 'e', name: 'renamed' } as EntityMetadata }, { id: 'e', name: 'n' } as EntityMetadata, 'a@b', 1);
+  assert.equal(plain.pinProtected, undefined);
+});
+
 test('the one description both pages render, "not recorded" included', () => {
   const stamped = describeAttachment(
     { id: 'e', name: 'n', imageSize: 2048, imageWidth: 10, imageHeight: 20, imageChangedAt: 0, imageChangedBy: 'x@y' } as EntityMetadata,
