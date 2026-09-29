@@ -37,6 +37,9 @@ test('an automatic path is REFUSED with a sentence, never a prompt and never an 
   assert.match(refusal, /prod-db/, 'it names the entry');
   assert.match(refusal, /cannot be used automatically/);
   assert.match(refusal, /remove the PIN protection/, 'and says what to do about it');
+  // D17: it used to send the person to "its General section", which has no such control.
+  assert.match(refusal, /right-click it and choose Remove PIN Protection…/, 'it names the command that exists, where it is');
+  assert.doesNotMatch(refusal, /General section/, 'the General section has no control that removes a PIN');
   assert.equal(automaticPinRefusal('hunter2', 'prod-db'), '', 'an ordinary value is handed over');
   assert.equal(automaticPinRefusal(undefined, 'prod-db'), '', 'and nothing stored is not a refusal');
 });

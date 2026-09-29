@@ -183,8 +183,10 @@ export function automaticPinRefusal(stored: string | undefined, entryName: strin
  * about. Two ways to know, one thing to say: a second wording would be two answers to one question.</p>
  */
 export function pinRefusalFor(entryName: string): string {
+  // D17: this used to end "from its General section", which has no such control — the command lives
+  // on the tree row's context menu, and the sentence now says so.
   return `"${entryName}" is protected with its own PIN, so it cannot be used automatically. Open the `
-    + 'entry and enter the PIN, or remove the PIN protection from its General section.';
+    + 'entry and enter the PIN, or remove the PIN protection: right-click it and choose Remove PIN Protection….';
 }
 
 /**
