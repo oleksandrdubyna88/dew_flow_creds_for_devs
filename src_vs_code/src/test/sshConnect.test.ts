@@ -227,3 +227,24 @@ test('an entity with NO credential at all still opens a terminal for an agent or
   assert.equal(w.sshTerminals.length, 1);
   assert.equal(w.sshTerminals[0].keyPath, undefined);
 });
+
+// Entry-PIN plan, D6: the human Connect opens every value through a CLICK opener — the owner's PIN is
+// asked — and a value its opener stopped connects with nothing.
+
+test('the human Connect resolves its credential through a click opener, never the automatic default', async () => {
+  const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS });
+
+  await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage' });
+
+  assert.equal(typeof w.openers[0], 'function', 'no opener: the resolver fell back to the automatic one, which refuses a protected key');
+});
+
+test('a credential whose PIN was declined opens no terminal and writes nothing', async () => {
+  const w = world({ source: { kind: 'stopped', reason: '', ownerName: 'deploy key' }, options: OPTIONS });
+
+  const opened = await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage' });
+
+  assert.equal(opened, false);
+  assert.deepEqual(w.materialised, []);
+  assert.equal(w.sshTerminals.length, 0, 'a terminal opened with no credential after the person said no');
+});

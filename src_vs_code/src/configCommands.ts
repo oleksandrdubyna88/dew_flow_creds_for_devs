@@ -1,5 +1,3 @@
-/* eslint-disable complexity -- moved verbatim out of extension.ts (roadmap A1, 2026-08-28):
-   the ceilings are a boundary for NEW code here; each function meets them when it is next touched for a reason of its own. */
 import { StorageManager } from './storageManager';
 import { TreeNode } from './types';
 import * as vscode from 'vscode';
@@ -12,6 +10,9 @@ import { EntityMetadata } from './types';
 import { configFileNameFor } from './configFile';
 import { isTrackedHere } from './gitTracked';
 import { trackedCopyWarning } from './configFile';
+import type { ConfigFormat } from './configFormat';
+import { clickOpener, clickedSecret } from './pinClick';
+import type { OpenedSecret } from './secretOpener';
 /**
  * What changed since the previous version of this config, by KEY.
  *
@@ -22,27 +23,71 @@ import { trackedCopyWarning } from './configFile';
  *
  * <p>Shown as a modal list of KEY NAMES and no values. A config holds connection strings and
  * passwords; which keys moved is the reviewable half and carries neither.</p>
+ *
+ * <p>Both bodies are OPENED first, through the entry's door (entry-PIN plan, D6/D18): a protected
+ * config was compared envelope against envelope, and the modal listed the wrap's own fields —
+ * `lock.sealed.data` and the rest — as the keys that had changed.</p>
  */
 export async function showConfigChanges(
   storage: StorageManager,
   accountId: string,
   node: TreeNode,
 ): Promise<void> {
-  const details = node.details;
-  const history = await storage.getHistory(accountId, node.id);
-  const previous = history[0]?.secrets.config;
-  if (details === undefined || previous === undefined) {
-    void vscode.window.showInformationMessage(`"${node.name}" has no previous version to compare with.`);
+  const compared = await comparedBodies(storage, accountId, node);
+  if (compared === undefined) {
     return;
   }
-  const current = (await storage.getConfigBody(accountId, node.id)) ?? '';
-  const changes = diffConfigs(details.configFormat ?? 'json', previous, current);
+  const changes = diffConfigs(compared.format, compared.previous, compared.current);
   void vscode.window.showInformationMessage(
-    `"${node.name}": ${summarizeChanges(changes)} since ${new Date(history[0].at).toLocaleString()}.`,
+    `"${node.name}": ${summarizeChanges(changes)} since ${new Date(compared.at).toLocaleString()}.`,
     { modal: true, detail: describeChanges(changes) },
   );
 }
 
+interface ComparedBodies {
+  readonly format: ConfigFormat;
+  readonly previous: string;
+  readonly current: string;
+  /** When the previous body was replaced. */
+  readonly at: number;
+}
+
+/** The newest kept body and today's, both opened — or nothing, having said why. */
+async function comparedBodies(storage: StorageManager, accountId: string, node: TreeNode): Promise<ComparedBodies | undefined> {
+  const details = node.details;
+  const newest = (await storage.getHistory(accountId, node.id))[0];
+  const previousRaw = newest?.secrets.config;
+  if (details === undefined || previousRaw === undefined) {
+    void vscode.window.showInformationMessage(`"${node.name}" has no previous version to compare with.`);
+    return undefined;
+  }
+  return openedBodies(storage, accountId, details, previousRaw, newest.at);
+}
+
+const COMPARE = 'compare it with its previous version';
+
+/** One door for both: the live body opens it, and the kept body is opened with the grant it left. */
+async function openedBodies(
+  storage: StorageManager,
+  accountId: string,
+  details: EntityMetadata,
+  previousRaw: string,
+  at: number,
+): Promise<ComparedBodies | undefined> {
+  const current = bodyText(await clickedSecret(storage, accountId, details, (s, a, e) => s.getConfigBody(a, e), COMPARE));
+  if (current === undefined) {
+    return undefined;
+  }
+  const previous = bodyText(await clickOpener(storage, accountId, COMPARE)(details, previousRaw));
+  return previous === undefined ? undefined : { format: details.configFormat ?? 'json', previous, current, at };
+}
+
+/** An opened body (an absent one is empty, as it always was); a stop is nothing — it has been said. */
+function bodyText(opened: OpenedSecret): string | undefined {
+  return opened.kind === 'open' ? (opened.value ?? '') : undefined;
+}
+
+// eslint-disable-next-line complexity -- moved verbatim out of extension.ts (roadmap A1); split when next touched
 export function addConfigHolder(
   found: ConfigHolder[],
   accountId: string,
@@ -80,6 +125,7 @@ export function collectConfigHolders(storage: StorageManager): ConfigHolder[] {
  * catches is quiet — the vault becomes a second place to keep the secrets rather than the place —
  * so a warning that arrives a moment late is still the whole value.</p>
  */
+// eslint-disable-next-line complexity -- moved verbatim out of extension.ts (roadmap A1); split when next touched
 export async function warnIfTrackedCopy(details: EntityMetadata): Promise<void> {
   const folder = vscode.workspace.workspaceFolders?.[0];
   if (details.isConfig !== true || folder === undefined) {

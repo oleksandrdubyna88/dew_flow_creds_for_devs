@@ -1,6 +1,3 @@
-/* eslint-disable complexity, max-lines-per-function -- command registrations moved verbatim out of extension.ts
-   (roadmap A1 stage 2, 2026-08-28): one function that registers a family of closures, each the size it
-   was. The ceilings are a boundary for NEW code here; a handler meets them when it is next touched. */
 import { TreeNode } from '../types';
 import { AgentDoors } from '../agentDoors';
 import { StorageManager } from '../storageManager';
@@ -27,6 +24,9 @@ import { withoutPassword } from '../dbConnString';
 import { openInDbExtension } from '../dbLauncher';
 import { TrustStore } from '../commandTrust';
 import { openEntrySite } from '../openSite';
+import { EntityMetadata } from '../types';
+import { SlotRead, clickedSecret, outsidePinNote } from '../pinClick';
+import type { OpenedSecret } from '../secretOpener';
 export interface EntityCommandsHost {
   readonly doorsAt: (accountId: string, node: TreeNode) => AgentDoors;
   readonly mutated: () => void;
@@ -37,9 +37,188 @@ export interface EntityCommandsHost {
   readonly trust: TrustStore;
 }
 
+/**
+ * The entity commands, registered in four families. Until the entry-PIN plan this was one function
+ * registering every closure, moved verbatim out of `extension.ts` under a file-level exemption; the
+ * handlers that hand a stored value to a sink were rewritten for D6 (each reads through
+ * `pinClick.clickedSecret` now), and the families that were not touched carry their exemption per
+ * function until they are.
+ */
 export function registerEntityCommands(host: EntityCommandsHost): void {
-  const { doorsAt, mutated, register, storage, storageDir, vaultKeys, trust } = host;
+  registerCommandLines(host);
+  registerSecretCopies(host);
+  registerTools(host);
+  registerFiles(host);
+}
 
+/** The clicked row as an entry of an account, or nothing for a folder, a header or a stale target. */
+function clickedEntry(target: unknown): { accountId: string; details: EntityMetadata } | undefined {
+  const element = asElement(target);
+  if (element?.kind !== 'node' || element.node.details === undefined) {
+    return undefined;
+  }
+  return { accountId: element.accountId, details: element.node.details };
+}
+
+/**
+ * One stored value of the clicked entry, opened for the click (rule R1) — or nothing, when there is no
+ * entry, the person declined the PIN, or a refusal has already been said. `missing` is said when the
+ * entry opened and holds no such value.
+ */
+async function clickedValue(
+  host: EntityCommandsHost,
+  target: unknown,
+  read: SlotRead,
+  purpose: string,
+  missing: (name: string) => string,
+): Promise<{ details: EntityMetadata; value: string } | undefined> {
+  host.vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+  const entry = clickedEntry(target);
+  if (entry === undefined) {
+    return undefined;
+  }
+  return presentValue(await clickedSecret(host.storage, entry.accountId, entry.details, read, purpose), entry.details, missing);
+}
+
+/** An opened value that is there; an absent one is said, a stopped one has been said already. */
+function presentValue(
+  opened: OpenedSecret,
+  details: EntityMetadata,
+  missing: (name: string) => string,
+): { details: EntityMetadata; value: string } | undefined {
+  if (opened.kind !== 'open') {
+    return undefined;
+  }
+  if (opened.value === undefined) {
+    void vscode.window.showWarningMessage(missing(details.name));
+    return undefined;
+  }
+  return { details, value: opened.value };
+}
+
+/** A value on the clipboard, with the TTL promise the notice makes. */
+async function copied(value: string, notice: string): Promise<void> {
+  await copySecret(vscode.env.clipboard, value);
+  void vscode.window.showInformationMessage(notice);
+}
+
+const readPassword: SlotRead = (s, a, e) => s.getPassword(a, e);
+const readDb: SlotRead = (s, a, e) => s.getDbConnection(a, e);
+const readTotp: SlotRead = (s, a, e) => s.getTotp(a, e);
+const readKey: SlotRead = (s, a, e) => s.getPrivateKey(a, e);
+
+/** Every click that copies or hands over a stored value — each through the entry's door (D6). */
+function registerSecretCopies(host: EntityCommandsHost): void {
+  host.register('credSshManager.copyPassword', async (target) => {
+    const got = await clickedValue(host, target, readPassword, 'copy its password', (name) => `"${name}" has no stored password.`);
+    if (got !== undefined) {
+      await copied(got.value, copiedMessage(`Password of "${got.details.name}"`));
+    }
+  });
+  // The current one-time code, computed from the stored seed at this moment. The seed itself never
+  // leaves SecretStorage; what lands on the clipboard expires twice — once when the period ends, once
+  // when the clipboard TTL clears it.
+  host.register('credSshManager.copyTotpCode', (target) => copyTotpCode(host, target));
+  host.register('credSshManager.copyDbConnectionNoPassword', async (target) => {
+    const got = await clickedValue(host, target, readDb, 'copy its connection string', () => 'No connection string stored for this entry.');
+    if (got !== undefined) {
+      await copied(withoutPassword(got.value), 'Connection string copied WITHOUT the password. It clears from the clipboard shortly.');
+    }
+  });
+  // Open a database entity in the matching DB extension — which says itself when there is no string.
+  host.register('credSshManager.connectDb', (target) => connectDb(host, target));
+  host.register('credSshManager.copyDbConnection', async (target) => {
+    const got = await clickedValue(host, target, readDb, 'copy its connection string', (name) => `"${name}" has no stored connection string.`);
+    if (got !== undefined) {
+      await copied(got.value, copiedMessage(`Connection string of "${got.details.name}"`));
+    }
+  });
+}
+
+async function connectDb(host: EntityCommandsHost, target: unknown): Promise<void> {
+  host.vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+  const entry = clickedEntry(target);
+  if (entry === undefined) {
+    return;
+  }
+  const opened = await clickedSecret(host.storage, entry.accountId, entry.details, readDb, 'connect');
+  if (opened.kind === 'open') {
+    await openInDbExtension(entry.details, opened.value);
+  }
+}
+
+/**
+ * The code, from the seed opened for the click. The "open Edit" hint in the refusal is safe to give
+ * now that Edit is gated too — until 1.12 a protected seed read as "no seed" here, and the hint steered
+ * the person into the one action that deleted it (D2).
+ */
+async function copyTotpCode(host: EntityCommandsHost, target: unknown): Promise<void> {
+  const noSeed = (name: string): string =>
+    `"${name}" has no one-time code seed — open Edit and paste the otpauth:// URI or the base32 secret.`;
+  const got = await clickedValue(host, target, readTotp, 'copy its one-time code', noSeed);
+  if (got === undefined) {
+    return;
+  }
+  const now = Date.now();
+  const snapshot = totpSnapshot(got.value, now);
+  if (snapshot === undefined) {
+    // A seed that opened and does not parse is "no seed", in the same words.
+    void vscode.window.showWarningMessage(noSeed(got.details.name));
+    return;
+  }
+  const secondsLeft = Math.ceil((snapshot.validUntil - now) / 1000);
+  await copied(snapshot.code, copiedMessage(`One-time code of "${got.details.name}" (valid for ${secondsLeft} s more)`));
+}
+
+/**
+ * The commands that write a stored value OUT — to `~/.ssh`, to a file of the person's choosing, to a
+ * tunnel. Each file written from a protected value says it is outside the PIN (`outsidePinNote`).
+ */
+function registerFiles(host: EntityCommandsHost): void {
+  const { register, storage, storageDir, vaultKeys, trust } = host;
+  register('credSshManager.installSshKey', (target) => installSshKey(host, target));
+  register('credSshManager.removeInstalledKey', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const entry = clickedEntry(target);
+    if (entry !== undefined) {
+      await removeInstalledKey(entry.details);
+    }
+  });
+  // Write the stored VPN config back out as a file.
+  register('credSshManager.saveVpnConfig', async (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const entry = clickedEntry(target);
+    if (entry !== undefined) {
+      await saveVpnConfigToFile(entry.accountId, entry.details, storage);
+    }
+  });
+  // Start and Stop side by side (Stop used to live in extension.ts). `trust` is the per-line record
+  // a launcher's command and a dependency chain are confirmed against (issue #103).
+  register('credSshManager.startVpn', (target) => runVpn(target, 'start', storage, storageDir, vaultKeys, trust));
+  register('credSshManager.stopVpn', (target) => runVpn(target, 'stop', storage, storageDir, vaultKeys, trust));
+}
+
+/**
+ * The key into `~/.ssh`. An ABSENT private key still goes on — a key entity with only its public half
+ * installs that half — so only a stopped door ends it here.
+ */
+async function installSshKey(host: EntityCommandsHost, target: unknown): Promise<void> {
+  host.vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+  const entry = clickedEntry(target);
+  if (entry === undefined) {
+    return;
+  }
+  const opened = await clickedSecret(host.storage, entry.accountId, entry.details, readKey, 'install its key');
+  if (opened.kind === 'open') {
+    await installKeyToSystem(entry.details, opened.value, outsidePinNote(opened));
+  }
+}
+
+/** A stored command line, copied or shown, the viewer and the site. Untouched since they moved out of extension.ts. */
+function registerCommandLines(host: EntityCommandsHost): void {
+  const { doorsAt, register, storage, vaultKeys } = host;
+
+  // eslint-disable-next-line complexity -- moved verbatim (roadmap A1); split when next touched
   register('credSshManager.copyCommand', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = await nodeAt(asElement(target), storage);
@@ -57,6 +236,7 @@ export function registerEntityCommands(host: EntityCommandsHost): void {
     void vscode.window.showInformationMessage(`Copied: ${line}`);
   });
 
+  // eslint-disable-next-line complexity -- moved verbatim (roadmap A1); split when next touched
   register('credSshManager.showCommand', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = await nodeAt(asElement(target), storage);
@@ -83,25 +263,6 @@ export function registerEntityCommands(host: EntityCommandsHost): void {
     await openEntityViewer(element.accountId, element.node, storage, doorsAt(element.accountId, element.node));
   });
 
-  register('credSshManager.copyPassword', async (target) => {
-    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = asElement(target);
-    if (element?.kind !== 'node' || !element.node.details) {
-      return;
-    }
-    const password = await storage.getPassword(element.accountId, element.node.details.id);
-    if (password === undefined) {
-      void vscode.window.showWarningMessage(
-        `"${element.node.name}" has no stored password.`,
-      );
-      return;
-    }
-    await copySecret(vscode.env.clipboard, password);
-    void vscode.window.showInformationMessage(
-      copiedMessage(`Password of "${element.node.name}"`),
-    );
-  });
-
   // Issue #104: the entry's stored URL in the default browser — http/https only (`siteUrl.ts`),
   // read through the PIN gate, re-judged now rather than trusted from the menu's hint.
   register('credSshManager.openSiteInBrowser', async (target) => {
@@ -111,32 +272,14 @@ export function registerEntityCommands(host: EntityCommandsHost): void {
       await openEntrySite(storage, element.accountId, element.node.details);
     }
   });
+}
 
-  // The current one-time code, computed from the stored seed at this moment. The seed
-  // itself never leaves SecretStorage; what lands on the clipboard expires twice — once
-  // when the period ends, once when the clipboard TTL clears it.
-  register('credSshManager.copyTotpCode', async (target) => {
-    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = asElement(target);
-    if (element?.kind !== 'node' || !element.node.details) {
-      return;
-    }
-    const now = Date.now();
-    const snapshot = totpSnapshot(await storage.getTotp(element.accountId, element.node.details.id), now);
-    if (snapshot === undefined) {
-      void vscode.window.showWarningMessage(
-        `"${element.node.name}" has no one-time code seed — open Edit and paste the otpauth:// URI or the base32 secret.`,
-      );
-      return;
-    }
-    await copySecret(vscode.env.clipboard, snapshot.code);
-    const secondsLeft = Math.ceil((snapshot.validUntil - now) / 1000);
-    void vscode.window.showInformationMessage(
-      copiedMessage(`One-time code of "${element.node.name}" (valid for ${secondsLeft} s more)`),
-    );
-  });
+/** The switch, the health report and the generator. Untouched since they moved out of extension.ts. */
+function registerTools(host: EntityCommandsHost): void {
+  const { mutated, register, storage, vaultKeys } = host;
 
   // Per-entry SSH on/off switch (default is off for new entities).
+  // eslint-disable-next-line complexity -- moved verbatim (roadmap A1); split when next touched
   register('credSshManager.toggleSsh', async (target) => {
     const element = asElement(target);
     if (element?.kind !== 'node' || !element.node.details) {
@@ -187,89 +330,4 @@ export function registerEntityCommands(host: EntityCommandsHost): void {
     await copySecret(vscode.env.clipboard, made.value);
     void vscode.window.showInformationMessage(`${made.description} ${copiedMessage('It')}`);
   });
-
-  register('credSshManager.installSshKey', async (target) => {
-    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = asElement(target);
-    if (element?.kind !== 'node' || !element.node.details) {
-      return;
-    }
-    const privateKey = await storage.getPrivateKey(element.accountId, element.node.details.id);
-    await installKeyToSystem(element.node.details, privateKey);
-  });
-
-  // Write the stored VPN config back out as a file.
-  register('credSshManager.removeInstalledKey', async (target) => {
-    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = asElement(target);
-    if (element?.kind !== 'node' || !element.node.details) {
-      return;
-    }
-    await removeInstalledKey(element.node.details);
-  });
-
-  register('credSshManager.saveVpnConfig', async (target) => {
-    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = asElement(target);
-    if (element?.kind !== 'node' || !element.node.details) {
-      return;
-    }
-    await saveVpnConfigToFile(element.accountId, element.node.details, storage);
-  });
-
-  // Start and Stop side by side (Stop used to live in extension.ts). `trust` is the per-line record
-  // a launcher's command and a dependency chain are confirmed against (issue #103).
-  register('credSshManager.startVpn', (target) => runVpn(target, 'start', storage, storageDir, vaultKeys, trust));
-  register('credSshManager.stopVpn', (target) => runVpn(target, 'stop', storage, storageDir, vaultKeys, trust));
-
-  // Open a database entity in the matching DB extension.
-  register('credSshManager.copyDbConnectionNoPassword', async (target) => {
-    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = asElement(target);
-    if (element?.kind !== 'node' || !element.node.details) {
-      return;
-    }
-    const conn = await storage.getDbConnection(element.accountId, element.node.details.id);
-    if (conn === undefined) {
-      void vscode.window.showWarningMessage('No connection string stored for this entry.');
-      return;
-    }
-    await copySecret(vscode.env.clipboard, withoutPassword(conn));
-    void vscode.window.showInformationMessage(
-      'Connection string copied WITHOUT the password. It clears from the clipboard shortly.',
-    );
-  });
-
-  register('credSshManager.connectDb', async (target) => {
-    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = asElement(target);
-    if (element?.kind !== 'node' || !element.node.details) {
-      return;
-    }
-    const connectionString = await storage.getDbConnection(
-      element.accountId,
-      element.node.details.id,
-    );
-    await openInDbExtension(element.node.details, connectionString);
-  });
-
-  register('credSshManager.copyDbConnection', async (target) => {
-    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = asElement(target);
-    if (element?.kind !== 'node' || !element.node.details) {
-      return;
-    }
-    const value = await storage.getDbConnection(element.accountId, element.node.details.id);
-    if (value === undefined) {
-      void vscode.window.showWarningMessage(
-        `"${element.node.name}" has no stored connection string.`,
-      );
-      return;
-    }
-    await copySecret(vscode.env.clipboard, value);
-    void vscode.window.showInformationMessage(
-      copiedMessage(`Connection string of "${element.node.name}"`),
-    );
-  });
-
 }

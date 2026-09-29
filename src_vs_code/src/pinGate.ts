@@ -140,7 +140,8 @@ const WRONG_PIN =
   'That PIN does not open this entry. Nothing has been changed — try again, and remember there is '
   + 'no recovery for a forgotten entry PIN: the vault recovery code opens the VAULT, not an entry.';
 
-function corruptReason(entryName: string, why: string): string {
+/** The sentence a damaged wrap earns — exported so an automatic reader refuses one in the same words. */
+export function corruptReason(entryName: string, why: string): string {
   return (
     `"${entryName}" holds a protected value that cannot be read: ${why} Nothing has been changed, `
     + 'and nothing here will overwrite it — a damaged wrap is the only copy of what was there.'

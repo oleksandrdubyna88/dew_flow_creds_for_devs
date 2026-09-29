@@ -37,6 +37,8 @@ export interface Terminal {
 export interface World {
   mod: Connect;
   materialised: string[];
+  /** The opener each credential resolution was handed — a click opener on the human path (entry-PIN plan, D6). */
+  openers: unknown[];
   forgotten: string[];
   /** Terminals opened through `openSshTerminal`, with the key path each was given. */
   sshTerminals: { keyPath: string | undefined; options: unknown; platform?: string; prefix?: string }[];
@@ -75,6 +77,7 @@ export function world(parts: Parts): World {
   const w: World = {
     mod: undefined as never,
     materialised: [],
+    openers: [],
     forgotten: [],
     sshTerminals: [],
     created: [],
@@ -137,7 +140,10 @@ export function world(parts: Parts): World {
     },
     {
       './sshCredential': {
-        resolveSshCredential: (): Promise<unknown> => Promise.resolve(parts.source),
+        resolveSshCredential: (_s: unknown, _a: unknown, _e: unknown, open: unknown): Promise<unknown> => {
+          w.openers.push(open);
+          return Promise.resolve(parts.source);
+        },
       },
       './connectionOptions': {
         connectionOptions: (): Promise<unknown> => Promise.resolve(parts.options),

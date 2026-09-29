@@ -13,6 +13,7 @@ import {
   writeAskpassScriptFile,
 } from './keyInstaller';
 import { resolveSshCredential } from './sshCredential';
+import { clickOpener } from './pinClick';
 import { ConnectionOptions, connectionOptions } from './connectionOptions';
 import * as path from 'node:path';
 import { materializedKeysDir } from './materializedKeys';
@@ -152,9 +153,14 @@ export async function connectEntity(
     await offerToInstall('ssh');
     return false;
   }
-  const source = await resolveSshCredential(storage, accountId, entity);
+  // Every value opened by its OWNER through that entry's door (entry-PIN plan, D6): a borrowed key
+  // entity asks its own PIN. A stop has been said already, or the person declined.
+  const source = await resolveSshCredential(storage, accountId, entity, clickOpener(storage, accountId, 'connect'));
   if (source.warning !== undefined) {
     void vscode.window.showWarningMessage(source.warning);
+  }
+  if (source.kind === 'stopped') {
+    return false;
   }
 
   // The route decision comes BEFORE `connectionOptions`, which writes a known_hosts file, and

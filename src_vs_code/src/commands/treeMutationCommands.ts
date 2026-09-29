@@ -55,10 +55,7 @@ import { enableConfigAccess } from '../configAccess';
 import { updateConfigDetails } from '../entityEditCommands';
 import { revokeConfigAccess } from '../configAccess';
 import { showConfigChanges } from '../configCommands';
-import { writeConfigFile } from '../configWrite';
-import { configFileNameFor } from '../configFile';
-import { runBounded } from '../sshExecRunner';
-import { lockToOwner } from '../materializedKeys';
+import { writeStoredConfig } from '../configWrite';
 import { ServerTransport } from '../serverTransport';
 import { withdrawalMessage } from '../commandTargets';
 import { keyFingerprint } from '../shareSignature';
@@ -642,21 +639,7 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     if (element?.kind !== 'node' || element.node.details === undefined) {
       return;
     }
-    const body = await storage.getConfigBody(element.accountId, element.node.id);
-    if (body === undefined || body.length === 0) {
-      void vscode.window.showWarningMessage(`"${element.node.name}" has nothing in it yet.`);
-      return;
-    }
-    const details = element.node.details;
-    await writeConfigFile({
-      suggestedName: configFileNameFor(details.configFileName, details.configFormat ?? 'json', element.node.name),
-      body,
-      git: (args, cwd) =>
-        runBounded('git', [...args], false, { cwd, env: process.env, timeoutMs: 10_000 }).then(
-          (outcome) => outcome.exitCode,
-        ),
-      lock: lockToOwner,
-    });
+    await writeStoredConfig(storage, element.accountId, element.node.details);
   });
 
   /**

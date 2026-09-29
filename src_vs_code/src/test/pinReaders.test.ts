@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
+import * as world from './pinWorld';
 import { EntityMetadata } from '../types';
 import { lockSecret } from '../secretEnvelope';
 import { automaticPinRefusal, openStored, pinFieldRefusal, pinPromptFor, silentPinGate } from '../pinGate';
@@ -376,4 +377,36 @@ test('without a gate the payload is what is stored — an unprotected entry is u
   const payload = await mod.buildSharePayload(storage, ACCOUNT, node, false);
 
   assert.equal(payload.secrets.password, 'hunter2');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Entry-PIN plan, D7: the SSH broker's KEY branch. Only the password branch was gated (`byPassword`),
+// so an agent exec on a connection that borrows a protected key entity wrote the envelope to disk as
+// an SSH key — reached through `sshKeyEntityId`, which the agent surfaces never hide.
+// ---------------------------------------------------------------------------------------------
+
+test('the broker refuses a protected stored KEY, says why, and writes nothing to disk', async () => {
+  const s = world.sinks();
+  const storage = world.memoryStorage(world.clickVscode([], s));
+  const key = { id: 'key1', name: 'deploy key', kind: 'sshkey', isSshEnabled: false, pinProtected: true } as EntityMetadata;
+  const connection = { id: 'ssh1', name: 'prod box', host: 'h', user: 'u', isSshEnabled: true, sshKeyEntityId: 'key1' } as EntityMetadata;
+  await world.seedEntry(storage, key, { 'private key': await world.locked('-----BEGIN OPENSSH PRIVATE KEY-----\nk\n-----END OPENSSH PRIVATE KEY-----') });
+  await world.seedEntry(storage, connection, {});
+  const materialized: string[] = [];
+  const mod = loadWithVscode<typeof import('../sshExecAuth')>('../sshExecAuth', {}, {
+    './keyInstaller': {
+      materializePrivateKey: (dir: string, name: string, content: string): string => {
+        materialized.push(content);
+        return `${dir}/${name}`;
+      },
+      writeAskpassScriptFile: (dir: string): string => `${dir}/askpass.sh`,
+    },
+  });
+
+  const auth = await mod.resolveExecAuth(storage, world.ACCOUNT, connection, '/store');
+
+  assert.deepEqual(materialized, [], 'the sealed envelope was written to disk as an SSH key');
+  assert.equal(auth.ok, false);
+  assert.match(auth.ok ? '' : auth.message, /"deploy key" is protected with its own PIN, so it cannot be used automatically/);
+  assert.equal(s.boxes, 0, 'an automatic path never prompts');
 });

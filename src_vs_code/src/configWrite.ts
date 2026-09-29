@@ -1,14 +1,20 @@
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { ignoredArgv, trackedArgv, writeVerdict } from './configFile';
+import { configFileNameFor, ignoredArgv, trackedArgv, writeVerdict } from './configFile';
+import { lockToOwner } from './materializedKeys';
+import { clickedSecret, outsidePinNote } from './pinClick';
+import { runBounded } from './sshExecRunner';
+import type { StorageManager } from './storageManager';
+import { EntityMetadata } from './types';
 
 /**
  * The flow that puts a config on disk: ask where, ask git, ask the person, write, lock.
  *
  * <p>Thin on purpose. Every decision it makes — the file name, what git's two answers mean, the
  * words of the refusal — lives in `configFile.ts`, which imports no `vscode` and is therefore a
- * unit test. What is left here is the dialog and the bytes, and there is nothing in either worth
- * asserting that a test could reach.</p>
+ * unit test. What is left here is the dialog and the bytes — and, since the entry-PIN plan, the
+ * one line that matters most about the bytes: they are the OPENED body (`writeStoredConfig`,
+ * asserted in `pinClickPaths.test.ts`).</p>
  */
 
 /** Runs git and answers with its exit code. Injected, like the sync transport's runner. */
@@ -20,6 +26,50 @@ export interface ConfigWriteRequest {
   readonly git: GitProbe;
   /** Applied to the written file — this is a secret on disk, and the product already locks those. */
   readonly lock: (filePath: string) => void;
+  /** What the confirmation adds — for a protected entry, that the file is outside the PIN. */
+  readonly note?: string;
+}
+
+/** git, bounded — the probe *Write config file* has always used. */
+const boundedGit: GitProbe = (args, cwd) =>
+  runBounded('git', [...args], false, { cwd, env: process.env, timeoutMs: 10_000 }).then((outcome) => outcome.exitCode);
+
+/**
+ * *Write config file*: the entry's stored body, OPENED for the click (entry-PIN plan, D6), to a file
+ * the person picks. Until 1.12 a protected config was written out as its envelope — a file the
+ * application could not read, and a click that looked as if it had worked. Moved here from the
+ * command registration, so the tree-mutation module keeps a one-line call site.
+ */
+export async function writeStoredConfig(
+  storage: StorageManager,
+  accountId: string,
+  details: EntityMetadata,
+  git: GitProbe = boundedGit,
+): Promise<void> {
+  const opened = await openedBody(storage, accountId, details);
+  if (opened === undefined) {
+    return;
+  }
+  await writeConfigFile({
+    suggestedName: configFileNameFor(details.configFileName, details.configFormat ?? 'json', details.name),
+    body: opened.body,
+    git,
+    lock: lockToOwner,
+    note: opened.note,
+  });
+}
+
+/** The body and its note — or nothing, when the door stopped it or there is nothing to write (said). */
+async function openedBody(storage: StorageManager, accountId: string, details: EntityMetadata): Promise<{ body: string; note: string } | undefined> {
+  const opened = await clickedSecret(storage, accountId, details, (s, a, e) => s.getConfigBody(a, e), 'write its config file');
+  if (opened.kind !== 'open') {
+    return undefined;
+  }
+  if (opened.value === undefined || opened.value.length === 0) {
+    void vscode.window.showWarningMessage(`"${details.name}" has nothing in it yet.`);
+    return undefined;
+  }
+  return { body: opened.value, note: outsidePinNote(opened) };
 }
 
 export async function writeConfigFile(request: ConfigWriteRequest): Promise<void> {
@@ -35,7 +85,7 @@ export async function writeConfigFile(request: ConfigWriteRequest): Promise<void
   // written is the plaintext the vault exists to keep off disk, now deliberately on it.
   request.lock(target.fsPath);
   void vscode.window.showInformationMessage(
-    `Wrote ${path.basename(target.fsPath)}. It holds real secrets now — keep it out of the repository.`,
+    `Wrote ${path.basename(target.fsPath)}. It holds real secrets now — keep it out of the repository.${request.note ?? ''}`,
   );
 }
 
