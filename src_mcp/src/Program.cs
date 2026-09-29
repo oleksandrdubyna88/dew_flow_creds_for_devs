@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using CredsBroker;
 using ModelContextProtocol.Server;
 
@@ -184,6 +185,10 @@ internal static class Program
         options.ToolCollection.Add(ListTool(contract));
         options.ToolCollection.Add(ConfigSnippetTool(contract));
         options.ToolCollection.Add(FolderListTool(contract));
+        foreach (var tool in KindTools(contract))
+        {
+            options.ToolCollection.Add(tool);
+        }
         foreach (var tool in FolderTool(contract, source))
         {
             options.ToolCollection.Add(tool);
@@ -277,6 +282,37 @@ internal static class Program
                 Destructive = false,
                 OpenWorld = false,
             });
+
+    /// <summary>
+    /// The catalogue: what a kind is, and what one kind takes.
+    /// </summary>
+    /// <remarks>
+    /// Read-only and idempotent, honestly — more so than any other read here: the answer is a table
+    /// the window carries, the same in every vault, gated by no switch because it discloses nothing a
+    /// person has. Both exist because an agent asked to "store a PowerShell command" had no way to
+    /// learn what a terminal entry is, and stored a host on it.
+    /// </remarks>
+    private static IEnumerable<McpServerTool> KindTools(BrokerContract contract) =>
+    [
+        McpServerTool.Create(
+            async () => Answer.From(await Tools.KindsAsync(contract)),
+            ReadOptions(Tools.KindsName, "List the kinds of entry", Tools.KindsDescription)),
+        McpServerTool.Create(
+            async (string kind) => Answer.From(await Tools.KindHelpAsync(contract, kind)),
+            ReadOptions(Tools.KindHelpName, "What one kind of entry takes", Tools.KindHelpDescription)),
+    ];
+
+    private static McpServerToolCreateOptions ReadOptions(string name, string title, string description) =>
+        new()
+        {
+            Name = name,
+            Title = title,
+            Description = description,
+            ReadOnly = true,
+            Idempotent = true,
+            Destructive = false,
+            OpenWorld = false,
+        };
 
     /// <summary>
     /// The three folder verbs.
@@ -415,12 +451,17 @@ internal static class Program
             // Defaults, not just nullable types: a parameter with no default is REQUIRED in the
             // generated schema, so a call that left `folder` out — the ordinary case, when only
             // one folder is open — failed to bind and reached the model as "an error occurred".
+            // `fields` is the one OBJECT parameter on this surface, and the exception is deliberate:
+            // it is the kind's own shape, judged by the window against its table, and the window is
+            // the only side that knows what each kind takes. Declaring the shapes here would be the
+            // second table this plan exists to avoid.
             "create" => async (
                     string name,
                     string kind,
                     string? secretKind = null,
                     string? secret = null,
                     string? folder = null,
+                    JsonObject? fields = null,
                     string? host = null,
                     string? user = null,
                     int? port = null,
@@ -444,7 +485,8 @@ internal static class Program
                     host,
                     user,
                     port,
-                    Draw(length, lower, upper, digits, symbols, avoidAmbiguous, words, separator))),
+                    Draw(length, lower, upper, digits, symbols, avoidAmbiguous, words, separator),
+                    fields)),
             _ => async (string entry) => Answer.From(await UseTools.InvokeAsync(contract, tool, caller.Current, entry, null, null)),
         };
 
@@ -456,7 +498,7 @@ internal static class Program
     /// permission state rather than an empty vault, and that secrets are not obtainable here at
     /// all — and everything else it can learn by calling the tool.
     /// </remarks>
-    private const string Instructions =
+    internal const string Instructions =
         """
         CredsForDevs holds this person's credentials. Start with creds_list: it shows the entries
         they explicitly opened to you, and each one's `can` says what you may do with it.
@@ -479,7 +521,8 @@ internal static class Program
         act on them. Use them when you are provisioning and want what you store to land somewhere
         sensible. You can never change a switch — no request here has a field for one — and a folder
         can only be moved somewhere the same grant already reaches, because a folder passes its answers
-        down to everything inside it.
+        down to everything inside it. Before creating, look at the folder's `holds` and `fields`; if
+        you are not told exactly what to create, call creds_kinds and creds_kind_help.
 
         Every answer here is JSON, as text. **Read it before believing a call worked**: a refusal
         arrives as an ordinary successful result whose body is {"error": "...", "hint": "..."} —
@@ -526,9 +569,10 @@ internal static class Program
         creds-mcp.exe as `--caller <base64url json>`; the Windows half never recomputes it. It is a
         label the person sees, never a permission — the modal says so.
 
-        Tools: creds_list and creds_folders, then creds_exec / creds_query / creds_run /
-        creds_open_terminal / creds_vpn_up / creds_vpn_down / creds_export_env, and the folder
-        verbs creds_create_folder / creds_edit_folder / creds_delete_folder — each gated by that
+        Tools: creds_list, creds_folders, creds_kinds and creds_kind_help, then creds_exec /
+        creds_query / creds_run / creds_open_terminal / creds_vpn_up / creds_vpn_down /
+        creds_export_env / creds_create, and the folder verbs creds_create_folder /
+        creds_edit_folder / creds_delete_folder — each gated by that
         entry or folder's own switch, and by the person's approval. How often they are asked is the
         consent setting of the ENTRY you are using: every time, once every 12 hours, or never.
         Creating and deleting an entry always ask, and so does every folder verb — a folder can

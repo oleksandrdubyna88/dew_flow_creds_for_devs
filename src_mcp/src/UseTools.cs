@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using CredsBroker;
 
 namespace CredsMcp;
@@ -174,32 +175,8 @@ internal static class UseTools
         new(
             "creds_create",
             "create",
-            "Store a credential you just made",
-            """
-            Save a credential into the person's vault — for something you just provisioned and now
-            hold the access to. Give a `name`, a `kind` (ssh, db, credential, vpn, terminal,
-            script, sshkey, config) and the `secret`; `host`, `user` and `port` if you have them.
-
-            You do NOT choose where it goes. It lands in a folder the person opened for this, and
-            if they opened more than one you name which in `folder` — creds_list shows the folders
-            entries live in. If none is open, this refuses and says which switch to turn on.
-
-            PREFER `secretKind` over `secret`. Naming a kind — "password" or "passphrase" — has
-            the window make the value, so it never enters your context; that is how every other
-            call in this server works. Send `secret` only when you already hold the value because
-            you provisioned the thing yourself. When you do, the person's journal records that the
-            secret came from you, which is the honest cost of that path.
-
-            You can shape what gets made instead of taking the default 32 characters of
-            everything: `length` (8-128), `lower`, `upper`, `digits`, `symbols`, `avoidAmbiguous`
-            for a password; `words` (3-24) and `separator` for a passphrase. Use them when the
-            system you are provisioning has rules — a length cap or no symbols is exactly the case
-            where an agent would otherwise generate the value itself and put it in its context.
-            Anything omitted stays as it normally would.
-
-            The entry is marked as agent-created, which is what the narrow delete permission keys
-            on. They approve the creation.
-            """,
+            "Store an entry you just made",
+            CreateDescriptionFor(BrokerContract.Current.CreatableKinds()),
             OwnRoute: true),
         new(
             "creds_export_env",
@@ -215,6 +192,53 @@ internal static class UseTools
             entry's consent setting asks for one.
             """),
     ];
+
+    /// <summary>
+    /// The create tool's description, with the kinds named from the contract rather than typed here.
+    /// </summary>
+    /// <remarks>
+    /// <para>The list was a literal and had drifted from the window's (plan §2.4) — the same way the
+    /// folder tool's had, each kept in step by nobody. It now comes from the embedded contract, which
+    /// the window generates from its own table, and <c>KindCatalogTests</c> asserts the words here are
+    /// exactly that list. Payment is absent because the owner decided an agent does not store a card
+    /// (D-A), and the sentence says so rather than leaving the model to guess at an omission.</para>
+    /// </remarks>
+    internal static string CreateDescriptionFor(IReadOnlyList<string> kinds) =>
+        $$"""
+        Save an entry into the person's vault — a credential for something you just provisioned, or
+        a command or script they asked you to keep. Give a `name`, a `kind` ({{string.Join(", ", kinds)}})
+        and the kind's own `fields`; a `payment` entry cannot be created by an agent.
+
+        Look at the target folder's `holds` and `fields` first (creds_folders) and send only those: a
+        typed folder decides the kind, and anything the kind does not take is refused with a sentence
+        naming what it does — nothing is created. If you are not told exactly what to create, call
+        creds_kinds and creds_kind_help; the help carries a complete example body. `fields` is a JSON
+        object: a string field is a string, `port` an integer, an enum field one of its words, and
+        `args` / `vars` an array of { value, note?, enabled? } rows (`vars` rows also carry `name`).
+        `host`, `user` and `port` may still be sent at the top level where the kind has them.
+
+        You do NOT choose where it goes. It lands in a folder the person opened for this, and if
+        they opened more than one you name which in `folder` — creds_list shows the folders entries
+        live in. If none is open, this refuses and says which switch to turn on.
+
+        PREFER `secretKind` over `secret`. Naming a kind — "password" or "passphrase" — has the
+        window make the value, so it never enters your context; that is how every other call in
+        this server works. Send `secret` only when you already hold the value because you
+        provisioned the thing yourself — a connection string, a config body, a VPN configuration or
+        a private key can only arrive this way. When you do, the person's journal records that the
+        secret came from you, which is the honest cost of that path. The secret never goes inside
+        `fields`.
+
+        You can shape what gets made instead of taking the default 32 characters of everything:
+        `length` (8-128), `lower`, `upper`, `digits`, `symbols`, `avoidAmbiguous` for a password;
+        `words` (3-24) and `separator` for a passphrase. Use them when the system you are
+        provisioning has rules — a length cap or no symbols is exactly the case where an agent would
+        otherwise generate the value itself and put it in its context. Anything omitted stays as it
+        normally would.
+
+        The entry is marked as agent-created, which is what the narrow delete permission keys on.
+        They approve the creation, and for a command or a script they see the whole of it first.
+        """;
 
     /// <summary>
     /// Perform one action and answer with whatever the window said.
@@ -276,17 +300,31 @@ internal static class UseTools
         string? host,
         string? user,
         int? port = null,
-        IReadOnlyList<(string Key, string? Value)>? draw = null)
+        IReadOnlyList<(string Key, string? Value)>? draw = null,
+        JsonObject? fields = null)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
             return Failure("No name was given.", "Give the new entry a name the person will recognise.");
         }
 
+        // A window older than `fields` would ignore them and store an entry with none — an agent
+        // told "created" about a terminal entry with an empty command. The catalogue route arrived
+        // with `fields`, so a window that does not serve it cannot be sent them; the refusal names
+        // the update, and nothing is created.
+        if (fields is not null)
+        {
+            var probe = await Windows.ReadAllAsync(contract, contract.ReadRoute("mcpKinds", "/v1/mcp/kinds"));
+            if (probe.Bodies.Count == 0)
+            {
+                return Tools.NoAnswer(probe.RouteRefused);
+            }
+        }
+
         var reply = await Windows.PostAsync(
             contract,
             RouteFor(contract, tool),
-            CreateBody(contract, caller, name, kind, secretKind, secret, folder, host, user, port, draw));
+            CreateBody(contract, caller, name, kind, secretKind, secret, folder, host, user, port, draw, fields));
         if (reply is null)
         {
             return Failure(
@@ -296,7 +334,15 @@ internal static class UseTools
         return reply.Status == 200 ? reply.Body : Refused(reply);
     }
 
-    /// <summary>The create body, field by field. Its own method so the SET of keys is a unit test.</summary>
+    /// <summary>
+    /// The create body, field by field. Its own method so the SET of keys is a unit test.
+    /// </summary>
+    /// <remarks>
+    /// `fields` is the one value that is an OBJECT rather than a string: the kind's own shape, as
+    /// the model composed it and as the window will judge it. It is passed through whole because the
+    /// window is the authority on what it may contain — this binary neither knows the kinds' fields
+    /// nor should, or there would be a second table to keep in step.
+    /// </remarks>
     internal static string CreateBody(
         BrokerContract contract,
         CallerRecord caller,
@@ -308,17 +354,19 @@ internal static class UseTools
         string? host,
         string? user,
         int? port,
-        IReadOnlyList<(string Key, string? Value)>? draw)
+        IReadOnlyList<(string Key, string? Value)>? draw,
+        JsonObject? fields)
     {
-        var fields = new Dictionary<string, string> { ["name"] = name, ["kind"] = kind };
-        Put(fields, "secretKind", secretKind);
-        Put(fields, "secret", secret);
-        Put(fields, "folder", folder);
-        Put(fields, "host", host);
-        Put(fields, "user", user);
-        Put(fields, "port", port?.ToString());
-        PutAll(fields, draw);
-        return Bodies.Compose(fields, caller, contract);
+        var strings = new Dictionary<string, string> { ["name"] = name, ["kind"] = kind };
+        Put(strings, "secretKind", secretKind);
+        Put(strings, "secret", secret);
+        Put(strings, "folder", folder);
+        Put(strings, "host", host);
+        Put(strings, "user", user);
+        Put(strings, "port", port?.ToString());
+        PutAll(strings, draw);
+        var body = strings.Select(pair => new KeyValuePair<string, JsonNode>(pair.Key, JsonValue.Create(pair.Value)!));
+        return Bodies.Compose(fields is null ? body : body.Append(new("fields", fields.DeepClone())), caller, contract);
     }
 
     /// <summary>
@@ -437,7 +485,8 @@ internal static class UseTools
     private static string HintFor(string? code) =>
         code switch
         {
-            "denied" => "Ask the person to allow it, or to turn the switch on in the entry's Agent access section.",
+            "invalid_request" => "The request itself was wrong — the message names what. Nothing was done; fix it and call again (for creds_create, creds_kind_help says what the kind takes).",
+            "denied" => "Ask the person to allow it, or to turn the switch on in the entry's Agent access section — unless the message says it cannot be done by an agent at all, in which case the person does it themselves.",
             "not_found" => "Call creds_list again — the entry may have been deleted or the window closed.",
             "not_supported" => "Either that action does not apply to this kind of entry, or the window cannot generate the kind of secret you asked for — the message says which. If it is the generator, you can offer to make the value yourself and let the person decide.",
             "too_many_requests" => "Too many prompts too quickly. Wait a moment and make one call, not several.",

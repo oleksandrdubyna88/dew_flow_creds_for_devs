@@ -84,6 +84,52 @@ internal static class Tools
         return refusal ?? NoWindow();
     }
 
+    internal const string KindsName = "creds_kinds";
+
+    internal const string KindsDescription =
+        """
+        List the KINDS of entry this vault holds — one line each, and whether you may create it.
+
+        Call it when you do not know which kind fits what you are storing, or before
+        creds_kind_help. The answer is JSON: `kinds`, one { kind, label, summary, creatable } per
+        kind. It needs no entry or folder to be opened to you; it is the vault's own vocabulary.
+        """;
+
+    internal const string KindHelpName = "creds_kind_help";
+
+    internal const string KindHelpDescription =
+        """
+        Everything you may set on an entry of one `kind`: each field, its JSON type, whether it is
+        required, what it means, and a complete example creds_create body. Fields not listed here
+        cannot be set by you — there is no other field, and a request naming one is refused.
+
+        The secret is its own line: it travels as `secret` (or `secretKind`, where the window can
+        make it), never inside `fields`. A `payment` entry cannot be created by an agent, and the
+        answer says so instead of listing fields.
+        """;
+
+    /// <summary>
+    /// The catalogue, from the first window that answers.
+    /// </summary>
+    /// <remarks>
+    /// First-answer rather than merge, for the snippet's reason: the table is the same in every
+    /// window of one extension version, and two windows on different versions are a state the
+    /// person resolves by updating, not one this binary should paper over by merging.
+    /// </remarks>
+    internal static async Task<string> KindsAsync(BrokerContract contract)
+    {
+        var read = await Windows.ReadAllAsync(contract, contract.ReadRoute("mcpKinds", "/v1/mcp/kinds"));
+        return read.Bodies.Count == 0 ? NoAnswer(read.RouteRefused) : read.Bodies[0];
+    }
+
+    /// <summary>One kind's help. A word that is not a kind comes back as the window's own refusal.</summary>
+    internal static async Task<string> KindHelpAsync(BrokerContract contract, string kind)
+    {
+        var route = contract.ReadRoute("mcpKindHelp", "/v1/mcp/kind-help");
+        var read = await Windows.ReadAllAsync(contract, $"{route}?kind={Uri.EscapeDataString(kind)}");
+        return read.Bodies.Count == 0 ? NoAnswer(read.RouteRefused) : read.Bodies[0];
+    }
+
     internal const string ListDescription =
         """
         List the credentials the person has explicitly opened to you in CredsForDevs — SSH hosts,

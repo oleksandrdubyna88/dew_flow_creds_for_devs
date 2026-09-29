@@ -23,6 +23,8 @@ namespace CredsMcp;
 [JsonSerializable(typeof(McpFoldersResponse))]
 [JsonSerializable(typeof(McpFolder))]
 [JsonSerializable(typeof(McpFolderCapabilities))]
+[JsonSerializable(typeof(McpFolderField))]
+[JsonSerializable(typeof(McpFolderField[]))]
 [JsonSerializable(typeof(McpFolder[]))]
 [JsonSerializable(typeof(ToolFailure))]
 [JsonSerializable(typeof(BrokerErrorEnvelope))]
@@ -115,7 +117,22 @@ internal sealed record McpFolder(
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("parent")] string? Parent,
     [property: JsonPropertyName("folderType")] string? FolderType,
+    [property: JsonPropertyName("holds")] string? Holds,
+    [property: JsonPropertyName("fields")] McpFolderField[]? Fields,
     [property: JsonPropertyName("can")] McpFolderCapabilities? Can);
+
+/// <summary>
+/// One field an entry in a typed folder may carry — the name, whether it must be sent, one line.
+/// </summary>
+/// <remarks>
+/// Declared here because this binary parses and re-serialises the window's answer: a property it
+/// does not declare is dropped on the way through, and the agent would never see it. The words are
+/// the window's, from its one table; nothing here is composed.
+/// </remarks>
+internal sealed record McpFolderField(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("required")] bool Required,
+    [property: JsonPropertyName("summary")] string? Summary);
 
 /// <summary>What may be done to a folder beyond seeing that it exists.</summary>
 internal sealed record McpFolderCapabilities(
