@@ -1,4 +1,6 @@
+import { protectEntity } from './entityPin';
 import { PinGate, PinOpen, openStored } from './pinGate';
+import { grantedPin } from './pinSession';
 import { SECRET_SLOTS } from './entitySlots';
 import { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
@@ -42,7 +44,43 @@ export async function admit(
     await repairFalseMark(storage, accountId, entityId);
     return { kind: 'in' };
   }
-  return decided(await openStored(locked, gate));
+  const admission = decided(await openStored(locked, gate));
+  if (admission.kind === 'in') {
+    await healProtected(storage, accountId, entityId);
+  }
+  return admission;
+}
+
+/**
+ * The door has just opened a LOCKED entry, with its PIN in this window's session — the moment two
+ * drifts can be put right at no cost to anybody (R5, R3):
+ *
+ * <ul>
+ *   <li><b>the mark is restored</b> when it is missing — the mirror of `repairFalseMark`. An Edit
+ *       before 1.12 dropped it (D3) and a sync can take the unmarked side (D12); left alone, the row
+ *       offers only *Protect…* (D15) and agents see the entry again. Not a protection DECISION, so it
+ *       counts as none;</li>
+ *   <li><b>a value found in the clear is sealed</b> by `protectEntity` — written by an older build,
+ *       or arriving from another machine. `protectEntity` seals exactly the plain values and writes
+ *       nothing when there are none.</li>
+ * </ul>
+ *
+ * <p>Both best-effort, as `clearMark` is: a repair on the way into an entry must never become a
+ * failure to open it, and the next door tries again.</p>
+ */
+async function healProtected(storage: StorageManager, accountId: string, entityId: string): Promise<void> {
+  await restoreMark(storage, accountId, entityId);
+  const pin = grantedPin(accountId, entityId);
+  if (pin !== undefined) {
+    await protectEntity(storage, accountId, entityId, pin).catch(() => undefined);
+  }
+}
+
+/** Locked values and no mark: the mark goes back (best-effort, through the same write as `clearMark`). */
+async function restoreMark(storage: StorageManager, accountId: string, entityId: string): Promise<void> {
+  if (storage.getNode(accountId, entityId)?.details?.pinProtected !== true) {
+    await clearMark(storage, accountId, entityId, { pinProtected: true });
+  }
 }
 
 function decided(opened: PinOpen): Admission {

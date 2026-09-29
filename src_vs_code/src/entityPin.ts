@@ -1,7 +1,11 @@
 import { SECRET_SLOTS, SecretSlot } from './entitySlots';
-import { attemptUnlock, cooldownMs, coolingReason } from './pinAttempts';
+import { OpenedHistory, firstSealedKept, openHistory, rewriteHistory } from './historyPin';
+import { attemptUnlock, cooldownMs, coolingReason, retryGranted } from './pinAttempts';
+import { sealValue } from './sealValue';
 import { StorageManager } from './storageManager';
-import { SecretEnvelope, isLockedSecret, lockSecret, readSecret } from './secretEnvelope';
+import { SecretEnvelope, SecretRead, isLockedSecret, plainSecret, readSecret } from './secretEnvelope';
+
+export { sealValue };
 
 /**
  * Putting one entry's secrets under a PIN, and taking them back out.
@@ -97,91 +101,131 @@ function noteSkip(kind: string, slot: SecretSlot, skipped: string[]): void {
 }
 
 /**
- * One value about to be WRITTEN into a protected entry, sealed under its PIN.
- *
- * <p>Extracted from `lockOne` so that every writer into a protected entry — Edit, a restore, a share
- * update, the history rewrite — seals exactly the way Protect does, in memory and BEFORE its raw
- * setter runs (entry-PIN plan, rule R3). One place for the woven mark, one place for idempotence:</p>
- *
- * <ul>
- *   <li>a plain string, and a plain envelope carrying the woven mark, both come out locked with
- *       the mark kept;</li>
- *   <li>a value that is already locked is returned untouched — a second wrap under the same PIN
- *       would need the first opened, and re-running being the resume is what `protectEntity`
- *       promises;</li>
- *   <li>envelope-shaped text that does not parse is sealed as the text it is. `readSecret` calls
- *       that `corrupt` when it is STORED, because a stored one is a damaged write; here it is what
- *       somebody typed, and a save must not refuse a note for looking like a wrap.</li>
- * </ul>
+ * A value the PIN cannot open because its wrap is DAMAGED — thrown by `unprotectEntity` before
+ * anything is written (D14). Taking the PIN off would leave it unreadable while the entry stopped
+ * claiming a PIN; the person decides, and `keepDamaged` is the answer that goes ahead.
  */
-export async function sealValue(value: string, accountId: string, pin: string): Promise<string> {
-  const read = readSecret(value);
-  if (read.kind === 'locked') {
-    return value;
+export class DamagedSlots extends Error {
+  constructor(readonly labels: readonly string[]) {
+    super(`${labels.join(', ')} ${labels.length === 1 ? 'is' : 'are'} damaged and cannot be opened.`);
+    this.name = 'DamagedSlots';
   }
-  return read.kind === 'value'
-    ? lockSecret(read.value, accountId, pin, read.woven)
-    : lockSecret(value, accountId, pin, false);
+}
+
+/** What *Remove PIN Protection…* did, beyond the live slots it unwrapped. */
+export interface UnprotectResult extends PinRunResult {
+  /** Live slots left exactly as they were because their wrap is damaged (`keepDamaged`). */
+  readonly damaged: readonly string[];
+  /** Kept-version values under a DIFFERENT PIN — left sealed, counted so the person is told. */
+  readonly foreignKept: number;
 }
 
 /**
- * Take every wrapped slot back out, given the PIN.
+ * Take every wrapped slot back out, given the PIN — and the entry's kept versions with it (§5.7).
  *
- * <p>Throws if the PIN does not open the FIRST locked slot, before anything is written — so a wrong
- * PIN costs a message rather than half an entry.</p>
+ * <p>In this order, and every step before the first write: the PIN is checked against the first
+ * locked value (a live one, or a kept one when the live entry holds none — plan gate, finding 3); every
+ * live slot AND every kept value is opened in memory; a damaged live slot refuses the whole run with
+ * `DamagedSlots` unless `keepDamaged` says to go ahead without it. Only then are the live slots
+ * written — each with `plainSecret(value, woven)`, so a woven password comes back woven (D13) — and
+ * then the history, with the list as it is at write time.</p>
  */
 export async function unprotectEntity(
   storage: StorageManager,
   accountId: string,
   entityId: string,
   pin: string,
-): Promise<PinRunResult> {
-  const opened = await openedSlots(storage, accountId, entityId, pin);
+  options: { readonly keepDamaged?: boolean } = {},
+): Promise<UnprotectResult> {
+  const live = await openedSlots(storage, accountId, entityId, pin);
+  const kept = await openedKeptVersions(storage, accountId, entityId, pin, live.opened.length > 0);
+  refuseDamaged(live.damaged, options.keepDamaged === true);
   const changed: string[] = [];
-  for (const [slot, value] of opened) {
+  for (const [slot, value] of live.opened) {
     await slot.write(storage, accountId, entityId, value);
     changed.push(slot.label);
   }
-  return { changed, skipped: [] };
+  await rewriteHistory(storage, accountId, entityId, kept.rewrite);
+  return { changed, skipped: [], damaged: live.damaged, foreignKept: kept.foreign };
+}
+
+function refuseDamaged(damaged: readonly string[], keepDamaged: boolean): void {
+  if (damaged.length > 0 && !keepDamaged) {
+    throw new DamagedSlots(damaged);
+  }
+}
+
+/** The live slots, opened into the form an unprotected value is stored in, and the damaged ones by label. */
+interface OpenedSlots {
+  readonly opened: readonly (readonly [SecretSlot, string])[];
+  readonly damaged: readonly string[];
 }
 
 /**
  * Every locked slot, opened — read and unwrapped in full BEFORE the first write.
  *
- * <p>This is where the wrong-PIN check lives: the first slot that will not open throws, and nothing
- * has been written yet. It is also why the values are held in a list rather than written as they
- * come: an unprotect that half-succeeded would leave an entry whose PIN opens some of it.</p>
+ * <p>This is where the wrong-PIN check lives: the first locked slot is a GUESS until it opens and is
+ * counted (`attemptUnlock`); once it has, the same PIN tried on the rest is not a guess
+ * (`retryGranted`), so a value under a second PIN costs a refusal, not a cooldown. A slot that will not
+ * open throws, and nothing has been written yet. The values are held in a list rather than written as
+ * they come, because an unprotect that half-succeeded would leave an entry whose PIN opens some of
+ * it.</p>
  */
-async function openedSlots(
-  storage: StorageManager,
-  accountId: string,
-  entityId: string,
-  pin: string,
-): Promise<[SecretSlot, string][]> {
+async function openedSlots(storage: StorageManager, accountId: string, entityId: string, pin: string): Promise<OpenedSlots> {
+  refuseWhileCooling(accountId, entityId);
+  const reads = await Promise.all(SECRET_SLOTS.map(async (slot) => [slot, readSecret(await slot.read(storage, accountId, entityId))] as const));
+  const locked = reads.filter(([, read]) => read.kind === 'locked');
+  const opened: [SecretSlot, string][] = [];
+  for (const [at, [slot, read]] of locked.entries()) {
+    const unlock = at === 0 ? attemptUnlock : retryGranted;
+    opened.push([slot, await openedOrThrow(read, (envelope) => unlock(envelope, accountId, entityId, pin))]);
+  }
+  return { opened, damaged: reads.filter(([, read]) => read.kind === 'corrupt').map(([slot]) => slot.label) };
+}
+
+function refuseWhileCooling(accountId: string, entityId: string): void {
   const cooling = cooldownMs(accountId, entityId, Date.now());
   if (cooling > 0) {
     throw new Error(coolingReason(cooling));
   }
-  const opened: [SecretSlot, string][] = [];
-  for (const slot of SECRET_SLOTS) {
-    const read = readSecret(await slot.read(storage, accountId, entityId));
-    if (read.kind === 'locked') {
-      opened.push([slot, await openedOrThrow(read.envelope, accountId, entityId, pin)]);
-    }
-  }
-  return opened;
 }
 
 /**
- * The choke point's answer, as the throw this module's callers report. `attemptUnlock` counts the
- * miss; the sentence here is what `pinCommands.removeOne` puts after <i>That PIN does not open</i>.
+ * The choke point's answer, as the throw this module's callers report — in the form an unprotected
+ * value is stored in, so the woven mark the lock kept survives the unwrap (D13). The sentence here is
+ * what `pinCommands.removeOne` puts after <i>That PIN does not open</i>.
  */
-async function openedOrThrow(envelope: SecretEnvelope, accountId: string, entityId: string, pin: string): Promise<string> {
-  const value = await attemptUnlock(envelope, accountId, entityId, pin);
+async function openedOrThrow(read: SecretRead, unlock: (envelope: SecretEnvelope) => Promise<string | undefined>): Promise<string> {
+  const value = read.kind === 'locked' ? await unlock(read.envelope) : undefined;
   if (value === undefined) {
     throw new Error('The PIN was refused.');
   }
-  return value;
+  return plainSecret(value, read.kind === 'locked' && read.woven);
+}
+
+/**
+ * The kept versions, opened in memory with the PIN. When no LIVE slot was locked there was nothing to
+ * check the PIN against yet, so the first sealed kept value is that check — counted as a guess.
+ */
+async function openedKeptVersions(
+  storage: StorageManager,
+  accountId: string,
+  entityId: string,
+  pin: string,
+  checked: boolean,
+): Promise<OpenedHistory> {
+  const kept = await storage.getHistory(accountId, entityId);
+  if (!checked) {
+    await checkOnKept(kept, accountId, entityId, pin);
+  }
+  return openHistory(kept, accountId, entityId, pin);
+}
+
+async function checkOnKept(kept: Awaited<ReturnType<StorageManager['getHistory']>>, accountId: string, entityId: string, pin: string): Promise<void> {
+  const first = firstSealedKept(kept);
+  if (first !== undefined) {
+    await openedOrThrow(first, (envelope) => attemptUnlock(envelope, accountId, entityId, pin));
+  }
 }
 
 /** How much of this entry is locked — the number a person is shown, and the interrupted-run signal. */

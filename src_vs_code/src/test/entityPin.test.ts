@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SECRET_SLOTS } from '../entitySlots';
 import {
+  DamagedSlots,
   isProtected,
   lockedSlotCount,
   pinOpens,
@@ -12,6 +13,7 @@ import {
 import { isLockedSecret, isWovenSecret, lockSecret, plainSecret, readSecret, unlockSecret } from '../secretEnvelope';
 import { FREE_TRIES, forgetAllAttempts, noteWrong } from '../pinAttempts';
 import { forgetAllPins, forgetPin, grantCount, grantPin, grantedPin } from '../pinSession';
+import type { Revision } from '../revisionHistory';
 import { StorageManager } from '../storageManager';
 
 /**
@@ -27,9 +29,13 @@ const ACCOUNT = 'acct-1';
 const ENTITY = 'e1';
 const PIN = 'correct-horse-battery';
 
-/** A vault with the nine slots and nothing else — enough for everything `entityPin` touches. */
-function vault(initial: Record<string, string> = {}): StorageManager {
+/**
+ * A vault with the ten slots and a kept-version list — enough for everything `entityPin` touches.
+ * *Remove PIN Protection…* opens the kept versions too (§5.7), so the list is part of the fake.
+ */
+function vault(initial: Record<string, string> = {}, kept: Revision[] = []): StorageManager {
   const held = new Map<string, string>(Object.entries(initial));
+  let history = kept;
   const get = (label: string) => Promise.resolve(held.get(label));
   const set = (label: string, value: string): Promise<void> => {
     held.set(label, value);
@@ -57,6 +63,11 @@ function vault(initial: Record<string, string> = {}): StorageManager {
     setPrivateKey: (_a: string, _e: string, v: string) => set('private key', v),
     getPassword: () => get('password'),
     setPassword: (_a: string, _e: string, v: string) => set('password', v),
+    getHistory: () => Promise.resolve(history),
+    replaceHistory: (_a: string, _e: string, revise: (list: Revision[]) => Revision[]) => {
+      history = revise(history);
+      return Promise.resolve();
+    },
   };
   return store as unknown as StorageManager;
 }
@@ -273,4 +284,76 @@ test('Remove PIN refuses while the entry is cooling down, and changes nothing', 
 
   assert.deepEqual(held(storage), before, 'byte-identical — nothing was touched');
   forgetAllAttempts();
+});
+
+const DAMAGED = '{"v":1,"lock":{"wrap":{}}}';
+
+test('Remove PIN keeps a woven password woven — the pair comes back a pair, not one string (D13)', async () => {
+  // The lock side kept the mark (`lockSecret(..., woven)`); the unwrap wrote the bare value, so the
+  // viewer offered no Unweave and showed the pair as one string.
+  const woven = plainSecret('w0Ov3Enn', true);
+  const storage = vault({ password: woven });
+  await protectEntity(storage, ACCOUNT, ENTITY, PIN);
+
+  await unprotectEntity(storage, ACCOUNT, ENTITY, PIN);
+
+  assert.equal(held(storage).get('password'), woven);
+  assert.equal(isWovenSecret(held(storage).get('password')), true);
+});
+
+test('Remove PIN over a DAMAGED slot changes nothing and names the value (D14)', async () => {
+  // `openedSlots` opened only the locked slots, so a corrupt one was skipped and the mark cleared:
+  // an entry with an unreadable value stopped claiming a PIN.
+  const storage = vault({ password: 'hunter2', notes: DAMAGED });
+  await protectEntity(storage, ACCOUNT, ENTITY, PIN);
+  const before = new Map(held(storage));
+
+  await assert.rejects(unprotectEntity(storage, ACCOUNT, ENTITY, PIN), (error: unknown) => {
+    assert.ok(error instanceof DamagedSlots, `not a DamagedSlots: ${String(error)}`);
+    assert.deepEqual(error.labels, ['notes']);
+    return true;
+  });
+  assert.deepEqual([...held(storage)], [...before], 'nothing was written');
+});
+
+test('"Remove the PIN from the rest" unwraps the rest and leaves the damaged slot byte-identical', async () => {
+  const storage = vault({ password: 'hunter2', notes: DAMAGED });
+  await protectEntity(storage, ACCOUNT, ENTITY, PIN);
+
+  const result = await unprotectEntity(storage, ACCOUNT, ENTITY, PIN, { keepDamaged: true });
+
+  assert.equal(held(storage).get('password'), 'hunter2');
+  assert.equal(held(storage).get('notes'), DAMAGED, 'the only copy of whatever it was');
+  assert.deepEqual(result.damaged, ['notes']);
+});
+
+function keptWith(secrets: Revision['secrets']): Revision {
+  return { at: 1, name: 'as it was', details: { id: ENTITY, name: 'as it was', isSshEnabled: false } as Revision['details'], secrets };
+}
+
+test('Remove PIN opens the kept versions too, and leaves one under another PIN sealed and counted', async () => {
+  const foreign = await lockSecret('other machine', ACCOUNT, 'another-pin');
+  const storage = vault({ password: 'hunter2' }, [keptWith({ password: await lockSecret('old pw', ACCOUNT, PIN), notes: foreign })]);
+  await protectEntity(storage, ACCOUNT, ENTITY, PIN);
+
+  const result = await unprotectEntity(storage, ACCOUNT, ENTITY, PIN);
+
+  const [kept] = await storage.getHistory(ACCOUNT, ENTITY);
+  assert.equal(kept.secrets.password, 'old pw', 'the kept password opened with the PIN coming off');
+  assert.equal(kept.secrets.notes, foreign, 'a value this PIN does not open is left as it was');
+  assert.equal(result.foreignKept, 1);
+});
+
+test('an entry whose only sealed values are its KEPT versions checks the PIN on them before writing anything', async () => {
+  // Plan gate, finding 3: unprotected on another machine, synced here; this machine's history is
+  // still sealed, and Remove PIN is the way to open it — so a wrong PIN must be refused here too.
+  forgetAllAttempts();
+  const sealed = await lockSecret('old pw', ACCOUNT, PIN);
+  const storage = vault({ password: 'hunter2' }, [keptWith({ password: sealed })]);
+
+  await assert.rejects(unprotectEntity(storage, ACCOUNT, ENTITY, 'not-the-pin-at-all'), /The PIN was refused/);
+  assert.equal((await storage.getHistory(ACCOUNT, ENTITY))[0].secrets.password, sealed, 'untouched');
+
+  await unprotectEntity(storage, ACCOUNT, ENTITY, PIN);
+  assert.equal((await storage.getHistory(ACCOUNT, ENTITY))[0].secrets.password, 'old pw');
 });

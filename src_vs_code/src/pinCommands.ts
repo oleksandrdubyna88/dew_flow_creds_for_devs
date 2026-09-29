@@ -3,8 +3,8 @@ import { StorageManager } from './storageManager';
 import { TreeNode } from './types';
 import { entryPinGate, newPin } from './pinPrompt';
 import { forgetPin } from './pinSession';
-import { isProtected, pinOpens, protectEntity, unprotectEntity } from './entityPin';
-import { protectHistory } from './historyPin';
+import { DamagedSlots, UnprotectResult, isProtected, lockedSlotCount, pinOpens, protectEntity, unprotectEntity } from './entityPin';
+import { lockedHistoryValues, protectHistory } from './historyPin';
 import { pinValidator } from './pinInput';
 import { describeError } from './describeError';
 import { asElement } from './commandTargets';
@@ -63,8 +63,7 @@ export interface PinCommandDeps {
 /** Wrap one entry's secrets under a PIN the person types twice. */
 export async function protectEntry(node: TreeNode, deps: PinCommandDeps): Promise<void> {
   const details = node.details;
-  if (details === undefined || (await isProtected(deps.storage, deps.accountId, node.id))) {
-    void vscode.window.showInformationMessage(ALREADY_PROTECTED);
+  if (details === undefined || (await offeredRemoval(node, deps))) {
     return;
   }
   const pin = await newPin(details.name, 'entry');
@@ -74,9 +73,62 @@ export async function protectEntry(node: TreeNode, deps: PinCommandDeps): Promis
   await runProtect([node], pin, deps);
 }
 
-/** Take the PIN off one entry, given it. */
+const REMOVE = 'Remove PIN Protection…';
+const PROTECT_AGAIN = 'Protect with a PIN…';
+
+/**
+ * An entry that already holds a PIN — live, or only in its kept versions — is offered *Remove PIN
+ * Protection…* instead of a dead end (D15). The row offers Protect whenever the MARK is off, and the
+ * mark can be lost while the values stay locked (an Edit before 1.12, a sync); the answer used to be
+ * "already has its own PIN" and nothing to press. `true` means this command is done: the person
+ * removed the protection, or dismissed the question. Only *Protect with a PIN…* goes on to protect.
+ */
+async function offeredRemoval(node: TreeNode, deps: PinCommandDeps): Promise<boolean> {
+  const offer = await removalOffer(node, deps);
+  if (offer === undefined) {
+    return false;
+  }
+  const answer = await vscode.window.showWarningMessage(offer.message, { modal: true }, ...offer.buttons);
+  if (answer === REMOVE) {
+    await unprotectEntry(node, deps);
+  }
+  return answer !== PROTECT_AGAIN;
+}
+
+async function removalOffer(node: TreeNode, deps: PinCommandDeps): Promise<{ message: string; buttons: string[] } | undefined> {
+  const live = await lockedSlotCount(deps.storage, deps.accountId, node.id);
+  if (live.locked > 0) {
+    return { message: alreadyProtected(node.name, live), buttons: [REMOVE] };
+  }
+  // Unprotected on another machine and synced here, while this machine's history stayed sealed
+  // (plan gate, finding 3): protecting again is a real choice, so it is offered beside the removal.
+  const kept = lockedHistoryValues(await deps.storage.getHistory(deps.accountId, node.id));
+  return kept === 0 ? undefined : { message: keptStillSealed(node.name, kept), buttons: [REMOVE, PROTECT_AGAIN] };
+}
+
+function alreadyProtected(name: string, count: { readonly locked: number; readonly total: number }): string {
+  return `"${name}" already has its own PIN (${count.locked} of ${count.total} values are locked). To set a different one, remove the protection first.`;
+}
+
+function keptStillSealed(name: string, kept: number): string {
+  return (
+    `"${name}" is not protected, but ${valueCount(kept)} in its kept versions on this machine ${isAre(kept)} still sealed under the PIN it used `
+    + `to have. ${REMOVE} opens them with that PIN; ${PROTECT_AGAIN} protects the entry again.`
+  );
+}
+
+/** "1 value" / "3 values" — the count a sentence about kept values starts with. */
+function valueCount(count: number): string {
+  return count === 1 ? '1 value' : `${count} values`;
+}
+
+function isAre(count: number): string {
+  return count === 1 ? 'is' : 'are';
+}
+
+/** Take the PIN off one entry, given it — while ANY of its values, live or kept, is sealed (§5.7). */
 export async function unprotectEntry(node: TreeNode, deps: PinCommandDeps): Promise<void> {
-  if (node.details === undefined || !(await isProtected(deps.storage, deps.accountId, node.id))) {
+  if (node.details === undefined || !(await anythingSealed(node, deps))) {
     void vscode.window.showInformationMessage(`"${node.name}" is not protected with a PIN.`);
     return;
   }
@@ -85,21 +137,78 @@ export async function unprotectEntry(node: TreeNode, deps: PinCommandDeps): Prom
   await removeIfTyped(node, pin, deps);
 }
 
+/** A live slot is locked, or a kept version on this machine is — either is something to remove. */
+async function anythingSealed(node: TreeNode, deps: PinCommandDeps): Promise<boolean> {
+  return (
+    (await isProtected(deps.storage, deps.accountId, node.id))
+    || lockedHistoryValues(await deps.storage.getHistory(deps.accountId, node.id)) > 0
+  );
+}
+
 function removeIfTyped(node: TreeNode, pin: string | undefined, deps: PinCommandDeps): Promise<void> {
   return pin === undefined || pin.length === 0 ? Promise.resolve() : removeOne(node, pin, deps);
 }
 
-async function removeOne(node: TreeNode, pin: string, deps: PinCommandDeps): Promise<void> {
-  try {
-    await unprotectEntity(deps.storage, deps.accountId, node.id, pin);
-  } catch (error) {
-    void vscode.window.showWarningMessage(`That PIN does not open "${node.name}". ${describeError(error)}`);
+/**
+ * The run, the mark, the grant — in that order, and the mark only after the values it describes.
+ * `keepDamaged` is the person's answer to the damaged-value question below.
+ */
+async function removeOne(node: TreeNode, pin: string, deps: PinCommandDeps, keepDamaged = false): Promise<void> {
+  const result = await removal(node, pin, deps, keepDamaged);
+  if (result === undefined) {
     return;
   }
   await markProtection(node, false, deps);
   forgetPin(deps.accountId, node.id);
   deps.refresh();
-  void vscode.window.showInformationMessage(`"${node.name}" is no longer protected with its own PIN.`);
+  void vscode.window.showInformationMessage(removedMessage(node.name, result));
+}
+
+/** The unwrap, or `undefined` having said why — a damaged value is a QUESTION, not a wrong PIN. */
+async function removal(node: TreeNode, pin: string, deps: PinCommandDeps, keepDamaged: boolean): Promise<UnprotectResult | undefined> {
+  try {
+    return await unprotectEntity(deps.storage, deps.accountId, node.id, pin, { keepDamaged });
+  } catch (error) {
+    await refused(node, pin, deps, error);
+    return undefined;
+  }
+}
+
+const KEEP_DAMAGED = 'Remove the PIN from the rest';
+
+/**
+ * D14: before 1.12 a damaged slot was skipped and the mark cleared, so an entry with an unreadable
+ * value stopped claiming a PIN without anybody deciding that. Now nothing is written until the person
+ * has read what it means and chosen to go ahead without that value.
+ */
+async function refused(node: TreeNode, pin: string, deps: PinCommandDeps, error: unknown): Promise<void> {
+  if (!(error instanceof DamagedSlots)) {
+    void vscode.window.showWarningMessage(`That PIN does not open "${node.name}". ${describeError(error)}`);
+    return;
+  }
+  const answer = await vscode.window.showWarningMessage(damagedQuestion(node.name, error.labels), { modal: true }, KEEP_DAMAGED);
+  if (answer === KEEP_DAMAGED) {
+    await removeOne(node, pin, deps, true);
+  }
+}
+
+function damagedQuestion(name: string, labels: readonly string[]): string {
+  return (
+    `"${name}" holds a damaged protected value (${labels.join(', ')}). Removing the PIN cannot open it: it would stay `
+    + 'unreadable while the entry stops claiming a PIN.'
+  );
+}
+
+/** What was done — and what was NOT: a damaged value left as it was, kept values under another PIN. */
+function removedMessage(name: string, result: UnprotectResult): string {
+  const damaged = result.damaged.length === 0 ? '' : ` Its ${result.damaged.join(', ')} could not be opened and was left exactly as it was.`;
+  const foreign = result.foreignKept === 0 ? '' : keptForeignNote(result.foreignKept);
+  return `"${name}" is no longer protected with its own PIN.${damaged}${foreign}`;
+}
+
+function keptForeignNote(count: number): string {
+  const stay = count === 1 ? 'stays' : 'stay';
+  return ` ${valueCount(count)} in its kept versions ${isAre(count)} sealed under a different PIN and ${stay} sealed.`;
 }
 
 /**
@@ -326,9 +435,6 @@ async function markProtection(node: TreeNode, on: boolean, deps: PinCommandDeps)
     pinProtected: on ? true : undefined,
   });
 }
-
-const ALREADY_PROTECTED =
-  'That entry already has its own PIN. Remove the protection first if you want to set a different one.';
 
 const PIN_FOR_FOLDER =
   'The PIN another entry in this folder already uses. It is stored nowhere, so it has to be typed — '

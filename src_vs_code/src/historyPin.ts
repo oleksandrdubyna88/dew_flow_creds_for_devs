@@ -1,8 +1,8 @@
-import { sealValue } from './entityPin';
+import { sealValue } from './sealValue';
 import { attemptUnlock, cooldownMs, coolingReason, retryGranted } from './pinAttempts';
 import { PinGate, PinOpen, openStored, silentPinGate } from './pinGate';
 import { Revision, RevisionSecrets, SMALL_FIELDS } from './revisionHistory';
-import { SecretEnvelope, plainSecret, readSecret } from './secretEnvelope';
+import { SecretEnvelope, SecretRead, plainSecret, readSecret } from './secretEnvelope';
 import type { StorageManager } from './storageManager';
 
 /**
@@ -41,6 +41,13 @@ function isText(value: string | undefined): value is string {
 /** How many kept values are in the clear — the door's reason to seal, and zero means nothing to do. */
 export function plainHistoryValues(kept: readonly Revision[]): number {
   return storedValues(kept).filter((stored) => readSecret(stored).kind === 'value').length;
+}
+
+/** The first sealed kept value — what a PIN is checked against when the live entry holds none. */
+export function firstSealedKept(kept: readonly Revision[]): SecretRead | undefined {
+  return storedValues(kept)
+    .map((stored) => readSecret(stored))
+    .find((read) => read.kind === 'locked');
 }
 
 /** How many kept values are sealed — *Remove PIN Protection…* is offered while this is above zero. */
