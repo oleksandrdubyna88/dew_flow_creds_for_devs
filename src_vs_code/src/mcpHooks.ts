@@ -110,7 +110,7 @@ export function chooseCreateTarget(storage: StorageManager, body: Record<string,
       entityName: chosen.target.folderName,
       kind: chosen.kind,
     },
-    summary: summarizeCreate(request, chosen.target, chosen.kind),
+    summary: summarizeCreate(request, chosen.target, chosen.kind, plan.values),
     withSecret: withSecret(body),
   };
 }

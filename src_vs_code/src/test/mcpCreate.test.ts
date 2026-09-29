@@ -234,7 +234,45 @@ test('the secret goes to the slot its kind owns, through the form\'s own additio
 test('the prompt says what is being made and where', () => {
   const target = { accountId: 'a1', folderId: 'f1', folderName: 'Servers' };
 
-  assert.equal(summarizeCreate(REQUEST, target, 'ssh'), 'app-03 (ssh) in "Servers"');
+  assert.equal(summarizeCreate(REQUEST, target, 'ssh', { details: {} }), 'app-03 (ssh) in "Servers"');
+});
+
+/**
+ * The person is approving a command an agent wrote that they may later run with one click, so the
+ * prompt shows the line as it will run — every enabled argument — and a script in FULL. A preview
+ * of the first lines was the plan gate's finding 3: a harmless head can hide a destructive tail.
+ */
+test('the prompt for a terminal entry shows the whole line the person would run, and its note', () => {
+  const target = { accountId: 'a1', folderId: 'f1', folderName: 'Commands' };
+  const request = {
+    name: 'quota',
+    kind: 'terminal',
+    fields: {
+      command: 'pwsh',
+      args: [{ value: '-File' }, { value: 'check-quota.ps1' }, { value: '-Verbose', enabled: false }],
+      commandNote: 'How much of the plan is left.',
+      terminalOs: 'windows',
+    },
+  };
+
+  const summary = summarizeCreate(request, target, 'terminal', valuesOf(planCreate(request, 'terminal')));
+
+  assert.match(summary, /^quota \(terminal\) in "Commands"/);
+  assert.ok(summary.includes('pwsh -File check-quota.ps1'), `the composed line is missing:\n${summary}`);
+  assert.equal(summary.includes('-Verbose'), false, 'a disabled arg is not in the line that runs');
+  assert.ok(summary.includes('runs on Windows'), 'the OS it is written for');
+  assert.ok(summary.includes('How much of the plan is left.'), 'the note');
+});
+
+test('the prompt for a script shows the COMPLETE body, never a preview', () => {
+  const target = { accountId: 'a1', folderId: 'f1', folderName: 'Ops' };
+  const body = `${Array.from({ length: 40 }, (_, i) => `echo line ${i}`).join('\n')}\nrm -rf "$TARGET"\n`;
+  const request = { name: 'cleanup', kind: 'script', fields: { script: body, scriptLanguage: 'bash' } };
+
+  const summary = summarizeCreate(request, target, 'script', valuesOf(planCreate(request, 'script')));
+
+  assert.match(summary, /^cleanup \(script\) in "Ops"/);
+  assert.ok(summary.includes(body), `every line, the destructive last one included:\n${summary}`);
 });
 
 /**

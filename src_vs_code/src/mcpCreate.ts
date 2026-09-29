@@ -1,5 +1,6 @@
 import { AgentValues, secretKindRefusal, validateAgentFields } from './agentFieldValidation';
 import { AGENT_KINDS, AgentSecret } from './agentKindFields';
+import { buildCommandLine, commandRowLabel } from './commandLine';
 import type { EntityFormValues } from './entityFormShape';
 import { McpAccess, resolveMcpInTree } from './mcpAccess';
 import { DrawOptions } from './secretKinds';
@@ -329,10 +330,29 @@ function inSlot(slot: AgentSecret['slot'] | undefined, wanted: AgentSecret['slot
   return slot === wanted ? secret : undefined;
 }
 
-/** What the consent prompt says: the entry, its kind, and where it is going. */
-export function summarizeCreate(request: CreateRequest, target: CreateTarget, kind: string): string {
-  return `${request.name} (${kind}) in "${target.folderName}"`;
+/**
+ * What the consent prompt says: the entry, its kind, where it is going — and, for a terminal or a
+ * script, exactly what would run.
+ *
+ * <p>All of it, never a preview (plan gate, finding 3). The person is approving a command an agent
+ * wrote that they may later run with one click, and a harmless first few lines can hide a
+ * destructive tail — so a script is shown whole, and a command as the line it becomes with every
+ * enabled argument. The journal's line for the creation carries the same text.</p>
+ */
+export function summarizeCreate(request: CreateRequest, target: CreateTarget, kind: string, values: AgentValues): string {
+  const head = `${request.name} (${kind}) in "${target.folderName}"`;
+  const shown = WHAT_RUNS[kind as EntityKind]?.(values.details) ?? [];
+  return [head, ...shown].join('\n');
 }
+
+/** The kinds that RUN something, and how each says what: the same composition the viewer shows. */
+const WHAT_RUNS: Partial<Record<EntityKind, (details: Partial<EntityMetadata>) => string[]>> = {
+  terminal: (details) => [
+    `${commandRowLabel(details.terminalOs)}: ${buildCommandLine(details.command ?? '', details.commandArgs)}`,
+    ...(details.commandNote === undefined ? [] : [details.commandNote]),
+  ],
+  script: (details) => [`Script (${details.scriptLanguage ?? 'bash'}), in full:`, details.script ?? ''],
+};
 
 /** Is anything at all creatable? Used by the tool to answer before a round trip. */
 export function anyCreatable(access: McpAccess): boolean {
