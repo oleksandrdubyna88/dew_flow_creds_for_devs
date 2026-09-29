@@ -9,7 +9,7 @@ import { EnvApplyResult, EnvWithheld } from './envApplyNotice';
 import { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
 import { FieldReading, readingOf, valueOf, withheld } from './fieldReading';
-import { automaticPinRefusal, pinRefusalFor } from './pinGate';
+import { pinFieldRefusal } from './pinGate';
 
 /**
  * Writing bound secret fields into VS Code's environment variable collection — the
@@ -68,24 +68,13 @@ export function automaticFieldRefusal(
   stored: string | undefined,
 ): string {
   const woven = automaticRefusal(details, field);
-  if (woven !== '') {
-    return woven;
-  }
-
-  // The WRAP is the truth and is asked first — a mark can be absent from an entry whose values are
-  // locked, which is why nothing here has ever keyed on it alone. The MARK is asked as well because
-  // it catches a state the wrap cannot: an entry marked protected whose stored value is, at this
-  // instant, plaintext. That state is reachable today — the EDIT path writes a newly typed secret
-  // and never re-seals it (found by the automated reviewer; its own plan) — and without this an edit
-  // would hand a protected entry's new password to every terminal opened afterwards. Either signal
-  // refuses: that cannot under-refuse, it can only refuse something the wrap would have allowed.
-  const locked = automaticPinRefusal(stored, details.name);
-  if (locked !== '') {
-    return locked;
-  }
-
-  // The same sentence the wrap earns, because it is the same fact about the same entry.
-  return details.pinProtected === true ? pinRefusalFor(details.name) : '';
+  // The PIN's answer — the WRAP first, the MARK second, one sentence for both — is
+  // `pinGate.pinFieldRefusal` since the entry-PIN plan (§5.4), so that the `creds://` reads and the
+  // SSH broker's key path ask the same question this road does. The mark half was born here: an
+  // entry marked protected whose stored value was, at that instant, plaintext, because the EDIT path
+  // wrote a newly typed secret and never re-sealed it — and without the mark an edit would have
+  // handed a protected entry's new password to every terminal opened afterwards.
+  return woven !== '' ? woven : pinFieldRefusal(details, stored);
 }
 
 /**

@@ -34,10 +34,18 @@
  */
 const granted = new Map<string, string>();
 
-/** The one place the composite key is spelled, so no caller can build a different one. */
-function keyOf(accountId: string, entityId: string): string {
+/**
+ * The one place the composite key is spelled, so no caller can build a different one.
+ *
+ * <p>Exported for `pinAttempts`, which counts wrong PINs under exactly this key: a counter keyed by
+ * the id alone would let one profile's guesses cool down another profile's entry, the same
+ * restore-puts-one-id-into-two-profiles case the grant is keyed against.</p>
+ */
+export function entryPinKey(accountId: string, entityId: string): string {
   return `${accountId}\u0000${entityId}`;
 }
+
+const keyOf = entryPinKey;
 
 /** Remember what opened this entry. Called only after the PIN has actually opened something. */
 export function grantPin(accountId: string, entityId: string, pin: string): void {

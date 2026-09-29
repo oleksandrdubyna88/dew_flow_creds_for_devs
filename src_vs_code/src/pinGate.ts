@@ -1,5 +1,6 @@
+import { attemptUnlock, cooldownMs, coolingReason } from './pinAttempts';
 import { grantPin, grantedPin, forgetPin } from './pinSession';
-import { SecretEnvelope, readSecret, unlockSecret } from './secretEnvelope';
+import { SecretEnvelope, readSecret } from './secretEnvelope';
 
 /**
  * Opening one PIN-protected value for one operation the person just asked for.
@@ -34,6 +35,13 @@ export interface PinGate {
   readonly entityId: string;
   readonly entryName: string;
   readonly ask: AskPin;
+  /**
+   * What the person is about to do, in the words the box says it: <i>"Enter it to copy its
+   * password"</i>, <i>"… to edit it"</i>, <i>"… to save it"</i>. A box that names what pressing OK
+   * will do is a decision; one that says "open this value" for a copy, an export and a save alike
+   * is a reflex. Absent, the generic question is asked.
+   */
+  readonly purpose?: string;
 }
 
 /** What opening a value produced. `cancelled` is a decision, not a failure — it says nothing more. */
@@ -42,7 +50,19 @@ export type PinOpen =
   | { readonly kind: 'unprotected'; readonly value: string | undefined }
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'wrong'; readonly reason: string }
+  /** Five wrong PINs in a row: nothing was tried and no box was raised — see `pinAttempts`. */
+  | { readonly kind: 'cooling'; readonly reason: string }
   | { readonly kind: 'corrupt'; readonly reason: string };
+
+/**
+ * A gate that never asks: it opens only with the grant this window already holds, and answers
+ * `cancelled` otherwise. For a path that runs AFTER a door admitted the entry — the share's withheld
+ * notice, the export's opener — where a second box would be a second question about an entry the
+ * person answered for a moment ago.
+ */
+export function silentPinGate(accountId: string, entityId: string, entryName: string): PinGate {
+  return { accountId, entityId, entryName, ask: () => Promise.resolve(undefined) };
+}
 
 /**
  * The stored string, opened — asking for the PIN only if this window has not been given it.
@@ -74,9 +94,19 @@ async function openLocked(envelope: SecretEnvelope, gate: PinGate): Promise<PinO
   return askOnce(envelope, gate);
 }
 
+/**
+ * The box, once — after the one check that must come BEFORE it (D16): an entry that has taken five
+ * wrong PINs in a row is refused without the box being raised at all, with the sentence that says
+ * how long. Raising it anyway and refusing what is typed would spend the person's wait on a
+ * question that cannot be answered.
+ */
 async function askOnce(envelope: SecretEnvelope, gate: PinGate): Promise<PinOpen> {
-  const typed = await gate.ask(PROMPT, gate.entryName);
-  if (typed === undefined || typed.length === 0) {
+  const cooling = cooldownMs(gate.accountId, gate.entityId, Date.now());
+  if (cooling > 0) {
+    return { kind: 'cooling', reason: coolingReason(cooling, gate.entryName) };
+  }
+  const typed = await gate.ask(pinPromptFor(gate.purpose), gate.entryName);
+  if (dismissed(typed)) {
     return { kind: 'cancelled' };
   }
   const opened = await tryPin(envelope, gate, typed);
@@ -87,17 +117,21 @@ async function askOnce(envelope: SecretEnvelope, gate: PinGate): Promise<PinOpen
   return { kind: 'value', value: opened };
 }
 
-/** One attempt. A wrong PIN is an ANSWER here — the throw belongs to the layer that must report it. */
-async function tryPin(
-  envelope: SecretEnvelope,
-  gate: PinGate,
-  pin: string,
-): Promise<string | undefined> {
-  try {
-    return await unlockSecret(envelope, gate.accountId, pin);
-  } catch {
-    return undefined;
-  }
+/** Dismissed, or an empty box: either way there is nothing to try. */
+function dismissed(typed: string | undefined): typed is undefined {
+  return typed === undefined || typed.length === 0;
+}
+
+/** One attempt, through the choke point that counts it. A wrong PIN is an ANSWER here — the words belong to the layer that must report it. */
+function tryPin(envelope: SecretEnvelope, gate: PinGate, pin: string): Promise<string | undefined> {
+  return attemptUnlock(envelope, gate.accountId, gate.entityId, pin);
+}
+
+/** The generic question, or the one that names what the person is about to do (`PinGate.purpose`). */
+export function pinPromptFor(purpose: string | undefined): string {
+  return purpose === undefined
+    ? PROMPT
+    : `This entry is protected with its own PIN. Enter it to ${purpose}. It is remembered until this window closes or the vault locks.`;
 }
 
 const PROMPT = 'This entry is protected with its own PIN. Enter it to open this value.';
@@ -135,4 +169,31 @@ export function automaticPinRefusal(stored: string | undefined, entryName: strin
 export function pinRefusalFor(entryName: string): string {
   return `"${entryName}" is protected with its own PIN, so it cannot be used automatically. Open the `
     + 'entry and enter the PIN, or remove the PIN protection from its General section.';
+}
+
+/**
+ * Why NOTHING automatic may have this stored field of this entry, or `''` when it may — the wrap
+ * first, the mark second, one sentence for both.
+ *
+ * <p>The WRAP is the truth and is asked first: a mark can be absent from an entry whose values are
+ * locked, which is why nothing here has ever keyed on it alone. The MARK is asked as well because it
+ * catches a state the wrap cannot — an entry marked protected whose stored value is, at this instant,
+ * plaintext (a value written by an older build, or arriving from another machine). Either signal
+ * refuses; that cannot under-refuse, it can only refuse something the wrap would have allowed.</p>
+ *
+ * <p>It lived inside `envApply.automaticFieldRefusal` and was extracted here (entry-PIN plan §5.4)
+ * so the `creds://` reads, the TOTP reading and the SSH broker's key path ask the SAME question,
+ * rather than each asking the wrap alone and forgetting the mark — the omission the code round of
+ * 2026-09-12 found once, on the held-value road.</p>
+ */
+export function pinFieldRefusal(
+  details: { readonly name: string; readonly pinProtected?: boolean },
+  stored: string | undefined,
+): string {
+  const locked = automaticPinRefusal(stored, details.name);
+  if (locked !== '') {
+    return locked;
+  }
+  // The same sentence the wrap earns, because it is the same fact about the same entry.
+  return details.pinProtected === true ? pinRefusalFor(details.name) : '';
 }

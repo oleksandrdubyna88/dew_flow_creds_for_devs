@@ -6,9 +6,11 @@ import {
   lockedSlotCount,
   pinOpens,
   protectEntity,
+  sealValue,
   unprotectEntity,
 } from '../entityPin';
-import { isLockedSecret, readSecret } from '../secretEnvelope';
+import { isLockedSecret, isWovenSecret, lockSecret, plainSecret, readSecret, unlockSecret } from '../secretEnvelope';
+import { FREE_TRIES, forgetAllAttempts, noteWrong } from '../pinAttempts';
 import { forgetAllPins, forgetPin, grantCount, grantPin, grantedPin } from '../pinSession';
 import { StorageManager } from '../storageManager';
 
@@ -214,4 +216,61 @@ test('the vault lock forgets everything at once', () => {
   forgetAllPins();
 
   assert.equal(grantCount(), 0);
+});
+
+/**
+ * `sealValue` — one value about to be WRITTEN into a protected entry, sealed the way `protectEntity`
+ * seals a stored one. Extracted from `lockOne` so every writer into a protected entry (Edit, a
+ * restore, a share update) seals identically, rather than each spelling `lockSecret` with its own
+ * idea about the woven mark. Rule R3 of the entry-PIN plan: sealed in memory first, then written.
+ */
+test('sealValue locks a plain value so that only the PIN opens it', async () => {
+  const sealed = await sealValue('hunter2', ACCOUNT, PIN);
+
+  assert.equal(readSecret(sealed).kind, 'locked');
+  assert.ok(!sealed.includes('hunter2'), 'the plaintext is not in the envelope');
+  assert.equal(await unlockSecret(JSON.parse(sealed) as never, ACCOUNT, PIN), 'hunter2');
+});
+
+test('sealValue keeps the woven mark of a woven plain value — a seal must not turn a pair into a string', async () => {
+  const wovenPlain = plainSecret('abXcdYef', true);
+
+  const sealed = await sealValue(wovenPlain, ACCOUNT, PIN);
+
+  assert.equal(readSecret(sealed).kind, 'locked');
+  assert.equal(isWovenSecret(sealed), true, 'the mark rides inside the lock, as lockOne always kept it');
+  assert.equal(await unlockSecret(JSON.parse(sealed) as never, ACCOUNT, PIN), 'abXcdYef');
+});
+
+test('sealValue leaves an already-locked value exactly as it is — re-running is the resume, never a double wrap', async () => {
+  const once = await sealValue('hunter2', ACCOUNT, PIN);
+
+  const twice = await sealValue(once, ACCOUNT, PIN);
+
+  assert.equal(twice, once, 'byte-identical: a second wrap would need the first opened, and nothing here has the PIN for that');
+});
+
+test('sealValue seals envelope-shaped text somebody TYPED as the text it is, rather than refusing the save', async () => {
+  // `readSecret` calls this `corrupt` when it is STORED, because a stored one is a damaged write. A
+  // person can type it into a notes box, and then it is their note.
+  const typed = '{"v":1,"lock":{"wrap":{}}}';
+
+  const sealed = await sealValue(typed, ACCOUNT, PIN);
+
+  assert.equal(readSecret(sealed).kind, 'locked');
+  assert.equal(await unlockSecret(JSON.parse(sealed) as never, ACCOUNT, PIN), typed);
+});
+
+test('Remove PIN refuses while the entry is cooling down, and changes nothing', async () => {
+  forgetAllAttempts();
+  const storage = vault({ password: await lockSecret('hunter2', ACCOUNT, PIN) });
+  const before = new Map(held(storage));
+  for (let i = 0; i < FREE_TRIES; i += 1) {
+    noteWrong(ACCOUNT, ENTITY, Date.now());
+  }
+
+  await assert.rejects(() => unprotectEntity(storage, ACCOUNT, ENTITY, PIN), /Too many wrong PINs/);
+
+  assert.deepEqual(held(storage), before, 'byte-identical — nothing was touched');
+  forgetAllAttempts();
 });

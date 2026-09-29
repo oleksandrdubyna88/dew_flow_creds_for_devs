@@ -13,12 +13,19 @@ import { StorageManager } from './storageManager';
  * lives, so the box says the same thing whichever surface opened it.</p>
  */
 
-/** A gate for one entry, with the prompt wired to a real input box. */
-export function entryPinGate(accountId: string, entityId: string, entryName: string): PinGate {
+/**
+ * A gate for one entry, with the prompt wired to a real input box.
+ *
+ * <p>`purpose` is what the box says pressing OK will do — <i>"edit it"</i>, <i>"copy its password"</i>
+ * — and `pinGate.pinPromptFor` turns it into the sentence; the gate only carries it. Absent, the
+ * generic question is asked, which is what every surface said before the entry-PIN plan.</p>
+ */
+export function entryPinGate(accountId: string, entityId: string, entryName: string, purpose?: string): PinGate {
   return {
     accountId,
     entityId,
     entryName,
+    purpose,
     ask: (prompt, name) =>
       vscode.window.showInputBox({
         title: `PIN for "${name}"`,
@@ -89,15 +96,16 @@ const NEW_PIN =
  * The door before a read: ask this entry's PIN when it has one, and answer the gate that opens its
  * values — or `undefined`, having said why. Declining says nothing more (the person chose); a wrong
  * PIN says the gate's own reason. The viewer and *Open Site in Browser* (issue #104) both stand here;
- * it was written out at each until then.
+ * it was written out at each until then. `purpose` names what the click will do (`entryPinGate`).
  */
 export async function admitEntry(
   storage: StorageManager,
   accountId: string,
   entityId: string,
   entryName: string,
+  purpose?: string,
 ): Promise<PinGate | undefined> {
-  const gate = entryPinGate(accountId, entityId, entryName);
+  const gate = entryPinGate(accountId, entityId, entryName, purpose);
   const admission = await admit(storage, accountId, entityId, gate);
   if (admission.kind === 'refused') {
     void vscode.window.showWarningMessage(admission.reason);

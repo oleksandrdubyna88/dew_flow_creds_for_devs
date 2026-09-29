@@ -1,6 +1,7 @@
 import { SECRET_SLOTS, SecretSlot } from './entitySlots';
+import { attemptUnlock, cooldownMs, coolingReason } from './pinAttempts';
 import { StorageManager } from './storageManager';
-import { SecretEnvelope, isLockedSecret, lockSecret, readSecret, unlockSecret } from './secretEnvelope';
+import { SecretEnvelope, isLockedSecret, lockSecret, readSecret } from './secretEnvelope';
 
 /**
  * Putting one entry's secrets under a PIN, and taking them back out.
@@ -78,13 +79,13 @@ async function lockOne(
 ): Promise<void> {
   const stored = await slot.read(storage, accountId, entityId);
   const read = readSecret(stored);
-  if (read.kind !== 'value') {
+  if (stored === undefined || read.kind !== 'value') {
     // `absent` is nothing to wrap; `locked` is already done; `corrupt` is the one state a write
     // must never touch — overwriting damaged ciphertext destroys the only copy of the evidence.
     noteSkip(read.kind, slot, skipped);
     return;
   }
-  await slot.write(storage, accountId, entityId, await lockSecret(read.value, accountId, pin, read.woven));
+  await slot.write(storage, accountId, entityId, await sealValue(stored, accountId, pin));
   changed.push(slot.label);
 }
 
@@ -93,6 +94,34 @@ function noteSkip(kind: string, slot: SecretSlot, skipped: string[]): void {
   if (kind !== 'absent') {
     skipped.push(slot.label);
   }
+}
+
+/**
+ * One value about to be WRITTEN into a protected entry, sealed under its PIN.
+ *
+ * <p>Extracted from `lockOne` so that every writer into a protected entry — Edit, a restore, a share
+ * update, the history rewrite — seals exactly the way Protect does, in memory and BEFORE its raw
+ * setter runs (entry-PIN plan, rule R3). One place for the woven mark, one place for idempotence:</p>
+ *
+ * <ul>
+ *   <li>a plain string, and a plain envelope carrying the woven mark, both come out locked with
+ *       the mark kept;</li>
+ *   <li>a value that is already locked is returned untouched — a second wrap under the same PIN
+ *       would need the first opened, and re-running being the resume is what `protectEntity`
+ *       promises;</li>
+ *   <li>envelope-shaped text that does not parse is sealed as the text it is. `readSecret` calls
+ *       that `corrupt` when it is STORED, because a stored one is a damaged write; here it is what
+ *       somebody typed, and a save must not refuse a note for looking like a wrap.</li>
+ * </ul>
+ */
+export async function sealValue(value: string, accountId: string, pin: string): Promise<string> {
+  const read = readSecret(value);
+  if (read.kind === 'locked') {
+    return value;
+  }
+  return read.kind === 'value'
+    ? lockSecret(read.value, accountId, pin, read.woven)
+    : lockSecret(value, accountId, pin, false);
 }
 
 /**
@@ -129,14 +158,30 @@ async function openedSlots(
   entityId: string,
   pin: string,
 ): Promise<[SecretSlot, string][]> {
+  const cooling = cooldownMs(accountId, entityId, Date.now());
+  if (cooling > 0) {
+    throw new Error(coolingReason(cooling));
+  }
   const opened: [SecretSlot, string][] = [];
   for (const slot of SECRET_SLOTS) {
     const read = readSecret(await slot.read(storage, accountId, entityId));
     if (read.kind === 'locked') {
-      opened.push([slot, await unlockSecret(read.envelope, accountId, pin)]);
+      opened.push([slot, await openedOrThrow(read.envelope, accountId, entityId, pin)]);
     }
   }
   return opened;
+}
+
+/**
+ * The choke point's answer, as the throw this module's callers report. `attemptUnlock` counts the
+ * miss; the sentence here is what `pinCommands.removeOne` puts after <i>That PIN does not open</i>.
+ */
+async function openedOrThrow(envelope: SecretEnvelope, accountId: string, entityId: string, pin: string): Promise<string> {
+  const value = await attemptUnlock(envelope, accountId, entityId, pin);
+  if (value === undefined) {
+    throw new Error('The PIN was refused.');
+  }
+  return value;
 }
 
 /** How much of this entry is locked — the number a person is shown, and the interrupted-run signal. */
@@ -179,17 +224,10 @@ export async function pinOpens(
   for (const slot of SECRET_SLOTS) {
     const read = readSecret(await slot.read(storage, accountId, entityId));
     if (read.kind === 'locked') {
-      return await opensQuietly(read.envelope, accountId, pin);
+      // Through the choke point, so a sibling check that opens none of N protected siblings counts
+      // one wrong attempt on each of them (D16) — and a cooling sibling opens for nobody.
+      return (await attemptUnlock(read.envelope, accountId, entityId, pin)) !== undefined;
     }
   }
   return false;
-}
-
-async function opensQuietly(envelope: SecretEnvelope, accountId: string, pin: string): Promise<boolean> {
-  try {
-    await unlockSecret(envelope, accountId, pin);
-    return true;
-  } catch {
-    return false;
-  }
 }

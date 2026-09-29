@@ -3,8 +3,8 @@ import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
 import { EntityMetadata } from '../types';
 import { lockSecret } from '../secretEnvelope';
-import { automaticPinRefusal, openStored } from '../pinGate';
-import { forgetAllPins, grantCount, grantedPin } from '../pinSession';
+import { automaticPinRefusal, openStored, pinFieldRefusal, pinPromptFor, silentPinGate } from '../pinGate';
+import { forgetAllPins, grantCount, grantPin, grantedPin } from '../pinSession';
 
 /**
  * Every row of the reader survey, by name.
@@ -55,6 +55,73 @@ test('env, the terminal and a creds:// reference all report WITHHELD, not absent
     undefined,
     'and the value-only reader agrees, because it IS the reading narrowed',
   );
+});
+
+/**
+ * `pinFieldRefusal` — the wrap first, the mark second, one sentence for both. It lived inside
+ * `envApply.automaticFieldRefusal` and was extracted (entry-PIN plan §5.4) so the `creds://` reads,
+ * the TOTP reading and the SSH broker's key path can ask the SAME question instead of each asking
+ * the wrap alone and forgetting the mark — the omission the code round of 2026-09-12 found once.
+ */
+test('pinFieldRefusal refuses on the WRAP, refuses on the MARK alone, and hands an ordinary value over', async () => {
+  const marked = details({ pinProtected: true });
+
+  assert.match(pinFieldRefusal(details(), await locked()), /prod-db.*protected with its own PIN/, 'the wrap is the truth');
+  assert.match(pinFieldRefusal(marked, 'hunter2'), /protected with its own PIN/, 'a plaintext value inside a marked entry is still withheld');
+  assert.equal(pinFieldRefusal(details(), 'hunter2'), '');
+  assert.equal(pinFieldRefusal(details(), undefined), '', 'nothing stored is not a refusal');
+});
+
+test('envApply asks pinFieldRefusal — the mark-only case still withholds through the binding reader', async () => {
+  // The extraction must not have moved the behaviour out from under its first caller.
+  const mod = loadWithVscode<typeof import('../envApply')>('../envApply', {});
+  const storage = { getPassword: () => Promise.resolve('hunter2') } as never;
+
+  const reading = await mod.bindableFieldReading(storage, ACCOUNT, details({ pinProtected: true }), 'password');
+
+  assert.equal(reading.kind, 'withheld');
+});
+
+/**
+ * The prompt names the PURPOSE (entry-PIN plan §5): a box that says what pressing OK will do is a
+ * decision; one that says "open this value" for a copy, an export and a save alike is a reflex.
+ */
+test('a gate with a purpose asks in that purpose\'s words; one without asks the generic question', async () => {
+  forgetAllPins();
+  const asked: string[] = [];
+  const gate = {
+    accountId: ACCOUNT,
+    entityId: 'e1',
+    entryName: 'prod-db',
+    ask: (prompt: string) => {
+      asked.push(prompt);
+      return Promise.resolve(undefined);
+    },
+  };
+
+  await openStored(await locked(), { ...gate, purpose: 'copy its password' });
+  await openStored(await locked(), gate);
+
+  assert.equal(asked[0], 'This entry is protected with its own PIN. Enter it to copy its password. It is remembered until this window closes or the vault locks.');
+  assert.equal(asked[1], pinPromptFor(undefined));
+  assert.match(asked[1], /Enter it to open this value/, 'the generic sentence is the one every surface used before');
+});
+
+/**
+ * The silent gate: opens only with what this window already holds, and never asks. For a path that
+ * runs AFTER a door admitted the entry — the share's withheld notice, the export's opener — where a
+ * second box would be a second question about an entry the person just answered for.
+ */
+test('the silent gate opens a granted entry and answers cancelled for one with no grant — it never raises a box', async () => {
+  forgetAllPins();
+  const value = await locked();
+
+  const unopened = await openStored(value, silentPinGate(ACCOUNT, 'e1', 'prod-db'));
+  assert.deepEqual(unopened, { kind: 'cancelled' }, 'no grant, no prompt, no value');
+
+  grantPin(ACCOUNT, 'e1', PIN);
+  const opened = await openStored(value, silentPinGate(ACCOUNT, 'e1', 'prod-db'));
+  assert.deepEqual(opened, { kind: 'value', value: 'hunter2' });
 });
 
 test('the SSH broker refuses a protected password rather than handing ssh an envelope', async () => {
