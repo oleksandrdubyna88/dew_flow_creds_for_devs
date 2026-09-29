@@ -484,6 +484,23 @@ defect starts with its RED test watched failing with the real symptom (§11), th
       Restore, sync rule), `research/module_tests.md` (new scenario tests); coai `review_code` until
       `proceed`; full suite from `out/`; promote this plan and the superseded one; extension 1.12.0.
 
+### 9.1 Epics and pull requests
+
+The owner allowed more than one pull request (2026-09-29). The phases ship as four epics, each its own
+branch, pull request and coai code round; **nothing is released until the last one** (owner decision 2).
+The order puts the data loss first.
+
+| Epic | Phases | Pull request closes | Why this order |
+|---|---|---|---|
+| E1 | P1-P3 | D1-D5, the banner half of D17 | the reported bug and the only data LOSS; carries this plan's commit |
+| E2 | P4-P5 | D6-D9, D18 | every leak of an envelope to a sink; reuses E1's door and `sealValue` |
+| E3 | P6-P7 | D10, D11, D13-D15 | history, Restore and Remove PIN share `replaceHistory` and the slot table's `revisionField`/`remove` |
+| E4 | P8-P10 | D12, D16, the rest of D17, §7 guards, docs, release | the guard is written last, when every reader it classifies is final |
+
+[PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md) is a fifth pull
+request after E1 (it uses `sealValue`) and before the release. Extension 1.12.0 is cut after E4 and it have
+both merged.
+
 ## 10. Risks
 
 1. **scrypt latency** on Edit and Protect (§8) — parallel opens, progress, keep-if-unchanged.
