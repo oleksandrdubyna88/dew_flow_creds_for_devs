@@ -370,3 +370,14 @@ test('a parent chain that LOOPS answers instead of hanging', async () => {
 
   assert.deepEqual(await mod.pinForNewEntry(storage, 'a1', 'a'), { kind: 'none' });
 });
+
+test('a sealed share import is one protection decision: the new entry carries pinEpoch 1', async () => {
+  const w = world();
+  ui.inputs = ['transit-pin-1111', 'recipient-pin-2222', 'recipient-pin-2222'];
+
+  await w.inbox.acceptOne(sealedShare(protectedPayload(), 'transit-pin-1111'));
+
+  const node = imported(w);
+  assert.equal(node?.details?.pinProtected, true, 'precondition: imported sealed');
+  assert.equal(node?.pinEpoch, 1);
+});

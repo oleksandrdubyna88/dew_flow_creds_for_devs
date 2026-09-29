@@ -69,19 +69,26 @@ export async function updateInPlace(
 }
 
 /**
- * The node from the payload, in the recipient's place, with the recipient's marks (#122, D9).
- * `pinEpoch` — the protection-decision counter the plan adds to the NODE in P8 — is not a field yet;
- * when it exists it is carried from `existing` here, beside `createdAt`, since the payload never has it.
+ * The node from the payload, in the recipient's place, with the recipient's marks (#122, D9) — and
+ * the recipient's `pinEpoch`, the count of THEIR protection decisions (§5.9). It lives on the node,
+ * not in `details`, so `keepingMark` cannot carry it; the payload never carries one either
+ * (`sharePayloadBuild` strips the sender's), so it comes from `existing`, beside `createdAt`.
  */
 function rebuilt(payload: SharePayload, existing: TreeNode | undefined, previousId: string, parentId: string | null): TreeNode {
   return withOwnId({
     ...payload.node,
     details: keepingMark(payload.node.details, existing),
     id: previousId,
-    parentId: existing?.parentId ?? parentId,
-    createdAt: existing?.createdAt,
+    ...recipientsOwn(existing, parentId),
     children: undefined,
   });
+}
+
+/** What the recipient's node keeps whatever the payload says: its place, its age, its decisions. */
+function recipientsOwn(existing: TreeNode | undefined, parentId: string | null): Pick<TreeNode, 'parentId' | 'createdAt' | 'pinEpoch'> {
+  return existing === undefined
+    ? { parentId, createdAt: undefined, pinEpoch: undefined }
+    : { parentId: existing.parentId ?? parentId, createdAt: existing.createdAt, pinEpoch: existing.pinEpoch };
 }
 
 /**

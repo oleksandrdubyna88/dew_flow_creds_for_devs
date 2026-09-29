@@ -10,6 +10,7 @@ import { describeError } from './describeError';
 import { asElement } from './commandTargets';
 import { FolderPinPlan, folderPinPlan, protectionSummary, runReport, siblingReport } from './pinFolderPlan';
 import { restoreRevision } from './revisionRestore';
+import { protectionDecision } from './syncPinRule';
 
 /**
  * Putting a PIN on an entry or a folder, and taking it off — the commands a person runs.
@@ -427,13 +428,12 @@ async function protectOne(node: TreeNode, pin: string, deps: PinCommandDeps, run
  * Written last, an interruption leaves the entry visible with values that refuse, which is true.</p>
  */
 async function markProtection(node: TreeNode, on: boolean, deps: PinCommandDeps): Promise<void> {
-  const details = node.details;
-  if (details === undefined) {
+  if (node.details === undefined) {
     return;
   }
-  await deps.storage.updateDetailsFields(deps.accountId, node.id, {
-    pinProtected: on ? true : undefined,
-  });
+  // The mark and one more protection DECISION, in one node write (§5.9, R6): the sync merge settles a
+  // concurrent disagreement by the later decision, so the count must never move apart from the mark.
+  await deps.storage.updateNodeFields(deps.accountId, node.id, protectionDecision(on));
 }
 
 const PIN_FOR_FOLDER =

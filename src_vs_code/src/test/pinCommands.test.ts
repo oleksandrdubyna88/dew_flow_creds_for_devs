@@ -121,3 +121,21 @@ test('Remove PIN reports a kept value under a different PIN as left sealed', asy
   assert.equal(await stored(w, 'password'), 'hunter2');
   assert.match(w.s.infos.join(' '), /1 value in its kept versions is sealed under a different PIN and stays sealed\./);
 });
+
+test('Protect and Remove PIN each write the mark AND one more protection decision, in ONE node write (R6)', async () => {
+  // The sync rule settles a concurrent disagreement by the later DECISION (§5.9), so the count has to
+  // move with the mark, never apart from it: one write, evaluated inside the write lease.
+  const w = await world(credential(), { password: 'hunter2' }, [PIN, PIN, PIN]);
+  let nodeWrites = 0;
+  const real = w.storage.updateNodeFields.bind(w.storage);
+  w.storage.updateNodeFields = (a, id, patch) => {
+    nodeWrites += 1;
+    return real(a, id, patch);
+  };
+
+  await w.commands.protectEntry(w.node(), w.deps);
+  assert.deepEqual([w.node().details?.pinProtected, w.node().pinEpoch, nodeWrites], [true, 1, 1], 'protected: the mark, epoch 1, one write');
+
+  await w.commands.unprotectEntry(w.node(), w.deps);
+  assert.deepEqual([w.node().details?.pinProtected, w.node().pinEpoch, nodeWrites], [undefined, 2, 2], 'removed: no mark, epoch 2, one more write');
+});

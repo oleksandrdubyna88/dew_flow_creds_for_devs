@@ -3,6 +3,7 @@ import { StorageManager } from './storageManager';
 import { TreeNode } from './types';
 import { isProtected, pinOpens, protectEntity } from './entityPin';
 import { protectHistory } from './historyPin';
+import { protectionDecision } from './syncPinRule';
 import { pinValidator } from './pinInput';
 import { newPin } from './pinPrompt';
 import { entriesUnder } from './pinFolderPlan';
@@ -190,7 +191,8 @@ export async function applyCreatePin(
   await protectHistory(storage, accountId, entityId, settled.pin);
   // The mark last, for the reason `pinCommands` gives: a mark written first and then interrupted
   // would hide the entry from every agent surface while its values were still readable.
-  await storage.updateDetailsFields(accountId, node.id, { pinProtected: true });
+  // And it is a protection decision like Protect's — the mark and `pinEpoch` + 1 in one write (§5.9).
+  await storage.updateNodeFields(accountId, node.id, protectionDecision(true));
 }
 
 const PROMPT =

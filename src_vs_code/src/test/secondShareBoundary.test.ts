@@ -175,3 +175,13 @@ test('the withheld names are ordered as a person reads, not by code unit', () =>
     /Second account number, Second card number, Second CVV, Second IBAN, Second password, Second PIN/,
   );
 });
+
+test('a share payload carries no protection-decision count — the sender\'s decisions are not the recipient\'s', async () => {
+  const mod = loadWithVscode<typeof import('../sharePayloadBuild')>('../sharePayloadBuild', {});
+  const node = { id: 'e1', name: 'prod-db', type: 'entity', details: DETAILS, pinEpoch: 5 } as never;
+
+  const payload = await mod.buildSharePayload(vault() as never, 'a1', node, false);
+
+  assert.equal(payload.node.pinEpoch, undefined);
+  assert.equal(payload.node.name, 'prod-db', 'the check is looking at the node that travels');
+});

@@ -69,3 +69,16 @@ test('a declined entry PIN updates nothing, and the share stays to be accepted a
   assert.equal(await w.storage.getPassword(RECIPIENT.accountId, id), before, 'byte-identical');
   assert.equal(w.removed.length, consumed, 'the share was consumed, and with it the only copy of the update');
 });
+
+test('updating a protected entry from a share keeps its protection-decision count — the payload never carries one', async () => {
+  const { w, id } = await protectedCopy();
+  await w.storage.updateNodeFields(RECIPIENT.accountId, id, { pinEpoch: 3 });
+
+  ui.inputs = [PIN, ENTRY_PIN];
+  ui.warningAnswer = 'Update it';
+  await w.inbox.acceptOne(sealedShare(payloadFor('prod api v2', 'sender-side-id'), PIN));
+
+  const updated = w.storage.getNode(RECIPIENT.accountId, id);
+  assert.equal(updated?.name, 'prod api v2', 'precondition: the update landed');
+  assert.equal(updated?.pinEpoch, 3, 'the recipient\'s decisions are the recipient\'s');
+});

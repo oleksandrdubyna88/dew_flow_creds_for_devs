@@ -76,6 +76,8 @@ async function wrappedPayload(
           // The instruction is SPENT: it has been acted on, so what the entry carries now is the
           // ordinary mark saying its values are wrapped — which is true of this copy.
           : { ...payload.node.details, pinAskOnImport: undefined, pinProtected: true },
+      // One protection decision on this copy, in the same node write as the mark (§5.9, R6).
+      pinEpoch: 1,
     },
     secrets: secrets as SharePayload["secrets"],
   };

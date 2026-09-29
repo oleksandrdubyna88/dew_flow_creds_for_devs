@@ -6,6 +6,7 @@ import { StorageManager } from './storageManager';
 import { UnlockOffer, reportLockedVaults } from './lockedVaultPrompt';
 import { sharesFromEnvelope } from './shareFormat';
 import { emptySnapshot, mergeProfiles, ProfileSnapshot } from './syncMerge';
+import { keepProtectionLosers, tellProtectionLosers } from './syncProtectionNotice';
 import { ConvergedMark, isIdleCycle, markAfterCycle } from './syncIdle';
 import {
   encryptJsonWrapped,
@@ -562,10 +563,12 @@ export class SyncManager implements vscode.Disposable {
     }
 
     const { merged, localChanged, remoteChanged } = mergeProfiles(local, remote, Date.now());
-
+    // A protection conflict's losing local copy is recorded BEFORE the merge replaces it (§5.9).
+    const losers = await keepProtectionLosers(this.storage, account.accountId, local, remote, merged);
     if (localChanged) {
       await this.storage.applySnapshot(account.accountId, merged);
     }
+    tellProtectionLosers(this.storage, account.accountId, losers);
     // Corporate escrow rides the ordinary write: enrolling is a wrap change, and a wrap change
     // is a reason to write even when nothing else moved.
     const escrow = await this.escrowFor(account, key);

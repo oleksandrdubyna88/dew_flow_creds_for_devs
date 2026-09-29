@@ -256,3 +256,16 @@ test('a declined door heals nothing — no mark, no seal', async () => {
   assert.equal(storage.getNode(pinWorld.ACCOUNT, 'm3')?.details?.pinProtected, undefined);
   assert.equal(await storage.getNotes(pinWorld.ACCOUNT, 'm3'), 'plain');
 });
+
+test('the door’s mark repair is a repair, not a protection decision — it counts none', async () => {
+  forgetAllPins();
+  const storage = pinWorld.memoryStorage(pinWorld.clickVscode([], pinWorld.sinks()));
+  await pinWorld.seedEntry(storage, { id: 'm4', name: 'prod-db', isSshEnabled: false } as never, { password: await pinWorld.locked('hunter2') });
+  await storage.updateNodeFields(pinWorld.ACCOUNT, 'm4', { pinEpoch: 4 });
+
+  await admit(storage, pinWorld.ACCOUNT, 'm4', { accountId: pinWorld.ACCOUNT, entityId: 'm4', entryName: 'prod-db', ask: () => Promise.resolve(pinWorld.PIN) });
+
+  const node = storage.getNode(pinWorld.ACCOUNT, 'm4');
+  assert.equal(node?.details?.pinProtected, true, 'precondition: the mark was repaired');
+  assert.equal(node?.pinEpoch, 4, 'and no decision was counted for it');
+});

@@ -77,8 +77,8 @@ export function exportScope(all: readonly TreeNode[], roots: readonly TreeNode[]
  * Not-for-export entry on (own review), and a protected entry stopped claiming its PIN while its
  * values were still sealed (entry-PIN plan, D9). One helper, so a third mark is one line here.
  *
- * <p>`pinEpoch` is not listed: the plan puts it on the NODE, not in `details` (§5.9), so when it
- * exists it is carried where the node is rebuilt (`shareUpdateSeal.rebuilt`).</p>
+ * <p>`pinEpoch` is not listed: it lives on the NODE, not in `details` (§5.9), so it is carried where
+ * the node is rebuilt (`shareUpdateSeal.rebuilt`), from the recipient's own existing node.</p>
  */
 export function keepingMark(incoming: EntityMetadata | undefined, existing: TreeNode | undefined): EntityMetadata | undefined {
   return incoming === undefined ? undefined : { ...incoming, ...recipientMarks(existing) };
