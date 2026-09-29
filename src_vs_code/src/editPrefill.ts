@@ -2,8 +2,10 @@ import type { SecretWriter } from './applyFormSecrets';
 import { parseFields, serializeFields } from './entityFields';
 import { sealValue } from './entityPin';
 import { parsePaymentFields, serializePaymentFields } from './paymentFields';
+import { SECRET_SLOTS, SecretSlot } from './entitySlots';
 import { firstLockedStored } from './pinAdmission';
-import { PinGate, PinOpen, openStored } from './pinGate';
+import { PinGate, PinOpen, openStored, silentPinGate } from './pinGate';
+import type { RevisionSecrets } from './revisionHistory';
 import { grantedPin } from './pinSession';
 import { parseSecondValues, serializeSecondValues } from './secondValues';
 import type { StorageManager } from './storageManager';
@@ -59,23 +61,38 @@ export type EditOpen =
 const PREFILLED = ['notes', 'fieldsRaw', 'secondRaw', 'paymentRaw', 'configBody', 'dbConnection', 'totp'] as const;
 type Prefilled = (typeof PREFILLED)[number];
 
-const READ: Readonly<Record<Prefilled, (s: StorageManager, a: string, e: string) => Thenable<string | undefined>>> = {
-  notes: (s, a, e) => s.getNotes(a, e),
-  fieldsRaw: (s, a, e) => s.getFieldsRaw(a, e),
-  secondRaw: (s, a, e) => s.getSecondRaw(a, e),
-  paymentRaw: (s, a, e) => s.getPaymentRaw(a, e),
-  configBody: (s, a, e) => s.getConfigBody(a, e),
-  dbConnection: (s, a, e) => s.getDbConnection(a, e),
-  totp: (s, a, e) => s.getTotp(a, e),
+/**
+ * The slot each prefilled value lives in, looked up in the slot table rather than written out a second
+ * time — so the refusal names a slot the way every other sentence about it does.
+ */
+const SLOT: Readonly<Record<Prefilled, SecretSlot>> = {
+  notes: slotOf('notes'),
+  fieldsRaw: slotOf('fields'),
+  secondRaw: slotOf('second'),
+  paymentRaw: slotOf('payment'),
+  configBody: slotOf('config'),
+  dbConnection: slotOf('dbConnection'),
+  totp: slotOf('totp'),
 };
+
+function slotOf(field: keyof RevisionSecrets): SecretSlot {
+  const slot = SECRET_SLOTS.find((one) => one.revisionField === field);
+  if (slot === undefined) {
+    throw new Error(`The slot table has no row for ${field}.`);
+  }
+  return slot;
+}
 
 /**
  * Open, through the gate, only what the form prefills; record presence for the rest.
  *
- * <p>Called after `admitEntry`, so the grant is in this window's session and nothing asks — what
- * `openStored` buys here is that a slot an interrupted protect-run left locked is still opened,
- * and that a `corrupt` one is a REFUSAL rather than text in a box (R4). The seven opens run in
- * parallel: each is a scrypt of about a second, and seven seconds is a form nobody waits for.</p>
+ * <p>Called after `admitEntry`, so the grant is in this window's session. The seven opens go through
+ * a SILENT gate: an entry whose slots were sealed under two PINs (two protects on two machines, mixed
+ * by a sync) would otherwise raise one box per slot the grant cannot open, each indistinguishable
+ * from the door's — and a PIN typed into one would be granted over the first. A slot the granted PIN
+ * does not open refuses the form and is named. What `openStored` still buys is that a `corrupt` slot
+ * is a REFUSAL rather than text in a box (R4). The opens run in parallel: each is a scrypt of about a
+ * second, and seven seconds is a form nobody waits for.</p>
  */
 export async function openEntryForEdit(
   storage: StorageManager,
@@ -83,24 +100,43 @@ export async function openEntryForEdit(
   entityId: string,
   gate: PinGate,
 ): Promise<EditOpen> {
-  const opens = await Promise.all(PREFILLED.map(async (slot) => openStored(await READ[slot](storage, accountId, entityId), gate)));
-  const refusal = opens.find((open) => open.kind !== 'value' && open.kind !== 'unprotected');
-  if (refusal !== undefined) {
-    return { kind: 'refused', reason: refusalOf(refusal) };
+  const silent = silentPinGate(accountId, entityId, gate.entryName);
+  const opens = await Promise.all(PREFILLED.map(async (slot) => openStored(await SLOT[slot].read(storage, accountId, entityId), silent)));
+  const refused = PREFILLED.findIndex((_slot, at) => !isOpen(opens[at]));
+  if (refused >= 0) {
+    return { kind: 'refused', reason: prefillRefusal(opens[refused], SLOT[PREFILLED[refused]].label, gate.entryName) };
   }
   const values = Object.fromEntries(PREFILLED.map((slot, at) => [slot, valueOf(opens[at])])) as Record<Prefilled, string | undefined>;
+  return { kind: 'open', prefill: { ...values, ...(await presenceOf(storage, accountId, entityId)) } };
+}
+
+/** What the form is told about the slots it does not prefill, and whether the entry is protected at all. */
+async function presenceOf(
+  storage: StorageManager,
+  accountId: string,
+  entityId: string,
+): Promise<Pick<EditPrefill, 'locked' | 'hasPassword' | 'hasPrivateKey' | 'hasVpnConfig'>> {
   return {
-    kind: 'open',
-    prefill: {
-      ...values,
-      // Asked of EVERY slot, not of the seven opened above: a credential whose only locked value is
-      // its password is protected all the same, and its save must seal what is typed.
-      locked: (await firstLockedStored(storage, accountId, entityId)) !== undefined,
-      hasPassword: (await storage.getPassword(accountId, entityId)) !== undefined,
-      hasPrivateKey: (await storage.getPrivateKey(accountId, entityId)) !== undefined,
-      hasVpnConfig: (await storage.getVpnConfig(accountId, entityId)) !== undefined,
-    },
+    // Asked of EVERY slot, not of the seven opened above: a credential whose only locked value is
+    // its password is protected all the same, and its save must seal what is typed.
+    locked: (await firstLockedStored(storage, accountId, entityId)) !== undefined,
+    hasPassword: (await storage.getPassword(accountId, entityId)) !== undefined,
+    hasPrivateKey: (await storage.getPrivateKey(accountId, entityId)) !== undefined,
+    hasVpnConfig: (await storage.getVpnConfig(accountId, entityId)) !== undefined,
   };
+}
+
+function isOpen(open: PinOpen): boolean {
+  return open.kind === 'value' || open.kind === 'unprotected';
+}
+
+/**
+ * Why the form does not open over this slot. A silent gate answers `cancelled` only when the PIN the
+ * door granted does not open the slot — a fact about the slot, never a decline — and the sentence
+ * ends where `editNode` adds "Edit is not opened, so nothing can overwrite it."
+ */
+function prefillRefusal(open: PinOpen, label: string, entryName: string): string {
+  return open.kind === 'cancelled' ? `The value "${label}" of "${entryName}" is sealed under a different PIN;` : refusalOf(open);
 }
 
 /** The opened text; `value` is a slot that WAS locked, `unprotected` one that was not. */

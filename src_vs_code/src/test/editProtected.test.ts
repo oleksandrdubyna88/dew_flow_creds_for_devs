@@ -370,6 +370,29 @@ test('Edit REFUSES over a damaged value, says so, and overwrites nothing', async
   assert.equal(w.node().name, 'orest payoneer');
 });
 
+test('an entry sealed under TWO PINs asks once, and refuses Edit naming the value the PIN does not open', async () => {
+  // Two protects with different PINs on two machines, then a sync that mixed the slots (§5.9's last
+  // row): the door opens the first locked slot, and a second box per slot the grant cannot open is a
+  // question the person cannot tell apart from the first — and a PIN typed there would be granted.
+  const w = await world(
+    card(),
+    { notes: await locked('the note'), 'payment details': await lockSecret(JSON.stringify(CARD), ACCOUNT, '9876') },
+    [PIN, '9876'],
+    { name: 'renamed' },
+  );
+  const before = await rawSlots(w);
+
+  await w.edit();
+
+  assert.equal(w.said.boxes, 1, 'one box, at the door — the slots behind it are opened with what the door granted');
+  assert.equal(w.form.options, undefined, 'the form must not open over a value this PIN cannot read');
+  assert.match(
+    w.said.warnings.join(' '),
+    /The value "payment details" of "orest payoneer" is sealed under a different PIN; Edit is not opened, so nothing can overwrite it\./,
+  );
+  assert.deepEqual(await rawSlots(w), before, 'byte-identical');
+});
+
 test('a declined door opens no form, changes nothing, and says nothing more', async () => {
   const w = await protectedCard([undefined], { name: 'renamed' });
   const before = await rawSlots(w);
@@ -505,6 +528,8 @@ test('the sealing writer still deletes on nothing, keeps on an empty password, a
   const w = await world(credential(), { password: await locked('hunter2'), notes: await locked('the note') }, []);
   const { openEntryForEdit, sealedWriter } = require('../editPrefill') as typeof import('../editPrefill');
   const gate = { accountId: ACCOUNT, entityId: 'c1', entryName: 'godaddy', ask: (): Promise<string> => Promise.resolve(PIN) };
+  // What the door leaves behind: the prefill opens with the grant and never asks (the silent gate).
+  (require('../pinSession') as typeof import('../pinSession')).grantPin(ACCOUNT, 'c1', PIN);
   const open = await openEntryForEdit(w.storage, ACCOUNT, 'c1', gate);
   assert.ok(open.kind === 'open', 'the entry opened');
   assert.equal(open.prefill.locked, true);
