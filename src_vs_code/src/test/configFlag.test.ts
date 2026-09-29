@@ -4,6 +4,7 @@ import { EntityFlagSource, EntityFlagTarget, EntityFlagsRefresher, entityKey } f
 import { RevisionHead } from '../revisionHistory';
 import { markInvalid } from '../treeRowText';
 import { EntityMetadata } from '../types';
+import { locked } from './pinWorld';
 
 /**
  * The `!!!` a config wears while its body does not parse.
@@ -144,4 +145,17 @@ test('the mark is three exclamation marks in front of the name, and nothing othe
   // decoration carries dependency colour, and one channel with two meanings tells you neither.
   assert.equal(markInvalid('appsettings.Development.json', true), '!!!-appsettings.Development.json');
   assert.equal(markInvalid('appsettings.Development.json', false), 'appsettings.Development.json');
+});
+
+test('a PIN-protected env or yaml config is not flagged invalid — its sealed body is not judged', async () => {
+  // Entry-PIN plan, D18: the walk parsed the ENVELOPE as the config. JSON happens to accept it; an
+  // `.env` or a YAML reader does not, so a protected config wore `!!!` for being protected.
+  const world = fake([config('secretEnv', { configFormat: 'env', pinProtected: true }), config('secretYaml', { configFormat: 'yaml', pinProtected: true })], {
+    secretEnv: await locked('DB_PASSWORD=s3cret'),
+    secretYaml: await locked('db: s3cret'),
+  });
+
+  await new EntityFlagsRefresher(world.source, world.target).refresh();
+
+  assert.equal(world.target.invalidConfigIds.size, 0, `flagged: ${[...world.target.invalidConfigIds].join(', ')}`);
 });

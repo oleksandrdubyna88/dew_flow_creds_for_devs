@@ -19,7 +19,7 @@ import { MetadataError, isSealedMetadata, newMetadataKey, openMetadata, sealMeta
 import { ExternalSecrets } from './externalBundle';
 import { stampKind } from './entityKind';
 import { TRASH_FOLDER_NAME, findTrash, restoreTarget } from './trash';
-import { exportSecretsFor } from './exportSecrets';
+import { ExportOpen, exportSecretsFor } from './exportSecrets';
 import { PaymentFields, parsePaymentFields, serializePaymentFields } from './paymentFields';
 import { forgetTombstone, sweepOrphanSecrets } from './orphanSweep';
 import { LeasedQueue, leasedWrites, sweepWithRetry } from './leasedWrites';
@@ -906,8 +906,8 @@ export class StorageManager implements vscode.Disposable {
   // ---------- backup ----------
 
   /** Every stored secret of the given entities, keyed by entity id — see `exportSecrets.ts`. */
-  exportSecretsFor(accountId: string, ids: readonly string[]): Promise<Record<string, ExternalSecrets>> {
-    return exportSecretsFor(this, accountId, ids);
+  exportSecretsFor(accountId: string, ids: readonly string[], open?: ExportOpen): Promise<Record<string, ExternalSecrets>> {
+    return exportSecretsFor(this, accountId, ids, open);
   }
 
   /** Pair every entity of one profile with its stored secrets. */

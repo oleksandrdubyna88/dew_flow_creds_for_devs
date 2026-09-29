@@ -1,7 +1,8 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ConfigStub, configStub, loadWithVscode } from './vscodeStub';
-import { StoredAccount } from '../types';
+import { EntityMetadata, StoredAccount } from '../types';
+import { clickVscode, locked, memoryStorage, seedEntry, sinks } from './pinWorld';
 
 /**
  * Which backend an account's vault is written through (audit A3).
@@ -161,4 +162,48 @@ test('the members client exists for a server account only, and one per location'
   const folder = build({ nasBackupPath: '/mnt/nas/vault' }, '/storage').factory;
   assert.equal(folder.orgMembersFor(ACCOUNT), undefined);
   assert.equal(folder.orgRecoveryFor(ACCOUNT), undefined, 'and the recovery client agrees');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Entry-PIN plan, D7: a git deploy key held by a PIN-protected entry. Sync is automatic — it has no
+// window to ask in — and it wrote the envelope to disk as the key, which then could not authenticate.
+// ---------------------------------------------------------------------------------------------
+
+const REMOTE = 'git@github.com:me/vault.git';
+
+async function deployKeyWorld(key: string, pinProtected: boolean): Promise<{ auth: () => Promise<unknown>; materialized: string[] }> {
+  const config = configStub({ nasBackupPath: REMOTE, gitDeployKeys: { [REMOTE]: 'key1' } });
+  const stub = { ...clickVscode([], sinks()), ...vscodeStub(config) };
+  const storage = memoryStorage(stub);
+  const details = { id: 'key1', name: 'vault deploy key', kind: 'sshkey', isSshEnabled: false, pinProtected } as EntityMetadata;
+  await seedEntry(storage, details, { 'private key': key });
+  const materialized: string[] = [];
+  const mod = loadWithVscode<Factory>('../transportFactory', stub, {
+    './keyInstaller': {
+      materializePrivateKey: (dir: string, name: string, content: string): string => {
+        materialized.push(content);
+        return `${dir}/${name}`;
+      },
+    },
+  });
+  const factory = new mod.TransportFactory(storage, {} as never, '/storage');
+  const gitAuth = (factory as unknown as { gitAuth(location: string, dir: string): Promise<unknown> }).gitAuth.bind(factory);
+  return { auth: () => gitAuth(REMOTE, '/storage'), materialized };
+}
+
+test('a PIN-protected deploy key is REFUSED with the sentence, and never written to disk', async () => {
+  const w = await deployKeyWorld(await locked('-----BEGIN OPENSSH PRIVATE KEY-----\nk\n-----END OPENSSH PRIVATE KEY-----'), true);
+
+  await assert.rejects(
+    w.auth(),
+    /"vault deploy key" is protected with its own PIN, so it cannot be used automatically\..* It is the deploy key for git@github\.com:me\/vault\.git, so this sync cannot authenticate with it\./,
+  );
+  assert.deepEqual(w.materialized, [], 'the sealed envelope was materialised as the deploy key');
+});
+
+test('an unprotected deploy key is still materialised for git', async () => {
+  const w = await deployKeyWorld('PLAIN-KEY', false);
+
+  assert.deepEqual(await w.auth(), { kind: 'ssh', keyPath: '/storage/git-key1' });
+  assert.deepEqual(w.materialized, ['PLAIN-KEY']);
 });

@@ -166,3 +166,14 @@ export async function seedEntry(storage: StorageManager, details: EntityMetadata
     }
   }
 }
+
+/**
+ * The slot getters of a vault that holds nothing — for a hand-built storage fake that a PIN door now
+ * reads through (`pinAdmission.firstLockedStored` walks every slot). The getter names are the ones
+ * the slot table calls, so a fake built with this answers the door the way an empty entry does.
+ */
+export const NO_SLOTS: Readonly<Record<string, () => Promise<undefined>>> = Object.fromEntries(
+  ['getNotes', 'getFieldsRaw', 'getSecondRaw', 'getPaymentRaw', 'getConfigBody', 'getDbConnection', 'getVpnConfig', 'getTotp', 'getPrivateKey', 'getPassword'].map(
+    (name) => [name, (): Promise<undefined> => Promise.resolve(undefined)],
+  ),
+);

@@ -86,7 +86,7 @@ test('the sender is TOLD, by name, what was not sent', async () => {
 test('an entry with nothing withheld produces no sentence at all', async () => {
   const empty = {
     getPaymentRaw: (): Promise<undefined> => Promise.resolve(undefined),
-    getSecond: (): Promise<SecondValues> => Promise.resolve({}),
+    getSecondRaw: (): Promise<undefined> => Promise.resolve(undefined),
   };
 
   assert.equal(await withheldNoteFor(empty, 'a1', [{ node: { id: 'e1' } }]), '');

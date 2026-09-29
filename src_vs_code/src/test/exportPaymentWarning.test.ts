@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { NO_SLOTS } from './pinWorld';
 import Module from 'node:module';
 import { test } from 'node:test';
 import { serializePaymentFields } from '../paymentFields';
@@ -100,6 +101,7 @@ function exportHandler(
       register: (command: string, handler: Handler) => handlers.set(command, handler),
       corpPolicyOf,
       storage: {
+        ...NO_SLOTS,
         getNodes: () => [node],
         exportSecretsFor: () => {
           captured.secretsRead += 1;

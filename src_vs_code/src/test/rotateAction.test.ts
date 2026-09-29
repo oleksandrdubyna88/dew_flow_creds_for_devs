@@ -318,3 +318,17 @@ test('an ordinary password on the same kind still rotates', async () => {
 
   assert.deepEqual(log.stored, [{ slot: 'password', value: generated }]);
 });
+
+test('an agent cannot rotate a value of an entry that CLAIMS a PIN, even when the value reads plain', async () => {
+  // Entry-PIN plan §5.6 check: the refusal asked the WRAP only. An entry marked protected whose value is
+  // plaintext at this instant (written by an older build, or arriving by sync) was rotated — a new
+  // readable value stored into an entry that goes on claiming a PIN. `pinFieldRefusal` asks the wrap
+  // first and the mark second, as the env bindings and the creds:// reads do.
+  const { action, log } = world({ details: { pinProtected: true } });
+
+  const result = await action.run(CTX, { statement: STATEMENT });
+
+  assert.equal(log.ran.length, 0, 'the far side was reached');
+  assert.equal(log.stored.length, 0, 'and a new value was stored into a protected entry');
+  assert.match(JSON.stringify(result), /protected with its own PIN/);
+});

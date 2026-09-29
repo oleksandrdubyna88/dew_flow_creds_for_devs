@@ -12,7 +12,8 @@ import { isTrackedHere } from './gitTracked';
 import { trackedCopyWarning } from './configFile';
 import type { ConfigFormat } from './configFormat';
 import { clickOpener, clickedSecret } from './pinClick';
-import type { OpenedSecret } from './secretOpener';
+import { OpenedSecret, SecretOwner, automaticOpener } from './secretOpener';
+import { FieldReading, withheld } from './fieldReading';
 /**
  * What changed since the previous version of this config, by KEY.
  *
@@ -105,6 +106,29 @@ export function addConfigHolder(
     format: details.configFormat ?? 'json',
     configKeyHash: details.configKeyHash,
   });
+}
+
+/**
+ * What the config route may serve for one holder: the body, READ — never an envelope.
+ *
+ * <p>The route is AUTOMATIC — an application calls it with a key and no window asks anybody — so the
+ * body goes through `automaticOpener` (entry-PIN plan, rule R2): a sealed body, or any body of an
+ * entry that claims a PIN, is `withheld` with the sentence, and the route answers it as the refusal
+ * it already has. Until 1.12 this was the raw getter, and a protected config was served as its
+ * envelope. An empty body is still a body, as it always was.</p>
+ */
+export async function configBodyReading(storage: StorageManager, holder: ConfigHolder): Promise<FieldReading> {
+  const opened = await automaticOpener(holderOwner(storage, holder), await storage.getConfigBody(holder.accountId, holder.entityId));
+  if (opened.kind === 'stopped') {
+    return withheld(opened.reason);
+  }
+  return opened.value === undefined ? { kind: 'absent' } : { kind: 'value', value: opened.value };
+}
+
+/** The entry behind a holder, as an opener sees it — its mark read from the node, where it lives. */
+function holderOwner(storage: StorageManager, holder: ConfigHolder): SecretOwner {
+  const details = storage.getNode(holder.accountId, holder.entityId)?.details;
+  return { id: holder.entityId, name: holder.entityName, pinProtected: details?.pinProtected };
 }
 
 export function collectConfigHolders(storage: StorageManager): ConfigHolder[] {

@@ -1,6 +1,7 @@
 import { BindableField } from './envBinding';
 import { EntityMetadata } from './types';
-import { FieldReading, readingOf } from './fieldReading';
+import { FieldReading, readingOf, withheld } from './fieldReading';
+import { pinFieldRefusal } from './pinGate';
 import { bindableFieldReading } from './envApply';
 import { SecretRefField } from './secretRef';
 import { StorageManager } from './storageManager';
@@ -43,26 +44,38 @@ function fieldOf(
     return notesReading(storage, accountId, details);
   }
   if (field === 'totp') {
-    return totpReading(storage, accountId, details.id, now);
+    return totpReading(storage, accountId, details, now);
   }
   return bindableFieldReading(storage, accountId, details, field as BindableField);
 }
 
-/** The stored note, or the plaintext one an older entry still carries in its metadata. */
+/**
+ * The stored note, or the plaintext one an older entry still carries in its metadata — withheld, with
+ * the sentence, for a protected entry (entry-PIN plan, D7: until 1.12 a reference resolved to the
+ * envelope). `pinFieldRefusal` asks the wrap first and the mark second, exactly as the env bindings do.
+ */
 async function notesReading(
   storage: StorageManager,
   accountId: string,
   details: EntityMetadata,
 ): Promise<FieldReading> {
-  return readingOf((await storage.getNotes(accountId, details.id)) ?? details.notes);
+  const stored = await storage.getNotes(accountId, details.id);
+  const refusal = pinFieldRefusal(details, stored);
+  return refusal === '' ? readingOf(stored ?? details.notes) : withheld(refusal);
 }
 
-/** The code as of `now` — a seed with no readable code is absent, not withheld. */
+/**
+ * The code as of `now` — a seed with no readable code is absent; a protected entry's seed is WITHHELD.
+ * Until 1.12 a sealed seed parsed as no seed at all, and a reference said "absent" about a code that
+ * exists and may not be used.
+ */
 async function totpReading(
   storage: StorageManager,
   accountId: string,
-  entityId: string,
+  details: EntityMetadata,
   now: number,
 ): Promise<FieldReading> {
-  return readingOf(totpSnapshot(await storage.getTotp(accountId, entityId), now)?.code);
+  const stored = await storage.getTotp(accountId, details.id);
+  const refusal = pinFieldRefusal(details, stored);
+  return refusal === '' ? readingOf(totpSnapshot(stored, now)?.code) : withheld(refusal);
 }

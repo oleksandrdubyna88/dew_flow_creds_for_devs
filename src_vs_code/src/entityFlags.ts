@@ -3,6 +3,7 @@ import { ConfigFormat, describeConfigProblem } from './configFormat';
 import { resolveKind } from './entityKind';
 import { parseFields } from './entityFields';
 import { siteUrlToOpen } from './siteUrl';
+import { isLockedSecret } from './secretEnvelope';
 import type { EntityMetadata } from './types';
 import type { StorageManager } from './storageManager';
 
@@ -175,7 +176,7 @@ export class EntityFlagsRefresher {
       return;
     }
     const body = await this.storage.getConfigBody(accountId, node.id);
-    if (describeConfigProblem(formatOf(node.details), body ?? '') !== undefined) {
+    if (describeConfigProblem(formatOf(node.details), judgedText(body)) !== undefined) {
       invalid.add(entityKey(accountId, node.id));
     }
   }
@@ -232,4 +233,14 @@ export class EntityFlagsRefresher {
 /** Narrowing helper so `activate()` can hand the real storage to the refresher. */
 export function entityFlagSource(storage: StorageManager): EntityFlagSource {
   return storage as unknown as EntityFlagSource;
+}
+
+/**
+ * What a config verdict is ABOUT: the body — or nothing for a SEALED one (entry-PIN plan, D18). The
+ * text of a protected config is its wrap, and judging the wrap flagged every protected `.env` as
+ * broken for being protected; nothing is judged until the entry is opened, exactly as an empty body
+ * is not judged.
+ */
+function judgedText(body: string | undefined): string {
+  return body === undefined || isLockedSecret(body) ? '' : body;
 }
