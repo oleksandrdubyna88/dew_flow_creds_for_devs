@@ -388,6 +388,23 @@ export function isMcpFoldersRoute(pathname: string): boolean {
   return pathname === '/v1/mcp/folders';
 }
 
+/**
+ * `GET /v1/mcp/kinds`, `GET /v1/mcp/kind-help?kind=…` — what an entry can BE, told to an agent.
+ *
+ * <p>Reads with no source behind them: the answer is the table in `agentKindFields.ts`, the same on
+ * every window and in every vault, so nothing here is gated by a switch and nothing is disclosed
+ * that the product's own help does not already say. They exist because an agent asked to "store a
+ * PowerShell command" had no way to learn that a terminal entry has a `command` and no `host`, and
+ * put the only thing it held into the only field it had (2026-09-29).</p>
+ */
+export function isMcpKindsRoute(pathname: string): boolean {
+  return pathname === '/v1/mcp/kinds';
+}
+
+export function isMcpKindHelpRoute(pathname: string): boolean {
+  return pathname === '/v1/mcp/kind-help';
+}
+
 export function parseMcpFolderRoute(pathname: string): string | undefined {
   const prefix = '/v1/mcp/folder/';
   if (!pathname.startsWith(prefix)) {

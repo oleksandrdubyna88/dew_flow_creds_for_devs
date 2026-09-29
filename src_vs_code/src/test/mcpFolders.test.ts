@@ -1,5 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { folderFieldsFor } from '../agentKindFields';
 import {
   describeMoveRefusal,
   findFolder,
@@ -67,6 +68,29 @@ test('an opened folder is offered, with what may be done to it', () => {
   assert.equal(seen[0].can.create, true);
   assert.equal(seen[0].can.edit, true, 'creating implies renaming, one rung below it');
   assert.equal(seen[0].can.delete, false, 'and never implies deleting, which is above');
+});
+
+test('a typed folder says what it holds and the fields an entry there may carry; an untyped one holds any', () => {
+  // O3: the agent looking at a folder is told the kind and the fields — from the one table, never a
+  // second list here — and nothing else. `project` is a folder-only template, not a kind an entry
+  // can be, so to an agent it holds anything, exactly as a folder with no type does.
+  const v = vault([
+    folder('f1', 'Commands', { mcp: { folderCreate: true }, folderType: 'terminal' }),
+    folder('f2', 'Misc', { mcp: { folderCreate: true } }),
+    folder('f3', 'Project', { mcp: { folderCreate: true }, folderType: 'project' }),
+    folder('f4', 'Anything', { mcp: { folderCreate: true }, folderType: 'any' }),
+  ]);
+
+  const [commands, misc, project, anything] = visibleFolders(v.accounts, v.nodesOf, v.byId);
+
+  assert.equal(commands.holds, 'terminal');
+  assert.deepEqual(commands.fields, folderFieldsFor('terminal'));
+  assert.equal(commands.folderType, 'terminal', 'the old name stays beside the new one, for an older relay');
+  assert.equal(misc.holds, 'any');
+  assert.equal(misc.fields, undefined, 'an untyped folder lists no fields — the kind is the agent\'s to name');
+  assert.equal(project.holds, 'any');
+  assert.equal(project.fields, undefined);
+  assert.equal(anything.holds, 'any');
 });
 
 test('a folder inside an opened one is offered too — one inheritance rule', () => {
