@@ -3,7 +3,8 @@
 import { StorageManager } from './storageManager';
 import { McpCreateHooks } from './brokerMcpDoor';
 import type { EntityKind } from './types';
-import { detailsFor } from './mcpCreate';
+import { agentFormValues, planCreate } from './mcpCreate';
+import { applyAdditions } from './applyFormSecrets';
 import { CreateDecision } from './brokerMcpDoor';
 import { creatableFolders } from './mcpCreate';
 import { chooseTarget } from './mcpCreate';
@@ -32,30 +33,37 @@ export function mcpCreateHooks(storage: StorageManager, onMade: () => void): Mcp
       const request = readCreateRequest(body);
       const id = StorageManager.newId();
       const kind = decision.target.kind as EntityKind;
+      // The same body `choose` accepted a moment ago, judged again by the same pure rule — so this
+      // cannot fail, and a failure here is a bug rather than a refusal the agent should see.
+      const plan = planCreate(request, kind);
+      if (!plan.ok) {
+        throw new Error(plan.message);
+      }
       // The secret is drawn and stored BEFORE the node — Rule A (`applyFormSecrets.ts`). This had
       // the node first, and on this path that is worse than elsewhere: the secret may be GENERATED
       // here, so a failure after the node write stranded an entry claiming a password that had never
       // even been created. The agent would have been told the entry exists.
       const secret = request.secret ?? generatedFor(request);
-      // On this path the secret may have been GENERATED here, so a failure that left it behind would
+      // By kind, through the form's own additions pass: a database's secret is its connection
+      // string and a config's is its body, and neither belongs in the password slot.
+      const values = agentFormValues(kind, id, request.name, plan.values, secret);
+      const accountId = decision.target.accountId;
       await storage.runCreate({
-        writeSecrets: async () => {
-          if (secret !== undefined && secret.length > 0) {
-            await storage.setPassword(decision.target.accountId, id, secret);
-          }
-        },
+        writeSecrets: () => applyAdditions(storage, accountId, id, values),
         writeNode: () =>
-          storage.addNode(decision.target.accountId, {
+          storage.addNode(accountId, {
             id,
             name: request.name,
             type: 'entity',
             parentId: decision.target.entityId,
-            details: detailsFor(id, kind, request),
+            details: values.details,
           }),
-        presence: () => storage.nodePresence(decision.target.accountId, id),
-        deferCleanup: () => storage.deferSecretCleanup(decision.target.accountId, id),
-        finishCleanup: () => storage.endSecretCleanup(decision.target.accountId, id),
-        undoSecrets: () => storage.deletePassword(decision.target.accountId, id),
+        presence: () => storage.nodePresence(accountId, id),
+        deferCleanup: () => storage.deferSecretCleanup(accountId, id),
+        finishCleanup: () => storage.endSecretCleanup(accountId, id),
+        // Every slot this id could have been written to: nothing else references a node that was
+        // proven absent, so there is nothing to keep.
+        undoSecrets: () => storage.forgetEntitySecrets(accountId, id),
       });
       onMade();
       return { id, name: request.name };
@@ -82,6 +90,12 @@ export function chooseCreateTarget(storage: StorageManager, body: Record<string,
   if (!chosen.ok) {
     return { ok: false, code: 'denied', message: chosen.message };
   }
+  // The fields, judged against the kind the entry WILL have — the folder's — before anybody is
+  // prompted. A host on a terminal entry ends here, with a sentence naming what a terminal takes.
+  const plan = planCreate(request, chosen.kind);
+  if (!plan.ok) {
+    return { ok: false, code: plan.code, message: plan.message, noGenerator: plan.noGenerator };
+  }
   // Asked for a kind we do not make: refused here, before anybody is prompted, and recorded as
   // the one outcome the journal's "could not generate" filter counts.
   const drawable = checkGeneratable(request);
@@ -97,8 +111,12 @@ export function chooseCreateTarget(storage: StorageManager, body: Record<string,
       kind: chosen.kind,
     },
     summary: summarizeCreate(request, chosen.target, chosen.kind),
-    withSecret: typeof body.secret === 'string' && body.secret.length > 0,
+    withSecret: withSecret(body),
   };
+}
+
+function withSecret(body: Record<string, unknown>): boolean {
+  return typeof body.secret === 'string' && body.secret.length > 0;
 }
 
 /**
@@ -181,7 +199,25 @@ export function readCreateRequest(body: Record<string, unknown>): CreateRequest 
     folder: text('folder'),
     secretKind: text('secretKind'),
     ...drawFrom(body),
+    ...fieldsFrom(body),
   };
+}
+
+/**
+ * The kind's own fields, or the reason they could not be read.
+ *
+ * <p>Carried rather than thrown, for `drawFrom`'s reason: "`fields` must be an object" is a thing
+ * an agent can fix and send again. Absent is fine — an older relay never sends it — and the
+ * values inside are judged later, against the kind the folder decides.</p>
+ */
+function fieldsFrom(body: Record<string, unknown>): Pick<CreateRequest, 'fields' | 'fieldsRefusal'> {
+  const raw = body.fields;
+  if (raw === undefined) {
+    return {};
+  }
+  return typeof raw === 'object' && raw !== null && !Array.isArray(raw)
+    ? { fields: raw as Record<string, unknown> }
+    : { fieldsRefusal: '`fields` must be a JSON object of the kind\'s fields — see creds_kind_help.' };
 }
 
 /**

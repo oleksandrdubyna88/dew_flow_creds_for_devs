@@ -209,16 +209,17 @@ test('the help for a creatable kind carries every field, the secret as its own l
   for (const kind of ENTITY_KINDS.filter((k) => k !== 'payment')) {
     const help = agentKindHelp(kind);
     const own = AGENT_KIND_FIELDS[kind].map((field) => field.name);
+    const example = help.example as { kind: string; fields: object };
 
     assert.equal(help.creatable, true);
     assert.deepEqual(help.fields.filter((f) => !f.secret).map((f) => f.name), own, kind);
     assert.deepEqual(help.fields.filter((f) => f.secret).map((f) => f.name), ['secret'], `${kind}: the secret is one line`);
-    assert.deepEqual(Object.keys(help.example?.fields as object).sort(), [...own].sort(), `${kind}: the example is complete`);
-    assert.equal(help.example?.kind, kind);
+    assert.deepEqual(Object.keys(example.fields).sort(), [...own].sort(), `${kind}: the example is complete`);
+    assert.equal(example.kind, kind);
   }
   const payment = agentKindHelp('payment');
   assert.equal(payment.creatable, false);
-  assert.match(payment.refusal ?? '', /cannot be created by an agent/);
+  assert.match(String(payment.refusal), /cannot be created by an agent/);
   assert.equal(payment.example, undefined);
 });
 

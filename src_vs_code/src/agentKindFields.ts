@@ -49,6 +49,8 @@ export interface AgentField {
   readonly key?: keyof EntityMetadata;
   /** Where it is stored when not on the record: the login/URL fields, or the notes. */
   readonly store?: 'fields' | 'notes';
+  /** A body: kept exactly as sent, never trimmed. */
+  readonly multiline?: true;
 }
 
 /** The one secret a kind holds, and the slot it goes to. Never inside `fields`. */
@@ -126,6 +128,7 @@ const NOTES: AgentField = {
   name: 'notes',
   type: 'string',
   store: 'notes',
+  multiline: true,
   summary: 'free-text notes',
   help: 'Free text the person sees on the entry. Stored sealed like a secret, so it is never listed back to you.',
   example: 'Provisioned by the deploy agent on 2026-09-29.',
@@ -225,6 +228,7 @@ const SCRIPT: AgentField = {
   name: 'script',
   type: 'string',
   required: true,
+  multiline: true,
   summary: 'the complete body',
   help: 'The whole script, exactly as it should run. Write `${NAME}` where a value from `vars` goes. The person sees every line of it before it is stored.',
   example: '#!/usr/bin/env bash\nset -euo pipefail\ncurl -fsS "https://api.example.com/quota?plan=${PLAN}"\n',
@@ -462,8 +466,15 @@ function secretHelpField(secret: AgentSecret | undefined): HelpField[] {
 /** A whole body an agent could send as it stands — every field's example, in the shape the wire takes. */
 function exampleRequest(kind: EntityKind, entry: AgentKind): Record<string, unknown> {
   const fields = Object.fromEntries(entry.fields.map((field) => [field.name, field.example]));
-  const secret = entry.secret?.drawable === true ? { secretKind: 'password' } : { secret: `<the ${entry.secret?.label ?? 'secret'}>` };
-  return { name: `example ${kind}`, kind, ...secret, fields };
+  return { name: `example ${kind}`, kind, ...exampleSecret(entry.secret), fields };
+}
+
+/** The better half where it exists: ask for the value to be made, and it never enters the agent's context. */
+function exampleSecret(secret: AgentSecret | undefined): Record<string, string> {
+  if (secret === undefined) {
+    return {};
+  }
+  return secret.drawable ? { secretKind: 'password' } : { secret: `<the ${secret.label}>` };
 }
 
 /**

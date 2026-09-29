@@ -1,3 +1,6 @@
+import { AgentValues, secretKindRefusal, validateAgentFields } from './agentFieldValidation';
+import { AGENT_KINDS, AgentSecret } from './agentKindFields';
+import type { EntityFormValues } from './entityFormShape';
 import { McpAccess, resolveMcpInTree } from './mcpAccess';
 import { DrawOptions } from './secretKinds';
 import { ENTITY_KINDS, EntityKind, EntityMetadata, TreeNode } from './types';
@@ -46,6 +49,15 @@ export interface CreateRequest {
    * and that case is what `secret` is for.</p>
    */
   secretKind?: string;
+  /**
+   * The kind's own fields — a terminal's command and args, a database's engine — checked against
+   * the table in `agentKindFields.ts` for the kind the entry WILL have. Anything the kind does not
+   * take is refused whole, with a sentence naming what it does take.
+   */
+  fields?: Record<string, unknown>;
+  /** Why `fields` could not be read at all (not an object). Carried so the refusal reaches the agent. */
+  fieldsRefusal?: string;
+  /** The three an older relay sends at the top level. Accepted only where the kind has them. */
   host?: string;
   user?: string;
   port?: number;
@@ -212,29 +224,109 @@ function isEntityKind(value: string): value is EntityKind {
   return (ENTITY_KINDS as readonly string[]).includes(value);
 }
 
+/** What a request becomes once its kind is known, or why it becomes nothing. */
+export type CreatePlan =
+  | { ok: true; values: AgentValues }
+  | { ok: false; code: 'denied' | 'invalid_request' | 'not_supported'; message: string; noGenerator?: boolean };
+
+/**
+ * The request checked against the kind the entry WILL have.
+ *
+ * <p>Runs before anybody is asked, so a refusal costs no dialog and creates nothing. The three
+ * top-level fields an older relay sends — `host`, `user`, `port` — are folded into `fields` first
+ * and judged by the same table, which is exactly how a host on a terminal entry stops being stored:
+ * it is not a field of that kind, and the sentence says what is.</p>
+ *
+ * <p>A payment refusal is `denied` — a policy, the owner's (D-A). A field refusal is
+ * `invalid_request` — the body was wrong and can be sent again right. A `secretKind` the kind
+ * cannot honour is `not_supported`, and counted by the journal's could-not-generate filter like
+ * every other kind of secret this window does not make.</p>
+ */
+export function planCreate(request: CreateRequest, kind: EntityKind): CreatePlan {
+  if (request.fieldsRefusal !== undefined) {
+    return { ok: false, code: 'invalid_request', message: request.fieldsRefusal };
+  }
+  const verdict = validateAgentFields(kind, withLegacyFields(request));
+  if (!verdict.ok) {
+    return { ok: false, code: fieldRefusalCode(kind), message: verdict.message };
+  }
+  const secret = secretKindRefusal(kind, request.secretKind);
+  return secret === undefined
+    ? { ok: true, values: verdict.values }
+    : { ok: false, code: 'not_supported', message: secret, noGenerator: true };
+}
+
+/** A kind nobody may create is a policy; a wrong field is a request that can be sent again right. */
+function fieldRefusalCode(kind: EntityKind): 'denied' | 'invalid_request' {
+  return AGENT_KINDS[kind].notCreatable === undefined ? 'invalid_request' : 'denied';
+}
+
+/** `fields` with the top-level three underneath it — a key sent both ways is the one in `fields`. */
+function withLegacyFields(request: CreateRequest): Record<string, unknown> {
+  const legacy: Record<string, unknown> = {};
+  for (const key of ['host', 'user', 'port'] as const) {
+    if (request[key] !== undefined) {
+      legacy[key] = request[key];
+    }
+  }
+  return { ...legacy, ...request.fields };
+}
+
 /**
  * The record an agent's request becomes.
  *
- * <p>Built field by field, like the read side and for the same reason: an agent supplies four
- * things and everything else is ours. `mcpCreatedByAgent` is the one that matters later — the
- * narrow delete scope keys on it, so an entry that arrived this way is one the agent may tidy
- * away and an entry a person made is not.</p>
+ * <p>Built from the VALIDATED values and nothing else, which is what keeps a field off a kind that
+ * does not have it: every key here came through the kind's own table. The form's scrub in
+ * `toValues` is not repeated — the table test (`agentKindFields.test.ts`) holds the table equal to
+ * what that scrub keeps, so there is one rule with one guard. `mcpCreatedByAgent` is the mark the
+ * narrow delete scope keys on, so an entry that arrived this way is one the agent may tidy away and
+ * an entry a person made is not.</p>
  */
-export function detailsFor(id: string, kind: EntityKind, request: CreateRequest): EntityMetadata {
+export function detailsFor(id: string, kind: EntityKind, name: string, values: AgentValues): EntityMetadata {
   return {
     id,
-    name: request.name,
+    name,
     kind,
     isSshEnabled: kind === 'ssh',
-    host: blank(request.host),
-    user: blank(request.user),
-    port: request.port,
+    ...values.details,
     mcpCreatedByAgent: true,
   };
 }
 
-function blank(value: string | undefined): string | undefined {
-  return value === undefined || value.trim().length === 0 ? undefined : value;
+/**
+ * The validated request in the shape the form's additions pass takes.
+ *
+ * <p>So that ONE secret path exists: `applyAdditions` (`applyFormSecrets.ts`) already knows which
+ * setter each slot has and in what order, and the agent's secret goes through it by kind — a
+ * database's to the connection string, a config's to its body, a key pair's to the private key.
+ * Before this every kind's secret went to the password slot, which a database does not even keep.
+ * Nothing is ever cleared: this is a creation, there is nothing to clear.</p>
+ */
+export function agentFormValues(kind: EntityKind, id: string, name: string, values: AgentValues, secret: string | undefined): EntityFormValues {
+  const slot = AGENT_KINDS[kind].secret?.slot;
+  return {
+    details: detailsFor(id, kind, name, values),
+    newPassword: inSlot(slot, 'password', secret),
+    newPrivateKey: inSlot(slot, 'privateKey', secret),
+    newVpnConfig: inSlot(slot, 'vpnConfig', secret),
+    newDbConnection: inSlot(slot, 'dbConnection', secret),
+    newConfigBody: inSlot(slot, 'configBody', secret),
+    newNotes: values.notes,
+    newFields: values.fields,
+    clearPassword: false,
+    clearPrivateKey: false,
+    clearVpnConfig: false,
+    clearDbConnection: false,
+    clearAttachment: false,
+    clearImage: false,
+    clearTotp: false,
+    clearHostKey: false,
+    dependsOnColors: [],
+  };
+}
+
+function inSlot(slot: AgentSecret['slot'] | undefined, wanted: AgentSecret['slot'], secret: string | undefined): string | undefined {
+  return slot === wanted ? secret : undefined;
 }
 
 /** What the consent prompt says: the entry, its kind, and where it is going. */

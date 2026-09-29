@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { chooseTarget, creatableFolders, detailsFor, summarizeCreate } from '../mcpCreate';
+import type { AgentValues } from '../agentFieldValidation';
+import { CreatePlan, agentFormValues, chooseTarget, creatableFolders, detailsFor, planCreate, summarizeCreate } from '../mcpCreate';
 import type { TreeNode } from '../types';
 
 /**
@@ -162,7 +163,7 @@ test('an untyped folder takes the kind the agent named, and refuses a word that 
 test('the new entry is MARKED as agent-created', () => {
   // The narrow delete permission keys on this. Forgetting it would make that permission cover
   // nothing at all — a silent failure in the safe direction, which is the kind that survives.
-  const details = detailsFor('new-1', 'ssh', { name: 'app-03', kind: 'ssh', host: 'app-03.internal' });
+  const details = detailsFor('new-1', 'ssh', 'app-03', { details: { host: 'app-03.internal' } });
 
   assert.equal(details.mcpCreatedByAgent, true);
   assert.equal(details.name, 'app-03');
@@ -170,12 +171,64 @@ test('the new entry is MARKED as agent-created', () => {
   assert.equal(details.isSshEnabled, true);
 });
 
-test('a field the agent did not send is absent, not empty', () => {
-  const details = detailsFor('new-1', 'credential', { name: 'token', kind: 'credential', host: '   ' });
+/** The accepted plan's values, or a failure naming the refusal — so no assertion reads a union. */
+function valuesOf(plan: CreatePlan): AgentValues {
+  return plan.ok ? plan.values : assert.fail(plan.message);
+}
 
-  assert.equal(details.host, undefined);
+/** The refusal, or a failure saying the plan was accepted — the other half of the union. */
+function refusalOf(plan: CreatePlan): { code: string; message: string; noGenerator?: boolean } {
+  return plan.ok ? assert.fail('the plan was accepted') : plan;
+}
+
+test('a blank field the agent sent is absent, not empty', () => {
+  const plan = planCreate({ name: 'app-03', kind: 'ssh', fields: { host: 'app-03.internal', user: '   ' } }, 'ssh');
+
+  const details = detailsFor('new-1', 'ssh', 'app-03', valuesOf(plan));
+
   assert.equal(details.user, undefined);
-  assert.equal(details.isSshEnabled, false);
+  assert.equal(details.host, 'app-03.internal');
+});
+
+test('an older relay\'s top-level host is judged by the kind\'s table like everything else', () => {
+  // The defect of 2026-09-29, at the pure seam: the request the other session sent, against the
+  // kind the folder gave it. It is refused with the sentence that names what a terminal takes.
+  const refused = refusalOf(planCreate({ name: 'quota', kind: 'terminal', host: 'token-plan.ap-southeast-1.maas.aliyuncs.com' }, 'terminal'));
+  const accepted = valuesOf(planCreate({ name: 'app-03', kind: 'ssh', host: 'app-03.internal', port: 22 }, 'ssh'));
+
+  assert.equal(refused.code, 'invalid_request');
+  assert.match(refused.message, /`host` is not a field of a terminal entry/);
+  assert.equal(accepted.details.port, 22);
+});
+
+test('`fields` that is not an object is refused before anything is judged', () => {
+  const plan = refusalOf(planCreate({ name: 'x', kind: 'ssh', fieldsRefusal: '`fields` must be a JSON object' }, 'ssh'));
+
+  assert.equal(plan.code, 'invalid_request');
+  assert.match(plan.message, /must be a JSON object/);
+});
+
+test('a payment kind is refused as a policy, and a secret the kind cannot draw as unsupported', () => {
+  const payment = refusalOf(planCreate({ name: 'card', kind: 'payment' }, 'payment'));
+  const db = refusalOf(planCreate({ name: 'orders', kind: 'db', secretKind: 'password', fields: { dbType: 'postgres' } }, 'db'));
+
+  assert.equal(payment.code, 'denied');
+  assert.match(payment.message, /cannot be created by an agent/);
+  assert.equal(db.code, 'not_supported');
+  assert.equal(db.noGenerator, true);
+});
+
+test('the secret goes to the slot its kind owns, through the form\'s own additions shape', () => {
+  const values = { details: {} };
+
+  assert.equal(agentFormValues('db', 'e1', 'orders', values, 'postgres://x').newDbConnection, 'postgres://x');
+  assert.equal(agentFormValues('db', 'e1', 'orders', values, 'postgres://x').newPassword, undefined);
+  assert.equal(agentFormValues('config', 'e1', 'dev', values, 'A=1').newConfigBody, 'A=1');
+  assert.equal(agentFormValues('vpn', 'e1', 'office', values, '[Interface]').newVpnConfig, '[Interface]');
+  assert.equal(agentFormValues('sshkey', 'e1', 'ci', values, 'PEM').newPrivateKey, 'PEM');
+  assert.equal(agentFormValues('terminal', 'e1', 'cmd', values, 'pw').newPassword, 'pw');
+  assert.equal(agentFormValues('credential', 'e1', 'login', { details: {}, fields: { login: 'me' }, notes: 'n' }, 'pw').newFields?.login, 'me');
+  assert.equal(agentFormValues('credential', 'e1', 'login', { details: {}, notes: 'n' }, 'pw').newNotes, 'n');
 });
 
 test('the prompt says what is being made and where', () => {
