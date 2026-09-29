@@ -1,6 +1,7 @@
 # PLAN — an agent learns what a folder holds, and creates an entry with exactly that kind's fields
 
-> Status: **plan only, nothing implemented yet, 2026-09-29.** Scope: `src_mcp/src` (the agent-facing
+> Status: **plan only, nothing implemented yet, 2026-09-29.** Plan gate passed (`proceed`, 2 of 2 reviewers,
+> one round, four findings accepted — §10). Scope: `src_mcp/src` (the agent-facing
 > tools: `UseTools.cs`, `FolderTools.cs`, `Tools.cs`, their tests), `contract/mcp-tools-v1.json`
 > (regenerated), `src_vs_code/src` (`mcpCreate.ts`, `mcpHooks.ts`, `mcpFolders.ts`, a new per-kind field
 > table, the broker routes that serve it, the consent summary, `sshCommand.ts` / `entityViewPage.ts` for
@@ -144,7 +145,10 @@ New broker route(s) in `brokerMcpRoutes.ts` (`GET`-shaped, no grant — the cata
   created there may carry — nothing else can be set."*
 - The answer gains, per typed folder, `holds: <kind>` (the existing value, clearer name kept alongside
   `folderType` for compatibility) and `fields: [{ name, required, summary }]` from the table. An untyped
-  folder answers `holds: "any"` and points at `creds_kinds`.
+  folder answers `holds: "any"` with **no `fields` list**, and its description points at `creds_kinds` /
+  `creds_kind_help`: in such a folder `creds_create` validates against the kind the agent NAMES (`kindFor`
+  is `folderType ?? request.kind`, `mcpCreate.ts:201`), and an unknown kind is refused naming
+  `creds_kinds` *(plan gate, finding 1)*.
 - The server's own instructions (`src_mcp/src/Program.cs`) get one sentence, not the table: *"Before
   creating, look at the folder's `holds` and `fields`; if you are not told exactly what to create, call
   creds_kinds and creds_kind_help."* The instructions block is already long; a table there would be
@@ -155,6 +159,14 @@ New broker route(s) in `brokerMcpRoutes.ts` (`GET`-shaped, no grant — the cata
 
 - The tool gains an object parameter `fields` (kind-specific, validated by the window). `host`, `user` and
   `port` at the top level stay accepted for backward compatibility **only where the kind has them**.
+- **The wire schema** *(plan gate, finding 2)*: `fields` is a JSON object; a `string` field is a JSON
+  string, `integer` a JSON integer, `boolean` a JSON boolean, `enum` a string from the listed `values`, and
+  `args` an array of `{ "value": string, "note"?: string, "enabled"?: boolean }`. The MCP `inputSchema`
+  declares `fields` as an object and each kind's shape is documented by `creds_kind_help`, so a client can
+  validate before sending; the window validates again and is the authority. A field marked `secret` is
+  **refused inside `fields`** with *"send it as `secret`, or prefer `secretKind` so the window makes it"* —
+  secret values travel only in the top-level `secret` / `secretKind`, and are routed by kind to the
+  matching slot (password, private key, VPN config, DB connection, config body).
 - `readCreateRequest` (`mcpHooks.ts:171-185`) reads `fields`; a new pure `validateAgentFields(kind,
   fields)` checks every key against `AGENT_KIND_FIELDS[kind]`: unknown or foreign key → refused, **nothing
   is created**, answer *"`host` is not a field of a terminal entry. A terminal entry takes: command
@@ -165,10 +177,11 @@ New broker route(s) in `brokerMcpRoutes.ts` (`GET`-shaped, no grant — the cata
   per-kind scrub the form applies, so a field can never land on a kind that does not have it (defect 2).
   Reuse, not a copy: the scrub is extracted from `toValues` into a function both call if the inventory
   shows it can be, otherwise the table test of §6 is the single guard.
-- **The consent prompt shows what will run.** For `terminal` and `script`, `summarizeCreate`
-  (`mcpCreate.ts:241-243`) names the full composed command line / the script's first lines — the person is
+- **The consent prompt shows what will run — all of it.** For `terminal` and `script`, `summarizeCreate`
+  (`mcpCreate.ts:241-243`) shows the full composed command line and the **complete** script, never a
+  preview *(plan gate, finding 3: a harmless first few lines can hide a destructive tail)* — the person is
   approving a command an agent wrote that they may later run with one click, and must see it before it is
-  stored. The journal records it the same way.
+  stored. The journal records the full text the same way (a script is details, not a secret slot).
 - `creds_create`'s description lists the kinds from the table (fixing the drift in §2.4) and says:
   *"Look at the target folder's `holds` and `fields` first; send only those."*
 
@@ -200,7 +213,10 @@ writes a migration for two rows.
   window asks them for the folder's PIN (checked against a protected sibling exactly as `pinOnCreate`
   does), and the entry is sealed before it is written (the sealing rule R3 of
   [PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise.md) §4); a declined PIN creates
-  nothing and the agent is told so.
+  nothing and the agent is told so. The PIN is asked **inside the same consent step**, bounded by that
+  step's existing timeout: dismissed, wrong three times, or timed out → the tool answers a refusal sentence
+  and nothing is created or left half-made, because the PIN is checked and the values sealed before
+  `runCreate` writes anything *(plan gate, finding 0)*.
 
 ## 5. Build order
 
@@ -274,3 +290,18 @@ Every RED watched failing first, then green; C# tests run through the test execu
 - [ ] Tests green (`npm test`, the C# test executable), contract regenerated, help ×5, CHANGELOG,
       `research/module_extension.md` updated; coai plan and code rounds `proceed`.
 - [ ] Promoted to `research/` with `IMPLEMENTED <date>` and deviations; `todo/README.md` in the same commit.
+
+## 10. Plan gate — 2026-09-29
+
+coai session `f639c6b7`, one round, codex + gemini (2 of 2 answered), verdict **proceed** (4 gating against
+a threshold of 6). Every finding was accepted:
+
+| # | Finding | Where it changed the plan |
+|---|---|---|
+| 0 | *(Blocking)* D-B's PIN prompt can hang the agent's call | §4.7 — asked inside the consent step, bounded by its timeout, refusal answered, nothing half-made |
+| 1 | untyped folders contradict "validated against the folder's kind" | §4.3 — `holds: "any"`, no `fields`, validate against the named kind |
+| 2 | no wire schema for `fields`, `args` and secret routing | §4.4 — the JSON shapes, secrets refused inside `fields` |
+| 3 | a script approved from its first lines only | §4.4 — the complete script in the consent prompt and the journal |
+
+Operator commands applied: build as one unit, autonomously, red-green-red, docs with every change, all
+tests before release, the pull-request comment check, and a re-read against the repository's rules.

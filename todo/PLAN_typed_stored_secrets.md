@@ -1,6 +1,7 @@
 # PLAN — a stored secret has its own type: forgetting the PIN door stops compiling
 
-> Status: **plan only, nothing implemented yet, 2026-09-29.** Scope: `src_vs_code/src` — `storageManager.ts`
+> Status: **plan only, nothing implemented yet, 2026-09-29.** Plan gate passed (`proceed`, 2 of 2 reviewers,
+> one round, seven findings accepted — §8). Scope: `src_vs_code/src` — `storageManager.ts`
 > getter/setter signatures, a new `storedSecret.ts` / `entryReader.ts` / `entryWriter.ts`, the ~105 call
 > sites that use a stored value, the four hand-written structural interfaces and one `Pick` that re-declare
 > the getters, and the tests' fakes. Extension only; no format change. **Starts after**
@@ -41,6 +42,16 @@ The root it removes (`storageManager.ts:697-899`): every getter returns `Thenabl
   keeps the crash-safe order (additions → node → removals), and stamps the protection mark. A `SealTicket`
   (unexported brand) comes from the door, from a brand-new entry, or from the unattended refusal. The PIN
   plan's `sealedWriter` / `sealValue` / `restoredDetails` are folded into it.
+  - **The unattended ticket permits nothing on a protected entry** *(gate finding 0)*: on an entry with a
+    locked slot or a PIN mark, `writeEntry` returns `{ kind: 'refused', reason }` and writes nothing; on an
+    unprotected entry it permits plain writes.
+  - **Interruption invariants** *(gate finding 1)*, Rule A per boundary: killed after the additions → only
+    orphaned new secrets exist, the node still describes the old state; killed after the node write → the
+    node is consistent, stale slots await removal; re-running the same plan converges in both cases.
+- **No truthiness on a stored secret** *(gate finding 4)*: a stored secret is never `''` (`putSecret`
+  deletes on empty, `storageManager.ts:364-371`), so truthiness and presence coincide today — but presence
+  checks are still written `!== undefined`, and the funnel test forbids `!secret`, `.length` and template
+  use on a `StoredSecret`. The object-shaped phantom is deliberate: string methods SHOULD not compile.
 - **The flip:** getters return `Thenable<StoredSecret | undefined>`, setters take `StoredSecret |
   undefined`. Presence checks (`!== undefined`, ~10 sites) keep compiling; the ~105 value uses migrate to
   the reader; the ~45 writes to `writeEntry`.
@@ -52,7 +63,9 @@ pins the modules allowed to call `carried(` / `readStored(` / `readSecret(` / `s
 (`storedSecret.ts`, `entitySlots.ts`, `entryReader.ts`, `entryWriter.ts`, `entityPin.ts`, `historyPin.ts`,
 `revisionSnapshot.ts`, `revisionStore.ts`, `pinAdmission.ts`, `pinGate.ts`, `syncPinRule.ts`,
 `storageManager.ts`), and review watches casts in production code. Type-aware lint rules are left out (CI
-cost).
+cost). *(Gate finding 2)*: `carried` / `readStored` live in a module whose name marks it internal
+(`storedSecretInternal.ts`), the funnel scan has a NEGATIVE fixture — a file outside the allowlist that
+calls `carried()` must make the scan fail — and a compile-fail fixture covers extraction by assignment.
 
 ## 4. Build order
 
@@ -64,7 +77,9 @@ cost).
       green commit; the PIN plan's `pinReaderBoundary` classification shrinks as groups move.
 - [ ] **T4** — `entryWriter.ts`; migrate Edit, Restore, create, share-accept/update, import, external
       apply, agent hooks, rotation.
-- [ ] **T5** — The flip of the StorageManager signatures (line-neutral against the ratchet, 1023); retype
+- [ ] **T5** — The flip of the StorageManager signatures, **staged per slot** *(gate finding 6)*: each slot's
+      getter/setter pair flips in its own green commit together with its callers, so a missed site surfaces
+      one slot at a time rather than all at once (line-neutral against the ratchet, 1023); retype
       the four structural interfaces (`entityFlags.ts:52-54`, `exportSecrets.ts:6`, `maskEntries.ts:27-35`,
       `mcpEntries.ts:183-192`) and the `Pick` (`revisionSnapshot.ts:20-32`); test fakes get a `stored()`
       helper; the funnel test.
@@ -75,8 +90,16 @@ cost).
 
 - The PIN plan's `pinSlotMatrix` and `pinReaderBoundary` stay green through every step — they are the
   behavioural oracle this refactor must not move.
-- New: the funnel test; the slot coverage test; a compile-fail fixture (a `tsc --noEmit` run over a snippet
-  that uses a getter's result as a string must fail) so the guarantee itself is tested.
+- New: the funnel test (with its negative fixture); the slot coverage test; a compile-fail fixture (a
+  `tsc --noEmit` run over a snippet that uses a getter's result as a string must fail) so the guarantee
+  itself is tested. The fixture runs **from a `node:test` file inside `npm test`** — it spawns `tsc` on the
+  fixture and asserts a non-zero exit with the expected diagnostic — so CI cannot pass without it *(gate
+  finding 5)*.
+- Refusal and interruption tests before T4 *(gate findings 0, 1)*: an unattended update, a removal and a
+  partial-write failure on a marked entry are refused with nothing written; a write thrown at each boundary
+  (after additions, after the node) against the real `StorageManager` converges on retry.
+- The inventory check *(gate finding 3)*: the PIN plan's `pinSlotMatrix` already enumerates every slot ×
+  every reader/writer surface, and it is this plan's per-slot inventory — kept green unchanged.
 - No behaviour change is intended: the whole suite green before and after each phase, with no assertion
   edited except mechanical fake signatures.
 
@@ -94,3 +117,15 @@ hand-written doors, three secret readers, hand lists), ~2,000 test lines mostly 
 - [ ] The PIN plan's behavioural tests unchanged and green; the funnel and coverage tests green.
 - [ ] The ratchet did not grow; lint green.
 - [ ] Docs updated; coai plan and code rounds `proceed`; promoted with deviations.
+
+## 8. Plan gate — 2026-09-29
+
+coai session `eda2faa2` (branch `docs/typed-stored-secrets`, kept for the build), one round, codex + gemini
+(2 of 2 answered), verdict **proceed** (6 gating against a threshold of 6). All seven findings accepted:
+the unattended ticket's refusal (§2), interruption invariants (§2, §5), the door-only extraction check (§3,
+§5), the inventory check by reference (§5), no truthiness on a stored secret (§2), the compile-fail fixture
+inside `npm test` (§5), and T5 staged per slot (§4).
+
+The gate's operator commands for THIS plan, to follow when it is built: do the split with Fable at its
+highest version; implement ordinary stories on Opus and anything security- or architecture-critical on
+Fable (max), naming the model per story; build on this branch, one code round over the whole diff.

@@ -1,6 +1,7 @@
 # PLAN — a PIN-protected entry keeps its promise: it opens, it edits, it never leaks, it never loses
 
-> Status: **plan only, nothing implemented yet, 2026-09-29.** Scope: `src_vs_code/src` — the PIN door and
+> Status: **plan only, nothing implemented yet, 2026-09-29.** Plan gate passed (`proceed`, 2 of 2 reviewers,
+> one round, five findings accepted — §14). Scope: `src_vs_code/src` — the PIN door and
 > gate (`pinAdmission.ts`, `pinGate.ts`, `pinPrompt.ts`, `pinSession.ts`, `entityPin.ts`, `entitySlots.ts`),
 > the viewer and the edit form, ~12 click commands, ~6 automatic readers, export, share-update, history,
 > a new *Restore This Version…* command, the sync merge, `package.json`, help ×5, CHANGELOG, and their
@@ -173,9 +174,11 @@ New pure module `editPrefill.ts` (every function ≤50 lines, complexity ≤4):
   (Rule A unchanged); a value equal to its opened plaintext is **skipped**; anything else is sealed with
   `sealValue()` — extracted from `entityPin.lockOne` (`entityPin.ts:79-88`) — before the raw setter runs.
   `setPassword('')` still means keep.
-- `pinForSave(gate)`: at Save time the grant is re-read (never captured when the form opened —
-  `pinSession.ts:35-50`); if it no longer opens the first locked slot (vault locked, window reloaded), ask
-  again with purpose *"save it"*.
+- `pinForSave(gate): Promise<string | undefined>`: at Save time the grant is re-read with
+  `grantedPin(accountId, entityId)` (`pinSession.ts:35-50` — it returns the PIN string; nothing captures it
+  when the form opened); if it no longer opens the first locked slot (vault locked, window reloaded), ask
+  again with purpose *"save it"*. The returned string is what `sealedWriter`, `shareUpdateSeal` and
+  `revisionRestore` seal with; `undefined` means the person declined. *(Plan gate, finding 2.)*
 
 `editNode` sequence:
 
@@ -190,6 +193,7 @@ New pure module `editPrefill.ts` (every function ≤50 lines, complexity ≤4):
    `EntityFormOptions.beforeSave?: () => Promise<boolean>` (`entityFormShape.ts`); `agreed()`
    (`entityFormPanel.ts:258-265`) runs it last. For a protected entry it is `pinForSave(gate)`; a decline
    **keeps the form open** with everything typed — the contract `confirmInvalidSave` already has.
+   `beforeSave` only GATES; the PIN itself is fetched again by `pinForSave` in step 6.
 6. Save: `recordRevision` (a protected entry's snapshot is already envelopes) → `applyAdditions(writer)`
    with `writer = protected ? sealedWriter(...) : storage` → `written = carryThroughDetails(...)`, which
    now carries `pinProtected` through a small `carryMarks()` helper (D3) → `updateNodeFields(written)` →
@@ -286,8 +290,12 @@ protected only by the file's password."*
 - **Revision viewer** (`entityViewerCommands.ts:211-283`): `admitEntry` on the LIVE entry (*"see this
   previous version"*), then `openRevision`, then render from the opened copy — card, Copy and Copy All
   (`entityViewCopy.ts`) work unchanged. A version sealed under a PIN that no longer opens the live entry is
-  asked for separately and **never granted**, so the live grant is not overwritten. `extension.ts:852`
-  changes in place (net 0).
+  asked for separately and **never granted**, so the live grant is not overwritten. The same separate ask
+  serves the case the plan gate found (finding 3): the entry was UNPROTECTED on another machine and synced
+  here, so the live entry holds no grant, while this machine's kept versions are still sealed — the viewer
+  and Restore then ask *"This kept version is sealed under the PIN the entry used to have. Enter it to see
+  it."*, and *Remove PIN Protection…* stays offered on the row so this machine can unseal its own history.
+  `extension.ts:852` changes in place (net 0).
 - **Restore This Version…** — command `credSshManager.restoreRevision`, menu
   `viewItem =~ /^revision/`, group `3_manage@0`, hidden from the palette (`"when": "false"`, as `:1207`),
   registered from `registerPinCommands` (`pinCommands.ts:46-49`) so `extension.ts` does not grow. Logic in
@@ -309,6 +317,12 @@ protected only by the file's password."*
      `deletePassword`, because `setPassword('')` means keep, `storageManager.ts:701-704`);
   8. the `protectEntity` sweep if protected; env-binding notice; refresh. Message *"<name> is back to the
      version replaced at <date>. Its agent access and code-access key are today's, not that version's."*
+
+  **Interrupted restore** *(plan gate, finding 1)*: every value is opened and sealed in memory BEFORE the
+  first write, so an interruption can only leave a mixture of two already-sealed states, never plaintext.
+  Restore is idempotent — running *Restore This Version…* on the same version again converges to it — and
+  the newest kept version is the pre-restore state, so the person can also go back. A test kills a restore
+  between two slot writes and re-runs it.
   `SecretSlot` gains `revisionField: keyof RevisionSecrets` and `remove`.
 - **Tooltip** `revisionRowItem.ts:31`: *"Replaced <date> — click to see what it was. Right-click →
   Restore This Version… to bring it back."*
@@ -350,15 +364,21 @@ node fields (`updateNodeFields` spreads `{...n, ...patch}`, `storageManager.ts:5
   3. When this overrides the wall-clock choice (`syncMerge.ts:133-136`), the kept node gets
      `v = mergeVectors(va, vb)`, so the resolution dominates both inputs and an older build elsewhere
      accepts it by dominance instead of flipping it back on wall clock.
-  4. In the per-id fallback (`copySecret`, `:356-366`) a **sealed winner never takes a plaintext value**
-     from the loser.
+  4. In the per-id fallback (`copySecret`, `:356-366`) a fallback value is taken only when its sealed
+     state MATCHES the winner's: a sealed winner takes no plaintext, and an unsealed winner takes no
+     envelope *(plan gate, finding 4 — the second direction would recreate D1/D2/D6 on an entry that had
+     just been unprotected)*.
 - **The loser is kept** (owner decision 6): new pure `protectionConflicts(local, merged)` lists ids whose
   local values were replaced by the other side's protection decision; `syncManager.ts` (780 lines — the
   logic stays in `syncProtection.ts`, ~3 lines at `:566-567`) records `revisionFromSnapshot(local, id)`
   **before** `applySnapshot`, and says once: *"<name> is protected with its own PIN again: another machine
   changed it under that PIN while this one held it unprotected. What this machine had is now its newest
   previous version — open it with the PIN to compare, or Restore This Version…."* (and the mirror sentence
-  for an unprotect that won). Coordinate with
+  for an unprotect that won). The recorded loser is never openable without the PIN: the revision viewer
+  asks the live entry's PIN for every version of a protected entry, and the conflict path schedules the
+  same background `protectHistory` the door runs, so the copy is sealed at the first door *(plan gate,
+  finding 0; the plaintext was this machine's own live value a moment earlier, so nothing new is exposed)*.
+  Coordinate with
   [PLAN_sync_says_what_already_happened.md](PLAN_sync_says_what_already_happened.md), which also edits
   `syncManager.ts` and owns how sync reports what it did — this notice goes through its summary once that
   lands, and the two plans are ordered in §6.
@@ -486,20 +506,22 @@ defect starts with its RED test watched failing with the real symptom (§11), th
 
 ### 9.1 Epics and pull requests
 
-The owner allowed more than one pull request (2026-09-29). The phases ship as four epics, each its own
-branch, pull request and coai code round; **nothing is released until the last one** (owner decision 2).
-The order puts the data loss first.
+The owner allowed more than one pull request (2026-09-29), and this section first split the phases into
+four epics. **The plan gate's operator command then overrode it** (2026-09-29): *"This plan is a PIECE of a
+split that is already under way, so do NOT split it again: build it as one unit, review its diff through
+this gate."* So it is built as ONE unit on `fix/entry-pin-keeps-its-promise`, with one code round and one
+pull request, the phases P1-P10 in order as commits. The table below is kept as the cut that would have been
+made, as the command asks — not as the delivery.
 
-| Epic | Phases | Pull request closes | Why this order |
+| Epic (not used) | Phases | Would have closed | Why this order |
 |---|---|---|---|
 | E1 | P1-P3 | D1-D5, the banner half of D17 | the reported bug and the only data LOSS; carries this plan's commit |
 | E2 | P4-P5 | D6-D9, D18 | every leak of an envelope to a sink; reuses E1's door and `sealValue` |
 | E3 | P6-P7 | D10, D11, D13-D15 | history, Restore and Remove PIN share `replaceHistory` and the slot table's `revisionField`/`remove` |
 | E4 | P8-P10 | D12, D16, the rest of D17, §7 guards, docs, release | the guard is written last, when every reader it classifies is final |
 
-[PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md) is a fifth pull
-request after E1 (it uses `sealValue`) and before the release. Extension 1.12.0 is cut after E4 and it have
-both merged.
+[PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md) is the second
+pull request, after this one (it uses `sealValue`). Extension 1.12.0 is cut once both have merged.
 
 ## 10. Risks
 
@@ -602,3 +624,20 @@ together with the sibling plan's relay release in the order that plan states.
       promoted to `research/` with `IMPLEMENTED <date>` and their deviations; `todo/README.md` updated in the
       same commit.
 - [ ] Extension 1.12.0 released.
+
+## 14. Plan gate — 2026-09-29
+
+coai session `72460163`, one round, codex + gemini (2 of 2 answered), verdict **proceed** (5 gating
+against a threshold of 6). Every finding was accepted and folded into the section named:
+
+| # | Finding | Where it changed the plan |
+|---|---|---|
+| 0 | the losing sync copy is recorded in history unsealed | §5.9 — the viewer asks the live PIN for every version; the conflict path schedules `protectHistory` |
+| 1 | an interrupted Restore can leave a mixture of two versions | §5.7 — seal everything in memory first, Restore idempotent, the pre-restore state is the newest version; a kill-and-rerun test |
+| 2 | *(Blocking)* the writers have no PIN to seal with | §5.2 — `pinForSave` returns the PIN string from `grantedPin`; a specification gap, not a design one |
+| 3 | Remove PIN on one machine strands sealed history on another | §5.7 — a version asks its own PIN when the live entry holds no grant; Remove PIN stays offered while any kept slot is locked |
+| 4 | an unprotected winner can adopt a sealed envelope from the loser | §5.9 rule 4 — the fallback guard is symmetric |
+
+The gate's operator commands, applied: build this plan as one unit (§9.1), work autonomously with
+red-green-red per defect, docs with every change, every test before a release, the pull-request comment
+check, and a re-read against the repository's rules.
