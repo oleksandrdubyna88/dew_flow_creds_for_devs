@@ -31,6 +31,7 @@ import { EditPrefill, openEntryForEdit, pinForSave, sealedWriter } from './editP
 import { protectEntity } from './entityPin';
 import { parseFields } from './entityFields';
 import { PinGate } from './pinGate';
+import { firstLockedStored } from './pinAdmission';
 import { admitEntry } from './pinPrompt';
 import { parseSecondValues } from './secondValues';
 import { describeError } from './describeError';
@@ -91,12 +92,28 @@ async function openForEdit(ctx: EditContext): Promise<Door | undefined> {
   if (gate === undefined) {
     return undefined;
   }
-  const opened = await openEntryForEdit(ctx.storage, ctx.accountId, ctx.node.id, gate);
+  const opened = await whileUnsealing(ctx, () => openEntryForEdit(ctx.storage, ctx.accountId, ctx.node.id, gate));
   if (opened.kind === 'refused') {
     sayRefusal(opened.reason);
     return undefined;
   }
   return { gate, prefill: opened.prefill };
+}
+
+/**
+ * Entry-PIN plan §8: a protected entry's form waits on up to seven scrypt opens of about a second
+ * each, and a click that shows nothing for seconds reads as a click that did nothing — so the wait is
+ * a notification. An entry with no locked value opens at once, and a notification that flashes for
+ * an instant is noise, so it gets none.
+ */
+async function whileUnsealing<T>(ctx: EditContext, work: () => Promise<T>): Promise<T> {
+  if ((await firstLockedStored(ctx.storage, ctx.accountId, ctx.node.id)) === undefined) {
+    return work();
+  }
+  return vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Opening "${ctx.node.name}" — unsealing its values under its PIN…` },
+    work,
+  );
 }
 
 /** A refusal with no words is a decline, and a decline says nothing more. */

@@ -70,6 +70,8 @@ interface Said {
   warnings: string[];
   /** PIN boxes raised — the door asks once; Save asks again only when the grant is gone. */
   boxes: number;
+  /** Every progress notification: its title, and what the work it wrapped answered. */
+  progress: { title: string; answered: unknown }[];
 }
 
 /** The `vscode` the edit path and the storage touch: PIN boxes answered from a queue, notices recorded. */
@@ -90,6 +92,11 @@ function stubbedVscode(inputs: (string | undefined)[], said: Said): Record<strin
         return Promise.resolve(undefined);
       },
       showErrorMessage: (): undefined => undefined,
+      withProgress: async (options: { title: string }, task: (progress: { report(): void }) => Promise<unknown>): Promise<unknown> => {
+        const answered = await task({ report: (): void => undefined });
+        said.progress.push({ title: options.title, answered });
+        return answered;
+      },
       createOutputChannel: () => ({ appendLine: (): void => undefined, show: (): void => undefined, dispose: (): void => undefined }),
     },
     workspace: {
@@ -100,6 +107,7 @@ function stubbedVscode(inputs: (string | undefined)[], said: Said): Record<strin
     },
     Uri: { file: (p: string): object => ({ fsPath: p }), joinPath: (): object => ({}) },
     ViewColumn: { Active: 1 },
+    ProgressLocation: { Notification: 15 },
     EventEmitter: class {
       event = (): void => undefined;
       fire(): void {}
@@ -237,7 +245,7 @@ async function world(
   inputs: (string | undefined)[],
   answer: Answer = {},
 ): Promise<World> {
-  const said: Said = { infos: [], warnings: [], boxes: 0 };
+  const said: Said = { infos: [], warnings: [], boxes: 0, progress: [] };
   const stub = stubbedVscode([...inputs], said);
   const { StorageManager } = loadWithVscode<typeof import('../storageManager')>('../storageManager', stub);
   const written: string[] = [];
@@ -424,6 +432,25 @@ test('a declined door opens no form, changes nothing, and says nothing more', as
   assert.deepEqual(w.said.warnings, []);
   assert.deepEqual(await rawSlots(w), before);
   assert.equal(w.node().name, 'orest payoneer');
+});
+
+test('Edit on a protected entry says it is opening the values while it unseals them — §8, seven scrypt opens take seconds', async () => {
+  const w = await protectedCard([PIN], { name: 'renamed' });
+
+  await w.edit();
+
+  assert.equal(w.said.progress.length, 1, 'a form that takes seconds to appear must say it is working');
+  assert.match(w.said.progress[0].title, /"orest payoneer"/);
+  assert.equal((w.said.progress[0].answered as { kind?: string }).kind, 'open', 'the slots were opened INSIDE the notification, not before or after it');
+});
+
+test('Edit on an entry with no PIN opens with no progress notification — there is nothing to unseal', async () => {
+  const w = await world(credential({ pinProtected: undefined }), { password: 'plain', notes: 'plain note' }, [], { name: 'renamed' });
+
+  await w.edit();
+
+  assert.equal(w.node().name, 'renamed', 'the edit happened');
+  assert.deepEqual(w.said.progress, [], 'a notification that flashes for an instant is noise');
 });
 
 // ---------------------------------------------------------------------------------------------
