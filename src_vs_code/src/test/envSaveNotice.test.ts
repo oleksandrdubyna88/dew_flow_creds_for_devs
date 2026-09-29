@@ -65,6 +65,8 @@ function stubbedVscode(inputs: (string | undefined)[], said: { infos: string[]; 
         return Promise.resolve(undefined);
       },
       showErrorMessage: (): undefined => undefined,
+      // Edit on a protected entry unseals its values behind a notification (entry-PIN plan §8).
+      withProgress: (_o: unknown, task: (p: { report(): void }) => Promise<unknown>): Promise<unknown> => task({ report: (): void => undefined }),
       createOutputChannel: () => ({ appendLine: (): void => undefined, show: (): void => undefined, dispose: (): void => undefined }),
     },
     workspace: {
@@ -75,6 +77,7 @@ function stubbedVscode(inputs: (string | undefined)[], said: { infos: string[]; 
     },
     Uri: { file: (p: string): object => ({ fsPath: p }), joinPath: (): object => ({}) },
     ViewColumn: { Active: 1 },
+    ProgressLocation: { Notification: 15 },
     EventEmitter: class {
       event = (): void => undefined;
       fire(): void {}
