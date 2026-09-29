@@ -283,3 +283,38 @@ test('between two unprotected sides the fallback still fills a slot the winner l
     assert.equal(merged.notes.x, 'only B has a note');
   }
 });
+
+let otherPinValue: Promise<string> | undefined;
+/** An envelope under a DIFFERENT PIN — what a concurrent protect on another machine leaves. */
+const sealedUnderOtherPin = (): Promise<string> => (otherPinValue ??= lockSecret('B card', 'a1', '9999'));
+
+test('two sealed sides that raced: one node wins wholesale — the winner borrows no sealed slot from the loser (§5.9, row 4)', async () => {
+  // Both machines protected concurrently, with different PINs. The rule does not fire (both are
+  // sealed), the clock picks B — and B must come through as B was: a note sealed under A's PIN
+  // borrowed into B's entry would be a value B's PIN can never open.
+  const a = snap({
+    nodes: [node('x', 100, { A: 2, B: 1 }, { details: protectedDetails, pinEpoch: 1 } as Partial<TreeNode>)],
+    passwords: { x: await sealed() },
+    notes: { x: await sealed() },
+    attachments: { x: 'a file only A has' },
+  });
+  const b = snap({
+    nodes: [node('x', 200, { A: 1, B: 2 }, { details: protectedDetails, pinEpoch: 1 } as Partial<TreeNode>)],
+    passwords: { x: await sealedUnderOtherPin() },
+  });
+
+  for (const merged of bothOrders(a, b)) {
+    assert.equal(merged.passwords.x, await sealedUnderOtherPin(), 'the later clock wins, as before');
+    assert.equal(merged.notes.x, undefined, 'a sealed winner must not be mixed with the loser’s sealed values');
+    assert.equal(merged.attachments.x, 'a file only A has', 'an attachment is outside the PIN and still fills in');
+  }
+});
+
+test('two sealed sides where one DOMINATES still merge as before — wholesale is only for a race', async () => {
+  const a = snap({ nodes: [node('x', 100, { A: 2, B: 2 }, { details: protectedDetails, pinEpoch: 1 } as Partial<TreeNode>)], passwords: { x: await sealed() } });
+  const b = snap({ nodes: [node('x', 200, { A: 1, B: 2 }, { details: protectedDetails, pinEpoch: 1 } as Partial<TreeNode>)], passwords: { x: await sealed() }, notes: { x: await sealed() } });
+
+  for (const merged of bothOrders(a, b)) {
+    assert.equal(merged.notes.x, await sealed(), 'a causally later sealed write keeps the per-slot fill it always had');
+  }
+});

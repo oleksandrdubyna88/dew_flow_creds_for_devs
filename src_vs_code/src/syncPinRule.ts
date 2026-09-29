@@ -1,7 +1,7 @@
 import { SECRET_KINDS, SecretMapKey } from './secretMaps';
 import { isLockedSecret } from './secretEnvelope';
 import type { TreeNode } from './types';
-import { VersionVector, dominates, emptyVector, mergeVectors } from './versionVector';
+import { VersionVector, concurrent, dominates, emptyVector, mergeVectors } from './versionVector';
 
 /**
  * The sync merge's rule for PROTECTION — which side wins when two machines disagree about whether an
@@ -27,6 +27,11 @@ import { VersionVector, dominates, emptyVector, mergeVectors } from './versionVe
  *       winner takes no plaintext, and an unsealed winner takes no envelope (plan gate, finding 4:
  *       the second direction would hand a just-unprotected entry an envelope, which is D1, D2 and D6
  *       all over again).</li>
+ *   <li><b>Two SEALED sides that raced do not mix at all.</b> Both protected concurrently — perhaps
+ *       under two different PINs — so the rule does not fire and the clock picks one node; that node
+ *       then wins wholesale and borrows no sealed slot from the loser, because a value sealed under
+ *       the loser's PIN inside the winner's entry is a value the winner's PIN can never open (§5.9,
+ *       table row 4). Attachments and images are outside the PIN and still fill in.</li>
  * </ol>
  *
  * <p>Pure: `mergeProfiles` calls it, and `syncMerge.test.ts` asserts it in both argument orders.</p>
@@ -56,10 +61,14 @@ export interface PinSide {
   readonly sealed: boolean;
 }
 
-/** What the rule decided: the node to keep, and which side it came from (for the per-slot copy). */
+/**
+ * What the rule decided: the node to keep, which side it came from (for the per-slot copy), and
+ * whether that side wins WHOLESALE — both sides sealed and concurrent, so nothing sealed is borrowed.
+ */
 export interface PinDecision {
   readonly node: TreeNode;
   readonly from: 'a' | 'b';
+  readonly wholesale: boolean;
 }
 
 /**
@@ -71,10 +80,15 @@ export function decideProtection(a: PinSide, b: PinSide, byClock: TreeNode): Pin
   const ruled = ruledWinner(a, b);
   const clockSide = sideOf(byClock, a);
   if (ruled === undefined || ruled === clockSide) {
-    return { node: byClock, from: clockSide };
+    return { node: byClock, from: clockSide, wholesale: racedSealed(a, b) };
   }
   const winner = ruled === 'a' ? a.node : b.node;
-  return { node: { ...winner, v: mergeVectors(vectorOf(a.node), vectorOf(b.node)) }, from: ruled };
+  return { node: { ...winner, v: mergeVectors(vectorOf(a.node), vectorOf(b.node)) }, from: ruled, wholesale: false };
+}
+
+/** Both sides sealed and neither saw the other: rule 5 — one node wins wholesale. */
+function racedSealed(a: PinSide, b: PinSide): boolean {
+  return a.sealed && b.sealed && concurrent(vectorOf(a.node), vectorOf(b.node));
 }
 
 function sideOf(node: TreeNode, a: PinSide): 'a' | 'b' {
@@ -109,11 +123,29 @@ function epochOf(node: TreeNode): number {
 }
 
 /**
- * The per-slot fallback, guarded: the losing side's value for a slot the winner lacks is taken only
- * when its sealed state matches the winner's — `undefined` otherwise, and the slot stays empty.
+ * Which of the losing side's values the per-slot fallback may take for a slot the winner lacks:
+ * only sealed ones (a sealed winner), only plain ones (an unsealed winner), or none at all (two sealed
+ * sides that raced — rule 5).
  */
-export function fallbackValue(value: string | undefined, winnerSealed: boolean): string | undefined {
-  return value !== undefined && isLockedSecret(value) === winnerSealed ? value : undefined;
+export type FallbackRule = 'sealed' | 'plain' | 'none';
+
+/** The fallback rule for a sealable map, from the winner's sealed state and the decision. */
+export function fallbackRuleFor(winnerSealed: boolean, wholesale: boolean): FallbackRule {
+  if (wholesale) {
+    return 'none';
+  }
+  return winnerSealed ? 'sealed' : 'plain';
+}
+
+/**
+ * The per-slot fallback, guarded: the losing side's value for a slot the winner lacks is taken only
+ * when the rule allows it — `undefined` otherwise, and the slot stays empty.
+ */
+export function fallbackValue(value: string | undefined, rule: FallbackRule): string | undefined {
+  if (value === undefined || rule === 'none') {
+    return undefined;
+  }
+  return isLockedSecret(value) === (rule === 'sealed') ? value : undefined;
 }
 
 /**

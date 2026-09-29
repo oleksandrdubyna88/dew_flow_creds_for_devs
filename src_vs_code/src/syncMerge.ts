@@ -1,4 +1,4 @@
-import { decideProtection, fallbackValue, sealedIn } from './syncPinRule';
+import { FallbackRule, decideProtection, fallbackRuleFor, fallbackValue, sealedIn } from './syncPinRule';
 import { TreeNode } from './types';
 import {
   Tombstone,
@@ -137,10 +137,14 @@ function pickNode(a: TreeNode, b: TreeNode): TreeNode {
   return lastWriter(va) >= lastWriter(vb) ? a : b;
 }
 
-/** The node kept for one id, and whether it is this machine's — the side its secrets are copied from. */
+/**
+ * The node kept for one id, whether it is this machine's — the side its secrets are copied from — and
+ * whether it wins wholesale (two sealed sides that raced: no sealed slot is borrowed, `syncPinRule`).
+ */
 interface Kept {
   readonly node: TreeNode;
   readonly local: boolean;
+  readonly wholesale: boolean;
 }
 
 /**
@@ -162,14 +166,14 @@ function pickWinner(
     { node: remoteNode, sealed: sealedIn(remote, id) },
     pickNode(localNode, remoteNode),
   );
-  return { node: decided.node, local: decided.from === 'a' };
+  return { node: decided.node, local: decided.from === 'a', wholesale: decided.wholesale };
 }
 
 function onlyOne(localNode: TreeNode | undefined, remoteNode: TreeNode | undefined): Kept | undefined {
   if (localNode !== undefined) {
-    return { node: localNode, local: true };
+    return { node: localNode, local: true, wholesale: false };
   }
-  return remoteNode === undefined ? undefined : { node: remoteNode, local: false };
+  return remoteNode === undefined ? undefined : { node: remoteNode, local: false, wholesale: false };
 }
 
 function normalizeTombstones(
@@ -300,28 +304,29 @@ export function mergeProfiles(
     const primary = localWins ? local : remote;
     const fallback = localWins ? remote : local;
     // The fallback takes a slot the winner lacks only in the winner's own sealed state (§5.9 rule 4):
-    // a sealed winner takes no plaintext, an unsealed one no envelope. Attachments and images are
+    // a sealed winner takes no plaintext, an unsealed one no envelope — and two sealed sides that
+    // raced take nothing from each other (row 4: one node wins wholesale). Attachments and images are
     // outside the PIN, so they are judged as unsealed whatever the entry is.
-    const sealed = sealedIn(primary, id);
-    copySecret(passwords, id, primary.passwords, fallback.passwords, sealed);
-    copySecret(privateKeys, id, primary.privateKeys, fallback.privateKeys, sealed);
-    copySecret(vpnConfigs, id, primary.vpnConfigs, fallback.vpnConfigs, sealed);
-    copySecret(dbConnections, id, primary.dbConnections, fallback.dbConnections, sealed);
-    copySecret(notes, id, primary.notes, fallback.notes, sealed);
-    copySecret(attachments, id, primary.attachments, fallback.attachments, false);
-    copySecret(images, id, primary.images, fallback.images, false);
+    const rule = fallbackRuleFor(sealedIn(primary, id), decided.wholesale);
+    copySecret(passwords, id, primary.passwords, fallback.passwords, rule);
+    copySecret(privateKeys, id, primary.privateKeys, fallback.privateKeys, rule);
+    copySecret(vpnConfigs, id, primary.vpnConfigs, fallback.vpnConfigs, rule);
+    copySecret(dbConnections, id, primary.dbConnections, fallback.dbConnections, rule);
+    copySecret(notes, id, primary.notes, fallback.notes, rule);
+    copySecret(attachments, id, primary.attachments, fallback.attachments, 'plain');
+    copySecret(images, id, primary.images, fallback.images, 'plain');
     // `?? {}`: a snapshot decoded from a pre-0.57 vault has no totps record at all.
-    copySecret(totps, id, primary.totps ?? {}, fallback.totps ?? {}, sealed);
+    copySecret(totps, id, primary.totps ?? {}, fallback.totps ?? {}, rule);
     // `?? {}` for the same reason the line above needs one: a snapshot decoded from a vault
     // written before the `config` kind carries no configs record at all.
-    copySecret(configs, id, primary.configs ?? {}, fallback.configs ?? {}, sealed);
-    copySecret(fields, id, primary.fields ?? {}, fallback.fields ?? {}, sealed);
+    copySecret(configs, id, primary.configs ?? {}, fallback.configs ?? {}, rule);
+    copySecret(fields, id, primary.fields ?? {}, fallback.fields ?? {}, rule);
     // The same guard the two lines above need: a snapshot from a vault written before the payment
     // kind carries no payments record at all, and must not delete the other side's.
-    copySecret(payments, id, primary.payments ?? {}, fallback.payments ?? {}, sealed);
+    copySecret(payments, id, primary.payments ?? {}, fallback.payments ?? {}, rule);
     // And the same guard again, for the same reason: a snapshot written by a build from before the
     // `seconds` kind carries no record at all, and must not delete the other side's.
-    copySecret(seconds, id, primary.seconds ?? {}, fallback.seconds ?? {}, sealed);
+    copySecret(seconds, id, primary.seconds ?? {}, fallback.seconds ?? {}, rule);
   }
 
   // Re-parent children whose parent did not survive the merge.
@@ -396,9 +401,9 @@ function copySecret(
   id: string,
   primary: Record<string, string>,
   fallback: Record<string, string>,
-  winnerSealed: boolean,
+  rule: FallbackRule,
 ): void {
-  const value = primary[id] ?? fallbackValue(fallback[id], winnerSealed);
+  const value = primary[id] ?? fallbackValue(fallback[id], rule);
   if (value !== undefined) {
     out[id] = value;
   }
