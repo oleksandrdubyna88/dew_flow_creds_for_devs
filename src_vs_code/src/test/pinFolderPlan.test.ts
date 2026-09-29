@@ -300,6 +300,8 @@ test('…but a run where at least ONE entry succeeded does record it', async () 
     getVpnConfig: nothing,
     getTotp: nothing,
     getPrivateKey: nothing,
+    // Protect seals the entry's kept versions too (D10); this one keeps none.
+    getHistory: () => Promise.resolve([]),
     updateNodeFields: (_a: string, id: string, patch: Partial<TreeNode>) => {
       written.push({ id, ...patch } as TreeNode);
       return Promise.resolve();

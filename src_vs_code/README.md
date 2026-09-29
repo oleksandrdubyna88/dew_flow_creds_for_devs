@@ -764,8 +764,11 @@ version's secret.
 
 The versions are **rows in the tree**: open the entry's twisty and they are underneath, newest
 first, labelled by when each was replaced. One click on a version opens the viewer on *that*
-version — every copy button reads the old value. Run and Copy Command work on an old version of
-a command, and **Clone** brings one back as a new entry. Nothing else is offered on a version:
+version — every copy button reads the old value; a version of an entry protected with its own PIN
+opens only after that PIN. Right-click → **Restore This Version…** brings the entry back to it: what
+the entry holds now becomes its newest previous version, so a restore is undone the same way, and
+its agent access and code-access key stay today's. Run and Copy Command work on an old version of
+a command, and **Clone** makes a new entry from one. Nothing else is offered on a version:
 no Edit, no Share, and no writing its secret into a terminal variable. A clone never carries
 history — a new id starts with an empty past, as it starts with no secrets.
 
@@ -1157,7 +1160,7 @@ also on the right-click menu where it applies.
 - **Vault** — Set Sync PIN · Add Security Key (YubiKey)… · Remove Security Key… · Unlock Vault
   (Security Key)… · Lock Vaults (clear cached keys) · Set Auto-Lock…
 - **Tree** — Add Folder · Add Entity · Edit · Clone… · Delete · Move to Folder… · Change Folder
-  Type… · Move Up · Move Down · View Details · Refresh
+  Type… · Move Up · Move Down · View Details · Restore This Version… · Refresh
 - **SSH** — Connect SSH · Toggle SSH (on/off) · Copy Password · Install SSH Key to System
   (~/.ssh) · Add to SSH Agent · Remove from SSH Agent · Copy Git Signing Config
 - **One-time codes** — Copy One-Time Code

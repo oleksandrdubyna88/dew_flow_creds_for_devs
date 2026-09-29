@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { EntityViewOptions } from '../entityViewPage';
-import { parseFields } from '../entityFields';
-import { parsePaymentFields } from '../paymentFields';
 import { forgetAllPins } from '../pinSession';
-import { parseSecondValues } from '../secondValues';
 import { lockSecret } from '../secretEnvelope';
 import { EntityMetadata, TreeNode } from '../types';
 import { loadWithVscode } from './vscodeStub';
@@ -21,9 +18,10 @@ import { loadWithVscode } from './vscodeStub';
  * were reachable the whole time, through the gated reader the same function already built two
  * lines later. No test drove the real viewer, so nothing noticed for three weeks.</p>
  *
- * <p>The vault here is a real in-memory store whose typed getters do what the real ones do — parse
- * the raw string — so a locked record reads as `{}` exactly as it did in the product. A stub that
- * answered `getPayment` with the card would have proven nothing.</p>
+ * <p>The vault here is a real in-memory store of RAW strings, as the product's is. The typed getters
+ * that turned a locked record into `{}` are gone (entry-PIN plan §7.1), so the fake offers only the
+ * raw ones: a read that silently empties a locked record no longer compiles, and a stub that answered
+ * with the card would have proven nothing.</p>
  */
 
 const ACCOUNT = 'a1';
@@ -105,11 +103,8 @@ function memoryVault(node: TreeNode, secrets: Map<string, string>): unknown {
     getTotp: get('totp'),
     getConfigBody: get('configBody'),
     getFieldsRaw: get('fieldsRaw'),
-    getFields: async (): Promise<unknown> => parseFields(await get('fieldsRaw')()),
     getSecondRaw: get('secondRaw'),
-    getSecond: async (): Promise<unknown> => parseSecondValues(await get('secondRaw')()),
     getPaymentRaw: get('paymentRaw'),
-    getPayment: async (): Promise<unknown> => parsePaymentFields(await get('paymentRaw')()),
     getAttachment: get('attachment'),
     getImage: get('image'),
     getHistory: (): Promise<unknown[]> => Promise.resolve([]),

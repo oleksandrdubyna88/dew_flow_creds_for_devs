@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { PaymentFields } from '../paymentFields';
+import { parsePaymentFields, type PaymentFields } from '../paymentFields';
 import { TreeNode } from '../types';
 import { loadWithVscode } from './vscodeStub';
 
@@ -16,7 +16,6 @@ import { loadWithVscode } from './vscodeStub';
 interface Storage {
   addNode(accountId: string, node: TreeNode): Promise<void>;
   setPayment(accountId: string, id: string, fields: PaymentFields | undefined): Promise<void>;
-  getPayment(accountId: string, id: string): Promise<PaymentFields>;
   getPaymentRaw(accountId: string, id: string): Promise<string | undefined>;
   setPaymentRaw(accountId: string, id: string, value: string | undefined): Promise<void>;
   deleteNodeRecursive(accountId: string, id: string): Promise<string[]>;
@@ -83,7 +82,7 @@ test('a payment record lives under one keychain key of its own, never in the nod
   const { storage, store } = machine();
   await storage.addNode(A, NODE);
   await storage.setPayment(A, 'p1', CARD);
-  assert.deepEqual(await storage.getPayment(A, 'p1'), CARD);
+  assert.deepEqual(parsePaymentFields(await storage.getPaymentRaw(A, 'p1')), CARD);
 
   const keys = store.keys().filter((k) => k.endsWith(':payment'));
   assert.equal(keys.length, 1, 'ONE key for nine card fields — that is what the single JSON record buys');
@@ -100,7 +99,7 @@ test('an empty record deletes the key rather than storing an empty object', asyn
   await storage.setPayment(A, 'p1', CARD);
   await storage.setPayment(A, 'p1', {});
   assert.equal(await storage.getPaymentRaw(A, 'p1'), undefined);
-  assert.deepEqual(await storage.getPayment(A, 'p1'), {}, 'and reading it back is no fields, not a throw');
+  assert.deepEqual(parsePaymentFields(await storage.getPaymentRaw(A, 'p1')), {}, 'and reading it back is no fields, not a throw');
 });
 
 test('the bundle carries the payment record, and a restore on another machine brings it back', async () => {
@@ -114,7 +113,7 @@ test('the bundle carries the payment record, and a restore on another machine br
 
   const b = machine();
   await b.storage.importBundle(A, bundle);
-  assert.deepEqual(await b.storage.getPayment(A, 'p1'), CARD, 'CVV and PIN included — a backup that lost them would lose them forever');
+  assert.deepEqual(parsePaymentFields(await b.storage.getPaymentRaw(A, 'p1')), CARD, 'CVV and PIN included — a backup that lost them would lose them forever');
 });
 
 test('a bundle written before this kind existed still imports, carrying no payments', async () => {
@@ -126,7 +125,7 @@ test('a bundle written before this kind existed still imports, carrying no payme
 
   const b = machine();
   await b.storage.importBundle(A, bundle);
-  assert.deepEqual(await b.storage.getPayment(A, 'p1'), {}, 'absent is empty, never a crash');
+  assert.deepEqual(parsePaymentFields(await b.storage.getPaymentRaw(A, 'p1')), {}, 'absent is empty, never a crash');
 });
 
 test('a forged entity id cannot reach another entity’s payment key', async () => {

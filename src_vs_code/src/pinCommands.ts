@@ -4,10 +4,12 @@ import { TreeNode } from './types';
 import { entryPinGate, newPin } from './pinPrompt';
 import { forgetPin } from './pinSession';
 import { isProtected, pinOpens, protectEntity, unprotectEntity } from './entityPin';
+import { protectHistory } from './historyPin';
 import { pinValidator } from './pinInput';
 import { describeError } from './describeError';
 import { asElement } from './commandTargets';
 import { FolderPinPlan, folderPinPlan, protectionSummary, runReport, siblingReport } from './pinFolderPlan';
+import { restoreRevision } from './revisionRestore';
 
 /**
  * Putting a PIN on an entry or a folder, and taking it off — the commands a person runs.
@@ -47,6 +49,8 @@ export function registerPinCommands(deps: {
   deps.register('credSshManager.unprotectEntry', onNode(unprotectEntry));
   deps.register('credSshManager.protectFolder', onNode(protectFolder));
   deps.register('credSshManager.stopAskingForPin', onNode(stopAskingForPin));
+  // A history row, not a node: Restore brings a kept version back through the entry's own door (D11).
+  deps.register('credSshManager.restoreRevision', (target) => restoreRevision(target, deps));
 }
 
 export interface PinCommandDeps {
@@ -265,8 +269,8 @@ async function runProtect(nodes: readonly TreeNode[], pin: string, deps: PinComm
     { location: vscode.ProgressLocation.Notification, title: 'Protecting with a PIN…' },
     async (progress) => {
       for (const [index, node] of nodes.entries()) {
-        progress.report({ message: `${index + 1} of ${nodes.length} — ${node.name}` });
-        await protectOne(node, pin, deps, done, failed);
+        const where = `${index + 1} of ${nodes.length} — ${node.name}`;
+        await protectOne(node, pin, deps, { done, failed, report: (what) => progress.report({ message: `${where}${what}` }) });
       }
     },
   );
@@ -275,22 +279,33 @@ async function runProtect(nodes: readonly TreeNode[], pin: string, deps: PinComm
   return done.length;
 }
 
-/** One entry, with its failure kept rather than thrown — the rest of the folder still deserves a try. */
-async function protectOne(
-  node: TreeNode,
-  pin: string,
-  deps: PinCommandDeps,
-  done: string[],
-  failed: string[],
-): Promise<void> {
+/** Where one entry's run reports to: what was done, what failed, and the progress line. */
+interface ProtectRun {
+  readonly done: string[];
+  readonly failed: string[];
+  /** Appends to the progress line — `''` for the live values, `' (kept versions)'` for the history. */
+  readonly report: (what: string) => void;
+}
+
+/**
+ * One entry, with its failure kept rather than thrown — the rest of the folder still deserves a try.
+ *
+ * <p>The live values, then the entry's KEPT versions (D10: before 1.12 the history stayed plaintext
+ * and opened with no PIN), then the mark — last, as `markProtection` says. The history is only this
+ * machine's; every other machine seals its own at the first door there (`historyHeal.ts`).</p>
+ */
+async function protectOne(node: TreeNode, pin: string, deps: PinCommandDeps, run: ProtectRun): Promise<void> {
   try {
+    run.report('');
     await protectEntity(deps.storage, deps.accountId, node.id, pin);
+    run.report(' (kept versions)');
+    await protectHistory(deps.storage, deps.accountId, node.id, pin);
     await markProtection(node, true, deps);
-    done.push(node.name);
+    run.done.push(node.name);
   } catch {
     // The reason is not shown per entry: a folder of fifty would produce fifty modals. What the
     // person needs is WHICH entries, and that a re-run finishes them.
-    failed.push(node.name);
+    run.failed.push(node.name);
   }
 }
 

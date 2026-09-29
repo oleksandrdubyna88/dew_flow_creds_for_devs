@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { SecondValues } from '../secondValues';
+import { parseSecondValues, type SecondValues } from '../secondValues';
 import { TreeNode } from '../types';
 import { loadWithVscode } from './vscodeStub';
 
@@ -20,7 +20,6 @@ import { loadWithVscode } from './vscodeStub';
 interface Storage {
   addNode(accountId: string, node: TreeNode): Promise<void>;
   setSecond(accountId: string, id: string, values: SecondValues | undefined): Promise<void>;
-  getSecond(accountId: string, id: string): Promise<SecondValues>;
   getSecondRaw(accountId: string, id: string): Promise<string | undefined>;
   setSecondRaw(accountId: string, id: string, value: string | undefined): Promise<void>;
   deleteNodeRecursive(accountId: string, id: string): Promise<string[]>;
@@ -87,7 +86,7 @@ test('second values live under one keychain key of their own, never in the node,
   const { storage, store } = machine();
   await storage.addNode(A, NODE);
   await storage.setSecond(A, 'p1', SECONDS);
-  assert.deepEqual(await storage.getSecond(A, 'p1'), SECONDS);
+  assert.deepEqual(parseSecondValues(await storage.getSecondRaw(A, 'p1')), SECONDS);
 
   const keys = store.keys().filter((k) => k.endsWith(':second'));
   assert.equal(keys.length, 1, 'ONE key for six second values — that is what the single JSON record buys');
@@ -106,7 +105,7 @@ test('an empty record deletes the key rather than storing an empty object', asyn
 
   assert.equal(await storage.getSecondRaw(A, 'p1'), undefined);
   assert.ok(!store.keys().some((k) => k.endsWith(':second')), 'the key is gone, not holding "{}"');
-  assert.deepEqual(await storage.getSecond(A, 'p1'), {}, 'and reading it back is no values, not a throw');
+  assert.deepEqual(parseSecondValues(await storage.getSecondRaw(A, 'p1')), {}, 'and reading it back is no values, not a throw');
 });
 
 test('clearing ONE second value leaves the others alone', async () => {
@@ -117,7 +116,7 @@ test('clearing ONE second value leaves the others alone', async () => {
   await storage.setSecond(A, 'p1', SECONDS);
   await storage.setSecond(A, 'p1', { cvv2: '481' });
 
-  assert.deepEqual(await storage.getSecond(A, 'p1'), { cvv2: '481' });
+  assert.deepEqual(parseSecondValues(await storage.getSecondRaw(A, 'p1')), { cvv2: '481' });
 });
 
 test('the bundle carries the second values, and a restore on another machine brings them back', async () => {
@@ -131,7 +130,7 @@ test('the bundle carries the second values, and a restore on another machine bri
 
   const b = machine();
   await b.storage.importBundle(A, bundle);
-  assert.deepEqual(await b.storage.getSecond(A, 'p1'), SECONDS, 'a backup that lost them would lose them forever');
+  assert.deepEqual(parseSecondValues(await b.storage.getSecondRaw(A, 'p1')), SECONDS, 'a backup that lost them would lose them forever');
 });
 
 test('a bundle written before this kind existed still imports, carrying no second values', async () => {
@@ -143,7 +142,7 @@ test('a bundle written before this kind existed still imports, carrying no secon
 
   const b = machine();
   await b.storage.importBundle(A, bundle);
-  assert.deepEqual(await b.storage.getSecond(A, 'p1'), {}, 'absent is empty, never a crash');
+  assert.deepEqual(parseSecondValues(await b.storage.getSecondRaw(A, 'p1')), {}, 'absent is empty, never a crash');
 });
 
 test('a forged entity id cannot reach another entity’s second-values key', async () => {

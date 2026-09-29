@@ -37,6 +37,7 @@ import { openedText } from './pinAdmission';
 import { admitEntry } from './pinPrompt';
 import { PinGate } from './pinGate';
 import type { EntityViewOptions } from './entityViewPage';
+import { openKeptVersion } from './revisionDoor';
 
 /**
  * Double-click target: the read-only viewer with per-field Copy buttons.
@@ -291,23 +292,29 @@ async function setEnv(ctx: ViewerContext, field: Parameters<typeof bindableField
  * writing the value into a terminal variable (an old password into a live variable is a
  * trap with a plausible name), and the history list (a version has no history of its own).
  * Attachments are not kept in revisions, so none are shown.</p>
+ *
+ * <p>Behind the LIVE entry's door (entry-PIN plan, D10): until 1.12 this asked nothing, so a kept
+ * version of a protected entry — a CVV from before the PIN included — opened from the history row
+ * with no PIN at all, and one from after it rendered its envelopes. `revisionDoor.openKeptVersion`
+ * asks, opens every value, and the page is built from the opened copy, so the card, Copy and Copy
+ * All work exactly as they do for an unprotected version.</p>
+ *
+ * <p>Split into the page's parts on 2026-09-29: it was one 70-line function under a disable whose own
+ * comment said this plan's P6 was the reason to make it meet the limits.</p>
  */
-// eslint-disable-next-line complexity, max-lines-per-function -- moved verbatim out of extension.ts (roadmap A1, 2026-08-28); it meets the ceilings when it is next touched for a reason of its own (the entry-PIN plan's P6 is that reason)
-export function openRevisionViewer(node: TreeNode, revision: Revision): void {
+export async function openRevisionViewer(accountId: string, node: TreeNode, revision: Revision, storage: StorageManager): Promise<void> {
+  const opened = await openKeptVersion(storage, accountId, node.id, revision, { door: 'see this previous version', version: 'see it' });
+  if (opened !== undefined) {
+    showEntityView(revisionViewOptions(node, opened));
+  }
+}
+
+/** The page for one opened version — every value from the version, none from the live entry. */
+function revisionViewOptions(node: TreeNode, revision: Revision): EntityViewOptions {
   const details = revision.details;
   const { password, privateKey, vpnConfig, dbConnection, notes } = revision.secrets;
-  const db = dbDisplay(dbConnection, details.dbType);
-  const refuseEnv = (): Promise<boolean> => {
-    void vscode.window.showWarningMessage(
-      'This is a previous version. Set terminal variables from the current entry, not from history.',
-    );
-    return Promise.resolve(false);
-  };
-  showEntityView({
-    details: {
-      ...details,
-      name: revision.name,
-    },
+  return {
+    details: { ...details, name: revision.name },
     // Its own line, not a suffix: glued to the name it read as part of it (owner, 2026-08-27).
     subtitle: `version replaced at ${new Date(revision.at).toLocaleString()}`,
     // Only if this version decided for itself; what its folder said back then is not kept.
@@ -319,44 +326,12 @@ export function openRevisionViewer(node: TreeNode, revision: Revision): void {
     notes,
     fields: parseFields(revision.secrets.fields),
     config: revision.secrets.config,
-    ...db,
+    ...dbDisplay(dbConnection, details.dbType),
     sshCommand: buildSshCommand(details),
     resolveSecret: secretResolver(revisionSecretReader(revision)),
-    totp:
-      revision.secrets.totp === undefined
-        ? undefined
-        : totpViewFor(revisionSecretReader(revision)),
-    // A kept version's card, from the record that version carried — the `SecretReader` seam is what
-    // makes this one line rather than a second implementation that would drift from the live one.
-    payment:
-      revision.secrets.payment === undefined
-        ? undefined
-        : paymentCardFor(
-            details.id,
-            formOf(details.paymentForm ?? ''),
-            parsePaymentFields(revision.secrets.payment),
-            Math.random,
-            parseSecondValues(revision.secrets.second),
-          ),
-    resolvePayment:
-      revision.secrets.payment === undefined
-        ? undefined
-        : paymentViewFor(revisionSecretReader(revision)),
-    // NOT gated on the payment record: a credential's revision can carry a second password with no
-    // payment at all, and gating it there made that row uncopyable — raised by the automated
-    // reviewer. A revision with no second values answers an empty record, which is the same
-    // "nothing to copy" the live viewer gives.
-    resolveSecond: secondViewFor(revisionSecretReader(revision)),
-    hasSecondPassword: parseSecondValues(revision.secrets.second).password2 !== undefined,
+    ...revisionCard(revision),
     copyAllText: () => Promise.resolve(formatEntityBlock(details, password, dbConnection, notes)),
-    saveVpnConfig: () =>
-      vpnConfig === undefined
-        ? Promise.resolve()
-        : saveTextAs(
-            'Save VPN config (previous version)',
-            details.vpnConfigFileName ?? `${revision.name}.ovpn`,
-            vpnConfig,
-          ),
+    saveVpnConfig: () => saveRevisionVpnConfig(revision),
     hasAttachment: false,
     createdAt: node.createdAt,
     updatedAt: revision.at,
@@ -364,7 +339,48 @@ export function openRevisionViewer(node: TreeNode, revision: Revision): void {
     saveAttachment: () => Promise.resolve(),
     setEnv: refuseEnv,
     checkEnv: () => void refuseEnv(),
-  });
+  };
+}
+
+/**
+ * A kept version's code, card and second values, from the records that version carried — the
+ * `SecretReader` seam is what makes this a few lines rather than a second implementation that would
+ * drift from the live one.
+ */
+function revisionCard(revision: Revision): Partial<EntityViewOptions> {
+  const reader = revisionSecretReader(revision);
+  const { totp, payment, second } = revision.secrets;
+  return {
+    totp: totp === undefined ? undefined : totpViewFor(reader),
+    payment: revisionPaymentCard(revision),
+    resolvePayment: payment === undefined ? undefined : paymentViewFor(reader),
+    // NOT gated on the payment record: a credential's revision can carry a second password with no
+    // payment at all, and gating it there made that row uncopyable — raised by the automated
+    // reviewer. A revision with no second values answers an empty record, which is the same
+    // "nothing to copy" the live viewer gives.
+    resolveSecond: secondViewFor(reader),
+    hasSecondPassword: parseSecondValues(second).password2 !== undefined,
+  };
+}
+
+function revisionPaymentCard(revision: Revision): EntityViewOptions['payment'] {
+  const { details } = revision;
+  const { payment, second } = revision.secrets;
+  return payment === undefined
+    ? undefined
+    : paymentCardFor(details.id, formOf(details.paymentForm ?? ''), parsePaymentFields(payment), Math.random, parseSecondValues(second));
+}
+
+function saveRevisionVpnConfig(revision: Revision): Promise<void> {
+  const vpnConfig = revision.secrets.vpnConfig;
+  return vpnConfig === undefined
+    ? Promise.resolve()
+    : saveTextAs('Save VPN config (previous version)', revision.details.vpnConfigFileName ?? `${revision.name}.ovpn`, vpnConfig);
+}
+
+function refuseEnv(): Promise<boolean> {
+  void vscode.window.showWarningMessage('This is a previous version. Set terminal variables from the current entry, not from history.');
+  return Promise.resolve(false);
 }
 
 /**

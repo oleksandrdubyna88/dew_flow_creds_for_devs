@@ -40,7 +40,6 @@ function vault(): Record<string, unknown> {
     getFieldsRaw: nothing,
     getPaymentRaw: nothing,
     getSecondRaw: () => Promise.resolve(serializeSecondValues(HELD)),
-    getSecond: () => Promise.resolve(HELD),
   };
 }
 

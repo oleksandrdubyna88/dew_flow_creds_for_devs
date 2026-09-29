@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { StorageManager } from './storageManager';
 import { TreeNode } from './types';
 import { isProtected, pinOpens, protectEntity } from './entityPin';
+import { protectHistory } from './historyPin';
 import { pinValidator } from './pinInput';
 import { newPin } from './pinPrompt';
 import { entriesUnder } from './pinFolderPlan';
@@ -184,6 +185,9 @@ export async function applyCreatePin(
     return;
   }
   await protectEntity(storage, accountId, entityId, settled.pin);
+  // A new entry keeps no versions yet, so today this seals nothing; it runs anyway, so creating with
+  // a PIN and Protect take the same road and cannot come to disagree about the history.
+  await protectHistory(storage, accountId, entityId, settled.pin);
   // The mark last, for the reason `pinCommands` gives: a mark written first and then interrupted
   // would hide the entry from every agent surface while its values were still readable.
   await storage.updateDetailsFields(accountId, node.id, { pinProtected: true });

@@ -3,6 +3,7 @@ import { PinGate } from './pinGate';
 import { pinValidator } from './pinInput';
 import { PinScope } from './pinPolicy';
 import { admit } from './pinAdmission';
+import { healKeptVersions } from './historyHeal';
 import { StorageManager } from './storageManager';
 
 /**
@@ -109,6 +110,9 @@ export async function admitEntry(
   const admission = await admit(storage, accountId, entityId, gate);
   if (admission.kind === 'refused') {
     void vscode.window.showWarningMessage(admission.reason);
+  }
+  if (admission.kind === 'in') {
+    healKeptVersions(storage, accountId, entityId, entryName);
   }
   return admission.kind === 'in' ? gate : undefined;
 }

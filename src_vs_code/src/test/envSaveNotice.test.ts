@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { EntityFormOptions, EntityFormValues } from '../entityFormPanel';
-import { parseFields, serializeFields } from '../entityFields';
-import { parsePaymentFields, serializePaymentFields } from '../paymentFields';
-import { parseSecondValues, serializeSecondValues } from '../secondValues';
+import { serializeFields } from '../entityFields';
+import { serializePaymentFields } from '../paymentFields';
+import { serializeSecondValues } from '../secondValues';
 import { lockSecret, readSecret } from '../secretEnvelope';
 import { EntityMetadata, TreeNode } from '../types';
 import { loadWithVscode } from './vscodeStub';
@@ -177,17 +177,16 @@ function memoryVault(nodes: TreeNode[], secrets: Map<string, string>): unknown {
     setConfigBody: set('configBody'),
     getFieldsRaw: get('fieldsRaw'),
     setFieldsRaw: set('fieldsRaw'),
-    getFields: async (a: string, id: string) => parseFields(await get('fieldsRaw')(a, id)),
     setFields: (a: string, id: string, v: Parameters<typeof serializeFields>[0]) => set('fieldsRaw')(a, id, serializeFields(v)),
     getSecondRaw: get('secondRaw'),
     setSecondRaw: set('secondRaw'),
-    getSecond: async (a: string, id: string) => parseSecondValues(await get('secondRaw')(a, id)),
     setSecond: (a: string, id: string, v: Parameters<typeof serializeSecondValues>[0]) => set('secondRaw')(a, id, serializeSecondValues(v)),
     getPaymentRaw: get('paymentRaw'),
     setPaymentRaw: set('paymentRaw'),
-    getPayment: async (a: string, id: string) => parsePaymentFields(await get('paymentRaw')(a, id)),
     setPayment: (a: string, id: string, v: Parameters<typeof serializePaymentFields>[0]) => set('paymentRaw')(a, id, serializePaymentFields(v)),
     getAttachment: get('attachment'),
+    // Creating with a PIN seals the entry's kept versions too (D10); a new entry keeps none.
+    getHistory: () => Promise.resolve([]),
     setAttachment: set('attachment'),
     getImage: get('image'),
     setImage: set('image'),

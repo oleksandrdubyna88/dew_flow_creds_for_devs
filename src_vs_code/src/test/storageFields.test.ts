@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { parseFields } from '../entityFields';
 import { mergeProfiles, ProfileSnapshot } from '../syncMerge';
 import { TreeNode } from '../types';
 import { loadWithVscode } from './vscodeStub';
@@ -13,7 +14,6 @@ import { loadWithVscode } from './vscodeStub';
 interface Storage {
   addNode(accountId: string, node: TreeNode): Promise<void>;
   setFields(accountId: string, id: string, fields: { login?: string; url?: string } | undefined): Promise<void>;
-  getFields(accountId: string, id: string): Promise<{ login?: string; url?: string }>;
   getFieldsRaw(accountId: string, id: string): Promise<string | undefined>;
   deleteNodeRecursive(accountId: string, id: string): Promise<string[]>;
   exportBundle(accountId: string): Promise<{ fields?: Record<string, string> }>;
@@ -73,7 +73,7 @@ test('login and URL live under their own keychain key, never in the node, and go
   const { storage, store } = machine();
   await storage.addNode(A, NODE);
   await storage.setFields(A, 'c1', { login: 'admin', url: 'https://grafana.example.internal' });
-  assert.deepEqual(await storage.getFields(A, 'c1'), { login: 'admin', url: 'https://grafana.example.internal' });
+  assert.deepEqual(parseFields(await storage.getFieldsRaw(A, 'c1')), { login: 'admin', url: 'https://grafana.example.internal' });
   assert.ok(store.keys().some((k) => k.endsWith(':fields')), 'a keychain key of its own');
   assert.ok(!JSON.stringify(NODE).includes('admin'), 'nothing in plain metadata');
   await storage.setFields(A, 'c1', {});
@@ -92,11 +92,11 @@ test('the bundle and the snapshot carry the fields, and a restore brings them ba
 
   const b = machine();
   await b.storage.importBundle(A, bundle);
-  assert.deepEqual(await b.storage.getFields(A, 'c1'), { login: 'admin', url: 'https://x' });
+  assert.deepEqual(parseFields(await b.storage.getFieldsRaw(A, 'c1')), { login: 'admin', url: 'https://x' });
 
   const c = machine();
   await c.storage.applySnapshot(A, await a.storage.getSnapshot(A));
-  assert.deepEqual(await c.storage.getFields(A, 'c1'), { login: 'admin', url: 'https://x' });
+  assert.deepEqual(parseFields(await c.storage.getFieldsRaw(A, 'c1')), { login: 'admin', url: 'https://x' });
 });
 
 test('a merge carries the fields like every other secret, and a pre-0.82 snapshot without them still merges', async () => {

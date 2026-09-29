@@ -41,3 +41,27 @@ export async function writeRevision(
   const next = pushRevision(await readHistory(chest, accountId, entityId), revision);
   await chest.store(historySecretKey(accountId, entityId), JSON.stringify(next));
 }
+
+/**
+ * Rewrite the kept versions in place — the history's own values sealed under a PIN, or opened again
+ * when the PIN comes off (`historyPin.ts`). The ONLY writer that replaces rather than pushes.
+ *
+ * <p>`revise` is handed the list as it is AT WRITE TIME, not a copy read earlier: a Save that
+ * recorded a revision while the rewrite was sealing is a revision the rewrite must keep, and a list
+ * captured before the seals would have written it out of history.</p>
+ *
+ * <p>Nothing is written when there is nothing kept, and nothing when what is kept does not parse:
+ * `readHistory` answers `[]` for corrupt JSON, and "rewrite what I read" over that answer would
+ * replace the damaged record — the only copy of whatever it was — with an empty list.</p>
+ */
+export async function writeHistory(
+  chest: SecretChest,
+  accountId: string,
+  entityId: string,
+  revise: (kept: Revision[]) => Revision[],
+): Promise<void> {
+  const kept = await readHistory(chest, accountId, entityId);
+  if (kept.length > 0) {
+    await chest.store(historySecretKey(accountId, entityId), JSON.stringify(revise(kept)));
+  }
+}

@@ -44,10 +44,16 @@ export interface Sinks {
   boxes: number;
   /** The box titles, which name the entry whose PIN was asked for. */
   boxTitles: string[];
+  /** The prompts the boxes carried — the sentence a version's own box says is asserted here. */
+  boxPrompts: string[];
+  /** Status-bar messages, with the work each one stands for — a test awaits `work` to see the end. */
+  statusBar: { readonly text: string; readonly work: Thenable<unknown> | undefined }[];
+  /** What the person presses on each MODAL, in order; a modal with nothing queued is dismissed. */
+  modalAnswers: (string | undefined)[];
 }
 
 export function sinks(): Sinks {
-  return { clipboard: [], files: {}, infos: [], warnings: [], errors: [], boxes: 0, boxTitles: [] };
+  return { clipboard: [], files: {}, infos: [], warnings: [], errors: [], boxes: 0, boxTitles: [], boxPrompts: [], statusBar: [], modalAnswers: [] };
 }
 
 /** Every sink's contents in one string — for "nothing sealed reached anything". */
@@ -57,16 +63,21 @@ export function everythingSunk(s: Sinks): string {
 
 /** The `vscode` the click paths touch: PIN boxes answered from a queue, a save dialog that says `saveTo`. */
 export function clickVscode(inputs: (string | undefined)[], s: Sinks, saveTo = '/tmp/saved.file'): Record<string, unknown> {
-  const said = (into: string[]) => (message: string): Promise<undefined> => {
+  const said = (into: string[]) => (message: string, options?: { modal?: boolean }): Promise<string | undefined> => {
     into.push(message);
-    return Promise.resolve(undefined);
+    return Promise.resolve(options?.modal === true ? s.modalAnswers.shift() : undefined);
   };
   return {
     window: {
-      showInputBox: (options: { title?: string }): Promise<string | undefined> => {
+      showInputBox: (options: { title?: string; prompt?: string }): Promise<string | undefined> => {
         s.boxes += 1;
         s.boxTitles.push(options.title ?? '');
+        s.boxPrompts.push(options.prompt ?? '');
         return Promise.resolve(inputs.shift());
+      },
+      setStatusBarMessage: (text: string, work?: Thenable<unknown>): { dispose(): void } => {
+        s.statusBar.push({ text, work });
+        return { dispose: (): void => undefined };
       },
       showQuickPick: (): Promise<undefined> => Promise.resolve(undefined),
       showInformationMessage: said(s.infos),

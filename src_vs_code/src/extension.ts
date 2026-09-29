@@ -849,7 +849,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (element?.revision === undefined || element.node.details === undefined) {
       return;
     }
-    openRevisionViewer(element.node, element.revision);
+    await openRevisionViewer(element.accountId, element.node, element.revision, storage);
   });
 
   /**
