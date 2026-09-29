@@ -1,9 +1,9 @@
 import * as vscode from 'vscode';
 import { StorageManager } from './storageManager';
 import { TreeNode } from './types';
-import { entryPinGate, newPin } from './pinPrompt';
+import { entryPinGate, newPin, refusedWhileCooling } from './pinPrompt';
 import { forgetPin } from './pinSession';
-import { DamagedSlots, UnprotectResult, isProtected, lockedSlotCount, pinOpens, protectEntity, unprotectEntity } from './entityPin';
+import { DamagedSlots, UnprotectResult, isProtected, lockedSlotCount, protectEntity, siblingsOpened, unprotectEntity } from './entityPin';
 import { lockedHistoryValues, protectHistory } from './historyPin';
 import { pinValidator } from './pinInput';
 import { describeError } from './describeError';
@@ -322,6 +322,9 @@ async function folderPin(
   if (plan.alreadyProtected.length === 0) {
     return newPin(folderName, 'entry');
   }
+  if (refusedWhileCooling(deps.accountId, plan.alreadyProtected)) {
+    return undefined;
+  }
   const typed = await vscode.window.showInputBox({
     title: `PIN for the entries in "${folderName}"`,
     prompt: PIN_FOR_FOLDER,
@@ -330,14 +333,18 @@ async function folderPin(
     // The entry scope (issue #55): this PIN is checked against SIBLINGS, never against the vault's floor.
     validateInput: pinValidator('entering', 'entry'),
   });
-  return typed === undefined || typed.length === 0 ? undefined : checkedPin(typed, plan, deps);
+  return checkedPin(typed, plan, deps);
 }
 
+/** Dismissed or empty: no PIN. Otherwise tried on the siblings, and the count agreed to. */
 async function checkedPin(
-  typed: string,
+  typed: string | undefined,
   plan: FolderPinPlan,
   deps: PinCommandDeps,
 ): Promise<string | undefined> {
+  if (typed === undefined || typed.length === 0) {
+    return undefined;
+  }
   return (await confirmedAgainstSiblings(typed, plan, deps)) ? typed : undefined;
 }
 
@@ -347,10 +354,7 @@ async function confirmedAgainstSiblings(
   plan: FolderPinPlan,
   deps: PinCommandDeps,
 ): Promise<boolean> {
-  let opened = 0;
-  for (const node of plan.alreadyProtected) {
-    opened += (await pinOpens(deps.storage, deps.accountId, node.id, typed)) ? 1 : 0;
-  }
+  const opened = await siblingsOpened(deps.storage, deps.accountId, plan.alreadyProtected.map((node) => node.id), typed);
   const answer = await vscode.window.showWarningMessage(
     opened === 0
       ? `This PIN opens none of the ${plan.alreadyProtected.length} protected entries here. The `

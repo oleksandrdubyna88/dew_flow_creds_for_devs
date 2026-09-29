@@ -127,6 +127,17 @@ export async function retryGranted(
   pin: string,
   now: number = Date.now(),
 ): Promise<string | undefined> {
+  return openUncounted(envelope, accountId, entityId, pin, now);
+}
+
+/** One try whose miss counts nothing: the cooldown still refuses, a hit still resets the run. */
+async function openUncounted(
+  envelope: SecretEnvelope,
+  accountId: string,
+  entityId: string,
+  pin: string,
+  now: number,
+): Promise<string | undefined> {
   if (cooldownMs(accountId, entityId, now) > 0) {
     return undefined;
   }
@@ -137,4 +148,66 @@ export async function retryGranted(
   } catch {
     return undefined;
   }
+}
+
+/** One sibling a folder-wide PIN is tried on: the entry, and the first envelope it holds. */
+export interface SiblingTry {
+  readonly entityId: string;
+  readonly envelope: SecretEnvelope;
+}
+
+/**
+ * A SIBLING check (§5.10) — one typed PIN tried on one envelope of each protected entry in a folder,
+ * answering how many it opened.
+ *
+ * <p>A PIN that opens NONE of them is one wrong attempt on EACH: it is a guess against every one. A
+ * PIN that opens SOME charges nobody, because a folder may legitimately hold entries under two PINs
+ * and the misses on the others are not guesses — the person typed a PIN that is right here. Callers
+ * refuse before asking while any sibling is cooling (`coolingAmong`); a cooling sibling tried here
+ * opens for nobody and is counted as not opened.</p>
+ */
+export async function attemptAcross(
+  tries: readonly SiblingTry[],
+  accountId: string,
+  pin: string,
+  now: number = Date.now(),
+): Promise<number> {
+  const opened = await countOpened(tries, accountId, pin, now);
+  if (opened === 0) {
+    chargeEach(tries, accountId, now);
+  }
+  return opened;
+}
+
+async function countOpened(tries: readonly SiblingTry[], accountId: string, pin: string, now: number): Promise<number> {
+  let opened = 0;
+  for (const one of tries) {
+    opened += (await openUncounted(one.envelope, accountId, one.entityId, pin, now)) === undefined ? 0 : 1;
+  }
+  return opened;
+}
+
+function chargeEach(tries: readonly SiblingTry[], accountId: string, now: number): void {
+  for (const one of tries) {
+    noteWrong(accountId, one.entityId, now);
+  }
+}
+
+/**
+ * The first of these entries that is cooling, and for how long — or `undefined` when none is. A
+ * sibling check refuses while any is: a cooling sibling opens for nobody, so the check would report
+ * "opens none" and invite the person to seal a new entry under a PIN nothing verified.
+ */
+export function coolingAmong<T extends { readonly id: string }>(
+  accountId: string,
+  entries: readonly T[],
+  now: number = Date.now(),
+): { readonly entry: T; readonly ms: number } | undefined {
+  for (const entry of entries) {
+    const ms = cooldownMs(accountId, entry.id, now);
+    if (ms > 0) {
+      return { entry, ms };
+    }
+  }
+  return undefined;
 }

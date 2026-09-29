@@ -1,11 +1,11 @@
 import * as vscode from 'vscode';
 import { StorageManager } from './storageManager';
 import { TreeNode } from './types';
-import { isProtected, pinOpens, protectEntity } from './entityPin';
+import { isProtected, protectEntity, siblingsOpened } from './entityPin';
 import { protectHistory } from './historyPin';
 import { protectionDecision } from './syncPinRule';
 import { pinValidator } from './pinInput';
-import { newPin } from './pinPrompt';
+import { newPin, refusedWhileCooling } from './pinPrompt';
 import { entriesUnder } from './pinFolderPlan';
 
 /**
@@ -50,7 +50,7 @@ export async function pinForNewEntry(
 ): Promise<CreatePin> {
   const siblings = await protectedSiblings(storage, accountId, parentId);
   if (siblings.length > 0) {
-    return askAndCheck(siblings, storage, accountId);
+    return refusedWhileCooling(accountId, siblings) ? { kind: 'cancelled' } : askAndCheck(siblings, storage, accountId);
   }
   // No sibling to check against, but the folder may still have been told to ask — the empty-folder
   // case. There the PIN is typed TWICE, which is the only check available and the same one every
@@ -156,10 +156,7 @@ async function agreed(
   storage: StorageManager,
   accountId: string,
 ): Promise<boolean> {
-  let opened = 0;
-  for (const node of siblings) {
-    opened += (await pinOpens(storage, accountId, node.id, typed)) ? 1 : 0;
-  }
+  const opened = await siblingsOpened(storage, accountId, siblings.map((node) => node.id), typed);
   const answer = await vscode.window.showWarningMessage(
     opened === 0
       ? `This PIN opens none of the ${siblings.length} protected entries in this folder. The new entry `

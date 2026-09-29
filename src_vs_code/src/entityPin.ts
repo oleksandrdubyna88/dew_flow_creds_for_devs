@@ -1,6 +1,6 @@
 import { SECRET_SLOTS, SecretSlot } from './entitySlots';
 import { OpenedHistory, firstSealedKept, openHistory, rewriteHistory } from './historyPin';
-import { attemptUnlock, cooldownMs, coolingReason, retryGranted } from './pinAttempts';
+import { SiblingTry, attemptAcross, attemptUnlock, cooldownMs, coolingReason, retryGranted } from './pinAttempts';
 import { sealValue } from './sealValue';
 import { StorageManager } from './storageManager';
 import { SecretEnvelope, SecretRead, isLockedSecret, plainSecret, readSecret } from './secretEnvelope';
@@ -254,24 +254,37 @@ export async function isProtected(
 }
 
 /**
- * Does this PIN open that entry?
+ * How many of these entries this PIN opens — the question the folder's "use the PIN a sibling already
+ * uses" boxes are answered with (Protect Folder, Add in a protected folder).
  *
- * <p>The question the folder's "use the PIN a sibling already uses" box is answered with. It opens
- * ONE slot and throws nothing: a wrong PIN is an answer here, not a failure.</p>
+ * <p>One slot per entry, and nothing thrown: a wrong PIN is an answer here, not a failure. Through
+ * `pinAttempts.attemptAcross`, so the count follows D16 (§5.10): a PIN that opens NONE of them is one
+ * wrong attempt on each, one that opens SOME charges nobody (a folder may hold two PINs), and a
+ * cooling entry opens for nobody. An entry with no locked value opens nothing and is not tried.</p>
  */
-export async function pinOpens(
+export async function siblingsOpened(
   storage: StorageManager,
   accountId: string,
-  entityId: string,
+  entityIds: readonly string[],
   pin: string,
-): Promise<boolean> {
+): Promise<number> {
+  const tries: SiblingTry[] = [];
+  for (const entityId of entityIds) {
+    const envelope = await firstEnvelope(storage, accountId, entityId);
+    if (envelope !== undefined) {
+      tries.push({ entityId, envelope });
+    }
+  }
+  return attemptAcross(tries, accountId, pin);
+}
+
+/** The first locked value of an entry, as its envelope — what a PIN is tried on. */
+async function firstEnvelope(storage: StorageManager, accountId: string, entityId: string): Promise<SecretEnvelope | undefined> {
   for (const slot of SECRET_SLOTS) {
     const read = readSecret(await slot.read(storage, accountId, entityId));
     if (read.kind === 'locked') {
-      // Through the choke point, so a sibling check that opens none of N protected siblings counts
-      // one wrong attempt on each of them (D16) — and a cooling sibling opens for nobody.
-      return (await attemptUnlock(read.envelope, accountId, entityId, pin)) !== undefined;
+      return read.envelope;
     }
   }
-  return false;
+  return undefined;
 }

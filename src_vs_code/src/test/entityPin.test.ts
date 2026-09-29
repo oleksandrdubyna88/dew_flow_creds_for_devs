@@ -5,7 +5,7 @@ import {
   DamagedSlots,
   isProtected,
   lockedSlotCount,
-  pinOpens,
+  siblingsOpened,
   protectEntity,
   sealValue,
   unprotectEntity,
@@ -193,15 +193,15 @@ test('a woven password keeps its mark through the wrap and back', async () => {
   assert.equal(held(storage).get('password'), 'w0Ov3Enn', 'the woven string is what comes back');
 });
 
-test('pinOpens answers the folder question without throwing', async () => {
+test('siblingsOpened answers the folder question without throwing', async () => {
   // A wrong PIN is an ANSWER here, not a failure: this is what the "use the PIN a sibling already
-  // uses" box is checked with, and it is asked once per sibling.
+  // uses" box is checked with, one value per sibling.
   const storage = vault({ password: 'hunter2' });
   await protectEntity(storage, ACCOUNT, ENTITY, PIN);
 
-  assert.equal(await pinOpens(storage, ACCOUNT, ENTITY, PIN), true);
-  assert.equal(await pinOpens(storage, ACCOUNT, ENTITY, 'a-different-one'), false);
-  assert.equal(await pinOpens(vault({ password: 'plain' }), ACCOUNT, ENTITY, PIN), false, 'an unprotected sibling opens nothing');
+  assert.equal(await siblingsOpened(storage, ACCOUNT, [ENTITY], PIN), 1);
+  assert.equal(await siblingsOpened(storage, ACCOUNT, [ENTITY], 'a-different-one'), 0);
+  assert.equal(await siblingsOpened(vault({ password: 'plain' }), ACCOUNT, [ENTITY], PIN), 0, 'an unprotected sibling opens nothing');
 });
 
 /**

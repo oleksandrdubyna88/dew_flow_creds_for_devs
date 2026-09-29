@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { PinGate } from './pinGate';
+import { coolingAmong, coolingReason } from './pinAttempts';
 import { pinValidator } from './pinInput';
 import { PinScope } from './pinPolicy';
 import { admit } from './pinAdmission';
@@ -86,6 +87,20 @@ async function confirmed(subject: string, first: string): Promise<string | undef
     validateInput: (value) => (value === first ? undefined : 'The two do not match.'),
   });
   return again === first ? first : undefined;
+}
+
+/**
+ * D16 at a sibling check (§5.10): while any of the protected entries a folder-wide PIN would be tried
+ * on is cooling, the check cannot be run — a cooling entry opens for nobody, so it would report
+ * "opens none" and invite a new entry sealed under a PIN nothing verified. So it refuses before any
+ * box is raised, and says which entry is cooling and for how long. Answers whether it refused.
+ */
+export function refusedWhileCooling(accountId: string, siblings: readonly { readonly id: string; readonly name: string }[]): boolean {
+  const cooling = coolingAmong(accountId, siblings);
+  if (cooling !== undefined) {
+    void vscode.window.showWarningMessage(coolingReason(cooling.ms, cooling.entry.name));
+  }
+  return cooling !== undefined;
 }
 
 const NEW_PIN =
