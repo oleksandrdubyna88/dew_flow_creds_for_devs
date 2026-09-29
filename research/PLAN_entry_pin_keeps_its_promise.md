@@ -1,20 +1,23 @@
 # PLAN — a PIN-protected entry keeps its promise: it opens, it edits, it never leaks, it never loses
 
-> Status: **plan only, nothing implemented yet, 2026-09-29.** Plan gate passed (`proceed`, 2 of 2 reviewers,
-> one round, five findings accepted — §14). Scope: `src_vs_code/src` — the PIN door and
+> Status: **IMPLEMENTED, 2026-09-29.** Built as one unit on `fix/entry-pin-keeps-its-promise`, P1-P10 as
+> commits (§9.1); every defect D1-D18 has a test watched failing first. Deviations: §15. Open tail: §16 —
+> the owner's check in a real editor, the 1.12.0 release after the sibling plan, three recorded limits, and
+> the typed-secrets plan. Plan gate passed (`proceed`, 2 of 2 reviewers, one round, five findings accepted —
+> §14). Scope: `src_vs_code/src` — the PIN door and
 > gate (`pinAdmission.ts`, `pinGate.ts`, `pinPrompt.ts`, `pinSession.ts`, `entityPin.ts`, `entitySlots.ts`),
 > the viewer and the edit form, ~12 click commands, ~6 automatic readers, export, share-update, history,
 > a new *Restore This Version…* command, the sync merge, `package.json`, help ×5, CHANGELOG, and their
 > tests. Extension only; no server, HTTP contract or vault-format change. Ships as **extension 1.12.0**.
 >
-> Supersedes the open [PLAN_edit_reseals_a_protected_entry.md](PLAN_edit_reseals_a_protected_entry.md),
+> Supersedes [PLAN_edit_reseals_a_protected_entry.md](PLAN_edit_reseals_a_protected_entry.md),
 > whose whole scope is phase P3 here (§6 boundary table), and whose §1 premise was false. Related docs:
-> [module_extension.md](../research/module_extension.md) §"A PIN on an entry" (:1151-1290),
-> [PLAN_woven_passwords_and_entity_pin.md](../research/PLAN_woven_passwords_and_entity_pin.md) (the PIN
-> design record), [PLAN_payment_polish_and_entity_pin.md](../research/PLAN_payment_polish_and_entity_pin.md),
-> [PLAN_second_values.md](../research/PLAN_second_values.md). Sibling plans opened the same day:
-> [PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md) (same release)
-> and [PLAN_typed_stored_secrets.md](PLAN_typed_stored_secrets.md) (after it).
+> [module_extension.md](module_extension.md) §"A PIN on an entry" (:1151-1290),
+> [PLAN_woven_passwords_and_entity_pin.md](PLAN_woven_passwords_and_entity_pin.md) (the PIN
+> design record), [PLAN_payment_polish_and_entity_pin.md](PLAN_payment_polish_and_entity_pin.md),
+> [PLAN_second_values.md](PLAN_second_values.md). Sibling plans opened the same day:
+> [PLAN_agent_creates_what_the_folder_holds.md](../todo/PLAN_agent_creates_what_the_folder_holds.md) (same release)
+> and [PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) (after it).
 
 All `file:line` references below are to `src_vs_code/src/` unless a path says otherwise, and were read on
 `origin/main` at `6905e9f` (no source change since the audited `4d35afa`).
@@ -102,11 +105,11 @@ and the raw carriers (sync, backup and bundles via `secretMaps.ts`, `revisionSna
 4. **A PIN-gated *Restore This Version…*** ships now, and the Clone tooltip is corrected.
 5. **Design:** the UX-first design as the base, with the protection-epoch sync rule from the structural
    design and the extra findings of the minimal design. The full compile-time secret type is its own plan,
-   [PLAN_typed_stored_secrets.md](PLAN_typed_stored_secrets.md), after this release.
+   [PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md), after this release.
 6. **A sync conflict's losing protected edit is kept** in that machine's history and the person is told
    once — never dropped silently.
 7. The agent-create defect the owner found the same day (a Terminal entry that shows *SSH command*) is a
-   separate plan in the same release: [PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md).
+   separate plan in the same release: [PLAN_agent_creates_what_the_folder_holds.md](../todo/PLAN_agent_creates_what_the_folder_holds.md).
 
 Proposed in this plan by precedent and **confirmed by the owner, 2026-09-29**:
 
@@ -379,7 +382,7 @@ node fields (`updateNodeFields` spreads `{...n, ...patch}`, `storageManager.ts:5
   same background `protectHistory` the door runs, so the copy is sealed at the first door *(plan gate,
   finding 0; the plaintext was this machine's own live value a moment earlier, so nothing new is exposed)*.
   Coordinate with
-  [PLAN_sync_says_what_already_happened.md](PLAN_sync_says_what_already_happened.md), which also edits
+  [PLAN_sync_says_what_already_happened.md](../todo/PLAN_sync_says_what_already_happened.md), which also edits
   `syncManager.ts` and owns how sync reports what it did — this notice goes through its summary once that
   lands, and the two plans are ordered in §6.
 
@@ -417,9 +420,9 @@ attacker, for whom scrypt is the cost.
 | Item | Built by | The other plan's part |
 |---|---|---|
 | Edit re-seals a protected entry (open plan §1-§5) | **this plan, P3** (§5.2) | [PLAN_edit_reseals_a_protected_entry.md](PLAN_edit_reseals_a_protected_entry.md) is superseded: its option (a) "keep the PIN from the open" is taken (as a grant re-read at Save, not a captured PIN), its "write then `protectEntity`" order is replaced by R3, its failure rule is §5.2 step 7, its step 5 (share-accept, import) is §5.6. Promoted together with this plan. |
-| A compile-time `StoredSecret` type, a single `writeEntry` path | [PLAN_typed_stored_secrets.md](PLAN_typed_stored_secrets.md), **after** this release | This plan lands the runtime rules and the test guard (§7) that plan turns into a compile error. |
-| Agent-created entries carry only fields their kind has; the SSH rows only for SSH | [PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md), same release | Disjoint files except `entityViewPage.ts` (it owns the SSH-row gate; this plan does not touch those rows). |
-| How sync reports what it did | [PLAN_sync_says_what_already_happened.md](PLAN_sync_says_what_already_happened.md) | Both edit `syncManager.ts`. Whichever lands second rebases; the conflict notice of §5.9 is routed through that plan's summary once it exists. This plan's merge rule (`syncMerge.ts`, `syncPinRule.ts`) is disjoint from it. |
+| A compile-time `StoredSecret` type, a single `writeEntry` path | [PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md), **after** this release | This plan lands the runtime rules and the test guard (§7) that plan turns into a compile error. |
+| Agent-created entries carry only fields their kind has; the SSH rows only for SSH | [PLAN_agent_creates_what_the_folder_holds.md](../todo/PLAN_agent_creates_what_the_folder_holds.md), same release | Disjoint files except `entityViewPage.ts` (it owns the SSH-row gate; this plan does not touch those rows). |
+| How sync reports what it did | [PLAN_sync_says_what_already_happened.md](../todo/PLAN_sync_says_what_already_happened.md) | Both edit `syncManager.ts`. Whichever lands second rebases; the conflict notice of §5.9 is routed through that plan's summary once it exists. This plan's merge rule (`syncMerge.ts`, `syncPinRule.ts`) is disjoint from it. |
 | Re-wrapping when an entry moves across a PIN boundary | not built (design record `research/PLAN_payment_polish_and_entity_pin.md:509-516`) | Out of scope, unchanged. |
 
 Nothing else in `todo/` touches these files.
@@ -480,26 +483,26 @@ Nothing else in `todo/` touches these files.
 Each phase is a green commit (`npm run typecheck`, `npm run lint`, `npm run ratchet`, `npm test`). Every
 defect starts with its RED test watched failing with the real symptom (§11), then the fix, then green.
 
-- [ ] **P0 — Gate this plan.** coai `review_plan` until `proceed`, run alongside our own review.
-- [ ] **P1 — Primitives.** `sealValue` extraction; `purpose` on `entryPinGate`/`admitEntry`;
+- [x] **P0 — Gate this plan.** coai `review_plan` until `proceed`, run alongside our own review.
+- [x] **P1 — Primitives.** `sealValue` extraction; `purpose` on `entryPinGate`/`admitEntry`;
       `SecretSlot.revisionField`/`remove` + `slotTable.test`; `pinAttempts` + `attemptUnlock`;
       `pinFieldRefusal` extraction; silent gate.
-- [ ] **P2 — View (D1).** The reported bug first: smallest change, visible at once.
-- [ ] **P3 — Edit (D2-D5, D17 banner).** `editPrefill`, `sealedWriter`, `SecretWriter`, `beforeSave`,
+- [x] **P2 — View (D1).** The reported bug first: smallest change, visible at once.
+- [x] **P3 — Edit (D2-D5, D17 banner).** `editPrefill`, `sealedWriter`, `SecretWriter`, `beforeSave`,
       `carryMarks`, the env fix, the banner; `mixedFieldGuard` pins updated.
-- [ ] **P4 — Clicks (D6, D18).** `pinClick`, the SSH opener split (owner of the value), agent, git
+- [x] **P4 — Clicks (D6, D18).** `pinClick`, the SSH opener split (owner of the value), agent, git
       signing, config changes.
-- [ ] **P5 — Automatic, export, share-update (D7-D9).** Including the broker key refusal and the deploy
+- [x] **P5 — Automatic, export, share-update (D7-D9).** Including the broker key refusal and the deploy
       key; the §5.6 check list recorded.
-- [ ] **P6 — History and Restore (D10-D11).** Typed-getter deletion lands here so the ratchet stays green;
+- [x] **P6 — History and Restore (D10-D11).** Typed-getter deletion lands here so the ratchet stays green;
       `replaceHistory`; `historyPin`; revision viewer; `revisionRestore`; tooltip; `package.json`.
-- [ ] **P7 — Remove PIN hardening and the dead end (D13-D15).** Damaged-slot refusal, woven flag, door
+- [x] **P7 — Remove PIN hardening and the dead end (D13-D15).** Damaged-slot refusal, woven flag, door
       heal, Protect-on-protected.
-- [ ] **P8 — Sync (D12).** `pinEpoch`, `syncPinRule`, the fallback guard, `syncProtection` + the conflict
+- [x] **P8 — Sync (D12).** `pinEpoch`, `syncPinRule`, the fallback guard, `syncProtection` + the conflict
       revision and notice.
-- [ ] **P9 — Attempts (D16) wired, false sentences (D17), guards (§7).** `pinReaderBoundary`,
+- [x] **P9 — Attempts (D16) wired, false sentences (D17), guards (§7).** `pinReaderBoundary`,
       `pinSlotMatrix`, `unlockSecret` pin, help parity.
-- [ ] **P10 — Docs and release.** Help ×5 (`helpEn/Ru/Uk/De/Es.ts`, key `entity-pin` at `:295`),
+- [ ] **P10 — Docs and release.** *(Docs, help and the promotion done 2026-09-29; the coai code round and 1.12.0 are the open tail, §16.)* Help ×5 (`helpEn/Ru/Uk/De/Es.ts`, key `entity-pin` at `:295`),
       CHANGELOG (§12), `research/module_extension.md` (the entry-PIN section: R1-R6, reader classes, history,
       Restore, sync rule), `research/module_tests.md` (new scenario tests); coai `review_code` until
       `proceed`; full suite from `out/`; promote this plan and the superseded one; extension 1.12.0.
@@ -520,7 +523,7 @@ made, as the command asks — not as the delivery.
 | E3 | P6-P7 | D10, D11, D13-D15 | history, Restore and Remove PIN share `replaceHistory` and the slot table's `revisionField`/`remove` |
 | E4 | P8-P10 | D12, D16, the rest of D17, §7 guards, docs, release | the guard is written last, when every reader it classifies is final |
 
-[PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md) is the second
+[PLAN_agent_creates_what_the_folder_holds.md](../todo/PLAN_agent_creates_what_the_folder_holds.md) is the second
 pull request, after this one (it uses `sealValue`). Extension 1.12.0 is cut once both have merged.
 
 ## 10. Risks
@@ -641,3 +644,130 @@ against a threshold of 6). Every finding was accepted and folded into the sectio
 The gate's operator commands, applied: build this plan as one unit (§9.1), work autonomously with
 red-green-red per defect, docs with every change, every test before a release, the pull-request comment
 check, and a re-read against the repository's rules.
+
+## 15. Deviations — what shipped differently (2026-09-29)
+
+Collected from the phase commits (`git log f5c82b61..` on the branch), where each carries its RED evidence.
+
+**P1 — primitives.**
+- `PinOpen` gained a kind `cooling` (no box, no scrypt, *"Too many wrong PINs for <name>. Nothing has been
+  changed — try again in <n> s."*); Remove PIN refuses a cooling entry before touching anything.
+- `silentPinGate` landed in P1 and became the rule for every read behind a door (below).
+
+**P2 — View.** `openEntityViewer` was split into `loadEntry` and `viewOptions` to meet the lint ceilings, and
+its file-level "moved verbatim" disable went; the shape is read once for the shape and again per request, as
+the values always were (not "reuse the `:64` value").
+
+**P3 — Edit.**
+- `openEntryForEdit` opens the seven prefilled slots through a **silent** gate, not the door's asking one: a
+  slot sealed under a different PIN (two protects mixed by a sync) refuses Edit naming the slot, instead of
+  raising a second box whose PIN would be granted over the first (`ef05470b`).
+- `pinForSave` also refuses an entry that stopped being protected while the form was open (sealing it would
+  re-protect without a decision; writing it plain would drop the mark in silence).
+- The two untouched functions of `entityEditCommands.ts` carry per-function `complexity` disables.
+- A silent retry with the PIN already granted is not a guess: `pinAttempts.retryGranted` and `PinGate.silent`
+  (`240fcc6b`) — without them, opening Edit on a two-PIN entry six times cooled it down for a PIN nobody typed
+  wrong.
+- The §8 progress notification (`Opening "<name>" — unsealing its values under its PIN…`) shipped at the end
+  (P9, `dfde0cca`), only for an entry with a locked value.
+
+**P4 — clicks.**
+- A second module, `secretOpener.ts` (`automaticOpener`, `SecretOwner`), beside `pinClick.ts`: several paths
+  are a click OR automatic (SSH credential, the SSH agent), and take an opener with the automatic one as the
+  default. The broker's stored-key refusal (§5.4, D7) therefore landed in P4, not P5.
+- Git signing became `gitSigningKey.signingPublicLine`; *Write Config File* moved into `configWrite.ts`
+  (`treeMutationCommands.ts` keeps a one-line call site); `entityCommands.ts`'s one registration function was
+  split into four families. `agentCommands.ts` 779 → 767, `treeMutationCommands.ts` 762 → 745.
+- `outsidePinNote` says a file written from a protected value is outside the PIN (Install SSH Key, Save VPN
+  Config, Write Config File; not the VPN's temp file).
+
+**P5 — automatic, export, share-update.**
+- Risk 4 was verified by reading: `transport.readVault` (`syncManager.ts:440`) is outside the read try/catch,
+  so the deploy-key throw reaches `warnOnce` → *"Sync for <email> failed: <message>"*.
+- §5.6 check list, answered: rotation (`rotateAction.protectedSlot`) had the same omission and now asks
+  `pinFieldRefusal`; `importCommands` and `externalSecretsApply` write NEW ids only, and `mcpHooks` creates a new
+  entry only — correct as they are (its folder-PIN gap is
+  [PLAN_agent_creates_what_the_folder_holds.md](../todo/PLAN_agent_creates_what_the_folder_holds.md) D-B).
+- `keepingMark` carries `pinProtected`; `pinEpoch` lives on the node, so it is carried where the node is
+  rebuilt (P8). `shareInbox.ts` 800 → 788.
+
+**P6 — history and Restore.**
+- `replaceHistory` takes a FUNCTION applied to the list as it is at write time (not a replacement list), and
+  writes nothing when history is absent or does not parse. `storageManager.ts` 1023 → 1014.
+- Restore is two modules: `revisionRestore.ts` (the command) and `restoreVersion.ts` (the writes, pure).
+- The door's history heal (`historyHeal.ts`) never runs for an entry that holds no locked value.
+- The README and the English help were updated in P6.
+
+**P7 — Remove PIN and the dead end.**
+- `sealValue` moved to its own `sealValue.ts` (re-exported by `entityPin`) so `historyPin` and `entityPin` do
+  not import each other.
+- `unprotectEntity` checks the PIN on the first locked value — a KEPT one when the live entry holds none (gate
+  finding 3) — and retries the rest without counting; it returns the damaged labels and the kept values left
+  under a foreign PIN. For kept-only locks the Protect modal offers both *Remove PIN Protection…* and
+  *Protect with a PIN…*.
+
+**P8 — sync.**
+- `updateNodeFields` accepts a function patch evaluated inside the write lease; `storageManager.ts` ended at
+  **1015** and the ratchet baseline was lowered from 1023. `syncManager.ts` +3 lines (783).
+- `shareUpdateSeal` keeps the recipient's `pinEpoch`; `sharePayloadBuild` strips the sender's.
+- Attachments and images are judged unsealed by the rule whatever the entry is.
+- The sync test harness moved to `test/syncWorld.ts` (the test file had reached 800 lines).
+
+**P9 — attempts wired, sentences, guards.**
+- **Two sealed sides that raced do not mix** (§5.9 table row 4). The row said "the rule does not fire; one
+  node wins wholesale", but the per-slot fallback still borrowed the loser's sealed values; `decideProtection`
+  now answers `wholesale` and the fallback rule is `'sealed' | 'plain' | 'none'`. Attachments and images still
+  fill in (`87b9d11b`).
+- The sibling checks: `pinOpens` was replaced by `entityPin.siblingsOpened` over `pinAttempts.attemptAcross`. A
+  PIN that opens NONE of N protected siblings is one wrong attempt on each (as §5.10 says); one that opens SOME
+  charges nobody (§5.10 is silent; a folder may hold two PINs, so those misses are not guesses — before this,
+  every miss was charged). `pinPrompt.refusedWhileCooling` refuses before the box while any sibling is cooling
+  (`51317d60`).
+- `pinRefusalFor` ends *"… or remove the PIN protection: right-click it and choose Remove PIN Protection…."*
+- **A gap outside the plan's lists**, found by classifying readers for the guard: the broker's database query
+  (`agentUseActions.dbQueryAction`) launched the client with the envelope; it now refuses with the PIN sentence
+  (`948428cd`).
+- `pinReaderBoundary.test.ts`: a "read" is a getter DERIVED from `SECRET_SLOTS`, the slot table's own `.read(`
+  in a file that walks it, or `getHistory(`. `configCommands.ts` is classified as two kinds (door AND
+  automatic). The refusal primitives accepted include `isLockedSecret(` (the hygiene scan, the masker, the
+  config flag skip sealed values) and `hiddenFromAgents(` (agents are mark-gated by design). The modules the
+  plan grew that read no slot themselves — `pinClick`, `secretOpener`, `revisionDoor`, `shareUpdateSeal`,
+  `syncProtection` — are not in `READERS`, and the test refuses to list a file that reads nothing. *Checked and
+  outside this boundary*: the raw carriers that reach the keychain by key prefix rather than through a getter
+  (`secretMaps.ts` for sync, backup and bundles) — they are not scanned.
+- `pinSlotMatrix.test.ts`: §7 item 5 listed env collection and `creds://` among surfaces that "receive the
+  plaintext"; that would be the D5 leak. They are asserted as **withheld with the PIN sentence** (rule R2)
+  instead. The click sinks are asserted through `clickedSecret`, the door every sink stands behind
+  (`pinReaderBoundary` holds each door file to a door primitive; `pinClickPaths.test.ts` drives the commands
+  themselves); the share payload carries no second values, so that cell asserts only "never `"lock":`".
+- The `unlockSecret(` source pin did not exist before P9; it is in `pinReaderBoundary.test.ts`.
+- `vscodeStub.loadEachWithVscode` loads several modules into one graph, so a grant taken at one door is the
+  grant every later surface sees; `loadWithVscode` is now a one-module call of it.
+
+**P10 — docs.**
+- The English `entity-pin` help had only the kept-versions paragraph after P6/P7; the rest of §12 (Edit,
+  clicks, export, attempts, Remove PIN, the three *what can go wrong* items) was written in P10, and the old
+  English sentence *"What is exported is what is stored — still wrapped"* was corrected: that is the backup
+  (*Export Secrets (backup to NAS)*); *Export / Share Externally…* now opens. All five languages carry it.
+- The CHANGELOG entry sits under `## [Unreleased]`; it becomes `## [1.12.0] — <date> — The entry PIN keeps its
+  promise` with the release (§16).
+- `research/module_extension.md`'s entry-PIN section had no Mermaid diagram; one was added (the reader
+  classes and the door).
+- The coai `review_code` round of §9 P10 / §13 had not been run when this plan was promoted (§16).
+
+## 16. Open tail
+
+1. **The owner's check in a real editor** — the card entry, protected, shows its whole card in View after one
+   PIN (§13, first item). Every test stubs VS Code (`research/module_tests.md`, *The editor's own UI*).
+2. **Extension 1.12.0**, cut after the sibling plan
+   [PLAN_agent_creates_what_the_folder_holds.md](../todo/PLAN_agent_creates_what_the_folder_holds.md) merges:
+   version in `package.json` AND `package-lock.json`, the CHANGELOG heading, tag `extension-v1.12.0`; the coai
+   `review_code` round on the finished branch before it.
+3. **Known limits, recorded:** re-running an interrupted restore adds one more kept version (the pre-restore
+   record) and so can push the oldest out; the first door after a sync seals stray plaintext synchronously
+   (about a second per value); and *Remove PIN Protection…* for an entry whose only sealed values are kept
+   versions is reached through the Protect modal — the row's token is derived from the mark
+   (`treeRowText.ts:184`) and the provider that would have to read kept versions, `treeDataProvider.ts`, is at
+   795 of its 800 lines.
+4. **[PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) follows** — the compile-time
+   `StoredSecret` type that turns this plan's runtime rules and test guard into a compile error.

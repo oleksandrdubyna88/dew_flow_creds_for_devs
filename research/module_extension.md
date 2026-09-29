@@ -1160,7 +1160,7 @@ inherited at read time.
 | Module | What it holds |
 |---|---|
 | `entitySlots.ts` | the nine slots, as one table everything walks — and the fixed ORDER |
-| `entityPin.ts` | `protectEntity` / `unprotectEntity` / `pinOpens` / `lockedSlotCount`, pure of `vscode` |
+| `entityPin.ts` | `protectEntity` / `unprotectEntity` / `siblingsOpened` / `lockedSlotCount`, pure of `vscode` |
 | `pinSession.ts` | the grant: a module-level Map in the extension host and nothing else |
 | `pinGate.ts` | opening one value for an operation somebody CLICKED; `automaticPinRefusal` for everything else |
 | `pinAdmission.ts` | the door — asked ONCE per entry, not per field |
@@ -1171,6 +1171,14 @@ inherited at read time.
 | `sharePayloadBuild.ts` | the payload builder, lifted out of `shareInbox` when this pushed it over its ceiling |
 | `shareTotpQuestion.ts` | *"What travels with this share?"* — the same lift, for the same ceiling |
 | `nodeOwnId.ts` | `withOwnId`: the node's record names the node it is in, at the import and at every read |
+| `sealValue.ts` | `sealValue` — the one seal every writer into a protected entry uses (woven mark kept, a sealed value untouched) |
+| `pinAttempts.ts` | five wrong PINs → a wait; `attemptUnlock` is the choke point, `attemptAcross` the sibling checks' |
+| `editPrefill.ts` | Edit over a protected entry: `openEntryForEdit`, `sealedWriter`, `pinForSave` |
+| `secretOpener.ts` / `pinClick.ts` | the automatic opener and the click opener every sink stands behind |
+| `historyPin.ts` / `historyHeal.ts` / `revisionDoor.ts` | kept versions: sealed, healed at the door, opened through the live entry's door |
+| `revisionRestore.ts` / `restoreVersion.ts` | *Restore This Version…*: the command, and the writes in the order that keeps R3 |
+| `shareUpdateSeal.ts` | a share's *Update it* into a protected entry: the door, then every arriving value sealed |
+| `syncPinRule.ts` / `syncProtection.ts` | the merge's protection rule (`pinEpoch`), and the losing copy kept as a revision |
 
 **The entry PIN has its own floor (issue #55, 2026-09-12).** `pinPolicy.ts` carries a `PinScope` —
 `'vault' | 'entry'` — and `pinFeedback` / `pinInput.pinValidator` take it as a third argument that
@@ -1226,10 +1234,13 @@ person last chose deliberately.
 **Attachments and images are deliberately not slots** — megabyte base64 blobs held in memory twice to
 seal, protecting nothing an attacker who has the file does not already have.
 
-**The reader survey, done before the code.** The plan said every read path must learn about `locked`
-and was written before anyone read them. Enumerated, most need no change at all, because a locked
-envelope is a STRING and they move strings: the existence flags, the tree badges,
-`mcpEntries.storedSecrets`, `revisionSnapshot`, and `exportSecrets` — a backup of a locked entry
+**The reader survey, done before the code.** *(2026-09-29: this hand-kept survey had no row for the
+viewer's card or the edit form, and that is how the owner lost a card — see "The entry PIN keeps its
+promise" below, where the survey is a test, `pinReaderBoundary.test.ts`. `exportSecrets` below now
+opens every value: that is the external export, not the backup.)* The plan said every read path must
+learn about `locked` and was written before anyone read them. Enumerated, most need no change at all,
+because a locked envelope is a STRING and they move strings: the existence flags, the tree badges,
+`mcpEntries.storedSecrets`, `revisionSnapshot`, and the vault backup — a backup of a locked entry
 stays locked, which is what its owner asked for. What changed is a dozen callers, each in its own
 way: the viewer asks at the DOOR (four values are read eagerly to build the page, and a per-field
 gate would ask four times while anything that slipped past reached the page as envelope JSON); env,
@@ -1311,6 +1322,140 @@ import to fail fast naming its PIN argument. There is no such surface: `openShar
 the extension, and no CLI or MCP path imports a share — so there is nothing to fail fast, and the line
 was inherited from the plan's first draft. The two items that stood here on 2026-09-04 — the
 recipient's own PIN, and the folder that asks while empty — are the two sections above.
+
+#### The entry PIN keeps its promise (2026-09-29, extension 1.12.0)
+
+The owner protected a payment card and View then showed only its name: nothing was deleted, but the
+StorageManager getters return the RAW stored string, three typed getters parsed it and kept only keys
+they knew, and a sealed envelope has none — so a locked record read as `{}`, indistinguishable from
+"empty". The audit that followed found the same shape at ~18 sites, the worst of them Edit, whose Save
+wrote that `{}` back and deleted the card. The design record:
+[PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise.md) (with the superseded
+[PLAN_edit_reseals_a_protected_entry.md](PLAN_edit_reseals_a_protected_entry.md)). The gate primitives
+were sound and are reused; what changed is that every reader now goes through one of them, and a test
+says which.
+
+**The rules.**
+
+- **R1 — one door per operation a person clicked.** `admitEntry` (asks only when a slot is locked, with
+  a *purpose* the box says — *"Enter it to copy its password"*), then `openStored`/`openedText` through
+  a **silent** gate: behind a door nothing asks again, and a value the granted PIN does not open (two
+  PINs mixed by a sync) is refused in words, never with a second box. No click path receives an envelope.
+- **R2 — nothing automatic prompts, and every refusal is SAID.** `automaticPinRefusal` /
+  `pinFieldRefusal` (the wrap first, the mark second) / `automaticOpener` answer a withheld reading, an
+  audit line or an error sentence — never an envelope, never a silent "absent".
+- **R3 — a protected entry is never written in the clear, not even for a moment.** Edit, Restore,
+  share-update and the history rewrite seal IN MEMORY (`sealValue`) and then write; `protectEntity` runs
+  afterwards only as an idempotent sweep. Tests watch the keychain's write log, because the final state
+  of "write plaintext, then sweep" is identical to a sealed save.
+- **R4 — a save never erases what it could not read.** Edit refuses to open over a damaged or
+  unopenable value, and a value equal to what was opened is kept byte-identical — no re-seal, no sync churn.
+- **R5 — the mark follows the values.** Every writer carries `pinProtected`; the door restores a missing
+  mark on an entry whose values are sealed and seals stray plaintext it finds there; the mark is written last.
+- **R6 — protection is a decision with a counter.** `TreeNode.pinEpoch` counts protect/unprotect decisions.
+
+```mermaid
+flowchart LR
+  subgraph readers["every src/** reader of a slot (pinReaderBoundary.test.ts)"]
+    C[carrier]
+    D[door]
+    A[automatic]
+    P[presence]
+  end
+  D -->|"admitEntry(purpose)"| G{slot sealed or entry marked?}
+  G -->|no| V[value as stored]
+  G -->|yes| B[PIN box once, grant in pinSession]
+  B --> S["openStored via silent gate"]
+  S --> V2[plaintext]
+  A --> R{"pinFieldRefusal / automaticOpener"}
+  R -->|sealed or marked| W["withheld + the PIN sentence"]
+  R -->|plain| V
+  P --> E["!== undefined only"]
+  C --> X["sealed in, sealed out"]
+  B -.->|"five wrong: pinAttempts wait"| B
+```
+
+**The reader boundary is a test, not a survey.** The 2026-09-04 survey above was a list a person kept,
+and it never had a row for the viewer's card or the edit form. `pinReaderBoundary.test.ts` derives the
+getters from `SECRET_SLOTS` (each row's `read` run against a recording storage), adds the slot table's
+own `.read(` and `getHistory(` (a kept version holds the same ten values), finds every `src/**` file
+that calls one, and requires each to be classified in its checked-in `READERS` table — **carrier**,
+**door** (must contain a door primitive), **automatic** (must contain a refusal primitive) or
+**presence** (only `(await ….getX(…)) !== undefined`). An unlisted reader fails naming file, line and
+getter; a listed file that reads nothing fails too. The same file pins `unlockSecret(` to
+`secretEnvelope.ts` and `pinAttempts.ts`. Classifying found one more gap on the spot — the broker's
+database query (`agentUseActions.dbQueryAction`) launched the client with the envelope — and it now
+refuses with the PIN sentence. The three silent typed getters (`getFields`/`getSecond`/`getPayment`)
+are deleted, so a read that empties a locked record no longer compiles. `pinSlotMatrix.test.ts` walks
+the grid: for every slot, with only that slot sealed, the viewer, the revision viewer, Edit's prefill,
+the click door, export and the share payload get the plaintext and never `"lock":`, terminal variables
+and `creds://` are withheld in words, an untouched Edit-save is byte-identical, and a changed slot is
+stored sealed (the write log says never in the clear) and opens to the new text. Its fixture table is
+`Record<keyof RevisionSecrets, …>`, so an eleventh slot without a fixture does not compile.
+
+**Where each surface stands.** The viewer reads the card's SHAPE through its gated reader
+(`entityViewerCommands.loadEntry`). Edit is `editPrefill.ts`: `openEntryForEdit` opens only the seven
+prefilled slots (in parallel, behind a progress notification — each is a scrypt of about a second)
+and records presence for the rest; `sealedWriter` is the `SecretWriter` a protected save writes
+through; `pinForSave` re-reads the grant at Save (`EntityFormOptions.beforeSave`: a decline keeps the
+form); `attachmentMeta.carryMarks` carries the mark; the env bindings get the WRITTEN details. Clicks
+go through `pinClick.clickedSecret`/`clickOpener`; a file written from a protected value says it is
+outside the PIN; Connect over a key borrowed from another entry asks the OWNER of the value. Automatic
+readers: the config route body is a `FieldReading` (withheld answers the same 401 as an invented key
+and audits `withheld (PIN)`), the git deploy key and the SSH broker's stored key refuse before
+`materializePrivateKey`, `creds://` notes and codes read withheld, the config-validity flag judges
+nothing sealed. Export (`admitForExport`, `exportOpener`) asks each protected entry's PIN, aborts whole
+on a decline, writes opened values and no `pinProtected`. Share *Update it* (`shareUpdateSeal`) goes
+through the live door and seals every arriving value.
+
+**History is sealed, opens through the door, and can be restored.** Kept versions live per machine in
+the keychain (cap 3). Protect runs `historyPin.protectHistory` before the mark; on every OTHER machine
+the door heals it — `historyHeal.healKeptVersions` seals this machine's plaintext versions in the
+background with a status-bar message, after a successful admission. `StorageManager.replaceHistory`
+rewrites the list as it is at write time and writes nothing when history is absent or does not parse.
+The revision viewer goes through `revisionDoor.openKeptVersion`: the LIVE entry's door, then
+`openRevision` — the grant silently, then the version's own PIN once, never granted (a version sealed
+under a PIN the live entry no longer has). **Restore This Version…** (`credSshManager.restoreRevision`,
+registered from `registerPinCommands`; `revisionRestore.ts` the command, `restoreVersion.ts` the
+writes) opens and seals everything in memory first, records today's state as the newest version,
+writes the values (password last), keeps today's `pinProtected`, `pinEpoch`, agent access, code-access
+key, expiry, burn policy, agent key and every attachment/image claim, removes what the version lacked
+through `SecretSlot.remove`, refuses over a damaged live value, and is idempotent.
+
+**Remove PIN** (`entityPin.unprotectEntity`): the PIN is checked on the first sealed value (a kept one
+when the live entry holds none), live values AND kept versions are opened in memory, a damaged live
+value throws `DamagedSlots` before any write (unless *Remove the PIN from the rest*, `keepDamaged`),
+values are written with `plainSecret(value, woven)` so a woven password stays woven, then the history
+is rewritten, the mark cleared and the epoch bumped. Protect on an entry that already holds a PIN offers
+*Remove PIN Protection…*; Remove PIN is offered while any live or kept value is sealed.
+
+**The sync rule** (`syncPinRule.ts`, used by `mergeProfiles`). Dominance decides first; concurrent
+vectors whose SEALED state (read from the envelopes, never the mark) differs are decided by the higher
+`pinEpoch`, equal epochs to the sealed side; an override keeps the merged vector so an older build
+accepts it by dominance. The per-slot fallback takes a value only in the winner's sealed state (both
+directions), and **two sealed sides that raced take nothing from each other** — one node wins
+wholesale, so a value sealed under the loser's PIN never lands in the winner's entry. Protect, Remove
+PIN, create-with-PIN and a sealed share import write the mark and `pinEpoch + 1` in one node write
+(`protectionDecision`, a function patch evaluated inside the write lease); the door's mark repair
+never bumps it. `syncProtection.keepProtectionLosers` records this machine's losing copy as a revision
+BEFORE `applySnapshot` and says so once; the door's history seal then covers it.
+
+**Attempts** (`pinAttempts.ts`, in memory, keyed like `pinSession`). Five wrong in a row → 30 s,
+doubling to 15 minutes; the right PIN resets; nothing is wiped. `attemptUnlock` is the one choke point
+(the gate's box, `entityPin`, `historyPin`); `retryGranted` retries a PIN already granted without
+counting a miss (a silent gate behind a door is not guessing); `attemptAcross` is the folder and
+new-entry sibling checks — a typed PIN that opens NONE of N protected siblings is one wrong attempt on
+each, one that opens SOME charges nobody, and `pinPrompt.refusedWhileCooling` refuses before the box
+while any sibling is cooling. It slows guessing at an unattended window; it does not stop an offline
+attacker, for whom scrypt is the cost.
+
+**Known limits, recorded.** Re-running an interrupted restore adds one more kept version (the
+pre-restore record); the first door seals stray plaintext synchronously (about a second per value);
+and Remove PIN for an entry whose only sealed values are kept versions is reached through the Protect
+modal: the row's menu token is derived from the mark (`treeRowText.ts:184`), and the provider that
+would have to read kept versions to change that, `treeDataProvider.ts`, is at 795 of its 800 lines. The compile-time
+secret type that turns the reader rules into a type error is its own plan,
+[PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md).
 
 #### A woven password (2026-09-04)
 
@@ -1758,7 +1903,7 @@ any binding can write, and deletes only a name NO binding can write — the earl
 its name. **The `pinProtected` mark is consulted after all**, alongside the wrap. The wrap inside the
 value is still the truth and is still asked first; the mark catches what the wrap cannot — an entry
 marked protected whose stored value is, at this instant, plaintext, which is reachable because the EDIT
-path never re-seals ([PLAN_edit_reseals_a_protected_entry.md](../todo/PLAN_edit_reseals_a_protected_entry.md)).
+path never re-seals ([PLAN_edit_reseals_a_protected_entry.md](PLAN_edit_reseals_a_protected_entry.md)).
 Either signal refuses, which cannot under-refuse, and both say `pinGate.pinRefusalFor`'s one sentence.
 This is defence in depth at one consumer and not the fix: the plaintext is still on disk for every
 other reader. `rotateAction`/`sshExecAuth` still decide from the value alone.

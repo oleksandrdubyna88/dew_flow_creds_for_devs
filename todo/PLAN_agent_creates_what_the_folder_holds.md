@@ -6,7 +6,7 @@
 > (regenerated), `src_vs_code/src` (`mcpCreate.ts`, `mcpHooks.ts`, `mcpFolders.ts`, a new per-kind field
 > table, the broker routes that serve it, the consent summary, `sshCommand.ts` / `entityViewPage.ts` for
 > the SSH rows), help, CHANGELOG and tests. Ships in the same release as
-> [PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise.md): extension 1.12.0 and the MCP
+> [PLAN_entry_pin_keeps_its_promise.md](../research/PLAN_entry_pin_keeps_its_promise.md): extension 1.12.0 and the MCP
 > relay 0.9.0.
 >
 > Related docs: [PLAN_mcp_server.md](../research/PLAN_mcp_server.md) (the six switches, the create level),
@@ -212,7 +212,7 @@ writes a migration for two rows.
   (`mcpHooks.ts:30-60`) does not. An agent cannot type a PIN, so after the person approves the creation the
   window asks them for the folder's PIN (checked against a protected sibling exactly as `pinOnCreate`
   does), and the entry is sealed before it is written (the sealing rule R3 of
-  [PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise.md) §4); a declined PIN creates
+  [PLAN_entry_pin_keeps_its_promise.md](../research/PLAN_entry_pin_keeps_its_promise.md) §4); a declined PIN creates
   nothing and the agent is told so. The PIN is asked **inside the same consent step**, bounded by that
   step's existing timeout: dismissed, wrong three times, or timed out → the tool answers a refusal sentence
   and nothing is created or left half-made, because the PIN is checked and the values sealed before
@@ -259,7 +259,7 @@ Every RED watched failing first, then green; C# tests run through the test execu
 | Item | Built by | The other plan's part |
 |---|---|---|
 | Agent-facing instructions text in `src_mcp` | this plan: one sentence (§4.3) | [PLAN_creds_cli_reachable_from_every_caller.md](PLAN_creds_cli_reachable_from_every_caller.md) also edits them; whichever lands second rebases the text, neither rewrites the other's sentence. |
-| The viewer's SSH rows | this plan (§4.5) | [PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise.md) edits `entityViewerCommands.ts` (the PIN door, D1) but not the SSH rows; land the PIN plan's P2 first, this S2 rebases onto it. |
+| The viewer's SSH rows | this plan (§4.5) | [PLAN_entry_pin_keeps_its_promise.md](../research/PLAN_entry_pin_keeps_its_promise.md) edits `entityViewerCommands.ts` (the PIN door, D1) but not the SSH rows; land the PIN plan's P2 first, this S2 rebases onto it. |
 | Sealing an agent-created entry in a PIN folder (D-B) | this plan, using that plan's `sealValue` (R3) | The PIN plan's P1 lands `sealValue` first. |
 
 ## 8. Growth, size and compatibility

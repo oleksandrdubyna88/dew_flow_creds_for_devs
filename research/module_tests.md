@@ -817,6 +817,34 @@ and the same shell without it reaches nothing. That is what makes the first two 
 attached to WSL, so VS Code creating the terminal and posting the line into it has only ever been
 exercised by a stub. Closing that means building the `.vsix` and clicking once.
 
+## A PIN-protected entry keeps its promise (2026-09-29, extension 1.12.0)
+
+The flows [PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise.md) added or
+repaired, each driven through the product's own entry points over the REAL `StorageManager` with real
+`lockSecret` wraps (the shared world is `src/test/pinWorld.ts`; `vscodeStub.loadEachWithVscode` loads
+several modules into ONE graph so a PIN the first door granted is the grant every later surface sees).
+Command: `npm test`, or `node --test out/test/<file>.js`.
+
+| Flow | Test | What it holds down |
+|---|---|---|
+| **The owner's walk:** protect a card → view → edit the name → view → Remove PIN → view | `entryPinScenario.test.ts` | the whole card — frame, every field, the second value, the note — at every step; sealed after Protect and after the edit, the mark kept, plain after Remove PIN, and no box once it is gone |
+| Every slot × every surface | `pinSlotMatrix.test.ts` (40) | ten slots, each alone sealed: viewer, revision viewer, Edit's prefill, the click door, export and share get the plaintext and never `"lock":`; env and `creds://` are withheld in words; an untouched save is byte-identical; a changed slot is sealed (the keychain's write log never sees it in the clear) and opens to the new text |
+| No reader unclassified | `pinReaderBoundary.test.ts` (8) | every `src/**` slot reader is carrier / door / automatic / presence, with the matching primitive; `unlockSecret(` only in its two modules — source-reading, with companions that assert the patterns still match known instances |
+| View a protected entry | `viewerOpen.test.ts` | the card frame and the second-password row drawn after one PIN; a decline opens nothing |
+| Edit a protected entry | `editProtected.test.ts` | nothing deleted, every value kept, a change sealed before it is written, the mark and the env bindings right, a damaged value refused, a notification while the values open |
+| Every click | `pinClickPaths.test.ts`, `sshCredential.test.ts` | the sink gets the plaintext after one PIN, a decline hands nothing, a file written from a protected value says it is outside the PIN |
+| Nothing automatic | `brokerConfigRoute`, `transportFactory`, `entityFieldReading`, `pinReaders`, `agentUseActions` tests | a withheld reading or a sentence, never the envelope |
+| Export, share update | `exportProtected.test.ts`, `storageExportSecrets.test.ts`, `shareUpdateSeal.test.ts`, `shareWithheld.test.ts` | the PIN asked, opened values out, arriving values sealed in, the mark kept |
+| History and Restore | `historyPin.test.ts`, `revisionViewer.test.ts`, `revisionRestore.test.ts` | kept versions sealed on Protect and at the first door elsewhere, opened only through the door, Restore sealing a pre-PIN version, keeping today's access, idempotent after an interruption |
+| Remove PIN, the dead end | `entityPin.test.ts`, `pinCommands.test.ts`, `pinGateHoles.test.ts` | woven stays woven, a damaged value asked about, the mark restored at the door, Protect on a protected entry offering Remove |
+| Sync | `syncMerge.test.ts`, `syncPinRule.test.ts`, `syncManager.test.ts` | the later protection decision wins in both argument orders; no mixing across the sealed line or between two sealed sides that raced; the loser recorded before `applySnapshot` |
+| Wrong PINs | `pinAttempts.test.ts`, `siblingPinAttempts.test.ts` | five wrong → a wait, doubling to the cap; a folder-wide PIN that opens none charges each sibling, one that opens some charges nobody, a cooling sibling refuses before the box |
+| The help | `helpCatalog.test.ts` | every language names *Restore This Version…* and *Remove PIN Protection…* |
+
+**What none of this proves.** No harness drives VS Code itself (*The editor's own UI*, below): the
+tree's context menus, the real webview and the real input box are stubbed. The owner's own card,
+protected and viewed in a real editor, is the plan's first Definition-of-Done item and is left open.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.

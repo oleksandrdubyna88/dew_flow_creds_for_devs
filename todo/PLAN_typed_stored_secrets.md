@@ -5,7 +5,7 @@
 > getter/setter signatures, a new `storedSecret.ts` / `entryReader.ts` / `entryWriter.ts`, the ~105 call
 > sites that use a stored value, the four hand-written structural interfaces and one `Pick` that re-declare
 > the getters, and the tests' fakes. Extension only; no format change. **Starts after**
-> [PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise.md) ships (extension 1.12.0).
+> [PLAN_entry_pin_keeps_its_promise.md](../research/PLAN_entry_pin_keeps_its_promise.md) ships (extension 1.12.0).
 >
 > Owner decision 2026-09-29: the structural design is right, but migrating every call site in the same
 > release as eighteen behavioural fixes to a secrets product is a regression risk of its own — so it is

@@ -1,13 +1,15 @@
 # PLAN — editing a PIN-protected entry leaves its new secret in the clear
 
-> Status: **plan only, nothing implemented yet, 2026-09-12; superseded 2026-09-29 by
-> [PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise.md), which builds all of it as
-> its phase P3 (boundary table in §0 below).** Scope: `src_vs_code/src` —
+> Status: **IMPLEMENTED, 2026-09-29.** Superseded by, and built as phase P3 of,
+> [PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise.md) (boundary table in §0 below).
+> Deviations: the premise of §1 step 1 was false (Edit never asked for the PIN), and §4 step 3's "write, then
+> `protectEntity`" was replaced by seal-before-write (R3); the rest are in that plan's §15, its open tail in
+> §16. Scope: `src_vs_code/src` —
 > `entityEditCommands.ts`, `entityPin.ts`, `pinPrompt.ts`/`pinGate.ts` (how the PIN reaches the save),
 > and the tests. Extension only; no HTTP contract.
 >
 > Found by the automated reviewer on the pull request for
-> [PLAN_entry_pin_kind_pick_env_feedback.md](../research/PLAN_entry_pin_kind_pick_env_feedback.md)
+> [PLAN_entry_pin_kind_pick_env_feedback.md](PLAN_entry_pin_kind_pick_env_feedback.md)
 > (CWE-200, rated Major), and independently by the agent that implemented it. Not introduced there —
 > it predates that work — but that work is what made it visible, and it is why this plan exists
 > rather than a line in a summary.
