@@ -24,6 +24,24 @@ export function loadWithVscode<T>(
    */
   mocks: Record<string, unknown> = {},
 ): T {
+  return loadEachWithVscode([request], stub, mocks)[0] as T;
+}
+
+/**
+ * Several modules under ONE stub, into ONE graph — for a test that drives a flow across modules which
+ * share state (`pinSession`'s grants, `pinAttempts`' counts).
+ *
+ * <p>`loadWithVscode` evicts the whole graph on every call, so two calls in a row leave the first
+ * module holding one `pinSession` and the second another: a PIN the first door granted is then
+ * invisible to the second surface, and the test reads that as a defect. Loaded here, every request
+ * comes out of the same eviction, and a plain `require` of a pure module afterwards answers the same
+ * instance they captured.</p>
+ */
+export function loadEachWithVscode(
+  requests: readonly string[],
+  stub: Record<string, unknown>,
+  mocks: Record<string, unknown> = {},
+): unknown[] {
   const loader = Module as unknown as { _load(request: string, ...rest: unknown[]): unknown };
   const original = loader._load;
   // The WHOLE graph is evicted, not just the requested module, because `require` is cached
@@ -34,7 +52,7 @@ export function loadWithVscode<T>(
   // `nasPaths` copy bound to an EARLIER stub, read a location from settings that are no longer
   // the test's, and route to the wrong transport. The first version of this helper did exactly
   // that, and the tests it broke read as routing defects rather than as a stale cache.
-  evictOwnModules(require.resolve(request));
+  evictOwnModules(require.resolve(requests[0]));
   loader._load = function patched(name: string, ...rest: unknown[]): unknown {
     if (name === 'vscode') {
       return stub;
@@ -42,7 +60,7 @@ export function loadWithVscode<T>(
     return name in mocks ? mocks[name] : original.call(this, name, ...rest);
   };
   try {
-    return require(request) as T;
+    return requests.map((request) => require(request) as unknown);
   } finally {
     loader._load = original;
   }
