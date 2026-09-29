@@ -172,3 +172,26 @@ test('every language states the entry PIN’s four-character floor, in its own w
     );
   }
 });
+
+/**
+ * Entry-PIN plan §7 item 6 — every language names the two commands a protected entry depends on.
+ *
+ * <p>*Restore This Version…* is the only way back to a kept version (the tooltip used to send people
+ * to Clone, which copies the metadata only), and *Remove PIN Protection…* is the only way out of the
+ * PIN. Command names stay in English in every language, as the menus show them, so the check is one
+ * literal per command — asked of the whole article, since either may be told in any section.</p>
+ */
+const PIN_COMMANDS = ['Restore This Version…', 'Remove PIN Protection…'] as const;
+
+test('every language’s entry-PIN help names Restore This Version… and Remove PIN Protection…', () => {
+  const article = helpArticle('entity-pin');
+  assert.ok(article !== undefined, 'the entity-pin article exists');
+  for (const language of HELP_LANGUAGES) {
+    const { body, fallback } = bodyFor(article, language);
+    assert.equal(fallback, false, `${language}: entity-pin is not translated`);
+    const text = [body.whatItIs, body.why, body.setup, body.usage, body.whatCanGoWrong].join('\n');
+    for (const command of PIN_COMMANDS) {
+      assert.ok(text.includes(command), `${language}: the entry-PIN help never names ${command}`);
+    }
+  }
+});
