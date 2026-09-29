@@ -11,8 +11,8 @@ import {
   noteRight,
   noteWrong,
 } from '../pinAttempts';
-import { openStored } from '../pinGate';
-import { forgetAllPins } from '../pinSession';
+import { openStored, silentPinGate } from '../pinGate';
+import { forgetAllPins, grantPin, grantedPin } from '../pinSession';
 
 /**
  * D16 — a wrong PIN costs more than a second of scrypt after the fifth one in a row.
@@ -142,4 +142,23 @@ test('five wrong PINs typed into the box arm the wait — the box is the road pe
   }
 
   assert.ok(cooldownMs(ACCOUNT, ENTITY, Date.now()) > 0, 'the gate counted through the same choke point');
+});
+
+test('a silent retry with the PIN already granted is not a guess: it neither cools the entry down nor forgets the grant', async () => {
+  // An entry sealed under two PINs (two protects on two machines, mixed by a sync): the door took
+  // the PIN that opens its first slot, and every value behind the door is opened with a SILENT
+  // gate. Trying that grant on the slot sealed under the other PIN is not somebody guessing — the
+  // person typed it once, correctly — so it must cost no attempt and must not drop the grant.
+  // Before the fix the sixth Edit found the entry cooling, and every Edit asked the door again.
+  forgetAllAttempts();
+  forgetAllPins();
+  grantPin(ACCOUNT, ENTITY, PIN);
+  const underAnother = await lockSecret('other-machine', ACCOUNT, 'another-pin');
+
+  for (let i = 0; i < FREE_TRIES + 1; i += 1) {
+    assert.equal((await openStored(underAnother, silentPinGate(ACCOUNT, ENTITY, 'prod-db'))).kind, 'cancelled');
+  }
+
+  assert.equal(cooldownMs(ACCOUNT, ENTITY, Date.now()), 0, 'a retry with the granted PIN is not a wrong attempt');
+  assert.equal(grantedPin(ACCOUNT, ENTITY), PIN, 'and the grant that opened the entry is kept');
 });

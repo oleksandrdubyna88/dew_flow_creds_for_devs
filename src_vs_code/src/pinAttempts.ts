@@ -109,3 +109,32 @@ export async function attemptUnlock(
     return undefined;
   }
 }
+
+/**
+ * The PIN this window already GRANTED for the entry, tried again — which is not a guess.
+ *
+ * <p>The grant is a PIN the person typed and that opened this entry. Trying it on a second value is
+ * what every silent gate behind a door does, and when that value is sealed under a different PIN (two
+ * protects on two machines, mixed by a sync) it does not open. Counting that as a wrong attempt made
+ * the sixth Edit of such an entry find it cooling, for a PIN nobody had typed wrong. So a miss here
+ * counts nothing; the cooldown still applies (a cooling entry opens for nobody), and a hit still
+ * resets the run, because the PIN is right.</p>
+ */
+export async function retryGranted(
+  envelope: SecretEnvelope,
+  accountId: string,
+  entityId: string,
+  pin: string,
+  now: number = Date.now(),
+): Promise<string | undefined> {
+  if (cooldownMs(accountId, entityId, now) > 0) {
+    return undefined;
+  }
+  try {
+    const value = await unlockSecret(envelope, accountId, pin);
+    noteRight(accountId, entityId);
+    return value;
+  } catch {
+    return undefined;
+  }
+}

@@ -393,6 +393,27 @@ test('an entry sealed under TWO PINs asks once, and refuses Edit naming the valu
   assert.deepEqual(await rawSlots(w), before, 'byte-identical');
 });
 
+test('opening Edit again and again on an entry sealed under two PINs asks once and never cools it down', async () => {
+  // The silent opens behind the door try the GRANTED PIN on the slot sealed under the other one. A
+  // PIN the person already typed correctly is not a guess: counted as one, the sixth Edit found the
+  // entry cooling; forgotten, every Edit asked the door's question again.
+  const w = await world(
+    card(),
+    { notes: await locked('the note'), 'payment details': await lockSecret(JSON.stringify(CARD), ACCOUNT, '9876') },
+    [PIN, PIN, PIN, PIN, PIN, PIN, PIN],
+  );
+  const { cooldownMs } = require('../pinAttempts') as typeof import('../pinAttempts');
+
+  for (let i = 0; i < 6; i += 1) {
+    await w.edit();
+  }
+
+  assert.equal(w.said.boxes, 1, 'the door asked once; the grant it left is still there for every later Edit');
+  assert.equal(cooldownMs(ACCOUNT, 'p1', Date.now()), 0, 'no wrong attempt was counted');
+  assert.doesNotMatch(w.said.warnings.join(' '), /Too many wrong PINs/);
+  assert.equal(w.said.warnings.filter((m) => m.includes('sealed under a different PIN')).length, 6, 'each Edit names the value it cannot open');
+});
+
 test('a declined door opens no form, changes nothing, and says nothing more', async () => {
   const w = await protectedCard([undefined], { name: 'renamed' });
   const before = await rawSlots(w);

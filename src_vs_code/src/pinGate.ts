@@ -1,4 +1,4 @@
-import { attemptUnlock, cooldownMs, coolingReason } from './pinAttempts';
+import { attemptUnlock, cooldownMs, coolingReason, retryGranted } from './pinAttempts';
 import { grantPin, grantedPin, forgetPin } from './pinSession';
 import { SecretEnvelope, readSecret } from './secretEnvelope';
 
@@ -42,6 +42,11 @@ export interface PinGate {
    * is a reflex. Absent, the generic question is asked.
    */
   readonly purpose?: string;
+  /**
+   * A gate that never asks (`silentPinGate`). Its miss with the granted PIN is a fact about THAT
+   * value — sealed under another PIN — and not a reason to drop the grant the door just took.
+   */
+  readonly silent?: boolean;
 }
 
 /** What opening a value produced. `cancelled` is a decision, not a failure — it says nothing more. */
@@ -61,7 +66,7 @@ export type PinOpen =
  * person answered for a moment ago.
  */
 export function silentPinGate(accountId: string, entityId: string, entryName: string): PinGate {
-  return { accountId, entityId, entryName, ask: () => Promise.resolve(undefined) };
+  return { accountId, entityId, entryName, silent: true, ask: () => Promise.resolve(undefined) };
 }
 
 /**
@@ -83,15 +88,25 @@ export async function openStored(stored: string | undefined, gate: PinGate): Pro
 }
 
 async function openLocked(envelope: SecretEnvelope, gate: PinGate): Promise<PinOpen> {
-  const remembered = grantedPin(gate.accountId, gate.entityId);
-  const withRemembered = remembered === undefined ? undefined : await tryPin(envelope, gate, remembered);
+  const withRemembered = await openWithGrant(envelope, gate);
   if (withRemembered !== undefined) {
     return { kind: 'value', value: withRemembered };
+  }
+  if (gate.silent === true) {
+    // Behind a door: the grant opened the entry a moment ago, so a value it does not open is sealed
+    // under another PIN. That is said by the caller; the grant stays, and nothing was guessed.
+    return { kind: 'cancelled' };
   }
   // A remembered PIN that no longer opens this entry is worse than none: it turns "type your PIN"
   // into "this entry is broken". Dropped, and the person is asked as if for the first time.
   forgetPin(gate.accountId, gate.entityId);
   return askOnce(envelope, gate);
+}
+
+/** The grant, tried — never counted as a wrong attempt (`retryGranted`): the person typed it right once. */
+function openWithGrant(envelope: SecretEnvelope, gate: PinGate): Promise<string | undefined> {
+  const remembered = grantedPin(gate.accountId, gate.entityId);
+  return remembered === undefined ? Promise.resolve(undefined) : retryGranted(envelope, gate.accountId, gate.entityId, remembered);
 }
 
 /**
