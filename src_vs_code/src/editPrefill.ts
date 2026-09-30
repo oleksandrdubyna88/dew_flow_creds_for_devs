@@ -57,6 +57,26 @@ export interface EditPrefill {
   readonly hasVpnConfig: boolean;
 }
 
+/**
+ * What a writer into a NEW entry was opened over: nothing. Handed to `sealedWriter`, every value the
+ * create stores differs from it and is sealed — an agent's create into a folder that asks for a PIN
+ * (agent-create plan, D-B) is that writer's one caller with no form behind it.
+ */
+export const NOTHING_OPENED: EditPrefill = {
+  locked: false,
+  held: false,
+  notes: undefined,
+  fieldsRaw: undefined,
+  secondRaw: undefined,
+  paymentRaw: undefined,
+  configBody: undefined,
+  dbConnection: undefined,
+  totp: undefined,
+  hasPassword: false,
+  hasPrivateKey: false,
+  hasVpnConfig: false,
+};
+
 /** The door's answer for the form: opened, or refused with the sentence to say (`''` for a decline). */
 export type EditOpen =
   | { readonly kind: 'open'; readonly prefill: EditPrefill }

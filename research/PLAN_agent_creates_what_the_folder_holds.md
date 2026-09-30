@@ -1,17 +1,19 @@
 # PLAN — an agent learns what a folder holds, and creates an entry with exactly that kind's fields
 
-> Status: **plan only, nothing implemented yet, 2026-09-29.** Plan gate passed (`proceed`, 2 of 2 reviewers,
-> one round, four findings accepted — §10). Scope: `src_mcp/src` (the agent-facing
+> Status: **IMPLEMENTED, 2026-09-30.** Every build step S1–S7 landed (bar S7's code round and releases) on
+> `feat/agent-creates-what-the-folder-holds`; what shipped differently, and what is still open (a real agent
+> session against the installed relay, the code round, the release), is §11. Plan gate passed (`proceed`,
+> 2 of 2 reviewers, one round, four findings accepted — §10). Scope: `src_mcp/src` (the agent-facing
 > tools: `UseTools.cs`, `FolderTools.cs`, `Tools.cs`, their tests), `contract/mcp-tools-v1.json`
 > (regenerated), `src_vs_code/src` (`mcpCreate.ts`, `mcpHooks.ts`, `mcpFolders.ts`, a new per-kind field
 > table, the broker routes that serve it, the consent summary, `sshCommand.ts` / `entityViewPage.ts` for
 > the SSH rows), help, CHANGELOG and tests. Ships in the same release as
-> [PLAN_entry_pin_keeps_its_promise.md](../research/PLAN_entry_pin_keeps_its_promise.md): extension 1.12.0 and the MCP
+> [PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise.md): extension 1.12.0 and the MCP
 > relay 0.9.0.
 >
-> Related docs: [PLAN_mcp_server.md](../research/PLAN_mcp_server.md) (the six switches, the create level),
-> [PLAN_agent_folder_ops.md](../research/PLAN_agent_folder_ops.md), [module_extension.md](../research/module_extension.md),
-> [PLAN_creds_cli_reachable_from_every_caller.md](PLAN_creds_cli_reachable_from_every_caller.md) (also
+> Related docs: [PLAN_mcp_server.md](PLAN_mcp_server.md) (the six switches, the create level),
+> [PLAN_agent_folder_ops.md](PLAN_agent_folder_ops.md), [module_extension.md](module_extension.md),
+> [PLAN_creds_cli_reachable_from_every_caller.md](../todo/PLAN_creds_cli_reachable_from_every_caller.md) (also
 > edits the agent-facing instructions in `src_mcp`, §7).
 
 `file:line` references are to `origin/main` at `6905e9f`.
@@ -212,7 +214,7 @@ writes a migration for two rows.
   (`mcpHooks.ts:30-60`) does not. An agent cannot type a PIN, so after the person approves the creation the
   window asks them for the folder's PIN (checked against a protected sibling exactly as `pinOnCreate`
   does), and the entry is sealed before it is written (the sealing rule R3 of
-  [PLAN_entry_pin_keeps_its_promise.md](../research/PLAN_entry_pin_keeps_its_promise.md) §4); a declined PIN creates
+  [PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise.md) §4); a declined PIN creates
   nothing and the agent is told so. The PIN is asked **inside the same consent step**, bounded by that
   step's existing timeout: dismissed, wrong three times, or timed out → the tool answers a refusal sentence
   and nothing is created or left half-made, because the PIN is checked and the values sealed before
@@ -220,18 +222,18 @@ writes a migration for two rows.
 
 ## 5. Build order
 
-- [ ] **S0** — Gate this plan (coai `review_plan` until `proceed`).
-- [ ] **S1** — Inventory `toValues` per kind → `agentKindFields.ts` + the table test (RED first: a table
+- [x] **S0** — Gate this plan (coai `review_plan` until `proceed`).
+- [x] **S1** — Inventory `toValues` per kind → `agentKindFields.ts` + the table test (RED first: a table
       entry the form would scrub fails).
-- [ ] **S2** — SSH rows gated by kind (RED: a Terminal entry with a host shows no SSH command).
-- [ ] **S3** — `validateAgentFields`, `readCreateRequest` reads `fields`, `detailsFor` builds from validated
+- [x] **S2** — SSH rows gated by kind (RED: a Terminal entry with a host shows no SSH command).
+- [x] **S3** — `validateAgentFields`, `readCreateRequest` reads `fields`, `detailsFor` builds from validated
       fields with the per-kind scrub (RED: creating a terminal entry with `host` stores a host today).
-- [ ] **S4** — Terminal/script consent summary shows the command (RED: the summary omits it).
-- [ ] **S5** — Broker routes for the catalogue; `creds_kinds`, `creds_kind_help` in `src_mcp`; the
+- [x] **S4** — Terminal/script consent summary shows the command (RED: the summary omits it).
+- [x] **S5** — Broker routes for the catalogue; `creds_kinds`, `creds_kind_help` in `src_mcp`; the
       `creds_folders` answer and descriptions; `creds_create` `fields` parameter and description; server
       instructions sentence. Regenerate `contract/mcp-tools-v1.json`.
-- [ ] **S6** — D-A and D-B as decided.
-- [ ] **S7** — Help (the agent-access section ×5), CHANGELOG, `research/module_extension.md` (the MCP
+- [x] **S6** — D-A and D-B as decided.
+- [x] **S7** *(docs and help done; the coai code round and the releases are the open tail, §11)* — Help (the agent-access section ×5), CHANGELOG, `research/module_extension.md` (the MCP
       create section: the table, the refusal rule, O4), `src_mcp/RELEASES` via release-please; coai
       `review_code`; releases.
 
@@ -258,8 +260,8 @@ Every RED watched failing first, then green; C# tests run through the test execu
 
 | Item | Built by | The other plan's part |
 |---|---|---|
-| Agent-facing instructions text in `src_mcp` | this plan: one sentence (§4.3) | [PLAN_creds_cli_reachable_from_every_caller.md](PLAN_creds_cli_reachable_from_every_caller.md) also edits them; whichever lands second rebases the text, neither rewrites the other's sentence. |
-| The viewer's SSH rows | this plan (§4.5) | [PLAN_entry_pin_keeps_its_promise.md](../research/PLAN_entry_pin_keeps_its_promise.md) edits `entityViewerCommands.ts` (the PIN door, D1) but not the SSH rows; land the PIN plan's P2 first, this S2 rebases onto it. |
+| Agent-facing instructions text in `src_mcp` | this plan: one sentence (§4.3) | [PLAN_creds_cli_reachable_from_every_caller.md](../todo/PLAN_creds_cli_reachable_from_every_caller.md) also edits them; whichever lands second rebases the text, neither rewrites the other's sentence. |
+| The viewer's SSH rows | this plan (§4.5) | [PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise.md) edits `entityViewerCommands.ts` (the PIN door, D1) but not the SSH rows; land the PIN plan's P2 first, this S2 rebases onto it. |
 | Sealing an agent-created entry in a PIN folder (D-B) | this plan, using that plan's `sealValue` (R3) | The PIN plan's P1 lands `sealValue` first. |
 
 ## 8. Growth, size and compatibility
@@ -279,17 +281,18 @@ Every RED watched failing first, then green; C# tests run through the test execu
 - [ ] An agent asked to "store a PowerShell command that checks the quota" in a Terminal folder produces an
       entry whose View shows the command and its arguments and no SSH line — verified with a real agent
       session against the built relay, not only in tests.
-- [ ] `creds_kinds` and `creds_kind_help` exist, answer from the one table, and never name an agent-access
+- [x] `creds_kinds` and `creds_kind_help` exist, answer from the one table, and never name an agent-access
       or window-owned field (asserted).
-- [ ] `creds_folders` tells the agent what each folder holds and which fields it may set.
-- [ ] `creds_create` refuses any field its kind does not have, with a sentence naming the allowed ones, and
+- [x] `creds_folders` tells the agent what each folder holds and which fields it may set.
+- [x] `creds_create` refuses any field its kind does not have, with a sentence naming the allowed ones, and
       creates nothing on a refusal.
-- [ ] The consent prompt shows a terminal/script entry's command before it is stored.
-- [ ] SSH rows appear only on SSH entries.
-- [ ] D-A and D-B built as the owner decided (§4.7).
+- [x] The consent prompt shows a terminal/script entry's command before it is stored.
+- [x] SSH rows appear only on SSH entries.
+- [x] D-A and D-B built as the owner decided (§4.7).
 - [ ] Tests green (`npm test`, the C# test executable), contract regenerated, help ×5, CHANGELOG,
-      `research/module_extension.md` updated; coai plan and code rounds `proceed`.
-- [ ] Promoted to `research/` with `IMPLEMENTED <date>` and deviations; `todo/README.md` in the same commit.
+      `research/module_extension.md` updated; coai plan and code rounds `proceed`. *(All of it but the code
+      round, which has not run — §11.)*
+- [x] Promoted to `research/` with `IMPLEMENTED <date>` and deviations; `todo/README.md` in the same commit.
 
 ## 10. Plan gate — 2026-09-29
 
@@ -305,3 +308,107 @@ a threshold of 6). Every finding was accepted:
 
 Operator commands applied: build as one unit, autonomously, red-green-red, docs with every change, all
 tests before release, the pull-request comment check, and a re-read against the repository's rules.
+
+## 11. As built — 2026-09-30
+
+Branch `feat/agent-creates-what-the-folder-holds`, rebased onto `main` after the entry-PIN pull request
+(#165). Commits, in order: the per-kind table (S1), validated fields (S3), the full command and script in
+consent (S4), the window's catalogue and `holds` (S5, window half), the relay's tools (S5, relay half),
+a test read raw after the rebase, SSH rows by kind (S2), PIN folders (D-B), the itest stand-ins, and the
+docs with this promotion (S7). D-A rode with S1/S3.
+
+### Deviations — what shipped differently from §4–§8
+
+- **The table was not the plan's guess** (S1). The test that posts every field through the real
+  `toValues` failed it four ways: sshkey also keeps `sshKeyPath`; `notes` is kept for EVERY kind, not
+  credential alone; vpn has `vpnType` and `vpnConfigFileName`; config has `configFileName`. `script` is
+  required on a script entry, `tags` is an ssh field, and the field types shipped are `string`,
+  `integer`, `enum`, `args` and `vars` — no `boolean`, which no agent-settable field needed. The shipped
+  table is in [module_extension.md](module_extension.md) §*A folder says what it holds*.
+- **No scrub was extracted from `toValues`** (§4.4 offered it "if the inventory shows it can be"):
+  `detailsFor` builds from validated values only, and the table test is the single guard. The secret goes
+  through the form's own additions pass to the kind's slot, and `secretKind` is refused where that slot
+  cannot be drawn.
+- **The catalogue routes are in `brokerReadRoutes.ts`**, at `GET /v1/mcp/kinds` and
+  `GET /v1/mcp/kind-help?kind=` — beside health, aliases, entries and folders — not in
+  `brokerMcpRoutes.ts` (§4.2).
+- **The kind lists come from the contract.** `contract/broker-v1.json` gained `entityKinds` and
+  `agentCreatableKinds`, emitted off the window's table; the relay reads them through
+  `BrokerContract.CreatableKinds()` (falling back to the list its build knew), so no hand-typed kind list
+  remains in `src_mcp`.
+- **A project folder holds `"any"`**, like an untyped one (§4.3 named only untyped folders).
+- **The old-window sentence is the relay's `NoAnswer` path, not `contractVersion.ts`** (§8). A create that
+  carries `fields` first reads the catalogue route; a window older than it — which would drop the fields and
+  store a terminal with no command — is answered the existing "update the extension" sentence and sent
+  nothing. The catalogue tools answer the same way.
+- **The hint wording changed for every relay tool**, not only the two new ones: an `invalid_request`
+  refusal has its own hint, and the `denied` hint no longer only says to turn a switch on (for payment
+  there is none).
+- **`Program.Instructions` became `internal`** so a test can measure it. The instructions block is
+  **2414 bytes**, already past the ~2 KiB point clients cut at; the new sentence ends at byte **1451**,
+  inside the part that survives.
+- **The Native-AOT link of the relay was not run locally**; the Debug build and its test executable were.
+- **S2 went wider than the viewer** (§4.5 said "checked and recorded"). The same gate now also holds in
+  Copy All (`formatEntityBlock`), `canConnectSsh` (the tree's *Connect via SSH*, and so `openSshTerminal`
+  behind it), the CLI row's verb (`cliCommandText`) and the tree description (`treeRowText.baseTarget`).
+  `canConnectSsh` keeps its documented breadth only for the record it was kept for — one whose kind falls
+  back to `credential` — so that legacy record keeps Connect. `agentCommands`' agent snippet already asked
+  `kind === 'ssh'`.
+- **The viewer's SSH rows follow `canConnectSsh`, not `resolveKind(details) === 'ssh'`** (decided
+  2026-09-30, after the branch first shipped the narrower gate). With two predicates the legacy host-only
+  record offered *Connect via SSH* in the tree while its viewer hid the Host and the SSH line Connect runs —
+  two answers to one question. `sshLineFor` now asks `canConnectSsh`, so the viewer, the revision viewer
+  and Copy All show an SSH line exactly when the entry can be connected to over SSH; `hostIsAField` draws
+  the Host row for a kind whose table has a host OR a record `canConnectSsh` admits, and the tree
+  description reads the same function. A Terminal, VPN or config entry with a stray host still shows
+  neither SSH row; the Host row test now expects it on a credential entry with a host, the one record
+  `canConnectSsh`'s breadth admits.
+- **D-B is a third step on the create door.** `McpCreateHooks` gained `settle(decision, deadline)` between
+  the consent modal and `make`, and `make` receives what it settled. The deadline is taken BEFORE the modal
+  (`Date.now() + CONSENT_TIMEOUT_MS`), so the PIN gets what is left of the step's five minutes, not five
+  more — the relay's call waits ten. Reuse, not a copy: `pinForAgentEntry` is `pinForNewEntry` asked again;
+  the sealing is `editPrefill.sealedWriter` over a new `NOTHING_OPENED`; the mark and the first `pinEpoch`
+  are `applyCreatePin`. Two widenings made that possible: `CreatePin`'s cancel carries `typed` (a PIN was
+  typed, then its count declined) and `asksForPinOnCreate` answers "does this folder ask" on its own, so a
+  folder that asks nothing is never timed out.
+- **"Wrong three times" means three typed PINs that open none of the folder's protected entries**
+  (first shipped as "three counts declined", changed by the code review below). `pinForNewEntry` checks a
+  typed PIN against the protected entries; on the agent's road (`PinAsk.confirm: false`) a PIN that opens
+  at least one is taken and the count is said in a message that asks nothing, and one that opens none is
+  the wrong PIN, asked again, three at most. A dismissed box ends it at once. In a folder that asks with no
+  protected entry yet, the PIN is typed twice by `newPin`, which answers a mismatch exactly as a dismissal —
+  so there a mismatch ends it at once too. So through an agent an entry can join a folder only under a PIN
+  its protected entries already use; starting a second PIN in the folder stays the person's own Add.
+- **The two MCP itests' JavaScript stand-ins needed `settle`**; the compiler never sees `.cjs`, and
+  `itest:mcp` died on the first create until they answered it (111 checks pass on Windows after).
+
+### Code review — 2026-09-30
+
+| # | Finding | Verdict | What changed |
+|---|---|---|---|
+| 0 | The agent's PIN step raises the sibling check's count question as a modal `showWarningMessage`, which VS Code cannot close from code: past the deadline it stays on screen and its answer is ignored | accepted, fixed | `pinOnCreate.PinAsk.confirm` — one option on the shared check, not a second check. Add leaves it unset and still agrees to the count in a modal; the agent's road (`pinForAgentEntry`) sets it `false`: a PIN that opens at least one protected entry is taken and the count said in a non-modal message, never awaited; one that opens none is a miss, said in a non-modal warning, asked again, three at most. Tests: *the agent's PIN step raises no modal that could outlive it* (the stub records every modal), *a PIN that opens none of the folder's protected entries is a declined attempt*, *the person's own Add still confirms the count* |
+| 1 | The relay probes the window's catalogue route before every create that carries `fields`; cache the capability instead | rejected | A cached capability goes stale when the window restarts on another extension version — exactly the old window the probe exists to catch, which would drop the fields and store a terminal with no command. The probe is one loopback GET; the create it guards raises a consent dialog a person must answer, so the GET is not what anyone waits on |
+| 2 | `agentFieldValidation.readString` accepts an unbounded `script` (and every other free-text field), which is then copied whole into the consent prompt and the journal | accepted, fixed | `AGENT_FIELD_MAX_BYTES` in `agentKindFields.ts`: every field at most 64 KiB, counted in UTF-8 **bytes** (65 536), a list of rows counted all together, measured on the value that would be kept; over it, one sentence naming the field and the limit, answered in `choose` before anything is shown or stored. The help of every free-text field says so, so `creds_kind_help` tells the agent. The broker's request body is already capped at 64 KiB (`MAX_REQUEST_BODY_BYTES`), so through the broker no field reaches the limit today; the field's own bound is what holds if that changes |
+
+### Open tail
+
+- **A real agent session against the built relay** (§9, first item) — "store a PowerShell command that
+  checks the quota" in a Terminal folder, then View shows the command and its arguments and no SSH line.
+  Needs extension 1.12.0 and relay 0.9.0 installed; not done.
+- **The release itself**: extension 1.12.0 first (it serves the routes), then relay 0.9.0, each tag pushed
+  alone (§8). `src_mcp/RELEASES.md` is release-please's to write from these commits.
+- **The coai code round** (S7) has not run on this branch.
+- **The instructions block is over 2 KiB** (2414 bytes). The sentence this plan added survives the cut; the
+  tail of the block does not, for clients that cut. Shortening it is shared with
+  [PLAN_creds_cli_reachable_from_every_caller.md](../todo/PLAN_creds_cli_reachable_from_every_caller.md) (§7).
+- ~~**A PIN box can outlive the step.**~~ **Closed 2026-09-30.** `settleAgentCreate` makes a
+  `vscode.CancellationTokenSource`, cancels it when the deadline passes and disposes it either way, and its
+  token rides `pinForAgentEntry` → `pinForNewEntry` (as `PinAsk.token`) → `newPin` and
+  `pinCheckedAgainstFolder` to every `showInputBox`, so a box still open then closes with the step. The
+  sibling check's count modal, which no token closes, is gone from this road too (code review below, finding
+  0); until then it stayed on screen until answered, and its answer was ignored.
+- **Whether to narrow Connect** for the legacy host-only record is still the product decision
+  `canConnectSsh`'s comment names. The viewer question is decided (above): its rows match `canConnectSsh`,
+  so narrowing Connect later narrows the viewer with it.
+- **Not run here**: the WSL itest (`itest:mcp-wsl`), and a D-B leg through the real binary — D-B is covered
+  by the unit suite and a test through the real broker door.

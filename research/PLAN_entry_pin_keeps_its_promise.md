@@ -16,7 +16,7 @@
 > [PLAN_woven_passwords_and_entity_pin.md](PLAN_woven_passwords_and_entity_pin.md) (the PIN
 > design record), [PLAN_payment_polish_and_entity_pin.md](PLAN_payment_polish_and_entity_pin.md),
 > [PLAN_second_values.md](PLAN_second_values.md). Sibling plans opened the same day:
-> [PLAN_agent_creates_what_the_folder_holds.md](../todo/PLAN_agent_creates_what_the_folder_holds.md) (same release)
+> [PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md) (same release)
 > and [PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) (after it).
 
 All `file:line` references below are to `src_vs_code/src/` unless a path says otherwise, and were read on
@@ -109,7 +109,7 @@ and the raw carriers (sync, backup and bundles via `secretMaps.ts`, `revisionSna
 6. **A sync conflict's losing protected edit is kept** in that machine's history and the person is told
    once — never dropped silently.
 7. The agent-create defect the owner found the same day (a Terminal entry that shows *SSH command*) is a
-   separate plan in the same release: [PLAN_agent_creates_what_the_folder_holds.md](../todo/PLAN_agent_creates_what_the_folder_holds.md).
+   separate plan in the same release: [PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md).
 
 Proposed in this plan by precedent and **confirmed by the owner, 2026-09-29**:
 
@@ -421,7 +421,7 @@ attacker, for whom scrypt is the cost.
 |---|---|---|
 | Edit re-seals a protected entry (open plan §1-§5) | **this plan, P3** (§5.2) | [PLAN_edit_reseals_a_protected_entry.md](PLAN_edit_reseals_a_protected_entry.md) is superseded: its option (a) "keep the PIN from the open" is taken (as a grant re-read at Save, not a captured PIN), its "write then `protectEntity`" order is replaced by R3, its failure rule is §5.2 step 7, its step 5 (share-accept, import) is §5.6. Promoted together with this plan. |
 | A compile-time `StoredSecret` type, a single `writeEntry` path | [PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md), **after** this release | This plan lands the runtime rules and the test guard (§7) that plan turns into a compile error. |
-| Agent-created entries carry only fields their kind has; the SSH rows only for SSH | [PLAN_agent_creates_what_the_folder_holds.md](../todo/PLAN_agent_creates_what_the_folder_holds.md), same release | Disjoint files except `entityViewPage.ts` (it owns the SSH-row gate; this plan does not touch those rows). |
+| Agent-created entries carry only fields their kind has; the SSH rows only for SSH | [PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md), same release | Disjoint files except `entityViewPage.ts` (it owns the SSH-row gate; this plan does not touch those rows). |
 | How sync reports what it did | [PLAN_sync_says_what_already_happened.md](../todo/PLAN_sync_says_what_already_happened.md) | Both edit `syncManager.ts`. Whichever lands second rebases; the conflict notice of §5.9 is routed through that plan's summary once it exists. This plan's merge rule (`syncMerge.ts`, `syncPinRule.ts`) is disjoint from it. |
 | Re-wrapping when an entry moves across a PIN boundary | not built (design record `research/PLAN_payment_polish_and_entity_pin.md:509-516`) | Out of scope, unchanged. |
 
@@ -523,7 +523,7 @@ made, as the command asks — not as the delivery.
 | E3 | P6-P7 | D10, D11, D13-D15 | history, Restore and Remove PIN share `replaceHistory` and the slot table's `revisionField`/`remove` |
 | E4 | P8-P10 | D12, D16, the rest of D17, §7 guards, docs, release | the guard is written last, when every reader it classifies is final |
 
-[PLAN_agent_creates_what_the_folder_holds.md](../todo/PLAN_agent_creates_what_the_folder_holds.md) is the second
+[PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md) is the second
 pull request, after this one (it uses `sealValue`). Extension 1.12.0 is cut once both have merged.
 
 ## 10. Risks
@@ -687,7 +687,7 @@ the values always were (not "reuse the `:64` value").
 - §5.6 check list, answered: rotation (`rotateAction.protectedSlot`) had the same omission and now asks
   `pinFieldRefusal`; `importCommands` and `externalSecretsApply` write NEW ids only, and `mcpHooks` creates a new
   entry only — correct as they are (its folder-PIN gap is
-  [PLAN_agent_creates_what_the_folder_holds.md](../todo/PLAN_agent_creates_what_the_folder_holds.md) D-B).
+  [PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md) D-B).
 - `keepingMark` carries `pinProtected`; `pinEpoch` lives on the node, so it is carried where the node is
   rebuilt (P8). `shareInbox.ts` 800 → 788.
 
@@ -834,7 +834,7 @@ reproduced by a test watched failing first; the commits carry the RED messages.
 1. **The owner's check in a real editor** — the card entry, protected, shows its whole card in View after one
    PIN (§13, first item). Every test stubs VS Code (`research/module_tests.md`, *The editor's own UI*).
 2. **Extension 1.12.0**, cut after the sibling plan
-   [PLAN_agent_creates_what_the_folder_holds.md](../todo/PLAN_agent_creates_what_the_folder_holds.md) merges:
+   [PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md) merges:
    version in `package.json` AND `package-lock.json`, the CHANGELOG heading, tag `extension-v1.12.0`; the coai
    `review_code` round on the finished branch before it.
 3. **Known limits, recorded:** re-running an interrupted restore adds one more kept version (the pre-restore

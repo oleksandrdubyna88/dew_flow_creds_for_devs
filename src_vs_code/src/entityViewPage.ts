@@ -38,6 +38,7 @@ import { methodOrder } from './phraseLayout';
 import { entityViewStyles } from './entityViewStyles';
 import { normalizeForwards, normalizeTags, renderForward } from './sshOptions';
 import { EntityFields } from './entityFields';
+import { hostIsAField } from './agentKindFields';
 
 /**
  * The read-only entity viewer as PURE markup: options in, one HTML string out.
@@ -429,7 +430,7 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     lifetimeRow,
     row('Login', 'login', options.fields?.login),
     urlRow(options.fields?.url), // issue #104: Copy, and Open in the browser
-    row('Host', 'host', d.host),
+    row('Host', 'host', hostIsAField(d) ? d.host : undefined), // only a kind that has one (agent-create §4.5)
     row('User', 'user', d.user),
     row('Port', 'port', d.port !== undefined ? String(d.port) : undefined),
     d.passwordWoven === true ? wovenPasswordRow(d.id) : row('Password', 'password', options.hasPassword ? '•' : undefined, true),

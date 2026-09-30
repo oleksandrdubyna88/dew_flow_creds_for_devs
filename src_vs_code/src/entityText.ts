@@ -7,7 +7,7 @@
  */
 
 import { DB_DEFAULT_PORTS, parseDbConnectionString } from './dbConnString';
-import { buildSshCommand } from './sshCommand';
+import { sshLineFor } from './sshCommand';
 import { describeCommand } from './commandLine';
 import { resolveScriptEnv } from './scriptRender';
 import { EntityMetadata } from './types';
@@ -92,7 +92,7 @@ export function formatEntityBlock(
     if (password !== undefined) {
       lines.push(`Password: ${password}`);
     }
-    const ssh = buildSshCommand(details);
+    const ssh = sshLineFor(details);
     if (ssh !== undefined) {
       lines.push(`SSH: ${ssh}`);
     }

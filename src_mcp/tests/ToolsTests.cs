@@ -1,3 +1,4 @@
+using CredsBroker;
 using CredsMcp;
 using FluentAssertions;
 
@@ -174,4 +175,130 @@ public sealed class NoAnswerTests
         answer.Should().Contain("it is open and listening");
         answer.Should().Contain("update the CredsForDevs");
     }
+}
+
+/// <summary>
+/// The kind catalogue — what an agent is told exists, and that the relay names kinds from ONE place.
+/// </summary>
+/// <remarks>
+/// <para>Two descriptions each carried a hand-typed list of kinds, and both had drifted from the
+/// window's <c>ENTITY_KINDS</c> by the time anyone looked (plan §2.4). A literal a human keeps in
+/// step is a literal that stops being in step; so the lists are read from the embedded contract,
+/// which the window's own code generates, and this asserts the description's words are exactly
+/// those. The emitter enumerates, the consumer compares — the testing rule for a contract with two
+/// implementations.</para>
+/// </remarks>
+public sealed class KindCatalogTests
+{
+    /// <summary>The comma-separated words inside the parentheses that follow the named argument.</summary>
+    private static string[] ListedAfter(string description, string marker)
+    {
+        var start = description.IndexOf(marker, StringComparison.Ordinal);
+        start.Should().BeGreaterThanOrEqualTo(0, $"the description names the list after \"{marker}\"");
+        var open = description.IndexOf('(', start);
+        var close = description.IndexOf(')', open);
+        return [.. description[(open + 1)..close].Replace("\n", " ").Split(',').Select(w => w.Trim().TrimStart("or ".ToCharArray()).Trim())];
+    }
+
+    [Fact]
+    public void The_create_description_names_exactly_the_kinds_the_contract_says_an_agent_may_create()
+    {
+        var expected = BrokerContract.Current.AgentCreatableKinds;
+        expected.Should().NotBeNullOrEmpty("the contract names the creatable kinds — regenerate it with npm run contract");
+
+        var listed = ListedAfter(UseTools.All.Single(t => t.Name == "creds_create").Description, "a `kind`");
+
+        listed.Should().Equal(expected);
+        listed.Should().NotContain("payment", "D-A: an agent cannot create a payment entry");
+    }
+
+    [Fact]
+    public void The_folder_type_description_names_every_creatable_kind_and_any_from_the_same_list()
+    {
+        var expected = BrokerContract.Current.AgentCreatableKinds!.Append("any");
+
+        var listed = ListedAfter(FolderTools.CreateDescription, "`folderType`");
+
+        listed.Should().Equal(expected);
+    }
+
+    [Fact]
+    public void The_two_catalogue_tools_exist_and_say_that_nothing_else_can_be_set()
+    {
+        Tools.KindsName.Should().Be("creds_kinds");
+        Tools.KindHelpName.Should().Be("creds_kind_help");
+        Tools.KindsDescription.Should().Contain("creds_kind_help");
+        Tools.KindHelpDescription.Should().Contain("cannot be set by you");
+        Tools.KindHelpDescription.Should().Contain("payment");
+    }
+
+    [Fact]
+    public void The_create_description_says_to_look_at_the_folder_first_and_lists_no_switch()
+    {
+        var description = UseTools.All.Single(t => t.Name == "creds_create").Description;
+
+        description.Should().Contain("`holds`");
+        description.Should().Contain("`fields`");
+        description.Should().Contain("creds_kind_help");
+        description.Should().NotContain("mcp", "the switches are never named to an agent (O4)");
+    }
+
+    [Fact]
+    public void The_folder_listing_description_explains_holds_and_fields()
+    {
+        FolderTools.ListDescription.Should().Contain("`holds`");
+        FolderTools.ListDescription.Should().Contain("`fields`");
+        FolderTools.ListDescription.Should().Contain("creds_kinds");
+    }
+
+    [Fact]
+    public void A_folder_answer_with_holds_and_fields_is_read_through_rather_than_dropped()
+    {
+        // The relay parses and re-serialises the window's answer, so a field this build does not
+        // declare is a field the agent never sees — which is exactly how `folderType` would have
+        // stayed invisible had it not been declared.
+        var body =
+            """
+            { "folders": [ { "id": "f1", "name": "Commands", "parent": null, "folderType": "terminal",
+              "holds": "terminal", "fields": [ { "name": "command", "required": true, "summary": "the base command" } ],
+              "can": { "create": true, "edit": true, "delete": false } } ] }
+            """;
+
+        var folder = FolderTools.Merge([body]).Single();
+
+        folder.Holds.Should().Be("terminal");
+        folder.Fields.Should().ContainSingle().Which.Name.Should().Be("command");
+        folder.Fields![0].Required.Should().BeTrue();
+    }
+
+    [Fact]
+    public void A_refused_request_passes_the_window_sentence_on_and_says_nothing_was_done()
+    {
+        // Before `fields`, an invalid request fell to the catch-all hint — "the window's own log has
+        // the detail" — which sends an agent to a log it cannot read, for a refusal whose message
+        // already names the field to fix.
+        var reply = new BrokerReply(400, """{ "error": { "code": "invalid_request", "message": "`host` is not a field of a terminal entry." } }""");
+
+        var answer = FailureOf(UseTools.Refused(reply));
+
+        answer.Error.Should().Be("`host` is not a field of a terminal entry.");
+        answer.Hint.Should().Contain("Nothing was done");
+        answer.Hint.Should().Contain("creds_kind_help");
+    }
+
+    [Fact]
+    public void A_kind_no_agent_may_create_is_not_answered_with_only_advice_to_turn_a_switch_on()
+    {
+        // D-A: payment is refused as a policy (`denied`), and the generic denied hint alone — "turn
+        // the switch on" — would send the agent to ask for a switch that opens nothing here.
+        var reply = new BrokerReply(403, """{ "error": { "code": "denied", "message": "A payment entry cannot be created by an agent. Ask the person to add the card or account themselves in VS Code." } }""");
+
+        var answer = FailureOf(UseTools.Refused(reply));
+
+        answer.Error.Should().StartWith("A payment entry cannot be created by an agent.");
+        answer.Hint.Should().Contain("cannot be done by an agent");
+    }
+
+    private static ToolFailure FailureOf(string json) =>
+        System.Text.Json.JsonSerializer.Deserialize(json, McpJsonContext.Default.ToolFailure)!;
 }

@@ -31,12 +31,32 @@ public sealed record BrokerContract(
     [property: JsonPropertyName("mcpCreateRoute")] string? McpCreateRoute,
     [property: JsonPropertyName("configRead")] ConfigReadRoute? ConfigRead,
     [property: JsonPropertyName("caller")] CallerContract? Caller,
+    [property: JsonPropertyName("entityKinds")] string[]? EntityKinds,
+    [property: JsonPropertyName("agentCreatableKinds")] string[]? AgentCreatableKinds,
     [property: JsonPropertyName("errors")] Dictionary<string, int> Errors,
     [property: JsonPropertyName("exitCodes")] Dictionary<string, int> ExitCodes)
 {
     private static readonly Lazy<BrokerContract> Loaded = new(Load);
 
     public static BrokerContract Current => Loaded.Value;
+
+    /// <summary>
+    /// The kinds an agent may ask <c>creds_create</c> to make, in the order the window lists them.
+    /// </summary>
+    /// <remarks>
+    /// <para>Read from the contract rather than typed here, because typed here is how both of this
+    /// binary's kind lists drifted from the window's — each was a literal a human kept in step, and
+    /// neither was. The window's own table (<c>agentKindFields.ts</c>) is what the emitter reads, so a
+    /// kind added or withdrawn there reaches every description in this binary at the next
+    /// regeneration, and a test asserts the descriptions name exactly this list.</para>
+    /// <para>The fallback is the list the descriptions carried before the field existed, for the
+    /// same reason every accessor here has one: a contract file written before it must degrade to
+    /// what this build knows.</para>
+    /// </remarks>
+    public IReadOnlyList<string> CreatableKinds() =>
+        AgentCreatableKinds is { Length: > 0 } kinds
+            ? kinds
+            : ["credential", "ssh", "sshkey", "vpn", "db", "terminal", "script", "config"];
 
     private static BrokerContract Load()
     {

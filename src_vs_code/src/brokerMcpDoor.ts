@@ -5,6 +5,7 @@ import { McpUseLookup, McpUseTarget, readMcpUse, readNamedBody } from './brokerR
 import { NO_GENERATOR_OUTCOME } from './secretKinds';
 import type { Slot } from './aliasThrottle';
 import type { AuditDoor } from './agentAuditLog';
+import { CONSENT_TIMEOUT_MS } from './agentConsent';
 
 /**
  * The MCP door: what happens between an agent's request and the machinery behind it.
@@ -355,12 +356,29 @@ function decide(create: McpCreateHooks | undefined, body: Record<string, unknown
 export interface McpCreateHooks {
   /** Which open folder this request lands in, or why none does. */
   choose(body: Record<string, unknown>): CreateDecision;
-  /** Make it. Answers the new entry's id and name. */
+  /**
+   * After the person allowed it and before anything is written: what the creation still needs from
+   * them. Today that is the folder's PIN, when the folder asks for one on new entries (agent-create
+   * plan, D-B) — asked inside this consent step and answered by `deadline` (epoch ms), the step's own
+   * timeout, so the agent's call never waits longer than the step promised.
+   */
+  settle(decision: CreateAccepted, deadline: number): Promise<CreateSettled>;
+  /** Make it, sealed under `settled.sealWith` when there is one. Answers the new entry's id and name. */
   make(
     decision: CreateAccepted,
     body: Record<string, unknown>,
+    settled: CreateReady,
   ): Promise<{ id: string; name: string }>;
 }
+
+/** Settled: go ahead — under a PIN when the folder asked for one. Carried to `make`, never logged. */
+export interface CreateReady {
+  ok: true;
+  sealWith?: string;
+}
+
+/** Whether the creation may be written, or the sentence the agent is answered with instead. */
+export type CreateSettled = CreateReady | { ok: false; code: ErrorCode; message: string };
 
 export type CreateDecision =
   | CreateAccepted
@@ -386,13 +404,15 @@ async function confirmAndCreate(
   caller: CallerLabel | undefined,
 ): Promise<void> {
   const grant = minted(door, decision.target, 'mcp-create', caller);
+  // The consent step's deadline, taken before the modal: the PIN a folder asks for is part of the step.
+  const deadline = Date.now() + CONSENT_TIMEOUT_MS;
   const consent = await door.consent(grant, 'create', 'create an entry in', decision.summary, caller);
-  if (consent !== 'allowed') {
-    const code: ErrorCode = consent === 'timeout' ? 'consent_timeout' : 'denied';
-    door.refuse(res, code, 'The human did not allow this.', grant, 'create', decision.summary, caller);
+  const settled = consent === 'allowed' ? await create.settle(decision, deadline) : notAllowed(consent);
+  if (!settled.ok) {
+    door.refuse(res, settled.code, settled.message, grant, 'create', decision.summary, caller);
     return;
   }
-  const made = await create.make(decision, body);
+  const made = await create.make(decision, body, settled);
   door.note({
     grant: door.describe(grant),
     entityName: made.name,
@@ -404,4 +424,9 @@ async function confirmAndCreate(
     caller,
   });
   door.respond(res, 200, { created: true, id: made.id, name: made.name });
+}
+
+/** A consent that was not given, in the create's own refusal shape. */
+function notAllowed(consent: Exclude<ConsentOutcome, 'allowed'>): CreateSettled {
+  return { ok: false, code: consent === 'timeout' ? 'consent_timeout' : 'denied', message: 'The human did not allow this.' };
 }

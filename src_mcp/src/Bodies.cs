@@ -21,12 +21,19 @@ namespace CredsMcp;
 /// </remarks>
 internal static class Bodies
 {
-    internal static string Compose(IEnumerable<KeyValuePair<string, string>> fields, CallerRecord caller, BrokerContract contract)
+    internal static string Compose(IEnumerable<KeyValuePair<string, string>> fields, CallerRecord caller, BrokerContract contract) =>
+        Compose(fields.Select(pair => new KeyValuePair<string, JsonNode>(pair.Key, JsonValue.Create(pair.Value))), caller, contract);
+
+    /// <summary>
+    /// The same road for a body that carries a nested object — the create call's `fields`, which is
+    /// the kind's own JSON shape and cannot be a string without the window parsing it twice.
+    /// </summary>
+    internal static string Compose(IEnumerable<KeyValuePair<string, JsonNode>> fields, CallerRecord caller, BrokerContract contract)
     {
         var body = new Dictionary<string, JsonNode>();
         foreach (var (key, value) in fields)
         {
-            body[key] = JsonValue.Create(value)!;
+            body[key] = value;
         }
 
         // An empty record sends no field at all, so an old window meets exactly the wire it always

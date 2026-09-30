@@ -169,7 +169,7 @@ public class BrokerContractTests
         // the value that used to be hard-coded keeps an old file working; throwing on a missing
         // key would turn an additive change into a breaking one.
         var older = new BrokerContract(1, "creds-for-devs-agent", BrokerContract.Current.Health,
-            [], [], null, null, null, null, null, null, null, null, null, [], []);
+            [], [], null, null, null, null, null, null, null, null, null, null, null, [], []);
 
         older.ReadRoute("aliases", "/v1/aliases").Should().Be("/v1/aliases");
         older.ConfigReadRoutePath().Should().Be("/v1/config/read");
@@ -183,5 +183,23 @@ public class BrokerContractTests
         // detail of it: every route this side reads has a fallback, so a contract file older than
         // the feature keeps working instead of turning an additive change into a breaking one.
         older.FolderRoute("create").Should().Be("/v1/mcp/folder/create");
+        // And the kind list the relay's descriptions name: the list they carried before it existed.
+        older.CreatableKinds().Should().Equal("credential", "ssh", "sshkey", "vpn", "db", "terminal", "script", "config");
+    }
+
+    [Fact]
+    public void The_kinds_an_agent_may_create_are_read_from_the_contract_and_leave_payment_out()
+    {
+        // Read, never retyped: the window's emitter writes both lists off its own table, and the
+        // relay's descriptions name what this returns — two literals kept in step by hand had
+        // already drifted once (both omitted payment by accident, before D-A made it deliberate).
+        var contract = BrokerContract.Current;
+
+        contract.EntityKinds.Should().Contain("payment", "the vault holds payment entries");
+        contract.CreatableKinds().Should().Equal(contract.AgentCreatableKinds);
+        contract.CreatableKinds().Should().NotContain("payment", "D-A: an agent cannot create a payment entry");
+        contract.CreatableKinds().Should().BeSubsetOf(contract.EntityKinds!);
+        contract.ReadRoute("mcpKinds", "/unused").Should().Be("/v1/mcp/kinds");
+        contract.ReadRoute("mcpKindHelp", "/unused").Should().Be("/v1/mcp/kind-help");
     }
 }

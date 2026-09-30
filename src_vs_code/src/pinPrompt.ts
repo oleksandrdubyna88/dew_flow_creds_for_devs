@@ -57,6 +57,7 @@ export async function newPin(
   subject: string,
   scope: PinScope = 'vault',
   prompt: string = NEW_PIN,
+  token?: vscode.CancellationToken,
 ): Promise<string | undefined> {
   const first = await vscode.window.showInputBox({
     title: `A PIN for "${subject}"`,
@@ -68,8 +69,8 @@ export async function newPin(
     // later that wanted the vault's floor would have got the four-character one in silence, which
     // is the one direction a PIN policy must never drift in.
     validateInput: pinValidator('choosing', scope),
-  });
-  return typedNothing(first) ? undefined : confirmed(subject, first as string);
+  }, token);
+  return typedNothing(first) ? undefined : confirmed(subject, first as string, token);
 }
 
 /** Dismissed, or an empty box: either way there is no PIN to confirm and nothing to wrap. */
@@ -78,14 +79,14 @@ function typedNothing(value: string | undefined): boolean {
 }
 
 /** The second box. A mismatch answers `undefined`, so a caller can never half-succeed. */
-async function confirmed(subject: string, first: string): Promise<string | undefined> {
+async function confirmed(subject: string, first: string, token?: vscode.CancellationToken): Promise<string | undefined> {
   const again = await vscode.window.showInputBox({
     title: `A PIN for "${subject}"`,
     prompt: 'Type it once more. There is no way to recover it.',
     password: true,
     ignoreFocusOut: true,
     validateInput: (value) => (value === first ? undefined : 'The two do not match.'),
-  });
+  }, token);
   return again === first ? first : undefined;
 }
 

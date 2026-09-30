@@ -45,6 +45,16 @@
       "method": "GET",
       "path": "/v1/mcp/folders",
       "authenticated": false
+    },
+    "mcpKinds": {
+      "method": "GET",
+      "path": "/v1/mcp/kinds",
+      "authenticated": false
+    },
+    "mcpKindHelp": {
+      "method": "GET",
+      "path": "/v1/mcp/kind-help",
+      "authenticated": false
     }
   },
   "configRead": {
@@ -85,6 +95,27 @@
     "maxFieldChars": 80,
     "maxLabelChars": 160
   },
+  "entityKinds": [
+    "credential",
+    "ssh",
+    "sshkey",
+    "vpn",
+    "db",
+    "terminal",
+    "script",
+    "config",
+    "payment"
+  ],
+  "agentCreatableKinds": [
+    "credential",
+    "ssh",
+    "sshkey",
+    "vpn",
+    "db",
+    "terminal",
+    "script",
+    "config"
+  ],
   "errors": {
     "invalid_request": 400,
     "unauthorized": 401,

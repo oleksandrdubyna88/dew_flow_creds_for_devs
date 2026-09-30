@@ -86,4 +86,17 @@ public sealed class StartupTests
         Program.HelpText.Should().Contain(CallerForwarding.Flag);
         Program.HelpText.Should().Contain("creds_list", "the release smoke check greps for this");
     }
+
+    [Fact]
+    public void The_instructions_send_an_agent_to_the_catalogue_before_the_point_clients_cut_them()
+    {
+        // One sentence, not the table (plan §4.3): clients have been seen truncating server
+        // instructions at about 2 KiB, and this block is already longer than that — so the
+        // sentence only helps if it lands before the cut.
+        var sentence = Program.Instructions.IndexOf("call creds_kinds and creds_kind_help", StringComparison.Ordinal);
+
+        sentence.Should().BeGreaterThan(0, "the instructions name the catalogue tools");
+        System.Text.Encoding.UTF8.GetByteCount(Program.Instructions[..sentence]).Should().BeLessThan(2048 - 64);
+        Program.Instructions.Should().Contain("`holds` and `fields`");
+    }
 }

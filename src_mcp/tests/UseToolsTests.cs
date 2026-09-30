@@ -146,7 +146,7 @@ public sealed class UseToolsTests
     [Fact]
     public void A_create_body_carries_its_named_fields_and_the_caller_and_nothing_else()
     {
-        var body = UseTools.CreateBody(BrokerContract.Current, Caller, "app-03", "ssh", null, "k", null, "app-03.internal", null, 22, null);
+        var body = UseTools.CreateBody(BrokerContract.Current, Caller, "app-03", "ssh", null, "k", null, "app-03.internal", null, 22, null, null);
 
         Keys(body).Should().Equal("name", "kind", "secret", "host", "port", "caller");
     }
@@ -175,4 +175,26 @@ public sealed class UseToolsTests
 
     private static UseTools.UseTool Named(string name) =>
         UseTools.All.Single(t => t.Name == name);
+}
+
+/// <summary>The kind's own fields ride in the create body as the OBJECT they are, under `fields`.</summary>
+public sealed class CreateFieldsTests
+{
+    private static readonly CallerRecord Caller = new("Claude Code 2.1.268", "98bf9f23", "clauderag-d6", "ClaudeRag");
+
+    [Fact]
+    public void The_fields_object_travels_as_an_object_not_a_string_and_only_when_given()
+    {
+        var fields = System.Text.Json.Nodes.JsonNode.Parse("""{ "command": "pwsh", "args": [ { "value": "-File" } ] }""")!.AsObject();
+
+        var body = UseTools.CreateBody(BrokerContract.Current, Caller, "quota", "terminal", null, null, null, null, null, null, null, fields);
+        var without = UseTools.CreateBody(BrokerContract.Current, CallerRecord.Empty, "quota", "terminal", null, null, null, null, null, null, null, null);
+
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.EnumerateObject().Select(p => p.Name).Should().Equal("name", "kind", "fields", "caller");
+        doc.RootElement.GetProperty("fields").ValueKind.Should().Be(JsonValueKind.Object);
+        doc.RootElement.GetProperty("fields").GetProperty("command").GetString().Should().Be("pwsh");
+        doc.RootElement.GetProperty("fields").GetProperty("args")[0].GetProperty("value").GetString().Should().Be("-File");
+        without.Should().Be("""{"name":"quota","kind":"terminal"}""", "an old window meets exactly the wire it always met");
+    }
 }

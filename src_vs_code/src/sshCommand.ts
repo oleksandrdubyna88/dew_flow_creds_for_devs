@@ -25,6 +25,7 @@
  */
 
 import { EntityMetadata } from './types';
+import { canConnectSsh } from './entityKind';
 import { sshOptionArgv } from './sshOptions';
 import { PathProbe, openSshProgram } from './sshProgram';
 
@@ -153,6 +154,18 @@ export function buildSshCommand(
   parts.push(...hostKeyArgv(options.knownHostsFile, platform));
   parts.push(quotedDestination(entity.user ? `${entity.user}@${host}` : host, platform));
   return parts.join(' ');
+}
+
+/**
+ * The ssh line a page SHOWS for an entry: exactly when the tree can connect to it over SSH (plan §4.5
+ * and §11 of the agent-create plan). `buildSshCommand` stays a pure builder that asks only whether the
+ * host is safe; the kind is asked here, through `canConnectSsh` — the tree's own question — because a
+ * Terminal entry whose host an agent had filled with an API endpoint drew `ssh <endpoint>` in its
+ * viewer, and because a second answer let the legacy host-only record offer *Connect via SSH* while
+ * its viewer hid the line Connect runs.
+ */
+export function sshLineFor(entity: EntityMetadata): string | undefined {
+  return canConnectSsh(entity) ? buildSshCommand(entity) : undefined;
 }
 
 /**

@@ -26,21 +26,35 @@ internal static class FolderTools
         List the FOLDERS the person opened to you — the places an entry can go, and the things
         you may rename, move or remove.
 
-        Each carries `id`, `name`, `parent` and `can` (create, edit, delete). Folders hold no
-        secret, so nothing here is redacted; what limits the list is only what was opened. An
-        empty list means no folder has been opened to you, not that the vault has none.
+        Each carries `id`, `name`, `parent`, `holds`, `fields` and `can` (create, edit, delete).
+        A folder with a `holds` kind accepts only that kind, and its `fields` are everything an
+        entry created there may carry — nothing else can be set. A folder that `holds` "any" lists
+        no fields: you name the kind yourself in creds_create, and creds_kinds / creds_kind_help
+        say what each kind takes. Folders hold no secret, so nothing here is redacted; what limits
+        the list is only what was opened. An empty list means no folder has been opened to you,
+        not that the vault has none.
 
-        Call this before creds_create_folder, creds_edit_folder or creds_delete_folder: the ids
-        those take come from here, and an id from an older listing may be stale.
+        Call this before creds_create, creds_create_folder, creds_edit_folder or
+        creds_delete_folder: the ids those take come from here, and an id from an older listing
+        may be stale.
         """;
 
     internal const string CreateName = "creds_create_folder";
 
-    internal const string CreateDescription =
-        """
+    /// <summary>
+    /// The folder types an agent may set, named from the contract rather than typed here.
+    /// </summary>
+    /// <remarks>
+    /// This was a literal, and it had drifted from the window's kind list by the time anyone looked
+    /// (plan §2.4). The list is now the window's own — the kinds an agent may create, plus `any` —
+    /// read from the embedded contract, and a test asserts the words in this description are exactly
+    /// those.
+    /// </remarks>
+    internal static readonly string CreateDescription =
+        $$"""
         Make a folder inside one the person opened to you. Give a `name` and the `parent` id
         from creds_folders; `folderType` optionally restricts what the folder may hold
-        (credential, ssh, sshkey, vpn, db, terminal, script, config, or any).
+        ({{string.Join(", ", BrokerContract.Current.CreatableKinds())}}, or any).
 
         You do not choose the place freely: the parent must already be open for creating folders,
         and if it is not you get a refusal naming the switch. The person approves the creation and

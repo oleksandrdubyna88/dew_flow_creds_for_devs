@@ -3,6 +3,7 @@ import { hasLifetime } from './entityExpiry';
 import { normalizeTags } from './sshOptions';
 import { EntityMetadata, TreeNode } from './types';
 import { canConnectSsh } from './entityKind';
+import { hostIsAField } from './agentKindFields';
 import { canStartVpn } from './vpnLauncher';
 
 /**
@@ -35,7 +36,8 @@ export function baseTarget(node: TreeNode): string {
   if (d?.isVpn && !d.host) {
     return d.vpnType ?? 'vpn';
   }
-  if (!d?.host) {
+  // A host an agent put on a kind that has none is not what the entry connects to (§4.5).
+  if (!d?.host || !(hostIsAField(d) || d.isDb === true)) {
     return '';
   }
   const target = d.user ? `${d.user}@${d.host}` : d.host;

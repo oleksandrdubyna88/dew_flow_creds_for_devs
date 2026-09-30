@@ -74,9 +74,13 @@ const { StorageManager } = require(path.join(OUT, 'storageManager.js'));
 const { folderHooks } = require(path.join(OUT, 'mcpFolderHooks.js'));
 // The REAL lookup for the quiet leg (#95): the policy resolved through a tree and a stamp store,
 // not a stub answering `preConsented: true`. A stub would prove the door forwards a flag.
-const { mcpUseHooks, moveEntryToTrash } = require(path.join(OUT, 'mcpHooks.js'));
+const { mcpCreateHooks, mcpUseHooks, moveEntryToTrash } = require(path.join(OUT, 'mcpHooks.js'));
 const { consentStampsFor, stampKey } = require(path.join(OUT, 'mcpConsentPolicy.js'));
 const { ladderKey, normalizeMcpAccess } = require(path.join(OUT, 'mcpAccess.js'));
+// The kinds leg's expectations, read off the window's own table rather than retyped here.
+const { folderFieldsFor } = require(path.join(OUT, 'agentKindFields.js'));
+const { ENTITY_KINDS } = require(path.join(OUT, 'types.js'));
+const { SERVICE_NAME } = require(path.join(OUT, 'brokerProtocol.js'));
 
 /** An in-memory Memento and SecretStorage — the two things a StorageManager needs. */
 /** One POST at the broker, bypassing the binary — what a local process can do unaided. */
@@ -449,6 +453,179 @@ async function quietLeg() {
   );
 }
 
+/** How many checks {@link kindsLeg} owns BEFORE its own contribution assertion. */
+const EXPECTED_KINDS_CHECKS = 14;
+
+/** The text of one tool reply, by request id. */
+const replyText = (said, id) => said.byId.get(id)?.result?.content?.[0]?.text ?? '';
+
+/** JSON, or `undefined` — a check reports the text when it is not. */
+function parsed(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Level 7 — an agent learns what a folder holds, and creates exactly that kind
+ * (`research/PLAN_agent_creates_what_the_folder_holds.md`).
+ *
+ * <p>The case that produced it: an agent asked to store a PowerShell quota check in a Terminal
+ * folder had a tool taking `host` and nothing a terminal entry is made of, so it stored the API
+ * endpoint as a host. Every half of the fix has a unit test; what only this can show is that the
+ * catalogue routes are reachable through the binary, that `holds` and `fields` survive the C#
+ * records the relay re-serialises them through, and that `fields` arrives at the window as the
+ * OBJECT it is — through the REAL create hooks over a REAL StorageManager, so the entry is read
+ * back from the tree rather than from a spy.</p>
+ *
+ * <p>Its own window for the reason level 5 has one: the prompt budget of the first is spent.</p>
+ */
+async function kindsLeg() {
+  const before = checksRun;
+  const storage = new StorageManager(memento(), secretStore());
+  await storage.upsertAccount({ accountId: 'a-1', email: 'me@corp.com', provider: 'google' });
+  await storage.addNode('a-1', {
+    id: 'f-cmd', name: 'Commands', type: 'folder', parentId: null, folderType: 'terminal',
+    mcp: { view: true, create: true },
+  });
+  const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mcp-itest-kinds-'));
+  const kindsServer = new CredsAgentServer(new UseActionRegistry(), () => {}, {
+    storageDir,
+    mcpCreate: mcpCreateHooks(storage, () => {}),
+  });
+  kindsServer.setFolderHooks(folderHooks(storage, () => {}));
+  try {
+    await kindsServer.ensureStarted();
+    const env = { CREDS_ENDPOINT_DIR: path.join(storageDir, 'endpoints') };
+    await catalogueChecks(env);
+    await createChecks(env, storage);
+  } finally {
+    kindsServer.dispose();
+    fs.rmSync(storageDir, { recursive: true, force: true });
+  }
+
+  check(
+    'the kinds leg contributed every check it owns',
+    checksRun - before === EXPECTED_KINDS_CHECKS,
+    `ran ${checksRun - before} of ${EXPECTED_KINDS_CHECKS}`,
+  );
+}
+
+/** The two catalogue tools and the folder answer, read through the binary. Seven checks. */
+async function catalogueChecks(env) {
+  const said = await speak(env, [
+    ...HANDSHAKE,
+    { jsonrpc: '2.0', id: 80, method: 'tools/list', params: {} },
+    { jsonrpc: '2.0', id: 81, method: 'tools/call', params: { name: 'creds_kinds', arguments: {} } },
+    { jsonrpc: '2.0', id: 82, method: 'tools/call', params: { name: 'creds_kind_help', arguments: { kind: 'terminal' } } },
+    { jsonrpc: '2.0', id: 83, method: 'tools/call', params: { name: 'creds_folders', arguments: {} } },
+  ]);
+  const tools = said.byId.get(80)?.result?.tools ?? [];
+  const names = tools.map((t) => t.name);
+  check('creds_kinds and creds_kind_help are offered', names.includes('creds_kinds') && names.includes('creds_kind_help'), JSON.stringify(names));
+  const fieldsParam = tools.find((t) => t.name === 'creds_create')?.inputSchema?.properties?.fields;
+  check('creds_create takes `fields` as an OBJECT', JSON.stringify(fieldsParam?.type ?? '').includes('object'), JSON.stringify(fieldsParam));
+
+  const kinds = parsed(replyText(said, 81))?.kinds ?? [];
+  check('creds_kinds lists every kind the vault holds', kinds.map((k) => k.kind).join(',') === ENTITY_KINDS.join(','), replyText(said, 81).slice(0, 240));
+  check('and says payment cannot be created by an agent (D-A)', kinds.find((k) => k.kind === 'payment')?.creatable === false, JSON.stringify(kinds.find((k) => k.kind === 'payment')));
+
+  const help = parsed(replyText(said, 82)) ?? {};
+  const helpNames = new Set((help.fields ?? []).map((f) => f.name));
+  check(
+    'creds_kind_help says what a terminal entry takes — a required command, and no host',
+    helpNames.has('command') && help.fields.find((f) => f.name === 'command')?.required === true && !helpNames.has('host'),
+    replyText(said, 82).slice(0, 240),
+  );
+
+  const folder = (parsed(replyText(said, 83)) ?? []).find?.((f) => f.id === 'f-cmd') ?? {};
+  check('creds_folders says the folder holds terminal entries', folder.holds === 'terminal', replyText(said, 83).slice(0, 240));
+  check(
+    'and names the fields an entry there may carry — the window\'s, through the relay\'s records',
+    JSON.stringify(folder.fields) === JSON.stringify(folderFieldsFor('terminal')),
+    JSON.stringify(folder.fields),
+  );
+}
+
+/** The owner's case refused, then made right, read back from the tree. Seven checks. */
+async function createChecks(env, storage) {
+  const entities = () => storage.getNodes('a-1').filter((n) => n.type === 'entity');
+  consent.answers = ['Allow'];
+  consent.asked = 0;
+  const refused = await speak(env, [
+    ...HANDSHAKE,
+    {
+      jsonrpc: '2.0', id: 84, method: 'tools/call',
+      params: { name: 'creds_create', arguments: { name: 'qwen token plan: quota left', kind: 'terminal', host: 'token-plan.ap-southeast-1.maas.aliyuncs.com' } },
+    },
+  ]);
+  check('a host on a terminal entry is refused with the fields a terminal takes', replyText(refused, 84).includes('is not a field of a terminal entry'), replyText(refused, 84).slice(0, 240));
+  check('and nothing was created, and nobody was asked', entities().length === 0 && consent.asked === 0, `${entities().length} entities, asked ${consent.asked}`);
+
+  consent.messages.length = 0;
+  const fields = {
+    command: 'pwsh',
+    args: [{ value: '-File' }, { value: 'check-quota.ps1', note: 'the vendor\'s quota script' }],
+    commandNote: 'How much of the token plan is left.',
+    terminalOs: 'windows',
+  };
+  const made = await speak(env, [
+    ...HANDSHAKE,
+    { jsonrpc: '2.0', id: 85, method: 'tools/call', params: { name: 'creds_create', arguments: { name: 'qwen token plan: quota left', kind: 'terminal', fields } } },
+  ]);
+  check('the same entry sent with its own fields is created', replyText(made, 85).includes('"created":true'), replyText(made, 85).slice(0, 240));
+  const details = entities()[0]?.details ?? {};
+  check('the tree holds the command and every argument row', details.command === 'pwsh' && details.commandArgs?.length === 2, JSON.stringify(details));
+  check('and no host', details.host === undefined, JSON.stringify(details.host));
+  check('the person was asked once', consent.asked === 1, String(consent.asked));
+  check(
+    'and the prompt showed the whole line that will run',
+    consent.messages.some((m) => m.includes('pwsh -File check-quota.ps1')),
+    JSON.stringify(consent.messages).slice(0, 240),
+  );
+}
+
+/**
+ * Level 8 — a window older than the catalogue: the relay says so, and sends it no `fields`.
+ *
+ * <p>An old window ignores `fields` and would store a terminal entry with no command, and the
+ * agent would be told "created". So the relay reads the catalogue route before a create that
+ * carries `fields`, and a window that answers health but not that route is told apart from a
+ * closed one — the handshake `NoAnswer` already has. The window here is a stand-in that knows
+ * only health, because an old build is exactly a window that knows fewer routes; it records every
+ * POST, so "nothing was sent" is observed rather than assumed.</p>
+ */
+async function oldWindowLeg() {
+  const posts = [];
+  const fake = require('node:http').createServer((req, res) => {
+    if (req.method === 'POST') posts.push(req.url);
+    const healthy = req.method === 'GET' && req.url === '/v1/health';
+    res.writeHead(healthy ? 200 : 404, { 'Content-Type': 'application/json' });
+    res.end(healthy ? JSON.stringify({ ok: true, service: SERVICE_NAME }) : '{"error":{"code":"not_found","message":"no such route"}}');
+  });
+  await new Promise((resolve) => fake.listen(0, '127.0.0.1', resolve));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mcp-itest-old-'));
+  fs.writeFileSync(
+    path.join(dir, 'window-old.json'),
+    JSON.stringify({ pid: process.pid, port: fake.address().port, socket: null, startedAt: new Date().toISOString() }),
+  );
+  try {
+    const said = await speak({ CREDS_ENDPOINT_DIR: dir }, [
+      ...HANDSHAKE,
+      { jsonrpc: '2.0', id: 90, method: 'tools/call', params: { name: 'creds_kinds', arguments: {} } },
+      { jsonrpc: '2.0', id: 91, method: 'tools/call', params: { name: 'creds_create', arguments: { name: 'quota', kind: 'terminal', fields: { command: 'pwsh' } } } },
+    ]);
+    check('an old window asked for the kinds says to update the extension, not that no window answered', replyText(said, 90).includes('update the CredsForDevs'), replyText(said, 90).slice(0, 240));
+    check('a create with fields says the same', replyText(said, 91).includes('update the CredsForDevs'), replyText(said, 91).slice(0, 240));
+    check('and the old window was sent nothing to create', posts.length === 0, JSON.stringify(posts));
+  } finally {
+    fake.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 (async () => {
   if (!fs.existsSync(EXE)) {
     console.log(`SKIP  the MCP server is not built at ${EXE}`);
@@ -572,6 +749,8 @@ async function quietLeg() {
         summary: `${String(body.name)} (ssh) in "Servers"`,
         withSecret: typeof body.secret === 'string' && body.secret.length > 0,
       }),
+      // The folder's PIN step (D-B): this stand-in folder asks for none.
+      settle: () => Promise.resolve({ ok: true }),
       make: (_decision, body) => {
         created.push({ name: String(body.name), secret: String(body.secret ?? '') });
         return Promise.resolve({ id: 'new-1', name: String(body.name) });
@@ -1195,6 +1374,8 @@ async function quietLeg() {
   check('and it is still in the tree', storage.getNode('a-1', 'f-open') !== undefined);
 
   await quietLeg();
+  await kindsLeg();
+  await oldWindowLeg();
 
   folderServer.dispose();
   server.dispose();

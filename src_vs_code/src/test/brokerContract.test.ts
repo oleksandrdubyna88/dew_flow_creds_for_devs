@@ -14,6 +14,8 @@ import {
   isConfigReadRoute,
   isMcpEntriesRoute,
   isMcpFoldersRoute,
+  isMcpKindHelpRoute,
+  isMcpKindsRoute,
   parseAliasRoute,
   parseMcpUseRoute,
   parseUseRoute,
@@ -22,7 +24,9 @@ import {
 } from '../brokerProtocol';
 import { readRouteBody } from '../brokerReadRoutes';
 import { EXIT } from '../agentCliOutcome';
+import { agentKinds } from '../agentKindFields';
 import { switchForAction } from '../mcpEntries';
+import { ENTITY_KINDS } from '../types';
 import {
   CALLER_FIELD,
   CALLER_FIELDS,
@@ -62,6 +66,8 @@ interface Contract {
   mcpCreateRoute: string;
   mcpFolderPrefix: string;
   caller: { field: string; fields: string[]; flatPrefix: string; maxFieldChars: number; maxLabelChars: number };
+  entityKinds: string[];
+  agentCreatableKinds: string[];
   errors: Record<string, number>;
   exitCodes: Record<string, number>;
 }
@@ -144,11 +150,15 @@ test('the read routes travel in the contract, and the code agrees with what it s
     'mcpConfigSnippet',
     'mcpEntries',
     'mcpFolders',
+    'mcpKindHelp',
+    'mcpKinds',
   ]);
   assert.equal(isAliasListRoute(reads.aliases.path), true);
   assert.equal(isMcpEntriesRoute(reads.mcpEntries.path), true);
   assert.equal(isMcpConfigSnippetRoute(reads.mcpConfigSnippet.path), true);
   assert.equal(isMcpFoldersRoute(reads.mcpFolders.path), true);
+  assert.equal(isMcpKindsRoute(reads.mcpKinds.path), true);
+  assert.equal(isMcpKindHelpRoute(reads.mcpKindHelp.path), true);
   for (const route of Object.values(reads)) {
     assert.match(route.path, /^\/v1\//, route.path);
   }
@@ -307,6 +317,23 @@ test('a body shaped exactly as the contract describes it — either shape — is
   for (const field of caller.fields) {
     assert.equal(flatCallerKey(field as never), `${caller.flatPrefix}${field.charAt(0).toUpperCase()}${field.slice(1)}`);
   }
+});
+
+test('the kinds travel in the contract, so the relay lists them from ONE place rather than retyping them', () => {
+  // The two kind lists in the relay's descriptions had drifted from `ENTITY_KINDS` (both omitted
+  // payment) because each was a literal a human kept in step. Now the relay reads them from here,
+  // and a C# test asserts its descriptions name exactly these — the emitter side enumerates, the
+  // consumer side compares, and neither retypes.
+  const { entityKinds, agentCreatableKinds } = load();
+
+  assert.deepEqual(entityKinds, [...ENTITY_KINDS]);
+  assert.deepEqual(
+    agentCreatableKinds,
+    agentKinds()
+      .filter((k) => k.creatable)
+      .map((k) => k.kind),
+  );
+  assert.equal(agentCreatableKinds.includes('payment'), false, 'D-A: an agent cannot create a payment entry');
 });
 
 test('every MCP action asks for a switch, and rotate asks for a higher one than the rest', () => {

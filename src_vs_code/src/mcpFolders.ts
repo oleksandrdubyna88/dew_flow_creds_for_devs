@@ -1,7 +1,9 @@
+import { FolderField, folderFieldsFor } from './agentKindFields';
 import { NeededSwitch } from './brokerRequests';
+import { isEntityKind } from './entityKind';
 import { mayDeleteFolder, resolveMcpInTree } from './mcpAccess';
 import { isInTrash, isTrashFolder } from './trash';
-import { FolderType, TreeNode } from './types';
+import { EntityKind, FolderType, TreeNode } from './types';
 
 /**
  * Folders as an agent may see and change them.
@@ -31,6 +33,14 @@ export interface FolderView {
   /** `null` at the root — the same shape the tree uses. */
   parent: string | null;
   folderType?: FolderType;
+  /**
+   * The kind an entry created here will be, or `any` when the agent names it (plan §4.3).
+   * `folderType` stays beside it for a relay that knew only that name; `project` is a folder-only
+   * template rather than a kind, so to an agent such a folder holds anything.
+   */
+  holds: EntityKind | 'any';
+  /** What an entry here may carry, from the one table — present only when `holds` is a kind. */
+  fields?: readonly FolderField[];
   can: { create: boolean; edit: boolean; delete: boolean };
 }
 
@@ -85,12 +95,24 @@ function viewOf(node: TreeNode, byId: (id: string) => TreeNode | undefined): Fol
     name: node.name,
     parent: node.parentId ?? null,
     folderType: node.folderType,
+    ...holdsOf(node.folderType),
     can: {
       create: access.folderCreate === true,
       edit: access.folderEdit === true,
       delete: mayDeleteFolder(access, node.mcpCreatedByAgent === true),
     },
   };
+}
+
+/**
+ * What a folder tells an agent it holds (O3): the kind and its fields, or `any` and no list.
+ *
+ * <p>No list for `any`, rather than every kind's: there the kind is the agent's to name, and
+ * `creds_kind_help` answers for the one it names — a folder answer carrying nine field lists would
+ * be the catalogue repeated once per folder.</p>
+ */
+function holdsOf(folderType: FolderType | undefined): Pick<FolderView, 'holds' | 'fields'> {
+  return isEntityKind(folderType) ? { holds: folderType, fields: folderFieldsFor(folderType) } : { holds: 'any' };
 }
 
 /** The switch one folder verb needs. Written out, so an unknown verb asks for the top rung. */

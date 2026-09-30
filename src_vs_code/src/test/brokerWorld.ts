@@ -1,6 +1,6 @@
 import { loadWithVscode } from './vscodeStub';
 import type { McpUseLookup } from '../brokerRequests';
-import type { McpCreateHooks } from '../brokerMcpDoor';
+import type { CreateSettled, McpCreateHooks } from '../brokerMcpDoor';
 
 /**
  * The broker, started for real, with every collaborator a test might want to control.
@@ -40,6 +40,8 @@ interface World {
   trashed: string[];
   /** Names of entries an agent created. */
   created: string[];
+  /** The deadline the door handed each create's `settle` — the consent step's own bound (D-B). */
+  settleDeadlines: number[];
   presence: number;
   /** Consents the vault was asked to remember: accountId, entityId and the ladder shown (#95). */
   consents: { entityId: string; rungs: string }[];
@@ -128,6 +130,8 @@ function world(options: {
   trash?: boolean;
   /** How a create request is answered: accepted into a folder, refused, or not served at all. */
   create?: 'open' | 'closed';
+  /** What an accepted create's `settle` answers — a folder's PIN not given, say. Absent: go ahead. */
+  settle?: CreateSettled;
   /**
    * Hooks passed STRAIGHT through, unshaped — for the one test that asks what the server does with
    * a key that is not a hook at all. Everything else should use the options above.
@@ -145,6 +149,7 @@ function world(options: {
     burned: [],
     trashed: [],
     created: [],
+    settleDeadlines: [],
     presence: 0,
     consents: [],
     result: { status: 200, body: { exitCode: 0, stdout: 'ok\n', stderr: '' } },
@@ -224,7 +229,7 @@ function hooksFor(w: World, options: Parameters<typeof world>[0]): Record<string
     visibleConfig: options.visibleConfig,
     resolveMcpUse: options.mcpResolve ?? mcpUseFor(options.mcpUse, options.mcpPreConsented),
     moveToTrash: trashFor(w, options.trash),
-    mcpCreate: createFor(w, options.create),
+    mcpCreate: createFor(w, options.create, options.settle),
     rememberMcpConsent: (accountId: string, entityId: string, rungs: string): Promise<void> => {
       w.consents = [...w.consents, { entityId, rungs }];
       return options.mcpRemember?.(accountId, entityId, rungs) ?? Promise.resolve();
@@ -402,7 +407,7 @@ function trashFor(
  * creation does; absent means this window serves no create calls at all, which is a real
  * configuration and one of the refusals under test.</p>
  */
-function createFor(w: World, mode: 'open' | 'closed' | undefined): McpCreateHooks | undefined {
+function createFor(w: World, mode: 'open' | 'closed' | undefined, settled?: CreateSettled): McpCreateHooks | undefined {
   if (mode === undefined) {
     return undefined;
   }
@@ -416,6 +421,10 @@ function createFor(w: World, mode: 'open' | 'closed' | undefined): McpCreateHook
             summary: `${String(body.name)} (ssh) in "Servers"`,
             withSecret: typeof body.secret === 'string' && body.secret.length > 0,
           },
+    settle: (_decision, deadline) => {
+      w.settleDeadlines.push(deadline);
+      return Promise.resolve(settled ?? { ok: true });
+    },
     make: (_decision, body) => {
       w.created.push(String(body.name));
       return Promise.resolve({ id: 'new-1', name: String(body.name) });

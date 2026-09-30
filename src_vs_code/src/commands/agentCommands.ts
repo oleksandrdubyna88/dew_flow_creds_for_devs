@@ -46,6 +46,7 @@ import { aliasFor } from '../cliAliases';
 import { withoutAlias } from '../cliAliases';
 import { describeAliasProblem } from '../cliAliases';
 import { resolveKind } from '../entityKind';
+import { cliCommandFor } from '../cliCommandText';
 import { withAlias } from '../cliAliases';
 import { asElement } from '../commandTargets';
 import { connectEntity } from '../sshConnect';
@@ -530,9 +531,11 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       return;
     }
 
+    // The verb is the CLI row's own rule (`cliCommandFor`), in the box AND in the message after it: a Terminal entry runs as `creds run`, not `creds ssh`.
+    const details = storage.getNode(accountId, node.id)?.details ?? { id: node.id, name: node.name, isSshEnabled: false };
     const name = await vscode.window.showInputBox({
       title: `Name for "${node.name}" in the terminal`,
-      prompt: 'Then: creds ssh <name> -- <command>. The name is not a secret; every call still asks you to allow it.',
+      prompt: `Then: ${cliCommandFor(details, '<name>')}. The name is not a secret; every call still asks you to allow it.`,
       value: node.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40),
       validateInput: (value) => describeAliasProblem(value.trim()) ?? null,
     });
@@ -540,11 +543,8 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       return;
     }
 
-    const kind = resolveKind(storage.getNode(accountId, node.id)?.details);
-    await setAliasMap(withAlias(aliasMap(), name.trim(), { accountId, entityId: node.id, kind }));
-    void vscode.window.showInformationMessage(
-      `"${node.name}" is now available in the terminal as: creds ${kind === 'db' ? 'db' : 'ssh'} ${name.trim()}`,
-    );
+    await setAliasMap(withAlias(aliasMap(), name.trim(), { accountId, entityId: node.id, kind: resolveKind(details) }));
+    void vscode.window.showInformationMessage(`"${node.name}" is now available in the terminal as: ${cliCommandFor(details, name.trim())}`);
   });
 
   register('credSshManager.connectSsh', async (target) => {

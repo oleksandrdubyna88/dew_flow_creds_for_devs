@@ -130,9 +130,19 @@ function legacyFlags(kind: EntityKind, wasSshEnabled: boolean): Partial<EntityMe
  * and narrowing this would silently remove that from vaults in the field. Whether to narrow
  * it is a product decision, not a refactor; until it is taken, the difference is stated here
  * and pinned by a test rather than left to be re-discovered.</p>
+ *
+ * <p>The breadth is for THAT record only — one whose kind falls back to `credential` — and since
+ * 2026-09-30 it says so: a Terminal entry an agent had given its API endpoint as a host was offered
+ * *Connect via SSH* to that endpoint, and a VPN to its own. A kind of its own that is not ssh is never
+ * a machine to log in to (agent-create plan §4.5).</p>
  */
 export function canConnectSsh(details: EntityMetadata | undefined): boolean {
-  return resolveKind(details) === 'ssh' || (details?.host ?? '') !== '';
+  const kind = resolveKind(details);
+  return kind === 'ssh' || (kind === 'credential' && hasHost(details));
+}
+
+function hasHost(details: EntityMetadata | undefined): boolean {
+  return (details?.host ?? '') !== '';
 }
 
 /**

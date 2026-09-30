@@ -1,3 +1,4 @@
+import { AgentKindSummary, KindHelp, agentKindHelp, agentKinds } from './agentKindFields';
 import {
   AliasListBody,
   AliasListEntry,
@@ -7,11 +8,14 @@ import {
   isMcpConfigSnippetRoute,
   isMcpEntriesRoute,
   isMcpFoldersRoute,
+  isMcpKindHelpRoute,
+  isMcpKindsRoute,
 } from './brokerProtocol';
+import { isEntityKind } from './entityKind';
 import { McpEntriesBody, McpEntry } from './mcpEntries';
 import { FolderView, FoldersBody } from './mcpFolders';
 import { ConfigSnippetBody, configSnippetResult } from './mcpSnippetRoute';
-import { EntityMetadata } from './types';
+import { ENTITY_KINDS, EntityMetadata } from './types';
 
 /**
  * The broker's GET routes, in one place because they are one KIND of route.
@@ -64,13 +68,39 @@ export async function readRouteBody(
     // in the POST branch, answering 404 to the only client that asks — reported to the agent as
     // "No CredsForDevs window answered", which is why the whole folder surface was unusable.
     [isMcpFoldersRoute(pathname), async () => ({ folders: foldersFrom(sources) })],
+    // The catalogue: no source, no switch, the same on every window. What a kind IS is not a
+    // disclosure — it is the product's own help, told to the one reader that had no way to it.
+    [isMcpKindsRoute(pathname), () => Promise.resolve({ kinds: agentKinds() })],
+    [isMcpKindHelpRoute(pathname), () => Promise.resolve(kindHelpBody(query))],
   ];
   const hit = routes.find(([matches]) => matches);
   return hit === undefined ? undefined : hit[1]();
 }
 
 /** Anything a GET route answers with. Named so the table above states it once, not twice. */
-type ReadBody = HealthBody | AliasListBody | McpEntriesBody | ConfigSnippetBody | FoldersBody;
+type ReadBody = HealthBody | AliasListBody | McpEntriesBody | ConfigSnippetBody | FoldersBody | KindsBody | KindHelp | KindRefusal;
+
+/** What `GET /v1/mcp/kinds` answers with: one line per kind, from the table. */
+export interface KindsBody {
+  kinds: readonly AgentKindSummary[];
+}
+
+/** A word that is not a kind, refused in the body the way the snippet route refuses — always 200. */
+export interface KindRefusal {
+  error: string;
+  hint: string;
+}
+
+/** One kind's help, or the refusal that names the kinds there are. */
+function kindHelpBody(query: URLSearchParams): KindHelp | KindRefusal {
+  const kind = query.get('kind') ?? '';
+  return isEntityKind(kind)
+    ? agentKindHelp(kind)
+    : {
+        error: `"${kind}" is not a kind of entry. One of: ${ENTITY_KINDS.join(', ')}.`,
+        hint: 'Call creds_kinds for the list, then creds_kind_help with one of them.',
+      };
+}
 
 /**
  * Always 200; a refusal travels as `error` IN the body. The tool reads the JSON either way,

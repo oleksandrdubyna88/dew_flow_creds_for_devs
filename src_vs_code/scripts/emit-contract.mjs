@@ -23,6 +23,11 @@ const repoRoot = resolve(extensionRoot, '..');
 const protocol = await import(pathToFileURL(join(extensionRoot, 'out', 'brokerProtocol.js')).href);
 const outcome = await import(pathToFileURL(join(extensionRoot, 'out', 'agentCliOutcome.js')).href);
 const callerModule = await import(pathToFileURL(join(extensionRoot, 'out', 'brokerCaller.js')).href);
+// The kinds an entry can be, and the ones an agent may create — read off the window's own table so the
+// relay's descriptions name them from ONE place. Both of its kind lists had drifted from `ENTITY_KINDS`
+// (each omitted payment) while they were literals a human kept in step.
+const kindsModule = await import(pathToFileURL(join(extensionRoot, 'out', 'agentKindFields.js')).href);
+const typesModule = await import(pathToFileURL(join(extensionRoot, 'out', 'types.js')).href);
 
 // Every error code the broker can answer with, and the HTTP status it rides on. Taken by
 // asking the real function rather than by copying its table, so a code added without a status
@@ -86,6 +91,10 @@ const reads = {
   // The folder listing belongs with them by the same definition: a GET that performs nothing,
   // raises no prompt and carries no token.
   mcpFolders: read('/v1/mcp/folders'),
+  // The catalogue: what an entry can BE, and what one kind takes. Reads by the same definition,
+  // with less behind them than any other — no vault, no switch, the same table on every window.
+  mcpKinds: read('/v1/mcp/kinds'),
+  mcpKindHelp: read('/v1/mcp/kind-help'),
 };
 
 // The one authenticated route here that is not a use, and the only POST that reads. It is NOT in
@@ -183,6 +192,14 @@ const contract = {
   // Additive, so `version` stays 1: no route moves, no status changes, no verb changes, and a
   // window that does not know the field ignores it as it ignores every unknown body field.
   caller,
+  // Every kind an entry can be, and the ones an agent may ask `creds_create` to make — so the
+  // relay's descriptions name them from here rather than from literals of their own. Additive,
+  // for `caller`'s reason: a reader that does not know the fields ignores them.
+  entityKinds: [...typesModule.ENTITY_KINDS],
+  agentCreatableKinds: kindsModule
+    .agentKinds()
+    .filter((kind) => kind.creatable)
+    .map((kind) => kind.kind),
   errors,
   // The band a client uses to report failures of the mechanism itself. A remote command's own
   // code passes through untouched, so these are deliberately high and documented as reserved.
