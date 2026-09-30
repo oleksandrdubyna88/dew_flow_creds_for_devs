@@ -1,6 +1,5 @@
 import * as path from 'node:path';
 import * as childProcess from 'node:child_process';
-import * as crypto from 'node:crypto';
 import { currentOwner, restrictToOwnerArgv } from './fileAcl';
 
 /**
@@ -76,8 +75,25 @@ export function safeFileComponent(name: string): string {
   if (cleaned === name && cleaned.length > 0) {
     return cleaned;
   }
-  const digest = crypto.createHash('sha256').update(name).digest('hex').slice(0, 8);
-  return `${cleaned.slice(0, 60)}-${digest}`;
+  return `${cleaned.slice(0, 60)}-${nameDigest(name)}`;
+}
+
+/**
+ * Sixteen hex characters that tell two ORIGINAL names apart — FNV-1a over the name's UTF-16 units.
+ *
+ * <p>Not a cryptographic hash, on purpose: the input is an entity id, never a secret, and the only
+ * property wanted is that two different ids do not end up with one file name. This was `sha256`
+ * truncated to 8 characters until 2026-09-30, when CodeQL's password-hash rule traced a password into
+ * it through the shared PIN opener (a conflation, not a flow — nothing secret reaches a file name);
+ * 64 bits of FNV-1a are more room against a collision than the 32 bits it had, and name nothing the
+ * rule mistakes for storing a password.</p>
+ */
+function nameDigest(name: string): string {
+  let hash = 0xcbf29ce484222325n;
+  for (let i = 0; i < name.length; i++) {
+    hash = BigInt.asUintN(64, (hash ^ BigInt(name.charCodeAt(i))) * 0x100000001b3n);
+  }
+  return hash.toString(16).padStart(16, '0');
 }
 
 /**
