@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > The entry PIN keeps its promise. A PIN-protected entry opens with everything it holds, edits
 > without losing or leaking anything, and no click, automatic reader, export, share or sync hands out
 > its sealed envelope or quietly takes the protection off. Update every machine you sync with — see
-> the note at the end.
+> the note at the end. And an agent creating an entry is told what the folder holds, may set only that
+> kind's fields — and an entry that is not SSH shows no SSH line.
 
 ### Fixed — a protected entry opens, edits and never loses a value
 
@@ -105,6 +106,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   holds now becomes its newest previous version, so a restore is undone the same way; a version from
   before the PIN comes back sealed; agent access, the code-access key and attachments stay today's. The
   history row used to say *"Clone it to bring it back"*, and Clone copies the metadata only.
+
+### Fixed — an agent's entry is the kind its folder holds
+
+- **A Terminal entry made by an agent showed a Host and an SSH command, and had no command.** Asked to
+  store two PowerShell quota checks in a Terminal folder, an agent could send only a name, a kind, a
+  secret and a host — so it put the API endpoint into `host`, the window stored a host on a kind that
+  has none, and the viewer drew *Host* and *SSH command* `ssh <endpoint>` while *Command* stayed
+  empty. `creds_create` now takes the kind's own fields (below), and a host is refused on a kind that
+  has none. Fix the two entries by hand — fill *Command* and *Arguments* — or delete and recreate
+  them; the next Save from the form drops the stray host.
+- **SSH rows only on an SSH entry.** *SSH command*, *SSH command (any machine)*, the ssh line in *Copy
+  All*, *Connect via SSH* in the tree, the `creds ssh` verb on the CLI row and the tree's `user@host`
+  description no longer appear on a Terminal, VPN or other non-SSH entry that carries a host; the
+  *Host* row is drawn only for the kinds that have one (SSH and VPN). An old record with a host and no
+  kind of its own keeps *Connect via SSH* as before.
+- **An agent's entry in a folder that asks for a PIN was stored in the clear.** Your own Add asks the
+  folder's PIN; an agent's create did not. Now, right after you allow the creation, the window asks
+  for it — the same question Add asks, checked against the folder's protected entries — and seals every
+  value before anything is written. Dismissed, not agreed to three times, or not given within the
+  prompt's five minutes: nothing is created, and the agent is told why.
+
+### Added — an agent learns what a folder holds, and sets only that
+
+- **`creds_kinds` and `creds_kind_help`** (MCP relay 0.9.0): the kinds of entry, and one kind's fields —
+  which are required, what each means — with a complete example request. Answered by the window from
+  one table; the agent-access switches and everything the window keeps for itself are never named.
+- **`creds_folders` says what each folder holds**: `holds` (the kind, or `any`) and, for a kind, the
+  `fields` an entry created there may carry.
+- **`creds_create` takes exactly the kind's fields**, in a new `fields` object, and refuses anything
+  else — an unknown field, a wrong type or word, a secret inside `fields`, a required field left out —
+  with a sentence naming what the kind takes; nothing is created on a refusal. The secret goes to the
+  kind's own slot — a database's connection string, a config's body, a key pair's private key — not
+  always to the password.
+- **The consent prompt shows the whole command line of a Terminal entry and the complete body of a
+  script** before it is stored, never a preview; the MCP journal records the same text.
+- **A payment entry cannot be created by an agent**: `creds_kinds` lists it as not creatable and
+  `creds_create` refuses it.
+
+### Note — an older relay, a newer window, and the other way round
+
+- A relay before 0.9.0 keeps working: its `host`, `user` and `port` are accepted where the kind has
+  them, and a host on a Terminal entry is now refused instead of stored — that is the fix. A 0.9.0
+  relay talking to a window before 1.12 answers `creds_kinds`, `creds_kind_help` and a `creds_create`
+  that carries `fields` with a sentence saying the extension must be updated, and sends it nothing to
+  create.
 
 ### Note — update every machine
 

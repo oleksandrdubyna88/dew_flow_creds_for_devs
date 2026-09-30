@@ -470,7 +470,7 @@ function parsed(text) {
 
 /**
  * Level 7 — an agent learns what a folder holds, and creates exactly that kind
- * (`todo/PLAN_agent_creates_what_the_folder_holds.md`).
+ * (`research/PLAN_agent_creates_what_the_folder_holds.md`).
  *
  * <p>The case that produced it: an agent asked to store a PowerShell quota check in a Terminal
  * folder had a tool taking `host` and nothing a terminal entry is made of, so it stored the API

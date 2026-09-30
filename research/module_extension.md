@@ -4727,6 +4727,9 @@ and not the other stops the build instead of every window's startup. Record:
 | `mcpHooks.ts` | the vault's answers to the MCP door — `mcpUseHooks` builds the read and the write over a single `ConsentStamps` it asks the policy module for (S2.4) |
 | `mcpSwitches.ts` / `mcpSwitchScript.ts` | the ten switches and the four cadence choices, each with the sentence that says what it costs — and the browser half that keeps the two axes apart when a form is saved |
 | `mcpCreate.ts` | which folders are open to creation, and what a request becomes |
+| `agentKindFields.ts` | the ONE table of what an agent may set, per kind — the catalogue, the folder's `fields`, the kind help and every refusal read it (1.12.0) |
+| `agentFieldValidation.ts` | `creds_create`'s `fields` judged against that table for the kind the folder decides — unknown, wrong type, bad enum word, a secret inside, a required one missing |
+| `agentCreatePin.ts` | D-B: the folder's PIN, asked after Allow inside the consent step's deadline, or the sentence the agent gets instead |
 | `secretRotation.ts` / `rotateAction.ts` | the placeholder, and the order a rotation happens in |
 | `secretKinds.ts` | what this extension can generate — and, named one at a time, what it cannot |
 | `brokerRequests.ts` / `brokerMcpDoor.ts` | the routes, the gate, the prompt, and the refusal wording |
@@ -4825,6 +4828,99 @@ agent that provisioned something and holds the key. It is not hidden: the entry 
 `mcpCreatedByAgent` (which the narrow delete scope keys on), and the audit line says the secret
 came from the agent so the journal can count them. The preferred path is `secretKind`, which has
 the window generate instead.
+
+#### A folder says what it holds, and a kind what an agent may set (1.12.0)
+
+[PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md). The owner's report: another agent session, asked to
+store two PowerShell quota checks in a Terminal folder, produced entries whose viewer showed **Host**
+and **SSH command** `ssh token-plan.ap-southeast-1.maas.aliyuncs.com` and whose Command box was
+empty. `creds_create` took a name, a kind, a secret, a host, a user and a port — nothing else — so
+the agent put the API endpoint into `host`; `detailsFor` wrote a host for every kind; and the viewer
+drew an ssh line for anything with one.
+
+**One table** — `AGENT_KINDS` in `agentKindFields.ts`, a `Record<EntityKind, …>` so a new kind
+without an entry does not compile. The rule it follows is derived, not chosen: a kind's list is what
+the FORM's own save (`toValues`) keeps for that kind, intersected with what an agent may set, and
+`agentKindFields.test.ts` posts every candidate field through the real `toValues` and asserts the
+list equals exactly what survives. The plan's own guess failed that test four ways — sshkey lacked
+`sshKeyPath`, `notes` is kept for every kind and not credential alone, vpn has `vpnType` and
+`vpnConfigFileName`, config has `configFileName` — which is the reason it is a test.
+
+| Kind | Fields an agent may set (`name` aside) | Its one secret, top level |
+|---|---|---|
+| credential | `login`, `url`, `notes` | the password (`secretKind` may draw it) |
+| ssh | `host` (required), `user`, `port`, `publicKey`, `sshKeyPath`, `tags`, `notes` | the password |
+| sshkey | `publicKey`, `sshKeyPath`, `notes` | the private key |
+| vpn | `vpnType`, `host`, `user`, `port`, `vpnConfigFileName`, `notes` | the configuration |
+| db | `dbType`, `notes` | the connection string |
+| terminal | `command` (required), `args` (`[{ value, note?, enabled? }]`), `commandNote`, `terminalOs`, `notes` | the password |
+| script | `scriptLanguage`, `script` (required — the body, not a secret), `vars`, `notes` | the password |
+| config | `configFormat`, `configFileName`, `notes` | the body |
+| payment | — **not creatable by an agent** (owner's decision D-A) | — |
+
+**Only fields an agent may SET are ever named (O4).** The six switches, the consent cadence,
+`mcpCreatedByAgent`, the PIN mark and `pinEpoch`, lifetimes, dependencies and their colours, the jump
+host, forwards, agent forwarding, the pinned host key, linked entries, attachments, images, dates and
+vectors are not in the table — so no answer can name them, not even as "forbidden". A deny-list test
+asserts none of them appears in any catalogue, kind-help or folder answer.
+
+**The catalogue is two GET reads** in `brokerReadRoutes.ts`, beside health, aliases, entries and
+folders: `/v1/mcp/kinds` (one line per kind, and `creatable`) and `/v1/mcp/kind-help?kind=` (each
+field's type, `values` for an enum, `required`, the help paragraph, and a complete example body —
+payment's help says it cannot be created and carries no example). No switch and no grant: what a kind
+IS discloses nothing a person has. An unknown kind is refused in the body, naming the kinds and
+`creds_kinds`. The relay's `creds_kinds` / `creds_kind_help` relay them and hold no second copy of the
+table. `contract/broker-v1.json` carries both reads and two lists, `entityKinds` and
+`agentCreatableKinds`, emitted off the table, so the relay's tool descriptions name the kinds from
+one place — its two hand-typed lists had drifted (both omitted payment).
+
+**The folder answer** gains `holds` — the folder's kind, or `"any"` for an untyped or project folder
+— and for a kind `fields`: `{ name, required, summary }` per field, with the secret listed as
+`secret` ("top level, never inside fields"). `folderType` stays beside it for an older relay. In an
+`any` folder the entry is validated against the kind the agent NAMES.
+
+**The refusal rule.** `planCreate` judges `fields` — and an old relay's top-level `host`/`user`/`port`
+— against the table for the kind the FOLDER decides, before anybody is asked: an unknown key, a wrong
+JSON type, an enum word outside `values`, a secret inside `fields` (*"send it as `secret`, or prefer
+`secretKind` so the window makes it"*), a missing required field, or a payment kind each answer ONE
+sentence ending with what the kind takes — *"`host` is not a field of a terminal entry. A terminal
+entry takes: command (required), args, commandNote, terminalOs, notes — see creds_kind_help."* —
+and nothing is created. `detailsFor` builds the record from validated values only, and the secret
+goes through the form's additions pass to the kind's own slot (a database's connection string, a
+config's body, a key pair's private key) instead of always to the password; `secretKind` is refused
+where that slot cannot be drawn.
+
+**The consent prompt shows all of it.** For a terminal entry `summarizeCreate` shows the line as it
+will run — the command with every enabled argument, its OS and note — and for a script the COMPLETE
+body, never a preview (plan gate: a harmless head can hide a destructive tail). The journal's create
+line carries the same text.
+
+**SSH rows only on an SSH entry** (defect 3). `buildSshCommand` stays the pure builder;
+`sshCommand.sshLineFor` asks `resolveKind(details) === 'ssh'` first, and the live viewer, the revision
+viewer and Copy All use it. The *Host* row is drawn only where the kind's table entry has a `host`
+(`hostIsAField` — ssh and vpn). The same gate was checked everywhere else a host becomes an ssh
+target: `canConnectSsh` (the tree's *Connect via SSH*, and so `openSshTerminal`) keeps its documented
+breadth only for a record whose kind falls back to `credential`; the CLI row's verb reads that
+predicate (`creds run`, not `creds ssh`, for a command); the tree description drops a stray host on a
+kind that has none; the agent-share snippet already asked `kind === 'ssh'`.
+
+**D-B — a folder that asks for a PIN on new entries.** The create door has a third step between the
+consent modal and `make`: `settle`, handed the consent step's deadline (`Date.now() +
+CONSENT_TIMEOUT_MS`, taken before the modal — the relay waits ten minutes, the step five). After
+Allow, `agentCreatePin.settleAgentCreate` asks `pinOnCreate`'s own question (`pinForAgentEntry` is
+`pinForNewEntry`, asked again while a typed PIN's count is declined, three at most; a dismissed box
+ends it), inside what is left of that deadline. With a PIN, `makeAgentEntry` writes the additions
+through `editPrefill.sealedWriter` over `NOTHING_OPENED` — every value sealed with `sealValue` in memory
+BEFORE `runCreate` writes anything (rule R3) — and `applyCreatePin` does what it does for Add: the
+idempotent sweep, the history, and the mark with its first `pinEpoch`, last. Dismissed, not agreed to
+three times, or out of time: `denied` / `consent_timeout` with a sentence naming the folder, and
+nothing written, not even half.
+
+**Compatibility.** An older relay never sends `fields`; its top-level `host`/`user`/`port` still work
+where the kind has them, and a host on a terminal is now refused rather than stored — that is the fix.
+A new relay reads the catalogue route before a create that carries `fields`: a window older than it
+would drop the fields and store a terminal with no command, so it is answered the existing "update
+the extension" sentence and sent nothing.
 
 **`secretKinds.ts` names what it cannot make**, one kind at a time with the reason — a certificate
 comes from an authority, a TOTP seed from the service, an SSH keypair needs its public half

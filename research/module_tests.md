@@ -34,7 +34,7 @@ is node throughout because what these need is process control, not a test runner
 | `src_vs_code/scripts/agent-broker-itest.cjs` | the broker over its own loopback HTTP surface, `vscode` stubbed | **yes** — *Integration test (agent broker)* | pass |
 | `src_vs_code/scripts/git-transport-itest.cjs` | the encrypted vault in a real git repository: commit, clone, delete | **yes** — *Integration test (git transport)* | pass |
 | `src_vs_code/scripts/creds-cli-itest.cjs` | the real `creds` binary against a live broker | **yes** — *Integration test (creds CLI against the broker)* | pass |
-| `src_vs_code/scripts/creds-mcp-itest.cjs` | `creds-mcp` over stdio, the full tool surface, both switch ladders and the quiet path (#95), and — since 2026-09-24 — the caller's TAB TITLE from the C# sender to the TypeScript modal (#136: a fixture home with a registry entry and a transcript; the modal must quote the title and — since 2026-09-24, the owner reversing D4 — the audit line must carry it the same way; skipped on Windows, where `HOME` does not decide the profile folder) | **yes, added 2026-09-06** | pass — **95** checks on Linux (WSL, 2026-09-24), 93 on Windows where the title check is skipped |
+| `src_vs_code/scripts/creds-mcp-itest.cjs` | `creds-mcp` over stdio, the full tool surface, both switch ladders and the quiet path (#95), and — since 2026-09-24 — the caller's TAB TITLE from the C# sender to the TypeScript modal (#136: a fixture home with a registry entry and a transcript; the modal must quote the title and — since 2026-09-24, the owner reversing D4 — the audit line must carry it the same way; skipped on Windows, where `HOME` does not decide the profile folder) | **yes, added 2026-09-06** | pass — **95** checks on Linux (WSL, 2026-09-24), 93 on Windows where the title check is skipped; **111** on Windows (2026-09-30), with the kind-catalogue legs |
 | `src_vs_code/scripts/masked-run-itest.cjs` | a masked run through a real pty, asserting no whole secret appears | **yes, added 2026-09-06** | pass |
 | `src_minimalapi_server/scripts/backup-archive-itest.cjs` | the REAL server binary sealing, verifying and opening a backup archive | **yes, added 2026-09-07** — in `ci · server`, on the server's own path filter | pass |
 | `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | the same MCP surface, bridged from inside a WSL distribution | no — see below | pass |
@@ -845,6 +845,33 @@ Command: `npm test`, or `node --test out/test/<file>.js`.
 **What none of this proves.** No harness drives VS Code itself (*The editor's own UI*, below): the
 tree's context menus, the real webview and the real input box are stubbed. The owner's own card,
 protected and viewed in a real editor, is the plan's first Definition-of-Done item and is left open.
+
+## An agent creates what the folder holds (2026-09-30, extension 1.12.0, relay 0.9.0)
+
+The flows [PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md)
+added. The TypeScript half over the REAL `StorageManager` and the real hooks the broker calls; the C#
+half through the relay's test executable; one live check — `creds-mcp-itest.cjs` — puts the real
+binary against the real window code for the catalogue and the owner's case. Command: `npm test`, or
+`node --test out/test/<file>.js`; `./src_mcp/tests/bin/Debug/net10.0/CredsMcp.Tests.exe`;
+`npm run itest:mcp`.
+
+| Flow | Test | What it holds down |
+|---|---|---|
+| The per-kind table IS the form's save | `agentKindFields.test.ts` | every listed field survives the real `toValues` for its kind and no field the form scrubs is listed; a deny-list of the agent-access switches and every window-owned field is absent from the catalogue, every kind help and every folder answer (O4) |
+| `fields` judged before anybody is asked | `agentFieldValidation.test.ts`, `mcpCreate.test.ts` | an unknown key, a wrong type, a bad enum word, a secret inside `fields`, a missing required field, payment — one sentence naming what the kind takes, nothing created |
+| The owner's case | `mcpCreateHooks.test.ts` | a terminal asked for with a host is refused naming the terminal fields; created with its command, args, note and OS and no host; each kind's secret in its own slot |
+| The consent prompt shows the command | `mcpCreate.test.ts` | the whole composed line of a terminal entry and the COMPLETE body of a script, in the summary and the journal |
+| The catalogue routes | `brokerKindRoutes.test.ts`, `brokerContract.test.ts` | `/v1/mcp/kinds` and `/v1/mcp/kind-help` answer from the table, an unknown kind is refused naming `creds_kinds`, payment's help has no example; the contract carries both reads and the kind lists |
+| A folder says what it holds | `mcpFolders.test.ts` | `holds` is the kind or `"any"`, `fields` only for a kind, `folderType` kept |
+| SSH rows only on SSH | `sshRowsByKind.test.ts` | the live and the revision viewer draw no ssh line for a Terminal or a VPN with a host, an SSH entry keeps it; the Host row only for the kinds whose table has one; Copy All, Connect, the CLI verb and the tree description agree; the legacy host-only record keeps Connect |
+| D-B — a folder that asks for a PIN | `agentCreatePin.test.ts` | every keychain write of the new entry is sealed (the write log never sees the secret or the login in the clear), the mark and `pinEpoch` 1, the PIN opens it; a folder of protected entries checks the PIN as Add does; dismissed / not agreed to three times / out of time create nothing and write nothing; through the real broker door the agent receives the window's sentence and `settle` is bounded by the consent step's five minutes; a Deny never reaches the PIN step |
+| The relay's side | `ToolsTests.cs`, `UseToolsTests.cs`, `StartupTests.cs`, `BrokerContractTests.cs` | the two tools' descriptions and schemas, `creds_create`'s `fields` parameter, the kind lists equal the contract's `agentCreatableKinds`, the instructions sentence before the ~2 KiB point |
+| Real binary against real window code | `creds-mcp-itest.cjs` | the catalogue, the folder answer, the owner's case refused with a host and created with its command and arguments, the whole line in the prompt; an old window (health only) told to update and sent no create |
+
+**What none of this proves.** No harness drives a real agent session against an installed relay — the
+plan's first Definition-of-Done item, left open until 1.12.0 and relay 0.9.0 are installed. The PIN
+boxes of D-B are stubbed input boxes; the real editor's box staying on screen after the step's time
+ran out is not observed by any test.
 
 ## What none of them covers
 
