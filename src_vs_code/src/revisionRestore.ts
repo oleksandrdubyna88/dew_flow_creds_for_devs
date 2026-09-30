@@ -6,10 +6,11 @@ import { applyEnvBindings } from './envApply';
 import { envCollection, showEnvNotice } from './envCollectionRef';
 import { firstLockedStored } from './pinAdmission';
 import { corruptReason } from './pinGate';
-import { grantedPin } from './pinSession';
+import { entryPinGate } from './pinPrompt';
 import { openKeptVersion } from './revisionDoor';
 import { MAX_REVISIONS, Revision } from './revisionHistory';
 import { damagedSlots, restoreVersion } from './restoreVersion';
+import { Sealing, WriterWords, sealingAtWrite } from './sealingAtWrite';
 import type { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
 
@@ -34,17 +35,48 @@ interface Ready {
   readonly accountId: string;
   readonly live: { readonly id: string; readonly name: string; readonly details: EntityMetadata };
   readonly version: Revision;
-  /** The entry's PIN when it is protected — every restored value is sealed under it. */
-  readonly pin: string | undefined;
+  /** The live entry held a sealed value at the door. Its PIN is read after the confirmation, never here. */
+  readonly locked: boolean;
 }
+
+/** What Restore says when the protection changed while its confirmation was open (`sealingAtWrite.ts`). */
+const RESTORE_WORDS: WriterWords = {
+  waited: 'this confirmation',
+  nothing: 'Nothing was restored.',
+  again: 'Run Restore This Version… again.',
+  purpose: 'restore it',
+};
 
 export async function restoreRevision(target: unknown, deps: RestoreDeps): Promise<void> {
   const ready = await readyToRestore(target, deps.storage);
   if (ready === undefined || !(await agreed(ready, deps.storage))) {
     return;
   }
-  const written = await restoreVersion(deps.storage, ready.accountId, ready.live.id, ready.version, ready.pin).catch((error: unknown) => {
-    void vscode.window.showWarningMessage(stoppedMessage(ready, error));
+  const sealing = await sealingAfterConfirmation(ready, deps.storage);
+  if (sealing.kind !== 'stopped') {
+    await restoreWith(ready, deps, pinOf(sealing));
+  }
+}
+
+function pinOf(sealing: Sealing): string | undefined {
+  return sealing.kind === 'sealed' ? sealing.pin : undefined;
+}
+
+/**
+ * Rule R3 at write time: the PIN — and whether there is one at all — is read AFTER the confirmation.
+ * It was taken before it, so an entry protected while the modal waited was restored in the clear, and
+ * one unprotected meanwhile was sealed again without a decision.
+ */
+function sealingAfterConfirmation(ready: Ready, storage: StorageManager): Promise<Sealing> {
+  const gate = entryPinGate(ready.accountId, ready.live.id, ready.live.name);
+  const opened = { locked: ready.locked, marked: ready.live.details.pinProtected === true };
+  return sealingAtWrite(storage, gate, opened, RESTORE_WORDS, (reason) => void vscode.window.showWarningMessage(reason));
+}
+
+/** The writes (`restoreVersion.ts`), and the sentences after them. */
+async function restoreWith(ready: Ready, deps: RestoreDeps, pin: string | undefined): Promise<void> {
+  const written = await restoreVersion(deps.storage, ready.accountId, ready.live.id, ready.version, pin).catch((error: unknown) => {
+    void vscode.window.showWarningMessage(stoppedMessage(ready, pin, error));
     return undefined;
   });
   deps.refresh();
@@ -73,10 +105,10 @@ async function restoreTarget(target: unknown, storage: StorageManager): Promise<
 
 function withLive(storage: StorageManager, accountId: string, id: string, version: Revision): Ready | undefined {
   const live = storage.getNode(accountId, id);
-  return live?.details === undefined ? undefined : { accountId, live: { id, name: live.name, details: live.details }, version, pin: undefined };
+  return live?.details === undefined ? undefined : { accountId, live: { id, name: live.name, details: live.details }, version, locked: false };
 }
 
-/** After the door: refuse over a damaged value (R4); take the PIN the door left for a protected entry. */
+/** After the door: refuse over a damaged value (R4); note whether the entry is protected — its PIN is fetched at the write. */
 async function checked(storage: StorageManager, ready: Ready): Promise<Ready | undefined> {
   const damaged = await damagedSlots(storage, ready.accountId, ready.live.id);
   if (damaged.length > 0) {
@@ -85,8 +117,7 @@ async function checked(storage: StorageManager, ready: Ready): Promise<Ready | u
     );
     return undefined;
   }
-  const locked = (await firstLockedStored(storage, ready.accountId, ready.live.id)) !== undefined;
-  return { ...ready, pin: locked ? grantedPin(ready.accountId, ready.live.id) : undefined };
+  return { ...ready, locked: (await firstLockedStored(storage, ready.accountId, ready.live.id)) !== undefined };
 }
 
 /** Step 3: one modal that says what happens to today's state, and what drops out of history. */
@@ -115,7 +146,7 @@ function restoredMessage(version: Revision): string {
  * write, so what is stored is a mixture of two whole states and never plaintext; running the command
  * again on the same version finishes it.
  */
-function stoppedMessage(ready: Ready, error: unknown): string {
-  const sealed = ready.pin === undefined ? '' : ' Nothing was stored in the clear.';
+function stoppedMessage(ready: Ready, pin: string | undefined, error: unknown): string {
+  const sealed = pin === undefined ? '' : ' Nothing was stored in the clear.';
   return `Restoring "${ready.live.name}" stopped part-way: ${describeError(error)}.${sealed} Run Restore This Version… on the same version again to finish it.`;
 }

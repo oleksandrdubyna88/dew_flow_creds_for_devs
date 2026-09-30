@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   values, seals every value you change under the same PIN before it is written, leaves untouched values
   byte-identical, keeps the mark, asks again at Save if the window forgot the PIN (a decline keeps the
   form), and refuses to open over a value it cannot read.
+- **A form or a confirmation left open wrote past a protection that changed meanwhile.** An entry
+  protected from another window or by a sync while its Edit form was open was saved with the typed
+  value in the clear and without its PIN mark; *Restore This Version…* did the same when the entry was
+  protected while its confirmation waited, and sealed it again when the PIN was removed meanwhile.
+  Both now decide at the moment they write: an entry whose protection changed is not touched, and you
+  are told to open Edit (or run Restore) again.
 - **Every click handed out the sealed envelope.** *Copy Password*, *Copy Connection String* (with and
   without the password), *Copy One-Time Code*, *Open in DB Extension*, *Install SSH Key to System*,
   *Save VPN Config As…*, *Start VPN*, *Connect SSH* (key and password), *Write Config File Here…*, *Add

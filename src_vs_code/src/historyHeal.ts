@@ -20,7 +20,9 @@ import type { StorageManager } from './storageManager';
  *
  * <p>Only for an entry that holds a LOCKED value now. A grant can outlive the protection — the entry
  * was unprotected on another machine and synced here this afternoon, and this morning's PIN is still
- * in memory — and sealing the history under it would re-protect what the person unprotected.</p>
+ * in memory — and sealing the history under it would re-protect what the person unprotected. Asked
+ * twice: before the sealing, and again after it and before the write, because the sealing takes
+ * seconds and a sync or a Remove PIN can land inside them (review of 2026-09-30).</p>
  */
 export function healKeptVersions(storage: StorageManager, accountId: string, entityId: string, entryName: string): void {
   const pin = grantedPin(accountId, entityId);
@@ -34,7 +36,8 @@ async function sealInBackground(storage: StorageManager, accountId: string, enti
     if (!(await needsSealing(storage, accountId, entityId))) {
       return;
     }
-    const work = protectHistory(storage, accountId, entityId, pin);
+    // Asked again after the sealing, before the write: the entry may have been unprotected meanwhile.
+    const work = protectHistory(storage, accountId, entityId, pin, () => holdsLocked(storage, accountId, entityId));
     vscode.window.setStatusBarMessage(`Sealing the kept versions of "${entryName}" under its PIN…`, work);
     await work;
   } catch {
@@ -44,8 +47,9 @@ async function sealInBackground(storage: StorageManager, accountId: string, enti
 
 /** A kept value in the clear, in an entry that is protected now — the two facts that make sealing right. */
 async function needsSealing(storage: StorageManager, accountId: string, entityId: string): Promise<boolean> {
-  return (
-    (await firstLockedStored(storage, accountId, entityId)) !== undefined
-    && plainHistoryValues(await storage.getHistory(accountId, entityId)) > 0
-  );
+  return (await holdsLocked(storage, accountId, entityId)) && plainHistoryValues(await storage.getHistory(accountId, entityId)) > 0;
+}
+
+async function holdsLocked(storage: StorageManager, accountId: string, entityId: string): Promise<boolean> {
+  return (await firstLockedStored(storage, accountId, entityId)) !== undefined;
 }

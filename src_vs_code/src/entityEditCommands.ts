@@ -27,7 +27,8 @@ import { KeyCandidate } from './entityFormPanel';
 import { EntityMetadata } from './types';
 import type { EntityFormOptions, EntityFormValues } from './entityFormPanel';
 import { envCollection, showEnvNotice } from './envCollectionRef';
-import { EditPrefill, openEntryForEdit, pinForSave, sealedWriter } from './editPrefill';
+import { EDIT_WORDS, EditPrefill, openEntryForEdit, pinForSave, sealedWriter } from './editPrefill';
+import { Sealing, sealingAtWrite } from './sealingAtWrite';
 import { protectEntity } from './entityPin';
 import { parseFields } from './entityFields';
 import { PinGate } from './pinGate';
@@ -225,21 +226,19 @@ function warn(message: string): void {
   void vscode.window.showWarningMessage(message);
 }
 
-/** Whether this save seals, and with what — or that it must not happen at all. */
-type Sealing = { readonly kind: 'plain' } | { readonly kind: 'sealed'; readonly pin: string } | { readonly kind: 'stopped' };
-
 /**
- * The PIN a protected entry's save seals with, fetched at the moment of use (`pinForSave`): the
- * window's grant when it still opens the entry, a fresh question when it does not. `stopped` means
- * the person declined, or was told why — and the form has already closed, so what was typed is
- * gone; the gate above makes that a moment's race, not the ordinary road.
+ * Whether this save seals, and with what, decided immediately before the first write
+ * (`sealingAtWrite`): a protected entry's PIN is fetched at the moment of use — the window's grant
+ * when it still opens the entry, a fresh question when it does not — and an entry whose protection
+ * CHANGED while the form was open, either way, is refused with the sentence that says so. The writer
+ * used to be chosen from what the entry was when Edit opened, so an entry protected meanwhile got the
+ * typed value in the clear. `stopped` means the person declined, or was told why — and the form has
+ * already closed, so what was typed is gone; the gate above makes that a moment's race, not the
+ * ordinary road.
  */
-async function sealingFor(ctx: EditContext, door: Door): Promise<Sealing> {
-  if (!door.prefill.locked) {
-    return { kind: 'plain' };
-  }
-  const pin = await pinForSave(ctx.storage, door.gate, warn);
-  return pin === undefined ? { kind: 'stopped' } : { kind: 'sealed', pin };
+function sealingFor(ctx: EditContext, door: Door): Promise<Sealing> {
+  const opened = { locked: door.prefill.locked, marked: ctx.details.pinProtected === true };
+  return sealingAtWrite(ctx.storage, door.gate, opened, EDIT_WORDS, warn);
 }
 
 async function saveEdit(ctx: EditContext, door: Door, result: EntityFormValues): Promise<void> {

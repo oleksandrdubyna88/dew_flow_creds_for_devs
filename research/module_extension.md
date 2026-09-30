@@ -1174,6 +1174,7 @@ inherited at read time.
 | `sealValue.ts` | `sealValue` — the one seal every writer into a protected entry uses (woven mark kept, a sealed value untouched) |
 | `pinAttempts.ts` | five wrong PINs → a wait; `attemptUnlock` is the choke point, `attemptAcross` the sibling checks' |
 | `editPrefill.ts` | Edit over a protected entry: `openEntryForEdit`, `sealedWriter`, `pinForSave` |
+| `sealingAtWrite.ts` | R3 at write time: seal, write plain, or refuse — decided right before the first write (Edit, Restore) |
 | `secretOpener.ts` / `pinClick.ts` | the automatic opener and the click opener every sink stands behind |
 | `historyPin.ts` / `historyHeal.ts` / `revisionDoor.ts` | kept versions: sealed, healed at the door, opened through the live entry's door |
 | `revisionRestore.ts` / `restoreVersion.ts` | *Restore This Version…*: the command, and the writes in the order that keeps R3 |
@@ -1398,7 +1399,13 @@ stored sealed (the write log says never in the clear) and opens to the new text.
 prefilled slots (in parallel, behind a progress notification — each is a scrypt of about a second)
 and records presence for the rest; `sealedWriter` is the `SecretWriter` a protected save writes
 through; `pinForSave` re-reads the grant at Save (`EntityFormOptions.beforeSave`: a decline keeps the
-form); `attachmentMeta.carryMarks` carries the mark; the env bindings get the WRITTEN details. Clicks
+form). **Whether a save seals at all is decided immediately before its first write**
+(`sealingAtWrite.ts`, shared with Restore): an entry opened sealed fetches its PIN then, and is refused
+if it holds no sealed value any more; an entry opened plain is refused if it now holds a sealed value
+or has gained the mark (*"… was protected with a PIN while this form was open. Nothing was saved. Close
+the form and open Edit again."*). Until 2026-09-30 the writer was chosen when the form OPENED, so an
+entry protected from another window or a sync while the form was open got the typed value in the clear
+and lost its mark. `attachmentMeta.carryMarks` carries the mark; the env bindings get the WRITTEN details. Clicks
 go through `pinClick.clickedSecret`/`clickOpener`; a file written from a protected value says it is
 outside the PIN; Connect over a key borrowed from another entry asks the OWNER of the value. Automatic
 readers: the config route body is a `FieldReading` (withheld answers the same 401 as an invented key
@@ -1411,14 +1418,18 @@ through the live door and seals every arriving value.
 **History is sealed, opens through the door, and can be restored.** Kept versions live per machine in
 the keychain (cap 3). Protect runs `historyPin.protectHistory` before the mark; on every OTHER machine
 the door heals it — `historyHeal.healKeptVersions` seals this machine's plaintext versions in the
-background with a status-bar message, after a successful admission. `StorageManager.replaceHistory`
+background with a status-bar message, after a successful admission — and asks again, after the
+sealing and before the write (`protectHistory`'s `stillWanted`), whether the entry still holds a sealed
+value, so a sync or a Remove PIN inside those seconds is not undone. `StorageManager.replaceHistory`
 rewrites the list as it is at write time and writes nothing when history is absent or does not parse.
 The revision viewer goes through `revisionDoor.openKeptVersion`: the LIVE entry's door, then
 `openRevision` — the grant silently, then the version's own PIN once, never granted (a version sealed
 under a PIN the live entry no longer has). **Restore This Version…** (`credSshManager.restoreRevision`,
 registered from `registerPinCommands`; `revisionRestore.ts` the command, `restoreVersion.ts` the
-writes) opens and seals everything in memory first, records today's state as the newest version,
-writes the values (password last), keeps today's `pinProtected`, `pinEpoch`, agent access, code-access
+writes) reads the entry's protection and PIN AFTER its confirmation (`sealingAtWrite`, in its own
+words — *"… while this confirmation was open. Nothing was restored. Run Restore This Version… again."*;
+they were taken before it until 2026-09-30), opens and seals everything in memory first, records
+today's state as the newest version, writes the values (password last), keeps today's `pinProtected`, `pinEpoch`, agent access, code-access
 key, expiry, burn policy, agent key and every attachment/image claim, removes what the version lacked
 through `SecretSlot.remove`, refuses over a damaged live value, and is idempotent.
 

@@ -164,3 +164,31 @@ test('the door seals nothing for an entry that holds no locked value, whatever g
   assert.deepEqual(s.statusBar, []);
   assert.equal((await storage.getHistory(ACCOUNT, ENTRY))[0].secrets.password, 'old pw');
 });
+
+test('the door’s background seal re-checks the protection before it writes — an entry unprotected while it sealed keeps a plain history', async () => {
+  // Capture-then-wait, the machine's kind (review of 2026-09-30): the heal decided "protected" before
+  // about a second of scrypt per value, and a sync or a Remove PIN in that second made its write a
+  // re-protection nobody decided. The live value goes plain the moment the heal first reads history.
+  const s = sinks();
+  const stub = clickVscode([PIN], s);
+  const storage = memoryStorage(stub);
+  await entryWithHistory(storage, { notes: await locked('live note') }, [{ password: 'old pw' }], { pinProtected: true });
+  const prompt = loadWithVscode<typeof import('../pinPrompt')>('../pinPrompt', stub);
+  const realGet = storage.getHistory.bind(storage);
+  let reads = 0;
+  storage.getHistory = async (a: string, e: string) => {
+    const kept = await realGet(a, e);
+    reads += 1;
+    if (reads === 2) {
+      await storage.setNotes(ACCOUNT, ENTRY, 'unprotected meanwhile');
+    }
+    return kept;
+  };
+
+  assert.ok((await prompt.admitEntry(storage, ACCOUNT, ENTRY, 'orest payoneer', 'view it')) !== undefined);
+  await settled(() => s.statusBar.length > 0, 3000);
+  await s.statusBar[0]?.work;
+
+  assert.ok(reads >= 2, 'precondition: the heal ran and read the history it meant to seal');
+  assert.equal((await realGet(ACCOUNT, ENTRY))[0].secrets.password, 'old pw', 'nothing sealed into the history of an entry that is no longer protected');
+});

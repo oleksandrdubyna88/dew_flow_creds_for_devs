@@ -2,8 +2,8 @@
 
 > Status: **IMPLEMENTED, 2026-09-29.** Built as one unit on `fix/entry-pin-keeps-its-promise`, P1-P10 as
 > commits (§9.1); every defect D1-D18 has a test watched failing first. Deviations: §15. Open tail: §16 —
-> the owner's check in a real editor, the 1.12.0 release after the sibling plan, three recorded limits, and
-> the typed-secrets plan. Plan gate passed (`proceed`, 2 of 2 reviewers, one round, five findings accepted —
+> the owner's check in a real editor, the 1.12.0 release after the sibling plan, three recorded limits, the
+> gaps the 2026-09-30 review recorded, and the typed-secrets plan. Plan gate passed (`proceed`, 2 of 2 reviewers, one round, five findings accepted —
 > §14). Scope: `src_vs_code/src` — the PIN door and
 > gate (`pinAdmission.ts`, `pinGate.ts`, `pinPrompt.ts`, `pinSession.ts`, `entityPin.ts`, `entitySlots.ts`),
 > the viewer and the edit form, ~12 click commands, ~6 automatic readers, export, share-update, history,
@@ -768,6 +768,20 @@ reproduced by a test watched failing first; the commits carry the RED messages.
   third notice (*"… was changed under its PIN on another machine while this one changed it too, and the
   other machine's version was kept …"*); `ProtectionConflict.protectedNow` became `won`
   (`'protect' | 'unprotect' | 'other-sealed-edit'`).
+- **R3 at write time.** Edit chose its writer from the protection captured when the form OPENED, and
+  Restore took `ready.pin` before its confirmation; an entry protected from another window or a sync
+  while either waited got plaintext (and, for Edit, details rebuilt from the stale copy without the
+  mark). New pure `sealingAtWrite.ts` decides seal / plain / refuse immediately before the first write
+  and is shared by both: opened sealed → the PIN is fetched then (`pinForSave` became a thin wrapper of
+  its `pinAtWrite`), refused if no sealed value is left; opened plain → refused if a sealed value or the
+  mark appeared (*"… was protected with a PIN while this form was open. Nothing was saved. Close the form
+  and open Edit again."*). The conservative refusal was chosen over sealing under the now-required PIN:
+  the person typed into a form that said the entry was unprotected. Restore also asks for the PIN again
+  when the vault locked while its confirmation was open. The door's history heal had the same shape
+  with a machine wait (seconds of scrypt): `protectHistory` takes a `stillWanted` re-check between the
+  sealing and the write. *Checked and left as they are*: `shareUpdateSeal` decides after the last wait
+  (the *Update it* choice comes before `updateInPlace`); export fails closed — an entry protected after
+  its admission does not open with the silent gate, and the export stops with nothing written.
 
 ## 16. Open tail
 
@@ -783,5 +797,13 @@ reproduced by a test watched failing first; the commits carry the RED messages.
    versions is reached through the Protect modal — the row's token is derived from the mark
    (`treeRowText.ts:184`) and the provider that would have to read kept versions, `treeDataProvider.ts`, is at
    795 of its 800 lines.
-4. **[PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) follows** — the compile-time
+4. **Recorded by the 2026-09-30 review, not fixed:** an entry protected while it held NO value carries
+   the mark alone, so Edit opens it as plain (no sealed value to open or to check a PIN against) and a
+   first value typed into it is stored in the clear — sealing needs a PIN nothing can verify, a design
+   question of its own. *Protect with a PIN…* checks for an existing PIN before its two PIN boxes; a
+   Protect from another window in between leaves every value under the OTHER PIN (locked slots are never
+   replaced) while this run still reports the entry protected and bumps `pinEpoch` a second time. The
+   `entity-pin` help's *Changed on two machines at once* paragraph (five languages) still says the raced
+   copies win "whole"; it does not yet name the kept second value or the kept sealed edit.
+5. **[PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) follows** — the compile-time
    `StoredSecret` type that turns this plan's runtime rules and test guard into a compile error.

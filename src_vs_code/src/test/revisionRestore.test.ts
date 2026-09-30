@@ -8,7 +8,9 @@ import { readSecret, unlockSecret } from '../secretEnvelope';
 import type { StorageManager } from '../storageManager';
 import { EntityMetadata, TreeNode } from '../types';
 import { loadWithVscode } from './vscodeStub';
-import { ACCOUNT, PIN, Sinks, clickVscode, locked, memoryStorage, seedEntry, sinks } from './pinWorld';
+import { protectEntity, unprotectEntity } from '../entityPin';
+import { protectionDecision } from '../syncPinRule';
+import { ACCOUNT, ModalAnswer, PIN, Sinks, clickVscode, locked, memoryStorage, seedEntry, sinks } from './pinWorld';
 
 /**
  * D11 of the entry-PIN plan — *Restore This Version…*.
@@ -48,7 +50,7 @@ async function world(
   live: { details: EntityMetadata; slots: Record<string, string> },
   version: { details?: Partial<EntityMetadata>; name?: string; secrets: RevisionSecrets },
   inputs: (string | undefined)[],
-  modal: (string | undefined)[] = ['Restore'],
+  modal: ModalAnswer[] = ['Restore'],
 ): Promise<World> {
   const s = sinks();
   s.modalAnswers.push(...modal);
@@ -256,4 +258,74 @@ test('Restore This Version… is contributed on every history row and hidden fro
     [['view == credSshManagerView && viewItem =~ /^revision/', '3_manage@0']],
   );
   assert.equal(manifest.contributes.menus.commandPalette.find((m) => m.command === id)?.when, 'false');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Rule R3 at WRITE time (review of 2026-09-30): protection is re-read AFTER the confirmation, because
+// another window or a sync can change it while the modal waits for an answer.
+// ---------------------------------------------------------------------------------------------
+
+/** Protect `c1` the way another window does — every value sealed, then the mark and the epoch in one write. */
+async function protectedElsewhere(storage: StorageManager): Promise<void> {
+  await protectEntity(storage, ACCOUNT, ENTRY, PIN);
+  await storage.updateNodeFields(ACCOUNT, ENTRY, protectionDecision(true));
+}
+
+/** A confirmation that is answered only after `meanwhile` has happened. */
+function answeredAfter(meanwhile: () => Promise<unknown>): ModalAnswer {
+  return async () => {
+    await meanwhile();
+    return 'Restore';
+  };
+}
+
+test('an entry PROTECTED while the confirmation was open is not restored in the clear — nothing is restored, and it says why', async () => {
+  let storage: StorageManager | undefined;
+  const w = await world(
+    { details: credential(), slots: { password: 'new pw' } },
+    { secrets: { password: 'old pw', notes: 'old note' } },
+    [],
+    [answeredAfter(() => protectedElsewhere(storage as StorageManager))],
+  );
+  storage = w.storage;
+
+  await w.restore();
+
+  for (const plain of ['old pw', 'old note']) {
+    assert.ok(!w.written.includes(plain), `"${plain}" was written in the clear into an entry protected a moment earlier`);
+  }
+  assert.equal(await openedLive(w, 'password'), 'new pw', 'the protected value stays exactly as the other window sealed it');
+  assert.equal(w.node().details?.pinProtected, true);
+  assert.match(w.s.warnings.join(' '), /"godaddy" was protected with a PIN while this confirmation was open\. Nothing was restored\. Run Restore This Version… again\./);
+});
+
+test('an entry UNPROTECTED while the confirmation was open is not sealed again without a decision — nothing is restored', async () => {
+  let storage: StorageManager | undefined;
+  const w = await world(
+    { details: credential({ pinProtected: true }), slots: { password: await locked('new pw') } },
+    { secrets: { password: 'old pw' } },
+    [PIN],
+    [answeredAfter(() => unprotectEntity(storage as StorageManager, ACCOUNT, ENTRY, PIN))],
+  );
+  storage = w.storage;
+
+  await w.restore();
+
+  assert.equal(await stored(w, 'password'), 'new pw', 'the value Remove PIN unsealed stays as it left it');
+  assert.match(w.s.warnings.join(' '), /"godaddy" stopped being protected with a PIN while this confirmation was open .* Nothing was restored\. Run Restore This Version… again\./);
+});
+
+test('the PIN is read AFTER the confirmation: a vault locked while it was open asks again, and the restore still seals', async () => {
+  const w = await world(
+    { details: credential({ pinProtected: true }), slots: { password: await locked('new pw') } },
+    { secrets: { password: 'old pw' } },
+    [PIN, PIN],
+    [answeredAfter(async () => (require('../pinSession') as typeof import('../pinSession')).forgetAllPins())],
+  );
+
+  await w.restore();
+
+  assert.equal(w.s.boxes, 2, 'the door, then the PIN again for the write — the grant it took is gone');
+  assert.equal(await openedLive(w, 'password'), 'old pw');
+  assert.ok(!w.written.includes('old pw'), 'sealed before it was written');
 });

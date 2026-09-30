@@ -48,9 +48,15 @@ export interface Sinks {
   boxPrompts: string[];
   /** Status-bar messages, with the work each one stands for — a test awaits `work` to see the end. */
   statusBar: { readonly text: string; readonly work: Thenable<unknown> | undefined }[];
-  /** What the person presses on each MODAL, in order; a modal with nothing queued is dismissed. */
-  modalAnswers: (string | undefined)[];
+  /**
+   * What the person presses on each MODAL, in order; a modal with nothing queued is dismissed. A
+   * FUNCTION is a modal that stays open while something else happens — another window, a sync — and
+   * answers only when that is done: the capture-then-wait races are driven through it.
+   */
+  modalAnswers: ModalAnswer[];
 }
+
+export type ModalAnswer = string | undefined | (() => Promise<string | undefined>);
 
 export function sinks(): Sinks {
   return { clipboard: [], files: {}, infos: [], warnings: [], errors: [], boxes: 0, boxTitles: [], boxPrompts: [], statusBar: [], modalAnswers: [] };
@@ -65,7 +71,8 @@ export function everythingSunk(s: Sinks): string {
 export function clickVscode(inputs: (string | undefined)[], s: Sinks, saveTo = '/tmp/saved.file'): Record<string, unknown> {
   const said = (into: string[]) => (message: string, options?: { modal?: boolean }): Promise<string | undefined> => {
     into.push(message);
-    return Promise.resolve(options?.modal === true ? s.modalAnswers.shift() : undefined);
+    const answer = options?.modal === true ? s.modalAnswers.shift() : undefined;
+    return typeof answer === 'function' ? answer() : Promise.resolve(answer);
   };
   return {
     window: {

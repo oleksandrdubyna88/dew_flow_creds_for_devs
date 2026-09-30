@@ -167,6 +167,8 @@ interface Answer {
   newPayment?: PaymentFields;
   /** The vault locked while the form was open: every grant is gone by the time Save is pressed. */
   lockVaultBeforeSave?: boolean;
+  /** Something that happens elsewhere — another window, a sync — while the form is open, before Save. */
+  meanwhile?: () => Promise<void>;
 }
 
 /** What the form was given, and whether its own last gate (`beforeSave`) held the save back. */
@@ -182,16 +184,24 @@ interface Form {
  * was given — the way the real `toValues` does for a person who changed only the name. `details`
  * are rebuilt WITHOUT `pinProtected`, because the real form's allow-list has no such field (D3).
  */
-function formAnswer(options: EntityFormOptions, answer: Answer, form: Form, lockVault: () => void): Promise<EntityFormValues | undefined> {
+async function formAnswer(options: EntityFormOptions, answer: Answer, form: Form, lockVault: () => void): Promise<EntityFormValues | undefined> {
   form.options = options;
+  await whileTheFormIsOpen(answer, lockVault);
+  const agreed = await (options.beforeSave ?? agreeing)();
+  form.heldAtSave = !agreed;
+  return agreed ? posted(options, answer) : undefined;
+}
+
+/** What happens between the form opening and Save being pressed — the vault locking, another window. */
+async function whileTheFormIsOpen(answer: Answer, lockVault: () => void): Promise<void> {
   if (answer.lockVaultBeforeSave === true) {
     lockVault();
   }
-  const gate = options.beforeSave ?? ((): Promise<boolean> => Promise.resolve(true));
-  return gate().then((agreed) => {
-    form.heldAtSave = !agreed;
-    return agreed ? posted(options, answer) : undefined;
-  });
+  await answer.meanwhile?.();
+}
+
+function agreeing(): Promise<boolean> {
+  return Promise.resolve(true);
 }
 
 function posted(options: EntityFormOptions, answer: Answer): EntityFormValues {
@@ -604,4 +614,49 @@ test('a save that fails part-way says so, stored nothing in the clear, and left 
   assert.match(w.said.warnings.join(' '), /Saving "orest payoneer" stopped part-way: the keychain refused the write\. Nothing was stored in the clear/);
   assert.deepEqual(w.written.filter((value) => value.includes('"999"')), [], 'no plaintext reached the keychain');
   assert.equal(w.node().name, 'orest payoneer', 'the node is written after the additions, so it did not move');
+});
+
+test('an entry PROTECTED while the form was open is not saved in the clear — Save refuses, keeps the mark, and says what to do', async () => {
+  // Rule R3 at WRITE time (review of 2026-09-30): the writer used to be chosen from the protection the
+  // entry had when Edit OPENED. Protected meanwhile, Save wrote the typed password in the clear into a
+  // protected entry and rebuilt its details from the stale copy, without the mark.
+  const answer: Answer = { newPassword: 'typed in the form' };
+  const w = await world(credential({ pinProtected: undefined }), { password: 'hunter2', notes: 'the note' }, [], answer);
+  const { protectEntity } = require('../entityPin') as typeof import('../entityPin');
+  const { protectionDecision } = require('../syncPinRule') as typeof import('../syncPinRule');
+  answer.meanwhile = async (): Promise<void> => {
+    await protectEntity(w.storage, ACCOUNT, 'c1', PIN);
+    await w.storage.updateNodeFields(ACCOUNT, 'c1', protectionDecision(true));
+  };
+
+  await w.edit();
+
+  assert.deepEqual(w.written.filter((value) => value.includes('typed in the form')), [], 'no plaintext reached the keychain');
+  assert.equal(await opened(w, 'password'), 'hunter2', 'the value the other window sealed stays exactly as it sealed it');
+  assert.equal(await opened(w, 'notes'), 'the note');
+  assert.equal(w.node().details?.pinProtected, true, 'the mark is not dropped by details read before the protection');
+  assert.match(w.said.warnings.join(' '), /"godaddy" was protected with a PIN while this form was open\. Nothing was saved\. Close the form and open Edit again\./);
+});
+
+test('an unprotected entry that stays unprotected still saves plainly — the write-time check refuses only a change', async () => {
+  const w = await world(credential({ pinProtected: undefined }), { password: 'hunter2' }, [], { newPassword: 'typed in the form' });
+
+  await w.edit();
+
+  assert.equal(await w.storage.getPassword(ACCOUNT, 'c1'), 'typed in the form');
+  assert.deepEqual(w.said.warnings, []);
+});
+
+test('an entry that GAINED the mark while the form was open is refused too — even when it holds no value to seal yet', async () => {
+  // A Protect over an entry with nothing in it writes the mark alone; a plain Save afterwards would put
+  // the first value of a protected entry into the keychain in the clear.
+  const answer: Answer = { newPassword: 'typed in the form' };
+  const w = await world(credential({ pinProtected: undefined }), {}, [], answer);
+  const { protectionDecision } = require('../syncPinRule') as typeof import('../syncPinRule');
+  answer.meanwhile = async (): Promise<void> => void (await w.storage.updateNodeFields(ACCOUNT, 'c1', protectionDecision(true)));
+
+  await w.edit();
+
+  assert.equal(await w.storage.getPassword(ACCOUNT, 'c1'), undefined, 'nothing was written');
+  assert.match(w.said.warnings.join(' '), /"godaddy" was protected with a PIN while this form was open\. Nothing was saved\./);
 });

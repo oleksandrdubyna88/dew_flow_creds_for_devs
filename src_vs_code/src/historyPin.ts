@@ -61,8 +61,19 @@ export function lockedHistoryValues(kept: readonly Revision[]): number {
  * <p>Only a `value` is sealed: one already locked is left exactly as it is (under this PIN it is done,
  * under another it cannot be opened here and must not be replaced), and a `corrupt` one is the only
  * copy of the evidence, which no rewrite may touch — the rule `protectEntity` keeps for live slots.</p>
+ *
+ * <p>`stillWanted`, when given, is asked AFTER the sealing and before the write: the sealing costs
+ * about a second per value, and a caller that decided "protected" before it (the door's background
+ * heal) must not write a re-protection that a sync or a Remove PIN made wrong in that second. Nothing
+ * is written, and 0 answered, when it says no.</p>
  */
-export async function protectHistory(storage: HistoryStore, accountId: string, entityId: string, pin: string): Promise<number> {
+export async function protectHistory(
+  storage: HistoryStore,
+  accountId: string,
+  entityId: string,
+  pin: string,
+  stillWanted?: () => Promise<boolean>,
+): Promise<number> {
   const plain = [...new Set(storedValues(await storage.getHistory(accountId, entityId)))].filter(
     (stored) => readSecret(stored).kind === 'value',
   );
@@ -70,6 +81,9 @@ export async function protectHistory(storage: HistoryStore, accountId: string, e
     return 0;
   }
   const sealed = new Map(await Promise.all(plain.map(async (stored) => [stored, await sealValue(stored, accountId, pin)] as const)));
+  if (stillWanted !== undefined && !(await stillWanted())) {
+    return 0;
+  }
   await rewriteHistory(storage, accountId, entityId, sealed);
   return sealed.size;
 }

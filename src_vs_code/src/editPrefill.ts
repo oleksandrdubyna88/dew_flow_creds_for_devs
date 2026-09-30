@@ -6,7 +6,7 @@ import { SECRET_SLOTS, SecretSlot } from './entitySlots';
 import { firstLockedStored } from './pinAdmission';
 import { PinGate, PinOpen, openStored, silentPinGate } from './pinGate';
 import type { RevisionSecrets } from './revisionHistory';
-import { grantedPin } from './pinSession';
+import { WriterWords, pinAtWrite, refusalOf } from './sealingAtWrite';
 import { parseSecondValues, serializeSecondValues } from './secondValues';
 import type { StorageManager } from './storageManager';
 
@@ -28,7 +28,8 @@ import type { StorageManager } from './storageManager';
  *       `corrupt` or unopenable slot, and a value equal to what was opened is left byte-identical:
  *       no re-seal, no sync churn.</li>
  *   <li><b>The PIN is fetched at Save, never captured at open.</b> `pinForSave` re-reads this
- *       window's grant and asks again when it no longer opens the entry (plan gate, finding 2).</li>
+ *       window's grant and asks again when it no longer opens the entry (plan gate, finding 2); the
+ *       whole decision — seal, write plain, or refuse — is `sealingAtWrite.ts`, shared with Restore.</li>
  * </ul>
  *
  * <p>Pure of `vscode`: the gate and the storage arrive as arguments, so `editProtected.test.ts`
@@ -144,47 +145,27 @@ function valueOf(open: PinOpen): string | undefined {
   return open.kind === 'value' || open.kind === 'unprotected' ? open.value : undefined;
 }
 
+/** What Edit's save says when the protection changed while its form was open (`sealingAtWrite.ts`). */
+export const EDIT_WORDS: WriterWords = {
+  waited: 'this form',
+  nothing: 'Nothing was saved.',
+  again: 'Close the form and open Edit again.',
+  purpose: 'save it',
+};
+
 /**
  * The PIN a protected entry's save seals with, verified NOW — or nothing, and the person is told
- * why unless they declined.
+ * why unless they declined (`sealingAtWrite.pinAtWrite`, in Edit's words).
  *
  * <p>The grant is re-read at Save rather than captured when the form opened: a grant taken early
  * and spent late can be gone by then (the vault locked, the window reloaded), and read late its
- * absence is simply another question — asked with the purpose <i>"save it"</i>. `undefined` means
- * the save must not happen; a wrong or damaged answer has been said through `report`. An entry
- * that holds no locked slot any more (unprotected in another window while this form was open) is
- * refused too: sealing it would re-protect it without the person's decision, and writing it plain
- * would drop the mark in silence, so the form stays open and the sentence says what to do.</p>
+ * absence is simply another question — asked with the purpose <i>"save it"</i>. An entry that holds
+ * no locked slot any more (unprotected in another window while this form was open) is refused too,
+ * so the form stays open and the sentence says what to do.</p>
  */
-export async function pinForSave(
-  storage: StorageManager,
-  gate: PinGate,
-  report: (reason: string) => void,
-): Promise<string | undefined> {
-  const locked = await firstLockedStored(storage, gate.accountId, gate.entityId);
-  if (locked === undefined) {
-    report(UNPROTECTED_MEANWHILE(gate.entryName));
-    return undefined;
-  }
-  const opened = await openStored(locked, { ...gate, purpose: 'save it' });
-  if (opened.kind === 'value') {
-    return grantedPin(gate.accountId, gate.entityId);
-  }
-  const reason = refusalOf(opened);
-  if (reason !== '') {
-    report(reason);
-  }
-  return undefined;
+export function pinForSave(storage: StorageManager, gate: PinGate, report: (reason: string) => void): Promise<string | undefined> {
+  return pinAtWrite(storage, gate, EDIT_WORDS, report);
 }
-
-/** What to say about an open that did not produce a value — nothing for a decline. */
-function refusalOf(opened: PinOpen): string {
-  return opened.kind === 'wrong' || opened.kind === 'cooling' || opened.kind === 'corrupt' ? opened.reason : '';
-}
-
-const UNPROTECTED_MEANWHILE = (name: string): string =>
-  `"${name}" stopped being protected with a PIN while this form was open — the protection was removed `
-  + 'in another window or by a sync. Nothing was saved. Close the form and open Edit again.';
 
 /**
  * The writer for a protected entry's save: every changed value sealed under `pin` before its raw
