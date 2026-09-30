@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.12.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.11.0...extension-v1.12.0) (2026-09-30)
+
+
+### Features
+
+* **agent:** an agent learns what a folder holds, and creates an entry with exactly that kind's fields ([#168](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/168)) ([57a2953](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/57a295361d20bf7121b5aaf6d4772bafb23b03ca))
+
+
+### Bug Fixes
+
+* **vscode:** a PIN-protected entry keeps its promise — opens, edits, never leaks, never loses ([#165](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/165)) ([21783f6](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/21783f6381680172f798cdf1a94129008ad32cb3))
+
 ## [1.11.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.10.0...extension-v1.11.0) (2026-09-25)
 
 
