@@ -816,8 +816,8 @@ reproduced by a test watched failing first; the commits carry the RED messages.
    first value typed into it is stored in the clear — sealing needs a PIN nothing can verify, a design
    question of its own. *Protect with a PIN…* checks for an existing PIN before its two PIN boxes; a
    Protect from another window in between leaves every value under the OTHER PIN (locked slots are never
-   replaced) while this run still reports the entry protected and bumps `pinEpoch` a second time. The
-   `entity-pin` help's *Changed on two machines at once* paragraph (five languages) still says the raced
-   copies win "whole"; it does not yet name the kept second value or the kept sealed edit.
+   replaced) while this run still reports the entry protected and bumps `pinEpoch` a second time. *(The
+   third item this review recorded — the `entity-pin` help's* Changed on two machines at once *paragraph
+   still saying the raced copies win "whole" — was fixed before the code round, in all five languages.)*
 5. **[PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) follows** — the compile-time
    `StoredSecret` type that turns this plan's runtime rules and test guard into a compile error.
