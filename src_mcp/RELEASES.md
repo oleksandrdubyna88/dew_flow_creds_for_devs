@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/mcp-v0.8.0...mcp-v0.9.0) (2026-09-30)
+
+
+### Features
+
+* **agent:** an agent learns what a folder holds, and creates an entry with exactly that kind's fields ([#168](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/168)) ([57a2953](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/57a295361d20bf7121b5aaf6d4772bafb23b03ca))
+
 ## [0.8.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/mcp-v0.7.0...mcp-v0.8.0) (2026-09-24)
 
 
