@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
+import { parseFields } from '../entityFields';
 import type { McpCreateHooks } from '../brokerMcpDoor';
 import type { EntityMetadata, FolderType, TreeNode } from '../types';
 
@@ -28,7 +29,7 @@ interface Storage {
   getConfigBody(accountId: string, id: string): Promise<string | undefined>;
   getVpnConfig(accountId: string, id: string): Promise<string | undefined>;
   getPrivateKey(accountId: string, id: string): Promise<string | undefined>;
-  getFields(accountId: string, id: string): Promise<{ login?: string; url?: string }>;
+  getFieldsRaw(accountId: string, id: string): Promise<string | undefined>;
   getNotes(accountId: string, id: string): Promise<string | undefined>;
 }
 
@@ -184,7 +185,8 @@ test('the secret lands in the slot its kind owns: connection string, config body
   assert.equal(await storage.getVpnConfig(A, vpn.id), '[Interface]\n');
   assert.equal(await storage.getPrivateKey(A, key.id), '-----BEGIN KEY-----');
   assert.equal(await storage.getPassword(A, login.id), 'pw');
-  assert.deepEqual(await storage.getFields(A, login.id), { login: 'svc', url: 'https://c.example' });
+  // The raw read, parsed here: the typed getter that emptied a sealed record in silence is gone (entry-PIN plan §7.1).
+  assert.deepEqual(parseFields(await storage.getFieldsRaw(A, login.id)), { login: 'svc', url: 'https://c.example' });
   assert.equal(await storage.getNotes(A, login.id), 'made by the agent');
   assert.equal(JSON.stringify(detailsOf(storage, login.id)).includes('svc'), false, 'the login is not on the node');
   assert.equal(detailsOf(storage, config.id).configFormat, 'env');
