@@ -13,7 +13,9 @@ import * as vscode from 'vscode';
  * clear into a folder whose whole point is that nothing in it is. An agent cannot type a PIN, so after
  * the person ALLOWS the creation the window asks them for it — the same question Add asks, by the same
  * code — inside the same consent step, and the step's deadline bounds it (plan gate, finding 0: a PIN
- * prompt must not hang the agent's call). The answer is settled BEFORE anything is written: a PIN seals
+ * prompt must not hang the agent's call). Only boxes are raised there, never a modal: a box closes with
+ * the step's token, a modal cannot be closed from code at all, so the count a typed PIN opens is said
+ * rather than agreed to (`PinAsk.confirm`, code review of 2026-09-30). The answer is settled BEFORE anything is written: a PIN seals
  * every value in memory first (rule R3 of the entry-PIN plan, `mcpHooks.makeAgentEntry`); anything else
  * is a sentence for the agent and nothing is made, not even half.</p>
  */
@@ -76,7 +78,7 @@ const NOT_GIVEN = (folder: string): string =>
   'are refusing PINs for a while after wrong ones. Nothing was created. Ask them to try again when they are ready.';
 
 const NOT_AGREED = (folder: string): string =>
-  `${ASKS(folder)}, and the PIN typed was not agreed to, ${AGENT_PIN_TRIES} times running. ` +
+  `${ASKS(folder)}, and none of the ${AGENT_PIN_TRIES} PINs typed opens its protected entries. ` +
   "Nothing was created. Ask the person to create it again with the PIN the folder's entries use.";
 
 const TIMED_OUT = (folder: string): string =>

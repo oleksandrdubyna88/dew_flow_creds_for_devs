@@ -35,6 +35,8 @@ interface World {
   stub: Record<string, unknown>;
   /** Every value the keychain was ever handed. */
   written: string[];
+  /** The person's own Add, loaded in the same graph — so the wrong-PIN counts are the ones the hooks see. */
+  onCreate: typeof import('../pinOnCreate');
 }
 
 interface Keychain {
@@ -83,9 +85,10 @@ async function world(folder: { asks?: boolean; sibling?: boolean }, inputs: (str
   const s = sinks();
   const stub = clickVscode([...inputs], s);
   const written: string[] = [];
-  const [storageModule, hooksModule] = loadEachWithVscode(['../storageManager', '../mcpHooks'], stub) as [
+  const [storageModule, hooksModule, onCreate] = loadEachWithVscode(['../storageManager', '../mcpHooks', '../pinOnCreate'], stub) as [
     typeof import('../storageManager'),
     typeof import('../mcpHooks'),
+    typeof import('../pinOnCreate'),
   ];
   const storage = new storageModule.StorageManager(memento() as never, keychain(written) as never);
   await storage.upsertAccount({ accountId: ACCOUNT, email: 'me@example.com', provider: 'google' });
@@ -95,7 +98,7 @@ async function world(folder: { asks?: boolean; sibling?: boolean }, inputs: (str
     await storage.setPassword(ACCOUNT, 's1', await locked('the sibling’s password'));
   }
   written.length = 0;
-  return { storage, hooks: hooksModule.mcpCreateHooks(storage, () => undefined), s, stub, written };
+  return { storage, hooks: hooksModule.mcpCreateHooks(storage, () => undefined), s, stub, written, onCreate };
 }
 
 /** The door's order: choose, then — once the person allowed it — settle, then make only if settled. */
@@ -145,16 +148,58 @@ test('an agent’s entry in a folder that asks for a PIN is sealed before it is 
   assert.match(await opened(await w.storage.getFieldsRaw(ACCOUNT, entry.id), '2468'), new RegExp(LOGIN));
 });
 
-test('in a folder of protected entries the PIN is checked against them, as Add checks it', async () => {
+test('in a folder of protected entries the PIN is checked against them, as Add checks it, and the count is said in a message that asks nothing', async () => {
   const w = await world({ sibling: true }, [PIN]);
-  w.s.modalAnswers.push('Use this PIN');
 
   const settled = await create(w);
 
   assert.equal(settled.ok, true, JSON.stringify(settled));
-  assert.match(w.s.warnings.join('\n'), /This PIN opens 1 of the 1 protected entries in this folder/);
+  assert.match(w.s.infos.join('\n'), /This PIN opens 1 of the 1 protected entries in this folder/);
   assert.equal(await opened(await w.storage.getPassword(ACCOUNT, onlyMade(w).id), PIN), SECRET);
   assert.ok(w.written.every((value) => !value.includes(SECRET)), 'nothing in the clear');
+});
+
+test('the agent’s PIN step raises no modal that could outlive it', async () => {
+  // VS Code closes a box whose token is cancelled, and cannot close a modal from code at all: a modal
+  // raised inside the step would stay on screen after its deadline, and its answer would be ignored.
+  for (const [folder, inputs] of [
+    [{ sibling: true }, [PIN]], // checked against a protected sibling
+    [{ sibling: true }, ['9999', PIN]], // a miss first, then the sibling's PIN
+    [{ asks: true }, ['2468', '2468']], // the folder's first PIN, typed twice
+  ] as const) {
+    const w = await world(folder, [...inputs]);
+
+    const settled = await create(w);
+
+    assert.deepEqual(w.s.modals, [], `a modal was raised inside the agent's PIN step (${JSON.stringify(inputs)})`);
+    assert.equal(settled.ok, true, JSON.stringify(settled));
+  }
+});
+
+test('a PIN that opens none of the folder’s protected entries is a declined attempt, and the box asks again', async () => {
+  const w = await world({ sibling: true }, ['9999', PIN]);
+
+  const settled = await create(w);
+
+  assert.equal(settled.ok, true, JSON.stringify(settled));
+  assert.equal(w.s.boxes, 2, 'the PIN that opened nothing was taken, or ended the step');
+  assert.match(w.s.warnings.join('\n'), /This PIN opens none of the 1 protected entries in this folder/);
+  assert.equal(await opened(await w.storage.getPassword(ACCOUNT, onlyMade(w).id), PIN), SECRET, 'sealed under the PIN the sibling opens');
+});
+
+test('the person’s own Add still confirms the count', async () => {
+  // Add has no deadline, and "it opened none" is a real choice there — a folder may hold two PINs — so
+  // the count stays a question the person answers, in a modal, and only an agreed count is taken.
+  const w = await world({ sibling: true }, [PIN, '9999']);
+  w.s.modalAnswers.push('Use this PIN', undefined);
+
+  assert.deepEqual(await w.onCreate.pinForNewEntry(w.storage, ACCOUNT, 'f1'), { kind: 'pin', pin: PIN });
+  assert.deepEqual(await w.onCreate.pinForNewEntry(w.storage, ACCOUNT, 'f1'), { kind: 'cancelled', typed: true }, 'a declined count is not a PIN');
+
+  assert.equal(w.s.modals.length, 2, 'Add asked for no agreement');
+  assert.match(w.s.modals[0], /^This PIN opens 1 of the 1 protected entries in this folder\.$/);
+  assert.match(w.s.modals[1], /^This PIN opens none of the 1 protected entries in this folder\. The new entry will be the first under it/);
+  assert.deepEqual(w.s.infos, [], 'the count was said without being asked');
 });
 
 test('a declined PIN creates nothing and tells the agent', async () => {
@@ -169,15 +214,13 @@ test('a declined PIN creates nothing and tells the agent', async () => {
   assert.deepEqual(w.written, [], 'and nothing was written, not even for a moment');
 });
 
-test('a PIN not agreed to three times creates nothing and says so', async () => {
+test('three PINs that open none of the folder’s protected entries create nothing and say so', async () => {
   const w = await world({ sibling: true }, ['1111', '2222', '3333', '4444']);
-  // "This PIN opens none of the 1 protected entries…" — dismissed each time, as a wrong PIN is.
-  w.s.modalAnswers.push(undefined, undefined, undefined);
 
   const settled = await create(w);
 
   assert.equal(w.s.boxes, 3, 'asked three times, not a fourth');
-  assert.match(settled.ok ? '' : settled.message, /not agreed to, 3 times running.*Nothing was created/s);
+  assert.match(settled.ok ? '' : settled.message, /none of the 3 PINs typed opens its protected entries.*Nothing was created/s);
   assert.deepEqual(made(w), []);
   assert.deepEqual(w.written, []);
 });
@@ -217,14 +260,11 @@ test('a PIN box still open when the consent step’s time runs out is closed wit
 });
 
 test('every PIN box an agent’s create raises carries the step’s token, and a PIN given in time cancels nothing', async () => {
-  for (const [folder, inputs, modal] of [
-    [{ asks: true }, ['2468', '2468'], undefined], // the folder's first PIN, typed twice (`newPin`)
-    [{ sibling: true }, [PIN], 'Use this PIN'], // checked against a protected sibling
+  for (const [folder, inputs] of [
+    [{ asks: true }, ['2468', '2468']], // the folder's first PIN, typed twice (`newPin`)
+    [{ sibling: true }, [PIN]], // checked against a protected sibling
   ] as const) {
     const w = await world(folder, [...inputs]);
-    if (modal !== undefined) {
-      w.s.modalAnswers.push(modal);
-    }
 
     const settled = await create(w);
 

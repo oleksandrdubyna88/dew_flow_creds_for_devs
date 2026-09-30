@@ -129,9 +129,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **An agent's entry in a folder that asks for a PIN was stored in the clear.** Your own Add asks the
   folder's PIN; an agent's create did not. Now, right after you allow the creation, the window asks
   for it — the same question Add asks, checked against the folder's protected entries — and seals every
-  value before anything is written. Dismissed, not agreed to three times, or not given within the
-  prompt's five minutes: nothing is created, and the agent is told why. A PIN box still open when those
-  five minutes run out closes with them, rather than staying on screen to take a PIN nobody uses.
+  value before anything is written. Dismissed, three PINs that open none of those entries, or not given
+  within the prompt's five minutes: nothing is created, and the agent is told why. A PIN box still open
+  when those five minutes run out closes with them, rather than staying on screen to take a PIN nobody
+  uses — and nothing in that step is a dialog that could outlive it: how many protected entries the PIN
+  opens is said in a message, not asked, and a PIN that opens none is asked again.
 
 ### Added — an agent learns what a folder holds, and sets only that
 

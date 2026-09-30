@@ -371,13 +371,23 @@ docs with this promotion (S7). D-A rode with S1/S3.
   are `applyCreatePin`. Two widenings made that possible: `CreatePin`'s cancel carries `typed` (a PIN was
   typed, then its count declined) and `asksForPinOnCreate` answers "does this folder ask" on its own, so a
   folder that asks nothing is never timed out.
-- **"Wrong three times" means three typed PINs whose count was declined.** `pinForNewEntry` checks a typed
-  PIN against the protected entries and asks the person to agree to the count; a declined count is what a
-  wrong PIN looks like there, and it is asked again, three at most. A dismissed box ends it at once. In a
-  folder that asks with no protected entry yet, the PIN is typed twice by `newPin`, which answers a mismatch
-  exactly as a dismissal — so there a mismatch ends it at once too.
+- **"Wrong three times" means three typed PINs that open none of the folder's protected entries**
+  (first shipped as "three counts declined", changed by the code review below). `pinForNewEntry` checks a
+  typed PIN against the protected entries; on the agent's road (`PinAsk.confirm: false`) a PIN that opens
+  at least one is taken and the count is said in a message that asks nothing, and one that opens none is
+  the wrong PIN, asked again, three at most. A dismissed box ends it at once. In a folder that asks with no
+  protected entry yet, the PIN is typed twice by `newPin`, which answers a mismatch exactly as a dismissal —
+  so there a mismatch ends it at once too. So through an agent an entry can join a folder only under a PIN
+  its protected entries already use; starting a second PIN in the folder stays the person's own Add.
 - **The two MCP itests' JavaScript stand-ins needed `settle`**; the compiler never sees `.cjs`, and
   `itest:mcp` died on the first create until they answered it (111 checks pass on Windows after).
+
+### Code review — 2026-09-30
+
+| # | Finding | Verdict | What changed |
+|---|---|---|---|
+| 0 | The agent's PIN step raises the sibling check's count question as a modal `showWarningMessage`, which VS Code cannot close from code: past the deadline it stays on screen and its answer is ignored | accepted, fixed | `pinOnCreate.PinAsk.confirm` — one option on the shared check, not a second check. Add leaves it unset and still agrees to the count in a modal; the agent's road (`pinForAgentEntry`) sets it `false`: a PIN that opens at least one protected entry is taken and the count said in a non-modal message, never awaited; one that opens none is a miss, said in a non-modal warning, asked again, three at most. Tests: *the agent's PIN step raises no modal that could outlive it* (the stub records every modal), *a PIN that opens none of the folder's protected entries is a declined attempt*, *the person's own Add still confirms the count* |
+| 1 | The relay probes the window's catalogue route before every create that carries `fields`; cache the capability instead | rejected | A cached capability goes stale when the window restarts on another extension version — exactly the old window the probe exists to catch, which would drop the fields and store a terminal with no command. The probe is one loopback GET; the create it guards raises a consent dialog a person must answer, so the GET is not what anyone waits on |
 
 ### Open tail
 
@@ -392,10 +402,10 @@ docs with this promotion (S7). D-A rode with S1/S3.
   [PLAN_creds_cli_reachable_from_every_caller.md](../todo/PLAN_creds_cli_reachable_from_every_caller.md) (§7).
 - ~~**A PIN box can outlive the step.**~~ **Closed 2026-09-30.** `settleAgentCreate` makes a
   `vscode.CancellationTokenSource`, cancels it when the deadline passes and disposes it either way, and its
-  token rides an optional trailing parameter through `pinForAgentEntry` → `pinForNewEntry` → `newPin` and
-  `pinCheckedAgainstFolder` to every `showInputBox`, so a box still open then closes with the step. What
-  remains: the sibling check's count modal (`showWarningMessage`, which takes no token) stays until it is
-  answered; its answer is ignored as before.
+  token rides `pinForAgentEntry` → `pinForNewEntry` (as `PinAsk.token`) → `newPin` and
+  `pinCheckedAgainstFolder` to every `showInputBox`, so a box still open then closes with the step. The
+  sibling check's count modal, which no token closes, is gone from this road too (code review below, finding
+  0); until then it stayed on screen until answered, and its answer was ignored.
 - **Whether to narrow Connect** for the legacy host-only record is still the product decision
   `canConnectSsh`'s comment names. The viewer question is decided (above): its rows match `canConnectSsh`,
   so narrowing Connect later narrows the viewer with it.

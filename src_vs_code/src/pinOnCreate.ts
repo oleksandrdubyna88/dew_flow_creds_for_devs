@@ -35,19 +35,35 @@ import { entriesUnder } from './pinFolderPlan';
 export type CreatePin =
   | { readonly kind: 'none' }
   | { readonly kind: 'pin'; readonly pin: string }
-  // `typed`: a PIN WAS typed and then not agreed to — the count it opened was declined. Add treats it as
-  // any other cancel; an agent's create asks again (`pinForAgentEntry`).
+  // `typed`: a PIN WAS typed and then not taken — on Add the count it opened was declined, on an agent's
+  // create it opened none of the folder's protected entries. Add treats it as any other cancel; an
+  // agent's create asks again (`pinForAgentEntry`).
   | { readonly kind: 'cancelled'; readonly typed?: true };
+
+/**
+ * How a PIN for a new entry is asked.
+ *
+ * <p>`token`, when given, is handed to every box raised, so a caller with a deadline can close them.
+ * `confirm` — true unless said otherwise — asks the person to AGREE to the count a typed PIN opens, in a
+ * modal. An agent's create says `false` (D-B, and the code review of 2026-09-30): VS Code cannot close a
+ * modal from code, so one raised inside a step with a deadline stays on screen after the step has
+ * answered the agent, and its answer is ignored. Without it the count is said in a message that asks
+ * nothing, a PIN that opens at least one protected entry is taken, and one that opens none is a miss.</p>
+ */
+export interface PinAsk {
+  readonly token?: vscode.CancellationToken;
+  readonly confirm?: boolean;
+}
 
 /** How many PINs an agent's create asks for before it gives up (agent-create plan, D-B). */
 export const AGENT_PIN_TRIES = 3;
 
 /**
  * The PIN for an entry an AGENT is creating in this folder — asked after the person allowed the
- * creation, exactly as Add asks it (`pinForNewEntry`), and asked again while a typed PIN is not agreed
- * to, up to `AGENT_PIN_TRIES`. A dismissed box ends it at once: the person chose. The caller bounds the
- * whole wait by its consent step's timeout, and `token` — cancelled when that runs out — closes whichever
- * box is still open then.
+ * creation, by the road Add asks it (`pinForNewEntry`) but with no modal on it (`PinAsk.confirm`), and
+ * asked again while a typed PIN opens none of the folder's protected entries, up to `AGENT_PIN_TRIES`.
+ * A dismissed box ends it at once: the person chose. The caller bounds the whole wait by its consent
+ * step's timeout, and `token` — cancelled when that runs out — closes whichever box is still open then.
  */
 export async function pinForAgentEntry(
   storage: StorageManager,
@@ -56,7 +72,7 @@ export async function pinForAgentEntry(
   triesLeft: number = AGENT_PIN_TRIES,
   token?: vscode.CancellationToken,
 ): Promise<CreatePin> {
-  const settled = await pinForNewEntry(storage, accountId, parentId, token);
+  const settled = await pinForNewEntry(storage, accountId, parentId, { token, confirm: false });
   return triesLeft > 1 && typedButDeclined(settled) ? pinForAgentEntry(storage, accountId, parentId, triesLeft - 1, token) : settled;
 }
 
@@ -77,21 +93,19 @@ export async function asksForPinOnCreate(storage: StorageManager, accountId: str
  *
  * <p>The typed value is CHECKED against those entries and the count is said, because a folder may
  * legitimately hold entries under two PINs and "it opened at least one" is not something a person
- * can act on.</p>
- *
- * <p>`token`, when given, is handed to every box raised here, so a caller with a deadline can close them.</p>
+ * can act on. `ask` says whether the count is agreed to or only said, and carries the caller's token.</p>
  */
 export function pinForNewEntry(
   storage: StorageManager,
   accountId: string,
   parentId: string | null,
-  token?: vscode.CancellationToken,
+  ask: PinAsk = {},
 ): Promise<CreatePin> {
   // No sibling to check against, but the folder may still have been told to ask — the empty-folder
   // case. There the PIN is typed TWICE, which is the only check available and the same one every
   // other new PIN in this product gets.
-  const alone = (): Promise<CreatePin> => (asksAnyway(storage, accountId, parentId) ? firstPinHere(token) : Promise.resolve(NONE));
-  return pinCheckedAgainstFolder(storage, accountId, parentId, NEW_ENTRY, alone, token);
+  const alone = (): Promise<CreatePin> => (asksAnyway(storage, accountId, parentId) ? firstPinHere(ask.token) : Promise.resolve(NONE));
+  return pinCheckedAgainstFolder(storage, accountId, parentId, NEW_ENTRY, alone, ask);
 }
 
 const NONE: CreatePin = { kind: 'none' };
@@ -112,13 +126,13 @@ async function pinCheckedAgainstFolder(
   parentId: string | null,
   entry: string,
   alone: () => Promise<CreatePin>,
-  token?: vscode.CancellationToken,
+  ask: PinAsk = {},
 ): Promise<CreatePin> {
   const siblings = await protectedSiblings(storage, accountId, parentId);
   if (siblings.length === 0) {
     return alone();
   }
-  return refusedWhileCooling(accountId, siblings) ? { kind: 'cancelled' } : askAndCheck(siblings, storage, accountId, entry, token);
+  return refusedWhileCooling(accountId, siblings) ? { kind: 'cancelled' } : askAndCheck(siblings, storage, accountId, entry, ask);
 }
 
 /**
@@ -198,7 +212,7 @@ async function askAndCheck(
   storage: StorageManager,
   accountId: string,
   entry: string,
-  token?: vscode.CancellationToken,
+  ask: PinAsk,
 ): Promise<CreatePin> {
   const typed = await vscode.window.showInputBox({
     title: 'This folder’s entries are protected',
@@ -207,11 +221,17 @@ async function askAndCheck(
     ignoreFocusOut: true,
     // The entry scope (issue #55): this PIN is checked against SIBLINGS, never against the vault's floor.
     validateInput: pinValidator('entering', 'entry'),
-  }, token);
+  }, ask.token);
   if (typed === undefined || typed.length === 0) {
     return { kind: 'cancelled' };
   }
-  return (await agreed(typed, siblings, storage, accountId, entry)) ? { kind: 'pin', pin: typed } : { kind: 'cancelled', typed: true };
+  const opened = await siblingsOpened(storage, accountId, siblings.map((node) => node.id), typed);
+  return (await countTaken(opened, siblings.length, entry, ask)) ? { kind: 'pin', pin: typed } : { kind: 'cancelled', typed: true };
+}
+
+/** Whether the count a typed PIN opens is taken: agreed to in a modal (Add), or only said (`PinAsk.confirm`). */
+function countTaken(opened: number, of: number, entry: string, ask: PinAsk): Promise<boolean> {
+  return ask.confirm === false ? Promise.resolve(saidCount(opened, of)) : agreedCount(opened, of, entry);
 }
 
 /**
@@ -240,25 +260,34 @@ async function protectedSiblings(
   return found;
 }
 
-/** How many of them it opens — said, then agreed to, before an entry is created under it. */
-async function agreed(
-  typed: string,
-  siblings: readonly TreeNode[],
-  storage: StorageManager,
-  accountId: string,
-  entry: string,
-): Promise<boolean> {
-  const opened = await siblingsOpened(storage, accountId, siblings.map((node) => node.id), typed);
+/** How many of them it opens — said, then agreed to in a modal, before an entry is created under it (Add). */
+async function agreedCount(opened: number, of: number, entry: string): Promise<boolean> {
   const answer = await vscode.window.showWarningMessage(
     opened === 0
-      ? `This PIN opens none of the ${siblings.length} protected entries in this folder. ${entry} `
-        + 'will be the first under it, and the folder will hold entries under two different PINs.'
-      : `This PIN opens ${opened} of the ${siblings.length} protected entries in this folder.`,
+      ? `${OPENS_NONE(of)} ${entry} will be the first under it, and the folder will hold entries under two different PINs.`
+      : OPENS(opened, of),
     { modal: true },
     'Use this PIN',
   );
   return answer === 'Use this PIN';
 }
+
+/**
+ * How many of them it opens — said in a message that asks nothing, and never awaited: a non-modal
+ * message resolves only when it is closed. A PIN that opens at least one is taken; one that opens none
+ * is a miss, which the agent's create asks again (`PinAsk.confirm`).
+ */
+function saidCount(opened: number, of: number): boolean {
+  if (opened === 0) {
+    void vscode.window.showWarningMessage(`${OPENS_NONE(of)} Type the PIN they use.`);
+    return false;
+  }
+  void vscode.window.showInformationMessage(`${OPENS(opened, of)} The new entry will be sealed under it.`);
+  return true;
+}
+
+const OPENS = (opened: number, of: number): string => `This PIN opens ${opened} of the ${of} protected entries in this folder.`;
+const OPENS_NONE = (of: number): string => `This PIN opens none of the ${of} protected entries in this folder.`;
 
 /** Wrap the entry that was just created, and mark it — the same order the commands use. */
 export async function applyCreatePin(

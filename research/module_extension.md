@@ -4910,18 +4910,26 @@ asked `kind === 'ssh'`.
 consent modal and `make`: `settle`, handed the consent step's deadline (`Date.now() +
 CONSENT_TIMEOUT_MS`, taken before the modal — the relay waits ten minutes, the step five). After
 Allow, `agentCreatePin.settleAgentCreate` asks `pinOnCreate`'s own question (`pinForAgentEntry` is
-`pinForNewEntry`, asked again while a typed PIN's count is declined, three at most; a dismissed box
-ends it), inside what is left of that deadline. With a PIN, `makeAgentEntry` writes the additions
+`pinForNewEntry` with `PinAsk.confirm: false`, asked again while a typed PIN opens none of the folder's
+protected entries, three at most; a dismissed box ends it), inside what is left of that deadline. With a PIN, `makeAgentEntry` writes the additions
 through `editPrefill.sealedWriter` over `NOTHING_OPENED` — every value sealed with `sealValue` in memory
 BEFORE `runCreate` writes anything (rule R3) — and `applyCreatePin` does what it does for Add: the
-idempotent sweep, the history, and the mark with its first `pinEpoch`, last. Dismissed, not agreed to
-three times, or out of time: `denied` / `consent_timeout` with a sentence naming the folder, and
-nothing written, not even half. Every box the question raises — the sibling check's and `newPin`'s two —
-carries one `vscode.CancellationToken` (an optional trailing parameter of `pinForAgentEntry`,
-`pinForNewEntry`, `pinCheckedAgainstFolder` and `newPin`; Add and the other callers pass none). The
-source is cancelled when the deadline passes and disposed either way, so a box still open then closes
-with the step instead of taking a PIN nobody uses. The sibling check's count modal
-(`showWarningMessage`) takes no token and is not closed by it.
+idempotent sweep, the history, and the mark with its first `pinEpoch`, last. Dismissed, three PINs
+that open none of the protected entries, or out of time: `denied` / `consent_timeout` with a sentence
+naming the folder, and nothing written, not even half. Every box the question raises — the sibling
+check's and `newPin`'s two — carries one `vscode.CancellationToken` (`PinAsk.token` on `pinForNewEntry`
+and `pinCheckedAgainstFolder`, an optional trailing parameter of `pinForAgentEntry` and `newPin`; Add and
+the other callers pass none). The source is cancelled when the deadline passes and disposed either way,
+so a box still open then closes with the step instead of taking a PIN nobody uses.
+
+**No modal inside the step** (code review, 2026-09-30). VS Code cannot close a modal from code, so the
+sibling check's count question — *"This PIN opens N of M protected entries"*, a modal on Add — would
+stay on screen after the deadline had answered the agent, its answer ignored. `PinAsk.confirm` is the one
+switch on the shared check: Add leaves it unset and still agrees to the count in a modal, "opens none"
+included, because a folder may hold entries under two PINs; the agent's create sets it `false`, and the
+check then says the count in a message that asks nothing (never awaited) — a PIN that opens at least one
+protected entry is taken, one that opens none is a miss, said in a non-modal warning, and the box asks
+again. So through an agent, a folder's entries can only be joined under a PIN they already use.
 
 **Compatibility.** An older relay never sends `fields`; its top-level `host`/`user`/`port` still work
 where the kind has them, and a host on a terminal is now refused rather than stored — that is the fix.
