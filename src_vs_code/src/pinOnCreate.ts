@@ -35,7 +35,40 @@ import { entriesUnder } from './pinFolderPlan';
 export type CreatePin =
   | { readonly kind: 'none' }
   | { readonly kind: 'pin'; readonly pin: string }
-  | { readonly kind: 'cancelled' };
+  // `typed`: a PIN WAS typed and then not agreed to — the count it opened was declined. Add treats it as
+  // any other cancel; an agent's create asks again (`pinForAgentEntry`).
+  | { readonly kind: 'cancelled'; readonly typed?: true };
+
+/** How many PINs an agent's create asks for before it gives up (agent-create plan, D-B). */
+export const AGENT_PIN_TRIES = 3;
+
+/**
+ * The PIN for an entry an AGENT is creating in this folder — asked after the person allowed the
+ * creation, exactly as Add asks it (`pinForNewEntry`), and asked again while a typed PIN is not agreed
+ * to, up to `AGENT_PIN_TRIES`. A dismissed box ends it at once: the person chose. The caller bounds the
+ * whole wait by its consent step's timeout.
+ */
+export async function pinForAgentEntry(
+  storage: StorageManager,
+  accountId: string,
+  parentId: string | null,
+  triesLeft: number = AGENT_PIN_TRIES,
+): Promise<CreatePin> {
+  const settled = await pinForNewEntry(storage, accountId, parentId);
+  return triesLeft > 1 && typedButDeclined(settled) ? pinForAgentEntry(storage, accountId, parentId, triesLeft - 1) : settled;
+}
+
+export function typedButDeclined(settled: CreatePin): boolean {
+  return settled.kind === 'cancelled' && settled.typed === true;
+}
+
+/**
+ * Whether a new entry here would be asked for a PIN — the question `pinForNewEntry` answers first,
+ * asked on its own so a caller with a deadline can tell "nothing to ask" from "asked, and waiting".
+ */
+export async function asksForPinOnCreate(storage: StorageManager, accountId: string, parentId: string | null): Promise<boolean> {
+  return (await protectedSiblings(storage, accountId, parentId)).length > 0 || asksAnyway(storage, accountId, parentId);
+}
 
 /**
  * Ask for the PIN a new entry in this folder must have, if this folder has any protected entries.
@@ -172,7 +205,7 @@ async function askAndCheck(
   if (typed === undefined || typed.length === 0) {
     return { kind: 'cancelled' };
   }
-  return (await agreed(typed, siblings, storage, accountId, entry)) ? { kind: 'pin', pin: typed } : { kind: 'cancelled' };
+  return (await agreed(typed, siblings, storage, accountId, entry)) ? { kind: 'pin', pin: typed } : { kind: 'cancelled', typed: true };
 }
 
 /**

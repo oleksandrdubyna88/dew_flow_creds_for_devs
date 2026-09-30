@@ -5,7 +5,10 @@ import { McpCreateHooks } from './brokerMcpDoor';
 import type { EntityKind } from './types';
 import { agentFormValues, planCreate } from './mcpCreate';
 import { applyAdditions } from './applyFormSecrets';
-import { CreateDecision } from './brokerMcpDoor';
+import { CreateAccepted, CreateDecision, CreateReady } from './brokerMcpDoor';
+import { settleAgentCreate } from './agentCreatePin';
+import { NOTHING_OPENED, sealedWriter } from './editPrefill';
+import { applyCreatePin } from './pinOnCreate';
 import { creatableFolders } from './mcpCreate';
 import { chooseTarget } from './mcpCreate';
 import { summarizeCreate } from './mcpCreate';
@@ -29,46 +32,61 @@ import * as vscode from 'vscode';
 export function mcpCreateHooks(storage: StorageManager, onMade: () => void): McpCreateHooks {
   return {
     choose: (body) => chooseCreateTarget(storage, body),
-    make: async (decision, body) => {
-      const request = readCreateRequest(body);
-      const id = StorageManager.newId();
-      const kind = decision.target.kind as EntityKind;
-      // The same body `choose` accepted a moment ago, judged again by the same pure rule — so this
-      // cannot fail, and a failure here is a bug rather than a refusal the agent should see.
-      const plan = planCreate(request, kind);
-      if (!plan.ok) {
-        throw new Error(plan.message);
-      }
-      // The secret is drawn and stored BEFORE the node — Rule A (`applyFormSecrets.ts`). This had
-      // the node first, and on this path that is worse than elsewhere: the secret may be GENERATED
-      // here, so a failure after the node write stranded an entry claiming a password that had never
-      // even been created. The agent would have been told the entry exists.
-      const secret = request.secret ?? generatedFor(request);
-      // By kind, through the form's own additions pass: a database's secret is its connection
-      // string and a config's is its body, and neither belongs in the password slot.
-      const values = agentFormValues(kind, id, request.name, plan.values, secret);
-      const accountId = decision.target.accountId;
-      await storage.runCreate({
-        writeSecrets: () => applyAdditions(storage, accountId, id, values),
-        writeNode: () =>
-          storage.addNode(accountId, {
-            id,
-            name: request.name,
-            type: 'entity',
-            parentId: decision.target.entityId,
-            details: values.details,
-          }),
-        presence: () => storage.nodePresence(accountId, id),
-        deferCleanup: () => storage.deferSecretCleanup(accountId, id),
-        finishCleanup: () => storage.endSecretCleanup(accountId, id),
-        // Every slot this id could have been written to: nothing else references a node that was
-        // proven absent, so there is nothing to keep.
-        undoSecrets: () => storage.forgetEntitySecrets(accountId, id),
-      });
-      onMade();
-      return { id, name: request.name };
-    },
+    settle: (decision, deadline) => settleAgentCreate(storage, decision, deadline),
+    make: (decision, body, settled) => makeAgentEntry(storage, onMade, decision, body, settled),
   };
+}
+
+/**
+ * Make the entry the person allowed — sealed under the folder's PIN when `settle` asked for one.
+ *
+ * <p>Sealed in memory BEFORE the first write (rule R3 of the entry-PIN plan): the additions go through
+ * `sealedWriter`, so no value of an agent's entry in a PIN folder ever reaches the keychain in the
+ * clear, not even for the moment "write, then protect" would leave it there. `applyCreatePin` then does
+ * what it does for Add — the idempotent sweep, the history, and the mark with the first `pinEpoch`,
+ * last (R5).</p>
+ */
+async function makeAgentEntry(
+  storage: StorageManager,
+  onMade: () => void,
+  decision: CreateAccepted,
+  body: Record<string, unknown>,
+  settled: CreateReady,
+): Promise<{ id: string; name: string }> {
+  const request = readCreateRequest(body);
+  const id = StorageManager.newId();
+  const kind = decision.target.kind as EntityKind;
+  // The same body `choose` accepted a moment ago, judged again by the same pure rule — so this
+  // cannot fail, and a failure here is a bug rather than a refusal the agent should see.
+  const plan = planCreate(request, kind);
+  if (!plan.ok) {
+    throw new Error(plan.message);
+  }
+  // The secret is drawn and stored BEFORE the node — Rule A (`applyFormSecrets.ts`). This had
+  // the node first, and on this path that is worse than elsewhere: the secret may be GENERATED
+  // here, so a failure after the node write stranded an entry claiming a password that had never
+  // even been created. The agent would have been told the entry exists.
+  const secret = request.secret ?? generatedFor(request);
+  // By kind, through the form's own additions pass: a database's secret is its connection
+  // string and a config's is its body, and neither belongs in the password slot.
+  const values = agentFormValues(kind, id, request.name, plan.values, secret);
+  const accountId = decision.target.accountId;
+  const pin = settled.sealWith;
+  const writer = pin === undefined ? storage : sealedWriter(storage, accountId, id, pin, NOTHING_OPENED);
+  await storage.runCreate({
+    writeSecrets: () => applyAdditions(writer, accountId, id, values),
+    writeNode: () =>
+      storage.addNode(accountId, { id, name: request.name, type: 'entity', parentId: decision.target.entityId, details: values.details }),
+    presence: () => storage.nodePresence(accountId, id),
+    deferCleanup: () => storage.deferSecretCleanup(accountId, id),
+    finishCleanup: () => storage.endSecretCleanup(accountId, id),
+    // Every slot this id could have been written to: nothing else references a node that was
+    // proven absent, so there is nothing to keep.
+    undoSecrets: () => storage.forgetEntitySecrets(accountId, id),
+  });
+  await applyCreatePin(pin === undefined ? { kind: 'none' } : { kind: 'pin', pin }, storage, accountId, id);
+  onMade();
+  return { id, name: request.name };
 }
 
 /**

@@ -1,0 +1,67 @@
+import type { CreateAccepted, CreateReady, CreateSettled } from './brokerMcpDoor';
+import { AGENT_PIN_TRIES, CreatePin, asksForPinOnCreate, pinForAgentEntry, typedButDeclined } from './pinOnCreate';
+import type { StorageManager } from './storageManager';
+import { withTimeout } from './withTimeout';
+
+/**
+ * An agent's entry in a folder that asks for a PIN on new entries — the owner's decision D-B of
+ * `PLAN_agent_creates_what_the_folder_holds.md` (§4.7).
+ *
+ * <p>The person's Add honours the folder: the PIN is asked before the form opens, checked against the
+ * folder's protected entries (`pinOnCreate`). The agent's create did not, and wrote its values in the
+ * clear into a folder whose whole point is that nothing in it is. An agent cannot type a PIN, so after
+ * the person ALLOWS the creation the window asks them for it — the same question Add asks, by the same
+ * code — inside the same consent step, and the step's deadline bounds it (plan gate, finding 0: a PIN
+ * prompt must not hang the agent's call). The answer is settled BEFORE anything is written: a PIN seals
+ * every value in memory first (rule R3 of the entry-PIN plan, `mcpHooks.makeAgentEntry`); anything else
+ * is a sentence for the agent and nothing is made, not even half.</p>
+ */
+export async function settleAgentCreate(
+  storage: StorageManager,
+  decision: CreateAccepted,
+  deadline: number,
+  now: () => number = Date.now,
+): Promise<CreateSettled> {
+  const { accountId, entityId: folderId, entityName: folder } = decision.target;
+  if (!(await asksForPinOnCreate(storage, accountId, folderId))) {
+    return READY;
+  }
+  const settled = await within(deadline - now(), () => pinForAgentEntry(storage, accountId, folderId));
+  return settled === undefined ? refused('consent_timeout', TIMED_OUT(folder)) : answerFor(settled, folder);
+}
+
+/** The question, bounded by what is left of the step — `undefined` when that ran out, or already had. */
+function within(left: number, ask: () => Promise<CreatePin>): Promise<CreatePin | undefined> {
+  // A rejection would escape `withTimeout` unhandled; a read that fails is a PIN not given.
+  return left > 0 ? withTimeout(ask().catch((): CreatePin => ({ kind: 'cancelled' })), left) : Promise.resolve(undefined);
+}
+
+const READY: CreateReady = { ok: true };
+
+function answerFor(settled: CreatePin, folder: string): CreateSettled {
+  switch (settled.kind) {
+    case 'none':
+      return READY;
+    case 'pin':
+      return { ok: true, sealWith: settled.pin };
+    default:
+      return refused('denied', typedButDeclined(settled) ? NOT_AGREED(folder) : NOT_GIVEN(folder));
+  }
+}
+
+function refused(code: 'denied' | 'consent_timeout', message: string): CreateSettled {
+  return { ok: false, code, message };
+}
+
+const ASKS = (folder: string): string => `The folder "${folder}" asks for a PIN on every new entry`;
+
+const NOT_GIVEN = (folder: string): string =>
+  `${ASKS(folder)}, and the person did not give it — the box was dismissed, or the folder's protected entries ` +
+  'are refusing PINs for a while after wrong ones. Nothing was created. Ask them to try again when they are ready.';
+
+const NOT_AGREED = (folder: string): string =>
+  `${ASKS(folder)}, and the PIN typed was not agreed to, ${AGENT_PIN_TRIES} times running. ` +
+  "Nothing was created. Ask the person to create it again with the PIN the folder's entries use.";
+
+const TIMED_OUT = (folder: string): string =>
+  `${ASKS(folder)}, and it was not given in time. Nothing was created. Ask the person to try again when they are at their editor.`;
