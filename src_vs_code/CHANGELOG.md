@@ -76,6 +76,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cleared the mark while that value stayed sealed. It now keeps a woven password woven, names a damaged
   value and asks first (**Remove the PIN from the rest** leaves it exactly as it was), and unseals the
   kept versions too.
+- **Two windows protecting one entry under two PINs.** *Protect with a PIN…* checks for an existing PIN
+  before its two PIN boxes; if another window protected the same entry under a different PIN while they
+  were open, the values stayed under the other PIN (a sealed value is never replaced) while this run
+  said the entry was protected with the PIN just typed, sealed its history under it and recorded a
+  second protection decision. It now checks that every sealed value opens with the PIN just typed —
+  silently, so it is not counted as a wrong guess — and otherwise records nothing and says the entry
+  was already protected in another window under a different PIN, with nothing changed on it.
 - **No dead end.** An entry whose mark was lost while its values stayed sealed offered only *Protect
   with a PIN…*, which answered "already has its own PIN" and nothing to press. The next PIN door
   restores the mark, and Protect on a protected entry offers *Remove PIN Protection…*.

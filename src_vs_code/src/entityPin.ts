@@ -263,6 +263,24 @@ export async function isProtected(
 }
 
 /**
+ * Whether EVERY sealed value of this entry opens with `pin` — the check a Protect run makes after
+ * `protectEntity`, which leaves a value sealed under another PIN exactly as it is.
+ *
+ * <p>Protect checks for an existing PIN before its two PIN boxes, and another window can protect the
+ * same entry under a different PIN while they are open (review of 2026-09-30). Without this the run
+ * then wrote the mark, counted a second protection decision and said the entry was protected with the
+ * PIN just typed — which opens none of it. Tried as a grant (`retryGranted`): the person chose this
+ * PIN a moment ago, so a value it does not open is a fact about that value, never a wrong guess that
+ * cools the entry down. The values are tried in parallel, each a scrypt of about a second.</p>
+ */
+export async function opensEverySealed(storage: StorageManager, accountId: string, entityId: string, pin: string): Promise<boolean> {
+  const reads = await Promise.all(SECRET_SLOTS.map(async (slot) => readSecret(await slot.read(storage, accountId, entityId))));
+  const sealed = reads.flatMap((read) => (read.kind === 'locked' ? [read.envelope] : []));
+  const opened = await Promise.all(sealed.map((envelope) => retryGranted(envelope, accountId, entityId, pin)));
+  return opened.every((value) => value !== undefined);
+}
+
+/**
  * How many of these entries this PIN opens — the question the folder's "use the PIN a sibling already
  * uses" boxes are answered with (Protect Folder, Add in a protected folder).
  *

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SECRET_SLOTS, SecretSlot } from '../entitySlots';
 import type { RevisionSecrets } from '../revisionHistory';
+import { readSecret, unlockSecret } from '../secretEnvelope';
 import type { StorageManager } from '../storageManager';
 import { EntityMetadata, TreeNode } from '../types';
 import { loadWithVscode } from './vscodeStub';
@@ -139,3 +140,49 @@ test('Protect and Remove PIN each write the mark AND one more protection decisio
   await w.commands.unprotectEntry(w.node(), w.deps);
   assert.deepEqual([w.node().details?.pinProtected, w.node().pinEpoch, nodeWrites], [undefined, 2, 2], 'removed: no mark, epoch 2, one more write');
 });
+
+test('a Protect that raced another window\'s Protect under a different PIN does not report success or bump the epoch', async () => {
+  // Protect checks for an existing PIN BEFORE its two PIN boxes. While they are open, another window
+  // protects the same entry under ITS PIN: every value is sealed, the mark is written, the epoch is 1.
+  // This run's `protectEntity` leaves locked slots as they are — it cannot open them and must not
+  // replace them — so it changes nothing, and until now it still wrote the mark, counted a second
+  // protection decision and said the entry was protected with the PIN just typed.
+  const s = sinks();
+  const stub = clickVscode([PIN, PIN], s);
+  const storage = memoryStorage(stub);
+  await seedEntry(storage, credential(), { password: 'hunter2', notes: 'the note' });
+  const window = stub.window as { showInputBox: (options: object) => Promise<string | undefined> };
+  const box = window.showInputBox;
+  window.showInputBox = async (options) => {
+    const typed = await box(options);
+    if (s.boxes === 2) {
+      await otherWindowProtects(storage, '9876');
+    }
+    return typed;
+  };
+  const commands = loadWithVscode<typeof import('../pinCommands')>('../pinCommands', stub);
+  const node = storage.getNode(ACCOUNT, ENTRY) as TreeNode;
+  // Four wrong PINs already typed for this entry: one more COUNTED miss would be the fifth and start a wait.
+  const attempts = require('../pinAttempts') as typeof import('../pinAttempts');
+  for (let i = 0; i < attempts.FREE_TRIES - 1; i += 1) {
+    attempts.noteWrong(ACCOUNT, ENTRY, Date.now());
+  }
+
+  await commands.protectEntry(node, { storage, accountId: ACCOUNT, refresh: () => undefined });
+
+  const after = storage.getNode(ACCOUNT, ENTRY) as TreeNode;
+  assert.equal(after.pinEpoch, 1, 'a second protection decision was counted for a Protect that protected nothing');
+  assert.doesNotMatch(s.infos.join(' '), /"godaddy" is protected with its own PIN/, 'the run reported success');
+  assert.match(s.infos.join(' '), /godaddy.* already protected in another window under a different PIN — nothing was changed on it/);
+  assert.equal(attempts.cooldownMs(ACCOUNT, ENTRY, Date.now()), 0, 'the check is silent: trying this run\'s PIN on the other window\'s values is not a guess');
+  attempts.forgetAllAttempts();
+  const read = readSecret(await storage.getPassword(ACCOUNT, ENTRY));
+  assert.equal(read.kind === 'locked' ? await unlockSecret(read.envelope, ACCOUNT, '9876') : '', 'hunter2', 'the other window\'s seal is untouched');
+});
+
+async function otherWindowProtects(storage: StorageManager, pin: string): Promise<void> {
+  const { protectEntity } = require('../entityPin') as typeof import('../entityPin');
+  const { protectionDecision } = require('../syncPinRule') as typeof import('../syncPinRule');
+  await protectEntity(storage, ACCOUNT, ENTRY, pin);
+  await storage.updateNodeFields(ACCOUNT, ENTRY, protectionDecision(true));
+}

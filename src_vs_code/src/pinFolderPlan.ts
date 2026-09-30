@@ -93,20 +93,53 @@ export function siblingReport(folderName: string, plan: FolderPinPlan): string {
  * nothing said, so the person saw a progress notification vanish and had no way to tell a finished
  * run from a failed one. Naming the failures — and the entry each belongs to — is what makes the
  * "run it again" answer usable, because re-running skips what is already done.</p>
+ *
+ * <p>`raced` is the third kind of outcome (review of 2026-09-30): an entry another window protected
+ * under a DIFFERENT PIN while this run's boxes were open. It is neither done — the PIN just typed
+ * opens none of it, so no mark was written and no decision counted — nor failed, because running it
+ * again would not help: it is protected, under the other PIN.</p>
  */
-export function runReport(done: readonly string[], failed: readonly string[]): string {
-  const protectedPart =
-    done.length === 1
-      ? `"${done[0]}" is protected with its own PIN.`
-      : `${done.length} entries are protected with that PIN.`;
-  if (failed.length === 0) {
-    return `${protectedPart} There is no way to recover it.`;
+export function runReport(done: readonly string[], failed: readonly string[], raced: readonly RacedEntry[] = []): string {
+  const tail = [failedPart(failed), untouchedPart(raced.filter((one) => one.sealedHere.length === 0)), ...raced.filter((one) => one.sealedHere.length > 0).map(mixedPart)]
+    .filter((part) => part !== '')
+    .join(' ');
+  return `${protectedPart(done)} ${tail === '' ? 'There is no way to recover it.' : tail}`;
+}
+
+/** An entry a Protect run found protected under another PIN — and the values THIS run sealed before it knew. */
+export interface RacedEntry {
+  readonly name: string;
+  /** Labels of the values this run sealed under its PIN: empty when the other window had sealed them all first. */
+  readonly sealedHere: readonly string[];
+}
+
+function protectedPart(done: readonly string[]): string {
+  return done.length === 1 ? `"${done[0]}" is protected with its own PIN.` : `${done.length} entries are protected with that PIN.`;
+}
+
+function failedPart(failed: readonly string[]): string {
+  return failed.length === 0
+    ? ''
+    : `${failed.length} could not be: ${failed.join(', ')}. Those are unchanged and still readable — run it again and it will `
+      + 'finish them, skipping what is already done.';
+}
+
+function untouchedPart(raced: readonly RacedEntry[]): string {
+  if (raced.length === 0) {
+    return '';
   }
-  return (
-    `${protectedPart} ${failed.length} could not be: ${failed.join(', ')}. `
-    + 'Those are unchanged and still readable — run it again and it will finish them, skipping '
-    + 'what is already done.'
-  );
+  const one = raced.length === 1;
+  return `${raced.map((entry) => `"${entry.name}"`).join(', ')} ${one ? 'was' : 'were'} already protected in another window under a `
+    + `different PIN — nothing was changed on ${one ? 'it' : 'them'}.`;
+}
+
+/**
+ * Both windows sealing the same entry in the same seconds, each under its own PIN — the one case where
+ * this run DID change something before it could know. Said as it is: which values went under this PIN.
+ */
+function mixedPart(entry: RacedEntry): string {
+  return `"${entry.name}" was being protected in another window under a different PIN at the same moment: its `
+    + `${entry.sealedHere.join(', ')} went under this PIN and the rest under the other, and no protection was recorded for this run.`;
 }
 
 /** The state of a folder in one line — what the tree shows, and what an already-done run says. */

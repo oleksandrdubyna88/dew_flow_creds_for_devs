@@ -3,12 +3,12 @@ import { StorageManager } from './storageManager';
 import { TreeNode } from './types';
 import { entryPinGate, newPin, refusedWhileCooling } from './pinPrompt';
 import { forgetPin } from './pinSession';
-import { DamagedSlots, UnprotectResult, isProtected, lockedSlotCount, protectEntity, siblingsOpened, unprotectEntity } from './entityPin';
+import { DamagedSlots, UnprotectResult, isProtected, lockedSlotCount, opensEverySealed, protectEntity, siblingsOpened, unprotectEntity } from './entityPin';
 import { lockedHistoryValues, protectHistory } from './historyPin';
 import { pinValidator } from './pinInput';
 import { describeError } from './describeError';
 import { asElement } from './commandTargets';
-import { FolderPinPlan, folderPinPlan, protectionSummary, runReport, siblingReport } from './pinFolderPlan';
+import { FolderPinPlan, RacedEntry, folderPinPlan, protectionSummary, runReport, siblingReport } from './pinFolderPlan';
 import { restoreRevision } from './revisionRestore';
 import { protectionDecision } from './syncPinRule';
 
@@ -379,24 +379,26 @@ async function confirmedAgainstSiblings(
 async function runProtect(nodes: readonly TreeNode[], pin: string, deps: PinCommandDeps): Promise<number> {
   const done: string[] = [];
   const failed: string[] = [];
+  const raced: RacedEntry[] = [];
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: 'Protecting with a PIN…' },
     async (progress) => {
       for (const [index, node] of nodes.entries()) {
         const where = `${index + 1} of ${nodes.length} — ${node.name}`;
-        await protectOne(node, pin, deps, { done, failed, report: (what) => progress.report({ message: `${where}${what}` }) });
+        await protectOne(node, pin, deps, { done, failed, raced, report: (what) => progress.report({ message: `${where}${what}` }) });
       }
     },
   );
   deps.refresh();
-  void vscode.window.showInformationMessage(runReport(done, failed));
+  void vscode.window.showInformationMessage(runReport(done, failed, raced));
   return done.length;
 }
 
-/** Where one entry's run reports to: what was done, what failed, and the progress line. */
+/** Where one entry's run reports to: what was done, what failed, what another window protected first, and the progress line. */
 interface ProtectRun {
   readonly done: string[];
   readonly failed: string[];
+  readonly raced: RacedEntry[];
   /** Appends to the progress line — `''` for the live values, `' (kept versions)'` for the history. */
   readonly report: (what: string) => void;
 }
@@ -407,11 +409,23 @@ interface ProtectRun {
  * <p>The live values, then the entry's KEPT versions (D10: before 1.12 the history stayed plaintext
  * and opened with no PIN), then the mark — last, as `markProtection` says. The history is only this
  * machine's; every other machine seals its own at the first door there (`historyHeal.ts`).</p>
+ *
+ * <p><b>Every sealed value must open with THIS run's PIN before anything else is written</b> (review
+ * of 2026-09-30). Protect checks for an existing PIN before its two boxes, and another window can
+ * protect the same entry under a different PIN while they are open; `protectEntity` then leaves those
+ * values as they are, and the run used to seal the history under the new PIN, write the mark, count a
+ * second protection decision and report the entry protected with a PIN that opens none of it. Now such
+ * an entry is reported as raced — no history sealed, no mark, no epoch — through `opensEverySealed`,
+ * which tries the PIN silently: a miss is not a wrong guess.</p>
  */
 async function protectOne(node: TreeNode, pin: string, deps: PinCommandDeps, run: ProtectRun): Promise<void> {
   try {
     run.report('');
-    await protectEntity(deps.storage, deps.accountId, node.id, pin);
+    const sealed = await protectEntity(deps.storage, deps.accountId, node.id, pin);
+    if (!(await opensEverySealed(deps.storage, deps.accountId, node.id, pin))) {
+      run.raced.push({ name: node.name, sealedHere: sealed.changed });
+      return;
+    }
     run.report(' (kept versions)');
     await protectHistory(deps.storage, deps.accountId, node.id, pin);
     await markProtection(node, true, deps);

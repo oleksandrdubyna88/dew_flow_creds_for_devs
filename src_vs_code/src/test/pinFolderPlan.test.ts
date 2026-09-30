@@ -213,6 +213,16 @@ test('a PARTIAL run names what could not be done, and that a re-run finishes it'
   assert.match(said, /run it again/, 'and the repair, which is the same command');
 });
 
+test('an entry another window protected under a different PIN is neither done nor failed — and the report says which values, if any, this run sealed', () => {
+  const untouched = runReport(['a'], [], [{ name: 'prod-db', sealedHere: [] }, { name: 'prod-api', sealedHere: [] }]);
+  const mixed = runReport([], [], [{ name: 'prod-db', sealedHere: ['notes', 'password'] }]);
+
+  assert.match(untouched, /"a" is protected with its own PIN\. "prod-db", "prod-api" were already protected in another window under a different PIN — nothing was changed on them\.$/);
+  assert.doesNotMatch(untouched, /run it again/, 'a re-run would not help: they are protected, under the other PIN');
+  assert.match(mixed, /"prod-db" was being protected in another window under a different PIN at the same moment: its notes, password went under this PIN/);
+  assert.doesNotMatch(mixed, /nothing was changed/, 'this run DID change something, and must not say it did not');
+});
+
 /**
  * A run that protected NOTHING must not record the preference.
  *

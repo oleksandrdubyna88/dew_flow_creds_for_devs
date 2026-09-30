@@ -1467,7 +1467,15 @@ when the live entry holds none), live values AND kept versions are opened in mem
 value throws `DamagedSlots` before any write (unless *Remove the PIN from the rest*, `keepDamaged`),
 values are written with `plainSecret(value, woven)` so a woven password stays woven, then the history
 is rewritten, the mark cleared and the epoch bumped. Protect on an entry that already holds a PIN offers
-*Remove PIN Protection…*; Remove PIN is offered while any live or kept value is sealed.
+*Remove PIN Protection…*; Remove PIN is offered while any live or kept value is sealed. **Protect
+verifies before it records anything** (2026-09-30): it checks for an existing PIN before its two boxes,
+and another window can protect the entry under a different PIN while they are open — `protectEntity`
+leaves those values as they are, so after it `pinCommands.protectOne` asks `entityPin.opensEverySealed`
+whether every sealed value opens with the PIN just typed, silently (`retryGranted`: a miss is not a
+guess). If one does not, no history is sealed, no mark written and no epoch counted, and the run report
+(`pinFolderPlan.runReport`'s third list, `RacedEntry`) says the entry was already protected in another
+window under a different PIN — nothing was changed on it — or, when both windows sealed in the same
+seconds, which of its values went under this PIN.
 
 **The sync rule** (`syncPinRule.ts`, used by `mergeProfiles`). Dominance decides first; concurrent
 vectors whose SEALED state (read from the envelopes, never the mark) differs are decided by the higher

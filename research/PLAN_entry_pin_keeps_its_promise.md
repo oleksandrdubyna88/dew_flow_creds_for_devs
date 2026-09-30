@@ -3,7 +3,7 @@
 > Status: **IMPLEMENTED, 2026-09-29.** Built as one unit on `fix/entry-pin-keeps-its-promise`, P1-P10 as
 > commits (§9.1); every defect D1-D18 has a test watched failing first. Deviations: §15. Open tail: §16 —
 > the owner's check in a real editor, the 1.12.0 release after the sibling plan, three recorded limits, the
-> gaps the 2026-09-30 review recorded, and the typed-secrets plan. Plan gate passed (`proceed`, 2 of 2 reviewers, one round, five findings accepted —
+> gaps the 2026-09-30 review recorded (both fixed that day — §16 item 4), and the typed-secrets plan. Plan gate passed (`proceed`, 2 of 2 reviewers, one round, five findings accepted —
 > §14). Scope: `src_vs_code/src` — the PIN door and
 > gate (`pinAdmission.ts`, `pinGate.ts`, `pinPrompt.ts`, `pinSession.ts`, `entityPin.ts`, `entitySlots.ts`),
 > the viewer and the edit form, ~12 click commands, ~6 automatic readers, export, share-update, history,
@@ -812,6 +812,16 @@ reproduced by a test watched failing first; the commits carry the RED messages.
   same after its confirmation (`restoreVersion.holdsValue`). The sibling check chosen was
   `pinOnCreate`'s rather than `protectFolder`'s `folderPin`/`confirmedAgainstSiblings`: it is the one
   built for a single entry with a `parentId` (its agreement now names the entry it seals).
+- **Protect racing Protect** (§16 item 4, second half; fixed 2026-09-30, RED first). After
+  `protectEntity`, `pinCommands.protectOne` asks `entityPin.opensEverySealed` whether every sealed value
+  opens with this run's PIN — through `pinAttempts.retryGranted`, so the check is never a counted guess.
+  One that does not means another window protected the entry under a different PIN while this run's
+  boxes were open: no history is sealed, no mark written, no `pinEpoch` counted, and `runReport` gained
+  a third list (`RacedEntry`) whose sentence is *"… was already protected in another window under a
+  different PIN — nothing was changed on it."* Deviation: when both windows sealed in the same seconds
+  this run DID seal some values before it could know (`protectEntity`'s `changed`), and that sentence
+  would be false, so such an entry is reported with the values that went under this PIN instead. The
+  check costs one more scrypt per sealed value, run in parallel.
 
 ## 16. Open tail
 
@@ -833,9 +843,12 @@ reproduced by a test watched failing first; the commits carry the RED messages.
    and the first save — or Restore — that stores a value asks for the entry's first PIN (typed twice,
    or checked against the protected entries of its folder) and seals every value with it before the
    first write. Nothing can verify that PIN against the one typed at Protect, which stored nothing;
-   the person chooses it again, as for a new entry. *Protect with a PIN…* checks for an existing PIN before its two PIN boxes; a
-   Protect from another window in between leaves every value under the OTHER PIN (locked slots are never
-   replaced) while this run still reports the entry protected and bumps `pinEpoch` a second time. *(The
+   the person chooses it again, as for a new entry. *Protect with a PIN…* checked for an existing PIN
+   before its two PIN boxes; a Protect from another window in between left every value under the OTHER
+   PIN (locked slots are never replaced) while this run still reported the entry protected and bumped
+   `pinEpoch` a second time. **Fixed 2026-09-30** (§15, *Protect racing Protect*): after `protectEntity`
+   every sealed value must open with this run's PIN, silently; otherwise nothing more is written and the
+   run report says the entry was already protected in another window under a different PIN. *(The
    third item this review recorded — the `entity-pin` help's* Changed on two machines at once *paragraph
    still saying the raced copies win "whole" — was fixed before the code round, in all five languages.)*
 5. **[PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) follows** — the compile-time
