@@ -22,6 +22,9 @@ function stamped(kind: EntityKind, over: Partial<EntityMetadata> = {}): EntityMe
   return stampKind({ id: `e-${kind}`, name: `${kind} entry`, isSshEnabled: kind === 'ssh', kind, ...over } as EntityMetadata);
 }
 
+/** The prompt the last name box carried — what the person reads BEFORE naming the alias. */
+let lastPrompt = '';
+
 /** What the window says after the alias is named, for an entry holding `details`. */
 async function toldAfterNaming(details: EntityMetadata): Promise<string> {
   const told: string[] = [];
@@ -29,7 +32,10 @@ async function toldAfterNaming(details: EntityMetadata): Promise<string> {
   const node: TreeNode = { id: details.id, name: details.name, type: 'entity', parentId: null, details };
   const mod = loadWithVscode<{ registerAgentCommands(host: Record<string, unknown>): void }>('../commands/agentCommands', {
     window: {
-      showInputBox: (): Promise<string> => Promise.resolve(ALIAS),
+      showInputBox: (options: { prompt?: string }): Promise<string> => {
+        lastPrompt = options.prompt ?? '';
+        return Promise.resolve(ALIAS);
+      },
       showInformationMessage: (message: string): Promise<undefined> => Promise.resolve(void told.push(message)),
     },
   });
@@ -63,6 +69,17 @@ test('a Terminal entry is told `creds run <alias>`, not `creds ssh`', async () =
   const message = await toldAfterNaming(terminal);
   assert.match(message, /creds run quota$/, 'the message named the wrong verb for a command');
   assert.doesNotMatch(message, /creds ssh/, 'a Terminal entry was told to ssh');
+});
+
+test('the name box says the command the entry will run — a Terminal entry is not told to ssh either', async () => {
+  // The box a few lines above the message said "Then: creds ssh <name> -- <command>" for every kind.
+  await toldAfterNaming(stamped('terminal', { command: 'pwsh' }));
+  assert.match(lastPrompt, /^Then: creds run <name>\./, `the name box said: ${lastPrompt}`);
+  for (const kind of ENTITY_KINDS) {
+    const details = stamped(kind, kind === 'ssh' ? { host: 'box.example.com' } : {});
+    await toldAfterNaming(details);
+    assert.ok(lastPrompt.startsWith(`Then: ${cliCommandFor(details, '<name>')}`), `a ${kind} entry's box said "${lastPrompt}"`);
+  }
 });
 
 test('the message names the same command as the CLI row, for every kind', async () => {

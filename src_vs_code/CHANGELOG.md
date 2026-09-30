@@ -122,9 +122,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   *Host* row is drawn only for the kinds that have one (SSH and VPN). An old record with a host and no
   kind of its own keeps *Connect via SSH* as before, and its viewer shows the *Host* and the SSH command
   that Connect runs.
-- **Enable in CLI told a Terminal entry to use `creds ssh`.** After you name the alias, the message
-  said `creds ssh <alias>` for every kind but a database; it now names the same command as the viewer's
-  CLI row — `creds run <alias>` for a Terminal entry, `creds vpn-up` for a VPN, and so on.
+- **Enable in CLI told a Terminal entry to use `creds ssh`.** The box that asks for the alias said
+  *Then: creds ssh <name> -- <command>* for every kind, and the message after it said `creds ssh
+  <alias>` for every kind but a database; both now name the same command as the viewer's CLI row —
+  `creds run <alias>` for a Terminal entry, `creds vpn-up` for a VPN, and so on.
 - **An agent's entry in a folder that asks for a PIN was stored in the clear.** Your own Add asks the
   folder's PIN; an agent's create did not. Now, right after you allow the creation, the window asks
   for it — the same question Add asks, checked against the folder's protected entries — and seals every
