@@ -46,6 +46,7 @@ import { aliasFor } from '../cliAliases';
 import { withoutAlias } from '../cliAliases';
 import { describeAliasProblem } from '../cliAliases';
 import { resolveKind } from '../entityKind';
+import { cliCommandFor } from '../cliCommandText';
 import { withAlias } from '../cliAliases';
 import { asElement } from '../commandTargets';
 import { connectEntity } from '../sshConnect';
@@ -540,11 +541,10 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       return;
     }
 
-    const kind = resolveKind(storage.getNode(accountId, node.id)?.details);
-    await setAliasMap(withAlias(aliasMap(), name.trim(), { accountId, entityId: node.id, kind }));
-    void vscode.window.showInformationMessage(
-      `"${node.name}" is now available in the terminal as: creds ${kind === 'db' ? 'db' : 'ssh'} ${name.trim()}`,
-    );
+    // The verb is the CLI row's own rule (`cliCommandFor`): a Terminal entry runs as `creds run`, not `creds ssh`.
+    const details = storage.getNode(accountId, node.id)?.details ?? { id: node.id, name: node.name, isSshEnabled: false };
+    await setAliasMap(withAlias(aliasMap(), name.trim(), { accountId, entityId: node.id, kind: resolveKind(details) }));
+    void vscode.window.showInformationMessage(`"${node.name}" is now available in the terminal as: ${cliCommandFor(details, name.trim())}`);
   });
 
   register('credSshManager.connectSsh', async (target) => {
