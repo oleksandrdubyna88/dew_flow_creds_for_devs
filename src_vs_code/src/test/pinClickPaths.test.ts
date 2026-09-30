@@ -3,12 +3,16 @@ import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { withoutPassword } from '../dbConnString';
 import type { StorageManager } from '../storageManager';
 import { EntityMetadata, TreeNode } from '../types';
 import { ACCOUNT, PIN, Sinks, clickVscode, everythingSunk, locked, memoryStorage, seedEntry, sinks } from './pinWorld';
 import { loadWithVscode } from './vscodeStub';
+
+/** A real directory for the paths the code under test actually creates (the key directory, the agent socket) — never a fixed root, which Linux CI cannot create. */
+const REAL_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-pinclick-'));
+after(() => fs.rmSync(REAL_DIR, { recursive: true, force: true }));
 
 /**
  * D6 of the entry-PIN plan: every CLICK that hands a stored value to a sink opens it through the
@@ -91,7 +95,7 @@ async function click(row: Row, inputs: (string | undefined)[], protect = true): 
   mod.registerEntityCommands({
     register: (command, handler) => handlers.set(command, handler),
     storage,
-    storageDir: '/workspace/creds-test',
+    storageDir: path.join(REAL_DIR, 'creds-test'),
     doorsAt: () => ({}) as never,
     mutated: () => undefined,
     vaultKeys: { noteUserActivity: () => undefined } as never,
@@ -336,7 +340,7 @@ function agentManager(stub: Record<string, unknown>, storage: StorageManager): A
   };
   class StubServer {
     listening = false;
-    socketPath = '/workspace/agent.sock';
+    socketPath = path.join(REAL_DIR, 'agent.sock');
     listen(): Promise<void> {
       this.listening = true;
       return Promise.resolve();
@@ -346,7 +350,7 @@ function agentManager(stub: Record<string, unknown>, storage: StorageManager): A
     }
   }
   const mod = loadWithVscode<typeof import('../sshAgentManager')>('../sshAgentManager', withLog, {
-    './sshAgentServer': { SshAgentServer: StubServer, agentSocketPath: (): string => '/workspace/agent.sock' },
+    './sshAgentServer': { SshAgentServer: StubServer, agentSocketPath: (): string => path.join(REAL_DIR, 'agent.sock') },
   });
   const env = { replace: (): void => undefined, delete: (): void => undefined, description: '' };
   return { instance: new mod.SshAgentManager(storage, os.tmpdir(), env as never, () => undefined), logs };
