@@ -167,6 +167,40 @@ export class StubEventEmitter<T> {
   }
 }
 
+/** The `vscode.CancellationToken` a `StubCancellationTokenSource` hands out. */
+export interface StubCancellationToken {
+  readonly isCancellationRequested: boolean;
+  onCancellationRequested(listener: () => void): { dispose(): void };
+}
+
+/**
+ * A working `vscode.CancellationTokenSource` — the real semantics, not a recorder: `cancel()` flips the
+ * token and delivers to its listeners, once, so a stubbed `showInputBox` can close the way VS Code closes
+ * a box whose token is cancelled. `disposed` says whether the owner cleaned up after itself.
+ */
+export class StubCancellationTokenSource {
+  private cancelled = false;
+  private readonly emitter = new StubEventEmitter<void>();
+  disposed = false;
+
+  readonly token: StubCancellationToken = {
+    isCancellationRequested: false,
+    onCancellationRequested: (listener) => this.emitter.event(listener),
+  };
+
+  cancel(): void {
+    if (!this.cancelled) {
+      this.cancelled = true;
+      (this.token as { isCancellationRequested: boolean }).isCancellationRequested = true;
+      this.emitter.fire();
+    }
+  }
+
+  dispose(): void {
+    this.disposed = true;
+  }
+}
+
 /** The handful of `vscode` values a settings-reading module touches. */
 export function settingsVscode(config: ConfigStub): Record<string, unknown> {
   return {

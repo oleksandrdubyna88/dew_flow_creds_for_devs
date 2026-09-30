@@ -46,16 +46,18 @@ export const AGENT_PIN_TRIES = 3;
  * The PIN for an entry an AGENT is creating in this folder — asked after the person allowed the
  * creation, exactly as Add asks it (`pinForNewEntry`), and asked again while a typed PIN is not agreed
  * to, up to `AGENT_PIN_TRIES`. A dismissed box ends it at once: the person chose. The caller bounds the
- * whole wait by its consent step's timeout.
+ * whole wait by its consent step's timeout, and `token` — cancelled when that runs out — closes whichever
+ * box is still open then.
  */
 export async function pinForAgentEntry(
   storage: StorageManager,
   accountId: string,
   parentId: string | null,
   triesLeft: number = AGENT_PIN_TRIES,
+  token?: vscode.CancellationToken,
 ): Promise<CreatePin> {
-  const settled = await pinForNewEntry(storage, accountId, parentId);
-  return triesLeft > 1 && typedButDeclined(settled) ? pinForAgentEntry(storage, accountId, parentId, triesLeft - 1) : settled;
+  const settled = await pinForNewEntry(storage, accountId, parentId, token);
+  return triesLeft > 1 && typedButDeclined(settled) ? pinForAgentEntry(storage, accountId, parentId, triesLeft - 1, token) : settled;
 }
 
 export function typedButDeclined(settled: CreatePin): boolean {
@@ -76,18 +78,20 @@ export async function asksForPinOnCreate(storage: StorageManager, accountId: str
  * <p>The typed value is CHECKED against those entries and the count is said, because a folder may
  * legitimately hold entries under two PINs and "it opened at least one" is not something a person
  * can act on.</p>
+ *
+ * <p>`token`, when given, is handed to every box raised here, so a caller with a deadline can close them.</p>
  */
 export function pinForNewEntry(
   storage: StorageManager,
   accountId: string,
   parentId: string | null,
+  token?: vscode.CancellationToken,
 ): Promise<CreatePin> {
   // No sibling to check against, but the folder may still have been told to ask — the empty-folder
   // case. There the PIN is typed TWICE, which is the only check available and the same one every
   // other new PIN in this product gets.
-  return pinCheckedAgainstFolder(storage, accountId, parentId, NEW_ENTRY, () =>
-    asksAnyway(storage, accountId, parentId) ? firstPinHere() : Promise.resolve(NONE),
-  );
+  const alone = (): Promise<CreatePin> => (asksAnyway(storage, accountId, parentId) ? firstPinHere(token) : Promise.resolve(NONE));
+  return pinCheckedAgainstFolder(storage, accountId, parentId, NEW_ENTRY, alone, token);
 }
 
 const NONE: CreatePin = { kind: 'none' };
@@ -108,12 +112,13 @@ async function pinCheckedAgainstFolder(
   parentId: string | null,
   entry: string,
   alone: () => Promise<CreatePin>,
+  token?: vscode.CancellationToken,
 ): Promise<CreatePin> {
   const siblings = await protectedSiblings(storage, accountId, parentId);
   if (siblings.length === 0) {
     return alone();
   }
-  return refusedWhileCooling(accountId, siblings) ? { kind: 'cancelled' } : askAndCheck(siblings, storage, accountId, entry);
+  return refusedWhileCooling(accountId, siblings) ? { kind: 'cancelled' } : askAndCheck(siblings, storage, accountId, entry, token);
 }
 
 /**
@@ -183,8 +188,8 @@ function above(node: TreeNode, storage: StorageManager, accountId: string): Tree
 }
 
 /** The first PIN in a folder that asks: typed twice, because there is nothing here to check it against. */
-async function firstPinHere(): Promise<CreatePin> {
-  const typed = await newPin('this entry', 'entry', FIRST_HERE);
+async function firstPinHere(token?: vscode.CancellationToken): Promise<CreatePin> {
+  const typed = await newPin('this entry', 'entry', FIRST_HERE, token);
   return typed === undefined ? { kind: 'cancelled' } : { kind: 'pin', pin: typed };
 }
 
@@ -193,6 +198,7 @@ async function askAndCheck(
   storage: StorageManager,
   accountId: string,
   entry: string,
+  token?: vscode.CancellationToken,
 ): Promise<CreatePin> {
   const typed = await vscode.window.showInputBox({
     title: 'This folder’s entries are protected',
@@ -201,7 +207,7 @@ async function askAndCheck(
     ignoreFocusOut: true,
     // The entry scope (issue #55): this PIN is checked against SIBLINGS, never against the vault's floor.
     validateInput: pinValidator('entering', 'entry'),
-  });
+  }, token);
   if (typed === undefined || typed.length === 0) {
     return { kind: 'cancelled' };
   }

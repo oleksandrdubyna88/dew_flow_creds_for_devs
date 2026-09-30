@@ -2,6 +2,7 @@ import type { CreateAccepted, CreateReady, CreateSettled } from './brokerMcpDoor
 import { AGENT_PIN_TRIES, CreatePin, asksForPinOnCreate, pinForAgentEntry, typedButDeclined } from './pinOnCreate';
 import type { StorageManager } from './storageManager';
 import { withTimeout } from './withTimeout';
+import * as vscode from 'vscode';
 
 /**
  * An agent's entry in a folder that asks for a PIN on new entries — the owner's decision D-B of
@@ -26,14 +27,29 @@ export async function settleAgentCreate(
   if (!(await asksForPinOnCreate(storage, accountId, folderId))) {
     return READY;
   }
-  const settled = await within(deadline - now(), () => pinForAgentEntry(storage, accountId, folderId));
+  const settled = await within(deadline - now(), (token) => pinForAgentEntry(storage, accountId, folderId, AGENT_PIN_TRIES, token));
   return settled === undefined ? refused('consent_timeout', TIMED_OUT(folder)) : answerFor(settled, folder);
 }
 
-/** The question, bounded by what is left of the step — `undefined` when that ran out, or already had. */
-function within(left: number, ask: () => Promise<CreatePin>): Promise<CreatePin | undefined> {
+/**
+ * The question, bounded by what is left of the step — `undefined` when that ran out, or already had.
+ *
+ * <p>Every box the question raises carries one token, cancelled when the step runs out: the agent is
+ * answered then and nothing is written, so a box still on screen after it would only take a PIN nobody
+ * uses (plan §11). VS Code closes a box whose token is cancelled, and one raised after it at once.</p>
+ */
+async function within(left: number, ask: (token: vscode.CancellationToken) => Promise<CreatePin>): Promise<CreatePin | undefined> {
+  if (left <= 0) {
+    return undefined;
+  }
+  const source = new vscode.CancellationTokenSource();
   // A rejection would escape `withTimeout` unhandled; a read that fails is a PIN not given.
-  return left > 0 ? withTimeout(ask().catch((): CreatePin => ({ kind: 'cancelled' })), left) : Promise.resolve(undefined);
+  const settled = await withTimeout(ask(source.token).catch((): CreatePin => ({ kind: 'cancelled' })), left);
+  if (settled === undefined) {
+    source.cancel();
+  }
+  source.dispose();
+  return settled;
 }
 
 const READY: CreateReady = { ok: true };

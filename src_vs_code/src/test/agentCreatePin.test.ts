@@ -4,7 +4,7 @@ import type { CreateAccepted, CreateSettled, McpCreateHooks } from '../brokerMcp
 import { isLockedSecret, readSecret, unlockSecret } from '../secretEnvelope';
 import type { StorageManager } from '../storageManager';
 import type { TreeNode } from '../types';
-import { loadEachWithVscode } from './vscodeStub';
+import { StubCancellationToken, loadEachWithVscode } from './vscodeStub';
 import { ACCOUNT, PIN, Sinks, clickVscode, locked, sinks } from './pinWorld';
 import { call, code, message, share, world as broker } from './brokerWorld';
 
@@ -192,6 +192,50 @@ test('a PIN nobody gives before the consent step’s time runs out creates nothi
   assert.match(settled.ok ? '' : settled.message, /not given in time.*Nothing was created/s);
   assert.deepEqual(made(w), []);
   assert.deepEqual(w.written, []);
+});
+
+test('a PIN box still open when the consent step’s time runs out is closed with it', async () => {
+  // The agent is answered at the deadline and nothing is written; a box left on screen after that takes a
+  // PIN nobody will use. VS Code closes a box whose token is cancelled — this stub does the same.
+  const w = await world({ asks: true }, []);
+  let closed = false;
+  (w.stub.window as Record<string, unknown>).showInputBox = (_options: unknown, token?: StubCancellationToken): Promise<undefined> => {
+    w.s.boxes += 1;
+    w.s.boxTokens.push(token);
+    return new Promise((resolve) => void token?.onCancellationRequested(() => resolve(void (closed = true))));
+  };
+
+  const settled = await create(w, Date.now() + 50);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.ok(!settled.ok && settled.code === 'consent_timeout', JSON.stringify(settled));
+  assert.ok(w.s.boxTokens[0] !== undefined, 'the PIN box was raised with no cancellation token, so nothing could close it when the step ran out');
+  assert.equal(closed, true, 'the PIN box stayed on screen after the step ran out');
+  assert.equal(w.s.boxes, 1, 'and no second box followed the closed one');
+  assert.ok(w.s.tokenSources.length === 1 && w.s.tokenSources[0].disposed, 'the token source was disposed');
+  assert.deepEqual(made(w), []);
+});
+
+test('every PIN box an agent’s create raises carries the step’s token, and a PIN given in time cancels nothing', async () => {
+  for (const [folder, inputs, modal] of [
+    [{ asks: true }, ['2468', '2468'], undefined], // the folder's first PIN, typed twice (`newPin`)
+    [{ sibling: true }, [PIN], 'Use this PIN'], // checked against a protected sibling
+  ] as const) {
+    const w = await world(folder, [...inputs]);
+    if (modal !== undefined) {
+      w.s.modalAnswers.push(modal);
+    }
+
+    const settled = await create(w);
+
+    assert.equal(settled.ok, true, JSON.stringify(settled));
+    assert.equal(w.s.boxTokens.length, inputs.length, 'precondition: every box was raised');
+    assert.equal(w.s.tokenSources.length, 1, 'one source for the step');
+    const [source] = w.s.tokenSources;
+    assert.ok(w.s.boxTokens.every((token) => token === source.token), `a box without the step's token: ${JSON.stringify(folder)}`);
+    assert.equal(source.token.isCancellationRequested, false, 'a PIN given in time cancelled the step');
+    assert.equal(source.disposed, true, 'the token source was disposed');
+  }
 });
 
 test('a folder that asks nothing asks nothing — the entry is written as before', async () => {

@@ -4916,7 +4916,12 @@ through `editPrefill.sealedWriter` over `NOTHING_OPENED` — every value sealed 
 BEFORE `runCreate` writes anything (rule R3) — and `applyCreatePin` does what it does for Add: the
 idempotent sweep, the history, and the mark with its first `pinEpoch`, last. Dismissed, not agreed to
 three times, or out of time: `denied` / `consent_timeout` with a sentence naming the folder, and
-nothing written, not even half.
+nothing written, not even half. Every box the question raises — the sibling check's and `newPin`'s two —
+carries one `vscode.CancellationToken` (an optional trailing parameter of `pinForAgentEntry`,
+`pinForNewEntry`, `pinCheckedAgainstFolder` and `newPin`; Add and the other callers pass none). The
+source is cancelled when the deadline passes and disposed either way, so a box still open then closes
+with the step instead of taking a PIN nobody uses. The sibling check's count modal
+(`showWarningMessage`) takes no token and is not closed by it.
 
 **Compatibility.** An older relay never sends `fields`; its top-level `host`/`user`/`port` still work
 where the kind has them, and a host on a terminal is now refused rather than stored — that is the fix.

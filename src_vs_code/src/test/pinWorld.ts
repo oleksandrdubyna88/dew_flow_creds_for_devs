@@ -2,7 +2,7 @@ import { SECRET_SLOTS } from '../entitySlots';
 import { lockSecret } from '../secretEnvelope';
 import type { StorageManager } from '../storageManager';
 import { EntityMetadata } from '../types';
-import { loadWithVscode } from './vscodeStub';
+import { StubCancellationToken, StubCancellationTokenSource, loadWithVscode } from './vscodeStub';
 
 /**
  * A protected entry over the REAL `StorageManager`, and a `vscode` whose every sink is a spy — for the
@@ -46,6 +46,10 @@ export interface Sinks {
   boxTitles: string[];
   /** The prompts the boxes carried — the sentence a version's own box says is asserted here. */
   boxPrompts: string[];
+  /** The cancellation token each box was raised with, `undefined` where none was passed. */
+  boxTokens: (StubCancellationToken | undefined)[];
+  /** Every `CancellationTokenSource` the code under test made, so a test can see it cancelled and disposed. */
+  tokenSources: StubCancellationTokenSource[];
   /** Status-bar messages, with the work each one stands for — a test awaits `work` to see the end. */
   statusBar: { readonly text: string; readonly work: Thenable<unknown> | undefined }[];
   /**
@@ -59,7 +63,7 @@ export interface Sinks {
 export type ModalAnswer = string | undefined | (() => Promise<string | undefined>);
 
 export function sinks(): Sinks {
-  return { clipboard: [], files: {}, infos: [], warnings: [], errors: [], boxes: 0, boxTitles: [], boxPrompts: [], statusBar: [], modalAnswers: [] };
+  return { clipboard: [], files: {}, infos: [], warnings: [], errors: [], boxes: 0, boxTitles: [], boxPrompts: [], boxTokens: [], tokenSources: [], statusBar: [], modalAnswers: [] };
 }
 
 /** Every sink's contents in one string — for "nothing sealed reached anything". */
@@ -76,10 +80,11 @@ export function clickVscode(inputs: (string | undefined)[], s: Sinks, saveTo = '
   };
   return {
     window: {
-      showInputBox: (options: { title?: string; prompt?: string }): Promise<string | undefined> => {
+      showInputBox: (options: { title?: string; prompt?: string }, token?: StubCancellationToken): Promise<string | undefined> => {
         s.boxes += 1;
         s.boxTitles.push(options.title ?? '');
         s.boxPrompts.push(options.prompt ?? '');
+        s.boxTokens.push(token);
         return Promise.resolve(inputs.shift());
       },
       setStatusBarMessage: (text: string, work?: Thenable<unknown>): { dispose(): void } => {
@@ -111,6 +116,12 @@ export function clickVscode(inputs: (string | undefined)[], s: Sinks, saveTo = '
     EventEmitter: class {
       event = (): void => undefined;
       fire(): void {}
+    },
+    CancellationTokenSource: class extends StubCancellationTokenSource {
+      constructor() {
+        super();
+        s.tokenSources.push(this);
+      }
     },
     ThemeIcon: class {
       constructor(readonly id: string) {}

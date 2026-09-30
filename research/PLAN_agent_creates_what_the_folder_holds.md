@@ -390,10 +390,12 @@ docs with this promotion (S7). D-A rode with S1/S3.
 - **The instructions block is over 2 KiB** (2414 bytes). The sentence this plan added survives the cut; the
   tail of the block does not, for clients that cut. Shortening it is shared with
   [PLAN_creds_cli_reachable_from_every_caller.md](../todo/PLAN_creds_cli_reachable_from_every_caller.md) (§7).
-- **A PIN box can outlive the step.** `showInputBox` is not given a cancellation token, so a PIN box still
-  open when the step's time runs out stays on screen; whatever is typed into it then is ignored — the agent
-  was already answered and nothing is written. Closing it would mean threading a token through
-  `pinForNewEntry`, `newPin` and the sibling check.
+- ~~**A PIN box can outlive the step.**~~ **Closed 2026-09-30.** `settleAgentCreate` makes a
+  `vscode.CancellationTokenSource`, cancels it when the deadline passes and disposes it either way, and its
+  token rides an optional trailing parameter through `pinForAgentEntry` → `pinForNewEntry` → `newPin` and
+  `pinCheckedAgainstFolder` to every `showInputBox`, so a box still open then closes with the step. What
+  remains: the sibling check's count modal (`showWarningMessage`, which takes no token) stays until it is
+  answered; its answer is ignored as before.
 - **Whether to narrow Connect** for the legacy host-only record is still the product decision
   `canConnectSsh`'s comment names. The viewer question is decided (above): its rows match `canConnectSsh`,
   so narrowing Connect later narrows the viewer with it.

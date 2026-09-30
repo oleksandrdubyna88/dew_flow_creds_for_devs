@@ -129,7 +129,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   folder's PIN; an agent's create did not. Now, right after you allow the creation, the window asks
   for it — the same question Add asks, checked against the folder's protected entries — and seals every
   value before anything is written. Dismissed, not agreed to three times, or not given within the
-  prompt's five minutes: nothing is created, and the agent is told why.
+  prompt's five minutes: nothing is created, and the agent is told why. A PIN box still open when those
+  five minutes run out closes with them, rather than staying on screen to take a PIN nobody uses.
 
 ### Added — an agent learns what a folder holds, and sets only that
 
