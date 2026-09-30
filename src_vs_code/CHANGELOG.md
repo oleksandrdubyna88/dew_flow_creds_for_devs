@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] — 2026-09-30 — The entry PIN keeps its promise, and an agent creates what the folder holds
+
 > The entry PIN keeps its promise. A PIN-protected entry opens with everything it holds, edits
 > without losing or leaking anything, and no click, automatic reader, export, share or sync hands out
 > its sealed envelope or quietly takes the protection off. Update every machine you sync with — see
