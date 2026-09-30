@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { secretKindRefusal, validateAgentFields } from '../agentFieldValidation';
-import { AGENT_KINDS, agentKindHelp } from '../agentKindFields';
+import { AGENT_FIELD_MAX_BYTES, AGENT_KINDS, agentKindHelp } from '../agentKindFields';
 import { ENTITY_KINDS } from '../types';
 
 /**
@@ -76,6 +76,44 @@ test('tags become the word list the record holds, deduplicated and cleaned', () 
   const verdict = validateAgentFields('ssh', { host: 'h', tags: ' prod  eu-west prod ' });
 
   assert.deepEqual(verdict.ok && verdict.values.details.tags, ['prod', 'eu-west']);
+});
+
+/** The sentence a field over the limit answers, built from the limit the table states. */
+function tooLarge(field: string, bytes: number): RegExp {
+  return new RegExp(`^\`${field}\` is too large: ${bytes} bytes, and a field may hold at most ${AGENT_FIELD_MAX_BYTES} bytes of UTF-8 text \\(64 KiB\\)\\.`);
+}
+
+test('a field over 64 KiB is refused naming the field and the limit — a body, a note, and a list of rows together', () => {
+  const over = 'x'.repeat(AGENT_FIELD_MAX_BYTES + 1);
+
+  assert.match(refusal('script', { script: over }), tooLarge('script', AGENT_FIELD_MAX_BYTES + 1));
+  assert.match(refusal('credential', { notes: over }), tooLarge('notes', AGENT_FIELD_MAX_BYTES + 1));
+  assert.match(refusal('terminal', { command: 'ls', commandNote: over }), tooLarge('commandNote', AGENT_FIELD_MAX_BYTES + 1));
+  const half = 'y'.repeat(AGENT_FIELD_MAX_BYTES / 2);
+  assert.match(refusal('terminal', { command: 'ls', args: [{ value: half }, { value: 'z', note: half }] }), tooLarge('args', AGENT_FIELD_MAX_BYTES + 1));
+});
+
+test('the limit counts UTF-8 bytes, not characters', () => {
+  // Two bytes each: half as many characters as the limit, plus one, is over it.
+  const accented = 'é'.repeat(AGENT_FIELD_MAX_BYTES / 2 + 1);
+
+  assert.match(refusal('script', { script: accented }), tooLarge('script', AGENT_FIELD_MAX_BYTES + 2));
+});
+
+test('a field at the limit is accepted, and kept whole', () => {
+  const at = 'x'.repeat(AGENT_FIELD_MAX_BYTES);
+
+  const verdict = validateAgentFields('script', { script: at });
+
+  assert.ok(verdict.ok, verdict.ok ? '' : verdict.message);
+  assert.equal(verdict.values.details.script, at);
+});
+
+test('the kind help tells the agent the limit on every free-text field', () => {
+  for (const [kind, field] of [['script', 'script'], ['script', 'vars'], ['credential', 'notes'], ['terminal', 'commandNote'], ['terminal', 'args']] as const) {
+    const help = agentKindHelp(kind).fields.find((f) => f.name === field)?.help ?? '';
+    assert.match(help, new RegExp(`at most 64 KiB \\(${AGENT_FIELD_MAX_BYTES} bytes of UTF-8\\)`, 'i'), `${kind}.${field}: ${help}`);
+  }
 });
 
 test('payment is refused in the owner\'s words whatever was sent', () => {

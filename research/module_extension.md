@@ -4728,7 +4728,7 @@ and not the other stops the build instead of every window's startup. Record:
 | `mcpSwitches.ts` / `mcpSwitchScript.ts` | the ten switches and the four cadence choices, each with the sentence that says what it costs — and the browser half that keeps the two axes apart when a form is saved |
 | `mcpCreate.ts` | which folders are open to creation, and what a request becomes |
 | `agentKindFields.ts` | the ONE table of what an agent may set, per kind — the catalogue, the folder's `fields`, the kind help and every refusal read it (1.12.0) |
-| `agentFieldValidation.ts` | `creds_create`'s `fields` judged against that table for the kind the folder decides — unknown, wrong type, bad enum word, a secret inside, a required one missing |
+| `agentFieldValidation.ts` | `creds_create`'s `fields` judged against that table for the kind the folder decides — unknown, wrong type, bad enum word, a secret inside, a required one missing, a field over 64 KiB |
 | `agentCreatePin.ts` | D-B: the folder's PIN, asked after Allow inside the consent step's deadline, or the sentence the agent gets instead |
 | `secretRotation.ts` / `rotateAction.ts` | the placeholder, and the order a rotation happens in |
 | `secretKinds.ts` | what this extension can generate — and, named one at a time, what it cannot |
@@ -4885,7 +4885,16 @@ JSON type, an enum word outside `values`, a secret inside `fields` (*"send it as
 `secretKind` so the window makes it"*), a missing required field, or a payment kind each answer ONE
 sentence ending with what the kind takes — *"`host` is not a field of a terminal entry. A terminal
 entry takes: command (required), args, commandNote, terminalOs, notes — see creds_kind_help."* —
-and nothing is created. `detailsFor` builds the record from validated values only, and the secret
+and nothing is created. **Every field is bounded** (code review, 2026-09-30): at most
+`AGENT_FIELD_MAX_BYTES` — 64 KiB, counted in UTF-8 **bytes**, the unit of the broker's request limit —
+measured on the value that would be kept, a list of rows (`args`, `vars`) with every value, name and
+note together. Over it: *"`script` is too large: N bytes, and a field may hold at most 65536 bytes of
+UTF-8 text (64 KiB). Nothing was created — send a shorter one."*, answered in `choose`, so nothing is
+shown or stored. The help of every free-text field (`notes`, `script`, `commandNote`, `args`, `vars`)
+states the limit, so `creds_kind_help` tells the agent before it sends. Through the broker the request
+body is itself capped at 64 KiB (`MAX_REQUEST_BODY_BYTES`), so today a field cannot reach the limit by
+that road; the bound belongs to the field, and holds whatever the body limit becomes or whoever calls
+`validateAgentFields`. `detailsFor` builds the record from validated values only, and the secret
 goes through the form's additions pass to the kind's own slot (a database's connection string, a
 config's body, a key pair's private key) instead of always to the password; `secretKind` is refused
 where that slot cannot be drawn.

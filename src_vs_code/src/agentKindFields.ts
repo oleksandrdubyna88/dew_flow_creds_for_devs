@@ -74,6 +74,16 @@ export interface AgentKind {
   readonly notCreatable?: string;
 }
 
+/**
+ * The most text one field may carry: 64 KiB, counted in UTF-8 BYTES — the unit of the broker's request
+ * limit (`MAX_REQUEST_BODY_BYTES`) and of the journal line the text is copied into.
+ */
+export const AGENT_FIELD_MAX_BYTES = 64 * 1024;
+
+/** What the help of every free-text field says about it — the limit holds for every field. */
+const AT_MOST = `At most 64 KiB (${AGENT_FIELD_MAX_BYTES} bytes of UTF-8); a longer one is refused and nothing is created.`;
+const ROWS_AT_MOST = `All rows together at most 64 KiB (${AGENT_FIELD_MAX_BYTES} bytes of UTF-8); more is refused and nothing is created.`;
+
 const HOST: AgentField = {
   name: 'host',
   type: 'string',
@@ -131,7 +141,7 @@ const NOTES: AgentField = {
   store: 'notes',
   multiline: true,
   summary: 'free-text notes',
-  help: 'Free text the person sees on the entry. Stored sealed like a secret, so it is never listed back to you.',
+  help: `Free text the person sees on the entry. Stored sealed like a secret, so it is never listed back to you. ${AT_MOST}`,
   example: 'Provisioned by the deploy agent on 2026-09-29.',
 };
 
@@ -193,7 +203,7 @@ const ARGS: AgentField = {
   type: 'args',
   key: 'commandArgs',
   summary: 'arguments, one per row: { value, note?, enabled? }',
-  help: 'The arguments, one object per row: `value` is the word as typed, `note` says what it is for, and `enabled: false` keeps a flag in the entry but out of the line. Rows rather than one string, because what nobody remembers a week later is which value belongs to which environment.',
+  help: `The arguments, one object per row: \`value\` is the word as typed, \`note\` says what it is for, and \`enabled: false\` keeps a flag in the entry but out of the line. Rows rather than one string, because what nobody remembers a week later is which value belongs to which environment. ${ROWS_AT_MOST}`,
   example: [
     { value: '--sso-session', note: 'the session name from the org\'s SSO setup' },
     { value: 'OD-org' },
@@ -204,7 +214,7 @@ const COMMAND_NOTE: AgentField = {
   name: 'commandNote',
   type: 'string',
   summary: 'what the command is for',
-  help: 'One or two lines saying what the command does and when to run it, shown under it.',
+  help: `One or two lines saying what the command does and when to run it, shown under it. ${AT_MOST}`,
   example: 'Signs in to the org\'s AWS accounts for the day.',
 };
 
@@ -231,7 +241,7 @@ const SCRIPT: AgentField = {
   required: true,
   multiline: true,
   summary: 'the complete body',
-  help: 'The whole script, exactly as it should run. Write `${NAME}` where a value from `vars` goes. The person sees every line of it before it is stored.',
+  help: `The whole script, exactly as it should run. Write \`\${NAME}\` where a value from \`vars\` goes. The person sees every line of it before it is stored. ${AT_MOST}`,
   example: '#!/usr/bin/env bash\nset -euo pipefail\ncurl -fsS "https://api.example.com/quota?plan=${PLAN}"\n',
 };
 
@@ -240,7 +250,7 @@ const VARS: AgentField = {
   type: 'vars',
   key: 'scriptVars',
   summary: 'the ${NAME} values, one per row: { name, value, note?, enabled? }',
-  help: 'The changeable parts of the body, one object per row: `name` is what `${NAME}` in the body refers to, `value` is what it becomes, `note` says what it is for, and `enabled: false` keeps a row without using it.',
+  help: `The changeable parts of the body, one object per row: \`name\` is what \`\${NAME}\` in the body refers to, \`value\` is what it becomes, \`note\` says what it is for, and \`enabled: false\` keeps a row without using it. ${ROWS_AT_MOST}`,
   example: [{ name: 'PLAN', value: 'token-plan', note: 'which plan to ask about' }],
 };
 

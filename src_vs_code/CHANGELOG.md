@@ -149,6 +149,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   always to the password.
 - **The consent prompt shows the whole command line of a Terminal entry and the complete body of a
   script** before it is stored, never a preview; the MCP journal records the same text.
+- **Every field an agent sends is at most 64 KiB** — 65 536 bytes of UTF-8, a list of arguments or
+  variables counted all together. A longer script, note or command line is refused with a sentence
+  naming the field and the limit, before anything is shown or stored, and nothing is created;
+  `creds_kind_help` states the limit on every free-text field.
 - **A payment entry cannot be created by an agent**: `creds_kinds` lists it as not creatable and
   `creds_create` refuses it.
 

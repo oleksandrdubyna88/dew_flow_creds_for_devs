@@ -1,4 +1,4 @@
-import { AGENT_KINDS, AgentField, allowedFieldsSentence } from './agentKindFields';
+import { AGENT_FIELD_MAX_BYTES, AGENT_KINDS, AgentField, allowedFieldsSentence } from './agentKindFields';
 import { normalizeArgs } from './commandLine';
 import { EntityFields } from './entityFields';
 import { normalizeTags } from './sshOptions';
@@ -13,6 +13,11 @@ import { CommandArg, EntityKind, EntityMetadata } from './types';
  * for a PowerShell script. Now an unknown key, a wrong type, a bad enum word, a secret where a field
  * should be, or a missing required field each answer ONE sentence that names the kind's real fields
  * — and nothing is created, because this runs before anybody is asked to approve anything.</p>
+ *
+ * <p>Every field is also bounded: at most `AGENT_FIELD_MAX_BYTES` (64 KiB) of UTF-8 text, a list of rows
+ * counted all together. A script, a note and a command line are copied WHOLE into the consent prompt and
+ * the journal (plan gate, finding 3), so without a bound a field was as large as the request could carry
+ * (code review of 2026-09-30, finding 2). Checked here, before anything is shown or stored.</p>
  *
  * <p>The kind is decided first, by the folder (`kindFor`), so what is checked is the kind the entry
  * will be rather than the one the agent named. Pure: no `vscode`, no storage.</p>
@@ -96,7 +101,28 @@ function readOne(kind: EntityKind, key: string, raw: unknown): OneVerdict {
     return { ok: false, message: `\`${key}\` is not a field of a ${kind} entry. ${allowedFieldsSentence(kind)}` };
   }
   const read = READERS[field.type](raw, field);
-  return read.ok ? read : { ok: false, message: `\`${key}\` ${read.why}. ${allowedFieldsSentence(kind)}` };
+  return read.ok ? withinLimit(key, read.value) : { ok: false, message: `\`${key}\` ${read.why}. ${allowedFieldsSentence(kind)}` };
+}
+
+/** The value as read, or the refusal that names the field and the limit — measured on what would be kept. */
+function withinLimit(key: string, value: unknown): OneVerdict {
+  const bytes = textBytes(value);
+  return bytes <= AGENT_FIELD_MAX_BYTES
+    ? { ok: true, value }
+    : {
+      ok: false,
+      message: `\`${key}\` is too large: ${bytes} bytes, and a field may hold at most ${AGENT_FIELD_MAX_BYTES} bytes of UTF-8 text (64 KiB). Nothing was created — send a shorter one.`,
+    };
+}
+
+/** The UTF-8 size of every string in a value: a text, a tag list, or rows with their names and notes. */
+function textBytes(value: unknown): number {
+  if (typeof value === 'string') {
+    return Buffer.byteLength(value, 'utf8');
+  }
+  return typeof value === 'object' && value !== null
+    ? Object.values(value).reduce((sum: number, item: unknown) => sum + textBytes(item), 0)
+    : 0;
 }
 
 type Read = { ok: true; value: unknown } | { ok: false; why: string };

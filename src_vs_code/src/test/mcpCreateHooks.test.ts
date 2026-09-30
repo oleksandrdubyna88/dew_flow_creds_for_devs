@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
+import { AGENT_FIELD_MAX_BYTES } from '../agentKindFields';
 import { parseFields } from '../entityFields';
 import type { McpCreateHooks } from '../brokerMcpDoor';
 import type { EntityMetadata, FolderType, TreeNode } from '../types';
@@ -249,4 +250,28 @@ test('a script is stored whole, with its variables, and defaults to bash', async
   assert.equal(details.script, body, 'the body is kept exactly, untrimmed');
   assert.deepEqual(details.scriptVars, [{ name: 'PLAN', value: 'token-plan' }]);
   assert.equal(details.scriptLanguage, 'bash');
+});
+
+test('a script over the limit is refused naming the limit, and nothing is created', async () => {
+  // The consent prompt and the journal carry a script whole (plan gate, finding 3), so an unbounded one
+  // was copied whole into both. Refused in `choose`, the request never reaches a prompt or the vault.
+  const { storage, hooks } = await vault('script');
+
+  const answer = await create(hooks, { name: 'huge', kind: 'script', fields: { script: 'x'.repeat(AGENT_FIELD_MAX_BYTES + 1) } });
+
+  assert.equal(answer.ok, false, 'the oversized script was accepted, so it reached the consent prompt');
+  assert.match(answer.message, new RegExp(`^\`script\` is too large: ${AGENT_FIELD_MAX_BYTES + 1} bytes, and a field may hold at most ${AGENT_FIELD_MAX_BYTES} bytes`));
+  assert.ok(answer.message.length < 400, 'the refusal repeats the script it refuses');
+  assert.deepEqual(entries(storage), [], 'nothing was created');
+});
+
+test('a script at the limit is accepted, shown whole and stored whole', async () => {
+  const body = 'x'.repeat(AGENT_FIELD_MAX_BYTES);
+  const { storage, hooks } = await vault('script');
+
+  const answer = await create(hooks, { name: 'large', kind: 'script', fields: { script: body } });
+
+  assert.equal(answer.ok, true, answer.message);
+  assert.ok(answer.message.endsWith(body), 'the consent summary cut the script');
+  assert.equal(detailsOf(storage, answer.id).script, body);
 });
