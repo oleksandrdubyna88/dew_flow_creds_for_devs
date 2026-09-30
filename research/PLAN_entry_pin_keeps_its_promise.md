@@ -796,6 +796,22 @@ reproduced by a test watched failing first; the commits carry the RED messages.
   the `presence` class for their has-one reads. Two real misreports found and fixed, RED first:
   `envApply` DB password (*absent* → withheld) and the tree's *Open Site* flag (envelope decides, not the
   mark). Carriers are unchanged; a helper of a helper is not followed.
+- **Protected while empty** (§16 item 4, first half; fixed 2026-09-30, RED first). The door's
+  `repairFalseMark` (§5.8's mirror, R5) read "marked, nothing locked" as the 0.99.0 false mark and
+  cleared it, so an entry protected while it held NO value lost its protection at the first door and
+  the first value typed into it was stored in the clear. The evidence is now a value IN THE CLEAR
+  (`lockedSlotCount` gained `plain`); a marked entry holding nothing keeps its mark and is treated as
+  protected. R3 for its first value: `EntityFormOptions.beforeSave` is handed the values the save would
+  write, and when they store a secret (`applyFormSecrets.addsSecret`) the person chooses the entry's
+  first PIN — `pinOnCreate.firstPinFor`, typed twice, or checked against the protected entries of its
+  folder through the same `pinCheckedAgainstFolder` a new entry in that folder uses (extracted, not
+  copied) — granted to the window; a decline keeps the form. `sealingAtWrite` gained a third opened
+  state (`OpenedAs.held`) and a required `FirstSeal`: the first value is sealed before the first write,
+  a value sealed meanwhile goes under its own PIN, a mark gone meanwhile is refused, and an entry
+  opened plain that became marked-and-empty is refused like one that gained the mark. Restore does the
+  same after its confirmation (`restoreVersion.holdsValue`). The sibling check chosen was
+  `pinOnCreate`'s rather than `protectFolder`'s `folderPin`/`confirmedAgainstSiblings`: it is the one
+  built for a single entry with a `parentId` (its agreement now names the entry it seals).
 
 ## 16. Open tail
 
@@ -811,10 +827,13 @@ reproduced by a test watched failing first; the commits carry the RED messages.
    versions is reached through the Protect modal — the row's token is derived from the mark
    (`treeRowText.ts:184`) and the provider that would have to read kept versions, `treeDataProvider.ts`, is at
    795 of its 800 lines.
-4. **Recorded by the 2026-09-30 review, not fixed:** an entry protected while it held NO value carries
-   the mark alone, so Edit opens it as plain (no sealed value to open or to check a PIN against) and a
-   first value typed into it is stored in the clear — sealing needs a PIN nothing can verify, a design
-   question of its own. *Protect with a PIN…* checks for an existing PIN before its two PIN boxes; a
+4. **Recorded by the 2026-09-30 review.** An entry protected while it held NO value carried the mark
+   alone, so Edit opened it as plain and a first value typed into it was stored in the clear. **Fixed
+   2026-09-30** (§15, *Protected while empty*): the door keeps the mark of an entry that holds nothing,
+   and the first save — or Restore — that stores a value asks for the entry's first PIN (typed twice,
+   or checked against the protected entries of its folder) and seals every value with it before the
+   first write. Nothing can verify that PIN against the one typed at Protect, which stored nothing;
+   the person chooses it again, as for a new entry. *Protect with a PIN…* checks for an existing PIN before its two PIN boxes; a
    Protect from another window in between leaves every value under the OTHER PIN (locked slots are never
    replaced) while this run still reports the entry protected and bumps `pinEpoch` a second time. *(The
    third item this review recorded — the `entity-pin` help's* Changed on two machines at once *paragraph

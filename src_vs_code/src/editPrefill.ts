@@ -1,9 +1,8 @@
 import type { SecretWriter } from './applyFormSecrets';
 import { parseFields, serializeFields } from './entityFields';
-import { sealValue } from './entityPin';
+import { lockedSlotCount, sealValue } from './entityPin';
 import { parsePaymentFields, serializePaymentFields } from './paymentFields';
 import { SECRET_SLOTS, SecretSlot } from './entitySlots';
-import { firstLockedStored } from './pinAdmission';
 import { PinGate, PinOpen, openStored, silentPinGate } from './pinGate';
 import type { RevisionSecrets } from './revisionHistory';
 import { WriterWords, pinAtWrite, refusalOf } from './sealingAtWrite';
@@ -40,6 +39,11 @@ import type { StorageManager } from './storageManager';
 export interface EditPrefill {
   /** At least one slot was locked when the form opened: the entry is protected, and its save seals. */
   readonly locked: boolean;
+  /**
+   * Any slot held anything when the form opened. A MARKED entry holding nothing is protected while
+   * empty: its save asks for the entry's first PIN when it stores a value (`sealingAtWrite`).
+   */
+  readonly held: boolean;
   readonly notes: string | undefined;
   readonly fieldsRaw: string | undefined;
   readonly secondRaw: string | undefined;
@@ -116,11 +120,13 @@ async function presenceOf(
   storage: StorageManager,
   accountId: string,
   entityId: string,
-): Promise<Pick<EditPrefill, 'locked' | 'hasPassword' | 'hasPrivateKey' | 'hasVpnConfig'>> {
+): Promise<Pick<EditPrefill, 'locked' | 'held' | 'hasPassword' | 'hasPrivateKey' | 'hasVpnConfig'>> {
+  const count = await lockedSlotCount(storage, accountId, entityId);
   return {
     // Asked of EVERY slot, not of the seven opened above: a credential whose only locked value is
     // its password is protected all the same, and its save must seal what is typed.
-    locked: (await firstLockedStored(storage, accountId, entityId)) !== undefined,
+    locked: count.locked > 0,
+    held: count.total > 0,
     hasPassword: (await storage.getPassword(accountId, entityId)) !== undefined,
     hasPrivateKey: (await storage.getPrivateKey(accountId, entityId)) !== undefined,
     hasVpnConfig: (await storage.getVpnConfig(accountId, entityId)) !== undefined,

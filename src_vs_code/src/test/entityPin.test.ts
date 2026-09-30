@@ -132,8 +132,8 @@ test('an entry says how much of itself is locked, so a half-run is SEEN', async 
   await protectEntity(storage, ACCOUNT, ENTITY, PIN);
   const after = await lockedSlotCount(storage, ACCOUNT, ENTITY);
 
-  assert.deepEqual(before, { locked: 0, total: 3 });
-  assert.deepEqual(after, { locked: 3, total: 3 });
+  assert.deepEqual(before, { locked: 0, total: 3, plain: 3 });
+  assert.deepEqual(after, { locked: 3, total: 3, plain: 0 }, 'and none of it is left in the clear');
   assert.equal(await isProtected(storage, ACCOUNT, ENTITY), true);
 });
 

@@ -329,3 +329,20 @@ test('the PIN is read AFTER the confirmation: a vault locked while it was open a
   assert.equal(await openedLive(w, 'password'), 'old pw');
   assert.ok(!w.written.includes('old pw'), 'sealed before it was written');
 });
+
+test('restoring into an entry protected while empty asks for its first PIN and seals the version before the first write', async () => {
+  // Protect with a PIN… on an empty entry writes the mark alone (§16 item 4): the version's values are
+  // the entry's first, and they go in sealed under a PIN chosen now — typed twice, nothing to check it on.
+  const w = await world({ details: credential({ pinProtected: true }), slots: {} }, { secrets: { password: 'old pw', notes: 'old note' } }, ['5678', '5678']);
+
+  await w.restore();
+
+  for (const plain of ['old pw', 'old note']) {
+    assert.ok(!w.written.includes(plain), `"${plain}" reached the keychain in the clear, even for a moment`);
+  }
+  const read = readSecret(await stored(w, 'password'));
+  assert.equal(read.kind, 'locked', 'the restored password is not sealed');
+  assert.equal(read.kind === 'locked' ? await unlockSecret(read.envelope, ACCOUNT, '5678') : '', 'old pw');
+  assert.equal(w.s.boxes, 2, 'a NEW PIN, typed twice');
+  assert.equal(w.node().details?.pinProtected, true);
+});

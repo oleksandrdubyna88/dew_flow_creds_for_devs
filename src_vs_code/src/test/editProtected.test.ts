@@ -187,9 +187,10 @@ interface Form {
 async function formAnswer(options: EntityFormOptions, answer: Answer, form: Form, lockVault: () => void): Promise<EntityFormValues | undefined> {
   form.options = options;
   await whileTheFormIsOpen(answer, lockVault);
-  const agreed = await (options.beforeSave ?? agreeing)();
+  const values = posted(options, answer);
+  const agreed = await (options.beforeSave ?? agreeing)(values);
   form.heldAtSave = !agreed;
-  return agreed ? posted(options, answer) : undefined;
+  return agreed ? values : undefined;
 }
 
 /** What happens between the form opening and Save being pressed — the vault locking, another window. */

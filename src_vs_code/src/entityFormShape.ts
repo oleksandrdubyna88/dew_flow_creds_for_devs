@@ -122,8 +122,12 @@ export interface EntityFormOptions {
    * contract `confirmInvalidSave` already has — and nothing is written. It runs after every other
    * gate, so nobody is asked for a PIN and then told their config does not parse. It only GATES;
    * the save fetches the PIN it seals with for itself (`editPrefill.pinForSave`).</p>
+   *
+   * <p>It is handed what the save WOULD write, because one gate depends on it: an entry protected
+   * while it held nothing asks for its first PIN only when the save stores a value into it
+   * (`applyFormSecrets.addsSecret`). A gate that does not care ignores the argument.</p>
    */
-  beforeSave?: () => Promise<boolean>;
+  beforeSave?: (values: EntityFormValues) => Promise<boolean>;
   /** Set when the parent folder dictates the entity kind (selector locked). */
   lockedKind?: EntityKind;
   /** The kind the form OPENS on when no folder locks it (issue #57) — a suggestion: selector alive, no folder hint; `lockedKind` outranks it. Why: `dialogs.pickEntityKind`. */

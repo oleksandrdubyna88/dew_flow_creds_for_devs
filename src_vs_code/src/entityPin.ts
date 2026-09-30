@@ -3,7 +3,7 @@ import { OpenedHistory, firstSealedKept, openHistory, rewriteHistory } from './h
 import { SiblingTry, attemptAcross, attemptUnlock, cooldownMs, coolingReason, retryGranted } from './pinAttempts';
 import { sealValue } from './sealValue';
 import { StorageManager } from './storageManager';
-import { SecretEnvelope, SecretRead, isLockedSecret, plainSecret, readSecret } from './secretEnvelope';
+import { SecretEnvelope, SecretRead, plainSecret, readSecret } from './secretEnvelope';
 
 export { sealValue };
 
@@ -228,20 +228,29 @@ async function checkOnKept(kept: Awaited<ReturnType<StorageManager['getHistory']
   }
 }
 
+/** What one entry's slots hold, counted by what `readSecret` says each one is. */
+export interface SlotCount {
+  /** Slots sealed under a PIN. */
+  readonly locked: number;
+  /** Slots that hold anything at all — sealed, in the clear, or damaged. */
+  readonly total: number;
+  /**
+   * Slots holding a value IN THE CLEAR — the 0.99.0 false mark's evidence (`pinAdmission`). An entry
+   * that claims a PIN over a value like this is wrong about itself; one that claims it over NOTHING is
+   * an entry protected while empty, and its mark is the only record of that choice.
+   */
+  readonly plain: number;
+}
+
 /** How much of this entry is locked — the number a person is shown, and the interrupted-run signal. */
-export async function lockedSlotCount(
-  storage: StorageManager,
-  accountId: string,
-  entityId: string,
-): Promise<{ readonly locked: number; readonly total: number }> {
-  let locked = 0;
-  let total = 0;
-  for (const slot of SECRET_SLOTS) {
-    const stored = await slot.read(storage, accountId, entityId);
-    total += stored === undefined ? 0 : 1;
-    locked += isLockedSecret(stored) ? 1 : 0;
-  }
-  return { locked, total };
+export async function lockedSlotCount(storage: StorageManager, accountId: string, entityId: string): Promise<SlotCount> {
+  const stored = await Promise.all(SECRET_SLOTS.map((slot) => slot.read(storage, accountId, entityId)));
+  const kinds = stored.map((raw) => readSecret(raw).kind);
+  return {
+    locked: kinds.filter((kind) => kind === 'locked').length,
+    total: kinds.filter((kind) => kind !== 'absent').length,
+    plain: kinds.filter((kind) => kind === 'value').length,
+  };
 }
 
 /** Whether this entry is protected at all — one locked slot is enough to have to ask. */

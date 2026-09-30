@@ -102,6 +102,14 @@ async function fateOf(
   return pin === undefined ? plainFate(stored, wanted) : { kind: 'write', value: await sealValue(wanted, accountId, pin) };
 }
 
+/**
+ * Whether the version holds a value in any slot the entry PIN covers — the same test `fateOf` writes
+ * by. A restore into an entry protected while empty asks for the entry's first PIN only when it does.
+ */
+export function holdsValue(version: Revision): boolean {
+  return SECRET_SLOTS.some((slot) => (version.secrets[slot.revisionField] ?? '').length > 0);
+}
+
 /** The version held nothing here: whatever the entry holds now goes. */
 function removalFate(stored: string | undefined): Fate {
   return stored === undefined ? { kind: 'keep' } : { kind: 'remove' };

@@ -1,4 +1,4 @@
-import { protectEntity } from './entityPin';
+import { lockedSlotCount, protectEntity } from './entityPin';
 import { PinGate, PinOpen, openStored } from './pinGate';
 import { grantedPin } from './pinSession';
 import { SECRET_SLOTS } from './entitySlots';
@@ -148,17 +148,27 @@ function valueOfOpen(opened: PinOpen): string | undefined {
  * check costs nothing and the entry heals the first time somebody opens it. Left alone, it hides
  * from that person's agent surfaces and offers a Remove-PIN command that answers "is not
  * protected\" — a contradiction with no way out from inside the interface.</p>
+ *
+ * <p><b>The evidence is a value IN THE CLEAR, not the absence of a lock</b> (review of 2026-09-30). An
+ * entry protected while it held nothing — *Protect with a PIN…* on an empty entry writes the mark alone
+ * — is also "marked, nothing locked", and clearing ITS mark at the first door threw away the person's
+ * decision in silence: the first value typed into it in Edit then went into the keychain in the clear.
+ * A marked entry that holds no value at all keeps its mark; its first value is sealed at the save
+ * (`sealingAtWrite`).</p>
  */
 async function repairFalseMark(
   storage: StorageManager,
   accountId: string,
   entityId: string,
 ): Promise<void> {
-  const node = storage.getNode(accountId, entityId);
-  if (node?.details?.pinProtected !== true) {
-    return;
+  if (await markIsFalse(storage, accountId, entityId)) {
+    await clearMark(storage, accountId, entityId, { pinProtected: undefined });
   }
-  await clearMark(storage, accountId, entityId, { pinProtected: undefined });
+}
+
+/** Marked, and holding a value in the clear — the evidence the mark is the 0.99.0 one. */
+async function markIsFalse(storage: StorageManager, accountId: string, entityId: string): Promise<boolean> {
+  return storage.getNode(accountId, entityId)?.details?.pinProtected === true && (await lockedSlotCount(storage, accountId, entityId)).plain > 0;
 }
 
 /**

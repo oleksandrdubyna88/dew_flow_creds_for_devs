@@ -264,7 +264,7 @@ export async function agreed(data: Record<string, unknown>, options: EntityFormO
     () => confirmInvalidSave(data, options),
     () => confirmUnwovenSave(data, options),
     // LAST: the caller's own check — a protected entry's PIN at Save (`EntityFormOptions.beforeSave`).
-    () => beforeSaveAgreed(options),
+    () => beforeSaveAgreed(data, options),
   ];
   for (const gate of gates) {
     if (!(await gate())) {
@@ -274,9 +274,13 @@ export async function agreed(data: Record<string, unknown>, options: EntityFormO
   return true;
 }
 
-/** The caller's gate when it has one; a form with none saves as it always did. */
-function beforeSaveAgreed(options: EntityFormOptions): Promise<boolean> {
-  return options.beforeSave === undefined ? Promise.resolve(true) : options.beforeSave();
+/**
+ * The caller's gate when it has one, handed what the save would write; a form with none saves as it
+ * always did. `toValues` is computed here only for a gate that exists — the save computes it again for
+ * what it resolves with, and the two agree on everything a gate asks (which values are present).
+ */
+function beforeSaveAgreed(data: Record<string, unknown>, options: EntityFormOptions): Promise<boolean> {
+  return options.beforeSave === undefined ? Promise.resolve(true) : options.beforeSave(toValues(data, options));
 }
 
 /**

@@ -17,7 +17,7 @@ import { newEntryOs } from './hostShell';
 import { hostKeyFingerprint } from './hostKeyPin';
 import { snapshotForRevision } from './revisionSnapshot';
 import { carryThroughDetails } from './attachmentMeta';
-import { SecretWriter, applyAdditions, applyRemovals } from './applyFormSecrets';
+import { SecretWriter, addsSecret, applyAdditions, applyRemovals } from './applyFormSecrets';
 import { warnIfTrackedCopy } from './configCommands';
 import { applyEnvBindings } from './envApply';
 import { heldEnvValues } from './envBinding';
@@ -28,12 +28,13 @@ import { EntityMetadata } from './types';
 import type { EntityFormOptions, EntityFormValues } from './entityFormPanel';
 import { envCollection, showEnvNotice } from './envCollectionRef';
 import { EDIT_WORDS, EditPrefill, openEntryForEdit, pinForSave, sealedWriter } from './editPrefill';
-import { Sealing, sealingAtWrite } from './sealingAtWrite';
+import { Sealing, chosenOnce, sealingAtWrite } from './sealingAtWrite';
 import { protectEntity } from './entityPin';
 import { parseFields } from './entityFields';
 import { PinGate } from './pinGate';
 import { firstLockedStored } from './pinAdmission';
 import { admitEntry } from './pinPrompt';
+import { firstPinFor } from './pinOnCreate';
 import { parseSecondValues } from './secondValues';
 import { describeError } from './describeError';
 
@@ -81,6 +82,11 @@ interface EditContext {
 interface Door {
   readonly gate: PinGate;
   readonly prefill: EditPrefill;
+  /**
+   * The FIRST PIN of an entry protected while empty, asked at most until it answers one: Save's gate
+   * asks it (a decline keeps the form open), and the write seals with the same answer.
+   */
+  readonly firstPin: () => Promise<string | undefined>;
 }
 
 /**
@@ -98,7 +104,7 @@ async function openForEdit(ctx: EditContext): Promise<Door | undefined> {
     sayRefusal(opened.reason);
     return undefined;
   }
-  return { gate, prefill: opened.prefill };
+  return { gate, prefill: opened.prefill, firstPin: chosenOnce(() => firstPinFor(ctx.storage, ctx.accountId, ctx.node)) };
 }
 
 /**
@@ -196,7 +202,7 @@ async function editFormOptions(ctx: EditContext, door: Door, storedPayment: Paym
     // and the same one-line `byId` the folder branch uses, so the two forms cannot come to disagree
     // about one ancestry.
     inheritedAsk: named(inheritedAskFor(node, (id) => storage.getNode(accountId, id))),
-    beforeSave: saveGateFor(storage, door),
+    beforeSave: saveGateFor(ctx, door),
     ...ctx.doorsFor(accountId, node),
   };
 }
@@ -205,9 +211,26 @@ async function editFormOptions(ctx: EditContext, door: Door, storedPayment: Paym
  * The form's LAST gate for a protected entry: the PIN, re-checked at Save (`pinForSave`). A decline
  * keeps the form open with everything typed. It only gates — the save fetches the PIN it seals with
  * for itself, a moment later, so a form that never ran this gate still cannot write in the clear.
+ *
+ * <p>An entry protected while EMPTY has no PIN to re-check: when the save stores a value, this gate
+ * asks for the entry's first PIN (`firstPinFor` — typed twice, or checked against the folder's
+ * protected entries), and a decline keeps the form open the same way. A save that stores nothing
+ * secret asks nothing.</p>
  */
-function saveGateFor(storage: StorageManager, door: Door): EntityFormOptions['beforeSave'] {
-  return door.prefill.locked ? () => pinForSave(storage, door.gate, warn).then((pin) => pin !== undefined) : undefined;
+function saveGateFor(ctx: EditContext, door: Door): EntityFormOptions['beforeSave'] {
+  if (door.prefill.locked) {
+    return () => pinForSave(ctx.storage, door.gate, warn).then((pin) => pin !== undefined);
+  }
+  return protectedWhileEmpty(ctx, door) ? (values) => firstPinAgreed(values, door) : undefined;
+}
+
+/** Marked, and holding nothing when the form opened — *Protect with a PIN…* on an empty entry. */
+function protectedWhileEmpty(ctx: EditContext, door: Door): boolean {
+  return ctx.details.pinProtected === true && !door.prefill.held;
+}
+
+async function firstPinAgreed(values: EntityFormValues, door: Door): Promise<boolean> {
+  return !(await addsSecret(values)) || (await door.firstPin()) !== undefined;
 }
 
 /** The form is told a seed exists and how it is configured — never the seed itself. */
@@ -236,13 +259,13 @@ function warn(message: string): void {
  * already closed, so what was typed is gone; the gate above makes that a moment's race, not the
  * ordinary road.
  */
-function sealingFor(ctx: EditContext, door: Door): Promise<Sealing> {
-  const opened = { locked: door.prefill.locked, marked: ctx.details.pinProtected === true };
-  return sealingAtWrite(ctx.storage, door.gate, opened, EDIT_WORDS, warn);
+async function sealingFor(ctx: EditContext, door: Door, result: EntityFormValues): Promise<Sealing> {
+  const opened = { locked: door.prefill.locked, marked: ctx.details.pinProtected === true, held: door.prefill.held };
+  return sealingAtWrite(ctx.storage, door.gate, opened, EDIT_WORDS, warn, { adds: await addsSecret(result), choose: door.firstPin });
 }
 
 async function saveEdit(ctx: EditContext, door: Door, result: EntityFormValues): Promise<void> {
-  const sealing = await sealingFor(ctx, door);
+  const sealing = await sealingFor(ctx, door, result);
   if (sealing.kind === 'stopped') {
     return;
   }

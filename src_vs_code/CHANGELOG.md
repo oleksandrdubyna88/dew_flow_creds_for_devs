@@ -32,6 +32,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   protected while its confirmation waited, and sealed it again when the PIN was removed meanwhile.
   Both now decide at the moment they write: an entry whose protection changed is not touched, and you
   are told to open Edit (or run Restore) again.
+- **An entry protected while it was empty lost its protection at the first open.** *Protect with a
+  PIN…* on an entry that holds nothing writes only the mark, and the first open removed it as if it
+  were the 0.99.0 false mark — so the first value typed into it in Edit, or brought back by *Restore
+  This Version…*, was stored in the clear. The mark now stays, and the first save that stores a value
+  asks for the entry's PIN — typed twice, or checked against the protected entries of its folder —
+  and seals every value with it before anything is written. Declining keeps the form open; a save that
+  stores nothing asks nothing. A mark over values that arrived in the clear (the 0.99.0 share) is
+  still removed.
 - **Every click handed out the sealed envelope.** *Copy Password*, *Copy Connection String* (with and
   without the password), *Copy One-Time Code*, *Open in DB Extension*, *Install SSH Key to System*,
   *Save VPN Config As…*, *Start VPN*, *Connect SSH* (key and password), *Write Config File Here…*, *Add

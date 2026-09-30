@@ -4,12 +4,13 @@ import { describeError } from './describeError';
 import { nodeAt } from './entityViewerCommands';
 import { applyEnvBindings } from './envApply';
 import { envCollection, showEnvNotice } from './envCollectionRef';
-import { firstLockedStored } from './pinAdmission';
+import { lockedSlotCount } from './entityPin';
 import { corruptReason } from './pinGate';
+import { firstPinFor } from './pinOnCreate';
 import { entryPinGate } from './pinPrompt';
 import { openKeptVersion } from './revisionDoor';
 import { MAX_REVISIONS, Revision } from './revisionHistory';
-import { damagedSlots, restoreVersion } from './restoreVersion';
+import { damagedSlots, holdsValue, restoreVersion } from './restoreVersion';
 import { Sealing, WriterWords, sealingAtWrite } from './sealingAtWrite';
 import type { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
@@ -33,10 +34,12 @@ export interface RestoreDeps {
 /** A kept version the person asked to restore, resolved and opened — or `undefined`, having said why. */
 interface Ready {
   readonly accountId: string;
-  readonly live: { readonly id: string; readonly name: string; readonly details: EntityMetadata };
+  readonly live: { readonly id: string; readonly name: string; readonly parentId?: string | null; readonly details: EntityMetadata };
   readonly version: Revision;
   /** The live entry held a sealed value at the door. Its PIN is read after the confirmation, never here. */
   readonly locked: boolean;
+  /** The live entry held anything at all — marked and holding nothing, it is protected while empty. */
+  readonly held: boolean;
 }
 
 /** What Restore says when the protection changed while its confirmation was open (`sealingAtWrite.ts`). */
@@ -66,11 +69,16 @@ function pinOf(sealing: Sealing): string | undefined {
  * Rule R3 at write time: the PIN — and whether there is one at all — is read AFTER the confirmation.
  * It was taken before it, so an entry protected while the modal waited was restored in the clear, and
  * one unprotected meanwhile was sealed again without a decision.
+ *
+ * <p>Into an entry protected while EMPTY, a version that holds a value brings the entry its first
+ * values: the person chooses the PIN they go under (`firstPinFor`), after the confirmation and before
+ * the first write, and a decline restores nothing (review of 2026-09-30).</p>
  */
 function sealingAfterConfirmation(ready: Ready, storage: StorageManager): Promise<Sealing> {
   const gate = entryPinGate(ready.accountId, ready.live.id, ready.live.name);
-  const opened = { locked: ready.locked, marked: ready.live.details.pinProtected === true };
-  return sealingAtWrite(storage, gate, opened, RESTORE_WORDS, (reason) => void vscode.window.showWarningMessage(reason));
+  const opened = { locked: ready.locked, marked: ready.live.details.pinProtected === true, held: ready.held };
+  const first = { adds: holdsValue(ready.version), choose: () => firstPinFor(storage, ready.accountId, ready.live) };
+  return sealingAtWrite(storage, gate, opened, RESTORE_WORDS, (reason) => void vscode.window.showWarningMessage(reason), first);
 }
 
 /** The writes (`restoreVersion.ts`), and the sentences after them. */
@@ -105,7 +113,9 @@ async function restoreTarget(target: unknown, storage: StorageManager): Promise<
 
 function withLive(storage: StorageManager, accountId: string, id: string, version: Revision): Ready | undefined {
   const live = storage.getNode(accountId, id);
-  return live?.details === undefined ? undefined : { accountId, live: { id, name: live.name, details: live.details }, version, locked: false };
+  return live?.details === undefined
+    ? undefined
+    : { accountId, live: { id, name: live.name, parentId: live.parentId, details: live.details }, version, locked: false, held: false };
 }
 
 /** After the door: refuse over a damaged value (R4); note whether the entry is protected — its PIN is fetched at the write. */
@@ -117,7 +127,8 @@ async function checked(storage: StorageManager, ready: Ready): Promise<Ready | u
     );
     return undefined;
   }
-  return { ...ready, locked: (await firstLockedStored(storage, ready.accountId, ready.live.id)) !== undefined };
+  const count = await lockedSlotCount(storage, ready.accountId, ready.live.id);
+  return { ...ready, locked: count.locked > 0, held: count.total > 0 };
 }
 
 /** Step 3: one modal that says what happens to today's state, and what drops out of history. */

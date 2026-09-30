@@ -1167,7 +1167,7 @@ inherited at read time.
 | `pinPrompt.ts` | the thin `vscode` edge: the one input box, with the one wording |
 | `pinCommands.ts` | the three commands, and the folder run |
 | `pinFolderPlan.ts` | what a folder run would do, and the sentences it says before doing it |
-| `pinOnCreate.ts` | a new entry in a folder whose entries are protected |
+| `pinOnCreate.ts` | a new entry in a folder whose entries are protected; `firstPinFor`, the first PIN of an entry protected while empty |
 | `sharePayloadBuild.ts` | the payload builder, lifted out of `shareInbox` when this pushed it over its ceiling |
 | `shareTotpQuestion.ts` | *"What travels with this share?"* — the same lift, for the same ceiling |
 | `nodeOwnId.ts` | `withOwnId`: the node's record names the node it is in, at the import and at every read |
@@ -1286,8 +1286,10 @@ still on, claiming a wrap it did not have: hidden from the recipient's agent sur
 saying *PIN — on*, and the command that form points at reading the values, finding nothing locked,
 and contradicting it. `pinProtected` now sits in `SECRET_CLAIM_FIELDS` (which fixes the clone path
 too, since a clone copies settings and no secrets), and copies that already arrived are repaired at
-the door: a mark with nothing locked under it is self-diagnosing, so `admit` clears it on the first
-open.
+the door: a mark over a value in the clear with nothing locked is self-diagnosing, so `admit` clears it
+on the first open. **The evidence is the plaintext, not the missing lock** (review of 2026-09-30): a
+marked entry that holds NO value at all is an entry protected while empty, and keeps its mark — see
+*Protected while empty* below.
 
 What travels in its place is `pinAskOnImport` — an instruction to ask, never a claim about a value —
 inside the sealed payload, so the server learns nothing. On accept the recipient chooses a PIN of
@@ -1414,7 +1416,8 @@ if it holds no sealed value any more; an entry opened plain is refused if it now
 or has gained the mark (*"… was protected with a PIN while this form was open. Nothing was saved. Close
 the form and open Edit again."*). Until 2026-09-30 the writer was chosen when the form OPENED, so an
 entry protected from another window or a sync while the form was open got the typed value in the clear
-and lost its mark. `attachmentMeta.carryMarks` carries the mark; the env bindings get the WRITTEN details. Clicks
+and lost its mark. An entry opened plain that is now marked and holds nothing is refused the same way.
+`attachmentMeta.carryMarks` carries the mark (a pure copy since 2026-09-30); the env bindings get the WRITTEN details. Clicks
 go through `pinClick.clickedSecret`/`clickOpener`; a file written from a protected value says it is
 outside the PIN; Connect over a key borrowed from another entry asks the OWNER of the value. Automatic
 readers: the config route body is a `FieldReading` (withheld answers the same 401 as an invented key
@@ -1423,6 +1426,23 @@ and audits `withheld (PIN)`), the git deploy key and the SSH broker's stored key
 nothing sealed. Export (`admitForExport`, `exportOpener`) asks each protected entry's PIN, aborts whole
 on a decline, writes opened values and no `pinProtected`. Share *Update it* (`shareUpdateSeal`) goes
 through the live door and seals every arriving value.
+
+**Protected while empty (2026-09-30).** *Protect with a PIN…* on an entry that holds nothing has no
+value to seal, so it writes the mark alone and the PIN typed there is stored nowhere. Until this date
+the door read "marked, nothing locked" as the 0.99.0 false mark and cleared it, and the first value
+typed into the entry was stored in the clear. Now `pinAdmission.repairFalseMark` clears the mark only
+over a value in the clear (`entityPin.lockedSlotCount(...).plain`), and "marked, nothing stored" is
+PROTECTED: Edit opens with nothing to unseal (`EditPrefill.held` is false), and Save — when the save
+stores a value (`applyFormSecrets.addsSecret`, the additions pass run against a recording writer) —
+asks for the entry's first PIN through `EntityFormOptions.beforeSave(values)`: `pinOnCreate.firstPinFor`,
+typed twice with `newPin`, or typed once and checked against the protected entries of the folder the
+way a new entry in that folder is (`pinCheckedAgainstFolder`, shared with `pinForNewEntry`). The PIN is
+granted to the window; a decline keeps the form. `sealingAtWrite` then seals every new value with it
+before the first write (`FirstSeal`, required of every writer; `chosenOnce` keeps Save's answer for the
+write), re-reading first: a value sealed meanwhile goes under ITS PIN (`pinAtWrite`), a mark gone
+meanwhile is refused. A save that stores nothing asks nothing and keeps the mark. *Restore This
+Version…* into such an entry asks the same first PIN after its confirmation when the version holds a
+value (`restoreVersion.holdsValue`).
 
 **History is sealed, opens through the door, and can be restored.** Kept versions live per machine in
 the keychain (cap 3). Protect runs `historyPin.protectHistory` before the mark; on every OTHER machine
