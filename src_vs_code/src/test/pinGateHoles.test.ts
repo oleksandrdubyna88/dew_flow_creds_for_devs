@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { lockSecret } from '../secretEnvelope';
-import { openedText } from '../pinAdmission';
+import { lockSecret, readSecret, unlockSecret } from '../secretEnvelope';
+import { admit, openedText } from '../pinAdmission';
 import { protectEntity } from '../entityPin';
 import { forgetAllPins, grantCount, grantPin, grantedPin } from '../pinSession';
 import { StorageManager } from '../storageManager';
 import { KEY_ID, RECIPIENT, TEAM_MEMBER, World, loaded, ui, world } from './shareWorld';
+import * as pinWorld from './pinWorld';
 
 /**
  * The holes a code round found in the PIN work, each with the test that would have caught it.
@@ -206,3 +207,65 @@ function openSent(sent: unknown): { secrets: { password?: string } } {
     secrets: { password?: string };
   };
 }
+
+/**
+ * D15 — the mark follows the values (R5). A door that opens a LOCKED entry whose mark is missing (an
+ * Edit before 1.12 dropped it, a sync took the unmarked side) restores the mark: the row gets its
+ * *Remove PIN Protection…* back and agents stop seeing the entry. The mirror of `repairFalseMark`,
+ * and like it best-effort — and never a protection DECISION, so it does not count as one.
+ */
+test('the door restores a missing mark on an entry whose values are locked', async () => {
+  forgetAllPins();
+  const storage = pinWorld.memoryStorage(pinWorld.clickVscode([], pinWorld.sinks()));
+  await pinWorld.seedEntry(storage, { id: 'm1', name: 'prod-db', isSshEnabled: false } as never, { password: await pinWorld.locked('hunter2') });
+
+  const admission = await admit(storage, pinWorld.ACCOUNT, 'm1', { accountId: pinWorld.ACCOUNT, entityId: 'm1', entryName: 'prod-db', ask: () => Promise.resolve(pinWorld.PIN) });
+
+  assert.equal(admission.kind, 'in');
+  assert.equal(storage.getNode(pinWorld.ACCOUNT, 'm1')?.details?.pinProtected, true, 'the entry claims its PIN again');
+});
+
+/**
+ * R3 at the door: a value found in the CLEAR inside a protected entry — written by an older build's
+ * Edit, or arriving from another machine — is sealed as soon as a door has the PIN.
+ */
+test('after the door, a value found in the clear inside a protected entry is sealed at once', async () => {
+  forgetAllPins();
+  const storage = pinWorld.memoryStorage(pinWorld.clickVscode([], pinWorld.sinks()));
+  await pinWorld.seedEntry(storage, { id: 'm2', name: 'prod-db', isSshEnabled: false, pinProtected: true } as never, {
+    password: await pinWorld.locked('hunter2'),
+    notes: 'typed by an older build',
+  });
+
+  await admit(storage, pinWorld.ACCOUNT, 'm2', { accountId: pinWorld.ACCOUNT, entityId: 'm2', entryName: 'prod-db', ask: () => Promise.resolve(pinWorld.PIN) });
+
+  const notes = await storage.getNotes(pinWorld.ACCOUNT, 'm2');
+  const read = readSecret(notes);
+  assert.equal(read.kind, 'locked', `still in the clear: ${String(notes)}`);
+  assert.equal(read.kind === 'locked' ? await unlockSecret(read.envelope, pinWorld.ACCOUNT, pinWorld.PIN) : '', 'typed by an older build');
+});
+
+test('a declined door heals nothing — no mark, no seal', async () => {
+  forgetAllPins();
+  const storage = pinWorld.memoryStorage(pinWorld.clickVscode([], pinWorld.sinks()));
+  await pinWorld.seedEntry(storage, { id: 'm3', name: 'prod-db', isSshEnabled: false } as never, { password: await pinWorld.locked('hunter2'), notes: 'plain' });
+
+  const admission = await admit(storage, pinWorld.ACCOUNT, 'm3', { accountId: pinWorld.ACCOUNT, entityId: 'm3', entryName: 'prod-db', ask: () => Promise.resolve(undefined) });
+
+  assert.equal(admission.kind, 'declined');
+  assert.equal(storage.getNode(pinWorld.ACCOUNT, 'm3')?.details?.pinProtected, undefined);
+  assert.equal(await storage.getNotes(pinWorld.ACCOUNT, 'm3'), 'plain');
+});
+
+test('the door’s mark repair is a repair, not a protection decision — it counts none', async () => {
+  forgetAllPins();
+  const storage = pinWorld.memoryStorage(pinWorld.clickVscode([], pinWorld.sinks()));
+  await pinWorld.seedEntry(storage, { id: 'm4', name: 'prod-db', isSshEnabled: false } as never, { password: await pinWorld.locked('hunter2') });
+  await storage.updateNodeFields(pinWorld.ACCOUNT, 'm4', { pinEpoch: 4 });
+
+  await admit(storage, pinWorld.ACCOUNT, 'm4', { accountId: pinWorld.ACCOUNT, entityId: 'm4', entryName: 'prod-db', ask: () => Promise.resolve(pinWorld.PIN) });
+
+  const node = storage.getNode(pinWorld.ACCOUNT, 'm4');
+  assert.equal(node?.details?.pinProtected, true, 'precondition: the mark was repaired');
+  assert.equal(node?.pinEpoch, 4, 'and no decision was counted for it');
+});

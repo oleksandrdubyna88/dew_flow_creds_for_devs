@@ -109,7 +109,11 @@ test('a name that had to be rewritten carries a digest of the original', () => {
   // That is what keeps the collision above impossible rather than merely unlikely.
   const safe = safeFileComponent('x/../../../../evil');
 
-  assert.match(safe, /-[0-9a-f]{8}$/);
+  // Sixteen hex characters — 64 bits of FNV-1a since 2026-09-30, where it was 32 bits of sha256.
+  assert.match(safe, /-[0-9a-f]{16}$/);
+  // And it is a function of the ORIGINAL: a different id that cleans to the same text gets another.
+  assert.notEqual(safeFileComponent('x/../../../../evil'), safeFileComponent('x\\..\\..\\..\\..\\evil'));
+  assert.equal(safeFileComponent('x/../../../../evil'), safe, 'the same id is the same name, so the purge finds it again');
 });
 
 test('an empty id still yields a usable name', () => {

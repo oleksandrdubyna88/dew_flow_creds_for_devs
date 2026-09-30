@@ -1,5 +1,6 @@
 import { ConfigReadBody, parseBearer } from './brokerProtocol';
 import { ConfigKeyHolder, describeConfigKey, findConfigKeyHolder } from './configKey';
+import type { FieldReading } from './fieldReading';
 
 /**
  * Serving one config file to the application that holds its key.
@@ -24,8 +25,11 @@ export interface ConfigHolder extends ConfigKeyHolder {
 export interface ConfigRouteSources {
   /** Every entry that carries a config key hash. Absent for a window with no vault open. */
   holders?: () => readonly ConfigHolder[];
-  /** The stored body. Separate from the lookup so the keychain is touched only after a match. */
-  body?: (holder: ConfigHolder) => Promise<string | undefined>;
+  /**
+   * The stored body, READ — a value, `withheld` (a PIN-protected entry's, which nothing automatic may
+   * have), or `absent`. Separate from the lookup so the keychain is touched only after a match.
+   */
+  body?: (holder: ConfigHolder) => Promise<FieldReading>;
   /** Called for every attempt, matched or not — see `agentAuditLog.ts` on the fourth door. */
   audit?: (line: ConfigReadAudit) => void;
 }
@@ -34,7 +38,7 @@ export interface ConfigReadAudit {
   /** A log-safe label, never the key. */
   readonly key: string;
   readonly entityName: string;
-  readonly outcome: 'served' | 'unknown key' | 'gone';
+  readonly outcome: 'served' | 'unknown key' | 'gone' | 'withheld (PIN)';
 }
 
 export type ConfigRouteResult =
@@ -49,7 +53,10 @@ export type ConfigRouteResult =
  * apart would turn this route into an oracle for which keys are real, which is the one thing an
  * unauthenticated caller could usefully learn from it.</p>
  *
- * <p>The audit line DOES tell them apart, because the person reading it is the owner.</p>
+ * <p>The audit line DOES tell them apart, because the person reading it is the owner. A body the
+ * entry's PIN withholds is the third refusal (entry-PIN plan, D7): the application gets the same
+ * 401 as for an invented key — so a protected entry cannot be told from a missing one either — and
+ * the owner's line says `withheld (PIN)`. Until 1.12 the route served the envelope as the config.</p>
  */
 export async function configRouteResult(
   key: string,
@@ -60,13 +67,18 @@ export async function configRouteResult(
     note(sources, key, '', 'unknown key');
     return REFUSED;
   }
-  const body = await sources.body?.(holder);
-  if (body === undefined) {
-    note(sources, key, holder.entityName, 'gone');
+  const reading = await bodyOf(sources, holder);
+  if (reading.kind !== 'value') {
+    note(sources, key, holder.entityName, reading.kind === 'withheld' ? 'withheld (PIN)' : 'gone');
     return REFUSED;
   }
   note(sources, key, holder.entityName, 'served');
-  return { status: 200, body: { format: holder.format, body } };
+  return { status: 200, body: { format: holder.format, body: reading.value } };
+}
+
+/** No body supplier is a window with no vault open: nothing to serve. */
+function bodyOf(sources: ConfigRouteSources, holder: ConfigHolder): Promise<FieldReading> {
+  return sources.body?.(holder) ?? Promise.resolve({ kind: 'absent' });
 }
 
 /**

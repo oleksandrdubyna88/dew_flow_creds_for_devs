@@ -14,13 +14,13 @@ import { RemoteState, buildDefaultFolders, shouldSeedDefaults } from './defaultF
 import { Tombstone, VersionVector, bumpVector, mergeVectors, normalizeTombstone, parseTombstones } from './versionVector';
 import { isSelfOrDescendantIn, subtreeOf } from './selectionResolver';
 import { Revision } from './revisionHistory';
-import { readHistory, writeRevision } from './revisionStore';
+import { readHistory, writeHistory, writeRevision } from './revisionStore';
 import { MetadataError, isSealedMetadata, newMetadataKey, openMetadata, sealMetadata } from './metadataCipher';
 import { ExternalSecrets } from './externalBundle';
 import { stampKind } from './entityKind';
 import { TRASH_FOLDER_NAME, findTrash, restoreTarget } from './trash';
-import { exportSecretsFor } from './exportSecrets';
-import { PaymentFields, parsePaymentFields, serializePaymentFields } from './paymentFields';
+import { ExportOpen, exportSecretsFor } from './exportSecrets';
+import { PaymentFields, serializePaymentFields } from './paymentFields';
 import { forgetTombstone, sweepOrphanSecrets } from './orphanSweep';
 import { LeasedQueue, leasedWrites, sweepWithRetry } from './leasedWrites';
 import { EntityCreate, createEntityWithSecrets } from './entityWrite';
@@ -31,8 +31,8 @@ import { attachmentSecretKey, configSecretKey, dbConnSecretKey, entitySecretKeys
   imageSecretKey, notesSecretKey, paymentSecretKey, privateKeySecretKey, secretKey, totpSecretKey,
   secondSecretKey, vpnConfigSecretKey } from './secretKeys';
 import { BackupBundle, EntityMetadata, StoredAccount, TreeNode, isStoredAccount, isTreeNode, withOwnId } from './types';
-import { EntityFields, parseFields, serializeFields } from './entityFields';
-import { SecondValues, parseSecondValues, serializeSecondValues } from './secondValues';
+import { EntityFields, serializeFields } from './entityFields';
+import { SecondValues, serializeSecondValues } from './secondValues';
 import { horizonKey, nodesKey, siblingOrder, tombstonesKey } from './stateKeys';
 
 const ACCOUNTS_KEY = 'credSshManager.accounts';
@@ -516,15 +516,16 @@ export class StorageManager implements vscode.Disposable {
 
   /** Some fields of a node, composed at WRITE time — so a change that landed in between survives,
    *  which `updateNode` cannot promise. A PATCH, never a merge: a field the person CLEARED stays
-   *  cleared. Both halves and why: `research/module_extension.md`, *Node writes*. */
-  async updateNodeFields(accountId: string, id: string, patch: Partial<TreeNode>): Promise<void> {
+   *  cleared. A FUNCTION patch is evaluated inside the lease, on the node as it is then (the PIN
+   *  mark and its `pinEpoch` move in one write). Both halves: `module_extension.md`, *Node writes*. */
+  async updateNodeFields(accountId: string, id: string, patch: Partial<TreeNode> | ((node: TreeNode) => Partial<TreeNode>)): Promise<void> {
     // Behind the lease, so the read and the write cannot be split by ANOTHER WINDOW either. Safe to
     // nest since `leasedQueue.ts` learned it is already held — without that this deadlocks, because
     // `createEntityWithSecrets` runs in here too.
     await this.writes.run(async () => {
       await this.saveNodes(
         accountId,
-        this.getNodes(accountId).map((n) => (n.id === id ? this.stampVector({ ...n, ...patch }) : n)),
+        this.getNodes(accountId).map((n) => (n.id === id ? this.stampVector({ ...n, ...(typeof patch === 'function' ? patch(n) : patch) }) : n)),
       );
       await this.bumpHorizonToSeq(accountId);
     });
@@ -761,6 +762,11 @@ export class StorageManager implements vscode.Disposable {
     return writeRevision(this.secrets, accountId, entityId, revision);
   }
 
+  /** Rewrite the kept versions in place; nothing when none are kept — `revisionStore.writeHistory`. */
+  replaceHistory(accountId: string, entityId: string, revise: (kept: Revision[]) => Revision[]): Promise<void> {
+    return writeHistory(this.secrets, accountId, entityId, revise);
+  }
+
   // ---------- attachments (SecretStorage, base64 content) ----------
 
   getAttachment(accountId: string, entityId: string): Thenable<string | undefined> {
@@ -804,8 +810,6 @@ export class StorageManager implements vscode.Disposable {
     return this.putSecret(notesSecretKey(accountId, entityId), accountId, value);
   }
 
-  // ---------- config bodies (SecretStorage, tenant-scoped) ----------
-
   // ---------- login / URL (SecretStorage, tenant-scoped, JSON) ----------
 
   /** The stored JSON as it is — what bundles, snapshots, shares and revisions carry. */
@@ -815,10 +819,6 @@ export class StorageManager implements vscode.Disposable {
 
   setFieldsRaw(accountId: string, entityId: string, value: string | undefined): Promise<void> {
     return this.putSecret(fieldsSecretKey(accountId, entityId), accountId, value);
-  }
-
-  async getFields(accountId: string, entityId: string): Promise<EntityFields> {
-    return parseFields(await this.getFieldsRaw(accountId, entityId));
   }
 
   /** Typed write: an empty record deletes, so a credential that lost both fields holds no key. */
@@ -837,10 +837,6 @@ export class StorageManager implements vscode.Disposable {
     return this.putSecret(secondSecretKey(accountId, entityId), accountId, value);
   }
 
-  async getSecond(accountId: string, entityId: string): Promise<SecondValues> {
-    return parseSecondValues(await this.getSecondRaw(accountId, entityId));
-  }
-
   /** Typed write: an empty record deletes, so an entry whose last second value went holds no key. */
   setSecond(accountId: string, entityId: string, values: SecondValues | undefined): Promise<void> {
     return this.setSecondRaw(accountId, entityId, serializeSecondValues(values));
@@ -855,10 +851,6 @@ export class StorageManager implements vscode.Disposable {
 
   setPaymentRaw(accountId: string, entityId: string, value: string | undefined): Promise<void> {
     return this.putSecret(paymentSecretKey(accountId, entityId), accountId, value);
-  }
-
-  async getPayment(accountId: string, entityId: string): Promise<PaymentFields> {
-    return parsePaymentFields(await this.getPaymentRaw(accountId, entityId));
   }
 
   /** Typed write: an empty record deletes, so a payment instrument stripped bare holds no key. */
@@ -906,8 +898,8 @@ export class StorageManager implements vscode.Disposable {
   // ---------- backup ----------
 
   /** Every stored secret of the given entities, keyed by entity id — see `exportSecrets.ts`. */
-  exportSecretsFor(accountId: string, ids: readonly string[]): Promise<Record<string, ExternalSecrets>> {
-    return exportSecretsFor(this, accountId, ids);
+  exportSecretsFor(accountId: string, ids: readonly string[], open?: ExportOpen): Promise<Record<string, ExternalSecrets>> {
+    return exportSecretsFor(this, accountId, ids, open);
   }
 
   /** Pair every entity of one profile with its stored secrets. */

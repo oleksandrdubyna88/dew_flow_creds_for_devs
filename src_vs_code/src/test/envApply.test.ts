@@ -513,3 +513,16 @@ test('a shared name every binding refuses is still deleted, and said once', asyn
   assert.deepEqual(result.written, []);
   assert.equal(result.withheld.length, 2, 'each refused binding still says its own reason');
 });
+
+test('the DB password of a SEALED connection string reads as WITHHELD, mark or no mark — never as an absence', async () => {
+  // Found by the per-function reader scan (review of 2026-09-30): `dbPassword` parsed the stored
+  // string BEFORE the refusal saw it, and an envelope parses to no password — so an entry whose mark
+  // was lost read "absent" (rule R2: every refusal is said), while every other field read withheld.
+  const mod = envApply();
+  const sealed = await lockSecret('postgresql://user:THE-DB-PASSWORD@host:5432/db', 'acc', 'correct-horse-battery');
+
+  const reading = await mod.bindableFieldReading(storage({ dbConnection: sealed }) as never, 'acc', details(), 'dbPassword');
+
+  assert.equal(reading.kind, 'withheld', `read as ${reading.kind}`);
+  assert.match(reading.kind === 'withheld' ? reading.reason : '', /PIN/);
+});

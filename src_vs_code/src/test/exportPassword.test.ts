@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { NO_SLOTS } from './pinWorld';
 import Module from 'node:module';
 import { test } from 'node:test';
 import { decryptJson } from '../cryptoUtils';
@@ -271,6 +272,7 @@ function exportHandler(): Handler {
     registerExportCommand({
       register: (command: string, handler: Handler) => handlers.set(command, handler),
       storage: {
+        ...NO_SLOTS,
         getNodes: () => [NODE],
         exportSecretsFor: () => Promise.resolve({ e1: { password: 'pw' } }),
       },

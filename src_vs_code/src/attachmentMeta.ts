@@ -203,13 +203,33 @@ export function carryThroughDetails(
   byEmail: string | undefined,
   nowMs: number,
 ): EntityMetadata {
-  const details: EntityMetadata = { ...result.details };
+  // A new record from the start: `carryMarks` answers a copy, so the form's own answer is never written into.
+  const details = carryMarks(result.details, oldDetails);
   if (details.isConfig === true && details.configKeyHash === undefined) {
     details.configKeyHash = oldDetails?.configKeyHash;
   }
   applySlot(details, 'attachment', stampFor(result.newAttachment, result.clearAttachment === true, byEmail, nowMs, false), oldDetails);
   applySlot(details, 'image', stampFor(result.newImage, result.clearImage === true, byEmail, nowMs, true), oldDetails);
   return details;
+}
+
+/**
+ * The marks a save CARRIES and never decides — today, the entry's PIN mark (entry-PIN plan, D3
+ * and rule R5: the mark follows the values).
+ *
+ * <p>The form's allow-list has no `pinProtected`, so every Edit+Save dropped it: the row went
+ * `:pinoff`, *Remove PIN Protection…* disappeared while the slots stayed locked, and agents saw the
+ * entry again (`mcpEntries.hiddenFromAgents` reads only the mark). Protection is set and cleared by
+ * the two tree commands, which write the mark AFTER the values they describe; a save carries what
+ * it found. Its own helper rather than a branch in `carryThroughDetails`, which sits at the
+ * complexity ceiling — and so the next mark has a place to go.</p>
+ *
+ * <p>Pure: it answers a NEW record — the details it is given, plus the marks it carries — and never
+ * writes into what it receives (the repository's immutability rule; the review of 2026-09-30 found
+ * the first version setting `details.pinProtected` in place).</p>
+ */
+function carryMarks(details: EntityMetadata, oldDetails: EntityMetadata | undefined): EntityMetadata {
+  return oldDetails?.pinProtected === true ? { ...details, pinProtected: true } : { ...details };
 }
 
 function applySlot(

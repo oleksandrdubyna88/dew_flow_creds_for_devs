@@ -5,6 +5,7 @@ import { FolderTransport } from './folderTransport';
 import { GitTransport } from './gitTransport';
 import { GitAuth, parseGitRemote } from './gitRemote';
 import { materializePrivateKey } from './keyInstaller';
+import { pinFieldRefusal } from './pinGate';
 import { runBounded } from './sshExecRunner';
 import { GoogleAuthProvider } from './googleAuthProvider';
 import { nasPathFor } from './nasPaths';
@@ -21,6 +22,21 @@ import { ClientConfigCache, defaultConfigFetcher, resolveMicrosoftScope } from '
 
 /** A git operation that has not finished in two minutes is not going to. */
 const GIT_TIMEOUT_MS = 120_000;
+
+/** A deploy key as stored, with the entry that holds it — the entry is what a refusal names. */
+interface DeployKey {
+  readonly key: string;
+  readonly owner: { readonly name: string; readonly pinProtected?: boolean };
+}
+
+/** The key, when nothing automatic is barred from it; otherwise the throw the sync failure path says. */
+function usableDeployKey(found: DeployKey, location: string): string {
+  const refusal = pinFieldRefusal(found.owner, found.key);
+  if (refusal !== '') {
+    throw new Error(`${refusal} It is the deploy key for ${location}, so this sync cannot authenticate with it.`);
+  }
+  return found.key;
+}
 
 /**
  * Resolves the transport for an account's configured location: a folder
@@ -244,26 +260,36 @@ export class TransportFactory {
    * materialized into the same `keys/` directory the SSH paths already use and purge, so no
    * new storage axis is needed. Everything else falls back to whatever the machine's own git
    * is already configured to do — which is what most people already have working.</p>
+   *
+   * <p>Sync is AUTOMATIC, so a deploy key held by a PIN-protected entry is refused before anything
+   * touches the disk (entry-PIN plan, D7): the throw carries the PIN sentence and names the remote,
+   * and the sync failure path says it (`syncFailureText` → "Sync for … failed: <this>"). Until 1.12
+   * the envelope was materialised as the key, and git failed to authenticate with nothing saying why.</p>
    */
   private async gitAuth(location: string, storageDir: string): Promise<GitAuth> {
     const keyEntityId = vscode.workspace
       .getConfiguration('credSshManager')
       .get<Record<string, string>>('gitDeployKeys', {})[location];
-    const key = keyEntityId === undefined ? undefined : await this.findPrivateKey(keyEntityId);
-    return key === undefined
+    const found = keyEntityId === undefined ? undefined : await this.findPrivateKey(keyEntityId);
+    return found === undefined
       ? { kind: 'inherit' }
-      : { kind: 'ssh', keyPath: materializePrivateKey(storageDir, `git-${keyEntityId}`, key) };
+      : { kind: 'ssh', keyPath: materializePrivateKey(storageDir, `git-${keyEntityId}`, usableDeployKey(found, location)) };
   }
 
-  /** The stored private key with this entity id, under whichever account holds it. */
-  private async findPrivateKey(entityId: string): Promise<string | undefined> {
+  /** The stored private key with this entity id, under whichever account holds it, with its entry. */
+  private async findPrivateKey(entityId: string): Promise<DeployKey | undefined> {
     for (const account of this.storage.getAccounts()) {
       const key = await this.storage.getPrivateKey(account.accountId, entityId);
       if (key !== undefined && key.length > 0) {
-        return key;
+        return { key, owner: this.ownerOf(account.accountId, entityId) };
       }
     }
     return undefined;
+  }
+
+  /** The entry that holds a deploy key — its name for a refusal, its mark for the PIN rule. */
+  private ownerOf(accountId: string, entityId: string): DeployKey['owner'] {
+    return this.storage.getNode(accountId, entityId)?.details ?? { name: entityId };
   }
 
   /** Distinct locations across all account profiles. */

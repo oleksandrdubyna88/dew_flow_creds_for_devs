@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { quarantineUnsafeIds } from '../idQuarantine';
-import type { PaymentFields } from '../paymentFields';
+import { parsePaymentFields, type PaymentFields } from '../paymentFields';
 import { mergeProfiles, ProfileSnapshot } from '../syncMerge';
 import { TreeNode } from '../types';
 import { loadWithVscode } from './vscodeStub';
@@ -30,7 +30,7 @@ import { loadWithVscode } from './vscodeStub';
 interface Storage {
   addNode(accountId: string, node: TreeNode): Promise<void>;
   setPayment(accountId: string, id: string, fields: PaymentFields | undefined): Promise<void>;
-  getPayment(accountId: string, id: string): Promise<PaymentFields>;
+  getPaymentRaw(accountId: string, id: string): Promise<string | undefined>;
   getSnapshot(accountId: string): Promise<ProfileSnapshot>;
   applySnapshot(accountId: string, snapshot: ProfileSnapshot): Promise<void>;
 }
@@ -103,7 +103,7 @@ test('a sync does not delete the payment record it is not carrying', async () =>
   await storage.applySnapshot(A, merged);
 
   assert.deepEqual(
-    await storage.getPayment(A, 'p1'),
+    parsePaymentFields(await storage.getPaymentRaw(A, 'p1')),
     CARD,
     'the card survived a sync — the CVV and the PIN exist nowhere else',
   );

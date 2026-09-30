@@ -1,0 +1,213 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { SECRET_SLOTS, SecretSlot } from '../entitySlots';
+import type { RevisionSecrets } from '../revisionHistory';
+import { readSecret, unlockSecret } from '../secretEnvelope';
+import type { StorageManager } from '../storageManager';
+import { EntityMetadata, TreeNode } from '../types';
+import { loadWithVscode } from './vscodeStub';
+import { ACCOUNT, PIN, Sinks, clickVscode, locked, memoryStorage, seedEntry, sinks } from './pinWorld';
+
+/**
+ * D14-D15 of the entry-PIN plan, through the commands a person runs: *Protect with a PIN…* and
+ * *Remove PIN Protection…*, over the REAL `StorageManager`.
+ *
+ * <p>D15 was a dead end: an entry whose mark was lost (an Edit before 1.12, a sync) while its values
+ * stayed locked showed only *Protect…*, which answered "already has its own PIN" and offered nothing.
+ * D14: Remove PIN over a damaged value cleared the mark anyway. And an entry unprotected on another
+ * machine, whose kept versions HERE are still sealed, answered "is not protected" — the one command
+ * that could open this machine's history refused to (plan gate, finding 3).</p>
+ */
+
+const ENTRY = 'c1';
+const DAMAGED = '{"v":1,"lock":{"wrap":{}}}';
+
+const credential = (over: Partial<EntityMetadata> = {}): EntityMetadata =>
+  ({ id: ENTRY, name: 'godaddy', isSshEnabled: false, kind: 'credential', ...over }) as EntityMetadata;
+
+interface World {
+  commands: typeof import('../pinCommands');
+  storage: StorageManager;
+  s: Sinks;
+  node(): TreeNode;
+  deps: { storage: StorageManager; accountId: string; refresh: () => void };
+}
+
+async function world(details: EntityMetadata, slots: Record<string, string>, inputs: (string | undefined)[], modal: (string | undefined)[] = [], kept?: RevisionSecrets): Promise<World> {
+  const s = sinks();
+  s.modalAnswers.push(...modal);
+  const stub = clickVscode([...inputs], s);
+  const storage = memoryStorage(stub);
+  await seedEntry(storage, details, slots);
+  if (kept !== undefined) {
+    await storage.recordRevision(ACCOUNT, ENTRY, { at: 1, name: 'godaddy', details, secrets: kept });
+    assert.equal((await storage.getHistory(ACCOUNT, ENTRY)).length, 1, 'precondition: the revision validator took the fixture');
+  }
+  const commands = loadWithVscode<typeof import('../pinCommands')>('../pinCommands', stub);
+  const node = (): TreeNode => storage.getNode(ACCOUNT, ENTRY) as TreeNode;
+  return { commands, storage, s, node, deps: { storage, accountId: ACCOUNT, refresh: () => undefined } };
+}
+
+function slot(label: string): SecretSlot {
+  const found = SECRET_SLOTS.find((one) => one.label === label);
+  assert.ok(found !== undefined);
+  return found;
+}
+
+const stored = (w: World, label: string): Thenable<string | undefined> => slot(label).read(w.storage, ACCOUNT, ENTRY);
+
+test('Protect on an entry that is already protected says how much is locked and offers Remove PIN Protection… — not a dead end', async () => {
+  // The mark was lost (D3, D12) while the values stayed locked: the row is `:pinoff`, so Protect is
+  // the only thing offered on it.
+  const w = await world(credential(), { notes: await locked('the note'), password: await locked('hunter2') }, [PIN], ['Remove PIN Protection…']);
+
+  await w.commands.protectEntry(w.node(), w.deps);
+
+  assert.match(w.s.warnings[0] ?? '', /^"godaddy" already has its own PIN \(2 of 2 values are locked\)\. To set a different one, remove the protection first\.$/);
+  assert.equal(await stored(w, 'password'), 'hunter2', 'the button did what it says');
+  assert.equal(await stored(w, 'notes'), 'the note');
+});
+
+test('Remove PIN over a damaged value asks first, and "Remove the PIN from the rest" leaves that value exactly as it was', async () => {
+  const w = await world(credential({ pinProtected: true }), { notes: DAMAGED, password: await locked('hunter2') }, [PIN], ['Remove the PIN from the rest']);
+
+  await w.commands.unprotectEntry(w.node(), w.deps);
+
+  assert.equal(
+    w.s.warnings[0],
+    '"godaddy" holds a damaged protected value (notes). Removing the PIN cannot open it: it would stay unreadable while the entry stops claiming a PIN.',
+  );
+  assert.equal(await stored(w, 'password'), 'hunter2');
+  assert.equal(await stored(w, 'notes'), DAMAGED, 'byte-identical');
+  assert.equal(w.node().details?.pinProtected, undefined, 'the person chose to take the mark off the rest');
+  assert.match(w.s.infos.join(' '), /"godaddy" is no longer protected with its own PIN\. Its notes could not be opened and was left exactly as it was\./);
+});
+
+test('Remove PIN over a damaged value, declined, changes nothing and keeps the mark', async () => {
+  const lockedPw = await locked('hunter2');
+  const w = await world(credential({ pinProtected: true }), { notes: DAMAGED, password: lockedPw }, [PIN], [undefined]);
+
+  await w.commands.unprotectEntry(w.node(), w.deps);
+
+  assert.equal(await stored(w, 'password'), lockedPw);
+  assert.equal(await stored(w, 'notes'), DAMAGED);
+  assert.equal(w.node().details?.pinProtected, true, 'an entry with an unreadable value keeps claiming its PIN');
+});
+
+test('Remove PIN Protection… on an entry protected while empty takes the protection off — nothing to unseal, so no PIN is asked', async () => {
+  // Review of 2026-09-30: an entry protected while it held nothing keeps its mark now, so the one
+  // command that should take it off must not answer "is not protected with a PIN" — that left the
+  // person with an entry claiming a protection they could not remove.
+  const w = await world(credential({ pinProtected: true }), {}, []);
+  const before = w.node().pinEpoch ?? 0;
+
+  await w.commands.unprotectEntry(w.node(), w.deps);
+
+  assert.equal(w.node().details?.pinProtected, undefined, 'the mark is off');
+  assert.equal(w.node().pinEpoch, before + 1, 'taking the protection off is a protection decision, and sync must see it as one');
+  assert.equal(w.s.boxes, 0, 'there is nothing sealed to check a PIN against, so none is asked');
+  assert.doesNotMatch(w.s.infos.join(' '), /is not protected/);
+  assert.match(w.s.infos.join(' '), /"godaddy" is no longer protected with its own PIN\./);
+});
+
+test('Remove PIN Protection… on an entry with no mark and nothing sealed still says it is not protected', async () => {
+  const w = await world(credential(), { password: 'hunter2' }, []);
+
+  await w.commands.unprotectEntry(w.node(), w.deps);
+
+  assert.match(w.s.infos.join(' '), /"godaddy" is not protected with a PIN\./);
+  assert.equal(await stored(w, 'password'), 'hunter2');
+});
+
+test('Remove PIN Protection… on an entry whose only sealed values are its kept versions opens them', async () => {
+  // Plan gate, finding 3: unprotected on another machine and synced here.
+  const w = await world(credential(), { password: 'hunter2' }, [PIN], [], { password: await locked('old pw') });
+
+  await w.commands.unprotectEntry(w.node(), w.deps);
+
+  assert.doesNotMatch(w.s.infos.join(' '), /is not protected/);
+  assert.equal((await w.storage.getHistory(ACCOUNT, ENTRY))[0].secrets.password, 'old pw');
+});
+
+test('Protect on an entry whose kept versions are still sealed under its old PIN offers Remove PIN Protection… for them', async () => {
+  const w = await world(credential(), { password: 'hunter2' }, [PIN], ['Remove PIN Protection…'], { password: await locked('old pw') });
+
+  await w.commands.protectEntry(w.node(), w.deps);
+
+  assert.match(w.s.warnings[0] ?? '', /"godaddy" is not protected, but 1 value in its kept versions on this machine is still sealed under the PIN it used to have\./);
+  assert.equal((await w.storage.getHistory(ACCOUNT, ENTRY))[0].secrets.password, 'old pw');
+  assert.equal(await stored(w, 'password'), 'hunter2', 'the live entry stayed as it was');
+});
+
+test('Remove PIN reports a kept value under a different PIN as left sealed', async () => {
+  const w = await world(credential({ pinProtected: true }), { password: await locked('hunter2') }, [PIN], [], { notes: await locked('other', '9876') });
+
+  await w.commands.unprotectEntry(w.node(), w.deps);
+
+  assert.equal(await stored(w, 'password'), 'hunter2');
+  assert.match(w.s.infos.join(' '), /1 value in its kept versions is sealed under a different PIN and stays sealed\./);
+});
+
+test('Protect and Remove PIN each write the mark AND one more protection decision, in ONE node write (R6)', async () => {
+  // The sync rule settles a concurrent disagreement by the later DECISION (§5.9), so the count has to
+  // move with the mark, never apart from it: one write, evaluated inside the write lease.
+  const w = await world(credential(), { password: 'hunter2' }, [PIN, PIN, PIN]);
+  let nodeWrites = 0;
+  const real = w.storage.updateNodeFields.bind(w.storage);
+  w.storage.updateNodeFields = (a, id, patch) => {
+    nodeWrites += 1;
+    return real(a, id, patch);
+  };
+
+  await w.commands.protectEntry(w.node(), w.deps);
+  assert.deepEqual([w.node().details?.pinProtected, w.node().pinEpoch, nodeWrites], [true, 1, 1], 'protected: the mark, epoch 1, one write');
+
+  await w.commands.unprotectEntry(w.node(), w.deps);
+  assert.deepEqual([w.node().details?.pinProtected, w.node().pinEpoch, nodeWrites], [undefined, 2, 2], 'removed: no mark, epoch 2, one more write');
+});
+
+test('a Protect that raced another window\'s Protect under a different PIN does not report success or bump the epoch', async () => {
+  // Protect checks for an existing PIN BEFORE its two PIN boxes. While they are open, another window
+  // protects the same entry under ITS PIN: every value is sealed, the mark is written, the epoch is 1.
+  // This run's `protectEntity` leaves locked slots as they are — it cannot open them and must not
+  // replace them — so it changes nothing, and until now it still wrote the mark, counted a second
+  // protection decision and said the entry was protected with the PIN just typed.
+  const s = sinks();
+  const stub = clickVscode([PIN, PIN], s);
+  const storage = memoryStorage(stub);
+  await seedEntry(storage, credential(), { password: 'hunter2', notes: 'the note' });
+  const window = stub.window as { showInputBox: (options: object) => Promise<string | undefined> };
+  const box = window.showInputBox;
+  window.showInputBox = async (options) => {
+    const typed = await box(options);
+    if (s.boxes === 2) {
+      await otherWindowProtects(storage, '9876');
+    }
+    return typed;
+  };
+  const commands = loadWithVscode<typeof import('../pinCommands')>('../pinCommands', stub);
+  const node = storage.getNode(ACCOUNT, ENTRY) as TreeNode;
+  // Four wrong PINs already typed for this entry: one more COUNTED miss would be the fifth and start a wait.
+  const attempts = require('../pinAttempts') as typeof import('../pinAttempts');
+  for (let i = 0; i < attempts.FREE_TRIES - 1; i += 1) {
+    attempts.noteWrong(ACCOUNT, ENTRY, Date.now());
+  }
+
+  await commands.protectEntry(node, { storage, accountId: ACCOUNT, refresh: () => undefined });
+
+  const after = storage.getNode(ACCOUNT, ENTRY) as TreeNode;
+  assert.equal(after.pinEpoch, 1, 'a second protection decision was counted for a Protect that protected nothing');
+  assert.doesNotMatch(s.infos.join(' '), /"godaddy" is protected with its own PIN/, 'the run reported success');
+  assert.match(s.infos.join(' '), /godaddy.* already protected in another window under a different PIN — nothing was changed on it/);
+  assert.equal(attempts.cooldownMs(ACCOUNT, ENTRY, Date.now()), 0, 'the check is silent: trying this run\'s PIN on the other window\'s values is not a guess');
+  attempts.forgetAllAttempts();
+  const read = readSecret(await storage.getPassword(ACCOUNT, ENTRY));
+  assert.equal(read.kind === 'locked' ? await unlockSecret(read.envelope, ACCOUNT, '9876') : '', 'hunter2', 'the other window\'s seal is untouched');
+});
+
+async function otherWindowProtects(storage: StorageManager, pin: string): Promise<void> {
+  const { protectEntity } = require('../entityPin') as typeof import('../entityPin');
+  const { protectionDecision } = require('../syncPinRule') as typeof import('../syncPinRule');
+  await protectEntity(storage, ACCOUNT, ENTRY, pin);
+  await storage.updateNodeFields(ACCOUNT, ENTRY, protectionDecision(true));
+}

@@ -11,7 +11,7 @@ import { EntityMetadata } from './types';
 import { DrawOptions, GenerationOutcome, NO_GENERATOR_OUTCOME } from './secretKinds';
 import { readSecretOptions } from './mcpSecretOptions';
 import { Revision } from './revisionHistory';
-import { automaticPinRefusal } from './pinGate';
+import { pinFieldRefusal } from './pinGate';
 
 /**
  * The `rotate` action: the window changes a secret on the far side and then stores it.
@@ -204,6 +204,10 @@ async function notRotatable(
  *
  * <p>Checked in `prepare`, beside the woven one, so nothing is generated first: a refused request
  * must not leave a drawn secret in a history nobody expected to grow.</p>
+ *
+ * <p>Asked through `pinFieldRefusal` — the wrap first, the entry's MARK second (entry-PIN plan §5.6
+ * check): asking the wrap alone rotated a value of an entry that claims a PIN while that value read
+ * plain at the instant, storing a readable secret under a claim of protection.</p>
  */
 async function protectedSlot(
   ctx: UseActionContext,
@@ -211,7 +215,7 @@ async function protectedSlot(
   details: EntityMetadata,
   deps: RotateDeps,
 ): Promise<string> {
-  const locked = automaticPinRefusal(await deps.current(ctx, slot), details.name);
+  const locked = pinFieldRefusal(details, await deps.current(ctx, slot));
   return locked === ''
     ? ''
     : `${locked} A rotation would replace a value this build cannot read, and the entry would keep `

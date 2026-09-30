@@ -1,5 +1,31 @@
 import type { StorageManager } from './storageManager';
 import type { EntityFormValues } from './entityFormPanel';
+import { serializeFields } from './entityFields';
+import { serializePaymentFields } from './paymentFields';
+import { serializeSecondValues } from './secondValues';
+
+/**
+ * The setters a save's ADDITIONS pass calls — the storage itself for an ordinary entry, and
+ * `editPrefill.sealedWriter` for a protected one, which seals every changed value under the entry's
+ * PIN before the raw setter runs (entry-PIN plan, rule R3). A `Pick` rather than a new interface so
+ * the real `StorageManager` satisfies it with no adapter, and so a setter added to the pass below is
+ * one the writer must implement — the compiler says so.
+ */
+export type SecretWriter = Pick<
+  StorageManager,
+  | 'setPassword'
+  | 'setPrivateKey'
+  | 'setVpnConfig'
+  | 'setDbConnection'
+  | 'setNotes'
+  | 'setFields'
+  | 'setPayment'
+  | 'setConfigBody'
+  | 'setSecond'
+  | 'setAttachment'
+  | 'setImage'
+  | 'setTotp'
+>;
 
 /**
  * Every secret the form can set, cleared or written from its values — one place for the create path
@@ -46,9 +72,14 @@ async function applyOptional(
   }
 }
 
-/** Everything a save WRITES — before the node, so the node never claims what is not there yet. */
+/**
+ * Everything a save WRITES — before the node, so the node never claims what is not there yet.
+ *
+ * <p>`storage` is a `SecretWriter`: for a protected entry the edit path hands in the sealing
+ * writer, so nothing here changes whether a value is sealed — the writer decides, once, per slot.</p>
+ */
 export async function applyAdditions(
-  storage: StorageManager,
+  storage: SecretWriter,
   accountId: string,
   entityId: string,
   result: EntityFormValues,
@@ -121,6 +152,43 @@ function noop(): Promise<void> {
 
 function noopSet(_value: string): Promise<void> {
   return Promise.resolve();
+}
+
+/**
+ * Whether this save's ADDITIONS store a secret — a value in any slot the entry PIN covers.
+ *
+ * <p>Asked by the one save that needs to know before it writes: an entry protected while it held
+ * nothing asks for its first PIN only when a value is about to go into it (review of 2026-09-30). The
+ * additions pass itself answers, run against a writer that stores nothing and records the string each
+ * setter WOULD store — serialised exactly as the storage serialises it, and empty meaning nothing, as
+ * `putSecret` treats it — so this cannot come to disagree with `applyAdditions` about a field. The
+ * attachment and the image are outside the PIN and are not counted.</p>
+ */
+export async function addsSecret(result: EntityFormValues): Promise<boolean> {
+  const stored: (string | undefined)[] = [];
+  await applyAdditions(recordingWriter(stored), '', '', result);
+  return stored.some((value) => value !== undefined && value.length > 0);
+}
+
+function recordingWriter(stored: (string | undefined)[]): SecretWriter {
+  const record = (value: string | undefined): Promise<void> => {
+    stored.push(value);
+    return Promise.resolve();
+  };
+  return {
+    setPassword: (_a, _e, v) => record(v),
+    setPrivateKey: (_a, _e, v) => record(v),
+    setVpnConfig: (_a, _e, v) => record(v),
+    setDbConnection: (_a, _e, v) => record(v),
+    setNotes: (_a, _e, v) => record(v),
+    setConfigBody: (_a, _e, v) => record(v),
+    setTotp: (_a, _e, v) => record(v),
+    setFields: (_a, _e, v) => record(serializeFields(v)),
+    setPayment: (_a, _e, v) => record(serializePaymentFields(v)),
+    setSecond: (_a, _e, v) => record(serializeSecondValues(v)),
+    setAttachment: () => Promise.resolve(),
+    setImage: () => Promise.resolve(),
+  };
 }
 
 /**

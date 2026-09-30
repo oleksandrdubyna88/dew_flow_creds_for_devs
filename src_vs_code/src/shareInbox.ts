@@ -1,7 +1,7 @@
 import { CorpPolicyState } from './corpPolicy';
 import { deliverToRecipient, projectsOfPayloads, refuseForRecipient } from './shareDelivery';
 import { buildSharePayload, countTotpEntries, nothingToShare } from './sharePayloadBuild';
-import { isNotForExport, keepingMark } from './exportScope';
+import { isNotForExport } from './exportScope';
 import { admit } from './pinAdmission';
 import { declinedMessage, forThisRecipient } from './shareRecipientPin';
 import { entryPinGate } from './pinPrompt';
@@ -24,7 +24,7 @@ import {
   shareLabelTrusted } from './shareFormat';
 import { recordOrigin, resolveOrigin } from './shareOrigin';
 import { askIncludeTotp } from './shareTotpQuestion';
-import { snapshotForRevision } from './revisionSnapshot';
+import { ShareWriter, updateInPlace } from './shareUpdateSeal';
 import type { SharePin } from './sharePin';
 import {
   SHARE_PIN,
@@ -662,6 +662,7 @@ After this, a share signed by any other key is refused.`,
     let node: TreeNode;
     /** Deferred so every ADDITION lands first — Rule A; see `applyFormSecrets.ts`. */
     let writeNode: () => Promise<void>;
+    let store: ShareWriter = this.deps.storage;
     if (previousId !== undefined) {
       const existing = this.deps.storage.getNode(share.accountId, previousId);
       const choice = await vscode.window.showWarningMessage(
@@ -670,32 +671,19 @@ After this, a share signed by any other key is refused.`,
         'Update it',
         'Keep both',
       );
-      if (choice === undefined) {
-        // Dismissed on purpose: the human wants to look before deciding. The share must
-        // survive that — consuming it here would destroy the only copy of the decision.
+      // In place: the revision first, the recipient's marks kept (#122) — and a PROTECTED entry through
+      // its door, its values sealed before they are written (entry-PIN plan, D9; `shareUpdateSeal.ts`).
+      const update = choice === 'Update it' ? await updateInPlace(this.deps.storage, share.accountId, previousId, payload, parentId) : undefined;
+      if (choice === undefined || (choice === 'Update it' && update === undefined)) {
+        // Dismissed on purpose — or the entry's PIN declined: the human wants to look before deciding.
+        // The share must survive that — consuming it here would destroy the only copy of the decision.
         void vscode.window.showInformationMessage(
           'Left in "Shared with me" — accept it again when you have decided.',
         );
         return;
       }
-      if (choice === 'Update it') {
-        // Keep its place in the tree and its own id; record what it was first.
-        await this.deps.storage.recordRevision(
-          share.accountId,
-          previousId,
-          await snapshotForRevision(this.deps.storage, share.accountId, {
-            id: previousId,
-            name: existing?.name ?? payload.node.name,
-            details: existing?.details ?? payload.node.details!,
-          }),
-        );
-        node = withOwnId({
-          ...payload.node, details: keepingMark(payload.node.details, existing), // #122
-          id: previousId,
-          parentId: existing?.parentId ?? parentId,
-          createdAt: existing?.createdAt,
-          children: undefined,
-        });
+      if (update !== undefined) {
+        ({ node, store } = update);
         writeNode = () => this.deps.storage.updateNode(share.accountId, node);
       } else {
         node = withOwnId({ ...payload.node, id: StorageManager.newId(), parentId, children: undefined });
@@ -716,28 +704,28 @@ After this, a share signed by any other key is refused.`,
     // right: a fresh id stops an OVERWRITE, and does nothing about a node that syncs while claiming
     // secrets nobody wrote. `setPassword(undefined)` is a removal, so it waits until after.
     if (password !== undefined) {
-      await this.deps.storage.setPassword(share.accountId, node.id, password);
+      await store.setPassword(share.accountId, node.id, password);
     }
     if (privateKey !== undefined) {
-      await this.deps.storage.setPrivateKey(share.accountId, node.id, privateKey);
+      await store.setPrivateKey(share.accountId, node.id, privateKey);
     }
     if (vpnConfig !== undefined) {
-      await this.deps.storage.setVpnConfig(share.accountId, node.id, vpnConfig);
+      await store.setVpnConfig(share.accountId, node.id, vpnConfig);
     }
     if (dbConnection !== undefined) {
-      await this.deps.storage.setDbConnection(share.accountId, node.id, dbConnection);
+      await store.setDbConnection(share.accountId, node.id, dbConnection);
     }
     if (payload.secrets.notes !== undefined) {
-      await this.deps.storage.setNotes(share.accountId, node.id, payload.secrets.notes);
+      await store.setNotes(share.accountId, node.id, payload.secrets.notes);
     }
     if (payload.secrets.totp !== undefined) {
-      await this.deps.storage.setTotp(share.accountId, node.id, payload.secrets.totp);
+      await store.setTotp(share.accountId, node.id, payload.secrets.totp);
     }
     if (payload.secrets.config !== undefined) {
-      await this.deps.storage.setConfigBody(share.accountId, node.id, payload.secrets.config);
+      await store.setConfigBody(share.accountId, node.id, payload.secrets.config);
     }
     if (payload.secrets.fields !== undefined) {
-      await this.deps.storage.setFieldsRaw(share.accountId, node.id, payload.secrets.fields);
+      await store.setFieldsRaw(share.accountId, node.id, payload.secrets.fields);
     }
     if (payload.secrets.payment !== undefined) {
       // Redacted AGAIN on arrival, through the same function the sender used. This is a trust
@@ -747,7 +735,7 @@ After this, a share signed by any other key is refused.`,
       // uses for sender identity, which is stamped from a verified token and never accepted from the
       // body. Accepted from the S1.3 code review, which overturned the opposite decision.
       const arrived = redactArrivedPayment(payload.secrets.payment);
-      await this.deps.storage.setPaymentRaw(share.accountId, node.id, arrived.raw);
+      await store.setPaymentRaw(share.accountId, node.id, arrived.raw);
       unreadablePayment = arrived.unreadable;
     }
     // THE NODE, after every addition and before the one removal. A crash anywhere above leaves

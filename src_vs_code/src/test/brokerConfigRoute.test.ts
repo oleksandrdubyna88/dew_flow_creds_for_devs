@@ -3,6 +3,10 @@ import { test } from 'node:test';
 import { ConfigHolder, ConfigReadAudit, configRouteResult } from '../brokerConfigRoute';
 import { configKeyHash, newConfigKey } from '../configKey';
 import { isConfigReadRoute } from '../brokerProtocol';
+import type { FieldReading } from '../fieldReading';
+import { EntityMetadata } from '../types';
+import { clickVscode, locked, memoryStorage, seedEntry, sinks } from './pinWorld';
+import { loadWithVscode } from './vscodeStub';
 
 /**
  * The one authenticated route on the broker that is not a use.
@@ -30,8 +34,8 @@ function world(bodies: Record<string, string> = {}) {
     },
     sources: {
       holders: (): readonly ConfigHolder[] => holders,
-      body: (holder: ConfigHolder): Promise<string | undefined> =>
-        Promise.resolve(bodies[holder.entityId]),
+      body: (holder: ConfigHolder): Promise<FieldReading> =>
+        Promise.resolve(bodies[holder.entityId] === undefined ? { kind: 'absent' } : { kind: 'value', value: bodies[holder.entityId] }),
       audit: (line: ConfigReadAudit): void => {
         audit.push(line);
       },
@@ -147,7 +151,7 @@ test('the keychain is not touched until a key has matched', async () => {
     holders: () => w.holders,
     body: (holder) => {
       reads.push(holder.entityId);
-      return Promise.resolve('{}');
+      return Promise.resolve({ kind: 'value', value: '{}' });
     },
   });
 
@@ -159,4 +163,43 @@ test('a window with no vault open refuses rather than failing', async () => {
   const result = await configRouteResult(newConfigKey(), {});
 
   assert.equal(result.status, 401);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Entry-PIN plan, D7: the route's body reader is the one `extension.ts` wires in (`configBodyReading`),
+// over the real vault. A PIN-protected config was SERVED — the envelope, as the config file.
+// ---------------------------------------------------------------------------------------------
+
+async function vaultRoute(body: string, pinProtected: boolean): Promise<{ key: string; audit: ConfigReadAudit[]; result: Awaited<ReturnType<typeof configRouteResult>> }> {
+  const s = sinks();
+  const stub = clickVscode([], s);
+  const storage = memoryStorage(stub);
+  const key = newConfigKey();
+  const details = { id: 'cfg1', name: 'appsettings', kind: 'config', configFormat: 'json', configKeyHash: configKeyHash(key), isSshEnabled: false, pinProtected } as EntityMetadata;
+  await seedEntry(storage, details, { 'config body': body });
+  const { configBodyReading, collectConfigHolders } = loadWithVscode<typeof import('../configCommands')>('../configCommands', stub);
+  const audit: ConfigReadAudit[] = [];
+  const result = await configRouteResult(key, {
+    holders: () => collectConfigHolders(storage),
+    body: (holder) => configBodyReading(storage, holder),
+    audit: (line) => audit.push(line),
+  });
+  assert.equal(s.boxes, 0, 'an automatic path never prompts');
+  return { key, audit, result };
+}
+
+test('a PIN-protected config answers 401 with the invented-key sentence, and the audit says withheld (PIN)', async () => {
+  const { audit, result } = await vaultRoute(await locked('{"db":"s3cret"}'), true);
+
+  assert.equal(result.status, 401, `the route served ${JSON.stringify(result).slice(0, 60)}…`);
+  assert.deepEqual(result, await configRouteResult(newConfigKey(), {}), 'the same answer an invented key gets');
+  assert.deepEqual(audit.map((line) => line.outcome), ['withheld (PIN)']);
+});
+
+test('an unprotected config is still served through the same reader', async () => {
+  const { audit, result } = await vaultRoute('{"db":"plain"}', false);
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.status === 200 ? result.body : undefined, { format: 'json', body: '{"db":"plain"}' });
+  assert.deepEqual(audit.map((line) => line.outcome), ['served']);
 });

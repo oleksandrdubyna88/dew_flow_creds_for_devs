@@ -8,6 +8,7 @@ import { dependencyRequest, runDependenciesFirst } from './dependencyRunHost';
 import { ShellFamily, entryShell } from './hostShell';
 import { entryTerminal, shellContext } from './pinnedTerminal';
 import { confirmTrusted } from './trustPrompt';
+import { clickedSecret } from './pinClick';
 import { launcherConfigFileName, launcherStopNote, substituteConfig, usesConfig } from './vpnLauncher';
 
 /**
@@ -94,7 +95,13 @@ function withConfig(line: string, configPath: string, family: ShellFamily): stri
  * having told the person, when there is no config to write. Shared with the built-in launcher.
  */
 export async function writeVpnConfig(ctx: VpnRunContext, fileName: string): Promise<string | undefined> {
-  const config = await ctx.storage.getVpnConfig(ctx.accountId, ctx.details.id);
+  // Opened for the click (entry-PIN plan, D6): the tunnel reads the file this writes, so an envelope
+  // here was a config the VPN client could not parse. A temporary file, so no outside-the-PIN note.
+  const opened = await clickedSecret(ctx.storage, ctx.accountId, ctx.details, (s, a, e) => s.getVpnConfig(a, e), 'start the VPN');
+  if (opened.kind !== 'open') {
+    return undefined;
+  }
+  const config = opened.value;
   if (config === undefined || config.trim().length === 0) {
     void vscode.window.showWarningMessage(
       `"${ctx.details.name}" has no stored VPN config — open Edit and upload the file first.`,

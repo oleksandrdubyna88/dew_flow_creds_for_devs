@@ -405,6 +405,14 @@ export interface TreeNode {
    * one case derivation cannot, a folder the command ran on while empty. See `pinOnCreate.ts`.
    */
   folderAsksForPin?: boolean;
+  /**
+   * Entries: how many protection DECISIONS this entry has seen — +1 for every *Protect with a PIN…*,
+   * *Remove PIN Protection…* and sealed share import, never for the door's healing (entry-PIN plan
+   * §5.9, R6). The sync merge settles two machines that disagree, concurrently, about whether the
+   * entry is sealed by the later decision (`syncPinRule.ts`). On the node rather than in `details`,
+   * because an older build's Edit rebuilds `details` from an allow-list but keeps unknown node fields.
+   */
+  pinEpoch?: number;
   /** Manual position among siblings (folders); lower comes first. */
   sortOrder?: number;
   /**

@@ -1,3 +1,4 @@
+import { FallbackRule, decideProtection, fallbackRuleFor, fallbackValue, sealedIn } from './syncPinRule';
 import { TreeNode } from './types';
 import {
   Tombstone,
@@ -72,8 +73,9 @@ export interface ProfileSnapshot {
    *
    * <p>Added in the SAME commit as its `SECRET_KINDS` row, which is the whole lesson of the
    * paragraph above: a kind in that table and not in this interface does not fail to sync, it
-   * DELETES. Optional, and read through `?? {}` at the merge, so a snapshot from a build that
-   * predates the kind contributes nothing rather than erasing the other side's values.</p>
+   * DELETES. Optional, and an ABSENT map is kept apart from an empty one — by the vault reader
+   * (`syncManager.ts`) and at the merge (`copySecret`) — so a snapshot from a build that predates the
+   * kind contributes nothing rather than erasing the other side's values.</p>
    */
   seconds?: Record<string, string>;
   /** id -> soft-delete record (object form; legacy number is normalized in). */
@@ -134,6 +136,45 @@ function pickNode(a: TreeNode, b: TreeNode): TreeNode {
     return nodeTime(a) > nodeTime(b) ? a : b;
   }
   return lastWriter(va) >= lastWriter(vb) ? a : b;
+}
+
+/**
+ * The node kept for one id, whether it is this machine's — the side its secrets are copied from — and
+ * whether it wins wholesale (two sealed sides that raced: no sealed slot is borrowed, `syncPinRule`).
+ */
+interface Kept {
+  readonly node: TreeNode;
+  readonly local: boolean;
+  readonly wholesale: boolean;
+}
+
+/**
+ * Both present: the causally-later node, then the protection rule over a CONCURRENT disagreement
+ * about whether the entry is sealed (`syncPinRule.ts`, entry-PIN plan §5.9). One present: that one.
+ */
+function pickWinner(
+  id: string,
+  localNode: TreeNode | undefined,
+  remoteNode: TreeNode | undefined,
+  local: ProfileSnapshot,
+  remote: ProfileSnapshot,
+): Kept | undefined {
+  if (localNode === undefined || remoteNode === undefined) {
+    return onlyOne(localNode, remoteNode);
+  }
+  const decided = decideProtection(
+    { node: localNode, sealed: sealedIn(local, id) },
+    { node: remoteNode, sealed: sealedIn(remote, id) },
+    pickNode(localNode, remoteNode),
+  );
+  return { node: decided.node, local: decided.from === 'a', wholesale: decided.wholesale };
+}
+
+function onlyOne(localNode: TreeNode | undefined, remoteNode: TreeNode | undefined): Kept | undefined {
+  if (localNode !== undefined) {
+    return { node: localNode, local: true, wholesale: false };
+  }
+  return remoteNode === undefined ? undefined : { node: remoteNode, local: false, wholesale: false };
 }
 
 function normalizeTombstones(
@@ -243,13 +284,11 @@ export function mergeProfiles(
       }
     }
 
-    const winner =
-      localNode !== undefined && remoteNode !== undefined
-        ? pickNode(localNode, remoteNode)
-        : (localNode ?? remoteNode);
-    if (winner === undefined) {
+    const decided = pickWinner(id, localNode, remoteNode, local, remote);
+    if (decided === undefined) {
       continue;
     }
+    const winner = decided.node;
     const winnerVec = vectorOf(winner);
 
     const tomb = tombstones[id];
@@ -262,28 +301,29 @@ export function mergeProfiles(
 
     nodes.push({ ...winner, children: undefined });
 
-    const localWins = winner === localNode;
+    const localWins = decided.local;
     const primary = localWins ? local : remote;
     const fallback = localWins ? remote : local;
-    copySecret(passwords, id, primary.passwords, fallback.passwords);
-    copySecret(privateKeys, id, primary.privateKeys, fallback.privateKeys);
-    copySecret(vpnConfigs, id, primary.vpnConfigs, fallback.vpnConfigs);
-    copySecret(dbConnections, id, primary.dbConnections, fallback.dbConnections);
-    copySecret(notes, id, primary.notes, fallback.notes);
-    copySecret(attachments, id, primary.attachments, fallback.attachments);
-    copySecret(images, id, primary.images, fallback.images);
-    // `?? {}`: a snapshot decoded from a pre-0.57 vault has no totps record at all.
-    copySecret(totps, id, primary.totps ?? {}, fallback.totps ?? {});
-    // `?? {}` for the same reason the line above needs one: a snapshot decoded from a vault
-    // written before the `config` kind carries no configs record at all.
-    copySecret(configs, id, primary.configs ?? {}, fallback.configs ?? {});
-    copySecret(fields, id, primary.fields ?? {}, fallback.fields ?? {});
-    // The same guard the two lines above need: a snapshot from a vault written before the payment
-    // kind carries no payments record at all, and must not delete the other side's.
-    copySecret(payments, id, primary.payments ?? {}, fallback.payments ?? {});
-    // And the same guard again, for the same reason: a snapshot written by a build from before the
-    // `seconds` kind carries no record at all, and must not delete the other side's.
-    copySecret(seconds, id, primary.seconds ?? {}, fallback.seconds ?? {});
+    // The fallback takes a slot the winner lacks only in the winner's own sealed state (§5.9 rule 4):
+    // a sealed winner takes no plaintext, an unsealed one no envelope — and two sealed sides that
+    // raced take nothing from each other (row 4: one node wins wholesale). Attachments and images are
+    // outside the PIN, so they are judged as unsealed whatever the entry is.
+    const rule = fallbackRuleFor(sealedIn(primary, id), decided.wholesale);
+    copySecret(passwords, id, primary.passwords, fallback.passwords, rule);
+    copySecret(privateKeys, id, primary.privateKeys, fallback.privateKeys, rule);
+    copySecret(vpnConfigs, id, primary.vpnConfigs, fallback.vpnConfigs, rule);
+    copySecret(dbConnections, id, primary.dbConnections, fallback.dbConnections, rule);
+    copySecret(notes, id, primary.notes, fallback.notes, rule);
+    copySecret(attachments, id, primary.attachments, fallback.attachments, 'plain');
+    copySecret(images, id, primary.images, fallback.images, 'plain');
+    // No `?? {}` on the maps below, deliberately: a snapshot decoded from a vault written before a
+    // kind existed (totps before 0.57, then configs, fields, payments, seconds) carries no record for
+    // it at all, and `copySecret` must tell that ABSENT map from an empty one — see its comment.
+    copySecret(totps, id, primary.totps, fallback.totps, rule);
+    copySecret(configs, id, primary.configs, fallback.configs, rule);
+    copySecret(fields, id, primary.fields, fallback.fields, rule);
+    copySecret(payments, id, primary.payments, fallback.payments, rule);
+    copySecret(seconds, id, primary.seconds, fallback.seconds, rule);
   }
 
   // Re-parent children whose parent did not survive the merge.
@@ -353,14 +393,37 @@ function isDeleted(tomb: Tombstone, winner: TreeNode, winnerVec: VersionVector):
   return concurrent(winnerVec, tomb.v) ? tomb.deletedAt >= nodeTime(winner) : true;
 }
 
+/**
+ * One slot of the kept entry: the winner's value, else the loser's as the fallback rule allows.
+ *
+ * <p>An ABSENT map on the winner — the key missing from its snapshot, not an empty record — is not a
+ * deletion. The winner was written by a build that predates the kind, and a build cannot have deleted
+ * a value it has no way to store. So a wholesale win (two sealed sides that raced, `syncPinRule`
+ * rule 5) must not turn "could not hold it" into "dropped it": the loser's SEALED value fills the
+ * slot. That can leave one entry holding values under two PINs — the lesser harm, because Edit names
+ * the slot it cannot open and nothing is lost — against losing what may be the only copy; and on the
+ * machine whose edit lost, `syncProtection` records its values as a kept version anyway. Only the
+ * wholesale restriction lifts: a sealed winner still takes no plaintext and an unsealed one no
+ * envelope (rule 4). An EMPTY map is a build that knows the kind and holds none, and stays wholesale.</p>
+ */
 function copySecret(
   out: Record<string, string>,
   id: string,
-  primary: Record<string, string>,
-  fallback: Record<string, string>,
+  primary: Record<string, string> | undefined,
+  fallback: Record<string, string> | undefined,
+  rule: FallbackRule,
 ): void {
-  const value = primary[id] ?? fallback[id];
+  const value = valueIn(primary, id) ?? fallbackValue(valueIn(fallback, id), ruleOver(primary, rule));
   if (value !== undefined) {
     out[id] = value;
   }
+}
+
+function valueIn(map: Record<string, string> | undefined, id: string): string | undefined {
+  return map?.[id];
+}
+
+/** The fallback rule for one map: a winner with NO map for the kind cannot have decided against the loser's sealed value. */
+function ruleOver(primary: Record<string, string> | undefined, rule: FallbackRule): FallbackRule {
+  return primary === undefined && rule === 'none' ? 'sealed' : rule;
 }

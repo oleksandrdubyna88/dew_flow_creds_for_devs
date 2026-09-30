@@ -57,7 +57,8 @@ export async function buildSharePayload(
   // here rather than trusted, so "the flag travels exactly when the seed does" is structural.
   const sharedDetails = shareableDetails(node.details, seed !== undefined);
   return {
-    node: { ...node, details: sharedDetails, parentId: null, children: undefined },
+    // No `pinEpoch`: it counts the SENDER's protection decisions about their own copy (§5.9).
+    node: { ...node, details: sharedDetails, parentId: null, children: undefined, pinEpoch: undefined },
     secrets: {
       password: await open(await storage.getPassword(accountId, node.id)),
       privateKey: await open(await storage.getPrivateKey(accountId, node.id)),

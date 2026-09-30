@@ -6,6 +6,112 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> The entry PIN keeps its promise. A PIN-protected entry opens with everything it holds, edits
+> without losing or leaking anything, and no click, automatic reader, export, share or sync hands out
+> its sealed envelope or quietly takes the protection off. Update every machine you sync with — see
+> the note at the end.
+
+### Fixed — a protected entry opens, edits and never loses a value
+
+- **Viewing a protected card showed only its name.** The viewer built the card's shape from a reading
+  that turned a sealed record into nothing, so after the PIN the page had *Main → Name*, the dates and
+  agent access — no number, no CVV, no second values; a credential's second-password row was hidden
+  the same way. Nothing was deleted, and the whole card now opens after one PIN.
+- **Edit on a protected entry deleted data.** It never asked for the PIN: the form opened with an empty
+  card, empty second values and an empty login/URL, and sealed text in Notes, Config and the connection
+  string. **Save then deleted the payment details, the second values and the login/URL**, dropped the
+  *One-Time Code* seed flag, stored a newly typed value **in the clear**, took the PIN mark off (so
+  *Remove PIN Protection…* disappeared and agents saw the entry again) and handed the new plaintext to
+  terminal variables. Edit now asks once (with a notification while the values open), shows the real
+  values, seals every value you change under the same PIN before it is written, leaves untouched values
+  byte-identical, keeps the mark, asks again at Save if the window forgot the PIN (a decline keeps the
+  form), and refuses to open over a value it cannot read.
+- **A form or a confirmation left open wrote past a protection that changed meanwhile.** An entry
+  protected from another window or by a sync while its Edit form was open was saved with the typed
+  value in the clear and without its PIN mark; *Restore This Version…* did the same when the entry was
+  protected while its confirmation waited, and sealed it again when the PIN was removed meanwhile.
+  Both now decide at the moment they write: an entry whose protection changed is not touched, and you
+  are told to open Edit (or run Restore) again.
+- **An entry protected while it was empty lost its protection at the first open.** *Protect with a
+  PIN…* on an entry that holds nothing writes only the mark, and the first open removed it as if it
+  were the 0.99.0 false mark — so the first value typed into it in Edit, or brought back by *Restore
+  This Version…*, was stored in the clear. The mark now stays, and the first save that stores a value
+  asks for the entry's PIN — typed twice, or checked against the protected entries of its folder —
+  and seals every value with it before anything is written. Declining keeps the form open; a save that
+  stores nothing asks nothing. A mark over values that arrived in the clear (the 0.99.0 share) is
+  still removed. *Remove PIN Protection…* on such an entry takes the protection off without asking for
+  a PIN, since it holds nothing sealed to open — it used to answer that the entry was not protected.
+- **Every click handed out the sealed envelope.** *Copy Password*, *Copy Connection String* (with and
+  without the password), *Copy One-Time Code*, *Open in DB Extension*, *Install SSH Key to System*,
+  *Save VPN Config As…*, *Start VPN*, *Connect SSH* (key and password), *Write Config File Here…*, *Add
+  to SSH Agent*, *Copy Git Signing Config*, the bridge and *Show What Changed* put `{"v":1,"lock":…}` on
+  the clipboard, into files, into the database extension, the VPN launcher and ssh. Each now opens the
+  value through the entry's PIN box, which says what OK will do; a file written from a protected entry
+  says it is outside the PIN. Connecting over a key borrowed from another protected entry asks THAT
+  entry's PIN.
+- **Nothing automatic gets a sealed value, and every refusal is said.** A protected config served by
+  its code-access key answers the same 401 an invented key gets and audits `withheld (PIN)` (it served
+  the envelope with 200); a protected git deploy key is refused with a sentence instead of written to
+  disk; a `creds://` note or one-time code reads *withheld* (it read the envelope, and *absent*); the SSH
+  broker refuses a protected stored key before anything reaches disk; an agent's database query refuses
+  a protected connection string (it launched the client with the envelope); a protected config is no
+  longer flagged *invalid*; and an entry whose PIN mark was lost while its values stayed sealed still
+  has its database password withheld in words (it read as *not stored*) and still offers *Open Site
+  in Browser*.
+- **Export carried envelopes nobody could open**, and dropped protected entries' login and URL.
+  *Export / Share Externally…* now asks each protected entry's PIN (declining any exports nothing),
+  writes the opened values under the file's own password with no PIN claim, keeps login/URL, counts a
+  protected CVV in its warning, and says how many protected entries go in.
+- **Updating a protected entry from a share wrote plaintext into it and dropped its PIN.** *Update it*
+  now asks the entry's PIN, seals every arriving value before it is written and keeps the mark; a
+  share of a protected card names the CVV and second values it does not send again.
+- **Sync could silently take the protection off.** A machine that had not yet seen a Protect could win
+  a concurrent change on its later clock and replace the sealed values with its plaintext; the
+  per-value fill could also slip the losing side's plaintext into a protected entry, or an envelope into
+  a just-unprotected one. The later protection decision now wins whatever the clocks say, a sealed
+  entry never borrows a plain value (nor the reverse), two machines that protected at once do not mix
+  their values — but a value the winning machine's older version had no place for (a second value)
+  is kept, not dropped — and the machine whose change lost keeps it as the entry's newest previous
+  version and is told once, including when both machines changed it under the PIN.
+- **Remove PIN Protection…** unwrapped a woven password into a plain one, and over a damaged value
+  cleared the mark while that value stayed sealed. It now keeps a woven password woven, names a damaged
+  value and asks first (**Remove the PIN from the rest** leaves it exactly as it was), and unseals the
+  kept versions too.
+- **Two windows protecting one entry under two PINs.** *Protect with a PIN…* checks for an existing PIN
+  before its two PIN boxes; if another window protected the same entry under a different PIN while they
+  were open, the values stayed under the other PIN (a sealed value is never replaced) while this run
+  said the entry was protected with the PIN just typed, sealed its history under it and recorded a
+  second protection decision. It now checks that every sealed value opens with the PIN just typed —
+  silently, so it is not counted as a wrong guess — and otherwise records nothing and says the entry
+  was already protected in another window under a different PIN, with nothing changed on it.
+- **No dead end.** An entry whose mark was lost while its values stayed sealed offered only *Protect
+  with a PIN…*, which answered "already has its own PIN" and nothing to press. The next PIN door
+  restores the mark, and Protect on a protected entry offers *Remove PIN Protection…*.
+- **Five wrong PINs in a row make you wait** — 30 s, doubling to 15 minutes; the right PIN resets;
+  nothing is ever deleted for a wrong one. A folder-wide PIN check that opens none of the protected
+  entries counts against each, and refuses while any of them is cooling. There was no limit at all.
+- **Two false sentences.** The automatic refusal told you to remove the PIN "from its General section",
+  which has no such control — it now says *right-click it and choose Remove PIN Protection…*; the form's
+  banner said every secret is wrapped (attachments and images are not) and that you were asked for the
+  PIN to open the form (you were not).
+
+### Added — history is protected, and can be restored
+
+- **A protected entry's kept versions are sealed under its PIN.** Until now the three kept versions from
+  before the PIN stayed readable — and copyable — without it. Protect seals them on this machine;
+  another machine seals its own at the first open there; opening a kept version asks the entry's PIN;
+  Remove PIN unseals them.
+- **Restore This Version…** — right-click a kept version to bring the entry back to it. What the entry
+  holds now becomes its newest previous version, so a restore is undone the same way; a version from
+  before the PIN comes back sealed; agent access, the code-access key and attachments stay today's. The
+  history row used to say *"Clone it to bring it back"*, and Clone copies the metadata only.
+
+### Note — update every machine
+
+- A version before 1.12 still removes the protection when it edits a protected entry, and its edit syncs
+  like any other. A 1.12 window seals such an entry again and restores its mark the next time it opens
+  it; until every machine you sync with is updated, edit protected entries only on updated ones.
+
 ## [1.11.0] — 2026-09-25 — Copy is not Show, Unweave, and a signing prompt that expires
 
 > Issues #135, #136 and #153: a Copy of a CVV or a PIN no longer asks the Show question, a woven

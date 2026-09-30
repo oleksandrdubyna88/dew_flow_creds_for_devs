@@ -6,7 +6,8 @@ import { localRequestTimeLine } from './requestTime';
 import { withTimeout } from './withTimeout';
 import { describeError } from './describeError';
 import { AgentKey, SshAgentServer, agentSocketPath } from './sshAgentServer';
-import { parseSshPrivateKey } from './sshKeyParse';
+import { ParsedSshKey, parseSshPrivateKey } from './sshKeyParse';
+import { SecretOpener, automaticOpener } from './secretOpener';
 import {
   ALLOW_ONCE,
   ALLOW_WINDOW,
@@ -49,6 +50,18 @@ function removeSocketFile(storageDir: string): void {
   } catch {
     // best effort — the purge covers it
   }
+}
+
+/** The opened key, parsed — or the reason it cannot be served, in the words the person is told. */
+function parsedKey(content: string | undefined, name: string): { ok: true; key: ParsedSshKey } | { ok: false; reason: string } {
+  if (content === undefined || content.trim().length === 0) {
+    return {
+      ok: false,
+      reason: `"${name}" has no private key stored in the vault. Open Edit and paste it, or point the entity at a key file (which the agent cannot serve).`,
+    };
+  }
+  const parsed = parseSshPrivateKey(content, name);
+  return parsed.ok ? { ok: true, key: parsed.key } : { ok: false, reason: `"${name}" cannot be served: ${parsed.reason}` };
 }
 
 interface LoadedKey extends AgentKey {
@@ -106,20 +119,33 @@ export class SshAgentManager implements vscode.Disposable {
    * Read a key out of the vault and serve it. Returns what to tell the user — the fingerprint
    * on success, the reason on failure, because "could not load the key" is not actionable and
    * every reason `parseSshPrivateKey` gives is.
+   *
+   * <p>`open` is how the stored key is opened (entry-PIN plan, D6/D7): the startup sweep takes the
+   * default, `automaticOpener`, which refuses a protected key with the PIN sentence and never
+   * prompts; the *Add Key to Agent* click passes a click opener, which asks that entry's PIN. A
+   * click's stop comes back with `reason: ''` — it has been said already, or the person declined.
+   * Until 1.12 both parsed the envelope and said the key "could not be read".</p>
    */
-  async load(accountId: string, details: EntityMetadata): Promise<{ ok: true; fingerprint: string } | { ok: false; reason: string }> {
-    const content = await this.storage.getPrivateKey(accountId, details.id);
-    if (content === undefined || content.trim().length === 0) {
-      return {
-        ok: false,
-        reason: `"${details.name}" has no private key stored in the vault. Open Edit and paste it, or point the entity at a key file (which the agent cannot serve).`,
-      };
+  async load(
+    accountId: string,
+    details: EntityMetadata,
+    open: SecretOpener = automaticOpener,
+  ): Promise<{ ok: true; fingerprint: string } | { ok: false; reason: string }> {
+    const opened = await open(details, await this.storage.getPrivateKey(accountId, details.id));
+    if (opened.kind === 'stopped') {
+      return { ok: false, reason: opened.reason };
     }
-    const parsed = parseSshPrivateKey(content, details.name);
+    const parsed = parsedKey(opened.value, details.name);
     if (!parsed.ok) {
-      return { ok: false, reason: `"${details.name}" cannot be served: ${parsed.reason}` };
+      return parsed;
     }
-    const key = parsed.key;
+    this.serve(accountId, details, parsed.key);
+    await this.ensureStarted();
+    this.log(`loaded "${details.name}" (${parsed.key.fingerprint})`);
+    return { ok: true, fingerprint: parsed.key.fingerprint };
+  }
+
+  private serve(accountId: string, details: EntityMetadata, key: ParsedSshKey): void {
     this.keys.set(details.id, {
       accountId,
       entityId: details.id,
@@ -129,9 +155,6 @@ export class SshAgentManager implements vscode.Disposable {
       identity: { publicBlob: key.publicBlob, comment: details.name },
       sign: (data, flags) => signForAgent(key, data, flags),
     });
-    await this.ensureStarted();
-    this.log(`loaded "${details.name}" (${key.fingerprint})`);
-    return { ok: true, fingerprint: key.fingerprint };
   }
 
   /** Stop serving one key. Its material goes with it. */

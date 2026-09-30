@@ -42,30 +42,53 @@ function sanitizeKeyFileName(name: string): string {
 /**
  * Install a key entity into ~/.ssh: `<name>` (private, 0600) and
  * `<name>.pub` (public, 0644). Asks before overwriting existing files.
+ *
+ * <p>`privateKey` is the OPENED key — the click opened it through the entry's door — and `note` is
+ * what the success message adds for a protected entry: the file is a copy the PIN cannot guard
+ * (`pinClick.outsidePinNote`). Split into its steps when the note arrived (entry-PIN plan, D6).</p>
  */
-// eslint-disable-next-line complexity, max-lines-per-function
 export async function installKeyToSystem(
   entity: EntityMetadata,
   privateKey: string | undefined,
+  note?: string,
 ): Promise<void> {
-  const publicKey = entity.publicKey;
-  if (privateKey === undefined && (publicKey === undefined || publicKey.length === 0)) {
+  const plan = installPlan(entity, privateKey);
+  if (plan !== undefined && (await confirmInstall(entity.name, plan)) && writeInstall(plan)) {
+    void vscode.window.showInformationMessage(installedMessage(plan, note));
+  }
+}
+
+/** Where each half goes, and which halves there are. */
+interface InstallPlan {
+  readonly sshDir: string;
+  readonly base: string;
+  readonly privatePath: string;
+  readonly publicPath: string;
+  readonly privateKey: string | undefined;
+  readonly publicKey: string | undefined;
+  readonly willWrite: readonly string[];
+}
+
+/** The plan — or nothing, having said so, for an entity with neither half. */
+function installPlan(entity: EntityMetadata, privateKey: string | undefined): InstallPlan | undefined {
+  const publicKey = entity.publicKey || undefined;
+  if (privateKey === undefined && publicKey === undefined) {
     void vscode.window.showWarningMessage(
       `"${entity.name}" has no stored key content — open Edit and paste the private/public key first.`,
     );
-    return;
+    return undefined;
   }
-
   const sshDir = path.join(os.homedir(), '.ssh');
   const base = sanitizeKeyFileName(entity.name);
   const privatePath = path.join(sshDir, base);
   const publicPath = path.join(sshDir, `${base}.pub`);
+  const halves: [string | undefined, string][] = [[privateKey, privatePath], [publicKey, publicPath]];
+  const willWrite = halves.filter(([content]) => content !== undefined).map(([, file]) => file);
+  return { sshDir, base, privatePath, publicPath, privateKey, publicKey, willWrite };
+}
 
-  const willWrite = [
-    ...(privateKey !== undefined ? [privatePath] : []),
-    ...(publicKey ? [publicPath] : []),
-  ];
-  const existing = willWrite.filter((p) => fs.existsSync(p));
+async function confirmInstall(name: string, plan: InstallPlan): Promise<boolean> {
+  const existing = plan.willWrite.filter((p) => fs.existsSync(p));
   // Say what makes this different from every other place the extension writes key
   // material: this copy is permanent and outside the extension's own housekeeping.
   const permanence =
@@ -73,36 +96,37 @@ export async function installKeyToSystem(
     ' it is not tracked and never purged — remove it with "Remove Installed Key…".';
   const confirmed = await vscode.window.showWarningMessage(
     (existing.length > 0
-      ? `Install key "${entity.name}" to ~/.ssh? This OVERWRITES: ${existing.map((p) => path.basename(p)).join(', ')}.`
-      : `Install key "${entity.name}" to ~/.ssh as "${base}"${publicKey ? ` + "${base}.pub"` : ''}?`) + permanence,
+      ? `Install key "${name}" to ~/.ssh? This OVERWRITES: ${existing.map((p) => path.basename(p)).join(', ')}.`
+      : `Install key "${name}" to ~/.ssh as "${plan.base}"${plan.publicKey ? ` + "${plan.base}.pub"` : ''}?`) + permanence,
     { modal: true },
     'Install',
   );
-  if (confirmed !== 'Install') {
-    return;
-  }
+  return confirmed === 'Install';
+}
 
+/** The two files, with the modes ssh expects. A failure is said, and answers false. */
+function writeInstall(plan: InstallPlan): boolean {
   try {
-    fs.mkdirSync(sshDir, { recursive: true, mode: 0o700 });
-    if (privateKey !== undefined) {
-      fs.writeFileSync(privatePath, ensureTrailingNewline(privateKey), { mode: 0o600 });
-      fs.chmodSync(privatePath, 0o600);
-  lockToOwner(privatePath);
+    fs.mkdirSync(plan.sshDir, { recursive: true, mode: 0o700 });
+    if (plan.privateKey !== undefined) {
+      fs.writeFileSync(plan.privatePath, ensureTrailingNewline(plan.privateKey), { mode: 0o600 });
+      fs.chmodSync(plan.privatePath, 0o600);
+      lockToOwner(plan.privatePath);
     }
-    if (publicKey) {
-      fs.writeFileSync(publicPath, ensureTrailingNewline(publicKey), { mode: 0o644 });
-      fs.chmodSync(publicPath, 0o644);
+    if (plan.publicKey !== undefined) {
+      fs.writeFileSync(plan.publicPath, ensureTrailingNewline(plan.publicKey), { mode: 0o644 });
+      fs.chmodSync(plan.publicPath, 0o644);
     }
+    return true;
   } catch (error) {
-    void vscode.window.showErrorMessage(
-      `Installing the key failed: ${describeError(error)}`,
-    );
-    return;
+    void vscode.window.showErrorMessage(`Installing the key failed: ${describeError(error)}`);
+    return false;
   }
-  void vscode.window.showInformationMessage(
-    `Installed to ${willWrite.join(' and ')}.` +
-      (privateKey !== undefined ? ` Use it with: ssh -i "${privatePath}" …` : ''),
-  );
+}
+
+function installedMessage(plan: InstallPlan, note: string | undefined): string {
+  const use = plan.privateKey !== undefined ? ` Use it with: ssh -i "${plan.privatePath}" …` : '';
+  return `Installed to ${plan.willWrite.join(' and ')}.${use}${note ?? ''}`;
 }
 
 function processAlive(pid: number): boolean {

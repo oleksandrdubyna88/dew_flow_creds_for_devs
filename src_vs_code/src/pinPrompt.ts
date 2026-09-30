@@ -1,8 +1,10 @@
 import * as vscode from 'vscode';
 import { PinGate } from './pinGate';
+import { coolingAmong, coolingReason } from './pinAttempts';
 import { pinValidator } from './pinInput';
 import { PinScope } from './pinPolicy';
 import { admit } from './pinAdmission';
+import { healKeptVersions } from './historyHeal';
 import { StorageManager } from './storageManager';
 
 /**
@@ -13,12 +15,19 @@ import { StorageManager } from './storageManager';
  * lives, so the box says the same thing whichever surface opened it.</p>
  */
 
-/** A gate for one entry, with the prompt wired to a real input box. */
-export function entryPinGate(accountId: string, entityId: string, entryName: string): PinGate {
+/**
+ * A gate for one entry, with the prompt wired to a real input box.
+ *
+ * <p>`purpose` is what the box says pressing OK will do — <i>"edit it"</i>, <i>"copy its password"</i>
+ * — and `pinGate.pinPromptFor` turns it into the sentence; the gate only carries it. Absent, the
+ * generic question is asked, which is what every surface said before the entry-PIN plan.</p>
+ */
+export function entryPinGate(accountId: string, entityId: string, entryName: string, purpose?: string): PinGate {
   return {
     accountId,
     entityId,
     entryName,
+    purpose,
     ask: (prompt, name) =>
       vscode.window.showInputBox({
         title: `PIN for "${name}"`,
@@ -80,6 +89,20 @@ async function confirmed(subject: string, first: string): Promise<string | undef
   return again === first ? first : undefined;
 }
 
+/**
+ * D16 at a sibling check (§5.10): while any of the protected entries a folder-wide PIN would be tried
+ * on is cooling, the check cannot be run — a cooling entry opens for nobody, so it would report
+ * "opens none" and invite a new entry sealed under a PIN nothing verified. So it refuses before any
+ * box is raised, and says which entry is cooling and for how long. Answers whether it refused.
+ */
+export function refusedWhileCooling(accountId: string, siblings: readonly { readonly id: string; readonly name: string }[]): boolean {
+  const cooling = coolingAmong(accountId, siblings);
+  if (cooling !== undefined) {
+    void vscode.window.showWarningMessage(coolingReason(cooling.ms, cooling.entry.name));
+  }
+  return cooling !== undefined;
+}
+
 const NEW_PIN =
   'This PIN wraps every secret this entry holds. It is stored NOWHERE — not here, not in a backup, '
   + 'not in the sync — so a forgotten PIN means the values are gone. The vault recovery code opens '
@@ -89,18 +112,22 @@ const NEW_PIN =
  * The door before a read: ask this entry's PIN when it has one, and answer the gate that opens its
  * values — or `undefined`, having said why. Declining says nothing more (the person chose); a wrong
  * PIN says the gate's own reason. The viewer and *Open Site in Browser* (issue #104) both stand here;
- * it was written out at each until then.
+ * it was written out at each until then. `purpose` names what the click will do (`entryPinGate`).
  */
 export async function admitEntry(
   storage: StorageManager,
   accountId: string,
   entityId: string,
   entryName: string,
+  purpose?: string,
 ): Promise<PinGate | undefined> {
-  const gate = entryPinGate(accountId, entityId, entryName);
+  const gate = entryPinGate(accountId, entityId, entryName, purpose);
   const admission = await admit(storage, accountId, entityId, gate);
   if (admission.kind === 'refused') {
     void vscode.window.showWarningMessage(admission.reason);
+  }
+  if (admission.kind === 'in') {
+    healKeptVersions(storage, accountId, entityId, entryName);
   }
   return admission.kind === 'in' ? gate : undefined;
 }

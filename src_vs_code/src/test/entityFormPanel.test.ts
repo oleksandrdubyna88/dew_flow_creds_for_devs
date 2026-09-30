@@ -351,6 +351,40 @@ test('editing an entry whose password is already woven, without retyping it, is 
   assert.deepEqual(dialogs, []);
 });
 
+/**
+ * `beforeSave` — the caller's own last gate (entry-PIN plan §5.2). A protected entry's Save
+ * re-checks the PIN through it; answering `false` keeps the form open with everything typed, the
+ * contract `confirmInvalidSave` already has. It runs LAST, so the person is not asked for a PIN and
+ * then told their config does not parse.
+ */
+test('a beforeSave that answers false keeps the form open — agreed() is false, and it ran after every other gate', async () => {
+  const { panel, dialogs } = gatedPanel();
+  const order: string[] = [];
+  const options: EntityFormOptions = {
+    ...formOptions(),
+    lockedKind: 'config',
+    beforeSave: () => {
+      order.push('beforeSave');
+      return Promise.resolve(false);
+    },
+  };
+  // A config that does not parse, so `confirmInvalidSave` asks — and its "Save anyway" is taken.
+  const data = posted('config', { configFormat: 'json', configBody: '{ not json' });
+
+  assert.equal(await panel.agreed(data, options), false, 'the save must not happen');
+  assert.equal(dialogs.length, 1, 'the config question was asked');
+  assert.deepEqual(dialogs[0].buttons, ['Save anyway']);
+  assert.deepEqual(order, ['beforeSave'], 'and beforeSave ran, after it');
+});
+
+test('a beforeSave that answers true lets the save through, and no beforeSave at all is the same as true', async () => {
+  const { panel, dialogs } = gatedPanel();
+
+  assert.equal(await panel.agreed(posted('credential'), { ...formOptions(), beforeSave: () => Promise.resolve(true) }), true);
+  assert.equal(await panel.agreed(posted('credential'), formOptions()), true);
+  assert.deepEqual(dialogs, []);
+});
+
 test('the #103 fields survive a save WHOLE — the literal toValues writes is what the entry keeps', () => {
   // `toValues` rebuilds `details` from a literal on every save; a field missing from it is deleted
   // by the next unrelated edit. These are the three this issue added, round-tripped.

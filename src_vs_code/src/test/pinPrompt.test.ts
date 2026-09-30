@@ -107,6 +107,22 @@ test('the box that OPENS a protected entry accepts 1234', async () => {
   assertEntryScope(w.boxes[0]);
 });
 
+test('the door asked for a PURPOSE puts that purpose in the box — the person reads what OK will do', async () => {
+  // Through the REAL door (`admitEntry` → `admit` → `openStored` → the gate's box), over a vault
+  // whose password is really locked, so the box under test is the one a click actually raises.
+  const nodes = [entry('e1', null)];
+  const storage = vaultWith(nodes, { e1: await lockSecret('hunter2', 'a1', 'correct-horse-battery') });
+  const w = recording();
+  const mod = loadWithVscode<typeof import('../pinPrompt')>('../pinPrompt', w.stub);
+
+  assert.equal(await mod.admitEntry(storage, 'a1', 'e1', 'prod-db', 'edit it'), undefined, 'dismissed, so not admitted');
+
+  assert.match(String(w.boxes[0]?.title), /PIN for "prod-db"/);
+  assert.match(String(w.boxes[0]?.prompt), /Enter it to edit it\./);
+  assert.match(String(w.boxes[0]?.prompt), /remembered until this window closes or the vault locks/);
+  assertEntryScope(w.boxes[0]);
+});
+
 test('the box that CHOOSES a new entry PIN accepts 1234 — the recipient of a protected share reaches this one too', async () => {
   // `shareRecipientPin.ts` goes through `newPin`: the recipient wraps ONE imported entry on their own
   // machine, behind their own open vault. That is an entry PIN by nature, and it is classified so here

@@ -55,7 +55,8 @@ import { buildAgentSnippet } from '../agentShareSnippet';
 import { buildKindSnippet } from '../agentShareSnippet';
 import { copySecret } from '../secretClipboard';
 import { copiedMessage } from '../secretClipboard';
-import { parseSshPrivateKey } from '../sshKeyParse';
+import { signingPublicLine } from '../gitSigningKey';
+import { clickOpener } from '../pinClick';
 import { gitSigningConfig } from '../gitSigningConfig';
 import { gitSigningClipboardText } from '../gitSigningConfig';
 import { showMcpLog } from '../mcpLogPanel';
@@ -280,7 +281,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       return;
     }
 
-    const credential = await resolveExecAuth(storage, accountId, details, storageDir);
+    const credential = await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect'));
     if (credential.warning !== undefined) {
       void vscode.window.showWarningMessage(credential.warning);
     }
@@ -430,7 +431,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
     if (storageDir === undefined) {
       return;
     }
-    const credential = await resolveExecAuth(storage, accountId, details, storageDir);
+    const credential = await resolveExecAuth(storage, accountId, details, storageDir, clickOpener(storage, accountId, 'connect'));
     if (credential.warning !== undefined) {
       void vscode.window.showWarningMessage(credential.warning);
     }
@@ -664,9 +665,9 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       );
       return false;
     }
-    const result = await sshAgent.load(element.accountId, keyNode.details);
+    const result = await sshAgent.load(element.accountId, keyNode.details, clickOpener(storage, element.accountId, 'load its key into the SSH agent'));
     if (!result.ok) {
-      void vscode.window.showWarningMessage(result.reason);
+      void (result.reason === '' ? undefined : vscode.window.showWarningMessage(result.reason));
       return false;
     }
     await storage.updateDetailsFields(element.accountId, keyNode.id, { sshAgent: true });
@@ -716,22 +717,9 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       return;
     }
     const details = element.node.details;
-    const loaded = sshAgent.loadedKeys().find((k) => k.entityId === details.id);
-    let publicLine = loaded?.publicLine;
+    const publicLine = await signingPublicLine(storage, element.accountId, details, sshAgent.loadedKeys());
     if (publicLine === undefined) {
-      const content = await storage.getPrivateKey(element.accountId, details.id);
-      const parsed = content === undefined ? undefined : parseSshPrivateKey(content, element.node.name);
-      if (parsed === undefined) {
-        void vscode.window.showWarningMessage(
-          `"${element.node.name}" has no private key stored, so there is no public half to sign with.`,
-        );
-        return;
-      }
-      if (!parsed.ok) {
-        void vscode.window.showWarningMessage(`"${element.node.name}": ${parsed.reason}`);
-        return;
-      }
-      publicLine = parsed.key.publicLine;
+      return;
     }
     const config = gitSigningConfig(
       publicLine,

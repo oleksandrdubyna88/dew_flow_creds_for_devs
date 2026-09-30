@@ -71,16 +71,26 @@ export function exportScope(all: readonly TreeNode[], roots: readonly TreeNode[]
 }
 
 /**
- * An accepted UPDATE keeps the mark the recipient set on their own copy. The sender's payload never
- * carries it — a marked entry does not leave — so rebuilding the node from the payload alone
- * dropped it silently, and the recipient's next folder share sent the entry on (own review).
+ * An accepted UPDATE keeps the marks the recipient set on their own copy. The sender's payload never
+ * carries them — a marked entry does not leave, and a PIN is the recipient's own — so rebuilding the
+ * node from the payload alone dropped them silently: the recipient's next folder share sent a
+ * Not-for-export entry on (own review), and a protected entry stopped claiming its PIN while its
+ * values were still sealed (entry-PIN plan, D9). One helper, so a third mark is one line here.
+ *
+ * <p>`pinEpoch` is not listed: it lives on the NODE, not in `details` (§5.9), so it is carried where
+ * the node is rebuilt (`shareUpdateSeal.rebuilt`), from the recipient's own existing node.</p>
  */
 export function keepingMark(incoming: EntityMetadata | undefined, existing: TreeNode | undefined): EntityMetadata | undefined {
-  return incoming !== undefined && wasMarked(existing) ? { ...incoming, notForExport: true } : incoming;
+  return incoming === undefined ? undefined : { ...incoming, ...recipientMarks(existing) };
 }
 
-function wasMarked(node: TreeNode | undefined): boolean {
-  return node?.details?.notForExport === true;
+/** The marks a recipient sets on their own copy, which no payload carries. */
+const RECIPIENT_MARKS = ['notForExport', 'pinProtected'] as const;
+
+/** The marks this recipient set, and only those that are set — an absent mark adds no key. */
+function recipientMarks(node: TreeNode | undefined): Partial<EntityMetadata> {
+  const details = node?.details;
+  return Object.fromEntries(RECIPIENT_MARKS.filter((mark) => details?.[mark] === true).map((mark) => [mark, true]));
 }
 
 /** True when the selection had marked entries and nothing ELSE that could leave. */

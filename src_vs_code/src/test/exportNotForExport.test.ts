@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { TreeNode } from '../types';
 import { loadWithVscode } from './vscodeStub';
+import { NO_SLOTS } from './pinWorld';
 
 /**
  * Issue #122 — *Export / Share Externally…* never writes an entry marked *Not for export*.
@@ -46,6 +47,7 @@ function world(nodes: TreeNode[]): World {
   registerExportCommand({
     register: (command: string, handler: Handler) => handlers.set(command, handler),
     storage: {
+      ...NO_SLOTS,
       getNodes: () => nodes,
       exportSecretsFor: (_accountId: string, ids: string[]) => {
         secretsAskedFor.push(ids);
@@ -142,7 +144,7 @@ test('the FILE a folder exports holds the unmarked entry and not the marked one 
   const hostProd = { ...prod, details: { ...prod.details!, host: 'prod.internal' } };
   registerExportCommand({
     register: (command: string, handler: Handler) => handlers.set(command, handler),
-    storage: { getNodes: () => [ops, hostProd, stage], exportSecretsFor: () => Promise.resolve({}) },
+    storage: { ...NO_SLOTS, getNodes: () => [ops, hostProd, stage], exportSecretsFor: () => Promise.resolve({}) },
     vaultKeys: { noteUserActivity: () => undefined },
     log: {},
   } as never);

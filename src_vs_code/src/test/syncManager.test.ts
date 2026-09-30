@@ -2,10 +2,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { configStub, loadWithVscode } from './vscodeStub';
-import { resignEnvelopeWraps } from '../cryptoUtils';
 import { emptySnapshot } from '../syncMerge';
-import { StoredAccount, TreeNode } from '../types';
+import { lockSecret } from '../secretEnvelope';
+import { TreeNode } from '../types';
+import { KEY, SIGNING_MASTER, World, envelope, manager, node, world } from './syncWorld';
 
 /**
  * The sync cycle (audit A3).
@@ -34,218 +34,6 @@ import { StoredAccount, TreeNode } from '../types';
  * rather than with the code they are guarding.</p>
  */
 
-type Sync = typeof import('../syncManager');
-
-const A: StoredAccount = { accountId: 'a1', email: 'me@corp.com', provider: 'google' };
-
-/**
- * A node the real validators accept.
- *
- * <p>`isSshEnabled` is REQUIRED by `isEntityMetadata`, and leaving it out is not a small
- * inaccuracy: `isBackupBundle` then rejects the decrypted payload, `syncProfile` throws
- * `corrupted` before it ever reaches the merge, and every test asserting "nothing was
- * written" passes without exercising the guard it names. Three of the tests below did
- * exactly that until this was fixed.</p>
- */
-function node(id: string, name: string): TreeNode {
-  return {
-    id,
-    name,
-    type: 'entity',
-    parentId: null,
-    details: { id, name, kind: 'credential', isSshEnabled: false },
-  } as unknown as TreeNode;
-}
-
-/**
- * A real envelope, SIGNED the way every writer of a v3+ file signs it.
- *
- * <p>It used to be built unsigned, and that was a fixture no production path can produce:
- * `encryptJsonWrapped` and `resignEnvelopeWraps` both write a `mac`, and since the 2026-09-09
- * audit's finding #2 an absent signature on a v3+ file is `bad` rather than "legacy, carry on".
- * Three enrolment tests were passing against a file that could not exist.</p>
- *
- * <p>Signed with {@link SIGNING_MASTER}, which is also what `WRAPPED_KEY` carries — so the tests
- * that exercise the MAC branch (`key.version === 2`) hold a file whose signature actually matches
- * their key. `mac` given explicitly still wins: that is how the tamper test presents a WRONG
- * signature, which is a different thing from an absent one.</p>
- */
-const SIGNING_MASTER = Buffer.alloc(32, 7);
-
-function envelope(options: { version?: number; mac?: string } = {}): string {
-  const version = options.version ?? 3;
-  const body = JSON.stringify({
-    format: 'cred-ssh-manager-backup',
-    version,
-    kdf: 'hkdf',
-    account: A,
-    salt: 's',
-    iv: 'i',
-    tag: 't',
-    data: 'd',
-  });
-  return signed(body, version, options.mac);
-}
-
-/** An explicit `mac` wins; v1 and v2 were legitimately written unsigned; v3+ is signed for real. */
-function signed(body: string, version: number, mac: string | undefined): string {
-  if (mac !== undefined) {
-    return JSON.stringify({ ...(JSON.parse(body) as object), mac });
-  }
-  return version < 3 ? body : resignEnvelopeWraps(body, [], SIGNING_MASTER);
-}
-
-interface World {
-  mod: Sync;
-  writes: string[];
-  applied: number;
-  warnings: string[];
-  errors: string[];
-  logs: string[];
-  /**
-   * Every warning WITH the buttons it offered. `warnings` keeps only the text, and the
-   * buttons are the whole question for a locked vault: what the person is invited to do
-   * about it is a different fact from what they were told.
-   */
-  prompts: { message: string; buttons: string[] }[];
-  /** The wrap list `encrypt` was handed, when the cycle passed one. Undefined = it did not. */
-  escrowWraps?: unknown[];
-  /** What the cycle wrote back into local storage, when it applied anything. */
-  appliedSnapshot?: unknown;
-}
-
-interface Parts {
-  raw?: string;
-  /** undefined = the vault stays locked. */
-  key?: { masterKey: Buffer; version: number };
-  remoteNodes?: TreeNode[];
-  localNodes?: TreeNode[];
-  metadataFault?: string;
-  embedsShares?: boolean;
-  changeToken?: string;
-  /** entityId -> login/URL JSON, as the SLOT the 0.82 fields feature writes. */
-  remoteFields?: Record<string, string>;
-  localFields?: Record<string, string>;
-  /** Any other secret slot, by name — what the per-slot guard below varies. */
-  remoteExtra?: Record<string, unknown>;
-  /** What `vaultKeys.storedPin` answers. undefined = this machine has no Sync PIN stored. */
-  storedPin?: string;
-  /** The keychain REFUSES to answer — a third state, and not the same as "no PIN stored". */
-  storedPinThrows?: boolean;
-}
-
-function world(): World {
-  const w: World = {
-    mod: undefined as never,
-    writes: [],
-    applied: 0,
-    warnings: [],
-    errors: [],
-    logs: [],
-    prompts: [],
-  };
-  const config = configStub({ autoSync: false });
-  w.mod = loadWithVscode<Sync>('../syncManager', {
-    workspace: {
-      getConfiguration: config.workspace.getConfiguration,
-      onDidChangeConfiguration: (): { dispose(): void } => ({ dispose: (): void => undefined }),
-    },
-    window: {
-      showWarningMessage: (m: string, ...buttons: string[]): Promise<undefined> => {
-        w.warnings.push(m);
-        w.prompts.push({ message: m, buttons });
-        return Promise.resolve(undefined);
-      },
-      showErrorMessage: (m: string): Promise<undefined> => {
-        w.errors.push(m);
-        return Promise.resolve(undefined);
-      },
-      showInformationMessage: (m: string): Promise<undefined> => {
-        w.warnings.push(m);
-        return Promise.resolve(undefined);
-      },
-    },
-    ConfigurationTarget: { Global: 1 },
-  });
-  return w;
-}
-
-function manager(w: World, parts: Parts): InstanceType<Sync['SyncManager']> {
-  const localSnapshot = {
-    ...emptySnapshot(),
-    nodes: parts.localNodes ?? [],
-    fields: parts.localFields ?? {},
-  };
-  const storage = {
-    getAccounts: (): StoredAccount[] => [A],
-    changeToken: (): string => parts.changeToken ?? 'token-1',
-    getSnapshot: (): Promise<unknown> => Promise.resolve(localSnapshot),
-    applySnapshot: (_id: string, snapshot: unknown): Promise<void> => {
-      w.applied += 1;
-      w.appliedSnapshot = snapshot;
-      return Promise.resolve();
-    },
-    get metadataFault(): string | undefined {
-      return parts.metadataFault;
-    },
-  };
-  const keys = {
-    unlock: (): Promise<unknown> => Promise.resolve(parts.key),
-    storedPin: (): Promise<string | undefined> =>
-      parts.storedPinThrows === true
-        ? Promise.reject(new Error('the keychain refused'))
-        : Promise.resolve(parts.storedPin),
-    decrypt: (): Promise<unknown> =>
-      Promise.resolve({
-        ...emptySnapshot(),
-        nodes: parts.remoteNodes ?? [],
-        fields: parts.remoteFields ?? {},
-        ...(parts.remoteExtra ?? {}),
-        version: 1,
-        accountId: 'a1',
-      }),
-    encrypt: (bundle: unknown, _k: unknown, _a: unknown, _s: unknown, wraps?: unknown[]): Promise<string> => {
-      // Recorded rather than ignored: whether a cycle changed the wrap list is the whole
-      // question the corporate-escrow tests below ask, and it is invisible in the ciphertext.
-      w.escrowWraps = wraps === undefined ? w.escrowWraps : [...wraps];
-      return Promise.resolve(JSON.stringify(bundle));
-    },
-  };
-  const transport = {
-    location: '/mnt/nas',
-    kind: 'folder' as const,
-    embedsShares: parts.embedsShares ?? false,
-    readVault: (): Promise<string | undefined> => Promise.resolve(parts.raw),
-    writeVault: (_a: unknown, content: string): Promise<void> => {
-      w.writes.push(content);
-      return Promise.resolve();
-    },
-    listTeam: (): Promise<unknown[]> => Promise.resolve([]),
-    listShares: (): Promise<unknown[]> => Promise.resolve([]),
-    appendShares: (): Promise<void> => Promise.resolve(),
-    removeShare: (): Promise<void> => Promise.resolve(),
-    deleteVault: (): Promise<void> => Promise.resolve(),
-  };
-  const transports = { forAccount: (): unknown => transport };
-  return new w.mod.SyncManager(
-    storage as never,
-    keys as never,
-    transports as never,
-    () => undefined,
-    undefined,
-    undefined,
-    {
-      info: (_s: string, m: string): void => {
-        w.logs.push(m);
-      },
-      error: (_s: string, m: string): void => {
-        w.logs.push(m);
-      },
-    },
-  );
-}
-
-const KEY = { masterKey: Buffer.alloc(32, 1), version: 3 };
 
 test('a LOCKED vault is never pushed over — no key, no cycle', async () => {
   // Otherwise the first machine that cannot unlock would write its local-only state over a
@@ -747,4 +535,98 @@ test('the sync summary says what its numbers count', () => {
     'the pushed count must name its unit, like the pulled one does',
   );
   assert.match(summary(0, 1), /pushed the vault for 1 profile\(s\)/);
+});
+
+/**
+ * D12, owner decision 6: a sync conflict's LOSING protected edit is kept, never dropped in silence.
+ *
+ * <p>Machine A protected the entry; this machine, not yet synced, edited it in the clear. The merge
+ * keeps A's sealed copy (`syncPinRule`), so what this machine had would vanish with `applySnapshot` —
+ * unless it is recorded as this machine's newest kept version FIRST, and the person is told once.</p>
+ */
+test('a protection conflict records this machine\'s losing copy BEFORE the merge is applied, and says so once', async () => {
+  const envelopeValue = await lockSecret('the card', 'a1', '1234');
+  const details = { id: 'x', name: 'orest payoneer', kind: 'credential', isSshEnabled: false };
+  const localNode = { id: 'x', name: 'orest payoneer', type: 'entity', parentId: null, updatedAt: 200, v: { A: 1, B: 2 }, details } as unknown as TreeNode;
+  const remoteNode = {
+    ...localNode,
+    updatedAt: 100,
+    v: { A: 2, B: 1 },
+    pinEpoch: 1,
+    details: { ...details, pinProtected: true },
+  } as unknown as TreeNode;
+  const w = world();
+  const sync = manager(w, {
+    raw: envelope(),
+    key: KEY,
+    localNodes: [localNode],
+    remoteNodes: [remoteNode],
+    localExtra: { passwords: { x: 'what this machine typed' } },
+    remoteExtra: { passwords: { x: envelopeValue } },
+  });
+
+  try {
+    await sync.syncNow();
+  } finally {
+    sync.dispose();
+  }
+
+  assert.deepEqual(w.order, ['record x', 'apply'], 'recorded before it was replaced, or it is gone');
+  const kept = w.recorded.x as { secrets: { password?: string }; name: string };
+  assert.equal(kept.secrets.password, 'what this machine typed');
+  assert.equal(
+    w.warnings.filter((m) => m.startsWith('"orest payoneer" is protected with its own PIN again')).length,
+    1,
+    `told once: ${JSON.stringify(w.warnings)}`,
+  );
+  assert.match(w.warnings.join(' '), /What this machine had is now its newest previous version — open it with the PIN to compare, or Restore This Version…\./);
+});
+
+test('an ordinary sync with no protection disagreement records no revision', async () => {
+  const w = world();
+  const sync = manager(w, { raw: envelope(), key: KEY, localNodes: [node('n1', 'local')], remoteNodes: [node('n2', 'remote')] });
+
+  try {
+    await sync.syncNow();
+  } finally {
+    sync.dispose();
+  }
+
+  assert.deepEqual(w.order.filter((step) => step.startsWith('record')), []);
+});
+
+/**
+ * The reviewer's case end to end (2026-09-30): two machines edited a protected entry concurrently, and
+ * the newer one runs a build from before the `seconds` kind, so the vault it pushed has no `seconds` map
+ * at all. The cycle must not read that absence as "the remote has none" — the vault reader and the merge
+ * both kept it apart from an empty map — and this machine's losing sealed password is kept, and said.
+ */
+test('a vault from a build with no `seconds` map keeps this machine\'s sealed second value, and the losing sealed edit is recorded first', async () => {
+  const mine = await lockSecret('the card', 'a1', '1234');
+  const theirs = await lockSecret('the card, changed there', 'a1', '9999');
+  const details = { id: 'x', name: 'orest payoneer', kind: 'credential', isSshEnabled: false, pinProtected: true };
+  const localNode = { id: 'x', name: 'orest payoneer', type: 'entity', parentId: null, updatedAt: 100, v: { A: 2, B: 1 }, pinEpoch: 1, details } as unknown as TreeNode;
+  const remoteNode = { ...localNode, updatedAt: 200, v: { A: 1, B: 2 } } as unknown as TreeNode;
+  const w = world();
+  const sync = manager(w, {
+    raw: envelope(),
+    key: KEY,
+    localNodes: [localNode],
+    remoteNodes: [remoteNode],
+    localExtra: { passwords: { x: mine }, seconds: { x: mine } },
+    remoteExtra: { passwords: { x: theirs }, seconds: undefined },
+  });
+
+  try {
+    await sync.syncNow();
+  } finally {
+    sync.dispose();
+  }
+
+  const applied = w.appliedSnapshot as { passwords: Record<string, string>; seconds?: Record<string, string> } | undefined;
+  assert.equal(applied?.passwords.x, theirs, 'the newer node still wins');
+  assert.equal(applied?.seconds?.x, mine, 'the only copy of the second value survives the cycle');
+  assert.deepEqual(w.order, ['record x', 'apply'], 'the losing sealed edit is recorded before it is replaced');
+  assert.equal((w.recorded.x as { secrets: { password?: string } }).secrets.password, mine);
+  assert.equal(w.warnings.filter((m) => m.startsWith('"orest payoneer" was changed under its PIN on another machine')).length, 1, `told once: ${JSON.stringify(w.warnings)}`);
 });

@@ -1102,6 +1102,11 @@
         "category": "CredsForDevs"
       },
       {
+        "command": "credSshManager.restoreRevision",
+        "title": "Restore This Version…",
+        "category": "CredsForDevs"
+      },
+      {
         "command": "credSshManager.protectFolder",
         "title": "Protect Every Entry with a PIN…",
         "category": "CredsForDevs"
@@ -1207,6 +1212,10 @@
       "commandPalette": [
         {
           "command": "credSshManager.openSiteInBrowser",
+          "when": "false"
+        },
+        {
+          "command": "credSshManager.restoreRevision",
           "when": "false"
         },
         {
@@ -1598,6 +1607,11 @@
           "command": "credSshManager.showCommand",
           "when": "view == credSshManagerView && viewItem =~ /:cmd/",
           "group": "2_actions@2"
+        },
+        {
+          "command": "credSshManager.restoreRevision",
+          "when": "view == credSshManagerView && viewItem =~ /^revision/",
+          "group": "3_manage@0"
         },
         {
           "command": "credSshManager.cloneNode",

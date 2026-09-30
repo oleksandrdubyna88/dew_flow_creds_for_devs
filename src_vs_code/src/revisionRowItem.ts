@@ -28,7 +28,7 @@ export function revisionRowItem(
   item.tooltip =
     head === undefined
       ? undefined
-      : `Replaced ${new Date(head.at).toLocaleString()} — click to see what it was. Clone it to bring it back as a new entry.`;
+      : `Replaced ${new Date(head.at).toLocaleString()} — click to see what it was. Right-click → Restore This Version… to bring it back.`;
   // A single click opens it: unlike an entity, a version has no other single-click job.
   item.command = {
     command: 'credSshManager.revisionClicked',

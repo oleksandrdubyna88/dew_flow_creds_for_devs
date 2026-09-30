@@ -71,7 +71,12 @@ export function revisionHead(revision: Revision): RevisionHead {
   return head;
 }
 
-const SMALL_FIELDS = ['password', 'privateKey', 'vpnConfig', 'dbConnection', 'notes', 'totp', 'config', 'fields', 'payment', 'second'] as const;
+/**
+ * The small secret fields a revision keeps — the source of truth `entitySlots` is asserted against
+ * (`slotTable.test.ts`), so a slot without a revision field, or a field without a slot, is a red
+ * test rather than a value history silently drops.
+ */
+export const SMALL_FIELDS = ['password', 'privateKey', 'vpnConfig', 'dbConnection', 'notes', 'totp', 'config', 'fields', 'payment', 'second'] as const;
 
 /** A copy of the list with `revision` newest-first, capped, attachments stripped. */
 export function pushRevision(list: readonly Revision[], revision: Revision): Revision[] {

@@ -1,14 +1,37 @@
 # PLAN — editing a PIN-protected entry leaves its new secret in the clear
 
-> Status: **plan only, nothing implemented yet, 2026-09-12.** Scope: `src_vs_code/src` —
+> Status: **IMPLEMENTED, 2026-09-29.** Superseded by, and built as phase P3 of,
+> [PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise.md) (boundary table in §0 below).
+> Deviations: the premise of §1 step 1 was false (Edit never asked for the PIN), and §4 step 3's "write, then
+> `protectEntity`" was replaced by seal-before-write (R3); the rest are in that plan's §15, its open tail in
+> §16. Scope: `src_vs_code/src` —
 > `entityEditCommands.ts`, `entityPin.ts`, `pinPrompt.ts`/`pinGate.ts` (how the PIN reaches the save),
 > and the tests. Extension only; no HTTP contract.
 >
 > Found by the automated reviewer on the pull request for
-> [PLAN_entry_pin_kind_pick_env_feedback.md](../research/PLAN_entry_pin_kind_pick_env_feedback.md)
+> [PLAN_entry_pin_kind_pick_env_feedback.md](PLAN_entry_pin_kind_pick_env_feedback.md)
 > (CWE-200, rated Major), and independently by the agent that implemented it. Not introduced there —
 > it predates that work — but that work is what made it visible, and it is why this plan exists
 > rather than a line in a summary.
+
+## 0. Superseded — where each part is built now (2026-09-29)
+
+The 2026-09-29 audit found that **§1 step 1 below is false**: `editNode` (`entityEditCommands.ts:34-163`)
+never calls `admitEntry`, so the form is NOT opened with the PIN — it opens over envelopes, shows an empty
+card, and Save **deletes** the locked payment, second values and login/URL and drops the PIN mark. The
+plaintext-on-save defect this plan describes is real and is one of eighteen; all of them are built by
+[PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise.md). This document is kept as the
+record of the design question it asked, and is promoted together with that plan.
+
+| Item of this plan | Built by | How it changed |
+|---|---|---|
+| §3 where the PIN comes from at save time | the new plan §5.2 | Option (a) taken — as the `pinSession` grant **re-read at Save**, never a PIN captured when the form opened; a missing grant asks again, and a decline keeps the form open. |
+| §4 step 3 "`protectEntity` after `applyAdditions`" | the new plan §4 R3, §5.2 | **Replaced**: values are sealed in memory BEFORE they are written (`sealedWriter`), so plaintext never reaches the keychain; `protectEntity` stays only as an idempotent sweep. |
+| §3 / §4 step 4 the failure rule | the new plan §5.2 step 7 | Kept: a part-way failure is surfaced; by construction no slot is left in the clear. |
+| §4 step 5 share-accept and import | the new plan §5.6 | Share *Update it* is the same defect and is fixed; import writes new entries only and is recorded. |
+| §5 `envApply`'s mark-based refusal | the new plan §5.2 step 6 (D5) | Kept, and the edit path now hands it the MARKED details, which it did not. |
+
+Nothing in this plan is built anywhere else.
 
 ## 1. The symptom
 

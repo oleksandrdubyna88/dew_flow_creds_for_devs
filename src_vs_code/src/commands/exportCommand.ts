@@ -7,7 +7,10 @@ import { StorageManager } from '../storageManager';
 import { TreeNode } from '../types';
 import { admitLeaving, isNotForExport } from '../exportScope';
 import { VaultKeys } from '../vaultKeys';
-import { buildExternalBundle } from '../externalBundle';
+import { ExternalSecrets, buildExternalBundle } from '../externalBundle';
+import { exportOpener, exportedNode } from '../exportSecrets';
+import { firstLockedStored } from '../pinAdmission';
+import { admitEntry } from '../pinPrompt';
 import { exportSensitiveNote, paymentFieldsInExport } from '../paymentRedaction';
 import { resolveBulkTargets } from '../commandTargets';
 import { encryptJson } from '../cryptoUtils';
@@ -124,26 +127,102 @@ async function writeExport(
 ): Promise<void> {
   const accountId = targets[0].accountId;
   const exportName = targets.length === 1 ? targets[0].node.name : `${targets.length}-items`;
-  const secrets = await host.storage.exportSecretsFor(
-    accountId,
-    picked.filter((n) => n.type === 'entity').map((n) => n.id),
-  );
+  const collected = await collectForExport(host.storage, accountId, picked);
+  if (collected === undefined) {
+    return;
+  }
+  // The copy claims no PIN: its values are opened, and the PIN is this person's (entry-PIN plan, D8).
+  const bundle = buildExternalBundle(picked.map(exportedNode), collected.secrets);
+  const file = await chooseForm(bundle, Object.keys(collected.secrets).length, exportName, collected.notes);
+  if (file !== undefined) {
+    await save(host.log, file, exportName, picked.length);
+  }
+}
+
+/** What the form says about the file before it is written — the card's values and the PIN-protected entries. */
+interface ExportNotes {
+  readonly card: string;
+  readonly protectedCount: number;
+}
+
+/**
+ * What goes into the file, OPENED — after the door of every protected entry (entry-PIN plan, D8) —
+ * and what the form says about it. Nothing, having said why, when a door stopped it or a value did
+ * not open.
+ */
+async function collectForExport(
+  storage: StorageManager,
+  accountId: string,
+  picked: readonly TreeNode[],
+): Promise<{ secrets: Record<string, ExternalSecrets>; notes: ExportNotes } | undefined> {
+  const entities = picked.filter((n) => n.type === 'entity');
+  const protectedCount = await admitForExport(storage, accountId, entities);
+  const secrets = protectedCount === undefined ? undefined : await openedSecrets(storage, accountId, entities);
+  if (protectedCount === undefined || secrets === undefined) {
+    return undefined;
+  }
   // An export carries what a SHARE removes: a card's CVV and PIN, and since #52 every second value
   // too — which belongs to credentials as well as to cards. That asymmetry is deliberate — an export
   // is a full copy the person made once — and it is exactly the thing somebody who just watched a
   // share leave the CVV behind would assume applies here too. So it is said, when there is something
   // to say. Counted, never printed: a CVV must not reach a notification, which several UI layers log.
-  // The sentence lives beside the rule it describes, not here.
-  const cardNote = exportSensitiveNote(paymentFieldsInExport(Object.values(secrets)));
-  const file = await chooseForm(
-    buildExternalBundle(picked, secrets),
-    Object.keys(secrets).length,
-    exportName,
-    cardNote,
-  );
-  if (file !== undefined) {
-    await save(host.log, file, exportName, picked.length);
+  // The sentence lives beside the rule it describes, not here. Counted over the OPENED records, so a
+  // protected card's CVV is counted — as an envelope it counted as nothing.
+  return { secrets, notes: { card: exportSensitiveNote(paymentFieldsInExport(Object.values(secrets))), protectedCount } };
+}
+
+/**
+ * Every picked entry with a sealed value, asked for its PIN once each (the purpose: "export it") —
+ * the precedent the share already set. A decline, a wrong PIN or a damaged value on ANY of them ends
+ * the whole export with nothing written, naming the entry. Answers how many were protected.
+ */
+async function admitForExport(storage: StorageManager, accountId: string, entities: readonly TreeNode[]): Promise<number | undefined> {
+  const guarded = await lockedAmong(storage, accountId, entities);
+  for (const node of guarded) {
+    if ((await admitEntry(storage, accountId, node.id, node.name, 'export it')) === undefined) {
+      warn(`"${node.name}" is protected with its own PIN, so nothing was exported. Its values have to be unwrapped here before they can leave.`);
+      return undefined;
+    }
   }
+  return guarded.length;
+}
+
+/** The entries holding a sealed value — the wrap decides, as the door does, never the mark alone. */
+async function lockedAmong(storage: StorageManager, accountId: string, entities: readonly TreeNode[]): Promise<TreeNode[]> {
+  const guarded: TreeNode[] = [];
+  for (const node of entities) {
+    if ((await firstLockedStored(storage, accountId, node.id)) !== undefined) {
+      guarded.push(node);
+    }
+  }
+  return guarded;
+}
+
+/** The secrets, opened with the grants the doors left — or nothing, having said "Export failed". */
+async function openedSecrets(
+  storage: StorageManager,
+  accountId: string,
+  entities: readonly TreeNode[],
+): Promise<Record<string, ExternalSecrets> | undefined> {
+  const names = new Map(entities.map((n) => [n.id, n.name]));
+  try {
+    return await storage.exportSecretsFor(accountId, entities.map((n) => n.id), exportOpener(accountId, (id) => names.get(id) ?? id));
+  } catch (err) {
+    void vscode.window.showErrorMessage(`Export failed: ${describeError(err)}. Nothing was written.`);
+    return undefined;
+  }
+}
+
+/**
+ * What the form adds when protected entries go in: their values leave unwrapped, and `protection`
+ * says what guards them instead. `''` when none does.
+ */
+function pinNote(count: number, protection: string): string {
+  const subject =
+    count === 1
+      ? ' 1 of these entries is protected with its own PIN; its values go'
+      : ` ${count} of these entries are protected with their own PIN; their values go`;
+  return count === 0 ? '' : `${subject} into the file unwrapped, ${protection}.`;
 }
 
 /** The file this export becomes: protected under a password, or plain JSON the person insisted on. */
@@ -151,7 +230,7 @@ async function chooseForm(
   bundle: unknown,
   entityCount: number,
   exportName: string,
-  cardNote: string,
+  notes: ExportNotes,
 ): Promise<ExportFile | undefined> {
   const mode = await vscode.window.showQuickPick(
     [
@@ -166,22 +245,27 @@ async function chooseForm(
         plain: true,
       },
     ],
-    { title: `Export "${exportName}" for someone outside the organisation.${cardNote}`, ignoreFocusOut: true },
+    {
+      title: `Export "${exportName}" for someone outside the organisation.${notes.card}${pinNote(notes.protectedCount, "protected only by the file's password")}`,
+      ignoreFocusOut: true,
+    },
   );
   if (mode === undefined) {
     return undefined;
   }
-  return mode.plain ? plainForm(bundle, entityCount, cardNote) : sealedForm(bundle);
+  return mode.plain ? plainForm(bundle, entityCount, notes) : sealedForm(bundle);
 }
 
 /** Plain JSON, behind a modal that says exactly what it will contain. */
 async function plainForm(
   bundle: unknown,
   entityCount: number,
-  cardNote: string,
+  notes: ExportNotes,
 ): Promise<ExportFile | undefined> {
+  // A plain file has no password, so the PIN note says what does guard those values: nothing.
+  const pins = pinNote(notes.protectedCount, 'readable by anyone who has the file');
   const sure = await vscode.window.showWarningMessage(
-    `The plain JSON file will contain ${entityCount} entities' secrets readable by ANYONE.${cardNote} Continue?`,
+    `The plain JSON file will contain ${entityCount} entities' secrets readable by ANYONE.${notes.card}${pins} Continue?`,
     { modal: true },
     'Write plain JSON',
   );

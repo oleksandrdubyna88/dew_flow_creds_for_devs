@@ -1,9 +1,12 @@
 import * as vscode from 'vscode';
 import { StorageManager } from './storageManager';
 import { TreeNode } from './types';
-import { isProtected, pinOpens, protectEntity } from './entityPin';
+import { isProtected, protectEntity, siblingsOpened } from './entityPin';
+import { protectHistory } from './historyPin';
+import { protectionDecision } from './syncPinRule';
 import { pinValidator } from './pinInput';
-import { newPin } from './pinPrompt';
+import { newPin, refusedWhileCooling } from './pinPrompt';
+import { grantPin } from './pinSession';
 import { entriesUnder } from './pinFolderPlan';
 
 /**
@@ -41,19 +44,69 @@ export type CreatePin =
  * legitimately hold entries under two PINs and "it opened at least one" is not something a person
  * can act on.</p>
  */
-export async function pinForNewEntry(
+export function pinForNewEntry(
   storage: StorageManager,
   accountId: string,
   parentId: string | null,
 ): Promise<CreatePin> {
-  const siblings = await protectedSiblings(storage, accountId, parentId);
-  if (siblings.length > 0) {
-    return askAndCheck(siblings, storage, accountId);
-  }
   // No sibling to check against, but the folder may still have been told to ask — the empty-folder
   // case. There the PIN is typed TWICE, which is the only check available and the same one every
   // other new PIN in this product gets.
-  return asksAnyway(storage, accountId, parentId) ? firstPinHere() : { kind: 'none' };
+  return pinCheckedAgainstFolder(storage, accountId, parentId, NEW_ENTRY, () =>
+    asksAnyway(storage, accountId, parentId) ? firstPinHere() : Promise.resolve(NONE),
+  );
+}
+
+const NONE: CreatePin = { kind: 'none' };
+const NEW_ENTRY = 'The new entry';
+
+/**
+ * The PIN an entry with nothing sealed yet goes under, in a folder that may hold protected entries:
+ * typed once and CHECKED against them when there are any — the count said and agreed to — or `alone()`
+ * when there are none. `entry` is how the agreement names the entry being sealed.
+ *
+ * <p>One road for the two entries that have no PIN of their own to check a typed one against: a new
+ * entry created here, and an entry protected while it was EMPTY receiving its first value
+ * (`firstPinFor`).</p>
+ */
+async function pinCheckedAgainstFolder(
+  storage: StorageManager,
+  accountId: string,
+  parentId: string | null,
+  entry: string,
+  alone: () => Promise<CreatePin>,
+): Promise<CreatePin> {
+  const siblings = await protectedSiblings(storage, accountId, parentId);
+  if (siblings.length === 0) {
+    return alone();
+  }
+  return refusedWhileCooling(accountId, siblings) ? { kind: 'cancelled' } : askAndCheck(siblings, storage, accountId, entry);
+}
+
+/**
+ * The FIRST PIN of an entry protected while it held nothing (review of 2026-09-30): *Protect with a
+ * PIN…* on an empty entry has nothing to seal and writes the mark alone, so the PIN typed there is
+ * stored nowhere and nothing can check it. When a value is first saved into the entry, the person
+ * chooses the PIN it is sealed under — checked against the protected entries of its folder when it
+ * has any, typed twice when it has none — and the PIN is granted to this window like any PIN that
+ * opened the entry. `undefined` is a decline, a mismatch, or a sibling check not agreed to.
+ */
+export async function firstPinFor(
+  storage: StorageManager,
+  accountId: string,
+  entry: { readonly id: string; readonly name: string; readonly parentId?: string | null },
+): Promise<string | undefined> {
+  const settled = await pinCheckedAgainstFolder(storage, accountId, entry.parentId ?? null, `"${entry.name}"`, () => typedTwice(entry.name));
+  if (settled.kind !== 'pin') {
+    return undefined;
+  }
+  grantPin(accountId, entry.id, settled.pin);
+  return settled.pin;
+}
+
+async function typedTwice(name: string): Promise<CreatePin> {
+  const typed = await newPin(name, 'entry', FIRST_VALUE);
+  return typed === undefined ? { kind: 'cancelled' } : { kind: 'pin', pin: typed };
 }
 
 /** Does this folder, or any folder above it, carry the preference? */
@@ -106,6 +159,7 @@ async function askAndCheck(
   siblings: readonly TreeNode[],
   storage: StorageManager,
   accountId: string,
+  entry: string,
 ): Promise<CreatePin> {
   const typed = await vscode.window.showInputBox({
     title: 'This folder’s entries are protected',
@@ -118,7 +172,7 @@ async function askAndCheck(
   if (typed === undefined || typed.length === 0) {
     return { kind: 'cancelled' };
   }
-  return (await agreed(typed, siblings, storage, accountId)) ? { kind: 'pin', pin: typed } : { kind: 'cancelled' };
+  return (await agreed(typed, siblings, storage, accountId, entry)) ? { kind: 'pin', pin: typed } : { kind: 'cancelled' };
 }
 
 /**
@@ -153,14 +207,12 @@ async function agreed(
   siblings: readonly TreeNode[],
   storage: StorageManager,
   accountId: string,
+  entry: string,
 ): Promise<boolean> {
-  let opened = 0;
-  for (const node of siblings) {
-    opened += (await pinOpens(storage, accountId, node.id, typed)) ? 1 : 0;
-  }
+  const opened = await siblingsOpened(storage, accountId, siblings.map((node) => node.id), typed);
   const answer = await vscode.window.showWarningMessage(
     opened === 0
-      ? `This PIN opens none of the ${siblings.length} protected entries in this folder. The new entry `
+      ? `This PIN opens none of the ${siblings.length} protected entries in this folder. ${entry} `
         + 'will be the first under it, and the folder will hold entries under two different PINs.'
       : `This PIN opens ${opened} of the ${siblings.length} protected entries in this folder.`,
     { modal: true },
@@ -184,15 +236,24 @@ export async function applyCreatePin(
     return;
   }
   await protectEntity(storage, accountId, entityId, settled.pin);
+  // A new entry keeps no versions yet, so today this seals nothing; it runs anyway, so creating with
+  // a PIN and Protect take the same road and cannot come to disagree about the history.
+  await protectHistory(storage, accountId, entityId, settled.pin);
   // The mark last, for the reason `pinCommands` gives: a mark written first and then interrupted
   // would hide the entry from every agent surface while its values were still readable.
-  await storage.updateDetailsFields(accountId, node.id, { pinProtected: true });
+  // And it is a protection decision like Protect's — the mark and `pinEpoch` + 1 in one write (§5.9).
+  await storage.updateNodeFields(accountId, node.id, protectionDecision(true));
 }
 
 const PROMPT =
   'Entries in this folder are protected with a PIN, so this one will be too. Type the PIN the others '
   + 'use — it is stored nowhere, so it has to be typed, and it will be checked against them before '
   + 'anything is written.';
+
+const FIRST_VALUE =
+  'This entry was protected with a PIN while it held nothing, so nothing has checked that PIN yet — the '
+  + 'value you are saving is the first it will seal. Type the PIN it goes under: it is stored nowhere, so it '
+  + 'is typed twice.';
 
 const FIRST_HERE =
   'This folder asks for a PIN on every entry created in it, and nothing here is protected yet — so '

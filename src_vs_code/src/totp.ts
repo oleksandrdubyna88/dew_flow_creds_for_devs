@@ -210,11 +210,17 @@ function pairOf(
  * <p>An unsalted hash of a seed is a stable identifier for a secret — the same twelve characters on
  * every machine, for as long as the seed exists. Salting it per process keeps the one property the
  * pair needs (it changes when the seed changes) and drops the one nobody asked for.</p>
+ *
+ * <p>Derived with HKDF-SHA256 (RFC 5869) since 2026-09-30, where it was an HMAC used as a hash: a
+ * one-time-code seed is KEY material — random, high-entropy — and HKDF is the construction made for
+ * deriving from a key, with this salt and a label that says what the output is for. Same salt, same
+ * per-process lifetime, same twelve hex characters. CodeQL's password-hash rule had read the HMAC as
+ * storing a password, through the shared PIN opener; nothing here is stored or compared.</p>
  */
 const PAIR_SALT = crypto.randomBytes(16);
 
 function pairIdOf(uri: string): string {
-  return crypto.createHmac('sha256', PAIR_SALT).update(uri).digest('hex').slice(0, 12);
+  return Buffer.from(crypto.hkdfSync('sha256', uri, PAIR_SALT, 'creds-for-devs totp pair id', 6)).toString('hex');
 }
 
 /** What a person compares with their authenticator app's settings. */

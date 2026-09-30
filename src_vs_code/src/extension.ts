@@ -103,7 +103,7 @@ import { runVpn } from './vpnRun';
 import { nodeAt } from './entityViewerCommands';
 import { openRevisionViewer } from './entityViewerCommands';
 import { applyInstallChoice } from './installFlow';
-import { collectConfigHolders } from './configCommands';
+import { collectConfigHolders, configBodyReading } from './configCommands';
 import { onPath } from './installFlow';
 import { setEnvCollection } from './envCollectionRef';
 import { DoorsFor } from './entityEditCommands';
@@ -849,7 +849,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (element?.revision === undefined || element.node.details === undefined) {
       return;
     }
-    openRevisionViewer(element.node, element.revision);
+    await openRevisionViewer(element.accountId, element.node, element.revision, storage);
   });
 
   /**
@@ -1023,7 +1023,7 @@ export function maskingBanner(secrets: readonly { value: string; label: string }
 function configRouteSources(storage: StorageManager): ConfigRouteSources {
   return {
     holders: () => collectConfigHolders(storage),
-    body: (holder) => Promise.resolve(storage.getConfigBody(holder.accountId, holder.entityId)),
+    body: (holder) => configBodyReading(storage, holder),
     // No audit sink here: the server supplies its own, so every door writes through one channel.
   };
 }

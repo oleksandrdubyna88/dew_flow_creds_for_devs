@@ -20,6 +20,7 @@ import { capturedRun, hostShell, osMismatch } from './hostShell';
 import { isCommandTrusted } from './commandTrust';
 import { lockToOwner, materializedKeyPath } from './materializedKeys';
 import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from './dbCliLauncher';
+import { pinFieldRefusal } from './pinGate';
 
 /**
  * The broker's non-SSH capabilities: a stored script, a stored terminal command, and a
@@ -303,6 +304,12 @@ export function dbQueryAction(
       const connection = await deps.storage.getDbConnection(ctx.accountId, ctx.entityId);
       if (connection === undefined || connection.length === 0) {
         return fail('no_credential', `"${ctx.entityName}" has no stored connection string.`);
+      }
+      // Rule R2 of the entry-PIN plan: nothing automatic gets a sealed value, and the refusal is
+      // SAID. Wrap first, mark second — an agent reaches this entry only while its mark is lost.
+      const withheld = pinFieldRefusal(entity, connection);
+      if (withheld !== '') {
+        return fail('no_credential', withheld);
       }
       if (dbType === 'postgres' && !isSafePostgresUri(connection)) {
         return fail(

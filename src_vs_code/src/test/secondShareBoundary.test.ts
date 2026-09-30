@@ -40,7 +40,6 @@ function vault(): Record<string, unknown> {
     getFieldsRaw: nothing,
     getPaymentRaw: nothing,
     getSecondRaw: () => Promise.resolve(serializeSecondValues(HELD)),
-    getSecond: () => Promise.resolve(HELD),
   };
 }
 
@@ -86,7 +85,7 @@ test('the sender is TOLD, by name, what was not sent', async () => {
 test('an entry with nothing withheld produces no sentence at all', async () => {
   const empty = {
     getPaymentRaw: (): Promise<undefined> => Promise.resolve(undefined),
-    getSecond: (): Promise<SecondValues> => Promise.resolve({}),
+    getSecondRaw: (): Promise<undefined> => Promise.resolve(undefined),
   };
 
   assert.equal(await withheldNoteFor(empty, 'a1', [{ node: { id: 'e1' } }]), '');
@@ -175,4 +174,14 @@ test('the withheld names are ordered as a person reads, not by code unit', () =>
     sentence,
     /Second account number, Second card number, Second CVV, Second IBAN, Second password, Second PIN/,
   );
+});
+
+test('a share payload carries no protection-decision count — the sender\'s decisions are not the recipient\'s', async () => {
+  const mod = loadWithVscode<typeof import('../sharePayloadBuild')>('../sharePayloadBuild', {});
+  const node = { id: 'e1', name: 'prod-db', type: 'entity', details: DETAILS, pinEpoch: 5 } as never;
+
+  const payload = await mod.buildSharePayload(vault() as never, 'a1', node, false);
+
+  assert.equal(payload.node.pinEpoch, undefined);
+  assert.equal(payload.node.name, 'prod-db', 'the check is looking at the node that travels');
 });

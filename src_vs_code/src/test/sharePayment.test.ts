@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { parsePaymentFields } from '../paymentFields';
 import { typedPin } from '../sharePin';
 import type { TreeNode } from '../types';
 import {
@@ -80,7 +81,7 @@ test('the sender still has everything after sharing', async () => {
 
   await loaded.buildSharePayload(w.storage, RECIPIENT.accountId, node, false);
 
-  const mine = await w.storage.getPayment(RECIPIENT.accountId, node.id);
+  const mine = parsePaymentFields(await w.storage.getPaymentRaw(RECIPIENT.accountId, node.id));
   assert.equal(mine.cvv, '123', 'sharing a card must not empty my own');
   assert.equal(mine.pin, '4321');
 });
@@ -112,7 +113,7 @@ test('an accepted card arrives with its number, and with no CVV to arrive with',
   await w.inbox.acceptOne(share);
 
   const nodes = w.storage.getNodes(RECIPIENT.accountId);
-  const arrived = await w.storage.getPayment(RECIPIENT.accountId, nodes[0].id);
+  const arrived = parsePaymentFields(await w.storage.getPaymentRaw(RECIPIENT.accountId, nodes[0].id));
   assert.equal(arrived.number, '4111111111111111', 'a card that arrived without its number is not a card');
   assert.equal(arrived.expiry, '12/29');
   assert.equal(arrived.cvv, undefined);
@@ -199,7 +200,7 @@ test('an unreadable payment payload KEEPS the share, so accepting again on a new
 
   const nodes = w.storage.getNodes(RECIPIENT.accountId);
   assert.equal(nodes.length, 1, 'the entry still arrives — the readable half is theirs');
-  assert.deepEqual(await w.storage.getPayment(RECIPIENT.accountId, nodes[0].id), {}, 'nothing unreadable is stored');
+  assert.deepEqual(parsePaymentFields(await w.storage.getPaymentRaw(RECIPIENT.accountId, nodes[0].id)), {}, 'nothing unreadable is stored');
   assert.deepEqual(w.removed, [], 'and the share is KEPT, so it can be accepted again after an update');
 });
 

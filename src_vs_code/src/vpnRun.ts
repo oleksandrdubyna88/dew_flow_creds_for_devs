@@ -23,6 +23,7 @@ import { offerToInstall } from './toolEnsure';
 import { EntityMetadata, VpnType } from './types';
 import { saveTextAs } from './saveTextAs';
 import { pinnedRefusal, sendPinned } from './pinnedTerminal';
+import { clickedSecret, outsidePinNote } from './pinClick';
 
 /**
  * Bring a VPN tunnel up or down.
@@ -207,12 +208,15 @@ export async function saveVpnConfigToFile(
   details: EntityMetadata,
   storage: StorageManager,
 ): Promise<void> {
-  const content = await storage.getVpnConfig(accountId, details.id);
-  if (content === undefined) {
+  const opened = await clickedSecret(storage, accountId, details, (s, a, e) => s.getVpnConfig(a, e), 'save its VPN configuration');
+  if (opened.kind !== 'open') {
+    return;
+  }
+  if (opened.value === undefined) {
     void vscode.window.showWarningMessage(
       `"${details.name}" has no stored VPN config — open Edit and upload the file first.`,
     );
     return;
   }
-  await saveTextAs('Save VPN config', details.vpnConfigFileName ?? `${details.name}.ovpn`, content);
+  await saveTextAs('Save VPN config', details.vpnConfigFileName ?? `${details.name}.ovpn`, opened.value, outsidePinNote(opened));
 }

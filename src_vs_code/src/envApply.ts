@@ -9,7 +9,8 @@ import { EnvApplyResult, EnvWithheld } from './envApplyNotice';
 import { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
 import { FieldReading, readingOf, valueOf, withheld } from './fieldReading';
-import { automaticPinRefusal, pinRefusalFor } from './pinGate';
+import { pinFieldRefusal } from './pinGate';
+import { isLockedSecret } from './secretEnvelope';
 
 /**
  * Writing bound secret fields into VS Code's environment variable collection — the
@@ -68,24 +69,13 @@ export function automaticFieldRefusal(
   stored: string | undefined,
 ): string {
   const woven = automaticRefusal(details, field);
-  if (woven !== '') {
-    return woven;
-  }
-
-  // The WRAP is the truth and is asked first — a mark can be absent from an entry whose values are
-  // locked, which is why nothing here has ever keyed on it alone. The MARK is asked as well because
-  // it catches a state the wrap cannot: an entry marked protected whose stored value is, at this
-  // instant, plaintext. That state is reachable today — the EDIT path writes a newly typed secret
-  // and never re-seals it (found by the automated reviewer; its own plan) — and without this an edit
-  // would hand a protected entry's new password to every terminal opened afterwards. Either signal
-  // refuses: that cannot under-refuse, it can only refuse something the wrap would have allowed.
-  const locked = automaticPinRefusal(stored, details.name);
-  if (locked !== '') {
-    return locked;
-  }
-
-  // The same sentence the wrap earns, because it is the same fact about the same entry.
-  return details.pinProtected === true ? pinRefusalFor(details.name) : '';
+  // The PIN's answer — the WRAP first, the MARK second, one sentence for both — is
+  // `pinGate.pinFieldRefusal` since the entry-PIN plan (§5.4), so that the `creds://` reads and the
+  // SSH broker's key path ask the same question this road does. The mark half was born here: an
+  // entry marked protected whose stored value was, at that instant, plaintext, because the EDIT path
+  // wrote a newly typed secret and never re-sealed it — and without the mark an edit would have
+  // handed a protected entry's new password to every terminal opened afterwards.
+  return woven !== '' ? woven : pinFieldRefusal(details, stored);
 }
 
 /**
@@ -108,6 +98,19 @@ export async function bindableFieldReading(
   return refusal === '' ? readingOf(stored) : withheld(refusal);
 }
 
+/**
+ * The password inside a stored connection string — or the ENVELOPE itself when the string is sealed,
+ * so the refusal sees what is stored. Parsed first, an envelope is no password at all, and a sealed
+ * entry whose mark was lost read "absent" instead of withheld (rule R2; found by the per-function
+ * reader scan, review of 2026-09-30).
+ */
+function dbPasswordOf(conn: string | undefined): string | undefined {
+  if (conn === undefined || isLockedSecret(conn)) {
+    return conn;
+  }
+  return parseDbConnectionString(conn).password;
+}
+
 // eslint-disable-next-line complexity
 async function storedField(
   storage: StorageManager,
@@ -124,10 +127,8 @@ async function storedField(
       return details.publicKey;
     case 'dbConnection':
       return storage.getDbConnection(accountId, details.id);
-    case 'dbPassword': {
-      const conn = await storage.getDbConnection(accountId, details.id);
-      return conn === undefined ? undefined : parseDbConnectionString(conn).password;
-    }
+    case 'dbPassword':
+      return dbPasswordOf(await storage.getDbConnection(accountId, details.id));
   }
 }
 

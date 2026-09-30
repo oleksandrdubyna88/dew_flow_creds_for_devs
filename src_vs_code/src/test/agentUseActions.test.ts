@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { commandFingerprint } from '../commandTrust';
+import { lockSecret } from '../secretEnvelope';
 import {
   dbQueryAction,
   scriptRunAction,
@@ -55,6 +56,26 @@ test('dbQueryAction refuses a postgres connection string that is not a plain URL
 
   assert.equal(code(result), 'not_supported');
   assert.match(message(result), /postgres:\/\/ URL/);
+});
+
+test('dbQueryAction refuses a PIN-protected connection with the PIN sentence — the database client is never handed the envelope', async () => {
+  // Found by pinReaderBoundary (entry-PIN plan §7): an AUTOMATIC reader with no refusal primitive.
+  // An agent reaches the entry only while it is unmarked (a lost mark, before the next door heals it),
+  // and then the sealed envelope went on as the connection string: psql refused it as "not a plain
+  // postgres:// URL" — a false reason — and mysql would have been launched with it.
+  const sealed = await lockSecret('mysql://u:p@h:3306/d', 'acct-1', 'correct-horse-battery');
+  const deps = fakeDeps({
+    storage: {
+      getNode: () => ({ details: { id: 'e1', name: 'prod-db', dbType: 'mysql' } }),
+      getDbConnection: async () => sealed,
+    },
+    onPath: () => true,
+  });
+
+  const result = await dbQueryAction(deps).run(ctx, { query: 'select 1' });
+
+  assert.equal(code(result), 'no_credential');
+  assert.match(message(result), /"prod-db" is protected with its own PIN, so it cannot be used automatically/);
 });
 
 test('dbQueryAction refuses mongodb — its shell could read the password back out', async () => {

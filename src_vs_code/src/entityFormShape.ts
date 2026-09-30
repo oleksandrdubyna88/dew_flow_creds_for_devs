@@ -113,6 +113,21 @@ export interface EntityFormOptions {
   hasStoredTotp: boolean;
   /** …how it is configured (`GitHub · 6 digits · SHA1 · every 30 s`), so it can be compared with the app. */
   storedTotpDescription?: string;
+  /**
+   * The caller's own LAST gate before a save settles (entry-PIN plan §5.2).
+   *
+   * <p>A protected entry's Save re-checks its PIN through this: the grant this window holds is
+   * re-read and, when it no longer opens the entry (the vault locked, the window reloaded), the
+   * person is asked again. Answering `false` keeps the form open with everything typed — the
+   * contract `confirmInvalidSave` already has — and nothing is written. It runs after every other
+   * gate, so nobody is asked for a PIN and then told their config does not parse. It only GATES;
+   * the save fetches the PIN it seals with for itself (`editPrefill.pinForSave`).</p>
+   *
+   * <p>It is handed what the save WOULD write, because one gate depends on it: an entry protected
+   * while it held nothing asks for its first PIN only when the save stores a value into it
+   * (`applyFormSecrets.addsSecret`). A gate that does not care ignores the argument.</p>
+   */
+  beforeSave?: (values: EntityFormValues) => Promise<boolean>;
   /** Set when the parent folder dictates the entity kind (selector locked). */
   lockedKind?: EntityKind;
   /** The kind the form OPENS on when no folder locks it (issue #57) — a suggestion: selector alive, no folder hint; `lockedKind` outranks it. Why: `dialogs.pickEntityKind`. */

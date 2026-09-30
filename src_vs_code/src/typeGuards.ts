@@ -440,6 +440,8 @@ function hasValidSyncFields(v: Record<string, unknown>): boolean {
     (v.createdAt === undefined || typeof v.createdAt === 'number') &&
     (v.updatedAt === undefined || typeof v.updatedAt === 'number') &&
     (v.sortOrder === undefined || typeof v.sortOrder === 'number') &&
+    // The protection-decision count (§5.9): a number, or absent on a node no decision has touched.
+    (v.pinEpoch === undefined || typeof v.pinEpoch === 'number') &&
     isVersionVector(v.v)
   );
 }

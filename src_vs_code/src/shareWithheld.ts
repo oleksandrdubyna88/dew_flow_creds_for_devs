@@ -1,5 +1,7 @@
-import { SECOND_KEYS, SECOND_LABELS, SecondValues } from './secondValues';
+import { SECOND_KEYS, SECOND_LABELS, SecondValues, parseSecondValues } from './secondValues';
 import { withheldFromShare } from './paymentRedaction';
+import { openedText } from './pinAdmission';
+import { silentPinGate } from './pinGate';
 
 /**
  * What a share leaves behind, as names a person recognises — the whole answer, in one place.
@@ -49,10 +51,18 @@ export function withheldSentence(names: Iterable<string>): string {
   return unique.length === 0 ? '' : ` Not sent, and they cannot be: ${unique.join(', ')}.`;
 }
 
-/** Just the two reads this needs, so a test does not have to build a StorageManager. */
+/**
+ * Just the two reads this needs, so a test does not have to build a StorageManager — both RAW, so a
+ * protected entry's records are opened here rather than parsed as `{}` by a typed getter.
+ */
 export interface WithheldReader {
   getPaymentRaw(accountId: string, entityId: string): Thenable<string | undefined>;
-  getSecond(accountId: string, entityId: string): Thenable<SecondValues>;
+  getSecondRaw(accountId: string, entityId: string): Thenable<string | undefined>;
+}
+
+/** What the notice reads of one payload: the sender's node, and whether it is a payment. */
+interface WithheldPayload {
+  readonly node: { readonly id: string; readonly name?: string; readonly details?: { readonly isPayment?: boolean } };
 }
 
 /**
@@ -62,18 +72,27 @@ export interface WithheldReader {
  * payload keeps the SENDER's node id, which is what reads the sender's own record. Every payload is
  * read, because a second value can belong to any kind — a folder of passwords costs one keychain read
  * each, which is the price of the notice being true.</p>
+ *
+ * <p>Both records are OPENED with the grant the share's door left (entry-PIN plan, D9), through a
+ * silent gate: a protected card read as `{}` here, and its sender was told nothing was withheld while
+ * its CVV was. A value the grant does not open counts as nothing held — never an envelope, never a
+ * second box.</p>
  */
 export async function withheldNoteFor(
   read: WithheldReader,
   accountId: string,
-  payloads: readonly { node: { id: string; details?: { isPayment?: boolean } } }[],
+  payloads: readonly WithheldPayload[],
 ): Promise<string> {
   const names: string[] = [];
   for (const payload of payloads) {
-    const paymentRaw = payload.node.details?.isPayment === true
-      ? await read.getPaymentRaw(accountId, payload.node.id)
-      : undefined;
-    names.push(...withheldNamesOf(paymentRaw, await read.getSecond(accountId, payload.node.id)));
+    names.push(...(await withheldOfOne(read, accountId, payload.node)));
   }
   return withheldSentence(names);
+}
+
+async function withheldOfOne(read: WithheldReader, accountId: string, node: WithheldPayload['node']): Promise<readonly string[]> {
+  const gate = silentPinGate(accountId, node.id, node.name ?? node.id);
+  const paymentRaw = node.details?.isPayment === true ? await openedText(await read.getPaymentRaw(accountId, node.id), gate) : undefined;
+  const secondRaw = await openedText(await read.getSecondRaw(accountId, node.id), gate);
+  return withheldNamesOf(paymentRaw, parseSecondValues(secondRaw));
 }

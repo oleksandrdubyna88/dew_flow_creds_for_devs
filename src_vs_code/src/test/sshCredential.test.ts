@@ -3,6 +3,9 @@ import { test } from 'node:test';
 import { resolveSshCredential } from '../sshCredential';
 import { StorageManager } from '../storageManager';
 import { EntityMetadata, TreeNode } from '../types';
+import type { SecretOpener } from '../secretOpener';
+import { ACCOUNT, PIN, Sinks, clickVscode, locked, memoryStorage, seedEntry, sinks } from './pinWorld';
+import { loadWithVscode } from './vscodeStub';
 
 /**
  * Which secret an SSH connection authenticates with. Extracted from
@@ -140,4 +143,57 @@ test('the key entity’s password is preferred, with the entity’s own as fallb
     entity({ sshKeyEntityId: 'keyent' }),
   );
   assert.deepEqual(fallback, { kind: 'password', password: 'own-pw', warning: undefined });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Entry-PIN plan, D6: the human Connect asks the OWNER of the value — which may be another entry.
+// ---------------------------------------------------------------------------------------------
+
+const KEY = '-----BEGIN OPENSSH PRIVATE KEY-----\nnot-a-real-key\n-----END OPENSSH PRIVATE KEY-----';
+
+/** A connection that borrows its key from a separate, PIN-protected key entry — over the real vault. */
+async function borrowedKeyWorld(inputs: (string | undefined)[]): Promise<{
+  s: Sinks;
+  storage: StorageManager;
+  connection: EntityMetadata;
+  opener: SecretOpener;
+}> {
+  const s = sinks();
+  const stub = clickVscode([...inputs], s);
+  const storage = memoryStorage(stub);
+  const key = { id: 'key1', name: 'deploy key', kind: 'sshkey', isSshEnabled: false, pinProtected: true } as EntityMetadata;
+  const connection = entity({ id: 'ssh1', name: 'prod box', sshKeyEntityId: 'key1' });
+  await seedEntry(storage, key, { 'private key': await locked(KEY) });
+  await seedEntry(storage, connection, { password: 'the connection password' });
+  const { clickOpener } = loadWithVscode<typeof import('../pinClick')>('../pinClick', stub);
+  return { s, storage, connection, opener: clickOpener(storage, ACCOUNT, 'connect') };
+}
+
+test('Connect over a protected key entity asks THAT entity\'s PIN, and hands ssh the key in the clear', async () => {
+  const w = await borrowedKeyWorld([PIN]);
+
+  const source = await resolveSshCredential(w.storage, ACCOUNT, w.connection, w.opener);
+
+  assert.equal(source.kind, 'storedKey');
+  assert.equal(source.kind === 'storedKey' ? source.content : '', KEY, 'the key reached ssh as the sealed envelope');
+  assert.equal(w.s.boxes, 1, 'one PIN');
+  assert.equal(w.s.boxTitles[0], 'PIN for "deploy key"', 'the box must name the entry that OWNS the key, not the connection');
+});
+
+test('a declined PIN on the borrowed key connects with nothing — it does not fall through to a password', async () => {
+  const w = await borrowedKeyWorld([undefined]);
+
+  const source = await resolveSshCredential(w.storage, ACCOUNT, w.connection, w.opener);
+
+  assert.equal(source.kind as string, 'stopped', `the credential resolved to ${source.kind} after the person said no`);
+});
+
+test('the AUTOMATIC resolver (no opener) refuses the protected key with the sentence, and never prompts', async () => {
+  const w = await borrowedKeyWorld([]);
+
+  const source = await resolveSshCredential(w.storage, ACCOUNT, w.connection);
+
+  assert.equal(source.kind as string, 'stopped');
+  assert.match((source as { reason?: string }).reason ?? '', /"deploy key" is protected with its own PIN, so it cannot be used automatically/);
+  assert.equal(w.s.boxes, 0);
 });
