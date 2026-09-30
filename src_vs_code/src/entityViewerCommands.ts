@@ -10,7 +10,7 @@ import { showEntityView } from './entityViewPanel';
 import { mcpFor } from './viewerOptions';
 import { describeRemaining } from './entityExpiry';
 import { hostKeyFingerprint } from './hostKeyPin';
-import { buildSshCommand } from './terminalManager';
+import { sshLineFor } from './sshCommand';
 import { secretResolver } from './viewerOptions';
 import { totpViewFor } from './viewerOptions';
 import { formatEntityBlock } from './dialogs';
@@ -164,7 +164,7 @@ function viewOptions(ctx: ViewerContext, loaded: LoadedEntry): EntityViewOptions
     config: loaded.config,
     // Always show a port for DB entities — the type's default when not explicit.
     ...dbDisplay(loaded.dbConnection, details.dbType),
-    sshCommand: buildSshCommand(details),
+    sshCommand: sshLineFor(details),
     resolveSecret: secretResolver(loaded.reader),
     copyAllText: async () =>
       formatEntityBlock(details, await loaded.reader.password(), await loaded.reader.dbConnection(), loaded.notes, loaded.fields),
@@ -327,7 +327,7 @@ function revisionViewOptions(node: TreeNode, revision: Revision): EntityViewOpti
     fields: parseFields(revision.secrets.fields),
     config: revision.secrets.config,
     ...dbDisplay(dbConnection, details.dbType),
-    sshCommand: buildSshCommand(details),
+    sshCommand: sshLineFor(details),
     resolveSecret: secretResolver(revisionSecretReader(revision)),
     ...revisionCard(revision),
     copyAllText: () => Promise.resolve(formatEntityBlock(details, password, dbConnection, notes)),

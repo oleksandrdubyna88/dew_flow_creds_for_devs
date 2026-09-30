@@ -1,4 +1,5 @@
 import { EntityMetadata } from './types';
+import { canConnectSsh } from './entityKind';
 
 /**
  * What an entry's CLI alias looks like typed into a terminal — its own module since issue #104,
@@ -17,7 +18,8 @@ import { EntityMetadata } from './types';
 export function cliCommandFor(details: EntityMetadata, alias: string): string {
   // First hit wins, in the order the CLI's own usage text lists the verbs.
   const rules: ReadonlyArray<[boolean, string]> = [
-    [details.isSshEnabled === true || details.host !== undefined, 'ssh'],
+    // The tree's own Connect predicate: a host on a Terminal entry is not an ssh target (§4.5).
+    [canConnectSsh(details), 'ssh'],
     [details.isDb === true, 'db'],
     [details.isTerminal === true, 'run'],
     [details.isScript === true, 'script'],
