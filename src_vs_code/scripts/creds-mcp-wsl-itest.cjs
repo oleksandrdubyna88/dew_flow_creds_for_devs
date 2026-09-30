@@ -274,6 +274,8 @@ async function main() {
         summary: `${String(body.name)} (ssh) in "Servers"`,
         withSecret: typeof body.secret === 'string' && body.secret.length > 0,
       }),
+      // The folder's PIN step (D-B): this stand-in folder asks for none.
+      settle: () => Promise.resolve({ ok: true }),
       make: (_decision, body) => {
         // The window generates when the agent named a kind instead of a value — the path this
         // whole product prefers, and the one the manual check exercises.

@@ -749,6 +749,8 @@ async function oldWindowLeg() {
         summary: `${String(body.name)} (ssh) in "Servers"`,
         withSecret: typeof body.secret === 'string' && body.secret.length > 0,
       }),
+      // The folder's PIN step (D-B): this stand-in folder asks for none.
+      settle: () => Promise.resolve({ ok: true }),
       make: (_decision, body) => {
         created.push({ name: String(body.name), secret: String(body.secret ?? '') });
         return Promise.resolve({ id: 'new-1', name: String(body.name) });
