@@ -68,7 +68,7 @@ export function everythingSunk(s: Sinks): string {
 }
 
 /** The `vscode` the click paths touch: PIN boxes answered from a queue, a save dialog that says `saveTo`. */
-export function clickVscode(inputs: (string | undefined)[], s: Sinks, saveTo = '/tmp/saved.file'): Record<string, unknown> {
+export function clickVscode(inputs: (string | undefined)[], s: Sinks, saveTo = '/workspace/chosen-in-the-dialog/saved.file'): Record<string, unknown> {
   const said = (into: string[]) => (message: string, options?: { modal?: boolean }): Promise<string | undefined> => {
     into.push(message);
     const answer = options?.modal === true ? s.modalAnswers.shift() : undefined;

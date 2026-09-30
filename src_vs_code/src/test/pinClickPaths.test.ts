@@ -63,7 +63,7 @@ const ROWS: readonly Row[] = [
   { command: 'credSshManager.connectDb', details: entry({ kind: 'db', dbType: 'postgres' }), slot: 'database connection', plain: CONN, sunk: (_s, c) => c.db[0], expected: CONN },
   { command: 'credSshManager.copyTotpCode', details: entry({ kind: 'credential', hasTotp: true }), slot: 'one-time-code seed', plain: SEED, sunk: lastClip, expected: /^\d{6}$/ },
   { command: 'credSshManager.installSshKey', details: entry({ kind: 'sshkey' }), slot: 'private key', plain: KEY, sunk: (_s, c) => c.installed[0]?.key, expected: KEY },
-  { command: 'credSshManager.saveVpnConfig', details: entry({ kind: 'vpn', vpnType: 'wireguard' }), slot: 'VPN configuration', plain: VPN, sunk: (s) => s.files['/tmp/saved.file'], expected: VPN },
+  { command: 'credSshManager.saveVpnConfig', details: entry({ kind: 'vpn', vpnType: 'wireguard' }), slot: 'VPN configuration', plain: VPN, sunk: (s) => s.files['/workspace/chosen-in-the-dialog/saved.file'], expected: VPN },
 ];
 
 interface Clicked {
@@ -91,7 +91,7 @@ async function click(row: Row, inputs: (string | undefined)[], protect = true): 
   mod.registerEntityCommands({
     register: (command, handler) => handlers.set(command, handler),
     storage,
-    storageDir: '/tmp/creds-test',
+    storageDir: '/workspace/creds-test',
     doorsAt: () => ({}) as never,
     mutated: () => undefined,
     vaultKeys: { noteUserActivity: () => undefined } as never,
@@ -271,7 +271,7 @@ test('Show Config Changes on a protected config compares the OPENED bodies, afte
 
 test('Write config file on a protected config writes the OPENED body after one PIN, and says the file is outside the PIN', async () => {
   const s = sinks();
-  const stub = clickVscode([PIN], s, '/tmp/app.env');
+  const stub = clickVscode([PIN], s, '/workspace/app.env');
   const storage = memoryStorage(stub);
   const details = { id: 'cfg1', name: 'app config', kind: 'config', configFormat: 'env', isSshEnabled: false, pinProtected: true } as EntityMetadata;
   await seedEntry(storage, details, { 'config body': await locked('DB_PASSWORD=s3cret\n') });
@@ -281,14 +281,14 @@ test('Write config file on a protected config writes the OPENED body after one P
 
   await writeStoredConfig(storage, ACCOUNT, details, git);
 
-  assert.equal(s.files['/tmp/app.env'], 'DB_PASSWORD=s3cret\n', `the file held: ${String(s.files['/tmp/app.env']).slice(0, 40)}`);
+  assert.equal(s.files['/workspace/app.env'], 'DB_PASSWORD=s3cret\n', `the file held: ${String(s.files['/workspace/app.env']).slice(0, 40)}`);
   assert.equal(s.boxes, 1);
   assert.match(s.infos.join(' '), /keep it out of the repository\. The file is outside the PIN: anyone who can read it has the value\./);
 });
 
 test('Write config file: a declined PIN writes no file', async () => {
   const s = sinks();
-  const stub = clickVscode([undefined], s, '/tmp/app.env');
+  const stub = clickVscode([undefined], s, '/workspace/app.env');
   const storage = memoryStorage(stub);
   const details = { id: 'cfg1', name: 'app config', kind: 'config', configFormat: 'env', isSshEnabled: false, pinProtected: true } as EntityMetadata;
   await seedEntry(storage, details, { 'config body': await locked('DB_PASSWORD=s3cret\n') });
@@ -336,7 +336,7 @@ function agentManager(stub: Record<string, unknown>, storage: StorageManager): A
   };
   class StubServer {
     listening = false;
-    socketPath = '/tmp/agent.sock';
+    socketPath = '/workspace/agent.sock';
     listen(): Promise<void> {
       this.listening = true;
       return Promise.resolve();
@@ -346,7 +346,7 @@ function agentManager(stub: Record<string, unknown>, storage: StorageManager): A
     }
   }
   const mod = loadWithVscode<typeof import('../sshAgentManager')>('../sshAgentManager', withLog, {
-    './sshAgentServer': { SshAgentServer: StubServer, agentSocketPath: (): string => '/tmp/agent.sock' },
+    './sshAgentServer': { SshAgentServer: StubServer, agentSocketPath: (): string => '/workspace/agent.sock' },
   });
   const env = { replace: (): void => undefined, delete: (): void => undefined, description: '' };
   return { instance: new mod.SshAgentManager(storage, os.tmpdir(), env as never, () => undefined), logs };
