@@ -4895,14 +4895,16 @@ will run — the command with every enabled argument, its OS and note — and fo
 body, never a preview (plan gate: a harmless head can hide a destructive tail). The journal's create
 line carries the same text.
 
-**SSH rows only on an SSH entry** (defect 3). `buildSshCommand` stays the pure builder;
-`sshCommand.sshLineFor` asks `resolveKind(details) === 'ssh'` first, and the live viewer, the revision
-viewer and Copy All use it. The *Host* row is drawn only where the kind's table entry has a `host`
-(`hostIsAField` — ssh and vpn). The same gate was checked everywhere else a host becomes an ssh
-target: `canConnectSsh` (the tree's *Connect via SSH*, and so `openSshTerminal`) keeps its documented
-breadth only for a record whose kind falls back to `credential`; the CLI row's verb reads that
-predicate (`creds run`, not `creds ssh`, for a command); the tree description drops a stray host on a
-kind that has none; the agent-share snippet already asked `kind === 'ssh'`.
+**SSH rows only on an entry the tree can connect to over SSH** (defect 3). `buildSshCommand` stays the
+pure builder; `sshCommand.sshLineFor` asks `canConnectSsh(details)` first — the tree's own question, so
+the viewer and *Connect via SSH* give one answer — and the live viewer, the revision viewer and Copy All
+use it. `canConnectSsh` admits an SSH entry, and keeps its documented breadth only for a record whose
+kind falls back to `credential` and has a host: that legacy record keeps Connect, and its viewer shows
+the Host and the SSH line Connect runs. The *Host* row is drawn where the kind's table entry has a
+`host` (ssh and vpn) or `canConnectSsh` admits the record (`hostIsAField`, which the tree description
+reads too). A Terminal, VPN or config entry with a stray host shows no SSH line. The CLI row's verb
+reads the same predicate (`creds run`, not `creds ssh`, for a command); the agent-share snippet already
+asked `kind === 'ssh'`.
 
 **D-B — a folder that asks for a PIN on new entries.** The create door has a third step between the
 consent modal and `make`: `settle`, handed the consent step's deadline (`Date.now() +

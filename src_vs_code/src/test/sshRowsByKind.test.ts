@@ -24,7 +24,9 @@ import { ACCOUNT, clickVscode, memoryStorage, seedEntry, sinks } from './pinWorl
  *
  * <p>The live viewer and the revision viewer are driven for real, over the real `StorageManager`;
  * only the webview is a spy. The Host row is asserted for every kind against the agent table — the
- * kinds whose table entry has a `host` — so a kind that gains one cannot be missed here.</p>
+ * kinds whose table entry has a `host` — and against `canConnectSsh`, so a kind that gains one cannot
+ * be missed here. The SSH rows follow `canConnectSsh` too (plan §11): the viewer and the tree's
+ * *Connect via SSH* give one answer to one question.</p>
  */
 
 const HOST = 'token-plan.ap-southeast-1.maas.aliyuncs.com';
@@ -78,12 +80,15 @@ test('a Terminal (and a VPN) entry with a host shows no SSH command; an SSH entr
   assert.match(String((await ssh.kept()).sshCommand), /^ssh root@token-plan\.ap-southeast-1/, 'and its kept version too');
 });
 
-test('the Host row is drawn only for the kinds whose agent table has a host', () => {
+test('the Host row is drawn only for the kinds whose agent table has a host, or a record the tree can Connect to', () => {
   const hosted = ENTITY_KINDS.filter((kind) => AGENT_KIND_FIELDS[kind].some((field) => field.name === 'host'));
   assert.deepEqual([...hosted].sort(), ['ssh', 'vpn'], 'precondition: the table says what the plan says');
+  const connectable = ENTITY_KINDS.filter((kind) => !hosted.includes(kind) && canConnectSsh(entry(kind)));
+  assert.deepEqual(connectable, ['credential'], 'precondition: only a credential with a host is Connect’s legacy breadth');
   for (const kind of ENTITY_KINDS) {
     const html = renderEntityViewHtml(viewPage(entry(kind)));
-    assert.equal(html.includes('<label>Host</label>'), hosted.includes(kind), `the Host row on a ${kind} entry`);
+    const expected = hosted.includes(kind) || connectable.includes(kind);
+    assert.equal(html.includes('<label>Host</label>'), expected, `the Host row on a ${kind} entry`);
   }
 });
 
@@ -99,6 +104,19 @@ test('Copy all, Connect, the CLI verb and the tree description do not treat a Te
   assert.equal(canConnectSsh(legacy), true, 'the documented legacy credential keeps Connect');
   assert.equal(cliCommandFor(legacy, 'b'), 'creds ssh b');
   assert.match(formatEntityBlock(entry('ssh', { isSshEnabled: true }), undefined), /SSH: ssh /, 'an SSH entry keeps its line in Copy all');
+});
+
+test('a legacy host-only record the tree can Connect to shows its Host and SSH command', async () => {
+  // A record written before `kind` existed, with a host and no ssh flag: its kind falls back to
+  // credential, and `canConnectSsh` keeps *Connect via SSH* for it on purpose. The viewer answers the
+  // same question the tree does, so it shows the machine Connect would log in to.
+  const legacy = { id: 'e-legacy', name: 'old box', isSshEnabled: false, host: HOST, user: 'root' } as EntityMetadata;
+  assert.equal(canConnectSsh(legacy), true, 'precondition: the tree offers Connect via SSH on this record');
+  const v = await viewers(legacy);
+  assert.match(String((await v.live()).sshCommand), /^ssh root@token-plan\.ap-southeast-1/, 'the viewer hid the SSH command the tree connects with');
+  assert.match(String((await v.kept()).sshCommand), /^ssh root@token-plan\.ap-southeast-1/, 'and its kept version hid it too');
+  assert.ok(renderEntityViewHtml(viewPage(legacy)).includes('<label>Host</label>'), 'the viewer hid the Host the tree connects to');
+  assert.match(formatEntityBlock(legacy, undefined), /SSH: ssh root@/, 'Copy all left out the line Connect uses');
 });
 
 function viewPage(details: EntityMetadata): EntityViewOptions {

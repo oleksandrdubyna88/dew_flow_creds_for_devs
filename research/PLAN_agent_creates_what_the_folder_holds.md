@@ -352,9 +352,17 @@ docs with this promotion (S7). D-A rode with S1/S3.
   Copy All (`formatEntityBlock`), `canConnectSsh` (the tree's *Connect via SSH*, and so `openSshTerminal`
   behind it), the CLI row's verb (`cliCommandText`) and the tree description (`treeRowText.baseTarget`).
   `canConnectSsh` keeps its documented breadth only for the record it was kept for — one whose kind falls
-  back to `credential` — so that legacy record keeps Connect; it no longer draws a Host or an SSH line in the
-  viewer, because the viewer's gate is exactly `resolveKind(details) === 'ssh'` and the Host row reads the
-  table. `agentCommands`' agent snippet already asked `kind === 'ssh'`.
+  back to `credential` — so that legacy record keeps Connect. `agentCommands`' agent snippet already asked
+  `kind === 'ssh'`.
+- **The viewer's SSH rows follow `canConnectSsh`, not `resolveKind(details) === 'ssh'`** (decided
+  2026-09-30, after the branch first shipped the narrower gate). With two predicates the legacy host-only
+  record offered *Connect via SSH* in the tree while its viewer hid the Host and the SSH line Connect runs —
+  two answers to one question. `sshLineFor` now asks `canConnectSsh`, so the viewer, the revision viewer
+  and Copy All show an SSH line exactly when the entry can be connected to over SSH; `hostIsAField` draws
+  the Host row for a kind whose table has a host OR a record `canConnectSsh` admits, and the tree
+  description reads the same function. A Terminal, VPN or config entry with a stray host still shows
+  neither SSH row; the Host row test now expects it on a credential entry with a host, the one record
+  `canConnectSsh`'s breadth admits.
 - **D-B is a third step on the create door.** `McpCreateHooks` gained `settle(decision, deadline)` between
   the consent modal and `make`, and `make` receives what it settled. The deadline is taken BEFORE the modal
   (`Date.now() + CONSENT_TIMEOUT_MS`), so the PIN gets what is left of the step's five minutes, not five
@@ -386,8 +394,8 @@ docs with this promotion (S7). D-A rode with S1/S3.
   open when the step's time runs out stays on screen; whatever is typed into it then is ignored — the agent
   was already answered and nothing is written. Closing it would mean threading a token through
   `pinForNewEntry`, `newPin` and the sibling check.
-- **The legacy host-only record** (kind falls back to `credential`) keeps *Connect via SSH* but now shows no
-  Host or SSH row in its viewer. Whether to narrow Connect too is the product decision `canConnectSsh`'s
-  comment already names.
+- **Whether to narrow Connect** for the legacy host-only record is still the product decision
+  `canConnectSsh`'s comment names. The viewer question is decided (above): its rows match `canConnectSsh`,
+  so narrowing Connect later narrows the viewer with it.
 - **Not run here**: the WSL itest (`itest:mcp-wsl`), and a D-B leg through the real binary — D-B is covered
   by the unit suite and a test through the real broker door.

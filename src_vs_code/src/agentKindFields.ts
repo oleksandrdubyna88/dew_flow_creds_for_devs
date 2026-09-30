@@ -1,6 +1,6 @@
 import { CONFIG_FORMATS } from './configFormat';
 import { OS_NAMES } from './hostShell';
-import { resolveKind } from './entityKind';
+import { canConnectSsh, resolveKind } from './entityKind';
 import { DB_TYPES, ENTITY_KINDS, ENTITY_KIND_LABELS, EntityKind, EntityMetadata, VPN_TYPES } from './types';
 
 /**
@@ -385,12 +385,14 @@ export function isAgentCreatable(kind: EntityKind): boolean {
 }
 
 /**
- * Whether a host is a field of this entry's kind — ssh and vpn today, read off the table rather than
- * listed a second time (plan §4.5). The viewer draws its *Host* row only then: a host on a Terminal
- * entry is a value an agent put where no field exists, not a machine the entry connects to.
+ * Whether this entry's host means something: its kind's table has a host (ssh and vpn today, read off
+ * the table rather than listed a second time), or it is a record `canConnectSsh` admits, whose host is
+ * the machine *Connect via SSH* logs in to (plan §4.5, §11). The viewer draws its *Host* row only then:
+ * a host on a Terminal entry is a value an agent put where no field exists, not a machine the entry
+ * connects to.
  */
 export function hostIsAField(details: EntityMetadata): boolean {
-  return AGENT_KINDS[resolveKind(details)].fields.some((field) => field.name === 'host');
+  return canConnectSsh(details) || AGENT_KINDS[resolveKind(details)].fields.some((field) => field.name === 'host');
 }
 
 /** A field as the folder answer names it: enough to know what to send, not the whole paragraph. */

@@ -120,7 +120,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   All*, *Connect via SSH* in the tree, the `creds ssh` verb on the CLI row and the tree's `user@host`
   description no longer appear on a Terminal, VPN or other non-SSH entry that carries a host; the
   *Host* row is drawn only for the kinds that have one (SSH and VPN). An old record with a host and no
-  kind of its own keeps *Connect via SSH* as before.
+  kind of its own keeps *Connect via SSH* as before, and its viewer shows the *Host* and the SSH command
+  that Connect runs.
 - **An agent's entry in a folder that asks for a PIN was stored in the clear.** Your own Add asks the
   folder's PIN; an agent's create did not. Now, right after you allow the creation, the window asks
   for it — the same question Add asks, checked against the folder's protected entries — and seals every

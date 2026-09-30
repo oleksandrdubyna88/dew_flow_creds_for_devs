@@ -37,7 +37,7 @@ export function baseTarget(node: TreeNode): string {
     return d.vpnType ?? 'vpn';
   }
   // A host an agent put on a kind that has none is not what the entry connects to (§4.5).
-  if (!d?.host || !(canConnectSsh(d) || hostIsAField(d) || d.isDb === true)) {
+  if (!d?.host || !(hostIsAField(d) || d.isDb === true)) {
     return '';
   }
   const target = d.user ? `${d.user}@${d.host}` : d.host;
