@@ -1,11 +1,10 @@
 /* eslint-disable complexity -- moved verbatim out of extension.ts (roadmap A1, 2026-08-28):
    the ceilings are a boundary for NEW code here; each function meets them when it is next touched for a reason of its own. */
 import { StorageManager } from './storageManager';
-import { McpCreateHooks } from './brokerMcpDoor';
+import { CreateAccepted, CreateDecision, CreateReady, McpCreateHooks } from './brokerMcpDoor';
 import type { EntityKind } from './types';
 import { agentFormValues, planCreate } from './mcpCreate';
 import { applyAdditions } from './applyFormSecrets';
-import { CreateAccepted, CreateDecision, CreateReady } from './brokerMcpDoor';
 import { settleAgentCreate } from './agentCreatePin';
 import { NOTHING_OPENED, sealedWriter } from './editPrefill';
 import { applyCreatePin } from './pinOnCreate';

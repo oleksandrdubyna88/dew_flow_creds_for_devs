@@ -365,7 +365,7 @@ internal static class UseTools
         Put(strings, "user", user);
         Put(strings, "port", port?.ToString());
         PutAll(strings, draw);
-        var body = strings.Select(pair => new KeyValuePair<string, JsonNode>(pair.Key, JsonValue.Create(pair.Value)!));
+        var body = strings.Select(pair => new KeyValuePair<string, JsonNode>(pair.Key, JsonValue.Create(pair.Value)));
         return Bodies.Compose(fields is null ? body : body.Append(new("fields", fields.DeepClone())), caller, contract);
     }
 

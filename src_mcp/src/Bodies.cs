@@ -22,7 +22,7 @@ namespace CredsMcp;
 internal static class Bodies
 {
     internal static string Compose(IEnumerable<KeyValuePair<string, string>> fields, CallerRecord caller, BrokerContract contract) =>
-        Compose(fields.Select(pair => new KeyValuePair<string, JsonNode>(pair.Key, JsonValue.Create(pair.Value)!)), caller, contract);
+        Compose(fields.Select(pair => new KeyValuePair<string, JsonNode>(pair.Key, JsonValue.Create(pair.Value))), caller, contract);
 
     /// <summary>
     /// The same road for a body that carries a nested object — the create call's `fields`, which is

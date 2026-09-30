@@ -407,7 +407,7 @@ function trashFor(
  * creation does; absent means this window serves no create calls at all, which is a real
  * configuration and one of the refusals under test.</p>
  */
-function createFor(w: World, mode: 'open' | 'closed' | undefined, settled: CreateSettled = { ok: true }): McpCreateHooks | undefined {
+function createFor(w: World, mode: 'open' | 'closed' | undefined, settled?: CreateSettled): McpCreateHooks | undefined {
   if (mode === undefined) {
     return undefined;
   }
@@ -423,7 +423,7 @@ function createFor(w: World, mode: 'open' | 'closed' | undefined, settled: Creat
           },
     settle: (_decision, deadline) => {
       w.settleDeadlines.push(deadline);
-      return Promise.resolve(settled);
+      return Promise.resolve(settled ?? { ok: true });
     },
     make: (_decision, body) => {
       w.created.push(String(body.name));

@@ -533,10 +533,10 @@ async function catalogueChecks(env) {
   check('and says payment cannot be created by an agent (D-A)', kinds.find((k) => k.kind === 'payment')?.creatable === false, JSON.stringify(kinds.find((k) => k.kind === 'payment')));
 
   const help = parsed(replyText(said, 82)) ?? {};
-  const helpNames = (help.fields ?? []).map((f) => f.name);
+  const helpNames = new Set((help.fields ?? []).map((f) => f.name));
   check(
     'creds_kind_help says what a terminal entry takes — a required command, and no host',
-    helpNames.includes('command') && help.fields.find((f) => f.name === 'command')?.required === true && !helpNames.includes('host'),
+    helpNames.has('command') && help.fields.find((f) => f.name === 'command')?.required === true && !helpNames.has('host'),
     replyText(said, 82).slice(0, 240),
   );
 
@@ -599,7 +599,7 @@ async function createChecks(env, storage) {
  */
 async function oldWindowLeg() {
   const posts = [];
-  const fake = require('http').createServer((req, res) => {
+  const fake = require('node:http').createServer((req, res) => {
     if (req.method === 'POST') posts.push(req.url);
     const healthy = req.method === 'GET' && req.url === '/v1/health';
     res.writeHead(healthy ? 200 : 404, { 'Content-Type': 'application/json' });

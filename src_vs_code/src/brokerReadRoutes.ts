@@ -70,8 +70,8 @@ export async function readRouteBody(
     [isMcpFoldersRoute(pathname), async () => ({ folders: foldersFrom(sources) })],
     // The catalogue: no source, no switch, the same on every window. What a kind IS is not a
     // disclosure — it is the product's own help, told to the one reader that had no way to it.
-    [isMcpKindsRoute(pathname), async () => ({ kinds: agentKinds() })],
-    [isMcpKindHelpRoute(pathname), async () => kindHelpBody(query)],
+    [isMcpKindsRoute(pathname), () => Promise.resolve({ kinds: agentKinds() })],
+    [isMcpKindHelpRoute(pathname), () => Promise.resolve(kindHelpBody(query))],
   ];
   const hit = routes.find(([matches]) => matches);
   return hit === undefined ? undefined : hit[1]();
