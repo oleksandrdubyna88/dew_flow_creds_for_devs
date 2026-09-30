@@ -796,6 +796,12 @@ reproduced by a test watched failing first; the commits carry the RED messages.
   the `presence` class for their has-one reads. Two real misreports found and fixed, RED first:
   `envApply` DB password (*absent* → withheld) and the tree's *Open Site* flag (envelope decides, not the
   mark). Carriers are unchanged; a helper of a helper is not followed.
+- **Remove PIN on an entry protected while empty** (found by the agent that fixed the item below; fixed
+  2026-09-30, RED first — *"the mark is off: actual true"*, break-it red again). Once the door stopped
+  clearing that mark, *Remove PIN Protection…* answered "is not protected with a PIN" to an entry that
+  claimed a protection — a protection nobody could take off. `pinCommands.nothingSealed` now takes the
+  mark off as one protection decision (`pinEpoch + 1`) with no PIN box, since nothing sealed exists to
+  check one against; a mark over values in the clear keeps its old answer (the door's to clear).
 - **Protected while empty** (§16 item 4, first half; fixed 2026-09-30, RED first). The door's
   `repairFalseMark` (§5.8's mirror, R5) read "marked, nothing locked" as the 0.99.0 false mark and
   cleared it, so an entry protected while it held NO value lost its protection at the first door and

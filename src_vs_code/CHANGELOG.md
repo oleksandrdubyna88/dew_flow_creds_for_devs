@@ -39,7 +39,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   asks for the entry's PIN — typed twice, or checked against the protected entries of its folder —
   and seals every value with it before anything is written. Declining keeps the form open; a save that
   stores nothing asks nothing. A mark over values that arrived in the clear (the 0.99.0 share) is
-  still removed.
+  still removed. *Remove PIN Protection…* on such an entry takes the protection off without asking for
+  a PIN, since it holds nothing sealed to open — it used to answer that the entry was not protected.
 - **Every click handed out the sealed envelope.** *Copy Password*, *Copy Connection String* (with and
   without the password), *Copy One-Time Code*, *Open in DB Extension*, *Install SSH Key to System*,
   *Save VPN Config As…*, *Start VPN*, *Connect SSH* (key and password), *Write Config File Here…*, *Add

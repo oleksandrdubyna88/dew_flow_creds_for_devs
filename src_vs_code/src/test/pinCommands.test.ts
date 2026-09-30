@@ -94,6 +94,31 @@ test('Remove PIN over a damaged value, declined, changes nothing and keeps the m
   assert.equal(w.node().details?.pinProtected, true, 'an entry with an unreadable value keeps claiming its PIN');
 });
 
+test('Remove PIN Protection… on an entry protected while empty takes the protection off — nothing to unseal, so no PIN is asked', async () => {
+  // Review of 2026-09-30: an entry protected while it held nothing keeps its mark now, so the one
+  // command that should take it off must not answer "is not protected with a PIN" — that left the
+  // person with an entry claiming a protection they could not remove.
+  const w = await world(credential({ pinProtected: true }), {}, []);
+  const before = w.node().pinEpoch ?? 0;
+
+  await w.commands.unprotectEntry(w.node(), w.deps);
+
+  assert.equal(w.node().details?.pinProtected, undefined, 'the mark is off');
+  assert.equal(w.node().pinEpoch, before + 1, 'taking the protection off is a protection decision, and sync must see it as one');
+  assert.equal(w.s.boxes, 0, 'there is nothing sealed to check a PIN against, so none is asked');
+  assert.doesNotMatch(w.s.infos.join(' '), /is not protected/);
+  assert.match(w.s.infos.join(' '), /"godaddy" is no longer protected with its own PIN\./);
+});
+
+test('Remove PIN Protection… on an entry with no mark and nothing sealed still says it is not protected', async () => {
+  const w = await world(credential(), { password: 'hunter2' }, []);
+
+  await w.commands.unprotectEntry(w.node(), w.deps);
+
+  assert.match(w.s.infos.join(' '), /"godaddy" is not protected with a PIN\./);
+  assert.equal(await stored(w, 'password'), 'hunter2');
+});
+
 test('Remove PIN Protection… on an entry whose only sealed values are its kept versions opens them', async () => {
   // Plan gate, finding 3: unprotected on another machine and synced here.
   const w = await world(credential(), { password: 'hunter2' }, [PIN], [], { password: await locked('old pw') });

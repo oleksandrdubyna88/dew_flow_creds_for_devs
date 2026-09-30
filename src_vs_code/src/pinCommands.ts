@@ -130,12 +130,35 @@ function isAre(count: number): string {
 /** Take the PIN off one entry, given it — while ANY of its values, live or kept, is sealed (§5.7). */
 export async function unprotectEntry(node: TreeNode, deps: PinCommandDeps): Promise<void> {
   if (node.details === undefined || !(await anythingSealed(node, deps))) {
-    void vscode.window.showInformationMessage(`"${node.name}" is not protected with a PIN.`);
+    await nothingSealed(node, deps);
     return;
   }
   const gate = entryPinGate(deps.accountId, node.id, node.name);
   const pin = await gate.ask('Enter this entry’s PIN to remove its protection.', node.name);
   await removeIfTyped(node, pin, deps);
+}
+
+/**
+ * Nothing is sealed — which is "not protected", UNLESS the entry was protected while it held nothing.
+ *
+ * <p>Review of 2026-09-30: such an entry keeps its mark (the door no longer mistakes it for the 0.99.0
+ * false mark), so this command is the one way to take that protection off — and answering "is not
+ * protected with a PIN" there left an entry claiming a protection nobody could remove. There is nothing
+ * to unseal, so there is nothing to check a PIN against: the mark comes off, as one more protection
+ * decision, and the sentence says why no PIN was asked. A mark over values in the CLEAR is the legacy
+ * false mark, which the door clears; this keeps its old answer rather than deciding it a second way.</p>
+ */
+async function nothingSealed(node: TreeNode, deps: PinCommandDeps): Promise<void> {
+  if (node.details?.pinProtected !== true || (await lockedSlotCount(deps.storage, deps.accountId, node.id)).total > 0) {
+    void vscode.window.showInformationMessage(`"${node.name}" is not protected with a PIN.`);
+    return;
+  }
+  await markProtection(node, false, deps);
+  forgetPin(deps.accountId, node.id);
+  deps.refresh();
+  void vscode.window.showInformationMessage(
+    `"${node.name}" is no longer protected with its own PIN. It held nothing sealed, so no PIN was needed.`,
+  );
 }
 
 /** A live slot is locked, or a kept version on this machine is — either is something to remove. */

@@ -1428,7 +1428,9 @@ on a decline, writes opened values and no `pinProtected`. Share *Update it* (`sh
 through the live door and seals every arriving value.
 
 **Protected while empty (2026-09-30).** *Protect with a PIN…* on an entry that holds nothing has no
-value to seal, so it writes the mark alone and the PIN typed there is stored nowhere. Until this date
+value to seal, so it writes the mark alone and the PIN typed there is stored nowhere. *Remove PIN
+Protection…* on it (`pinCommands.nothingSealed`) takes the mark off as one protection decision without a
+PIN box — nothing is sealed, so nothing could check one — where it used to answer "is not protected". Until this date
 the door read "marked, nothing locked" as the 0.99.0 false mark and cleared it, and the first value
 typed into the entry was stored in the clear. Now `pinAdmission.repairFalseMark` clears the mark only
 over a value in the clear (`entityPin.lockedSlotCount(...).plain`), and "marked, nothing stored" is
