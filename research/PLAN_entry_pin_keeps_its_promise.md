@@ -782,6 +782,20 @@ reproduced by a test watched failing first; the commits carry the RED messages.
   sealing and the write. *Checked and left as they are*: `shareUpdateSeal` decides after the last wait
   (the *Update it* choice comes before `updateInPlace`); export fails closed — an entry protected after
   its admission does not open with the silent gate, and the export stops with nothing written.
+- **The reader guard is per read, over the syntax tree.** §7 item 2 was a regular expression for
+  `.getX(` plus a per-FILE primitive check, so `storage.getPassword.bind(storage)`, `storage['getX']`, a
+  getter passed as a value and an extra ungated function in a classified file all passed (planted and
+  confirmed against the old test). `test/readerScan.ts` uses the TypeScript compiler API: every property
+  access, string-literal element access and destructured binding of a getter name (still derived from
+  `SECRET_SLOTS`) is a read, and each one must meet its file's class in its NEAREST function — a
+  primitive there; a call of a local helper that holds one (one level — the concession that keeps
+  `present(…)`, `judgedText(…)`, `openedBodies(…)` legible); a callback handed straight to a primitive
+  (`clickedSecret(…, (s, a, e) => s.getX(a, e), …)`); or a function named in `GATED_BY_CALLER` with the
+  gate its returned value goes through (22 functions in 12 files, each reason checked by reading the
+  caller; the list fails when an entry stops being needed). `editPrefill` and `sharePayloadBuild` gained
+  the `presence` class for their has-one reads. Two real misreports found and fixed, RED first:
+  `envApply` DB password (*absent* → withheld) and the tree's *Open Site* flag (envelope decides, not the
+  mark). Carriers are unchanged; a helper of a helper is not followed.
 
 ## 16. Open tail
 

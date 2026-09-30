@@ -10,6 +10,7 @@ import { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
 import { FieldReading, readingOf, valueOf, withheld } from './fieldReading';
 import { pinFieldRefusal } from './pinGate';
+import { isLockedSecret } from './secretEnvelope';
 
 /**
  * Writing bound secret fields into VS Code's environment variable collection — the
@@ -97,6 +98,19 @@ export async function bindableFieldReading(
   return refusal === '' ? readingOf(stored) : withheld(refusal);
 }
 
+/**
+ * The password inside a stored connection string — or the ENVELOPE itself when the string is sealed,
+ * so the refusal sees what is stored. Parsed first, an envelope is no password at all, and a sealed
+ * entry whose mark was lost read "absent" instead of withheld (rule R2; found by the per-function
+ * reader scan, review of 2026-09-30).
+ */
+function dbPasswordOf(conn: string | undefined): string | undefined {
+  if (conn === undefined || isLockedSecret(conn)) {
+    return conn;
+  }
+  return parseDbConnectionString(conn).password;
+}
+
 // eslint-disable-next-line complexity
 async function storedField(
   storage: StorageManager,
@@ -113,10 +127,8 @@ async function storedField(
       return details.publicKey;
     case 'dbConnection':
       return storage.getDbConnection(accountId, details.id);
-    case 'dbPassword': {
-      const conn = await storage.getDbConnection(accountId, details.id);
-      return conn === undefined ? undefined : parseDbConnectionString(conn).password;
-    }
+    case 'dbPassword':
+      return dbPasswordOf(await storage.getDbConnection(accountId, details.id));
   }
 }
 

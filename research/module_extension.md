@@ -1379,11 +1379,20 @@ flowchart LR
 **The reader boundary is a test, not a survey.** The 2026-09-04 survey above was a list a person kept,
 and it never had a row for the viewer's card or the edit form. `pinReaderBoundary.test.ts` derives the
 getters from `SECRET_SLOTS` (each row's `read` run against a recording storage), adds the slot table's
-own `.read(` and `getHistory(` (a kept version holds the same ten values), finds every `src/**` file
-that calls one, and requires each to be classified in its checked-in `READERS` table — **carrier**,
-**door** (must contain a door primitive), **automatic** (must contain a refusal primitive) or
-**presence** (only `(await ….getX(…)) !== undefined`). An unlisted reader fails naming file, line and
-getter; a listed file that reads nothing fails too. The same file pins `unlockSecret(` to
+own `.read(` and `getHistory` (a kept version holds the same ten values), finds every `src/**` file
+that reads one, and requires each to be classified in its checked-in `READERS` table — **carrier**,
+**door**, **automatic** or **presence**. An unlisted reader fails naming file, line and getter; a
+listed file that reads nothing fails too. **Since 2026-09-30 the scan is the TypeScript syntax tree and
+the rule is per READ** (`test/readerScan.ts`): a read is any property access, string-literal bracket
+access or destructured binding of a getter name, called or not — a `.bind` alias and a getter handed on
+as a value are reads — and each read of a door or automatic file must sit in a function that holds its
+class's primitive, in a local helper that holds one (one level), in a callback handed straight to a
+primitive, or in a function named in `GATED_BY_CALLER` with the gate its value goes through (a function
+listed there that no longer needs it fails). A presence read must itself be `(await ….getX(…)) !==
+undefined`. The per-file version passed a classified file with one gated function and one ungated one.
+The stricter scan found two misreports, both fixed: `envApply`'s DB password parsed a sealed connection
+string before the refusal saw it (an entry with a lost mark read *absent*, not withheld), and the tree's
+*Open Site* flag asked only the mark (a sealed login/URL with a lost mark read "no URL"). The same file pins `unlockSecret(` to
 `secretEnvelope.ts` and `pinAttempts.ts`. Classifying found one more gap on the spot — the broker's
 database query (`agentUseActions.dbQueryAction`) launched the client with the envelope — and it now
 refuses with the PIN sentence. The three silent typed getters (`getFields`/`getSecond`/`getPayment`)

@@ -46,7 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   disk; a `creds://` note or one-time code reads *withheld* (it read the envelope, and *absent*); the SSH
   broker refuses a protected stored key before anything reaches disk; an agent's database query refuses
   a protected connection string (it launched the client with the envelope); a protected config is no
-  longer flagged *invalid*.
+  longer flagged *invalid*; and an entry whose PIN mark was lost while its values stayed sealed still
+  has its database password withheld in words (it read as *not stored*) and still offers *Open Site
+  in Browser*.
 - **Export carried envelopes nobody could open**, and dropped protected entries' login and URL.
   *Export / Share Externally…* now asks each protected entry's PIN (declining any exports nothing),
   writes the opened values under the file's own password with no PIN claim, keeps login/URL, counts a

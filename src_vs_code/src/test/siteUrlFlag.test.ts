@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EntityFlagsRefresher, EntityFlagSource, EntityFlagTarget, entityKey } from '../entityFlags';
+import { lockSecret } from '../secretEnvelope';
 import { entityContextValue } from '../treeRowText';
 import { EntityMetadata } from '../types';
 
@@ -105,4 +106,14 @@ test('one unreadable record costs its own hint, never the walk — every other f
   await w.walker.refresh();
   assert.deepEqual([...w.target.urlIds], [entityKey('acc', 'site')]);
   assert.deepEqual([...w.target.passwordIds], [entityKey('acc', 'site')], 'the password flags were published too');
+});
+
+test('a credential whose login/URL record is SEALED is offered even with its mark lost — the envelope decides, not the mirror', async () => {
+  // Found by the per-function reader scan (review of 2026-09-30): the walk asked only the MARK, and an
+  // envelope parsed as login/URL is `{}`, so a sealed record with a lost mark read as "no URL".
+  const sealed = await lockSecret(JSON.stringify({ url: 'www.godaddy.com' }), 'acc', '1234');
+
+  const { ids } = await urlIdsOf({ sealed: { details: credential('sealed'), fields: sealed } });
+
+  assert.deepEqual(ids, [entityKey('acc', 'sealed')]);
 });

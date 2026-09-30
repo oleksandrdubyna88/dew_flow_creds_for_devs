@@ -141,13 +141,17 @@ export class EntityFlagsRefresher {
     }
   }
 
-  /** A sealed (PIN-protected) record counts as "may open"; an open one is judged by `siteUrl.ts`. */
+  /**
+   * A sealed (PIN-protected) record counts as "may open"; an open one is judged by `siteUrl.ts`.
+   * Sealed by the mark OR by the envelope: an envelope parsed as login/URL is `{}`, so a record whose
+   * mark was lost read "no URL" (found by the per-function reader scan, review of 2026-09-30).
+   */
   private async urlOpens(accountId: string, node: FlagNode): Promise<boolean> {
     if (node.details?.pinProtected === true) {
       return true;
     }
     try {
-      return siteUrlToOpen(parseFields(await this.storage.getFieldsRaw(accountId, node.id)).url).ok;
+      return judgedUrlOpens(await this.storage.getFieldsRaw(accountId, node.id));
     } catch {
       // A HINT that cannot be read is a hint not given — it must not stop the walk publishing every
       // other flag (gate code round, #18). The command reads again, and says what it finds.
@@ -241,6 +245,10 @@ export function entityFlagSource(storage: StorageManager): EntityFlagSource {
  * broken for being protected; nothing is judged until the entry is opened, exactly as an empty body
  * is not judged.
  */
+function judgedUrlOpens(raw: string | undefined): boolean {
+  return isLockedSecret(raw) || siteUrlToOpen(parseFields(raw).url).ok;
+}
+
 function judgedText(body: string | undefined): string {
   return body === undefined || isLockedSecret(body) ? '' : body;
 }
