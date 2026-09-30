@@ -318,3 +318,63 @@ test('two sealed sides where one DOMINATES still merge as before — wholesale i
     assert.equal(merged.notes.x, await sealed(), 'a causally later sealed write keeps the per-slot fill it always had');
   }
 });
+
+/** A snapshot as a build from before a kind decodes it: the map is not empty, it is not there at all. */
+function withoutKind(snapshot: ProfileSnapshot, kind: 'seconds' | 'payments'): ProfileSnapshot {
+  const copy = { ...snapshot };
+  delete copy[kind];
+  return copy;
+}
+
+test('two sealed sides that raced: a winner from a build with NO map for a kind does not delete the loser’s sealed value of it', async () => {
+  // The newer winner was written by a build that predates `seconds`, so its snapshot carries no such
+  // map. That is not a decision to delete the loser's second value — that build could not have stored
+  // one — and "wholesale" must not turn "cannot hold it" into "dropped it".
+  const newer = withoutKind(snap({
+    nodes: [node('x', 200, { A: 2, B: 1 }, { details: protectedDetails, pinEpoch: 1 } as Partial<TreeNode>)],
+    passwords: { x: await sealedUnderOtherPin() },
+  }), 'seconds');
+  const older = snap({
+    nodes: [node('x', 100, { A: 1, B: 2 }, { details: protectedDetails, pinEpoch: 1 } as Partial<TreeNode>)],
+    passwords: { x: await sealed() },
+    seconds: { x: await sealed() },
+  });
+
+  for (const merged of bothOrders(newer, older)) {
+    assert.equal(merged.passwords.x, await sealedUnderOtherPin(), 'the later clock still wins the node');
+    assert.equal(merged.seconds?.x, await sealed(), 'the only copy of the second value survives the merge');
+  }
+});
+
+test('an absent map lifts only the wholesale restriction: a sealed winner with no `seconds` map still takes no plaintext', async () => {
+  const newer = withoutKind(snap({
+    nodes: [node('x', 200, { A: 2, B: 1 }, { details: protectedDetails, pinEpoch: 1 } as Partial<TreeNode>)],
+    passwords: { x: await sealedUnderOtherPin() },
+  }), 'seconds');
+  const older = snap({
+    nodes: [node('x', 100, { A: 1, B: 2 }, { details: protectedDetails, pinEpoch: 1 } as Partial<TreeNode>)],
+    passwords: { x: await sealed() },
+    seconds: { x: '{"password2":"plain"}' },
+  });
+
+  for (const merged of bothOrders(newer, older)) {
+    assert.equal(merged.seconds?.x, undefined, 'rule 4 still holds: a protected entry gains no plaintext value');
+  }
+});
+
+test('an EMPTY map on the winner is still a wholesale win — only an absent one is "could not hold it"', async () => {
+  const newer = snap({
+    nodes: [node('x', 200, { A: 2, B: 1 }, { details: protectedDetails, pinEpoch: 1 } as Partial<TreeNode>)],
+    passwords: { x: await sealedUnderOtherPin() },
+    seconds: {},
+  });
+  const older = snap({
+    nodes: [node('x', 100, { A: 1, B: 2 }, { details: protectedDetails, pinEpoch: 1 } as Partial<TreeNode>)],
+    passwords: { x: await sealed() },
+    seconds: { x: await sealed() },
+  });
+
+  for (const merged of bothOrders(newer, older)) {
+    assert.equal(merged.seconds?.x, undefined, 'a build that knows the kind and holds none for the entry decided so');
+  }
+});

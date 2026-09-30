@@ -1434,11 +1434,20 @@ vectors whose SEALED state (read from the envelopes, never the mark) differs are
 `pinEpoch`, equal epochs to the sealed side; an override keeps the merged vector so an older build
 accepts it by dominance. The per-slot fallback takes a value only in the winner's sealed state (both
 directions), and **two sealed sides that raced take nothing from each other** — one node wins
-wholesale, so a value sealed under the loser's PIN never lands in the winner's entry. Protect, Remove
-PIN, create-with-PIN and a sealed share import write the mark and `pinEpoch + 1` in one node write
+wholesale, so a value sealed under the loser's PIN never lands in the winner's entry — **except where
+the winner has no map for that kind at all**: a snapshot from a build that predates the kind (`seconds`
+is the one that can meet a sealed entry) could not have deleted a value it cannot store, so the loser's
+SEALED value fills the slot (`syncMerge.copySecret`; an EMPTY map stays wholesale). Losing the only copy
+is worse than one entry holding two PINs, over which Edit refuses naming the slot it cannot open. The
+vault reader (`syncManager.ts`) keeps the three optional maps absent rather than coalescing them to `{}`,
+or the merge could not tell the two apart. Protect, Remove PIN, create-with-PIN and a sealed share
+import write the mark and `pinEpoch + 1` in one node write
 (`protectionDecision`, a function patch evaluated inside the write lease); the door's mark repair
 never bumps it. `syncProtection.keepProtectionLosers` records this machine's losing copy as a revision
-BEFORE `applySnapshot` and says so once; the door's history seal then covers it.
+BEFORE `applySnapshot` and says so once, **whenever the merge discards a sealed value this machine held**
+for an entry both machines changed concurrently — a Protect that won, a Remove PIN that won, or the other
+machine's own sealed edit (two edits under the PIN, the sealed state unchanged — until 2026-09-30 only
+the first two were recorded, against owner decision 6). The door's history seal then covers it.
 
 **Attempts** (`pinAttempts.ts`, in memory, keyed like `pinSession`). Five wrong in a row → 30 s,
 doubling to 15 minutes; the right PIN resets; nothing is wiped. `attemptUnlock` is the one choke point

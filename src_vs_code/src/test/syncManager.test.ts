@@ -594,3 +594,39 @@ test('an ordinary sync with no protection disagreement records no revision', asy
 
   assert.deepEqual(w.order.filter((step) => step.startsWith('record')), []);
 });
+
+/**
+ * The reviewer's case end to end (2026-09-30): two machines edited a protected entry concurrently, and
+ * the newer one runs a build from before the `seconds` kind, so the vault it pushed has no `seconds` map
+ * at all. The cycle must not read that absence as "the remote has none" — the vault reader and the merge
+ * both kept it apart from an empty map — and this machine's losing sealed password is kept, and said.
+ */
+test('a vault from a build with no `seconds` map keeps this machine\'s sealed second value, and the losing sealed edit is recorded first', async () => {
+  const mine = await lockSecret('the card', 'a1', '1234');
+  const theirs = await lockSecret('the card, changed there', 'a1', '9999');
+  const details = { id: 'x', name: 'orest payoneer', kind: 'credential', isSshEnabled: false, pinProtected: true };
+  const localNode = { id: 'x', name: 'orest payoneer', type: 'entity', parentId: null, updatedAt: 100, v: { A: 2, B: 1 }, pinEpoch: 1, details } as unknown as TreeNode;
+  const remoteNode = { ...localNode, updatedAt: 200, v: { A: 1, B: 2 } } as unknown as TreeNode;
+  const w = world();
+  const sync = manager(w, {
+    raw: envelope(),
+    key: KEY,
+    localNodes: [localNode],
+    remoteNodes: [remoteNode],
+    localExtra: { passwords: { x: mine }, seconds: { x: mine } },
+    remoteExtra: { passwords: { x: theirs }, seconds: undefined },
+  });
+
+  try {
+    await sync.syncNow();
+  } finally {
+    sync.dispose();
+  }
+
+  const applied = w.appliedSnapshot as { passwords: Record<string, string>; seconds?: Record<string, string> } | undefined;
+  assert.equal(applied?.passwords.x, theirs, 'the newer node still wins');
+  assert.equal(applied?.seconds?.x, mine, 'the only copy of the second value survives the cycle');
+  assert.deepEqual(w.order, ['record x', 'apply'], 'the losing sealed edit is recorded before it is replaced');
+  assert.equal((w.recorded.x as { secrets: { password?: string } }).secrets.password, mine);
+  assert.equal(w.warnings.filter((m) => m.startsWith('"orest payoneer" was changed under its PIN on another machine')).length, 1, `told once: ${JSON.stringify(w.warnings)}`);
+});

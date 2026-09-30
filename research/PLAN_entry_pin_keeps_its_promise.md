@@ -755,6 +755,20 @@ the values always were (not "reuse the `:64` value").
   classes and the door).
 - The coai `review_code` round of §9 P10 / §13 had not been run when this plan was promoted (§16).
 
+**Review of 2026-09-30 — defects an independent reviewer found on the finished branch.** Each was
+reproduced by a test watched failing first; the commits carry the RED messages.
+- **Sync: an absent map is not a deletion, and every discarded sealed edit is kept.** The wholesale rule
+  (P9) dropped the loser's sealed value of a kind the winner's snapshot has NO map for — a vault pushed by
+  a build from before `seconds` — because the vault reader (`syncManager.ts`) and the merge both
+  collapsed an absent map into `{}`. Both now keep absence apart, and `copySecret` lets the loser's sealed
+  value fill a slot whose map the winner lacks (an empty map stays wholesale; a sealed winner still takes
+  no plaintext). And `protectionConflicts` recorded a loser only when the SEALED STATE changed, so two
+  ordinary concurrent edits under the PIN lost one side with no kept version and nothing said — against
+  owner decision 6. It now records whenever the merge discards a sealed value this machine held, with a
+  third notice (*"… was changed under its PIN on another machine while this one changed it too, and the
+  other machine's version was kept …"*); `ProtectionConflict.protectedNow` became `won`
+  (`'protect' | 'unprotect' | 'other-sealed-edit'`).
+
 ## 16. Open tail
 
 1. **The owner's check in a real editor** — the card entry, protected, shows its whole card in View after one

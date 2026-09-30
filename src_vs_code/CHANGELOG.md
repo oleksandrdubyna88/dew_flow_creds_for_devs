@@ -53,8 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   per-value fill could also slip the losing side's plaintext into a protected entry, or an envelope into
   a just-unprotected one. The later protection decision now wins whatever the clocks say, a sealed
   entry never borrows a plain value (nor the reverse), two machines that protected at once do not mix
-  their values, and the machine whose change lost keeps it as the entry's newest previous version and
-  is told once.
+  their values — but a value the winning machine's older version had no place for (a second value)
+  is kept, not dropped — and the machine whose change lost keeps it as the entry's newest previous
+  version and is told once, including when both machines changed it under the PIN.
 - **Remove PIN Protection…** unwrapped a woven password into a plain one, and over a damaged value
   cleared the mark while that value stayed sealed. It now keeps a woven password woven, names a damaged
   value and asks first (**Remove the PIN from the rest** leaves it exactly as it was), and unseals the

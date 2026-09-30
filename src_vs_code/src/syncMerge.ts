@@ -73,8 +73,9 @@ export interface ProfileSnapshot {
    *
    * <p>Added in the SAME commit as its `SECRET_KINDS` row, which is the whole lesson of the
    * paragraph above: a kind in that table and not in this interface does not fail to sync, it
-   * DELETES. Optional, and read through `?? {}` at the merge, so a snapshot from a build that
-   * predates the kind contributes nothing rather than erasing the other side's values.</p>
+   * DELETES. Optional, and an ABSENT map is kept apart from an empty one — by the vault reader
+   * (`syncManager.ts`) and at the merge (`copySecret`) — so a snapshot from a build that predates the
+   * kind contributes nothing rather than erasing the other side's values.</p>
    */
   seconds?: Record<string, string>;
   /** id -> soft-delete record (object form; legacy number is normalized in). */
@@ -315,18 +316,14 @@ export function mergeProfiles(
     copySecret(notes, id, primary.notes, fallback.notes, rule);
     copySecret(attachments, id, primary.attachments, fallback.attachments, 'plain');
     copySecret(images, id, primary.images, fallback.images, 'plain');
-    // `?? {}`: a snapshot decoded from a pre-0.57 vault has no totps record at all.
-    copySecret(totps, id, primary.totps ?? {}, fallback.totps ?? {}, rule);
-    // `?? {}` for the same reason the line above needs one: a snapshot decoded from a vault
-    // written before the `config` kind carries no configs record at all.
-    copySecret(configs, id, primary.configs ?? {}, fallback.configs ?? {}, rule);
-    copySecret(fields, id, primary.fields ?? {}, fallback.fields ?? {}, rule);
-    // The same guard the two lines above need: a snapshot from a vault written before the payment
-    // kind carries no payments record at all, and must not delete the other side's.
-    copySecret(payments, id, primary.payments ?? {}, fallback.payments ?? {}, rule);
-    // And the same guard again, for the same reason: a snapshot written by a build from before the
-    // `seconds` kind carries no record at all, and must not delete the other side's.
-    copySecret(seconds, id, primary.seconds ?? {}, fallback.seconds ?? {}, rule);
+    // No `?? {}` on the maps below, deliberately: a snapshot decoded from a vault written before a
+    // kind existed (totps before 0.57, then configs, fields, payments, seconds) carries no record for
+    // it at all, and `copySecret` must tell that ABSENT map from an empty one — see its comment.
+    copySecret(totps, id, primary.totps, fallback.totps, rule);
+    copySecret(configs, id, primary.configs, fallback.configs, rule);
+    copySecret(fields, id, primary.fields, fallback.fields, rule);
+    copySecret(payments, id, primary.payments, fallback.payments, rule);
+    copySecret(seconds, id, primary.seconds, fallback.seconds, rule);
   }
 
   // Re-parent children whose parent did not survive the merge.
@@ -396,15 +393,37 @@ function isDeleted(tomb: Tombstone, winner: TreeNode, winnerVec: VersionVector):
   return concurrent(winnerVec, tomb.v) ? tomb.deletedAt >= nodeTime(winner) : true;
 }
 
+/**
+ * One slot of the kept entry: the winner's value, else the loser's as the fallback rule allows.
+ *
+ * <p>An ABSENT map on the winner — the key missing from its snapshot, not an empty record — is not a
+ * deletion. The winner was written by a build that predates the kind, and a build cannot have deleted
+ * a value it has no way to store. So a wholesale win (two sealed sides that raced, `syncPinRule`
+ * rule 5) must not turn "could not hold it" into "dropped it": the loser's SEALED value fills the
+ * slot. That can leave one entry holding values under two PINs — the lesser harm, because Edit names
+ * the slot it cannot open and nothing is lost — against losing what may be the only copy; and on the
+ * machine whose edit lost, `syncProtection` records its values as a kept version anyway. Only the
+ * wholesale restriction lifts: a sealed winner still takes no plaintext and an unsealed one no
+ * envelope (rule 4). An EMPTY map is a build that knows the kind and holds none, and stays wholesale.</p>
+ */
 function copySecret(
   out: Record<string, string>,
   id: string,
-  primary: Record<string, string>,
-  fallback: Record<string, string>,
+  primary: Record<string, string> | undefined,
+  fallback: Record<string, string> | undefined,
   rule: FallbackRule,
 ): void {
-  const value = primary[id] ?? fallbackValue(fallback[id], rule);
+  const value = valueIn(primary, id) ?? fallbackValue(valueIn(fallback, id), ruleOver(primary, rule));
   if (value !== undefined) {
     out[id] = value;
   }
+}
+
+function valueIn(map: Record<string, string> | undefined, id: string): string | undefined {
+  return map?.[id];
+}
+
+/** The fallback rule for one map: a winner with NO map for the kind cannot have decided against the loser's sealed value. */
+function ruleOver(primary: Record<string, string> | undefined, rule: FallbackRule): FallbackRule {
+  return primary === undefined && rule === 'none' ? 'sealed' : rule;
 }
