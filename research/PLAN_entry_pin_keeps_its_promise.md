@@ -833,10 +833,11 @@ reproduced by a test watched failing first; the commits carry the RED messages.
 
 1. **The owner's check in a real editor** — the card entry, protected, shows its whole card in View after one
    PIN (§13, first item). Every test stubs VS Code (`research/module_tests.md`, *The editor's own UI*).
-2. **Extension 1.12.0**, cut after the sibling plan
-   [PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md) merges:
-   version in `package.json` AND `package-lock.json`, the CHANGELOG heading, tag `extension-v1.12.0`; the coai
-   `review_code` round on the finished branch before it.
+2. ~~**Extension 1.12.0**~~ **Shipped 2026-09-30.** The coai code round ran (`proceed`, 8 of 8 reviewers;
+   five findings fixed, one rejected with a reason), the branch merged as #165, the sibling plan as #168, the
+   CHANGELOG heading as #169, and release-please's #170 cut `extension-v1.12.0`: published to the VS Code
+   Marketplace (`remsoftdev.creds-for-devs` 1.12.0, listed 14:54 UTC) and as the GitHub release with the
+   `.vsix` attached.
 3. **Known limits, recorded:** re-running an interrupted restore adds one more kept version (the pre-restore
    record) and so can push the oldest out; the first door after a sync seals stray plaintext synchronously
    (about a second per value); and *Remove PIN Protection…* for an entry whose only sealed values are kept

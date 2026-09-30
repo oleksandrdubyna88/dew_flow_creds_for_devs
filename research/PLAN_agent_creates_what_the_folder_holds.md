@@ -395,9 +395,14 @@ docs with this promotion (S7). D-A rode with S1/S3.
 - **A real agent session against the built relay** (§9, first item) — "store a PowerShell command that
   checks the quota" in a Terminal folder, then View shows the command and its arguments and no SSH line.
   Needs extension 1.12.0 and relay 0.9.0 installed; not done.
-- **The release itself**: extension 1.12.0 first (it serves the routes), then relay 0.9.0, each tag pushed
-  alone (§8). `src_mcp/RELEASES.md` is release-please's to write from these commits.
-- **The coai code round** (S7) has not run on this branch.
+- ~~**The release itself**~~ **Shipped 2026-09-30**, in the order §8 asks: `extension-v1.12.0` (#170 — the
+  VS Code Marketplace and the GitHub release), then `mcp-v0.9.0` (#171 — the GitHub release with the
+  `creds-mcp` binaries for win, linux and osx on x64 and arm64, each with its SHA-256), each tag cut alone.
+  The release build is also where the relay's Native-AOT link ran for the first time with the `fields`
+  object parameter, and it passed on all six targets.
+- ~~**The coai code round**~~ **Ran 2026-09-30** before the merge (#168): `proceed`, 8 of 8 reviewers; the
+  modal that could outlive the PIN step and the missing size cap were fixed, the per-create probe kept with
+  its reason (§11, *Code review*).
 - **The instructions block is over 2 KiB** (2414 bytes). The sentence this plan added survives the cut; the
   tail of the block does not, for clients that cut. Shortening it is shared with
   [PLAN_creds_cli_reachable_from_every_caller.md](../todo/PLAN_creds_cli_reachable_from_every_caller.md) (§7).
