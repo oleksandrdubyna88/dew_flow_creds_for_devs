@@ -1,7 +1,7 @@
 import { SECRET_SLOTS } from '../entitySlots';
 import { lockSecret } from '../secretEnvelope';
 import type { StorageManager } from '../storageManager';
-import { carried, stored } from '../storedSecret';
+import { stored } from '../storedSecret';
 import { EntityMetadata } from '../types';
 import { StubCancellationToken, StubCancellationTokenSource, loadWithVscode } from './vscodeStub';
 
@@ -26,7 +26,7 @@ export const PIN = '1234';
  * keychain does (`stored`), and a test that inspects a stored value byte for byte reads it back
  * (`carried`). Identity at run time — no assertion sees a different value.
  */
-export { carried, stored };
+export { carried, stored } from '../storedSecret';
 
 /** Locked values, one wrap per plaintext and PIN, made once per process — scrypt costs about a second. */
 const wraps = new Map<string, Promise<string>>();

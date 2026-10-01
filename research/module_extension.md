@@ -1584,7 +1584,10 @@ revision and no sync payload changed.
   and mint. `RevisionSecrets`, `SecretSlot.read`, `viewerOptions.StoredReader`, `ExportOpen`,
   `RotateDeps.current`, `McpEntryContext.dbConnection` and the five hand-written structural interfaces
   (`entityFlags`, `exportSecrets`, `maskEntries`, `mcpEntries`, `shareWithheld`) hold the stored form. So a
-  stored value handed to a `string` — a file, a JSON payload, a parser, a page — does not compile.
+  stored value handed to an API typed `string` — a file write, a parser, a page's `string` field — does not
+  compile. The compiler does NOT see a template literal, `+`, `String(value)`, `JSON.stringify(value)`, a
+  truthiness test or a cast: those are §3's limits, and the funnel test's syntax half and the AST reader
+  guard are what refuse them.
 - **Text comes out through a door, a read, or a carrier — and goes in through one writer.** Out:
   `openStored` / `openedText` / `gatedSecretReader` and the click openers (door), `automaticOpener` +
   `fieldReadingOf`, `plainText`, `unsealedText` (automatic and owner-less), and `carried()` only at the raw

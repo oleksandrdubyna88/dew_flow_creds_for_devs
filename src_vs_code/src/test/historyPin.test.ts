@@ -213,3 +213,20 @@ test('an opened kept version holds REAL stored forms: each field reads as `value
   assert.deepEqual(readSecret(secrets.password), { kind: 'value', value: 'woven pw', woven: true }, 'the woven password reads as a woven value');
   assert.deepEqual(readSecret(secrets.notes), { kind: 'value', value: 'kept note', woven: false }, 'the plain note reads as a plain value');
 });
+
+test('a kept field stored as null (a damaged or older history record) is nothing to seal, not a crash', async () => {
+  // `readHistory` hands back what the store parsed; a record whose field is `null` passes its shape check.
+  // Before the typed-secrets flip `isText` asked `typeof value === 'string'`; the flip's `isHeld` must too
+  // (CodeRabbit on PR #178).
+  const storage = memoryStorage(clickVscode([], sinks()));
+  await entryWithHistory(storage, {}, [{ password: stored('pw') }]);
+  // `pushRevision` drops a non-string on WRITE, so the record is what an older build or a damaged store left —
+  // read back through `readHistory`, which checks the list's shape and not each field.
+  const read = storage.getHistory.bind(storage);
+  storage.getHistory = async (a: string, e: string) =>
+    (await read(a, e)).map((r) => ({ ...r, secrets: { ...r.secrets, notes: null as unknown as StoredSecret } }));
+
+  const sealed = await protectHistory(storage, ACCOUNT, ENTRY, PIN).then((count) => count, (error: unknown) => error);
+
+  assert.equal(sealed, 1, `a null kept field crashed Protect's history pass: ${String(sealed)}`);
+});

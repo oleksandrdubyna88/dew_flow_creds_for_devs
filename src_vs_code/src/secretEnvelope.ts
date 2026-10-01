@@ -267,7 +267,9 @@ export function isCorruptSecret(raw: StoredSecret | undefined): boolean {
  */
 export function isEmptySecret(raw: StoredSecret | undefined): boolean {
   const text = carried(raw);
-  return text === undefined || text.length === 0;
+  // `typeof`, not `=== undefined`: a kept field read back from a damaged or older history record can be
+  // `null` (`readHistory` checks the list's shape, not each field) — nothing, not a crash (PR #178).
+  return typeof text !== 'string' || text.length === 0;
 }
 
 /** Whether what is stored is a woven pair — true whether or not it is also locked. */

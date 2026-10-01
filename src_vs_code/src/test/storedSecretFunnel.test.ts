@@ -227,6 +227,7 @@ test('the negative fixture: a slot setter called on the storage is reported, raw
     'export const deps = { store: storage };',
     'export class I { f() { let store = this.deps.storage; return store; } }',
     'export async function e(storage: S, s: StoredSecret) { const vault = storage; await vault.setPassword("a", "e", s); }',
+    'export async function g(deps: D, s: StoredSecret) { const { storage: kept } = deps; await kept.setPassword("a", "e", s); }',
   ].join('\n');
 
   assert.deepEqual(writesIn('fixture.ts', source).map(said), [
@@ -235,6 +236,7 @@ test('the negative fixture: a slot setter called on the storage is reported, raw
     'src/fixture.ts:4 store: storage',
     'src/fixture.ts:5 store: storage',
     'src/fixture.ts:6 vault: storage',
+    'src/fixture.ts:7 kept: storage',
   ]);
 });
 

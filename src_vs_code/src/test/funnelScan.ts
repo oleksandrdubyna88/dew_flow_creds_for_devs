@@ -231,12 +231,19 @@ function deletes(call: ts.Node): boolean {
  * the storage on under its own name, where every later call is still seen.
  */
 function storageAlias(node: ts.Node): string | undefined {
+  const alias = boundAlias(node) ?? destructuredAlias(node);
+  return alias === undefined || alias === 'storage' ? undefined : `${alias}: storage`;
+}
+
+/** `x: storage` in an object, or `const x = storage` — the name the storage is bound to. */
+function boundAlias(node: ts.Node): string | undefined {
   const named = bindingOf(node);
-  if (named === undefined || !isStorage(named.initializer)) {
-    return undefined;
-  }
-  const name = named.name.getText();
-  return name === 'storage' ? undefined : `${name}: storage`;
+  return named !== undefined && isStorage(named.initializer) ? named.name.getText() : undefined;
+}
+
+/** `const { storage: x } = deps` — the storage taken out of something under another name (CodeRabbit on PR #178). */
+function destructuredAlias(node: ts.Node): string | undefined {
+  return ts.isBindingElement(node) && node.propertyName !== undefined && nameOf(node.propertyName) === 'storage' ? node.name.getText() : undefined;
 }
 
 function bindingOf(node: ts.Node): ts.PropertyAssignment | ts.VariableDeclaration | undefined {
