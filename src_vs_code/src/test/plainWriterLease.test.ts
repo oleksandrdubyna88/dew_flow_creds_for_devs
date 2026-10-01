@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { describeError } from '../describeError';
 import { NOTHING_OPENED } from '../editPrefill';
 import { protectEntity } from '../entityPin';
-import { EntryWriter, ProtectedMeanwhile, writerFor } from '../entryWriter';
+import { EntryWriter, ProtectedMeanwhile, writerFor, writerForNew } from '../entryWriter';
 import { unattendedSealing } from '../sealingAtWrite';
 import type { StorageManager } from '../storageManager';
 import { protectionDecision } from '../syncPinRule';
@@ -109,4 +109,38 @@ test('every write of a plain writer runs inside the storage\'s cross-window leas
   await writer.setPassword(ACCOUNT, ENTRY, 'new pw');
 
   assert.deepEqual(leased, ['setNotes leased', 'setPassword leased']);
+});
+
+// ---- writerForNew: the caller's word that an id is new, verified (the E2 code round, findings 0 and 6) ----
+
+test('writerForNew over an id whose entry exists and was protected stores nothing in the clear — the word "new" is checked, not taken', async () => {
+  const written: string[] = [];
+  const storage = await vault({ password: 'old pw' }, written);
+  await protectedElsewhere(storage);
+  written.length = 0;
+
+  const outcome = await writerForNew(storage, ACCOUNT, ENTRY).setPassword(ACCOUNT, ENTRY, 'new pw').then(() => 'written', (error: unknown) => error);
+
+  assert.deepEqual(written.filter((value) => value === 'new pw'), [], 'a writer for a "new" id wrote in the clear into an existing, protected entry');
+  assert.ok(outcome instanceof ProtectedMeanwhile, `the write was not refused: ${describeError(outcome)}`);
+});
+
+test('the companion: writerForNew over a genuinely new id writes without reading a single slot — an import pays no keychain re-check', async () => {
+  const storage = await vault({});
+  const reads: string[] = [];
+  for (const getter of ['getNotes', 'getFieldsRaw', 'getSecondRaw', 'getPaymentRaw', 'getConfigBody', 'getDbConnection', 'getVpnConfig', 'getTotp', 'getPrivateKey', 'getPassword'] as const) {
+    const real = storage[getter].bind(storage);
+    storage[getter] = (a: string, e: string) => {
+      reads.push(getter);
+      return real(a, e);
+    };
+  }
+  const writer = writerForNew(storage, ACCOUNT, 'brand-new');
+
+  await writer.setPassword(ACCOUNT, 'brand-new', 'pw');
+  await writer.setNotes(ACCOUNT, 'brand-new', 'note');
+  await writer.setDbConnection(ACCOUNT, 'brand-new', 'postgres://h/db');
+
+  assert.deepEqual(reads, [], 'the fast path for a new id read the keychain');
+  assert.equal(await storage.getPassword(ACCOUNT, 'brand-new'), 'pw');
 });

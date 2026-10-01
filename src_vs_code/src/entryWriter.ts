@@ -23,8 +23,10 @@ import type { StorageManager } from './storageManager';
  *       (CWE-362) named the window: a decision read, a write later, another window protecting the entry
  *       in between — and the E2 code round found it open between ANY two writes, not only before the
  *       first. Nothing is cached: one write failing for a passing reason never fails the next. No lease
- *       is held across a PIN box — a plain proof asks nothing. A brand-new entry (`fresh`) re-checks
- *       nothing: its id is one nobody else can know.</li>
+ *       is held across a PIN box — a plain proof asks nothing. A brand-new entry (`fresh`) is taken at
+ *       its word only once its first write has seen, under the lease, that no node has its id
+ *       ({@link freshVerified}); after that it re-checks nothing — an id no node carries is one nobody
+ *       else can protect.</li>
  *   <li><b>the sealing writer</b>, for a `sealed` proof: every value sealed in memory under the PIN before
  *       its own raw setter runs (rule R3) — so a process killed between two slot writes leaves each slot
  *       sealed or unwritten, never plaintext — a value equal to what the form OPENED is skipped (R4:
@@ -65,7 +67,7 @@ export function writerFor(storage: StorageManager, accountId: string, entityId: 
   if (sealing.kind === 'sealed') {
     return sealingWriter(storage, accountId, entityId, sealing.pin, opened);
   }
-  return plainWriter(storage, accountId, entityId, sealing.fresh ? straight : recheckedEach(storage, accountId, entityId, sealing.marked));
+  return plainWriter(storage, accountId, entityId, sealing.fresh ? freshVerified(storage, accountId, entityId) : recheckedEach(storage, accountId, entityId, sealing.marked));
 }
 
 /**
@@ -130,6 +132,32 @@ function recheckedEach(storage: StorageManager, accountId: string, entityId: str
     storage.writes.run(async () => {
       await refuseIfProtectedSince(storage, accountId, entityId, markedAtDecision);
       await write();
+    });
+}
+
+/**
+ * A NEW id's writes — the caller's word that the id is new, VERIFIED at the first write (the E2 code
+ * round, findings 0 and 6): under the lease, the tree must hold no node with that id. Then nothing
+ * re-checks again, and an import or a bundle restore pays one lease and no keychain read per entry.
+ *
+ * <p>Sufficient, and the cheapest check that is: an entry is protected only through its node — the mark
+ * lives on it, and *Protect with a PIN…* runs from it — and every `writerForNew` caller (the person's Add,
+ * an agent's create, an import, a bundle restore, an accepted share) writes the node AFTER the secrets
+ * (Rule A), so no window can protect an id that has no node yet, and none can learn a fresh random id
+ * before that node is written. A slot read would ask ten keychain entries what the node already answers.
+ * When a node DOES carry the id — the word was wrong — the writes take the re-checked road, every one,
+ * as if the decision had seen no mark: a protected entry refuses them, an unprotected one is written as
+ * any existing entry is. (A tree that cannot be read at all — `metadataFault` — reads every node as
+ * absent here; it blinds the re-check's own mark read the same way, and no Protect can run from a node
+ * nobody can read.)</p>
+ */
+function freshVerified(storage: StorageManager, accountId: string, entityId: string): Through {
+  const verified: { road?: Through } = {};
+  return (write) =>
+    verified.road?.(write)
+    ?? storage.writes.run(async () => {
+      verified.road = storage.getNode(accountId, entityId) === undefined ? straight : recheckedEach(storage, accountId, entityId, false);
+      await verified.road(write);
     });
 }
 

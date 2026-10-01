@@ -52,7 +52,8 @@ const PROOF: unique symbol = Symbol('a Sealing made by sealingAtWrite.ts');
  * <ul>
  *   <li>`plain` carries what its decision SAW of the mark (`marked`), so the writer can re-check under
  *       the cross-window lease that nothing was protected since (`entryWriter.ts`), and `fresh` when the
- *       entry is brand new — an id nobody else can know, so there is nothing to re-check;</li>
+ *       caller says the entry is brand new — a word the writer verifies at its first write (no node
+ *       may carry the id) before it stops re-checking;</li>
  *   <li>`stopped.reason` is what the CALLER still has to say: `''` when the person declined or was told
  *       already (the interactive constructors), the PIN sentence for an unattended write — the
  *       `OpenedSecret.stopped` contract (`secretOpener.ts`).</li>
@@ -138,8 +139,8 @@ function sealedWith(pin: string | undefined): Sealing {
 /**
  * A BRAND-NEW entry's sealing (§2.4): `plain` when its folder asks for no PIN, `sealed` with the
  * folder's PIN when it does (`pinOnCreate.CreatePin`), `stopped` when the PIN was not settled — a caller
- * that returned on `cancelled` before writing gets a writable proof by its type. `fresh`: the id is new,
- * nobody else can protect it, so the writer re-checks nothing. The person's Add and an agent's create
+ * that returned on `cancelled` before writing gets a writable proof by its type. `fresh`: the id is new —
+ * the writer checks that no node carries it at the first write, and re-checks nothing after. The person's Add and an agent's create
  * take it; so do an accepted share and an import, which write NEW ids and ask no folder PIN (§2.7 — the
  * typed writer makes their `plain` proof visible rather than silent).
  */

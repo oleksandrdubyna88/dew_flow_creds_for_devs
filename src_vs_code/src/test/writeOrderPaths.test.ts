@@ -74,6 +74,8 @@ function recorder(): { calls: string[]; storage: Record<string, unknown> } {
     return Promise.resolve();
   };
   const storage: Record<string, unknown> = {
+    // The lease a writer's first write for a new id is verified under (the E2 code round, findings 0 and 6) — run inline.
+    writes: { run: <T>(work: () => Promise<T>): Promise<T> => work() },
     addNode: (...a: unknown[]) => note('addNode')(...a, 'node'),
     updateNode: (...a: unknown[]) => note('updateNode')(...a, 'node'),
     updateNodeFields: (...a: unknown[]) => note('updateNode')(...a, 'node'),
@@ -257,6 +259,8 @@ function stores(options: { addNodeFails: boolean }): {
     return Promise.resolve();
   };
   const storage: Record<string, unknown> = {
+    // The lease a writer's first write for a new id is verified under (the E2 code round, findings 0 and 6) — run inline.
+    writes: { run: <T>(work: () => Promise<T>): Promise<T> => work() },
     addNode: (_a: string, node: { id: string }): Promise<void> => {
       // A refused write does not land the node — which is exactly the case the compensation covers,
       // and the only one it can settle without deciding what other machines may keep.
