@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { describeError } from '../describeError';
+import { refreshFrom, runAndDeliver, tableFor } from '../brokerResponse';
 import { protectEntity } from '../entityPin';
+import { maskEntriesFor } from '../maskEntries';
 import { writeUnattended } from '../entryWriter';
 import { snapshotForRevision } from '../revisionSnapshot';
 import type { RotateDeps } from '../rotateAction';
 import { readSecret, unlockSecret } from '../secretEnvelope';
 import { NEW_SECRET_PLACEHOLDER } from '../secretRotation';
+import type { MaskEntry } from '../secretMasker';
 import type { StorageManager } from '../storageManager';
 import { protectionDecision } from '../syncPinRule';
 import { EntityMetadata } from '../types';
@@ -46,8 +49,24 @@ interface World {
   rotate: () => Promise<UseActionResult>;
 }
 
+/**
+ * How the far side behaves: `echo` prints back the statement it ran (a statement composed to echo its
+ * input, the masker's case), `stays` leaves the entry unprotected, `exitCode` is what the statement ended with.
+ */
+interface FarSide {
+  readonly echo?: boolean;
+  readonly stays?: 'plain';
+  readonly exitCode?: number;
+}
+
+/** What the far side printed and how the statement ended. */
+function farAnswer(far: FarSide, body: unknown): UseActionResult {
+  const printed = far.echo === true ? `${String((body as { query?: unknown }).query)}\n` : 'ALTER\n';
+  return { status: 200, body: { exitCode: far.exitCode ?? 0, stdout: printed, stderr: far.echo === true ? printed : '' } };
+}
+
 /** A plain database entry, and a far side that accepts the statement while another window protects the entry. */
-async function world(inputs: (string | undefined)[], modal: (string | undefined)[]): Promise<World> {
+async function world(inputs: (string | undefined)[], modal: (string | undefined)[], far: FarSide = {}): Promise<World> {
   const s = sinks();
   s.modalAnswers.push(...modal);
   const stub = clickVscode([...inputs], s);
@@ -67,11 +86,13 @@ async function world(inputs: (string | undefined)[], modal: (string | undefined)
     validate: () => ({ ok: true }),
     summarize: () => '',
     describeOutcome: () => 'ok',
-    run: async () => {
+    run: async (_ctx, body) => {
       // The server took the new password. Meanwhile, another window protected the entry.
-      await protectEntity(storage, ACCOUNT, ENTRY, PIN);
-      await storage.updateNodeFields(ACCOUNT, ENTRY, protectionDecision(true));
-      return { status: 200, body: { exitCode: 0, stdout: 'ALTER\n' } };
+      if (far.stays !== 'plain') {
+        await protectEntity(storage, ACCOUNT, ENTRY, PIN);
+        await storage.updateNodeFields(ACCOUNT, ENTRY, protectionDecision(true));
+      }
+      return farAnswer(far, body);
     },
   };
   const deps: RotateDeps = {
@@ -147,4 +168,70 @@ test('an unattended write refused because the entry was protected meanwhile does
   assert.match(refused, /"orders-db" was protected with a PIN/);
   assert.doesNotMatch(refused, /do it again from the entry/i, 'an unattended caller was told to do it again from the entry');
   assert.match(refused, /Nothing was stored/);
+});
+
+// ---- Q1: the rotation's own answer never carries the new value (rotation-quarantine plan §4.8) ----
+
+/**
+ * The rotation's answer as the agent receives it: through the broker's own tail (`runAndDeliver`), with
+ * the pre-run table and the post-run refresh read by the real `maskEntriesFor` over the real storage —
+ * exactly what `credsAgentServer` wires. A statement composed to echo its input prints the new value.
+ */
+async function delivered(w: World): Promise<string> {
+  const entriesFor = (a: string, e: string): Promise<readonly MaskEntry[]> => maskEntriesFor(w.storage, a, e);
+  const where = { accountId: ACCOUNT, entityId: ENTRY };
+  let sent: unknown;
+  await runAndDeliver(
+    {
+      respond: (_status, body) => {
+        sent = body;
+      },
+      log: () => undefined,
+      burn: () => Promise.resolve(),
+      table: await tableFor(entriesFor, where),
+      where: { grant: 'g1', entityName: 'orders-db', action: 'rotate', via: 'mcp', summary: 'rotate', caller: undefined },
+      refresh: refreshFrom(entriesFor, where),
+      fail: (reason) => {
+        sent = { failed: reason };
+      },
+      mutatesSecrets: true,
+    },
+    w.rotate,
+    () => 'rotated',
+  );
+  return JSON.stringify(sent);
+}
+
+test('a statement that echoes the new value, the entry protected while it ran, the person stores it under the PIN — the agent never reads the new value', async () => {
+  const w = await world([PIN], [STORE_IT], { echo: true });
+
+  const answer = await delivered(w);
+
+  assert.ok(!answer.includes(NEW_SECRET), `the agent was handed the new value in the rotation's own answer: ${answer}`);
+  assert.match(answer, /CREDS_MASKED/, 'the echoed statement was not masked — it is missing rather than redacted');
+});
+
+test('a statement that echoes the new value, the entry protected while it ran, the person declines and copies it — the agent never reads the new value', async () => {
+  const w = await world([], [undefined, COPY_IT], { echo: true });
+
+  const answer = await delivered(w);
+
+  assert.ok(!answer.includes(NEW_SECRET), `the agent was handed the new value in the rotation's own answer: ${answer}`);
+});
+
+test('a statement that echoes the new value and then FAILS — the far side may have changed anyway, and the agent never reads the new value', async () => {
+  const w = await world([], [], { echo: true, stays: 'plain', exitCode: 1 });
+
+  const answer = await delivered(w);
+
+  assert.ok(!answer.includes(NEW_SECRET), `the agent was handed the new value in a failed rotation's answer: ${answer}`);
+});
+
+test('the control: a statement that echoes the new value into an entry nobody protected — stored plain, and masked', async () => {
+  const w = await world([], [], { echo: true, stays: 'plain' });
+
+  const answer = await delivered(w);
+
+  assert.ok(!answer.includes(NEW_SECRET), `the agent was handed the new value: ${answer}`);
+  assert.match(answer, /CREDS_MASKED/);
 });

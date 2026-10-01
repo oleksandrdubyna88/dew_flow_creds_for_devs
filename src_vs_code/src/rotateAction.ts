@@ -14,6 +14,7 @@ import { Revision } from './revisionHistory';
 import { pinFieldRefusal } from './pinGate';
 import { unsealedText } from './secretOpener';
 import type { StoredSecret } from './storedSecret';
+import { MaskEntry, buildMaskTable, maskResponseBody } from './secretMasker';
 
 /**
  * The `rotate` action: the window changes a secret on the far side and then stores it.
@@ -34,9 +35,11 @@ import type { StoredSecret } from './storedSecret';
  * <p><b>Nobody sees the new secret.</b> Not the agent, which wrote a placeholder; not the
  * person, whose consent prompt shows the statement with the placeholder intact; not the audit
  * line, which records the same summary. The one place it could still escape is the far side's
- * own output — a statement can be composed to echo what it was given — and the broker's masker
- * closes that: by the time the response is masked the new value is stored, so it is in the mask
- * table like any other secret of that entry.</p>
+ * own output — a statement can be composed to echo what it was given. The rotation closes that
+ * ITSELF, with the values it holds (`maskedAnswer`): the drawn secret and the stored form are masked
+ * out of whatever it answers, stored or not, succeeded or not. The broker's masker could not — it
+ * reads the entry's values after the run, and a value stored sealed under a PIN, held outside the
+ * entry or stored nowhere is in no table it can build (rotation-quarantine plan §4.8, Q1).</p>
  */
 
 export interface RotateDeps {
@@ -151,11 +154,32 @@ async function run(
   const { details, checked, secret, stored } = ready;
 
   const result = await underlying.run(ctx, { [field]: substituteNewSecret(statement, secret) });
-  // The far side did not change, so neither does the vault. Handed back as it came: the
-  // statement's own error is what says why, and rewording it here would lose that.
-  return succeeded(result)
-    ? await commit(ctx, details, checked.slot, stored, result, deps)
-    : result;
+  // The far side did not change, so neither does the vault. Handed back as it came — but masked: the
+  // statement's own error is what says why, and a statement that printed its input and THEN failed may
+  // have changed the far side all the same.
+  const answer = succeeded(result) ? await commit(ctx, details, checked.slot, stored, result, deps) : result;
+  return maskedAnswer(answer, newValues(checked.slot, secret, stored));
+}
+
+/**
+ * The rotation's answer with the new value taken out of every field (rotation-quarantine plan §4.8, Q1).
+ *
+ * <p>Here and not in the broker, because only here is the value in hand: stored under a PIN it is sealed
+ * (`maskEntries` cannot read a sealed value, by design), and handed to the person it is stored nowhere —
+ * so the post-run table the broker builds holds the OLD value and not the new one, and a statement
+ * composed to echo its input handed the agent the very secret this action exists to keep from it.</p>
+ */
+function maskedAnswer(answer: UseActionResult, values: readonly MaskEntry[]): UseActionResult {
+  return { status: answer.status, body: maskResponseBody(answer.body, buildMaskTable(values)).body };
+}
+
+/** The drawn secret and the stored form that carries it — a connection string carries the password inside it. */
+function newValues(slot: RotationSlot, secret: string, stored: string): MaskEntry[] {
+  const label = slot === 'password' ? 'NEW_PASSWORD' : 'NEW_DB_PASSWORD';
+  return [
+    { value: secret, label },
+    { value: stored, label: slot === 'password' ? label : 'NEW_DB_CONNECTION' },
+  ];
 }
 
 /**
@@ -351,7 +375,7 @@ function succeeded(result: UseActionResult): boolean {
   return exitCode === undefined || exitCode === 0;
 }
 
-/** Whatever the statement printed, passed through — the masker takes the secret out of it. */
+/** Whatever the statement printed, passed through — `maskedAnswer` takes the new value out of it. */
 function outputOf(result: UseActionResult): unknown {
   return (result.body as { stdout?: unknown }).stdout ?? '';
 }
