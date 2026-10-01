@@ -152,7 +152,10 @@ for minutes.
 (`pinClick.ts:44`, `:66-68`), Export (`commands/exportCommand.ts:182`), Open Site, the kept-version door
 (`revisionDoor.ts:43`), a share's update (`shareUpdateSeal.ts:120`), and the share inbox
 (`shareInbox.ts:240`). Release is added there, best-effort like `healProtected` (`:71-77`) and `clearMark`
-(`:181-192`) — a failed release never becomes a failure to open:
+(`:181-192`) — a failed release never becomes a failure to open. It is **AWAITED** before `admit`
+returns (plan round, findings 2–3): "best-effort" means a failure is swallowed, never that the release runs
+detached, so Edit, a share or an export that admitted first always reads the released value, and a form
+can never be opened over the old one and saved back over the new:
 
 - **Locked path:** after `healProtected`, `releaseHeld(storage, a, e, gate)`.
 - **Unlocked path:** after `repairFalseMark` (`:42-46`), the same call — it takes the plain road (below).
