@@ -10,6 +10,8 @@
 import tseslint from 'typescript-eslint';
 
 export default [
+  // Fixtures MEANT not to compile — typedFixtures.test.ts compiles them, one program each.
+  { ignores: ['src/test/fixtures/typed/**'] },
   {
     // A disable that has stopped being needed is an exemption nobody granted: once a refactor
     // brings a function under the limit, or a file under 800 lines, the stale marker would keep

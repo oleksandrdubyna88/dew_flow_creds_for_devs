@@ -14,5 +14,6 @@
     "sourceMap": true,
     "skipLibCheck": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/test/fixtures/typed"]
 }
