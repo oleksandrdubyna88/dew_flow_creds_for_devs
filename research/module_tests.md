@@ -847,6 +847,19 @@ Command: `npm test`, or `node --test out/test/<file>.js`.
 tree's context menus, the real webview and the real input box are stubbed. The owner's own card,
 protected and viewed in a real editor, is the plan's first Definition-of-Done item and is left open.
 
+### The typed-secrets plan, epic 1 — no flow, two foundations (2026-10-01)
+
+[PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) E1 changes no behaviour, so it adds
+no scenario; it adds what the later epics are checked with. `slotTable.test.ts` now holds the slot table
+to the vault's kinds (the ten `bundleKey`s plus attachments and images equal `SECRET_KINDS`) and holds
+`snapshotForRevision` to exactly the table's getters, and `syncPinRule.test.ts` holds `SEALABLE_MAPS`
+to the same ten names. `typedFixtures.test.ts` is the **compile-fail harness**: every file under
+`src/test/fixtures/typed/` declares on its first line `// expect TS<code> at line <n>` or `// expect
+compiles`, is compiled as its own program with the project's `tsconfig.json` options, and must produce
+exactly that diagnostic or none. The fixtures are excluded from `tsc -p ./` and `eslint src`; the
+directory is resolved from the package root, an empty one fails, and a `// expect compiles` fixture
+must exist as the control that programs are really built and checked. ~0.5-1 s per fixture.
+
 ## An agent creates what the folder holds (2026-09-30, extension 1.12.0, relay 0.9.0)
 
 The flows [PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md)

@@ -1159,7 +1159,8 @@ inherited at read time.
 
 | Module | What it holds |
 |---|---|
-| `entitySlots.ts` | the nine slots, as one table everything walks — and the fixed ORDER |
+| `entitySlots.ts` | the ten slots, as one table everything walks — and the fixed ORDER. Each row names its revision field and, since the typed-secrets plan's E1 (2026-10-01), its `bundleKey` — the sync/backup map it travels in, asserted with attachments and images to be exactly `SECRET_KINDS` and to equal `syncPinRule.SEALABLE_MAPS`; `snapshotForRevision` walks the table instead of ten hand-written reads |
+| `storedSecret.ts` | `StoredSecret`, the phantom type of a value as the keychain holds it ([PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) §2.2), with its `stored()` mint and `carried()` — defined in E1 and returned by nothing yet; what it must and must not compile is held by `test/typedFixtures.test.ts` |
 | `entityPin.ts` | `protectEntity` / `unprotectEntity` / `siblingsOpened` / `lockedSlotCount`, pure of `vscode` |
 | `pinSession.ts` | the grant: a module-level Map in the extension host and nothing else |
 | `pinGate.ts` | opening one value for an operation somebody CLICKED; `automaticPinRefusal` for everything else |
@@ -2248,9 +2249,11 @@ presses the other one.
 `secretResolver` over a `SecretReader` — the live viewer reads the keychain at Copy time
 (`storageSecretReader`), the revision viewer answers from the record (`revisionSecretReader`) —
 and `dbDisplay` owns the always-show-a-port / never-inline-the-password arithmetic.
-`revisionSnapshot.ts` (pure): the five-secret capture recorded before an entity is overwritten,
+`revisionSnapshot.ts` (pure): the capture recorded before an entity is overwritten,
 shared by an edit and by an accepted same-sender share update — previously two copies, where a
-secret added to one would silently fall out of the other's history.
+secret added to one would silently fall out of the other's history. Since 2026-10-01 it walks
+`entitySlots.SECRET_SLOTS` (every slot, one read each), so a slot added to the table is kept by
+history with no line written here; `RevisionSecrets` is typed from `SMALL_FIELDS` for the same reason.
 
 ### History as tree rows (0.56.0)
 

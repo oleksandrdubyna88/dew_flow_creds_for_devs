@@ -1,7 +1,8 @@
 # PLAN — a stored secret has its own type: forgetting the PIN door stops compiling
 
-> Status: **plan only, nothing implemented yet, 2026-09-29 — revised after the consultation, 2026-09-30;
-> split into epics after the second plan round, 2026-09-30.**
+> Status: **E1 of three epics built, 2026-10-01** (T1 and T2 on `feat/typed-secrets-e1`, its code round and
+> pull request still to run; E2 and E3 not begun) — written 2026-09-29, revised after the consultation
+> 2026-09-30, split into epics after the second plan round 2026-09-30.
 > Two plan gates passed: `proceed` on the 2026-09-29 text (2 of 2 reviewers, one round, seven findings
 > accepted — §8.1) and `proceed` on this revised text (session `bc788c97`, 1 of 2 reviewers — Codex was
 > rate-limited — two findings accepted, one rejected with its reason — §8.2). The second round's operator
@@ -418,7 +419,7 @@ this is what they mean for THIS plan:
 
 | epic | branch | cut from | stories (model) | plan round | code round | PR |
 |---|---|---|---|---|---|---|
-| **E1** — foundations | `feat/typed-secrets-e1` | `main` | T1, T2 (Opus) | session `9f8e746d`, **proceed**, 1 of 2 reviewers (Codex rate-limited); finding 0 accepted — the harness resolves its fixtures from the package root, a run that finds zero fixtures FAILS, and the compiles-fixture is the positive control; finding 1 accepted as a check — the ratchet's output is recorded per commit | — | — |
+| **E1** — foundations | `feat/typed-secrets-e1` | `main` at `9f62e4db` | T1, T2 (Opus) — built 2026-10-01, commits `f038982c` (T1) and `9e380014` (T2) | session `9f8e746d`, **proceed**, 1 of 2 reviewers (Codex rate-limited); finding 0 accepted — the harness resolves its fixtures from the package root, a run that finds zero fixtures FAILS, and the compiles-fixture is the positive control (all three built and shown red, T2's commit); finding 1 accepted as a check — the ratchet's output is recorded per commit (both commits: 1038 / 1015, at baseline) | — | — |
 | **E2** — the doors | `feat/typed-secrets-e2` | E1's last commit | T3, T4 (Fable, max) | — | — | — |
 | **E3** — the flip and the finish | `feat/typed-secrets-e3` | E2's last commit | T5, T6 (Opus) | — | — | — |
 
@@ -435,7 +436,7 @@ land in E1's harness, and T5 walks E1's table. The cut is after T2 rather than a
 without a type has no positive control and a type without the harness has no teeth. Opus: no judgement
 is made in either story.
 
-- [ ] **T1 (E1) — The slot table is the one list.** `SecretSlot.bundleKey`; `RevisionSecrets` typed from
+- [x] **T1 (E1) — The slot table is the one list.** `SecretSlot.bundleKey`; `RevisionSecrets` typed from
       `SMALL_FIELDS`; `snapshotForRevision` walks `SECRET_SLOTS`; `SEALABLE_MAPS` asserted against the
       table; the coverage test. Files: `entitySlots.ts`, `revisionHistory.ts`, `revisionSnapshot.ts`,
       `syncPinRule.ts`, `test/slotTable.test.ts`, the `syncPinRule` tests.
@@ -446,7 +447,17 @@ is made in either story.
       storage of `pinReaderBoundary.slotGetters` (`:95-110`) against what the snapshot calls.
       **Model: Opus** — one table widened, no behaviour. **DoD:** no behaviour change; `slotTable`,
       `pinSlotMatrix`, `pinReaderBoundary`, `syncMerge` green unchanged; ratchet unchanged.
-- [ ] **T2 (E1) — `StoredSecret` exists, and the compile-fail harness runs in `npm test`.** `storedSecret.ts`;
+      **Done 2026-10-01, `f038982c`** (Opus). RED as planned: `TS2339: Property 'bundleKey' does not exist on
+      type 'SecretSlot'` at both new tests; the guard green over the ten hand-written reads and over the table
+      walk, and red (`- 'getSecondRaw'`) with one read deleted. **Deviations:** `SecretSlot.read` takes
+      `SlotSource` — the `Pick` of the ten getters, moved from `revisionSnapshot.ts:20-32` into `entitySlots.ts`,
+      `RevisionSource` now its alias — because the snapshot is handed that narrow source and must walk the table
+      without a cast (T5's structural interface for the snapshot is therefore `entitySlots.SlotSource`); the
+      guard lives in `slotTable.test.ts` with its own recording storage, so `pinReaderBoundary.test.ts` stays
+      byte-unchanged; the SEALABLE_MAPS equality is a new test beside the count test, which was not edited.
+      **Left as found, a question for E2/E3:** `syncProtection.SNAPSHOT_MAP` (`:109-120`) is a third copy of
+      the revision-field → bundle-map pairing the new column carries; it could be derived from the table.
+- [x] **T2 (E1) — `StoredSecret` exists, and the compile-fail harness runs in `npm test`.** `storedSecret.ts`;
       `test/typedFixtures.test.ts` with its first fixtures — `stored_is_not_a_string.ts` (TS2322),
       `a_string_is_not_stored.ts` (TS2322), `carried_is_a_string.ts` (compiles); the `tsconfig` / ESLint
       exclusions; the program-build timing for §3 item 2. Nothing returns a `StoredSecret` yet.
@@ -456,6 +467,14 @@ is made in either story.
       restored, green. Both observations in the commit.
       **Model: Opus** — a type, a harness, two config lines. **DoD:** harness green with its positive
       control; `npm run compile` unaffected by the fixtures; timing recorded in the commit.
+      **Done 2026-10-01, `9e380014`** (Opus). Teeth: with `type StoredSecret = string` planted, *"expected
+      TS2322 at line 7 of stored_is_not_a_string.ts — the fixture compiled"* (and the same for
+      `a_string_is_not_stored.ts`), restored green; an empty directory and the `out/test/fixtures/typed`
+      path both fail *"no fixtures under … — a harness over nothing passes"*; the compiles-fixture removed
+      fails the guard; a header naming the wrong line reports the line it got. **Timing for §3 item 2:**
+      one fixture program 0.4-1.1 s; one program over `src/**` without `test/` (508 roots, 670 source files)
+      builds in 1.0-1.2 s and is fully checked in 4.8-6.3 s more — 5.9-7.4 s in all on this machine, under
+      the ~10 s box; CI unmeasured. `out/test/fixtures` is not emitted.
 
 **E1 DoD:** T1's and T2's DoDs; no behaviour change — the whole suite green with no assertion edited;
 ratchet unchanged; the harness's teeth proven both ways in the commit; `review_plan` (epic 1/3) and
