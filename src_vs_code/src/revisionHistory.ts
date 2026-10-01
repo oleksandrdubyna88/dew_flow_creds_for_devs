@@ -22,30 +22,38 @@ import { EntityMetadata, isEntityMetadata } from './types';
 
 export const MAX_REVISIONS = 3;
 
-/** The small secret fields a revision keeps. Attachments are deliberately absent. */
-export interface RevisionSecrets {
-  password?: string;
-  privateKey?: string;
-  vpnConfig?: string;
-  dbConnection?: string;
-  notes?: string;
-  /** The canonical `otpauth://` URI — a replaced seed is still a seed. */
-  totp?: string;
-  /** The config file's previous contents — an edit that breaks a config must be undoable. */
-  config?: string;
-  /** The login/URL JSON as it was. */
-  fields?: string;
-  /** The second values as they were — a rollback that returned half an entry is worse than none. */
-  second?: string;
-  /**
-   * A payment instrument's fields as they were — the WHOLE record, CVV and PIN included.
-   *
-   * <p>Carried rather than scrubbed, and the reason is the direction: a rollback that returned a card
-   * without half its fields would be a worse defect than having no rollback. Only a SHARE strips those
-   * two, because only a share sends the value into somebody else's vault.</p>
-   */
-  payment?: string;
-}
+/**
+ * The small secret fields a revision keeps — the source of truth `entitySlots` is asserted against
+ * (`slotTable.test.ts`), so a slot without a revision field, or a field without a slot, is a red
+ * test rather than a value history silently drops. Attachments are deliberately absent. The order is
+ * the order a kept version is written in (`pushRevision`).
+ */
+export const SMALL_FIELDS = [
+  'password',
+  'privateKey',
+  'vpnConfig',
+  'dbConnection',
+  'notes',
+  // The canonical `otpauth://` URI — a replaced seed is still a seed.
+  'totp',
+  // The config file's previous contents — an edit that breaks a config must be undoable.
+  'config',
+  // The login/URL JSON as it was.
+  'fields',
+  // A payment instrument's fields as they were — the WHOLE record, CVV and PIN included. Carried
+  // rather than scrubbed, and the reason is the direction: a rollback that returned a card without
+  // half its fields would be a worse defect than having no rollback. Only a SHARE strips those two,
+  // because only a share sends the value into somebody else's vault.
+  'payment',
+  // The second values as they were — a rollback that returned half an entry is worse than none.
+  'second',
+] as const;
+
+/**
+ * The small secret fields a revision keeps, typed FROM `SMALL_FIELDS` rather than written out a
+ * second time — a field added to the list is a field of this type with no line written here.
+ */
+export type RevisionSecrets = { [field in (typeof SMALL_FIELDS)[number]]?: string };
 
 export interface Revision {
   /** When this version was replaced (ms epoch). */
@@ -70,13 +78,6 @@ export function revisionHead(revision: Revision): RevisionHead {
   const { secrets: _secrets, ...head } = revision;
   return head;
 }
-
-/**
- * The small secret fields a revision keeps — the source of truth `entitySlots` is asserted against
- * (`slotTable.test.ts`), so a slot without a revision field, or a field without a slot, is a red
- * test rather than a value history silently drops.
- */
-export const SMALL_FIELDS = ['password', 'privateKey', 'vpnConfig', 'dbConnection', 'notes', 'totp', 'config', 'fields', 'payment', 'second'] as const;
 
 /** A copy of the list with `revision` newest-first, capped, attachments stripped. */
 export function pushRevision(list: readonly Revision[], revision: Revision): Revision[] {
