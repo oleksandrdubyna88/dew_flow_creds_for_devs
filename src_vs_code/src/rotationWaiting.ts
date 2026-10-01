@@ -19,6 +19,14 @@ export function rotatedWhat(slot: RotationSlot): string {
   return slot === 'password' ? 'password' : 'connection string';
 }
 
+/**
+ * The sentence a command appends when it released a waiting value itself — *Remove PIN Protection…*: `''`
+ * when nothing was waiting, so a message that had nothing to add says nothing more.
+ */
+export function releasedSentence(release: Release): string {
+  return release.released.map((slot) => ` The rotated ${rotatedWhat(slot.slot)} that was waiting is now stored in it.`).join('');
+}
+
 const STORE_ROTATED = 'Store the rotated one';
 const KEEP_CURRENT = 'Keep the current one';
 const DROP_IT = 'Drop It';

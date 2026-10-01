@@ -55,12 +55,11 @@ import { DepDecorationProvider } from './depDecorations';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
 import { formPanels, lockNotice } from './formPanels';
 import { ConfigRouteSources } from './brokerConfigRoute';
-import { EntityFlagsRefresher, entityFlagSource } from './entityFlags';
+import { EntityFlagsRefresher, entityFlagSource, entityKey } from './entityFlags';
 import { createDiagnosticLog } from './diagnosticLog';
 import { resolveKind } from './entityKind';
 import { burnOneUseIn } from './burnOnUse';
 import { SshBridgeManager } from './sshBridgeManager';
-import { entityKey } from './entityFlags';
 import { Machine } from './installCommand';
 import { PhaseTimer, timed } from './startupTiming';
 import { toWslPath } from './wslRelay';
@@ -73,6 +72,7 @@ import { visibleConfigDetails, visibleMcpEntries } from './mcpEntries';
 import { McpEntriesCache } from './mcpEntriesCache';
 import { RotateDeps, rotateAction } from './rotateAction';
 import { storeRotated } from './rotationStore';
+import { releaseUnprotected } from './rotationQuarantine';
 import { generateSecret } from './secretKinds';
 import { CREDS_CLI, CredsProduct, ridFor } from './credsInstall';
 import { binaryPath, installMenu } from './binaryInstaller';
@@ -278,15 +278,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   provider.sharing = sharing;
   void sharing.reload();
 
-  // NAS auto-sync (two-way merge); it re-renders the tree after pulling — and re-reads the
-  // per-entity flags, because a pulled merge can add or remove a password.
+  // NAS auto-sync (two-way merge); after pulling it re-renders the tree, stores a rotated value whose entry the pull
+  // unprotected (`rotationQuarantine.ts`), and re-reads the per-entity flags — a pulled merge can add or remove a password.
   const sync = new SyncManager(
     storage,
     vaultKeys,
     transports,
     () => {
       provider.refresh();
-      void refreshEntityFlags();
+      void releaseUnprotected(storage).finally(() => void refreshEntityFlags());
     },
     () => void sharing.reload(),
     (accountId) => void context.globalState.update(`syncReminder.lastOk.${accountId}`, Date.now()),
@@ -313,15 +313,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     log.info('backup', message), corpPolicyOf);
   context.subscriptions.push(backups);
 
-  // Short-lived entries: delete what has run out of clock, and renew the lease on what this
-  // window is holding open. Started here rather than lazily because a window OPENING is when
-  // entries orphaned by a window that crashed are found — that first pass is the whole
-  // crash-safety story, and a lazy start would skip it in exactly the case it exists for.
+  // Short-lived entries: delete what has run out of clock, renew the lease on what this window holds open, and store a
+  // rotated value whose entry is no longer protected. Started here rather than lazily: a window OPENING is when what a
+  // crashed window left behind is found — that first pass is the whole crash-safety story, and a lazy start skips it.
   const ephemeral = new EphemeralSweeper(
     storage,
     context.globalState,
     (message) => log.info('ephemeral', message),
     () => provider.refresh(),
+    () => releaseUnprotected(storage),
   );
   ephemeral.start();
   context.subscriptions.push(ephemeral);

@@ -72,6 +72,11 @@ export class EphemeralSweeper implements vscode.Disposable {
     private readonly state: vscode.Memento,
     private readonly log: (message: string) => void = () => {},
     private readonly onChanged: () => void = () => {},
+    /**
+     * Store every rotated value that waits beside an entry no longer protected — unprotected by a sync or
+     * another window, with no door to open it (`rotationQuarantine.releaseUnprotected`). How many went in.
+     */
+    private readonly releaseWaiting: () => Promise<number> = () => Promise.resolve(0),
   ) {}
 
   /** Begin sweeping, starting with one pass now — a window opening is when orphans surface. */
@@ -143,6 +148,19 @@ export class EphemeralSweeper implements vscode.Disposable {
       if (swept.deleted > 0) {
         this.log(`Swept ${swept.deleted} orphaned secret(s) from ${swept.checked} recorded deletion(s).`);
       }
+    }
+    await this.releaseHeldRotations();
+  }
+
+  /**
+   * A rotated value that waited for an entry's PIN, whose entry is no longer protected (rotation-quarantine
+   * plan §4.5) — the same trigger: what nothing else would ever finish. Its own method for the complexity cap.
+   */
+  private async releaseHeldRotations(): Promise<void> {
+    const released = await this.releaseWaiting();
+    if (released > 0) {
+      this.log(`Stored ${released} rotated value(s) that waited beside an entry no longer protected.`);
+      this.onChanged();
     }
   }
 

@@ -11,6 +11,8 @@ import { asElement } from './commandTargets';
 import { FolderPinPlan, RacedEntry, folderPinPlan, protectionSummary, runReport, siblingReport } from './pinFolderPlan';
 import { restoreRevision } from './revisionRestore';
 import { protectionDecision } from './syncPinRule';
+import { UNATTENDED, releaseHeld } from './rotationQuarantine';
+import { releasedSentence } from './rotationWaiting';
 
 /**
  * Putting a PIN on an entry or a folder, and taking it off — the commands a person runs.
@@ -155,10 +157,21 @@ async function nothingSealed(node: TreeNode, deps: PinCommandDeps): Promise<void
   }
   await markProtection(node, false, deps);
   forgetPin(deps.accountId, node.id);
+  const waiting = await releaseWaiting(node, deps);
   deps.refresh();
   void vscode.window.showInformationMessage(
-    `"${node.name}" is no longer protected with its own PIN. It held nothing sealed, so no PIN was needed.`,
+    `"${node.name}" is no longer protected with its own PIN. It held nothing sealed, so no PIN was needed.${waiting}`,
   );
+}
+
+/**
+ * A rotated value that waited beside the entry for its PIN goes in now, PLAIN (rotation-quarantine plan §4.5):
+ * the person decided the entry's values are plain, and the held value has exactly a plain slot's protection
+ * already — kept held, the entry would stay on a dead password with no PIN left to trigger anything. The
+ * unattended proof, after the mark is off: a slot still sealed (a damaged value kept) stops it.
+ */
+async function releaseWaiting(node: TreeNode, deps: PinCommandDeps): Promise<string> {
+  return releasedSentence(await releaseHeld(deps.storage, deps.accountId, node.id, node.name, UNATTENDED));
 }
 
 /** A live slot is locked, or a kept version on this machine is — either is something to remove. */
@@ -184,8 +197,9 @@ async function removeOne(node: TreeNode, pin: string, deps: PinCommandDeps, keep
   }
   await markProtection(node, false, deps);
   forgetPin(deps.accountId, node.id);
+  const waiting = await releaseWaiting(node, deps);
   deps.refresh();
-  void vscode.window.showInformationMessage(removedMessage(node.name, result));
+  void vscode.window.showInformationMessage(`${removedMessage(node.name, result)}${waiting}`);
 }
 
 /** The unwrap, or `undefined` having said why — a damaged value is a QUESTION, not a wrong PIN. */

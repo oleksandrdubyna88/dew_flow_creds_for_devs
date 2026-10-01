@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { protectEntity } from '../entityPin';
+import { protectEntity, unprotectEntity } from '../entityPin';
 import { exportOpener } from '../exportSecrets';
 import type { PinGate } from '../pinGate';
-import { HeldSlots, fingerprintOf } from '../rotationQuarantine';
+import { HeldSlots, ReleaseProof, fingerprintOf } from '../rotationQuarantine';
 import { readSecret, unlockSecret } from '../secretEnvelope';
 import { rotationQuarantineSecretKey } from '../secretKeys';
 import type { StorageManager } from '../storageManager';
@@ -322,3 +322,115 @@ function failOnce(target: Record<string, unknown> | object, name: string): void 
     return Promise.reject(new Error(`${name} failed (injected)`));
   };
 }
+
+// ---- Q5: the release when the entry is no longer protected (plan §4.5) ----
+
+interface PlainWorld extends DoorWorld {
+  readonly quarantine: typeof import('../rotationQuarantine');
+  readonly session: typeof import('../pinSession');
+  readonly commands: typeof import('../pinCommands');
+}
+
+/** `doorWorld`, with the release's own module, the grants and the PIN commands in the same graph. */
+async function plainWorld(inputs: (string | undefined)[] = [PIN]): Promise<PlainWorld> {
+  const w = await doorWorld(inputs);
+  const stub = clickVscode([...inputs], w.s);
+  const [quarantine, session, commands] = loadEachWithVscode(['../rotationQuarantine', '../pinSession', '../pinCommands'], stub) as [
+    typeof import('../rotationQuarantine'),
+    typeof import('../pinSession'),
+    typeof import('../pinCommands'),
+  ];
+  return { ...w, quarantine, session, commands };
+}
+
+/** What another window or a sync does: the values unsealed with the PIN, the mark off — no door here. */
+async function unprotectedElsewhere(w: DoorWorld): Promise<void> {
+  await unprotectEntity(w.storage, ACCOUNT, ENTRY, PIN);
+  await w.storage.updateNodeFields(ACCOUNT, ENTRY, protectionDecision(false));
+  w.written.length = 0;
+}
+
+const plainSlot = async (w: DoorWorld): Promise<string | undefined> => carried(await w.storage.getDbConnection(ACCOUNT, ENTRY));
+
+test('Remove PIN Protection with a rotated value waiting: the entry gets the new value, plain, and the item is gone', async () => {
+  const w = await plainWorld();
+
+  await w.commands.unprotectEntry(w.storage.getNode(ACCOUNT, ENTRY) as TreeNode, { storage: w.storage, accountId: ACCOUNT, refresh: () => undefined });
+
+  assert.equal(await plainSlot(w), HELD_CONN, 'the entry was left on the old connection string with no PIN left to trigger anything');
+  assert.deepEqual(await heldNow(w), {}, 'the held value survived its entry losing its PIN');
+  assert.match(w.s.infos.join('\n'), /rotated connection string that was waiting is now stored/);
+});
+
+test('an entry unprotected by a sync: the sweep stores the waiting value, plain, exactly as the rotation would have', async () => {
+  const w = await plainWorld();
+  await unprotectedElsewhere(w);
+
+  const released = await w.quarantine.releaseUnprotected(w.storage);
+
+  assert.equal(released, 1);
+  assert.equal(await plainSlot(w), HELD_CONN, 'the sweep left an unprotected entry on the old connection string');
+  assert.deepEqual(await heldNow(w), {});
+  assert.deepEqual(await w.storage.heldRotations.listed(), []);
+});
+
+test('an entry protected again between the sweep\'s decision and its write: refused under the lease, nothing in the clear, the item kept', async () => {
+  const w = await plainWorld();
+  await unprotectedElsewhere(w);
+  const protectedLate: ReleaseProof = async (storage, accountId, entityId, name) => {
+    const decided = await w.quarantine.UNATTENDED(storage, accountId, entityId, name);
+    await protectEntity(w.storage, ACCOUNT, ENTRY, PIN);
+    await w.storage.updateNodeFields(ACCOUNT, ENTRY, protectionDecision(true));
+    w.written.length = 0;
+    return decided;
+  };
+
+  const release = await w.quarantine.releaseHeld(w.storage, ACCOUNT, ENTRY, 'orders-db', protectedLate);
+
+  assert.deepEqual(release.released, []);
+  assert.deepEqual(clearWrites(w), [], 'the held value was written in the clear into an entry protected meanwhile');
+  assert.equal(readSecret(await w.storage.getDbConnection(ACCOUNT, ENTRY)).kind, 'locked');
+  assert.ok((await heldNow(w)).dbConnection !== undefined, 'the held value was lost');
+});
+
+test('a protected entry\'s held value is left alone by the sweep — even while this window holds its PIN', async () => {
+  const w = await plainWorld();
+  w.session.grantPin(ACCOUNT, ENTRY, PIN);
+
+  const released = await w.quarantine.releaseUnprotected(w.storage);
+
+  assert.equal(released, 0);
+  assert.deepEqual(w.written, [], 'the sweep wrote into a protected entry — nothing automatic may use a PIN');
+  assert.ok((await heldNow(w)).dbConnection !== undefined);
+  assert.equal(await openedSlot(w), CONN);
+});
+
+test('the sweep drops an index entry whose item is gone', async () => {
+  const w = await plainWorld();
+  await w.storage.heldRotations.put(ACCOUNT, ENTRY, {});
+
+  await w.quarantine.releaseUnprotected(w.storage);
+
+  assert.deepEqual(await w.storage.heldRotations.listed(), [], 'a stale index entry survived the sweep');
+});
+
+test('the sweeper runs the release on its own trigger, says so, and repaints', async () => {
+  const lines: string[] = [];
+  let repainted = 0;
+  const { EphemeralSweeper } = loadWithVscode<typeof import('../ephemeralSweeper')>('../ephemeralSweeper', clickVscode([], sinks()));
+  const quiet = {
+    metadataFault: undefined,
+    getAccounts: () => [],
+    getNodes: () => [],
+    deleteNodeRecursive: () => Promise.resolve([]),
+    sweepOrphanSecrets: () => Promise.resolve({ deleted: 0, checked: 0 }),
+    resumeAccountRemovals: () => Promise.resolve([]),
+  };
+  const state = { get: () => undefined, update: () => Promise.resolve() } as never;
+  const sweeper = new EphemeralSweeper(quiet, state, (line) => lines.push(line), () => (repainted += 1), () => Promise.resolve(2));
+
+  await sweeper.runOnce();
+
+  assert.match(lines.join('\n'), /Stored 2 rotated value\(s\) that waited beside an entry no longer protected/);
+  assert.equal(repainted, 1);
+});
