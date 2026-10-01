@@ -3,7 +3,7 @@ import { ConsentStamps, consentDue, remembersConsent, stampKey } from './mcpCons
 import { EntityMetadata, TreeNode } from './types';
 import { resolveKind } from './entityKind';
 import { withoutPassword } from './dbConnString';
-import { unsealedText } from './secretOpener';
+import { plainText } from './secretOpener';
 
 /**
  * What an agent is allowed to SEE — level 1 of the ladder, and the only place that decides it.
@@ -113,12 +113,13 @@ export function hiddenFromAgents(node: TreeNode | undefined): boolean {
 
 /**
  * The connection string an agent is shown: the stored one without its password — and nothing for a
- * SEALED one (`secretOpener.unsealedText`). An entry carrying the mark is hidden already; one whose mark
- * was lost while the value stayed sealed handed the agent the envelope itself until the typed-secrets
- * plan (T3), and a wrap is no address.
+ * SEALED, DAMAGED or woven one (`secretOpener.plainText`: a value the parser reads as a value, or
+ * nothing). An entry carrying the mark is hidden already; one whose mark was lost while the value stayed
+ * sealed handed the agent the envelope itself until the typed-secrets plan (T3), and a damaged wrap was
+ * still passed through as text until the E2 security review (finding 4) — a wrap is no address.
  */
 function shownConnection(stored: string | undefined): string | undefined {
-  const text = unsealedText(stored);
+  const text = plainText(stored);
   return text === undefined ? undefined : withoutPassword(text);
 }
 

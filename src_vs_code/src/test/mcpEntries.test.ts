@@ -171,6 +171,20 @@ test('a sealed connection string is not handed to an agent as its envelope — t
   assert.equal(entry.connectionString, undefined, 'a sealed connection string reached an agent as its envelope');
 });
 
+test('a DAMAGED wrap in an unmarked entry\'s connection is not handed to an agent as a connection string', async () => {
+  // The E2 security review, finding 4: `unsealedText` passes a damaged wrap through as text — right for
+  // the masker, wrong here — so an agent was shown the broken envelope as the entry's address. Only a
+  // value the parser reads as a value (`secretOpener.plainText`) is an address.
+  const damaged = '{"v":1,"lock":{"wrap":';
+  assert.equal(readSecret(damaged).kind, 'corrupt', 'the fixture is what the parser calls damaged');
+  const nodes = [folder('f1', 'DB'), entity('e1', 'orders', { kind: 'db', mcp: { view: true } })];
+
+  const [entry] = await visibleMcpEntries(vault(nodes, { dbConnection: damaged }));
+
+  assert.equal(entry.name, 'orders', 'precondition: the entry is visible');
+  assert.equal(entry.connectionString, undefined, `a damaged wrap reached an agent as a connection string: ${String(entry.connectionString)}`);
+});
+
 test('no secret has a field to travel in — the whole answer is searched for each one', async () => {
   // The structural guarantee, asserted structurally: whatever the shape grows, none of these
   // five values may appear anywhere in the serialized answer.
