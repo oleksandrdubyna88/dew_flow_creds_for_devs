@@ -3,6 +3,7 @@ import { ConsentStamps, consentDue, remembersConsent, stampKey } from './mcpCons
 import { EntityMetadata, TreeNode } from './types';
 import { resolveKind } from './entityKind';
 import { withoutPassword } from './dbConnString';
+import { unsealedText } from './secretOpener';
 
 /**
  * What an agent is allowed to SEE — level 1 of the ladder, and the only place that decides it.
@@ -110,6 +111,17 @@ export function hiddenFromAgents(node: TreeNode | undefined): boolean {
   return node?.details?.pinProtected === true;
 }
 
+/**
+ * The connection string an agent is shown: the stored one without its password — and nothing for a
+ * SEALED one (`secretOpener.unsealedText`). An entry carrying the mark is hidden already; one whose mark
+ * was lost while the value stayed sealed handed the agent the envelope itself until the typed-secrets
+ * plan (T3), and a wrap is no address.
+ */
+function shownConnection(stored: string | undefined): string | undefined {
+  const text = unsealedText(stored);
+  return text === undefined ? undefined : withoutPassword(text);
+}
+
 export function capabilitiesOf(access: McpAccess): McpCapabilities {
   const [, use, edit, create, del] = accessMask(access);
   return { use, edit, create, delete: del };
@@ -133,8 +145,7 @@ export function mcpEntryFor(node: TreeNode, context: McpEntryContext): McpEntry 
     kind: resolveKind(details),
     folder: context.folderName,
     ...visibleFields(details),
-    connectionString:
-      context.dbConnection === undefined ? undefined : withoutPassword(context.dbConnection),
+    connectionString: shownConnection(context.dbConnection),
     hasPassword: context.hasPassword,
     hasPrivateKey: context.hasPrivateKey,
     hasNotes: context.hasNotes,

@@ -3,7 +3,7 @@ import { ConfigFormat, describeConfigProblem } from './configFormat';
 import { resolveKind } from './entityKind';
 import { parseFields } from './entityFields';
 import { siteUrlToOpen } from './siteUrl';
-import { isLockedSecret } from './secretEnvelope';
+import { unsealedText } from './secretOpener';
 import type { EntityMetadata } from './types';
 import type { StorageManager } from './storageManager';
 
@@ -243,12 +243,15 @@ export function entityFlagSource(storage: StorageManager): EntityFlagSource {
  * What a config verdict is ABOUT: the body — or nothing for a SEALED one (entry-PIN plan, D18). The
  * text of a protected config is its wrap, and judging the wrap flagged every protected `.env` as
  * broken for being protected; nothing is judged until the entry is opened, exactly as an empty body
- * is not judged.
+ * is not judged. Both read through `secretOpener.unsealedText`, which answers nothing for a sealed
+ * value and the stored text for anything else — what these hints have always judged.
  */
 function judgedUrlOpens(raw: string | undefined): boolean {
-  return isLockedSecret(raw) || siteUrlToOpen(parseFields(raw).url).ok;
+  const text = unsealedText(raw);
+  // Present and nothing to judge is SEALED — a record that "may open", as it always counted.
+  return (raw !== undefined && text === undefined) || siteUrlToOpen(parseFields(text).url).ok;
 }
 
 function judgedText(body: string | undefined): string {
-  return body === undefined || isLockedSecret(body) ? '' : body;
+  return unsealedText(body) ?? '';
 }
