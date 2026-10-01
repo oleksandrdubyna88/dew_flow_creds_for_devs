@@ -738,12 +738,12 @@ export class StorageManager implements vscode.Disposable {
 
   // ---------- VPN configs (SecretStorage, tenant-scoped) ----------
 
-  getVpnConfig(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(vpnConfigSecretKey(accountId, entityId));
+  getVpnConfig(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(vpnConfigSecretKey(accountId, entityId)));
   }
 
-  setVpnConfig(accountId: string, entityId: string, content: string): Promise<void> {
-    return this.putSecret(vpnConfigSecretKey(accountId, entityId), accountId, content);
+  setVpnConfig(accountId: string, entityId: string, content: StoredSecret): Promise<void> {
+    return this.putSecret(vpnConfigSecretKey(accountId, entityId), accountId, carried(content));
   }
 
   deleteVpnConfig(accountId: string, entityId: string): Promise<void> {

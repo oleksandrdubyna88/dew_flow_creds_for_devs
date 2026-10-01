@@ -9,7 +9,7 @@ import { TreeNode } from './types';
 export interface SecretReader {
   getPassword(accountId: string, id: string): Thenable<string | undefined>;
   getPrivateKey(accountId: string, id: string): Thenable<string | undefined>;
-  getVpnConfig(accountId: string, id: string): Thenable<string | undefined>;
+  getVpnConfig(accountId: string, id: string): Thenable<StoredSecret | undefined>;
   getDbConnection(accountId: string, id: string): Thenable<string | undefined>;
   getNotes(accountId: string, id: string): Thenable<StoredSecret | undefined>;
   getAttachment(accountId: string, id: string): Thenable<string | undefined>;

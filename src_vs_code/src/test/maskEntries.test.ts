@@ -35,7 +35,7 @@ function source(
     }),
     getPassword: read('password'),
     getPrivateKey: read('privateKey'),
-    getVpnConfig: read('vpnConfig'),
+    getVpnConfig: held('vpnConfig'),
     getDbConnection: read('dbConnection'),
     getNotes: held('notes'),
   };

@@ -177,7 +177,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     bundleKey: 'vpnConfigs',
     read: (s, a, e) => s.getVpnConfig(a, e),
     write: (s, a, e, v) => s.setVpnConfig(a, e, v),
-    store: (s, a, e, v) => s.setVpnConfig(a, e, unflipped(v)),
+    store: (s, a, e, v) => s.setVpnConfig(a, e, v),
     remove: (s, a, e) => s.deleteVpnConfig(a, e),
   },
   {
