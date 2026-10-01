@@ -2,6 +2,7 @@ import { ExternalSecrets } from './externalBundle';
 import { parseFields } from './entityFields';
 import { PinGate, PinOpen, openStored, silentPinGate } from './pinGate';
 import { plainSecret, readSecret } from './secretEnvelope';
+import { StoredSecret, seamText } from './storedSecret';
 import { TreeNode } from './types';
 
 /** The nine secret readers the export walks — the storage, by the part of it this needs. */
@@ -17,7 +18,7 @@ export interface SecretReader {
   getConfigBody(accountId: string, id: string): Thenable<string | undefined>;
   getFieldsRaw(accountId: string, id: string): Thenable<string | undefined>;
   getSecondRaw(accountId: string, id: string): Thenable<string | undefined>;
-  getPaymentRaw(accountId: string, id: string): Thenable<string | undefined>;
+  getPaymentRaw(accountId: string, id: string): Thenable<StoredSecret | undefined>;
 }
 
 /**
@@ -28,7 +29,7 @@ export interface SecretReader {
  * with the grant the export's door left (a silent gate: the door has asked already) and throws on a
  * value no grant opens, which the command answers "Export failed… Nothing was written."</p>
  */
-export type ExportOpen = (stored: string | undefined, entityId: string) => Promise<string | undefined>;
+export type ExportOpen = (stored: StoredSecret | string | undefined, entityId: string) => Promise<string | undefined>;
 
 /**
  * The export's opener. A value that is not sealed goes in BYTE-IDENTICAL — a woven password keeps its
@@ -39,14 +40,14 @@ export function exportOpener(accountId: string, nameOf: (entityId: string) => st
   return async (stored, entityId) => {
     const read = readSecret(stored);
     if (read.kind === 'value' || read.kind === 'absent') {
-      return stored;
+      return seamText(stored);
     }
     return openedForFile(stored, read.kind === 'locked' && read.woven, silentPinGate(accountId, entityId, nameOf(entityId)));
   };
 }
 
 /** A sealed (or damaged) value, opened with the grant — or the throw that stops the whole export. */
-async function openedForFile(stored: string | undefined, woven: boolean, gate: PinGate): Promise<string> {
+async function openedForFile(stored: StoredSecret | string | undefined, woven: boolean, gate: PinGate): Promise<string> {
   const opened = await openStored(stored, gate);
   if (opened.kind !== 'value') {
     throw new Error(notOpened(opened, gate.entryName));
@@ -87,7 +88,7 @@ async function secretsOf(
   vault: SecretReader,
   accountId: string,
   id: string,
-  open: (stored: string | undefined) => Promise<string | undefined>,
+  open: (stored: StoredSecret | string | undefined) => Promise<string | undefined>,
 ): Promise<ExternalSecrets> {
   const s: ExternalSecrets = {};
   const put = <K extends keyof ExternalSecrets>(key: K, value: string | undefined): void => {
@@ -95,7 +96,7 @@ async function secretsOf(
       s[key] = value;
     }
   };
-  const opened = async (read: Thenable<string | undefined>): Promise<string | undefined> => open(await read);
+  const opened = async (read: Thenable<StoredSecret | string | undefined>): Promise<string | undefined> => open(await read);
   put('password', await opened(vault.getPassword(accountId, id)));
   put('privateKey', await opened(vault.getPrivateKey(accountId, id)));
   put('vpnConfig', await opened(vault.getVpnConfig(accountId, id)));

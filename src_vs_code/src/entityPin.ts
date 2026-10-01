@@ -4,6 +4,7 @@ import { SiblingTry, attemptAcross, attemptUnlock, cooldownMs, coolingReason, re
 import { sealValue } from './sealValue';
 import { StorageManager } from './storageManager';
 import { SecretEnvelope, SecretRead, plainSecret, readSecret } from './secretEnvelope';
+import { StoredSecret, stored } from './storedSecret';
 
 export { sealValue };
 
@@ -118,14 +119,14 @@ async function sealIfStill(
   entityId: string,
   slot: SecretSlot,
   pin: string,
-  made: { readonly was: string; readonly sealed: string },
+  made: { readonly was: StoredSecret | string; readonly sealed: StoredSecret },
 ): Promise<string> {
   const now = await slot.read(storage, accountId, entityId);
   const read = readSecret(now);
   if (now === undefined || read.kind !== 'value') {
     return read.kind;
   }
-  await slot.write(storage, accountId, entityId, now === made.was ? made.sealed : await sealValue(now, accountId, pin));
+  await slot.store(storage, accountId, entityId, now === made.was ? made.sealed : await sealValue(now, accountId, pin));
   return 'value';
 }
 
@@ -187,7 +188,7 @@ export async function unprotectEntity(
   refuseDamaged(live.damaged, options.keepDamaged === true);
   const changed: string[] = [];
   for (const [slot, value] of live.opened) {
-    await slot.write(storage, accountId, entityId, value);
+    await slot.store(storage, accountId, entityId, value);
     changed.push(slot.label);
   }
   await rewriteHistory(storage, accountId, entityId, kept.rewrite);
@@ -202,7 +203,7 @@ function refuseDamaged(damaged: readonly string[], keepDamaged: boolean): void {
 
 /** The live slots, opened into the form an unprotected value is stored in, and the damaged ones by label. */
 interface OpenedSlots {
-  readonly opened: readonly (readonly [SecretSlot, string])[];
+  readonly opened: readonly (readonly [SecretSlot, StoredSecret])[];
   readonly damaged: readonly string[];
 }
 
@@ -220,7 +221,7 @@ async function openedSlots(storage: StorageManager, accountId: string, entityId:
   refuseWhileCooling(accountId, entityId);
   const reads = await Promise.all(SECRET_SLOTS.map(async (slot) => [slot, readSecret(await slot.read(storage, accountId, entityId))] as const));
   const locked = reads.filter(([, read]) => read.kind === 'locked');
-  const opened: [SecretSlot, string][] = [];
+  const opened: [SecretSlot, StoredSecret][] = [];
   for (const [at, [slot, read]] of locked.entries()) {
     const unlock = at === 0 ? attemptUnlock : retryGranted;
     opened.push([slot, await openedOrThrow(read, (envelope) => unlock(envelope, accountId, entityId, pin))]);
@@ -240,12 +241,12 @@ function refuseWhileCooling(accountId: string, entityId: string): void {
  * value is stored in, so the woven mark the lock kept survives the unwrap (D13). The sentence here is
  * what `pinCommands.removeOne` puts after <i>That PIN does not open</i>.
  */
-async function openedOrThrow(read: SecretRead, unlock: (envelope: SecretEnvelope) => Promise<string | undefined>): Promise<string> {
+async function openedOrThrow(read: SecretRead, unlock: (envelope: SecretEnvelope) => Promise<string | undefined>): Promise<StoredSecret> {
   const value = read.kind === 'locked' ? await unlock(read.envelope) : undefined;
   if (value === undefined) {
     throw new Error('The PIN was refused.');
   }
-  return plainSecret(value, read.kind === 'locked' && read.woven);
+  return stored(plainSecret(value, read.kind === 'locked' && read.woven));
 }
 
 /**

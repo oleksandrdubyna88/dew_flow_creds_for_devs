@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { SECRET_SLOTS, SecretSlot } from '../entitySlots';
+import type { StoredSecret } from '../storedSecret';
 import type { Revision, RevisionSecrets } from '../revisionHistory';
 import { readSecret, unlockSecret } from '../secretEnvelope';
 import type { StorageManager } from '../storageManager';
@@ -72,7 +73,7 @@ async function world(
   return { storage, s, written, node, restore: async () => void (await handler({ kind: 'revision', accountId: ACCOUNT, node: node(), index: 0 })) };
 }
 
-async function stored(w: World, label: string): Promise<string | undefined> {
+async function stored(w: World, label: string): Promise<StoredSecret | string | undefined> {
   return slot(label).read(w.storage, ACCOUNT, ENTRY);
 }
 

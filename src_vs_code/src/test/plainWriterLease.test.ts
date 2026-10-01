@@ -129,8 +129,10 @@ test('the companion: writerForNew over a genuinely new id writes without reading
   const storage = await vault({});
   const reads: string[] = [];
   for (const getter of ['getNotes', 'getFieldsRaw', 'getSecondRaw', 'getPaymentRaw', 'getConfigBody', 'getDbConnection', 'getVpnConfig', 'getTotp', 'getPrivateKey', 'getPassword'] as const) {
-    const real = storage[getter].bind(storage);
-    storage[getter] = (a: string, e: string) => {
+    // Ten getters of two return types while the slots flip (T5): patched through one shape.
+    const patchable = storage as unknown as Record<typeof getter, (a: string, e: string) => unknown>;
+    const real = patchable[getter].bind(storage);
+    patchable[getter] = (a: string, e: string) => {
       reads.push(getter);
       return real(a, e);
     };

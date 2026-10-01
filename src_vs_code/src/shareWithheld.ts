@@ -2,6 +2,7 @@ import { SECOND_KEYS, SECOND_LABELS, SecondValues, parseSecondValues } from './s
 import { withheldFromShare } from './paymentRedaction';
 import { openedText } from './pinAdmission';
 import { silentPinGate } from './pinGate';
+import type { StoredSecret } from './storedSecret';
 
 /**
  * What a share leaves behind, as names a person recognises — the whole answer, in one place.
@@ -56,7 +57,7 @@ export function withheldSentence(names: Iterable<string>): string {
  * protected entry's records are opened here rather than parsed as `{}` by a typed getter.
  */
 export interface WithheldReader {
-  getPaymentRaw(accountId: string, entityId: string): Thenable<string | undefined>;
+  getPaymentRaw(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
   getSecondRaw(accountId: string, entityId: string): Thenable<string | undefined>;
 }
 

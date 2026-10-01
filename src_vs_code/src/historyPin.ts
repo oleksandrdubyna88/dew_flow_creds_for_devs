@@ -2,8 +2,9 @@ import { sealValue } from './sealValue';
 import { attemptUnlock, cooldownMs, coolingReason, retryGranted } from './pinAttempts';
 import { PinGate, PinOpen, openStored, silentPinGate } from './pinGate';
 import { Revision, RevisionSecrets, SMALL_FIELDS } from './revisionHistory';
-import { SecretEnvelope, SecretRead, plainSecret, readSecret } from './secretEnvelope';
+import { SecretEnvelope, SecretRead, isEmptySecret, plainSecret, readSecret } from './secretEnvelope';
 import type { StorageManager } from './storageManager';
+import { StoredSecret, stored } from './storedSecret';
 
 /**
  * An entry's KEPT versions under its PIN — sealed when it is protected, opened when the PIN comes off,
@@ -29,9 +30,17 @@ export type HistoryStore = Pick<StorageManager, 'getHistory' | 'replaceHistory'>
 
 type Field = (typeof SMALL_FIELDS)[number];
 
-/** Every stored string the kept versions hold, field by field. */
-function storedValues(kept: readonly Revision[]): string[] {
-  return kept.flatMap((revision) => SMALL_FIELDS.map((field) => revision.secrets[field]).filter(isText));
+/** A kept version's stored form, or `undefined` for a field the version does not hold. `| string` for T5's window. */
+type Kept = StoredSecret | string;
+
+/** Every stored value the kept versions hold, field by field. */
+function storedValues(kept: readonly Revision[]): Kept[] {
+  return kept.flatMap((revision) => SMALL_FIELDS.map((field) => revision.secrets[field]).filter(isHeld));
+}
+
+/** A field that holds something — never read as text: absent and empty are both nothing. */
+function isHeld(value: Kept | undefined): value is Kept {
+  return value !== undefined && !isEmptySecret(value);
 }
 
 function isText(value: string | undefined): value is string {
@@ -91,7 +100,7 @@ export async function protectHistory(
 /** What opening the kept versions with one PIN produced, in memory — nothing has been written yet. */
 export interface OpenedHistory {
   /** Stored string → its opened form (`plainSecret`, so a woven value stays woven). */
-  readonly rewrite: ReadonlyMap<string, string>;
+  readonly rewrite: ReadonlyMap<Kept, StoredSecret>;
   /** Values this PIN does not open — left sealed and counted, never replaced. */
   readonly foreign: number;
 }
@@ -106,7 +115,7 @@ export interface OpenedHistory {
 export async function openHistory(kept: readonly Revision[], accountId: string, entityId: string, pin: string): Promise<OpenedHistory> {
   const sealed = [...new Set(storedValues(kept))].filter((stored) => readSecret(stored).kind === 'locked');
   const opened = await Promise.all(sealed.map((stored) => openedForm(stored, (envelope) => retryGranted(envelope, accountId, entityId, pin))));
-  const rewrite = new Map<string, string>();
+  const rewrite = new Map<Kept, StoredSecret>();
   sealed.forEach((stored, at) => {
     const value = opened[at];
     if (value !== undefined) {
@@ -116,14 +125,14 @@ export async function openHistory(kept: readonly Revision[], accountId: string, 
   return { rewrite, foreign: sealed.length - rewrite.size };
 }
 
-/** One sealed stored string, opened into the form an unprotected value is stored in — or nothing. */
-async function openedForm(stored: string, unlock: (envelope: SecretEnvelope) => Promise<string | undefined>): Promise<string | undefined> {
-  const read = readSecret(stored);
+/** One sealed stored value, opened into the form an unprotected value is stored in — or nothing. */
+async function openedForm(kept: Kept | undefined, unlock: (envelope: SecretEnvelope) => Promise<string | undefined>): Promise<StoredSecret | undefined> {
+  const read = readSecret(kept);
   if (read.kind !== 'locked') {
     return undefined;
   }
   const value = await unlock(read.envelope);
-  return value === undefined ? undefined : plainSecret(value, read.woven);
+  return value === undefined ? undefined : stored(plainSecret(value, read.woven));
 }
 
 /** Apply a stored→replacement map to the kept versions as they are at write time. */
@@ -131,13 +140,13 @@ export function rewriteHistory(
   storage: HistoryStore,
   accountId: string,
   entityId: string,
-  rewrite: ReadonlyMap<string, string>,
+  rewrite: ReadonlyMap<Kept, StoredSecret>,
 ): Promise<void> {
   return rewrite.size === 0 ? Promise.resolve() : storage.replaceHistory(accountId, entityId, (kept) => kept.map((r) => revised(r, rewrite)));
 }
 
 /** One revision with every mapped value replaced; everything else — and every other field — as it was. */
-function revised(revision: Revision, rewrite: ReadonlyMap<string, string>): Revision {
+function revised(revision: Revision, rewrite: ReadonlyMap<Kept, StoredSecret>): Revision {
   const secrets: RevisionSecrets = { ...revision.secrets };
   for (const field of SMALL_FIELDS) {
     const replacement = replacementOf(secrets[field], rewrite);
@@ -148,8 +157,8 @@ function revised(revision: Revision, rewrite: ReadonlyMap<string, string>): Revi
   return { ...revision, secrets };
 }
 
-function replacementOf(stored: string | undefined, rewrite: ReadonlyMap<string, string>): string | undefined {
-  return stored === undefined ? undefined : rewrite.get(stored);
+function replacementOf(kept: Kept | undefined, rewrite: ReadonlyMap<Kept, StoredSecret>): StoredSecret | undefined {
+  return kept === undefined ? undefined : rewrite.get(kept);
 }
 
 /** Seal-free Remove PIN for the kept versions: open with `pin`, write the opened list. */
@@ -176,7 +185,7 @@ export type RevisionOpen = { readonly kind: 'open'; readonly revision: Revision 
  */
 export async function openRevision(revision: Revision, gate: PinGate, askVersion: VersionAsk, purpose: string): Promise<RevisionOpen> {
   const silent = silentPinGate(gate.accountId, gate.entityId, gate.entryName);
-  const fields = SMALL_FIELDS.filter((field) => isText(revision.secrets[field]));
+  const fields = SMALL_FIELDS.filter((field) => isHeld(revision.secrets[field]));
   const opens = await Promise.all(fields.map((field) => openStored(revision.secrets[field], silent)));
   const stopped = opens.find((open) => open.kind === 'corrupt' || open.kind === 'cooling');
   if (stopped !== undefined) {
@@ -191,7 +200,7 @@ function reasonOf(open: PinOpen): string {
   return open.kind === 'corrupt' || open.kind === 'cooling' ? open.reason : '';
 }
 
-type VersionValues = { readonly kind: 'open'; readonly values: ReadonlyMap<Field, string> } | { readonly kind: 'refused'; readonly reason: string };
+type VersionValues = { readonly kind: 'open'; readonly values: ReadonlyMap<Field, StoredSecret> } | { readonly kind: 'refused'; readonly reason: string };
 
 /** The values the live grant did not open, opened with the version's own PIN — asked once, never granted. */
 async function versionValues(
@@ -221,15 +230,19 @@ async function versionValues(
  */
 async function openedWithTyped(revision: Revision, pending: readonly Field[], gate: PinGate, typed: string): Promise<VersionValues> {
   const [first, ...rest] = pending;
-  const firstValue = await openedForm(revision.secrets[first] ?? '', (envelope) => attemptUnlock(envelope, gate.accountId, gate.entityId, typed));
+  const firstValue = await openedForm(revision.secrets[first], (envelope) => attemptUnlock(envelope, gate.accountId, gate.entityId, typed));
   if (firstValue === undefined) {
     return versionRefusal(gate.entryName);
   }
   const others = await Promise.all(
-    rest.map((field) => openedForm(revision.secrets[field] ?? '', (envelope) => retryGranted(envelope, gate.accountId, gate.entityId, typed))),
+    rest.map((field) => openedForm(revision.secrets[field], (envelope) => retryGranted(envelope, gate.accountId, gate.entityId, typed))),
   );
   const opened = [firstValue, ...others];
-  return opened.every(isText) ? { kind: 'open', values: new Map(pending.map((field, at) => [field, opened[at] as string])) } : versionRefusal(gate.entryName);
+  return opened.every(isOpened) ? { kind: 'open', values: new Map(pending.map((field, at) => [field, opened[at]])) } : versionRefusal(gate.entryName);
+}
+
+function isOpened(value: StoredSecret | undefined): value is StoredSecret {
+  return value !== undefined;
 }
 
 function versionRefusal(entryName: string): VersionValues {
@@ -245,7 +258,7 @@ export function versionPrompt(purpose: string): string {
 }
 
 /** The version with every field in the form an unprotected revision holds it. */
-function withValues(revision: Revision, fields: readonly Field[], opens: readonly PinOpen[], own: ReadonlyMap<Field, string>): Revision {
+function withValues(revision: Revision, fields: readonly Field[], opens: readonly PinOpen[], own: ReadonlyMap<Field, StoredSecret>): Revision {
   const secrets: RevisionSecrets = { ...revision.secrets };
   fields.forEach((field, at) => {
     secrets[field] = own.get(field) ?? storedForm(revision.secrets[field], opens[at]);
@@ -253,11 +266,15 @@ function withValues(revision: Revision, fields: readonly Field[], opens: readonl
   return { ...revision, secrets };
 }
 
-/** An opened value keeps its woven mark (`plainSecret`); a value that was never sealed stays byte-identical. */
-function storedForm(stored: string | undefined, open: PinOpen): string | undefined {
+/**
+ * An opened value keeps its woven mark (`plainSecret`); a value that was never sealed stays byte-identical.
+ * A REAL stored form, minted — never a cast (second plan round, finding 0): `readSecret` on it answers
+ * `value` with the woven flag intact, exactly what it answers for an unprotected entry's field.
+ */
+function storedForm(kept: Kept | undefined, open: PinOpen): Kept | undefined {
   if (open.kind !== 'value') {
-    return stored;
+    return kept;
   }
-  const read = readSecret(stored);
-  return plainSecret(open.value, read.kind === 'locked' && read.woven);
+  const read = readSecret(kept);
+  return stored(plainSecret(open.value, read.kind === 'locked' && read.woven));
 }

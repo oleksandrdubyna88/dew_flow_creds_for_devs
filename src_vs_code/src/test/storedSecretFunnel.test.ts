@@ -2,8 +2,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
-import { SECRET_SLOTS } from '../entitySlots';
-import type { StorageManager } from '../storageManager';
+import { SECRET_SLOTS, SlotSink } from '../entitySlots';
 import { Finding, funnelUses, importedUses, readsKeptVersions, slotWritesOverStorage, storageWrites } from './funnelScan';
 
 /**
@@ -29,8 +28,11 @@ import { Finding, funnelUses, importedUses, readsKeptVersions, slotWritesOverSto
 
 const SRC = path.join(__dirname, '..', '..', 'src');
 
-/** The funnel's functions, and the modules that define them (`entityPin` re-exports `sealValue`). */
-const FUNNEL = ['stored', 'carried', 'readSecret', 'isLockedSecret', 'isCorruptSecret', 'isWovenSecret', 'plainSecret', 'lockSecret', 'sealValue'];
+/**
+ * The funnel's functions, and the modules that define them (`entityPin` re-exports `sealValue`).
+ * `storedRead` is the getters' mint; `seamText` and `unflipped` are T5's window only (`storedSecret.ts`).
+ */
+const FUNNEL = ['stored', 'storedRead', 'carried', 'seamText', 'unflipped', 'readSecret', 'isLockedSecret', 'isCorruptSecret', 'isWovenSecret', 'plainSecret', 'lockSecret', 'sealValue'];
 const DEFINED_IN = ['storedSecret', 'secretEnvelope', 'sealValue', 'entityPin'];
 
 /** The modules that may use the funnel, each with its reason (the plan's §3 table). */
@@ -161,7 +163,7 @@ function slotSetters(): string[] {
   const raw = SECRET_SLOTS.map((slot) => {
     let called = '';
     const recorder = new Proxy({}, { get: (_target, name) => (): Promise<void> => ((called = String(name)), Promise.resolve()) });
-    void slot.write(recorder as unknown as StorageManager, 'a', 'e', 'v');
+    void slot.write(recorder as unknown as SlotSink, 'a', 'e', 'v');
     return called;
   });
   return [...raw, ...raw.filter((name) => name.endsWith('Raw')).map((name) => name.slice(0, -'Raw'.length))];
@@ -221,7 +223,7 @@ const SLOT_WRITERS: Readonly<Record<string, string>> = {
   'restoreVersion.ts#writeSealed': 'Restore\'s sealed road: every value sealed in memory under the entry\'s PIN before the first write (R3)',
 };
 
-const slotWriteKey = (finding: Finding): string => `${finding.file}#${finding.what.replace('slot.write(storage in ', '')}`;
+const slotWriteKey = (finding: Finding): string => `${finding.file}#${finding.what.replace(/^slot\.(write|store)\(storage in /, '')}`;
 
 test('no slot table row is handed the storage itself as its writer outside the allowlist — every other value goes through writerFor', () => {
   const outside = eachSource(slotWritesOverStorage).filter((finding) => SLOT_WRITERS[slotWriteKey(finding)] === undefined);

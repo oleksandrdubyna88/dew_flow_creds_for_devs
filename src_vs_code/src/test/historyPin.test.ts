@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SECRET_SLOTS } from '../entitySlots';
-import { protectHistory, unprotectHistory } from '../historyPin';
+import { openRevision, protectHistory, unprotectHistory } from '../historyPin';
+import { forgetPin, grantPin } from '../pinSession';
 import type { Revision, RevisionSecrets } from '../revisionHistory';
 import { writeHistory } from '../revisionStore';
 import { lockSecret, plainSecret, readSecret, unlockSecret } from '../secretEnvelope';
 import type { StorageManager } from '../storageManager';
+import type { StoredSecret } from '../storedSecret';
 import { EntityMetadata } from '../types';
 import { loadWithVscode } from './vscodeStub';
 import { ACCOUNT, PIN, clickVscode, locked, memoryStorage, seedEntry, sinks } from './pinWorld';
@@ -56,7 +58,7 @@ async function settled(done: () => boolean, ms: number): Promise<void> {
 }
 
 /** A kept value, which must be LOCKED under `pin`, opened — or the assertion names what is there. */
-async function openedKept(stored: string | undefined, pin: string = PIN): Promise<string> {
+async function openedKept(stored: StoredSecret | string | undefined, pin: string = PIN): Promise<string> {
   const read = readSecret(stored);
   assert.equal(read.kind, 'locked', `a kept value is not sealed; stored: ${String(stored)}`);
   return read.kind === 'locked' ? unlockSecret(read.envelope, ACCOUNT, pin) : '';
@@ -191,4 +193,23 @@ test('the door’s background seal re-checks the protection before it writes —
 
   assert.ok(reads >= 2, 'precondition: the heal ran and read the history it meant to seal');
   assert.equal((await realGet(ACCOUNT, ENTRY))[0].secrets.password, 'old pw', 'nothing sealed into the history of an entry that is no longer protected');
+});
+
+test('an opened kept version holds REAL stored forms: each field reads as `value`, woven exactly where the sealed one was woven', async () => {
+  // Typed-secrets plan T5, second plan round finding 0: `openRevision` mints every opened field as
+  // `stored(plainSecret(value, woven))` — never a cast — so `readSecret` on the opened copy answers what it
+  // answers for an unprotected entry's field, and the viewer reads it through the same silent gated reader.
+  const kept = revision(1, { password: await lockSecret('woven pw', ACCOUNT, PIN, true), notes: await locked('kept note') });
+  // The session `historyPin` itself was loaded with — imported here at the top, not `require`d after
+  // another test's `loadWithVscode` has handed out fresh module instances.
+  grantPin(ACCOUNT, ENTRY, PIN);
+  const gate = { accountId: ACCOUNT, entityId: ENTRY, entryName: 'orest payoneer', ask: () => Promise.resolve(undefined) };
+
+  const opened = await openRevision(kept, gate, () => assert.fail('the grant opens every value; no version PIN is asked'), 'view it');
+  forgetPin(ACCOUNT, ENTRY);
+
+  assert.equal(opened.kind, 'open', 'the grant opened the version');
+  const secrets = opened.kind === 'open' ? opened.revision.secrets : {};
+  assert.deepEqual(readSecret(secrets.password), { kind: 'value', value: 'woven pw', woven: true }, 'the woven password reads as a woven value');
+  assert.deepEqual(readSecret(secrets.notes), { kind: 'value', value: 'kept note', woven: false }, 'the plain note reads as a plain value');
 });

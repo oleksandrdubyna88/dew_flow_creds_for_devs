@@ -1,6 +1,7 @@
 import { DB_DEFAULT_PORTS, DbConnParts, parseDbConnectionString } from './dbConnString';
 import { Revision } from './revisionHistory';
 import type { StorageManager } from './storageManager';
+import type { StoredSecret } from './storedSecret';
 import { DbType, TreeNode } from './types';
 import { TotpSnapshot, totpSnapshot } from './totp';
 import { PaymentFields, parsePaymentFields } from './paymentFields';
@@ -52,8 +53,8 @@ export type ViewerSecretField =
  *       `gatedSecretReader` over a stored one.</li>
  * </ul>
  *
- * <p>Structurally one type while the getters return `string`; when they return `StoredSecret` (the
- * plan's T5) the stored reader's `T` becomes that, and a stored reader handed to a page stops compiling.</p>
+ * <p>Two types since the getters return `StoredSecret` (the plan's T5): the stored reader's `T` is that,
+ * and a stored reader handed to a page does not compile.</p>
  */
 interface ViewerValues<T> {
   password(): Thenable<T | undefined>;
@@ -82,8 +83,11 @@ interface ViewerValues<T> {
   paymentRaw(): Thenable<T | undefined>;
 }
 
-/** Where a viewer's secrets come from, as stored: the keychain (live) or a kept version's record. */
-export type StoredReader = ViewerValues<string>;
+/**
+ * Where a viewer's secrets come from, as stored: the keychain (live) or a kept version's record.
+ * `| string` for T5's window only — a kept version's fields carry it (`RevisionSecrets`).
+ */
+export type StoredReader = ViewerValues<StoredSecret | string>;
 
 /** What a viewer's page reads — every value opened. Built only by `gatedSecretReader`. */
 export type SecretReader = ViewerValues<string>;
@@ -180,7 +184,7 @@ export function gatedSecretReader(
   gate: PinGate,
   report: (message: string) => void,
 ): SecretReader {
-  const through = (read: () => Thenable<string | undefined>) => async (): Promise<string | undefined> =>
+  const through = (read: () => Thenable<StoredSecret | string | undefined>) => async (): Promise<string | undefined> =>
     told(await openStored(await read(), gate), report);
   return {
     password: through(inner.password),

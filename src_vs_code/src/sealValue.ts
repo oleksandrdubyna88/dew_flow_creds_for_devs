@@ -1,4 +1,5 @@
 import { lockSecret, readSecret } from './secretEnvelope';
+import { StoredSecret, seamText, stored } from './storedSecret';
 
 /**
  * One value about to be WRITTEN into a protected entry, sealed under its PIN.
@@ -22,12 +23,18 @@ import { lockSecret, readSecret } from './secretEnvelope';
  * `entityPin` opens the kept versions on *Remove PIN Protection…* — one module importing the other
  * both ways would be a cycle. `entityPin` re-exports it, so no caller moved.</p>
  */
-export async function sealValue(value: string, accountId: string, pin: string): Promise<string> {
-  const read = readSecret(value);
+export async function sealValue(value: string, accountId: string, pin: string): Promise<string>;
+export async function sealValue(value: StoredSecret | string, accountId: string, pin: string): Promise<StoredSecret>;
+/**
+ * Two shapes, one rule: TEXT a writer is about to store comes back as the sealed text (the writer mints
+ * it — `entryWriter`), and a STORED form — a live slot (Protect), a kept field (the history, Restore) —
+ * comes back as a stored form. `| string` on the second for T5's window only.
+ */
+export async function sealValue(value: StoredSecret | string, accountId: string, pin: string): Promise<StoredSecret | string> {
+  const text = seamText(value);
+  const read = readSecret(text);
   if (read.kind === 'locked') {
     return value;
   }
-  return read.kind === 'value'
-    ? lockSecret(read.value, accountId, pin, read.woven)
-    : lockSecret(value, accountId, pin, false);
+  return stored(read.kind === 'value' ? await lockSecret(read.value, accountId, pin, read.woven) : await lockSecret(text, accountId, pin, false));
 }

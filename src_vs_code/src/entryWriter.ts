@@ -6,6 +6,7 @@ import type { SettledPin } from './pinOnCreate';
 import { WritableSealing, isMarked, sealingForNew, unattendedSealing } from './sealingAtWrite';
 import { SecondValues, parseSecondValues, serializeSecondValues } from './secondValues';
 import type { StorageManager } from './storageManager';
+import { StoredSecret, stored, unflipped } from './storedSecret';
 
 /**
  * The one road from text to a stored value (`PLAN_typed_stored_secrets.md` §2.4, T4).
@@ -204,14 +205,14 @@ function plainWriter(storage: StorageManager, a: string, e: string, through: Thr
     setPayment: (_a, _e, v) => through(() => storage.setPayment(a, e, v)),
     setSecond: (_a, _e, v) => through(() => storage.setSecond(a, e, v)),
     setFieldsRaw: (_a, _e, v) => through(() => storage.setFieldsRaw(a, e, v)),
-    setPaymentRaw: (_a, _e, v) => through(() => storage.setPaymentRaw(a, e, v)),
+    setPaymentRaw: (_a, _e, v) => through(() => storage.setPaymentRaw(a, e, stored(v))),
     setSecondRaw: (_a, _e, v) => through(() => storage.setSecondRaw(a, e, v)),
     setAttachment: (_a, _e, v) => through(() => storage.setAttachment(a, e, v)),
     setImage: (_a, _e, v) => through(() => storage.setImage(a, e, v)),
   };
 }
 
-type Seal = (value: string) => Promise<string>;
+type Seal = (value: string) => Promise<StoredSecret>;
 
 /**
  * Every changed value sealed under `pin` before its raw setter runs. The rules per slot:
@@ -231,26 +232,27 @@ type Seal = (value: string) => Promise<string>;
  * are; the sealing itself runs before, outside it ({@link put}).</p>
  */
 function sealingWriter(storage: StorageManager, a: string, e: string, pin: string, opened: EditPrefill): EntryWriter {
-  const seal: Seal = (value) => sealValue(value, a, pin);
-  const maybe = async (value: string | undefined): Promise<string | undefined> => (value === undefined ? undefined : seal(value));
+  const seal: Seal = async (value) => stored(await sealValue(value, a, pin));
+  const maybe = async (value: string | undefined): Promise<StoredSecret | undefined> => (value === undefined ? undefined : seal(value));
   const commit: Commit = (write) => storage.writes.run(write);
   return {
-    setPassword: (_a, _e, v) => put(v === undefined || v.length === 0 ? Promise.resolve(v) : seal(v), commit, (s) => storage.setPassword(a, e, s)),
-    setPrivateKey: (_a, _e, v) => put(seal(v), commit, (s) => storage.setPrivateKey(a, e, s)),
-    setVpnConfig: (_a, _e, v) => put(seal(v), commit, (s) => storage.setVpnConfig(a, e, s)),
-    setTotp: (_a, _e, v) => sealIfChanged(opened.totp, v, seal, (sealed) => commit(() => storage.setTotp(a, e, sealed))),
-    setDbConnection: (_a, _e, v) => sealIfChanged(opened.dbConnection, v, seal, (sealed) => commit(() => storage.setDbConnection(a, e, sealed))),
-    setNotes: (_a, _e, v) => sealOrDelete(opened.notes, v, seal, (sealed) => commit(() => storage.setNotes(a, e, sealed))),
-    setConfigBody: (_a, _e, v) => sealOrDelete(opened.configBody, v, seal, (sealed) => commit(() => storage.setConfigBody(a, e, sealed))),
+    // An empty password means "keep" — nothing is sealed, and the setter keeps for `undefined` as it does for `''`.
+    setPassword: (_a, _e, v) => put(v === undefined || v.length === 0 ? Promise.resolve(undefined) : seal(v), commit, (s) => storage.setPassword(a, e, unflipped(s))),
+    setPrivateKey: (_a, _e, v) => put(seal(v), commit, (s) => storage.setPrivateKey(a, e, unflipped(s))),
+    setVpnConfig: (_a, _e, v) => put(seal(v), commit, (s) => storage.setVpnConfig(a, e, unflipped(s))),
+    setTotp: (_a, _e, v) => sealIfChanged(opened.totp, v, seal, (sealed) => commit(() => storage.setTotp(a, e, unflipped(sealed)))),
+    setDbConnection: (_a, _e, v) => sealIfChanged(opened.dbConnection, v, seal, (sealed) => commit(() => storage.setDbConnection(a, e, unflipped(sealed)))),
+    setNotes: (_a, _e, v) => sealOrDelete(opened.notes, v, seal, (sealed) => commit(() => storage.setNotes(a, e, unflipped(sealed)))),
+    setConfigBody: (_a, _e, v) => sealOrDelete(opened.configBody, v, seal, (sealed) => commit(() => storage.setConfigBody(a, e, unflipped(sealed)))),
     setFields: (_a, _e, v) =>
-      sealOrDelete(canonicalFields(opened.fieldsRaw), serializeFields(v), seal, (sealed) => commit(() => storage.setFieldsRaw(a, e, sealed))),
+      sealOrDelete(canonicalFields(opened.fieldsRaw), serializeFields(v), seal, (sealed) => commit(() => storage.setFieldsRaw(a, e, unflipped(sealed)))),
     setPayment: (_a, _e, v) =>
       sealOrDelete(canonicalPayment(opened.paymentRaw), serializePaymentFields(v), seal, (sealed) => commit(() => storage.setPaymentRaw(a, e, sealed))),
     setSecond: (_a, _e, v) =>
-      sealOrDelete(canonicalSecond(opened.secondRaw), serializeSecondValues(v), seal, (sealed) => commit(() => storage.setSecondRaw(a, e, sealed))),
-    setFieldsRaw: (_a, _e, v) => put(maybe(v), commit, (s) => storage.setFieldsRaw(a, e, s)),
+      sealOrDelete(canonicalSecond(opened.secondRaw), serializeSecondValues(v), seal, (sealed) => commit(() => storage.setSecondRaw(a, e, unflipped(sealed)))),
+    setFieldsRaw: (_a, _e, v) => put(maybe(v), commit, (s) => storage.setFieldsRaw(a, e, unflipped(s))),
     setPaymentRaw: (_a, _e, v) => put(maybe(v), commit, (s) => storage.setPaymentRaw(a, e, s)),
-    setSecondRaw: (_a, _e, v) => put(maybe(v), commit, (s) => storage.setSecondRaw(a, e, s)),
+    setSecondRaw: (_a, _e, v) => put(maybe(v), commit, (s) => storage.setSecondRaw(a, e, unflipped(s))),
     setAttachment: (_a, _e, v) => commit(() => storage.setAttachment(a, e, v)),
     setImage: (_a, _e, v) => commit(() => storage.setImage(a, e, v)),
   };
@@ -273,7 +275,7 @@ async function put<T>(sealed: Promise<T>, commit: Commit, write: (value: T) => P
  * One value: equal to what the form was opened over is SKIPPED — byte-identical stays
  * byte-identical (R4) — and anything else is sealed in memory first, then written (R3).
  */
-async function sealIfChanged(was: string | undefined, now: string, seal: Seal, write: (sealed: string) => Promise<void>): Promise<void> {
+async function sealIfChanged(was: string | undefined, now: string, seal: Seal, write: (sealed: StoredSecret) => Promise<void>): Promise<void> {
   if (now !== was) {
     await write(await seal(now));
   }
@@ -287,7 +289,7 @@ async function sealOrDelete(
   was: string | undefined,
   now: string | undefined,
   seal: Seal,
-  write: (sealed: string | undefined) => Promise<void>,
+  write: (sealed: StoredSecret | undefined) => Promise<void>,
 ): Promise<void> {
   if (now !== undefined) {
     await sealIfChanged(was, now, seal, write);

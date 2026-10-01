@@ -1,7 +1,9 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { silentPinGate } from '../pinGate';
 import {
   dbDisplay,
+  gatedSecretReader,
   revisionSecretReader,
   secretResolver,
   storageSecretReader,
@@ -81,7 +83,10 @@ test('a revision reader answers from the record; a storage reader from the stora
     details: { id: 'e1', name: 'old', isSshEnabled: false },
     secrets: { password: 'old-pw', dbConnection: 'mysql://u:x@h/db' },
   };
-  const fromRevision = secretResolver(revisionSecretReader(revision));
+  // A page reads a stored reader through the gate (T5: a stored reader handed to a page does not compile).
+  const gate = silentPinGate('acc', 'e1', 'old');
+  const told = (message: string): void => assert.fail(`nothing here is protected, yet the gate said: ${message}`);
+  const fromRevision = secretResolver(gatedSecretReader(revisionSecretReader(revision), gate, told));
   assert.equal(await fromRevision('password'), 'old-pw');
   assert.equal(await fromRevision('privateKey'), undefined);
   assert.equal(await fromRevision('dbPassword'), 'x');
@@ -96,7 +101,7 @@ test('a revision reader answers from the record; a storage reader from the stora
     getVpnConfig: () => Promise.resolve(undefined),
     getDbConnection: () => Promise.resolve(undefined),
   };
-  const fromStorage = secretResolver(storageSecretReader(storage as never, 'acc', 'e1'));
+  const fromStorage = secretResolver(gatedSecretReader(storageSecretReader(storage as never, 'acc', 'e1'), gate, told));
   assert.equal(await fromStorage('password'), 'live-pw');
   assert.deepEqual(asked, ['pw:acc:e1'], 'reads are lazy: only the asked field was read');
 });

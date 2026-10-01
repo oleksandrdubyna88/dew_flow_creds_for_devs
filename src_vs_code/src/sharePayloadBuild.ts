@@ -5,6 +5,7 @@ import { openedText } from './pinAdmission';
 import { SharePayload, TreeNode } from './types';
 import { shareableDetails } from './shareFormat';
 import { redactPaymentForShare } from './paymentRedaction';
+import { StoredSecret, seamText } from './storedSecret';
 
 /**
  * Reading one entry out of the vault and into a share payload.
@@ -45,8 +46,9 @@ export async function buildSharePayload(
    */
   gate?: PinGate,
 ): Promise<SharePayload> {
-  const open = (stored: string | undefined): Promise<string | undefined> =>
-    gate === undefined ? Promise.resolve(stored) : openedText(stored, gate);
+  // An unprotected entry's values travel as they are stored — the raw carry (`seamText` until T5's eleventh commit).
+  const open = (stored: StoredSecret | string | undefined): Promise<string | undefined> =>
+    gate === undefined ? Promise.resolve(seamText(stored)) : openedText(stored, gate);
   const note = (await open(await storage.getNotes(accountId, node.id))) ?? node.details?.notes;
   // Read only when it is going to travel: a seed nobody asked to send has no business being
   // fetched out of the keychain, let alone sealed into a payload.

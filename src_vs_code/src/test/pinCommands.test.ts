@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SECRET_SLOTS, SecretSlot } from '../entitySlots';
+import type { StoredSecret } from '../storedSecret';
 import type { RevisionSecrets } from '../revisionHistory';
 import { readSecret, unlockSecret } from '../secretEnvelope';
 import type { StorageManager } from '../storageManager';
@@ -54,7 +55,7 @@ function slot(label: string): SecretSlot {
   return found;
 }
 
-const stored = (w: World, label: string): Thenable<string | undefined> => slot(label).read(w.storage, ACCOUNT, ENTRY);
+const stored = (w: World, label: string): Thenable<StoredSecret | string | undefined> => slot(label).read(w.storage, ACCOUNT, ENTRY);
 
 test('Protect on an entry that is already protected says how much is locked and offers Remove PIN Protection… — not a dead end', async () => {
   // The mark was lost (D3, D12) while the values stayed locked: the row is `:pinoff`, so Protect is

@@ -5,6 +5,7 @@ import { SECRET_SLOTS } from './entitySlots';
 import { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
 import { isLockedSecret, readSecret } from './secretEnvelope';
+import { StoredSecret, seamText } from './storedSecret';
 
 /**
  * Being let into a protected entry — once, at the door, rather than field by field.
@@ -102,7 +103,7 @@ export async function firstLockedStored(
   storage: StorageManager,
   accountId: string,
   entityId: string,
-): Promise<string | undefined> {
+): Promise<StoredSecret | string | undefined> {
   for (const slot of SECRET_SLOTS) {
     const stored = await slot.read(storage, accountId, entityId);
     if (isLockedSecret(stored)) {
@@ -119,7 +120,7 @@ export async function firstLockedStored(
  * still goes through `openStored` rather than unwrapping directly, because that is the one place
  * that knows what a corrupt envelope is and refuses to treat it as text.</p>
  */
-export async function openedText(stored: string | undefined, gate: PinGate): Promise<string | undefined> {
+export async function openedText(stored: StoredSecret | string | undefined, gate: PinGate): Promise<string | undefined> {
   const read = readSecret(stored);
   if (read.kind === 'locked' || read.kind === 'corrupt') {
     // A reviewer's finding, and it was a real hole: only `locked` was special-cased, so envelope-
@@ -129,7 +130,7 @@ export async function openedText(stored: string | undefined, gate: PinGate): Pro
     // happen, and this is the caller that was ignoring it.
     return valueOfOpen(await openStored(stored, gate));
   }
-  return stored;
+  return seamText(stored);
 }
 
 function valueOfOpen(opened: PinOpen): string | undefined {

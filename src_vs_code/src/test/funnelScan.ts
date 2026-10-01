@@ -280,19 +280,24 @@ function declaredName(fn: ts.Node): ts.Node | undefined {
   return ts.isFunctionDeclaration(fn) || ts.isMethodDeclaration(fn) ? fn.name : undefined;
 }
 
-/** `slot.write(storage, …)` — a slot table row's writer handed the storage itself. */
+/** The table's two writing columns: `write` (plaintext, through a writer) and `store` (a stored form, T5). */
+const SLOT_WRITES = new Set(['write', 'store']);
+
+/** `slot.write(storage, …)` / `slot.store(storage, …)` — a slot table row's writer handed the storage itself. */
 function slotWriteOverStorage(file: string, node: ts.Node): Finding[] {
   const access = memberCall(node);
-  if (access?.name.text !== 'write') {
+  if (access === undefined || !SLOT_WRITES.has(access.name.text)) {
     return [];
   }
-  return isStorage((node as ts.CallExpression).arguments[0]) ? [at(file, node, `slot.write(storage in ${enclosingName(node)}`)] : [];
+  return isStorage((node as ts.CallExpression).arguments[0]) ? [at(file, node, `slot.${access.name.text}(storage in ${enclosingName(node)}`)] : [];
 }
 
 /**
- * Every slot table row's `write` handed the storage itself — a value stored with no writer between it and
- * the keychain, so no lease and no re-check (the E2 security review, finding 2: Restore's plain path).
- * Each finding names the function it sits in, which is what the allowlist is keyed by.
+ * Every slot table row's `write` or `store` handed the storage itself — a value stored with no writer
+ * between it and the keychain, so no lease and no re-check (the E2 security review, finding 2: Restore's
+ * plain path). Each finding names the function it sits in, which is what the allowlist is keyed by. Since
+ * T5 the storage is no `write` sink at all (its raw setters take `StoredSecret`), so the three allowlisted
+ * writers hand it to `store` — and `store` is still a road around the lease, so it is held to the same list.
  */
 export function slotWritesOverStorage(file: string, text: string): Finding[] {
   return nodesOf(parse(file, text)).flatMap((node) => slotWriteOverStorage(file, node));

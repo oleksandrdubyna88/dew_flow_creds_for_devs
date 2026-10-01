@@ -24,8 +24,8 @@ import { PaymentFields, serializePaymentFields } from './paymentFields';
 import { forgetTombstone, sweepOrphanSecrets } from './orphanSweep';
 import { LeasedQueue, leasedWrites, sweepWithRetry } from './leasedWrites';
 import { EntityCreate, createEntityWithSecrets } from './entityWrite';
-import { CleanupPort, clearSecretsPending, isEmptyPending, markSecretsPending, parsePendingCleanup,
-  finishBeforeReuse, removeWithIntent, resumePending } from './pendingCleanup';
+import { CleanupPort, clearSecretsPending, isEmptyPending, markSecretsPending, parsePendingCleanup, finishBeforeReuse, removeWithIntent, resumePending } from './pendingCleanup';
+import { StoredSecret, carried, stored, storedRead } from './storedSecret';
 import { dropVanishedSecrets, readSecretMaps, secretMapsOf, storeSecretMaps } from './secretMaps';
 import { attachmentSecretKey, configSecretKey, dbConnSecretKey, entitySecretKeys, fieldsSecretKey,
   imageSecretKey, notesSecretKey, paymentSecretKey, privateKeySecretKey, secretKey, totpSecretKey,
@@ -845,17 +845,17 @@ export class StorageManager implements vscode.Disposable {
   // ---------- payment instruments (SecretStorage, tenant-scoped, JSON) ----------
 
   /** The stored JSON as it is — what bundles, snapshots, shares and revisions carry. */
-  getPaymentRaw(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(paymentSecretKey(accountId, entityId));
+  getPaymentRaw(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(paymentSecretKey(accountId, entityId)));
   }
 
-  setPaymentRaw(accountId: string, entityId: string, value: string | undefined): Promise<void> {
-    return this.putSecret(paymentSecretKey(accountId, entityId), accountId, value);
+  setPaymentRaw(accountId: string, entityId: string, value: StoredSecret | undefined): Promise<void> {
+    return this.putSecret(paymentSecretKey(accountId, entityId), accountId, carried(value));
   }
 
   /** Typed write: an empty record deletes, so a payment instrument stripped bare holds no key. */
   setPayment(accountId: string, entityId: string, fields: PaymentFields | undefined): Promise<void> {
-    return this.setPaymentRaw(accountId, entityId, serializePaymentFields(fields));
+    return this.setPaymentRaw(accountId, entityId, stored(serializePaymentFields(fields)));
   }
 
   getConfigBody(accountId: string, entityId: string): Thenable<string | undefined> {

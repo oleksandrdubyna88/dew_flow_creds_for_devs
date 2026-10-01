@@ -1,6 +1,7 @@
 import { FieldReading, readingOf, withheld } from './fieldReading';
 import { corruptReason, pinFieldRefusal } from './pinGate';
 import { readSecret } from './secretEnvelope';
+import { StoredSecret, seamText } from './storedSecret';
 
 /**
  * Opening one stored value for one operation — the seam a path that may be a CLICK or may be
@@ -37,7 +38,7 @@ export type OpenedSecret =
   | { readonly kind: 'stopped'; readonly reason: string };
 
 /** Opens one stored value of `owner`. */
-export type SecretOpener = (owner: SecretOwner, stored: string | undefined) => Promise<OpenedSecret>;
+export type SecretOpener = (owner: SecretOwner, stored: StoredSecret | string | undefined) => Promise<OpenedSecret>;
 
 /**
  * Nothing automatic asks, and nothing automatic is handed a value of a protected entry: a sealed
@@ -47,13 +48,13 @@ export type SecretOpener = (owner: SecretOwner, stored: string | undefined) => P
  */
 export const automaticOpener: SecretOpener = (owner, stored) => Promise.resolve(automaticOpen(owner, stored));
 
-function automaticOpen(owner: SecretOwner, stored: string | undefined): OpenedSecret {
+function automaticOpen(owner: SecretOwner, stored: StoredSecret | string | undefined): OpenedSecret {
   const refusal = stored === undefined ? '' : pinFieldRefusal(owner, stored);
   return refusal === '' ? plainOpen(owner, stored) : { kind: 'stopped', reason: refusal };
 }
 
 /** A value that is not sealed: in the clear (a woven pair's envelope read as its value), or damaged. */
-function plainOpen(owner: SecretOwner, stored: string | undefined): OpenedSecret {
+function plainOpen(owner: SecretOwner, stored: StoredSecret | string | undefined): OpenedSecret {
   const read = readSecret(stored);
   if (read.kind === 'corrupt') {
     return { kind: 'stopped', reason: corruptReason(owner.name, read.why) };
@@ -100,7 +101,7 @@ function claimsPin(owner: SecretOwner | undefined): owner is SecretOwner {
  * interleaved with a decoy — each of the three would be graded as a strong, unique password, the lie
  * `hygieneScan.ts` describes. Absent, sealed, woven and damaged all answer `undefined`.</p>
  */
-export function plainText(stored: string | undefined): string | undefined {
+export function plainText(stored: StoredSecret | string | undefined): string | undefined {
   const read = readSecret(stored);
   return read.kind === 'value' && !read.woven ? read.value : undefined;
 }
@@ -114,6 +115,6 @@ export function plainText(stored: string | undefined): string | undefined {
  * URL hints, which judge a body and must not judge a wrap. A sealed value is `undefined`: there is
  * nothing in it to mask or judge.</p>
  */
-export function unsealedText(stored: string | undefined): string | undefined {
-  return readSecret(stored).kind === 'locked' ? undefined : stored;
+export function unsealedText(stored: StoredSecret | string | undefined): string | undefined {
+  return readSecret(stored).kind === 'locked' ? undefined : seamText(stored);
 }

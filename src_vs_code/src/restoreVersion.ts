@@ -5,8 +5,9 @@ import { writerFor } from './entryWriter';
 import { Revision } from './revisionHistory';
 import { snapshotForRevision } from './revisionSnapshot';
 import type { Sealing } from './sealingAtWrite';
-import { readSecret } from './secretEnvelope';
+import { isEmptySecret, readSecret } from './secretEnvelope';
 import type { StorageManager } from './storageManager';
+import { StoredSecret, carried, seamText, stored } from './storedSecret';
 import { EntityMetadata } from './types';
 
 /**
@@ -78,7 +79,7 @@ export function restoredDetails(version: Revision, live: EntityMetadata): Entity
 
 /** Every slot's fate, decided and SEALED in memory before the first write. */
 interface RestorePlan {
-  readonly writes: readonly (readonly [SecretSlot, string])[];
+  readonly writes: readonly (readonly [SecretSlot, StoredSecret])[];
   readonly removals: readonly SecretSlot[];
 }
 
@@ -90,7 +91,7 @@ async function planned(storage: StorageManager, accountId: string, entityId: str
   };
 }
 
-type Fate = { readonly kind: 'write'; readonly value: string } | { readonly kind: 'remove' } | { readonly kind: 'keep' };
+type Fate = { readonly kind: 'write'; readonly value: StoredSecret } | { readonly kind: 'remove' } | { readonly kind: 'keep' };
 
 /** One slot: the version's value (sealed first when there is a PIN), a removal, or nothing to do. */
 async function fateOf(
@@ -102,11 +103,11 @@ async function fateOf(
   pin: string | undefined,
 ): Promise<Fate> {
   const wanted = version.secrets[slot.revisionField];
-  const stored = await slot.read(storage, accountId, entityId);
-  if (wanted === undefined || wanted.length === 0) {
-    return removalFate(stored);
+  const live = await slot.read(storage, accountId, entityId);
+  if (wanted === undefined || isEmptySecret(wanted)) {
+    return removalFate(live);
   }
-  return pin === undefined ? plainFate(stored, wanted) : { kind: 'write', value: await sealValue(wanted, accountId, pin) };
+  return pin === undefined ? plainFate(live, wanted) : { kind: 'write', value: await sealValue(wanted, accountId, pin) };
 }
 
 /**
@@ -114,17 +115,17 @@ async function fateOf(
  * by. A restore into an entry protected while empty asks for the entry's first PIN only when it does.
  */
 export function holdsValue(version: Revision): boolean {
-  return SECRET_SLOTS.some((slot) => (version.secrets[slot.revisionField] ?? '').length > 0);
+  return SECRET_SLOTS.some((slot) => !isEmptySecret(version.secrets[slot.revisionField]));
 }
 
 /** The version held nothing here: whatever the entry holds now goes. */
-function removalFate(stored: string | undefined): Fate {
-  return stored === undefined ? { kind: 'keep' } : { kind: 'remove' };
+function removalFate(live: StoredSecret | string | undefined): Fate {
+  return live === undefined ? { kind: 'keep' } : { kind: 'remove' };
 }
 
 /** An unprotected entry: a value already equal to the version's is left byte-identical (no sync churn). */
-function plainFate(stored: string | undefined, wanted: string): Fate {
-  return stored === wanted ? { kind: 'keep' } : { kind: 'write', value: wanted };
+function plainFate(live: StoredSecret | string | undefined, wanted: StoredSecret | string): Fate {
+  return live === wanted ? { kind: 'keep' } : { kind: 'write', value: stored(seamText(wanted)) };
 }
 
 /** How a restore writes: the entry's PIN (a protected entry — every value sealed first), or the plain proof its decision made. */
@@ -162,7 +163,7 @@ export async function restoreVersion(
 /** A protected entry: every value was sealed in memory under its PIN by `planned`, before the first write (R3). */
 async function writeSealed(storage: StorageManager, accountId: string, entityId: string, plan: RestorePlan): Promise<void> {
   for (const [slot, value] of plan.writes) {
-    await slot.write(storage, accountId, entityId, value);
+    await slot.store(storage, accountId, entityId, value);
   }
 }
 
@@ -176,7 +177,9 @@ async function writePlain(
 ): Promise<void> {
   const writer = writerFor(storage, accountId, entityId, proof, NOTHING_OPENED);
   for (const [slot, value] of plan.writes) {
-    await slot.write(writer, accountId, entityId, value);
+    // A raw carry: the kept version's stored bytes, handed to the plain writer to store as they are
+    // (an unprotected version holds plain and woven-plain forms only — `openRevision` opened the rest).
+    await slot.write(writer, accountId, entityId, carried(value));
   }
 }
 

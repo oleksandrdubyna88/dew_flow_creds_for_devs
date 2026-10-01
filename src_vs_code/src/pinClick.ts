@@ -5,6 +5,7 @@ import { admitEntry } from './pinPrompt';
 import { OpenedSecret, SecretOpener, SecretOwner } from './secretOpener';
 import { isLockedSecret } from './secretEnvelope';
 import type { StorageManager } from './storageManager';
+import type { StoredSecret } from './storedSecret';
 
 /**
  * A value somebody CLICKED for — opened through the entry's door first (entry-PIN plan, rule R1).
@@ -63,7 +64,7 @@ export function grantedOpener(accountId: string): SecretOpener {
 /** Said already, or declined: the caller has nothing left to say. */
 const STOPPED: OpenedSecret = { kind: 'stopped', reason: '' };
 
-function needsDoor(owner: SecretOwner, stored: string | undefined): boolean {
+function needsDoor(owner: SecretOwner, stored: StoredSecret | string | undefined): boolean {
   return owner.pinProtected === true || isLockedSecret(stored);
 }
 

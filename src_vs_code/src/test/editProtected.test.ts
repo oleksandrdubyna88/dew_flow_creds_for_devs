@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SECRET_SLOTS, SecretSlot } from '../entitySlots';
+import { StoredSecret, stored } from '../storedSecret';
 import type { EntityFormOptions, EntityFormValues } from '../entityFormShape';
 import { hiddenFromAgents } from '../mcpEntries';
 import { PaymentFields, parsePaymentFields } from '../paymentFields';
@@ -265,7 +266,7 @@ async function world(
   for (const slot of SECRET_SLOTS) {
     const value = slots[slot.label];
     if (value !== undefined) {
-      await slot.write(storage, ACCOUNT, details.id, value);
+      await slot.store(storage, ACCOUNT, details.id, stored(value));
     }
   }
   const form: Form = {};
@@ -304,8 +305,8 @@ async function opened(w: World, label: string): Promise<string> {
 }
 
 /** Every slot as stored, byte for byte. */
-async function rawSlots(w: World): Promise<Record<string, string | undefined>> {
-  const out: Record<string, string | undefined> = {};
+async function rawSlots(w: World): Promise<Record<string, StoredSecret | string | undefined>> {
+  const out: Record<string, StoredSecret | string | undefined> = {};
   for (const slot of SECRET_SLOTS) {
     out[slot.label] = await slot.read(w.storage, ACCOUNT, w.node().id);
   }
