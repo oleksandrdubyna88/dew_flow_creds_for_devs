@@ -51,7 +51,7 @@ function nodesOf(source: ts.SourceFile): ts.Node[] {
 /** The module a relative import names, without its directory: `'../secretEnvelope'` → `secretEnvelope`. */
 function moduleName(declaration: ts.ImportDeclaration): string {
   const spec = declaration.moduleSpecifier;
-  return ts.isStringLiteral(spec) ? spec.text.split('/').slice(-1)[0] : '';
+  return ts.isStringLiteral(spec) ? (spec.text.split('/').at(-1) ?? '') : '';
 }
 
 /** What a file imports from the funnel's modules among the funnel's names: local name → original, and namespaces. */
@@ -241,7 +241,7 @@ function storeIsStorage(node: ts.Node): string | undefined {
 
 function storeBinding(node: ts.Node): ts.PropertyAssignment | ts.VariableDeclaration | undefined {
   const named = bindingOf(node);
-  return named !== undefined && named.name.getText() === 'store' ? named : undefined;
+  return named?.name.getText() === 'store' ? named : undefined;
 }
 
 function bindingOf(node: ts.Node): ts.PropertyAssignment | ts.VariableDeclaration | undefined {
@@ -283,7 +283,7 @@ function declaredName(fn: ts.Node): ts.Node | undefined {
 /** `slot.write(storage, …)` — a slot table row's writer handed the storage itself. */
 function slotWriteOverStorage(file: string, node: ts.Node): Finding[] {
   const access = memberCall(node);
-  if (access === undefined || access.name.text !== 'write') {
+  if (access?.name.text !== 'write') {
     return [];
   }
   return isStorage((node as ts.CallExpression).arguments[0]) ? [at(file, node, `slot.write(storage in ${enclosingName(node)}`)] : [];

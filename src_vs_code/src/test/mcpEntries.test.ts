@@ -160,7 +160,7 @@ test('the connection string comes back without the password in it', async () => 
 test('a sealed connection string is not handed to an agent as its envelope — there is no address in a wrap', async () => {
   // An entry whose MARK was lost while its connection stayed sealed (a sync took the unmarked side)
   // is visible to agents; what it holds is ciphertext, which is no connection string at all
-  // (`PLAN_typed_stored_secrets.md` T3: the hint reads through `secretOpener.unsealedText`).
+  // (`PLAN_typed_stored_secrets.md` T3: the connection string reads through `secretOpener.plainText`).
   const sealed = await lockSecret(`mysql://app:${SECRET}@db-01.example.internal:3306/orders`, 'a1', '2468');
   assert.equal(readSecret(sealed).kind, 'locked', 'the fixture is what the parser calls sealed');
   const nodes = [folder('f1', 'DB'), entity('e1', 'orders', { kind: 'db', mcp: { view: true } })];

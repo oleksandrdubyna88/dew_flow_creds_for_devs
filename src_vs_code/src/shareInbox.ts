@@ -522,9 +522,8 @@ export class ShareInbox {
     // A declined item is STILL PENDING: opened, so not in `remaining`; not imported, so not in
     // `imported`. Counted nowhere, it would vanish from the tally that says whether this is done.
     const pending = remaining.length + declined + failed.length;
-    void vscode.window.showInformationMessage(
-      `Accepted ${imported} item(s)${pending > 0 ? `, ${pending} still pending` : ''}.${notSavedNote(failed, attempted)}`,
-    );
+    const stillPending = pending > 0 ? `, ${pending} still pending` : '';
+    void vscode.window.showInformationMessage(`Accepted ${imported} item(s)${stillPending}.${notSavedNote(failed, attempted)}`);
   }
 
   /**

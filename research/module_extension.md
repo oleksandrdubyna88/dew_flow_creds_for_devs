@@ -1490,8 +1490,8 @@ proof. Getters and setters are still `string`; E3 flips them to `StoredSecret`.
   `FieldReading` (stopped → withheld with its sentence, open value → value, nothing or `''` → absent; with
   the entry passed, a protected entry withholds even a field it does not hold, which terminal variables and
   `creds://` have answered since the entry-PIN plan and `pinSlotMatrix` holds) — and two owner-less reads:
-  `plainText` (a value in the clear that is not woven: the health report) and `unsealedText` (the stored
-  text unless sealed: the output masker, the tree's config and URL hints, an agent's connection string).
+  `plainText` (a value in the clear that is not woven: the health report, an agent's connection string) and
+  `unsealedText` (the stored text unless sealed: the output masker, the tree's config and URL hints).
   The four automatic readers that called `pinFieldRefusal` and then used the string themselves —
   `envApply.bindableFieldReading`, `entityFieldReading` (notes, one-time code), `agentUseActions.dbQueryAction`,
   `transportFactory.usableDeployKey` — go through `automaticOpener` + `fieldReadingOf`, so a DAMAGED wrap is
@@ -1528,7 +1528,10 @@ proof. Getters and setters are still `string`; E3 flips them to `StoredSecret`.
   protected only through its node and every new-id caller writes the node after the secrets (Rule A) —
   and nothing is remembered between writes; a node found there, or a tree that cannot be read
   (`metadataFault`), sends that write down the re-checked road. No lease is
-  held across a PIN box or a modal.
+  held across a PIN box or a modal. The SEALING writer commits each sealed value under the same lease,
+  its sealing done before, outside it (`put`; CodeRabbit on PR #177) — so a sealed write can no longer land
+  between Protect's re-read and its write (`entityPin.sealIfStill`) and be overwritten with the seal of
+  the value Protect read before.
 - **Protect takes the lease** (the E2 security review, finding 3). `entityPin.protectEntity` seals each
   slot OUTSIDE the lease (scrypt, about a second) and writes it inside, after reading the slot again
   (`sealIfStill`): unchanged → the seal; changed by a plain write in that second → that value sealed

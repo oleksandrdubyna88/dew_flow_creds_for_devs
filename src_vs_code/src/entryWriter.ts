@@ -226,30 +226,47 @@ type Seal = (value: string) => Promise<string>;
  *       arrives and pass `undefined` through as the delete it always was — nothing opened them;</li>
  *   <li>the attachment and the image pass straight through — the two slots outside the PIN.</li>
  * </ul>
+ *
+ * <p>Every raw setter call is committed under the storage's cross-window lease, as the plain writer's
+ * are; the sealing itself runs before, outside it ({@link put}).</p>
  */
 function sealingWriter(storage: StorageManager, a: string, e: string, pin: string, opened: EditPrefill): EntryWriter {
   const seal: Seal = (value) => sealValue(value, a, pin);
   const maybe = async (value: string | undefined): Promise<string | undefined> => (value === undefined ? undefined : seal(value));
+  const commit: Commit = (write) => storage.writes.run(write);
   return {
-    setPassword: async (_a, _e, v) => storage.setPassword(a, e, v === undefined || v.length === 0 ? v : await seal(v)),
-    setPrivateKey: async (_a, _e, v) => storage.setPrivateKey(a, e, await seal(v)),
-    setVpnConfig: async (_a, _e, v) => storage.setVpnConfig(a, e, await seal(v)),
-    setTotp: (_a, _e, v) => sealIfChanged(opened.totp, v, seal, (sealed) => storage.setTotp(a, e, sealed)),
-    setDbConnection: (_a, _e, v) => sealIfChanged(opened.dbConnection, v, seal, (sealed) => storage.setDbConnection(a, e, sealed)),
-    setNotes: (_a, _e, v) => sealOrDelete(opened.notes, v, seal, (sealed) => storage.setNotes(a, e, sealed)),
-    setConfigBody: (_a, _e, v) => sealOrDelete(opened.configBody, v, seal, (sealed) => storage.setConfigBody(a, e, sealed)),
+    setPassword: (_a, _e, v) => put(v === undefined || v.length === 0 ? Promise.resolve(v) : seal(v), commit, (s) => storage.setPassword(a, e, s)),
+    setPrivateKey: (_a, _e, v) => put(seal(v), commit, (s) => storage.setPrivateKey(a, e, s)),
+    setVpnConfig: (_a, _e, v) => put(seal(v), commit, (s) => storage.setVpnConfig(a, e, s)),
+    setTotp: (_a, _e, v) => sealIfChanged(opened.totp, v, seal, (sealed) => commit(() => storage.setTotp(a, e, sealed))),
+    setDbConnection: (_a, _e, v) => sealIfChanged(opened.dbConnection, v, seal, (sealed) => commit(() => storage.setDbConnection(a, e, sealed))),
+    setNotes: (_a, _e, v) => sealOrDelete(opened.notes, v, seal, (sealed) => commit(() => storage.setNotes(a, e, sealed))),
+    setConfigBody: (_a, _e, v) => sealOrDelete(opened.configBody, v, seal, (sealed) => commit(() => storage.setConfigBody(a, e, sealed))),
     setFields: (_a, _e, v) =>
-      sealOrDelete(canonicalFields(opened.fieldsRaw), serializeFields(v), seal, (sealed) => storage.setFieldsRaw(a, e, sealed)),
+      sealOrDelete(canonicalFields(opened.fieldsRaw), serializeFields(v), seal, (sealed) => commit(() => storage.setFieldsRaw(a, e, sealed))),
     setPayment: (_a, _e, v) =>
-      sealOrDelete(canonicalPayment(opened.paymentRaw), serializePaymentFields(v), seal, (sealed) => storage.setPaymentRaw(a, e, sealed)),
+      sealOrDelete(canonicalPayment(opened.paymentRaw), serializePaymentFields(v), seal, (sealed) => commit(() => storage.setPaymentRaw(a, e, sealed))),
     setSecond: (_a, _e, v) =>
-      sealOrDelete(canonicalSecond(opened.secondRaw), serializeSecondValues(v), seal, (sealed) => storage.setSecondRaw(a, e, sealed)),
-    setFieldsRaw: async (_a, _e, v) => storage.setFieldsRaw(a, e, await maybe(v)),
-    setPaymentRaw: async (_a, _e, v) => storage.setPaymentRaw(a, e, await maybe(v)),
-    setSecondRaw: async (_a, _e, v) => storage.setSecondRaw(a, e, await maybe(v)),
-    setAttachment: (_a, _e, v) => storage.setAttachment(a, e, v),
-    setImage: (_a, _e, v) => storage.setImage(a, e, v),
+      sealOrDelete(canonicalSecond(opened.secondRaw), serializeSecondValues(v), seal, (sealed) => commit(() => storage.setSecondRaw(a, e, sealed))),
+    setFieldsRaw: (_a, _e, v) => put(maybe(v), commit, (s) => storage.setFieldsRaw(a, e, s)),
+    setPaymentRaw: (_a, _e, v) => put(maybe(v), commit, (s) => storage.setPaymentRaw(a, e, s)),
+    setSecondRaw: (_a, _e, v) => put(maybe(v), commit, (s) => storage.setSecondRaw(a, e, s)),
+    setAttachment: (_a, _e, v) => commit(() => storage.setAttachment(a, e, v)),
+    setImage: (_a, _e, v) => commit(() => storage.setImage(a, e, v)),
   };
+}
+
+/** One raw setter call under the storage's cross-window lease — the commit, and nothing slow, inside it. */
+type Commit = (write: () => Promise<void>) => Promise<void>;
+
+/**
+ * Seal OUTSIDE the lease (scrypt, ~1 s), then commit INSIDE it (CodeRabbit on PR #177): a sealed value
+ * written outside the lease could land between Protect's re-read and its write (`entityPin.sealIfStill`)
+ * and be overwritten with the seal of the value Protect read before — an update lost.
+ */
+async function put<T>(sealed: Promise<T>, commit: Commit, write: (value: T) => Promise<void>): Promise<void> {
+  const value = await sealed;
+  await commit(() => write(value));
 }
 
 /**

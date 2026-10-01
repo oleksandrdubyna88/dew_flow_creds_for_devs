@@ -4,7 +4,7 @@ import { describeError } from '../describeError';
 import { NOTHING_OPENED } from '../editPrefill';
 import { protectEntity } from '../entityPin';
 import { EntryWriter, ProtectedMeanwhile, writerFor, writerForNew } from '../entryWriter';
-import { unattendedSealing } from '../sealingAtWrite';
+import { sealingForNew, unattendedSealing } from '../sealingAtWrite';
 import type { StorageManager } from '../storageManager';
 import { protectionDecision } from '../syncPinRule';
 import { EntityMetadata } from '../types';
@@ -175,4 +175,36 @@ test('writerForNew over an unreadable tree takes the re-checked road — an unkn
 
   assert.deepEqual(written.filter((value) => value === 'new pw'), [], 'an unreadable tree was read as "no node", and the "new" writer wrote in the clear into a protected entry');
   assert.ok(outcome instanceof ProtectedMeanwhile, `the write was not refused: ${describeError(outcome)}`);
+});
+
+// ---- the sealing writer commits under the lease too (CodeRabbit on PR #177) ----
+
+test('every write of the SEALING writer commits inside the lease — Protect\'s re-read and write cannot be split by it', async () => {
+  const storage = await vault({ notes: 'old note', password: 'old pw' });
+  const writer = writerFor(storage, ACCOUNT, ENTRY, sealingForNew({ kind: 'pin', pin: PIN }), NOTHING_OPENED);
+  const lease = storage.writes;
+  const run = lease.run.bind(lease);
+  let inside = 0;
+  lease.run = async <T>(work: () => Promise<T>): Promise<T> =>
+    run(async () => {
+      inside += 1;
+      try {
+        return await work();
+      } finally {
+        inside -= 1;
+      }
+    });
+  const leased: string[] = [];
+  for (const name of ['setNotes', 'setPassword'] as const) {
+    const real = storage[name].bind(storage);
+    storage[name] = (a: string, e: string, value: string | undefined) => {
+      leased.push(`${name} ${inside > 0 ? 'leased' : 'OUTSIDE the lease'}`);
+      return real(a, e, value);
+    };
+  }
+
+  await writer.setNotes(ACCOUNT, ENTRY, 'new note');
+  await writer.setPassword(ACCOUNT, ENTRY, 'new pw');
+
+  assert.deepEqual(leased, ['setNotes leased', 'setPassword leased'], 'a sealed value was committed outside the lease, where it can land between Protect\'s re-read and its write');
 });

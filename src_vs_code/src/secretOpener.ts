@@ -88,7 +88,7 @@ export function fieldReadingOf(opened: OpenedSecret, claimedBy?: SecretOwner): F
 }
 
 function claimsPin(owner: SecretOwner | undefined): owner is SecretOwner {
-  return owner !== undefined && owner.pinProtected === true;
+  return owner?.pinProtected === true;
 }
 
 /**
