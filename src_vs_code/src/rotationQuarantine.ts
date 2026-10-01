@@ -445,7 +445,7 @@ async function releaseIfUnprotected(storage: StorageManager, entry: HeldEntry): 
     return forgetIfAbsent(storage, entry);
   }
   if (isEmpty(await storage.heldRotations.read(entry.accountId, entry.entityId))) {
-    await storage.heldRotations.unlist(entry.accountId, entry.entityId);
+    await unlistIfEmpty(storage, entry);
     return 0;
   }
   return (await protectedNow(storage, entry)) ? 0 : (await releaseHeld(storage, entry.accountId, entry.entityId, node.name, UNATTENDED)).released.length;
@@ -489,9 +489,24 @@ async function stillWaiting(storage: StorageManager, entry: HeldEntry): Promise<
   }
   const held = presence === 'present' && !isEmpty(await storage.heldRotations.read(entry.accountId, entry.entityId));
   if (!held) {
-    await storage.heldRotations.unlist(entry.accountId, entry.entityId);
+    await unlistIfEmpty(storage, entry);
   }
   return held;
+}
+
+/**
+ * Drop an index entry only if its item is STILL empty, decided under the lease (the security review, finding
+ * 3): the reader saw "empty" without it, and a hold — index first, item second, one step under the lease —
+ * can land between that look and this write. Unlisted then, the item would exist with nothing to find it:
+ * no tree hint, no sweep. A node that is gone takes its entry with it either way (`forgetIfAbsent`).
+ */
+async function unlistIfEmpty(storage: StorageManager, entry: HeldEntry): Promise<void> {
+  const store = storage.heldRotations;
+  await storage.writes.run(async () => {
+    if (storage.nodePresence(entry.accountId, entry.entityId) === 'absent' || isEmpty(await store.read(entry.accountId, entry.entityId))) {
+      await store.unlist(entry.accountId, entry.entityId);
+    }
+  });
 }
 
 /** One value a permanent deletion would lose: the entry it waits beside, and which slot. Never the value. */

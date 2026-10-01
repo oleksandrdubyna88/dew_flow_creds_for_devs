@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { protectEntity, unprotectEntity } from '../entityPin';
 import { exportOpener } from '../exportSecrets';
 import type { PinGate } from '../pinGate';
-import { HeldSlots, ReleaseProof, fingerprintOf } from '../rotationQuarantine';
+import { HeldSlots, ReleaseProof, fingerprintOf, holdRotated, releaseUnprotected, waitingKeys } from '../rotationQuarantine';
 import { readSecret, unlockSecret } from '../secretEnvelope';
 import { rotationQuarantineSecretKey } from '../secretKeys';
 import type { StorageManager } from '../storageManager';
@@ -499,4 +499,50 @@ test('a click opener handed a value read before its door (Connect, SSH, exec) us
   const opened = await w.click.clickOpener(w.storage, ACCOUNT, 'connect')(OWNER, readFirst);
 
   assert.equal(opened.kind === 'open' && opened.value, HELD_CONN, 'the opener used the pre-release value');
+});
+
+// ---- security review, finding 3: an index entry is dropped only while its item is still empty ----
+
+/**
+ * The first read of the item answers "empty" — and a rotation's hold lands right after it, before the reader
+ * acts on the answer: the index entry the hold wrote must survive the reader's clean-up.
+ */
+function holdLandsAfterTheFirstRead(storage: StorageManager): void {
+  const store = storage.heldRotations as unknown as Record<string, unknown>;
+  const read = storage.heldRotations.read.bind(storage.heldRotations);
+  let first = true;
+  store.read = async (accountId: string, entityId: string): Promise<HeldSlots> => {
+    const answer = await read(accountId, entityId);
+    if (first) {
+      first = false;
+      await holdRotated(storage, ACCOUNT, ENTRY, 'dbConnection', HELD_CONN, fingerprintOf(CONN));
+    }
+    return answer;
+  };
+}
+
+async function emptyButListed(): Promise<StorageManager> {
+  const storage = memoryStorage(clickVscode([], sinks()));
+  await seedEntry(storage, details(), { 'database connection': CONN });
+  await storage.heldRotations.list(ACCOUNT, ENTRY);
+  return storage;
+}
+
+test('the flags walk does not drop the index entry of a hold that landed while it looked', async () => {
+  const storage = await emptyButListed();
+  holdLandsAfterTheFirstRead(storage);
+
+  await waitingKeys(storage);
+
+  assert.ok((await storage.heldRotations.read(ACCOUNT, ENTRY)).dbConnection !== undefined, 'the setup: the hold did not land');
+  assert.deepEqual(await storage.heldRotations.listed(), [{ accountId: ACCOUNT, entityId: ENTRY }], 'the index lost an entry whose item exists — the tree and the sweep can no longer see it');
+});
+
+test('the sweep does not drop the index entry of a hold that landed while it looked', async () => {
+  const storage = await emptyButListed();
+  holdLandsAfterTheFirstRead(storage);
+
+  await releaseUnprotected(storage);
+
+  assert.deepEqual(await storage.heldRotations.listed(), [{ accountId: ACCOUNT, entityId: ENTRY }], 'the index lost an entry whose item exists');
 });
