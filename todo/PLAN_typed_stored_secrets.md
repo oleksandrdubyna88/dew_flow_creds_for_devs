@@ -672,8 +672,8 @@ unchanged; `review_plan` (epic 2/3) and `review_code` over E2's diff against E1'
 ### E3 — The flip and the finish: the type takes over, the plan closes (Opus)
 
 **Why the cut is here.** Nothing in E3 decides anything — every judgement about a reader or a writer was
-made in E2 — so the flip is mechanical, each of its eleven commits bounded by the compiler's own list for
-one slot, and the docs and the promotion are the plan's close. It is its own epic because its diff is the
+made in E2 — so the flip is mechanical, ten commits each bounded by the compiler's own list for
+one slot and an eleventh that takes the transitional `| string` off the seams (E3 plan round, finding 1), and the docs and the promotion are the plan's close. It is its own epic because its diff is the
 largest (the 102 getter and 83 setter references of §10, and ~30 test fakes) and would bury E2's
 judgement if reviewed with it; and because the eleventh commit is the moment the type takes over from
 T4's interim rule, so E3's code round is the one that must see `applyAdditions(storage, …)` refuse to
@@ -708,7 +708,9 @@ promotion records all three epics' rounds and deviations. Opus: volume, not judg
       eleventh commit without that fixture, leaves the write side guarded by nothing.
       **Model: Opus** — mechanical, each commit bounded by the compiler's own list; the one judgement per
       caller was made in T3 and T4. **DoD per commit:** typecheck, lint, ratchet (line-neutral in the two
-      ratcheted files), `npm test`; no assertion edited except a fake's signature.
+      ratcheted files), `npm test` (which runs T4's interim rule); no assertion edited except a fake's signature.
+      **Each commit is green before the next begins** (E3 plan round, finding 2): a commit whose checks go
+      red is corrected or reverted in place — never built on — and the last green commit is the recovery point.
 - [ ] **T6 (E3) — Docs, the last code round, promotion, release.** `research/module_extension.md` §*The
       entry PIN keeps its promise* (`:1329-1517`): the type, the funnel table and the compile-fail harness as
       one subsection — the reader classes table STAYS, because the AST guard stays (§2.6; the 09-29 text
@@ -716,7 +718,11 @@ promotion records all three epics' rounds and deviations. Opus: volume, not judg
       (`:820-848`): the two scanning tests and the harness; help unchanged (nothing a person sees moves);
       CHANGELOG; E3's `review_code` over its whole diff against E2's last commit (§4.0 — the round that
       sees the type take over); the promotion with deviations, carrying the three epics' rounds, the
-      cadence consultation's outcome and the §2.7 question for the owner; the release after E3's PR.
+      cadence consultation's outcome and the §2.7 question for the owner; the release after E3's PR —
+      **one release for the whole plan** (the hotfix #175, E1 #176, E2 #177, E3): the candidate is `main`
+      after E3's merge; the owner is shown its version numbers, the `[Unreleased]` CHANGELOG section that
+      becomes them, the full suite's result on that commit and `main`'s CI, and the release is tagged and
+      published only after the owner's explicit approval of that content (E3 plan round, finding 3).
       **Model: Opus.** **DoD:** §7.
 
 **E3 DoD:** §7 in full — it is the plan's DoD, and E3 is where the plan ends; plus `review_plan`
