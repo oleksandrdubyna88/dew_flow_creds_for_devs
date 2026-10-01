@@ -65,7 +65,7 @@ export async function updateInPlace(
 ): Promise<InPlaceUpdate | undefined> {
   const existing = storage.getNode(accountId, previousId);
   const current = existing ?? payload.node;
-  const store = await writerFor(storage, accountId, previousId, current.name, carriesSecret(payload));
+  const store = await writerFor(storage, accountId, updatedEntry(previousId, current.name, existing, parentId), carriesSecret(payload));
   if (store === undefined) {
     return undefined;
   }
@@ -113,14 +113,30 @@ function recipientsOwn(existing: TreeNode | undefined, parentId: string | null):
  *
  * <p>`undefined` when the door, or the first-PIN box, stopped it — the share stays in the inbox.</p>
  */
-async function writerFor(storage: StorageManager, accountId: string, entityId: string, name: string, carries: boolean): Promise<ShareWriter | undefined> {
-  if ((await firstLockedStored(storage, accountId, entityId)) !== undefined) {
-    return throughDoor(storage, accountId, entityId, name);
+async function writerFor(storage: StorageManager, accountId: string, entry: UpdatedEntry, carries: boolean): Promise<ShareWriter | undefined> {
+  if ((await firstLockedStored(storage, accountId, entry.id)) !== undefined) {
+    return throughDoor(storage, accountId, entry.id, entry.name);
   }
-  if (!(await protectedWhileEmpty(storage, accountId, entityId))) {
+  if (!(await protectedWhileEmpty(storage, accountId, entry.id))) {
     return storage;
   }
-  return carries ? firstSealing(storage, accountId, entityId, name) : storage;
+  return carries ? firstSealing(storage, accountId, entry) : storage;
+}
+
+/** The entry an update writes into, as the recipient's tree has it. */
+interface UpdatedEntry {
+  readonly id: string;
+  readonly name: string;
+  readonly parentId: string | null | undefined;
+}
+
+/**
+ * The entry as THIS machine knows it — its local id, name and folder — read once and handed down, so
+ * the first-PIN box checks against the folder it actually sits in rather than a second lookup of it
+ * (the 2026-10-01 code round).
+ */
+function updatedEntry(id: string, name: string, existing: TreeNode | undefined, parentId: string | null): UpdatedEntry {
+  return { id, name, parentId: existing?.parentId ?? parentId };
 }
 
 /** The live door, and a writer that seals under the PIN it took; `undefined` when the door stopped it. */
@@ -145,8 +161,8 @@ async function protectedWhileEmpty(storage: StorageManager, accountId: string, e
  * granted to this window) — and a writer that seals every arriving value under it. `undefined` for a
  * decline, a mismatch, or a sibling check not agreed to.
  */
-async function firstSealing(storage: StorageManager, accountId: string, entityId: string, name: string): Promise<ShareWriter | undefined> {
-  const pin = await firstPinFor(storage, accountId, { id: entityId, name, parentId: storage.getNode(accountId, entityId)?.parentId });
+async function firstSealing(storage: StorageManager, accountId: string, entry: UpdatedEntry): Promise<ShareWriter | undefined> {
+  const pin = await firstPinFor(storage, accountId, entry);
   return pin === undefined ? undefined : sealingWriter(storage, accountId, pin);
 }
 
