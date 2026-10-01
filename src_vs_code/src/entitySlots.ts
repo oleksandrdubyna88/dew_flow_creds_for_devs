@@ -186,7 +186,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     bundleKey: 'totps',
     read: (s, a, e) => s.getTotp(a, e),
     write: (s, a, e, v) => s.setTotp(a, e, v),
-    store: (s, a, e, v) => s.setTotp(a, e, unflipped(v)),
+    store: (s, a, e, v) => s.setTotp(a, e, v),
     remove: (s, a, e) => s.deleteTotp(a, e),
   },
   {

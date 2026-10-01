@@ -883,12 +883,12 @@ export class StorageManager implements vscode.Disposable {
   // ---------- TOTP seeds (SecretStorage, tenant-scoped) ----------
 
   /** The canonical `otpauth://` URI, or undefined when the entity has no second factor here. */
-  getTotp(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(totpSecretKey(accountId, entityId));
+  getTotp(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(totpSecretKey(accountId, entityId)));
   }
 
-  setTotp(accountId: string, entityId: string, uri: string): Promise<void> {
-    return Promise.resolve(this.secrets.store(totpSecretKey(accountId, entityId), uri));
+  setTotp(accountId: string, entityId: string, uri: StoredSecret): Promise<void> {
+    return Promise.resolve(this.secrets.store(totpSecretKey(accountId, entityId), carried(uri)));
   }
 
   deleteTotp(accountId: string, entityId: string): Promise<void> {

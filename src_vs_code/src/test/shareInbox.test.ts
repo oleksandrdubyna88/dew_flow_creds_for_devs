@@ -17,6 +17,7 @@ import {
   world,
 } from './shareWorld';
 import type { World } from './shareWorld';
+import { stored } from '../storedSecret';
 
 test('an accepted share gets a FRESH local id — a sender cannot address our entries', async () => {
   const w = world();
@@ -207,7 +208,7 @@ async function entryWithTotp(storage: InstanceType<typeof StorageManager>): Prom
   };
   await storage.addNode(RECIPIENT.accountId, node);
   await storage.setPassword(RECIPIENT.accountId, node.id, 'pw');
-  await storage.setTotp(RECIPIENT.accountId, node.id, SEED);
+  await storage.setTotp(RECIPIENT.accountId, node.id, stored(SEED));
   return node;
 }
 
@@ -346,7 +347,7 @@ test('an entry whose flag never got set is still asked about', async () => {
     details: { id: 'flagless', name: 'VPN with a seed and no flag', isSshEnabled: false },
   };
   await w.storage.addNode(RECIPIENT.accountId, node);
-  await w.storage.setTotp(RECIPIENT.accountId, node.id, SEED);
+  await w.storage.setTotp(RECIPIENT.accountId, node.id, stored(SEED));
 
   await w.inbox.shareNodes(RECIPIENT.accountId, [node]);
 

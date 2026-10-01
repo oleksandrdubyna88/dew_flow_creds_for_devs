@@ -32,7 +32,7 @@ async function godaddy(storage: InstanceType<typeof StorageManager>): Promise<Tr
   await storage.addNode(RECIPIENT.accountId, node);
   await storage.setPassword(RECIPIENT.accountId, node.id, 'pw-of-godaddy');
   await storage.setFieldsRaw(RECIPIENT.accountId, node.id, stored(FIELDS));
-  await storage.setTotp(RECIPIENT.accountId, node.id, SEED);
+  await storage.setTotp(RECIPIENT.accountId, node.id, stored(SEED));
   return node;
 }
 
