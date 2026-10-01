@@ -144,3 +144,35 @@ test('the companion: writerForNew over a genuinely new id writes without reading
   assert.deepEqual(reads, [], 'the fast path for a new id read the keychain');
   assert.equal(await storage.getPassword(ACCOUNT, 'brand-new'), 'pw');
 });
+
+// ---- writerForNew: "new" is verified at EVERY write, not remembered (the E2 second code round, findings 0-4) ----
+
+test('writerForNew: a node that appears and is protected after the first write refuses the second — "new" is not remembered', async () => {
+  const written: string[] = [];
+  const storage = memoryStorage(clickVscode([], sinks()), written);
+  const writer = writerForNew(storage, ACCOUNT, ENTRY);
+
+  await writer.setNotes(ACCOUNT, ENTRY, 'first note');
+  await seedEntry(storage, entry(), { notes: 'first note' });
+  await protectedElsewhere(storage);
+  written.length = 0;
+  const second = await writer.setPassword(ACCOUNT, ENTRY, 'new pw').then(() => 'written', (error: unknown) => error);
+
+  assert.deepEqual(written.filter((value) => value === 'new pw'), [], 'a "new" writer remembered its first check and wrote in the clear into an entry protected since');
+  assert.ok(second instanceof ProtectedMeanwhile, `the write was not refused: ${describeError(second)}`);
+});
+
+test('writerForNew over an unreadable tree takes the re-checked road — an unknowable node is not an absent one', async () => {
+  const written: string[] = [];
+  const storage = await vault({ password: 'old pw' }, written);
+  await protectedElsewhere(storage);
+  storage.metadataFault = 'the tree could not be read (simulated)';
+  // What a fault does to every node read (storageManager.nodePresence: 'a metadataFault makes every node read as missing').
+  storage.getNode = () => undefined;
+  written.length = 0;
+
+  const outcome = await writerForNew(storage, ACCOUNT, ENTRY).setPassword(ACCOUNT, ENTRY, 'new pw').then(() => 'written', (error: unknown) => error);
+
+  assert.deepEqual(written.filter((value) => value === 'new pw'), [], 'an unreadable tree was read as "no node", and the "new" writer wrote in the clear into a protected entry');
+  assert.ok(outcome instanceof ProtectedMeanwhile, `the write was not refused: ${describeError(outcome)}`);
+});

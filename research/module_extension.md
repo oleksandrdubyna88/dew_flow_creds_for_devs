@@ -1523,10 +1523,11 @@ proof. Getters and setters are still `string`; E3 flips them to `StoredSecret`.
   refuses THAT write with `entryWriter.ProtectedMeanwhile` before it is stored (`recheckedEach`). Nothing
   is cached between writes, so one write failing for a passing reason never fails the next (until the
   code round only the first write was re-checked, the rest ran outside the lease, and a rejected first
-  write rejected every later one). A `fresh` proof (a new id) is VERIFIED at its first write, under the
-  lease, by the absence of a node with that id (`freshVerified`) — sufficient because an entry is
+  write rejected every later one). A `fresh` proof (a new id) is VERIFIED at EVERY write, under the
+  lease, by a readable tree holding no node with that id (`freshVerified`, an in-memory read, no keychain slot) — sufficient because an entry is
   protected only through its node and every new-id caller writes the node after the secrets (Rule A) —
-  and re-checks nothing after; a node found there sends every write down the re-checked road. No lease is
+  and nothing is remembered between writes; a node found there, or a tree that cannot be read
+  (`metadataFault`), sends that write down the re-checked road. No lease is
   held across a PIN box or a modal.
 - **Protect takes the lease** (the E2 security review, finding 3). `entityPin.protectEntity` seals each
   slot OUTSIDE the lease (scrypt, about a second) and writes it inside, after reading the slot again

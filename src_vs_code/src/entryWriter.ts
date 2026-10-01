@@ -133,10 +133,8 @@ export class ProtectedMeanwhile extends Error {
   }
 }
 
-/** How a plain writer's writes run: straight, or each one re-checked under the lease. */
+/** How a plain writer's writes run — each one under the lease, re-checked or verified new. */
 type Through = (write: () => Promise<void>) => Promise<void>;
-
-const straight: Through = (write) => write();
 
 /**
  * Every write under the storage's cross-window lease (`LeasedQueue` — `StorageManager.writes`), each
@@ -154,29 +152,27 @@ function recheckedEach(storage: StorageManager, accountId: string, entityId: str
 }
 
 /**
- * A NEW id's writes — the caller's word that the id is new, VERIFIED at the first write (the E2 code
- * round, findings 0 and 6): under the lease, the tree must hold no node with that id. Then nothing
- * re-checks again, and an import or a bundle restore pays one lease and no keychain read per entry.
+ * A NEW id's writes — the caller's word that the id is new, VERIFIED at EVERY write (the E2 code
+ * rounds: the first round's findings 0 and 6, the second's 0-4): under the lease, the tree must be
+ * readable and hold no node with that id. Nothing is remembered between writes — a node that appears
+ * after the first write (a retry, a word that was wrong) sends the next write down the re-checked road,
+ * and a tree that cannot be read (`metadataFault` makes every node read as missing) is "unknown", never
+ * "absent". The check is an in-memory tree read: an import or a bundle restore still reads no keychain
+ * slot for a new id, and `runCreate` already holds the lease, so its writes join it inline.
  *
- * <p>Sufficient, and the cheapest check that is: an entry is protected only through its node — the mark
- * lives on it, and *Protect with a PIN…* runs from it — and every `writerForNew` caller (the person's Add,
- * an agent's create, an import, a bundle restore, an accepted share) writes the node AFTER the secrets
- * (Rule A), so no window can protect an id that has no node yet, and none can learn a fresh random id
- * before that node is written. A slot read would ask ten keychain entries what the node already answers.
- * When a node DOES carry the id — the word was wrong — the writes take the re-checked road, every one,
- * as if the decision had seen no mark: a protected entry refuses them, an unprotected one is written as
- * any existing entry is. (A tree that cannot be read at all — `metadataFault` — reads every node as
- * absent here; it blinds the re-check's own mark read the same way, and no Protect can run from a node
- * nobody can read.)</p>
+ * <p>Sufficient: an entry is protected only through its node — the mark lives on it, and *Protect with a
+ * PIN…* runs from it — and every `writerForNew` caller writes the node AFTER the secrets (Rule A). When a
+ * node DOES carry the id, or the tree is unknowable, the write is re-checked as any existing entry's is:
+ * a sealed slot or the mark refuses it.</p>
  */
 function freshVerified(storage: StorageManager, accountId: string, entityId: string): Through {
-  const verified: { road?: Through } = {};
-  return (write) =>
-    verified.road?.(write)
-    ?? storage.writes.run(async () => {
-      verified.road = storage.getNode(accountId, entityId) === undefined ? straight : recheckedEach(storage, accountId, entityId, false);
-      await verified.road(write);
-    });
+  const rechecked = recheckedEach(storage, accountId, entityId, false);
+  return (write) => storage.writes.run(() => (stillNew(storage, accountId, entityId) ? write() : rechecked(write)));
+}
+
+/** No node with this id, in a tree that could be read — the only answer that skips the re-check. */
+function stillNew(storage: StorageManager, accountId: string, entityId: string): boolean {
+  return storage.metadataFault === undefined && storage.getNode(accountId, entityId) === undefined;
 }
 
 /** A sealed slot now, or a mark the decision did not see — the entry was protected since. */

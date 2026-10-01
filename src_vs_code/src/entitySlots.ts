@@ -22,7 +22,7 @@
 import type { EntryWriter } from './entryWriter';
 import type { RevisionSecrets } from './revisionHistory';
 import type { SecretMapKey } from './secretMaps';
-import { StorageManager } from './storageManager';
+import type { StorageManager } from './storageManager';
 
 /**
  * What a slot's `read` needs — the ten getters and nothing else, so a walker that only READS (the
