@@ -140,6 +140,11 @@ export interface EntityViewOptions {
   updatedAt?: number;
   /** Previous versions, newest first. Empty when nothing has been changed yet. */
   history: Revision[];
+  /**
+   * A history row's Copy: that version's value, opened through the entry's door and read through the
+   * silent gated reader (typed-secrets plan T3) — never the kept string as stored. Absent where there is no history.
+   */
+  resolveRevision?: (index: number) => Promise<string | undefined>;
   /** data: URI for the stored image — the one secret deliberately SENT to the webview,
    * because a preview cannot round-trip through the host. */
   imageDataUri?: string;

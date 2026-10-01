@@ -35,7 +35,7 @@ import { SecondValues, parseSecondValues } from './secondValues';
 import { formOf } from './paymentSaveGate';
 import { openedText } from './pinAdmission';
 import { admitEntry } from './pinPrompt';
-import { PinGate } from './pinGate';
+import { PinGate, silentPinGate } from './pinGate';
 import type { EntityViewOptions } from './entityViewPage';
 import { openKeptVersion } from './revisionDoor';
 
@@ -173,6 +173,7 @@ function viewOptions(ctx: ViewerContext, loaded: LoadedEntry): EntityViewOptions
     createdAt: node.createdAt,
     updatedAt: node.updatedAt,
     history: loaded.history,
+    resolveRevision: (index) => keptValueToCopy(ctx, loaded.history[index]),
     imageDataUri: imageDataUriOf(details, loaded.imageB64),
     saveAttachment: (which) => saveAttachment(ctx, which),
     checkEnv: checkEnv,
@@ -301,18 +302,51 @@ async function setEnv(ctx: ViewerContext, field: Parameters<typeof bindableField
  *
  * <p>Split into the page's parts on 2026-09-29: it was one 70-line function under a disable whose own
  * comment said this plan's P6 was the reason to make it meet the limits.</p>
+ *
+ * <p><b>Admitted once, read silently</b> (`PLAN_typed_stored_secrets.md` T3, second plan round, finding
+ * 0): every field of the opened copy is read through the viewer's own `gatedSecretReader` behind a
+ * SILENT gate (`keptRead`) — the road the live viewer takes, so the two cannot come to answer
+ * differently. Until T3 the page read the record raw, and a woven password went to Copy as its envelope.</p>
  */
 export async function openRevisionViewer(accountId: string, node: TreeNode, revision: Revision, storage: StorageManager): Promise<void> {
   const opened = await openKeptVersion(storage, accountId, node.id, revision, { door: 'see this previous version', version: 'see it' });
   if (opened !== undefined) {
-    showEntityView(revisionViewOptions(node, opened));
+    showEntityView(await revisionViewOptions(node, opened, keptRead(accountId, node, opened)));
   }
 }
 
+/** A kept version the door has opened, and how its fields are read: the viewer's gated reader behind a silent gate. */
+interface KeptRead {
+  readonly reader: SecretReader;
+  readonly gate: PinGate;
+}
+
+/**
+ * The reader over an OPENED kept version. Its fields are plain stored forms by now (`historyPin.withValues`),
+ * so the silent gate opens each as `unprotected` and asks nothing; a second `admitEntry` for a version the
+ * door admitted a moment ago is exactly the second question `silentPinGate` exists to prevent.
+ */
+function keptRead(accountId: string, node: TreeNode, opened: Revision): KeptRead {
+  const gate = silentPinGate(accountId, node.id, node.name);
+  return { gate, reader: gatedSecretReader(revisionSecretReader(opened), gate, (message) => void vscode.window.showWarningMessage(message)) };
+}
+
+/** The four values the page shows as text, opened through the same silent gate. */
+async function keptText(revision: Revision, gate: PinGate): Promise<Record<'notes' | 'fields' | 'config' | 'dbConnection', string | undefined>> {
+  const { notes, fields, config, dbConnection } = revision.secrets;
+  return {
+    notes: await openedText(notes, gate),
+    fields: await openedText(fields, gate),
+    config: await openedText(config, gate),
+    dbConnection: await openedText(dbConnection, gate),
+  };
+}
+
 /** The page for one opened version — every value from the version, none from the live entry. */
-function revisionViewOptions(node: TreeNode, revision: Revision): EntityViewOptions {
+async function revisionViewOptions(node: TreeNode, revision: Revision, kept: KeptRead): Promise<EntityViewOptions> {
   const details = revision.details;
-  const { password, privateKey, vpnConfig, dbConnection, notes } = revision.secrets;
+  const { password, privateKey, vpnConfig, dbConnection } = revision.secrets;
+  const text = await keptText(revision, kept.gate);
   return {
     details: { ...details, name: revision.name },
     // Its own line, not a suffix: glued to the name it read as part of it (owner, 2026-08-27).
@@ -323,15 +357,15 @@ function revisionViewOptions(node: TreeNode, revision: Revision): EntityViewOpti
     hasPrivateKey: privateKey !== undefined,
     hasVpnConfig: vpnConfig !== undefined,
     hasDbConnection: dbConnection !== undefined,
-    notes,
-    fields: parseFields(revision.secrets.fields),
-    config: revision.secrets.config,
-    ...dbDisplay(dbConnection, details.dbType),
+    notes: text.notes,
+    fields: parseFields(text.fields),
+    config: text.config,
+    ...dbDisplay(text.dbConnection, details.dbType),
     sshCommand: sshLineFor(details),
-    resolveSecret: secretResolver(revisionSecretReader(revision)),
-    ...revisionCard(revision),
-    copyAllText: () => Promise.resolve(formatEntityBlock(details, password, dbConnection, notes)),
-    saveVpnConfig: () => saveRevisionVpnConfig(revision),
+    resolveSecret: secretResolver(kept.reader),
+    ...(await revisionCard(revision, kept.reader)),
+    copyAllText: async () => formatEntityBlock(details, await kept.reader.password(), text.dbConnection, text.notes),
+    saveVpnConfig: () => saveRevisionVpnConfig(revision, kept.reader),
     hasAttachment: false,
     createdAt: node.createdAt,
     updatedAt: revision.at,
@@ -347,36 +381,66 @@ function revisionViewOptions(node: TreeNode, revision: Revision): EntityViewOpti
  * `SecretReader` seam is what makes this a few lines rather than a second implementation that would
  * drift from the live one.
  */
-function revisionCard(revision: Revision): Partial<EntityViewOptions> {
-  const reader = revisionSecretReader(revision);
-  const { totp, payment, second } = revision.secrets;
+async function revisionCard(revision: Revision, reader: SecretReader): Promise<Partial<EntityViewOptions>> {
+  const { totp, payment } = revision.secrets;
+  const seconds = parseSecondValues(await reader.secondRaw());
   return {
     totp: totp === undefined ? undefined : totpViewFor(reader),
-    payment: revisionPaymentCard(revision),
+    payment: await revisionPaymentCard(revision, reader, seconds),
     resolvePayment: payment === undefined ? undefined : paymentViewFor(reader),
     // NOT gated on the payment record: a credential's revision can carry a second password with no
     // payment at all, and gating it there made that row uncopyable — raised by the automated
     // reviewer. A revision with no second values answers an empty record, which is the same
     // "nothing to copy" the live viewer gives.
     resolveSecond: secondViewFor(reader),
-    hasSecondPassword: parseSecondValues(second).password2 !== undefined,
+    hasSecondPassword: seconds.password2 !== undefined,
   };
 }
 
-function revisionPaymentCard(revision: Revision): EntityViewOptions['payment'] {
+async function revisionPaymentCard(revision: Revision, reader: SecretReader, seconds: SecondValues): Promise<EntityViewOptions['payment']> {
   const { details } = revision;
-  const { payment, second } = revision.secrets;
-  return payment === undefined
+  return revision.secrets.payment === undefined
     ? undefined
-    : paymentCardFor(details.id, formOf(details.paymentForm ?? ''), parsePaymentFields(payment), Math.random, parseSecondValues(second));
+    : paymentCardFor(details.id, formOf(details.paymentForm ?? ''), parsePaymentFields(await reader.paymentRaw()), Math.random, seconds);
 }
 
-function saveRevisionVpnConfig(revision: Revision): Promise<void> {
-  const vpnConfig = revision.secrets.vpnConfig;
+async function saveRevisionVpnConfig(revision: Revision, reader: SecretReader): Promise<void> {
+  const vpnConfig = await reader.vpnConfig();
   return vpnConfig === undefined
-    ? Promise.resolve()
+    ? undefined
     : saveTextAs('Save VPN config (previous version)', revision.details.vpnConfigFileName ?? `${revision.name}.ovpn`, vpnConfig);
 }
+
+/** The order a history row's Copy has always taken its one value in. */
+const KEPT_COPY_ORDER: readonly ((reader: SecretReader) => Thenable<string | undefined>)[] = [
+  (reader) => reader.password(),
+  (reader) => reader.privateKey(),
+  (reader) => reader.dbConnection(),
+  (reader) => reader.vpnConfig(),
+];
+
+/**
+ * The live viewer's history-row Copy: that version opened through `openKeptVersion` — silent, because
+ * the live viewer's door admitted the entry when it opened — then its first value read through the silent
+ * reader, as the revision viewer reads it (T3). Until T3 the row copied the RAW kept string, so a version
+ * of a protected entry put its envelope on the clipboard.
+ */
+async function keptValueToCopy(ctx: ViewerContext, revision: Revision | undefined): Promise<string | undefined> {
+  const opened = revision === undefined ? undefined : await openKeptVersion(ctx.storage, ctx.accountId, ctx.node.id, revision, KEPT_COPY);
+  return opened === undefined ? undefined : firstKeptValue(keptRead(ctx.accountId, ctx.node, opened), opened);
+}
+
+async function firstKeptValue(kept: KeptRead, opened: Revision): Promise<string | undefined> {
+  for (const read of KEPT_COPY_ORDER) {
+    const value = await read(kept.reader);
+    if (value !== undefined) {
+      return value;
+    }
+  }
+  return openedText(opened.secrets.notes, kept.gate);
+}
+
+const KEPT_COPY = { door: 'copy a previous version', version: 'copy it' };
 
 function refuseEnv(): Promise<boolean> {
   void vscode.window.showWarningMessage('This is a previous version. Set terminal variables from the current entry, not from history.');

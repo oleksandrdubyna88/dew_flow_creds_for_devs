@@ -39,12 +39,25 @@ export async function clickedSecret(
 
 /** The same, as an opener — for a path that resolves WHICH entry owns the value itself (an SSH key). */
 export function clickOpener(storage: StorageManager, accountId: string, purpose: string): SecretOpener {
+  const behindTheDoor = grantedOpener(accountId);
   return async (owner, stored) => {
     if (needsDoor(owner, stored) && (await admitEntry(storage, accountId, owner.id, owner.name, purpose)) === undefined) {
       return STOPPED;
     }
-    return told(await openStored(stored, silentPinGate(accountId, owner.id, owner.name)), owner);
+    return behindTheDoor(owner, stored);
   };
+}
+
+/**
+ * The second half of `clickOpener` alone: a value opened with the grant a door ALREADY left, through a
+ * SILENT gate — never a box — and every stop said. For a value read right after a click admitted its
+ * entry, where a second `admitEntry` would be a second question about an entry the person answered a
+ * moment ago: *Show Config Changes* opens the kept body with the grant the live body's click left
+ * (`PLAN_typed_stored_secrets.md` §2.3, second plan round, finding 0 — no reader of a kept version
+ * reaches for `clickOpener`).
+ */
+export function grantedOpener(accountId: string): SecretOpener {
+  return async (owner, stored) => told(await openStored(stored, silentPinGate(accountId, owner.id, owner.name)), owner);
 }
 
 /** Said already, or declined: the caller has nothing left to say. */

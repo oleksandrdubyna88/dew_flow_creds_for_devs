@@ -177,17 +177,9 @@ export async function copyValueFor(
       }
       const revision = /^rev(\d+)$/.exec(field);
       if (revision !== null) {
-        // The old secret, on demand and through the host — a previous password is
-        // still a password.
-        const r = options.history[Number(revision[1])];
-        value =
-          r === undefined
-            ? undefined
-            : (r.secrets.password ??
-              r.secrets.privateKey ??
-              r.secrets.dbConnection ??
-              r.secrets.vpnConfig ??
-              r.secrets.notes);
+        // The old secret, on demand and through the host — a previous password is still a password,
+        // so it is OPENED through the entry's door, never copied as the kept string (typed-secrets T3).
+        value = await options.resolveRevision?.(Number(revision[1]));
         break;
       }
       const forward = /^forward(\d+)$/.exec(field);
