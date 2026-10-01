@@ -1167,7 +1167,7 @@ inherited at read time.
 | `pinPrompt.ts` | the thin `vscode` edge: the one input box, with the one wording |
 | `pinCommands.ts` | the three commands, and the folder run |
 | `pinFolderPlan.ts` | what a folder run would do, and the sentences it says before doing it |
-| `pinOnCreate.ts` | a new entry in a folder whose entries are protected; `firstPinFor`, the first PIN of an entry protected while empty |
+| `pinOnCreate.ts` | a new entry in a folder whose entries are protected; `firstPinFor`, the first PIN of an entry protected while empty; `writerForNewEntry`, the one writer both creates (Add, the agent's) take — sealed before the first write |
 | `sharePayloadBuild.ts` | the payload builder, lifted out of `shareInbox` when this pushed it over its ceiling |
 | `shareTotpQuestion.ts` | *"What travels with this share?"* — the same lift, for the same ceiling |
 | `nodeOwnId.ts` | `withOwnId`: the node's record names the node it is in, at the import and at every read |
@@ -1178,7 +1178,7 @@ inherited at read time.
 | `secretOpener.ts` / `pinClick.ts` | the automatic opener and the click opener every sink stands behind |
 | `historyPin.ts` / `historyHeal.ts` / `revisionDoor.ts` | kept versions: sealed, healed at the door, opened through the live entry's door |
 | `revisionRestore.ts` / `restoreVersion.ts` | *Restore This Version…*: the command, and the writes in the order that keeps R3 |
-| `shareUpdateSeal.ts` | a share's *Update it* into a protected entry: the door, then every arriving value sealed |
+| `shareUpdateSeal.ts` | a share's *Update it* into a protected entry: the door, then every arriving value sealed; into an entry protected while empty, its first PIN first |
 | `syncPinRule.ts` / `syncProtection.ts` | the merge's protection rule (`pinEpoch`), and the losing copy kept as a revision |
 
 **The entry PIN has its own floor (issue #55, 2026-09-12).** `pinPolicy.ts` carries a `PinScope` —
@@ -1425,7 +1425,8 @@ and audits `withheld (PIN)`), the git deploy key and the SSH broker's stored key
 `materializePrivateKey`, `creds://` notes and codes read withheld, the config-validity flag judges
 nothing sealed. Export (`admitForExport`, `exportOpener`) asks each protected entry's PIN, aborts whole
 on a decline, writes opened values and no `pinProtected`. Share *Update it* (`shareUpdateSeal`) goes
-through the live door and seals every arriving value.
+through the live door and seals every arriving value — and into an entry protected while empty it asks
+the entry's first PIN first (below, *Two plaintext windows closed*).
 
 **Protected while empty (2026-09-30).** *Protect with a PIN…* on an entry that holds nothing has no
 value to seal, so it writes the mark alone and the PIN typed there is stored nowhere. *Remove PIN
@@ -1445,6 +1446,36 @@ write), re-reading first: a value sealed meanwhile goes under ITS PIN (`pinAtWri
 meanwhile is refused. A save that stores nothing asks nothing and keeps the mark. *Restore This
 Version…* into such an entry asks the same first PIN after its confirmation when the version holds a
 value (`restoreVersion.holdsValue`).
+
+**Two plaintext windows closed (2026-10-01, `fix/two-plaintext-windows`).** Found by the T0 re-read of
+the typed-secrets plan (`todo/PLAN_typed_stored_secrets.md` §2.7) and fixed ahead of its epics, as the
+cadence consultation advised — each RED first against the real `StorageManager` with every keychain
+write logged, then shown red again with its fix reverted:
+
+- **Add into a folder that asks for a PIN** wrote the additions through the storage itself and sealed
+  afterwards with `applyCreatePin`, *"because it wraps what is THERE"* — the write-then-protect order R3
+  rejected for Edit, and the one the agent's create in the same folder was built without. A process
+  killed between the two left the values plain under a node that claimed nothing. Now
+  `pinOnCreate.writerForNewEntry(settled, storage, a, e)` — the storage for `none`,
+  `editPrefill.sealedWriter` over `NOTHING_OPENED` for `pin` — is the one writer BOTH creates take:
+  Add's `runCreate` writes its secrets through it (`treeMutationCommands.ts`), and `mcpHooks.makeAgentEntry`
+  replaced its own inline ternary with the same call. `applyCreatePin` still runs after either — with
+  nothing left plain it is the idempotent sweep, the history and the mark. `addEntityPin.test.ts` drives
+  the registered `credSshManager.addEntity` handler: the write log sees only sealed values; a create
+  killed after its first slot write leaves that slot sealed and the node absent, and the next Add
+  converges.
+- **A share's *Update it* into an entry protected while empty** asked only the slots
+  (`shareUpdateSeal.writerFor` → `firstLockedStored`), never the mark — so an entry marked while it held
+  nothing was updated plain under its mark (the plan gate's finding 2 of 2026-09-30). Now `writerFor`
+  decides at the write what `sealingAtWrite` decides for Edit and Restore: a sealed slot → the door and
+  a writer sealing under the PIN it took (unchanged); no sealed slot and no mark → the storage; the mark
+  over nothing in any slot (`lockedSlotCount(...).total === 0`, the test `emptyAtOpen` makes) →
+  `pinOnCreate.firstPinFor` — typed twice, or checked against the folder's protected entries, granted to
+  the window, the road Edit's `saveGateFor` and Restore take — then `sealingWriter` under that PIN; a
+  declined first PIN updates nothing and keeps the share, as a declined door does; a payload carrying no
+  secret asks nothing (`FirstSeal.adds`, asked of the share). A mark over values in the clear stays the
+  0.99.0 false mark the door clears at the next open, and is updated as the plain entry it is.
+  `shareUpdateSeal.test.ts` holds the three cases through the real `ShareInbox`.
 
 **History is sealed, opens through the door, and can be restored.** Kept versions live per machine in
 the keychain (cap 3). Protect runs `historyPin.protectHistory` before the mark; on every OTHER machine
@@ -1929,7 +1960,9 @@ consulted only the woven refusal before using a held value. That was a PIN bypas
 entry's secret went into the collection, where every later terminal in the window read it without the
 PIN, against the form's *"PIN — on"* banner and the `entity-pin` help. **A PIN-protected entry writes no
 environment variable.** The seal runs first again (`treeMutationCommands.ts`: `applyCreatePin`, then
-`applyEnvBindings` — the pre-plan order), and `envApply.automaticFieldRefusal(details, field, stored)`
+`applyEnvBindings` — the pre-plan order; and since 2026-10-01 the additions themselves are already
+written sealed, through `pinOnCreate.writerForNewEntry`, so the order is about the mark the bindings
+read rather than the wrap), and `envApply.automaticFieldRefusal(details, field, stored)`
 is the ONE function every road asks: the woven refusal from the entry, the PIN refusal from the value's
 own wrap (`pinGate.automaticPinRefusal`) — a third policy goes there, not at a call site.
 `boundReading` takes the stored reading first and lets a held value stand in only when that reading is
@@ -4921,7 +4954,8 @@ CONSENT_TIMEOUT_MS`, taken before the modal — the relay waits ten minutes, the
 Allow, `agentCreatePin.settleAgentCreate` asks `pinOnCreate`'s own question (`pinForAgentEntry` is
 `pinForNewEntry` with `PinAsk.confirm: false`, asked again while a typed PIN opens none of the folder's
 protected entries, three at most; a dismissed box ends it), inside what is left of that deadline. With a PIN, `makeAgentEntry` writes the additions
-through `editPrefill.sealedWriter` over `NOTHING_OPENED` — every value sealed with `sealValue` in memory
+through `pinOnCreate.writerForNewEntry` — `editPrefill.sealedWriter` over `NOTHING_OPENED`, the one writer
+the person's Add takes too since 2026-10-01 — every value sealed with `sealValue` in memory
 BEFORE `runCreate` writes anything (rule R3) — and `applyCreatePin` does what it does for Add: the
 idempotent sweep, the history, and the mark with its first `pinEpoch`, last. Dismissed, three PINs
 that open none of the protected entries, or out of time: `denied` / `consent_timeout` with a sentence
