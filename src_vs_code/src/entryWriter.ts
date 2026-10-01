@@ -195,7 +195,7 @@ async function protectedSince(storage: StorageManager, accountId: string, entity
 function plainWriter(storage: StorageManager, a: string, e: string, through: Through): EntryWriter {
   return {
     setPassword: (_a, _e, v) => through(() => storage.setPassword(a, e, v)),
-    setPrivateKey: (_a, _e, v) => through(() => storage.setPrivateKey(a, e, v)),
+    setPrivateKey: (_a, _e, v) => through(() => storage.setPrivateKey(a, e, stored(v))),
     setVpnConfig: (_a, _e, v) => through(() => storage.setVpnConfig(a, e, stored(v))),
     setDbConnection: (_a, _e, v) => through(() => storage.setDbConnection(a, e, stored(v))),
     setTotp: (_a, _e, v) => through(() => storage.setTotp(a, e, stored(v))),
@@ -238,7 +238,7 @@ function sealingWriter(storage: StorageManager, a: string, e: string, pin: strin
   return {
     // An empty password means "keep" — nothing is sealed, and the setter keeps for `undefined` as it does for `''`.
     setPassword: (_a, _e, v) => put(v === undefined || v.length === 0 ? Promise.resolve(undefined) : seal(v), commit, (s) => storage.setPassword(a, e, unflipped(s))),
-    setPrivateKey: (_a, _e, v) => put(seal(v), commit, (s) => storage.setPrivateKey(a, e, unflipped(s))),
+    setPrivateKey: (_a, _e, v) => put(seal(v), commit, (s) => storage.setPrivateKey(a, e, s)),
     setVpnConfig: (_a, _e, v) => put(seal(v), commit, (s) => storage.setVpnConfig(a, e, s)),
     setTotp: (_a, _e, v) => sealIfChanged(opened.totp, v, seal, (sealed) => commit(() => storage.setTotp(a, e, sealed))),
     setDbConnection: (_a, _e, v) => sealIfChanged(opened.dbConnection, v, seal, (sealed) => commit(() => storage.setDbConnection(a, e, sealed))),

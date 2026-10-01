@@ -724,12 +724,12 @@ export class StorageManager implements vscode.Disposable {
 
   // ---------- SSH private keys (SecretStorage, tenant-scoped) ----------
 
-  getPrivateKey(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(privateKeySecretKey(accountId, entityId));
+  getPrivateKey(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(privateKeySecretKey(accountId, entityId)));
   }
 
-  setPrivateKey(accountId: string, entityId: string, content: string): Promise<void> {
-    return this.putSecret(privateKeySecretKey(accountId, entityId), accountId, content);
+  setPrivateKey(accountId: string, entityId: string, content: StoredSecret): Promise<void> {
+    return this.putSecret(privateKeySecretKey(accountId, entityId), accountId, carried(content));
   }
 
   deletePrivateKey(accountId: string, entityId: string): Promise<void> {

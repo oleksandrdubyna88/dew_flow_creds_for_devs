@@ -189,7 +189,7 @@ const GATED_BY_CALLER: Readonly<Record<string, Readonly<Record<string, string>>>
     readPassword: 'a SlotRead handed to clickedValue, which reads through clickedSecret',
     readDb: 'a SlotRead handed to clickedValue, which reads through clickedSecret (typed since T5)',
     readTotp: 'a SlotRead handed to clickedValue (Copy One-Time Code), which reads through clickedSecret (typed since T5)',
-    readKey: 'a SlotRead handed straight to clickedSecret (Install SSH Key)',
+    readKey: 'a SlotRead handed straight to clickedSecret (Install SSH Key) (typed since T5)',
   },
   'entityFlags.ts': {
     read: 'history HEADS only (dates and names), and the password as a has-one flag',
@@ -201,7 +201,7 @@ const GATED_BY_CALLER: Readonly<Record<string, Readonly<Record<string, string>>>
     secretsOf: 'every value goes through the ExportOpen it is given — exportOpener, a silent gate that throws on what it cannot open',
   },
   'gitSigningKey.ts': {
-    readKey: 'a SlotRead handed straight to clickedSecret (Copy Git Signing Config)',
+    readKey: 'a SlotRead handed straight to clickedSecret (Copy Git Signing Config) (typed since T5)',
   },
   'historyPin.ts': {
     protectHistory: 'seals kept plaintext under the PIN it is given — a carrier inside a door file',
@@ -220,11 +220,11 @@ const GATED_BY_CALLER: Readonly<Record<string, Readonly<Record<string, string>>>
     passwordOwner: 'returns the stored password with its OWNER; the caller opens it through the opener it was given',
   },
   'transportFactory.ts': {
-    findPrivateKey: 'returns the stored key with its owner; usableDeployKey refuses a sealed one (pinFieldRefusal) before materializePrivateKey',
+    findPrivateKey: 'returns the stored key with its owner; usableDeployKey refuses a sealed one (pinFieldRefusal) before materializePrivateKey (typed since T5)',
   },
   'viewerOptions.ts': {
     password: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader',
-    privateKey: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader',
+    privateKey: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader (typed since T5)',
     vpnConfig: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader (typed since T5)',
     dbConnection: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader (typed since T5)',
     totpSeed: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader (typed since T5)',

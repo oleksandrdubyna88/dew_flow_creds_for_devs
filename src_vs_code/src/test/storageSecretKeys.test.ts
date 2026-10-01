@@ -99,7 +99,7 @@ test("a crafted id cannot reach another entity's private-key slot", async () => 
   await w.storage.addNode(ACCOUNT, entity('x'));
   await w.storage.addNode(ACCOUNT, entity('x:sshPrivateKey'));
 
-  await w.storage.setPrivateKey(ACCOUNT, 'x', 'THE REAL PRIVATE KEY');
+  await w.storage.setPrivateKey(ACCOUNT, 'x', stored('THE REAL PRIVATE KEY'));
   await w.storage.setPassword(ACCOUNT, 'x:sshPrivateKey', 'attacker-password');
 
   assert.equal(
@@ -145,7 +145,7 @@ test('an ordinary uuid still reads back what it stored, across every kind', asyn
   await w.storage.addNode(ACCOUNT, entity(id));
 
   await w.storage.setPassword(ACCOUNT, id, 'pw');
-  await w.storage.setPrivateKey(ACCOUNT, id, 'key');
+  await w.storage.setPrivateKey(ACCOUNT, id, stored('key'));
   await w.storage.setNotes(ACCOUNT, id, stored('note'));
 
   assert.equal(await w.storage.getPassword(ACCOUNT, id), 'pw');

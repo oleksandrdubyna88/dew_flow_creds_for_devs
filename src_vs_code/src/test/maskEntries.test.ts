@@ -34,7 +34,7 @@ function source(
       details: { id: 'e1', name: 'prod-db', isSshEnabled: false, ...details } as EntityMetadata,
     }),
     getPassword: read('password'),
-    getPrivateKey: read('privateKey'),
+    getPrivateKey: held('privateKey'),
     getVpnConfig: held('vpnConfig'),
     getDbConnection: held('dbConnection'),
     getNotes: held('notes'),

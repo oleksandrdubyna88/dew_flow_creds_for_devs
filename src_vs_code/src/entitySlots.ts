@@ -195,7 +195,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     bundleKey: 'privateKeys',
     read: (s, a, e) => s.getPrivateKey(a, e),
     write: (s, a, e, v) => s.setPrivateKey(a, e, v),
-    store: (s, a, e, v) => s.setPrivateKey(a, e, unflipped(v)),
+    store: (s, a, e, v) => s.setPrivateKey(a, e, v),
     remove: (s, a, e) => s.deletePrivateKey(a, e),
   },
   // Last on purpose — see the note above.

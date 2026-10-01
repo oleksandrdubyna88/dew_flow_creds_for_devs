@@ -28,7 +28,7 @@ import type { StoredSecret } from './storedSecret';
 export interface SecretSource {
   getNode(accountId: string, id: string): { details?: EntityMetadata } | undefined;
   getPassword(accountId: string, entityId: string): Thenable<string | undefined>;
-  getPrivateKey(accountId: string, entityId: string): Thenable<string | undefined>;
+  getPrivateKey(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
   getVpnConfig(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
   getDbConnection(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
   getNotes(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
