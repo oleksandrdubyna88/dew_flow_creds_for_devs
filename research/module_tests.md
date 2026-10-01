@@ -875,13 +875,24 @@ shown red with the fix taken out) and is held by the flow it changed, over the r
 | Kept versions, admitted once | `revisionViewer.test.ts` | a woven kept password read as the live viewer reads it; the live viewer's history-row Copy of a protected entry copies the value, never the envelope, after ONE box; a version under the entry's older PIN asks for that PIN and is not granted over it; viewing and copying ask once (a guard, green before too) |
 | The proofs | `sealingProof.test.ts` | `unattendedSealing`: stopped with the PIN sentence on a sealed slot, stopped on the mark alone, plain on a plain unmarked entry, never sealed; `sealingForNew`'s three answers; `writeUnattended` refused with nothing written, and the positive |
 | The decision and the write under one lease | `shareUpdateSeal.test.ts` | a share update whose entry another window protects between the decision and the write stores nothing in the clear, keeps the other window's seal and the share, and says why; its companion lands an update nobody protects; the first write runs inside `StorageManager.writes` |
-| The funnel, syntax half | `storedSecretFunnel.test.ts` (over `funnelScan.ts`) | no module outside the allowlist (each with its reason) uses a funnel function or casts to `StoredSecret`; no kept-version reader uses `clickOpener`; T4's interim rule — the storage itself is a writer only in `entryWriter.ts` and the slot table (a deletion with `undefined` excepted) — each with a negative fixture and a positive control |
+| Every write re-checked, and a new id verified (code round) | `plainWriterLease.test.ts` | protected after the first write → the second is refused and never stored in the clear; a first write that fails for a passing reason does not block a later one; every write runs inside the lease; `writerForNew` over an id whose entry exists and is protected stores nothing in the clear, while over a genuinely new id it reads no slot at all |
+| Protect under the lease (security review) | `protectUnderLease.test.ts` | a plain write landing while Protect seals that slot ends sealed with the NEW value inside (it was seal(old) — the new value lost); a plain write after Protect sealed one slot is refused; *Protect with a PIN…* on an empty entry writes the mark inside a lease turn and a plain write decided before it is refused |
+| A rotation never drops what the far side accepted | `rotationNoLoss.test.ts` | protected while the statement ran: the person stores the value under the entry's PIN (sealed, opens to the new value, never in the clear); declines, or dismisses the PIN box → offered to copy once, nothing plain stored, the other window's seal intact, the agent answered `stored: false` with no value; an unattended refusal never says "do it again from the entry" |
+| Restore through the re-checked road | `restoreUnderLease.test.ts` | an entry protected between Restore's decision and its writes has nothing restored in the clear, keeps the seal and the mark, and the person is told |
+| A batch accept survives one refusal | `shareBatchRefusal.test.ts` | two shares, the first refused → the second imported, only it consumed, the tally names the first, the log has its line |
+| `creds_list` and the health report on damaged values | `mcpEntries.test.ts`, `hygieneScan.test.ts` | a damaged wrap is no connection string for an agent; a woven, sealed or damaged connection string is never graded as a password (key=value fixtures, so the connection parser alone cannot keep them out) |
+| The funnel, syntax half | `storedSecretFunnel.test.ts` (over `funnelScan.ts`) | no module outside the allowlist (each with its reason) uses a funnel function or casts to `StoredSecret`; no kept-version reader uses `clickOpener`; T4's interim rule — the storage itself is a writer only in `entryWriter.ts` and the slot table (a deletion with `undefined` excepted), and no slot table row is handed the storage (`slot.write(storage`) outside a `file#function` allowlist — each with a negative fixture and a positive control |
 | A writer needs a proof | `typedFixtures.test.ts`, `fixtures/typed/sealing_is_a_proof.ts` | a hand-built `plain` without the brand handed to `writerFor` is TS2345 |
 
 The PIN suite above stayed green with no assertion edited; `pinReaderBoundary.test.ts`'s refusal
 primitives gained `plainText(` and `unsealedText(` (the reads that replaced `isLockedSecret(` in the
 scans), and two fakes changed mechanically (`editProtected.test.ts` takes the sealing writer from
-`writerFor`; `envSaveNotice.test.ts`'s hand-built storage offers `writes`, the lease).
+`writerFor`; `envSaveNotice.test.ts`'s hand-built storage offers `writes`, the lease). The code-round fixes
+changed fakes the same way and no assertion: `entityPin`, `pinGateHoles`, `pinFolderPlan` (both),
+`writeOrderPaths` (both) and `externalSecretsApply` offer `writes` (Protect's seal and a new id's first write
+run under it; the last also `getNode`). `secretClipboard.test.ts`'s "copying the same secret again restarts
+its window" — 10 ms timer margins — failed twice under the full run's load while the scrypt-heavy suites
+ran beside it, and is green alone; it was not touched.
 
 ## An agent creates what the folder holds (2026-09-30, extension 1.12.0, relay 0.9.0)
 

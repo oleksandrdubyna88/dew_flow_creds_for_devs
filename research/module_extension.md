@@ -1176,10 +1176,11 @@ inherited at read time.
 | `pinAttempts.ts` | five wrong PINs → a wait; `attemptUnlock` is the choke point, `attemptAcross` the sibling checks' |
 | `editPrefill.ts` | Edit over a protected entry: `openEntryForEdit`, `pinForSave`, `NOTHING_OPENED` (its `sealedWriter` moved into `entryWriter.ts` in E2) |
 | `sealingAtWrite.ts` | R3 at write time: seal, write plain, or refuse — and since E2 the `Sealing` is a branded PROOF only this module makes: `sealingAtWrite` (Edit, Restore — decided right before the first write), `sealingForNew` (a brand-new entry), `sealingForUpdate` (a share's *Update it*, doors injected), `unattendedSealing` (the rotation: plain only with no sealed slot and no mark, never sealed) |
-| `entryWriter.ts` | the ONE road from text to a stored value (E2): `EntryWriter`, `writerFor(storage, a, e, sealing, opened)` — the plain writer, whose first write re-checks the entry under the storage's cross-window lease for a proof about an entry that existed (`ProtectedMeanwhile`), or the sealing writer (sealed in memory before each raw setter, an unchanged value skipped) — plus `writerForNew` and `writeUnattended` |
+| `entryWriter.ts` | the ONE road from text to a stored value (E2): `EntryWriter`, `writerFor(storage, a, e, sealing, opened)` — the plain writer, EVERY write of which runs under the storage's cross-window lease with its own re-check for a proof about an entry that existed (`ProtectedMeanwhile`), and whose new-id proof is verified at the first write (no node may carry the id), or the sealing writer (sealed in memory before each raw setter, an unchanged value skipped) — plus `writerForNew` and `writeUnattended` (`UnattendedRefusal`) |
+| `rotationStore.ts` | the rotation's store: unattended first; refused because the entry was protected while the far side changed, the value goes to the PERSON — stored under the entry's PIN, or offered to copy — never dropped |
 | `secretOpener.ts` / `pinClick.ts` | the automatic opener and the click opener every sink stands behind; since E2 also `fieldReadingOf` (an opener's answer as a `FieldReading`), the owner-less reads `plainText` (hygiene) and `unsealedText` (masker, tree hints), and `pinClick.grantedOpener` (the click opener's silent half, for a value read right after a door) |
 | `historyPin.ts` / `historyHeal.ts` / `revisionDoor.ts` | kept versions: sealed, healed at the door, opened through the live entry's door |
-| `revisionRestore.ts` / `restoreVersion.ts` | *Restore This Version…*: the command, and the writes in the order that keeps R3 |
+| `revisionRestore.ts` / `restoreVersion.ts` | *Restore This Version…*: the command, and the writes in the order that keeps R3 — a plain restore through `writerFor` with its plain proof (under the lease, re-checked), a sealed one with every value sealed first |
 | `shareUpdateSeal.ts` | a share's *Update it* into a protected entry: the door, then every arriving value sealed; into an entry protected while empty, its first PIN first — since E2 the decision is `sealingAtWrite.sealingForUpdate` and the writer `entryWriter.writerFor`, never the storage itself |
 | `syncPinRule.ts` / `syncProtection.ts` | the merge's protection rule (`pinEpoch`), and the losing copy kept as a revision |
 
@@ -1511,25 +1512,58 @@ proof. Getters and setters are still `string`; E3 flips them to `StoredSecret`.
   additions pass plus the three raw record setters a share and an import write). The sealing writer is
   `editPrefill.sealedWriter` and `shareUpdateSeal.sealingWriter` merged; `SecretWriter`, `ShareWriter`,
   `pinOnCreate.writerForNewEntry` and the callerless `applySecrets` are gone. Edit, Add, an agent's create,
-  a share's accept and *Update it*, the import, an external bundle's import and the rotation's store
-  (`writeUnattended`) all take their writer from it; `StorageManager.writes` — the `LeasedQueue` — is public
-  so the writer can use it.
-- **The decision and the write under one lease** (CodeRabbit on PR #175, CWE-362). A `plain` proof about an
-  entry that existed carries what its decision saw of the mark; the plain writer's FIRST write runs under
-  `StorageManager.writes` — the cross-window lock sync, creates and every node write already take — after
-  re-checking the entry, and a sealed slot or a mark the decision did not see refuses it with
-  `entryWriter.ProtectedMeanwhile` before anything is stored; later writes of that writer wait for it and
-  fail with it. A brand-new entry's proof is `fresh` and re-checks nothing. No lease is held across a PIN
-  box. **Known limit:** `entityPin.protectEntity` does not itself take the lease, so a Protect in another
-  window that starts sealing after the re-check can still interleave with the later writes of the same
-  update; the door's `healProtected` seals such a value at the next open.
+  a share's accept and *Update it*, the import, an external bundle's import, Restore's plain path and the
+  rotation's store (`writeUnattended`) all take their writer from it; `StorageManager.writes` — the
+  `LeasedQueue` — is public so the writer can use it. `SecretSlot.write` takes a `SlotSink` (the ten
+  setters of an `EntryWriter`), so a slot table row can be handed a writer.
+- **The decision and the writes under one lease** (CodeRabbit on PR #175, CWE-362; the E2 code round). A
+  `plain` proof about an entry that existed carries what its decision saw of the mark; EVERY write of the
+  plain writer runs under `StorageManager.writes` — the cross-window lock sync, creates, Protect's seals
+  and every node write take — after its own re-check, and a sealed slot or a mark the decision did not see
+  refuses THAT write with `entryWriter.ProtectedMeanwhile` before it is stored (`recheckedEach`). Nothing
+  is cached between writes, so one write failing for a passing reason never fails the next (until the
+  code round only the first write was re-checked, the rest ran outside the lease, and a rejected first
+  write rejected every later one). A `fresh` proof (a new id) is VERIFIED at its first write, under the
+  lease, by the absence of a node with that id (`freshVerified`) — sufficient because an entry is
+  protected only through its node and every new-id caller writes the node after the secrets (Rule A) —
+  and re-checks nothing after; a node found there sends every write down the re-checked road. No lease is
+  held across a PIN box or a modal.
+- **Protect takes the lease** (the E2 security review, finding 3). `entityPin.protectEntity` seals each
+  slot OUTSIDE the lease (scrypt, about a second) and writes it inside, after reading the slot again
+  (`sealIfStill`): unchanged → the seal; changed by a plain write in that second → that value sealed
+  instead, inside the lease (one step, never a retry loop that could be overtaken without end); sealed,
+  emptied or damaged meanwhile → nothing. Before, Protect wrote seal(the old value) over a value a plain
+  write had just stored, and the plain writer's re-check guarded nothing against it. Protecting an EMPTY
+  entry is the mark alone, a leased node write the re-check reads under.
+- **A rotation never drops what the far side accepted** (the E2 security review, finding 1; code round
+  findings 5 and 14). The far side changes first; the store (`rotationStore.storeRotated`) is unattended.
+  An entry protected while the statement ran refuses it (`UnattendedRefusal` — the PIN sentence, or the
+  re-check's fact without "do it again from the entry"), and the value is then handed to the PERSON: a
+  modal says the password WAS changed and offers *Store it (asks for the entry's PIN)* — the entry's door
+  through `sealingForUpdate` with `shareUpdateSeal.updateDoors`, a sealed proof, the sealing writer;
+  declined, dismissed, refused or failed → a modal says plainly it was NOT stored and offers *Copy the new
+  password / connection string* to the person only, through `copySecret` (cleared on its own). Any other
+  store failure goes straight to that offer. The agent gets `rotated: true, stored: false` and a sentence,
+  never the value (`RotateDeps.store` rejects with `rotateAction.RotationNotStored`); the journal says
+  `rotated, not stored`.
+- **Restore goes through the re-checked road** (the E2 security review, finding 2). A plain restore hands
+  `restoreVersion` its plain proof (`RestoreUnder`) and writes through `writerFor` — it used to drop the
+  proof and write `slot.write(storage, …)` around the lease — and the node is rebuilt from the node as it
+  is inside the lease, so a mark set meanwhile stays. A sealed restore is unchanged.
+- **A batch accept survives one refused share** (the E2 security review, finding 5): `importOpened`
+  catches each share's save failure — the share kept, logged through `noteFailed`, counted pending and
+  named in the tally (`shareDiagnostics.notSavedNote`) — and imports the rest. **And `creds_list`**
+  (finding 4) reads an agent's connection string through `plainText`: a damaged wrap is no longer listed
+  as one.
 - **The funnel, the syntax half** (`test/storedSecretFunnel.test.ts` over `test/funnelScan.ts`): outside an
   allowlist with reasons, no module uses `stored`, `carried`, `readSecret`, `isLockedSecret`,
   `isCorruptSecret`, `isWovenSecret`, `plainSecret`, `lockSecret` or `sealValue` (by import, so a local
   `stored(` is not one) or writes `as StoredSecret`; no reader of kept versions uses `clickOpener`; and —
   T4's interim rule, until E3 makes it a type — outside `entryWriter.ts` and `entitySlots.ts` the storage
   is never a writer (`applyAdditions(storage`, a `store` bound to it, a slot setter called on it with a
-  value; a deletion with `undefined` is not a write). `test/fixtures/typed/sealing_is_a_proof.ts`: a
+  value; a deletion with `undefined` is not a write), and no slot table row is handed the storage itself
+  (`slot.write(storage`) outside an allowlist keyed `file#function`: Protect's `sealIfStill`, Remove PIN's
+  `unprotectEntity`, Restore's `writeSealed`. `test/fixtures/typed/sealing_is_a_proof.ts`: a
   hand-built `plain` without the brand does not compile.
 
 **History is sealed, opens through the door, and can be restored.** Kept versions live per machine in
