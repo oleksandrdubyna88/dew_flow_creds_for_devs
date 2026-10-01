@@ -1,6 +1,7 @@
 # PLAN — a rotated value the vault could not store waits in quarantine, not in the clipboard
 
-> Status: **plan only, nothing implemented yet, 2026-10-01.** Scope: the rotation's store
+> Status: **Q1–Q6 built 2026-10-01 on `feat/rotation-quarantine` (commits and deviations in §5 and §5.1); Q7 — the
+> code round and the promotion — still open.** Scope: the rotation's store
 > (`rotationStore.ts`, `rotateAction.ts`), a new per-entry quarantine item in the OS keychain
 > (`rotationQuarantine.ts`, `secretKeys.ts`), its release at the entry-PIN door (`pinAdmission.ts`,
 > `pinPrompt.ts`), *Remove PIN Protection…* (`pinCommands.ts`), the startup sweep (`ephemeralSweeper.ts`),
@@ -272,11 +273,11 @@ named after the guarantee, run RED against unfixed code with the real symptom in
 the whole suite; a **break-it** check (revert the fix or plant the defect, see red, restore) recorded in the
 commit body. Typecheck, lint, the size ratchet (line-neutral in the two baselined files), `npm test`.
 
-- [ ] **Q1 — the rotation's answer never carries the new value.** *Independent of the rest; a candidate for
+- [x] **Q1 — the rotation's answer never carries the new value.** *Done — `9e0bc8b7`.* *Independent of the rest; a candidate for
       a hotfix.* RED (`rotationNoLoss.test.ts`): a statement that echoes `{{creds:new}}`, the entry protected
       while it runs, the person stores it under the PIN → the agent's `stdout` contains `NEW_SECRET` today;
       the same for the copy path. Fix §4.8. Break-it: drop the mask in `commit` → red.
-- [ ] **Q2 — the quarantine store and its exclusions.** `rotationQuarantineSecretKey`, `QuarantineStore`,
+- [x] **Q2 — the quarantine store and its exclusions.** *Done — `51b75a5f`.* `rotationQuarantineSecretKey`, `QuarantineStore`,
       the index. RED: `secretKeys.test.ts:168`'s golden list gains `acct-7_ent-42:rotationQuarantine` (red:
       missing); a delete, an account removal and the orphan sweep leave no item (`entityWriteOrder.test.ts`
       pattern); a sync/backup snapshot, a bundle apply that drops kinds, export and a share payload of an
@@ -286,7 +287,7 @@ commit body. Typecheck, lint, the size ratchet (line-neutral in the two baseline
       allowed modules reference the key builder or the store; NEGATIVE fixture (a planted reference from
       `mcpEntries.ts` is reported) and POSITIVE control (the known references are found). Break-it: add the
       key to `SECRET_KINDS` → the bundle test is red.
-- [ ] **Q3 — the refused store writes the hold.** RED (`rotationNoLoss.test.ts`, over the real
+- [x] **Q3 — the refused store writes the hold.** *Done — `48c78d3a`.* RED (`rotationNoLoss.test.ts`, over the real
       `StorageManager` with the keychain write log): protected while the statement ran → the item holds the
       new value, no slot key received a plaintext write (the old value stays sealed byte-for-byte), the
       agent body says `stored: "quarantined"` with no value, the journal says `rotated, quarantined`, and
@@ -295,7 +296,7 @@ commit body. Typecheck, lint, the size ratchet (line-neutral in the two baseline
       is gone. The hold write failing → today's chain (the three existing tests at `:99`, `:112`, `:128` keep
       passing, re-pointed at the failing-hold world). Break-it: skip the supersession drop → the
       older-overwrites-newer test is red.
-- [ ] **Q4 — release at the door, sealed.** RED (`pinAdmission` world): with an item waiting, `admit` with
+- [x] **Q4 — release at the door, sealed.** *Done — `b42fb097`.* RED (`pinAdmission` world): with an item waiting, `admit` with
       the PIN → the slot opens to the new value, every write to the slot key is an envelope (R3, write
       log), the item and the index entry are gone, `released` names the slot. Crash cases by injected
       failure: the item `drop` fails → the next `admit` finds slot == held and finishes; the sealed write
@@ -303,17 +304,64 @@ commit body. Typecheck, lint, the size ratchet (line-neutral in the two baseline
       written, `conflicts` reported; *Store the rotated one* records a snapshot then writes; *Keep the
       current one* drops it. Edit after a waiting rotation opens over the rotated value. Break-it: delete
       the item before the write → the crash test is red.
-- [ ] **Q5 — release when the entry is not protected.** RED: Remove PIN Protection with an item waiting →
+- [x] **Q5 — release when the entry is not protected.** *Done — `cfd529cf`.* RED: Remove PIN Protection with an item waiting →
       the slot holds the new value plain and the item is gone; an entry unprotected "by a sync" → the
       startup sweep releases it; an entry protected again between the sweep's decision and its write →
       `ProtectedMeanwhile`, item kept; a protected entry's item is untouched by the sweep. Break-it: let the
       sweep take a protected entry → red.
-- [ ] **Q6 — the person sees it.** RED: the walk's `waitingIds` holds an entry with an item and drops a
+- [x] **Q6 — the person sees it.** *Done — `541a4476`.* RED: the walk's `waitingIds` holds an entry with an item and drops a
       stale index entry; the row description says `rotated password waiting`; the rotation modal's text
       and buttons; the clipboard modal and the post-copy message carry the clipboard-history sentence; no
       clipboard write happens without the button. Break-it: remove the warning sentence → red.
 - [ ] **Q7 — docs, contract, release notes, promotion.** §7. `review_code` over the whole diff; the plan
-      promoted with its deviations.
+      promoted with its deviations. *Built so far: the `creds_rotate` description and the regenerated contract
+      (`4b540885`), the help in five languages (`5e393bed`), `module_extension.md`, `module_tests.md` and the
+      CHANGELOG (the docs commit). Open: the code round and the promotion.*
+
+### 5.1 What shipped differently (recorded at build time)
+
+Every story's commit body carries its RED message and its break-it. What differs from the text above:
+
+1. **Q1 masks more than `commit`.** `rotateAction.run` masks WHATEVER the rotation answers
+   (`maskedAnswer`, over the drawn secret and the stored form), including the failed statement's own
+   body: a far side can change and still exit non-zero, and that body went back unmasked too. The RED
+   includes that case.
+2. **The field is `StorageManager.heldRotations`, not `quarantine`** — the class already has a private
+   `quarantine()` (the id quarantine on import). Still one field, still line-neutral (1015).
+3. **`QuarantineStore.read` and `listed` take no lease.** A single keychain `get` is atomic, and the door
+   pays it on every open of every entry; every write and every read-modify-write (`holdRotated`,
+   `supersedeHeld`, `dropHeld`) holds the lease. The port's `drop` verb exists but the code drops through
+   `put` of the remainder (`settle`), which deletes the item when nothing is left.
+4. **The release takes a proof.** `releaseHeld(…, proof)` with `AT_THE_DOOR` (`sealingForUpdate`, doors
+   that ask nothing) or `UNATTENDED` (`unattendedSealing` — what the plan called "the plain proof", exactly
+   the store the rotation would have made). Remove PIN and the sweep use `UNATTENDED`; Remove PIN also
+   releases on the protected-while-empty path (`nothingSealed`). The sweep skips a marked or sealed entry
+   BEFORE it reads anything, so even a window holding the entry's grant never seals automatically.
+5. **The sweep runs on the sweeper's own trigger** — window start and every tick
+   (`EphemeralSweeper.releaseWaiting`) — not only at startup; its cost is one local index read when nothing
+   is held.
+6. **A held value is written only when it is plain text this build wrote** (`secretOpener.plainText`):
+   sealed, damaged AND woven are refused and kept (the plan named locked and corrupt).
+7. **The person's words live in a new `rotationWaiting.ts`** (the `vscode` edge: released message,
+   conflict question, row hint, delete sentence), so `rotationQuarantine.ts` stays free of `vscode`. The
+   time is `requestTime.wallTime`/`localWallTime`, extracted from `requestTimeLine` (which prefixes
+   "Requested").
+8. **The owner's answer to open question 1 is built (Q6):** Delete and Empty Trash append *"X" holds a
+   rotated … that was never stored; deleting it permanently loses the only copy.* (`lostWithDeletion`).
+9. **The tree's wording comes from the entry's kind** (a db entry rotates its connection string), not from
+   the item's slots; the boundary scan also watches the index key string.
+10. **Tests that reach the mechanism, not the surface:** "Edit opens over the rotated value" drives the Edit
+    command's own two steps (`admitEntry` then `openEntryForEdit`); "protected again between the sweep's
+    decision and its write" drives `releaseHeld` with a proof that protects right after deciding — the
+    mechanism the sweep uses — rather than the sweep loop.
+11. **Declared mechanical test changes** (each named in its commit): `secretKeys.test.ts` golden lists and
+    count (Q2); `rotateAction.test.ts` fake stores resolve `'stored'` and the three E2 tests re-pointed at a
+    failing-hold world (Q3); `pinReaderBoundary` READERS row and `openSite`'s mocked admission shape (Q4);
+    three `EntityFlagTarget` fakes gain `waitingIds` (Q6). `test/pinWorld.ts` was widened (keychain READ
+    log; modal buttons and details). No other existing assertion changed.
+12. **The C# side gained a test** (`UseToolsTests.A_rotation_held_for_the_PIN_is_explained_so_the_agent_does_not_retry_it`,
+    run through the test executable), and the description's "Needs the entry's switch" sentence starts its
+    own paragraph.
 
 ## 6. Test plan
 
@@ -362,14 +410,11 @@ Real `StorageManager` over the logged in-memory keychain (`test/pinWorld.ts`) th
       `npm test`, the plan lifecycle check, all green.
 - [ ] Docs of §7 updated; `review_plan` and `review_code` `proceed`; the plan promoted with its deviations.
 
-## 9. Open questions for the owner
+## 9. Questions the owner decided (2026-10-01 — the proposed defaults)
 
-1. **Permanent delete of an entry with a waiting rotation** (Empty Trash, or a delete on another machine
-   that syncs): proposed — the confirmation names it (*"…holds a rotated password that was never stored;
-   deleting it loses the only copy"*), and a synced deletion deletes it silently like every other value of
-   the entry. Or: refuse the permanent delete until it is released?
-2. **The conflict at release** (§4.4 step 3 — the stored value changed after the rotation): proposed — ask
-   the person (*Store the rotated one* / *Keep the current one*). Or: the later timestamp wins without
-   asking?
-3. **The agent answer no longer waits for the person** when the hold landed (§4.3): proposed yes. Or keep
-   waiting for the modal, as E2 does today?
+1. **Permanent delete of an entry with a waiting rotation — DECIDED: the confirmation names it** (*"…holds a
+   rotated password that was never stored; deleting it permanently loses the only copy"*), and a synced
+   deletion deletes it silently like every other value of the entry. Built in Q6 (Delete and Empty Trash).
+2. **The conflict at release — DECIDED: ask the person** (*Store the rotated one* / *Keep the current one*;
+   *Keep* drops the item after a confirming modal; dismissed → asked at the next door). Built in Q4.
+3. **The agent's answer does not wait for the person once the hold landed — DECIDED: yes.** Built in Q3.

@@ -6,6 +6,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — an agent's rotation could hand it the new secret (2026-10-01)
+
+- **A rotation whose statement printed what it was given showed the agent the new password.** The broker
+  masks a call's output with the entry's stored values — but a rotation into an entry that was being
+  protected with a PIN stored the new value sealed (unreadable to the masker, by design) or not at all, so
+  the masker held only the OLD password, and a statement composed to echo its input returned the new one
+  in the clear. The same happened when such a statement failed after printing. The rotation now masks its
+  own answer with the value it generated, whatever happened to it.
+
+### Changed — a rotation refused by a PIN keeps the new value until the PIN is entered (2026-10-01)
+
+- **Nothing to answer, nothing to lose.** When an entry is protected with a PIN while an agent's rotation
+  runs, the far side already has the new password and nothing automatic may write into the entry. Until now
+  the window asked you, then and there, to store it under the PIN — and if you were away or dismissed it,
+  the last resort was the clipboard. Now the new value is kept on this machine, outside the entry, the
+  moment the store is refused; the agent is answered at once (`stored: "quarantined"`) and told not to
+  retry; and the next time you open the entry and enter its PIN, it is stored, sealed. The tree row says
+  *rotated password waiting* until then. Removing the PIN, or the entry's protection removed elsewhere,
+  stores it plain. If the stored value changed after the rotation, you are asked which one the far side
+  accepts. Deleting the entry permanently says it would lose that only copy. Until it is stored the value
+  has the protection an unprotected entry's password has (the OS keychain) and it never leaves this
+  machine — not in a sync, a backup, an export or a share.
+- **The clipboard says what a clipboard history does.** Offered only when even keeping the value failed,
+  and only after a click, the copy now says plainly that a clipboard history (Windows' Win+V, a clipboard
+  manager, a remote-desktop clipboard) keeps its own copy, which the automatic clear does not empty.
+
 ### Changed — a stored secret has its own type (typed-secrets E3, 2026-10-01; for developers)
 
 - **Nothing you see changes.** Under the hood, every value the extension keeps in the keychain is now a
