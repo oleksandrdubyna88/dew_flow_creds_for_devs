@@ -16,11 +16,13 @@ import type { StorageManager } from './storageManager';
  *
  * <ul>
  *   <li><b>the plain writer</b>, for a `plain` proof: the value as it came. For an entry that EXISTED when
- *       the proof was made, its first write re-checks — under the storage's cross-window lease, the same
- *       one that serialises sync and every node write — that nothing protected the entry since the
- *       decision; a sealed slot or a mark the decision did not see refuses the write
- *       ({@link ProtectedMeanwhile}) before anything is stored. CodeRabbit on PR #175 (CWE-362) named the
- *       window: a decision read, a write later, another window protecting the entry in between. No lease
+ *       the proof was made, EVERY write runs under the storage's cross-window lease — the same one that
+ *       serialises sync, Protect's seals and every node write — together with its own re-check that
+ *       nothing protected the entry since the decision; a sealed slot or a mark the decision did not see
+ *       refuses that write ({@link ProtectedMeanwhile}) before it is stored. CodeRabbit on PR #175
+ *       (CWE-362) named the window: a decision read, a write later, another window protecting the entry
+ *       in between — and the E2 code round found it open between ANY two writes, not only before the
+ *       first. Nothing is cached: one write failing for a passing reason never fails the next. No lease
  *       is held across a PIN box — a plain proof asks nothing. A brand-new entry (`fresh`) re-checks
  *       nothing: its id is one nobody else can know.</li>
  *   <li><b>the sealing writer</b>, for a `sealed` proof: every value sealed in memory under the PIN before
@@ -63,7 +65,7 @@ export function writerFor(storage: StorageManager, accountId: string, entityId: 
   if (sealing.kind === 'sealed') {
     return sealingWriter(storage, accountId, entityId, sealing.pin, opened);
   }
-  return plainWriter(storage, accountId, entityId, sealing.fresh ? straight : recheckedFirst(storage, accountId, entityId, sealing.marked));
+  return plainWriter(storage, accountId, entityId, sealing.fresh ? straight : recheckedEach(storage, accountId, entityId, sealing.marked));
 }
 
 /**
@@ -81,7 +83,7 @@ const NO_PIN: SettledPin = { kind: 'none' };
 /**
  * An unattended write (the rotation's store): the proof `sealingAtWrite.unattendedSealing` gives —
  * refused with the PIN sentence on an entry that is protected, by a sealed slot or by the mark — and the
- * plain writer it permits, re-checked under the lease at its first write.
+ * plain writer it permits, every write re-checked under the lease.
  */
 export async function writeUnattended(
   storage: StorageManager,
@@ -111,28 +113,24 @@ export class ProtectedMeanwhile extends Error {
   }
 }
 
-/** How a plain writer's writes run: straight, or the first one re-checked under the lease. */
+/** How a plain writer's writes run: straight, or each one re-checked under the lease. */
 type Through = (write: () => Promise<void>) => Promise<void>;
 
 const straight: Through = (write) => write();
 
 /**
- * The first write runs under the storage's cross-window lease (`LeasedQueue` — `StorageManager.writes`),
- * after the re-check; every later write waits for it, and a refused first write refuses them all. The
- * lease is held for the re-check and one slot write, never across anything that asks.
+ * Every write under the storage's cross-window lease (`LeasedQueue` — `StorageManager.writes`), each
+ * after its OWN re-check: an entry protected between the second and the third write refuses the third,
+ * as one protected before the first refuses the first. Nothing is remembered between writes, so a write
+ * that failed — a refusal or a keychain hiccup — is that write's alone. The lease is held for one
+ * re-check and one slot write, never across anything that asks.
  */
-function recheckedFirst(storage: StorageManager, accountId: string, entityId: string, markedAtDecision: boolean): Through {
-  let first: Promise<void> | undefined;
-  return (write) => {
-    if (first !== undefined) {
-      return first.then(write);
-    }
-    first = storage.writes.run(async () => {
+function recheckedEach(storage: StorageManager, accountId: string, entityId: string, markedAtDecision: boolean): Through {
+  return (write) =>
+    storage.writes.run(async () => {
       await refuseIfProtectedSince(storage, accountId, entityId, markedAtDecision);
       await write();
     });
-    return first;
-  };
 }
 
 /** A sealed slot now, or a mark the decision did not see — the entry was protected since. */
