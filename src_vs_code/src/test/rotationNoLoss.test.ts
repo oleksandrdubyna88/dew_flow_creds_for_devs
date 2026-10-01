@@ -338,3 +338,35 @@ test('a refused rotation, then one that lands in the unprotected entry — the o
   assert.equal(await heldConnection(w), undefined, 'the older hold survived a newer value landing in the entry');
   assert.deepEqual(await w.storage.heldRotations.listed(), [], 'the index still names an entry with nothing held');
 });
+
+// ---- Q6: what the person is told at the rotation, and the clipboard as the last resort (plan §4.3, §4.7) ----
+
+const HISTORY_WARNING = /A clipboard history \(Windows' Win\+V, a clipboard manager, a remote-desktop clipboard\) keeps its own copy: the automatic clear empties the clipboard, not that history\. Paste it into the entry now, then delete it from the history\./;
+
+test('the modal at a hold says the value is kept on this machine until the PIN, and offers the door or later — never a copy', async () => {
+  const w = await world([], ['Later']);
+
+  await w.rotate();
+
+  assert.match(w.s.modals[0] ?? '', /WAS changed on the far side\. "orders-db" was protected with a PIN while that ran, so the new connection string is being kept on this machine, outside the entry, until its PIN is entered — then it is stored, sealed\. Until then the entry still holds the old connection string, which no longer works\./);
+  assert.deepEqual(w.s.modalButtons[0], ['Store it now (asks for the PIN)', 'Later']);
+  assert.deepEqual(w.s.clipboard, [], 'the value reached the clipboard though it is safe on this machine');
+});
+
+test('the last-resort copy offer says what a clipboard history does — and nothing is copied without the button', async () => {
+  const w = await world([], [undefined, undefined], { hold: 'fails' });
+
+  await w.rotate();
+
+  assert.match(w.s.modals[1] ?? '', HISTORY_WARNING, 'the copy offer does not warn about clipboard history');
+  assert.deepEqual(w.s.clipboard, [], 'the new value was copied without the person pressing the button');
+});
+
+test('after the copy, the message says it again: the automatic clear does not empty a clipboard history', async () => {
+  const w = await world([], [undefined, COPY_IT], { hold: 'fails' });
+
+  await w.rotate();
+
+  assert.equal(w.s.clipboard.length, 1);
+  assert.match(w.s.infos.join('\n'), HISTORY_WARNING, 'the post-copy message does not warn about clipboard history');
+});

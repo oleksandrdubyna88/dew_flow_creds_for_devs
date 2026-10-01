@@ -53,6 +53,10 @@ export interface Sinks {
    * step with a deadline must raise none — this is where a test sees whether it did.
    */
   modals: string[];
+  /** Each modal's buttons, in the order the modals were raised — what the person could have pressed. */
+  modalButtons: string[][];
+  /** Each modal's `detail`, `''` where it had none. */
+  modalDetails: string[];
   /** PIN boxes raised — every door asks once at most. */
   boxes: number;
   /** The box titles, which name the entry whose PIN was asked for. */
@@ -76,7 +80,7 @@ export interface Sinks {
 export type ModalAnswer = string | undefined | (() => Promise<string | undefined>);
 
 export function sinks(): Sinks {
-  return { clipboard: [], files: {}, infos: [], warnings: [], errors: [], modals: [], boxes: 0, boxTitles: [], boxPrompts: [], boxTokens: [], tokenSources: [], statusBar: [], modalAnswers: [] };
+  return { clipboard: [], files: {}, infos: [], warnings: [], errors: [], modals: [], modalButtons: [], modalDetails: [], boxes: 0, boxTitles: [], boxPrompts: [], boxTokens: [], tokenSources: [], statusBar: [], modalAnswers: [] };
 }
 
 /** Every sink's contents in one string — for "nothing sealed reached anything". */
@@ -86,13 +90,15 @@ export function everythingSunk(s: Sinks): string {
 
 /** The `vscode` the click paths touch: PIN boxes answered from a queue, a save dialog that says `saveTo`. */
 export function clickVscode(inputs: (string | undefined)[], s: Sinks, saveTo = '/workspace/chosen-in-the-dialog/saved.file'): Record<string, unknown> {
-  const modalAnswer = (message: string): ModalAnswer => {
+  const modalAnswer = (message: string, options: { detail?: string }, buttons: string[]): ModalAnswer => {
     s.modals.push(message);
+    s.modalDetails.push(options.detail ?? '');
+    s.modalButtons.push(buttons);
     return s.modalAnswers.shift();
   };
-  const said =(into: string[]) => (message: string, options?: { modal?: boolean }): Promise<string | undefined> => {
+  const said =(into: string[]) => (message: string, options?: { modal?: boolean; detail?: string }, ...buttons: string[]): Promise<string | undefined> => {
     into.push(message);
-    const answer = options?.modal === true ? modalAnswer(message) : undefined;
+    const answer = options?.modal === true ? modalAnswer(message, options, buttons) : undefined;
     return typeof answer === 'function' ? answer() : Promise.resolve(answer);
   };
   return {

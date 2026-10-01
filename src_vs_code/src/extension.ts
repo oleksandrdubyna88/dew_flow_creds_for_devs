@@ -72,7 +72,7 @@ import { visibleConfigDetails, visibleMcpEntries } from './mcpEntries';
 import { McpEntriesCache } from './mcpEntriesCache';
 import { RotateDeps, rotateAction } from './rotateAction';
 import { storeRotated } from './rotationStore';
-import { releaseUnprotected } from './rotationQuarantine';
+import { releaseUnprotected, waitingKeys } from './rotationQuarantine';
 import { generateSecret } from './secretKinds';
 import { CREDS_CLI, CredsProduct, ridFor } from './credsInstall';
 import { binaryPath, installMenu } from './binaryInstaller';
@@ -409,7 +409,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
    * caches are swapped at the end rather than cleared at the start, so a repaint that lands
    * mid-walk never shows a tree with every flag briefly off.
    */
-  const entityFlags = new EntityFlagsRefresher(entityFlagSource(storage), provider);
+  const entityFlags = new EntityFlagsRefresher(entityFlagSource(storage), provider, () => waitingKeys(storage));
   const refreshEntityFlags = (): Promise<void> => entityFlags.refresh();
   void refreshEntityFlags();
 

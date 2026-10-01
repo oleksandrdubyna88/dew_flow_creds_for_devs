@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
 import { localWallTime } from './requestTime';
 import { snapshotForRevision } from './revisionSnapshot';
-import { AT_THE_DOOR, HeldConflict, Release, ReleasedSlot, dropHeld, releaseHeld } from './rotationQuarantine';
+import { resolveKind } from './entityKind';
+import { AT_THE_DOOR, HeldConflict, Release, ReleasedSlot, WaitingValue, dropHeld, releaseHeld, waitingUnder } from './rotationQuarantine';
 import type { RotationSlot } from './secretRotation';
 import type { StorageManager } from './storageManager';
+import type { EntityMetadata } from './types';
 
 /**
  * What the person is told about a rotated value that waited beside its entry, in `vscode`'s words
@@ -25,6 +27,34 @@ export function rotatedWhat(slot: RotationSlot): string {
  */
 export function releasedSentence(release: Release): string {
   return release.released.map((slot) => ` The rotated ${rotatedWhat(slot.slot)} that was waiting is now stored in it.`).join('');
+}
+
+/**
+ * The tree row's hint (§4.6): *rotated password waiting* in the description, and how to store it in the tooltip.
+ * A database entry rotates its connection string; every other kind its password (`secretRotation.slotFor`).
+ */
+export function waitingHint(details: EntityMetadata | undefined, waiting: boolean): { readonly description: string; readonly tooltip: readonly string[] } {
+  if (!waiting) {
+    return { description: '', tooltip: [] };
+  }
+  const what = rotatedWhat(resolveKind(details) === 'db' ? 'dbConnection' : 'password');
+  return {
+    description: `rotated ${what} waiting`,
+    tooltip: ['', `A rotated ${what} is waiting on this machine, outside the entry — open the entry and enter its PIN to store it.`],
+  };
+}
+
+/**
+ * What a permanent deletion would lose, for its confirmation (the owner's answer to the plan's open question 1):
+ * `''` when nothing waits under the targets, else one sentence per value. A deletion that arrives by sync deletes
+ * it silently, like every other value of the entry.
+ */
+export async function lostWithDeletion(storage: StorageManager, targets: readonly { readonly accountId: string; readonly id: string }[]): Promise<string> {
+  const lost: WaitingValue[] = [];
+  for (const target of targets) {
+    lost.push(...(await waitingUnder(storage, target.accountId, [target.id]).catch(() => [])));
+  }
+  return lost.map((value) => ` "${value.entryName}" holds a rotated ${rotatedWhat(value.slot)} that was never stored; deleting it permanently loses the only copy.`).join('');
 }
 
 const STORE_ROTATED = 'Store the rotated one';

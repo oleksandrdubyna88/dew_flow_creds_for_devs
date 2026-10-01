@@ -60,6 +60,7 @@ import { writeStoredConfig } from '../configWrite';
 import { ServerTransport } from '../serverTransport';
 import { withdrawalMessage } from '../commandTargets';
 import { keyFingerprint } from '../shareSignature';
+import { lostWithDeletion } from '../rotationWaiting';
 export interface TreeMutationCommandsHost {
   readonly announceArrival: (accountId: string, entityId: string) => Promise<void>;
   /** Where an import that failed says which of its three possible causes it was. */
@@ -121,12 +122,13 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
       void vscode.window.showInformationMessage('The Trash is already empty.');
       return;
     }
+    const lost = await lostWithDeletion(storage, inside.map((node) => ({ accountId: element.accountId, id: node.id })));
     const confirmed = await vscode.window.showWarningMessage(
       `Permanently delete ${inside.length === 1 ? '1 item' : `${inside.length} items`} from the Trash?`,
       {
         modal: true,
         detail:
-          'This removes the secrets, the revision history, and propagates to every machine that syncs. It cannot be undone.',
+          `This removes the secrets, the revision history, and propagates to every machine that syncs. It cannot be undone.${lost}`,
       },
       'Delete Permanently',
     );
@@ -385,12 +387,13 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
         : `${targets.length} selected items, folders with everything inside them`;
     // "Move to Trash" is FIRST, which makes it the button Enter presses. The safe answer being
     // the reflex answer is the whole point of having a trash at all.
+    const lost = await lostWithDeletion(storage, targets.map((t) => ({ accountId: t.accountId, id: t.node.id })));
     const confirmed = await vscode.window.showWarningMessage(
       `Delete ${what}?${skippedNote === '' ? '' : ` ${skippedNote}`}`,
       {
         modal: true,
         detail:
-          'Moving to Trash can be undone by dragging it back out. Deleting permanently cannot: it removes the secrets, the revision history, and propagates to every machine that syncs.',
+          `Moving to Trash can be undone by dragging it back out. Deleting permanently cannot: it removes the secrets, the revision history, and propagates to every machine that syncs.${lost}`,
       },
       'Move to Trash',
       'Delete Permanently',

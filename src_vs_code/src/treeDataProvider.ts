@@ -21,6 +21,7 @@ import {
   searchTerms,
 } from './treeSearch';
 import { entityKey } from './entityFlags';
+import { waitingHint } from './rotationWaiting';
 import { describeRemaining } from './entityExpiry';
 import { parentFolderOf, refuseMove, refuseProjectFolderChange } from './moveGate';
 import { SyncReadiness } from './syncReadiness';
@@ -162,6 +163,9 @@ export class CredTreeDataProvider
 
   /** Configs whose stored body does not parse. Why it marks the LABEL: `markInvalid` says. */
   readonly invalidConfigIds = new Set<string>();
+
+  /** Entries with a rotated value waiting beside them for the PIN (`rotationQuarantine.ts`) — the same walk fills it. */
+  readonly waitingIds = new Set<string>();
 
   /** Set by the extension: Team / Shared-with-me data source. */
   sharing: SharingManager | undefined;
@@ -648,10 +652,11 @@ export class CredTreeDataProvider
     // description rather than as a second icon tint: the tint already means "has previous
     // versions", and one channel carrying two meanings tells you neither. Same separator the
     // account row uses.
-    item.description = [describeTarget(node), describeRemaining(node, Date.now())]
+    const waiting = waitingHint(node.details, this.waitingIds.has(entityKey(accountId, node.id)));
+    item.description = [describeTarget(node), describeRemaining(node, Date.now()), waiting.description]
       .filter(Boolean)
       .join('  ·  ');
-    item.tooltip = buildTooltip(node);
+    item.tooltip = buildTooltip(node, waiting.tooltip);
     // Single click only selects (the handler ignores it); a DOUBLE click
     // opens the read-only viewer. Actions live in the context menu.
     //

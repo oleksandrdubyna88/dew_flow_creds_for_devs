@@ -1,5 +1,6 @@
 import * as crypto from 'node:crypto';
 import { NOTHING_OPENED } from './editPrefill';
+import { entityKey } from './entityFlags';
 import { lockedSlotCount } from './entityPin';
 import { EntryWriter, writerFor } from './entryWriter';
 import type { LeasedQueue } from './leasedQueue';
@@ -389,6 +390,62 @@ async function forgetIfAbsent(storage: StorageManager, entry: HeldEntry): Promis
 /** The mark, or a sealed slot — the protection `unattendedSealing` refuses on, asked before anything is read. */
 async function protectedNow(storage: StorageManager, entry: HeldEntry): Promise<boolean> {
   return isMarked(storage, entry.accountId, entry.entityId) || (await lockedSlotCount(storage, entry.accountId, entry.entityId)).locked > 0;
+}
+
+// ---- what the person sees (plan §4.6) ----
+
+/**
+ * The tree's hint: every entry with a value held beside it, as `entityFlags.entityKey` — read from the local
+ * index, verified by one keychain get per LISTED entry (the tree cannot await, so the flags walk asks this).
+ * An index entry whose entry or item is gone is dropped here too; one whose tree cannot be read is kept, and
+ * not shown. Ids only.
+ */
+export async function waitingKeys(storage: StorageManager): Promise<ReadonlySet<string>> {
+  const keys = new Set<string>();
+  for (const entry of await storage.heldRotations.listed()) {
+    if (await stillWaiting(storage, entry)) {
+      keys.add(entityKey(entry.accountId, entry.entityId));
+    }
+  }
+  return keys;
+}
+
+async function stillWaiting(storage: StorageManager, entry: HeldEntry): Promise<boolean> {
+  const presence = storage.nodePresence(entry.accountId, entry.entityId);
+  if (presence === 'unknown') {
+    return false;
+  }
+  const held = presence === 'present' && !isEmpty(await storage.heldRotations.read(entry.accountId, entry.entityId));
+  if (!held) {
+    await storage.heldRotations.unlist(entry.accountId, entry.entityId);
+  }
+  return held;
+}
+
+/** One value a permanent deletion would lose: the entry it waits beside, and which slot. Never the value. */
+export interface WaitingValue {
+  readonly entryName: string;
+  readonly slot: RotationSlot;
+}
+
+/**
+ * The values held beside `rootIds` or anything under them — what a permanent deletion of those would lose
+ * (the owner's answer to the plan's open question 1: the confirmation names it). Read from the index and
+ * verified by a get per listed entry.
+ */
+export async function waitingUnder(storage: StorageManager, accountId: string, rootIds: readonly string[]): Promise<readonly WaitingValue[]> {
+  const under = (await storage.heldRotations.listed()).filter(
+    (entry) => entry.accountId === accountId && rootIds.some((root) => storage.isSelfOrDescendant(accountId, root, entry.entityId)),
+  );
+  const found: WaitingValue[] = [];
+  for (const entry of under) {
+    found.push(...heldNames(storage.getNode(accountId, entry.entityId)?.name ?? entry.entityId, await storage.heldRotations.read(accountId, entry.entityId)));
+  }
+  return found;
+}
+
+function heldNames(entryName: string, held: HeldSlots): WaitingValue[] {
+  return SLOTS.filter((slot) => held[slot] !== undefined).map((slot) => ({ entryName, slot }));
 }
 
 // ---- the item's wire form: `{ v: 1, slots: { password?: Held, dbConnection?: Held } }` ----

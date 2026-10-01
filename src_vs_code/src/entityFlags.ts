@@ -41,6 +41,8 @@ export interface EntityFlagTarget {
   readonly urlIds: Set<string>;
   /** Config entries whose stored body does not parse as what it claims to be. */
   readonly invalidConfigIds: Set<string>;
+  /** Entries with a rotated value waiting beside them for the PIN (`rotationQuarantine.ts`). */
+  readonly waitingIds: Set<string>;
   refresh(): void;
 }
 
@@ -68,9 +70,9 @@ function formatOf(details: EntityMetadata | undefined): ConfigFormat {
 }
 
 /** The caches that are plain sets of entity keys, swapped in together. */
-type FlagSet = 'passwordIds' | 'invalidConfigIds' | 'urlIds';
+type FlagSet = 'passwordIds' | 'invalidConfigIds' | 'urlIds' | 'waitingIds';
 
-const FLAG_SETS: readonly FlagSet[] = ['passwordIds', 'invalidConfigIds', 'urlIds'];
+const FLAG_SETS: readonly FlagSet[] = ['passwordIds', 'invalidConfigIds', 'urlIds', 'waitingIds'];
 
 function replaceAll(target: Set<string>, source: Set<string>): void {
   target.clear();
@@ -89,6 +91,11 @@ export class EntityFlagsRefresher {
   constructor(
     private readonly storage: EntityFlagSource,
     private readonly target: EntityFlagTarget,
+    /**
+     * The entries with a rotated value waiting beside them — `rotationQuarantine.waitingKeys`, which reads the
+     * local index and verifies it with one keychain get per LISTED entry. None by default: a walk with no source.
+     */
+    private readonly waiting: () => Promise<ReadonlySet<string>> = () => Promise.resolve(new Set()),
   ) {}
 
   /**
@@ -127,7 +134,9 @@ export class EntityFlagsRefresher {
       await this.readConfigVerdict(accountId, node, invalidConfigs);
       await this.readUrl(accountId, node, withUrl);
     }
-    this.swapIn(history, { passwordIds: withPassword, invalidConfigIds: invalidConfigs, urlIds: withUrl });
+    // A hint that cannot be read is a hint not given — never a walk that publishes nothing.
+    const waiting = new Set(await this.waiting().catch(() => new Set<string>()));
+    this.swapIn(history, { passwordIds: withPassword, invalidConfigIds: invalidConfigs, urlIds: withUrl, waitingIds: waiting });
   }
 
   /**

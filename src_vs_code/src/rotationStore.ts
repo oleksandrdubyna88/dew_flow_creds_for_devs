@@ -137,7 +137,7 @@ async function offerCopy(ctx: UseActionContext, slot: RotationSlot, value: strin
   const answer = await vscode.window.showWarningMessage(notStored(ctx.entityName, slot, why), { modal: true }, copy);
   if (answer === copy) {
     await copySecret(vscode.env.clipboard, value);
-    void vscode.window.showInformationMessage(copiedMessage(`The new ${what(slot)} of "${ctx.entityName}"`));
+    void vscode.window.showInformationMessage(`${copiedMessage(`The new ${what(slot)} of "${ctx.entityName}"`)} ${CLIPBOARD_HISTORY}`);
   }
 }
 
@@ -157,6 +157,16 @@ function notStored(name: string, slot: RotationSlot, why: string): string {
   const reason = why === DECLINED ? '' : ` (${why})`;
   return (
     `The ${what(slot)} of "${name}" was changed on the far side and was NOT stored in the vault${reason}. `
-    + `The old one no longer works and the new one exists nowhere else: copy it now and put it into the entry yourself.`
+    + `The old one no longer works and the new one exists nowhere else: copy it now and put it into the entry yourself. `
+    + CLIPBOARD_HISTORY
   );
 }
+
+/**
+ * What a clipboard history does, said plainly (plan §4.7, the owner's decision). `vscode.env.clipboard` takes
+ * plain text only, so the extension cannot mark the content as excluded from a history; this sentence is the
+ * whole mitigation, and it says so rather than implying more.
+ */
+export const CLIPBOARD_HISTORY =
+  'A clipboard history (Windows\' Win+V, a clipboard manager, a remote-desktop clipboard) keeps its own copy: the automatic clear '
+  + 'empties the clipboard, not that history. Paste it into the entry now, then delete it from the history.';
