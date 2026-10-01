@@ -253,6 +253,8 @@ test('a folder run where every entry FAILED records no preference', async () => 
     // the finding is about. The write is what fails, so `protectEntity` throws for this entry and
     // `protectOne` records it as failed.
     getPassword: () => Promise.resolve('hunter2'),
+    // The lease Protect's seal is written under (the E2 security review, finding 3) — a fake runs it inline.
+    writes: { run: <T>(work: () => Promise<T>): Promise<T> => work() },
     setPassword: () => Promise.reject(new Error('the keychain is unavailable')),
     getNotes: () => Promise.resolve(undefined),
     getFieldsRaw: () => Promise.resolve(undefined),
@@ -299,6 +301,8 @@ test('…but a run where at least ONE entry succeeded does record it', async () 
     getNodes: () => [folder, entity],
     getNode: (_a: string, id: string) => [folder, entity].find((n) => n.id === id),
     getPassword: () => Promise.resolve('hunter2'),
+    // The lease Protect's seal is written under (the E2 security review, finding 3) — a fake runs it inline.
+    writes: { run: <T>(work: () => Promise<T>): Promise<T> => work() },
     setPassword: () => Promise.resolve(),
     getNotes: nothing,
     getFieldsRaw: nothing,

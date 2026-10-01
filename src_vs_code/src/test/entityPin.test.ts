@@ -43,6 +43,8 @@ function vault(initial: Record<string, string> = {}, kept: Revision[] = []): Sto
   };
   const store = {
     held,
+    // The lease Protect's seal is written under (the E2 security review, finding 3) — a fake runs it inline.
+    writes: { run: <T>(work: () => Promise<T>): Promise<T> => work() },
     getNotes: () => get('notes'),
     setNotes: (_a: string, _e: string, v: string) => set('notes', v),
     getFieldsRaw: () => get('login and URL'),
