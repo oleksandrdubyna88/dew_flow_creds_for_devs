@@ -72,7 +72,7 @@ import { maskEntriesFor } from './maskEntries';
 import { visibleConfigDetails, visibleMcpEntries } from './mcpEntries';
 import { McpEntriesCache } from './mcpEntriesCache';
 import { RotateDeps, rotateAction } from './rotateAction';
-import { writeUnattended } from './entryWriter';
+import { storeRotated } from './rotationStore';
 import { generateSecret } from './secretKinds';
 import { CREDS_CLI, CredsProduct, ridFor } from './credsInstall';
 import { binaryPath, installMenu } from './binaryInstaller';
@@ -686,9 +686,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     snapshot: (ctx, details) =>
       snapshotForRevision(storage, ctx.accountId, { id: ctx.entityId, name: ctx.entityName, details }),
     record: (ctx, revision) => storage.recordRevision(ctx.accountId, ctx.entityId, revision),
-    // Unattended (`entryWriter.writeUnattended`): refused with the PIN sentence on an entry protected since `prepare` checked.
-    store: (ctx, slot, value) => writeUnattended(storage, ctx.accountId, { id: ctx.entityId, name: ctx.entityName }, (writer) =>
-      slot === 'password' ? writer.setPassword(ctx.accountId, ctx.entityId, value) : writer.setDbConnection(ctx.accountId, ctx.entityId, value)),
+    // Unattended first; refused (protected since `prepare` checked), handed to the person — never dropped (`rotationStore.ts`).
+    store: (ctx, slot, value) => storeRotated(storage, ctx, slot, value),
     onRotated: () => mutated(),
   };
   useActions.register(rotateAction(dbQueryAction(agentDeps), 'query', rotateDeps));

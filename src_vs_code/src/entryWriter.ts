@@ -95,22 +95,40 @@ export async function writeUnattended(
 ): Promise<void> {
   const sealing = await unattendedSealing(storage, accountId, owner);
   if (sealing.kind === 'stopped') {
-    throw new Error(`${sealing.reason} Nothing was stored.`);
+    throw new UnattendedRefusal(`${sealing.reason} Nothing was stored.`);
   }
-  await write(writerFor(storage, accountId, owner.id, sealing, NOTHING_OPENED));
+  await write(writerFor(storage, accountId, owner.id, sealing, NOTHING_OPENED)).catch((error: unknown) => {
+    throw error instanceof ProtectedMeanwhile ? new UnattendedRefusal(error.unattended) : error;
+  });
 }
 
 /**
- * Thrown by a plain writer's first write when the entry was protected — another window, a sync —
- * between the decision and that write. Nothing of the write was stored; the message is what the
- * caller's failure path says (Edit's "Saving … stopped part-way", the share's "saving it failed").
+ * An unattended write refused because the entry is protected — before it began (`unattendedSealing`'s
+ * PIN sentence) or while it ran (the plain writer's re-check). Its own class so the one caller, the
+ * rotation's store, can hand a value the far side already accepted to the PERSON rather than drop it
+ * (`rotationStore.ts`); its sentence never tells an automatic caller to do anything "from the entry".
+ */
+export class UnattendedRefusal extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnattendedRefusal';
+  }
+}
+
+/**
+ * Thrown by a plain writer's write when the entry was protected — another window, a sync — between the
+ * decision and that write. Nothing of that write was stored; the message is what an interactive
+ * caller's failure path says (Edit's "Saving … stopped part-way", the share's "saving it failed",
+ * Restore's "stopped part-way"). `unattended` is the same fact for a caller nobody is watching — it
+ * names no next step for a person to take "from the entry" (the E2 code round, finding 14).
  */
 export class ProtectedMeanwhile extends Error {
+  readonly unattended: string;
+
   constructor(name: string) {
-    super(
-      `"${name}" was protected with a PIN — in another window or by a sync — after this write was decided and before it began. `
-      + 'Nothing was written in the clear; do it again from the entry, which will ask for its PIN.',
-    );
+    const fact = `"${name}" was protected with a PIN — in another window or by a sync — after this write was decided and before it began.`;
+    super(`${fact} Nothing was written in the clear; do it again from the entry, which will ask for its PIN.`);
+    this.unattended = `${fact} Nothing was stored, in the clear or otherwise: nothing automatic writes into a protected entry.`;
     this.name = 'ProtectedMeanwhile';
   }
 }

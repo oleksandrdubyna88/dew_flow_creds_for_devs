@@ -59,7 +59,7 @@ export async function updateInPlace(
   const existing = storage.getNode(accountId, previousId);
   const current = existing ?? payload.node;
   const entry = updatedEntry(previousId, current.name, existing, parentId);
-  const sealing = await sealingForUpdate(storage, accountId, previousId, carriesSecret(payload), doorsOf(storage, accountId, entry));
+  const sealing = await sealingForUpdate(storage, accountId, previousId, carriesSecret(payload), updateDoors(storage, accountId, entry, 'update it'));
   if (sealing.kind === 'stopped') {
     return undefined;
   }
@@ -93,7 +93,7 @@ function recipientsOwn(existing: TreeNode | undefined, parentId: string | null):
 }
 
 /** The entry an update writes into, as the recipient's tree has it. */
-interface UpdatedEntry {
+export interface UpdatedEntry {
   readonly id: string;
   readonly name: string;
   readonly parentId: string | null | undefined;
@@ -109,14 +109,15 @@ function updatedEntry(id: string, name: string, existing: TreeNode | undefined, 
 }
 
 /**
- * The two doors `sealingForUpdate` may need: the live door — `admitEntry`, purpose "update it", and the
- * PIN it granted — and the entry's FIRST PIN, chosen the way Edit's first save and Restore ask it
- * (`pinOnCreate.firstPinFor`: typed twice, or checked against the protected entries of its folder, and
- * granted to this window). Each answers `undefined` for a stop, said by the door or a decline.
+ * The two doors `sealingForUpdate` may need: the live door — `admitEntry` with `purpose` ("update it"
+ * for a share, "store the new value" for a rotation the person takes over), and the PIN it granted — and
+ * the entry's FIRST PIN, chosen the way Edit's first save and Restore ask it (`pinOnCreate.firstPinFor`:
+ * typed twice, or checked against the protected entries of its folder, and granted to this window).
+ * Each answers `undefined` for a stop, said by the door or a decline.
  */
-function doorsOf(storage: StorageManager, accountId: string, entry: UpdatedEntry): UpdateDoors {
+export function updateDoors(storage: StorageManager, accountId: string, entry: UpdatedEntry, purpose: string): UpdateDoors {
   return {
-    door: async () => ((await admitEntry(storage, accountId, entry.id, entry.name, 'update it')) === undefined ? undefined : grantedPin(accountId, entry.id)),
+    door: async () => ((await admitEntry(storage, accountId, entry.id, entry.name, purpose)) === undefined ? undefined : grantedPin(accountId, entry.id)),
     firstPin: () => firstPinFor(storage, accountId, entry),
   };
 }
