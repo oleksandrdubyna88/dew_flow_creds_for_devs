@@ -7,7 +7,7 @@ import { declinedMessage, forThisRecipient } from './shareRecipientPin';
 import { entryPinGate } from './pinPrompt';
 import { describeError } from './describeError';
 import { DiagnosticWriter } from './diagnosticWriter';
-import { ShareAttempt, attemptOf, noteAcceptFailures, rememberAttempt } from './shareDiagnostics';
+import { ShareAttempt, attemptOf, noteAcceptFailures, notSavedNote, rememberAttempt } from './shareDiagnostics';
 import * as vscode from 'vscode';
 import { BackupError } from './cryptoUtils';
 import { StorageManager } from './storageManager';
@@ -476,6 +476,7 @@ export class ShareInbox {
     const attempted = new Map<string, ShareAttempt>();
     let imported = 0;
     let declined = 0; // opened, then left in the inbox: no PIN chosen, or the wrap failed
+    const failed: OwnedShare[] = []; // opened, and the save failed — kept, logged, named in the tally
     while (remaining.length > 0) {
       const next = remaining[0];
       const pin = await vscode.window.showInputBox({
@@ -504,24 +505,25 @@ export class ShareInbox {
         (owned) => this.deps.sharing.serverStamped(owned),
         (owned, f, reason) => rememberAttempt(attempted, owned.item.id, attemptOf(f, reason, pin)),
       );
-      const round = await this.importOpened(opened);
+      const round = await this.importOpened(opened, pin, attempted);
       imported += round.imported;
       declined += round.declined;
+      failed.push(...round.failed);
       if (opened.length === 0) {
         void vscode.window.showWarningMessage('That PIN did not open any of the items.');
       }
       remaining = rest;
     }
-    this.noteFailed(remaining, attempted);
+    this.noteFailed([...remaining, ...failed], attempted);
     if (imported > 0) {
       this.deps.onMutated();
     }
     void this.deps.sharing.reload();
     // A declined item is STILL PENDING: opened, so not in `remaining`; not imported, so not in
     // `imported`. Counted nowhere, it would vanish from the tally that says whether this is done.
-    const pending = remaining.length + declined;
+    const pending = remaining.length + declined + failed.length;
     void vscode.window.showInformationMessage(
-      `Accepted ${imported} item(s)${pending > 0 ? `, ${pending} still pending` : ''}.`,
+      `Accepted ${imported} item(s)${pending > 0 ? `, ${pending} still pending` : ''}.${notSavedNote(failed, attempted)}`,
     );
   }
 
@@ -534,23 +536,28 @@ export class ShareInbox {
    * the ordinary way to accept, so this was the common route past the protection, not a corner.</p>
    *
    * <p>Declined, or a wrap that failed: `sealedForRecipient` has said which, the share is NOT
-   * consumed, and it is COUNTED — an item neither imported nor still locked is counted nowhere.</p>
+   * consumed, and it is COUNTED — an item neither imported nor still locked is counted nowhere. A save
+   * that FAILED (a write refused, `ProtectedMeanwhile`) is that share's alone: kept, its reason recorded
+   * for the log and the tally, and the rest still imported (the E2 security review, finding 5).</p>
    */
   private async importOpened(
-    opened: readonly (OwnedShare & { payload: SharePayload })[],
-  ): Promise<{ imported: number; declined: number }> {
+    opened: readonly (OwnedShare & { payload: SharePayload })[], pin: string, attempted: Map<string, ShareAttempt>,
+  ): Promise<{ imported: number; declined: number; failed: OwnedShare[] }> {
     let imported = 0;
     let declined = 0;
+    const failed: OwnedShare[] = [];
     for (const share of opened) {
       const arriving = await this.sealedForRecipient(share, share.payload);
       if (arriving === undefined) {
         declined++;
         continue;
       }
-      await this.importShared(share, arriving);
-      imported++;
+      await this.importShared(share, arriving).then(() => imported++, (error: unknown) => {
+        rememberAttempt(attempted, share.item.id, attemptOf('', error, pin));
+        failed.push(share);
+      });
     }
-    return { imported, declined };
+    return { imported, declined, failed };
   }
 
   /**
