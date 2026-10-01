@@ -512,6 +512,16 @@ two defects the owner's data loss came from — and a later round cannot repair 
       `extension.ts:688-691`. Until T5 the storage still satisfies `EntryWriter` structurally, so T4 adds the
       funnel test's rule *"no `applyAdditions(storage`, `store: storage` or `storage.set<Slot>(` outside
       `entryWriter.ts` and `entitySlots.ts`"* — retired in T5's last commit, where the type takes over.
+      **The decision and the writes under one lease** *(CodeRabbit on the hotfix PR #175, CWE-362, recorded
+      2026-10-01)*: every writer today — the share update's `writerFor`, and on `main` before the hotfix too —
+      reads the entry's state (a sealed slot? the mark?) and writes LATER, outside one cross-window lease, so
+      another window protecting the entry in between can receive a plain write. The door's heal
+      (`pinAdmission.healProtected`) seals such a stray value at the next open, which is why it is a narrow
+      window and not an open hole; closing it is T4's to do, because `writerFor` is where the decision moves:
+      a plain `Sealing` is re-validated under the same lease as the first slot write (a sealed slot or the
+      mark found there → the write is refused and the person told, as `sealingAtWrite` refuses a form whose
+      protection changed), and no lease is ever held across a PIN box. RED first: *a share update whose entry
+      is protected by another window between the decision and the write stores nothing in the clear*.
       **Guard (green since the hotfix of 2026-10-01, §2.7 — kept green, not a RED):** *a person's Add into
       a folder that asks for a PIN never writes a value in the clear — the keychain's write log sees only
       sealed values*; *an Add into a PIN folder killed after its first slot write leaves that slot SEALED and
