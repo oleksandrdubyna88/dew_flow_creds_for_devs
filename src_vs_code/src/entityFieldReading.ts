@@ -1,7 +1,7 @@
 import { BindableField } from './envBinding';
 import { EntityMetadata } from './types';
-import { FieldReading, readingOf, withheld } from './fieldReading';
-import { pinFieldRefusal } from './pinGate';
+import { FieldReading, readingOf } from './fieldReading';
+import { automaticOpener, fieldReadingOf } from './secretOpener';
 import { bindableFieldReading } from './envApply';
 import { SecretRefField } from './secretRef';
 import { StorageManager } from './storageManager';
@@ -52,7 +52,9 @@ function fieldOf(
 /**
  * The stored note, or the plaintext one an older entry still carries in its metadata — withheld, with
  * the sentence, for a protected entry (entry-PIN plan, D7: until 1.12 a reference resolved to the
- * envelope). `pinFieldRefusal` asks the wrap first and the mark second, exactly as the env bindings do.
+ * envelope). Opened by `automaticOpener`, which asks the wrap first and the mark second exactly as the
+ * env bindings do, and refuses a damaged wrap as damaged (typed-secrets plan, T3 — until then its text
+ * resolved as the note). The metadata note is what is stored for an older entry, so it is opened the same way.
  */
 async function notesReading(
   storage: StorageManager,
@@ -60,14 +62,13 @@ async function notesReading(
   details: EntityMetadata,
 ): Promise<FieldReading> {
   const stored = await storage.getNotes(accountId, details.id);
-  const refusal = pinFieldRefusal(details, stored);
-  return refusal === '' ? readingOf(stored ?? details.notes) : withheld(refusal);
+  return fieldReadingOf(await automaticOpener(details, stored ?? details.notes), details);
 }
 
 /**
  * The code as of `now` — a seed with no readable code is absent; a protected entry's seed is WITHHELD.
  * Until 1.12 a sealed seed parsed as no seed at all, and a reference said "absent" about a code that
- * exists and may not be used.
+ * exists and may not be used; until the typed-secrets plan (T3) a damaged one did too.
  */
 async function totpReading(
   storage: StorageManager,
@@ -75,7 +76,6 @@ async function totpReading(
   details: EntityMetadata,
   now: number,
 ): Promise<FieldReading> {
-  const stored = await storage.getTotp(accountId, details.id);
-  const refusal = pinFieldRefusal(details, stored);
-  return refusal === '' ? readingOf(totpSnapshot(stored, now)?.code) : withheld(refusal);
+  const seed = fieldReadingOf(await automaticOpener(details, await storage.getTotp(accountId, details.id)), details);
+  return seed.kind === 'value' ? readingOf(totpSnapshot(seed.value, now)?.code) : seed;
 }

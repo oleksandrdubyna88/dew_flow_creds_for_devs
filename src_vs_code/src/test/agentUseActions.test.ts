@@ -220,3 +220,21 @@ test('an entry written for THIS OS runs in the native shell — PowerShell synta
   assert.equal(result.status, 200, JSON.stringify(result.body));
   assert.match((result.body as { stdout?: string }).stdout ?? '', /ab/);
 });
+
+test('dbQueryAction refuses a DAMAGED connection string as damaged — the database client is never handed the wrap', async () => {
+  // Typed-secrets plan T3: the connection reads through `automaticOpener`, which refuses a damaged wrap
+  // in words. Before, the wrap's text went on as the connection string: mysql would have been launched
+  // with it, and psql refused it for a false reason ("not a plain postgres:// URL").
+  const deps = fakeDeps({
+    storage: {
+      getNode: () => ({ details: { id: 'e1', name: 'prod-db', dbType: 'mysql' } }),
+      getDbConnection: async () => '{"v":1,"lock":{"wrap":',
+    },
+    onPath: () => true,
+  });
+
+  const result = await dbQueryAction(deps).run(ctx, { query: 'select 1' });
+
+  assert.equal(code(result), 'no_credential', `answered ${code(result)}: ${message(result)}`);
+  assert.match(message(result), /"prod-db" holds a protected value that cannot be read/);
+});

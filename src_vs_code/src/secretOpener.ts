@@ -71,9 +71,24 @@ function plainOpen(owner: SecretOwner, stored: string | undefined): OpenedSecret
  * open value is a `value`, and an open nothing — or an empty string, as every one of them already
  * read it — is `absent`. For an automatic opener only: a click's stop carries `''`, because it has
  * already been said, and a withheld reading must carry its reason.</p>
+ *
+ * <p><b>`claimedBy`</b> — the entry, for the consumers that withhold EVERY field of an entry claiming a
+ * PIN, held or not: a terminal variable and a `creds://` reference have answered a protected entry with
+ * the PIN sentence whether or not that slot holds anything since the entry-PIN plan (`pinGate.pinFieldRefusal`
+ * refuses on the mark alone; `pinSlotMatrix` holds it for every slot). The opener answers an absent value
+ * as absent — nothing to withhold — so without the owner here those consumers would start telling the
+ * world which fields a protected entry does not hold. Omitted, absent is absent (the broker's db query,
+ * which says "no stored connection string" first).</p>
  */
-export function fieldReadingOf(opened: OpenedSecret): FieldReading {
-  return opened.kind === 'stopped' ? withheld(opened.reason) : readingOf(opened.value);
+export function fieldReadingOf(opened: OpenedSecret, claimedBy?: SecretOwner): FieldReading {
+  if (opened.kind === 'stopped') {
+    return withheld(opened.reason);
+  }
+  return opened.value === undefined && claimsPin(claimedBy) ? withheld(pinFieldRefusal(claimedBy, undefined)) : readingOf(opened.value);
+}
+
+function claimsPin(owner: SecretOwner | undefined): owner is SecretOwner {
+  return owner !== undefined && owner.pinProtected === true;
 }
 
 /**

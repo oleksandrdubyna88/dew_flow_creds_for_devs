@@ -67,3 +67,15 @@ test('unsealedText: everything stored is seen as it is, except a sealed value', 
   assert.equal(unsealedText(f.sealed), undefined, 'a wrap is nothing to judge or mask');
   assert.equal(unsealedText(undefined), undefined);
 });
+
+test('fieldReadingOf with the entry: a protected entry withholds even a field it does not hold — absent stays absent without it', async () => {
+  const marked = { ...OWNER, pinProtected: true };
+  const nothing = await automaticOpener(marked, undefined);
+  assert.deepEqual(nothing, { kind: 'open', value: undefined, protectedEntry: false }, 'the opener itself: nothing stored is nothing to withhold');
+
+  const withheldReading = fieldReadingOf(nothing, marked);
+  assert.equal(withheldReading.kind, 'withheld', 'a terminal variable or creds:// reference would tell which fields a protected entry does not hold');
+  assert.match(withheldReading.kind === 'withheld' ? withheldReading.reason : '', /"prod db" is protected with its own PIN/);
+  assert.deepEqual(fieldReadingOf(nothing), { kind: 'absent' }, 'without the entry, absent is absent');
+  assert.deepEqual(fieldReadingOf(await automaticOpener(OWNER, undefined), OWNER), { kind: 'absent' }, 'an entry that claims no PIN holds nothing there');
+});

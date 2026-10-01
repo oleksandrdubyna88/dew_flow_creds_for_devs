@@ -526,3 +526,19 @@ test('the DB password of a SEALED connection string reads as WITHHELD, mark or n
   assert.equal(reading.kind, 'withheld', `read as ${reading.kind}`);
   assert.match(reading.kind === 'withheld' ? reading.reason : '', /PIN/);
 });
+
+test('a DAMAGED stored value reads as WITHHELD, naming the damage — never handed to a terminal as text', async () => {
+  // Typed-secrets plan T3: the bindings read through `automaticOpener` + `fieldReadingOf`. Before, a
+  // damaged wrap was not a refusal at all, and its text was written into the environment as the value.
+  const mod = envApply();
+  const damaged = '{"v":1,"lock":{"wrap":';
+  const fields = ['password', 'privateKey', 'dbConnection', 'dbPassword'] as const;
+  const readings = await Promise.all(
+    fields.map((field) => mod.bindableFieldReading(storage({ password: damaged, privateKey: damaged, dbConnection: damaged }) as never, 'acc', details(), field)),
+  );
+
+  assert.deepEqual(readings.map((r) => r.kind), ['withheld', 'withheld', 'withheld', 'withheld'], `read as ${JSON.stringify(readings).slice(0, 120)}`);
+  for (const reading of readings) {
+    assert.match(reading.kind === 'withheld' ? reading.reason : '', /"prod" holds a protected value that cannot be read/);
+  }
+});
