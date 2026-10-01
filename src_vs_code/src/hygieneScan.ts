@@ -1,4 +1,4 @@
-import { isLockedSecret } from './secretEnvelope';
+import { plainText } from './secretOpener';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -95,18 +95,19 @@ export async function collectPasswords(storage: StorageManager): Promise<Passwor
   return entries;
 }
 
-/** One entry per non-empty value — an absent field contributes nothing to weigh. */
 /**
- * One password for the report, or nothing at all.
+ * One password for the report, or nothing at all — an absent or empty field contributes nothing to weigh.
  *
- * <p><b>A PIN-protected value is skipped, and skipping it is the only honest answer.</b> What is
- * stored for such an entry is a random data key's ciphertext: long, high-entropy and unlike every
- * other password in the vault — so a scan that read it would report the entry as a strong, unique
- * password. That is a lie in the one direction that matters: somebody would be told their weakest
- * habit is fine because it happens to be encrypted twice.</p>
+ * <p><b>Only what `secretOpener.plainText` can read as a password is weighed, and skipping the rest is
+ * the only honest answer.</b> What is stored for a PIN-protected entry is a random data key's
+ * ciphertext: long, high-entropy and unlike every other password in the vault — so a scan that read it
+ * would report the entry as a strong, unique password. That is a lie in the one direction that matters:
+ * somebody would be told their weakest habit is fine because it happens to be encrypted twice. A damaged
+ * wrap and a woven pair told the same lie until the typed-secrets plan (T3): the first is envelope text,
+ * the second the person's value interleaved with a decoy, and both were graded as strong and unique.</p>
  *
- * <p>Nor is it a value this could grade if it wanted to: reading it needs a PIN, and the scan runs
- * over the whole vault with no window to ask in.</p>
+ * <p>Nor is a sealed value one this could grade if it wanted to: reading it needs a PIN, and the scan
+ * runs over the whole vault with no window to ask in.</p>
  */
 function present(
   entityName: string,
@@ -114,10 +115,7 @@ function present(
   field: string,
   value: string | undefined,
 ): PasswordEntry[] {
-  if (value === undefined || value.length === 0 || isLockedSecret(value)) {
-    return [];
-  }
-  return [{ entityName, accountEmail, field, value }];
+  return value === undefined || value.length === 0 ? [] : [{ entityName, accountEmail, field, value }];
 }
 
 async function entryFor(
@@ -127,9 +125,9 @@ async function entryFor(
   entityId: string,
   entityName: string,
 ): Promise<PasswordEntry[]> {
-  const connection = await storage.getDbConnection(accountId, entityId);
+  const connection = plainText(await storage.getDbConnection(accountId, entityId));
   return [
-    ...present(entityName, accountEmail, 'password', await storage.getPassword(accountId, entityId)),
+    ...present(entityName, accountEmail, 'password', plainText(await storage.getPassword(accountId, entityId))),
     ...present(
       entityName,
       accountEmail,

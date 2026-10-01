@@ -1,3 +1,4 @@
+import { FieldReading, readingOf, withheld } from './fieldReading';
 import { corruptReason, pinFieldRefusal } from './pinGate';
 import { readSecret } from './secretEnvelope';
 
@@ -58,4 +59,46 @@ function plainOpen(owner: SecretOwner, stored: string | undefined): OpenedSecret
     return { kind: 'stopped', reason: corruptReason(owner.name, read.why) };
   }
   return { kind: 'open', value: read.kind === 'value' ? read.value : undefined, protectedEntry: false };
+}
+
+/**
+ * What an opener's answer is to an AUTOMATIC consumer — `FieldReading`'s three answers, from
+ * `OpenedSecret`'s two (`PLAN_typed_stored_secrets.md` §2.3).
+ *
+ * <p>`OpenedSecret` folds "absent" into `open` with no value, and the consumers this is for — a
+ * `creds://` reference, the config route, a terminal variable, the broker — must tell absent from
+ * withheld (`fieldReading.ts` says why). So: `stopped` is `withheld` with the opener's sentence, an
+ * open value is a `value`, and an open nothing — or an empty string, as every one of them already
+ * read it — is `absent`. For an automatic opener only: a click's stop carries `''`, because it has
+ * already been said, and a withheld reading must carry its reason.</p>
+ */
+export function fieldReadingOf(opened: OpenedSecret): FieldReading {
+  return opened.kind === 'stopped' ? withheld(opened.reason) : readingOf(opened.value);
+}
+
+/**
+ * The value as a PASSWORD can be judged, with no owner and nothing asked — or nothing at all.
+ *
+ * <p>For the health report, which reads every entry of the vault with no window to ask in and grades
+ * what it reads. Only a value in the clear that is not woven is one: a sealed value is the ciphertext of
+ * a random data key, a damaged wrap is envelope-shaped text, and a woven pair is the person's value
+ * interleaved with a decoy — each of the three would be graded as a strong, unique password, the lie
+ * `hygieneScan.ts` describes. Absent, sealed, woven and damaged all answer `undefined`.</p>
+ */
+export function plainText(stored: string | undefined): string | undefined {
+  const read = readSecret(stored);
+  return read.kind === 'value' && !read.woven ? read.value : undefined;
+}
+
+/**
+ * The stored text as it is, unless it is sealed — with no owner and nothing asked.
+ *
+ * <p>For the readers that look at what is stored without using it as a value: the output masker,
+ * which masks everything it can see (`maskFailClosed` — a woven envelope and a damaged wrap included,
+ * because the cost of masking a string no tool prints is nothing), and the tree's config-validity and
+ * URL hints, which judge a body and must not judge a wrap. A sealed value is `undefined`: there is
+ * nothing in it to mask or judge.</p>
+ */
+export function unsealedText(stored: string | undefined): string | undefined {
+  return readSecret(stored).kind === 'locked' ? undefined : stored;
 }

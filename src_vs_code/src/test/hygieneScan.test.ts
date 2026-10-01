@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import { configStub, loadWithVscode } from './vscodeStub';
 import { StoredAccount, TreeNode } from '../types';
+import { plainSecret, readSecret } from '../secretEnvelope';
 
 /**
  * Gathering what the health report weighs (audit A3).
@@ -212,6 +213,40 @@ test('an entity with no secret contributes nothing to weigh', async () => {
     const collected = await w.mod.collectPasswords(storageOf([{ id: 'e1', name: 'empty' }]) as never);
 
     assert.deepEqual(collected, []);
+  } finally {
+    cleanup(w);
+  }
+});
+
+// A damaged wrap and a woven pair are what a sealed value is to this scan: text that is not the person's
+// password, which the grader would call strong and unique (`PLAN_typed_stored_secrets.md` §2.3, T3).
+
+test('a damaged wrap is not graded as a password by the health report', async () => {
+  const damaged = '{"v":1,"lock":{"wrap":';
+  assert.equal(readSecret(damaged).kind, 'corrupt', 'the fixture is what the parser calls damaged');
+  const w = world({});
+  try {
+    const collected = await w.mod.collectPasswords(
+      storageOf([{ id: 'e1', name: 'prod', password: damaged }, { id: 'e2', name: 'db', connection: damaged }]) as never,
+    );
+
+    assert.deepEqual(collected.map((c) => [c.entityName, c.field]), [], 'a damaged wrap was graded as a password');
+  } finally {
+    cleanup(w);
+  }
+});
+
+test('a woven password is not graded as a strong, unique password', async () => {
+  const woven = plainSecret('hhuunntteerr22', true);
+  const read = readSecret(woven);
+  assert.equal(read.kind === 'value' && read.woven, true, 'the fixture is what the parser calls woven');
+  const w = world({});
+  try {
+    const collected = await w.mod.collectPasswords(
+      storageOf([{ id: 'e1', name: 'woven', password: woven }, { id: 'e2', name: 'plain', password: 'hunter2' }]) as never,
+    );
+
+    assert.deepEqual(collected.map((c) => [c.entityName, c.value]), [['plain', 'hunter2']], 'a woven pair was graded as a password');
   } finally {
     cleanup(w);
   }
