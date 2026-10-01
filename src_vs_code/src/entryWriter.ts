@@ -197,7 +197,7 @@ function plainWriter(storage: StorageManager, a: string, e: string, through: Thr
     setPassword: (_a, _e, v) => through(() => storage.setPassword(a, e, v)),
     setPrivateKey: (_a, _e, v) => through(() => storage.setPrivateKey(a, e, v)),
     setVpnConfig: (_a, _e, v) => through(() => storage.setVpnConfig(a, e, stored(v))),
-    setDbConnection: (_a, _e, v) => through(() => storage.setDbConnection(a, e, v)),
+    setDbConnection: (_a, _e, v) => through(() => storage.setDbConnection(a, e, stored(v))),
     setTotp: (_a, _e, v) => through(() => storage.setTotp(a, e, stored(v))),
     setNotes: (_a, _e, v) => through(() => storage.setNotes(a, e, stored(v))),
     setConfigBody: (_a, _e, v) => through(() => storage.setConfigBody(a, e, stored(v))),
@@ -241,7 +241,7 @@ function sealingWriter(storage: StorageManager, a: string, e: string, pin: strin
     setPrivateKey: (_a, _e, v) => put(seal(v), commit, (s) => storage.setPrivateKey(a, e, unflipped(s))),
     setVpnConfig: (_a, _e, v) => put(seal(v), commit, (s) => storage.setVpnConfig(a, e, s)),
     setTotp: (_a, _e, v) => sealIfChanged(opened.totp, v, seal, (sealed) => commit(() => storage.setTotp(a, e, sealed))),
-    setDbConnection: (_a, _e, v) => sealIfChanged(opened.dbConnection, v, seal, (sealed) => commit(() => storage.setDbConnection(a, e, unflipped(sealed)))),
+    setDbConnection: (_a, _e, v) => sealIfChanged(opened.dbConnection, v, seal, (sealed) => commit(() => storage.setDbConnection(a, e, sealed))),
     setNotes: (_a, _e, v) => sealOrDelete(opened.notes, v, seal, (sealed) => commit(() => storage.setNotes(a, e, sealed))),
     setConfigBody: (_a, _e, v) => sealOrDelete(opened.configBody, v, seal, (sealed) => commit(() => storage.setConfigBody(a, e, sealed))),
     setFields: (_a, _e, v) =>

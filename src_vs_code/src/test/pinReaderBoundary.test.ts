@@ -187,7 +187,7 @@ function ruleFor(kind: ReaderKind, file: string, text: string): ((read: SlotRead
 const GATED_BY_CALLER: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   'commands/entityCommands.ts': {
     readPassword: 'a SlotRead handed to clickedValue, which reads through clickedSecret',
-    readDb: 'a SlotRead handed to clickedValue, which reads through clickedSecret',
+    readDb: 'a SlotRead handed to clickedValue, which reads through clickedSecret (typed since T5)',
     readTotp: 'a SlotRead handed to clickedValue (Copy One-Time Code), which reads through clickedSecret (typed since T5)',
     readKey: 'a SlotRead handed straight to clickedSecret (Install SSH Key)',
   },
@@ -226,7 +226,7 @@ const GATED_BY_CALLER: Readonly<Record<string, Readonly<Record<string, string>>>
     password: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader',
     privateKey: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader',
     vpnConfig: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader (typed since T5)',
-    dbConnection: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader',
+    dbConnection: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader (typed since T5)',
     totpSeed: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader (typed since T5)',
     paymentRaw: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader (typed since T5)',
     secondRaw: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader (typed since T5)',

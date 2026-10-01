@@ -168,7 +168,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     bundleKey: 'dbConnections',
     read: (s, a, e) => s.getDbConnection(a, e),
     write: (s, a, e, v) => s.setDbConnection(a, e, v),
-    store: (s, a, e, v) => s.setDbConnection(a, e, unflipped(v)),
+    store: (s, a, e, v) => s.setDbConnection(a, e, v),
     remove: (s, a, e) => s.deleteDbConnection(a, e),
   },
   {

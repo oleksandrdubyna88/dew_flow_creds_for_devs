@@ -11,6 +11,7 @@ import { EntityMetadata } from './types';
 import { FieldReading, readingOf, valueOf, withheld } from './fieldReading';
 import { pinFieldRefusal } from './pinGate';
 import { OpenedSecret, automaticOpener, fieldReadingOf } from './secretOpener';
+import type { StoredSecret } from './storedSecret';
 
 /**
  * Writing bound secret fields into VS Code's environment variable collection — the
@@ -128,7 +129,7 @@ async function openedField(
   details: EntityMetadata,
   field: BindableField,
 ): Promise<OpenedSecret> {
-  const open = (stored: string | undefined): Promise<OpenedSecret> => automaticOpener(details, stored);
+  const open = (stored: StoredSecret | string | undefined): Promise<OpenedSecret> => automaticOpener(details, stored);
   switch (field) {
     case 'password':
       return open(await storage.getPassword(accountId, details.id));

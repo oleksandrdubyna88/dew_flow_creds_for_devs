@@ -138,7 +138,7 @@ function agentVault(): McpVaultSource & { getSecondRaw(a: string, e: string): Pr
     getPrivateKey: () => Promise.resolve(undefined),
     getNotes: () => Promise.resolve(undefined),
     getTotp: () => Promise.resolve(undefined),
-    getDbConnection: () => Promise.resolve('postgres://app:the-first-password@db-01:5432/orders'),
+    getDbConnection: () => Promise.resolve(stored('postgres://app:the-first-password@db-01:5432/orders')),
     // Not part of `McpVaultSource` — present exactly so a listing that reached for it COULD have it,
     // which is what makes the absence below evidence rather than a tautology.
     getSecondRaw: () => Promise.resolve(RAW),

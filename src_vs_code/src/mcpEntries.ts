@@ -84,8 +84,8 @@ export interface McpEntryContext {
   hasPrivateKey: boolean;
   hasNotes: boolean;
   hasTotp: boolean;
-  /** The stored connection string, if any. Stripped here rather than by the caller. */
-  dbConnection?: string;
+  /** The stored connection string, if any — as stored (`| string` for T5's window). Stripped here rather than by the caller. */
+  dbConnection?: StoredSecret | string;
   /** The names this entry depends on, already resolved from ids by the caller. */
   dependsOn: readonly string[];
 }
@@ -119,7 +119,7 @@ export function hiddenFromAgents(node: TreeNode | undefined): boolean {
  * sealed handed the agent the envelope itself until the typed-secrets plan (T3), and a damaged wrap was
  * still passed through as text until the E2 security review (finding 4) — a wrap is no address.
  */
-function shownConnection(stored: string | undefined): string | undefined {
+function shownConnection(stored: StoredSecret | string | undefined): string | undefined {
   const text = plainText(stored);
   return text === undefined ? undefined : withoutPassword(text);
 }
@@ -201,7 +201,7 @@ export interface McpVaultSource {
   getPrivateKey(accountId: string, entityId: string): Thenable<string | undefined>;
   getNotes(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
   getTotp(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
-  getDbConnection(accountId: string, entityId: string): Thenable<string | undefined>;
+  getDbConnection(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
 }
 
 /**

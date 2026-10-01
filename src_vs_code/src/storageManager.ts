@@ -868,12 +868,12 @@ export class StorageManager implements vscode.Disposable {
 
   // ---------- DB connection strings (SecretStorage, tenant-scoped) ----------
 
-  getDbConnection(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(dbConnSecretKey(accountId, entityId));
+  getDbConnection(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(dbConnSecretKey(accountId, entityId)));
   }
 
-  setDbConnection(accountId: string, entityId: string, value: string): Promise<void> {
-    return this.putSecret(dbConnSecretKey(accountId, entityId), accountId, value);
+  setDbConnection(accountId: string, entityId: string, value: StoredSecret): Promise<void> {
+    return this.putSecret(dbConnSecretKey(accountId, entityId), accountId, carried(value));
   }
 
   deleteDbConnection(accountId: string, entityId: string): Promise<void> {

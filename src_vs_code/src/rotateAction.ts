@@ -12,6 +12,8 @@ import { DrawOptions, GenerationOutcome, NO_GENERATOR_OUTCOME } from './secretKi
 import { readSecretOptions } from './mcpSecretOptions';
 import { Revision } from './revisionHistory';
 import { pinFieldRefusal } from './pinGate';
+import { unsealedText } from './secretOpener';
+import type { StoredSecret } from './storedSecret';
 
 /**
  * The `rotate` action: the window changes a secret on the far side and then stores it.
@@ -48,8 +50,12 @@ export interface RotateDeps {
   generate(kind: string, options?: DrawOptions): GenerationOutcome;
   /** The live entity, or undefined when it has gone. */
   entity(ctx: UseActionContext): EntityMetadata | undefined;
-  /** The value in the slot right now — a password, or a connection string. */
-  current(ctx: UseActionContext, slot: RotationSlot): Promise<string | undefined>;
+  /**
+   * The value in the slot right now, AS STORED — a password, or a connection string. `protectedSlot`
+   * refuses a sealed one (or any of a marked entry) before anything else; what `draw` rebuilds is read
+   * through `unsealedText`. `| string` for T5's window only.
+   */
+  current(ctx: UseActionContext, slot: RotationSlot): Promise<StoredSecret | string | undefined>;
   /** Everything about this entity as it is, for history. */
   snapshot(ctx: UseActionContext, details: EntityMetadata): Promise<Revision>;
   record(ctx: UseActionContext, revision: Revision): Promise<void>;
@@ -259,7 +265,8 @@ async function draw(
   if (!drawn.ok) {
     return { ok: false, error: drawn.message, noGenerator: true };
   }
-  const stored = storedValueFor(checked.slot, await deps.current(ctx, checked.slot), drawn.value, details.dbType);
+  // Sealed values and marked entries were refused by `protectedSlot` before this ran; the text as stored.
+  const stored = storedValueFor(checked.slot, unsealedText(await deps.current(ctx, checked.slot)), drawn.value, details.dbType);
   return stored.ok
     ? { ok: true, details, checked, secret: drawn.value, stored: stored.value }
     : { ok: false, error: stored.error };

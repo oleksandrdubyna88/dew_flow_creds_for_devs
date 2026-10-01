@@ -10,7 +10,7 @@ export interface SecretReader {
   getPassword(accountId: string, id: string): Thenable<string | undefined>;
   getPrivateKey(accountId: string, id: string): Thenable<string | undefined>;
   getVpnConfig(accountId: string, id: string): Thenable<StoredSecret | undefined>;
-  getDbConnection(accountId: string, id: string): Thenable<string | undefined>;
+  getDbConnection(accountId: string, id: string): Thenable<StoredSecret | undefined>;
   getNotes(accountId: string, id: string): Thenable<StoredSecret | undefined>;
   getAttachment(accountId: string, id: string): Thenable<string | undefined>;
   getImage(accountId: string, id: string): Thenable<string | undefined>;

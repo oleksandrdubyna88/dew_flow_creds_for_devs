@@ -68,7 +68,7 @@ function vault(nodes: readonly TreeNode[], secrets: Partial<Record<string, strin
     getPrivateKey: answer('privateKey'),
     getNotes: held('notes'),
     getTotp: held('totp'),
-    getDbConnection: answer('dbConnection'),
+    getDbConnection: held('dbConnection'),
   };
 }
 

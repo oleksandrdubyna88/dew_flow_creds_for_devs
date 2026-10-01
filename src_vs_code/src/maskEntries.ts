@@ -30,7 +30,7 @@ export interface SecretSource {
   getPassword(accountId: string, entityId: string): Thenable<string | undefined>;
   getPrivateKey(accountId: string, entityId: string): Thenable<string | undefined>;
   getVpnConfig(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
-  getDbConnection(accountId: string, entityId: string): Thenable<string | undefined>;
+  getDbConnection(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
   getNotes(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
   getSecondRaw(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
 }
