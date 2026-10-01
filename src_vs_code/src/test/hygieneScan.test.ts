@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import { configStub, loadWithVscode } from './vscodeStub';
 import { StoredAccount, TreeNode } from '../types';
-import { plainSecret, readSecret } from '../secretEnvelope';
+import { lockSecret, plainSecret, readSecret } from '../secretEnvelope';
 
 /**
  * Gathering what the health report weighs (audit A3).
@@ -247,6 +247,33 @@ test('a woven password is not graded as a strong, unique password', async () => 
     );
 
     assert.deepEqual(collected.map((c) => [c.entityName, c.value]), [['plain', 'hunter2']], 'a woven pair was graded as a password');
+  } finally {
+    cleanup(w);
+  }
+});
+
+test('a connection string that is woven, sealed or damaged is never graded as a password — only a readable one is', async () => {
+  // The E2 code round, finding 3 (accepted as a pin): the database password is parsed OUT of the stored
+  // connection string, so the string itself must first be a value the parser reads as one. Key=value
+  // form on purpose: the connection parser finds `Password=` inside an envelope's JSON text too, so it
+  // is not the parser that keeps these out — `plainText` is.
+  const conn = 'Server=h;User Id=me;Password=s3cret-db-pw;';
+  const woven = plainSecret(conn, true);
+  const sealed = await lockSecret(conn, 'a1', '2468');
+  const damaged = `{"v":1,"lock":{"wrap":"${conn}`;
+  assert.deepEqual([readSecret(woven).kind, readSecret(sealed).kind, readSecret(damaged).kind], ['value', 'locked', 'corrupt'], 'the fixtures are what the parser calls them');
+  const w = world({});
+  try {
+    const collected = await w.mod.collectPasswords(
+      storageOf([
+        { id: 'e1', name: 'woven', connection: woven },
+        { id: 'e2', name: 'sealed', connection: sealed },
+        { id: 'e3', name: 'damaged', connection: damaged },
+        { id: 'e4', name: 'readable', connection: 'postgresql://me:hunter2@h:5432/app' },
+      ]) as never,
+    );
+
+    assert.deepEqual(collected.map((c) => [c.entityName, c.field, c.value]), [['readable', 'database password', 'hunter2']], 'a connection string that is not a readable value was graded as a password');
   } finally {
     cleanup(w);
   }
