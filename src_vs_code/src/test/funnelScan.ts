@@ -222,21 +222,42 @@ function deletes(call: ts.Node): boolean {
   return value !== undefined && ts.isIdentifier(value) && value.text === 'undefined';
 }
 
+/**
+ * `store: storage`, `let store = this.deps.storage`, `const vault = storage` — the storage bound to another
+ * name. A setter called through the alias (`vault.setPassword(a, e, stored)`) is not `storage.set<Slot>(`,
+ * so the binding itself is the finding. A binding NAMED `storage` (`{ storage: this.storage }`) only hands
+ * the storage on under its own name, where every later call is still seen.
+ */
+function storageAlias(node: ts.Node): string | undefined {
+  const named = bindingOf(node);
+  if (named === undefined || !isStorage(named.initializer)) {
+    return undefined;
+  }
+  const name = named.name.getText();
+  return name === 'storage' ? undefined : `${name}: storage`;
+}
+
+function bindingOf(node: ts.Node): ts.PropertyAssignment | ts.VariableDeclaration | undefined {
+  return ts.isPropertyAssignment(node) || ts.isVariableDeclaration(node) ? node : undefined;
+}
+
 function storageWrite(file: string, node: ts.Node, setters: ReadonlySet<string>): Finding[] {
-  const what = slotSetterCall(node, setters);
+  const what = slotSetterCall(node, setters) ?? storageAlias(node);
   return what === undefined ? [] : [at(file, node, what)];
 }
 
 /**
- * Every slot setter called on the storage itself — a STORED form written with nothing between it and the
+ * Every slot setter called on the storage itself, and every binding of the storage to another name (an
+ * alias a setter could be called through) — a STORED form written with nothing between it and the
  * keychain. Permanent (typed-secrets plan §3, *what the type does not catch*): since T5 the type refuses
  * text there, but a `StoredSecret` cannot say whether it is plain or sealed, so a plain stored form copied
  * into a protected entry would still type-check. `setters` are the slot setters' names.
  *
- * <p>T4's interim rule also refused `applyAdditions(storage` and `store: storage` — the storage handed out
- * as a PLAINTEXT writer. The type refuses both since T5 (the storage satisfies no `EntryWriter`;
- * `fixtures/typed/storage_is_not_a_writer.ts`), so those two patterns were retired with T5's eleventh
- * commit.</p>
+ * <p>T4's interim rule also refused `applyAdditions(storage` — the storage handed to the additions pass as a
+ * PLAINTEXT writer. The type refuses it since T5 (the storage satisfies no `EntryWriter`;
+ * `fixtures/typed/storage_is_not_a_writer.ts`), so that pattern was retired with T5's eleventh commit. Its
+ * `store: storage` binding pattern was retired with it and RESTORED, widened to any name, after E3's
+ * test-diff check: an alias of the storage carries a stored form past `storage.set<Slot>(` as easily as text.</p>
  */
 export function storageWrites(file: string, text: string, setters: readonly string[]): Finding[] {
   const names = new Set(setters);

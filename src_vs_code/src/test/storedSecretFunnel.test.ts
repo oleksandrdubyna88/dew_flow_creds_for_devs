@@ -158,11 +158,12 @@ test('the companion: the scan still sees kept-version readers and click openers'
 // ---- the stored-form rule (permanent): no slot is written through the storage itself but here ----
 //
 // T4 added this as an INTERIM rule while the setters took `string`. Since T5 the TYPE refuses the storage
-// as a plaintext writer, so its two plaintext-writer patterns — `applyAdditions(storage, …)` and
-// `store: storage` — were retired with T5's eleventh commit (`fixtures/typed/storage_is_not_a_writer.ts`
-// is their compile-time twin). What stays is what a type cannot see: a `StoredSecret` does not say
-// whether it is plain or sealed, so a plain stored form copied into a protected entry type-checks, and
-// the typed setters (`setFields`, `setPayment`, `setSecond`) still take a record.
+// as a plaintext writer, so its additions-pass pattern — `applyAdditions(storage, …)` — was retired with
+// T5's eleventh commit (`fixtures/typed/storage_is_not_a_writer.ts` is its compile-time twin). What stays
+// is what a type cannot see: a `StoredSecret` does not say whether it is plain or sealed, so a plain
+// stored form copied into a protected entry type-checks — through `storage.set<Slot>(`, through an alias
+// of the storage (`store: storage`, `const vault = storage`; restored after E3's test-diff check, any
+// name but `storage`), or through a typed setter (`setFields`, `setPayment`, `setSecond`) taking a record.
 
 /**
  * The slot setters, asked of the slot table rather than typed out — each row's `write` run against a
@@ -200,16 +201,22 @@ test('the companions: the setters come from the table, and the scan still finds 
   assert.ok(sanctioned.some((finding) => finding.what === 'storage.setPassword('), 'the plain writer\'s own write is no longer seen');
 });
 
-test('the negative fixture: a slot setter called on the storage is reported, raw or typed — and a deletion is not a write', () => {
+test('the negative fixture: a slot setter called on the storage is reported, raw or typed, and so is the storage bound to another name — a deletion is not a write', () => {
   const source = [
     'export async function b(ctx: C, s: StoredSecret) { await ctx.storage.setPassword("a", "e", s); }',
     'export async function c(storage: S) { await storage.setFields("a", "e", { login: "x" }); }',
     'export async function d(storage: S) { await storage.setNotes("a", "e", undefined); }',
+    'export const deps = { store: storage };',
+    'export class I { f() { let store = this.deps.storage; return store; } }',
+    'export async function e(storage: S, s: StoredSecret) { const vault = storage; await vault.setPassword("a", "e", s); }',
   ].join('\n');
 
   assert.deepEqual(writesIn('fixture.ts', source).map(said), [
     'src/fixture.ts:1 storage.setPassword(',
     'src/fixture.ts:2 storage.setFields(',
+    'src/fixture.ts:4 store: storage',
+    'src/fixture.ts:5 store: storage',
+    'src/fixture.ts:6 vault: storage',
   ]);
 });
 
