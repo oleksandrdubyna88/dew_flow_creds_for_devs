@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import type { SecretWriter } from './applyFormSecrets';
+import { NOTHING_OPENED, sealedWriter } from './editPrefill';
 import { StorageManager } from './storageManager';
 import { TreeNode } from './types';
 import { isProtected, protectEntity, siblingsOpened } from './entityPin';
@@ -288,6 +290,23 @@ function saidCount(opened: number, of: number): boolean {
 
 const OPENS = (opened: number, of: number): string => `This PIN opens ${opened} of the ${of} protected entries in this folder.`;
 const OPENS_NONE = (of: number): string => `This PIN opens none of the ${of} protected entries in this folder.`;
+
+/**
+ * The writer a NEW entry's additions go through: the storage itself when the folder asked for no
+ * PIN, and `editPrefill.sealedWriter` over `NOTHING_OPENED` when it did — every value sealed in
+ * memory BEFORE `runCreate` writes anything (rule R3 of the entry-PIN plan), so the keychain never
+ * sees a value of such an entry in the clear, not even between its first write and the mark.
+ *
+ * <p>One function for both creates, the person's Add and the agent's. The agent's was built this way
+ * from the start; Add wrote through the storage and sealed afterwards with `applyCreatePin`, "because
+ * it wraps what is THERE" — and a process killed between the two left the new entry's values plain in
+ * the keychain under a node that claimed nothing (`PLAN_typed_stored_secrets.md` §2.7, fixed
+ * 2026-10-01). `applyCreatePin` still runs after either: with nothing left plain it is the idempotent
+ * sweep, the history and the mark.</p>
+ */
+export function writerForNewEntry(settled: CreatePin, storage: StorageManager, accountId: string, entityId: string): SecretWriter {
+  return settled.kind === 'pin' ? sealedWriter(storage, accountId, entityId, settled.pin, NOTHING_OPENED) : storage;
+}
 
 /** Wrap the entry that was just created, and mark it — the same order the commands use. */
 export async function applyCreatePin(

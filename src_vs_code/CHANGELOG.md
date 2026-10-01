@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — two plaintext windows, closed before the typed-secrets work (2026-10-01)
+
+- **Add into a folder that asks for a PIN wrote the new entry in the clear first, then sealed it.** The
+  values went into the keychain through the storage itself and were wrapped a moment later — so a crash,
+  a reload or a closed window between the two left them readable under a node that claimed nothing. Now
+  every value is sealed in memory before the first write, through the same writer an agent's create in
+  such a folder has always used; a create interrupted part-way leaves its slots sealed or unwritten, never
+  plain, and running Add again finishes the job.
+- **A share's *Update it* into an entry protected while it was empty wrote the arriving values in the
+  clear under the PIN mark.** The update asked only whether something was already sealed — and an entry
+  marked with *Protect with a PIN…* while it held nothing has nothing sealed yet — so it wrote plain and
+  kept the mark. Now such an entry asks for its first PIN at the update (typed twice, or checked against
+  the folder's protected entries, as Edit and Restore already ask it), seals every arriving value under it
+  before writing, and a decline leaves the share in *Shared with me* to be accepted again.
+
 ## [1.12.0] — 2026-09-30 — The entry PIN keeps its promise, and an agent creates what the folder holds
 
 > The entry PIN keeps its promise. A PIN-protected entry opens with everything it holds, edits

@@ -6,7 +6,10 @@
 > accepted — §8.1) and `proceed` on this revised text (session `bc788c97`, 1 of 2 reviewers — Codex was
 > rate-limited — two findings accepted, one rejected with its reason — §8.2). The second round's operator
 > commands turned §4 into three epics of two stories, each its own branch, plan round, code round and pull
-> request (§4.0); T0 is done. Scope: `src_vs_code/src` — `storageManager.ts` getter/setter signatures, a new `storedSecret.ts` and
+> request (§4.0); T0 is done. **The two plaintext windows §2.7 names were fixed ahead of the epics**, on
+> `fix/two-plaintext-windows` (2026-10-01, the cadence consultation's first advice — §9 row 4; the pull
+> request number is added when it opens), so T4 keeps their tests green rather than turning them red.
+> Scope: `src_vs_code/src` — `storageManager.ts` getter/setter signatures, a new `storedSecret.ts` and
 > `entryWriter.ts`, the shipped door and sealing modules RETYPED rather than replaced (`secretOpener.ts`,
 > `pinClick.ts`, `pinGate.ts`, `pinAdmission.ts`, `sealingAtWrite.ts`, `editPrefill.ts`,
 > `shareUpdateSeal.ts`), the 102 getter references, 83 setter references and 5 + 4 structural interfaces
@@ -181,8 +184,9 @@ rewriting them is the blast radius the owner deferred this plan to avoid.
   share's *Update it* — `shareUpdateSeal.writerFor` `:98-105` moved and **tightened**, *gate 2026-09-30,
   finding 2*: `plain` with NO door when the existing entry holds no sealed slot AND no mark — the same
   test `unattendedSealing` makes, `lockedSlotCount(...).locked === 0` and `details.pinProtected !== true`
-  — where today's `writerFor` asks only `firstLockedStored` (`pinAdmission.ts:101-113`: locked slots,
-  never the mark), so an entry carrying the mark with every slot empty is updated in the clear today;
+  — where `writerFor` asked only `firstLockedStored` (`pinAdmission.ts:101-113`: locked slots, never the
+  mark) until 2026-10-01, so an entry carrying the mark with every slot empty was updated in the clear
+  (fixed ahead of the epics, §2.7: `writerFor` now makes that very test and takes the first-PIN road);
   `sealed{pin}` through the door and the grant when the entry is protected by either; `stopped` when the
   person declined or the door said why. `shareUpdateSeal.updateInPlace` (`:52-69`) takes the `Sealing`
   and writes through `writerFor(storage, a, e, sealing, NOTHING_OPENED)` in both cases — the storage
@@ -219,8 +223,9 @@ rewriting them is the blast radius the owner deferred this plan to avoid.
   (`applyFormSecrets.ts:41-46`); re-running the same Edit or Restore converges (`restoreVersion.ts:31-32`,
   the kill-and-rerun test of `revisionRestore.test.ts`). T4 adds the same test for the case §2.7 found.
 - **A new entry in a folder that asks for a PIN is sealed before its first write.** The agent's create
-  already is (`mcpHooks.ts:42-44, 74`); the person's Add is not (§2.7). `sealingForNew` gives both the same
-  proof and the same writer; `applyCreatePin` (`pinOnCreate.ts:293-314`) keeps running after, as the
+  always was (`mcpHooks.ts:42-44, 74`); the person's Add is since 2026-10-01 (§2.7), and both already take
+  one writer, `pinOnCreate.writerForNewEntry`. `sealingForNew` gives both the same branded proof and moves
+  that writer behind `writerFor`; `applyCreatePin` (`pinOnCreate.ts:293-314`) keeps running after, as the
   idempotent sweep plus the history and the mark — sealing nothing, because nothing is left plain.
 
 ### 2.5 The slot table, widened — there is no `slotSpec.ts`
@@ -260,17 +265,46 @@ test asserts `SECRET_SLOTS.map(bundleKey) ∪ {attachments, images}` equals `SEC
 - The DOOR and REFUSAL primitive lists (`:91-92`) gain nothing: `fieldReadingOf`, `plainText`,
   `unsealedText` and `writerFor` are not primitives, they are what a primitive's answer goes through.
 
-### 2.7 What the compiler will find that the tests did not — recorded in T0
+### 2.7 What the compiler will find that the tests did not — recorded in T0, fixed ahead of the epics
 
-**The person's Add into a folder that asks for a PIN writes every value in the clear, then seals it.**
-`commands/treeMutationCommands.ts:285` runs `applyAdditions(storage, …)` — the storage itself, plaintext —
-and `applyCreatePin` (`:310` → `pinOnCreate.ts:306` `protectEntity`) seals afterwards, *"because it wraps
+> **Both defects below were fixed on 2026-10-01**, on `fix/two-plaintext-windows` (the pull request number
+> is added when it opens), before any epic was built — the cadence consultation's first advice (§9 row 4):
+> a plaintext window in a shipped release does not wait for a refactor. Each was RED first against the real
+> `StorageManager` with every keychain write logged, then green, then shown red again with its fix reverted.
+> T4 keeps these tests green through its retyping instead of carrying them as REDs.
+
+**The person's Add into a folder that asks for a PIN wrote every value in the clear, then sealed it.**
+`commands/treeMutationCommands.ts:285` ran `applyAdditions(storage, …)` — the storage itself, plaintext —
+and `applyCreatePin` (`:310` → `pinOnCreate.ts:306` `protectEntity`) sealed afterwards, *"because it wraps
 what is THERE"* (`:308-309`). That is the *"write, then `protectEntity`"* order rule R3 rejected for Edit
 (`PLAN_entry_pin_keeps_its_promise.md` §4 R3), and the agent's create in the same folder was deliberately
 built the other way (`mcpHooks.ts:42-44`: *"not even for the moment 'write, then protect' would leave it
-there"*). A kill between `:285` and `:310` leaves the new entry's values plain in the keychain under a node
-that claims nothing. After T4, `applyAdditions(storage, …)` does not compile; `writerFor(sealingForNew(createPin))`
-seals in memory first. T4's first RED test is this case (§5).
+there"*). A kill between `:285` and `:310` left the new entry's values plain in the keychain under a node
+that claimed nothing. **Fixed:** `pinOnCreate.writerForNewEntry(settled, storage, a, e)` — the storage for
+`none`, `editPrefill.sealedWriter` over `NOTHING_OPENED` for `pin` — is the one writer both creates take:
+Add's additions go through it (`treeMutationCommands.ts`, in `runCreate`'s `writeSecrets`) and the agent's
+inline ternary (`mcpHooks.ts:73-74`) was replaced by the same call, so the sealing road exists once.
+`applyCreatePin` still runs after either as the idempotent sweep, the history and the mark.
+`test/addEntityPin.test.ts` holds the two cases through the registered `credSshManager.addEntity` handler:
+RED *"the keychain was handed a value in the clear: hunter2-typed-into-the-form"* and *"the slot written
+before the kill is in the clear"*; green; red again with the writer reverted to the storage. T4's
+`sealingForNew` retypes this road; it does not change it.
+
+**A share's *Update it* into an entry protected while empty wrote the arriving values in the clear.**
+`shareUpdateSeal.writerFor` (`:98-105`) answered the storage whenever `firstLockedStored` found no sealed
+slot — it asked the slots, never `details.pinProtected` — so an entry that carried the mark and held nothing
+(*Protect with a PIN…* on an empty entry, §15 *Protected while empty* of the PIN plan) was updated plain
+under its mark (gate 2026-09-30, finding 2). **Fixed:** `writerFor` answers the storage only for an entry
+with no sealed slot and no mark; marked and holding nothing in any slot (`lockedSlotCount(...).total === 0`,
+the test `sealingAtWrite.emptyAtOpen` and Edit's `protectedWhileEmpty` make) it takes the first-PIN road
+Edit and Restore shipped — `pinOnCreate.firstPinFor`, typed twice or checked against the folder's protected
+entries, granted to the window — and seals every arriving value under it through `sealingWriter`; a
+declined first PIN updates nothing and keeps the share, as a declined door does. A payload that carries no
+secret asks nothing (`FirstSeal.adds`, asked of the share's secrets). A mark over values in the clear is
+the 0.99.0 false mark, which the door clears at the next open; it is updated as the plain entry it is.
+`test/shareUpdateSeal.test.ts` holds it through the real `ShareInbox`: RED *"the arriving password is
+stored in the clear in an entry protected while empty"*; green; red again with the mark test reverted.
+T4's `sealingForUpdate` is this decision as a branded `Sealing`.
 
 **Checked and left as they are, with the question named:** an accepted share into a folder that asks for
 a PIN (`shareInbox.ts:693-698`, a fresh id) and an import into one (`importCommands.ts:111-129`) ask no PIN
@@ -331,6 +365,20 @@ over the TypeScript compiler API the reader scan already uses (`readerScan.ts:1,
 Type-aware ESLint rules stay out (CI cost, as gated); the checker in item 2 is one test file, not a lint
 pass over every rule. Review watches casts in production code.
 
+**Two limits the cadence consultation named (2026-09-30, §9 row 4), both verified against the code:**
+
+- **The phantom changes nothing at run time.** `StoredSecret` is a `string` with a compile-time brand:
+  `JSON.stringify` in `revisionStore.ts`, every `===`, and `structuredClone` see the same strings they see
+  today, so no stored byte, no revision and no sync payload moves. That is what makes T5 a flip and not a
+  migration — and it is also why the type proves nothing about a value that was cast.
+- **During T5's first ten commits the compiler protects nothing on the write side.** The seams accept
+  `StoredSecret | string` for the duration (§4 T5), so `applyAdditions(storage, …)` and
+  `storage.set<Slot>(a, e, plaintext)` still type-check through the whole window, and a NEW plaintext write
+  added in it is a compile error nowhere. In that window the guarantee rests on **T4's interim scan rule
+  alone** — *no `applyAdditions(storage`, `store: storage` or `storage.set<Slot>(` outside `entryWriter.ts`
+  and `entitySlots.ts`* — which is why it is retired in T5's eleventh commit and not a moment earlier: the
+  commit that takes the `| string` off the seams is the one where the type takes over from the scan.
+
 ## 4. Build order — three epics, six stories
 
 Every story leaves the build green on its own: `npm run typecheck`, `npm run lint`, `npm run ratchet`
@@ -370,7 +418,7 @@ this is what they mean for THIS plan:
 
 | epic | branch | cut from | stories (model) | plan round | code round | PR |
 |---|---|---|---|---|---|---|
-| **E1** — foundations | `feat/typed-secrets-e1` | `main` | T1, T2 (Opus) | — | — | — |
+| **E1** — foundations | `feat/typed-secrets-e1` | `main` | T1, T2 (Opus) | session `9f8e746d`, **proceed**, 1 of 2 reviewers (Codex rate-limited); finding 0 accepted — the harness resolves its fixtures from the package root, a run that finds zero fixtures FAILS, and the compiles-fixture is the positive control; finding 1 accepted as a check — the ratchet's output is recorded per commit | — | — |
 | **E2** — the doors | `feat/typed-secrets-e2` | E1's last commit | T3, T4 (Fable, max) | — | — | — |
 | **E3** — the flip and the finish | `feat/typed-secrets-e3` | E2's last commit | T5, T6 (Opus) | — | — | — |
 
@@ -417,8 +465,9 @@ before T1 began; the PR merged into `main`.
 ### E2 — The doors: every read converges on an opener, every writer comes from a `Sealing` (Fable, max)
 
 **Why the cut is here.** These are the two judgement stories and the only two that change behaviour —
-hygiene's two fixes, the Add sealed before its first write, the update into a marked entry through the
-door — grouped so that ONE code round sees every decision about where text comes from and where it goes,
+hygiene's two fixes; the Add sealed before its first write and the update into a marked entry were ALSO
+behaviour changes here until the hotfix of 2026-10-01 shipped them ahead (§2.7), and T4 now retypes
+those two roads with their tests green — grouped so that ONE code round sees every decision about where text comes from and where it goes,
 while the getters and setters are still `string`: the reviewer reads doors and writers, not 185 signature
 changes. E2 ends with T4's interim scan rule standing in for the type, which is what keeps the merged
 state honest until E3 retires it, and it is its own PR because it is the one whose regression would be a
@@ -463,21 +512,33 @@ two defects the owner's data loss came from — and a later round cannot repair 
       `extension.ts:688-691`. Until T5 the storage still satisfies `EntryWriter` structurally, so T4 adds the
       funnel test's rule *"no `applyAdditions(storage`, `store: storage` or `storage.set<Slot>(` outside
       `entryWriter.ts` and `entitySlots.ts`"* — retired in T5's last commit, where the type takes over.
-      **RED (red today):** *a person's Add into a folder that asks for a PIN never writes a value in the
-      clear — the keychain's write log sees only sealed values* (§2.7; the write-log assertion of
-      `pinSlotMatrix.test.ts` over `treeMutationCommands`' create, template `agentCreatePin.test.ts`);
-      *an Add into a PIN folder killed after its first slot write leaves that slot SEALED and the node absent,
-      and running it again converges* (gate finding 1). **RED (new behaviour, tests first):** *the unattended
+      **The decision and the writes under one lease** *(CodeRabbit on the hotfix PR #175, CWE-362, recorded
+      2026-10-01)*: every writer today — the share update's `writerFor`, and on `main` before the hotfix too —
+      reads the entry's state (a sealed slot? the mark?) and writes LATER, outside one cross-window lease, so
+      another window protecting the entry in between can receive a plain write. The door's heal
+      (`pinAdmission.healProtected`) seals such a stray value at the next open, which is why it is a narrow
+      window and not an open hole; closing it is T4's to do, because `writerFor` is where the decision moves:
+      a plain `Sealing` is re-validated under the same lease as the first slot write (a sealed slot or the
+      mark found there → the write is refused and the person told, as `sealingAtWrite` refuses a form whose
+      protection changed), and no lease is ever held across a PIN box. RED first: *a share update whose entry
+      is protected by another window between the decision and the write stores nothing in the clear*.
+      **Guard (green since the hotfix of 2026-10-01, §2.7 — kept green, not a RED):** *a person's Add into
+      a folder that asks for a PIN never writes a value in the clear — the keychain's write log sees only
+      sealed values*; *an Add into a PIN folder killed after its first slot write leaves that slot SEALED and
+      the node absent, and running it again converges* (gate finding 1) — both in `addEntityPin.test.ts`
+      over the registered Add handler, and T4's `sealingForNew` + `writerFor` must leave both exactly as they
+      are, like the rest of the PIN plan's suite. **RED (new behaviour, tests first):** *the unattended
       sealing of an entry with a sealed slot is `stopped` with the PIN sentence; of an entry with the mark
       alone, `stopped`; of a plain unmarked entry, `plain`; it is never `sealed`* (gate finding 0);
       *an update from a share into a protected entry seals every arriving value and keeps the mark and
-      epoch* (`shareUpdateSeal.test.ts`, unchanged and green — the oracle). **RED (red today, gate
-      2026-09-30, finding 2):** *an update from a share into an entry that carries the mark and holds no
-      sealed slot goes through the door and seals every arriving value* — today `writerFor` sees no locked
-      slot and hands back the storage (`shareUpdateSeal.ts:99-101`), so the values land in the clear under
-      the mark; and *`sealingForUpdate` answers `plain` without a door only for an entry with no sealed slot
-      and no mark, `stopped` when the door is declined* (the write log of `shareUpdateSeal.test.ts`, one
-      case each). **Compile-fail fixture:**
+      epoch* (`shareUpdateSeal.test.ts`, unchanged and green — the oracle). **Guard (gate 2026-09-30,
+      finding 2 — green since the hotfix of 2026-10-01, §2.7):** *an update from a share into an entry that
+      carries the mark and holds no sealed slot asks for its first PIN and seals every arriving value*,
+      *a declined first PIN updates nothing and keeps the share*, and *an entry with no sealed slot and no
+      mark is written plain with no entry PIN asked* — three cases in `shareUpdateSeal.test.ts` that
+      `sealingForUpdate`'s three answers (`plain` / `sealed{pin}` / `stopped`) must leave green; until the
+      hotfix `writerFor` saw no locked slot and handed back the storage (`shareUpdateSeal.ts:99-101`).
+      **Compile-fail fixture:**
       *`writerFor` refuses a `Sealing` that was not made by `sealingAtWrite`* — `{ kind: 'plain' }` handed
       in is TS2345; teeth proven by removing the brand.
       **Model: Fable** — every writer into the keychain changes hands, and R3 is the rule the owner's data
@@ -489,8 +550,9 @@ two defects the owner's data loss came from — and a later round cannot repair 
 **E2 DoD:** T3's and T4's DoDs; the PIN plan's suite green with no assertion edited; the funnel test's
 syntax half green with its negative fixture and positive control, and T4's interim rule (*no
 `applyAdditions(storage`, `store: storage`, `storage.set<Slot>(` outside `entryWriter.ts` and
-`entitySlots.ts`*) green; every behaviour change — hygiene's two, the Add, the update into a marked entry
-— RED-then-green with both observations in its commit; `readerScan`'s `READERS` table unchanged; ratchet
+`entitySlots.ts`*) green; every behaviour change — hygiene's two (the Add and the update into a marked
+entry shipped ahead on the hotfix, §2.7, and stay green) — RED-then-green with both observations in its
+commit; `readerScan`'s `READERS` table unchanged; ratchet
 unchanged; `review_plan` (epic 2/3) and `review_code` over E2's diff against E1's last commit both
 `proceed`; the PR merged into `main`.
 
@@ -525,6 +587,12 @@ promotion records all three epics' rounds and deviations. Opus: volume, not judg
       transitional `| string` off `readSecret`, `openStored`, `openedText`, `SecretOpener`, `SlotRead` and
       `SecretSlot.read`, lands the fixture *the storage itself is not a writer* (TS2345 on
       `applyAdditions(storage, …)`), and retires T4's interim scan rule.
+      **The window has no compiler in it (§3, consultation 2026-09-30):** while the seams carry
+      `StoredSecret | string` — the first ten commits — a new plaintext write still type-checks everywhere,
+      so T4's interim scan rule is the ONLY thing refusing one, and it stays in force, run green in every
+      one of those ten commits, until the eleventh takes the `| string` off and the fixture *the storage
+      itself is not a writer* goes red-then-green in its place. Retiring the rule earlier, or landing the
+      eleventh commit without that fixture, leaves the write side guarded by nothing.
       **Model: Opus** — mechanical, each commit bounded by the compiler's own list; the one judgement per
       caller was made in T3 and T4. **DoD per commit:** typecheck, lint, ratchet (line-neutral in the two
       ratcheted files), `npm test`; no assertion edited except a fake's signature.
@@ -552,9 +620,10 @@ into `main` before the release is tagged.
   forever*): the funnel test (§3 items 1-2: allowlist, negative fixture, positive control, the type-aware
   half); the compile-fail harness (§3 item 3) with a fixture that must compile as its control; the slot
   coverage test (T1).
-- New, behavioural, RED first: hygiene's two (T3); the Add-into-a-PIN-folder pair (T4); the unattended
-  sealing's four answers (T4, tests first); one compile-fail fixture per slot (T5, ten) and the two proof
-  fixtures (T4, T5).
+- New, behavioural, RED first: hygiene's two (T3); the unattended sealing's four answers (T4, tests
+  first); one compile-fail fixture per slot (T5, ten) and the two proof fixtures (T4, T5). The
+  Add-into-a-PIN-folder pair and the marked-empty share update were RED-then-green on the hotfix of
+  2026-10-01 (§2.7: `addEntityPin.test.ts`, `shareUpdateSeal.test.ts`) and join the oracle above.
 - Refusal and interruption *(gate findings 0, 1)*: an unattended write into an entry with a sealed slot,
   and into one with the mark alone, is refused with the PIN sentence and writes nothing; a create killed
   after its first slot write, against the real `StorageManager`, converges on re-run — beside the PIN plan's
@@ -567,8 +636,9 @@ into `main` before the release is tagged.
   calls `clickOpener` (T3, structural, red today at `configCommands.ts:82`), and one PIN box for viewing,
   copying from and comparing a kept version (T3, a guard — green today because the grant keeps the second
   `admitEntry` silent, and said so); **finding 2** — an update from a share into an entry with the mark
-  and no sealed slot goes through the door and seals every value (T4, RED, red today), and
-  `sealingForUpdate`'s three answers, one case each (T4, tests first).
+  and no sealed slot asks for its first PIN and seals every value (RED-then-green on the hotfix of
+  2026-10-01, §2.7; a guard for T4), and `sealingForUpdate`'s three answers, one case each (the three
+  cases already in `shareUpdateSeal.test.ts` since the hotfix — T4 retypes, and keeps them green).
 - No behaviour change is intended beyond T3's two hygiene fixes and T4's Add fix, both named as such: the
   whole suite green before and after each story, with no assertion edited except mechanical fake
   signatures.
@@ -645,7 +715,7 @@ and did not. So this verdict is one vendor's reading of the revised design, and 
 |---|---|---|---|
 | 0 | `historyPin.openRevision` must mint every opened field as a REAL stored form — `stored(plainSecret(value, woven))`, never a cast — so `readSecret` on it answers `value` with the woven flag; and the revision viewer reads the opened version through `gatedSecretReader` behind a SILENT gate (the version was admitted by `revisionDoor.openKeptVersion`), never through `clickOpener`, so history is never admitted twice | **accepted** | §2.2 (the mint — `withValues` / `storedForm` already produce that form untyped), §2.3 (the silent reader over the opened copy; the same road for the history-row Copy and *Show Config Changes*), T3 (the three kept-version readers move, one structural RED and one guard), T5 (the mint flips with the first slot, its RED against a woven `lockSecret`) |
 | 1 | the nine presence reads should be held to the `!== undefined` shape, so a truthiness test on a stored value cannot read a sealed one as present | **rejected**, with the reason: they already are — all nine (§10) read `!== undefined` today, and the shipped AST guard enforces that shape per read: `readerScan.isPresenceShape` (`:152-177`) is the rule of `pinReaderBoundary.test.ts`'s `presence` class (`:171-172`, teeth at `:266`); the type-aware half of the funnel (§3 item 2) adds the same rule for every `StoredSecret`-typed expression, so no new rule was owed | §3 item 2 cites the enforcement by line |
-| 2 | `sealingForUpdate(storage, a, e, name)` answers `plain` with NO door when the existing entry holds no sealed slot and no mark (an unprotected update), `sealed{pin}` through the door and the grant when protected, `stopped` when declined; `shareUpdateSeal.updateInPlace` takes the `Sealing` and writes through `writerFor` in both cases | **accepted** — and it tightens today's `writerFor` (`shareUpdateSeal.ts:98-105`), which asks only `firstLockedStored`: an entry carrying the mark with no sealed slot is updated in the clear today | §2.4 (the three answers, the mark test shared with `unattendedSealing`, `updateInPlace` through `writerFor`), T4 (a RED that is red today, and the three answers tests-first), §5 |
+| 2 | `sealingForUpdate(storage, a, e, name)` answers `plain` with NO door when the existing entry holds no sealed slot and no mark (an unprotected update), `sealed{pin}` through the door and the grant when protected, `stopped` when declined; `shareUpdateSeal.updateInPlace` takes the `Sealing` and writes through `writerFor` in both cases | **accepted** — and it tightened the `writerFor` of the day (`shareUpdateSeal.ts:98-105`), which asked only `firstLockedStored`: an entry carrying the mark with no sealed slot was updated in the clear until the hotfix of 2026-10-01 fixed it ahead of the epics (§2.7) | §2.4 (the three answers, the mark test shared with `unattendedSealing`, `updateInPlace` through `writerFor`), §2.7 (the fix, and its RED), T4 (the three cases kept green), §5 |
 
 This round's three operator commands are what §4.0 applies: two-to-three epics of two-to-three stories with
 one gate per epic (its own branch from the previous epic's commit, `review_plan` with `plan:` and
@@ -664,7 +734,7 @@ made three points. Each was verified against the code before it was acted on.
 | 1 | Keep the type mechanics (phantom, `SLOT_SPECS`, per-slot flip) but do not build `EntryReader` / `writeEntry` from scratch: `EntryReader` should yield `secretOpener.ts`'s `OpenedSecret` (`:29`), with `automaticOpener` as the unattended reader and `pinClick.clickedSecret` the interactive one; `writeEntry` should consume `sealingAtWrite.ts`'s `Sealing` (`:39`) as its proof and absorb `editPrefill.sealedWriter` (`:216`), so there is ONE read API and ONE write API | `OpenedSecret` is at `secretOpener.ts:29-36`, `automaticOpener` at `:47`, `SecretOpener` at `:39`; `clickedSecret` / `clickOpener` at `pinClick.ts:30-48`, and `clickOpener` runs `admitEntry` itself (`:43`); `Sealing` at `sealingAtWrite.ts:39` with its constants at `:71-72, 101-103`; `sealedWriter` at `editPrefill.ts:216-242`, and a second copy of it, `sealingWriter`, at `shareUpdateSeal.ts:111-125` | **Followed on the write side and on the door**: no `entryReader.ts`, no `Admitted` brand (§2.3); `Sealing` branded and `writerFor` the one road, both writer copies merged (§2.4). **Not followed on the answer type**: `OpenedSecret` folds *absent* into `open{value: undefined}`, and the automatic consumers need *absent* apart from *withheld* (`fieldReading.ts:4-14`), so `FieldReading` stays their answer and one adapter, `fieldReadingOf`, joins `secretOpener.ts`. "One read API" therefore means: one door type (`SecretOpener`) and one answer per consumer class, not one answer type for every consumer |
 | 2 | Keep the AST guard (`readerScan.ts` / `pinReaderBoundary.test.ts`, `enclosingFunction` at `readerScan.ts:119`): the type proves the door was used, the AST proves it was used in the same function. Retarget the scan at the new reader API rather than delete it, and say what happens to `GATED_BY_CALLER` | `enclosingFunction` is at `readerScan.ts:119-126`; `GATED_BY_CALLER` at `pinReaderBoundary.test.ts:184-231` — 22 functions in 12 files, each with a written reason; the "listed but no longer needed" check at `:291-296` | **Followed.** §2.6: the scan is kept unchanged — there is no new reader API to retarget it at, because the openers it already recognises ARE the API; the list neither grows nor shrinks by the flip, each reason gains a compile-time twin and is annotated in T5 |
 | 3 | Story split: T1/T2 ordinary (Opus): phantom + `slotSpec`; T3 security-critical (Fable): `secretOpener` / `pinClick` into `EntryReader`; T4 security-critical (Fable): `sealedWriter` / `sealingAtWrite` into `writeEntry`; T5 ordinary (Opus): the per-slot flip and the ~105 call sites; T6 docs | The counts are in §10: 102 getter references, 83 setter references, 9 table walkers, 5 hand-written and 4 `Pick` interfaces, ~200 test references | **Followed, with two changes.** `slotSpec` is not a new table: `SECRET_SLOTS` exists and is widened (§2.5, T1). T3 is not "into `EntryReader`" but "the reads converge on the openers" — the same modules, the same model, a different destination (§4). T0 is added back as a story because the revision owes a plan round, and §2.7 makes T4's first RED a shipped defect rather than a refactor. The same six stories are now three epics of two (§4.0), the consultant's Opus / Fable / Opus grouping unchanged |
-| 4 | *(the cadence consultation for E1–E3 — §4.0: taken before E1's first story, closed with an outcome; not yet held)* | — | — |
+| 4 | **The cadence consultation for E1–E3** (§4.0; `kind: cadence`, epics 1-3, consultationId `c785e2389d834408a01b2cd282c5e79f`, Gemini 3.1 Pro via Antigravity, 2026-09-30 — the first attempt answered nothing, the second answered). **(A)** Move the two plaintext defects of §2.7 out of the epics into a separate fix shipped BEFORE them: a shipped release writes secrets in the clear on two roads, and a refactor's timeline is the wrong clock for that. **(B)** The phantom changes nothing at run time — `JSON.stringify` in `revisionStore.ts`, `===` and `structuredClone` all see strings — so T5 moves no byte; and the transitional `StoredSecret \| string` on the seams during T5's first ten commits gives the compiler NO protection against a new plaintext write in that window | **(A)** verified by reading `treeMutationCommands.ts:285-310` (`applyAdditions(storage, …)` then `applyCreatePin`) and `shareUpdateSeal.ts:98-105` (`firstLockedStored` only, never the mark): both windows real. **(B)** verified: the brand is erased by `tsc`; `revisionStore.ts`'s `JSON.stringify`, the `===` comparisons in `syncMerge` and the `structuredClone` of the store see plain strings; and with `\| string` on `readSecret`, `openStored`, `SlotRead` and `SecretSlot.read`, `applyAdditions(storage, …)` type-checks until the eleventh commit | **(A) followed** — the hotfix `fix/two-plaintext-windows` (2026-10-01; §2.7 records both fixes, their REDs and their tests; the PR number is added when it opens); T4 and §5 now keep those tests green instead of carrying them as REDs. **(B) recorded** in §3 (*Two limits the cadence consultation named*) and in T5: in the window the guarantee rests on T4's interim scan rule alone, which must stay until T5's eleventh commit |
 
 ## 10. T0 — the re-verification record (2026-09-30)
 
