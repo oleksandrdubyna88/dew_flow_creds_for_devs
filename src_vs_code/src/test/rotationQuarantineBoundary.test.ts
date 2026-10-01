@@ -108,5 +108,6 @@ test('the positive control: the scan still finds the module\'s own references an
   assert.ok(seen('rotationQuarantine.ts', 'rotationQuarantineSecretKey'), 'the module\'s own use of the key is no longer seen');
   assert.ok(seen('rotationQuarantine.ts', 'quarantineStore'), 'the module\'s own store is no longer seen');
   assert.ok(seen('storageManager.ts', 'heldRotations'), 'the one field is no longer seen');
+  assert.ok(seen('rotationQuarantine.ts', 'heldRotations'), 'the use of the field by the module itself is no longer seen');
   assert.ok(seen('secretKeys.ts', 'rotationQuarantineSecretKey'), 'the builder\'s definition is no longer seen');
 });

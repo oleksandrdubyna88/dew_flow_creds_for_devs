@@ -1,5 +1,11 @@
 import * as crypto from 'node:crypto';
+import { NOTHING_OPENED } from './editPrefill';
+import { EntryWriter, writerFor } from './entryWriter';
 import type { LeasedQueue } from './leasedQueue';
+import { openStored, silentPinGate } from './pinGate';
+import { grantedPin } from './pinSession';
+import { Sealing, UpdateDoors, sealingForUpdate, unattendedSealing } from './sealingAtWrite';
+import { plainText } from './secretOpener';
 import { rotationQuarantineSecretKey } from './secretKeys';
 import type { SecretChest } from './secretMaps';
 import type { RotationSlot } from './secretRotation';
@@ -63,9 +69,11 @@ export interface IndexState {
 }
 
 /**
- * The item's own keychain verbs and the index — a narrow port, not the slot setters (plan §4.1). Every verb
- * runs under the storage's cross-window lease (`StorageManager.writes`, re-entrant), so a compound step that
- * holds the lease itself (`read` then `put`) is still one step to another window.
+ * The item's own keychain verbs and the index — a narrow port, not the slot setters (plan §4.1). Every WRITE
+ * runs under the storage's cross-window lease (`StorageManager.writes`, re-entrant), and a compound step that
+ * reads and then writes holds the lease itself, so it is one step to another window. A plain `read` is one
+ * keychain `get`, atomic on its own, and takes no lease: the door pays it on every open of every entry, and a
+ * cross-window file lock per click would be the cost of a feature that is almost always empty.
  */
 export interface QuarantineStore {
   read(accountId: string, entityId: string): Promise<HeldSlots>;
@@ -82,10 +90,10 @@ export interface QuarantineStore {
 export function quarantineStore(chest: SecretChest, state: IndexState, writes: LeasedQueue): QuarantineStore {
   const key = rotationQuarantineSecretKey;
   return {
-    read: (a, e) => writes.run(async () => heldOf(await chest.get(key(a, e)))),
+    read: async (a, e) => heldOf(await chest.get(key(a, e))),
     put: (a, e, slots) => writes.run(() => Promise.resolve(isEmpty(slots) ? chest.delete(key(a, e)) : chest.store(key(a, e), serialised(slots)))),
     drop: (a, e) => writes.run(() => Promise.resolve(chest.delete(key(a, e)))),
-    listed: () => writes.run(() => Promise.resolve(indexOf(state))),
+    listed: () => Promise.resolve(indexOf(state)),
     list: (a, e) => writes.run(() => Promise.resolve(state.update(QUARANTINE_INDEX_KEY, [...without(indexOf(state), a, e), { accountId: a, entityId: e }]))),
     unlist: (a, e) => writes.run(() => Promise.resolve(state.update(QUARANTINE_INDEX_KEY, nonEmpty(without(indexOf(state), a, e))))),
   };
@@ -167,6 +175,180 @@ async function settle(store: QuarantineStore, accountId: string, entityId: strin
     await store.unlist(accountId, entityId);
   }
 }
+
+// ---- the release (plan §4.4, §4.5) ----
+
+/** A slot whose held value is now in the entry — sealed under its PIN, or plain in an unprotected entry. */
+export interface ReleasedSlot {
+  readonly slot: RotationSlot;
+  readonly at: number;
+  readonly sealed: boolean;
+}
+
+/** A held value NOT written because the slot changed after the rotation — the person decides (§4.6). */
+export interface HeldConflict {
+  readonly slot: RotationSlot;
+  readonly at: number;
+}
+
+/** What a release did. Ids and times only — never a value. */
+export interface Release {
+  readonly released: readonly ReleasedSlot[];
+  readonly conflicts: readonly HeldConflict[];
+}
+
+export const NOTHING_RELEASED: Release = { released: [], conflicts: [] };
+
+/**
+ * How a release decides whether it seals — the proof its write is made under (`sealingAtWrite.ts` makes
+ * every one; this only chooses which).
+ */
+export type ReleaseProof = (storage: StorageManager, accountId: string, entityId: string, entryName: string) => Promise<Sealing>;
+
+/**
+ * At the door, just after it admitted the entry: `sealingForUpdate` — reused, its decision table is the
+ * release's — with doors that ASK NOTHING: the live door answers the grant the door just took, the first-PIN
+ * road answers nothing. A sealed slot seals with the grant (R3: sealed in memory, committed under the lease);
+ * no sealed slot and no mark writes plain, re-checked under the lease; marked over nothing stops.
+ */
+export const AT_THE_DOOR: ReleaseProof = (storage, accountId, entityId) => sealingForUpdate(storage, accountId, entityId, true, releaseDoors(accountId, entityId));
+
+/**
+ * Without a door — the startup sweep, a pulled sync, *Remove PIN Protection…*: the unattended proof, exactly
+ * the store the rotation would have made. Plain only for an entry with no sealed slot and no mark; anything
+ * protected stops, because nothing automatic holds a PIN, even one this window was given.
+ */
+export const UNATTENDED: ReleaseProof = (storage, accountId, entityId, entryName) => unattendedSealing(storage, accountId, { id: entityId, name: entryName });
+
+function releaseDoors(accountId: string, entityId: string): UpdateDoors {
+  return { door: () => Promise.resolve(grantedPin(accountId, entityId)), firstPin: () => Promise.resolve(undefined) };
+}
+
+/**
+ * Put every value held beside this entry into it — per slot, in an order where a crash at any point loses
+ * nothing (§4.4): read the item; open the live slot silently; equal to the held value → an earlier release
+ * wrote it and died before dropping it, so only the drop is left; changed since the rotation (`was`) → a
+ * conflict, nothing written; otherwise the write, through `writerFor` under `proof`; and only after the
+ * write LANDED, under the lease, the slot is dropped from the item — if its `at` is still the one released.
+ *
+ * <p>Best-effort, like the door's other repairs: a release that fails is never a failure to open, the item is
+ * kept, and the next door tries again. `force` names slots whose conflict the person settled for the rotated
+ * value (*Store the rotated one*). No lease is held across anything slow: the sealing writer seals outside it.</p>
+ */
+export async function releaseHeld(
+  storage: StorageManager,
+  accountId: string,
+  entityId: string,
+  entryName: string,
+  proof: ReleaseProof = AT_THE_DOOR,
+  force: readonly RotationSlot[] = [],
+): Promise<Release> {
+  return releaseAll({ storage, accountId, entityId, entryName, proof }, force).catch(() => NOTHING_RELEASED);
+}
+
+/** One slot after the other: each write takes its own proof and its own lease, never two at once. */
+async function releaseAll(at: ReleaseAt, force: readonly RotationSlot[]): Promise<Release> {
+  const held = await at.storage.heldRotations.read(at.accountId, at.entityId);
+  const outcomes: SlotOutcome[] = [];
+  for (const slot of SLOTS) {
+    outcomes.push(await releaseOne(at, slot, held[slot], force.includes(slot)));
+  }
+  return combined(outcomes);
+}
+
+/** Where a release runs: the entry, and the proof its writes are made under. */
+interface ReleaseAt {
+  readonly storage: StorageManager;
+  readonly accountId: string;
+  readonly entityId: string;
+  readonly entryName: string;
+  readonly proof: ReleaseProof;
+}
+
+/** One slot's outcome — `kept` says nothing: the item stays and the next door tries again. */
+type SlotOutcome = { readonly kind: 'released'; readonly slot: ReleasedSlot } | { readonly kind: 'conflict'; readonly conflict: HeldConflict } | { readonly kind: 'kept' };
+
+const KEPT: SlotOutcome = { kind: 'kept' };
+
+function combined(outcomes: readonly SlotOutcome[]): Release {
+  return {
+    released: outcomes.flatMap((outcome) => (outcome.kind === 'released' ? [outcome.slot] : [])),
+    conflicts: outcomes.flatMap((outcome) => (outcome.kind === 'conflict' ? [outcome.conflict] : [])),
+  };
+}
+
+async function releaseOne(at: ReleaseAt, slot: RotationSlot, held: Held | undefined, forced: boolean): Promise<SlotOutcome> {
+  const text = held === undefined ? undefined : plainText(held.value);
+  if (held === undefined || text === undefined) {
+    // Nothing held, or a held value that is not plain text this build wrote (sealed, woven, damaged):
+    // refused, and kept — it is never written anywhere.
+    return KEPT;
+  }
+  return releaseText(at, slot, held, text, forced).catch(() => KEPT);
+}
+
+async function releaseText(at: ReleaseAt, slot: RotationSlot, held: Held, text: string, forced: boolean): Promise<SlotOutcome> {
+  const live = await liveText(at, slot);
+  if (live === UNREADABLE) {
+    return KEPT;
+  }
+  if (live.text === text) {
+    return finished(at, slot, held, live.sealed);
+  }
+  return changedSince(live.text, held, forced) ? { kind: 'conflict', conflict: { slot, at: held.at } } : written(at, slot, held, text);
+}
+
+/** The slot no longer holds what the rotation replaced — and the person has not chosen the rotated value anyway. */
+function changedSince(live: string | undefined, held: Held, forced: boolean): boolean {
+  return !forced && fingerprintOf(live) !== held.was;
+}
+
+/** The write, under the proof — and the drop only once it landed. */
+async function written(at: ReleaseAt, slot: RotationSlot, held: Held, text: string): Promise<SlotOutcome> {
+  const sealing = await at.proof(at.storage, at.accountId, at.entityId, at.entryName);
+  if (sealing.kind === 'stopped') {
+    return KEPT;
+  }
+  await writeSlot(writerFor(at.storage, at.accountId, at.entityId, sealing, NOTHING_OPENED), at, slot, text);
+  return finished(at, slot, held, sealing.kind === 'sealed');
+}
+
+function writeSlot(writer: EntryWriter, at: ReleaseAt, slot: RotationSlot, text: string): Promise<void> {
+  return slot === 'password' ? writer.setPassword(at.accountId, at.entityId, text) : writer.setDbConnection(at.accountId, at.entityId, text);
+}
+
+/** The value is in the slot: drop it from the item — a failed drop is finished by the next door (step 2). */
+async function finished(at: ReleaseAt, slot: RotationSlot, held: Held, sealed: boolean): Promise<SlotOutcome> {
+  await dropHeld(at.storage, at.accountId, at.entityId, slot, held.at).catch(() => undefined);
+  return { kind: 'released', slot: { slot, at: held.at, sealed } };
+}
+
+/**
+ * Drop one held slot — under the lease, and only if it is still the hold of `heldAt`: a newer rotation that
+ * landed meanwhile stays. The index entry goes when the item is empty (item first, index second).
+ */
+export async function dropHeld(storage: StorageManager, accountId: string, entityId: string, slot: RotationSlot, heldAt: number): Promise<void> {
+  const store = storage.heldRotations;
+  await storage.writes.run(async () => {
+    const { [slot]: current, ...rest } = await store.read(accountId, entityId);
+    if (current?.at === heldAt) {
+      await settle(store, accountId, entityId, rest);
+    }
+  });
+}
+
+/** The live slot's text, opened silently with the grant the door just took — or `UNREADABLE`. */
+async function liveText(at: ReleaseAt, slot: RotationSlot): Promise<{ readonly text: string | undefined; readonly sealed: boolean } | typeof UNREADABLE> {
+  const raw = slot === 'password' ? await at.storage.getPassword(at.accountId, at.entityId) : await at.storage.getDbConnection(at.accountId, at.entityId);
+  const opened = await openStored(raw, silentPinGate(at.accountId, at.entityId, at.entryName));
+  if (opened.kind === 'value' || opened.kind === 'unprotected') {
+    return { text: opened.value, sealed: opened.kind === 'value' };
+  }
+  return UNREADABLE;
+}
+
+/** A live slot this release cannot read — sealed with no grant, damaged: nothing is compared, nothing written. */
+const UNREADABLE = 'unreadable';
 
 // ---- the item's wire form: `{ v: 1, slots: { password?: Held, dbConnection?: Held } }` ----
 

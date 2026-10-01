@@ -5,6 +5,7 @@ import { pinValidator } from './pinInput';
 import { PinScope } from './pinPolicy';
 import { admit } from './pinAdmission';
 import { healKeptVersions } from './historyHeal';
+import { settleRelease } from './rotationWaiting';
 import { StorageManager } from './storageManager';
 
 /**
@@ -129,6 +130,8 @@ export async function admitEntry(
   }
   if (admission.kind === 'in') {
     healKeptVersions(storage, accountId, entityId, entryName);
+    // A rotated value that waited beside the entry went in at the door: said, and a conflict asked (§4.6).
+    await settleRelease(storage, accountId, entityId, entryName, admission);
   }
   return admission.kind === 'in' ? gate : undefined;
 }
