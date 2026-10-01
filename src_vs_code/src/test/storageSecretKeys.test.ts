@@ -100,7 +100,7 @@ test("a crafted id cannot reach another entity's private-key slot", async () => 
   await w.storage.addNode(ACCOUNT, entity('x:sshPrivateKey'));
 
   await w.storage.setPrivateKey(ACCOUNT, 'x', stored('THE REAL PRIVATE KEY'));
-  await w.storage.setPassword(ACCOUNT, 'x:sshPrivateKey', 'attacker-password');
+  await w.storage.setPassword(ACCOUNT, 'x:sshPrivateKey', stored('attacker-password'));
 
   assert.equal(
     await w.storage.getPrivateKey(ACCOUNT, 'x'),
@@ -117,7 +117,7 @@ test('and it cannot reach the other suffixed slots either', async () => {
     await w.storage.addNode(ACCOUNT, entity(`x:${suffix}`));
 
     await w.storage.setNotes(ACCOUNT, 'x', stored('THE REAL NOTE'));
-    await w.storage.setPassword(ACCOUNT, `x:${suffix}`, 'attacker-password');
+    await w.storage.setPassword(ACCOUNT, `x:${suffix}`, stored('attacker-password'));
 
     assert.equal(await w.storage.getNotes(ACCOUNT, 'x'), 'THE REAL NOTE', suffix);
   }
@@ -130,8 +130,8 @@ test('two ordinary entities keep separate slots — the fix must not merge them'
   await w.storage.addNode(ACCOUNT, entity('a1b2c3d4-e5f6-7890-abcd-ef1234567890'));
   await w.storage.addNode(ACCOUNT, entity('11111111-2222-3333-4444-555555555555'));
 
-  await w.storage.setPassword(ACCOUNT, 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', 'first');
-  await w.storage.setPassword(ACCOUNT, '11111111-2222-3333-4444-555555555555', 'second');
+  await w.storage.setPassword(ACCOUNT, 'a1b2c3d4-e5f6-7890-abcd-ef1234567890', stored('first'));
+  await w.storage.setPassword(ACCOUNT, '11111111-2222-3333-4444-555555555555', stored('second'));
 
   assert.equal(await w.storage.getPassword(ACCOUNT, 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'), 'first');
   assert.equal(await w.storage.getPassword(ACCOUNT, '11111111-2222-3333-4444-555555555555'), 'second');
@@ -144,7 +144,7 @@ test('an ordinary uuid still reads back what it stored, across every kind', asyn
   const id = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
   await w.storage.addNode(ACCOUNT, entity(id));
 
-  await w.storage.setPassword(ACCOUNT, id, 'pw');
+  await w.storage.setPassword(ACCOUNT, id, stored('pw'));
   await w.storage.setPrivateKey(ACCOUNT, id, stored('key'));
   await w.storage.setNotes(ACCOUNT, id, stored('note'));
 
@@ -159,7 +159,7 @@ test('an already-stored secret keeps the key an existing install wrote', async (
   const w = instance(world());
   const id = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
   await w.storage.addNode(ACCOUNT, entity(id));
-  await w.storage.setPassword(ACCOUNT, id, 'pw');
+  await w.storage.setPassword(ACCOUNT, id, stored('pw'));
 
   assert.ok(w.secrets.has(`${ACCOUNT}_${id}`), [...w.secrets.keys()].join(' | '));
 });
@@ -295,7 +295,7 @@ test('the share does not collide with an entity whose id looks like its key', as
   await w.storage.addNode(ACCOUNT, entity(':orgEscrowShare'));
   await w.storage.setOrgEscrowShare(ACCOUNT, shareWrap() as never);
 
-  await w.storage.setPassword(ACCOUNT, ':orgEscrowShare', 'attacker-password');
+  await w.storage.setPassword(ACCOUNT, ':orgEscrowShare', stored('attacker-password'));
 
   assert.notEqual(
     await w.storage.getOrgEscrowShare(ACCOUNT),

@@ -23,10 +23,9 @@ function source(
   const reads: string[] = [];
   const read = (name: keyof typeof secrets) => (accountId: string, entityId: string) => {
     reads.push(`${name}:${accountId}:${entityId}`);
-    return Promise.resolve(secrets[name]);
+    // As the keychain answers: a stored secret (T5).
+    return Promise.resolve(stored(secrets[name]));
   };
-  // A slot T5 has flipped answers as the keychain does: a stored secret.
-  const held = (name: keyof typeof secrets) => (accountId: string, entityId: string) => read(name)(accountId, entityId).then(stored);
   return {
     reads,
     getSecondRaw: () => Promise.resolve(stored(secondsJson)),
@@ -34,10 +33,10 @@ function source(
       details: { id: 'e1', name: 'prod-db', isSshEnabled: false, ...details } as EntityMetadata,
     }),
     getPassword: read('password'),
-    getPrivateKey: held('privateKey'),
-    getVpnConfig: held('vpnConfig'),
-    getDbConnection: held('dbConnection'),
-    getNotes: held('notes'),
+    getPrivateKey: read('privateKey'),
+    getVpnConfig: read('vpnConfig'),
+    getDbConnection: read('dbConnection'),
+    getNotes: read('notes'),
   };
 }
 

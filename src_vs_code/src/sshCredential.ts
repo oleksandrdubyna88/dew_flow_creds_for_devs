@@ -1,6 +1,7 @@
 import { EntityMetadata } from './types';
 import { StorageManager } from './storageManager';
 import { OpenedSecret, SecretOpener, automaticOpener } from './secretOpener';
+import type { StoredSecret } from './storedSecret';
 
 /**
  * What an SSH connection should authenticate with, resolved from the vault.
@@ -107,7 +108,7 @@ async function passwordOwner(
   accountId: string,
   entity: EntityMetadata,
   keySource: EntityMetadata,
-): Promise<{ owner: EntityMetadata; stored: string | undefined }> {
+): Promise<{ owner: EntityMetadata; stored: StoredSecret | undefined }> {
   const shared = await storage.getPassword(accountId, keySource.id);
   return shared !== undefined
     ? { owner: keySource, stored: shared }

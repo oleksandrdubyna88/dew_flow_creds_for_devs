@@ -50,14 +50,3 @@ export function seamText(secret: StoredSecret | string | undefined): string | un
 export function seamText(secret: StoredSecret | string | undefined): string | undefined {
   return secret as unknown as string | undefined;
 }
-
-/**
- * TRANSITIONAL — T5's window only, deleted by its tenth commit: a stored form handed to a storage
- * setter that does not take `StoredSecret` YET (a slot not flipped). Each flip removes its slot's
- * calls; the last flip removes the function.
- */
-export function unflipped(secret: StoredSecret): string;
-export function unflipped(secret: StoredSecret | undefined): string | undefined;
-export function unflipped(secret: StoredSecret | undefined): string | undefined {
-  return secret as unknown as string | undefined;
-}

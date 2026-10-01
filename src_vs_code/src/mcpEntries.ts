@@ -197,7 +197,7 @@ export interface McpVaultSource {
   getAccounts(): readonly { accountId: string }[];
   getNodes(accountId: string): readonly TreeNode[];
   getNode(accountId: string, id: string): TreeNode | undefined;
-  getPassword(accountId: string, entityId: string): Thenable<string | undefined>;
+  getPassword(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
   getPrivateKey(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
   getNotes(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
   getTotp(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;

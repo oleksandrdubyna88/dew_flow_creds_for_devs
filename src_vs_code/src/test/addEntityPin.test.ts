@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import type { EntityFormOptions, EntityFormValues } from '../entityFormShape';
 import { isLockedSecret, readSecret, unlockSecret } from '../secretEnvelope';
 import type { StorageManager } from '../storageManager';
-import type { StoredSecret } from '../storedSecret';
+import { StoredSecret, stored } from '../storedSecret';
 import type { EntityMetadata, TreeNode } from '../types';
 import { loadEachWithVscode } from './vscodeStub';
 import { ACCOUNT, PIN, Sinks, clickVscode, locked, memoryStorage, sinks } from './pinWorld';
@@ -76,7 +76,7 @@ async function world(folder: { asks?: boolean; sibling?: boolean }, inputs: (str
   await storage.addNode(ACCOUNT, { id: 'f1', name: 'Production', type: 'folder', parentId: null, ...(folder.asks === true ? { folderAsksForPin: true } : {}) });
   if (folder.sibling === true) {
     await storage.addNode(ACCOUNT, { id: 's1', name: 'prod-cache', type: 'entity', parentId: 'f1', details: { id: 's1', name: 'prod-cache', isSshEnabled: false, kind: 'credential', pinProtected: true } as EntityMetadata });
-    await storage.setPassword(ACCOUNT, 's1', await locked('the sibling’s password'));
+    await storage.setPassword(ACCOUNT, 's1', stored(await locked('the sibling’s password')));
   }
   const handlers = new Map<string, Handler>();
   const [mod] = loadEachWithVscode(['../commands/treeMutationCommands'], stub, {

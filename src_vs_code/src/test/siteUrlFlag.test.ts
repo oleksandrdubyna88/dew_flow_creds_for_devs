@@ -42,7 +42,7 @@ function walk(entries: Record<string, Entry>): Walk {
       reads.push(id);
       return entries[id]?.unreadable === true ? Promise.reject(new Error('keychain says no')) : Promise.resolve(stored(entries[id]?.fields));
     },
-    getPassword: (_a, id) => Promise.resolve(id === 'site' ? 'pw' : undefined),
+    getPassword: (_a, id) => Promise.resolve(stored(id === 'site' ? 'pw' : undefined)),
   };
   return { target, walker: new EntityFlagsRefresher(source, target), reads };
 }

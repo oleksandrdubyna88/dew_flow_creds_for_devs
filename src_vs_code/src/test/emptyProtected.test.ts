@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { stored } from '../storedSecret';
 import { test } from 'node:test';
 import { SECRET_SLOTS } from '../entitySlots';
 import type { EntityFormOptions, EntityFormValues } from '../entityFormShape';
@@ -197,7 +198,7 @@ test('in a folder that holds protected entries, the first PIN of an entry protec
   const folder = async (storage: StorageManager): Promise<void> => {
     await storage.addNode(ACCOUNT, { id: 'f1', name: 'prod', type: 'folder', parentId: null });
     await storage.addNode(ACCOUNT, { id: 's1', name: 'prod-db', type: 'entity', parentId: 'f1', details: { id: 's1', name: 'prod-db', isSshEnabled: false, pinProtected: true } as EntityMetadata });
-    await storage.setPassword(ACCOUNT, 's1', await locked('sibling pw'));
+    await storage.setPassword(ACCOUNT, 's1', stored(await locked('sibling pw')));
   };
   const w = await world(empty(), {}, [PIN], { newPassword: FIRST }, { modals: ['Use this PIN'], before: folder });
   await w.storage.updateNodeFields(ACCOUNT, 'e1', { parentId: 'f1' });

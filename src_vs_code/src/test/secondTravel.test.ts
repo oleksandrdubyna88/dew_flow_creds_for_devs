@@ -134,7 +134,7 @@ function agentVault(): McpVaultSource & { getSecondRaw(a: string, e: string): Pr
     getAccounts: () => [{ accountId: 'a1' }],
     getNodes: () => nodes,
     getNode: (_a, id) => nodes.find((n) => n.id === id),
-    getPassword: () => Promise.resolve('the first password'),
+    getPassword: () => Promise.resolve(stored('the first password')),
     getPrivateKey: () => Promise.resolve(undefined),
     getNotes: () => Promise.resolve(undefined),
     getTotp: () => Promise.resolve(undefined),

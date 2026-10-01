@@ -23,7 +23,7 @@ import type { EntryWriter } from './entryWriter';
 import type { RevisionSecrets } from './revisionHistory';
 import type { SecretMapKey } from './secretMaps';
 import type { StorageManager } from './storageManager';
-import { StoredSecret, unflipped } from './storedSecret';
+import type { StoredSecret } from './storedSecret';
 
 /**
  * What a slot's `read` needs — the ten getters and nothing else, so a walker that only READS (the
@@ -209,7 +209,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     // reaches it empty — a slot with no value is skipped before the write — and `putSecret` is not
     // public, so the guard is the caller's and is asserted.
     write: (s, a, e, v) => s.setPassword(a, e, v),
-    store: (s, a, e, v) => s.setPassword(a, e, unflipped(v)),
+    store: (s, a, e, v) => s.setPassword(a, e, v),
     // Its DELETER, for the same reason: an empty write keeps.
     remove: (s, a, e) => s.deletePassword(a, e),
   },

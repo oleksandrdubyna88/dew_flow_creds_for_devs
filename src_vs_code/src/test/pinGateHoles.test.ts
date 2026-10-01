@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { stored } from '../storedSecret';
 import { test } from 'node:test';
 import { lockSecret, readSecret, unlockSecret } from '../secretEnvelope';
 import { admit, openedText } from '../pinAdmission';
@@ -199,7 +200,7 @@ async function plantProtectedEntry(w: World): Promise<void> {
   await w.storage.setPassword(
     RECIPIENT.accountId,
     'pin-e1',
-    await lockSecret('hunter2', RECIPIENT.accountId, PIN_FOR_ENTRY),
+    stored(await lockSecret('hunter2', RECIPIENT.accountId, PIN_FOR_ENTRY)),
   );
 }
 

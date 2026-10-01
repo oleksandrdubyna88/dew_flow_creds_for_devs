@@ -695,15 +695,15 @@ export class StorageManager implements vscode.Disposable {
 
   // ---------- secrets (SecretStorage, tenant-scoped) ----------
 
-  getPassword(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(secretKey(accountId, entityId));
+  getPassword(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(secretKey(accountId, entityId)));
   }
 
-  async setPassword(accountId: string, entityId: string, password: string | undefined): Promise<void> {
-    if (password === undefined || password.length === 0) {
+  async setPassword(accountId: string, entityId: string, password: StoredSecret | undefined): Promise<void> {
+    if (password === undefined || carried(password).length === 0) {
       return; // empty input means "keep whatever is stored" — the ONE setter that works this way
     }
-    await this.putSecret(secretKey(accountId, entityId), accountId, password);
+    await this.putSecret(secretKey(accountId, entityId), accountId, carried(password));
   }
 
   deletePassword(accountId: string, entityId: string): Promise<void> {

@@ -7,7 +7,7 @@ import { TreeNode } from './types';
 
 /** The nine secret readers the export walks — the storage, by the part of it this needs. */
 export interface SecretReader {
-  getPassword(accountId: string, id: string): Thenable<string | undefined>;
+  getPassword(accountId: string, id: string): Thenable<StoredSecret | undefined>;
   getPrivateKey(accountId: string, id: string): Thenable<StoredSecret | undefined>;
   getVpnConfig(accountId: string, id: string): Thenable<StoredSecret | undefined>;
   getDbConnection(accountId: string, id: string): Thenable<StoredSecret | undefined>;

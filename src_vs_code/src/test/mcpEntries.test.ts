@@ -57,14 +57,13 @@ function entity(id: string, name: string, details: Record<string, unknown>, pare
 
 function vault(nodes: readonly TreeNode[], secrets: Partial<Record<string, string>> = {}): McpVaultSource {
   const find = (id: string): TreeNode | undefined => nodes.find((n) => n.id === id);
-  const answer = (key: string) => (): Thenable<string | undefined> => Promise.resolve(secrets[key]);
-  // A slot T5 has flipped answers as the keychain does: a stored secret.
+  // Every slot answers as the keychain does: a stored secret (T5).
   const held = (key: string) => (): Thenable<StoredSecret | undefined> => Promise.resolve(stored(secrets[key]));
   return {
     getAccounts: () => [{ accountId: 'a1' }],
     getNodes: () => nodes,
     getNode: (_a, id) => find(id),
-    getPassword: answer('password'),
+    getPassword: held('password'),
     getPrivateKey: held('privateKey'),
     getNotes: held('notes'),
     getTotp: held('totp'),

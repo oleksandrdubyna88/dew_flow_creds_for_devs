@@ -30,7 +30,7 @@ async function godaddy(storage: InstanceType<typeof StorageManager>): Promise<Tr
     details: { id: 'sender-side-godaddy', name: 'godaddy', isSshEnabled: false, hasTotp: true },
   };
   await storage.addNode(RECIPIENT.accountId, node);
-  await storage.setPassword(RECIPIENT.accountId, node.id, 'pw-of-godaddy');
+  await storage.setPassword(RECIPIENT.accountId, node.id, stored('pw-of-godaddy'));
   await storage.setFieldsRaw(RECIPIENT.accountId, node.id, stored(FIELDS));
   await storage.setTotp(RECIPIENT.accountId, node.id, stored(SEED));
   return node;
@@ -126,7 +126,7 @@ test('an entry already stored with a stale record id reads back naming itself', 
     details: { id: 'sender-side-id', name: 'accepted by an older build', isSshEnabled: false },
   };
   await w.storage.addNode(RECIPIENT.accountId, broken);
-  await w.storage.setPassword(RECIPIENT.accountId, 'local-id', 'the value that was never lost');
+  await w.storage.setPassword(RECIPIENT.accountId, 'local-id', stored('the value that was never lost'));
 
   const read = w.storage.getNode(RECIPIENT.accountId, 'local-id');
 
@@ -219,7 +219,7 @@ test('an entry repaired on read stays repaired after an ordinary edit, and keeps
     parentId: null,
     details: { id: 'sender-side-id', name: 'accepted by an older build', isSshEnabled: false },
   });
-  await w.storage.setPassword(RECIPIENT.accountId, 'local-id', 'still here');
+  await w.storage.setPassword(RECIPIENT.accountId, 'local-id', stored('still here'));
 
   await w.storage.updateDetailsFields(RECIPIENT.accountId, 'local-id', { host: 'example.com' });
 

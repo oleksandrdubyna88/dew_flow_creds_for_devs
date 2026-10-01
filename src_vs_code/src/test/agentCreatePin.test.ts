@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import type { CreateAccepted, CreateSettled, McpCreateHooks } from '../brokerMcpDoor';
 import { isLockedSecret, readSecret, unlockSecret } from '../secretEnvelope';
 import type { StorageManager } from '../storageManager';
-import type { StoredSecret } from '../storedSecret';
+import { StoredSecret, stored } from '../storedSecret';
 import type { TreeNode } from '../types';
 import { StubCancellationToken, loadEachWithVscode } from './vscodeStub';
 import { ACCOUNT, PIN, Sinks, clickVscode, locked, sinks } from './pinWorld';
@@ -96,7 +96,7 @@ async function world(folder: { asks?: boolean; sibling?: boolean }, inputs: (str
   await storage.addNode(ACCOUNT, { id: 'f1', name: 'Quotas', type: 'folder', parentId: null, mcp: { create: true }, ...(folder.asks === true ? { folderAsksForPin: true } : {}) });
   if (folder.sibling === true) {
     await storage.addNode(ACCOUNT, { id: 's1', name: 'grok key', type: 'entity', parentId: 'f1', details: { id: 's1', name: 'grok key', isSshEnabled: false, kind: 'credential', pinProtected: true } });
-    await storage.setPassword(ACCOUNT, 's1', await locked('the sibling’s password'));
+    await storage.setPassword(ACCOUNT, 's1', stored(await locked('the sibling’s password')));
   }
   written.length = 0;
   return { storage, hooks: hooksModule.mcpCreateHooks(storage, () => undefined), s, stub, written, onCreate };

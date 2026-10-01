@@ -6,7 +6,7 @@ import type { SettledPin } from './pinOnCreate';
 import { WritableSealing, isMarked, sealingForNew, unattendedSealing } from './sealingAtWrite';
 import { SecondValues, parseSecondValues, serializeSecondValues } from './secondValues';
 import type { StorageManager } from './storageManager';
-import { StoredSecret, stored, unflipped } from './storedSecret';
+import { StoredSecret, stored } from './storedSecret';
 
 /**
  * The one road from text to a stored value (`PLAN_typed_stored_secrets.md` §2.4, T4).
@@ -194,7 +194,7 @@ async function protectedSince(storage: StorageManager, accountId: string, entity
  */
 function plainWriter(storage: StorageManager, a: string, e: string, through: Through): EntryWriter {
   return {
-    setPassword: (_a, _e, v) => through(() => storage.setPassword(a, e, v)),
+    setPassword: (_a, _e, v) => through(() => storage.setPassword(a, e, stored(v))),
     setPrivateKey: (_a, _e, v) => through(() => storage.setPrivateKey(a, e, stored(v))),
     setVpnConfig: (_a, _e, v) => through(() => storage.setVpnConfig(a, e, stored(v))),
     setDbConnection: (_a, _e, v) => through(() => storage.setDbConnection(a, e, stored(v))),
@@ -237,7 +237,7 @@ function sealingWriter(storage: StorageManager, a: string, e: string, pin: strin
   const commit: Commit = (write) => storage.writes.run(write);
   return {
     // An empty password means "keep" — nothing is sealed, and the setter keeps for `undefined` as it does for `''`.
-    setPassword: (_a, _e, v) => put(v === undefined || v.length === 0 ? Promise.resolve(undefined) : seal(v), commit, (s) => storage.setPassword(a, e, unflipped(s))),
+    setPassword: (_a, _e, v) => put(v === undefined || v.length === 0 ? Promise.resolve(undefined) : seal(v), commit, (s) => storage.setPassword(a, e, s)),
     setPrivateKey: (_a, _e, v) => put(seal(v), commit, (s) => storage.setPrivateKey(a, e, s)),
     setVpnConfig: (_a, _e, v) => put(seal(v), commit, (s) => storage.setVpnConfig(a, e, s)),
     setTotp: (_a, _e, v) => sealIfChanged(opened.totp, v, seal, (sealed) => commit(() => storage.setTotp(a, e, sealed))),

@@ -30,9 +30,9 @@ const SRC = path.join(__dirname, '..', '..', 'src');
 
 /**
  * The funnel's functions, and the modules that define them (`entityPin` re-exports `sealValue`).
- * `storedRead` is the getters' mint; `seamText` and `unflipped` are T5's window only (`storedSecret.ts`).
+ * `storedRead` is the getters' mint; `seamText` is T5's window only (`storedSecret.ts`).
  */
-const FUNNEL = ['stored', 'storedRead', 'carried', 'seamText', 'unflipped', 'readSecret', 'isLockedSecret', 'isCorruptSecret', 'isWovenSecret', 'plainSecret', 'lockSecret', 'sealValue'];
+const FUNNEL = ['stored', 'storedRead', 'carried', 'seamText', 'readSecret', 'isLockedSecret', 'isCorruptSecret', 'isWovenSecret', 'plainSecret', 'lockSecret', 'sealValue'];
 const DEFINED_IN = ['storedSecret', 'secretEnvelope', 'sealValue', 'entityPin'];
 
 /** The modules that may use the funnel, each with its reason (the plan's §3 table). */

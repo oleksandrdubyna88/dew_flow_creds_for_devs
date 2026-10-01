@@ -51,7 +51,7 @@ export interface EntityFlagSource {
     accountId: string,
   ): readonly { id: string; type: 'folder' | 'entity'; details?: EntityMetadata }[];
   getHistory(accountId: string, entityId: string): Promise<{ secrets: unknown }[]>;
-  getPassword(accountId: string, entityId: string): Thenable<string | undefined>;
+  getPassword(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
   getFieldsRaw(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
   getConfigBody(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
 }

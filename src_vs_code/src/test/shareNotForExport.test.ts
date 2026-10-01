@@ -17,7 +17,7 @@ import { stored } from '../storedSecret';
 async function add(w: World, node: TreeNode, totp = false): Promise<TreeNode> {
   await w.storage.addNode(RECIPIENT.accountId, node);
   if (node.type === 'entity') {
-    await w.storage.setPassword(RECIPIENT.accountId, node.id, `pw-${node.id}`);
+    await w.storage.setPassword(RECIPIENT.accountId, node.id, stored(`pw-${node.id}`));
     if (totp) {
       await w.storage.setTotp(RECIPIENT.accountId, node.id, stored('JBSWY3DPEHPK3PXP'));
     }
