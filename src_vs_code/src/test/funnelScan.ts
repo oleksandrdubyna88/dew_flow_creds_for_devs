@@ -196,13 +196,29 @@ function memberCall(node: ts.Node): ts.PropertyAccessExpression | undefined {
   return ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) ? node.expression : undefined;
 }
 
-/** `storage.setPassword(…)` for a slot setter. */
+/**
+ * `storage.setPassword(a, e, value)` for a slot setter — a value written by the storage itself. A call
+ * whose value is the literal `undefined` is a DELETION (`setNotes(a, e, undefined)` removes the note),
+ * which writes nothing in the clear: Rule A's removals pass (`applyRemovals`) and an import's undo make
+ * those on the storage, and `writeOrderPaths.test.ts` holds their names and order.
+ */
 function slotSetterCall(node: ts.Node, setters: ReadonlySet<string>): string | undefined {
+  const access = writingSetter(node, setters);
+  return access !== undefined && isStorage(access.expression) ? `storage.${access.name.text}(` : undefined;
+}
+
+/** A slot setter called with a value — not a deletion. */
+function writingSetter(node: ts.Node, setters: ReadonlySet<string>): ts.PropertyAccessExpression | undefined {
   const access = memberCall(node);
   if (access === undefined || !setters.has(access.name.text)) {
     return undefined;
   }
-  return isStorage(access.expression) ? `storage.${access.name.text}(` : undefined;
+  return deletes(node as ts.CallExpression) ? undefined : access;
+}
+
+function deletes(call: ts.CallExpression): boolean {
+  const value = call.arguments[2];
+  return value !== undefined && ts.isIdentifier(value) && value.text === 'undefined';
 }
 
 /** `applyAdditions(storage, …)` — the additions pass handed the storage itself. */

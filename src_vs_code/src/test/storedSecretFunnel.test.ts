@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
-import { Finding, funnelUses, importedUses, readsKeptVersions } from './funnelScan';
+import { SECRET_SLOTS } from '../entitySlots';
+import type { StorageManager } from '../storageManager';
+import { Finding, funnelUses, importedUses, readsKeptVersions, storageWrites } from './funnelScan';
 
 /**
  * The funnel — the syntax half (`PLAN_typed_stored_secrets.md` §3 item 1, T3).
@@ -55,9 +57,6 @@ const ALLOWED: Readonly<Record<string, string>> = {
   'historyPin.ts': 'seals and opens kept versions in place',
   'restoreVersion.ts': 'Restore\'s writes, sealed in memory before the first one',
   'entitySlots.ts': 'the table: types only',
-  // Until T4 moves the two sealing writers into `entryWriter.ts` — the next story of this epic.
-  'editPrefill.ts': 'Edit\'s sealing writer, until T4 moves it into entryWriter.ts',
-  'shareUpdateSeal.ts': 'the share update\'s sealing writer, until T4 moves it into entryWriter.ts',
 };
 
 function sourceFiles(dir: string = SRC): string[] {
@@ -149,4 +148,61 @@ test('the companion: the scan still sees kept-version readers and click openers'
   assert.ok(clicks.has('sshConnect.ts'), 'Connect opens its credential with a click opener');
   const fixture = "import { clickOpener } from './pinClick';\nasync function f(s: S) { const [v] = await s.getHistory('a', 'e'); return clickOpener(s, 'a', 'x')(o, v.secrets.config); }";
   assert.equal(readsKeptVersions('fixture.ts', fixture).length > 0 && importedUses('fixture.ts', fixture, 'clickOpener', 'pinClick').length > 0, true, 'the fixture is not seen');
+});
+
+// ---- T4's interim rule: the storage is not a writer (until E3's types take over) ----
+
+/**
+ * The slot setters, asked of the slot table rather than typed out — each row's `write` run against a
+ * recording storage — plus the typed setter beside each raw one (`setFieldsRaw` → `setFields`), which
+ * serialises and then calls it. An eleventh slot is covered with no line written here.
+ */
+function slotSetters(): string[] {
+  const raw = SECRET_SLOTS.map((slot) => {
+    let called = '';
+    const recorder = new Proxy({}, { get: (_target, name) => (): Promise<void> => ((called = String(name)), Promise.resolve()) });
+    void slot.write(recorder as unknown as StorageManager, 'a', 'e', 'v');
+    return called;
+  });
+  return [...raw, ...raw.filter((name) => name.endsWith('Raw')).map((name) => name.slice(0, -'Raw'.length))];
+}
+
+/** The two modules that may hand a value to the storage's own setter: the writer, and the table it walks. */
+const WRITERS = new Set(['entryWriter.ts', 'entitySlots.ts']);
+
+function writesIn(file: string, text: string): Finding[] {
+  return storageWrites(file, text, slotSetters());
+}
+
+test('the storage itself is a writer only inside entryWriter.ts and the slot table — every other write comes from writerFor', () => {
+  const outside = eachSource(writesIn).filter((finding) => !WRITERS.has(finding.file));
+
+  assert.deepEqual(outside.map(said), [], 'the storage handed out as a writer: take one from entryWriter.writerFor instead');
+});
+
+test('the companions: the setters come from the table, and the scan still finds the writer\'s own writes', () => {
+  const setters = slotSetters();
+  assert.equal(setters.length, SECRET_SLOTS.length + 3, `the table's setters: ${setters.join(', ')}`);
+  assert.ok(setters.includes('setPaymentRaw') && setters.includes('setPayment'), 'the card — raw and typed');
+  const sanctioned = eachSource(writesIn).filter((finding) => finding.file === 'entryWriter.ts');
+  assert.ok(sanctioned.some((finding) => finding.what === 'storage.setPassword('), 'the plain writer\'s own write is no longer seen');
+});
+
+test('the negative fixture: every shape of the storage handed out as a writer is reported — and a deletion is not a write', () => {
+  const source = [
+    'export async function a(storage: S, ctx: C, r: R) { await applyAdditions(storage, "a", "e", r); }',
+    'export const deps = { store: storage };',
+    'export async function b(ctx: C) { await ctx.storage.setPassword("a", "e", "hunter2"); }',
+    'export class I { f() { let store = this.deps.storage; return store; } }',
+    'export async function c(storage: S) { await storage.setFields("a", "e", { login: "x" }); }',
+    'export async function d(storage: S) { await storage.setNotes("a", "e", undefined); }',
+  ].join('\n');
+
+  assert.deepEqual(writesIn('fixture.ts', source).map(said), [
+    'src/fixture.ts:1 applyAdditions(storage',
+    'src/fixture.ts:2 store: storage',
+    'src/fixture.ts:3 storage.setPassword(',
+    'src/fixture.ts:4 store: storage',
+    'src/fixture.ts:5 storage.setFields(',
+  ]);
 });
