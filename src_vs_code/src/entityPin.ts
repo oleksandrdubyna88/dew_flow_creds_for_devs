@@ -72,6 +72,16 @@ export async function protectEntity(
   return { changed, skipped };
 }
 
+/**
+ * One slot: read, sealed, written — the write atomic with respect to the storage's cross-window lease
+ * (the E2 security review, finding 3). Without it, a plain write that landed while this was sealing was
+ * overwritten with seal(the value read before it): the new value lost, and the plain writer's re-check
+ * guarding nothing, because Protect wrote around the lease it re-checks under.
+ *
+ * <p>The lease is kept SHORT: the seal — a scrypt of about a second — is made OUTSIDE it, optimistically;
+ * inside it the slot is read again and the seal written only if the value is still the one it seals.
+ * Never across a PIN box: the PIN arrives already chosen.</p>
+ */
 async function lockOne(
   storage: StorageManager,
   accountId: string,
@@ -89,8 +99,43 @@ async function lockOne(
     noteSkip(read.kind, slot, skipped);
     return;
   }
-  await slot.write(storage, accountId, entityId, await sealValue(stored, accountId, pin));
-  changed.push(slot.label);
+  const sealed = await sealValue(stored, accountId, pin);
+  const kind = await storage.writes.run(() => sealIfStill(storage, accountId, entityId, slot, pin, { was: stored, sealed }));
+  noteRun(kind, slot, changed, skipped);
+}
+
+/**
+ * Under the lease: the slot read again. Still the value the seal was made from → the seal is written.
+ * A plain write landed meanwhile → THAT value is sealed and written, here, inside the lease — one more
+ * scrypt, held for about a second, on a path two windows have to collide to reach; a retry loop outside
+ * would release the lease between attempts and could be overtaken again for ever, where this ends in one
+ * step. Sealed, emptied or damaged meanwhile → nothing to wrap, nothing written. Answers what the slot
+ * held when it was decided, as `readSecret` names it.
+ */
+async function sealIfStill(
+  storage: StorageManager,
+  accountId: string,
+  entityId: string,
+  slot: SecretSlot,
+  pin: string,
+  made: { readonly was: string; readonly sealed: string },
+): Promise<string> {
+  const now = await slot.read(storage, accountId, entityId);
+  const read = readSecret(now);
+  if (now === undefined || read.kind !== 'value') {
+    return read.kind;
+  }
+  await slot.write(storage, accountId, entityId, now === made.was ? made.sealed : await sealValue(now, accountId, pin));
+  return 'value';
+}
+
+/** A slot this run sealed is changed; any other that held something was skipped. */
+function noteRun(kind: string, slot: SecretSlot, changed: string[], skipped: string[]): void {
+  if (kind === 'value') {
+    changed.push(slot.label);
+  } else {
+    noteSkip(kind, slot, skipped);
+  }
 }
 
 /** Only a slot that HELD something is worth telling somebody about. */

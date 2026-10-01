@@ -5,13 +5,14 @@ import { nodeAt } from './entityViewerCommands';
 import { applyEnvBindings } from './envApply';
 import { envCollection, showEnvNotice } from './envCollectionRef';
 import { lockedSlotCount } from './entityPin';
+import { ProtectedMeanwhile } from './entryWriter';
 import { corruptReason } from './pinGate';
 import { firstPinFor } from './pinOnCreate';
 import { entryPinGate } from './pinPrompt';
 import { openKeptVersion } from './revisionDoor';
 import { MAX_REVISIONS, Revision } from './revisionHistory';
-import { damagedSlots, holdsValue, restoreVersion } from './restoreVersion';
-import { Sealing, WriterWords, sealingAtWrite } from './sealingAtWrite';
+import { RestoreUnder, damagedSlots, holdsValue, restoreVersion } from './restoreVersion';
+import { Sealing, WritableSealing, WriterWords, sealingAtWrite } from './sealingAtWrite';
 import type { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
 
@@ -57,12 +58,13 @@ export async function restoreRevision(target: unknown, deps: RestoreDeps): Promi
   }
   const sealing = await sealingAfterConfirmation(ready, deps.storage);
   if (sealing.kind !== 'stopped') {
-    await restoreWith(ready, deps, pinOf(sealing));
+    await restoreWith(ready, deps, underOf(sealing));
   }
 }
 
-function pinOf(sealing: Sealing): string | undefined {
-  return sealing.kind === 'sealed' ? sealing.pin : undefined;
+/** The PIN for a sealed decision; the plain proof itself for a plain one — never dropped (the E2 security review, finding 2). */
+function underOf(sealing: WritableSealing): RestoreUnder {
+  return sealing.kind === 'sealed' ? sealing.pin : sealing;
 }
 
 /**
@@ -81,10 +83,13 @@ function sealingAfterConfirmation(ready: Ready, storage: StorageManager): Promis
   return sealingAtWrite(storage, gate, opened, RESTORE_WORDS, (reason) => void vscode.window.showWarningMessage(reason), first);
 }
 
-/** The writes (`restoreVersion.ts`), and the sentences after them. */
-async function restoreWith(ready: Ready, deps: RestoreDeps, pin: string | undefined): Promise<void> {
-  const written = await restoreVersion(deps.storage, ready.accountId, ready.live.id, ready.version, pin).catch((error: unknown) => {
-    void vscode.window.showWarningMessage(stoppedMessage(ready, pin, error));
+/**
+ * The writes (`restoreVersion.ts`) — under the PIN, or through the plain writer with the plain proof the
+ * decision made, never around it (the E2 security review, finding 2) — and the sentences after them.
+ */
+async function restoreWith(ready: Ready, deps: RestoreDeps, under: RestoreUnder): Promise<void> {
+  const written = await restoreVersion(deps.storage, ready.accountId, ready.live.id, ready.version, under).catch((error: unknown) => {
+    void vscode.window.showWarningMessage(stoppedMessage(ready, typeof under === 'string', error));
     return undefined;
   });
   deps.refresh();
@@ -157,7 +162,10 @@ function restoredMessage(version: Revision): string {
  * write, so what is stored is a mixture of two whole states and never plaintext; running the command
  * again on the same version finishes it.
  */
-function stoppedMessage(ready: Ready, pin: string | undefined, error: unknown): string {
-  const sealed = pin === undefined ? '' : ' Nothing was stored in the clear.';
+function stoppedMessage(ready: Ready, sealedRoad: boolean, error: unknown): string {
+  if (error instanceof ProtectedMeanwhile) {
+    return `Restoring "${ready.live.name}" stopped before anything more was written: ${error.message}`;
+  }
+  const sealed = sealedRoad ? ' Nothing was stored in the clear.' : '';
   return `Restoring "${ready.live.name}" stopped part-way: ${describeError(error)}.${sealed} Run Restore This Version… on the same version again to finish it.`;
 }

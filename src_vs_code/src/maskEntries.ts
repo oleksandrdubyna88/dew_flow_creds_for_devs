@@ -1,4 +1,4 @@
-import { isLockedSecret } from './secretEnvelope';
+import { unsealedText } from './secretOpener';
 import { SecondKey, parseSecondValues } from './secondValues';
 import { parseDbConnectionString } from './dbConnString';
 import type { MaskEntry } from './secretMasker';
@@ -77,13 +77,16 @@ export async function maskEntriesFor(
   const details = node.details;
   const bindings = details?.envBindings ?? {};
 
-  const values = await Promise.all([
-    source.getPassword(accountId, entityId),
-    source.getPrivateKey(accountId, entityId),
-    source.getVpnConfig(accountId, entityId),
-    source.getDbConnection(accountId, entityId),
-    source.getNotes(accountId, entityId),
-  ]);
+  // What is stored, as it is — except a SEALED value, which is nothing to mask (see `present`).
+  const values = (
+    await Promise.all([
+      source.getPassword(accountId, entityId),
+      source.getPrivateKey(accountId, entityId),
+      source.getVpnConfig(accountId, entityId),
+      source.getDbConnection(accountId, entityId),
+      source.getNotes(accountId, entityId),
+    ])
+  ).map((stored) => unsealedText(stored));
 
   const entries = FIELDS.flatMap(({ field, label }, index) =>
     present(values[index]).map((value) => ({ value, label: bindings[field] ?? label })),
@@ -92,7 +95,7 @@ export async function maskEntriesFor(
   // Every SECOND value this entry holds, masked one by one rather than as the record that carries
   // them: what a tool prints is a password, never a JSON object, so masking the serialised record
   // would match nothing and leave each value in the clear. The label names which one it was.
-  const seconds = Object.entries(parseSecondValues(await source.getSecondRaw(accountId, entityId)))
+  const seconds = Object.entries(parseSecondValues(unsealedText(await source.getSecondRaw(accountId, entityId))))
     .flatMap(([key, value]) => present(value).map((one) => ({ value: one, label: SECOND_MASK_LABELS[key as SecondKey] })));
   // A DB connection string carries the password inside it; the password on its own is what a
   // tool actually prints (PGPASSWORD, a client's own error message), so it is masked as its
@@ -105,20 +108,22 @@ export async function maskEntriesFor(
   ];
 }
 
-/** A non-empty string as a one-element list, so absent values compose away. */
 /**
- * A value worth masking, or nothing.
+ * A value worth masking, or nothing — a non-empty string as a one-element list, so absent values
+ * compose away.
  *
- * <p><b>A PIN-protected value is skipped, and there is nothing lost by it.</b> The masker replaces
- * secrets that appear in a command's output; what is stored for a protected entry is the wrap, and
- * the wrap is not what any tool prints — the PLAINTEXT would be, and this cannot read it. Masking
- * the ciphertext would be masking a string that will never occur.</p>
+ * <p><b>A PIN-protected value is skipped, and there is nothing lost by it.</b> The stored values reach
+ * here through `secretOpener.unsealedText`, which answers nothing for a sealed one: the masker replaces
+ * secrets that appear in a command's output; what is stored for a protected entry is the wrap, and the
+ * wrap is not what any tool prints — the PLAINTEXT would be, and this cannot read it. Masking the
+ * ciphertext would be masking a string that will never occur. Everything else it can see is masked, a
+ * woven envelope and a damaged wrap included (`maskFailClosed`).</p>
  *
  * <p>It also cannot leak: an entry whose values are locked has already refused every automatic path
  * that could put one in a command line, so there is no run whose output could carry it.</p>
  */
 function present(value: string | undefined): string[] {
-  return typeof value === 'string' && value.length > 0 && !isLockedSecret(value) ? [value] : [];
+  return typeof value === 'string' && value.length > 0 ? [value] : [];
 }
 
 /**

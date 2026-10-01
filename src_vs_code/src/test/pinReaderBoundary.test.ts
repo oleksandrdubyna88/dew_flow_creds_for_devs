@@ -89,7 +89,10 @@ const READERS: Readonly<Record<string, ReaderKind | readonly ReaderKind[]>> = {
 };
 
 const DOOR_PRIMITIVES = ['admitEntry(', 'openStored(', 'openedText(', 'clickedSecret(', 'clickOpener(', 'gatedSecretReader(', 'openEntryForEdit(', 'openKeptVersion(', 'openRevision(', 'exportOpener'];
-const REFUSAL_PRIMITIVES = ['automaticPinRefusal(', 'pinFieldRefusal(', 'pinRefusalFor(', 'automaticOpener', 'isLockedSecret(', 'hiddenFromAgents('];
+// `plainText(` and `unsealedText(` since the typed-secrets plan's T3: the owner-less reads that replaced
+// `isLockedSecret(` in the scans (hygiene, masker, tree hints), which may no longer parse a stored string
+// themselves (`storedSecretFunnel.test.ts`). They refuse a sealed value exactly as that call did.
+const REFUSAL_PRIMITIVES = ['automaticPinRefusal(', 'pinFieldRefusal(', 'pinRefusalFor(', 'automaticOpener', 'isLockedSecret(', 'hiddenFromAgents(', 'plainText(', 'unsealedText('];
 
 /** The getter each row of the slot table reads through — asked of the table, never typed out. */
 function slotGetters(): string[] {

@@ -1,7 +1,7 @@
 # PLAN — a stored secret has its own type: forgetting the PIN door stops compiling
 
-> Status: **E1 of three epics built, 2026-10-01** (T1 and T2 on `feat/typed-secrets-e1`, its code round passed,
-> pull request open; E2 and E3 not begun) — written 2026-09-29, revised after the consultation
+> Status: **E1 and E2 of three epics built, 2026-10-01** (E1 — T1, T2 — merged as #176; E2 — T3, T4 — on
+> `feat/typed-secrets-e2`, its plan round and two code rounds passed (`proceed`), PR #177 open; E3 not begun) — written 2026-09-29, revised after the consultation
 > 2026-09-30, split into epics after the second plan round 2026-09-30.
 > Two plan gates passed: `proceed` on the 2026-09-29 text (2 of 2 reviewers, one round, seven findings
 > accepted — §8.1) and `proceed` on this revised text (session `bc788c97`, 1 of 2 reviewers — Codex was
@@ -216,7 +216,11 @@ rewriting them is the blast radius the owner deferred this plan to avoid.
   and `stopped` with the PIN sentence otherwise; it can never answer `sealed`, because nothing automatic
   holds a PIN. Its one caller today is the rotation store; `rotateAction.protectedSlot` (`:212-223`)
   already refuses before the action runs, and the proof is what turns "refused before" into "cannot be
-  written without".
+  written without". **A refusal AFTER the far side changed never drops the value** *(E2 security review,
+  finding 1 — fixed in the code-round fixes, `887a2b05`)*: `rotationStore.storeRotated` hands it to the
+  person — stored under the entry's PIN through the door and a `sealed` proof, or, declined, offered to
+  copy — and the agent is told `stored: false`; an unattended refusal never tells its caller to act "from
+  the entry".
 - **Interruption invariants** *(gate finding 1)*, unchanged from what shipped and now type-carried: the
   writer seals each value in memory before its own raw setter runs, so a process killed between two slot
   writes leaves every slot sealed-or-unwritten and never plaintext (`editPrefill.ts:246-254`,
@@ -377,13 +381,14 @@ pass over every rule. Review watches casts in production code.
   `storage.set<Slot>(a, e, plaintext)` still type-check through the whole window, and a NEW plaintext write
   added in it is a compile error nowhere. In that window the guarantee rests on **T4's interim scan rule
   alone** — *no `applyAdditions(storage`, `store: storage` or `storage.set<Slot>(` outside `entryWriter.ts`
-  and `entitySlots.ts`* — which is why it is retired in T5's eleventh commit and not a moment earlier: the
+  and `entitySlots.ts`, and no `slot.write(storage` outside its `file#function` allowlist* — which is why it
+  is retired in T5's eleventh commit and not a moment earlier: the
   commit that takes the `| string` off the seams is the one where the type takes over from the scan.
 
 ## 4. Build order — three epics, six stories
 
 Every story leaves the build green on its own: `npm run typecheck`, `npm run lint`, `npm run ratchet`
-(`extension.ts` 1038, `storageManager.ts` 1015 — `.size-baseline.json`; the plan's earlier 1023 was lowered
+(`extension.ts` 1038 — 1037 since the E2 code-round fixes moved the rotation's store out —, `storageManager.ts` 1015 — `.size-baseline.json`; the plan's earlier 1023 was lowered
 by the PIN plan P8), `npm test`. Every RED is watched failing for the real symptom before its fix, and both
 observations go into the commit. The model per story follows the gate's operator command (§8.2): ordinary
 stories on Opus, security- or architecture-critical ones on Fable (max), with the reason named. The story
@@ -420,7 +425,7 @@ this is what they mean for THIS plan:
 | epic | branch | cut from | stories (model) | plan round | code round | PR |
 |---|---|---|---|---|---|---|
 | **E1** — foundations | `feat/typed-secrets-e1` | `main` at `9f62e4db` | T1, T2 (Opus) — built 2026-10-01, commits `f038982c` (T1) and `9e380014` (T2) | session `9f8e746d`, **proceed**, 1 of 2 reviewers (Codex rate-limited); finding 0 accepted — the harness resolves its fixtures from the package root, a run that finds zero fixtures FAILS, and the compiles-fixture is the positive control (all three built and shown red, T2's commit); finding 1 accepted as a check — the ratchet's output is recorded per commit (both commits: 1038 / 1015, at baseline) | session `9f8e746d`, **proceed**, 4 of 8 reviewers (Codex rate-limited), 6 findings: 5 rejected with reasons — the serial slot reads (2, 4) are the shipped order unchanged and parallel reads would not close a torn snapshot, only move it; the `undefined` overload (0) never drops `undefined` from the type; `read` returning `string` (1) is T5's staged flip; the pinned fixture line (3) is what proves the error sits on the statement under test — and finding 5 accepted: the harness hands each fixture's program to the next as `oldProgram`, so the lib files are parsed once (3 fixtures: 1.9 s → 1.5 s) | — |
-| **E2** — the doors | `feat/typed-secrets-e2` | E1's last commit | T3, T4 (Fable, max) | — | — | — |
+| **E2** — the doors | `feat/typed-secrets-e2` | `main` at `9369b4d3` (E1 merged, #176) | T3, T4 — planned on Fable (max), **built on Opus 5.5, because Fable was rate-limited (2026-10-01)**; built 2026-10-01, commits `d8339155`, `275b9230`, `28fd17fd`, `6544409f`, `d39e9712` (T3) and `80574e5d`, `98839d13` (T4) | session `67779c80`, **proceed**, 1 of 2 reviewers (Codex rate-limited), 2 findings rejected — answered by §2.3 (the doors' answers for absent / plain / woven / sealed / damaged) and §2.4 (the branded `Sealing` and the `stopped` contract) | session `67779c80`, **proceed**, 8 of 8 reviewers, 15 findings — **11 accepted and fixed** (0 and 6: `writerForNew`'s `fresh` proof verified at its first write, `5683b799`; 1, 4, 7, 9, 10, 12: every plain write under the lease with its own re-check, no cached promise, `b2b9d0da`; 3: the health-report pin for a woven / sealed / damaged connection string, `f19ae9f0`, green on arrival; 5 and 14: the rotation's no-loss road and an unattended refusal that names no step "from the entry", `887a2b05`), **4 rejected** (2: a plain proof is only issued over zero sealed slots; 8: kept versions are read silently by design, §2.3; 11: each slot is sealed before its own setter, R3 holds; 13: bundle restore is sequential by design, there is no keychain bulk API). Own security review (Opus): rotation no-loss (`887a2b05`), Restore around the lease (`4bd853c0`), Protect around the lease (`11f9e0fc`), `creds_list` damaged wrap (`203307be`), batch accept (`300789d2`) — all fixed. **Second round** (`again`), **proceed**, 8 of 8 reviewers, 11 findings — **6 accepted and fixed** (0–4: `writerForNew` verified at EVERY write under the lease, nothing remembered, and an unreadable tree (`metadataFault`) takes the re-checked road — REDs *"a 'new' writer remembered its first check and wrote in the clear into an entry protected since"* and *"an unreadable tree was read as 'no node'"*; 5: `entitySlots.ts` imports `StorageManager` as a type), **5 rejected** (6: new ids are freshly minted and never reused, so no orphan slot can carry one; 7 and 8: Protect's in-lease re-seal happens only when a plain write landed on that slot during its ~1 s outside seal, and is one bounded step — a retry loop outside can be overtaken indefinitely; 9: a plain writer cannot know where its caller's batch ends and must never hold the lease across caller code that may ask, so one lease per write is the price — at most ten writes of an interactive save; 10: every remaining catcher of the interactive sentence is interactive, the unattended one is translated). **PR #177:** CodeRabbit — the sealing writer committed outside the lease, so a sealed value could land between Protect's re-read and its write and be lost: fixed, each commit under the lease and the scrypt outside it (RED *"a sealed value was committed outside the lease"*, actual `['setNotes OUTSIDE the lease', 'setPassword OUTSIDE the lease']`); three docs that contradicted the code fixed; the `notSavedNote` nit rejected (the toast is for a person and keeps the sentence, the log keeps the `kind`). Sonar: nested template, optional chains and `.at` fixed; `await` in a loop left (sequential by design, read-modify-write) and the `error_` catch-name rule left (not this repo's convention) | — |
 | **E3** — the flip and the finish | `feat/typed-secrets-e3` | E2's last commit | T5, T6 (Opus) | — | — | — |
 
 - [x] **T0 — Re-verify, count, gate the revision.** Done 2026-09-30, on Fable as the operator asked: the
@@ -494,7 +499,7 @@ secrets regression — mergeable alone, bisectable alone. Fable (max) because a 
 plain, woven, sealed or damaged value, or a writer the storage can still satisfy, is D7 and R3 again — the
 two defects the owner's data loss came from — and a later round cannot repair a release that shipped one.
 
-- [ ] **T3 (E2) — The reads converge on the doors.** Outside the funnel no module parses a stored string or uses
+- [x] **T3 (E2) — The reads converge on the doors.** Outside the funnel no module parses a stored string or uses
       a getter's result as text. `secretOpener.ts` gains `fieldReadingOf`, `plainText`, `unsealedText`;
       `envApply.ts:90-133`, `entityFieldReading.ts:57-81`, `agentUseActions.ts:304-313`,
       `transportFactory.ts:280-288` go through `automaticOpener`; `hygieneScan.ts:111-121`,
@@ -522,7 +527,32 @@ two defects the owner's data loss came from — and a later round cannot repair 
       sealed or damaged value is decided in ten modules at once, and a wrong default is D7 again.
       **DoD:** the PIN plan's suite green unchanged; the funnel's syntax half green with its negative
       fixture and positive control; `readerScan`'s `READERS` table unchanged; ratchet unchanged.
-- [ ] **T4 (E2) — One road to a writer.** `sealingAtWrite.ts`: the brand, `sealingForNew`, `sealingForUpdate`,
+      **Done 2026-10-01, `d8339155` `275b9230` `28fd17fd` `6544409f` `d39e9712`** (Opus 5.5 — Fable was
+      rate-limited). Every RED watched first: the funnel listed exactly the four files named above
+      (`entityFlags.ts:249, 253`, `envApply.ts:108`, `hygieneScan.ts:117`, `maskEntries.ts:121`) and the
+      `clickOpener` rule `configCommands.ts`; hygiene's two (*"a damaged wrap was graded as a password"*,
+      *"a woven pair was graded as a password"*). The guard (one box for viewing and copying a kept version)
+      green before and after. Break-it per moved site recorded in each commit. **Behaviour found and fixed on
+      the way, each RED first:** a DAMAGED wrap was handed on as text by all four automatic readers (the
+      broker's db query launched the client with it); an agent was shown a sealed connection string's
+      envelope (`mcpEntries`); the revision viewer copied a woven kept password as its envelope, and the
+      live viewer's history-row Copy put a protected entry's kept envelope on the clipboard
+      (`entityViewCopy` read `options.history[i].secrets` raw — now `EntityViewOptions.resolveRevision`,
+      through `openKeptVersion` and the silent reader). **Deviations:** (1) `fieldReadingOf(opened,
+      claimedBy?)` takes the entry: built as written, `pinSlotMatrix` went red ten times (*"an automatic
+      reader was handed {"kind":"absent"}"*) — the opener answers an absent value as absent while
+      `pinFieldRefusal`, which terminal variables and `creds://` asked, refuses on the mark alone; envApply and
+      entityFieldReading pass the entry, the db query and the deploy key do not (they said "nothing stored"
+      first, and still do). (2) `pinReaderBoundary`'s refusal primitives gain `plainText(` and
+      `unsealedText(` — §2.6 said they would gain nothing, but `READERS` is unchanged, the scans' files are
+      `automatic`, and the funnel no longer lets them call `isLockedSecret(`, so without it the boundary named
+      `hygieneScan.entryFor` ungated; `GATED_BY_CALLER` unchanged. (3) *Show Config Changes* opens the kept
+      body through `pinClick.grantedOpener` — `clickOpener`'s silent half, extracted — rather than a bare
+      `openStored`, so a stop is said in the same words. (4) The funnel's positive control for `carried(` in
+      `exportSecrets.ts` cannot exist before T5 (nothing calls `carried` yet); the control is the parser's and
+      the producers' known callers. (5) `mcpEntries` reads through `unsealedText` in the shaper, not in
+      `storedSecrets`, which stays a caller-gated function.
+- [x] **T4 (E2) — One road to a writer.** `sealingAtWrite.ts`: the brand, `sealingForNew`, `sealingForUpdate`,
       `unattendedSealing`. `entryWriter.ts`: `EntryWriter`, `writerFor`, the plain and the sealing writer —
       `editPrefill.sealedWriter` (`:216-242`) and `shareUpdateSeal.sealingWriter` (`:111-125`) deleted;
       `SecretWriter` and `ShareWriter` replaced by `EntryWriter`. Callers: `entityEditCommands.ts:272-273`,
@@ -530,17 +560,25 @@ two defects the owner's data loss came from — and a later round cannot repair 
       `shareUpdateSeal.ts:52-69, 98-105`, `importCommands.ts:111-129`, `externalSecretsApply.ts:71-95`,
       `extension.ts:688-691`. Until T5 the storage still satisfies `EntryWriter` structurally, so T4 adds the
       funnel test's rule *"no `applyAdditions(storage`, `store: storage` or `storage.set<Slot>(` outside
-      `entryWriter.ts` and `entitySlots.ts`"* — retired in T5's last commit, where the type takes over.
+      `entryWriter.ts` and `entitySlots.ts`"* — and, since the E2 code-round fixes, *"no `slot.write(storage`
+      outside an allowlist keyed `file#function`, each with its reason"* (Protect's `sealIfStill`, Remove
+      PIN's `unprotectEntity`, Restore's `writeSealed`) — retired in T5's last commit, where the type takes over.
       **The decision and the writes under one lease** *(CodeRabbit on the hotfix PR #175, CWE-362, recorded
       2026-10-01)*: every writer today — the share update's `writerFor`, and on `main` before the hotfix too —
       reads the entry's state (a sealed slot? the mark?) and writes LATER, outside one cross-window lease, so
       another window protecting the entry in between can receive a plain write. The door's heal
       (`pinAdmission.healProtected`) seals such a stray value at the next open, which is why it is a narrow
       window and not an open hole; closing it is T4's to do, because `writerFor` is where the decision moves:
-      a plain `Sealing` is re-validated under the same lease as the first slot write (a sealed slot or the
-      mark found there → the write is refused and the person told, as `sealingAtWrite` refuses a form whose
-      protection changed), and no lease is ever held across a PIN box. RED first: *a share update whose entry
-      is protected by another window between the decision and the write stores nothing in the clear*.
+      a plain `Sealing` is re-validated under the same lease as EVERY slot write, each with its own re-check
+      (a sealed slot or a mark the decision did not see → that write is refused and the person told, as
+      `sealingAtWrite` refuses a form whose protection changed; nothing is cached, so one failed write never
+      fails the next); a `fresh` proof is verified at EVERY write under the lease (a readable tree, no node carries the
+      id — nothing remembered between writes); **Protect takes the same lease** — each slot sealed outside it and written inside it after the slot
+      is read again, a value changed in between sealed instead of overwritten — so the re-check guards
+      against Protect too; and no lease is ever held across a PIN box or a modal. RED first: *a share update
+      whose entry is protected by another window between the decision and the write stores nothing in the
+      clear*. *(As first built, only the first write was re-checked and Protect wrote around the lease; the
+      E2 code round and its security review found both, and the code-round fixes below closed them.)*
       **Guard (green since the hotfix of 2026-10-01, §2.7 — kept green, not a RED):** *a person's Add into
       a folder that asks for a PIN never writes a value in the clear — the keychain's write log sees only
       sealed values*; *an Add into a PIN folder killed after its first slot write leaves that slot SEALED and
@@ -565,11 +603,67 @@ two defects the owner's data loss came from — and a later round cannot repair 
       **DoD:** `editProtected`, `emptyProtected`, `shareUpdateSeal`, `revisionRestore`, `agentCreatePin`,
       `writeOrderPaths`, `pinSlotMatrix` green unchanged; `editPrefill.ts` and `shareUpdateSeal.ts` shrink;
       `storageManager.ts` and `extension.ts` line-neutral.
+      **Done 2026-10-01, `80574e5d` `98839d13`** (Opus 5.5 — Fable was rate-limited). The unattended
+      sealing's answers RED as TS2305 first, then green, with teeth (always-plain → *"an unattended write was
+      permitted into an entry with a sealed slot"*); the compile-fail fixture `sealing_is_a_proof.ts` red with
+      the brand removed (*"the fixture compiled"*); the interim rule red over the pre-T4 tree (39 findings in
+      seven files). The lease: the existing cross-window lock is `StorageManager.writes` (the `LeasedQueue`
+      over `windowLock.ts`), reused, not a second one. Its RED was shown with the re-check taken out — the
+      test was written after the writer, so testing.md's *fix landed first* route: *"the arriving password
+      reached the keychain in the clear, in a protected entry"*. `editPrefill.ts` 288 → 192 lines,
+      `shareUpdateSeal.ts` 196 → 131; ratchet 1038 / 1015, at baseline. **Deviations:** (1) the plain proof
+      carries what its decision saw of the mark (`marked`) and whether the entry is brand new (`fresh`): the
+      re-check refuses a sealed slot or a mark the decision did NOT see, because `sealingForUpdate` and
+      `sealingAtWrite` legitimately answer `plain` over a mark on values in the clear (the 0.99.0 false
+      mark), and a new id has nothing to re-check; (2) `stopped` carries `reason` (`''` when said or
+      declined, the PIN sentence for `unattendedSealing`) — the `OpenedSecret` contract; (3) `sealingForUpdate`
+      takes its two doors as arguments so `sealingAtWrite.ts` stays pure of `vscode`; (4) `EntryWriter` adds
+      `setSecondRaw` to the plan's list (an external bundle's import writes it) — fifteen setters;
+      (5) `entryWriter.writerForNew` (`sealingForNew` over `NOTHING_OPENED`) and `writeUnattended` are the
+      two shapes callers take, both behind `writerFor`; an accepted share and an import take `writerForNew`
+      with no PIN (§2.7's question stays the owner's); `applyExternalSecrets` makes one writer per entity;
+      (6) `StorageManager.writes` is made public instead of a new method — line-neutral; (7) the interim rule
+      does not report a slot setter called with the literal `undefined`: a deletion writes nothing in the
+      clear, and `writeOrderPaths` (the PIN suite) holds `applyRemovals`' `setNotes/setFields/setPayment/
+      setConfigBody/setSecond(…, undefined)` by name; (8) `applySecrets` had no caller and was deleted; (9) two
+      test fakes changed mechanically — `editProtected.test.ts` takes the sealing writer from `writerFor`,
+      `envSaveNotice.test.ts`'s storage offers `writes`. ~~**Known limit:** `protectEntity` does not take the
+      lease~~ — closed by the code-round fixes below.
+      **The code-round fixes, 2026-10-01** (Opus 5.5; each RED first with the real symptom, then green, then
+      red again with its fix reverted — every observation in its commit): `b2b9d0da` every write of a plain
+      writer under the lease with its own re-check, no cached promise (findings 1, 4, 7, 9, 10, 12 — RED
+      *"the second write of a plain writer reached the keychain in the clear, after the entry was
+      protected"*, *"a later write was blocked by an earlier write's passing failure"*); `11f9e0fc` Protect
+      seals each slot atomically with the lease — sealed outside, the slot read again inside, a value changed
+      in between sealed inside the lease (one step: a loop outside could be overtaken without end), an
+      empty entry's mark a leased node write (security review finding 3 — RED *"Protect sealed the value it
+      read before the plain write landed — the new value was overwritten and is gone"*); `5683b799`
+      `writerForNew` verifies "new" at its first write — no node may carry the id, the cheapest sufficient
+      check because protection lives on the node and every new-id caller writes the node after its secrets
+      (findings 0, 6 — RED *"a writer for a 'new' id wrote in the clear into an existing, protected
+      entry"*); the second code round made it EVERY write, an unreadable tree "unknown" rather than "absent"; `887a2b05` the rotation's no-loss road, `rotationStore.ts` (security review finding 1,
+      findings 5, 14 — RED *"the far side's new password was dropped"*): an `UnattendedRefusal` hands the
+      value to the person — *Store it (asks for the entry's PIN)* through the door and a `sealed` proof, or,
+      declined, *Copy the new password* through `copySecret` — and the agent gets `rotated: true, stored:
+      false`; `4bd853c0` Restore's plain path through `writerFor` with its plain proof and the node rebuilt
+      inside the lease, plus the interim rule's `slot.write(storage` pattern (security review finding 2 — RED
+      *"Restore wrote the kept version in the clear into an entry protected meanwhile"*); `203307be`
+      `creds_list` through `plainText` (security review finding 4 — RED *"a damaged wrap reached an agent as
+      a connection string"*); `300789d2` a batch accept catches each share's save failure (security review
+      finding 5 — RED *"one refused share aborted the whole batch"*); `f19ae9f0` the health-report pin for a
+      woven / sealed / damaged connection string (finding 3 — green on arrival, teeth shown with `plainText`
+      removed). **Deviations:** the rotation's copy offer also covers a store that failed for any other
+      reason (the far side changed all the same); `ProtectedMeanwhile` keeps its interactive sentence and
+      carries an `unattended` one; the fresh check reads `getNode`, not `nodePresence`, because
+      `writeOrderPaths.test.ts` pins the import undo's exact `nodePresence` call order; `extension.ts` shrank
+      to 1037 and the baseline was lowered. Mechanical test edits, no assertion touched: five hand-built
+      storages gain `writes` (`entityPin`, `pinGateHoles`, `pinFolderPlan` ×2, `writeOrderPaths` ×2,
+      `externalSecretsApply` — the last also `getNode`).
 
 **E2 DoD:** T3's and T4's DoDs; the PIN plan's suite green with no assertion edited; the funnel test's
 syntax half green with its negative fixture and positive control, and T4's interim rule (*no
 `applyAdditions(storage`, `store: storage`, `storage.set<Slot>(` outside `entryWriter.ts` and
-`entitySlots.ts`*) green; every behaviour change — hygiene's two (the Add and the update into a marked
+`entitySlots.ts`; no `slot.write(storage` outside its `file#function` allowlist*) green; every behaviour change — hygiene's two (the Add and the update into a marked
 entry shipped ahead on the hotfix, §2.7, and stay green) — RED-then-green with both observations in its
 commit; `readerScan`'s `READERS` table unchanged; ratchet
 unchanged; `review_plan` (epic 2/3) and `review_code` over E2's diff against E1's last commit both

@@ -72,6 +72,7 @@ import { maskEntriesFor } from './maskEntries';
 import { visibleConfigDetails, visibleMcpEntries } from './mcpEntries';
 import { McpEntriesCache } from './mcpEntriesCache';
 import { RotateDeps, rotateAction } from './rotateAction';
+import { storeRotated } from './rotationStore';
 import { generateSecret } from './secretKinds';
 import { CREDS_CLI, CredsProduct, ridFor } from './credsInstall';
 import { binaryPath, installMenu } from './binaryInstaller';
@@ -685,10 +686,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     snapshot: (ctx, details) =>
       snapshotForRevision(storage, ctx.accountId, { id: ctx.entityId, name: ctx.entityName, details }),
     record: (ctx, revision) => storage.recordRevision(ctx.accountId, ctx.entityId, revision),
-    store: (ctx, slot, value) =>
-      slot === 'password'
-        ? storage.setPassword(ctx.accountId, ctx.entityId, value)
-        : storage.setDbConnection(ctx.accountId, ctx.entityId, value),
+    // Unattended first; refused (protected since `prepare` checked), handed to the person — never dropped (`rotationStore.ts`).
+    store: (ctx, slot, value) => storeRotated(storage, ctx, slot, value),
     onRotated: () => mutated(),
   };
   useActions.register(rotateAction(dbQueryAction(agentDeps), 'query', rotateDeps));

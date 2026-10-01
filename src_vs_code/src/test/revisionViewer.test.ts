@@ -5,6 +5,8 @@ import type { Revision, RevisionSecrets } from '../revisionHistory';
 import type { StorageManager } from '../storageManager';
 import { EntityMetadata, TreeNode } from '../types';
 import { loadWithVscode } from './vscodeStub';
+import { copyValueFor } from '../entityViewCopy';
+import { plainSecret } from '../secretEnvelope';
 import { ACCOUNT, PIN, Sinks, clickVscode, everythingSunk, locked, memoryStorage, seedEntry, sinks } from './pinWorld';
 
 /**
@@ -123,4 +125,79 @@ test('an unprotected version of an unprotected entry still opens without a quest
   assert.equal(w.s.boxes, 0);
   assert.equal(w.shown.length, 1);
   assert.equal(await w.shown[0].resolveSecret('password'), 'old pw');
+});
+
+// ---------------------------------------------------------------------------------------------
+// The typed-secrets plan, T3 (second plan round, finding 0): a kept version is admitted ONCE, by
+// `revisionDoor.openKeptVersion`, and every field of the opened copy is read through the viewer's own
+// gated reader behind a SILENT gate — the road the live viewer takes, so the two cannot answer differently.
+// ---------------------------------------------------------------------------------------------
+
+test('a kept WOVEN password is read by the revision viewer as the live viewer reads it — the pair, never its envelope', async () => {
+  const woven = plainSecret('hhuunntteerr22', true);
+  const w = await world({ 'payment details': CARD }, { payment: CARD, password: woven }, []);
+
+  await w.view();
+
+  assert.equal(w.shown.length, 1);
+  assert.equal(await w.shown[0].resolveSecret('password'), 'hhuunntteerr22', 'the revision viewer handed its page the woven envelope');
+  assert.doesNotMatch(await w.shown[0].copyAllText(), /"woven"/, 'Copy All carried the envelope');
+});
+
+/** The LIVE viewer of the same world, its page spied on — what the history row's Copy is pressed on. */
+async function liveViewer(w: World, stub: Record<string, unknown>): Promise<EntityViewOptions> {
+  const shown: EntityViewOptions[] = [];
+  const mod = loadWithVscode<typeof import('../entityViewerCommands')>('../entityViewerCommands', stub, {
+    './entityViewPanel': { showEntityView: (options: EntityViewOptions): void => void shown.push(options) },
+  });
+  const node = w.storage.getNode(ACCOUNT, ENTRY) as TreeNode;
+  await mod.openEntityViewer(ACCOUNT, node, w.storage, { cliAliases: [], codeAccess: false, bridgeOpen: false, wslRelay: false } as never);
+  assert.equal(shown.length, 1, `the live viewer did not open; warnings: ${w.s.warnings.join(' | ')}`);
+  return shown[0];
+}
+
+test('the history row’s Copy on a protected entry copies the kept value, never its envelope — and asks the PIN once', async () => {
+  const s = sinks();
+  const stub = clickVscode([PIN], s);
+  const storage = memoryStorage(stub);
+  await seedEntry(storage, card({ pinProtected: true }), { 'payment details': await locked(CARD) });
+  await storage.recordRevision(ACCOUNT, ENTRY, { at: 1_700_000_000_000, name: 'orest payoneer (old)', details: card(), secrets: { password: await locked('old pw') } });
+  const w: World = { shown: [], s, storage, view: () => Promise.resolve() };
+
+  const page = await liveViewer(w, stub);
+  const copied = await copyValueFor(page, 'rev0');
+
+  assert.equal(copied, 'old pw', `the history row copied ${String(copied).slice(0, 40)}`);
+  assert.equal(s.boxes, 1, 'the live door was asked once; the kept version opened behind it with no second box');
+});
+
+test('viewing a kept version of a protected entry and copying from it asks the PIN ONCE — the guard over the silent reader', async () => {
+  // Green before T3 too: a grant in the session already kept a second door silent. It is the guard that
+  // the silent reader did not add a box.
+  const w = await world({ 'payment details': await locked(CARD) }, { payment: await locked(CARD), password: await locked('old pw') }, [PIN], { pinProtected: true });
+
+  await w.view();
+  const page = w.shown[0];
+  await page.resolveSecret('password');
+  await page.copyAllText();
+  await page.resolvePayment?.();
+  await page.resolveSecond?.();
+
+  assert.equal(w.s.boxes, 1, 'a kept version asked twice');
+});
+
+test('the history row’s Copy of a version sealed under the entry’s OLDER PIN asks for that PIN, as the revision viewer does', async () => {
+  const s = sinks();
+  const stub = clickVscode([PIN, OLD_PIN], s);
+  const storage = memoryStorage(stub);
+  await seedEntry(storage, card({ pinProtected: true }), { 'payment details': await locked(CARD) });
+  await storage.recordRevision(ACCOUNT, ENTRY, { at: 1_700_000_000_000, name: 'orest payoneer (old)', details: card(), secrets: { password: await locked('older pw', OLD_PIN) } });
+  const w: World = { shown: [], s, storage, view: () => Promise.resolve() };
+
+  const page = await liveViewer(w, stub);
+  const copied = await copyValueFor(page, 'rev0');
+
+  assert.equal(copied, 'older pw', 'the version was not opened through its own door');
+  assert.equal(s.boxes, 2, 'the live door, then the version\'s own PIN');
+  assert.equal(session().grantedPin(ACCOUNT, ENTRY), PIN, 'the version\'s PIN is not granted over the entry\'s');
 });

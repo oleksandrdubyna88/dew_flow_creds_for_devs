@@ -326,6 +326,16 @@ export function noteAcceptFailures(
 }
 
 /**
+ * The batch tally's tail for shares that OPENED and whose save failed — each named with why, because
+ * "1 still pending" alone does not say which share to look at, nor that it was not a wrong PIN (the E2
+ * security review, finding 5). Empty when every opened share was saved.
+ */
+export function notSavedNote(failed: readonly OwnedShare[], attempts: ReadonlyMap<string, ShareAttempt>): string {
+  const named = failed.map((share) => `"${share.item.entityName}" — ${describeError(attempts.get(share.item.id)?.reason)}`);
+  return named.length === 0 ? '' : ` Not saved: ${named.join('; ')} It stays in "Shared with me".`;
+}
+
+/**
  * The sealed bytes inside an export file, when the file has any — from the text, or from an
  * envelope somebody has already parsed.
  *

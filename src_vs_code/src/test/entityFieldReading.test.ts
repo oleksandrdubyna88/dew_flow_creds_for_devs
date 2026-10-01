@@ -47,3 +47,15 @@ test('an unprotected note and code still resolve', async () => {
   const code = await read('totp', { 'one-time-code seed': SEED }, false);
   assert.match(code.kind === 'value' ? code.value : '', /^\d{6}$/);
 });
+
+test('a creds:// reference to a DAMAGED note or seed is withheld as damaged, never resolved to the wrap', async () => {
+  // Typed-secrets plan T3: the note and the seed read through `automaticOpener` + `fieldReadingOf`.
+  // Before, a damaged note resolved to its text, and a damaged seed read as "there is no seed".
+  const damaged = '{"v":1,"lock":{"wrap":';
+  const note = await read('notes', { notes: damaged }, false);
+  const code = await read('totp', { 'one-time-code seed': damaged }, false);
+
+  assert.equal(note.kind, 'withheld', `the note resolved to ${JSON.stringify(note).slice(0, 60)}`);
+  assert.match(note.kind === 'withheld' ? note.reason : '', /"prod" holds a protected value that cannot be read/);
+  assert.equal(code.kind, 'withheld', `the code resolved to ${JSON.stringify(code)}`);
+});

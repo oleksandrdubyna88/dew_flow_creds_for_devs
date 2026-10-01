@@ -6,6 +6,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — every read goes through a door, every write through one writer (typed-secrets E2, 2026-10-01)
+
+- **The health report graded a damaged protected value and a woven password as strong, unique
+  passwords.** It already skipped a sealed value for that reason; a damaged wrap (envelope text) and a
+  woven pair (your value interleaved with a decoy) told the same lie. Both are now skipped: the report
+  weighs only what it can read as a password.
+- **A damaged protected value was used as if it were the value.** A terminal variable, a `creds://`
+  reference to a note or a one-time code, an agent's database query and a git sync's deploy key each
+  handed the damaged wrap on as text — the database client was even launched with it. Each now refuses it
+  in words ("… holds a protected value that cannot be read"), as the viewer and every click already did.
+- **An agent was shown a sealed connection string's envelope.** An entry whose PIN mark was lost while its
+  connection string stayed sealed listed the ciphertext as its connection string. It now lists none.
+- **A kept version's woven password was copied as its envelope**, from the version viewer's *Copy* and
+  *Copy All*; and **the history row's *Copy* of a protected entry put a kept version's sealed envelope on
+  the clipboard.** Both now read the version the way the live viewer reads the entry: opened once through
+  the entry's door (a version sealed under the PIN the entry used to have asks for that PIN), then read
+  without asking again.
+- **A write decided while an entry was unprotected could land after another window protected it.** A
+  share's *Update it*, an Edit and an agent's rotation read the entry's protection and wrote a moment
+  later; another window protecting the entry in between received the value in the clear (until the next
+  open sealed it). Every write now checks again under the same cross-window lock sync and every node
+  write take — each one, not only the first, and a write that fails no longer blocks the next: an entry
+  protected meanwhile is not written, nothing is stored in the clear, and you are told — a share stays in
+  *Shared with me* to be accepted again. A write for an entry said to be NEW checks once that it really is.
+- **Protecting an entry could overwrite a value saved a moment earlier with the old one.** *Protect with a
+  PIN…* read a value, spent a second sealing it, and wrote the seal — over whatever another window had
+  saved in that second. It now writes each seal under the same lock and reads the value again first: a
+  value changed in between is the one that gets sealed.
+- **An agent's rotation could lose the new password.** The server was changed first; if the entry was
+  protected with a PIN while that ran, the vault refused the new password, kept the old one — which no
+  longer worked — and the new one was gone. Now you are asked: store it under the entry's PIN, or, if not,
+  copy it (the clipboard clears itself). The agent is told the password changed and was not stored; it is
+  never shown the value.
+- **Restore This Version… into an entry protected in another window meanwhile restored it in the clear.**
+  It now writes through the same checked road: nothing is restored in the clear, and the PIN mark another
+  window set stays.
+- **Accepting several shares at once stopped at the first one that could not be saved**, leaving the rest
+  unimported with nothing said. Each share now succeeds or fails on its own; the one that failed stays in
+  *Shared with me* and the summary names it.
+- **An agent could be shown a damaged protected connection string as the entry's address.** It now sees
+  none.
+
 ### Fixed — two plaintext windows, closed before the typed-secrets work (2026-10-01)
 
 - **Add into a folder that asks for a PIN wrote the new entry in the clear first, then sealed it.** The

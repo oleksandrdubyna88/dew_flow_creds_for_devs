@@ -6,7 +6,8 @@ import type { EntityKind } from './types';
 import { agentFormValues, planCreate } from './mcpCreate';
 import { applyAdditions } from './applyFormSecrets';
 import { settleAgentCreate } from './agentCreatePin';
-import { CreatePin, applyCreatePin, writerForNewEntry } from './pinOnCreate';
+import { SettledPin, applyCreatePin } from './pinOnCreate';
+import { writerForNew } from './entryWriter';
 import { creatableFolders } from './mcpCreate';
 import { chooseTarget } from './mcpCreate';
 import { summarizeCreate } from './mcpCreate';
@@ -39,7 +40,7 @@ export function mcpCreateHooks(storage: StorageManager, onMade: () => void): Mcp
  * Make the entry the person allowed — sealed under the folder's PIN when `settle` asked for one.
  *
  * <p>Sealed in memory BEFORE the first write (rule R3 of the entry-PIN plan): the additions go through
- * `pinOnCreate.writerForNewEntry` — the sealing writer Add uses too since 2026-10-01 — so no value of
+ * `entryWriter.writerForNew` — the sealing writer Add uses too since 2026-10-01 — so no value of
  * an agent's entry in a PIN folder ever reaches the keychain in the clear, not even for the moment
  * "write, then protect" would leave it there. `applyCreatePin` then does what it does for Add — the
  * idempotent sweep, the history, and the mark with the first `pinEpoch`, last (R5).</p>
@@ -69,9 +70,9 @@ async function makeAgentEntry(
   // string and a config's is its body, and neither belongs in the password slot.
   const values = agentFormValues(kind, id, request.name, plan.values, secret);
   const accountId = decision.target.accountId;
-  const createPin: CreatePin = settled.sealWith === undefined ? { kind: 'none' } : { kind: 'pin', pin: settled.sealWith };
+  const createPin: SettledPin = settled.sealWith === undefined ? { kind: 'none' } : { kind: 'pin', pin: settled.sealWith };
   await storage.runCreate({
-    writeSecrets: () => applyAdditions(writerForNewEntry(createPin, storage, accountId, id), accountId, id, values),
+    writeSecrets: () => applyAdditions(writerForNew(storage, accountId, id, createPin), accountId, id, values),
     writeNode: () =>
       storage.addNode(accountId, { id, name: request.name, type: 'entity', parentId: decision.target.entityId, details: values.details }),
     presence: () => storage.nodePresence(accountId, id),

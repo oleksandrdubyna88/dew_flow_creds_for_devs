@@ -53,6 +53,11 @@ export interface RotateDeps {
   /** Everything about this entity as it is, for history. */
   snapshot(ctx: UseActionContext, details: EntityMetadata): Promise<Revision>;
   record(ctx: UseActionContext, revision: Revision): Promise<void>;
+  /**
+   * Put the new value into the vault. Resolves when it is there; rejects with {@link RotationNotStored}
+   * when it could not be stored and was handed to the PERSON instead (`rotationStore.ts`) — the far side
+   * has changed by then, so the value is never simply dropped.
+   */
   store(ctx: UseActionContext, slot: RotationSlot, value: string): Promise<void>;
   /** Called after a successful rotation so the tree and any open viewer catch up. */
   onRotated?: () => void;
@@ -95,7 +100,7 @@ export function rotateAction(
  */
 function describeRotation(result: UseActionResult): string {
   if (result.status === 200) {
-    return 'rotated';
+    return (result.body as { stored?: unknown }).stored === false ? ROTATED_NOT_STORED : 'rotated';
   }
   return (result.body as { noGenerator?: unknown }).noGenerator === true
     ? NO_GENERATOR_OUTCOME
@@ -270,7 +275,11 @@ function kindOf(body: unknown): string {
   return typeof value === 'string' && value.length > 0 ? value : 'password';
 }
 
-/** History first, then the write, then the tree. Only ever reached by a far side that changed. */
+/**
+ * History first, then the write, then the tree. Only ever reached by a far side that changed — so a
+ * store that could not happen is never an internal failure that drops the new value: the person was
+ * handed it (`RotationNotStored`), and the agent is told plainly that it was not stored.
+ */
 async function commit(
   ctx: UseActionContext,
   details: EntityMetadata,
@@ -280,13 +289,45 @@ async function commit(
   deps: RotateDeps,
 ): Promise<UseActionResult> {
   await deps.record(ctx, await deps.snapshot(ctx, details));
-  await deps.store(ctx, slot, value);
+  const stored = await storedOrHanded(ctx, slot, value, deps);
   deps.onRotated?.();
   // `stdout`, not `output`: it IS the far side's stdout, and calling it anything else was how
   // this answer escaped the masker for one release (security pass, 2026-08-27). The masker
   // covers every field now, and the honest name is still the right one.
-  return { status: 200, body: { rotated: true, entity: ctx.entityName, stdout: outputOf(result) } };
+  const rotated = { rotated: true, entity: ctx.entityName, stdout: outputOf(result) };
+  return { status: 200, body: stored ? rotated : { ...rotated, stored: false, message: NOT_STORED } };
 }
+
+/** `true` when the value is in the vault; `false` when the store handed it to the person instead. */
+async function storedOrHanded(ctx: UseActionContext, slot: RotationSlot, value: string, deps: RotateDeps): Promise<boolean> {
+  try {
+    await deps.store(ctx, slot, value);
+    return true;
+  } catch (error) {
+    if (error instanceof RotationNotStored) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+/**
+ * The store could not put the new value into the vault, and handed it to the person — who was told the
+ * far side changed. The value is in no message, no journal line and no answer.
+ */
+export class RotationNotStored extends Error {
+  constructor() {
+    super(NOT_STORED);
+    this.name = 'RotationNotStored';
+  }
+}
+
+/** What the agent is told when the far side changed and the vault did not (its words, no value). */
+const NOT_STORED = 'The far side changed; the new value was not stored in the vault; the person was told and offered the value. '
+  + 'Do not retry the rotation: the old value no longer works, and the person holds the new one.';
+
+/** The journal's word for it — grep-able beside `rotated`. */
+const ROTATED_NOT_STORED = 'rotated, not stored';
 
 /**
  * Did the far side actually change?

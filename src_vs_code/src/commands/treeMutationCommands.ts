@@ -6,7 +6,8 @@ import { noteImportFailed, sealedBlobOf } from '../shareDiagnostics';
 import { describeTransitSecret } from '../transitSecretReport';
 import { DoorsFor } from '../entityEditCommands';
 import { StorageManager } from '../storageManager';
-import { applyCreatePin, pinForNewEntry, writerForNewEntry } from '../pinOnCreate';
+import { applyCreatePin, pinForNewEntry } from '../pinOnCreate';
+import { writerForNew } from '../entryWriter';
 import { TransportFactory } from '../transportFactory';
 import { VaultKeys } from '../vaultKeys';
 import { asElement } from '../commandTargets';
@@ -283,12 +284,12 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     // uses was the one still leaving an uncollectable orphan when the node write failed.
     //
     // SEALED before the first write when the folder asked for a PIN (rule R3): the additions go
-    // through the writer the agent's create uses (`writerForNewEntry`), so no value of this entry
+    // through the writer the agent's create uses (`entryWriter.writerForNew`), so no value of this entry
     // ever reaches the keychain in the clear. Until 2026-10-01 they went through the storage and
     // `applyCreatePin` sealed what was there afterwards — and a process killed between the two left
     // the values plain under a node that claimed nothing (`PLAN_typed_stored_secrets.md` §2.7).
     await createdOrExplained(() => storage.runCreate({
-      writeSecrets: () => applyAdditions(writerForNewEntry(createPin, storage, location.accountId, id), location.accountId, id, result),
+      writeSecrets: () => applyAdditions(writerForNew(storage, location.accountId, id, createPin), location.accountId, id, result),
       writeNode: () =>
         storage.addNode(location.accountId, {
           id,

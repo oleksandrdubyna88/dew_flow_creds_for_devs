@@ -207,3 +207,12 @@ test('an unprotected deploy key is still materialised for git', async () => {
   assert.deepEqual(await w.auth(), { kind: 'ssh', keyPath: '/storage/git-key1' });
   assert.deepEqual(w.materialized, ['PLAIN-KEY']);
 });
+
+test('a DAMAGED deploy key is refused as damaged, and never written to disk as a key', async () => {
+  // Typed-secrets plan T3: the deploy key reads through `automaticOpener`, which refuses a damaged wrap
+  // in words. Before, the wrap's text was materialised as the key and git failed with nothing saying why.
+  const w = await deployKeyWorld('{"v":1,"lock":{"wrap":', false);
+
+  await assert.rejects(w.auth(), /"vault deploy key" holds a protected value that cannot be read.* It is the deploy key for git@github\.com:me\/vault\.git/);
+  assert.deepEqual(w.materialized, [], 'the damaged wrap was materialised as the deploy key');
+});

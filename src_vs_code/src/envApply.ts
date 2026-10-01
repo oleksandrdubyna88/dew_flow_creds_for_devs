@@ -10,7 +10,7 @@ import { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
 import { FieldReading, readingOf, valueOf, withheld } from './fieldReading';
 import { pinFieldRefusal } from './pinGate';
-import { isLockedSecret } from './secretEnvelope';
+import { OpenedSecret, automaticOpener, fieldReadingOf } from './secretOpener';
 
 /**
  * Writing bound secret fields into VS Code's environment variable collection — the
@@ -51,7 +51,12 @@ export function automaticRefusal(details: EntityMetadata, field: BindableField):
 }
 
 /**
- * Why NOTHING automatic may use this field, or `''` when it may — every refusal in ONE place.
+ * Why NOTHING automatic may use this field, or `''` when it may — the policy as one sentence, for a
+ * stored string already in hand.
+ *
+ * <p>`bindableFieldReading` asks the same two policies through the opener since the typed-secrets plan
+ * (T3): the woven one here (`automaticRefusal`), the PIN one through `secretOpener.automaticOpener`, which
+ * asks `pinGate.pinFieldRefusal` — this function's second half — and refuses a damaged wrap as well.</p>
  *
  * <p>Two policies today. The woven one is a fact about the ENTRY (`passwordWoven` is a field) and
  * needs no value; the PIN one is a fact about the VALUE — the wrap is inside it, which is the whole
@@ -86,6 +91,11 @@ export function automaticFieldRefusal(
  * did not know to ask would get `undefined` and report "nothing stored" about a password that is
  * very much stored. Now the only way to reach the value is through a reading that carries the
  * refusal with it.</p>
+ *
+ * <p>The woven policy first — a fact about the entry, needing no value — then the value opened by
+ * `automaticOpener` and read through `fieldReadingOf` (typed-secrets plan, T3): sealed, or of an entry
+ * that claims a PIN, is withheld with the PIN sentence; a damaged wrap is withheld as damaged — until T3
+ * its text was handed to the terminal as the value; absent is absent.</p>
  */
 export async function bindableFieldReading(
   storage: StorageManager,
@@ -93,42 +103,42 @@ export async function bindableFieldReading(
   details: EntityMetadata,
   field: BindableField,
 ): Promise<FieldReading> {
-  const stored = await storedField(storage, accountId, details, field);
-  const refusal = automaticFieldRefusal(details, field, stored);
-  return refusal === '' ? readingOf(stored) : withheld(refusal);
+  const woven = automaticRefusal(details, field);
+  if (woven !== '') {
+    return withheld(woven);
+  }
+  const reading = fieldReadingOf(await openedField(storage, accountId, details, field), details);
+  return field === 'dbPassword' ? dbPasswordOf(reading) : reading;
 }
 
 /**
- * The password inside a stored connection string — or the ENVELOPE itself when the string is sealed,
- * so the refusal sees what is stored. Parsed first, an envelope is no password at all, and a sealed
- * entry whose mark was lost read "absent" instead of withheld (rule R2; found by the per-function
- * reader scan, review of 2026-09-30).
+ * The password inside an OPENED connection string. Opened first, so a sealed string is withheld rather
+ * than parsed — an envelope is no password at all, and a sealed entry whose mark was lost read "absent"
+ * instead of withheld (rule R2; found by the per-function reader scan, review of 2026-09-30).
  */
-function dbPasswordOf(conn: string | undefined): string | undefined {
-  if (conn === undefined || isLockedSecret(conn)) {
-    return conn;
-  }
-  return parseDbConnectionString(conn).password;
+function dbPasswordOf(connection: FieldReading): FieldReading {
+  return connection.kind === 'value' ? readingOf(parseDbConnectionString(connection.value).password) : connection;
 }
 
+/** The stored string behind one bindable field, opened by the automatic opener — the db password's is the connection's. */
 // eslint-disable-next-line complexity
-async function storedField(
+async function openedField(
   storage: StorageManager,
   accountId: string,
   details: EntityMetadata,
   field: BindableField,
-): Promise<string | undefined> {
+): Promise<OpenedSecret> {
+  const open = (stored: string | undefined): Promise<OpenedSecret> => automaticOpener(details, stored);
   switch (field) {
     case 'password':
-      return storage.getPassword(accountId, details.id);
+      return open(await storage.getPassword(accountId, details.id));
     case 'privateKey':
-      return storage.getPrivateKey(accountId, details.id);
+      return open(await storage.getPrivateKey(accountId, details.id));
     case 'publicKey':
-      return details.publicKey;
+      return open(details.publicKey);
     case 'dbConnection':
-      return storage.getDbConnection(accountId, details.id);
     case 'dbPassword':
-      return dbPasswordOf(await storage.getDbConnection(accountId, details.id));
+      return open(await storage.getDbConnection(accountId, details.id));
   }
 }
 

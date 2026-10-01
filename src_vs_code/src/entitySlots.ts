@@ -19,9 +19,10 @@
  * had claimed an atomicity nothing here can deliver.)</p>
  */
 
+import type { EntryWriter } from './entryWriter';
 import type { RevisionSecrets } from './revisionHistory';
 import type { SecretMapKey } from './secretMaps';
-import { StorageManager } from './storageManager';
+import type { StorageManager } from './storageManager';
 
 /**
  * What a slot's `read` needs — the ten getters and nothing else, so a walker that only READS (the
@@ -42,6 +43,26 @@ export type SlotSource = Pick<
   | 'getPassword'
 >;
 
+/**
+ * What a slot's `write` needs — the ten setters, as an `EntryWriter` has them. A writer from
+ * `entryWriter.writerFor` is one (Restore's plain road writes through it: under the lease, re-checked);
+ * the storage still is one too until its setters are typed (E3), and `storedSecretFunnel.test.ts`
+ * names the few functions allowed to hand it in.
+ */
+export type SlotSink = Pick<
+  EntryWriter,
+  | 'setNotes'
+  | 'setFieldsRaw'
+  | 'setSecondRaw'
+  | 'setPaymentRaw'
+  | 'setConfigBody'
+  | 'setDbConnection'
+  | 'setVpnConfig'
+  | 'setTotp'
+  | 'setPrivateKey'
+  | 'setPassword'
+>;
+
 export interface SecretSlot {
   /** What this slot is called when a person is told about it. */
   readonly label: string;
@@ -59,7 +80,7 @@ export interface SecretSlot {
    */
   readonly bundleKey: SecretMapKey;
   readonly read: (storage: SlotSource, accountId: string, entityId: string) => Thenable<string | undefined>;
-  readonly write: (storage: StorageManager, accountId: string, entityId: string, value: string) => Promise<void>;
+  readonly write: (sink: SlotSink, accountId: string, entityId: string, value: string) => Promise<void>;
   /**
    * Empty the slot — through the deleter the slot really has. Written down per slot because the
    * setters disagree about what nothing means: `setNotes(undefined)` deletes, `setPassword('')`

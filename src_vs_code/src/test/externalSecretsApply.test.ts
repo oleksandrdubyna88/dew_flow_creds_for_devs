@@ -32,6 +32,9 @@ function fakeStorage(): { storage: Record<string, unknown>; written: Written } {
   };
   return {
     storage: {
+      // The lease a writer's first write for a new id is verified under (the E2 code round, findings 0 and 6) — run inline.
+      writes: { run: <T>(work: () => Promise<T>): Promise<T> => work() },
+      getNode: () => undefined,
       setPassword: record('setPassword'),
       setPrivateKey: record('setPrivateKey'),
       setVpnConfig: record('setVpnConfig'),

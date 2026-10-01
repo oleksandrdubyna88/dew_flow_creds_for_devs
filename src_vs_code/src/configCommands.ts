@@ -11,7 +11,7 @@ import { configFileNameFor } from './configFile';
 import { isTrackedHere } from './gitTracked';
 import { trackedCopyWarning } from './configFile';
 import type { ConfigFormat } from './configFormat';
-import { clickOpener, clickedSecret } from './pinClick';
+import { clickedSecret, grantedOpener } from './pinClick';
 import { OpenedSecret, SecretOwner, automaticOpener } from './secretOpener';
 import { FieldReading, withheld } from './fieldReading';
 /**
@@ -67,7 +67,11 @@ async function comparedBodies(storage: StorageManager, accountId: string, node: 
 
 const COMPARE = 'compare it with its previous version';
 
-/** One door for both: the live body opens it, and the kept body is opened with the grant it left. */
+/**
+ * One door for both: the live body opens it, and the kept body is opened with the grant it left —
+ * silently (`grantedOpener`), never through a second click door: a kept version is admitted once
+ * (`PLAN_typed_stored_secrets.md` T3, second plan round, finding 0).
+ */
 async function openedBodies(
   storage: StorageManager,
   accountId: string,
@@ -79,7 +83,7 @@ async function openedBodies(
   if (current === undefined) {
     return undefined;
   }
-  const previous = bodyText(await clickOpener(storage, accountId, COMPARE)(details, previousRaw));
+  const previous = bodyText(await grantedOpener(accountId)(details, previousRaw));
   return previous === undefined ? undefined : { format: details.configFormat ?? 'json', previous, current, at };
 }
 

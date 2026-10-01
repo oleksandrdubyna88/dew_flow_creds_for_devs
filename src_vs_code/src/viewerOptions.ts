@@ -41,14 +41,27 @@ export type ViewerSecretField =
   | 'dbPassword'
   | 'totp';
 
-/** Where a viewer's secrets come from: the keychain (live) or the revision record. */
-export interface SecretReader {
-  password(): Thenable<string | undefined>;
-  privateKey(): Thenable<string | undefined>;
-  vpnConfig(): Thenable<string | undefined>;
-  dbConnection(): Thenable<string | undefined>;
+/**
+ * The seven values a viewer reads, as `T` — the one shape behind the viewer's two seams
+ * (`PLAN_typed_stored_secrets.md` §2.3, T3):
+ *
+ * <ul>
+ *   <li>a {@link StoredReader} answers what is STORED — the keychain (`storageSecretReader`) or a kept
+ *       version's record (`revisionSecretReader`) — and is never handed to a page;</li>
+ *   <li>a {@link SecretReader} answers what a page may show: every value OPENED, built only by
+ *       `gatedSecretReader` over a stored one.</li>
+ * </ul>
+ *
+ * <p>Structurally one type while the getters return `string`; when they return `StoredSecret` (the
+ * plan's T5) the stored reader's `T` becomes that, and a stored reader handed to a page stops compiling.</p>
+ */
+interface ViewerValues<T> {
+  password(): Thenable<T | undefined>;
+  privateKey(): Thenable<T | undefined>;
+  vpnConfig(): Thenable<T | undefined>;
+  dbConnection(): Thenable<T | undefined>;
   /** The stored `otpauth://` seed. The viewer never gets this — only the code below. */
-  totpSeed(): Thenable<string | undefined>;
+  totpSeed(): Thenable<T | undefined>;
   /**
    * The second-values record as stored JSON (#52), for the same reason `paymentRaw` is here.
    *
@@ -57,7 +70,7 @@ export interface SecretReader {
    * the same three implementations every other kind already has. A getter added anywhere else would
    * be a second ladder, which is the defect this interface was extracted to end.</p>
    */
-  secondRaw(): Thenable<string | undefined>;
+  secondRaw(): Thenable<T | undefined>;
   /**
    * The payment record as stored JSON. The page never gets this either — the card asks per field.
    *
@@ -66,8 +79,14 @@ export interface SecretReader {
    * record is the ninth kind's version of exactly that. Adding it here is what makes a card work in
    * the history viewer without a second implementation deciding to differ.</p>
    */
-  paymentRaw(): Thenable<string | undefined>;
+  paymentRaw(): Thenable<T | undefined>;
 }
+
+/** Where a viewer's secrets come from, as stored: the keychain (live) or a kept version's record. */
+export type StoredReader = ViewerValues<string>;
+
+/** What a viewer's page reads — every value opened. Built only by `gatedSecretReader`. */
+export type SecretReader = ViewerValues<string>;
 
 /** The one field-to-secret ladder both viewers share. */
 export function secretResolver(read: SecretReader): (field: ViewerSecretField) => Thenable<string | undefined> {
@@ -132,7 +151,7 @@ export function storageSecretReader(
   storage: StorageManager,
   accountId: string,
   entityId: string,
-): SecretReader {
+): StoredReader {
   return {
     password: () => storage.getPassword(accountId, entityId),
     privateKey: () => storage.getPrivateKey(accountId, entityId),
@@ -157,7 +176,7 @@ export function storageSecretReader(
  * silent `undefined` that the viewer renders as "nothing stored" about a value that is stored.</p>
  */
 export function gatedSecretReader(
-  inner: SecretReader,
+  inner: StoredReader,
   gate: PinGate,
   report: (message: string) => void,
 ): SecretReader {
@@ -185,8 +204,8 @@ function told(opened: PinOpen, report: (message: string) => void): string | unde
   return undefined;
 }
 
-/** A revision's secrets: whatever the record kept, nothing read from the keychain. */
-export function revisionSecretReader(revision: Revision): SecretReader {
+/** A revision's secrets as the record kept them, nothing read from the keychain — a page reads them through `gatedSecretReader`. */
+export function revisionSecretReader(revision: Revision): StoredReader {
   const { password, privateKey, vpnConfig, dbConnection, totp, payment, second } = revision.secrets;
   return {
     password: () => Promise.resolve(password),
