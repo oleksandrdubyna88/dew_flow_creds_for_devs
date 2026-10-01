@@ -1,7 +1,10 @@
+import * as crypto from 'node:crypto';
 import type { LeasedQueue } from './leasedQueue';
 import { rotationQuarantineSecretKey } from './secretKeys';
 import type { SecretChest } from './secretMaps';
 import type { RotationSlot } from './secretRotation';
+import { plainSecret } from './secretEnvelope';
+import type { StorageManager } from './storageManager';
 import { StoredSecret, carried, stored } from './storedSecret';
 
 /**
@@ -110,6 +113,59 @@ function indexOf(state: IndexState): readonly HeldEntry[] {
 function isHeldEntry(value: unknown): value is HeldEntry {
   const entry = value as Partial<HeldEntry> | null;
   return typeof entry?.accountId === 'string' && typeof entry.entityId === 'string';
+}
+
+// ---- the hold (plan §4.3) ----
+
+/**
+ * What a held value replaced, as the release compares it: SHA-256 hex of the slot's text when the rotation
+ * read it — `''` for an empty slot. Never the text itself: the item holds the new value, not the old one.
+ */
+export function fingerprintOf(text: string | undefined): string {
+  return crypto.createHash('sha256').update(text ?? '', 'utf8').digest('hex');
+}
+
+/**
+ * Keep a value the far side accepted and the entry refused, beside the entry — index FIRST, item second, one
+ * step under the lease. The last value wins: a second hold of the same slot overwrites the first, because the
+ * far side holds the latest. Stored in its plain stored form (`plainSecret`), minted by `heldFor`.
+ */
+export async function holdRotated(storage: StorageManager, accountId: string, entityId: string, slot: RotationSlot, value: string, was: string): Promise<void> {
+  const store = storage.heldRotations;
+  await storage.writes.run(async () => {
+    await store.list(accountId, entityId);
+    await store.put(accountId, entityId, { ...(await store.read(accountId, entityId)), [slot]: heldFor(value, was) });
+  });
+}
+
+/** The held form of a value the rotation drew — minted here, as the parse mints what it reads. */
+function heldFor(value: string, was: string): Held {
+  return { value: stored(plainSecret(value, false)), at: Date.now(), was };
+}
+
+/**
+ * The rotation's own value LANDED in the entry: any older hold of that slot is superseded — the far side
+ * holds the newer value, and a door must never overwrite it with the older one. Best-effort: a hold left
+ * behind by a failed drop is still refused by the release, whose `was` no longer matches the slot.
+ */
+export async function supersedeHeld(storage: StorageManager, accountId: string, entityId: string, slot: RotationSlot): Promise<void> {
+  const store = storage.heldRotations;
+  await storage.writes
+    .run(async () => {
+      const { [slot]: superseded, ...rest } = await store.read(accountId, entityId);
+      if (superseded !== undefined) {
+        await settle(store, accountId, entityId, rest);
+      }
+    })
+    .catch(() => undefined);
+}
+
+/** Write what is left — item first, then the index entry when nothing is (the release order, §4.2). */
+async function settle(store: QuarantineStore, accountId: string, entityId: string, rest: HeldSlots): Promise<void> {
+  await store.put(accountId, entityId, rest);
+  if (isEmpty(rest)) {
+    await store.unlist(accountId, entityId);
+  }
 }
 
 // ---- the item's wire form: `{ v: 1, slots: { password?: Held, dbConnection?: Held } }` ----

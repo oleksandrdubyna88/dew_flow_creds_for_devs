@@ -2,20 +2,21 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { describeError } from '../describeError';
 import { refreshFrom, runAndDeliver, tableFor } from '../brokerResponse';
-import { protectEntity } from '../entityPin';
+import { protectEntity, unprotectEntity } from '../entityPin';
 import { maskEntriesFor } from '../maskEntries';
 import { writeUnattended } from '../entryWriter';
 import { snapshotForRevision } from '../revisionSnapshot';
-import type { RotateDeps } from '../rotateAction';
+import type { RotateDeps, StoreOutcome } from '../rotateAction';
+import { fingerprintOf } from '../rotationQuarantine';
 import { readSecret, unlockSecret } from '../secretEnvelope';
-import { NEW_SECRET_PLACEHOLDER } from '../secretRotation';
+import { NEW_SECRET_PLACEHOLDER, RotationSlot } from '../secretRotation';
 import type { MaskEntry } from '../secretMasker';
 import type { StorageManager } from '../storageManager';
 import { protectionDecision } from '../syncPinRule';
 import { EntityMetadata } from '../types';
 import type { UseAction, UseActionResult } from '../useActions';
 import { loadEachWithVscode } from './vscodeStub';
-import { ACCOUNT, PIN, Sinks, clickVscode, memoryStorage, seedEntry, sinks } from './pinWorld';
+import { ACCOUNT, ModalAnswer, PIN, Sinks, carried, clickVscode, memoryStorage, seedEntry, sinks } from './pinWorld';
 
 /**
  * A rotation never loses a password the far side already accepted (the E2 security review, finding 1;
@@ -47,6 +48,12 @@ interface World {
   s: Sinks;
   written: string[];
   rotate: () => Promise<UseActionResult>;
+  /** The rotation action itself — its journal word is `describeOutcome`. */
+  action: UseAction;
+  /** The store the action calls, for a second rotation's store without a second far side. */
+  store: (slot: RotationSlot, value: string) => Promise<StoreOutcome>;
+  /** The connection string as the other window sealed it, byte for byte, the moment it was protected. */
+  sealedBefore: string | undefined;
 }
 
 /**
@@ -57,6 +64,8 @@ interface FarSide {
   readonly echo?: boolean;
   readonly stays?: 'plain';
   readonly exitCode?: number;
+  /** `fails`: the keychain refuses the HOLD's item — the value exists in memory alone, E2's chain (plan §4.3 step 3). */
+  readonly hold?: 'fails';
 }
 
 /** What the far side printed and how the statement ended. */
@@ -66,13 +75,17 @@ function farAnswer(far: FarSide, body: unknown): UseActionResult {
 }
 
 /** A plain database entry, and a far side that accepts the statement while another window protects the entry. */
-async function world(inputs: (string | undefined)[], modal: (string | undefined)[], far: FarSide = {}): Promise<World> {
+async function world(inputs: (string | undefined)[], modal: ModalAnswer[], far: FarSide = {}): Promise<World> {
   const s = sinks();
   s.modalAnswers.push(...modal);
   const stub = clickVscode([...inputs], s);
   const written: string[] = [];
   const storage = memoryStorage(stub, written);
   await seedEntry(storage, details(), { 'database connection': CONN });
+  if (far.hold === 'fails') {
+    refuseHolds(storage);
+  }
+  const w = { sealedBefore: undefined } as World;
   // One graph: the store's `RotationNotStored` is the class the action catches.
   const [{ storeRotated }, { rotateAction }] = loadEachWithVscode(['../rotationStore', '../rotateAction'], stub) as [
     typeof import('../rotationStore'),
@@ -91,6 +104,7 @@ async function world(inputs: (string | undefined)[], modal: (string | undefined)
       if (far.stays !== 'plain') {
         await protectEntity(storage, ACCOUNT, ENTRY, PIN);
         await storage.updateNodeFields(ACCOUNT, ENTRY, protectionDecision(true));
+        w.sealedBefore = carried(await storage.getDbConnection(ACCOUNT, ENTRY));
       }
       return farAnswer(far, body);
     },
@@ -101,13 +115,20 @@ async function world(inputs: (string | undefined)[], modal: (string | undefined)
     current: (ctx) => Promise.resolve(storage.getDbConnection(ctx.accountId, ctx.entityId)),
     snapshot: (ctx, d) => snapshotForRevision(storage, ctx.accountId, { id: ctx.entityId, name: ctx.entityName, details: d }),
     record: (ctx, revision) => storage.recordRevision(ctx.accountId, ctx.entityId, revision),
-    store: (ctx, slot, value) => storeRotated(storage, ctx, slot, value),
+    store: (ctx, slot, value, was) => storeRotated(storage, ctx, slot, value, was),
   };
   const action = rotateAction(farSide, 'query', deps);
   written.length = 0;
   const rotate = (): Promise<UseActionResult> =>
     action.run(CTX, { statement: STATEMENT }).catch((error: unknown) => ({ status: 500, body: { thrown: describeError(error) } }));
-  return { storage, s, written, rotate };
+  const store = (slot: RotationSlot, value: string): Promise<StoreOutcome> => storeRotated(storage, CTX, slot, value, fingerprintOf(CONN));
+  return Object.assign(w, { storage, s, written, rotate, action, store });
+}
+
+/** The keychain refuses the hold's item: what is left is E2's chain, the value in memory alone. */
+function refuseHolds(storage: StorageManager): void {
+  const store = storage.heldRotations;
+  Object.defineProperty(storage, 'heldRotations', { value: { ...store, put: () => Promise.reject(new Error('the keychain refused the write')) } });
 }
 
 const inTheClear = (w: World): string[] => w.written.filter((value) => value.includes(NEW_SECRET));
@@ -117,8 +138,8 @@ async function openedConnection(w: World): Promise<string | undefined> {
   return read.kind === 'locked' ? unlockSecret(read.envelope, ACCOUNT, PIN) : undefined;
 }
 
-test('protected while the far side changed — the person stores the new value under the entry\'s PIN: sealed, kept, never in the clear', async () => {
-  const w = await world([PIN], [STORE_IT]);
+test('protected while the far side changed and the hold failed — the person stores the new value under the entry\'s PIN: sealed, kept, never in the clear', async () => {
+  const w = await world([PIN], [STORE_IT], { hold: 'fails' });
 
   const result = await w.rotate();
 
@@ -130,8 +151,8 @@ test('protected while the far side changed — the person stores the new value u
   assert.match(w.s.modals[0] ?? '', /WAS changed/);
 });
 
-test('protected while the far side changed — the person declines: the copy offer happens, nothing plain is stored, and the agent is told it was NOT stored', async () => {
-  const w = await world([], [undefined, COPY_IT]);
+test('protected while the far side changed and the hold failed — the person declines: the copy offer happens, nothing plain is stored, and the agent is told it was NOT stored', async () => {
+  const w = await world([], [undefined, COPY_IT], { hold: 'fails' });
 
   const result = await w.rotate();
 
@@ -146,8 +167,8 @@ test('protected while the far side changed — the person declines: the copy off
   assert.match(w.s.modals[1] ?? '', /was NOT stored in the vault/);
 });
 
-test('protected while the far side changed — the person agrees but the PIN box is dismissed: the copy offer still comes, and nothing is stored in the clear', async () => {
-  const w = await world([undefined], [STORE_IT, COPY_IT]);
+test('protected while the far side changed and the hold failed — the person agrees but the PIN box is dismissed: the copy offer still comes, and nothing is stored in the clear', async () => {
+  const w = await world([undefined], [STORE_IT, COPY_IT], { hold: 'fails' });
 
   const result = await w.rotate();
 
@@ -203,7 +224,7 @@ async function delivered(w: World): Promise<string> {
 }
 
 test('a statement that echoes the new value, the entry protected while it ran, the person stores it under the PIN — the agent never reads the new value', async () => {
-  const w = await world([PIN], [STORE_IT], { echo: true });
+  const w = await world([PIN], [STORE_IT], { echo: true, hold: 'fails' });
 
   const answer = await delivered(w);
 
@@ -212,7 +233,7 @@ test('a statement that echoes the new value, the entry protected while it ran, t
 });
 
 test('a statement that echoes the new value, the entry protected while it ran, the person declines and copies it — the agent never reads the new value', async () => {
-  const w = await world([], [undefined, COPY_IT], { echo: true });
+  const w = await world([], [undefined, COPY_IT], { echo: true, hold: 'fails' });
 
   const answer = await delivered(w);
 
@@ -234,4 +255,86 @@ test('the control: a statement that echoes the new value into an entry nobody pr
 
   assert.ok(!answer.includes(NEW_SECRET), `the agent was handed the new value: ${answer}`);
   assert.match(answer, /CREDS_MASKED/);
+});
+
+// ---- Q3: the refused store writes the hold (plan §4.3) ----
+
+/** `work`, or a failure naming what it waited for — a test that would otherwise hang says why instead. */
+async function within<T>(work: Promise<T>, ms: number, waited: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(waited)), ms);
+  });
+  try {
+    return await Promise.race([work, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** A modal that stays open until the test answers it — the person is away. */
+function heldOpen(): { answer: ModalAnswer; close: (pressed: string | undefined) => void } {
+  let close: (pressed: string | undefined) => void = () => undefined;
+  const answer = (): Promise<string | undefined> => new Promise((resolve) => (close = resolve));
+  return { answer, close: (pressed) => close(pressed) };
+}
+
+const holdsTheNewValue = async (w: World): Promise<boolean> => ((await heldConnection(w)) ?? '').includes(NEW_SECRET);
+
+/** Every keychain write that carried the new value was the held item's record — and there was one. */
+const onlyInTheHeldItem = (w: World): boolean => inTheClear(w).length > 0 && inTheClear(w).every((value) => value.startsWith('{"v":1,"slots":'));
+
+const journalWord = (w: World, result: UseActionResult): string => (w.action.describeOutcome ?? String)(result);
+
+const heldConnection = async (w: World): Promise<string | undefined> => carried((await w.storage.heldRotations.read(ACCOUNT, ENTRY)).dbConnection?.value);
+
+test('protected while the far side changed — the new value is held beside the entry, the agent hears "quarantined" at once, and nothing reaches the slot in the clear', async () => {
+  const modal = heldOpen();
+  const w = await world([], [modal.answer]);
+
+  const result = await within(w.rotate(), 5_000, 'the agent\'s answer waited for the person to answer the modal');
+
+  assert.ok(await holdsTheNewValue(w), `the far side's new password is held nowhere — the agent got ${JSON.stringify(result.body)}`);
+  assert.equal(carried(await w.storage.getDbConnection(ACCOUNT, ENTRY)), w.sealedBefore, 'the slot is not the sealed value the other window wrote, byte for byte');
+  assert.ok(onlyInTheHeldItem(w), 'the new value reached a keychain key other than the held item');
+  const body = result.body as { rotated?: unknown; stored?: unknown; message?: unknown };
+  assert.deepEqual([result.status, body.rotated, body.stored], [200, true, 'quarantined']);
+  assert.match(String(body.message), /kept on the person's machine, outside the entry, until they next enter its PIN/);
+  assert.ok(!JSON.stringify(result.body).includes(NEW_SECRET), 'the agent was handed the new value');
+  assert.equal(journalWord(w, result), 'rotated, quarantined');
+  assert.deepEqual(await w.storage.heldRotations.listed(), [{ accountId: ACCOUNT, entityId: ENTRY }], 'the index does not name the entry — the tree and the sweep cannot see it');
+  assert.match(w.s.modals[0] ?? '', /being kept on this machine, outside the entry, until its PIN is entered/);
+  modal.close('Later');
+});
+
+test('a held rotation that echoes its new value — the agent never reads it', async () => {
+  const w = await world([], [], { echo: true });
+
+  const answer = await delivered(w);
+
+  assert.match(answer, /"stored":"quarantined"/);
+  assert.ok(!answer.includes(NEW_SECRET), `the agent was handed the new value: ${answer}`);
+});
+
+test('a second refused rotation of the same slot — the hold keeps the later value, the one the far side holds', async () => {
+  const w = await world([], []);
+  await w.rotate();
+
+  const second = await w.store('dbConnection', 'mysql://app:SECOND-rotation-9d1e@db-01.example.internal:3306/orders');
+
+  assert.equal(second, 'quarantined');
+  assert.match((await heldConnection(w)) ?? '', /SECOND-rotation-9d1e/, 'the hold kept the older value — the next PIN would store a password the far side no longer accepts');
+});
+
+test('a refused rotation, then one that lands in the unprotected entry — the older hold is gone, so no door overwrites the newer value with it', async () => {
+  const w = await world([], []);
+  await w.rotate();
+  await unprotectEntity(w.storage, ACCOUNT, ENTRY, PIN);
+  await w.storage.updateNodeFields(ACCOUNT, ENTRY, protectionDecision(false));
+
+  const later = await w.store('dbConnection', 'mysql://app:LANDED-rotation-3c5a@db-01.example.internal:3306/orders');
+
+  assert.equal(later, 'stored');
+  assert.equal(await heldConnection(w), undefined, 'the older hold survived a newer value landing in the entry');
+  assert.deepEqual(await w.storage.heldRotations.listed(), [], 'the index still names an entry with nothing held');
 });

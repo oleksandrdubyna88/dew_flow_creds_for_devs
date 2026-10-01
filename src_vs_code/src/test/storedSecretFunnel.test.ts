@@ -63,6 +63,7 @@ const ALLOWED: Readonly<Record<string, string>> = {
   'entityFieldReading.ts#notesReading': 'a metadata value read as the plain stored form it is (legacy note / public key kept in node metadata)',
   'envApply.ts#openedField': 'a metadata value read as the plain stored form it is (legacy note / public key kept in node metadata)',
   'rotationQuarantine.ts#heldIn': 'the quarantine parse boundary: a held rotation minted from its own item (rotation-quarantine plan §4.1)',
+  'rotationQuarantine.ts#heldFor': 'the quarantine parse boundary: the plain stored form of a value the rotation drew, minted for its item',
   'rotationQuarantine.ts#serialised': 'the quarantine parse boundary: the held stored form carried into its own item',
 };
 

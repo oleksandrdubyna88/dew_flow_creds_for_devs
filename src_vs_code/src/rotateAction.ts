@@ -15,6 +15,7 @@ import { pinFieldRefusal } from './pinGate';
 import { unsealedText } from './secretOpener';
 import type { StoredSecret } from './storedSecret';
 import { MaskEntry, buildMaskTable, maskResponseBody } from './secretMasker';
+import { fingerprintOf } from './rotationQuarantine';
 
 /**
  * The `rotate` action: the window changes a secret on the far side and then stores it.
@@ -63,14 +64,19 @@ export interface RotateDeps {
   snapshot(ctx: UseActionContext, details: EntityMetadata): Promise<Revision>;
   record(ctx: UseActionContext, revision: Revision): Promise<void>;
   /**
-   * Put the new value into the vault. Resolves when it is there; rejects with {@link RotationNotStored}
-   * when it could not be stored and was handed to the PERSON instead (`rotationStore.ts`) — the far side
-   * has changed by then, so the value is never simply dropped.
+   * Put the new value into the vault. Resolves `stored` when it is there, `quarantined` when the entry
+   * refused it and it is held beside the entry until its PIN is entered (`rotationQuarantine.ts`); rejects
+   * with {@link RotationNotStored} when even that failed and it was handed to the PERSON instead
+   * (`rotationStore.ts`) — the far side has changed by then, so the value is never simply dropped. `was` is
+   * the fingerprint of the text it replaces (`rotationQuarantine.fingerprintOf`), which a later release checks.
    */
-  store(ctx: UseActionContext, slot: RotationSlot, value: string): Promise<void>;
+  store(ctx: UseActionContext, slot: RotationSlot, value: string, was: string): Promise<StoreOutcome>;
   /** Called after a successful rotation so the tree and any open viewer catch up. */
   onRotated?: () => void;
 }
+
+/** Where the new value is once the store returned: in the entry, or held beside it. */
+export type StoreOutcome = 'stored' | 'quarantined';
 
 /** The body field the wrapped action reads its statement from. */
 export type StatementField = 'query' | 'command';
@@ -109,7 +115,7 @@ export function rotateAction(
  */
 function describeRotation(result: UseActionResult): string {
   if (result.status === 200) {
-    return (result.body as { stored?: unknown }).stored === false ? ROTATED_NOT_STORED : 'rotated';
+    return JOURNAL_WORDS.get((result.body as { stored?: unknown }).stored) ?? 'rotated';
   }
   return (result.body as { noGenerator?: unknown }).noGenerator === true
     ? NO_GENERATOR_OUTCOME
@@ -151,13 +157,13 @@ async function run(
     // they are the map of where an agent will be tempted to generate the value itself.
     return ready.noGenerator === true ? refuseNoGenerator(ready.error) : refuse(ready.error);
   }
-  const { details, checked, secret, stored } = ready;
+  const { details, checked, secret, stored, was } = ready;
 
   const result = await underlying.run(ctx, { [field]: substituteNewSecret(statement, secret) });
   // The far side did not change, so neither does the vault. Handed back as it came — but masked: the
   // statement's own error is what says why, and a statement that printed its input and THEN failed may
   // have changed the far side all the same.
-  const answer = succeeded(result) ? await commit(ctx, details, checked.slot, stored, result, deps) : result;
+  const answer = succeeded(result) ? await commit(ctx, details, { slot: checked.slot, value: stored, was }, result, deps) : result;
   return maskedAnswer(answer, newValues(checked.slot, secret, stored));
 }
 
@@ -290,14 +296,15 @@ async function draw(
     return { ok: false, error: drawn.message, noGenerator: true };
   }
   // Sealed values and marked entries were refused by `protectedSlot` before this ran; the text as stored.
-  const stored = storedValueFor(checked.slot, unsealedText(await deps.current(ctx, checked.slot)), drawn.value, details.dbType);
+  const current = unsealedText(await deps.current(ctx, checked.slot));
+  const stored = storedValueFor(checked.slot, current, drawn.value, details.dbType);
   return stored.ok
-    ? { ok: true, details, checked, secret: drawn.value, stored: stored.value }
+    ? { ok: true, details, checked, secret: drawn.value, stored: stored.value, was: fingerprintOf(current) }
     : { ok: false, error: stored.error };
 }
 
 type Prepared =
-  | { ok: true; details: EntityMetadata; checked: { slot: RotationSlot }; secret: string; stored: string }
+  | { ok: true; details: EntityMetadata; checked: { slot: RotationSlot }; secret: string; stored: string; was: string }
   | { ok: false; error: string; noGenerator?: boolean };
 
 /** The kind asked for, defaulting to a password — which is what a rotation almost always is. */
@@ -306,37 +313,46 @@ function kindOf(body: unknown): string {
   return typeof value === 'string' && value.length > 0 ? value : 'password';
 }
 
+/** What a successful far side hands the store: the slot, the stored form, and the fingerprint of what it replaces. */
+interface NewValue {
+  readonly slot: RotationSlot;
+  readonly value: string;
+  readonly was: string;
+}
+
 /**
  * History first, then the write, then the tree. Only ever reached by a far side that changed — so a
- * store that could not happen is never an internal failure that drops the new value: the person was
- * handed it (`RotationNotStored`), and the agent is told plainly that it was not stored.
+ * store that could not happen is never an internal failure that drops the new value: it is held beside
+ * the entry until its PIN (`quarantined`), or — when even that failed — the person was handed it
+ * (`RotationNotStored`), and the agent is told plainly where the value is.
  */
 async function commit(
   ctx: UseActionContext,
   details: EntityMetadata,
-  slot: RotationSlot,
-  value: string,
+  value: NewValue,
   result: UseActionResult,
   deps: RotateDeps,
 ): Promise<UseActionResult> {
   await deps.record(ctx, await deps.snapshot(ctx, details));
-  const stored = await storedOrHanded(ctx, slot, value, deps);
+  const where = await storedOrHanded(ctx, value, deps);
   deps.onRotated?.();
   // `stdout`, not `output`: it IS the far side's stdout, and calling it anything else was how
   // this answer escaped the masker for one release (security pass, 2026-08-27). The masker
   // covers every field now, and the honest name is still the right one.
   const rotated = { rotated: true, entity: ctx.entityName, stdout: outputOf(result) };
-  return { status: 200, body: stored ? rotated : { ...rotated, stored: false, message: NOT_STORED } };
+  return { status: 200, body: { ...rotated, ...AGENT_WORDS[where] } };
 }
 
-/** `true` when the value is in the vault; `false` when the store handed it to the person instead. */
-async function storedOrHanded(ctx: UseActionContext, slot: RotationSlot, value: string, deps: RotateDeps): Promise<boolean> {
+/**
+ * `stored` when the value is in the vault, `quarantined` when it is held beside the entry until its PIN,
+ * `handed` when the store handed it to the person instead.
+ */
+async function storedOrHanded(ctx: UseActionContext, value: NewValue, deps: RotateDeps): Promise<StoreOutcome | 'handed'> {
   try {
-    await deps.store(ctx, slot, value);
-    return true;
+    return await deps.store(ctx, value.slot, value.value, value.was);
   } catch (error) {
     if (error instanceof RotationNotStored) {
-      return false;
+      return 'handed';
     }
     throw error;
   }
@@ -357,8 +373,29 @@ export class RotationNotStored extends Error {
 const NOT_STORED = 'The far side changed; the new value was not stored in the vault; the person was told and offered the value. '
   + 'Do not retry the rotation: the old value no longer works, and the person holds the new one.';
 
-/** The journal's word for it — grep-able beside `rotated`. */
-const ROTATED_NOT_STORED = 'rotated, not stored';
+/**
+ * What the agent is told when the entry refused the value and it is held beside it (plan §4.3). The answer
+ * does NOT wait for the person: the value is safe, so nothing they answer changes what the agent should do
+ * (the owner's answer to the plan's open question 3).
+ */
+const QUARANTINED = "The far side changed. The entry was protected with a PIN while it ran, so the new value is kept on the person's "
+  + 'machine, outside the entry, until they next enter its PIN — then it is stored. Do not retry the rotation; the old value no longer works.';
+
+/**
+ * Where the value is, in the answer's words — `stored` answers "where is it now": one field with three
+ * answers that cannot contradict each other the way `stored: false, held: true` could (plan §4.3).
+ */
+const AGENT_WORDS: Readonly<Record<StoreOutcome | 'handed', object>> = {
+  stored: {},
+  quarantined: { stored: 'quarantined', message: QUARANTINED },
+  handed: { stored: false, message: NOT_STORED },
+};
+
+/** The journal's words for it — grep-able beside `rotated`. */
+const JOURNAL_WORDS = new Map<unknown, string>([
+  [false, 'rotated, not stored'],
+  ['quarantined', 'rotated, quarantined'],
+]);
 
 /**
  * Did the far side actually change?
