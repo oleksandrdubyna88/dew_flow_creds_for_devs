@@ -213,11 +213,11 @@ function writingSetter(node: ts.Node, setters: ReadonlySet<string>): ts.Property
   if (access === undefined || !setters.has(access.name.text)) {
     return undefined;
   }
-  return deletes(node as ts.CallExpression) ? undefined : access;
+  return deletes(access.parent) ? undefined : access;
 }
 
-function deletes(call: ts.CallExpression): boolean {
-  const value = call.arguments[2];
+function deletes(call: ts.Node): boolean {
+  const value = ts.isCallExpression(call) ? call.arguments[2] : undefined;
   return value !== undefined && ts.isIdentifier(value) && value.text === 'undefined';
 }
 

@@ -6,6 +6,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — every read goes through a door, every write through one writer (typed-secrets E2, 2026-10-01)
+
+- **The health report graded a damaged protected value and a woven password as strong, unique
+  passwords.** It already skipped a sealed value for that reason; a damaged wrap (envelope text) and a
+  woven pair (your value interleaved with a decoy) told the same lie. Both are now skipped: the report
+  weighs only what it can read as a password.
+- **A damaged protected value was used as if it were the value.** A terminal variable, a `creds://`
+  reference to a note or a one-time code, an agent's database query and a git sync's deploy key each
+  handed the damaged wrap on as text — the database client was even launched with it. Each now refuses it
+  in words ("… holds a protected value that cannot be read"), as the viewer and every click already did.
+- **An agent was shown a sealed connection string's envelope.** An entry whose PIN mark was lost while its
+  connection string stayed sealed listed the ciphertext as its connection string. It now lists none.
+- **A kept version's woven password was copied as its envelope**, from the version viewer's *Copy* and
+  *Copy All*; and **the history row's *Copy* of a protected entry put a kept version's sealed envelope on
+  the clipboard.** Both now read the version the way the live viewer reads the entry: opened once through
+  the entry's door (a version sealed under the PIN the entry used to have asks for that PIN), then read
+  without asking again.
+- **A write decided while an entry was unprotected could land after another window protected it.** A
+  share's *Update it*, an Edit and an agent's rotation read the entry's protection and wrote a moment
+  later; another window protecting the entry in between received the value in the clear (until the next
+  open sealed it). The first write now checks again under the same cross-window lock sync and every node
+  write take: an entry protected meanwhile is not written, nothing is stored in the clear, and you are
+  told — a share stays in *Shared with me* to be accepted again. An agent's rotation into an entry
+  protected meanwhile is refused with the PIN sentence.
+
 ### Fixed — two plaintext windows, closed before the typed-secrets work (2026-10-01)
 
 - **Add into a folder that asks for a PIN wrote the new entry in the clear first, then sealed it.** The

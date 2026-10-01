@@ -1160,7 +1160,7 @@ inherited at read time.
 | Module | What it holds |
 |---|---|
 | `entitySlots.ts` | the ten slots, as one table everything walks — and the fixed ORDER. Each row names its revision field and, since the typed-secrets plan's E1 (2026-10-01), its `bundleKey` — the sync/backup map it travels in, asserted with attachments and images to be exactly `SECRET_KINDS` and to equal `syncPinRule.SEALABLE_MAPS`; `snapshotForRevision` walks the table instead of ten hand-written reads |
-| `storedSecret.ts` | `StoredSecret`, the phantom type of a value as the keychain holds it ([PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) §2.2), with its `stored()` mint and `carried()` — defined in E1 and returned by nothing yet; what it must and must not compile is held by `test/typedFixtures.test.ts` |
+| `storedSecret.ts` | `StoredSecret`, the phantom type of a value as the keychain holds it ([PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) §2.2), with its `stored()` mint and `carried()` — defined in E1 and returned by nothing yet (the getters flip in E3); what it must and must not compile is held by `test/typedFixtures.test.ts`, and which modules may mint, strip, parse or seal a stored string by `test/storedSecretFunnel.test.ts` (E2) |
 | `entityPin.ts` | `protectEntity` / `unprotectEntity` / `siblingsOpened` / `lockedSlotCount`, pure of `vscode` |
 | `pinSession.ts` | the grant: a module-level Map in the extension host and nothing else |
 | `pinGate.ts` | opening one value for an operation somebody CLICKED; `automaticPinRefusal` for everything else |
@@ -1168,18 +1168,19 @@ inherited at read time.
 | `pinPrompt.ts` | the thin `vscode` edge: the one input box, with the one wording |
 | `pinCommands.ts` | the three commands, and the folder run |
 | `pinFolderPlan.ts` | what a folder run would do, and the sentences it says before doing it |
-| `pinOnCreate.ts` | a new entry in a folder whose entries are protected; `firstPinFor`, the first PIN of an entry protected while empty; `writerForNewEntry`, the one writer both creates (Add, the agent's) take — sealed before the first write |
+| `pinOnCreate.ts` | a new entry in a folder whose entries are protected; `firstPinFor`, the first PIN of an entry protected while empty; `SettledPin`, what a new entry's writer is made from (`entryWriter.writerForNew` since E2 — it was `writerForNewEntry` here) |
 | `sharePayloadBuild.ts` | the payload builder, lifted out of `shareInbox` when this pushed it over its ceiling |
 | `shareTotpQuestion.ts` | *"What travels with this share?"* — the same lift, for the same ceiling |
 | `nodeOwnId.ts` | `withOwnId`: the node's record names the node it is in, at the import and at every read |
 | `sealValue.ts` | `sealValue` — the one seal every writer into a protected entry uses (woven mark kept, a sealed value untouched) |
 | `pinAttempts.ts` | five wrong PINs → a wait; `attemptUnlock` is the choke point, `attemptAcross` the sibling checks' |
-| `editPrefill.ts` | Edit over a protected entry: `openEntryForEdit`, `sealedWriter`, `pinForSave` |
-| `sealingAtWrite.ts` | R3 at write time: seal, write plain, or refuse — decided right before the first write (Edit, Restore) |
-| `secretOpener.ts` / `pinClick.ts` | the automatic opener and the click opener every sink stands behind |
+| `editPrefill.ts` | Edit over a protected entry: `openEntryForEdit`, `pinForSave`, `NOTHING_OPENED` (its `sealedWriter` moved into `entryWriter.ts` in E2) |
+| `sealingAtWrite.ts` | R3 at write time: seal, write plain, or refuse — and since E2 the `Sealing` is a branded PROOF only this module makes: `sealingAtWrite` (Edit, Restore — decided right before the first write), `sealingForNew` (a brand-new entry), `sealingForUpdate` (a share's *Update it*, doors injected), `unattendedSealing` (the rotation: plain only with no sealed slot and no mark, never sealed) |
+| `entryWriter.ts` | the ONE road from text to a stored value (E2): `EntryWriter`, `writerFor(storage, a, e, sealing, opened)` — the plain writer, whose first write re-checks the entry under the storage's cross-window lease for a proof about an entry that existed (`ProtectedMeanwhile`), or the sealing writer (sealed in memory before each raw setter, an unchanged value skipped) — plus `writerForNew` and `writeUnattended` |
+| `secretOpener.ts` / `pinClick.ts` | the automatic opener and the click opener every sink stands behind; since E2 also `fieldReadingOf` (an opener's answer as a `FieldReading`), the owner-less reads `plainText` (hygiene) and `unsealedText` (masker, tree hints), and `pinClick.grantedOpener` (the click opener's silent half, for a value read right after a door) |
 | `historyPin.ts` / `historyHeal.ts` / `revisionDoor.ts` | kept versions: sealed, healed at the door, opened through the live entry's door |
 | `revisionRestore.ts` / `restoreVersion.ts` | *Restore This Version…*: the command, and the writes in the order that keeps R3 |
-| `shareUpdateSeal.ts` | a share's *Update it* into a protected entry: the door, then every arriving value sealed; into an entry protected while empty, its first PIN first |
+| `shareUpdateSeal.ts` | a share's *Update it* into a protected entry: the door, then every arriving value sealed; into an entry protected while empty, its first PIN first — since E2 the decision is `sealingAtWrite.sealingForUpdate` and the writer `entryWriter.writerFor`, never the storage itself |
 | `syncPinRule.ts` / `syncProtection.ts` | the merge's protection rule (`pinEpoch`), and the losing copy kept as a revision |
 
 **The entry PIN has its own floor (issue #55, 2026-09-12).** `pinPolicy.ts` carries a `PinScope` —
@@ -1409,8 +1410,9 @@ stored sealed (the write log says never in the clear) and opens to the new text.
 **Where each surface stands.** The viewer reads the card's SHAPE through its gated reader
 (`entityViewerCommands.loadEntry`). Edit is `editPrefill.ts`: `openEntryForEdit` opens only the seven
 prefilled slots (in parallel, behind a progress notification — each is a scrypt of about a second)
-and records presence for the rest; `sealedWriter` is the `SecretWriter` a protected save writes
-through; `pinForSave` re-reads the grant at Save (`EntityFormOptions.beforeSave`: a decline keeps the
+and records presence for the rest; the sealing writer `entryWriter.writerFor` answers for a sealed
+proof is what a protected save writes through (it was `editPrefill.sealedWriter` until E2 of the
+typed-secrets plan); `pinForSave` re-reads the grant at Save (`EntityFormOptions.beforeSave`: a decline keeps the
 form). **Whether a save seals at all is decided immediately before its first write**
 (`sealingAtWrite.ts`, shared with Restore): an entry opened sealed fetches its PIN then, and is refused
 if it holds no sealed value any more; an entry opened plain is refused if it now holds a sealed value
@@ -1477,6 +1479,58 @@ write logged, then shown red again with its fix reverted:
   secret asks nothing (`FirstSeal.adds`, asked of the share). A mark over values in the clear stays the
   0.99.0 false mark the door clears at the next open, and is updated as the plain entry it is.
   `shareUpdateSeal.test.ts` holds the three cases through the real `ShareInbox`.
+
+**The doors and the one writer (typed-secrets plan, E2 — T3 and T4, 2026-10-01).** The second epic of
+[PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md): every read of a stored string
+outside a handful of modules goes through an opener, and every write through one writer made from a
+proof. Getters and setters are still `string`; E3 flips them to `StoredSecret`.
+
+- **Reads (T3).** `secretOpener.ts` gains `fieldReadingOf(opened, claimedBy?)` — an opener's answer as a
+  `FieldReading` (stopped → withheld with its sentence, open value → value, nothing or `''` → absent; with
+  the entry passed, a protected entry withholds even a field it does not hold, which terminal variables and
+  `creds://` have answered since the entry-PIN plan and `pinSlotMatrix` holds) — and two owner-less reads:
+  `plainText` (a value in the clear that is not woven: the health report) and `unsealedText` (the stored
+  text unless sealed: the output masker, the tree's config and URL hints, an agent's connection string).
+  The four automatic readers that called `pinFieldRefusal` and then used the string themselves —
+  `envApply.bindableFieldReading`, `entityFieldReading` (notes, one-time code), `agentUseActions.dbQueryAction`,
+  `transportFactory.usableDeployKey` — go through `automaticOpener` + `fieldReadingOf`, so a DAMAGED wrap is
+  withheld as damaged on all four (it was handed on as text — the database client was launched with it).
+  The health report no longer grades a damaged wrap or a woven pair as a strong, unique password; an agent
+  is no longer shown a sealed connection string's envelope.
+- **Kept versions are admitted once.** `viewerOptions` splits its seam: `StoredReader` (what is stored —
+  `storageSecretReader`, `revisionSecretReader`) and `SecretReader` (what a page reads — built only by
+  `gatedSecretReader`). The revision viewer, the live viewer's history-row Copy (`EntityViewOptions.resolveRevision`,
+  replacing the raw read of `options.history[i].secrets` in `entityViewCopy`) and *Show Config Changes*
+  read a kept version through `revisionDoor.openKeptVersion` once and then the silent gated reader
+  (`entityViewerCommands.keptRead`, `pinClick.grantedOpener`) — never `clickOpener`, whose door would be a
+  second question. A woven kept password is copied as the live viewer copies it, and a protected entry's
+  history row no longer puts a sealed envelope on the clipboard.
+- **Writes (T4).** `sealingAtWrite.Sealing` carries an unexported brand on `plain` and `sealed`, and only
+  that module makes one — `sealingAtWrite`, `sealingForNew`, `sealingForUpdate`, `unattendedSealing` — while
+  `entryWriter.writerFor` is the only way to a writer (`EntryWriter`: the twelve plaintext setters of the
+  additions pass plus the three raw record setters a share and an import write). The sealing writer is
+  `editPrefill.sealedWriter` and `shareUpdateSeal.sealingWriter` merged; `SecretWriter`, `ShareWriter`,
+  `pinOnCreate.writerForNewEntry` and the callerless `applySecrets` are gone. Edit, Add, an agent's create,
+  a share's accept and *Update it*, the import, an external bundle's import and the rotation's store
+  (`writeUnattended`) all take their writer from it; `StorageManager.writes` — the `LeasedQueue` — is public
+  so the writer can use it.
+- **The decision and the write under one lease** (CodeRabbit on PR #175, CWE-362). A `plain` proof about an
+  entry that existed carries what its decision saw of the mark; the plain writer's FIRST write runs under
+  `StorageManager.writes` — the cross-window lock sync, creates and every node write already take — after
+  re-checking the entry, and a sealed slot or a mark the decision did not see refuses it with
+  `entryWriter.ProtectedMeanwhile` before anything is stored; later writes of that writer wait for it and
+  fail with it. A brand-new entry's proof is `fresh` and re-checks nothing. No lease is held across a PIN
+  box. **Known limit:** `entityPin.protectEntity` does not itself take the lease, so a Protect in another
+  window that starts sealing after the re-check can still interleave with the later writes of the same
+  update; the door's `healProtected` seals such a value at the next open.
+- **The funnel, the syntax half** (`test/storedSecretFunnel.test.ts` over `test/funnelScan.ts`): outside an
+  allowlist with reasons, no module uses `stored`, `carried`, `readSecret`, `isLockedSecret`,
+  `isCorruptSecret`, `isWovenSecret`, `plainSecret`, `lockSecret` or `sealValue` (by import, so a local
+  `stored(` is not one) or writes `as StoredSecret`; no reader of kept versions uses `clickOpener`; and —
+  T4's interim rule, until E3 makes it a type — outside `entryWriter.ts` and `entitySlots.ts` the storage
+  is never a writer (`applyAdditions(storage`, a `store` bound to it, a slot setter called on it with a
+  value; a deletion with `undefined` is not a write). `test/fixtures/typed/sealing_is_a_proof.ts`: a
+  hand-built `plain` without the brand does not compile.
 
 **History is sealed, opens through the door, and can be restored.** Kept versions live per machine in
 the keychain (cap 3). Protect runs `historyPin.protectHistory` before the mark; on every OTHER machine
@@ -1962,10 +2016,13 @@ entry's secret went into the collection, where every later terminal in the windo
 PIN, against the form's *"PIN — on"* banner and the `entity-pin` help. **A PIN-protected entry writes no
 environment variable.** The seal runs first again (`treeMutationCommands.ts`: `applyCreatePin`, then
 `applyEnvBindings` — the pre-plan order; and since 2026-10-01 the additions themselves are already
-written sealed, through `pinOnCreate.writerForNewEntry`, so the order is about the mark the bindings
-read rather than the wrap), and `envApply.automaticFieldRefusal(details, field, stored)`
-is the ONE function every road asks: the woven refusal from the entry, the PIN refusal from the value's
-own wrap (`pinGate.automaticPinRefusal`) — a third policy goes there, not at a call site.
+written sealed, through `entryWriter.writerForNew` (`pinOnCreate.writerForNewEntry` until the
+typed-secrets plan's E2), so the order is about the mark the bindings read rather than the wrap), and
+`envApply.bindableFieldReading` is the ONE reading every road asks: the woven refusal from the entry
+(`automaticRefusal`), then the value opened by `secretOpener.automaticOpener` — the PIN refusal from the
+value's own wrap and the entry's mark, and since E2 a damaged wrap withheld as damaged — read through
+`fieldReadingOf`. `automaticFieldRefusal(details, field, stored)` is the same policy as one sentence for a
+stored string in hand — a third policy goes there and into the opener, not at a call site.
 `boundReading` takes the stored reading first and lets a held value stand in only when that reading is
 not a refusal, so a held value never outranks the policy wherever it came from; the withheld name
 carries the same sentence the viewer's `ENV` button says.

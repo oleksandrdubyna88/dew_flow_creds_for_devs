@@ -1,7 +1,7 @@
 # PLAN — a stored secret has its own type: forgetting the PIN door stops compiling
 
-> Status: **E1 of three epics built, 2026-10-01** (T1 and T2 on `feat/typed-secrets-e1`, its code round passed,
-> pull request open; E2 and E3 not begun) — written 2026-09-29, revised after the consultation
+> Status: **E1 and E2 of three epics built, 2026-10-01** (E1 — T1, T2 — merged as #176; E2 — T3, T4 — on
+> `feat/typed-secrets-e2`, its plan round passed, its code round not yet run; E3 not begun) — written 2026-09-29, revised after the consultation
 > 2026-09-30, split into epics after the second plan round 2026-09-30.
 > Two plan gates passed: `proceed` on the 2026-09-29 text (2 of 2 reviewers, one round, seven findings
 > accepted — §8.1) and `proceed` on this revised text (session `bc788c97`, 1 of 2 reviewers — Codex was
@@ -420,7 +420,7 @@ this is what they mean for THIS plan:
 | epic | branch | cut from | stories (model) | plan round | code round | PR |
 |---|---|---|---|---|---|---|
 | **E1** — foundations | `feat/typed-secrets-e1` | `main` at `9f62e4db` | T1, T2 (Opus) — built 2026-10-01, commits `f038982c` (T1) and `9e380014` (T2) | session `9f8e746d`, **proceed**, 1 of 2 reviewers (Codex rate-limited); finding 0 accepted — the harness resolves its fixtures from the package root, a run that finds zero fixtures FAILS, and the compiles-fixture is the positive control (all three built and shown red, T2's commit); finding 1 accepted as a check — the ratchet's output is recorded per commit (both commits: 1038 / 1015, at baseline) | session `9f8e746d`, **proceed**, 4 of 8 reviewers (Codex rate-limited), 6 findings: 5 rejected with reasons — the serial slot reads (2, 4) are the shipped order unchanged and parallel reads would not close a torn snapshot, only move it; the `undefined` overload (0) never drops `undefined` from the type; `read` returning `string` (1) is T5's staged flip; the pinned fixture line (3) is what proves the error sits on the statement under test — and finding 5 accepted: the harness hands each fixture's program to the next as `oldProgram`, so the lib files are parsed once (3 fixtures: 1.9 s → 1.5 s) | — |
-| **E2** — the doors | `feat/typed-secrets-e2` | E1's last commit | T3, T4 (Fable, max) | — | — | — |
+| **E2** — the doors | `feat/typed-secrets-e2` | `main` at `9369b4d3` (E1 merged, #176) | T3, T4 — planned on Fable (max), **built on Opus 5.5, because Fable was rate-limited (2026-10-01)**; built 2026-10-01, commits `d8339155`, `275b9230`, `28fd17fd`, `6544409f`, `d39e9712` (T3) and `80574e5d`, `98839d13` (T4) | session `67779c80`, **proceed**, 1 of 2 reviewers (Codex rate-limited), 2 findings rejected — answered by §2.3 (the doors' answers for absent / plain / woven / sealed / damaged) and §2.4 (the branded `Sealing` and the `stopped` contract) | — | — |
 | **E3** — the flip and the finish | `feat/typed-secrets-e3` | E2's last commit | T5, T6 (Opus) | — | — | — |
 
 - [x] **T0 — Re-verify, count, gate the revision.** Done 2026-09-30, on Fable as the operator asked: the
@@ -494,7 +494,7 @@ secrets regression — mergeable alone, bisectable alone. Fable (max) because a 
 plain, woven, sealed or damaged value, or a writer the storage can still satisfy, is D7 and R3 again — the
 two defects the owner's data loss came from — and a later round cannot repair a release that shipped one.
 
-- [ ] **T3 (E2) — The reads converge on the doors.** Outside the funnel no module parses a stored string or uses
+- [x] **T3 (E2) — The reads converge on the doors.** Outside the funnel no module parses a stored string or uses
       a getter's result as text. `secretOpener.ts` gains `fieldReadingOf`, `plainText`, `unsealedText`;
       `envApply.ts:90-133`, `entityFieldReading.ts:57-81`, `agentUseActions.ts:304-313`,
       `transportFactory.ts:280-288` go through `automaticOpener`; `hygieneScan.ts:111-121`,
@@ -522,7 +522,32 @@ two defects the owner's data loss came from — and a later round cannot repair 
       sealed or damaged value is decided in ten modules at once, and a wrong default is D7 again.
       **DoD:** the PIN plan's suite green unchanged; the funnel's syntax half green with its negative
       fixture and positive control; `readerScan`'s `READERS` table unchanged; ratchet unchanged.
-- [ ] **T4 (E2) — One road to a writer.** `sealingAtWrite.ts`: the brand, `sealingForNew`, `sealingForUpdate`,
+      **Done 2026-10-01, `d8339155` `275b9230` `28fd17fd` `6544409f` `d39e9712`** (Opus 5.5 — Fable was
+      rate-limited). Every RED watched first: the funnel listed exactly the four files named above
+      (`entityFlags.ts:249, 253`, `envApply.ts:108`, `hygieneScan.ts:117`, `maskEntries.ts:121`) and the
+      `clickOpener` rule `configCommands.ts`; hygiene's two (*"a damaged wrap was graded as a password"*,
+      *"a woven pair was graded as a password"*). The guard (one box for viewing and copying a kept version)
+      green before and after. Break-it per moved site recorded in each commit. **Behaviour found and fixed on
+      the way, each RED first:** a DAMAGED wrap was handed on as text by all four automatic readers (the
+      broker's db query launched the client with it); an agent was shown a sealed connection string's
+      envelope (`mcpEntries`); the revision viewer copied a woven kept password as its envelope, and the
+      live viewer's history-row Copy put a protected entry's kept envelope on the clipboard
+      (`entityViewCopy` read `options.history[i].secrets` raw — now `EntityViewOptions.resolveRevision`,
+      through `openKeptVersion` and the silent reader). **Deviations:** (1) `fieldReadingOf(opened,
+      claimedBy?)` takes the entry: built as written, `pinSlotMatrix` went red ten times (*"an automatic
+      reader was handed {"kind":"absent"}"*) — the opener answers an absent value as absent while
+      `pinFieldRefusal`, which terminal variables and `creds://` asked, refuses on the mark alone; envApply and
+      entityFieldReading pass the entry, the db query and the deploy key do not (they said "nothing stored"
+      first, and still do). (2) `pinReaderBoundary`'s refusal primitives gain `plainText(` and
+      `unsealedText(` — §2.6 said they would gain nothing, but `READERS` is unchanged, the scans' files are
+      `automatic`, and the funnel no longer lets them call `isLockedSecret(`, so without it the boundary named
+      `hygieneScan.entryFor` ungated; `GATED_BY_CALLER` unchanged. (3) *Show Config Changes* opens the kept
+      body through `pinClick.grantedOpener` — `clickOpener`'s silent half, extracted — rather than a bare
+      `openStored`, so a stop is said in the same words. (4) The funnel's positive control for `carried(` in
+      `exportSecrets.ts` cannot exist before T5 (nothing calls `carried` yet); the control is the parser's and
+      the producers' known callers. (5) `mcpEntries` reads through `unsealedText` in the shaper, not in
+      `storedSecrets`, which stays a caller-gated function.
+- [x] **T4 (E2) — One road to a writer.** `sealingAtWrite.ts`: the brand, `sealingForNew`, `sealingForUpdate`,
       `unattendedSealing`. `entryWriter.ts`: `EntryWriter`, `writerFor`, the plain and the sealing writer —
       `editPrefill.sealedWriter` (`:216-242`) and `shareUpdateSeal.sealingWriter` (`:111-125`) deleted;
       `SecretWriter` and `ShareWriter` replaced by `EntryWriter`. Callers: `entityEditCommands.ts:272-273`,
@@ -565,6 +590,34 @@ two defects the owner's data loss came from — and a later round cannot repair 
       **DoD:** `editProtected`, `emptyProtected`, `shareUpdateSeal`, `revisionRestore`, `agentCreatePin`,
       `writeOrderPaths`, `pinSlotMatrix` green unchanged; `editPrefill.ts` and `shareUpdateSeal.ts` shrink;
       `storageManager.ts` and `extension.ts` line-neutral.
+      **Done 2026-10-01, `80574e5d` `98839d13`** (Opus 5.5 — Fable was rate-limited). The unattended
+      sealing's answers RED as TS2305 first, then green, with teeth (always-plain → *"an unattended write was
+      permitted into an entry with a sealed slot"*); the compile-fail fixture `sealing_is_a_proof.ts` red with
+      the brand removed (*"the fixture compiled"*); the interim rule red over the pre-T4 tree (39 findings in
+      seven files). The lease: the existing cross-window lock is `StorageManager.writes` (the `LeasedQueue`
+      over `windowLock.ts`), reused, not a second one. Its RED was shown with the re-check taken out — the
+      test was written after the writer, so testing.md's *fix landed first* route: *"the arriving password
+      reached the keychain in the clear, in a protected entry"*. `editPrefill.ts` 288 → 192 lines,
+      `shareUpdateSeal.ts` 196 → 131; ratchet 1038 / 1015, at baseline. **Deviations:** (1) the plain proof
+      carries what its decision saw of the mark (`marked`) and whether the entry is brand new (`fresh`): the
+      re-check refuses a sealed slot or a mark the decision did NOT see, because `sealingForUpdate` and
+      `sealingAtWrite` legitimately answer `plain` over a mark on values in the clear (the 0.99.0 false
+      mark), and a new id has nothing to re-check; (2) `stopped` carries `reason` (`''` when said or
+      declined, the PIN sentence for `unattendedSealing`) — the `OpenedSecret` contract; (3) `sealingForUpdate`
+      takes its two doors as arguments so `sealingAtWrite.ts` stays pure of `vscode`; (4) `EntryWriter` adds
+      `setSecondRaw` to the plan's list (an external bundle's import writes it) — fifteen setters;
+      (5) `entryWriter.writerForNew` (`sealingForNew` over `NOTHING_OPENED`) and `writeUnattended` are the
+      two shapes callers take, both behind `writerFor`; an accepted share and an import take `writerForNew`
+      with no PIN (§2.7's question stays the owner's); `applyExternalSecrets` makes one writer per entity;
+      (6) `StorageManager.writes` is made public instead of a new method — line-neutral; (7) the interim rule
+      does not report a slot setter called with the literal `undefined`: a deletion writes nothing in the
+      clear, and `writeOrderPaths` (the PIN suite) holds `applyRemovals`' `setNotes/setFields/setPayment/
+      setConfigBody/setSecond(…, undefined)` by name; (8) `applySecrets` had no caller and was deleted; (9) two
+      test fakes changed mechanically — `editProtected.test.ts` takes the sealing writer from `writerFor`,
+      `envSaveNotice.test.ts`'s storage offers `writes`. **Known limit:** `protectEntity` does not take the
+      lease, so a Protect in another window that starts sealing AFTER the re-check can interleave with the
+      update's later writes; the door's `healProtected` seals such a value at the next open — taking the lease
+      in `protectEntity` is the follow-up, and a question for the code round.
 
 **E2 DoD:** T3's and T4's DoDs; the PIN plan's suite green with no assertion edited; the funnel test's
 syntax half green with its negative fixture and positive control, and T4's interim rule (*no
