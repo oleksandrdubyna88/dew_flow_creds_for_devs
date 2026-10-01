@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { stored } from '../storedSecret';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -264,7 +265,7 @@ test('Show Config Changes on a protected config compares the OPENED bodies, afte
   const details = { id: 'cfg1', name: 'app config', kind: 'config', configFormat: 'json', isSshEnabled: false, pinProtected: true } as EntityMetadata;
   await seedEntry(storage, details, { 'config body': await locked('{"db":"new","port":1}') });
   const previous = await locked('{"db":"old","port":1}');
-  await storage.recordRevision(ACCOUNT, 'cfg1', { at: Date.UTC(2026, 8, 1, 12), name: 'app config', details, secrets: { config: previous } });
+  await storage.recordRevision(ACCOUNT, 'cfg1', { at: Date.UTC(2026, 8, 1, 12), name: 'app config', details, secrets: { config: stored(previous) } });
   const { showConfigChanges } = loadWithVscode<typeof import('../configCommands')>('../configCommands', stub);
 
   await showConfigChanges(storage, ACCOUNT, storage.getNode(ACCOUNT, 'cfg1') as TreeNode);

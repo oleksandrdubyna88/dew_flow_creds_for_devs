@@ -30,16 +30,13 @@ export type HistoryStore = Pick<StorageManager, 'getHistory' | 'replaceHistory'>
 
 type Field = (typeof SMALL_FIELDS)[number];
 
-/** A kept version's stored form, or `undefined` for a field the version does not hold. `| string` for T5's window. */
-type Kept = StoredSecret | string;
-
 /** Every stored value the kept versions hold, field by field. */
-function storedValues(kept: readonly Revision[]): Kept[] {
+function storedValues(kept: readonly Revision[]): StoredSecret[] {
   return kept.flatMap((revision) => SMALL_FIELDS.map((field) => revision.secrets[field]).filter(isHeld));
 }
 
 /** A field that holds something — never read as text: absent and empty are both nothing. */
-function isHeld(value: Kept | undefined): value is Kept {
+function isHeld(value: StoredSecret | undefined): value is StoredSecret {
   return value !== undefined && !isEmptySecret(value);
 }
 
@@ -100,7 +97,7 @@ export async function protectHistory(
 /** What opening the kept versions with one PIN produced, in memory — nothing has been written yet. */
 export interface OpenedHistory {
   /** Stored string → its opened form (`plainSecret`, so a woven value stays woven). */
-  readonly rewrite: ReadonlyMap<Kept, StoredSecret>;
+  readonly rewrite: ReadonlyMap<StoredSecret, StoredSecret>;
   /** Values this PIN does not open — left sealed and counted, never replaced. */
   readonly foreign: number;
 }
@@ -115,7 +112,7 @@ export interface OpenedHistory {
 export async function openHistory(kept: readonly Revision[], accountId: string, entityId: string, pin: string): Promise<OpenedHistory> {
   const sealed = [...new Set(storedValues(kept))].filter((stored) => readSecret(stored).kind === 'locked');
   const opened = await Promise.all(sealed.map((stored) => openedForm(stored, (envelope) => retryGranted(envelope, accountId, entityId, pin))));
-  const rewrite = new Map<Kept, StoredSecret>();
+  const rewrite = new Map<StoredSecret, StoredSecret>();
   sealed.forEach((stored, at) => {
     const value = opened[at];
     if (value !== undefined) {
@@ -126,7 +123,7 @@ export async function openHistory(kept: readonly Revision[], accountId: string, 
 }
 
 /** One sealed stored value, opened into the form an unprotected value is stored in — or nothing. */
-async function openedForm(kept: Kept | undefined, unlock: (envelope: SecretEnvelope) => Promise<string | undefined>): Promise<StoredSecret | undefined> {
+async function openedForm(kept: StoredSecret | undefined, unlock: (envelope: SecretEnvelope) => Promise<string | undefined>): Promise<StoredSecret | undefined> {
   const read = readSecret(kept);
   if (read.kind !== 'locked') {
     return undefined;
@@ -140,13 +137,13 @@ export function rewriteHistory(
   storage: HistoryStore,
   accountId: string,
   entityId: string,
-  rewrite: ReadonlyMap<Kept, StoredSecret>,
+  rewrite: ReadonlyMap<StoredSecret, StoredSecret>,
 ): Promise<void> {
   return rewrite.size === 0 ? Promise.resolve() : storage.replaceHistory(accountId, entityId, (kept) => kept.map((r) => revised(r, rewrite)));
 }
 
 /** One revision with every mapped value replaced; everything else — and every other field — as it was. */
-function revised(revision: Revision, rewrite: ReadonlyMap<Kept, StoredSecret>): Revision {
+function revised(revision: Revision, rewrite: ReadonlyMap<StoredSecret, StoredSecret>): Revision {
   const secrets: RevisionSecrets = { ...revision.secrets };
   for (const field of SMALL_FIELDS) {
     const replacement = replacementOf(secrets[field], rewrite);
@@ -157,7 +154,7 @@ function revised(revision: Revision, rewrite: ReadonlyMap<Kept, StoredSecret>): 
   return { ...revision, secrets };
 }
 
-function replacementOf(kept: Kept | undefined, rewrite: ReadonlyMap<Kept, StoredSecret>): StoredSecret | undefined {
+function replacementOf(kept: StoredSecret | undefined, rewrite: ReadonlyMap<StoredSecret, StoredSecret>): StoredSecret | undefined {
   return kept === undefined ? undefined : rewrite.get(kept);
 }
 
@@ -271,7 +268,7 @@ function withValues(revision: Revision, fields: readonly Field[], opens: readonl
  * A REAL stored form, minted — never a cast (second plan round, finding 0): `readSecret` on it answers
  * `value` with the woven flag intact, exactly what it answers for an unprotected entry's field.
  */
-function storedForm(kept: Kept | undefined, open: PinOpen): Kept | undefined {
+function storedForm(kept: StoredSecret | undefined, open: PinOpen): StoredSecret | undefined {
   if (open.kind !== 'value') {
     return kept;
   }

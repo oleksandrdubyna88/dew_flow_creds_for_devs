@@ -83,11 +83,8 @@ interface ViewerValues<T> {
   paymentRaw(): Thenable<T | undefined>;
 }
 
-/**
- * Where a viewer's secrets come from, as stored: the keychain (live) or a kept version's record.
- * `| string` for T5's window only — a kept version's fields carry it (`RevisionSecrets`).
- */
-export type StoredReader = ViewerValues<StoredSecret | string>;
+/** Where a viewer's secrets come from, as stored: the keychain (live) or a kept version's record. */
+export type StoredReader = ViewerValues<StoredSecret>;
 
 /** What a viewer's page reads — every value opened. Built only by `gatedSecretReader`. */
 export type SecretReader = ViewerValues<string>;
@@ -184,7 +181,7 @@ export function gatedSecretReader(
   gate: PinGate,
   report: (message: string) => void,
 ): SecretReader {
-  const through = (read: () => Thenable<StoredSecret | string | undefined>) => async (): Promise<string | undefined> =>
+  const through = (read: () => Thenable<StoredSecret | undefined>) => async (): Promise<string | undefined> =>
     told(await openStored(await read(), gate), report);
   return {
     password: through(inner.password),

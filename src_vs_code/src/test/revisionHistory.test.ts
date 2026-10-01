@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { stored } from '../storedSecret';
 import { test } from 'node:test';
 import {
   MAX_REVISIONS,
@@ -12,7 +13,7 @@ const rev = (at: number, name = 'prod db') => ({
   at,
   name,
   details: { id: 'e1', name, isSshEnabled: false },
-  secrets: { password: `pw-${at}` },
+  secrets: { password: stored(`pw-${at}`) },
 });
 
 test('the newest revision is first, so a viewer reads top-down', () => {
@@ -78,7 +79,7 @@ test('attachments are not part of a revision — states the limit rather than hi
 test('a replaced TOTP seed is kept — an old seed still produces codes somebody may need', () => {
   const pushed = pushRevision([], {
     ...rev(1),
-    secrets: { totp: 'otpauth://totp/code?secret=JBSWY3DPEHPK3PXP&algorithm=SHA1&digits=6&period=30' },
+    secrets: { totp: stored('otpauth://totp/code?secret=JBSWY3DPEHPK3PXP&algorithm=SHA1&digits=6&period=30') },
   });
 
   assert.equal(pushed[0].secrets.totp, 'otpauth://totp/code?secret=JBSWY3DPEHPK3PXP&algorithm=SHA1&digits=6&period=30');
@@ -91,7 +92,7 @@ test('a head carries everything the tree draws and none of the secrets', () => {
     at: 1_700_000_000_000,
     name: 'before',
     details: { id: 'e', name: 'before', isSshEnabled: false, host: 'h' },
-    secrets: { password: 'hunter2', notes: 'private' },
+    secrets: { password: stored('hunter2'), notes: stored('private') },
   });
 
   assert.deepEqual(Object.keys(head).sort(), ['at', 'details', 'name']);

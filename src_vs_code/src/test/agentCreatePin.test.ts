@@ -124,7 +124,7 @@ function onlyMade(w: World): TreeNode {
   return nodes[0];
 }
 
-async function opened(value: StoredSecret | string | undefined, pin: string): Promise<string> {
+async function opened(value: StoredSecret | undefined, pin: string): Promise<string> {
   const read = readSecret(value);
   assert.equal(read.kind, 'locked', `stored in the clear: ${String(value)}`);
   return read.kind === 'locked' ? unlockSecret(read.envelope, ACCOUNT, pin) : '';
@@ -139,7 +139,7 @@ test('an agent’s entry in a folder that asks for a PIN is sealed before it is 
   assert.ok(w.written.length > 0, 'precondition: something was written');
   for (const value of w.written) {
     assert.ok(!value.includes(SECRET) && !value.includes(LOGIN), `the keychain was handed a value in the clear: ${value}`);
-    assert.ok(isLockedSecret(value), `a value written unsealed: ${value}`);
+    assert.ok(isLockedSecret(stored(value)), `a value written unsealed: ${value}`);
   }
   assert.equal(w.s.boxes, 2, 'the first PIN of the folder, typed twice');
   const entry = onlyMade(w);

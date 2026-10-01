@@ -33,7 +33,7 @@ const locked = (): Promise<string> => (lockedValue ??= lockSecret('hunter2', ACC
 test('a CORRUPT envelope is withheld, never handed on as if it were the value', async () => {
   const damaged = '{"v":1,"lock":{"wrap":{}}}';
 
-  const out = await openedText(damaged, {
+  const out = await openedText(stored(damaged), {
     accountId: ACCOUNT,
     entityId: 'e1',
     entryName: 'prod-db',
@@ -52,8 +52,8 @@ test('an ordinary value and a locked one still pass through as before', async ()
   };
   forgetAllPins();
 
-  assert.equal(await openedText('plain notes', gate), 'plain notes');
-  assert.equal(await openedText(await locked(), gate), 'hunter2');
+  assert.equal(await openedText(stored('plain notes'), gate), 'plain notes');
+  assert.equal(await openedText(stored(await locked()), gate), 'hunter2');
   assert.equal(await openedText(undefined, gate), undefined);
 });
 

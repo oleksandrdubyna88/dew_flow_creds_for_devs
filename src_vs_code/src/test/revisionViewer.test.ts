@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { stored } from '../storedSecret';
 import { test } from 'node:test';
 import type { EntityViewOptions } from '../entityViewPage';
 import type { Revision, RevisionSecrets } from '../revisionHistory';
@@ -58,7 +59,7 @@ function session(): typeof import('../pinSession') {
 }
 
 test('a kept version of a protected entry opens only after the entry’s PIN, and draws its whole card', async () => {
-  const w = await world({ 'payment details': await locked(CARD) }, { payment: await locked(CARD), password: await locked('old pw') }, [PIN], { pinProtected: true });
+  const w = await world({ 'payment details': await locked(CARD) }, { payment: stored(await locked(CARD)), password: stored(await locked('old pw')) }, [PIN], { pinProtected: true });
 
   await w.view();
 
@@ -73,7 +74,7 @@ test('a kept version of a protected entry opens only after the entry’s PIN, an
 
 test('a kept version from BEFORE the PIN still asks the entry’s PIN — a history row is not a way round it', async () => {
   // Plan gate, finding 0: the plaintext CVV of the version replaced before Protect ran.
-  const w = await world({ 'payment details': await locked(CARD) }, { payment: CARD }, [undefined], { pinProtected: true });
+  const w = await world({ 'payment details': await locked(CARD) }, { payment: stored(CARD) }, [undefined], { pinProtected: true });
 
   await w.view();
 
@@ -85,7 +86,7 @@ test('a kept version from BEFORE the PIN still asks the entry’s PIN — a hist
 test('a version sealed under the PIN the entry used to have asks for THAT PIN with its own sentence, and never grants it', async () => {
   // Plan gate, finding 3: unprotected on another machine and synced here, while this machine's kept
   // versions stayed sealed. The live entry holds no lock and no grant; the version holds both.
-  const w = await world({ 'payment details': CARD }, { payment: await locked(CARD, OLD_PIN) }, [OLD_PIN]);
+  const w = await world({ 'payment details': CARD }, { payment: stored(await locked(CARD, OLD_PIN)) }, [OLD_PIN]);
 
   await w.view();
 
@@ -97,7 +98,7 @@ test('a version sealed under the PIN the entry used to have asks for THAT PIN wi
 });
 
 test('a version under an OLDER PIN of a protected entry keeps the live grant as it was', async () => {
-  const w = await world({ 'payment details': await locked(CARD) }, { payment: await locked(CARD, OLD_PIN) }, [PIN, OLD_PIN], { pinProtected: true });
+  const w = await world({ 'payment details': await locked(CARD) }, { payment: stored(await locked(CARD, OLD_PIN)) }, [PIN, OLD_PIN], { pinProtected: true });
 
   await w.view();
 
@@ -107,7 +108,7 @@ test('a version under an OLDER PIN of a protected entry keeps the live grant as 
 });
 
 test('a wrong PIN for a kept version opens nothing, says so, and changes nothing', async () => {
-  const w = await world({ 'payment details': CARD }, { payment: await locked(CARD, OLD_PIN) }, ['not-it']);
+  const w = await world({ 'payment details': CARD }, { payment: stored(await locked(CARD, OLD_PIN)) }, ['not-it']);
   const before = await w.storage.getHistory(ACCOUNT, ENTRY);
 
   await w.view();
@@ -118,7 +119,7 @@ test('a wrong PIN for a kept version opens nothing, says so, and changes nothing
 });
 
 test('an unprotected version of an unprotected entry still opens without a question', async () => {
-  const w = await world({ 'payment details': CARD }, { payment: CARD, password: 'old pw' }, []);
+  const w = await world({ 'payment details': CARD }, { payment: stored(CARD), password: stored('old pw') }, []);
 
   await w.view();
 
@@ -135,7 +136,7 @@ test('an unprotected version of an unprotected entry still opens without a quest
 
 test('a kept WOVEN password is read by the revision viewer as the live viewer reads it — the pair, never its envelope', async () => {
   const woven = plainSecret('hhuunntteerr22', true);
-  const w = await world({ 'payment details': CARD }, { payment: CARD, password: woven }, []);
+  const w = await world({ 'payment details': CARD }, { payment: stored(CARD), password: stored(woven) }, []);
 
   await w.view();
 
@@ -161,7 +162,7 @@ test('the history row’s Copy on a protected entry copies the kept value, never
   const stub = clickVscode([PIN], s);
   const storage = memoryStorage(stub);
   await seedEntry(storage, card({ pinProtected: true }), { 'payment details': await locked(CARD) });
-  await storage.recordRevision(ACCOUNT, ENTRY, { at: 1_700_000_000_000, name: 'orest payoneer (old)', details: card(), secrets: { password: await locked('old pw') } });
+  await storage.recordRevision(ACCOUNT, ENTRY, { at: 1_700_000_000_000, name: 'orest payoneer (old)', details: card(), secrets: { password: stored(await locked('old pw')) } });
   const w: World = { shown: [], s, storage, view: () => Promise.resolve() };
 
   const page = await liveViewer(w, stub);
@@ -174,7 +175,7 @@ test('the history row’s Copy on a protected entry copies the kept value, never
 test('viewing a kept version of a protected entry and copying from it asks the PIN ONCE — the guard over the silent reader', async () => {
   // Green before T3 too: a grant in the session already kept a second door silent. It is the guard that
   // the silent reader did not add a box.
-  const w = await world({ 'payment details': await locked(CARD) }, { payment: await locked(CARD), password: await locked('old pw') }, [PIN], { pinProtected: true });
+  const w = await world({ 'payment details': await locked(CARD) }, { payment: stored(await locked(CARD)), password: stored(await locked('old pw')) }, [PIN], { pinProtected: true });
 
   await w.view();
   const page = w.shown[0];
@@ -191,7 +192,7 @@ test('the history row’s Copy of a version sealed under the entry’s OLDER PIN
   const stub = clickVscode([PIN, OLD_PIN], s);
   const storage = memoryStorage(stub);
   await seedEntry(storage, card({ pinProtected: true }), { 'payment details': await locked(CARD) });
-  await storage.recordRevision(ACCOUNT, ENTRY, { at: 1_700_000_000_000, name: 'orest payoneer (old)', details: card(), secrets: { password: await locked('older pw', OLD_PIN) } });
+  await storage.recordRevision(ACCOUNT, ENTRY, { at: 1_700_000_000_000, name: 'orest payoneer (old)', details: card(), secrets: { password: stored(await locked('older pw', OLD_PIN)) } });
   const w: World = { shown: [], s, storage, view: () => Promise.resolve() };
 
   const page = await liveViewer(w, stub);

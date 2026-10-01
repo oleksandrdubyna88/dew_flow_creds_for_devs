@@ -164,7 +164,7 @@ test('a sealed connection string is not handed to an agent as its envelope — t
   // is visible to agents; what it holds is ciphertext, which is no connection string at all
   // (`PLAN_typed_stored_secrets.md` T3: the connection string reads through `secretOpener.plainText`).
   const sealed = await lockSecret(`mysql://app:${SECRET}@db-01.example.internal:3306/orders`, 'a1', '2468');
-  assert.equal(readSecret(sealed).kind, 'locked', 'the fixture is what the parser calls sealed');
+  assert.equal(readSecret(stored(sealed)).kind, 'locked', 'the fixture is what the parser calls sealed');
   const nodes = [folder('f1', 'DB'), entity('e1', 'orders', { kind: 'db', mcp: { view: true } })];
 
   const [entry] = await visibleMcpEntries(vault(nodes, { dbConnection: sealed }));
@@ -178,7 +178,7 @@ test('a DAMAGED wrap in an unmarked entry\'s connection is not handed to an agen
   // the masker, wrong here — so an agent was shown the broken envelope as the entry's address. Only a
   // value the parser reads as a value (`secretOpener.plainText`) is an address.
   const damaged = '{"v":1,"lock":{"wrap":';
-  assert.equal(readSecret(damaged).kind, 'corrupt', 'the fixture is what the parser calls damaged');
+  assert.equal(readSecret(stored(damaged)).kind, 'corrupt', 'the fixture is what the parser calls damaged');
   const nodes = [folder('f1', 'DB'), entity('e1', 'orders', { kind: 'db', mcp: { view: true } })];
 
   const [entry] = await visibleMcpEntries(vault(nodes, { dbConnection: damaged }));

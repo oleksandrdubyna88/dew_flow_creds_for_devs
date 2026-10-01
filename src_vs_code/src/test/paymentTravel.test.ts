@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { stored } from '../storedSecret';
 import { test } from 'node:test';
 import { exportSecretsFor } from '../exportSecrets';
 import { parsePaymentFields, serializePaymentFields } from '../paymentFields';
@@ -74,7 +75,7 @@ test('a revision keeps the payment record through the cap, like every other smal
     at: 1,
     name: 'visa',
     details: { id: 'p1', name: 'visa', isSshEnabled: false },
-    secrets: { payment: RAW },
+    secrets: { payment: stored(RAW) },
   };
   const [kept] = pushRevision([], revision);
   assert.equal(kept?.secrets.payment, RAW, 'payment must be in SMALL_FIELDS or history loses it');
@@ -85,7 +86,7 @@ test('an empty payment record is not written into history as an empty string', (
     at: 1,
     name: 'visa',
     details: { id: 'p1', name: 'visa', isSshEnabled: false },
-    secrets: { payment: '' },
+    secrets: { payment: stored('') },
   };
   const [kept] = pushRevision([], revision);
   assert.equal(kept?.secrets.payment, undefined);

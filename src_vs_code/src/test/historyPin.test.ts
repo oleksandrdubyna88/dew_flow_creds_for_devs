@@ -58,7 +58,7 @@ async function settled(done: () => boolean, ms: number): Promise<void> {
 }
 
 /** A kept value, which must be LOCKED under `pin`, opened — or the assertion names what is there. */
-async function openedKept(stored: StoredSecret | string | undefined, pin: string = PIN): Promise<string> {
+async function openedKept(stored: StoredSecret | undefined, pin: string = PIN): Promise<string> {
   const read = readSecret(stored);
   assert.equal(read.kind, 'locked', `a kept value is not sealed; stored: ${String(stored)}`);
   return read.kind === 'locked' ? unlockSecret(read.envelope, ACCOUNT, pin) : '';
@@ -82,10 +82,10 @@ test('Protect seals every kept version of the entry — every field the slot tab
 
 test('a revision recorded while the kept versions are being sealed is kept, not written out of history', async () => {
   const storage = memoryStorage(clickVscode([], sinks()));
-  await entryWithHistory(storage, {}, [{ password: 'first' }]);
+  await entryWithHistory(storage, {}, [{ password: stored('first') }]);
 
   const sealing = protectHistory(storage, ACCOUNT, ENTRY, PIN);
-  await storage.recordRevision(ACCOUNT, ENTRY, revision(9, { password: 'saved meanwhile' }));
+  await storage.recordRevision(ACCOUNT, ENTRY, revision(9, { password: stored('saved meanwhile') }));
   await sealing;
 
   const kept = await storage.getHistory(ACCOUNT, ENTRY);
@@ -96,7 +96,7 @@ test('a revision recorded while the kept versions are being sealed is kept, not 
 test('a damaged kept value is never rewritten — it is the only copy of whatever it was', async () => {
   const storage = memoryStorage(clickVscode([], sinks()));
   const damaged = '{"v":1,"lock":{"wrap":{}}}';
-  await entryWithHistory(storage, {}, [{ notes: damaged, password: 'pw' }]);
+  await entryWithHistory(storage, {}, [{ notes: stored(damaged), password: stored('pw') }]);
 
   assert.equal(await protectHistory(storage, ACCOUNT, ENTRY, PIN), 1, 'the one plain value was sealed');
 
@@ -119,7 +119,7 @@ test('a history that is absent, or does not parse, is never overwritten by a rew
 test('the PIN coming off opens every kept value it sealed, keeps a woven one woven, and leaves one under another PIN sealed and counted', async () => {
   const storage = memoryStorage(clickVscode([], sinks()));
   const foreign = await lockSecret('under the other PIN', ACCOUNT, '9876');
-  await entryWithHistory(storage, {}, [{ password: await lockSecret('woven pw', ACCOUNT, PIN, true), notes: await locked('kept note'), config: foreign }]);
+  await entryWithHistory(storage, {}, [{ password: stored(await lockSecret('woven pw', ACCOUNT, PIN, true)), notes: stored(await locked('kept note')), config: stored(foreign) }]);
 
   const result = await unprotectHistory(storage, ACCOUNT, ENTRY, PIN);
 
@@ -136,7 +136,7 @@ test('another machine’s kept versions are sealed at the first door here, in th
   const s = sinks();
   const stub = clickVscode([PIN], s);
   const storage = memoryStorage(stub);
-  await entryWithHistory(storage, { notes: await locked('live note') }, [{ password: 'old pw', payment: '{"cvv":"123"}' }], { pinProtected: true });
+  await entryWithHistory(storage, { notes: await locked('live note') }, [{ password: stored('old pw'), payment: stored('{"cvv":"123"}') }], { pinProtected: true });
   const prompt = loadWithVscode<typeof import('../pinPrompt')>('../pinPrompt', stub);
 
   const gate = await prompt.admitEntry(storage, ACCOUNT, ENTRY, 'orest payoneer', 'copy its password');
@@ -156,7 +156,7 @@ test('the door seals nothing for an entry that holds no locked value, whatever g
   const s = sinks();
   const stub = clickVscode([], s);
   const storage = memoryStorage(stub);
-  await entryWithHistory(storage, { notes: 'plain now' }, [{ password: 'old pw' }]);
+  await entryWithHistory(storage, { notes: 'plain now' }, [{ password: stored('old pw') }]);
   const prompt = loadWithVscode<typeof import('../pinPrompt')>('../pinPrompt', stub);
   (require('../pinSession') as typeof import('../pinSession')).grantPin(ACCOUNT, ENTRY, PIN);
 
@@ -174,7 +174,7 @@ test('the door’s background seal re-checks the protection before it writes —
   const s = sinks();
   const stub = clickVscode([PIN], s);
   const storage = memoryStorage(stub);
-  await entryWithHistory(storage, { notes: await locked('live note') }, [{ password: 'old pw' }], { pinProtected: true });
+  await entryWithHistory(storage, { notes: await locked('live note') }, [{ password: stored('old pw') }], { pinProtected: true });
   const prompt = loadWithVscode<typeof import('../pinPrompt')>('../pinPrompt', stub);
   const realGet = storage.getHistory.bind(storage);
   let reads = 0;
@@ -199,7 +199,7 @@ test('an opened kept version holds REAL stored forms: each field reads as `value
   // Typed-secrets plan T5, second plan round finding 0: `openRevision` mints every opened field as
   // `stored(plainSecret(value, woven))` — never a cast — so `readSecret` on the opened copy answers what it
   // answers for an unprotected entry's field, and the viewer reads it through the same silent gated reader.
-  const kept = revision(1, { password: await lockSecret('woven pw', ACCOUNT, PIN, true), notes: await locked('kept note') });
+  const kept = revision(1, { password: stored(await lockSecret('woven pw', ACCOUNT, PIN, true)), notes: stored(await locked('kept note')) });
   // The session `historyPin` itself was loaded with — imported here at the top, not `require`d after
   // another test's `loadWithVscode` has handed out fresh module instances.
   grantPin(ACCOUNT, ENTRY, PIN);

@@ -11,7 +11,7 @@ import { EntityMetadata } from './types';
 import { FieldReading, readingOf, valueOf, withheld } from './fieldReading';
 import { pinFieldRefusal } from './pinGate';
 import { OpenedSecret, automaticOpener, fieldReadingOf } from './secretOpener';
-import type { StoredSecret } from './storedSecret';
+import { StoredSecret, stored } from './storedSecret';
 
 /**
  * Writing bound secret fields into VS Code's environment variable collection — the
@@ -72,7 +72,7 @@ export function automaticRefusal(details: EntityMetadata, field: BindableField):
 export function automaticFieldRefusal(
   details: EntityMetadata,
   field: BindableField,
-  stored: string | undefined,
+  held: StoredSecret | undefined,
 ): string {
   const woven = automaticRefusal(details, field);
   // The PIN's answer — the WRAP first, the MARK second, one sentence for both — is
@@ -81,7 +81,7 @@ export function automaticFieldRefusal(
   // entry marked protected whose stored value was, at that instant, plaintext, because the EDIT path
   // wrote a newly typed secret and never re-sealed it — and without the mark an edit would have
   // handed a protected entry's new password to every terminal opened afterwards.
-  return woven !== '' ? woven : pinFieldRefusal(details, stored);
+  return woven !== '' ? woven : pinFieldRefusal(details, held);
 }
 
 /**
@@ -129,14 +129,15 @@ async function openedField(
   details: EntityMetadata,
   field: BindableField,
 ): Promise<OpenedSecret> {
-  const open = (stored: StoredSecret | string | undefined): Promise<OpenedSecret> => automaticOpener(details, stored);
+  const open = (stored: StoredSecret | undefined): Promise<OpenedSecret> => automaticOpener(details, stored);
   switch (field) {
     case 'password':
       return open(await storage.getPassword(accountId, details.id));
     case 'privateKey':
       return open(await storage.getPrivateKey(accountId, details.id));
     case 'publicKey':
-      return open(details.publicKey);
+      // A metadata value read as the plain stored form it is: the public key kept in node metadata.
+      return open(stored(details.publicKey));
     case 'dbConnection':
     case 'dbPassword':
       return open(await storage.getDbConnection(accountId, details.id));

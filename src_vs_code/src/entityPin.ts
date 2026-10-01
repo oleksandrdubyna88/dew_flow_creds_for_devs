@@ -119,7 +119,7 @@ async function sealIfStill(
   entityId: string,
   slot: SecretSlot,
   pin: string,
-  made: { readonly was: StoredSecret | string; readonly sealed: StoredSecret },
+  made: { readonly was: StoredSecret; readonly sealed: StoredSecret },
 ): Promise<string> {
   const now = await slot.read(storage, accountId, entityId);
   const read = readSecret(now);

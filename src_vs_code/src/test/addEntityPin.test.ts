@@ -116,7 +116,7 @@ function onlyMade(w: World): TreeNode {
 }
 
 /** A slot that must be SEALED — opened with `pin`, or the assertion names what is stored. */
-async function opened(value: StoredSecret | string | undefined, pin: string): Promise<string> {
+async function opened(value: StoredSecret | undefined, pin: string): Promise<string> {
   const read = readSecret(value);
   assert.equal(read.kind, 'locked', `stored in the clear: ${String(value)}`);
   return read.kind === 'locked' ? unlockSecret(read.envelope, ACCOUNT, pin) : '';
@@ -125,7 +125,7 @@ async function opened(value: StoredSecret | string | undefined, pin: string): Pr
 function everySealed(w: World): void {
   for (const value of w.written) {
     assert.ok(!value.includes(SECRET) && !value.includes(NOTE) && !value.includes(LOGIN), `the keychain was handed a value in the clear: ${value}`);
-    assert.ok(isLockedSecret(value), `a value written unsealed: ${value}`);
+    assert.ok(isLockedSecret(stored(value)), `a value written unsealed: ${value}`);
   }
 }
 
@@ -164,7 +164,7 @@ test('an Add into a PIN folder killed after its first slot write leaves that slo
 
   assert.ok(killed, 'the kill landed after the password and before the note');
   assert.equal(w.written.length, 1, `one slot was written before the kill, found ${w.written.length}`);
-  assert.ok(isLockedSecret(w.written[0]), `the slot written before the kill is in the clear: ${w.written[0]}`);
+  assert.ok(isLockedSecret(stored(w.written[0])), `the slot written before the kill is in the clear: ${w.written[0]}`);
   assert.deepEqual(w.entries(), [], 'the node landed although the secrets did not');
 
   w.inputs.push(FIRST_PIN, FIRST_PIN);

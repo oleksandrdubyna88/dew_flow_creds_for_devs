@@ -7,7 +7,7 @@ import { snapshotForRevision } from './revisionSnapshot';
 import type { Sealing } from './sealingAtWrite';
 import { isEmptySecret, readSecret } from './secretEnvelope';
 import type { StorageManager } from './storageManager';
-import { StoredSecret, carried, seamText, stored } from './storedSecret';
+import { StoredSecret, carried } from './storedSecret';
 import { EntityMetadata } from './types';
 
 /**
@@ -119,13 +119,13 @@ export function holdsValue(version: Revision): boolean {
 }
 
 /** The version held nothing here: whatever the entry holds now goes. */
-function removalFate(live: StoredSecret | string | undefined): Fate {
+function removalFate(live: StoredSecret | undefined): Fate {
   return live === undefined ? { kind: 'keep' } : { kind: 'remove' };
 }
 
 /** An unprotected entry: a value already equal to the version's is left byte-identical (no sync churn). */
-function plainFate(live: StoredSecret | string | undefined, wanted: StoredSecret | string): Fate {
-  return live === wanted ? { kind: 'keep' } : { kind: 'write', value: stored(seamText(wanted)) };
+function plainFate(live: StoredSecret | undefined, wanted: StoredSecret): Fate {
+  return live === wanted ? { kind: 'keep' } : { kind: 'write', value: wanted };
 }
 
 /** How a restore writes: the entry's PIN (a protected entry — every value sealed first), or the plain proof its decision made. */

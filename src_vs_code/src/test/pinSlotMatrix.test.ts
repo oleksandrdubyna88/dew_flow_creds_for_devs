@@ -274,8 +274,8 @@ function kindRecord(options: EntityFormOptions): Partial<EntityFormValues> {
   return pick === undefined ? {} : pick(options);
 }
 
-async function rawSlots(w: World): Promise<Record<string, StoredSecret | string | undefined>> {
-  const out: Record<string, StoredSecret | string | undefined> = {};
+async function rawSlots(w: World): Promise<Record<string, StoredSecret | undefined>> {
+  const out: Record<string, StoredSecret | undefined> = {};
   for (const slot of SECRET_SLOTS) {
     out[slot.label] = await slot.read(w.storage, ACCOUNT, w.details.id);
   }

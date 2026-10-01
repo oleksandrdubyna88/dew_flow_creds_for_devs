@@ -64,7 +64,7 @@ export function grantedOpener(accountId: string): SecretOpener {
 /** Said already, or declined: the caller has nothing left to say. */
 const STOPPED: OpenedSecret = { kind: 'stopped', reason: '' };
 
-function needsDoor(owner: SecretOwner, stored: StoredSecret | string | undefined): boolean {
+function needsDoor(owner: SecretOwner, stored: StoredSecret | undefined): boolean {
   return owner.pinProtected === true || isLockedSecret(stored);
 }
 

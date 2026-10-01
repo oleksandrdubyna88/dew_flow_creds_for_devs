@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { stored as mint } from '../storedSecret';
 import { test } from 'node:test';
 import type { EntityFormOptions, EntityFormValues } from '../entityFormPanel';
 import { serializeFields } from '../entityFields';
@@ -320,7 +321,7 @@ test('CREATE with a PIN and a binding: the PIN outranks the binding — nothing 
   await w.addEntity();
 
   assert.deepEqual(w.env.replaced, {}, 'the PIN-protected plaintext was written into the environment collection');
-  const stored = readSecret(w.secrets.get(`password:${w.createdId()}`));
+  const stored = readSecret(mint(w.secrets.get(`password:${w.createdId()}`)));
   assert.equal(stored.kind, 'locked', 'and the entry IS sealed under its PIN');
   assert.deepEqual(w.said.infos, [], 'nothing was set, so nothing claims to be');
   assert.equal(w.said.warnings.length, 1, `one warning, got: ${JSON.stringify(w.said.warnings)}`);

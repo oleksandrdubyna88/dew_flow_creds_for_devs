@@ -2,6 +2,7 @@ import { BindableField } from './envBinding';
 import { EntityMetadata } from './types';
 import { FieldReading, readingOf } from './fieldReading';
 import { automaticOpener, fieldReadingOf } from './secretOpener';
+import { stored } from './storedSecret';
 import { bindableFieldReading } from './envApply';
 import { SecretRefField } from './secretRef';
 import { StorageManager } from './storageManager';
@@ -61,8 +62,9 @@ async function notesReading(
   accountId: string,
   details: EntityMetadata,
 ): Promise<FieldReading> {
-  const stored = await storage.getNotes(accountId, details.id);
-  return fieldReadingOf(await automaticOpener(details, stored ?? details.notes), details);
+  const held = await storage.getNotes(accountId, details.id);
+  // A metadata value read as the plain stored form it is: the legacy note kept in node metadata.
+  return fieldReadingOf(await automaticOpener(details, held ?? stored(details.notes)), details);
 }
 
 /**

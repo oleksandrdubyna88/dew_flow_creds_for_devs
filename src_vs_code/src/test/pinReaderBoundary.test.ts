@@ -195,7 +195,7 @@ const GATED_BY_CALLER: Readonly<Record<string, Readonly<Record<string, string>>>
     read: 'history HEADS only (dates and names), and the password as a has-one flag (typed since T5)',
   },
   'entityViewerCommands.ts': {
-    nodeAt: 'resolves a history row; the revision viewer and Restore open it through revisionDoor.openKeptVersion',
+    nodeAt: 'resolves a history row; the revision viewer and Restore open it through revisionDoor.openKeptVersion (typed since T5)',
   },
   'exportSecrets.ts': {
     secretsOf: 'every value goes through the ExportOpen it is given — exportOpener, a silent gate that throws on what it cannot open (typed since T5)',
@@ -204,17 +204,17 @@ const GATED_BY_CALLER: Readonly<Record<string, Readonly<Record<string, string>>>
     readKey: 'a SlotRead handed straight to clickedSecret (Copy Git Signing Config) (typed since T5)',
   },
   'historyPin.ts': {
-    protectHistory: 'seals kept plaintext under the PIN it is given — a carrier inside a door file',
-    unprotectHistory: 'opens kept values with the PIN already checked against the entry (openHistory, retryGranted)',
+    protectHistory: 'seals kept plaintext under the PIN it is given — a carrier inside a door file (typed since T5)',
+    unprotectHistory: 'opens kept values with the PIN already checked against the entry (openHistory, retryGranted) (typed since T5)',
   },
   'mcpEntries.ts': {
     storedSecrets: 'has-one flags, and the connection string for the shaper; agents never see a protected entry (hiddenFromAgents, by the mark) (typed since T5)',
   },
   'pinAdmission.ts': {
-    firstLockedStored: 'looks only for a sealed value (isLockedSecret) to decide whether the door must ask',
+    firstLockedStored: 'looks only for a sealed value (isLockedSecret) to decide whether the door must ask (typed since T5)',
   },
   'revisionRestore.ts': {
-    agreed: 'counts and dates the kept versions for the confirmation; no value is used',
+    agreed: 'counts and dates the kept versions for the confirmation; no value is used (typed since T5)',
   },
   'sshCredential.ts': {
     passwordOwner: 'returns the stored password with its OWNER; the caller opens it through the opener it was given (typed since T5)',

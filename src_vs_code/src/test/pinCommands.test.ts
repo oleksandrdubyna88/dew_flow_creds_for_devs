@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { stored as mint } from '../storedSecret';
 import { test } from 'node:test';
 import { SECRET_SLOTS, SecretSlot } from '../entitySlots';
 import type { StoredSecret } from '../storedSecret';
@@ -55,7 +56,7 @@ function slot(label: string): SecretSlot {
   return found;
 }
 
-const stored = (w: World, label: string): Thenable<StoredSecret | string | undefined> => slot(label).read(w.storage, ACCOUNT, ENTRY);
+const stored = (w: World, label: string): Thenable<StoredSecret | undefined> => slot(label).read(w.storage, ACCOUNT, ENTRY);
 
 test('Protect on an entry that is already protected says how much is locked and offers Remove PIN Protection… — not a dead end', async () => {
   // The mark was lost (D3, D12) while the values stayed locked: the row is `:pinoff`, so Protect is
@@ -122,7 +123,7 @@ test('Remove PIN Protection… on an entry with no mark and nothing sealed still
 
 test('Remove PIN Protection… on an entry whose only sealed values are its kept versions opens them', async () => {
   // Plan gate, finding 3: unprotected on another machine and synced here.
-  const w = await world(credential(), { password: 'hunter2' }, [PIN], [], { password: await locked('old pw') });
+  const w = await world(credential(), { password: 'hunter2' }, [PIN], [], { password: mint(await locked('old pw')) });
 
   await w.commands.unprotectEntry(w.node(), w.deps);
 
@@ -131,7 +132,7 @@ test('Remove PIN Protection… on an entry whose only sealed values are its kept
 });
 
 test('Protect on an entry whose kept versions are still sealed under its old PIN offers Remove PIN Protection… for them', async () => {
-  const w = await world(credential(), { password: 'hunter2' }, [PIN], ['Remove PIN Protection…'], { password: await locked('old pw') });
+  const w = await world(credential(), { password: 'hunter2' }, [PIN], ['Remove PIN Protection…'], { password: mint(await locked('old pw')) });
 
   await w.commands.protectEntry(w.node(), w.deps);
 
@@ -141,7 +142,7 @@ test('Protect on an entry whose kept versions are still sealed under its old PIN
 });
 
 test('Remove PIN reports a kept value under a different PIN as left sealed', async () => {
-  const w = await world(credential({ pinProtected: true }), { password: await locked('hunter2') }, [PIN], [], { notes: await locked('other', '9876') });
+  const w = await world(credential({ pinProtected: true }), { password: await locked('hunter2') }, [PIN], [], { notes: mint(await locked('other', '9876')) });
 
   await w.commands.unprotectEntry(w.node(), w.deps);
 

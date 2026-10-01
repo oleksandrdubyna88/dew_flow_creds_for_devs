@@ -38,15 +38,3 @@ export function carried(secret: StoredSecret | undefined): string | undefined;
 export function carried(secret: StoredSecret | undefined): string | undefined {
   return secret as unknown as string | undefined;
 }
-
-/**
- * TRANSITIONAL — T5's window only, deleted by its eleventh commit. While some getters still return
- * `string`, the seams (`readSecret`, `openStored`, `openedText`, the openers, `SecretSlot.read`) accept
- * `StoredSecret | string`; this is the one place that union becomes the bytes again. The commit that
- * takes the `| string` off the seams deletes it, and the compiler names every caller.
- */
-export function seamText(secret: StoredSecret | string): string;
-export function seamText(secret: StoredSecret | string | undefined): string | undefined;
-export function seamText(secret: StoredSecret | string | undefined): string | undefined {
-  return secret as unknown as string | undefined;
-}

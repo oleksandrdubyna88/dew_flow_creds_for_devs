@@ -89,7 +89,7 @@ test('a revision keeps the record through the cap, like every other small secret
     at: 1,
     name: 'visa',
     details: { id: 'p1', name: 'visa', isSshEnabled: false },
-    secrets: { second: RAW },
+    secrets: { second: stored(RAW) },
   };
 
   const [kept] = pushRevision([], revision);
@@ -102,7 +102,7 @@ test('an empty record is not written into history as an empty string', () => {
     at: 1,
     name: 'visa',
     details: { id: 'p1', name: 'visa', isSshEnabled: false },
-    secrets: { second: '' },
+    secrets: { second: stored('') },
   };
 
   const [kept] = pushRevision([], revision);

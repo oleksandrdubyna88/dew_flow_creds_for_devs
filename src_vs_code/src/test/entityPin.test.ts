@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { stored } from '../storedSecret';
 import { test } from 'node:test';
 import { SECRET_SLOTS } from '../entitySlots';
 import {
@@ -93,7 +94,7 @@ test('every slot that holds something is wrapped, and the plaintext is gone from
 
   assert.deepEqual([...result.changed].sort(), ['notes', 'password', 'private key']);
   for (const [label, value] of held(storage)) {
-    assert.ok(isLockedSecret(value), `${label} was left readable`);
+    assert.ok(isLockedSecret(stored(value)), `${label} was left readable`);
     for (const plaintext of ['hunter2', 'the note', KEY_MATERIAL]) {
       assert.ok(!value.includes(plaintext), `${label} still carries ${plaintext}`);
     }
@@ -170,7 +171,7 @@ test('a slot that is CORRUPT is skipped rather than overwritten', async () => {
 
   const result = await protectEntity(storage, ACCOUNT, ENTITY, PIN);
 
-  assert.equal(readSecret(held(storage).get('notes')).kind, 'corrupt');
+  assert.equal(readSecret(stored(held(storage).get('notes'))).kind, 'corrupt');
   assert.equal(held(storage).get('notes'), '{"v":1,"lock":{"wrap":{}}}', 'byte-identical');
   assert.ok(result.skipped.includes('notes'), 'and it is reported, not silent');
 });
@@ -240,7 +241,7 @@ test('the vault lock forgets everything at once', () => {
 test('sealValue locks a plain value so that only the PIN opens it', async () => {
   const sealed = await sealValue('hunter2', ACCOUNT, PIN);
 
-  assert.equal(readSecret(sealed).kind, 'locked');
+  assert.equal(readSecret(stored(sealed)).kind, 'locked');
   assert.ok(!sealed.includes('hunter2'), 'the plaintext is not in the envelope');
   assert.equal(await unlockSecret(JSON.parse(sealed) as never, ACCOUNT, PIN), 'hunter2');
 });
@@ -250,8 +251,8 @@ test('sealValue keeps the woven mark of a woven plain value — a seal must not 
 
   const sealed = await sealValue(wovenPlain, ACCOUNT, PIN);
 
-  assert.equal(readSecret(sealed).kind, 'locked');
-  assert.equal(isWovenSecret(sealed), true, 'the mark rides inside the lock, as lockOne always kept it');
+  assert.equal(readSecret(stored(sealed)).kind, 'locked');
+  assert.equal(isWovenSecret(stored(sealed)), true, 'the mark rides inside the lock, as lockOne always kept it');
   assert.equal(await unlockSecret(JSON.parse(sealed) as never, ACCOUNT, PIN), 'abXcdYef');
 });
 
@@ -270,7 +271,7 @@ test('sealValue seals envelope-shaped text somebody TYPED as the text it is, rat
 
   const sealed = await sealValue(typed, ACCOUNT, PIN);
 
-  assert.equal(readSecret(sealed).kind, 'locked');
+  assert.equal(readSecret(stored(sealed)).kind, 'locked');
   assert.equal(await unlockSecret(JSON.parse(sealed) as never, ACCOUNT, PIN), typed);
 });
 
@@ -300,7 +301,7 @@ test('Remove PIN keeps a woven password woven — the pair comes back a pair, no
   await unprotectEntity(storage, ACCOUNT, ENTITY, PIN);
 
   assert.equal(held(storage).get('password'), woven);
-  assert.equal(isWovenSecret(held(storage).get('password')), true);
+  assert.equal(isWovenSecret(stored(held(storage).get('password'))), true);
 });
 
 test('Remove PIN over a DAMAGED slot changes nothing and names the value (D14)', async () => {
@@ -335,7 +336,7 @@ function keptWith(secrets: Revision['secrets']): Revision {
 
 test('Remove PIN opens the kept versions too, and leaves one under another PIN sealed and counted', async () => {
   const foreign = await lockSecret('other machine', ACCOUNT, 'another-pin');
-  const storage = vault({ password: 'hunter2' }, [keptWith({ password: await lockSecret('old pw', ACCOUNT, PIN), notes: foreign })]);
+  const storage = vault({ password: 'hunter2' }, [keptWith({ password: stored(await lockSecret('old pw', ACCOUNT, PIN)), notes: stored(foreign) })]);
   await protectEntity(storage, ACCOUNT, ENTITY, PIN);
 
   const result = await unprotectEntity(storage, ACCOUNT, ENTITY, PIN);
@@ -351,7 +352,7 @@ test('an entry whose only sealed values are its KEPT versions checks the PIN on 
   // still sealed, and Remove PIN is the way to open it — so a wrong PIN must be refused here too.
   forgetAllAttempts();
   const sealed = await lockSecret('old pw', ACCOUNT, PIN);
-  const storage = vault({ password: 'hunter2' }, [keptWith({ password: sealed })]);
+  const storage = vault({ password: 'hunter2' }, [keptWith({ password: stored(sealed) })]);
 
   await assert.rejects(unprotectEntity(storage, ACCOUNT, ENTITY, 'not-the-pin-at-all'), /The PIN was refused/);
   assert.equal((await storage.getHistory(ACCOUNT, ENTITY))[0].secrets.password, sealed, 'untouched');

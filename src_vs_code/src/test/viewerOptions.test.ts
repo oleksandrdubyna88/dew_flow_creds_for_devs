@@ -1,4 +1,5 @@
 import * as assert from 'node:assert/strict';
+import { stored } from '../storedSecret';
 import { test } from 'node:test';
 import { silentPinGate } from '../pinGate';
 import {
@@ -81,7 +82,7 @@ test('a revision reader answers from the record; a storage reader from the stora
     at: 1,
     name: 'old',
     details: { id: 'e1', name: 'old', isSshEnabled: false },
-    secrets: { password: 'old-pw', dbConnection: 'mysql://u:x@h/db' },
+    secrets: { password: stored('old-pw'), dbConnection: stored('mysql://u:x@h/db') },
   };
   // A page reads a stored reader through the gate (T5: a stored reader handed to a page does not compile).
   const gate = silentPinGate('acc', 'e1', 'old');

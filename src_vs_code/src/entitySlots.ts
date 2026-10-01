@@ -99,8 +99,8 @@ export interface SecretSlot {
    * the maps the merge judges sealed.
    */
   readonly bundleKey: SecretMapKey;
-  /** As stored. `| string` for T5's window only — while some getters still return text; its eleventh commit takes it off. */
-  readonly read: (storage: SlotSource, accountId: string, entityId: string) => Thenable<StoredSecret | string | undefined>;
+  /** As stored — a door or an owner-less read is what turns it into text. */
+  readonly read: (storage: SlotSource, accountId: string, entityId: string) => Thenable<StoredSecret | undefined>;
   /** Plaintext, through a writer — which decides, under its proof, what reaches the keychain. */
   readonly write: (sink: SlotSink, accountId: string, entityId: string, value: string) => Promise<void>;
   /** A stored form, straight into the keychain — a seal, or an opened value as an unprotected entry stores it. */

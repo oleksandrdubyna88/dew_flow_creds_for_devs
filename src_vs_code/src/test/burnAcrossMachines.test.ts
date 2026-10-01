@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { stored } from '../storedSecret';
 import { test } from 'node:test';
 import { mergeProfiles, ProfileSnapshot } from '../syncMerge';
 import { Revision } from '../revisionHistory';
@@ -80,7 +81,7 @@ function ephemeral(id: string): TreeNode {
   };
 }
 
-const REVISION: Revision = { at: NOW - 1000, name: 'before', details: { id: 'e1', name: 'before', isSshEnabled: false } as never, secrets: { password: 'old-pw' } };
+const REVISION: Revision = { at: NOW - 1000, name: 'before', details: { id: 'e1', name: 'before', isSshEnabled: false } as never, secrets: { password: stored('old-pw') } };
 
 /** The entry as a person makes it: metadata, a password, notes, and one kept version. */
 async function seed(storage: Storage): Promise<void> {

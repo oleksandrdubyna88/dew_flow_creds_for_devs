@@ -1,4 +1,4 @@
-import type { StoredSecret } from './storedSecret';
+import { StoredSecret, stored } from './storedSecret';
 import { EntityMetadata, isEntityMetadata } from './types';
 
 /**
@@ -53,11 +53,10 @@ export const SMALL_FIELDS = [
 /**
  * The small secret fields a revision keeps, typed FROM `SMALL_FIELDS` rather than written out a
  * second time — a field added to the list is a field of this type with no line written here. Each
- * holds a STORED form, as the live slot it was copied from does. `| string` for T5's window only: the
- * fields are written by walkers of the whole table (the snapshot, the history rewrite) while some slots
- * still read as text, so a field cannot be narrower than the widest slot; the eleventh commit takes it off.
+ * holds a STORED form, as the live slot it was copied from does (typed-secrets plan T5) — so a kept
+ * value reaches text only through a door, exactly as a live one does.
  */
-export type RevisionSecrets = { [field in (typeof SMALL_FIELDS)[number]]?: StoredSecret | string };
+export type RevisionSecrets = { [field in (typeof SMALL_FIELDS)[number]]?: StoredSecret };
 
 export interface Revision {
   /** When this version was replaced (ms epoch). */
@@ -89,7 +88,7 @@ export function pushRevision(list: readonly Revision[], revision: Revision): Rev
   for (const field of SMALL_FIELDS) {
     const value = (revision.secrets as Record<string, unknown>)[field];
     if (typeof value === 'string' && value.length > 0) {
-      secrets[field] = value;
+      secrets[field] = stored(value);
     }
   }
   return [{ ...revision, secrets }, ...list].slice(0, MAX_REVISIONS);

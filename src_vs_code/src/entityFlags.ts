@@ -247,12 +247,12 @@ export function entityFlagSource(storage: StorageManager): EntityFlagSource {
  * is not judged. Both read through `secretOpener.unsealedText`, which answers nothing for a sealed
  * value and the stored text for anything else — what these hints have always judged.
  */
-function judgedUrlOpens(raw: StoredSecret | string | undefined): boolean {
+function judgedUrlOpens(raw: StoredSecret | undefined): boolean {
   const text = unsealedText(raw);
   // Present and nothing to judge is SEALED — a record that "may open", as it always counted.
   return (raw !== undefined && text === undefined) || siteUrlToOpen(parseFields(text).url).ok;
 }
 
-function judgedText(body: StoredSecret | string | undefined): string {
+function judgedText(body: StoredSecret | undefined): string {
   return unsealedText(body) ?? '';
 }

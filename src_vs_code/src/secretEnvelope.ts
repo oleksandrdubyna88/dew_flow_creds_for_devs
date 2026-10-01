@@ -1,6 +1,6 @@
 import { SealedBlob, openBlobAsync, sealBlobAsync } from './cryptoUtils';
 import { KeyWrap, isKeyWrap, newMasterKey, unwrapWithPinAsync, wrapWithPinAsync } from './keyWrap';
-import { StoredSecret, seamText } from './storedSecret';
+import { StoredSecret, carried, stored } from './storedSecret';
 
 /**
  * A secret that describes itself — the value, and the facts about how it is protected, written in
@@ -93,8 +93,8 @@ export function isSecretEnvelope(value: unknown): value is SecretEnvelope {
  * <p>Total by construction: a string this build never wrote — a password from any earlier version,
  * or something a hand-edited keychain holds — is a plain value, which is what it is.</p>
  */
-export function readSecret(stored: StoredSecret | string | undefined): SecretRead {
-  const raw = seamText(stored);
+export function readSecret(stored: StoredSecret | undefined): SecretRead {
+  const raw = carried(stored);
   if (raw === undefined) {
     return { kind: 'absent' };
   }
@@ -242,12 +242,22 @@ async function unsealed(lock: SecretLock, accountId: string, pin: string): Promi
 }
 
 /** Whether what is stored needs a PIN before anything can be done with it. */
-export function isLockedSecret(raw: StoredSecret | string | undefined): boolean {
+export function isLockedSecret(raw: StoredSecret | undefined): boolean {
   return readSecret(raw).kind === 'locked';
 }
 
+/**
+ * Whether TEXT — a value an opener already handed out, not a stored form — is still a sealed envelope.
+ * The defence-in-depth check of a sink that writes text where no envelope may go (`sshExecAuth`: an
+ * askpass password, a key file), whatever opener a future caller passes. The same parse `readSecret`
+ * makes: only `locked` is sealed — plain text, a woven-plain envelope and a damaged one are not.
+ */
+export function isSealedText(text: string): boolean {
+  return readSecret(stored(text)).kind === 'locked';
+}
+
 /** Whether what is stored is one of ours and damaged — a state a caller must not write over. */
-export function isCorruptSecret(raw: StoredSecret | string | undefined): boolean {
+export function isCorruptSecret(raw: StoredSecret | undefined): boolean {
   return readSecret(raw).kind === 'corrupt';
 }
 
@@ -255,13 +265,13 @@ export function isCorruptSecret(raw: StoredSecret | string | undefined): boolean
  * Whether a slot holds nothing at all — absent, or the empty string, which every keychain write already
  * treats as nothing (`putSecret` deletes on empty). Asked of a stored form without reading it as text.
  */
-export function isEmptySecret(raw: StoredSecret | string | undefined): boolean {
-  const text = seamText(raw);
+export function isEmptySecret(raw: StoredSecret | undefined): boolean {
+  const text = carried(raw);
   return text === undefined || text.length === 0;
 }
 
 /** Whether what is stored is a woven pair — true whether or not it is also locked. */
-export function isWovenSecret(raw: StoredSecret | string | undefined): boolean {
+export function isWovenSecret(raw: StoredSecret | undefined): boolean {
   const read = readSecret(raw);
   return (read.kind === 'value' || read.kind === 'locked') && read.woven;
 }

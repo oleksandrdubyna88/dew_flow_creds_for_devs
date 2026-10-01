@@ -77,7 +77,7 @@ export function silentPinGate(accountId: string, entityId: string, entryName: st
  * started. A reviewer was right that a grant taken early and spent late can be gone by then; read
  * late, its absence is simply another question rather than a failure.</p>
  */
-export async function openStored(stored: StoredSecret | string | undefined, gate: PinGate): Promise<PinOpen> {
+export async function openStored(stored: StoredSecret | undefined, gate: PinGate): Promise<PinOpen> {
   const read = readSecret(stored);
   if (read.kind === 'corrupt') {
     return { kind: 'corrupt', reason: corruptReason(gate.entryName, read.why) };
@@ -171,7 +171,7 @@ export function corruptReason(entryName: string, why: string): string {
  * tooling, none of which has a window — and a modal there hangs the operation rather than asking
  * anybody anything.</p>
  */
-export function automaticPinRefusal(stored: StoredSecret | string | undefined, entryName: string): string {
+export function automaticPinRefusal(stored: StoredSecret | undefined, entryName: string): string {
   return readSecret(stored).kind === 'locked' ? pinRefusalFor(entryName) : '';
 }
 
@@ -207,7 +207,7 @@ export function pinRefusalFor(entryName: string): string {
  */
 export function pinFieldRefusal(
   details: { readonly name: string; readonly pinProtected?: boolean },
-  stored: StoredSecret | string | undefined,
+  stored: StoredSecret | undefined,
 ): string {
   const locked = automaticPinRefusal(stored, details.name);
   if (locked !== '') {

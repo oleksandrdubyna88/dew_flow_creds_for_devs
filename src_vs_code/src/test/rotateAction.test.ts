@@ -11,6 +11,7 @@ import {
 } from '../secretRotation';
 import type { UseAction, UseActionResult } from '../useActions';
 import type { EntityMetadata } from '../types';
+import { stored } from '../storedSecret';
 
 /**
  * Rotation: the far side changes first, and only then does the vault.
@@ -69,7 +70,7 @@ function world(
         : { ok: true, value: generated, kind: 'password' },
     entity: () =>
       ({ id: 'e1', name: 'orders-db', kind: 'db', isSshEnabled: false, dbType: 'mysql', ...overrides.details }) as EntityMetadata,
-    current: () => Promise.resolve(overrides.current ?? CONN),
+    current: () => Promise.resolve(stored(overrides.current ?? CONN)),
     snapshot: () => Promise.resolve({ at: 1, name: 'orders-db', details: {} as EntityMetadata, secrets: {} }),
     record: () => {
       log.recorded += 1;
@@ -174,7 +175,7 @@ test('the entry going missing mid-flight is refused, not stored into', async () 
   const gone = rotateAction(underlyingThatRecords(ran), 'query', {
     generate: () => ({ ok: true, value: 'x', kind: 'password' }),
     entity: () => undefined,
-    current: () => Promise.resolve(CONN),
+    current: () => Promise.resolve(stored(CONN)),
     snapshot: () => Promise.resolve({ at: 1, name: '', details: {} as EntityMetadata, secrets: {} }),
     record: () => Promise.resolve(),
     store: () => Promise.resolve(),

@@ -15,8 +15,9 @@ import * as ts from 'typescript';
  *   <li><b>Is it a reader of kept versions, and does it open one with a click opener?</b> — the rule the
  *       second plan round's finding 0 wrote: a kept version is admitted once, by
  *       `revisionDoor.openKeptVersion`, and read through a silent gate after that.</li>
- *   <li><b>Does it hand the storage itself out as a writer?</b> — T4's interim rule, the one thing that
- *       refuses a plaintext write until the getters and setters are typed (E3).</li>
+ *   <li><b>Does it write a slot through the storage itself?</b> — the permanent stored-form rule: the
+ *       type (T5) refuses text there, and this refuses a stored form copied around the writer and the
+ *       lease (`storage.set<Slot>(`, `slot.write(storage`, `slot.store(storage`) outside its allowlist.</li>
  * </ul>
  *
  * <p>Not named `*.test.ts`, so the runner never treats it as a suite.</p>
@@ -221,41 +222,21 @@ function deletes(call: ts.Node): boolean {
   return value !== undefined && ts.isIdentifier(value) && value.text === 'undefined';
 }
 
-/** `applyAdditions(storage, …)` — the additions pass handed the storage itself. */
-function additionsOverStorage(node: ts.Node): string | undefined {
-  const call = callOf(node, 'applyAdditions');
-  return call !== undefined && isStorage(call.arguments[0]) ? 'applyAdditions(storage' : undefined;
-}
-
-/** A call of the function named `name`, or nothing. */
-function callOf(node: ts.Node, name: string): ts.CallExpression | undefined {
-  const call = ts.isCallExpression(node) ? node : undefined;
-  return call !== undefined && nameOf(call.expression) === name ? call : undefined;
-}
-
-/** `store: storage` or `let store = storage` — a writer that IS the storage. */
-function storeIsStorage(node: ts.Node): string | undefined {
-  const named = storeBinding(node);
-  return named !== undefined && isStorage(named.initializer) ? 'store: storage' : undefined;
-}
-
-function storeBinding(node: ts.Node): ts.PropertyAssignment | ts.VariableDeclaration | undefined {
-  const named = bindingOf(node);
-  return named?.name.getText() === 'store' ? named : undefined;
-}
-
-function bindingOf(node: ts.Node): ts.PropertyAssignment | ts.VariableDeclaration | undefined {
-  return ts.isPropertyAssignment(node) || ts.isVariableDeclaration(node) ? node : undefined;
-}
-
 function storageWrite(file: string, node: ts.Node, setters: ReadonlySet<string>): Finding[] {
-  const what = slotSetterCall(node, setters) ?? additionsOverStorage(node) ?? storeIsStorage(node);
+  const what = slotSetterCall(node, setters);
   return what === undefined ? [] : [at(file, node, what)];
 }
 
 /**
- * Every place the storage itself is used as a writer of a slot (T4's interim rule): a slot setter called
- * on it, the additions pass handed it, or a `store` bound to it. `setters` are the slot setters' names.
+ * Every slot setter called on the storage itself — a STORED form written with nothing between it and the
+ * keychain. Permanent (typed-secrets plan §3, *what the type does not catch*): since T5 the type refuses
+ * text there, but a `StoredSecret` cannot say whether it is plain or sealed, so a plain stored form copied
+ * into a protected entry would still type-check. `setters` are the slot setters' names.
+ *
+ * <p>T4's interim rule also refused `applyAdditions(storage` and `store: storage` — the storage handed out
+ * as a PLAINTEXT writer. The type refuses both since T5 (the storage satisfies no `EntryWriter`;
+ * `fixtures/typed/storage_is_not_a_writer.ts`), so those two patterns were retired with T5's eleventh
+ * commit.</p>
  */
 export function storageWrites(file: string, text: string, setters: readonly string[]): Finding[] {
   const names = new Set(setters);

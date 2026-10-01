@@ -53,9 +53,9 @@ export interface RotateDeps {
   /**
    * The value in the slot right now, AS STORED — a password, or a connection string. `protectedSlot`
    * refuses a sealed one (or any of a marked entry) before anything else; what `draw` rebuilds is read
-   * through `unsealedText`. `| string` for T5's window only.
+   * through `unsealedText`.
    */
-  current(ctx: UseActionContext, slot: RotationSlot): Promise<StoredSecret | string | undefined>;
+  current(ctx: UseActionContext, slot: RotationSlot): Promise<StoredSecret | undefined>;
   /** Everything about this entity as it is, for history. */
   snapshot(ctx: UseActionContext, details: EntityMetadata): Promise<Revision>;
   record(ctx: UseActionContext, revision: Revision): Promise<void>;

@@ -77,7 +77,7 @@ async function openedBodies(
   storage: StorageManager,
   accountId: string,
   details: EntityMetadata,
-  previousRaw: StoredSecret | string,
+  previousRaw: StoredSecret,
   at: number,
 ): Promise<ComparedBodies | undefined> {
   const current = bodyText(await clickedSecret(storage, accountId, details, (s, a, e) => s.getConfigBody(a, e), COMPARE));
