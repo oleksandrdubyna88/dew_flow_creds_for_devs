@@ -159,7 +159,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     bundleKey: 'configs',
     read: (s, a, e) => s.getConfigBody(a, e),
     write: (s, a, e, v) => s.setConfigBody(a, e, v),
-    store: (s, a, e, v) => s.setConfigBody(a, e, unflipped(v)),
+    store: (s, a, e, v) => s.setConfigBody(a, e, v),
     remove: (s, a, e) => s.setConfigBody(a, e, undefined),
   },
   {

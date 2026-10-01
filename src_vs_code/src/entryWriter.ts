@@ -200,7 +200,7 @@ function plainWriter(storage: StorageManager, a: string, e: string, through: Thr
     setDbConnection: (_a, _e, v) => through(() => storage.setDbConnection(a, e, v)),
     setTotp: (_a, _e, v) => through(() => storage.setTotp(a, e, v)),
     setNotes: (_a, _e, v) => through(() => storage.setNotes(a, e, stored(v))),
-    setConfigBody: (_a, _e, v) => through(() => storage.setConfigBody(a, e, v)),
+    setConfigBody: (_a, _e, v) => through(() => storage.setConfigBody(a, e, stored(v))),
     setFields: (_a, _e, v) => through(() => storage.setFields(a, e, v)),
     setPayment: (_a, _e, v) => through(() => storage.setPayment(a, e, v)),
     setSecond: (_a, _e, v) => through(() => storage.setSecond(a, e, v)),
@@ -243,7 +243,7 @@ function sealingWriter(storage: StorageManager, a: string, e: string, pin: strin
     setTotp: (_a, _e, v) => sealIfChanged(opened.totp, v, seal, (sealed) => commit(() => storage.setTotp(a, e, unflipped(sealed)))),
     setDbConnection: (_a, _e, v) => sealIfChanged(opened.dbConnection, v, seal, (sealed) => commit(() => storage.setDbConnection(a, e, unflipped(sealed)))),
     setNotes: (_a, _e, v) => sealOrDelete(opened.notes, v, seal, (sealed) => commit(() => storage.setNotes(a, e, sealed))),
-    setConfigBody: (_a, _e, v) => sealOrDelete(opened.configBody, v, seal, (sealed) => commit(() => storage.setConfigBody(a, e, unflipped(sealed)))),
+    setConfigBody: (_a, _e, v) => sealOrDelete(opened.configBody, v, seal, (sealed) => commit(() => storage.setConfigBody(a, e, sealed))),
     setFields: (_a, _e, v) =>
       sealOrDelete(canonicalFields(opened.fieldsRaw), serializeFields(v), seal, (sealed) => commit(() => storage.setFieldsRaw(a, e, sealed))),
     setPayment: (_a, _e, v) =>

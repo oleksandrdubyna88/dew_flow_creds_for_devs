@@ -53,7 +53,7 @@ export interface EntityFlagSource {
   getHistory(accountId: string, entityId: string): Promise<{ secrets: unknown }[]>;
   getPassword(accountId: string, entityId: string): Thenable<string | undefined>;
   getFieldsRaw(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
-  getConfigBody(accountId: string, entityId: string): Thenable<string | undefined>;
+  getConfigBody(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
 }
 
 /**
@@ -253,6 +253,6 @@ function judgedUrlOpens(raw: StoredSecret | string | undefined): boolean {
   return (raw !== undefined && text === undefined) || siteUrlToOpen(parseFields(text).url).ok;
 }
 
-function judgedText(body: string | undefined): string {
+function judgedText(body: StoredSecret | string | undefined): string {
   return unsealedText(body) ?? '';
 }

@@ -4,7 +4,7 @@ import { EntityFlagSource, EntityFlagTarget, EntityFlagsRefresher, entityKey } f
 import { RevisionHead } from '../revisionHistory';
 import { markInvalid } from '../treeRowText';
 import { EntityMetadata } from '../types';
-import { locked } from './pinWorld';
+import { locked, stored } from './pinWorld';
 
 /**
  * The `!!!` a config wears while its body does not parse.
@@ -49,7 +49,7 @@ function fake(nodes: readonly { id: string; details?: EntityMetadata }[], bodies
       getFieldsRaw: () => Promise.resolve(undefined),
       getConfigBody: (_accountId, entityId) => {
         self.bodyReads.push(entityId);
-        return Promise.resolve(bodies[entityId]);
+        return Promise.resolve(stored(bodies[entityId]));
       },
     },
   };

@@ -858,12 +858,12 @@ export class StorageManager implements vscode.Disposable {
     return this.setPaymentRaw(accountId, entityId, stored(serializePaymentFields(fields)));
   }
 
-  getConfigBody(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(configSecretKey(accountId, entityId));
+  getConfigBody(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(configSecretKey(accountId, entityId)));
   }
 
-  setConfigBody(accountId: string, entityId: string, value: string | undefined): Promise<void> {
-    return this.putSecret(configSecretKey(accountId, entityId), accountId, value);
+  setConfigBody(accountId: string, entityId: string, value: StoredSecret | undefined): Promise<void> {
+    return this.putSecret(configSecretKey(accountId, entityId), accountId, carried(value));
   }
 
   // ---------- DB connection strings (SecretStorage, tenant-scoped) ----------
