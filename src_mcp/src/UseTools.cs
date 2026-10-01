@@ -140,9 +140,14 @@ internal static class UseTools
             see either value, old or new.
 
             Only a statement that SUCCEEDS updates the vault, so a refusal on the far side leaves
-            everything as it was. Needs the entry's "Agents may replace the secret" switch, which
-            is a rung above using it, and when a dialog is due the person approves the statement —
-            they see it with {{creds:new}} still in it, which is what makes it safe to show them.
+            everything as it was. If the person protected the entry with a PIN while the statement
+            ran, the answer says `stored: "quarantined"`: the far side changed, and the new value is
+            kept on the person's machine, outside the entry, until they next enter its PIN — then it
+            is stored. Do not retry the rotation; the old value no longer works.
+
+            Needs the entry's "Agents may replace the secret" switch, which is a rung above using it,
+            and when a dialog is due the person approves the statement — they see it with
+            {{creds:new}} still in it, which is what makes it safe to show them.
 
             `secretKind` picks what gets made: "password" (the default) or "passphrase". Key pairs
             and certificates are not made here — ask for one and you get a refusal saying why,

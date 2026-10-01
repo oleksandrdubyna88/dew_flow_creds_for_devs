@@ -96,6 +96,17 @@ public sealed class UseToolsTests
     }
 
     [Fact]
+    public void A_rotation_held_for_the_PIN_is_explained_so_the_agent_does_not_retry_it()
+    {
+        // The extension answers `stored: "quarantined"` when the entry was protected while the statement ran:
+        // the far side changed and the value waits on the person's machine. An agent that has never been told
+        // what that word means reads it as a failure, and a retry rotates the password a second time.
+        var rotate = Named("creds_rotate").Description;
+        rotate.Should().Contain("stored: \"quarantined\"");
+        rotate.Should().Contain("Do not retry");
+    }
+
+    [Fact]
     public async Task An_empty_entry_id_is_refused_here_rather_than_sent()
     {
         // A tool call with nothing in it must not become a request. The broker would refuse it,
