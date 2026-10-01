@@ -121,7 +121,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     bundleKey: 'notes',
     read: (s, a, e) => s.getNotes(a, e),
     write: (s, a, e, v) => s.setNotes(a, e, v),
-    store: (s, a, e, v) => s.setNotes(a, e, unflipped(v)),
+    store: (s, a, e, v) => s.setNotes(a, e, v),
     remove: (s, a, e) => s.setNotes(a, e, undefined),
   },
   {

@@ -15,6 +15,7 @@ import { McpAccess, McpAskPolicy, ladderKey, normalizeMcpAccess, resolveMcpInTre
 import { ConsentStamp, ConsentStampStore, ConsentStamps, STAMPS_KEY, stampKey } from '../mcpConsentPolicy';
 import type { TreeNode } from '../types';
 import { lockSecret, readSecret } from '../secretEnvelope';
+import { StoredSecret, stored } from '../storedSecret';
 
 /**
  * Level 1 of the ladder: what an agent may SEE.
@@ -57,13 +58,15 @@ function entity(id: string, name: string, details: Record<string, unknown>, pare
 function vault(nodes: readonly TreeNode[], secrets: Partial<Record<string, string>> = {}): McpVaultSource {
   const find = (id: string): TreeNode | undefined => nodes.find((n) => n.id === id);
   const answer = (key: string) => (): Thenable<string | undefined> => Promise.resolve(secrets[key]);
+  // A slot T5 has flipped answers as the keychain does: a stored secret.
+  const held = (key: string) => (): Thenable<StoredSecret | undefined> => Promise.resolve(stored(secrets[key]));
   return {
     getAccounts: () => [{ accountId: 'a1' }],
     getNodes: () => nodes,
     getNode: (_a, id) => find(id),
     getPassword: answer('password'),
     getPrivateKey: answer('privateKey'),
-    getNotes: answer('notes'),
+    getNotes: held('notes'),
     getTotp: answer('totp'),
     getDbConnection: answer('dbConnection'),
   };

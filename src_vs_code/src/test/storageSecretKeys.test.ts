@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
+import { stored } from '../storedSecret';
 import { TreeNode } from '../types';
 
 /**
@@ -115,7 +116,7 @@ test('and it cannot reach the other suffixed slots either', async () => {
     await w.storage.addNode(ACCOUNT, entity('x'));
     await w.storage.addNode(ACCOUNT, entity(`x:${suffix}`));
 
-    await w.storage.setNotes(ACCOUNT, 'x', 'THE REAL NOTE');
+    await w.storage.setNotes(ACCOUNT, 'x', stored('THE REAL NOTE'));
     await w.storage.setPassword(ACCOUNT, `x:${suffix}`, 'attacker-password');
 
     assert.equal(await w.storage.getNotes(ACCOUNT, 'x'), 'THE REAL NOTE', suffix);
@@ -145,7 +146,7 @@ test('an ordinary uuid still reads back what it stored, across every kind', asyn
 
   await w.storage.setPassword(ACCOUNT, id, 'pw');
   await w.storage.setPrivateKey(ACCOUNT, id, 'key');
-  await w.storage.setNotes(ACCOUNT, id, 'note');
+  await w.storage.setNotes(ACCOUNT, id, stored('note'));
 
   assert.equal(await w.storage.getPassword(ACCOUNT, id), 'pw');
   assert.equal(await w.storage.getPrivateKey(ACCOUNT, id), 'key');

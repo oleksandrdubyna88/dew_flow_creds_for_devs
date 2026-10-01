@@ -4,6 +4,7 @@ import { EntityMetadata, TreeNode } from './types';
 import { resolveKind } from './entityKind';
 import { withoutPassword } from './dbConnString';
 import { plainText } from './secretOpener';
+import type { StoredSecret } from './storedSecret';
 
 /**
  * What an agent is allowed to SEE — level 1 of the ladder, and the only place that decides it.
@@ -198,7 +199,7 @@ export interface McpVaultSource {
   getNode(accountId: string, id: string): TreeNode | undefined;
   getPassword(accountId: string, entityId: string): Thenable<string | undefined>;
   getPrivateKey(accountId: string, entityId: string): Thenable<string | undefined>;
-  getNotes(accountId: string, entityId: string): Thenable<string | undefined>;
+  getNotes(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
   getTotp(accountId: string, entityId: string): Thenable<string | undefined>;
   getDbConnection(accountId: string, entityId: string): Thenable<string | undefined>;
 }

@@ -98,8 +98,10 @@ test('every write of a plain writer runs inside the storage\'s cross-window leas
     });
   const leased: string[] = [];
   for (const name of ['setNotes', 'setPassword'] as const) {
-    const real = storage[name].bind(storage);
-    storage[name] = (a: string, e: string, value: string | undefined) => {
+    // Two setters of two value types while the slots flip (T5): patched through one shape.
+    const patchable = storage as unknown as Record<typeof name, (a: string, e: string, value: unknown) => Promise<void>>;
+    const real = patchable[name].bind(storage);
+    patchable[name] = (a: string, e: string, value: unknown) => {
       leased.push(`${name} ${inside > 0 ? 'leased' : 'OUTSIDE the lease'}`);
       return real(a, e, value);
     };
@@ -198,8 +200,10 @@ test('every write of the SEALING writer commits inside the lease — Protect\'s 
     });
   const leased: string[] = [];
   for (const name of ['setNotes', 'setPassword'] as const) {
-    const real = storage[name].bind(storage);
-    storage[name] = (a: string, e: string, value: string | undefined) => {
+    // Two setters of two value types while the slots flip (T5): patched through one shape.
+    const patchable = storage as unknown as Record<typeof name, (a: string, e: string, value: unknown) => Promise<void>>;
+    const real = patchable[name].bind(storage);
+    patchable[name] = (a: string, e: string, value: unknown) => {
       leased.push(`${name} ${inside > 0 ? 'leased' : 'OUTSIDE the lease'}`);
       return real(a, e, value);
     };

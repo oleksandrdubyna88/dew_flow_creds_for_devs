@@ -11,7 +11,7 @@ export interface SecretReader {
   getPrivateKey(accountId: string, id: string): Thenable<string | undefined>;
   getVpnConfig(accountId: string, id: string): Thenable<string | undefined>;
   getDbConnection(accountId: string, id: string): Thenable<string | undefined>;
-  getNotes(accountId: string, id: string): Thenable<string | undefined>;
+  getNotes(accountId: string, id: string): Thenable<StoredSecret | undefined>;
   getAttachment(accountId: string, id: string): Thenable<string | undefined>;
   getImage(accountId: string, id: string): Thenable<string | undefined>;
   getTotp(accountId: string, id: string): Thenable<string | undefined>;

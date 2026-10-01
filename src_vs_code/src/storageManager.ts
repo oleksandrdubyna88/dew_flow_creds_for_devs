@@ -802,12 +802,12 @@ export class StorageManager implements vscode.Disposable {
 
   // ---------- notes (SecretStorage, tenant-scoped) ----------
 
-  getNotes(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(notesSecretKey(accountId, entityId));
+  getNotes(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(notesSecretKey(accountId, entityId)));
   }
 
-  setNotes(accountId: string, entityId: string, value: string | undefined): Promise<void> {
-    return this.putSecret(notesSecretKey(accountId, entityId), accountId, value);
+  setNotes(accountId: string, entityId: string, value: StoredSecret | undefined): Promise<void> {
+    return this.putSecret(notesSecretKey(accountId, entityId), accountId, carried(value));
   }
 
   // ---------- login / URL (SecretStorage, tenant-scoped, JSON) ----------

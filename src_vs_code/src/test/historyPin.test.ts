@@ -10,7 +10,7 @@ import type { StorageManager } from '../storageManager';
 import type { StoredSecret } from '../storedSecret';
 import { EntityMetadata } from '../types';
 import { loadWithVscode } from './vscodeStub';
-import { ACCOUNT, PIN, clickVscode, locked, memoryStorage, seedEntry, sinks } from './pinWorld';
+import { ACCOUNT, PIN, clickVscode, locked, memoryStorage, seedEntry, sinks, stored } from './pinWorld';
 
 /**
  * D10 of the entry-PIN plan — an entry's KEPT versions under its PIN.
@@ -182,7 +182,7 @@ test('the door’s background seal re-checks the protection before it writes —
     const kept = await realGet(a, e);
     reads += 1;
     if (reads === 2) {
-      await storage.setNotes(ACCOUNT, ENTRY, 'unprotected meanwhile');
+      await storage.setNotes(ACCOUNT, ENTRY, stored('unprotected meanwhile'));
     }
     return kept;
   };

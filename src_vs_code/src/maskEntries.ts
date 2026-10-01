@@ -31,7 +31,7 @@ export interface SecretSource {
   getPrivateKey(accountId: string, entityId: string): Thenable<string | undefined>;
   getVpnConfig(accountId: string, entityId: string): Thenable<string | undefined>;
   getDbConnection(accountId: string, entityId: string): Thenable<string | undefined>;
-  getNotes(accountId: string, entityId: string): Thenable<string | undefined>;
+  getNotes(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
   getSecondRaw(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
 }
 
