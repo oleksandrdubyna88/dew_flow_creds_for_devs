@@ -6,6 +6,7 @@ import { PinScope } from './pinPolicy';
 import { admit } from './pinAdmission';
 import { healKeptVersions } from './historyHeal';
 import { settleRelease } from './rotationWaiting';
+import type { Release } from './rotationQuarantine';
 import { StorageManager } from './storageManager';
 
 /**
@@ -123,15 +124,31 @@ export async function admitEntry(
   entryName: string,
   purpose?: string,
 ): Promise<PinGate | undefined> {
+  return (await admitted(storage, accountId, entityId, entryName, purpose))?.gate;
+}
+
+/**
+ * `admitEntry`, saying also what the door RELEASED — a rotated value that waited beside the entry and is in a
+ * slot now (`rotationQuarantine.ts`). A click that read its value before the door reads it again from this
+ * (`pinClick.clickOpener`; the security review, finding 2): the value it holds is the one the door replaced.
+ */
+export async function admitted(
+  storage: StorageManager,
+  accountId: string,
+  entityId: string,
+  entryName: string,
+  purpose?: string,
+): Promise<{ readonly gate: PinGate; readonly release: Release } | undefined> {
   const gate = entryPinGate(accountId, entityId, entryName, purpose);
   const admission = await admit(storage, accountId, entityId, gate);
   if (admission.kind === 'refused') {
     void vscode.window.showWarningMessage(admission.reason);
   }
-  if (admission.kind === 'in') {
-    healKeptVersions(storage, accountId, entityId, entryName);
-    // A rotated value that waited beside the entry went in at the door: said, and a conflict asked (§4.6).
-    await settleRelease(storage, accountId, entityId, entryName, admission);
+  if (admission.kind !== 'in') {
+    return undefined;
   }
-  return admission.kind === 'in' ? gate : undefined;
+  healKeptVersions(storage, accountId, entityId, entryName);
+  // A rotated value that waited beside the entry went in at the door: said, and a conflict asked (§4.6).
+  await settleRelease(storage, accountId, entityId, entryName, admission);
+  return { gate, release: admission };
 }

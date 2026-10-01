@@ -218,7 +218,7 @@ const GATED_BY_CALLER: Readonly<Record<string, Readonly<Record<string, string>>>
     agreed: 'counts and dates the kept versions for the confirmation; no value is used (typed since T5)',
   },
   'rotationQuarantine.ts': {
-    rawSlot: 'the live slot as stored: liveText opens it through openStored, and the release’s commit guard compares it byte for byte — never used as a value',
+    rawSlot: 'the live slot as stored: liveText opens it through openStored, the release’s commit guard compares it byte for byte, and a click’s re-read after its door hands it to grantedOpener — never used as a value here',
   },
   'sshCredential.ts': {
     passwordOwner: 'returns the stored password with its OWNER; the caller opens it through the opener it was given (typed since T5)',

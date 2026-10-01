@@ -472,3 +472,31 @@ test('a plain rotation lands and supersedes the hold between the release\'s chec
 
   assert.equal(await plainSlot(w), V2, 'the release overwrote the newer rotation with the older held value');
 });
+
+// ---- security review, finding 2: a click reads its value AFTER the door that released it ----
+
+/** The click surfaces of `doorWorld`'s entry, in the graph whose door releases. */
+async function clickWorld(): Promise<DoorWorld & { readonly click: typeof import('../pinClick') }> {
+  const w = await doorWorld();
+  const [click] = loadEachWithVscode(['../pinClick'], clickVscode([PIN], w.s)) as [typeof import('../pinClick')];
+  return { ...w, click };
+}
+
+const OWNER = { id: ENTRY, name: 'orders-db', pinProtected: true };
+
+test('Copy Connection String on an entry with a rotated value waiting copies the NEW value, not the one the door just replaced', async () => {
+  const w = await clickWorld();
+
+  const opened = await w.click.clickedSecret(w.storage, ACCOUNT, OWNER, (s, a, e) => s.getDbConnection(a, e), 'copy its connection string');
+
+  assert.equal(opened.kind === 'open' && opened.value, HELD_CONN, 'the click used the value read before its door released the rotated one — a password that no longer works');
+});
+
+test('a click opener handed a value read before its door (Connect, SSH, exec) uses the value the door released', async () => {
+  const w = await clickWorld();
+  const readFirst = await w.storage.getDbConnection(ACCOUNT, ENTRY);
+
+  const opened = await w.click.clickOpener(w.storage, ACCOUNT, 'connect')(OWNER, readFirst);
+
+  assert.equal(opened.kind === 'open' && opened.value, HELD_CONN, 'the opener used the pre-release value');
+});

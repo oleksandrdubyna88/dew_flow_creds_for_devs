@@ -341,7 +341,7 @@ class ReleaseOvertaken extends Error {
   }
 }
 
-function rawSlot(at: ReleaseAt, slot: RotationSlot): PromiseLike<StoredSecret | undefined> {
+function rawSlot(at: Pick<ReleaseAt, 'storage' | 'accountId' | 'entityId'>, slot: RotationSlot): PromiseLike<StoredSecret | undefined> {
   return slot === 'password' ? at.storage.getPassword(at.accountId, at.entityId) : at.storage.getDbConnection(at.accountId, at.entityId);
 }
 
@@ -367,6 +367,41 @@ export async function dropHeld(storage: StorageManager, accountId: string, entit
       await settle(store, accountId, entityId, rest);
     }
   });
+}
+
+/** Re-reads, after a door, the value a click read before it — see `beforeTheDoor`. */
+export type AfterTheDoor = (value: StoredSecret | undefined, release: Release) => Promise<StoredSecret | undefined>;
+
+const AS_READ: AfterTheDoor = (value) => Promise.resolve(value);
+
+/**
+ * Taken BEFORE a click's door: what the slots of a held rotation hold now (nothing is read when nothing is
+ * held — one keychain get). After the door, a value equal to what a RELEASED slot held before is the value the
+ * door replaced, and the slot is read again (the security review, finding 2). The caller opens what it gets
+ * through the grant the door left — this never opens anything.
+ */
+export async function beforeTheDoor(storage: StorageManager, accountId: string, entityId: string): Promise<AfterTheDoor> {
+  try {
+    const held = await storage.heldRotations.read(accountId, entityId);
+    return isEmpty(held) ? AS_READ : rereadAfter(storage, accountId, entityId, await slotsNow(storage, accountId, entityId, held));
+  } catch {
+    return AS_READ;
+  }
+}
+
+async function slotsNow(storage: StorageManager, accountId: string, entityId: string, held: HeldSlots): Promise<Partial<Record<RotationSlot, StoredSecret | undefined>>> {
+  const now: Partial<Record<RotationSlot, StoredSecret | undefined>> = {};
+  for (const slot of SLOTS.filter((one) => held[one] !== undefined)) {
+    now[slot] = await rawSlot({ storage, accountId, entityId }, slot);
+  }
+  return now;
+}
+
+function rereadAfter(storage: StorageManager, accountId: string, entityId: string, before: Partial<Record<RotationSlot, StoredSecret | undefined>>): AfterTheDoor {
+  return async (value, release) => {
+    const replaced = release.released.find((one) => value !== undefined && before[one.slot] === value);
+    return replaced === undefined ? value : rawSlot({ storage, accountId, entityId }, replaced.slot);
+  };
 }
 
 /** What the release compared: the slot's text, whether it was sealed, and the stored string it was read from. */
