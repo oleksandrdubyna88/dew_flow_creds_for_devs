@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import { SECRET_SLOTS } from '../entitySlots';
 import type { StorageManager } from '../storageManager';
-import { Finding, funnelUses, importedUses, readsKeptVersions, storageWrites } from './funnelScan';
+import { Finding, funnelUses, importedUses, readsKeptVersions, slotWritesOverStorage, storageWrites } from './funnelScan';
 
 /**
  * The funnel — the syntax half (`PLAN_typed_stored_secrets.md` §3 item 1, T3).
@@ -204,5 +204,41 @@ test('the negative fixture: every shape of the storage handed out as a writer is
     'src/fixture.ts:3 storage.setPassword(',
     'src/fixture.ts:4 store: storage',
     'src/fixture.ts:5 storage.setFields(',
+  ]);
+});
+
+// ---- ...and no slot table row writes through the storage itself, but these (the E2 security review, finding 2) ----
+
+/**
+ * `slot.write(storage, …)` stores a value with nothing between it and the keychain — no lease, no
+ * re-check of the decision it was made under. Restore's plain path did that, and an entry protected
+ * between its decision and its writes was restored in the clear. Allowed only here, each with its reason,
+ * keyed `file#function`.
+ */
+const SLOT_WRITERS: Readonly<Record<string, string>> = {
+  'entityPin.ts#sealIfStill': 'Protect: the SEAL, written under the lease after the slot was read again',
+  'entityPin.ts#unprotectEntity': 'Remove PIN Protection…: the values the person\'s own PIN opened, by the person\'s decision',
+  'restoreVersion.ts#writeSealed': 'Restore\'s sealed road: every value sealed in memory under the entry\'s PIN before the first write (R3)',
+};
+
+const slotWriteKey = (finding: Finding): string => `${finding.file}#${finding.what.replace('slot.write(storage in ', '')}`;
+
+test('no slot table row is handed the storage itself as its writer outside the allowlist — every other value goes through writerFor', () => {
+  const outside = eachSource(slotWritesOverStorage).filter((finding) => SLOT_WRITERS[slotWriteKey(finding)] === undefined);
+
+  assert.deepEqual(outside.map(said), [], 'a slot written through the storage itself: take a writer from entryWriter.writerFor');
+});
+
+test('the companions: every allowlisted slot writer is still there, and the scan reports one it is shown', () => {
+  const seen = new Set(eachSource(slotWritesOverStorage).map(slotWriteKey));
+  assert.deepEqual(Object.keys(SLOT_WRITERS).filter((key) => !seen.has(key)), [], 'an allowlist entry matches nothing — take it out');
+  const fixture = [
+    'export async function restoreAround(storage: S, slot: T) { await slot.write(storage, "a", "e", "v"); }',
+    'export const viaArrow = async (ctx: C, slot: T) => slot.write(ctx.storage, "a", "e", "v");',
+    'export async function viaWriter(writer: W, slot: T) { await slot.write(writer, "a", "e", "v"); }',
+  ].join('\n');
+  assert.deepEqual(slotWritesOverStorage('fixture.ts', fixture).map(said), [
+    'src/fixture.ts:1 slot.write(storage in restoreAround',
+    'src/fixture.ts:2 slot.write(storage in viaArrow',
   ]);
 });

@@ -1,7 +1,10 @@
+import { NOTHING_OPENED } from './editPrefill';
 import { protectEntity, sealValue } from './entityPin';
 import { SECRET_SLOTS, SecretSlot } from './entitySlots';
+import { writerFor } from './entryWriter';
 import { Revision } from './revisionHistory';
 import { snapshotForRevision } from './revisionSnapshot';
+import type { Sealing } from './sealingAtWrite';
 import { readSecret } from './secretEnvelope';
 import type { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
@@ -23,7 +26,11 @@ import { EntityMetadata } from './types';
  *       restore is undone the same way it was done.</li>
  *   <li>The values (the password last, as the slot table orders them), the node, then the removals of
  *       every value the version did not hold — through each slot's own deleter, because
- *       `setPassword('')` KEEPS.</li>
+ *       `setPassword('')` KEEPS. Into an unprotected entry the values go through the plain writer
+ *       `writerFor` gives Restore's plain proof: every write under the cross-window lease and re-checked,
+ *       so an entry another window protects between the decision and a write refuses that write (the E2
+ *       security review, finding 2). The node is rebuilt from the node AS IT IS at its write, inside the
+ *       lease — a mark another window set meanwhile is today's, and stays.</li>
  *   <li>The `protectEntity` sweep, for a protected entry: idempotent, it seals anything a racing
  *       writer left in the clear.</li>
  * </ol>
@@ -120,31 +127,57 @@ function plainFate(stored: string | undefined, wanted: string): Fate {
   return stored === wanted ? { kind: 'keep' } : { kind: 'write', value: wanted };
 }
 
+/** How a restore writes: the entry's PIN (a protected entry — every value sealed first), or the plain proof its decision made. */
+export type RestoreUnder = string | Extract<Sealing, { readonly kind: 'plain' }>;
+
 /**
  * Restore `version` — already OPENED (`historyPin.openRevision`) — into the live entry `entityId`.
- * `pin` is the entry's PIN when it is protected, and absent when it is not. Answers the details it
- * wrote, for the terminal bindings the caller refreshes.
+ * `under` is the entry's PIN when it is protected, and the plain proof `sealingAtWrite` gave when it is
+ * not. Answers the details it wrote, for the terminal bindings the caller refreshes.
  */
 export async function restoreVersion(
   storage: StorageManager,
   accountId: string,
   entityId: string,
   version: Revision,
-  pin: string | undefined,
+  under: RestoreUnder,
 ): Promise<EntityMetadata> {
+  const pin = typeof under === 'string' ? under : undefined;
   const live = liveEntry(storage, accountId, entityId);
   const plan = await planned(storage, accountId, entityId, version, pin);
   await storage.recordRevision(accountId, entityId, await snapshotForRevision(storage, accountId, live));
-  for (const [slot, value] of plan.writes) {
-    await slot.write(storage, accountId, entityId, value);
-  }
-  const details = restoredDetails(version, live.details);
-  await storage.updateNodeFields(accountId, entityId, { name: version.name, details });
+  await (typeof under === 'string' ? writeSealed(storage, accountId, entityId, plan) : writePlain(storage, accountId, entityId, plan, under));
+  let details = restoredDetails(version, live.details);
+  await storage.updateNodeFields(accountId, entityId, (node) => {
+    details = restoredDetails(version, node.details ?? live.details);
+    return { name: version.name, details };
+  });
   for (const slot of plan.removals) {
     await slot.remove(storage, accountId, entityId);
   }
   await sweep(storage, accountId, entityId, pin);
   return details;
+}
+
+/** A protected entry: every value was sealed in memory under its PIN by `planned`, before the first write (R3). */
+async function writeSealed(storage: StorageManager, accountId: string, entityId: string, plan: RestorePlan): Promise<void> {
+  for (const [slot, value] of plan.writes) {
+    await slot.write(storage, accountId, entityId, value);
+  }
+}
+
+/** An unprotected entry: through the plain writer — each write under the lease, re-checked against the decision. */
+async function writePlain(
+  storage: StorageManager,
+  accountId: string,
+  entityId: string,
+  plan: RestorePlan,
+  proof: Extract<Sealing, { readonly kind: 'plain' }>,
+): Promise<void> {
+  const writer = writerFor(storage, accountId, entityId, proof, NOTHING_OPENED);
+  for (const [slot, value] of plan.writes) {
+    await slot.write(writer, accountId, entityId, value);
+  }
 }
 
 function liveEntry(storage: StorageManager, accountId: string, entityId: string): { id: string; name: string; details: EntityMetadata } {

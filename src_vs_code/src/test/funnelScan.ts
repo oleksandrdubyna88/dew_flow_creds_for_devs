@@ -261,3 +261,39 @@ export function storageWrites(file: string, text: string, setters: readonly stri
   const names = new Set(setters);
   return nodesOf(parse(file, text)).flatMap((node) => storageWrite(file, node, names));
 }
+
+/** The name of the function a node sits in — a declaration, a method, or an arrow bound to a name. */
+function enclosingName(node: ts.Node): string {
+  const fn = ts.findAncestor(node.parent, (up) => ts.isFunctionDeclaration(up) || ts.isMethodDeclaration(up) || ts.isArrowFunction(up) || ts.isFunctionExpression(up));
+  return fn === undefined ? '(top level)' : functionName(fn);
+}
+
+function functionName(fn: ts.Node): string {
+  const named = declaredName(fn);
+  if (named !== undefined) {
+    return named.getText();
+  }
+  return ts.isVariableDeclaration(fn.parent) ? fn.parent.name.getText() : enclosingName(fn);
+}
+
+function declaredName(fn: ts.Node): ts.Node | undefined {
+  return ts.isFunctionDeclaration(fn) || ts.isMethodDeclaration(fn) ? fn.name : undefined;
+}
+
+/** `slot.write(storage, …)` — a slot table row's writer handed the storage itself. */
+function slotWriteOverStorage(file: string, node: ts.Node): Finding[] {
+  const access = memberCall(node);
+  if (access === undefined || access.name.text !== 'write') {
+    return [];
+  }
+  return isStorage((node as ts.CallExpression).arguments[0]) ? [at(file, node, `slot.write(storage in ${enclosingName(node)}`)] : [];
+}
+
+/**
+ * Every slot table row's `write` handed the storage itself — a value stored with no writer between it and
+ * the keychain, so no lease and no re-check (the E2 security review, finding 2: Restore's plain path).
+ * Each finding names the function it sits in, which is what the allowlist is keyed by.
+ */
+export function slotWritesOverStorage(file: string, text: string): Finding[] {
+  return nodesOf(parse(file, text)).flatMap((node) => slotWriteOverStorage(file, node));
+}
