@@ -20,7 +20,27 @@
  */
 
 import type { RevisionSecrets } from './revisionHistory';
+import type { SecretMapKey } from './secretMaps';
 import { StorageManager } from './storageManager';
+
+/**
+ * What a slot's `read` needs — the ten getters and nothing else, so a walker that only READS (the
+ * revision snapshot) can be handed a narrow source rather than the whole storage manager. A row that
+ * read through a getter missing here would not compile.
+ */
+export type SlotSource = Pick<
+  StorageManager,
+  | 'getNotes'
+  | 'getFieldsRaw'
+  | 'getSecondRaw'
+  | 'getPaymentRaw'
+  | 'getConfigBody'
+  | 'getDbConnection'
+  | 'getVpnConfig'
+  | 'getTotp'
+  | 'getPrivateKey'
+  | 'getPassword'
+>;
 
 export interface SecretSlot {
   /** What this slot is called when a person is told about it. */
@@ -31,7 +51,14 @@ export interface SecretSlot {
    * `slotTable.test.ts` asserts the ten against `revisionHistory.SMALL_FIELDS`.
    */
   readonly revisionField: keyof RevisionSecrets;
-  readonly read: (storage: StorageManager, accountId: string, entityId: string) => Thenable<string | undefined>;
+  /**
+   * The map a sync or backup bundle carries this slot in (`secretMaps.SECRET_KINDS`) — the column
+   * that makes the table the one list: `slotTable.test.ts` asserts these ten plus attachments and
+   * images are exactly the kinds the vault stores, and `syncPinRule.test.ts` that they are exactly
+   * the maps the merge judges sealed.
+   */
+  readonly bundleKey: SecretMapKey;
+  readonly read: (storage: SlotSource, accountId: string, entityId: string) => Thenable<string | undefined>;
   readonly write: (storage: StorageManager, accountId: string, entityId: string, value: string) => Promise<void>;
   /**
    * Empty the slot — through the deleter the slot really has. Written down per slot because the
@@ -46,6 +73,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
   {
     label: 'notes',
     revisionField: 'notes',
+    bundleKey: 'notes',
     read: (s, a, e) => s.getNotes(a, e),
     write: (s, a, e, v) => s.setNotes(a, e, v),
     remove: (s, a, e) => s.setNotes(a, e, undefined),
@@ -53,6 +81,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
   {
     label: 'login and URL',
     revisionField: 'fields',
+    bundleKey: 'fields',
     read: (s, a, e) => s.getFieldsRaw(a, e),
     write: (s, a, e, v) => s.setFieldsRaw(a, e, v),
     remove: (s, a, e) => s.setFieldsRaw(a, e, undefined),
@@ -62,6 +91,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     // and every walker of this table gets it without a line written anywhere else.
     label: 'second values',
     revisionField: 'second',
+    bundleKey: 'seconds',
     read: (s, a, e) => s.getSecondRaw(a, e),
     write: (s, a, e, v) => s.setSecondRaw(a, e, v),
     remove: (s, a, e) => s.setSecondRaw(a, e, undefined),
@@ -69,6 +99,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
   {
     label: 'payment details',
     revisionField: 'payment',
+    bundleKey: 'payments',
     read: (s, a, e) => s.getPaymentRaw(a, e),
     write: (s, a, e, v) => s.setPaymentRaw(a, e, v),
     remove: (s, a, e) => s.setPaymentRaw(a, e, undefined),
@@ -76,6 +107,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
   {
     label: 'config body',
     revisionField: 'config',
+    bundleKey: 'configs',
     read: (s, a, e) => s.getConfigBody(a, e),
     write: (s, a, e, v) => s.setConfigBody(a, e, v),
     remove: (s, a, e) => s.setConfigBody(a, e, undefined),
@@ -83,6 +115,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
   {
     label: 'database connection',
     revisionField: 'dbConnection',
+    bundleKey: 'dbConnections',
     read: (s, a, e) => s.getDbConnection(a, e),
     write: (s, a, e, v) => s.setDbConnection(a, e, v),
     remove: (s, a, e) => s.deleteDbConnection(a, e),
@@ -90,6 +123,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
   {
     label: 'VPN configuration',
     revisionField: 'vpnConfig',
+    bundleKey: 'vpnConfigs',
     read: (s, a, e) => s.getVpnConfig(a, e),
     write: (s, a, e, v) => s.setVpnConfig(a, e, v),
     remove: (s, a, e) => s.deleteVpnConfig(a, e),
@@ -97,6 +131,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
   {
     label: 'one-time-code seed',
     revisionField: 'totp',
+    bundleKey: 'totps',
     read: (s, a, e) => s.getTotp(a, e),
     write: (s, a, e, v) => s.setTotp(a, e, v),
     remove: (s, a, e) => s.deleteTotp(a, e),
@@ -104,6 +139,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
   {
     label: 'private key',
     revisionField: 'privateKey',
+    bundleKey: 'privateKeys',
     read: (s, a, e) => s.getPrivateKey(a, e),
     write: (s, a, e, v) => s.setPrivateKey(a, e, v),
     remove: (s, a, e) => s.deletePrivateKey(a, e),
@@ -112,6 +148,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
   {
     label: 'password',
     revisionField: 'password',
+    bundleKey: 'passwords',
     read: (s, a, e) => s.getPassword(a, e),
     // `setPassword` treats an empty string as "keep what is stored", which is right for a form and
     // wrong here: this writes a value it has just transformed and must never be a no-op. Nothing

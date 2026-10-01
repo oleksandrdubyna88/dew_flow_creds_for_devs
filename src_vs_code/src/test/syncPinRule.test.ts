@@ -28,6 +28,14 @@ test('the merge judges exactly the slots the PIN wraps — every slot of the tab
   assert.ok(!SEALABLE_MAPS.includes('attachments') && !SEALABLE_MAPS.includes('images'));
 });
 
+test('the maps the merge judges are exactly the slot table’s bundle keys — the same ten, by name', () => {
+  assert.deepEqual(
+    [...SEALABLE_MAPS].sort(),
+    SECRET_SLOTS.map((slot) => slot.bundleKey).sort(),
+    'SEALABLE_MAPS is derived from the vault’s kinds; the table is what the PIN wraps — the two must name the same maps',
+  );
+});
+
 test('"sealed" is read from the envelopes, never from the mark', async () => {
   const markOnly = snap({ nodes: [node({ A: 1 }, { details: { id: 'x', name: 'n', isSshEnabled: false, pinProtected: true } as never })], passwords: { x: 'plain' } });
   const envelopeOnly = snap({ nodes: [node({ A: 1 })], notes: { x: await sealed() } });
