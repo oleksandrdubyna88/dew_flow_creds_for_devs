@@ -28,6 +28,8 @@ export interface Finding {
   readonly file: string;
   readonly line: number;
   readonly what: string;
+  /** The function it sits in — what an allowlist keyed `file#function` is matched against. */
+  readonly within?: string;
 }
 
 function parse(file: string, text: string): ts.SourceFile {
@@ -138,9 +140,9 @@ function isTypeNamed(type: ts.Node, name: string): boolean {
 function funnelFinding(file: string, node: ts.Node, imported: Imported, names: ReadonlySet<string>): Finding[] {
   const name = namedReference(node, imported) ?? namespaceReference(node, imported, names);
   if (name !== undefined) {
-    return [at(file, node, `${name}(`)];
+    return [{ ...at(file, node, `${name}(`), within: enclosingName(node) }];
   }
-  return castToStored(node) ? [at(file, node, 'as StoredSecret')] : [];
+  return castToStored(node) ? [{ ...at(file, node, 'as StoredSecret'), within: enclosingName(node) }] : [];
 }
 
 /**

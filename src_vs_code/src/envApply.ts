@@ -129,7 +129,7 @@ async function openedField(
   details: EntityMetadata,
   field: BindableField,
 ): Promise<OpenedSecret> {
-  const open = (stored: StoredSecret | undefined): Promise<OpenedSecret> => automaticOpener(details, stored);
+  const open = (held: StoredSecret | undefined): Promise<OpenedSecret> => automaticOpener(details, held);
   switch (field) {
     case 'password':
       return open(await storage.getPassword(accountId, details.id));
@@ -182,9 +182,9 @@ async function boundReading(
   field: BindableField,
   values: EnvValues,
 ): Promise<FieldReading> {
-  const stored = await bindableFieldReading(storage, accountId, details, field);
+  const reading = await bindableFieldReading(storage, accountId, details, field);
   const held = HELD[field](values);
-  return stored.kind === 'withheld' || held === undefined ? stored : readingOf(held);
+  return reading.kind === 'withheld' || held === undefined ? reading : readingOf(held);
 }
 
 /**

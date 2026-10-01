@@ -59,8 +59,9 @@ const ALLOWED: Readonly<Record<string, string>> = {
   'historyPin.ts': 'seals and opens kept versions in place',
   'restoreVersion.ts': 'Restore\'s writes, sealed in memory before the first one',
   'entitySlots.ts': 'the table: types only',
-  'entityFieldReading.ts': 'a metadata value read as the plain stored form it is (legacy note / public key kept in node metadata)',
-  'envApply.ts': 'a metadata value read as the plain stored form it is (legacy note / public key kept in node metadata)',
+  // Keyed `file#function`: one mint each, and the rest of the file is outside the funnel like any other.
+  'entityFieldReading.ts#notesReading': 'a metadata value read as the plain stored form it is (legacy note / public key kept in node metadata)',
+  'envApply.ts#openedField': 'a metadata value read as the plain stored form it is (legacy note / public key kept in node metadata)',
 };
 
 function sourceFiles(dir: string = SRC): string[] {
@@ -89,10 +90,24 @@ const said = (finding: Finding): string => `src/${finding.file}:${finding.line} 
 
 // ---- the funnel ----
 
+/** A use the allowlist does not cover — by its file, or by `file#function` for the one-function entries. */
+const outsideTheFunnel = (finding: Finding): boolean =>
+  ALLOWED[finding.file] === undefined && ALLOWED[`${finding.file}#${finding.within ?? ''}`] === undefined;
+
 test('no module outside the funnel parses a stored string, mints or strips one, or seals one', () => {
-  const outside = eachSource(usesIn).filter((finding) => ALLOWED[finding.file] === undefined);
+  const outside = eachSource(usesIn).filter(outsideTheFunnel);
 
   assert.deepEqual(outside.map(said), [], 'a module outside the funnel uses it — ask an opener, a door or a writer instead');
+});
+
+test('a function allowlisted for one mint does not exempt its file: a mint elsewhere in envApply.ts is reported', () => {
+  const source = [
+    "import { stored } from './storedSecret';",
+    'async function openedField(d: D) { return open(stored(d.publicKey)); }',
+    'export function leak(text: string) { return stored(text); }',
+  ].join('\n');
+
+  assert.deepEqual(usesIn('envApply.ts', source).filter(outsideTheFunnel).map(said), ['src/envApply.ts:3 stored(']);
 });
 
 test('the companion: the scan still finds the funnel\'s known callers inside it', () => {
@@ -104,6 +119,9 @@ test('the companion: the scan still finds the funnel\'s known callers inside it'
   assert.ok(seen('entityPin.ts', 'sealValue('), 'Protect\'s sealing is no longer seen');
   assert.ok(seen('shareRecipientPin.ts', 'lockSecret('), 'the recipient\'s wrap is no longer seen');
   assert.ok(seen('exportSecrets.ts', 'carried('), 'the export\'s byte-identical carry is no longer seen');
+  const keyed = Object.keys(ALLOWED).filter((key) => key.includes('#'));
+  const matched = (key: string): boolean => found.some((finding) => `${finding.file}#${finding.within ?? ''}` === key);
+  assert.deepEqual(keyed.filter((key) => !matched(key)), [], 'a file#function allowlist entry matches nothing — take it out');
 });
 
 test('the negative fixture: a module outside the allowlist that strips a stored secret is reported', () => {
