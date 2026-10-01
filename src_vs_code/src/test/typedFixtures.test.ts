@@ -75,10 +75,18 @@ function describeFound(found: readonly Found[]): string {
   return found.map((one) => `TS${one.code} at line ${one.line}: ${one.text}`).join('; ');
 }
 
+/**
+ * The previous fixture's program, handed to the next as `oldProgram` so the unchanged source files —
+ * the lib `.d.ts` files above all — are reused rather than parsed again for every fixture (E1 code
+ * round, finding 5). Each fixture still gets a program whose only root is itself.
+ */
+let previous: ts.Program | undefined;
+
 /** Build one program over the fixture, check it, and keep the diagnostics that belong to the fixture. */
 function compile(file: string, options: ts.CompilerOptions): Found[] {
   const full = path.join(FIXTURES, file);
-  const program = ts.createProgram([full], options);
+  const program = ts.createProgram([full], options, undefined, previous);
+  previous = program;
   const own = program.getSourceFile(full);
   assert.ok(own, `${file} was not part of the program built for it`);
   return ts
