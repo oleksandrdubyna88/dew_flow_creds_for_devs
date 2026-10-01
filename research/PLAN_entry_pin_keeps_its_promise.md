@@ -17,7 +17,7 @@
 > design record), [PLAN_payment_polish_and_entity_pin.md](PLAN_payment_polish_and_entity_pin.md),
 > [PLAN_second_values.md](PLAN_second_values.md). Sibling plans opened the same day:
 > [PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md) (same release)
-> and [PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) (after it).
+> and [PLAN_typed_stored_secrets.md](PLAN_typed_stored_secrets.md) (after it).
 
 All `file:line` references below are to `src_vs_code/src/` unless a path says otherwise, and were read on
 `origin/main` at `6905e9f` (no source change since the audited `4d35afa`).
@@ -105,7 +105,7 @@ and the raw carriers (sync, backup and bundles via `secretMaps.ts`, `revisionSna
 4. **A PIN-gated *Restore This Version…*** ships now, and the Clone tooltip is corrected.
 5. **Design:** the UX-first design as the base, with the protection-epoch sync rule from the structural
    design and the extra findings of the minimal design. The full compile-time secret type is its own plan,
-   [PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md), after this release.
+   [PLAN_typed_stored_secrets.md](PLAN_typed_stored_secrets.md), after this release.
 6. **A sync conflict's losing protected edit is kept** in that machine's history and the person is told
    once — never dropped silently.
 7. The agent-create defect the owner found the same day (a Terminal entry that shows *SSH command*) is a
@@ -420,7 +420,7 @@ attacker, for whom scrypt is the cost.
 | Item | Built by | The other plan's part |
 |---|---|---|
 | Edit re-seals a protected entry (open plan §1-§5) | **this plan, P3** (§5.2) | [PLAN_edit_reseals_a_protected_entry.md](PLAN_edit_reseals_a_protected_entry.md) is superseded: its option (a) "keep the PIN from the open" is taken (as a grant re-read at Save, not a captured PIN), its "write then `protectEntity`" order is replaced by R3, its failure rule is §5.2 step 7, its step 5 (share-accept, import) is §5.6. Promoted together with this plan. |
-| A compile-time `StoredSecret` type, a single `writeEntry` path | [PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md), **after** this release | This plan lands the runtime rules and the test guard (§7) that plan turns into a compile error. |
+| A compile-time `StoredSecret` type, a single `writeEntry` path | [PLAN_typed_stored_secrets.md](PLAN_typed_stored_secrets.md), **after** this release | This plan lands the runtime rules and the test guard (§7) that plan turns into a compile error. |
 | Agent-created entries carry only fields their kind has; the SSH rows only for SSH | [PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md), same release | Disjoint files except `entityViewPage.ts` (it owns the SSH-row gate; this plan does not touch those rows). |
 | How sync reports what it did | [PLAN_sync_says_what_already_happened.md](../todo/PLAN_sync_says_what_already_happened.md) | Both edit `syncManager.ts`. Whichever lands second rebases; the conflict notice of §5.9 is routed through that plan's summary once it exists. This plan's merge rule (`syncMerge.ts`, `syncPinRule.ts`) is disjoint from it. |
 | Re-wrapping when an entry moves across a PIN boundary | not built (design record `research/PLAN_payment_polish_and_entity_pin.md:509-516`) | Out of scope, unchanged. |
@@ -858,5 +858,5 @@ reproduced by a test watched failing first; the commits carry the RED messages.
    run report says the entry was already protected in another window under a different PIN. *(The
    third item this review recorded — the `entity-pin` help's* Changed on two machines at once *paragraph
    still saying the raced copies win "whole" — was fixed before the code round, in all five languages.)*
-5. **[PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) follows** — the compile-time
+5. **[PLAN_typed_stored_secrets.md](PLAN_typed_stored_secrets.md) follows** — the compile-time
    `StoredSecret` type that turns this plan's runtime rules and test guard into a compile error.

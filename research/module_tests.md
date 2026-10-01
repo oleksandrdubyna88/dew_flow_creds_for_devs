@@ -849,7 +849,7 @@ protected and viewed in a real editor, is the plan's first Definition-of-Done it
 
 ### The typed-secrets plan, epic 1 — no flow, two foundations (2026-10-01)
 
-[PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) E1 changes no behaviour, so it adds
+[PLAN_typed_stored_secrets.md](PLAN_typed_stored_secrets.md) E1 changes no behaviour, so it adds
 no scenario; it adds what the later epics are checked with. `slotTable.test.ts` now holds the slot table
 to the vault's kinds (the ten `bundleKey`s plus attachments and images equal `SECRET_KINDS`) and holds
 `snapshotForRevision` to exactly the table's getters, and `syncPinRule.test.ts` holds `SEALABLE_MAPS`

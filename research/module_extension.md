@@ -1160,7 +1160,7 @@ inherited at read time.
 | Module | What it holds |
 |---|---|
 | `entitySlots.ts` | the ten slots, as one table everything walks — and the fixed ORDER. Each row names its revision field and, since the typed-secrets plan's E1 (2026-10-01), its `bundleKey` — the sync/backup map it travels in, asserted with attachments and images to be exactly `SECRET_KINDS` and to equal `syncPinRule.SEALABLE_MAPS`; `snapshotForRevision` walks the table instead of ten hand-written reads |
-| `storedSecret.ts` | `StoredSecret`, the phantom type of a value as the keychain holds it ([PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) §2.2), with its `stored()` mint and `carried()` — defined in E1 and returned by nothing yet (the getters flip in E3); what it must and must not compile is held by `test/typedFixtures.test.ts`, and which modules may mint, strip, parse or seal a stored string by `test/storedSecretFunnel.test.ts` (E2) |
+| `storedSecret.ts` | `StoredSecret`, the phantom type of a value as the keychain holds it ([PLAN_typed_stored_secrets.md](PLAN_typed_stored_secrets.md) §2.2), with its `stored()` mint and `carried()` — defined in E1 and returned by nothing yet (the getters flip in E3); what it must and must not compile is held by `test/typedFixtures.test.ts`, and which modules may mint, strip, parse or seal a stored string by `test/storedSecretFunnel.test.ts` (E2) |
 | `entityPin.ts` | `protectEntity` / `unprotectEntity` / `siblingsOpened` / `lockedSlotCount`, pure of `vscode` |
 | `pinSession.ts` | the grant: a module-level Map in the extension host and nothing else |
 | `pinGate.ts` | opening one value for an operation somebody CLICKED; `automaticPinRefusal` for everything else |
@@ -1452,7 +1452,7 @@ Version…* into such an entry asks the same first PIN after its confirmation wh
 value (`restoreVersion.holdsValue`).
 
 **Two plaintext windows closed (2026-10-01, `fix/two-plaintext-windows`).** Found by the T0 re-read of
-the typed-secrets plan (`todo/PLAN_typed_stored_secrets.md` §2.7) and fixed ahead of its epics, as the
+the typed-secrets plan (`research/PLAN_typed_stored_secrets.md` §2.7) and fixed ahead of its epics, as the
 cadence consultation advised — each RED first against the real `StorageManager` with every keychain
 write logged, then shown red again with its fix reverted:
 
@@ -1482,7 +1482,7 @@ write logged, then shown red again with its fix reverted:
   `shareUpdateSeal.test.ts` holds the three cases through the real `ShareInbox`.
 
 **The doors and the one writer (typed-secrets plan, E2 — T3 and T4, 2026-10-01).** The second epic of
-[PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md): every read of a stored string
+[PLAN_typed_stored_secrets.md](PLAN_typed_stored_secrets.md): every read of a stored string
 outside a handful of modules goes through an opener, and every write through one writer made from a
 proof. Getters and setters were still `string` then; E3 flipped them to `StoredSecret` (below).
 
@@ -1571,7 +1571,7 @@ proof. Getters and setters were still `string` then; E3 flipped them to `StoredS
   hand-built `plain` without the brand does not compile.
 
 **The type takes over (typed-secrets plan, E3 — T5, 2026-10-01).** The third epic of
-[PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) flips the ten slots, one commit
+[PLAN_typed_stored_secrets.md](PLAN_typed_stored_secrets.md) flips the ten slots, one commit
 each in the plan's order (payment, second values, login/URL, notes, config, VPN, one-time code,
 connection string, private key, password), then takes the transitional `| string` off the seams in an
 eleventh commit. Nothing a person sees moves: the phantom is erased by `tsc`, so no stored byte, no
@@ -1600,8 +1600,8 @@ revision and no sync payload changed.
 - **Minted at the boundaries, never cast.** No `as` to or from `StoredSecret` outside `storedSecret.ts`.
   Mints: the getters; the kept-version parse (`revisionHistory.pushRevision`); the bundle maps where the
   sync rule reads their sealed state (`syncPinRule`, `syncProtection`); the producers' call sites
-  (`plainSecret` / `lockSecret` / `sealValue` return text — `sealValue` is overloaded: text in, sealed text
-  out; a stored form in, a stored form out); `historyPin.openRevision`, whose opened fields are
+  (`plainSecret` / `lockSecret` / `sealText` return text the caller mints; `sealValue` takes a stored form
+  and returns one — split from one overload in E3's code round); `historyPin.openRevision`, whose opened fields are
   `stored(plainSecret(value, woven))`, so a kept version reads as `value` with its woven flag exactly as an
   unprotected entry's field does (second plan round, finding 0); and two metadata values read as the plain
   stored form they are — the legacy note (`entityFieldReading.notesReading`) and the public key
@@ -1712,7 +1712,7 @@ and Remove PIN for an entry whose only sealed values are kept versions is reache
 modal: the row's menu token is derived from the mark (`treeRowText.ts:184`), and the provider that
 would have to read kept versions to change that, `treeDataProvider.ts`, is at 795 of its 800 lines. The compile-time
 secret type that turns the reader rules into a type error landed with
-[PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) E3 (above).
+[PLAN_typed_stored_secrets.md](PLAN_typed_stored_secrets.md) E3 (above).
 
 #### A woven password (2026-09-04)
 

@@ -1,5 +1,5 @@
 /**
- * A secret as the keychain holds it, as a type of its own (todo/PLAN_typed_stored_secrets.md §2.2).
+ * A secret as the keychain holds it, as a type of its own (research/PLAN_typed_stored_secrets.md §2.2).
  *
  * <p>A stored value is a plain value, a woven-plain envelope, a sealed envelope or a damaged one —
  * and while every getter returned `string`, those four and "text a person may read" were one type, so
