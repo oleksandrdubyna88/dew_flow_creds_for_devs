@@ -1,5 +1,6 @@
 import { SECRET_KINDS, SecretMapKey } from './secretMaps';
 import { isLockedSecret } from './secretEnvelope';
+import { stored } from './storedSecret';
 import type { TreeNode } from './types';
 import { VersionVector, concurrent, dominates, emptyVector, mergeVectors } from './versionVector';
 
@@ -52,7 +53,7 @@ export type SecretSide = Partial<Record<SecretMapKey, Record<string, string>>>;
 
 /** Whether this side holds a SEALED value for `id` — from the envelopes, never from the mark. */
 export function sealedIn(side: SecretSide, id: string): boolean {
-  return SEALABLE_MAPS.some((key) => isLockedSecret(side[key]?.[id]));
+  return SEALABLE_MAPS.some((key) => isLockedSecret(stored(side[key]?.[id])));
 }
 
 /** One side of a merge for one id: its node, and whether its values are sealed. */
@@ -145,7 +146,7 @@ export function fallbackValue(value: string | undefined, rule: FallbackRule): st
   if (value === undefined || rule === 'none') {
     return undefined;
   }
-  return isLockedSecret(value) === (rule === 'sealed') ? value : undefined;
+  return isLockedSecret(stored(value)) === (rule === 'sealed') ? value : undefined;
 }
 
 /**

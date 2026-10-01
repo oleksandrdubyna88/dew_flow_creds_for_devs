@@ -1,11 +1,13 @@
 import { NOTHING_OPENED, type EditPrefill } from './editPrefill';
 import { EntityFields, parseFields, serializeFields } from './entityFields';
-import { lockedSlotCount, sealValue } from './entityPin';
+import { lockedSlotCount } from './entityPin';
+import { sealText } from './sealValue';
 import { PaymentFields, parsePaymentFields, serializePaymentFields } from './paymentFields';
 import type { SettledPin } from './pinOnCreate';
 import { WritableSealing, isMarked, sealingForNew, unattendedSealing } from './sealingAtWrite';
 import { SecondValues, parseSecondValues, serializeSecondValues } from './secondValues';
 import type { StorageManager } from './storageManager';
+import { StoredSecret, stored } from './storedSecret';
 
 /**
  * The one road from text to a stored value (`PLAN_typed_stored_secrets.md` §2.4, T4).
@@ -35,9 +37,9 @@ import type { StorageManager } from './storageManager';
  *       and `shareUpdateSeal.sealingWriter`.</li>
  * </ul>
  *
- * <p>The storage still satisfies {@link EntryWriter} structurally until the setters take `StoredSecret`
- * (E3, T5); until then `storedSecretFunnel.test.ts` refuses the storage handed out as a writer anywhere
- * but here and in the slot table.</p>
+ * <p>The storage satisfies no {@link EntryWriter}: its raw setters take `StoredSecret` (T5), so a writer
+ * that is not from here does not compile (`fixtures/typed/storage_is_not_a_writer.ts`). Both writers mint
+ * the stored form at this one road — the plain writer `stored(v)`, the sealing writer what it sealed.</p>
  */
 
 /** The plaintext setters a write goes through — what `applyAdditions`, a share, an import and a rotation call. */
@@ -189,29 +191,29 @@ async function protectedSince(storage: StorageManager, accountId: string, entity
 
 /**
  * The value as it came, through the storage's own setter — bound to one entry: the ids each call is
- * handed are ignored on purpose, as the sealing writer's are. (T5 mints the stored form here.)
+ * handed are ignored on purpose, as the sealing writer's are. The stored form is minted here (`stored(v)`).
  */
 function plainWriter(storage: StorageManager, a: string, e: string, through: Through): EntryWriter {
   return {
-    setPassword: (_a, _e, v) => through(() => storage.setPassword(a, e, v)),
-    setPrivateKey: (_a, _e, v) => through(() => storage.setPrivateKey(a, e, v)),
-    setVpnConfig: (_a, _e, v) => through(() => storage.setVpnConfig(a, e, v)),
-    setDbConnection: (_a, _e, v) => through(() => storage.setDbConnection(a, e, v)),
-    setTotp: (_a, _e, v) => through(() => storage.setTotp(a, e, v)),
-    setNotes: (_a, _e, v) => through(() => storage.setNotes(a, e, v)),
-    setConfigBody: (_a, _e, v) => through(() => storage.setConfigBody(a, e, v)),
+    setPassword: (_a, _e, v) => through(() => storage.setPassword(a, e, stored(v))),
+    setPrivateKey: (_a, _e, v) => through(() => storage.setPrivateKey(a, e, stored(v))),
+    setVpnConfig: (_a, _e, v) => through(() => storage.setVpnConfig(a, e, stored(v))),
+    setDbConnection: (_a, _e, v) => through(() => storage.setDbConnection(a, e, stored(v))),
+    setTotp: (_a, _e, v) => through(() => storage.setTotp(a, e, stored(v))),
+    setNotes: (_a, _e, v) => through(() => storage.setNotes(a, e, stored(v))),
+    setConfigBody: (_a, _e, v) => through(() => storage.setConfigBody(a, e, stored(v))),
     setFields: (_a, _e, v) => through(() => storage.setFields(a, e, v)),
     setPayment: (_a, _e, v) => through(() => storage.setPayment(a, e, v)),
     setSecond: (_a, _e, v) => through(() => storage.setSecond(a, e, v)),
-    setFieldsRaw: (_a, _e, v) => through(() => storage.setFieldsRaw(a, e, v)),
-    setPaymentRaw: (_a, _e, v) => through(() => storage.setPaymentRaw(a, e, v)),
-    setSecondRaw: (_a, _e, v) => through(() => storage.setSecondRaw(a, e, v)),
+    setFieldsRaw: (_a, _e, v) => through(() => storage.setFieldsRaw(a, e, stored(v))),
+    setPaymentRaw: (_a, _e, v) => through(() => storage.setPaymentRaw(a, e, stored(v))),
+    setSecondRaw: (_a, _e, v) => through(() => storage.setSecondRaw(a, e, stored(v))),
     setAttachment: (_a, _e, v) => through(() => storage.setAttachment(a, e, v)),
     setImage: (_a, _e, v) => through(() => storage.setImage(a, e, v)),
   };
 }
 
-type Seal = (value: string) => Promise<string>;
+type Seal = (value: string) => Promise<StoredSecret>;
 
 /**
  * Every changed value sealed under `pin` before its raw setter runs. The rules per slot:
@@ -231,11 +233,12 @@ type Seal = (value: string) => Promise<string>;
  * are; the sealing itself runs before, outside it ({@link put}).</p>
  */
 function sealingWriter(storage: StorageManager, a: string, e: string, pin: string, opened: EditPrefill): EntryWriter {
-  const seal: Seal = (value) => sealValue(value, a, pin);
-  const maybe = async (value: string | undefined): Promise<string | undefined> => (value === undefined ? undefined : seal(value));
+  const seal: Seal = async (value) => stored(await sealText(value, a, pin));
+  const maybe = async (value: string | undefined): Promise<StoredSecret | undefined> => (value === undefined ? undefined : seal(value));
   const commit: Commit = (write) => storage.writes.run(write);
   return {
-    setPassword: (_a, _e, v) => put(v === undefined || v.length === 0 ? Promise.resolve(v) : seal(v), commit, (s) => storage.setPassword(a, e, s)),
+    // An empty password means "keep" — nothing is sealed, and the setter keeps for `undefined` as it does for `''`.
+    setPassword: (_a, _e, v) => put(v === undefined || v.length === 0 ? Promise.resolve(undefined) : seal(v), commit, (s) => storage.setPassword(a, e, s)),
     setPrivateKey: (_a, _e, v) => put(seal(v), commit, (s) => storage.setPrivateKey(a, e, s)),
     setVpnConfig: (_a, _e, v) => put(seal(v), commit, (s) => storage.setVpnConfig(a, e, s)),
     setTotp: (_a, _e, v) => sealIfChanged(opened.totp, v, seal, (sealed) => commit(() => storage.setTotp(a, e, sealed))),
@@ -273,7 +276,7 @@ async function put<T>(sealed: Promise<T>, commit: Commit, write: (value: T) => P
  * One value: equal to what the form was opened over is SKIPPED — byte-identical stays
  * byte-identical (R4) — and anything else is sealed in memory first, then written (R3).
  */
-async function sealIfChanged(was: string | undefined, now: string, seal: Seal, write: (sealed: string) => Promise<void>): Promise<void> {
+async function sealIfChanged(was: string | undefined, now: string, seal: Seal, write: (sealed: StoredSecret) => Promise<void>): Promise<void> {
   if (now !== was) {
     await write(await seal(now));
   }
@@ -287,7 +290,7 @@ async function sealOrDelete(
   was: string | undefined,
   now: string | undefined,
   seal: Seal,
-  write: (sealed: string | undefined) => Promise<void>,
+  write: (sealed: StoredSecret | undefined) => Promise<void>,
 ): Promise<void> {
   if (now !== undefined) {
     await sealIfChanged(was, now, seal, write);

@@ -6,7 +6,8 @@ import { SshCredentialSource, SshCredentialStopped, resolveSshCredential } from 
 import { askpassEnv } from './sshAskpass';
 import { materializePrivateKey, writeAskpassScriptFile } from './keyInstaller';
 import { EntityMetadata } from './types';
-import { automaticPinRefusal } from './pinGate';
+import { pinRefusalFor } from './pinGate';
+import { isSealedText } from './secretEnvelope';
 import type { SecretOpener } from './secretOpener';
 
 /**
@@ -80,7 +81,7 @@ function byPassword(
   if (entity.passwordWoven === true) {
     return wovenRefusal(entity.name, warning);
   }
-  const locked = automaticPinRefusal(password, entity.name);
+  const locked = isSealedText(password) ? pinRefusalFor(entity.name) : '';
   if (locked !== '') {
     return { ok: false, reason: 'no_credential', message: locked, warning };
   }
@@ -145,7 +146,7 @@ function authFor(source: SshCredentialSource, entity: EntityMetadata, storageDir
  * written as an SSH key" impossible whatever opener a future caller passes.
  */
 function byStoredKey(source: Extract<SshCredentialSource, { kind: 'storedKey' }>, entity: EntityMetadata, storageDir: string): ExecAuth {
-  const locked = automaticPinRefusal(source.content, entity.name);
+  const locked = isSealedText(source.content) ? pinRefusalFor(entity.name) : '';
   if (locked !== '') {
     return { ok: false, reason: 'no_credential', message: locked, warning: source.warning };
   }

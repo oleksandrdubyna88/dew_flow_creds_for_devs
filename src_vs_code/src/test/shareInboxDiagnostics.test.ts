@@ -1,4 +1,5 @@
 import * as assert from 'node:assert/strict';
+import { stored } from '../storedSecret';
 import { test } from 'node:test';
 import { KEY_ID, PIN, RECIPIENT, SENDER, TEAM_MEMBER, payloadFor, sealedShare, ui, world } from './shareWorld';
 import { TreeNode } from '../types';
@@ -84,7 +85,7 @@ test('the sender records its half, so the two machines have something to compare
     details: { id: 'sender-side-ionos', name: 'ionos server', isSshEnabled: true },
   };
   await w.storage.addNode(RECIPIENT.accountId, node);
-  await w.storage.setPassword(RECIPIENT.accountId, node.id, 'pw');
+  await w.storage.setPassword(RECIPIENT.accountId, node.id, stored('pw'));
   ui.quickPickAnswers = [[{ label: SENDER.email, member: TEAM_MEMBER }]];
   ui.inputs = [PIN, PIN];
 

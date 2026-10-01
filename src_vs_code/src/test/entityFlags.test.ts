@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EntityFlagsRefresher, EntityFlagSource, EntityFlagTarget, entityKey } from '../entityFlags';
 import { RevisionHead } from '../revisionHistory';
+import { stored } from '../storedSecret';
 
 /**
  * The two rules that make the tree's per-entity flag caches trustworthy (review of the
@@ -69,7 +70,7 @@ function fake(tree: Record<string, string[]>): Fake {
           secrets: { password: 'must-not-be-cached' },
         }));
       },
-      getPassword: (accountId, id) => Promise.resolve(passwords.get(key(accountId, id))),
+      getPassword: (accountId, id) => Promise.resolve(stored(passwords.get(key(accountId, id)))),
       getFieldsRaw: () => Promise.resolve(undefined),
     },
     setPassword: (a, i, v) => {

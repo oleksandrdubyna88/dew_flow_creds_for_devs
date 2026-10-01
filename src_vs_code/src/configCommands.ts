@@ -14,6 +14,7 @@ import type { ConfigFormat } from './configFormat';
 import { clickedSecret, grantedOpener } from './pinClick';
 import { OpenedSecret, SecretOwner, automaticOpener } from './secretOpener';
 import { FieldReading, withheld } from './fieldReading';
+import type { StoredSecret } from './storedSecret';
 /**
  * What changed since the previous version of this config, by KEY.
  *
@@ -76,7 +77,7 @@ async function openedBodies(
   storage: StorageManager,
   accountId: string,
   details: EntityMetadata,
-  previousRaw: string,
+  previousRaw: StoredSecret,
   at: number,
 ): Promise<ComparedBodies | undefined> {
   const current = bodyText(await clickedSecret(storage, accountId, details, (s, a, e) => s.getConfigBody(a, e), COMPARE));

@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import * as ts from 'typescript';
 
 /**
- * The compile-fail harness (todo/PLAN_typed_stored_secrets.md §3 item 3, gate finding 5): what the
+ * The compile-fail harness (research/PLAN_typed_stored_secrets.md §3 item 3, gate finding 5): what the
  * TYPES promise, proven inside `npm test`.
  *
  * <p>Every file under `src/test/fixtures/typed/` starts with one header line — `// expect TS<code> at

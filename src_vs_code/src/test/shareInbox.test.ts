@@ -17,6 +17,7 @@ import {
   world,
 } from './shareWorld';
 import type { World } from './shareWorld';
+import { stored } from '../storedSecret';
 
 test('an accepted share gets a FRESH local id — a sender cannot address our entries', async () => {
   const w = world();
@@ -206,8 +207,8 @@ async function entryWithTotp(storage: InstanceType<typeof StorageManager>): Prom
     details: { id: 'sender-side-totp', name: 'GitHub', isSshEnabled: false, hasTotp: true },
   };
   await storage.addNode(RECIPIENT.accountId, node);
-  await storage.setPassword(RECIPIENT.accountId, node.id, 'pw');
-  await storage.setTotp(RECIPIENT.accountId, node.id, SEED);
+  await storage.setPassword(RECIPIENT.accountId, node.id, stored('pw'));
+  await storage.setTotp(RECIPIENT.accountId, node.id, stored(SEED));
   return node;
 }
 
@@ -346,7 +347,7 @@ test('an entry whose flag never got set is still asked about', async () => {
     details: { id: 'flagless', name: 'VPN with a seed and no flag', isSshEnabled: false },
   };
   await w.storage.addNode(RECIPIENT.accountId, node);
-  await w.storage.setTotp(RECIPIENT.accountId, node.id, SEED);
+  await w.storage.setTotp(RECIPIENT.accountId, node.id, stored(SEED));
 
   await w.inbox.shareNodes(RECIPIENT.accountId, [node]);
 
@@ -393,7 +394,7 @@ async function shareWithGeneratedPin(
     details: { id: `gen-${name}`, name, isSshEnabled: false },
   };
   await w.storage.addNode(RECIPIENT.accountId, node);
-  await w.storage.setPassword(RECIPIENT.accountId, node.id, 'pw');
+  await w.storage.setPassword(RECIPIENT.accountId, node.id, stored('pw'));
   ui.quickPickAnswers = [[{ label: SENDER.email, member: TEAM_MEMBER }]];
   ui.inputs = [how];
 
@@ -554,7 +555,7 @@ test('a partly failed share still offers the PIN the delivered recipients need',
     details: { id: 'partly', name: 'partly', isSshEnabled: false },
   };
   await w.storage.addNode(RECIPIENT.accountId, node);
-  await w.storage.setPassword(RECIPIENT.accountId, node.id, 'pw');
+  await w.storage.setPassword(RECIPIENT.accountId, node.id, stored('pw'));
   const good = { ...TEAM_MEMBER, account: { ...SENDER, email: 'good@corp.com' } };
   const bad = { ...TEAM_MEMBER, account: { ...SENDER, email: 'bad@corp.com' } };
   ui.deliveryFailsFor = 'bad@';

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { stored } from '../storedSecret';
 import { test } from 'node:test';
 import { SECRET_CLAIM_FIELDS, withoutSecretClaims } from '../secretClaims';
 import { shareableDetails } from '../shareFormat';
@@ -242,7 +243,7 @@ test('a mark with nothing locked under it is CLEARED, not asked about', async ()
     parentId: null,
     details: { id: 'false-mark', name: 'arrived-before-the-fix', isSshEnabled: false, pinProtected: true },
   } as TreeNode);
-  await w.storage.setPassword(RECIPIENT.accountId, 'false-mark', 'hunter2');
+  await w.storage.setPassword(RECIPIENT.accountId, 'false-mark', stored('hunter2'));
   const mod = loadWithVscode<typeof import('../pinAdmission')>('../pinAdmission', {});
 
   const admission = await mod.admit(w.storage, RECIPIENT.accountId, 'false-mark', {
@@ -272,7 +273,7 @@ test('a TRUE mark is left alone — the repair is about the false one only', asy
   await w.storage.setPassword(
     RECIPIENT.accountId,
     'really-locked',
-    await lockSecret('hunter2', RECIPIENT.accountId, 'a-real-pin-4444'),
+    stored(await lockSecret('hunter2', RECIPIENT.accountId, 'a-real-pin-4444')),
   );
   const mod = loadWithVscode<typeof import('../pinAdmission')>('../pinAdmission', {});
 

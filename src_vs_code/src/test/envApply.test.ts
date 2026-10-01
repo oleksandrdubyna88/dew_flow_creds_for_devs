@@ -1,4 +1,5 @@
 import * as assert from 'node:assert/strict';
+import { stored } from '../storedSecret';
 import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
 import { BINDABLE_FIELDS, heldEnvValues } from '../envBinding';
@@ -382,9 +383,9 @@ test('ONE function answers whether a field may be used automatically at all — 
   const mod = envApply();
   const locked = await lockSecret('THE-PASSWORD', 'acc', 'correct-horse-battery');
 
-  assert.match(mod.automaticFieldRefusal(details({ passwordWoven: true }), 'password', 'plain'), /woven with a decoy/);
-  assert.match(mod.automaticFieldRefusal(details(), 'password', locked), /protected with its own PIN/);
-  assert.equal(mod.automaticFieldRefusal(details(), 'password', 'plain'), '', 'an ordinary value is handed over');
+  assert.match(mod.automaticFieldRefusal(details({ passwordWoven: true }), 'password', stored('plain')), /woven with a decoy/);
+  assert.match(mod.automaticFieldRefusal(details(), 'password', stored(locked)), /protected with its own PIN/);
+  assert.equal(mod.automaticFieldRefusal(details(), 'password', stored('plain')), '', 'an ordinary value is handed over');
   assert.equal(mod.automaticFieldRefusal(details(), 'password', undefined), '', 'and nothing stored is not a refusal');
 });
 

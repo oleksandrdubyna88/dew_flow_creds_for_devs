@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { stored } from '../storedSecret';
 import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
 import * as world from './pinWorld';
@@ -32,7 +33,7 @@ const details = (over: Partial<EntityMetadata> = {}): EntityMetadata =>
 // ---------------------------------------------------------------------------------------------
 
 test('an automatic path is REFUSED with a sentence, never a prompt and never an emptiness', async () => {
-  const refusal = automaticPinRefusal(await locked(), 'prod-db');
+  const refusal = automaticPinRefusal(stored(await locked()), 'prod-db');
 
   assert.match(refusal, /prod-db/, 'it names the entry');
   assert.match(refusal, /cannot be used automatically/);
@@ -40,7 +41,7 @@ test('an automatic path is REFUSED with a sentence, never a prompt and never an 
   // D17: it used to send the person to "its General section", which has no such control.
   assert.match(refusal, /right-click it and choose Remove PIN Protection…/, 'it names the command that exists, where it is');
   assert.doesNotMatch(refusal, /General section/, 'the General section has no control that removes a PIN');
-  assert.equal(automaticPinRefusal('hunter2', 'prod-db'), '', 'an ordinary value is handed over');
+  assert.equal(automaticPinRefusal(stored('hunter2'), 'prod-db'), '', 'an ordinary value is handed over');
   assert.equal(automaticPinRefusal(undefined, 'prod-db'), '', 'and nothing stored is not a refusal');
 });
 
@@ -70,9 +71,9 @@ test('env, the terminal and a creds:// reference all report WITHHELD, not absent
 test('pinFieldRefusal refuses on the WRAP, refuses on the MARK alone, and hands an ordinary value over', async () => {
   const marked = details({ pinProtected: true });
 
-  assert.match(pinFieldRefusal(details(), await locked()), /prod-db.*protected with its own PIN/, 'the wrap is the truth');
-  assert.match(pinFieldRefusal(marked, 'hunter2'), /protected with its own PIN/, 'a plaintext value inside a marked entry is still withheld');
-  assert.equal(pinFieldRefusal(details(), 'hunter2'), '');
+  assert.match(pinFieldRefusal(details(), stored(await locked())), /prod-db.*protected with its own PIN/, 'the wrap is the truth');
+  assert.match(pinFieldRefusal(marked, stored('hunter2')), /protected with its own PIN/, 'a plaintext value inside a marked entry is still withheld');
+  assert.equal(pinFieldRefusal(details(), stored('hunter2')), '');
   assert.equal(pinFieldRefusal(details(), undefined), '', 'nothing stored is not a refusal');
 });
 
@@ -103,8 +104,8 @@ test('a gate with a purpose asks in that purpose\'s words; one without asks the 
     },
   };
 
-  await openStored(await locked(), { ...gate, purpose: 'copy its password' });
-  await openStored(await locked(), gate);
+  await openStored(stored(await locked()), { ...gate, purpose: 'copy its password' });
+  await openStored(stored(await locked()), gate);
 
   assert.equal(asked[0], 'This entry is protected with its own PIN. Enter it to copy its password. It is remembered until this window closes or the vault locks.');
   assert.equal(asked[1], pinPromptFor(undefined));
@@ -120,11 +121,11 @@ test('the silent gate opens a granted entry and answers cancelled for one with n
   forgetAllPins();
   const value = await locked();
 
-  const unopened = await openStored(value, silentPinGate(ACCOUNT, 'e1', 'prod-db'));
+  const unopened = await openStored(stored(value), silentPinGate(ACCOUNT, 'e1', 'prod-db'));
   assert.deepEqual(unopened, { kind: 'cancelled' }, 'no grant, no prompt, no value');
 
   grantPin(ACCOUNT, 'e1', PIN);
-  const opened = await openStored(value, silentPinGate(ACCOUNT, 'e1', 'prod-db'));
+  const opened = await openStored(stored(value), silentPinGate(ACCOUNT, 'e1', 'prod-db'));
   assert.deepEqual(opened, { kind: 'value', value: 'hunter2' });
 });
 
@@ -207,7 +208,7 @@ test('the right PIN opens the value and is remembered for this window', async ()
   forgetAllPins();
   const asked: string[] = [];
 
-  const opened = await openStored(await locked(), {
+  const opened = await openStored(stored(await locked()), {
     accountId: ACCOUNT,
     entityId: 'e1',
     entryName: 'prod-db',
@@ -231,10 +232,10 @@ test('a remembered PIN opens the next value without asking again', async () => {
     entryName: 'prod-db',
     ask: () => Promise.resolve(PIN),
   };
-  await openStored(value, gate);
+  await openStored(stored(value), gate);
 
   let askedAgain = 0;
-  const second = await openStored(value, {
+  const second = await openStored(stored(value), {
     ...gate,
     ask: () => {
       askedAgain += 1;
@@ -249,7 +250,7 @@ test('a remembered PIN opens the next value without asking again', async () => {
 test('a WRONG pin is said, and is not remembered', async () => {
   forgetAllPins();
 
-  const opened = await openStored(await locked(), {
+  const opened = await openStored(stored(await locked()), {
     accountId: ACCOUNT,
     entityId: 'e1',
     entryName: 'prod-db',
@@ -265,7 +266,7 @@ test('a WRONG pin is said, and is not remembered', async () => {
 test('a dismissed box is a DECISION — nothing is said and nothing is wrong', async () => {
   forgetAllPins();
 
-  const opened = await openStored(await locked(), {
+  const opened = await openStored(stored(await locked()), {
     accountId: ACCOUNT,
     entityId: 'e1',
     entryName: 'prod-db',
@@ -286,10 +287,10 @@ test('a stale grant that no longer opens the entry is dropped, and the person is
     entryName: 'prod-db',
     ask: () => Promise.resolve(PIN),
   };
-  await openStored(value, gate);
+  await openStored(stored(value), gate);
 
   const other = await lockSecret('a different secret', ACCOUNT, 'a-different-pin-x');
-  const opened = await openStored(other, { ...gate, ask: () => Promise.resolve('a-different-pin-x') });
+  const opened = await openStored(stored(other), { ...gate, ask: () => Promise.resolve('a-different-pin-x') });
 
   assert.equal(opened.kind, 'value');
   assert.equal(grantedPin(ACCOUNT, 'e1'), 'a-different-pin-x', 'the working one replaced the stale one');
@@ -298,7 +299,7 @@ test('a stale grant that no longer opens the entry is dropped, and the person is
 test('an unprotected value passes straight through, asking nothing', async () => {
   forgetAllPins();
 
-  const opened = await openStored('hunter2', {
+  const opened = await openStored(stored('hunter2'), {
     accountId: ACCOUNT,
     entityId: 'e1',
     entryName: 'prod-db',
@@ -309,7 +310,7 @@ test('an unprotected value passes straight through, asking nothing', async () =>
 });
 
 test('a CORRUPT wrap is named as damage, and nothing offers to overwrite it', async () => {
-  const opened = await openStored('{"v":1,"lock":{"wrap":{}}}', {
+  const opened = await openStored(stored('{"v":1,"lock":{"wrap":{}}}'), {
     accountId: ACCOUNT,
     entityId: 'e1',
     entryName: 'prod-db',

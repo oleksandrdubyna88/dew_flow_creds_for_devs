@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { stored as mint } from '../storedSecret';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { SECRET_SLOTS, SecretSlot } from '../entitySlots';
+import type { StoredSecret } from '../storedSecret';
 import type { Revision, RevisionSecrets } from '../revisionHistory';
 import { readSecret, unlockSecret } from '../secretEnvelope';
 import type { StorageManager } from '../storageManager';
@@ -72,7 +74,7 @@ async function world(
   return { storage, s, written, node, restore: async () => void (await handler({ kind: 'revision', accountId: ACCOUNT, node: node(), index: 0 })) };
 }
 
-async function stored(w: World, label: string): Promise<string | undefined> {
+async function stored(w: World, label: string): Promise<StoredSecret | undefined> {
   return slot(label).read(w.storage, ACCOUNT, ENTRY);
 }
 
@@ -87,7 +89,7 @@ async function openedLive(w: World, label: string): Promise<string> {
 test('Restore brings the version back into the same entry and records today’s state first', async () => {
   const w = await world(
     { details: credential(), slots: { password: 'new pw', notes: 'new note' } },
-    { secrets: { password: 'old pw', notes: 'old note', fields: '{"login":"me"}' } },
+    { secrets: { password: mint('old pw'), notes: mint('old note'), fields: mint('{"login":"me"}') } },
     [],
   );
 
@@ -106,7 +108,7 @@ test('Restore brings the version back into the same entry and records today’s 
 test('restoring into a protected entry SEALS a version from before the PIN — nothing is ever stored in the clear', async () => {
   const w = await world(
     { details: credential({ pinProtected: true }), slots: { password: await locked('new pw'), notes: await locked('new note') } },
-    { secrets: { password: 'old pw', notes: 'old note', payment: '{"cvv":"123"}' } },
+    { secrets: { password: mint('old pw'), notes: mint('old note'), payment: mint('{"cvv":"123"}') } },
     [PIN],
   );
 
@@ -124,7 +126,7 @@ test('restoring into a protected entry SEALS a version from before the PIN — n
 test('Restore keeps today’s agent access, code-access key, PIN mark and file claims — and derives the code flag from the seed', async () => {
   const today = { pinProtected: true, mcp: { read: false } as never, configKeyHash: 'today-key', notForExport: true, attachmentFileName: 'today.pdf', hasTotp: true };
   const then = { mcp: { read: true, exec: true } as never, configKeyHash: 'revoked-key', notForExport: undefined, attachmentFileName: 'gone.pdf', tags: ['then'] };
-  const w = await world({ details: credential(today), slots: { password: await locked('new pw') } }, { details: then, secrets: { password: 'old pw' } }, [PIN]);
+  const w = await world({ details: credential(today), slots: { password: await locked('new pw') } }, { details: then, secrets: { password: mint('old pw') } }, [PIN]);
 
   await w.restore();
 
@@ -139,7 +141,7 @@ test('Restore keeps today’s agent access, code-access key, PIN mark and file c
 });
 
 test('Restore removes every value the version did not hold — the password included, though an empty write keeps it', async () => {
-  const w = await world({ details: credential(), slots: { password: 'new pw', 'database connection': 'postgres://x', notes: 'now' } }, { secrets: { notes: 'then' } }, []);
+  const w = await world({ details: credential(), slots: { password: 'new pw', 'database connection': 'postgres://x', notes: 'now' } }, { secrets: { notes: mint('then') } }, []);
 
   await w.restore();
 
@@ -150,7 +152,7 @@ test('Restore removes every value the version did not hold — the password incl
 
 test('a declined PIN restores nothing and records nothing', async () => {
   const live = { password: await locked('new pw') };
-  const w = await world({ details: credential({ pinProtected: true }), slots: live }, { secrets: { password: 'old pw' } }, [undefined]);
+  const w = await world({ details: credential({ pinProtected: true }), slots: live }, { secrets: { password: mint('old pw') } }, [undefined]);
 
   await w.restore();
 
@@ -160,7 +162,7 @@ test('a declined PIN restores nothing and records nothing', async () => {
 });
 
 test('a declined confirmation restores nothing', async () => {
-  const w = await world({ details: credential(), slots: { password: 'new pw' } }, { secrets: { password: 'old pw' } }, [], [undefined]);
+  const w = await world({ details: credential(), slots: { password: 'new pw' } }, { secrets: { password: mint('old pw') } }, [], [undefined]);
 
   await w.restore();
 
@@ -170,7 +172,7 @@ test('a declined confirmation restores nothing', async () => {
 
 test('Restore refuses over a damaged live value and overwrites nothing — it is the only copy of what was there', async () => {
   const damaged = '{"v":1,"lock":{"wrap":{}}}';
-  const w = await world({ details: credential(), slots: { password: 'new pw', notes: damaged } }, { secrets: { password: 'old pw', notes: 'old note' } }, []);
+  const w = await world({ details: credential(), slots: { password: 'new pw', notes: damaged } }, { secrets: { password: mint('old pw'), notes: mint('old note') } }, []);
 
   await w.restore();
 
@@ -181,7 +183,7 @@ test('Restore refuses over a damaged live value and overwrites nothing — it is
 
 test('a version sealed under the PIN the entry used to have is restored with THAT PIN, into the unprotected entry', async () => {
   // Plan gate, finding 3, on the Restore road: unprotected elsewhere, this machine's history still sealed.
-  const w = await world({ details: credential(), slots: { password: 'new pw' } }, { secrets: { password: await locked('old pw', '9876') } }, ['9876']);
+  const w = await world({ details: credential(), slots: { password: 'new pw' } }, { secrets: { password: mint(await locked('old pw', '9876')) } }, ['9876']);
 
   await w.restore();
 
@@ -197,7 +199,7 @@ test('a restore killed between two slot writes leaves nothing in the clear, and 
   const written: string[] = [];
   const storage = memoryStorage(stub, written);
   await seedEntry(storage, credential({ pinProtected: true }), { notes: await locked('new note'), 'login and URL': await locked('{"login":"new"}'), password: await locked('new pw') });
-  const version: Revision = { at: AT, name: 'godaddy', details: credential({ pinProtected: true }), secrets: { notes: 'old note', fields: '{"login":"old"}', password: 'old pw' } };
+  const version: Revision = { at: AT, name: 'godaddy', details: credential({ pinProtected: true }), secrets: { notes: mint('old note'), fields: mint('{"login":"old"}'), password: mint('old pw') } };
   const { restoreVersion } = loadWithVscode<typeof import('../restoreVersion')>('../restoreVersion', stub);
   const realWrite = storage.setFieldsRaw.bind(storage);
   let killed = false;
@@ -283,7 +285,7 @@ test('an entry PROTECTED while the confirmation was open is not restored in the 
   let storage: StorageManager | undefined;
   const w = await world(
     { details: credential(), slots: { password: 'new pw' } },
-    { secrets: { password: 'old pw', notes: 'old note' } },
+    { secrets: { password: mint('old pw'), notes: mint('old note') } },
     [],
     [answeredAfter(() => protectedElsewhere(storage as StorageManager))],
   );
@@ -303,7 +305,7 @@ test('an entry UNPROTECTED while the confirmation was open is not sealed again w
   let storage: StorageManager | undefined;
   const w = await world(
     { details: credential({ pinProtected: true }), slots: { password: await locked('new pw') } },
-    { secrets: { password: 'old pw' } },
+    { secrets: { password: mint('old pw') } },
     [PIN],
     [answeredAfter(() => unprotectEntity(storage as StorageManager, ACCOUNT, ENTRY, PIN))],
   );
@@ -318,7 +320,7 @@ test('an entry UNPROTECTED while the confirmation was open is not sealed again w
 test('the PIN is read AFTER the confirmation: a vault locked while it was open asks again, and the restore still seals', async () => {
   const w = await world(
     { details: credential({ pinProtected: true }), slots: { password: await locked('new pw') } },
-    { secrets: { password: 'old pw' } },
+    { secrets: { password: mint('old pw') } },
     [PIN, PIN],
     [answeredAfter(async () => (require('../pinSession') as typeof import('../pinSession')).forgetAllPins())],
   );
@@ -333,7 +335,7 @@ test('the PIN is read AFTER the confirmation: a vault locked while it was open a
 test('restoring into an entry protected while empty asks for its first PIN and seals the version before the first write', async () => {
   // Protect with a PIN… on an empty entry writes the mark alone (§16 item 4): the version's values are
   // the entry's first, and they go in sealed under a PIN chosen now — typed twice, nothing to check it on.
-  const w = await world({ details: credential({ pinProtected: true }), slots: {} }, { secrets: { password: 'old pw', notes: 'old note' } }, ['5678', '5678']);
+  const w = await world({ details: credential({ pinProtected: true }), slots: {} }, { secrets: { password: mint('old pw'), notes: mint('old note') } }, ['5678', '5678']);
 
   await w.restore();
 

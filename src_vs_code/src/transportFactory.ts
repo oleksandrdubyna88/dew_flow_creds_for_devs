@@ -19,13 +19,16 @@ import { StoredAccount } from './types';
 import { VaultTransport, isCorpServerLocation, isServerLocation } from './vaultTransport';
 import { microsoftServerScopes } from './msScopes';
 import { ClientConfigCache, defaultConfigFetcher, resolveMicrosoftScope } from './clientConfig';
+import { isEmptySecret } from './secretEnvelope';
+import type { StoredSecret } from './storedSecret';
 
 /** A git operation that has not finished in two minutes is not going to. */
 const GIT_TIMEOUT_MS = 120_000;
 
 /** A deploy key as stored, with the entry that holds it — the entry is what a refusal names. */
 interface DeployKey {
-  readonly key: string;
+  /** As stored — opened only by `usableDeployKey`. */
+  readonly key: StoredSecret;
   readonly owner: SecretOwner;
 }
 
@@ -285,7 +288,7 @@ export class TransportFactory {
   private async findPrivateKey(entityId: string): Promise<DeployKey | undefined> {
     for (const account of this.storage.getAccounts()) {
       const key = await this.storage.getPrivateKey(account.accountId, entityId);
-      if (key !== undefined && key.length > 0) {
+      if (key !== undefined && !isEmptySecret(key)) {
         return { key, owner: this.ownerOf(account.accountId, entityId) };
       }
     }

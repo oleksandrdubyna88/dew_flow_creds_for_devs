@@ -7,7 +7,7 @@ import { parseSecondValues } from '../secondValues';
 import { readSecret } from '../secretEnvelope';
 import type { StorageManager } from '../storageManager';
 import { EntityMetadata, TreeNode } from '../types';
-import { ACCOUNT, PIN, Sinks, clickVscode, memoryStorage, seedEntry, sinks } from './pinWorld';
+import { ACCOUNT, PIN, Sinks, carried, clickVscode, memoryStorage, seedEntry, sinks } from './pinWorld';
 import { loadEachWithVscode } from './vscodeStub';
 
 /**
@@ -109,14 +109,14 @@ test('protect a card → view → edit the name → view → Remove PIN → view
   assert.equal(w.node().name, 'orest payoneer (payouts)', 'the edit happened');
   assert.deepEqual(await sealedState(w), [true, true, true], 'the edit kept every value sealed (D2, D4)');
   assert.equal(w.node().details?.pinProtected, true, 'the edit kept the mark (D3)');
-  assert.deepEqual(parsePaymentFields(await w.storage.getPaymentRaw(ACCOUNT, ENTRY)), {}, 'precondition: a sealed record parses as nothing without the door');
+  assert.deepEqual(parsePaymentFields(carried(await w.storage.getPaymentRaw(ACCOUNT, ENTRY))), {}, 'precondition: a sealed record parses as nothing without the door');
   await viewShowsTheCard(w, 'after editing the name');
 
   await w.pin.unprotectEntry(w.node(), deps(w));
   assert.deepEqual(await sealedState(w), [false, false, false], 'Remove PIN unwrapped every value');
   assert.equal(w.node().details?.pinProtected, undefined);
-  assert.deepEqual(parsePaymentFields(await w.storage.getPaymentRaw(ACCOUNT, ENTRY)), CARD);
-  assert.deepEqual(parseSecondValues(await w.storage.getSecondRaw(ACCOUNT, ENTRY)), SECOND);
+  assert.deepEqual(parsePaymentFields(carried(await w.storage.getPaymentRaw(ACCOUNT, ENTRY))), CARD);
+  assert.deepEqual(parseSecondValues(carried(await w.storage.getSecondRaw(ACCOUNT, ENTRY))), SECOND);
   const boxes = w.s.boxes;
   await viewShowsTheCard(w, 'after Remove PIN');
   assert.equal(w.s.boxes, boxes, 'an unprotected card opens without a question');

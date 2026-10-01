@@ -186,50 +186,50 @@ function ruleFor(kind: ReaderKind, file: string, text: string): ((read: SlotRead
  */
 const GATED_BY_CALLER: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   'commands/entityCommands.ts': {
-    readPassword: 'a SlotRead handed to clickedValue, which reads through clickedSecret',
-    readDb: 'a SlotRead handed to clickedValue, which reads through clickedSecret',
-    readTotp: 'a SlotRead handed to clickedValue (Copy One-Time Code), which reads through clickedSecret',
-    readKey: 'a SlotRead handed straight to clickedSecret (Install SSH Key)',
+    readPassword: 'a SlotRead handed to clickedValue, which reads through clickedSecret (typed since T5)',
+    readDb: 'a SlotRead handed to clickedValue, which reads through clickedSecret (typed since T5)',
+    readTotp: 'a SlotRead handed to clickedValue (Copy One-Time Code), which reads through clickedSecret (typed since T5)',
+    readKey: 'a SlotRead handed straight to clickedSecret (Install SSH Key) (typed since T5)',
   },
   'entityFlags.ts': {
-    read: 'history HEADS only (dates and names), and the password as a has-one flag',
+    read: 'history HEADS only (dates and names), and the password as a has-one flag (typed since T5)',
   },
   'entityViewerCommands.ts': {
-    nodeAt: 'resolves a history row; the revision viewer and Restore open it through revisionDoor.openKeptVersion',
+    nodeAt: 'resolves a history row; the revision viewer and Restore open it through revisionDoor.openKeptVersion (typed since T5)',
   },
   'exportSecrets.ts': {
-    secretsOf: 'every value goes through the ExportOpen it is given — exportOpener, a silent gate that throws on what it cannot open',
+    secretsOf: 'every value goes through the ExportOpen it is given — exportOpener, a silent gate that throws on what it cannot open (typed since T5)',
   },
   'gitSigningKey.ts': {
-    readKey: 'a SlotRead handed straight to clickedSecret (Copy Git Signing Config)',
+    readKey: 'a SlotRead handed straight to clickedSecret (Copy Git Signing Config) (typed since T5)',
   },
   'historyPin.ts': {
-    protectHistory: 'seals kept plaintext under the PIN it is given — a carrier inside a door file',
-    unprotectHistory: 'opens kept values with the PIN already checked against the entry (openHistory, retryGranted)',
+    protectHistory: 'seals kept plaintext under the PIN it is given — a carrier inside a door file (typed since T5)',
+    unprotectHistory: 'opens kept values with the PIN already checked against the entry (openHistory, retryGranted) (typed since T5)',
   },
   'mcpEntries.ts': {
-    storedSecrets: 'has-one flags, and the connection string for the shaper; agents never see a protected entry (hiddenFromAgents, by the mark)',
+    storedSecrets: 'has-one flags, and the connection string for the shaper; agents never see a protected entry (hiddenFromAgents, by the mark) (typed since T5)',
   },
   'pinAdmission.ts': {
-    firstLockedStored: 'looks only for a sealed value (isLockedSecret) to decide whether the door must ask',
+    firstLockedStored: 'looks only for a sealed value (isLockedSecret) to decide whether the door must ask (typed since T5)',
   },
   'revisionRestore.ts': {
-    agreed: 'counts and dates the kept versions for the confirmation; no value is used',
+    agreed: 'counts and dates the kept versions for the confirmation; no value is used (typed since T5)',
   },
   'sshCredential.ts': {
-    passwordOwner: 'returns the stored password with its OWNER; the caller opens it through the opener it was given',
+    passwordOwner: 'returns the stored password with its OWNER; the caller opens it through the opener it was given (typed since T5)',
   },
   'transportFactory.ts': {
-    findPrivateKey: 'returns the stored key with its owner; usableDeployKey refuses a sealed one (pinFieldRefusal) before materializePrivateKey',
+    findPrivateKey: 'returns the stored key with its owner; usableDeployKey refuses a sealed one (pinFieldRefusal) before materializePrivateKey (typed since T5)',
   },
   'viewerOptions.ts': {
-    password: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader',
-    privateKey: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader',
-    vpnConfig: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader',
-    dbConnection: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader',
-    totpSeed: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader',
-    paymentRaw: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader',
-    secondRaw: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader',
+    password: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader (typed since T5)',
+    privateKey: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader (typed since T5)',
+    vpnConfig: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader (typed since T5)',
+    dbConnection: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader (typed since T5)',
+    totpSeed: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader (typed since T5)',
+    paymentRaw: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader (typed since T5)',
+    secondRaw: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader (typed since T5)',
   },
 };
 

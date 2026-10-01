@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import type { TreeNode } from '../types';
 import { ui, loaded, RECIPIENT, SENDER, KEY_ID, PIN, TEAM_MEMBER, payloadFor, sealedShare, world } from './shareWorld';
 import type { World } from './shareWorld';
+import { stored } from '../storedSecret';
 
 /**
  * Issue #122 — a FOLDER shared through the real `ShareInbox` never carries an entry marked
@@ -16,9 +17,9 @@ import type { World } from './shareWorld';
 async function add(w: World, node: TreeNode, totp = false): Promise<TreeNode> {
   await w.storage.addNode(RECIPIENT.accountId, node);
   if (node.type === 'entity') {
-    await w.storage.setPassword(RECIPIENT.accountId, node.id, `pw-${node.id}`);
+    await w.storage.setPassword(RECIPIENT.accountId, node.id, stored(`pw-${node.id}`));
     if (totp) {
-      await w.storage.setTotp(RECIPIENT.accountId, node.id, 'JBSWY3DPEHPK3PXP');
+      await w.storage.setTotp(RECIPIENT.accountId, node.id, stored('JBSWY3DPEHPK3PXP'));
     }
   }
   return node;

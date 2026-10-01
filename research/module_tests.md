@@ -849,7 +849,7 @@ protected and viewed in a real editor, is the plan's first Definition-of-Done it
 
 ### The typed-secrets plan, epic 1 — no flow, two foundations (2026-10-01)
 
-[PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) E1 changes no behaviour, so it adds
+[PLAN_typed_stored_secrets.md](PLAN_typed_stored_secrets.md) E1 changes no behaviour, so it adds
 no scenario; it adds what the later epics are checked with. `slotTable.test.ts` now holds the slot table
 to the vault's kinds (the ten `bundleKey`s plus attachments and images equal `SECRET_KINDS`) and holds
 `snapshotForRevision` to exactly the table's getters, and `syncPinRule.test.ts` holds `SEALABLE_MAPS`
@@ -881,7 +881,7 @@ shown red with the fix taken out) and is held by the flow it changed, over the r
 | Restore through the re-checked road | `restoreUnderLease.test.ts` | an entry protected between Restore's decision and its writes has nothing restored in the clear, keeps the seal and the mark, and the person is told |
 | A batch accept survives one refusal | `shareBatchRefusal.test.ts` | two shares, the first refused → the second imported, only it consumed, the tally names the first, the log has its line |
 | `creds_list` and the health report on damaged values | `mcpEntries.test.ts`, `hygieneScan.test.ts` | a damaged wrap is no connection string for an agent; a woven, sealed or damaged connection string is never graded as a password (key=value fixtures, so the connection parser alone cannot keep them out) |
-| The funnel, syntax half | `storedSecretFunnel.test.ts` (over `funnelScan.ts`) | no module outside the allowlist (each with its reason) uses a funnel function or casts to `StoredSecret`; no kept-version reader uses `clickOpener`; T4's interim rule — the storage itself is a writer only in `entryWriter.ts` and the slot table (a deletion with `undefined` excepted), and no slot table row is handed the storage (`slot.write(storage`) outside a `file#function` allowlist — each with a negative fixture and a positive control |
+| The funnel, syntax half | `storedSecretFunnel.test.ts` (over `funnelScan.ts`) | no module outside the allowlist (each with its reason) uses a funnel function or casts to `StoredSecret`; no kept-version reader uses `clickOpener`; T4's interim rule (its plaintext-writer half retired in E3, below) — the storage itself is a writer only in `entryWriter.ts` and the slot table (a deletion with `undefined` excepted), and no slot table row is handed the storage (`slot.write(storage`) outside a `file#function` allowlist — each with a negative fixture and a positive control |
 | A writer needs a proof | `typedFixtures.test.ts`, `fixtures/typed/sealing_is_a_proof.ts` | a hand-built `plain` without the brand handed to `writerFor` is TS2345 |
 
 The PIN suite above stayed green with no assertion edited; `pinReaderBoundary.test.ts`'s refusal
@@ -893,6 +893,33 @@ changed fakes the same way and no assertion: `entityPin`, `pinGateHoles`, `pinFo
 run under it; the last also `getNode`). `secretClipboard.test.ts`'s "copying the same secret again restarts
 its window" — 10 ms timer margins — failed twice under the full run's load while the scrypt-heavy suites
 ran beside it, and is green alone; it was not touched.
+
+### The typed-secrets plan, epic 3 — the flip, and the type takes over (2026-10-01)
+
+E3 (T5) changes no behaviour, so it adds no flow; it turns the epics' scans into compile errors where a
+type can carry them and keeps them as scans where it cannot. Three checks hold the result:
+
+| Check | Test | What it holds down |
+|---|---|---|
+| The compile-fail harness | `typedFixtures.test.ts`, `fixtures/typed/` | one fixture per slot — `slot_<payment\|second\|fields\|notes\|config\|vpn\|totp\|db\|key\|password>_is_not_a_string.ts`: the getter's result handed to a `string` is TS2322, each watched compiling on the unflipped tree first — and `storage_is_not_a_writer.ts`: `applyAdditions(storage, …)` is TS2345 (it compiles at `49e34949`, before T5, and is refused from the first flipped slot on); beside E1's three and T4's `sealing_is_a_proof.ts` |
+| The funnel, syntax half | `storedSecretFunnel.test.ts` (over `funnelScan.ts`) | the allowlist with reasons (now also `entityFieldReading.ts` and `envApply.ts` — a metadata note or public key read as the plain stored form it is; and `carried` inside the doors' own parse and return points named funnel-internal); its positive control also finds the export's `carried(`; **the stored-form rule, permanent:** no slot setter called on the storage itself outside `entryWriter.ts` / `entitySlots.ts`, and no `slot.write(storage` / `slot.store(storage` outside its `file#function` allowlist — negative fixture and companions as before |
+| The reader boundary | `pinReaderBoundary.test.ts` | unchanged lists; every `GATED_BY_CALLER` reason annotated "(typed since T5)" |
+| An opened kept version is a real stored form | `historyPin.test.ts` | `openRevision` over a real `lockSecret(value, …, woven = true)`: each opened field reads as `value`, woven exactly where the sealed one was (green on arrival — shown red with the mint reduced to `stored(open.value)`) |
+| The text-level seal check | `secretEnvelope.test.ts` | `isSealedText`: a sealed envelope (woven or not) is sealed; plain text, a woven-plain envelope and a damaged one are not — readSecret's `value`, `value`, `corrupt` |
+
+**T4's interim rule is retired where the type took over** — its `applyAdditions(storage` and
+`store: storage` patterns, now refused by the compiler (the fixture above, and a planted
+`applyAdditions(storage, …)` / `storage.setPassword(a, e, 'hunter2')` in a scratch production file failing
+`tsc` with TS2345 twice). The rest of it stays as the permanent stored-form rule: a `StoredSecret` does not
+say whether it is plain or sealed, so a plain stored form copied into a protected entry type-checks.
+
+The PIN suite stayed green with no assertion's meaning changed. What changed is mechanical: test inputs
+that stand for stored values are minted (`stored(...)`, re-exported by `pinWorld.ts` beside `carried`, or
+`stored as mint` where a file already has a local `stored`); fakes of the structural interfaces answer
+stored secrets; a test that inspects stored bytes reads them back with `carried(...)`; helper signatures
+narrowed to `StoredSecret`; `viewerOptions.test.ts` reads a stored reader through `gatedSecretReader`, as
+a page does — handing a page a stored reader no longer compiles. Every edited file is listed in its
+commit (`85f0ac13` … `f474f3d4`).
 
 ## An agent creates what the folder holds (2026-09-30, extension 1.12.0, relay 0.9.0)
 

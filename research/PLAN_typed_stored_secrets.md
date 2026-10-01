@@ -1,22 +1,36 @@
 # PLAN — a stored secret has its own type: forgetting the PIN door stops compiling
 
-> Status: **E1 and E2 of three epics built, 2026-10-01** (E1 — T1, T2 — merged as #176; E2 — T3, T4 — on
-> `feat/typed-secrets-e2`, its plan round and two code rounds passed (`proceed`), PR #177 open; E3 not begun) — written 2026-09-29, revised after the consultation
+> Status: **IMPLEMENTED, 2026-10-01.** Three epics built in order, each with its plan round and code round
+> at `proceed`: E1 (T1, T2) merged as #176, E2 (T3, T4) merged as #177, E3 (T5, T6) on `feat/typed-secrets-e3`
+> (its PR opened after this promotion); the two plaintext windows of §2.7 were fixed ahead of them in #175.
+> **Deviations:** E2 was planned on Fable (max) and built on Opus 5.5 (Fable was rate-limited); the writer
+> side closed at T5's FIRST flipped slot, not at the eleventh commit — the `| string` window only covered the
+> read seams (§3, *What the type does not catch*); T4's interim rule was retired only in part — its
+> additions-pass pattern — and the rest is a PERMANENT stored-form rule, the storage bound to another name
+> included; `sealValue` split into `sealText` / `sealValue` (E3 code round, finding 0); a `store` column on
+> the slot table; the producers stay text-returning, minted at funnel call sites; two metadata values (the
+> legacy note, the public key) minted at their one function each; `rotateAction.draw`, a reader §10 had not
+> counted, reads through `unsealedText`; each story's own deviations are recorded under it (T1-T5).
+> **Open tail:** `syncProtection.SNAPSHOT_MAP` is still a hand copy of the slot → bundle-map pairing; the
+> funnel's type-aware half (§3 item 2) is unbuilt; **the release** — one for the whole plan (#175, #176,
+> #177, E3) — waits for the owner's approval of its content. §2.7's question (should a folder that asks for
+> a PIN ask at accept and import too?) stays the owner's.
+>
+> History: written 2026-09-29, revised after the consultation
 > 2026-09-30, split into epics after the second plan round 2026-09-30.
 > Two plan gates passed: `proceed` on the 2026-09-29 text (2 of 2 reviewers, one round, seven findings
 > accepted — §8.1) and `proceed` on this revised text (session `bc788c97`, 1 of 2 reviewers — Codex was
 > rate-limited — two findings accepted, one rejected with its reason — §8.2). The second round's operator
 > commands turned §4 into three epics of two stories, each its own branch, plan round, code round and pull
 > request (§4.0); T0 is done. **The two plaintext windows §2.7 names were fixed ahead of the epics**, on
-> `fix/two-plaintext-windows` (2026-10-01, the cadence consultation's first advice — §9 row 4; the pull
-> request number is added when it opens), so T4 keeps their tests green rather than turning them red.
+> `fix/two-plaintext-windows` (2026-10-01, the cadence consultation's first advice — §9 row 4; pull request #175), so T4 keeps their tests green rather than turning them red.
 > Scope: `src_vs_code/src` — `storageManager.ts` getter/setter signatures, a new `storedSecret.ts` and
 > `entryWriter.ts`, the shipped door and sealing modules RETYPED rather than replaced (`secretOpener.ts`,
 > `pinClick.ts`, `pinGate.ts`, `pinAdmission.ts`, `sealingAtWrite.ts`, `editPrefill.ts`,
 > `shareUpdateSeal.ts`), the 102 getter references, 83 setter references and 5 + 4 structural interfaces
 > counted in §10, and the tests' fakes. Extension only; no format change. **Starts after**
-> [PLAN_entry_pin_keeps_its_promise.md](../research/PLAN_entry_pin_keeps_its_promise.md) and
-> [PLAN_agent_creates_what_the_folder_holds.md](../research/PLAN_agent_creates_what_the_folder_holds.md),
+> [PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise.md) and
+> [PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md),
 > both shipped as extension 1.12.0 on 2026-09-30 — which is why every `file:line` below was re-read (§10).
 >
 > Owner decision 2026-09-29: the structural design is right, but migrating every call site in the same
@@ -272,8 +286,8 @@ test asserts `SECRET_SLOTS.map(bundleKey) ∪ {attachments, images}` equals `SEC
 
 ### 2.7 What the compiler will find that the tests did not — recorded in T0, fixed ahead of the epics
 
-> **Both defects below were fixed on 2026-10-01**, on `fix/two-plaintext-windows` (the pull request number
-> is added when it opens), before any epic was built — the cadence consultation's first advice (§9 row 4):
+> **Both defects below were fixed on 2026-10-01**, on `fix/two-plaintext-windows` (pull request
+> #175), before any epic was built — the cadence consultation's first advice (§9 row 4):
 > a plaintext window in a shipped release does not wait for a refactor. Each was RED first against the real
 > `StorageManager` with every keychain write logged, then green, then shown red again with its fix reverted.
 > T4 keeps these tests green through its retyping instead of carrying them as REDs.
@@ -385,6 +399,18 @@ pass over every rule. Review watches casts in production code.
   is retired in T5's eleventh commit and not a moment earlier: the
   commit that takes the `| string` off the seams is the one where the type takes over from the scan.
 
+**What the type does not catch, and the rule that does** *(E3, deviation — coordinator decision 2026-10-01)*.
+As built, the writer side closed at T5's FIRST flipped slot, not at the eleventh commit: the `| string`
+window only ever covered the read seams, and once `setPaymentRaw` took `StoredSecret` the storage satisfied
+no `EntryWriter` (`fixtures/typed/storage_is_not_a_writer.ts` compiles at `49e34949`, TS2345 from
+`85f0ac13`). The interim rule's two PLAINTEXT-writer patterns — `applyAdditions(storage` and `store: storage`
+— were retired in the eleventh commit because the type refuses them. Its other patterns stay as a
+**permanent** funnel rule, not an interim one: no slot setter called on the storage itself outside
+`entryWriter.ts` / `entitySlots.ts`, and no `slot.write(storage` / `slot.store(storage` outside its
+`file#function` allowlist (Protect's `sealIfStill`, `unprotectEntity`, Restore's `writeSealed`). The phantom
+cannot tell a plain stored form from a sealed one, so copying a plain stored form into a protected entry
+type-checks — and the typed setters (`setFields`, `setPayment`, `setSecond`) still take a record.
+
 ## 4. Build order — three epics, six stories
 
 Every story leaves the build green on its own: `npm run typecheck`, `npm run lint`, `npm run ratchet`
@@ -403,7 +429,7 @@ this is what they mean for THIS plan:
   epic. **The gate runs once per epic.** Each epic is its own branch, cut from the previous epic's last
   commit: `feat/typed-secrets-e1` from `main` at the merge of this revision, `feat/typed-secrets-e2` from
   E1's last commit, `feat/typed-secrets-e3` from E2's. Per epic, in order: `review_plan` over this file
-  verbatim before its first story, declaring `plan: todo/PLAN_typed_stored_secrets.md` and `epic: k/3`;
+  verbatim before its first story, declaring `plan: todo/PLAN_typed_stored_secrets.md` (its path until the promotion) and `epic: k/3`;
   its stories built, each RED watched, each commit green; then ONE `review_code` over the epic's whole
   diff with the previous epic's last commit as `baseRef` (for E1, the `main` commit it was cut from), the
   same declaration. **Each epic ends green and mergeable on its own** — its own pull request into `main`,
@@ -424,9 +450,9 @@ this is what they mean for THIS plan:
 
 | epic | branch | cut from | stories (model) | plan round | code round | PR |
 |---|---|---|---|---|---|---|
-| **E1** — foundations | `feat/typed-secrets-e1` | `main` at `9f62e4db` | T1, T2 (Opus) — built 2026-10-01, commits `f038982c` (T1) and `9e380014` (T2) | session `9f8e746d`, **proceed**, 1 of 2 reviewers (Codex rate-limited); finding 0 accepted — the harness resolves its fixtures from the package root, a run that finds zero fixtures FAILS, and the compiles-fixture is the positive control (all three built and shown red, T2's commit); finding 1 accepted as a check — the ratchet's output is recorded per commit (both commits: 1038 / 1015, at baseline) | session `9f8e746d`, **proceed**, 4 of 8 reviewers (Codex rate-limited), 6 findings: 5 rejected with reasons — the serial slot reads (2, 4) are the shipped order unchanged and parallel reads would not close a torn snapshot, only move it; the `undefined` overload (0) never drops `undefined` from the type; `read` returning `string` (1) is T5's staged flip; the pinned fixture line (3) is what proves the error sits on the statement under test — and finding 5 accepted: the harness hands each fixture's program to the next as `oldProgram`, so the lib files are parsed once (3 fixtures: 1.9 s → 1.5 s) | — |
-| **E2** — the doors | `feat/typed-secrets-e2` | `main` at `9369b4d3` (E1 merged, #176) | T3, T4 — planned on Fable (max), **built on Opus 5.5, because Fable was rate-limited (2026-10-01)**; built 2026-10-01, commits `d8339155`, `275b9230`, `28fd17fd`, `6544409f`, `d39e9712` (T3) and `80574e5d`, `98839d13` (T4) | session `67779c80`, **proceed**, 1 of 2 reviewers (Codex rate-limited), 2 findings rejected — answered by §2.3 (the doors' answers for absent / plain / woven / sealed / damaged) and §2.4 (the branded `Sealing` and the `stopped` contract) | session `67779c80`, **proceed**, 8 of 8 reviewers, 15 findings — **11 accepted and fixed** (0 and 6: `writerForNew`'s `fresh` proof verified at its first write, `5683b799`; 1, 4, 7, 9, 10, 12: every plain write under the lease with its own re-check, no cached promise, `b2b9d0da`; 3: the health-report pin for a woven / sealed / damaged connection string, `f19ae9f0`, green on arrival; 5 and 14: the rotation's no-loss road and an unattended refusal that names no step "from the entry", `887a2b05`), **4 rejected** (2: a plain proof is only issued over zero sealed slots; 8: kept versions are read silently by design, §2.3; 11: each slot is sealed before its own setter, R3 holds; 13: bundle restore is sequential by design, there is no keychain bulk API). Own security review (Opus): rotation no-loss (`887a2b05`), Restore around the lease (`4bd853c0`), Protect around the lease (`11f9e0fc`), `creds_list` damaged wrap (`203307be`), batch accept (`300789d2`) — all fixed. **Second round** (`again`), **proceed**, 8 of 8 reviewers, 11 findings — **6 accepted and fixed** (0–4: `writerForNew` verified at EVERY write under the lease, nothing remembered, and an unreadable tree (`metadataFault`) takes the re-checked road — REDs *"a 'new' writer remembered its first check and wrote in the clear into an entry protected since"* and *"an unreadable tree was read as 'no node'"*; 5: `entitySlots.ts` imports `StorageManager` as a type), **5 rejected** (6: new ids are freshly minted and never reused, so no orphan slot can carry one; 7 and 8: Protect's in-lease re-seal happens only when a plain write landed on that slot during its ~1 s outside seal, and is one bounded step — a retry loop outside can be overtaken indefinitely; 9: a plain writer cannot know where its caller's batch ends and must never hold the lease across caller code that may ask, so one lease per write is the price — at most ten writes of an interactive save; 10: every remaining catcher of the interactive sentence is interactive, the unattended one is translated). **PR #177:** CodeRabbit — the sealing writer committed outside the lease, so a sealed value could land between Protect's re-read and its write and be lost: fixed, each commit under the lease and the scrypt outside it (RED *"a sealed value was committed outside the lease"*, actual `['setNotes OUTSIDE the lease', 'setPassword OUTSIDE the lease']`); three docs that contradicted the code fixed; the `notSavedNote` nit rejected (the toast is for a person and keeps the sentence, the log keeps the `kind`). Sonar: nested template, optional chains and `.at` fixed; `await` in a loop left (sequential by design, read-modify-write) and the `error_` catch-name rule left (not this repo's convention) | — |
-| **E3** — the flip and the finish | `feat/typed-secrets-e3` | E2's last commit | T5, T6 (Opus) | — | — | — |
+| **E1** — foundations | `feat/typed-secrets-e1` | `main` at `9f62e4db` | T1, T2 (Opus) — built 2026-10-01, commits `f038982c` (T1) and `9e380014` (T2) | session `9f8e746d`, **proceed**, 1 of 2 reviewers (Codex rate-limited); finding 0 accepted — the harness resolves its fixtures from the package root, a run that finds zero fixtures FAILS, and the compiles-fixture is the positive control (all three built and shown red, T2's commit); finding 1 accepted as a check — the ratchet's output is recorded per commit (both commits: 1038 / 1015, at baseline) | session `9f8e746d`, **proceed**, 4 of 8 reviewers (Codex rate-limited), 6 findings: 5 rejected with reasons — the serial slot reads (2, 4) are the shipped order unchanged and parallel reads would not close a torn snapshot, only move it; the `undefined` overload (0) never drops `undefined` from the type; `read` returning `string` (1) is T5's staged flip; the pinned fixture line (3) is what proves the error sits on the statement under test — and finding 5 accepted: the harness hands each fixture's program to the next as `oldProgram`, so the lib files are parsed once (3 fixtures: 1.9 s → 1.5 s) | #176 |
+| **E2** — the doors | `feat/typed-secrets-e2` | `main` at `9369b4d3` (E1 merged, #176) | T3, T4 — planned on Fable (max), **built on Opus 5.5, because Fable was rate-limited (2026-10-01)**; built 2026-10-01, commits `d8339155`, `275b9230`, `28fd17fd`, `6544409f`, `d39e9712` (T3) and `80574e5d`, `98839d13` (T4) | session `67779c80`, **proceed**, 1 of 2 reviewers (Codex rate-limited), 2 findings rejected — answered by §2.3 (the doors' answers for absent / plain / woven / sealed / damaged) and §2.4 (the branded `Sealing` and the `stopped` contract) | session `67779c80`, **proceed**, 8 of 8 reviewers, 15 findings — **11 accepted and fixed** (0 and 6: `writerForNew`'s `fresh` proof verified at its first write, `5683b799`; 1, 4, 7, 9, 10, 12: every plain write under the lease with its own re-check, no cached promise, `b2b9d0da`; 3: the health-report pin for a woven / sealed / damaged connection string, `f19ae9f0`, green on arrival; 5 and 14: the rotation's no-loss road and an unattended refusal that names no step "from the entry", `887a2b05`), **4 rejected** (2: a plain proof is only issued over zero sealed slots; 8: kept versions are read silently by design, §2.3; 11: each slot is sealed before its own setter, R3 holds; 13: bundle restore is sequential by design, there is no keychain bulk API). Own security review (Opus): rotation no-loss (`887a2b05`), Restore around the lease (`4bd853c0`), Protect around the lease (`11f9e0fc`), `creds_list` damaged wrap (`203307be`), batch accept (`300789d2`) — all fixed. **Second round** (`again`), **proceed**, 8 of 8 reviewers, 11 findings — **6 accepted and fixed** (0–4: `writerForNew` verified at EVERY write under the lease, nothing remembered, and an unreadable tree (`metadataFault`) takes the re-checked road — REDs *"a 'new' writer remembered its first check and wrote in the clear into an entry protected since"* and *"an unreadable tree was read as 'no node'"*; 5: `entitySlots.ts` imports `StorageManager` as a type), **5 rejected** (6: new ids are freshly minted and never reused, so no orphan slot can carry one; 7 and 8: Protect's in-lease re-seal happens only when a plain write landed on that slot during its ~1 s outside seal, and is one bounded step — a retry loop outside can be overtaken indefinitely; 9: a plain writer cannot know where its caller's batch ends and must never hold the lease across caller code that may ask, so one lease per write is the price — at most ten writes of an interactive save; 10: every remaining catcher of the interactive sentence is interactive, the unattended one is translated). **PR #177:** CodeRabbit — the sealing writer committed outside the lease, so a sealed value could land between Protect's re-read and its write and be lost: fixed, each commit under the lease and the scrypt outside it (RED *"a sealed value was committed outside the lease"*, actual `['setNotes OUTSIDE the lease', 'setPassword OUTSIDE the lease']`); three docs that contradicted the code fixed; the `notSavedNote` nit rejected (the toast is for a person and keeps the sentence, the log keeps the `kind`). Sonar: nested template, optional chains and `.at` fixed; `await` in a loop left (sequential by design, read-modify-write) and the `error_` catch-name rule left (not this repo's convention) | #177 |
+| **E3** — the flip and the finish | `feat/typed-secrets-e3` | `main` at `2be95db5` (E2 merged, #177) | T5, T6 (Opus 5.5) — T5 built 2026-10-01, commits `85f0ac13`, `854e9342`, `76bd974f`, `aaf6006e`, `b7863a4d`, `7b98398c`, `e2b3715d`, `27bd099c`, `2bf5f8a1`, `5dc944d1` (the ten slots) and `f474f3d4` (the seams); T6's docs written | session `a48a7ccb`, **proceed**, 2 of 2 reviewers, 5 findings: 1, 2, 3 accepted (`49e34949`), 0 and 4 rejected | session `a48a7ccb`, **proceed**, 8 of 8 reviewers, 4 findings — 0 accepted and fixed (`f646303a`: `sealText` / `sealValue` split, RED fixture `seal_value_takes_no_text`); 1 and 3 rejected (`''` / `undefined` both mean keep at `storageManager.setPassword` :703); 2 rejected (`automaticOpener` never opens a sealed envelope; same path before E3; allowlist narrowed to the function — `455714be`). Independent test-diff check: 49 changed assertions byte-identical modulo `stored()` / `carried()`; two funnel weakenings closed (`3fbb7565` the storage under another name, `455714be` the per-function allowlist). **PR #178:** CodeRabbit — a kept field read back as `null` from a damaged or older history record crashed Protect's history pass (`isEmptySecret` asked `=== undefined`; RED *"TypeError: Cannot read properties of null"*, fixed with `typeof`); the storage destructured under another name (`const { storage: kept } = deps`) escaped the stored-form rule (RED, fixed); three docs narrowed to what the compiler actually refuses (an API typed `string`, not a template literal, `String()` or `JSON.stringify`). Sonar: the test re-export, fixed; `await` in a loop left (sequential by design) | #178 |
 
 - [x] **T0 — Re-verify, count, gate the revision.** Done 2026-09-30, on Fable as the operator asked: the
       re-read and the counts (§10), the consultation (§9), the second plan round over this text (§8.2,
@@ -672,15 +698,15 @@ unchanged; `review_plan` (epic 2/3) and `review_code` over E2's diff against E1'
 ### E3 — The flip and the finish: the type takes over, the plan closes (Opus)
 
 **Why the cut is here.** Nothing in E3 decides anything — every judgement about a reader or a writer was
-made in E2 — so the flip is mechanical, each of its eleven commits bounded by the compiler's own list for
-one slot, and the docs and the promotion are the plan's close. It is its own epic because its diff is the
+made in E2 — so the flip is mechanical, ten commits each bounded by the compiler's own list for
+one slot and an eleventh that takes the transitional `| string` off the seams (E3 plan round, finding 1), and the docs and the promotion are the plan's close. It is its own epic because its diff is the
 largest (the 102 getter and 83 setter references of §10, and ~30 test fakes) and would bury E2's
 judgement if reviewed with it; and because the eleventh commit is the moment the type takes over from
 T4's interim rule, so E3's code round is the one that must see `applyAdditions(storage, …)` refuse to
 compile. T6 belongs here and not in a fourth epic because the plan finishes where the type does: the
 promotion records all three epics' rounds and deviations. Opus: volume, not judgement.
 
-- [ ] **T5 (E3) — The flip, one slot at a time** *(gate finding 6)*, in the order of fewest references first
+- [x] **T5 (E3) — The flip, one slot at a time** *(gate finding 6)*, in the order of fewest references first
       (§10): `paymentRaw` (6 — and the slot the owner lost, so its RED is the card), `secondRaw` (6),
       `fieldsRaw` (7), `notes` (8), `configBody` (9), `vpnConfig` (10), `totp` (10), `dbConnection` (14),
       `privateKey` (16), `password` (16). Per slot, one green commit: **RED** — the fixture
@@ -708,16 +734,81 @@ promotion records all three epics' rounds and deviations. Opus: volume, not judg
       eleventh commit without that fixture, leaves the write side guarded by nothing.
       **Model: Opus** — mechanical, each commit bounded by the compiler's own list; the one judgement per
       caller was made in T3 and T4. **DoD per commit:** typecheck, lint, ratchet (line-neutral in the two
-      ratcheted files), `npm test`; no assertion edited except a fake's signature.
-- [ ] **T6 (E3) — Docs, the last code round, promotion, release.** `research/module_extension.md` §*The
+      ratcheted files), `npm test` (which runs T4's interim rule); no assertion edited except a fake's signature.
+      **Each commit is green before the next begins** (E3 plan round, finding 2): a commit whose checks go
+      red is corrected or reverted in place — never built on — and the last green commit is the recovery point.
+      **Done 2026-10-01, `85f0ac13` … `5dc944d1` (ten slots) and `f474f3d4` (the seams)** (Opus 5.5). Every
+      slot's fixture `slot_<x>_is_not_a_string.ts` watched failing first — *"expected TS2322 at line 8 of
+      slot_<x>_is_not_a_string.ts — the fixture compiled"* — then green; every commit green on typecheck,
+      lint, `npm test` (the interim rule inside it) and the ratchet (1037 / 1015 throughout) before the next.
+      Finding 0's test (*an opened kept version holds REAL stored forms … woven exactly where the sealed one
+      was woven*, against a real woven `lockSecret`) was green on arrival — `withValues` already wrote that
+      form untyped — and was shown red with the mint reduced to `stored(open.value)` (*"the woven password
+      reads as a woven value"*, actual `woven: false`). The seam commit: `storage_is_not_a_writer.ts` lands
+      green (see the deviations); a planted `applyAdditions(storage, …)` and `storage.setPassword(a, e,
+      'hunter2')` in a scratch production file failed `tsc` with TS2345 twice and were removed; the export's
+      `carried(` is the funnel's new positive control; all 22 `GATED_BY_CALLER` reasons end "(typed since
+      T5)", the lists unchanged. Final suite: 5275 tests, 5271 pass, 0 fail, 4 skipped.
+      **Deviations in E3:**
+      1. *A `store` column on the slot table*, beside `write`: a stored form straight into the keychain. From
+         the first flip the storage is no `SlotSink`, so Protect's `sealIfStill`, Remove PIN's
+         `unprotectEntity` and Restore's `writeSealed` write through `store`; the funnel's slot-write rule
+         scans `.store(storage` with the same three-function allowlist.
+      2. *`RevisionSecrets`, `StoredReader` and `ExportOpen` widened to `StoredSecret | string` uniformly in the
+         first commit*, not per slot — the table walkers (the snapshot, the history rewrite) write fields
+         through a union key, so no field can be narrower than the widest slot; all narrowed in the seam
+         commit.
+      3. *The producers stay text-returning*: `plainSecret` and `lockSecret` return `string` and are minted at
+         funnel call sites (`stored(plainSecret(...))`). §2.1's "`lockSecret` / `plainSecret` return one" was
+         not built. `sealValue` was first overloaded over text and a stored form; the code round's finding 0
+         split it (`f646303a`): `sealText(text) → sealed text` (the sealing writer mints it at the one road)
+         and `sealValue(stored) → stored form` (Protect, the history, Restore) — an overload that tested
+         `typeof value === 'string'` could not tell the two apart at run time.
+      4. *Helpers in `storedSecret.ts`*: `storedRead` (the getters' mint over a `Thenable`, identity — no
+         extra microtask), `carried` overloads for `undefined`, the transitional `seamText` (deleted in the
+         seam commit) and `unflipped` (deleted with the tenth slot); `secretEnvelope.isEmptySecret` replaces
+         `.length` on a stored value; `secretEnvelope.isSealedText` is `sshExecAuth`'s text-level re-check of
+         opened text (the same parse).
+      5. *Where `carried()` stands*: the raw carriers (the export's byte-identical branch, an unprotected
+         share, Restore's plain road — a kept version's bytes to the plain writer — and the keychain write),
+         and inside the doors' own parse and return points (`readSecret`, `openedText`'s unprotected branch,
+         `unsealedText`), named funnel-internal in the funnel test.
+      6. *A reader §10 had not counted*: `rotateAction.draw` parsed `RotateDeps.current` raw; `current` now
+         answers the stored form and `draw` reads it through `unsealedText` — byte-identical in every case
+         that reaches it (`protectedSlot` refuses a sealed value or a marked entry first).
+      7. *`GATED_BY_CALLER` annotated per function* once all its reads were typed, the kept-version entries
+         in the seam commit.
+      8. *Two metadata values minted at their line* (coordinator decision): `entityFieldReading.notesReading`
+         (`stored(details.notes)`) and `envApply.openedField` (`stored(details.publicKey)`), both modules
+         allowlisted — "a metadata value read as the plain stored form it is"; `entityFieldReading.test.ts`
+         and `sshExecAuth.test.ts` green untouched.
+      9. *The fixture `storage_is_not_a_writer.ts` was not red at the seam*: the writer side closed at the
+         first slot (§3, *What the type does not catch*); its RED is the `49e34949` tree.
+      10. *T4's rule retired only in part* — its plaintext-writer patterns; the rest is permanent (§3).
+      **Open tail:** `syncProtection.SNAPSHOT_MAP` is still a third hand copy of the slot → bundle-map
+      pairing (deriving it from the table needs a cast or a typed builder); the §3 item 2 type-aware half of
+      the funnel is still unbuilt.
+- [x] **T6 (E3) — Docs, the last code round, promotion, release** — all but the release: release pending the owner's approval of its content. `research/module_extension.md` §*The
       entry PIN keeps its promise* (`:1329-1517`): the type, the funnel table and the compile-fail harness as
       one subsection — the reader classes table STAYS, because the AST guard stays (§2.6; the 09-29 text
       said the API *replaces* it); `research/module_tests.md` §*A PIN-protected entry keeps its promise*
       (`:820-848`): the two scanning tests and the harness; help unchanged (nothing a person sees moves);
       CHANGELOG; E3's `review_code` over its whole diff against E2's last commit (§4.0 — the round that
       sees the type take over); the promotion with deviations, carrying the three epics' rounds, the
-      cadence consultation's outcome and the §2.7 question for the owner; the release after E3's PR.
+      cadence consultation's outcome and the §2.7 question for the owner; the release after E3's PR —
+      **one release for the whole plan** (the hotfix #175, E1 #176, E2 #177, E3): the candidate is `main`
+      after E3's merge; the owner is shown its version numbers, the `[Unreleased]` CHANGELOG section that
+      becomes them, the full suite's result on that commit and `main`'s CI, and the release is tagged and
+      published only after the owner's explicit approval of that content (E3 plan round, finding 3).
       **Model: Opus.** **DoD:** §7.
+      **Done 2026-10-01 but for the release** (Opus 5.5): docs in `ca659a26` (`module_extension.md`
+      *The type takes over*, `module_tests.md` *epic 3*, CHANGELOG `[Unreleased]`); E3's code round
+      `proceed` (session `a48a7ccb`, 8 of 8 — §4.0); its one accepted finding fixed in `f646303a`
+      (`sealValue` split into `sealText(text) → text` and `sealValue(stored) → stored`); the independent
+      test-diff check's two funnel weakenings closed — the storage bound to another name reported again
+      (`3fbb7565`), the two metadata mints allowlisted per function (`455714be`); promoted to `research/`.
+      **The release is pending the owner's approval of its content** (version numbers, the `[Unreleased]`
+      section, the suite on `main` after E3's merge and `main`'s CI).
 
 **E3 DoD:** §7 in full — it is the plan's DoD, and E3 is where the plan ends; plus `review_plan`
 (epic 3/3) and `review_code` over E3's diff against E2's last commit both `proceed`, and the PR merged
@@ -847,7 +938,7 @@ made three points. Each was verified against the code before it was acted on.
 | 1 | Keep the type mechanics (phantom, `SLOT_SPECS`, per-slot flip) but do not build `EntryReader` / `writeEntry` from scratch: `EntryReader` should yield `secretOpener.ts`'s `OpenedSecret` (`:29`), with `automaticOpener` as the unattended reader and `pinClick.clickedSecret` the interactive one; `writeEntry` should consume `sealingAtWrite.ts`'s `Sealing` (`:39`) as its proof and absorb `editPrefill.sealedWriter` (`:216`), so there is ONE read API and ONE write API | `OpenedSecret` is at `secretOpener.ts:29-36`, `automaticOpener` at `:47`, `SecretOpener` at `:39`; `clickedSecret` / `clickOpener` at `pinClick.ts:30-48`, and `clickOpener` runs `admitEntry` itself (`:43`); `Sealing` at `sealingAtWrite.ts:39` with its constants at `:71-72, 101-103`; `sealedWriter` at `editPrefill.ts:216-242`, and a second copy of it, `sealingWriter`, at `shareUpdateSeal.ts:111-125` | **Followed on the write side and on the door**: no `entryReader.ts`, no `Admitted` brand (§2.3); `Sealing` branded and `writerFor` the one road, both writer copies merged (§2.4). **Not followed on the answer type**: `OpenedSecret` folds *absent* into `open{value: undefined}`, and the automatic consumers need *absent* apart from *withheld* (`fieldReading.ts:4-14`), so `FieldReading` stays their answer and one adapter, `fieldReadingOf`, joins `secretOpener.ts`. "One read API" therefore means: one door type (`SecretOpener`) and one answer per consumer class, not one answer type for every consumer |
 | 2 | Keep the AST guard (`readerScan.ts` / `pinReaderBoundary.test.ts`, `enclosingFunction` at `readerScan.ts:119`): the type proves the door was used, the AST proves it was used in the same function. Retarget the scan at the new reader API rather than delete it, and say what happens to `GATED_BY_CALLER` | `enclosingFunction` is at `readerScan.ts:119-126`; `GATED_BY_CALLER` at `pinReaderBoundary.test.ts:184-231` — 22 functions in 12 files, each with a written reason; the "listed but no longer needed" check at `:291-296` | **Followed.** §2.6: the scan is kept unchanged — there is no new reader API to retarget it at, because the openers it already recognises ARE the API; the list neither grows nor shrinks by the flip, each reason gains a compile-time twin and is annotated in T5 |
 | 3 | Story split: T1/T2 ordinary (Opus): phantom + `slotSpec`; T3 security-critical (Fable): `secretOpener` / `pinClick` into `EntryReader`; T4 security-critical (Fable): `sealedWriter` / `sealingAtWrite` into `writeEntry`; T5 ordinary (Opus): the per-slot flip and the ~105 call sites; T6 docs | The counts are in §10: 102 getter references, 83 setter references, 9 table walkers, 5 hand-written and 4 `Pick` interfaces, ~200 test references | **Followed, with two changes.** `slotSpec` is not a new table: `SECRET_SLOTS` exists and is widened (§2.5, T1). T3 is not "into `EntryReader`" but "the reads converge on the openers" — the same modules, the same model, a different destination (§4). T0 is added back as a story because the revision owes a plan round, and §2.7 makes T4's first RED a shipped defect rather than a refactor. The same six stories are now three epics of two (§4.0), the consultant's Opus / Fable / Opus grouping unchanged |
-| 4 | **The cadence consultation for E1–E3** (§4.0; `kind: cadence`, epics 1-3, consultationId `c785e2389d834408a01b2cd282c5e79f`, Gemini 3.1 Pro via Antigravity, 2026-09-30 — the first attempt answered nothing, the second answered). **(A)** Move the two plaintext defects of §2.7 out of the epics into a separate fix shipped BEFORE them: a shipped release writes secrets in the clear on two roads, and a refactor's timeline is the wrong clock for that. **(B)** The phantom changes nothing at run time — `JSON.stringify` in `revisionStore.ts`, `===` and `structuredClone` all see strings — so T5 moves no byte; and the transitional `StoredSecret \| string` on the seams during T5's first ten commits gives the compiler NO protection against a new plaintext write in that window | **(A)** verified by reading `treeMutationCommands.ts:285-310` (`applyAdditions(storage, …)` then `applyCreatePin`) and `shareUpdateSeal.ts:98-105` (`firstLockedStored` only, never the mark): both windows real. **(B)** verified: the brand is erased by `tsc`; `revisionStore.ts`'s `JSON.stringify`, the `===` comparisons in `syncMerge` and the `structuredClone` of the store see plain strings; and with `\| string` on `readSecret`, `openStored`, `SlotRead` and `SecretSlot.read`, `applyAdditions(storage, …)` type-checks until the eleventh commit | **(A) followed** — the hotfix `fix/two-plaintext-windows` (2026-10-01; §2.7 records both fixes, their REDs and their tests; the PR number is added when it opens); T4 and §5 now keep those tests green instead of carrying them as REDs. **(B) recorded** in §3 (*Two limits the cadence consultation named*) and in T5: in the window the guarantee rests on T4's interim scan rule alone, which must stay until T5's eleventh commit |
+| 4 | **The cadence consultation for E1–E3** (§4.0; `kind: cadence`, epics 1-3, consultationId `c785e2389d834408a01b2cd282c5e79f`, Gemini 3.1 Pro via Antigravity, 2026-09-30 — the first attempt answered nothing, the second answered). **(A)** Move the two plaintext defects of §2.7 out of the epics into a separate fix shipped BEFORE them: a shipped release writes secrets in the clear on two roads, and a refactor's timeline is the wrong clock for that. **(B)** The phantom changes nothing at run time — `JSON.stringify` in `revisionStore.ts`, `===` and `structuredClone` all see strings — so T5 moves no byte; and the transitional `StoredSecret \| string` on the seams during T5's first ten commits gives the compiler NO protection against a new plaintext write in that window | **(A)** verified by reading `treeMutationCommands.ts:285-310` (`applyAdditions(storage, …)` then `applyCreatePin`) and `shareUpdateSeal.ts:98-105` (`firstLockedStored` only, never the mark): both windows real. **(B)** verified: the brand is erased by `tsc`; `revisionStore.ts`'s `JSON.stringify`, the `===` comparisons in `syncMerge` and the `structuredClone` of the store see plain strings; and with `\| string` on `readSecret`, `openStored`, `SlotRead` and `SecretSlot.read`, `applyAdditions(storage, …)` type-checks until the eleventh commit | **(A) followed** — the hotfix `fix/two-plaintext-windows` (2026-10-01; §2.7 records both fixes, their REDs and their tests; pull request #175); T4 and §5 now keep those tests green instead of carrying them as REDs. **(B) recorded** in §3 (*Two limits the cadence consultation named*) and in T5: in the window the guarantee rests on T4's interim scan rule alone, which must stay until T5's eleventh commit |
 
 ## 10. T0 — the re-verification record (2026-09-30)
 

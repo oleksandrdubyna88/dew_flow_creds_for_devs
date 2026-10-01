@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import type { CreateAccepted, CreateSettled, McpCreateHooks } from '../brokerMcpDoor';
 import { isLockedSecret, readSecret, unlockSecret } from '../secretEnvelope';
 import type { StorageManager } from '../storageManager';
+import { StoredSecret, stored } from '../storedSecret';
 import type { TreeNode } from '../types';
 import { StubCancellationToken, loadEachWithVscode } from './vscodeStub';
 import { ACCOUNT, PIN, Sinks, clickVscode, locked, sinks } from './pinWorld';
@@ -95,7 +96,7 @@ async function world(folder: { asks?: boolean; sibling?: boolean }, inputs: (str
   await storage.addNode(ACCOUNT, { id: 'f1', name: 'Quotas', type: 'folder', parentId: null, mcp: { create: true }, ...(folder.asks === true ? { folderAsksForPin: true } : {}) });
   if (folder.sibling === true) {
     await storage.addNode(ACCOUNT, { id: 's1', name: 'grok key', type: 'entity', parentId: 'f1', details: { id: 's1', name: 'grok key', isSshEnabled: false, kind: 'credential', pinProtected: true } });
-    await storage.setPassword(ACCOUNT, 's1', await locked('the sibling’s password'));
+    await storage.setPassword(ACCOUNT, 's1', stored(await locked('the sibling’s password')));
   }
   written.length = 0;
   return { storage, hooks: hooksModule.mcpCreateHooks(storage, () => undefined), s, stub, written, onCreate };
@@ -123,7 +124,7 @@ function onlyMade(w: World): TreeNode {
   return nodes[0];
 }
 
-async function opened(value: string | undefined, pin: string): Promise<string> {
+async function opened(value: StoredSecret | undefined, pin: string): Promise<string> {
   const read = readSecret(value);
   assert.equal(read.kind, 'locked', `stored in the clear: ${String(value)}`);
   return read.kind === 'locked' ? unlockSecret(read.envelope, ACCOUNT, pin) : '';
@@ -138,7 +139,7 @@ test('an agent’s entry in a folder that asks for a PIN is sealed before it is 
   assert.ok(w.written.length > 0, 'precondition: something was written');
   for (const value of w.written) {
     assert.ok(!value.includes(SECRET) && !value.includes(LOGIN), `the keychain was handed a value in the clear: ${value}`);
-    assert.ok(isLockedSecret(value), `a value written unsealed: ${value}`);
+    assert.ok(isLockedSecret(stored(value)), `a value written unsealed: ${value}`);
   }
   assert.equal(w.s.boxes, 2, 'the first PIN of the folder, typed twice');
   const entry = onlyMade(w);

@@ -98,8 +98,10 @@ test('every write of a plain writer runs inside the storage\'s cross-window leas
     });
   const leased: string[] = [];
   for (const name of ['setNotes', 'setPassword'] as const) {
-    const real = storage[name].bind(storage);
-    storage[name] = (a: string, e: string, value: string | undefined) => {
+    // Two setters of two value types while the slots flip (T5): patched through one shape.
+    const patchable = storage as unknown as Record<typeof name, (a: string, e: string, value: unknown) => Promise<void>>;
+    const real = patchable[name].bind(storage);
+    patchable[name] = (a: string, e: string, value: unknown) => {
       leased.push(`${name} ${inside > 0 ? 'leased' : 'OUTSIDE the lease'}`);
       return real(a, e, value);
     };
@@ -129,8 +131,10 @@ test('the companion: writerForNew over a genuinely new id writes without reading
   const storage = await vault({});
   const reads: string[] = [];
   for (const getter of ['getNotes', 'getFieldsRaw', 'getSecondRaw', 'getPaymentRaw', 'getConfigBody', 'getDbConnection', 'getVpnConfig', 'getTotp', 'getPrivateKey', 'getPassword'] as const) {
-    const real = storage[getter].bind(storage);
-    storage[getter] = (a: string, e: string) => {
+    // Ten getters of two return types while the slots flip (T5): patched through one shape.
+    const patchable = storage as unknown as Record<typeof getter, (a: string, e: string) => unknown>;
+    const real = patchable[getter].bind(storage);
+    patchable[getter] = (a: string, e: string) => {
       reads.push(getter);
       return real(a, e);
     };
@@ -196,8 +200,10 @@ test('every write of the SEALING writer commits inside the lease — Protect\'s 
     });
   const leased: string[] = [];
   for (const name of ['setNotes', 'setPassword'] as const) {
-    const real = storage[name].bind(storage);
-    storage[name] = (a: string, e: string, value: string | undefined) => {
+    // Two setters of two value types while the slots flip (T5): patched through one shape.
+    const patchable = storage as unknown as Record<typeof name, (a: string, e: string, value: unknown) => Promise<void>>;
+    const real = patchable[name].bind(storage);
+    patchable[name] = (a: string, e: string, value: unknown) => {
       leased.push(`${name} ${inside > 0 ? 'leased' : 'OUTSIDE the lease'}`);
       return real(a, e, value);
     };

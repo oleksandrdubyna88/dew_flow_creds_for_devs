@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { stored } from '../storedSecret';
 import { test } from 'node:test';
 import { lockSecret } from '../secretEnvelope';
 import {
@@ -117,7 +118,7 @@ test('a cooling entry is refused WITHOUT a prompt, and the sentence says how lon
     noteWrong(ACCOUNT, ENTITY, now);
   }
 
-  const opened = await openStored(await locked(), {
+  const opened = await openStored(stored(await locked()), {
     accountId: ACCOUNT,
     entityId: ENTITY,
     entryName: 'prod-db',
@@ -138,7 +139,7 @@ test('five wrong PINs typed into the box arm the wait — the box is the road pe
   const gate = { accountId: ACCOUNT, entityId: ENTITY, entryName: 'prod-db', ask: () => Promise.resolve('wrong-one') };
 
   for (let i = 0; i < FREE_TRIES; i += 1) {
-    assert.equal((await openStored(value, gate)).kind, 'wrong');
+    assert.equal((await openStored(stored(value), gate)).kind, 'wrong');
   }
 
   assert.ok(cooldownMs(ACCOUNT, ENTITY, Date.now()) > 0, 'the gate counted through the same choke point');
@@ -156,7 +157,7 @@ test('a silent retry with the PIN already granted is not a guess: it neither coo
   const underAnother = await lockSecret('other-machine', ACCOUNT, 'another-pin');
 
   for (let i = 0; i < FREE_TRIES + 1; i += 1) {
-    assert.equal((await openStored(underAnother, silentPinGate(ACCOUNT, ENTITY, 'prod-db'))).kind, 'cancelled');
+    assert.equal((await openStored(stored(underAnother), silentPinGate(ACCOUNT, ENTITY, 'prod-db'))).kind, 'cancelled');
   }
 
   assert.equal(cooldownMs(ACCOUNT, ENTITY, Date.now()), 0, 'a retry with the granted PIN is not a wrong attempt');

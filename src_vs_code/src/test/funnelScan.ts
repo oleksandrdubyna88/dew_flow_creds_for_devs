@@ -15,8 +15,9 @@ import * as ts from 'typescript';
  *   <li><b>Is it a reader of kept versions, and does it open one with a click opener?</b> — the rule the
  *       second plan round's finding 0 wrote: a kept version is admitted once, by
  *       `revisionDoor.openKeptVersion`, and read through a silent gate after that.</li>
- *   <li><b>Does it hand the storage itself out as a writer?</b> — T4's interim rule, the one thing that
- *       refuses a plaintext write until the getters and setters are typed (E3).</li>
+ *   <li><b>Does it write a slot through the storage itself?</b> — the permanent stored-form rule: the
+ *       type (T5) refuses text there, and this refuses a stored form copied around the writer and the
+ *       lease (`storage.set<Slot>(`, `slot.write(storage`, `slot.store(storage`) outside its allowlist.</li>
  * </ul>
  *
  * <p>Not named `*.test.ts`, so the runner never treats it as a suite.</p>
@@ -27,6 +28,8 @@ export interface Finding {
   readonly file: string;
   readonly line: number;
   readonly what: string;
+  /** The function it sits in — what an allowlist keyed `file#function` is matched against. */
+  readonly within?: string;
 }
 
 function parse(file: string, text: string): ts.SourceFile {
@@ -137,9 +140,9 @@ function isTypeNamed(type: ts.Node, name: string): boolean {
 function funnelFinding(file: string, node: ts.Node, imported: Imported, names: ReadonlySet<string>): Finding[] {
   const name = namedReference(node, imported) ?? namespaceReference(node, imported, names);
   if (name !== undefined) {
-    return [at(file, node, `${name}(`)];
+    return [{ ...at(file, node, `${name}(`), within: enclosingName(node) }];
   }
-  return castToStored(node) ? [at(file, node, 'as StoredSecret')] : [];
+  return castToStored(node) ? [{ ...at(file, node, 'as StoredSecret'), within: enclosingName(node) }] : [];
 }
 
 /**
@@ -221,27 +224,26 @@ function deletes(call: ts.Node): boolean {
   return value !== undefined && ts.isIdentifier(value) && value.text === 'undefined';
 }
 
-/** `applyAdditions(storage, …)` — the additions pass handed the storage itself. */
-function additionsOverStorage(node: ts.Node): string | undefined {
-  const call = callOf(node, 'applyAdditions');
-  return call !== undefined && isStorage(call.arguments[0]) ? 'applyAdditions(storage' : undefined;
+/**
+ * `store: storage`, `let store = this.deps.storage`, `const vault = storage` — the storage bound to another
+ * name. A setter called through the alias (`vault.setPassword(a, e, stored)`) is not `storage.set<Slot>(`,
+ * so the binding itself is the finding. A binding NAMED `storage` (`{ storage: this.storage }`) only hands
+ * the storage on under its own name, where every later call is still seen.
+ */
+function storageAlias(node: ts.Node): string | undefined {
+  const alias = boundAlias(node) ?? destructuredAlias(node);
+  return alias === undefined || alias === 'storage' ? undefined : `${alias}: storage`;
 }
 
-/** A call of the function named `name`, or nothing. */
-function callOf(node: ts.Node, name: string): ts.CallExpression | undefined {
-  const call = ts.isCallExpression(node) ? node : undefined;
-  return call !== undefined && nameOf(call.expression) === name ? call : undefined;
-}
-
-/** `store: storage` or `let store = storage` — a writer that IS the storage. */
-function storeIsStorage(node: ts.Node): string | undefined {
-  const named = storeBinding(node);
-  return named !== undefined && isStorage(named.initializer) ? 'store: storage' : undefined;
-}
-
-function storeBinding(node: ts.Node): ts.PropertyAssignment | ts.VariableDeclaration | undefined {
+/** `x: storage` in an object, or `const x = storage` — the name the storage is bound to. */
+function boundAlias(node: ts.Node): string | undefined {
   const named = bindingOf(node);
-  return named?.name.getText() === 'store' ? named : undefined;
+  return named !== undefined && isStorage(named.initializer) ? named.name.getText() : undefined;
+}
+
+/** `const { storage: x } = deps` — the storage taken out of something under another name (CodeRabbit on PR #178). */
+function destructuredAlias(node: ts.Node): string | undefined {
+  return ts.isBindingElement(node) && node.propertyName !== undefined && nameOf(node.propertyName) === 'storage' ? node.name.getText() : undefined;
 }
 
 function bindingOf(node: ts.Node): ts.PropertyAssignment | ts.VariableDeclaration | undefined {
@@ -249,13 +251,22 @@ function bindingOf(node: ts.Node): ts.PropertyAssignment | ts.VariableDeclaratio
 }
 
 function storageWrite(file: string, node: ts.Node, setters: ReadonlySet<string>): Finding[] {
-  const what = slotSetterCall(node, setters) ?? additionsOverStorage(node) ?? storeIsStorage(node);
+  const what = slotSetterCall(node, setters) ?? storageAlias(node);
   return what === undefined ? [] : [at(file, node, what)];
 }
 
 /**
- * Every place the storage itself is used as a writer of a slot (T4's interim rule): a slot setter called
- * on it, the additions pass handed it, or a `store` bound to it. `setters` are the slot setters' names.
+ * Every slot setter called on the storage itself, and every binding of the storage to another name (an
+ * alias a setter could be called through) — a STORED form written with nothing between it and the
+ * keychain. Permanent (typed-secrets plan §3, *what the type does not catch*): since T5 the type refuses
+ * text there, but a `StoredSecret` cannot say whether it is plain or sealed, so a plain stored form copied
+ * into a protected entry would still type-check. `setters` are the slot setters' names.
+ *
+ * <p>T4's interim rule also refused `applyAdditions(storage` — the storage handed to the additions pass as a
+ * PLAINTEXT writer. The type refuses it since T5 (the storage satisfies no `EntryWriter`;
+ * `fixtures/typed/storage_is_not_a_writer.ts`), so that pattern was retired with T5's eleventh commit. Its
+ * `store: storage` binding pattern was retired with it and RESTORED, widened to any name, after E3's
+ * test-diff check: an alias of the storage carries a stored form past `storage.set<Slot>(` as easily as text.</p>
  */
 export function storageWrites(file: string, text: string, setters: readonly string[]): Finding[] {
   const names = new Set(setters);
@@ -280,19 +291,24 @@ function declaredName(fn: ts.Node): ts.Node | undefined {
   return ts.isFunctionDeclaration(fn) || ts.isMethodDeclaration(fn) ? fn.name : undefined;
 }
 
-/** `slot.write(storage, …)` — a slot table row's writer handed the storage itself. */
+/** The table's two writing columns: `write` (plaintext, through a writer) and `store` (a stored form, T5). */
+const SLOT_WRITES = new Set(['write', 'store']);
+
+/** `slot.write(storage, …)` / `slot.store(storage, …)` — a slot table row's writer handed the storage itself. */
 function slotWriteOverStorage(file: string, node: ts.Node): Finding[] {
   const access = memberCall(node);
-  if (access?.name.text !== 'write') {
+  if (access === undefined || !SLOT_WRITES.has(access.name.text)) {
     return [];
   }
-  return isStorage((node as ts.CallExpression).arguments[0]) ? [at(file, node, `slot.write(storage in ${enclosingName(node)}`)] : [];
+  return isStorage((node as ts.CallExpression).arguments[0]) ? [at(file, node, `slot.${access.name.text}(storage in ${enclosingName(node)}`)] : [];
 }
 
 /**
- * Every slot table row's `write` handed the storage itself — a value stored with no writer between it and
- * the keychain, so no lease and no re-check (the E2 security review, finding 2: Restore's plain path).
- * Each finding names the function it sits in, which is what the allowlist is keyed by.
+ * Every slot table row's `write` or `store` handed the storage itself — a value stored with no writer
+ * between it and the keychain, so no lease and no re-check (the E2 security review, finding 2: Restore's
+ * plain path). Each finding names the function it sits in, which is what the allowlist is keyed by. Since
+ * T5 the storage is no `write` sink at all (its raw setters take `StoredSecret`), so the three allowlisted
+ * writers hand it to `store` — and `store` is still a road around the lease, so it is held to the same list.
  */
 export function slotWritesOverStorage(file: string, text: string): Finding[] {
   return nodesOf(parse(file, text)).flatMap((node) => slotWriteOverStorage(file, node));

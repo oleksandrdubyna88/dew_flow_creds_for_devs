@@ -2,8 +2,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
-import { SECRET_SLOTS } from '../entitySlots';
-import type { StorageManager } from '../storageManager';
+import { SECRET_SLOTS, SlotSink } from '../entitySlots';
 import { Finding, funnelUses, importedUses, readsKeptVersions, slotWritesOverStorage, storageWrites } from './funnelScan';
 
 /**
@@ -11,9 +10,9 @@ import { Finding, funnelUses, importedUses, readsKeptVersions, slotWritesOverSto
  *
  * <p>A stored secret reaches text, and text reaches a stored form, only through a handful of modules:
  * the parser, the producers of a stored form, the doors, the carriers that move a stored string without
- * reading it. Every other module asks one of those. The phantom type (`storedSecret.ts`) will make the
- * compiler hold that once the getters return it (E3); until then — and for what a type cannot see, a
- * cast — this scan holds it: a module outside the allowlist that calls `readSecret(`, `isLockedSecret(`,
+ * reading it. Every other module asks one of those. The phantom type (`storedSecret.ts`) makes the
+ * compiler hold that since the getters return it (T5); for what a type cannot see — a cast above all —
+ * this scan holds it: a module outside the allowlist that calls `readSecret(`, `isLockedSecret(`,
  * `plainSecret(`, `lockSecret(`, `sealValue(`, `stored(`, `carried(` or their siblings, or writes
  * `as StoredSecret`, fails here naming file and line.</p>
  *
@@ -29,18 +28,21 @@ import { Finding, funnelUses, importedUses, readsKeptVersions, slotWritesOverSto
 
 const SRC = path.join(__dirname, '..', '..', 'src');
 
-/** The funnel's functions, and the modules that define them (`entityPin` re-exports `sealValue`). */
-const FUNNEL = ['stored', 'carried', 'readSecret', 'isLockedSecret', 'isCorruptSecret', 'isWovenSecret', 'plainSecret', 'lockSecret', 'sealValue'];
+/**
+ * The funnel's functions, and the modules that define them (`entityPin` re-exports `sealValue`).
+ * `storedRead` is the getters' mint.
+ */
+const FUNNEL = ['stored', 'storedRead', 'carried', 'readSecret', 'isLockedSecret', 'isCorruptSecret', 'isWovenSecret', 'plainSecret', 'lockSecret', 'sealValue', 'sealText'];
 const DEFINED_IN = ['storedSecret', 'secretEnvelope', 'sealValue', 'entityPin'];
 
 /** The modules that may use the funnel, each with its reason (the plan's §3 table). */
 const ALLOWED: Readonly<Record<string, string>> = {
   'storedSecret.ts': 'the type, `stored`, `carried`',
-  'storageManager.ts': 'mints at `this.secrets.get`; the typed setters serialise then store',
-  'secretEnvelope.ts': 'the parser and the producers of a stored form',
+  'storageManager.ts': 'mints at `this.secrets.get` (`storedRead`); the typed setters serialise then mint; `carried` at the keychain write',
+  'secretEnvelope.ts': 'the parser and the producers of a stored form — `carried` inside its own parse is funnel-internal',
   'sealValue.ts': 'the one sealing rule',
   'pinAttempts.ts': 'the one `unlockSecret` choke point',
-  'revisionHistory.ts': 'the kept versions\' parse boundary (`isRevisionList`)',
+  'revisionHistory.ts': 'the kept versions\' parse boundary (`isRevisionList`, `pushRevision` mints what it keeps)',
   'revisionStore.ts': 'the kept versions\' parse boundary (`pushRevision`)',
   'secretMaps.ts': 'a raw carrier: chest ↔ bundle maps',
   'syncPinRule.ts': 'the sealed-state rule over the bundle\'s map strings',
@@ -50,13 +52,16 @@ const ALLOWED: Readonly<Record<string, string>> = {
   'shareRecipientPin.ts': 'the recipient\'s own wrap of an arriving payload, in memory before any write',
   'entryWriter.ts': 'text → stored: the plain and the sealing writer',
   'pinGate.ts': 'the door primitive and the refusals',
-  'pinAdmission.ts': 'the door: the first sealed slot decides whether it asks',
-  'secretOpener.ts': 'the openers, and the two owner-less reads',
+  'pinAdmission.ts': 'the door: the first sealed slot decides whether it asks — `carried` in `openedText`\'s unprotected branch is funnel-internal',
+  'secretOpener.ts': 'the openers, and the two owner-less reads — `carried` in `unsealedText` is funnel-internal',
   'pinClick.ts': 'the click door: a sealed value needs the door',
   'entityPin.ts': 'Protect / Remove PIN: seals and opens in place',
   'historyPin.ts': 'seals and opens kept versions in place',
   'restoreVersion.ts': 'Restore\'s writes, sealed in memory before the first one',
   'entitySlots.ts': 'the table: types only',
+  // Keyed `file#function`: one mint each, and the rest of the file is outside the funnel like any other.
+  'entityFieldReading.ts#notesReading': 'a metadata value read as the plain stored form it is (legacy note / public key kept in node metadata)',
+  'envApply.ts#openedField': 'a metadata value read as the plain stored form it is (legacy note / public key kept in node metadata)',
 };
 
 function sourceFiles(dir: string = SRC): string[] {
@@ -85,10 +90,24 @@ const said = (finding: Finding): string => `src/${finding.file}:${finding.line} 
 
 // ---- the funnel ----
 
+/** A use the allowlist does not cover — by its file, or by `file#function` for the one-function entries. */
+const outsideTheFunnel = (finding: Finding): boolean =>
+  ALLOWED[finding.file] === undefined && ALLOWED[`${finding.file}#${finding.within ?? ''}`] === undefined;
+
 test('no module outside the funnel parses a stored string, mints or strips one, or seals one', () => {
-  const outside = eachSource(usesIn).filter((finding) => ALLOWED[finding.file] === undefined);
+  const outside = eachSource(usesIn).filter(outsideTheFunnel);
 
   assert.deepEqual(outside.map(said), [], 'a module outside the funnel uses it — ask an opener, a door or a writer instead');
+});
+
+test('a function allowlisted for one mint does not exempt its file: a mint elsewhere in envApply.ts is reported', () => {
+  const source = [
+    "import { stored } from './storedSecret';",
+    'async function openedField(d: D) { return open(stored(d.publicKey)); }',
+    'export function leak(text: string) { return stored(text); }',
+  ].join('\n');
+
+  assert.deepEqual(usesIn('envApply.ts', source).filter(outsideTheFunnel).map(said), ['src/envApply.ts:3 stored(']);
 });
 
 test('the companion: the scan still finds the funnel\'s known callers inside it', () => {
@@ -99,6 +118,10 @@ test('the companion: the scan still finds the funnel\'s known callers inside it'
   assert.ok(seen('pinGate.ts', 'readSecret('), 'the door primitive\'s parse is no longer seen');
   assert.ok(seen('entityPin.ts', 'sealValue('), 'Protect\'s sealing is no longer seen');
   assert.ok(seen('shareRecipientPin.ts', 'lockSecret('), 'the recipient\'s wrap is no longer seen');
+  assert.ok(seen('exportSecrets.ts', 'carried('), 'the export\'s byte-identical carry is no longer seen');
+  const keyed = Object.keys(ALLOWED).filter((key) => key.includes('#'));
+  const matched = (key: string): boolean => found.some((finding) => `${finding.file}#${finding.within ?? ''}` === key);
+  assert.deepEqual(keyed.filter((key) => !matched(key)), [], 'a file#function allowlist entry matches nothing — take it out');
 });
 
 test('the negative fixture: a module outside the allowlist that strips a stored secret is reported', () => {
@@ -150,7 +173,15 @@ test('the companion: the scan still sees kept-version readers and click openers'
   assert.equal(readsKeptVersions('fixture.ts', fixture).length > 0 && importedUses('fixture.ts', fixture, 'clickOpener', 'pinClick').length > 0, true, 'the fixture is not seen');
 });
 
-// ---- T4's interim rule: the storage is not a writer (until E3's types take over) ----
+// ---- the stored-form rule (permanent): no slot is written through the storage itself but here ----
+//
+// T4 added this as an INTERIM rule while the setters took `string`. Since T5 the TYPE refuses the storage
+// as a plaintext writer, so its additions-pass pattern — `applyAdditions(storage, …)` — was retired with
+// T5's eleventh commit (`fixtures/typed/storage_is_not_a_writer.ts` is its compile-time twin). What stays
+// is what a type cannot see: a `StoredSecret` does not say whether it is plain or sealed, so a plain
+// stored form copied into a protected entry type-checks — through `storage.set<Slot>(`, through an alias
+// of the storage (`store: storage`, `const vault = storage`; restored after E3's test-diff check, any
+// name but `storage`), or through a typed setter (`setFields`, `setPayment`, `setSecond`) taking a record.
 
 /**
  * The slot setters, asked of the slot table rather than typed out — each row's `write` run against a
@@ -161,7 +192,7 @@ function slotSetters(): string[] {
   const raw = SECRET_SLOTS.map((slot) => {
     let called = '';
     const recorder = new Proxy({}, { get: (_target, name) => (): Promise<void> => ((called = String(name)), Promise.resolve()) });
-    void slot.write(recorder as unknown as StorageManager, 'a', 'e', 'v');
+    void slot.write(recorder as unknown as SlotSink, 'a', 'e', 'v');
     return called;
   });
   return [...raw, ...raw.filter((name) => name.endsWith('Raw')).map((name) => name.slice(0, -'Raw'.length))];
@@ -174,7 +205,7 @@ function writesIn(file: string, text: string): Finding[] {
   return storageWrites(file, text, slotSetters());
 }
 
-test('the storage itself is a writer only inside entryWriter.ts and the slot table — every other write comes from writerFor', () => {
+test('a slot is written through the storage itself only inside entryWriter.ts and the slot table — every other write comes from writerFor', () => {
   const outside = eachSource(writesIn).filter((finding) => !WRITERS.has(finding.file));
 
   assert.deepEqual(outside.map(said), [], 'the storage handed out as a writer: take one from entryWriter.writerFor instead');
@@ -188,22 +219,24 @@ test('the companions: the setters come from the table, and the scan still finds 
   assert.ok(sanctioned.some((finding) => finding.what === 'storage.setPassword('), 'the plain writer\'s own write is no longer seen');
 });
 
-test('the negative fixture: every shape of the storage handed out as a writer is reported — and a deletion is not a write', () => {
+test('the negative fixture: a slot setter called on the storage is reported, raw or typed, and so is the storage bound to another name — a deletion is not a write', () => {
   const source = [
-    'export async function a(storage: S, ctx: C, r: R) { await applyAdditions(storage, "a", "e", r); }',
-    'export const deps = { store: storage };',
-    'export async function b(ctx: C) { await ctx.storage.setPassword("a", "e", "hunter2"); }',
-    'export class I { f() { let store = this.deps.storage; return store; } }',
+    'export async function b(ctx: C, s: StoredSecret) { await ctx.storage.setPassword("a", "e", s); }',
     'export async function c(storage: S) { await storage.setFields("a", "e", { login: "x" }); }',
     'export async function d(storage: S) { await storage.setNotes("a", "e", undefined); }',
+    'export const deps = { store: storage };',
+    'export class I { f() { let store = this.deps.storage; return store; } }',
+    'export async function e(storage: S, s: StoredSecret) { const vault = storage; await vault.setPassword("a", "e", s); }',
+    'export async function g(deps: D, s: StoredSecret) { const { storage: kept } = deps; await kept.setPassword("a", "e", s); }',
   ].join('\n');
 
   assert.deepEqual(writesIn('fixture.ts', source).map(said), [
-    'src/fixture.ts:1 applyAdditions(storage',
-    'src/fixture.ts:2 store: storage',
-    'src/fixture.ts:3 storage.setPassword(',
+    'src/fixture.ts:1 storage.setPassword(',
+    'src/fixture.ts:2 storage.setFields(',
     'src/fixture.ts:4 store: storage',
-    'src/fixture.ts:5 storage.setFields(',
+    'src/fixture.ts:5 store: storage',
+    'src/fixture.ts:6 vault: storage',
+    'src/fixture.ts:7 kept: storage',
   ]);
 });
 
@@ -221,7 +254,7 @@ const SLOT_WRITERS: Readonly<Record<string, string>> = {
   'restoreVersion.ts#writeSealed': 'Restore\'s sealed road: every value sealed in memory under the entry\'s PIN before the first write (R3)',
 };
 
-const slotWriteKey = (finding: Finding): string => `${finding.file}#${finding.what.replace('slot.write(storage in ', '')}`;
+const slotWriteKey = (finding: Finding): string => `${finding.file}#${finding.what.replace(/^slot\.(write|store)\(storage in /, '')}`;
 
 test('no slot table row is handed the storage itself as its writer outside the allowlist — every other value goes through writerFor', () => {
   const outside = eachSource(slotWritesOverStorage).filter((finding) => SLOT_WRITERS[slotWriteKey(finding)] === undefined);

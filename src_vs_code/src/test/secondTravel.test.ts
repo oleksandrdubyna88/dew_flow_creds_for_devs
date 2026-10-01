@@ -7,6 +7,7 @@ import { readRouteBody } from '../brokerReadRoutes';
 import { pushRevision, type Revision } from '../revisionHistory';
 import { RevisionSource, snapshotForRevision } from '../revisionSnapshot';
 import { SECOND_KEYS, parseSecondValues, serializeSecondValues, type SecondValues } from '../secondValues';
+import { StoredSecret, stored } from '../storedSecret';
 import type { EntityMetadata, TreeNode } from '../types';
 
 /**
@@ -49,7 +50,7 @@ function vault(second: string | undefined): SecretReader & RevisionSource {
     getConfigBody: nothing,
     getFieldsRaw: nothing,
     getPaymentRaw: nothing,
-    getSecondRaw: (): Promise<string | undefined> => Promise.resolve(second),
+    getSecondRaw: (): Promise<StoredSecret | undefined> => Promise.resolve(stored(second)),
   };
 }
 
@@ -88,7 +89,7 @@ test('a revision keeps the record through the cap, like every other small secret
     at: 1,
     name: 'visa',
     details: { id: 'p1', name: 'visa', isSshEnabled: false },
-    secrets: { second: RAW },
+    secrets: { second: stored(RAW) },
   };
 
   const [kept] = pushRevision([], revision);
@@ -101,7 +102,7 @@ test('an empty record is not written into history as an empty string', () => {
     at: 1,
     name: 'visa',
     details: { id: 'p1', name: 'visa', isSshEnabled: false },
-    secrets: { second: '' },
+    secrets: { second: stored('') },
   };
 
   const [kept] = pushRevision([], revision);
@@ -133,11 +134,11 @@ function agentVault(): McpVaultSource & { getSecondRaw(a: string, e: string): Pr
     getAccounts: () => [{ accountId: 'a1' }],
     getNodes: () => nodes,
     getNode: (_a, id) => nodes.find((n) => n.id === id),
-    getPassword: () => Promise.resolve('the first password'),
+    getPassword: () => Promise.resolve(stored('the first password')),
     getPrivateKey: () => Promise.resolve(undefined),
     getNotes: () => Promise.resolve(undefined),
     getTotp: () => Promise.resolve(undefined),
-    getDbConnection: () => Promise.resolve('postgres://app:the-first-password@db-01:5432/orders'),
+    getDbConnection: () => Promise.resolve(stored('postgres://app:the-first-password@db-01:5432/orders')),
     // Not part of `McpVaultSource` — present exactly so a listing that reached for it COULD have it,
     // which is what makes the absence below evidence rather than a tautology.
     getSecondRaw: () => Promise.resolve(RAW),

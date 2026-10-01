@@ -1,4 +1,5 @@
 import * as assert from 'node:assert/strict';
+import { stored } from '../storedSecret';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -223,7 +224,7 @@ test('an entity with no secret contributes nothing to weigh', async () => {
 
 test('a damaged wrap is not graded as a password by the health report', async () => {
   const damaged = '{"v":1,"lock":{"wrap":';
-  assert.equal(readSecret(damaged).kind, 'corrupt', 'the fixture is what the parser calls damaged');
+  assert.equal(readSecret(stored(damaged)).kind, 'corrupt', 'the fixture is what the parser calls damaged');
   const w = world({});
   try {
     const collected = await w.mod.collectPasswords(
@@ -238,7 +239,7 @@ test('a damaged wrap is not graded as a password by the health report', async ()
 
 test('a woven password is not graded as a strong, unique password', async () => {
   const woven = plainSecret('hhuunntteerr22', true);
-  const read = readSecret(woven);
+  const read = readSecret(stored(woven));
   assert.equal(read.kind === 'value' && read.woven, true, 'the fixture is what the parser calls woven');
   const w = world({});
   try {
@@ -261,7 +262,7 @@ test('a connection string that is woven, sealed or damaged is never graded as a 
   const woven = plainSecret(conn, true);
   const sealed = await lockSecret(conn, 'a1', '2468');
   const damaged = `{"v":1,"lock":{"wrap":"${conn}`;
-  assert.deepEqual([readSecret(woven).kind, readSecret(sealed).kind, readSecret(damaged).kind], ['value', 'locked', 'corrupt'], 'the fixtures are what the parser calls them');
+  assert.deepEqual([readSecret(stored(woven)).kind, readSecret(stored(sealed)).kind, readSecret(stored(damaged)).kind], ['value', 'locked', 'corrupt'], 'the fixtures are what the parser calls them');
   const w = world({});
   try {
     const collected = await w.mod.collectPasswords(

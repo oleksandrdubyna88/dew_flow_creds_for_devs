@@ -4,6 +4,7 @@ import { EntityMetadata, TreeNode } from './types';
 import { resolveKind } from './entityKind';
 import { withoutPassword } from './dbConnString';
 import { plainText } from './secretOpener';
+import type { StoredSecret } from './storedSecret';
 
 /**
  * What an agent is allowed to SEE — level 1 of the ladder, and the only place that decides it.
@@ -83,8 +84,8 @@ export interface McpEntryContext {
   hasPrivateKey: boolean;
   hasNotes: boolean;
   hasTotp: boolean;
-  /** The stored connection string, if any. Stripped here rather than by the caller. */
-  dbConnection?: string;
+  /** The connection string, if any, as stored. Read (`plainText`) and stripped here rather than by the caller. */
+  dbConnection?: StoredSecret;
   /** The names this entry depends on, already resolved from ids by the caller. */
   dependsOn: readonly string[];
 }
@@ -118,7 +119,7 @@ export function hiddenFromAgents(node: TreeNode | undefined): boolean {
  * sealed handed the agent the envelope itself until the typed-secrets plan (T3), and a damaged wrap was
  * still passed through as text until the E2 security review (finding 4) — a wrap is no address.
  */
-function shownConnection(stored: string | undefined): string | undefined {
+function shownConnection(stored: StoredSecret | undefined): string | undefined {
   const text = plainText(stored);
   return text === undefined ? undefined : withoutPassword(text);
 }
@@ -196,11 +197,11 @@ export interface McpVaultSource {
   getAccounts(): readonly { accountId: string }[];
   getNodes(accountId: string): readonly TreeNode[];
   getNode(accountId: string, id: string): TreeNode | undefined;
-  getPassword(accountId: string, entityId: string): Thenable<string | undefined>;
-  getPrivateKey(accountId: string, entityId: string): Thenable<string | undefined>;
-  getNotes(accountId: string, entityId: string): Thenable<string | undefined>;
-  getTotp(accountId: string, entityId: string): Thenable<string | undefined>;
-  getDbConnection(accountId: string, entityId: string): Thenable<string | undefined>;
+  getPassword(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
+  getPrivateKey(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
+  getNotes(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
+  getTotp(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
+  getDbConnection(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
 }
 
 /**

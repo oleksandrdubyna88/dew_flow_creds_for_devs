@@ -3,6 +3,7 @@ import type { SecretMapKey } from './secretMaps';
 import type { StorageManager } from './storageManager';
 import type { ProfileSnapshot } from './syncMerge';
 import { isLockedSecret } from './secretEnvelope';
+import { stored } from './storedSecret';
 import { SEALABLE_MAPS, SecretSide, sealedIn } from './syncPinRule';
 import type { TreeNode } from './types';
 import { VersionVector, concurrent, emptyVector } from './versionVector';
@@ -77,7 +78,7 @@ function winnerOver(local: ProfileSnapshot, merged: ProfileSnapshot, id: string)
 function lostSealedValue(local: ProfileSnapshot, merged: ProfileSnapshot, id: string): boolean {
   return SEALABLE_MAPS.some((key) => {
     const held = valueIn(local, key, id);
-    return isLockedSecret(held) && valueIn(merged, key, id) !== held;
+    return isLockedSecret(stored(held)) && valueIn(merged, key, id) !== held;
   });
 }
 

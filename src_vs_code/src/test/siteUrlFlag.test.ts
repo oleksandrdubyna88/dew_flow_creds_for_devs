@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EntityFlagsRefresher, EntityFlagSource, EntityFlagTarget, entityKey } from '../entityFlags';
 import { lockSecret } from '../secretEnvelope';
+import { stored } from '../storedSecret';
 import { entityContextValue } from '../treeRowText';
 import { EntityMetadata } from '../types';
 
@@ -39,9 +40,9 @@ function walk(entries: Record<string, Entry>): Walk {
     getConfigBody: () => Promise.resolve(undefined),
     getFieldsRaw: (_a, id) => {
       reads.push(id);
-      return entries[id]?.unreadable === true ? Promise.reject(new Error('keychain says no')) : Promise.resolve(entries[id]?.fields);
+      return entries[id]?.unreadable === true ? Promise.reject(new Error('keychain says no')) : Promise.resolve(stored(entries[id]?.fields));
     },
-    getPassword: (_a, id) => Promise.resolve(id === 'site' ? 'pw' : undefined),
+    getPassword: (_a, id) => Promise.resolve(stored(id === 'site' ? 'pw' : undefined)),
   };
   return { target, walker: new EntityFlagsRefresher(source, target), reads };
 }

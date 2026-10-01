@@ -23,6 +23,7 @@ import type { EntryWriter } from './entryWriter';
 import type { RevisionSecrets } from './revisionHistory';
 import type { SecretMapKey } from './secretMaps';
 import type { StorageManager } from './storageManager';
+import type { StoredSecret } from './storedSecret';
 
 /**
  * What a slot's `read` needs — the ten getters and nothing else, so a walker that only READS (the
@@ -44,13 +45,32 @@ export type SlotSource = Pick<
 >;
 
 /**
- * What a slot's `write` needs — the ten setters, as an `EntryWriter` has them. A writer from
+ * What a slot's `write` needs — the ten PLAINTEXT setters, as an `EntryWriter` has them. A writer from
  * `entryWriter.writerFor` is one (Restore's plain road writes through it: under the lease, re-checked);
- * the storage still is one too until its setters are typed (E3), and `storedSecretFunnel.test.ts`
- * names the few functions allowed to hand it in.
+ * the storage is not, once its raw setters take `StoredSecret` (T5) — a value written straight into
+ * the keychain is a stored form, through {@link SecretSlot.store}.
  */
 export type SlotSink = Pick<
   EntryWriter,
+  | 'setNotes'
+  | 'setFieldsRaw'
+  | 'setSecondRaw'
+  | 'setPaymentRaw'
+  | 'setConfigBody'
+  | 'setDbConnection'
+  | 'setVpnConfig'
+  | 'setTotp'
+  | 'setPrivateKey'
+  | 'setPassword'
+>;
+
+/**
+ * What a slot's `store` needs — the storage's own raw setters, which take a STORED form (`StoredSecret`):
+ * a seal, or a value opened back into the form an unprotected entry stores it in. Only the funnel's own
+ * modules hold one to hand in (Protect's seal, Remove PIN's opened values, Restore's sealed road).
+ */
+export type SlotStore = Pick<
+  StorageManager,
   | 'setNotes'
   | 'setFieldsRaw'
   | 'setSecondRaw'
@@ -79,8 +99,12 @@ export interface SecretSlot {
    * the maps the merge judges sealed.
    */
   readonly bundleKey: SecretMapKey;
-  readonly read: (storage: SlotSource, accountId: string, entityId: string) => Thenable<string | undefined>;
+  /** As stored — a door or an owner-less read is what turns it into text. */
+  readonly read: (storage: SlotSource, accountId: string, entityId: string) => Thenable<StoredSecret | undefined>;
+  /** Plaintext, through a writer — which decides, under its proof, what reaches the keychain. */
   readonly write: (sink: SlotSink, accountId: string, entityId: string, value: string) => Promise<void>;
+  /** A stored form, straight into the keychain — a seal, or an opened value as an unprotected entry stores it. */
+  readonly store: (storage: SlotStore, accountId: string, entityId: string, value: StoredSecret) => Promise<void>;
   /**
    * Empty the slot — through the deleter the slot really has. Written down per slot because the
    * setters disagree about what nothing means: `setNotes(undefined)` deletes, `setPassword('')`
@@ -97,6 +121,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     bundleKey: 'notes',
     read: (s, a, e) => s.getNotes(a, e),
     write: (s, a, e, v) => s.setNotes(a, e, v),
+    store: (s, a, e, v) => s.setNotes(a, e, v),
     remove: (s, a, e) => s.setNotes(a, e, undefined),
   },
   {
@@ -105,6 +130,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     bundleKey: 'fields',
     read: (s, a, e) => s.getFieldsRaw(a, e),
     write: (s, a, e, v) => s.setFieldsRaw(a, e, v),
+    store: (s, a, e, v) => s.setFieldsRaw(a, e, v),
     remove: (s, a, e) => s.setFieldsRaw(a, e, undefined),
   },
   {
@@ -115,6 +141,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     bundleKey: 'seconds',
     read: (s, a, e) => s.getSecondRaw(a, e),
     write: (s, a, e, v) => s.setSecondRaw(a, e, v),
+    store: (s, a, e, v) => s.setSecondRaw(a, e, v),
     remove: (s, a, e) => s.setSecondRaw(a, e, undefined),
   },
   {
@@ -123,6 +150,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     bundleKey: 'payments',
     read: (s, a, e) => s.getPaymentRaw(a, e),
     write: (s, a, e, v) => s.setPaymentRaw(a, e, v),
+    store: (s, a, e, v) => s.setPaymentRaw(a, e, v),
     remove: (s, a, e) => s.setPaymentRaw(a, e, undefined),
   },
   {
@@ -131,6 +159,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     bundleKey: 'configs',
     read: (s, a, e) => s.getConfigBody(a, e),
     write: (s, a, e, v) => s.setConfigBody(a, e, v),
+    store: (s, a, e, v) => s.setConfigBody(a, e, v),
     remove: (s, a, e) => s.setConfigBody(a, e, undefined),
   },
   {
@@ -139,6 +168,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     bundleKey: 'dbConnections',
     read: (s, a, e) => s.getDbConnection(a, e),
     write: (s, a, e, v) => s.setDbConnection(a, e, v),
+    store: (s, a, e, v) => s.setDbConnection(a, e, v),
     remove: (s, a, e) => s.deleteDbConnection(a, e),
   },
   {
@@ -147,6 +177,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     bundleKey: 'vpnConfigs',
     read: (s, a, e) => s.getVpnConfig(a, e),
     write: (s, a, e, v) => s.setVpnConfig(a, e, v),
+    store: (s, a, e, v) => s.setVpnConfig(a, e, v),
     remove: (s, a, e) => s.deleteVpnConfig(a, e),
   },
   {
@@ -155,6 +186,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     bundleKey: 'totps',
     read: (s, a, e) => s.getTotp(a, e),
     write: (s, a, e, v) => s.setTotp(a, e, v),
+    store: (s, a, e, v) => s.setTotp(a, e, v),
     remove: (s, a, e) => s.deleteTotp(a, e),
   },
   {
@@ -163,6 +195,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     bundleKey: 'privateKeys',
     read: (s, a, e) => s.getPrivateKey(a, e),
     write: (s, a, e, v) => s.setPrivateKey(a, e, v),
+    store: (s, a, e, v) => s.setPrivateKey(a, e, v),
     remove: (s, a, e) => s.deletePrivateKey(a, e),
   },
   // Last on purpose — see the note above.
@@ -176,6 +209,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     // reaches it empty — a slot with no value is skipped before the write — and `putSecret` is not
     // public, so the guard is the caller's and is asserted.
     write: (s, a, e, v) => s.setPassword(a, e, v),
+    store: (s, a, e, v) => s.setPassword(a, e, v),
     // Its DELETER, for the same reason: an empty write keeps.
     remove: (s, a, e) => s.deletePassword(a, e),
   },

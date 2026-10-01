@@ -24,8 +24,8 @@ import { PaymentFields, serializePaymentFields } from './paymentFields';
 import { forgetTombstone, sweepOrphanSecrets } from './orphanSweep';
 import { LeasedQueue, leasedWrites, sweepWithRetry } from './leasedWrites';
 import { EntityCreate, createEntityWithSecrets } from './entityWrite';
-import { CleanupPort, clearSecretsPending, isEmptyPending, markSecretsPending, parsePendingCleanup,
-  finishBeforeReuse, removeWithIntent, resumePending } from './pendingCleanup';
+import { CleanupPort, clearSecretsPending, isEmptyPending, markSecretsPending, parsePendingCleanup, finishBeforeReuse, removeWithIntent, resumePending } from './pendingCleanup';
+import { StoredSecret, carried, stored, storedRead } from './storedSecret';
 import { dropVanishedSecrets, readSecretMaps, secretMapsOf, storeSecretMaps } from './secretMaps';
 import { attachmentSecretKey, configSecretKey, dbConnSecretKey, entitySecretKeys, fieldsSecretKey,
   imageSecretKey, notesSecretKey, paymentSecretKey, privateKeySecretKey, secretKey, totpSecretKey,
@@ -695,15 +695,15 @@ export class StorageManager implements vscode.Disposable {
 
   // ---------- secrets (SecretStorage, tenant-scoped) ----------
 
-  getPassword(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(secretKey(accountId, entityId));
+  getPassword(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(secretKey(accountId, entityId)));
   }
 
-  async setPassword(accountId: string, entityId: string, password: string | undefined): Promise<void> {
-    if (password === undefined || password.length === 0) {
+  async setPassword(accountId: string, entityId: string, password: StoredSecret | undefined): Promise<void> {
+    if (password === undefined || carried(password).length === 0) {
       return; // empty input means "keep whatever is stored" — the ONE setter that works this way
     }
-    await this.putSecret(secretKey(accountId, entityId), accountId, password);
+    await this.putSecret(secretKey(accountId, entityId), accountId, carried(password));
   }
 
   deletePassword(accountId: string, entityId: string): Promise<void> {
@@ -724,12 +724,12 @@ export class StorageManager implements vscode.Disposable {
 
   // ---------- SSH private keys (SecretStorage, tenant-scoped) ----------
 
-  getPrivateKey(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(privateKeySecretKey(accountId, entityId));
+  getPrivateKey(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(privateKeySecretKey(accountId, entityId)));
   }
 
-  setPrivateKey(accountId: string, entityId: string, content: string): Promise<void> {
-    return this.putSecret(privateKeySecretKey(accountId, entityId), accountId, content);
+  setPrivateKey(accountId: string, entityId: string, content: StoredSecret): Promise<void> {
+    return this.putSecret(privateKeySecretKey(accountId, entityId), accountId, carried(content));
   }
 
   deletePrivateKey(accountId: string, entityId: string): Promise<void> {
@@ -738,12 +738,12 @@ export class StorageManager implements vscode.Disposable {
 
   // ---------- VPN configs (SecretStorage, tenant-scoped) ----------
 
-  getVpnConfig(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(vpnConfigSecretKey(accountId, entityId));
+  getVpnConfig(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(vpnConfigSecretKey(accountId, entityId)));
   }
 
-  setVpnConfig(accountId: string, entityId: string, content: string): Promise<void> {
-    return this.putSecret(vpnConfigSecretKey(accountId, entityId), accountId, content);
+  setVpnConfig(accountId: string, entityId: string, content: StoredSecret): Promise<void> {
+    return this.putSecret(vpnConfigSecretKey(accountId, entityId), accountId, carried(content));
   }
 
   deleteVpnConfig(accountId: string, entityId: string): Promise<void> {
@@ -802,78 +802,78 @@ export class StorageManager implements vscode.Disposable {
 
   // ---------- notes (SecretStorage, tenant-scoped) ----------
 
-  getNotes(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(notesSecretKey(accountId, entityId));
+  getNotes(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(notesSecretKey(accountId, entityId)));
   }
 
-  setNotes(accountId: string, entityId: string, value: string | undefined): Promise<void> {
-    return this.putSecret(notesSecretKey(accountId, entityId), accountId, value);
+  setNotes(accountId: string, entityId: string, value: StoredSecret | undefined): Promise<void> {
+    return this.putSecret(notesSecretKey(accountId, entityId), accountId, carried(value));
   }
 
   // ---------- login / URL (SecretStorage, tenant-scoped, JSON) ----------
 
   /** The stored JSON as it is — what bundles, snapshots, shares and revisions carry. */
-  getFieldsRaw(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(fieldsSecretKey(accountId, entityId));
+  getFieldsRaw(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(fieldsSecretKey(accountId, entityId)));
   }
 
-  setFieldsRaw(accountId: string, entityId: string, value: string | undefined): Promise<void> {
-    return this.putSecret(fieldsSecretKey(accountId, entityId), accountId, value);
+  setFieldsRaw(accountId: string, entityId: string, value: StoredSecret | undefined): Promise<void> {
+    return this.putSecret(fieldsSecretKey(accountId, entityId), accountId, carried(value));
   }
 
   /** Typed write: an empty record deletes, so a credential that lost both fields holds no key. */
   setFields(accountId: string, entityId: string, fields: EntityFields | undefined): Promise<void> {
-    return this.setFieldsRaw(accountId, entityId, serializeFields(fields));
+    return this.setFieldsRaw(accountId, entityId, stored(serializeFields(fields)));
   }
 
   // ---------- second values (SecretStorage, tenant-scoped, JSON) ----------
 
   /** The stored JSON as it is — what bundles, snapshots and revisions carry. */
-  getSecondRaw(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(secondSecretKey(accountId, entityId));
+  getSecondRaw(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(secondSecretKey(accountId, entityId)));
   }
 
-  setSecondRaw(accountId: string, entityId: string, value: string | undefined): Promise<void> {
-    return this.putSecret(secondSecretKey(accountId, entityId), accountId, value);
+  setSecondRaw(accountId: string, entityId: string, value: StoredSecret | undefined): Promise<void> {
+    return this.putSecret(secondSecretKey(accountId, entityId), accountId, carried(value));
   }
 
   /** Typed write: an empty record deletes, so an entry whose last second value went holds no key. */
   setSecond(accountId: string, entityId: string, values: SecondValues | undefined): Promise<void> {
-    return this.setSecondRaw(accountId, entityId, serializeSecondValues(values));
+    return this.setSecondRaw(accountId, entityId, stored(serializeSecondValues(values)));
   }
 
   // ---------- payment instruments (SecretStorage, tenant-scoped, JSON) ----------
 
   /** The stored JSON as it is — what bundles, snapshots, shares and revisions carry. */
-  getPaymentRaw(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(paymentSecretKey(accountId, entityId));
+  getPaymentRaw(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(paymentSecretKey(accountId, entityId)));
   }
 
-  setPaymentRaw(accountId: string, entityId: string, value: string | undefined): Promise<void> {
-    return this.putSecret(paymentSecretKey(accountId, entityId), accountId, value);
+  setPaymentRaw(accountId: string, entityId: string, value: StoredSecret | undefined): Promise<void> {
+    return this.putSecret(paymentSecretKey(accountId, entityId), accountId, carried(value));
   }
 
   /** Typed write: an empty record deletes, so a payment instrument stripped bare holds no key. */
   setPayment(accountId: string, entityId: string, fields: PaymentFields | undefined): Promise<void> {
-    return this.setPaymentRaw(accountId, entityId, serializePaymentFields(fields));
+    return this.setPaymentRaw(accountId, entityId, stored(serializePaymentFields(fields)));
   }
 
-  getConfigBody(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(configSecretKey(accountId, entityId));
+  getConfigBody(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(configSecretKey(accountId, entityId)));
   }
 
-  setConfigBody(accountId: string, entityId: string, value: string | undefined): Promise<void> {
-    return this.putSecret(configSecretKey(accountId, entityId), accountId, value);
+  setConfigBody(accountId: string, entityId: string, value: StoredSecret | undefined): Promise<void> {
+    return this.putSecret(configSecretKey(accountId, entityId), accountId, carried(value));
   }
 
   // ---------- DB connection strings (SecretStorage, tenant-scoped) ----------
 
-  getDbConnection(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(dbConnSecretKey(accountId, entityId));
+  getDbConnection(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(dbConnSecretKey(accountId, entityId)));
   }
 
-  setDbConnection(accountId: string, entityId: string, value: string): Promise<void> {
-    return this.putSecret(dbConnSecretKey(accountId, entityId), accountId, value);
+  setDbConnection(accountId: string, entityId: string, value: StoredSecret): Promise<void> {
+    return this.putSecret(dbConnSecretKey(accountId, entityId), accountId, carried(value));
   }
 
   deleteDbConnection(accountId: string, entityId: string): Promise<void> {
@@ -883,12 +883,12 @@ export class StorageManager implements vscode.Disposable {
   // ---------- TOTP seeds (SecretStorage, tenant-scoped) ----------
 
   /** The canonical `otpauth://` URI, or undefined when the entity has no second factor here. */
-  getTotp(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(totpSecretKey(accountId, entityId));
+  getTotp(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(totpSecretKey(accountId, entityId)));
   }
 
-  setTotp(accountId: string, entityId: string, uri: string): Promise<void> {
-    return Promise.resolve(this.secrets.store(totpSecretKey(accountId, entityId), uri));
+  setTotp(accountId: string, entityId: string, uri: StoredSecret): Promise<void> {
+    return Promise.resolve(this.secrets.store(totpSecretKey(accountId, entityId), carried(uri)));
   }
 
   deleteTotp(accountId: string, entityId: string): Promise<void> {

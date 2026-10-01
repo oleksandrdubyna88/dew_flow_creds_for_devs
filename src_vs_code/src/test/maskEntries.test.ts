@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SecretSource, maskEntriesFor } from '../maskEntries';
+import { stored } from '../storedSecret';
 import { EntityMetadata } from '../types';
 import { buildMaskTable, maskText, placeholderFor } from '../secretMasker';
 
@@ -22,11 +23,12 @@ function source(
   const reads: string[] = [];
   const read = (name: keyof typeof secrets) => (accountId: string, entityId: string) => {
     reads.push(`${name}:${accountId}:${entityId}`);
-    return Promise.resolve(secrets[name]);
+    // As the keychain answers: a stored secret (T5).
+    return Promise.resolve(stored(secrets[name]));
   };
   return {
     reads,
-    getSecondRaw: () => Promise.resolve(secondsJson),
+    getSecondRaw: () => Promise.resolve(stored(secondsJson)),
     getNode: () => ({
       details: { id: 'e1', name: 'prod-db', isSshEnabled: false, ...details } as EntityMetadata,
     }),

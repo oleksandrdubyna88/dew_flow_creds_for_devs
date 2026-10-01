@@ -1,6 +1,7 @@
 import { SECRET_SLOTS } from '../entitySlots';
 import { lockSecret } from '../secretEnvelope';
 import type { StorageManager } from '../storageManager';
+import { stored } from '../storedSecret';
 import { EntityMetadata } from '../types';
 import { StubCancellationToken, StubCancellationTokenSource, loadWithVscode } from './vscodeStub';
 
@@ -19,6 +20,13 @@ import { StubCancellationToken, StubCancellationTokenSource, loadWithVscode } fr
 
 export const ACCOUNT = 'a1';
 export const PIN = '1234';
+
+/**
+ * The stored-secret type at a test's edge (typed-secrets plan T5): a fake mints what it holds as the
+ * keychain does (`stored`), and a test that inspects a stored value byte for byte reads it back
+ * (`carried`). Identity at run time — no assertion sees a different value.
+ */
+export { carried, stored } from '../storedSecret';
 
 /** Locked values, one wrap per plaintext and PIN, made once per process — scrypt costs about a second. */
 const wraps = new Map<string, Promise<string>>();
@@ -200,7 +208,7 @@ export async function seedEntry(storage: StorageManager, details: EntityMetadata
   for (const slot of SECRET_SLOTS) {
     const value = slots[slot.label];
     if (value !== undefined) {
-      await slot.write(storage, ACCOUNT, details.id, value);
+      await slot.store(storage, ACCOUNT, details.id, stored(value));
     }
   }
 }

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { stored } from '../storedSecret';
 import { test } from 'node:test';
 import { protectEntity } from '../entityPin';
 import { readSecret, unlockSecret } from '../secretEnvelope';
@@ -36,7 +37,7 @@ test('an entry protected between Restore\'s decision and its writes has nothing 
   const written: string[] = [];
   const storage: StorageManager = memoryStorage(stub, written);
   await seedEntry(storage, credential(), { password: 'new pw', notes: 'new note' });
-  await storage.recordRevision(ACCOUNT, ENTRY, { at: AT, name: 'godaddy', details: credential(), secrets: { password: 'old pw', notes: 'old note' } });
+  await storage.recordRevision(ACCOUNT, ENTRY, { at: AT, name: 'godaddy', details: credential(), secrets: { password: stored('old pw'), notes: stored('old note') } });
   const handlers = new Map<string, (target: unknown) => unknown>();
   const commands = loadWithVscode<typeof import('../pinCommands')>('../pinCommands', stub);
   commands.registerPinCommands({ register: (id, handler) => void handlers.set(id, handler), storage, refresh: () => undefined });
