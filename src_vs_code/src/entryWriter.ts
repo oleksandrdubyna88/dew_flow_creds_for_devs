@@ -1,6 +1,7 @@
 import { NOTHING_OPENED, type EditPrefill } from './editPrefill';
 import { EntityFields, parseFields, serializeFields } from './entityFields';
-import { lockedSlotCount, sealValue } from './entityPin';
+import { lockedSlotCount } from './entityPin';
+import { sealText } from './sealValue';
 import { PaymentFields, parsePaymentFields, serializePaymentFields } from './paymentFields';
 import type { SettledPin } from './pinOnCreate';
 import { WritableSealing, isMarked, sealingForNew, unattendedSealing } from './sealingAtWrite';
@@ -232,7 +233,7 @@ type Seal = (value: string) => Promise<StoredSecret>;
  * are; the sealing itself runs before, outside it ({@link put}).</p>
  */
 function sealingWriter(storage: StorageManager, a: string, e: string, pin: string, opened: EditPrefill): EntryWriter {
-  const seal: Seal = async (value) => stored(await sealValue(value, a, pin));
+  const seal: Seal = async (value) => stored(await sealText(value, a, pin));
   const maybe = async (value: string | undefined): Promise<StoredSecret | undefined> => (value === undefined ? undefined : seal(value));
   const commit: Commit = (write) => storage.writes.run(write);
   return {

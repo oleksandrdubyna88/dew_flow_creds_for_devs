@@ -32,7 +32,7 @@ const SRC = path.join(__dirname, '..', '..', 'src');
  * The funnel's functions, and the modules that define them (`entityPin` re-exports `sealValue`).
  * `storedRead` is the getters' mint.
  */
-const FUNNEL = ['stored', 'storedRead', 'carried', 'readSecret', 'isLockedSecret', 'isCorruptSecret', 'isWovenSecret', 'plainSecret', 'lockSecret', 'sealValue'];
+const FUNNEL = ['stored', 'storedRead', 'carried', 'readSecret', 'isLockedSecret', 'isCorruptSecret', 'isWovenSecret', 'plainSecret', 'lockSecret', 'sealValue', 'sealText'];
 const DEFINED_IN = ['storedSecret', 'secretEnvelope', 'sealValue', 'entityPin'];
 
 /** The modules that may use the funnel, each with its reason (the plan's §3 table). */

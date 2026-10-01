@@ -23,18 +23,20 @@ import { StoredSecret, carried, stored } from './storedSecret';
  * `entityPin` opens the kept versions on *Remove PIN Protection…* — one module importing the other
  * both ways would be a cycle. `entityPin` re-exports it, so no caller moved.</p>
  */
-export async function sealValue(value: string, accountId: string, pin: string): Promise<string>;
-export async function sealValue(value: StoredSecret, accountId: string, pin: string): Promise<StoredSecret>;
+export async function sealValue(value: StoredSecret, accountId: string, pin: string): Promise<StoredSecret> {
+  return stored(await sealText(carried(value), accountId, pin));
+}
+
 /**
- * Two shapes, one rule: TEXT a writer is about to store comes back as the sealed text (the writer mints
- * it — `entryWriter`), and a STORED form — a live slot (Protect), a kept field (the history, Restore) —
- * comes back as a stored form.
+ * The same rule over TEXT a writer is about to store (`entryWriter`'s sealing writer, which mints the
+ * answer at the one road): sealed text back. Two functions rather than one overloaded over
+ * `StoredSecret | string` (E3 code round, finding 0): a StoredSecret IS a string at run time, so one body
+ * could not tell the shapes apart and had to claim `string` for text while handing back a minted form.
  */
-export async function sealValue(value: StoredSecret | string, accountId: string, pin: string): Promise<StoredSecret | string> {
-  const text = typeof value === 'string' ? value : carried(value);
+export async function sealText(text: string, accountId: string, pin: string): Promise<string> {
   const read = readSecret(stored(text));
   if (read.kind === 'locked') {
-    return value;
+    return text;
   }
-  return stored(read.kind === 'value' ? await lockSecret(read.value, accountId, pin, read.woven) : await lockSecret(text, accountId, pin, false));
+  return read.kind === 'value' ? lockSecret(read.value, accountId, pin, read.woven) : lockSecret(text, accountId, pin, false);
 }
