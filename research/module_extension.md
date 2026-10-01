@@ -1484,7 +1484,7 @@ write logged, then shown red again with its fix reverted:
 **The doors and the one writer (typed-secrets plan, E2 — T3 and T4, 2026-10-01).** The second epic of
 [PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md): every read of a stored string
 outside a handful of modules goes through an opener, and every write through one writer made from a
-proof. Getters and setters are still `string`; E3 flips them to `StoredSecret`.
+proof. Getters and setters were still `string` then; E3 flipped them to `StoredSecret` (below).
 
 - **Reads (T3).** `secretOpener.ts` gains `fieldReadingOf(opened, claimedBy?)` — an opener's answer as a
   `FieldReading` (stopped → withheld with its sentence, open value → value, nothing or `''` → absent; with
@@ -1563,12 +1563,86 @@ proof. Getters and setters are still `string`; E3 flips them to `StoredSecret`.
   allowlist with reasons, no module uses `stored`, `carried`, `readSecret`, `isLockedSecret`,
   `isCorruptSecret`, `isWovenSecret`, `plainSecret`, `lockSecret` or `sealValue` (by import, so a local
   `stored(` is not one) or writes `as StoredSecret`; no reader of kept versions uses `clickOpener`; and —
-  T4's interim rule, until E3 makes it a type — outside `entryWriter.ts` and `entitySlots.ts` the storage
+  T4's interim rule, its plaintext-writer half retired by E3 where the type took over (below) — outside `entryWriter.ts` and `entitySlots.ts` the storage
   is never a writer (`applyAdditions(storage`, a `store` bound to it, a slot setter called on it with a
   value; a deletion with `undefined` is not a write), and no slot table row is handed the storage itself
   (`slot.write(storage`) outside an allowlist keyed `file#function`: Protect's `sealIfStill`, Remove PIN's
   `unprotectEntity`, Restore's `writeSealed`. `test/fixtures/typed/sealing_is_a_proof.ts`: a
   hand-built `plain` without the brand does not compile.
+
+**The type takes over (typed-secrets plan, E3 — T5, 2026-10-01).** The third epic of
+[PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) flips the ten slots, one commit
+each in the plan's order (payment, second values, login/URL, notes, config, VPN, one-time code,
+connection string, private key, password), then takes the transitional `| string` off the seams in an
+eleventh commit. Nothing a person sees moves: the phantom is erased by `tsc`, so no stored byte, no
+revision and no sync payload changed.
+
+- **The type.** `storedSecret.StoredSecret` is a `string` at run time and an object type to the compiler,
+  assignable neither to nor from `string`. Every slot getter returns `Thenable<StoredSecret | undefined>`
+  (minted by `storedRead`, identity — no extra microtask); every raw setter takes a `StoredSecret`
+  (`carried` at the keychain write); the typed setters (`setFields`, `setPayment`, `setSecond`) serialise
+  and mint. `RevisionSecrets`, `SecretSlot.read`, `viewerOptions.StoredReader`, `ExportOpen`,
+  `RotateDeps.current`, `McpEntryContext.dbConnection` and the five hand-written structural interfaces
+  (`entityFlags`, `exportSecrets`, `maskEntries`, `mcpEntries`, `shareWithheld`) hold the stored form. So a
+  stored value handed to a `string` — a file, a JSON payload, a parser, a page — does not compile.
+- **Text comes out through a door, a read, or a carrier — and goes in through one writer.** Out:
+  `openStored` / `openedText` / `gatedSecretReader` and the click openers (door), `automaticOpener` +
+  `fieldReadingOf`, `plainText`, `unsealedText` (automatic and owner-less), and `carried()` only at the raw
+  carriers — the export's byte-identical branch, an unprotected entry's share, Restore's plain road (a kept
+  version's bytes to the plain writer), the keychain write — and inside the doors' own parse and return
+  points (`readSecret`, `openedText`'s unprotected branch, `unsealedText`). In: `entryWriter.writerFor`, the
+  one road — the plain writer mints `stored(v)`, the sealing writer mints what it sealed. The storage
+  satisfies no `EntryWriter` (its raw setters take `StoredSecret`), so `applyAdditions(storage, …)` does not
+  compile — since the first flipped slot, not the eleventh commit: the `| string` window only ever covered
+  the read seams. A stored form straight into the keychain — Protect's seal, Remove PIN's opened values,
+  Restore's sealed road — goes through the slot table's new **`store`** column beside `write` (plaintext,
+  through a writer).
+- **Minted at the boundaries, never cast.** No `as` to or from `StoredSecret` outside `storedSecret.ts`.
+  Mints: the getters; the kept-version parse (`revisionHistory.pushRevision`); the bundle maps where the
+  sync rule reads their sealed state (`syncPinRule`, `syncProtection`); the producers' call sites
+  (`plainSecret` / `lockSecret` / `sealValue` return text — `sealValue` is overloaded: text in, sealed text
+  out; a stored form in, a stored form out); `historyPin.openRevision`, whose opened fields are
+  `stored(plainSecret(value, woven))`, so a kept version reads as `value` with its woven flag exactly as an
+  unprotected entry's field does (second plan round, finding 0); and two metadata values read as the plain
+  stored form they are — the legacy note (`entityFieldReading.notesReading`) and the public key
+  (`envApply.openedField`). `sshExecAuth` re-checks opened TEXT with `secretEnvelope.isSealedText` (the same
+  parse; only `locked` is sealed). `rotateAction.draw` reads the stored connection string through
+  `unsealedText` — the compiler named it; §10's count had missed that reader.
+
+```mermaid
+flowchart LR
+  K[(keychain)] -->|"storedRead (getters)"| S[StoredSecret]
+  S -->|"door: openStored / openedText / gatedSecretReader / click openers"| T[text]
+  S -->|"automatic: automaticOpener + fieldReadingOf, plainText, unsealedText"| T
+  S -->|"carried: export, unprotected share, Restore's plain carry"| W[wire / raw bytes]
+  T -->|"entryWriter.writerFor (a Sealing proof)"| M["stored(v) / stored(sealed)"]
+  M -->|"raw setter"| K
+  S -->|"SecretSlot.store (allowlisted)"| K
+  X["string"] -.->|"does not compile"| K
+```
+
+- **The funnel test, and what stays a rule.** `test/storedSecretFunnel.test.ts` (over `funnelScan.ts`)
+  keeps its allowlist of the modules that may use `stored` / `storedRead` / `carried` / the parser / the
+  producers, each with its reason (the plan's §3 table plus `entityFieldReading.ts` and `envApply.ts` for
+  their metadata mint), with a negative fixture and a positive control that now includes the export's
+  `carried(`. T4's interim rule is retired where the type took over — `applyAdditions(storage` and
+  `store: storage` — and the rest is now **permanent**: no slot setter called on the storage itself, and no
+  `slot.write(storage` / `slot.store(storage` outside its `file#function` allowlist (Protect's `sealIfStill`,
+  `unprotectEntity`, Restore's `writeSealed`). The type cannot say whether a `StoredSecret` is plain or
+  sealed, so a plain stored form copied into a protected entry would type-check, and the typed setters
+  still take a record; that is the rule's job.
+- **The compile-fail harness** (`test/typedFixtures.test.ts`, every fixture under
+  `test/fixtures/typed/` declaring `// expect TS<code> at line <n>` or `// expect compiles`): a stored secret
+  is not a string, a string is not a stored secret, `carried` gives text (the control), a hand-made `Sealing`
+  is no proof, one fixture per slot — each getter's result is not a string — and **the storage itself is not
+  a writer** (`applyAdditions(storage, …)` is TS2345).
+- **The reader classes table stays** (above): the type proves the door was used somewhere on the value's
+  path; `pinReaderBoundary`'s per-read AST rule proves it was used in the SAME function. Its lists are
+  unchanged; every `GATED_BY_CALLER` reason now ends "(typed since T5)" — each claim *"the caller opens it"*
+  has a compile-time twin.
+- **Limits.** Casts defeat any brand; a template literal, `+`, `String(s)`, `JSON.stringify(s)` and a
+  truthiness test still accept a `StoredSecret` (the funnel's type-aware half is the plan's §3 item 2).
+  `syncProtection.SNAPSHOT_MAP` is still a third hand copy of the slot → bundle-map pairing.
 
 **History is sealed, opens through the door, and can be restored.** Kept versions live per machine in
 the keychain (cap 3). Protect runs `historyPin.protectHistory` before the mark; on every OTHER machine
@@ -1637,8 +1711,8 @@ pre-restore record); the first door seals stray plaintext synchronously (about a
 and Remove PIN for an entry whose only sealed values are kept versions is reached through the Protect
 modal: the row's menu token is derived from the mark (`treeRowText.ts:184`), and the provider that
 would have to read kept versions to change that, `treeDataProvider.ts`, is at 795 of its 800 lines. The compile-time
-secret type that turns the reader rules into a type error is its own plan,
-[PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md).
+secret type that turns the reader rules into a type error landed with
+[PLAN_typed_stored_secrets.md](../todo/PLAN_typed_stored_secrets.md) E3 (above).
 
 #### A woven password (2026-09-04)
 

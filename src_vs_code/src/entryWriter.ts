@@ -36,9 +36,9 @@ import { StoredSecret, stored } from './storedSecret';
  *       and `shareUpdateSeal.sealingWriter`.</li>
  * </ul>
  *
- * <p>The storage still satisfies {@link EntryWriter} structurally until the setters take `StoredSecret`
- * (E3, T5); until then `storedSecretFunnel.test.ts` refuses the storage handed out as a writer anywhere
- * but here and in the slot table.</p>
+ * <p>The storage satisfies no {@link EntryWriter}: its raw setters take `StoredSecret` (T5), so a writer
+ * that is not from here does not compile (`fixtures/typed/storage_is_not_a_writer.ts`). Both writers mint
+ * the stored form at this one road — the plain writer `stored(v)`, the sealing writer what it sealed.</p>
  */
 
 /** The plaintext setters a write goes through — what `applyAdditions`, a share, an import and a rotation call. */
@@ -190,7 +190,7 @@ async function protectedSince(storage: StorageManager, accountId: string, entity
 
 /**
  * The value as it came, through the storage's own setter — bound to one entry: the ids each call is
- * handed are ignored on purpose, as the sealing writer's are. (T5 mints the stored form here.)
+ * handed are ignored on purpose, as the sealing writer's are. The stored form is minted here (`stored(v)`).
  */
 function plainWriter(storage: StorageManager, a: string, e: string, through: Through): EntryWriter {
   return {

@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — a stored secret has its own type (typed-secrets E3, 2026-10-01; for developers)
+
+- **Nothing you see changes.** Under the hood, every value the extension keeps in the keychain is now a
+  type of its own, distinct from plain text: code that tries to show, copy, send or parse a stored value
+  without opening it first — through the entry's PIN door, or one of the reads that never ask — no
+  longer compiles, and nothing can write text into the keychain except through the one writer that
+  seals it when the entry is protected. Until now that rule was held by tests that read the source; the
+  compiler holds it now, and a scan keeps the one part a type cannot see (a value copied between entries
+  as it is stored). No stored byte, kept version or sync payload is different.
+
 ### Fixed — every read goes through a door, every write through one writer (typed-secrets E2, 2026-10-01)
 
 - **The health report graded a damaged protected value and a woven password as strong, unique
