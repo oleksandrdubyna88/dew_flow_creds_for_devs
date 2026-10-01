@@ -1,4 +1,5 @@
 import type { ExternalSecrets } from './externalBundle';
+import { EntryWriter, writerForNew } from './entryWriter';
 import type { StorageManager } from './storageManager';
 
 /**
@@ -22,23 +23,6 @@ import type { StorageManager } from './storageManager';
  * such list, and the first with a test.</p>
  */
 
-/** The storage writers this module needs — narrow on purpose, so a test needs no real vault. */
-type SecretWriter = Pick<
-  StorageManager,
-  | 'setPassword'
-  | 'setPrivateKey'
-  | 'setVpnConfig'
-  | 'setDbConnection'
-  | 'setNotes'
-  | 'setFields'
-  | 'setAttachment'
-  | 'setImage'
-  | 'setTotp'
-  | 'setConfigBody'
-  | 'setPaymentRaw'
-  | 'setSecondRaw'
->;
-
 /**
  * Every simple field: one value, one setter, written when present.
  *
@@ -60,28 +44,31 @@ export const EXTERNAL_SECRET_KEYS = [
   { field: 'second', setter: 'setSecondRaw' },
   // The pair, named here so the coverage test counts it; applied by `applyFields` below.
   { field: 'login', setter: 'setFields' },
-] as const satisfies ReadonlyArray<{ field: keyof ExternalSecrets; setter: keyof SecretWriter }>;
+] as const satisfies ReadonlyArray<{ field: keyof ExternalSecrets; setter: keyof EntryWriter }>;
 
 /**
- * Restore one bundle's secrets, entity by entity.
+ * Restore one bundle's secrets, entity by entity — each entity's through its own writer
+ * (`entryWriter.writerForNew`: the ids are new, and an import asks no folder PIN — §2.7 of the
+ * typed-secrets plan), never through the storage itself (T4).
  *
  * <p>Sequential rather than parallel, matching the loop it replaces: each write is a read-modify-write
  * of shared storage state, and two in flight would drop one.</p>
  */
 export async function applyExternalSecrets(
-  storage: SecretWriter,
+  storage: StorageManager,
   accountId: string,
   secrets: Readonly<Record<string, ExternalSecrets>>,
 ): Promise<void> {
   for (const [entityId, s] of Object.entries(secrets)) {
-    await applySimpleFields(storage, accountId, entityId, s);
-    await applyFields(storage, accountId, entityId, s);
+    const writer = writerForNew(storage, accountId, entityId);
+    await applySimpleFields(writer, accountId, entityId, s);
+    await applyFields(writer, accountId, entityId, s);
   }
 }
 
 /** Every one-value-one-setter field. `login`/`url` are the pair and are applied separately. */
 async function applySimpleFields(
-  storage: SecretWriter,
+  writer: EntryWriter,
   accountId: string,
   entityId: string,
   s: ExternalSecrets,
@@ -89,14 +76,14 @@ async function applySimpleFields(
   for (const { field, setter } of EXTERNAL_SECRET_KEYS.filter((k) => k.field !== 'login')) {
     const value = s[field];
     if (value !== undefined) {
-      await (storage[setter] as (a: string, e: string, v: string) => Promise<void>)(accountId, entityId, value);
+      await (writer[setter] as (a: string, e: string, v: string) => Promise<void>)(accountId, entityId, value);
     }
   }
 }
 
 /** Login and URL travel as two fields and are STORED as one record — so one write, not two. */
 async function applyFields(
-  storage: SecretWriter,
+  writer: EntryWriter,
   accountId: string,
   entityId: string,
   s: ExternalSecrets,
@@ -104,5 +91,5 @@ async function applyFields(
   if (s.login === undefined && s.url === undefined) {
     return;
   }
-  await storage.setFields(accountId, entityId, { login: s.login, url: s.url });
+  await writer.setFields(accountId, entityId, { login: s.login, url: s.url });
 }

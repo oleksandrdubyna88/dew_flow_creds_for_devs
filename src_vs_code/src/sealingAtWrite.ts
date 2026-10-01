@@ -1,6 +1,7 @@
 import { lockedSlotCount } from './entityPin';
 import { firstLockedStored } from './pinAdmission';
-import { PinGate, PinOpen, openStored } from './pinGate';
+import { PinGate, PinOpen, openStored, pinRefusalFor } from './pinGate';
+import type { CreatePin, SettledPin } from './pinOnCreate';
 import { grantedPin } from './pinSession';
 import type { StorageManager } from './storageManager';
 
@@ -32,11 +33,38 @@ import type { StorageManager } from './storageManager';
  *       sealed again under ITS PIN (`pinAtWrite`), and a mark gone meanwhile is refused.</li>
  * </ul>
  *
- * <p>Pure of `vscode`: the gate, the storage and the reporter arrive as arguments.</p>
+ * <p><b>A `Sealing` is a proof, and only this module can make one</b> (`PLAN_typed_stored_secrets.md`
+ * §2.4, T4). `plain` and `sealed` carry an unexported brand, so a writer can be had only from
+ * `entryWriter.writerFor`, and `writerFor` only from a `Sealing` made here — by the interactive re-read
+ * above (`sealingAtWrite`), by a brand-new entry's PIN (`sealingForNew`), by a share's update
+ * (`sealingForUpdate`) or by an unattended write (`unattendedSealing`). `{ kind: 'plain' }` written
+ * anywhere else does not compile (`test/fixtures/typed/sealing_is_a_proof.ts`).</p>
+ *
+ * <p>Pure of `vscode`: the gate, the storage, the doors and the reporter arrive as arguments.</p>
  */
 
-/** Whether a write seals, and with what — or that it must not happen at all (the person was told why). */
-export type Sealing = { readonly kind: 'plain' } | { readonly kind: 'sealed'; readonly pin: string } | { readonly kind: 'stopped' };
+/** The brand. Unexported, so a `plain` or `sealed` value exists only where this module made it. */
+const PROOF: unique symbol = Symbol('a Sealing made by sealingAtWrite.ts');
+
+/**
+ * Whether a write seals, and with what — or that it must not happen at all.
+ *
+ * <ul>
+ *   <li>`plain` carries what its decision SAW of the mark (`marked`), so the writer can re-check under
+ *       the cross-window lease that nothing was protected since (`entryWriter.ts`), and `fresh` when the
+ *       entry is brand new — an id nobody else can know, so there is nothing to re-check;</li>
+ *   <li>`stopped.reason` is what the CALLER still has to say: `''` when the person declined or was told
+ *       already (the interactive constructors), the PIN sentence for an unattended write — the
+ *       `OpenedSecret.stopped` contract (`secretOpener.ts`).</li>
+ * </ul>
+ */
+export type Sealing =
+  | { readonly kind: 'plain'; readonly marked: boolean; readonly fresh: boolean; readonly [PROOF]: true }
+  | { readonly kind: 'sealed'; readonly pin: string; readonly [PROOF]: true }
+  | { readonly kind: 'stopped'; readonly reason: string };
+
+/** A sealing a writer can be had for — `stopped` has none: its caller returns. */
+export type WritableSealing = Exclude<Sealing, { readonly kind: 'stopped' }>;
 
 /** One writer's words: what was open while the protection could change, and what the person does next. */
 export interface WriterWords {
@@ -68,8 +96,13 @@ export interface FirstSeal {
   readonly choose: () => Promise<string | undefined>;
 }
 
-const PLAIN: Sealing = { kind: 'plain' };
-const STOPPED: Sealing = { kind: 'stopped' };
+/** Declined, or said already: the caller has nothing left to say. */
+const STOPPED: Sealing = { kind: 'stopped', reason: '' };
+
+/** A plain proof for an entry that exists, carrying what the decision saw of its mark. */
+function plainOver(marked: boolean): Sealing {
+  return { kind: 'plain', marked, fresh: false, [PROOF]: true };
+}
 
 /** The sealing a write uses, decided NOW — immediately before its first write. */
 export async function sealingAtWrite(
@@ -90,7 +123,7 @@ export async function sealingAtWrite(
     report(protectedMeanwhile(gate.entryName, words));
     return STOPPED;
   }
-  return PLAIN;
+  return plainOver(markedNow(storage, gate));
 }
 
 /** Protected while empty when the writer opened: marked, and holding nothing in any slot. */
@@ -99,7 +132,91 @@ function emptyAtOpen(opened: OpenedAs): boolean {
 }
 
 function sealedWith(pin: string | undefined): Sealing {
-  return pin === undefined ? STOPPED : { kind: 'sealed', pin };
+  return pin === undefined ? STOPPED : { kind: 'sealed', pin, [PROOF]: true };
+}
+
+/**
+ * A BRAND-NEW entry's sealing (§2.4): `plain` when its folder asks for no PIN, `sealed` with the
+ * folder's PIN when it does (`pinOnCreate.CreatePin`), `stopped` when the PIN was not settled — a caller
+ * that returned on `cancelled` before writing gets a writable proof by its type. `fresh`: the id is new,
+ * nobody else can protect it, so the writer re-checks nothing. The person's Add and an agent's create
+ * take it; so do an accepted share and an import, which write NEW ids and ask no folder PIN (§2.7 — the
+ * typed writer makes their `plain` proof visible rather than silent).
+ */
+export function sealingForNew(settled: SettledPin): WritableSealing;
+export function sealingForNew(settled: CreatePin): Sealing;
+export function sealingForNew(settled: CreatePin): Sealing {
+  if (settled.kind === 'cancelled') {
+    return STOPPED;
+  }
+  return settled.kind === 'pin' ? sealedWith(settled.pin) : { kind: 'plain', marked: false, fresh: true, [PROOF]: true };
+}
+
+/** How a share's *Update it* reaches a PIN: the live door, and the entry's FIRST PIN — `undefined` for a stop. */
+export interface UpdateDoors {
+  /** The live door (purpose "update it"), and the PIN it granted; `undefined` when it stopped (said by the door). */
+  readonly door: () => Promise<string | undefined>;
+  /** The entry's first PIN, chosen by the person (`pinOnCreate.firstPinFor`); `undefined` for a decline. */
+  readonly firstPin: () => Promise<string | undefined>;
+}
+
+/**
+ * A share's *Update it* into an entry that already exists (§2.4, gate 2026-09-30 finding 2; the
+ * decision `shareUpdateSeal.writerFor` made since the hotfix of 2026-10-01, branded and moved here):
+ *
+ * <ul>
+ *   <li><b>a sealed slot:</b> `sealed` with the PIN the live door took, or `stopped`;</li>
+ *   <li><b>the mark over nothing at all — protected while empty:</b> a payload that `carries` a value takes
+ *       the first-PIN road and is `sealed` under it (or `stopped` for a decline); one that carries none is
+ *       `plain`, with nothing secret to write;</li>
+ *   <li><b>no sealed slot and no mark</b> — or a mark over values in the CLEAR, the 0.99.0 false mark the
+ *       door clears at the next open — `plain`, with no door.</li>
+ * </ul>
+ *
+ * <p>A share's writer opens and writes in one step, so this is `sealingAtWrite`'s decision without the
+ * wait in between; what can still change between it and the first write is re-checked by the writer.</p>
+ */
+export async function sealingForUpdate(
+  storage: StorageManager,
+  accountId: string,
+  entityId: string,
+  carries: boolean,
+  doors: UpdateDoors,
+): Promise<Sealing> {
+  if ((await firstLockedStored(storage, accountId, entityId)) !== undefined) {
+    return sealedWith(await doors.door());
+  }
+  const marked = isMarked(storage, accountId, entityId);
+  if (carries && (await protectedWhileEmpty(storage, accountId, entityId, marked))) {
+    return sealedWith(await doors.firstPin());
+  }
+  return plainOver(marked);
+}
+
+/** Marked, and holding nothing in any slot — the test `emptyAtOpen` and Edit's `protectedWhileEmpty` make. */
+async function protectedWhileEmpty(storage: StorageManager, accountId: string, entityId: string, marked: boolean): Promise<boolean> {
+  return marked && (await lockedSlotCount(storage, accountId, entityId)).total === 0;
+}
+
+/**
+ * An UNATTENDED write's sealing (§2.4, the first plan gate's finding 0): `plain` only for an entry with
+ * no sealed slot and no mark; `stopped` with the PIN sentence otherwise. Never `sealed` — nothing
+ * automatic holds a PIN. Its one caller is the rotation's store (`entryWriter.writeUnattended`), where
+ * `rotateAction.protectedSlot` refused before the action ran; this is what turns "refused before" into
+ * "cannot be written without".
+ */
+export async function unattendedSealing(
+  storage: StorageManager,
+  accountId: string,
+  owner: { readonly id: string; readonly name: string },
+): Promise<Sealing> {
+  const protectedNow = isMarked(storage, accountId, owner.id) || (await lockedSlotCount(storage, accountId, owner.id)).locked > 0;
+  return protectedNow ? { kind: 'stopped', reason: pinRefusalFor(owner.name) } : plainOver(false);
+}
+
+/** Whether the entry carries the PIN mark, read from the node where it lives. */
+export function isMarked(storage: StorageManager, accountId: string, entityId: string): boolean {
+  return storage.getNode(accountId, entityId)?.details?.pinProtected === true;
 }
 
 /**
@@ -121,7 +238,7 @@ async function firstSealing(
     report(unprotectedMeanwhile(gate.entryName, words));
     return STOPPED;
   }
-  return first.adds ? sealedWith(await first.choose()) : PLAIN;
+  return first.adds ? sealedWith(await first.choose()) : plainOver(true);
 }
 
 /**
@@ -180,7 +297,7 @@ async function becameProtected(storage: StorageManager, gate: PinGate, markedAtO
 }
 
 function markedNow(storage: StorageManager, gate: PinGate): boolean {
-  return storage.getNode(gate.accountId, gate.entityId)?.details?.pinProtected === true;
+  return isMarked(storage, gate.accountId, gate.entityId);
 }
 
 function protectedMeanwhile(name: string, words: WriterWords): string {

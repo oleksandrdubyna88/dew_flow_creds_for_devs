@@ -24,7 +24,8 @@ import {
   shareLabelTrusted } from './shareFormat';
 import { recordOrigin, resolveOrigin } from './shareOrigin';
 import { askIncludeTotp } from './shareTotpQuestion';
-import { ShareWriter, updateInPlace } from './shareUpdateSeal';
+import { updateInPlace } from './shareUpdateSeal';
+import { EntryWriter, writerForNew } from './entryWriter';
 import type { SharePin } from './sharePin';
 import {
   SHARE_PIN,
@@ -662,7 +663,8 @@ After this, a share signed by any other key is refused.`,
     let node: TreeNode;
     /** Deferred so every ADDITION lands first — Rule A; see `applyFormSecrets.ts`. */
     let writeNode: () => Promise<void>;
-    let store: ShareWriter = this.deps.storage;
+    /** A NEW id's writer asks no folder PIN (§2.7 of the typed-secrets plan); an update's comes from its own decision. */
+    let store: EntryWriter;
     if (previousId !== undefined) {
       const existing = this.deps.storage.getNode(share.accountId, previousId);
       const choice = await vscode.window.showWarningMessage(
@@ -687,6 +689,7 @@ After this, a share signed by any other key is refused.`,
         writeNode = () => this.deps.storage.updateNode(share.accountId, node);
       } else {
         node = withOwnId({ ...payload.node, id: StorageManager.newId(), parentId, children: undefined });
+        store = writerForNew(this.deps.storage, share.accountId, node.id);
         writeNode = () => this.deps.storage.addNode(share.accountId, node);
       }
     } else {
@@ -694,6 +697,7 @@ After this, a share signed by any other key is refused.`,
       // already exists in our vault. Through `withOwnId`, like both branches above: the new id has
       // to reach the record INSIDE the node too, or nothing can read what this import writes.
       node = withOwnId({ ...payload.node, id: StorageManager.newId(), parentId, children: undefined });
+      store = writerForNew(this.deps.storage, share.accountId, node.id);
       writeNode = () => this.deps.storage.addNode(share.accountId, node);
     }
     const { password, privateKey, vpnConfig, dbConnection } = payload.secrets;

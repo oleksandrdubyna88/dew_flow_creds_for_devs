@@ -6,6 +6,7 @@ export interface NodeLocation {
 }
 
 import { EntryLandedError } from './entityWrite';
+import { EntryWriter, writerForNew } from './entryWriter';
 import { StorageManager } from './storageManager';
 import { ImportedEntity } from './importFormats';
 import { toTreeNodes } from './importFormats';
@@ -61,7 +62,7 @@ export async function importEntities(
     // this returns still includes it, because it is there.
     // Secrets, then the node — and on any observable failure the secrets go back, so a refused
     await landedIsFine(() => storage.runCreate({
-      writeSecrets: () => writeImportedSecrets(storage, location.accountId, node.id, secrets),
+      writeSecrets: () => writeImportedSecrets(writerForNew(storage, location.accountId, node.id), location.accountId, node.id, secrets),
       writeNode: () => storage.addNode(location.accountId, node),
       presence: () => storage.nodePresence(location.accountId, node.id),
       deferCleanup: () => storage.deferSecretCleanup(location.accountId, node.id),
@@ -107,19 +108,23 @@ async function undoImportedSecrets(storage: StorageManager, accountId: string, e
  * moment each write became conditional. Conditional because `setPassword(undefined)` and
  * `setNotes(undefined)` DELETE, and a deletion is a removal that belongs after the node — on an
  * import there is nothing to delete, so the honest form is not to call them at all.</p>
+ *
+ * <p>Through the writer `entryWriter.writerForNew` gives a new id with no folder PIN asked — never the
+ * storage itself (the typed-secrets plan's T4; whether an import into a PIN folder should ask is §2.7's
+ * question for the owner).</p>
  */
 async function writeImportedSecrets(
-  storage: StorageManager,
+  writer: EntryWriter,
   accountId: string,
   entityId: string,
   secrets: { password?: string; notes?: string; privateKey?: string; dbConnection?: string; totp?: string },
 ): Promise<void> {
   const writes: ReadonlyArray<[string | undefined, (v: string) => Promise<void>]> = [
-    [secrets.password, (v) => storage.setPassword(accountId, entityId, v)],
-    [secrets.notes, (v) => storage.setNotes(accountId, entityId, v)],
-    [secrets.privateKey, (v) => storage.setPrivateKey(accountId, entityId, v)],
-    [secrets.dbConnection, (v) => storage.setDbConnection(accountId, entityId, v)],
-    [secrets.totp, (v) => storage.setTotp(accountId, entityId, v)],
+    [secrets.password, (v) => writer.setPassword(accountId, entityId, v)],
+    [secrets.notes, (v) => writer.setNotes(accountId, entityId, v)],
+    [secrets.privateKey, (v) => writer.setPrivateKey(accountId, entityId, v)],
+    [secrets.dbConnection, (v) => writer.setDbConnection(accountId, entityId, v)],
+    [secrets.totp, (v) => writer.setTotp(accountId, entityId, v)],
   ];
   for (const [value, write] of writes) {
     if (value !== undefined) {

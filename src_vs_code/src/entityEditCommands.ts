@@ -17,7 +17,7 @@ import { newEntryOs } from './hostShell';
 import { hostKeyFingerprint } from './hostKeyPin';
 import { snapshotForRevision } from './revisionSnapshot';
 import { carryThroughDetails } from './attachmentMeta';
-import { SecretWriter, addsSecret, applyAdditions, applyRemovals } from './applyFormSecrets';
+import { addsSecret, applyAdditions, applyRemovals } from './applyFormSecrets';
 import { warnIfTrackedCopy } from './configCommands';
 import { applyEnvBindings } from './envApply';
 import { heldEnvValues } from './envBinding';
@@ -27,7 +27,8 @@ import { KeyCandidate } from './entityFormPanel';
 import { EntityMetadata } from './types';
 import type { EntityFormOptions, EntityFormValues } from './entityFormPanel';
 import { envCollection, showEnvNotice } from './envCollectionRef';
-import { EDIT_WORDS, EditPrefill, openEntryForEdit, pinForSave, sealedWriter } from './editPrefill';
+import { EDIT_WORDS, EditPrefill, openEntryForEdit, pinForSave } from './editPrefill';
+import { EntryWriter, writerFor } from './entryWriter';
 import { Sealing, chosenOnce, sealingAtWrite } from './sealingAtWrite';
 import { protectEntity } from './entityPin';
 import { parseFields } from './entityFields';
@@ -269,8 +270,8 @@ async function saveEdit(ctx: EditContext, door: Door, result: EntityFormValues):
   if (sealing.kind === 'stopped') {
     return;
   }
-  const writer: SecretWriter =
-    sealing.kind === 'sealed' ? sealedWriter(ctx.storage, ctx.accountId, ctx.node.id, sealing.pin, door.prefill) : ctx.storage;
+  // The one road to a writer (`entryWriter.writerFor`): sealing for a sealed proof, plain — re-checked under the lease — for a plain one.
+  const writer = writerFor(ctx.storage, ctx.accountId, ctx.node.id, sealing, door.prefill);
   const written = await writeEdit(ctx, result, writer, sealing);
   if (written === undefined) {
     return;
@@ -294,7 +295,7 @@ async function saveEdit(ctx: EditContext, door: Door, result: EntityFormValues):
 async function writeEdit(
   ctx: EditContext,
   result: EntityFormValues,
-  writer: SecretWriter,
+  writer: EntryWriter,
   sealing: Sealing,
 ): Promise<EntityMetadata | undefined> {
   const { accountId, node, storage } = ctx;

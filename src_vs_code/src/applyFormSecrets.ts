@@ -1,31 +1,16 @@
 import type { StorageManager } from './storageManager';
 import type { EntityFormValues } from './entityFormPanel';
 import { serializeFields } from './entityFields';
+import type { EntryWriter } from './entryWriter';
 import { serializePaymentFields } from './paymentFields';
 import { serializeSecondValues } from './secondValues';
 
-/**
- * The setters a save's ADDITIONS pass calls — the storage itself for an ordinary entry, and
- * `editPrefill.sealedWriter` for a protected one, which seals every changed value under the entry's
- * PIN before the raw setter runs (entry-PIN plan, rule R3). A `Pick` rather than a new interface so
- * the real `StorageManager` satisfies it with no adapter, and so a setter added to the pass below is
- * one the writer must implement — the compiler says so.
+/*
+ * A save's ADDITIONS go through an `EntryWriter` — `entryWriter.writerFor`'s answer to the save's
+ * `Sealing`: the plain writer for an ordinary entry, the sealing writer for a protected one, which seals
+ * every changed value under the entry's PIN before the raw setter runs (entry-PIN plan, rule R3). It was
+ * `SecretWriter`, a `Pick` the storage itself satisfied, until the typed-secrets plan's T4.
  */
-export type SecretWriter = Pick<
-  StorageManager,
-  | 'setPassword'
-  | 'setPrivateKey'
-  | 'setVpnConfig'
-  | 'setDbConnection'
-  | 'setNotes'
-  | 'setFields'
-  | 'setPayment'
-  | 'setConfigBody'
-  | 'setSecond'
-  | 'setAttachment'
-  | 'setImage'
-  | 'setTotp'
->;
 
 /**
  * Every secret the form can set, cleared or written from its values — one place for the create path
@@ -75,38 +60,38 @@ async function applyOptional(
 /**
  * Everything a save WRITES — before the node, so the node never claims what is not there yet.
  *
- * <p>`storage` is a `SecretWriter`: for a protected entry the edit path hands in the sealing
+ * <p>`writer` is an `EntryWriter` (`entryWriter.writerFor`): for a protected entry it is the sealing
  * writer, so nothing here changes whether a value is sealed — the writer decides, once, per slot.</p>
  */
 export async function applyAdditions(
-  storage: SecretWriter,
+  writer: EntryWriter,
   accountId: string,
   entityId: string,
   result: EntityFormValues,
 ): Promise<void> {
   if (!result.clearPassword) {
-    await storage.setPassword(accountId, entityId, result.newPassword);
+    await writer.setPassword(accountId, entityId, result.newPassword);
   }
-  await applyOptional(false, result.newPrivateKey, noop, (v) => storage.setPrivateKey(accountId, entityId, v));
-  await applyOptional(false, result.newVpnConfig, noop, (v) => storage.setVpnConfig(accountId, entityId, v));
-  await applyOptional(false, result.newDbConnection, noop, (v) => storage.setDbConnection(accountId, entityId, v));
+  await applyOptional(false, result.newPrivateKey, noop, (v) => writer.setPrivateKey(accountId, entityId, v));
+  await applyOptional(false, result.newVpnConfig, noop, (v) => writer.setVpnConfig(accountId, entityId, v));
+  await applyOptional(false, result.newDbConnection, noop, (v) => writer.setDbConnection(accountId, entityId, v));
   // Only when there is a value. `undefined` DELETES on these three, which is a removal and belongs
   // after the node write — see `applyRemovals`.
-  await applyWhenDefined(result.newNotes, (v) => storage.setNotes(accountId, entityId, v));
-  await applyWhenDefined(result.newFields, (v) => storage.setFields(accountId, entityId, v));
+  await applyWhenDefined(result.newNotes, (v) => writer.setNotes(accountId, entityId, v));
+  await applyWhenDefined(result.newFields, (v) => writer.setFields(accountId, entityId, v));
   // `applyWhenDefined` is not enough for a RECORD. `setPayment` deletes when the record serialises to
   // nothing — and an emptied-but-defined `{}` does exactly that, so passing it here would run a real
   // deletion in the ADDITIONS pass, before the node write. That is the torn state Rule A exists to
   // prevent, and a code review found it: every naive edit-save of a payment produces `{}`.
-  await applyWhenDefined(nonEmptyRecord(result.newPayment), (v) => storage.setPayment(accountId, entityId, v));
-  await applyWhenDefined(result.newConfigBody, (v) => storage.setConfigBody(accountId, entityId, v));
+  await applyWhenDefined(nonEmptyRecord(result.newPayment), (v) => writer.setPayment(accountId, entityId, v));
+  await applyWhenDefined(result.newConfigBody, (v) => writer.setConfigBody(accountId, entityId, v));
   // A record, so the same rule the payment record needed: an emptied-but-defined `{}` serialises to
   // nothing and DELETES, which is a removal and must not run before the node write.
-  await applyWhenDefined(nonEmptyRecord(result.newSecond), (v) => storage.setSecond(accountId, entityId, v));
-  await applyOptional(false, result.newAttachment, noop, (v) => storage.setAttachment(accountId, entityId, v));
-  await applyOptional(false, result.newImage, noop, (v) => storage.setImage(accountId, entityId, v));
+  await applyWhenDefined(nonEmptyRecord(result.newSecond), (v) => writer.setSecond(accountId, entityId, v));
+  await applyOptional(false, result.newAttachment, noop, (v) => writer.setAttachment(accountId, entityId, v));
+  await applyOptional(false, result.newImage, noop, (v) => writer.setImage(accountId, entityId, v));
   // The form already canonicalised the seed (`toValues`), so this is a store, not a parse.
-  await applyOptional(false, result.newTotp, noop, (v) => storage.setTotp(accountId, entityId, v));
+  await applyOptional(false, result.newTotp, noop, (v) => writer.setTotp(accountId, entityId, v));
 }
 
 /** Everything a save DELETES — after the node, so no node outlives a value it still claims. */
@@ -170,7 +155,7 @@ export async function addsSecret(result: EntityFormValues): Promise<boolean> {
   return stored.some((value) => value !== undefined && value.length > 0);
 }
 
-function recordingWriter(stored: (string | undefined)[]): SecretWriter {
+function recordingWriter(stored: (string | undefined)[]): EntryWriter {
   const record = (value: string | undefined): Promise<void> => {
     stored.push(value);
     return Promise.resolve();
@@ -186,32 +171,13 @@ function recordingWriter(stored: (string | undefined)[]): SecretWriter {
     setFields: (_a, _e, v) => record(serializeFields(v)),
     setPayment: (_a, _e, v) => record(serializePaymentFields(v)),
     setSecond: (_a, _e, v) => record(serializeSecondValues(v)),
+    // Never called by the additions pass — the raw record setters are a share's and an import's.
+    setFieldsRaw: (_a, _e, v) => record(v),
+    setPaymentRaw: (_a, _e, v) => record(v),
+    setSecondRaw: (_a, _e, v) => record(v),
     setAttachment: () => Promise.resolve(),
     setImage: () => Promise.resolve(),
   };
-}
-
-/**
- * Both passes with NO node write between them — for the one caller that has no node to write.
- *
- * <p>Kept so a caller that genuinely does not order a node against these (a test, or a path that has
- * already written its node) does not have to know about the split. Anything that DOES write a node
- * must call the two halves around it instead — and `writeOrderPaths.test.ts` is what holds that,
- * by recording the SEQUENCE of storage calls and asserting what came before what.</p>
- *
- * <p>That sentence named the wrong file until a reviewer checked it: it pointed at
- * `entityWriteOrder.test.ts`, which tests only the sweep's pure arithmetic and asserts no ordering
- * anywhere. A rule whose test does not exist is a comment, and pointing at a test that does not check
- * it is worse than pointing at nothing.</p>
- */
-export async function applySecrets(
-  storage: StorageManager,
-  accountId: string,
-  entityId: string,
-  result: EntityFormValues,
-): Promise<void> {
-  await applyAdditions(storage, accountId, entityId, result);
-  await applyRemovals(storage, accountId, entityId, result);
 }
 
 /**

@@ -166,3 +166,75 @@ test('an update into an entry with no sealed slot and no mark asks for no entry 
   assert.equal(await w.storage.getPassword(RECIPIENT.accountId, id), NEW_PASSWORD, 'an unprotected entry is written as it always was — under the vault alone');
   assert.equal(w.storage.getNode(RECIPIENT.accountId, id)?.details?.pinProtected, undefined, 'no mark was invented');
 });
+
+// ---------------------------------------------------------------------------------------------
+// The decision and the write under one lease (CodeRabbit on PR #175, CWE-362; the typed-secrets
+// plan's T4). The update decides — no sealed slot, no mark: plain — and writes a moment later; another
+// window can protect the entry in between. The plain writer re-checks under the cross-window lease at
+// its first write, and refuses.
+// ---------------------------------------------------------------------------------------------
+
+test('a share update whose entry is protected by another window between the decision and the write stores nothing in the clear', async () => {
+  const { w, id } = await acceptedCopy();
+  const written = loggingWrites(w);
+  const consumed = w.removed.length;
+  // "Another window": after the update decided (the entry was plain and unmarked) and before its first
+  // write — the revision of what it was is recorded in between — the entry is protected the way Protect
+  // does it: every value sealed, then the mark.
+  const record = w.storage.recordRevision.bind(w.storage);
+  w.storage.recordRevision = async (a, e, revision) => {
+    await record(a, e, revision);
+    await protectEntity(w.storage, RECIPIENT.accountId, id, ENTRY_PIN);
+    await w.storage.updateDetailsFields(RECIPIENT.accountId, id, { pinProtected: true });
+  };
+
+  ui.inputs = [PIN];
+  ui.warningAnswer = 'Update it';
+  await w.inbox.acceptOne(sealedShare(payloadFor('prod api v2', 'sender-side-id'), PIN));
+
+  assert.deepEqual(written.filter((value) => value.includes(NEW_PASSWORD)), [], 'the arriving password reached the keychain in the clear, in a protected entry');
+  assert.equal(readSecret(await w.storage.getPassword(RECIPIENT.accountId, id)).kind, 'locked', 'the other window\'s seal was overwritten');
+  assert.equal(w.storage.getNode(RECIPIENT.accountId, id)?.name, 'prod api', 'the node was rebuilt from the update anyway');
+  assert.equal(w.removed.length, consumed, 'the share was consumed though nothing was stored');
+  assert.match(ui.errors.join(' '), /"prod api" was protected with a PIN — in another window or by a sync/, 'the person was not told');
+});
+
+test('the companion: an update into a plain entry that nobody protects meanwhile is still written, re-checked and all', async () => {
+  const { w, id } = await acceptedCopy();
+
+  ui.inputs = [PIN];
+  ui.warningAnswer = 'Update it';
+  await w.inbox.acceptOne(sealedShare(payloadFor('prod api v2', 'sender-side-id'), PIN));
+
+  assert.equal(w.storage.getNode(RECIPIENT.accountId, id)?.name, 'prod api v2');
+  assert.equal(await w.storage.getPassword(RECIPIENT.accountId, id), NEW_PASSWORD, 'the update landed, in the clear as the entry is');
+  assert.deepEqual(ui.errors, []);
+});
+
+test('the re-check and the first write of a plain update run under the storage\'s cross-window lease — the one sync and every node write take', async () => {
+  const { w } = await acceptedCopy();
+  const lease = w.storage.writes;
+  const run = lease.run.bind(lease);
+  let inside = 0;
+  lease.run = async <T>(work: () => Promise<T>): Promise<T> =>
+    run(async () => {
+      inside += 1;
+      try {
+        return await work();
+      } finally {
+        inside -= 1;
+      }
+    });
+  const leased: boolean[] = [];
+  const setPassword = w.storage.setPassword.bind(w.storage);
+  w.storage.setPassword = (a, e, value) => {
+    leased.push(inside > 0);
+    return setPassword(a, e, value);
+  };
+
+  ui.inputs = [PIN];
+  ui.warningAnswer = 'Update it';
+  await w.inbox.acceptOne(sealedShare(payloadFor('prod api v2', 'sender-side-id'), PIN));
+
+  assert.deepEqual(leased, [true], 'the update\'s first write — its password — ran outside the lease its re-check took');
+});

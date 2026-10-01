@@ -100,9 +100,9 @@ export class StorageManager implements vscode.Disposable {
    * Applying a bundle, removing an account and finishing interrupted work — one at a time, and one
    * WINDOW at a time. Every `await` inside these was a place another could start; a whole round of
    * findings were variants of that fact, and `crossWindowWrites.test.ts` shows the half a per-instance
-   * queue cannot reach. `LeasedQueue` is that queue plus the lock — see `windowLock.ts`.</p>
+   * queue cannot reach. `LeasedQueue` is that queue plus the lock (`windowLock.ts`); public for `entryWriter`'s re-check-then-write.</p>
    */
-  private readonly writes: LeasedQueue;
+  readonly writes: LeasedQueue;
 
   /**
    * How many times each profile's local state was written through this instance — one half of

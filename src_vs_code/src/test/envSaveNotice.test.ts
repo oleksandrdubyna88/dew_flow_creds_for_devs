@@ -155,6 +155,8 @@ function memoryVault(nodes: TreeNode[], secrets: Map<string, string>): unknown {
       await create.finishCleanup();
     },
     nodePresence: () => 'present',
+    // The cross-window lease a plain writer's first write re-checks under (typed-secrets plan T4) — one window here.
+    writes: { run: <T>(work: () => Promise<T>): Promise<T> => work() },
     deferSecretCleanup: done,
     endSecretCleanup: done,
     forgetEntitySecrets: done,

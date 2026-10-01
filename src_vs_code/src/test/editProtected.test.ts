@@ -585,7 +585,10 @@ test('Save refuses, and says why, when the entry stopped being protected while t
 
 test('the sealing writer still deletes on nothing, keeps on an empty password, and leaves the attachment outside the PIN', async () => {
   const w = await world(credential(), { password: await locked('hunter2'), notes: await locked('the note') }, []);
-  const { openEntryForEdit, sealedWriter } = require('../editPrefill') as typeof import('../editPrefill');
+  const { openEntryForEdit } = require('../editPrefill') as typeof import('../editPrefill');
+  // T4 of the typed-secrets plan: the sealing writer is `entryWriter.writerFor`'s answer to a sealed proof.
+  const { writerFor } = require('../entryWriter') as typeof import('../entryWriter');
+  const { sealingForNew } = require('../sealingAtWrite') as typeof import('../sealingAtWrite');
   const gate = { accountId: ACCOUNT, entityId: 'c1', entryName: 'godaddy', ask: (): Promise<string> => Promise.resolve(PIN) };
   // What the door leaves behind: the prefill opens with the grant and never asks (the silent gate).
   (require('../pinSession') as typeof import('../pinSession')).grantPin(ACCOUNT, 'c1', PIN);
@@ -594,7 +597,7 @@ test('the sealing writer still deletes on nothing, keeps on an empty password, a
   assert.equal(open.prefill.locked, true);
   assert.equal(open.prefill.notes, 'the note');
   const password = await w.storage.getPassword(ACCOUNT, 'c1');
-  const writer = sealedWriter(w.storage, ACCOUNT, 'c1', PIN, open.prefill);
+  const writer = writerFor(w.storage, ACCOUNT, 'c1', sealingForNew({ kind: 'pin', pin: PIN }), open.prefill);
 
   await writer.setPassword(ACCOUNT, 'c1', '');
   await writer.setNotes(ACCOUNT, 'c1', undefined);

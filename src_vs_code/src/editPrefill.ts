@@ -1,12 +1,8 @@
-import type { SecretWriter } from './applyFormSecrets';
-import { parseFields, serializeFields } from './entityFields';
-import { lockedSlotCount, sealValue } from './entityPin';
-import { parsePaymentFields, serializePaymentFields } from './paymentFields';
+import { lockedSlotCount } from './entityPin';
 import { SECRET_SLOTS, SecretSlot } from './entitySlots';
 import { PinGate, PinOpen, openStored, silentPinGate } from './pinGate';
 import type { RevisionSecrets } from './revisionHistory';
 import { WriterWords, pinAtWrite, refusalOf } from './sealingAtWrite';
-import { parseSecondValues, serializeSecondValues } from './secondValues';
 import type { StorageManager } from './storageManager';
 
 /**
@@ -19,10 +15,11 @@ import type { StorageManager } from './storageManager';
  * here, in one pure module, so the edit command stays a sequence and every rule is a unit test:</p>
  *
  * <ul>
- *   <li><b>R3 — never written in the clear, not even for a moment.</b> `sealedWriter` seals every
- *       changed value in memory and only then runs the raw setter; the precedent is
- *       `shareRecipientPin.ts`, and the rejected alternative was "write, then run `protectEntity`",
- *       which leaves plaintext in the keychain in between.</li>
+ *   <li><b>R3 — never written in the clear, not even for a moment.</b> The sealing writer
+ *       (`entryWriter.writerFor` for a `sealed` proof — it lived here as `sealedWriter` until the
+ *       typed-secrets plan's T4) seals every changed value in memory and only then runs the raw setter;
+ *       the precedent is `shareRecipientPin.ts`, and the rejected alternative was "write, then run
+ *       `protectEntity`", which leaves plaintext in the keychain in between.</li>
  *   <li><b>R4 — a save never erases what it could not read.</b> `openEntryForEdit` refuses over a
  *       `corrupt` or unopenable slot, and a value equal to what was opened is left byte-identical:
  *       no re-seal, no sync churn.</li>
@@ -58,9 +55,10 @@ export interface EditPrefill {
 }
 
 /**
- * What a writer into a NEW entry was opened over: nothing. Handed to `sealedWriter`, every value the
- * create stores differs from it and is sealed — an agent's create into a folder that asks for a PIN
- * (agent-create plan, D-B) is that writer's one caller with no form behind it.
+ * What a writer was opened over when there was no form: nothing. Handed to `entryWriter.writerFor`,
+ * every value a create, a share or an import stores differs from it, so a sealing writer seals all of
+ * them — an agent's create into a folder that asks for a PIN (agent-create plan, D-B) was the first
+ * such caller.
  */
 export const NOTHING_OPENED: EditPrefill = {
   locked: false,
@@ -191,98 +189,4 @@ export const EDIT_WORDS: WriterWords = {
  */
 export function pinForSave(storage: StorageManager, gate: PinGate, report: (reason: string) => void): Promise<string | undefined> {
   return pinAtWrite(storage, gate, EDIT_WORDS, report);
-}
-
-/**
- * The writer for a protected entry's save: every changed value sealed under `pin` before its raw
- * setter runs; a value equal to what the form was opened over is skipped.
- *
- * <p>The setter subset `applyAdditions` uses, over the storage — so the additions pass does not
- * know whether an entry is protected; the writer does, once, per slot. The rules per slot:</p>
- *
- * <ul>
- *   <li>the typed records (login/URL, payment, second values) are serialised with the module that
- *       owns them, compared canonically with the opened record, and sealed when they differ;
- *       `undefined` stays a delete (Rule A of `applyFormSecrets` is unchanged);</li>
- *   <li>`setPassword('')` still means keep; a typed password, key or VPN config is always new,
- *       because the form never prefills those, so it is always sealed;</li>
- *   <li>the attachment and the image pass straight through — the two slots outside the PIN.</li>
- * </ul>
- *
- * <p>Bound to ONE entry: the ids `applyAdditions` hands each setter are the same ones, and the
- * writer ignores them on purpose — a value sealed under this entry's PIN belongs in this entry, and
- * a writer that could be pointed at another would be a way to put it somewhere else.</p>
- */
-export function sealedWriter(
-  storage: StorageManager,
-  accountId: string,
-  entityId: string,
-  pin: string,
-  opened: EditPrefill,
-): SecretWriter {
-  const seal = (value: string): Promise<string> => sealValue(value, accountId, pin);
-  const [a, e] = [accountId, entityId];
-  return {
-    setPassword: async (_a, _e, v) => storage.setPassword(a, e, v === undefined || v.length === 0 ? v : await seal(v)),
-    setPrivateKey: async (_a, _e, v) => storage.setPrivateKey(a, e, await seal(v)),
-    setVpnConfig: async (_a, _e, v) => storage.setVpnConfig(a, e, await seal(v)),
-    setTotp: (_a, _e, v) => sealIfChanged(opened.totp, v, seal, (sealed) => storage.setTotp(a, e, sealed)),
-    setDbConnection: (_a, _e, v) => sealIfChanged(opened.dbConnection, v, seal, (sealed) => storage.setDbConnection(a, e, sealed)),
-    setNotes: (_a, _e, v) => sealOrDelete(opened.notes, v, seal, (sealed) => storage.setNotes(a, e, sealed)),
-    setConfigBody: (_a, _e, v) => sealOrDelete(opened.configBody, v, seal, (sealed) => storage.setConfigBody(a, e, sealed)),
-    setFields: (_a, _e, v) =>
-      sealOrDelete(canonicalFields(opened.fieldsRaw), serializeFields(v), seal, (sealed) => storage.setFieldsRaw(a, e, sealed)),
-    setPayment: (_a, _e, v) =>
-      sealOrDelete(canonicalPayment(opened.paymentRaw), serializePaymentFields(v), seal, (sealed) => storage.setPaymentRaw(a, e, sealed)),
-    setSecond: (_a, _e, v) =>
-      sealOrDelete(canonicalSecond(opened.secondRaw), serializeSecondValues(v), seal, (sealed) => storage.setSecondRaw(a, e, sealed)),
-    setAttachment: (_a, _e, v) => storage.setAttachment(a, e, v),
-    setImage: (_a, _e, v) => storage.setImage(a, e, v),
-  };
-}
-
-type Seal = (value: string) => Promise<string>;
-
-/**
- * One value: equal to what the form was opened over is SKIPPED — byte-identical stays
- * byte-identical (R4) — and anything else is sealed in memory first, then written (R3).
- */
-async function sealIfChanged(was: string | undefined, now: string, seal: Seal, write: (sealed: string) => Promise<void>): Promise<void> {
-  if (now !== was) {
-    await write(await seal(now));
-  }
-}
-
-/**
- * The same, for a setter where nothing DELETES (`setNotes`, the typed records): an absent value is
- * handed through as the delete it always was, unless there was nothing to delete.
- */
-async function sealOrDelete(
-  was: string | undefined,
-  now: string | undefined,
-  seal: Seal,
-  write: (sealed: string | undefined) => Promise<void>,
-): Promise<void> {
-  if (now !== undefined) {
-    await sealIfChanged(was, now, seal, write);
-  } else if (was !== undefined) {
-    await write(undefined);
-  }
-}
-
-/**
- * Canonical forms — the opened record re-serialised by the module that owns it, so a record stored
- * by an older build in another key order compares equal to the same record out of the form, and is
- * not re-sealed for nothing. The NEW side is already canonical: it comes out of the same serialiser.
- */
-function canonicalFields(raw: string | undefined): string | undefined {
-  return raw === undefined ? undefined : serializeFields(parseFields(raw));
-}
-
-function canonicalPayment(raw: string | undefined): string | undefined {
-  return raw === undefined ? undefined : serializePaymentFields(parsePaymentFields(raw));
-}
-
-function canonicalSecond(raw: string | undefined): string | undefined {
-  return raw === undefined ? undefined : serializeSecondValues(parseSecondValues(raw));
 }
