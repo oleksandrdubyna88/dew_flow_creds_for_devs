@@ -813,17 +813,17 @@ export class StorageManager implements vscode.Disposable {
   // ---------- login / URL (SecretStorage, tenant-scoped, JSON) ----------
 
   /** The stored JSON as it is — what bundles, snapshots, shares and revisions carry. */
-  getFieldsRaw(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(fieldsSecretKey(accountId, entityId));
+  getFieldsRaw(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(fieldsSecretKey(accountId, entityId)));
   }
 
-  setFieldsRaw(accountId: string, entityId: string, value: string | undefined): Promise<void> {
-    return this.putSecret(fieldsSecretKey(accountId, entityId), accountId, value);
+  setFieldsRaw(accountId: string, entityId: string, value: StoredSecret | undefined): Promise<void> {
+    return this.putSecret(fieldsSecretKey(accountId, entityId), accountId, carried(value));
   }
 
   /** Typed write: an empty record deletes, so a credential that lost both fields holds no key. */
   setFields(accountId: string, entityId: string, fields: EntityFields | undefined): Promise<void> {
-    return this.setFieldsRaw(accountId, entityId, serializeFields(fields));
+    return this.setFieldsRaw(accountId, entityId, stored(serializeFields(fields)));
   }
 
   // ---------- second values (SecretStorage, tenant-scoped, JSON) ----------

@@ -6,6 +6,7 @@ import { siteUrlToOpen } from './siteUrl';
 import { unsealedText } from './secretOpener';
 import type { EntityMetadata } from './types';
 import type { StorageManager } from './storageManager';
+import type { StoredSecret } from './storedSecret';
 
 /**
  * The per-entity answers the tree cannot await while it renders: does this entry keep previous
@@ -51,7 +52,7 @@ export interface EntityFlagSource {
   ): readonly { id: string; type: 'folder' | 'entity'; details?: EntityMetadata }[];
   getHistory(accountId: string, entityId: string): Promise<{ secrets: unknown }[]>;
   getPassword(accountId: string, entityId: string): Thenable<string | undefined>;
-  getFieldsRaw(accountId: string, entityId: string): Thenable<string | undefined>;
+  getFieldsRaw(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
   getConfigBody(accountId: string, entityId: string): Thenable<string | undefined>;
 }
 
@@ -246,7 +247,7 @@ export function entityFlagSource(storage: StorageManager): EntityFlagSource {
  * is not judged. Both read through `secretOpener.unsealedText`, which answers nothing for a sealed
  * value and the stored text for anything else — what these hints have always judged.
  */
-function judgedUrlOpens(raw: string | undefined): boolean {
+function judgedUrlOpens(raw: StoredSecret | string | undefined): boolean {
   const text = unsealedText(raw);
   // Present and nothing to judge is SEALED — a record that "may open", as it always counted.
   return (raw !== undefined && text === undefined) || siteUrlToOpen(parseFields(text).url).ok;

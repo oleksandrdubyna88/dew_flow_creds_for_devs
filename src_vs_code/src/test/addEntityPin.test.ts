@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import type { EntityFormOptions, EntityFormValues } from '../entityFormShape';
 import { isLockedSecret, readSecret, unlockSecret } from '../secretEnvelope';
 import type { StorageManager } from '../storageManager';
+import type { StoredSecret } from '../storedSecret';
 import type { EntityMetadata, TreeNode } from '../types';
 import { loadEachWithVscode } from './vscodeStub';
 import { ACCOUNT, PIN, Sinks, clickVscode, locked, memoryStorage, sinks } from './pinWorld';
@@ -115,7 +116,7 @@ function onlyMade(w: World): TreeNode {
 }
 
 /** A slot that must be SEALED — opened with `pin`, or the assertion names what is stored. */
-async function opened(value: string | undefined, pin: string): Promise<string> {
+async function opened(value: StoredSecret | string | undefined, pin: string): Promise<string> {
   const read = readSecret(value);
   assert.equal(read.kind, 'locked', `stored in the clear: ${String(value)}`);
   return read.kind === 'locked' ? unlockSecret(read.envelope, ACCOUNT, pin) : '';

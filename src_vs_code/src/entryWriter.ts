@@ -204,7 +204,7 @@ function plainWriter(storage: StorageManager, a: string, e: string, through: Thr
     setFields: (_a, _e, v) => through(() => storage.setFields(a, e, v)),
     setPayment: (_a, _e, v) => through(() => storage.setPayment(a, e, v)),
     setSecond: (_a, _e, v) => through(() => storage.setSecond(a, e, v)),
-    setFieldsRaw: (_a, _e, v) => through(() => storage.setFieldsRaw(a, e, v)),
+    setFieldsRaw: (_a, _e, v) => through(() => storage.setFieldsRaw(a, e, stored(v))),
     setPaymentRaw: (_a, _e, v) => through(() => storage.setPaymentRaw(a, e, stored(v))),
     setSecondRaw: (_a, _e, v) => through(() => storage.setSecondRaw(a, e, stored(v))),
     setAttachment: (_a, _e, v) => through(() => storage.setAttachment(a, e, v)),
@@ -245,12 +245,12 @@ function sealingWriter(storage: StorageManager, a: string, e: string, pin: strin
     setNotes: (_a, _e, v) => sealOrDelete(opened.notes, v, seal, (sealed) => commit(() => storage.setNotes(a, e, unflipped(sealed)))),
     setConfigBody: (_a, _e, v) => sealOrDelete(opened.configBody, v, seal, (sealed) => commit(() => storage.setConfigBody(a, e, unflipped(sealed)))),
     setFields: (_a, _e, v) =>
-      sealOrDelete(canonicalFields(opened.fieldsRaw), serializeFields(v), seal, (sealed) => commit(() => storage.setFieldsRaw(a, e, unflipped(sealed)))),
+      sealOrDelete(canonicalFields(opened.fieldsRaw), serializeFields(v), seal, (sealed) => commit(() => storage.setFieldsRaw(a, e, sealed))),
     setPayment: (_a, _e, v) =>
       sealOrDelete(canonicalPayment(opened.paymentRaw), serializePaymentFields(v), seal, (sealed) => commit(() => storage.setPaymentRaw(a, e, sealed))),
     setSecond: (_a, _e, v) =>
       sealOrDelete(canonicalSecond(opened.secondRaw), serializeSecondValues(v), seal, (sealed) => commit(() => storage.setSecondRaw(a, e, sealed))),
-    setFieldsRaw: (_a, _e, v) => put(maybe(v), commit, (s) => storage.setFieldsRaw(a, e, unflipped(s))),
+    setFieldsRaw: (_a, _e, v) => put(maybe(v), commit, (s) => storage.setFieldsRaw(a, e, s)),
     setPaymentRaw: (_a, _e, v) => put(maybe(v), commit, (s) => storage.setPaymentRaw(a, e, s)),
     setSecondRaw: (_a, _e, v) => put(maybe(v), commit, (s) => storage.setSecondRaw(a, e, s)),
     setAttachment: (_a, _e, v) => commit(() => storage.setAttachment(a, e, v)),

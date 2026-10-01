@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import type { CreateAccepted, CreateSettled, McpCreateHooks } from '../brokerMcpDoor';
 import { isLockedSecret, readSecret, unlockSecret } from '../secretEnvelope';
 import type { StorageManager } from '../storageManager';
+import type { StoredSecret } from '../storedSecret';
 import type { TreeNode } from '../types';
 import { StubCancellationToken, loadEachWithVscode } from './vscodeStub';
 import { ACCOUNT, PIN, Sinks, clickVscode, locked, sinks } from './pinWorld';
@@ -123,7 +124,7 @@ function onlyMade(w: World): TreeNode {
   return nodes[0];
 }
 
-async function opened(value: string | undefined, pin: string): Promise<string> {
+async function opened(value: StoredSecret | string | undefined, pin: string): Promise<string> {
   const read = readSecret(value);
   assert.equal(read.kind, 'locked', `stored in the clear: ${String(value)}`);
   return read.kind === 'locked' ? unlockSecret(read.envelope, ACCOUNT, pin) : '';

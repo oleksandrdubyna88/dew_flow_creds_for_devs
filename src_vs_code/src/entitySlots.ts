@@ -130,7 +130,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     bundleKey: 'fields',
     read: (s, a, e) => s.getFieldsRaw(a, e),
     write: (s, a, e, v) => s.setFieldsRaw(a, e, v),
-    store: (s, a, e, v) => s.setFieldsRaw(a, e, unflipped(v)),
+    store: (s, a, e, v) => s.setFieldsRaw(a, e, v),
     remove: (s, a, e) => s.setFieldsRaw(a, e, undefined),
   },
   {
