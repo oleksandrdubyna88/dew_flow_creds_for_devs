@@ -2,7 +2,7 @@ import * as crypto from 'node:crypto';
 import { NOTHING_OPENED } from './editPrefill';
 import { entityKey } from './entityFlags';
 import { lockedSlotCount } from './entityPin';
-import { EntryWriter, writerFor } from './entryWriter';
+import { CommitGuard, EntryWriter, writerFor } from './entryWriter';
 import type { LeasedQueue } from './leasedQueue';
 import { openStored, silentPinGate } from './pinGate';
 import { grantedPin } from './pinSession';
@@ -297,7 +297,7 @@ async function releaseText(at: ReleaseAt, slot: RotationSlot, held: Held, text: 
   if (live.text === text) {
     return finished(at, slot, held, live.sealed);
   }
-  return changedSince(live.text, held, forced) ? { kind: 'conflict', conflict: { slot, at: held.at } } : written(at, slot, held, text);
+  return changedSince(live.text, held, forced) ? { kind: 'conflict', conflict: { slot, at: held.at } } : written(at, slot, held, text, live.raw);
 }
 
 /** The slot no longer holds what the rotation replaced — and the person has not chosen the rotated value anyway. */
@@ -305,14 +305,44 @@ function changedSince(live: string | undefined, held: Held, forced: boolean): bo
   return !forced && fingerprintOf(live) !== held.was;
 }
 
-/** The write, under the proof — and the drop only once it landed. */
-async function written(at: ReleaseAt, slot: RotationSlot, held: Held, text: string): Promise<SlotOutcome> {
+/**
+ * The write, under the proof and GUARDED — and the drop only once it landed. The decision above read the
+ * slot and the item without the lease, and sealing takes about a second outside it; another window's Edit,
+ * a pulled sync or a rotation that landed plain could store a newer value in that gap (the security review,
+ * finding 1). So inside the commit's own lease the guard re-reads both: the slot must still be, byte for
+ * byte, what was compared, and the item must still hold this hold. Otherwise nothing is written and the
+ * item is kept — the next door decides again.
+ */
+async function written(at: ReleaseAt, slot: RotationSlot, held: Held, text: string, compared: StoredSecret | undefined): Promise<SlotOutcome> {
   const sealing = await at.proof(at.storage, at.accountId, at.entityId, at.entryName);
   if (sealing.kind === 'stopped') {
     return KEPT;
   }
-  await writeSlot(writerFor(at.storage, at.accountId, at.entityId, sealing, NOTHING_OPENED), at, slot, text);
+  await writeSlot(writerFor(at.storage, at.accountId, at.entityId, sealing, NOTHING_OPENED, unchangedSince(at, slot, held, compared)), at, slot, text);
   return finished(at, slot, held, sealing.kind === 'sealed');
+}
+
+/** The release's precondition, checked under the commit's lease (`entryWriter.CommitGuard`). */
+function unchangedSince(at: ReleaseAt, slot: RotationSlot, held: Held, compared: StoredSecret | undefined): CommitGuard {
+  return async () => {
+    const now = await rawSlot(at, slot);
+    const still = (await at.storage.heldRotations.read(at.accountId, at.entityId))[slot];
+    if (now !== compared || still?.at !== held.at) {
+      throw new ReleaseOvertaken();
+    }
+  };
+}
+
+/** The slot or the hold changed between the release's decision and its commit — nothing was written. */
+class ReleaseOvertaken extends Error {
+  constructor() {
+    super('The value changed while the release was being sealed; nothing was written and the held value is kept.');
+    this.name = 'ReleaseOvertaken';
+  }
+}
+
+function rawSlot(at: ReleaseAt, slot: RotationSlot): PromiseLike<StoredSecret | undefined> {
+  return slot === 'password' ? at.storage.getPassword(at.accountId, at.entityId) : at.storage.getDbConnection(at.accountId, at.entityId);
 }
 
 function writeSlot(writer: EntryWriter, at: ReleaseAt, slot: RotationSlot, text: string): Promise<void> {
@@ -339,12 +369,19 @@ export async function dropHeld(storage: StorageManager, accountId: string, entit
   });
 }
 
+/** What the release compared: the slot's text, whether it was sealed, and the stored string it was read from. */
+interface Live {
+  readonly text: string | undefined;
+  readonly sealed: boolean;
+  readonly raw: StoredSecret | undefined;
+}
+
 /** The live slot's text, opened silently with the grant the door just took — or `UNREADABLE`. */
-async function liveText(at: ReleaseAt, slot: RotationSlot): Promise<{ readonly text: string | undefined; readonly sealed: boolean } | typeof UNREADABLE> {
-  const raw = slot === 'password' ? await at.storage.getPassword(at.accountId, at.entityId) : await at.storage.getDbConnection(at.accountId, at.entityId);
+async function liveText(at: ReleaseAt, slot: RotationSlot): Promise<Live | typeof UNREADABLE> {
+  const raw = await rawSlot(at, slot);
   const opened = await openStored(raw, silentPinGate(at.accountId, at.entityId, at.entryName));
   if (opened.kind === 'value' || opened.kind === 'unprotected') {
-    return { text: opened.value, sealed: opened.kind === 'value' };
+    return { text: opened.value, sealed: opened.kind === 'value', raw };
   }
   return UNREADABLE;
 }

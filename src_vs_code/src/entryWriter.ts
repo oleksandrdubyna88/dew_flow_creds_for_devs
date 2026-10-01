@@ -62,14 +62,25 @@ export interface EntryWriter {
 }
 
 /**
+ * A precondition the caller's decision rests on, checked INSIDE the lease right before each commit — it
+ * throws to write nothing. The release of a held rotation uses it (`rotationQuarantine.ts`, the security
+ * review's finding 1): its check ("the slot still holds what I compared, the hold is still mine") and its
+ * write must be one step to another window, while the sealing (scrypt, ~1 s) stays outside the lease.
+ */
+export type CommitGuard = () => Promise<void>;
+
+const UNGUARDED: CommitGuard = () => Promise.resolve();
+
+/**
  * The writer for one entry, from the proof its write was decided with. `opened` is what a form was
  * opened over — `NOTHING_OPENED` when there was no form (a create, a share, an import, a rotation).
+ * `guard` runs under the lease before every commit; a brand-new id's writer is never guarded.
  */
-export function writerFor(storage: StorageManager, accountId: string, entityId: string, sealing: WritableSealing, opened: EditPrefill): EntryWriter {
+export function writerFor(storage: StorageManager, accountId: string, entityId: string, sealing: WritableSealing, opened: EditPrefill, guard: CommitGuard = UNGUARDED): EntryWriter {
   if (sealing.kind === 'sealed') {
-    return sealingWriter(storage, accountId, entityId, sealing.pin, opened);
+    return sealingWriter(storage, accountId, entityId, sealing.pin, opened, guard);
   }
-  return plainWriter(storage, accountId, entityId, sealing.fresh ? freshVerified(storage, accountId, entityId) : recheckedEach(storage, accountId, entityId, sealing.marked));
+  return plainWriter(storage, accountId, entityId, sealing.fresh ? freshVerified(storage, accountId, entityId) : recheckedEach(storage, accountId, entityId, sealing.marked, guard));
 }
 
 /**
@@ -145,10 +156,11 @@ type Through = (write: () => Promise<void>) => Promise<void>;
  * that failed — a refusal or a keychain hiccup — is that write's alone. The lease is held for one
  * re-check and one slot write, never across anything that asks.
  */
-function recheckedEach(storage: StorageManager, accountId: string, entityId: string, markedAtDecision: boolean): Through {
+function recheckedEach(storage: StorageManager, accountId: string, entityId: string, markedAtDecision: boolean, guard: CommitGuard = UNGUARDED): Through {
   return (write) =>
     storage.writes.run(async () => {
       await refuseIfProtectedSince(storage, accountId, entityId, markedAtDecision);
+      await guard();
       await write();
     });
 }
@@ -232,10 +244,14 @@ type Seal = (value: string) => Promise<StoredSecret>;
  * <p>Every raw setter call is committed under the storage's cross-window lease, as the plain writer's
  * are; the sealing itself runs before, outside it ({@link put}).</p>
  */
-function sealingWriter(storage: StorageManager, a: string, e: string, pin: string, opened: EditPrefill): EntryWriter {
+function sealingWriter(storage: StorageManager, a: string, e: string, pin: string, opened: EditPrefill, guard: CommitGuard): EntryWriter {
   const seal: Seal = async (value) => stored(await sealText(value, a, pin));
   const maybe = async (value: string | undefined): Promise<StoredSecret | undefined> => (value === undefined ? undefined : seal(value));
-  const commit: Commit = (write) => storage.writes.run(write);
+  const commit: Commit = (write) =>
+    storage.writes.run(async () => {
+      await guard();
+      await write();
+    });
   return {
     // An empty password means "keep" — nothing is sealed, and the setter keeps for `undefined` as it does for `''`.
     setPassword: (_a, _e, v) => put(v === undefined || v.length === 0 ? Promise.resolve(undefined) : seal(v), commit, (s) => storage.setPassword(a, e, s)),

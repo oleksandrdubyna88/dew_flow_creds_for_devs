@@ -10,7 +10,7 @@ import type { StorageManager } from '../storageManager';
 import { protectionDecision } from '../syncPinRule';
 import { EntityMetadata, TreeNode } from '../types';
 import { loadEachWithVscode, loadWithVscode } from './vscodeStub';
-import { ACCOUNT, ModalAnswer, PIN, Sinks, carried, clickVscode, memoryStorage, seedEntry, sinks, stored } from './pinWorld';
+import { ACCOUNT, ModalAnswer, PIN, Sinks, carried, clickVscode, locked, memoryStorage, seedEntry, sinks, stored } from './pinWorld';
 
 /**
  * A rotated value the vault could not store waits in its own keychain item until the entry's PIN is entered
@@ -433,4 +433,42 @@ test('the sweeper runs the release on its own trigger, says so, and repaints', a
 
   assert.match(lines.join('\n'), /Stored 2 rotated value\(s\) that waited beside an entry no longer protected/);
   assert.equal(repainted, 1);
+});
+
+// ---- security review, finding 1: the release decides and commits under ONE lease ----
+
+const V3 = 'mysql://app:EDITED-elsewhere-8a2d@db-01.example.internal:3306/orders';
+const V2 = 'mysql://app:ROTATED-again-4f1b@db-01.example.internal:3306/orders';
+
+test('another window seals a newer value between the release\'s check and its commit — the release writes nothing and keeps the item', async () => {
+  const w = await plainWorld();
+  w.session.grantPin(ACCOUNT, ENTRY, PIN);
+  const editedMeanwhile: ReleaseProof = async (...args) => {
+    const decided = await w.quarantine.AT_THE_DOOR(...args);
+    // Another window's Edit lands while this one seals (scrypt, ~1 s, outside the lease).
+    await w.storage.setDbConnection(ACCOUNT, ENTRY, stored(await locked(V3)));
+    return decided;
+  };
+
+  const release = await w.quarantine.releaseHeld(w.storage, ACCOUNT, ENTRY, 'orders-db', editedMeanwhile);
+
+  assert.equal(await openedSlot(w), V3, 'the release overwrote a newer value with the older held one');
+  assert.deepEqual(release.released, []);
+  assert.ok((await heldNow(w)).dbConnection !== undefined, 'the held value was dropped though it was never written');
+});
+
+test('a plain rotation lands and supersedes the hold between the release\'s check and its commit — the newer value stays', async () => {
+  const w = await plainWorld();
+  await unprotectedElsewhere(w);
+  const rotatedMeanwhile: ReleaseProof = async (...args) => {
+    const decided = await w.quarantine.UNATTENDED(...args);
+    // What `storeRotated` does for a rotation that lands: the plain write, then the older hold superseded.
+    await w.storage.setDbConnection(ACCOUNT, ENTRY, stored(V2));
+    await w.quarantine.supersedeHeld(w.storage, ACCOUNT, ENTRY, 'dbConnection');
+    return decided;
+  };
+
+  await w.quarantine.releaseHeld(w.storage, ACCOUNT, ENTRY, 'orders-db', rotatedMeanwhile);
+
+  assert.equal(await plainSlot(w), V2, 'the release overwrote the newer rotation with the older held value');
 });
