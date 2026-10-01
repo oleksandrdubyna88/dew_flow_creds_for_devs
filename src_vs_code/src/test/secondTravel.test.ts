@@ -7,6 +7,7 @@ import { readRouteBody } from '../brokerReadRoutes';
 import { pushRevision, type Revision } from '../revisionHistory';
 import { RevisionSource, snapshotForRevision } from '../revisionSnapshot';
 import { SECOND_KEYS, parseSecondValues, serializeSecondValues, type SecondValues } from '../secondValues';
+import { StoredSecret, stored } from '../storedSecret';
 import type { EntityMetadata, TreeNode } from '../types';
 
 /**
@@ -49,7 +50,7 @@ function vault(second: string | undefined): SecretReader & RevisionSource {
     getConfigBody: nothing,
     getFieldsRaw: nothing,
     getPaymentRaw: nothing,
-    getSecondRaw: (): Promise<string | undefined> => Promise.resolve(second),
+    getSecondRaw: (): Promise<StoredSecret | undefined> => Promise.resolve(stored(second)),
   };
 }
 

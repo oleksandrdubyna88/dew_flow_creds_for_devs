@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { SecretSource, maskEntriesFor } from '../maskEntries';
+import { stored } from '../storedSecret';
 import { EntityMetadata } from '../types';
 import { buildMaskTable, maskText, placeholderFor } from '../secretMasker';
 
@@ -26,7 +27,7 @@ function source(
   };
   return {
     reads,
-    getSecondRaw: () => Promise.resolve(secondsJson),
+    getSecondRaw: () => Promise.resolve(stored(secondsJson)),
     getNode: () => ({
       details: { id: 'e1', name: 'prod-db', isSshEnabled: false, ...details } as EntityMetadata,
     }),

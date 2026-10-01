@@ -116,7 +116,7 @@ test('protect a card → view → edit the name → view → Remove PIN → view
   assert.deepEqual(await sealedState(w), [false, false, false], 'Remove PIN unwrapped every value');
   assert.equal(w.node().details?.pinProtected, undefined);
   assert.deepEqual(parsePaymentFields(carried(await w.storage.getPaymentRaw(ACCOUNT, ENTRY))), CARD);
-  assert.deepEqual(parseSecondValues(await w.storage.getSecondRaw(ACCOUNT, ENTRY)), SECOND);
+  assert.deepEqual(parseSecondValues(carried(await w.storage.getSecondRaw(ACCOUNT, ENTRY))), SECOND);
   const boxes = w.s.boxes;
   await viewShowsTheCard(w, 'after Remove PIN');
   assert.equal(w.s.boxes, boxes, 'an unprotected card opens without a question');

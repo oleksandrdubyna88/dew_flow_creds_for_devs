@@ -141,7 +141,7 @@ export const SECRET_SLOTS: readonly SecretSlot[] = [
     bundleKey: 'seconds',
     read: (s, a, e) => s.getSecondRaw(a, e),
     write: (s, a, e, v) => s.setSecondRaw(a, e, v),
-    store: (s, a, e, v) => s.setSecondRaw(a, e, unflipped(v)),
+    store: (s, a, e, v) => s.setSecondRaw(a, e, v),
     remove: (s, a, e) => s.setSecondRaw(a, e, undefined),
   },
   {

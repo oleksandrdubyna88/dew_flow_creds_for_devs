@@ -229,7 +229,7 @@ const GATED_BY_CALLER: Readonly<Record<string, Readonly<Record<string, string>>>
     dbConnection: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader',
     totpSeed: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader',
     paymentRaw: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader (typed since T5)',
-    secondRaw: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader',
+    secondRaw: 'storageSecretReader, the raw reader; its one caller wraps it in gatedSecretReader (typed since T5)',
   },
 };
 

@@ -206,7 +206,7 @@ function plainWriter(storage: StorageManager, a: string, e: string, through: Thr
     setSecond: (_a, _e, v) => through(() => storage.setSecond(a, e, v)),
     setFieldsRaw: (_a, _e, v) => through(() => storage.setFieldsRaw(a, e, v)),
     setPaymentRaw: (_a, _e, v) => through(() => storage.setPaymentRaw(a, e, stored(v))),
-    setSecondRaw: (_a, _e, v) => through(() => storage.setSecondRaw(a, e, v)),
+    setSecondRaw: (_a, _e, v) => through(() => storage.setSecondRaw(a, e, stored(v))),
     setAttachment: (_a, _e, v) => through(() => storage.setAttachment(a, e, v)),
     setImage: (_a, _e, v) => through(() => storage.setImage(a, e, v)),
   };
@@ -249,10 +249,10 @@ function sealingWriter(storage: StorageManager, a: string, e: string, pin: strin
     setPayment: (_a, _e, v) =>
       sealOrDelete(canonicalPayment(opened.paymentRaw), serializePaymentFields(v), seal, (sealed) => commit(() => storage.setPaymentRaw(a, e, sealed))),
     setSecond: (_a, _e, v) =>
-      sealOrDelete(canonicalSecond(opened.secondRaw), serializeSecondValues(v), seal, (sealed) => commit(() => storage.setSecondRaw(a, e, unflipped(sealed)))),
+      sealOrDelete(canonicalSecond(opened.secondRaw), serializeSecondValues(v), seal, (sealed) => commit(() => storage.setSecondRaw(a, e, sealed))),
     setFieldsRaw: (_a, _e, v) => put(maybe(v), commit, (s) => storage.setFieldsRaw(a, e, unflipped(s))),
     setPaymentRaw: (_a, _e, v) => put(maybe(v), commit, (s) => storage.setPaymentRaw(a, e, s)),
-    setSecondRaw: (_a, _e, v) => put(maybe(v), commit, (s) => storage.setSecondRaw(a, e, unflipped(s))),
+    setSecondRaw: (_a, _e, v) => put(maybe(v), commit, (s) => storage.setSecondRaw(a, e, s)),
     setAttachment: (_a, _e, v) => commit(() => storage.setAttachment(a, e, v)),
     setImage: (_a, _e, v) => commit(() => storage.setImage(a, e, v)),
   };

@@ -58,7 +58,7 @@ export function withheldSentence(names: Iterable<string>): string {
  */
 export interface WithheldReader {
   getPaymentRaw(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
-  getSecondRaw(accountId: string, entityId: string): Thenable<string | undefined>;
+  getSecondRaw(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
 }
 
 /** What the notice reads of one payload: the sender's node, and whether it is a payment. */

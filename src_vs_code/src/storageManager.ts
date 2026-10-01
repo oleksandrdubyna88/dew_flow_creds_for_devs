@@ -829,17 +829,17 @@ export class StorageManager implements vscode.Disposable {
   // ---------- second values (SecretStorage, tenant-scoped, JSON) ----------
 
   /** The stored JSON as it is — what bundles, snapshots and revisions carry. */
-  getSecondRaw(accountId: string, entityId: string): Thenable<string | undefined> {
-    return this.secrets.get(secondSecretKey(accountId, entityId));
+  getSecondRaw(accountId: string, entityId: string): Thenable<StoredSecret | undefined> {
+    return storedRead(this.secrets.get(secondSecretKey(accountId, entityId)));
   }
 
-  setSecondRaw(accountId: string, entityId: string, value: string | undefined): Promise<void> {
-    return this.putSecret(secondSecretKey(accountId, entityId), accountId, value);
+  setSecondRaw(accountId: string, entityId: string, value: StoredSecret | undefined): Promise<void> {
+    return this.putSecret(secondSecretKey(accountId, entityId), accountId, carried(value));
   }
 
   /** Typed write: an empty record deletes, so an entry whose last second value went holds no key. */
   setSecond(accountId: string, entityId: string, values: SecondValues | undefined): Promise<void> {
-    return this.setSecondRaw(accountId, entityId, serializeSecondValues(values));
+    return this.setSecondRaw(accountId, entityId, stored(serializeSecondValues(values)));
   }
 
   // ---------- payment instruments (SecretStorage, tenant-scoped, JSON) ----------

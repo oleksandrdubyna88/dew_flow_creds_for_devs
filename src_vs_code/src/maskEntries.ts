@@ -3,6 +3,7 @@ import { SecondKey, parseSecondValues } from './secondValues';
 import { parseDbConnectionString } from './dbConnString';
 import type { MaskEntry } from './secretMasker';
 import { EntityMetadata } from './types';
+import type { StoredSecret } from './storedSecret';
 
 /**
  * The values to mask out of one entity's own command output, and what to call them.
@@ -31,7 +32,7 @@ export interface SecretSource {
   getVpnConfig(accountId: string, entityId: string): Thenable<string | undefined>;
   getDbConnection(accountId: string, entityId: string): Thenable<string | undefined>;
   getNotes(accountId: string, entityId: string): Thenable<string | undefined>;
-  getSecondRaw(accountId: string, entityId: string): Thenable<string | undefined>;
+  getSecondRaw(accountId: string, entityId: string): Thenable<StoredSecret | undefined>;
 }
 
 /** Secret field -> the fallback label, and the env-binding key that can override it. */

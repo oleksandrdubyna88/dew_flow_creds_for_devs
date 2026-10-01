@@ -17,7 +17,7 @@ export interface SecretReader {
   getTotp(accountId: string, id: string): Thenable<string | undefined>;
   getConfigBody(accountId: string, id: string): Thenable<string | undefined>;
   getFieldsRaw(accountId: string, id: string): Thenable<string | undefined>;
-  getSecondRaw(accountId: string, id: string): Thenable<string | undefined>;
+  getSecondRaw(accountId: string, id: string): Thenable<StoredSecret | undefined>;
   getPaymentRaw(accountId: string, id: string): Thenable<StoredSecret | undefined>;
 }
 
