@@ -175,12 +175,18 @@ function memento(): { get<T>(key: string, fallback?: T): T | undefined; update(k
   };
 }
 
-/** The keychain, in memory, with every value ever stored logged in `written` (rule R3's evidence). */
-function keychain(written: string[]): object {
+/**
+ * The keychain, in memory, with every value ever stored logged in `written` (rule R3's evidence) and, when
+ * asked, every key READ logged in `reads` — what a carrier touched, for "the held rotation is read by nothing".
+ */
+function keychain(written: string[], reads?: string[]): object {
   const map = new Map<string, string>();
   return {
     keys: () => [...map.keys()],
-    get: (k: string) => Promise.resolve(map.get(k)),
+    get: (k: string) => {
+      reads?.push(k);
+      return Promise.resolve(map.get(k));
+    },
     store: (k: string, v: string) => {
       map.set(k, v);
       written.push(v);
@@ -195,9 +201,9 @@ function keychain(written: string[]): object {
 }
 
 /** The real `StorageManager`, loaded under `stub`, with every value it stores logged in `written`. */
-export function memoryStorage(stub: Record<string, unknown>, written: string[] = []): StorageManager {
+export function memoryStorage(stub: Record<string, unknown>, written: string[] = [], reads?: string[]): StorageManager {
   const { StorageManager } = loadWithVscode<typeof import('../storageManager')>('../storageManager', stub);
-  return new StorageManager(memento() as never, keychain(written) as never);
+  return new StorageManager(memento() as never, keychain(written, reads) as never);
 }
 
 /** Add one entry and write its slots by LABEL, through the slot table — the names the product uses. */

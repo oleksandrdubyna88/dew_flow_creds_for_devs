@@ -62,6 +62,8 @@ const ALLOWED: Readonly<Record<string, string>> = {
   // Keyed `file#function`: one mint each, and the rest of the file is outside the funnel like any other.
   'entityFieldReading.ts#notesReading': 'a metadata value read as the plain stored form it is (legacy note / public key kept in node metadata)',
   'envApply.ts#openedField': 'a metadata value read as the plain stored form it is (legacy note / public key kept in node metadata)',
+  'rotationQuarantine.ts#heldIn': 'the quarantine parse boundary: a held rotation minted from its own item (rotation-quarantine plan §4.1)',
+  'rotationQuarantine.ts#serialised': 'the quarantine parse boundary: the held stored form carried into its own item',
 };
 
 function sourceFiles(dir: string = SRC): string[] {

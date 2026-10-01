@@ -26,6 +26,7 @@ import { LeasedQueue, leasedWrites, sweepWithRetry } from './leasedWrites';
 import { EntityCreate, createEntityWithSecrets } from './entityWrite';
 import { CleanupPort, clearSecretsPending, isEmptyPending, markSecretsPending, parsePendingCleanup, finishBeforeReuse, removeWithIntent, resumePending } from './pendingCleanup';
 import { StoredSecret, carried, stored, storedRead } from './storedSecret';
+import { QuarantineStore, quarantineStore } from './rotationQuarantine';
 import { dropVanishedSecrets, readSecretMaps, secretMapsOf, storeSecretMaps } from './secretMaps';
 import { attachmentSecretKey, configSecretKey, dbConnSecretKey, entitySecretKeys, fieldsSecretKey,
   imageSecretKey, notesSecretKey, paymentSecretKey, privateKeySecretKey, secretKey, totpSecretKey,
@@ -103,6 +104,8 @@ export class StorageManager implements vscode.Disposable {
    * queue cannot reach. `LeasedQueue` is that queue plus the lock (`windowLock.ts`); public for `entryWriter`'s re-check-then-write.</p>
    */
   readonly writes: LeasedQueue;
+  /** A rotated value the vault could not store, held beside its entry until the PIN — `rotationQuarantine.ts` alone reaches it. */
+  readonly heldRotations: QuarantineStore;
 
   /**
    * How many times each profile's local state was written through this instance — one half of
@@ -123,8 +126,8 @@ export class StorageManager implements vscode.Disposable {
     lockDir?: string,
   ) {
     this.writes = leasedWrites(lockDir);
-    // A password written by another window of this profile lands in the keychain without
-    // passing through this instance; the change event is the only way to learn of it.
+    this.heldRotations = quarantineStore(secrets, globalState, this.writes);
+    // A password written by another window of this profile lands in the keychain without passing through this instance; the change event is the only way to learn of it.
     this.secretsListener = secrets.onDidChange(() => {
       this.secretsEpoch += 1;
     });
@@ -347,10 +350,6 @@ export class StorageManager implements vscode.Disposable {
     }
   }
 
-  /**
-   * Every keychain key this entity owns, gone. Safe as a blanket delete for a failed CREATE precisely
-   * because the id is new — nothing older sits under any of them.
-   */
   /** Delete one key and mark the profile changed — the three lines every `deleteX` was. */
   private async dropSecret(key: string, accountId: string): Promise<void> {
     await this.secrets.delete(key);
@@ -370,6 +369,7 @@ export class StorageManager implements vscode.Disposable {
     this.touch(accountId);
   }
 
+  /** Every keychain key this entity owns (its held rotation too), gone — safe for a failed CREATE: the id is new. */
   async forgetEntitySecrets(accountId: string, entityId: string, stopIf?: () => boolean): Promise<void> {
     for (const key of entitySecretKeys(accountId, entityId)) {
       if (stopIf?.() === true) {

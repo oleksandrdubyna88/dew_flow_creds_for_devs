@@ -4,6 +4,8 @@ import { SECRET_SLOTS } from '../entitySlots';
 import { SMALL_FIELDS } from '../revisionHistory';
 import { snapshotForRevision } from '../revisionSnapshot';
 import { SECRET_KINDS } from '../secretMaps';
+import { rotationQuarantineSecretKey } from '../secretKeys';
+import { clickVscode, memoryStorage, sinks } from './pinWorld';
 import { loadWithVscode } from './vscodeStub';
 
 /**
@@ -129,3 +131,17 @@ function secrets(): { keys(): string[]; get(k: string): Promise<string | undefin
     onDidChange: () => {},
   };
 }
+
+test('the rotation\'s held value is in no slot and no bundle kind, so nothing that walks either ever reads it (rotation-quarantine plan §4.1)', async () => {
+  const held = rotationQuarantineSecretKey('acc', 'e1');
+  const reads: string[] = [];
+  const storage = memoryStorage(clickVscode([], sinks()), [], reads);
+
+  for (const slot of SECRET_SLOTS) {
+    await slot.read(storage, 'acc', 'e1');
+  }
+
+  assert.ok(!SECRET_KINDS.some((kind) => kind.key('acc', 'e1') === held), 'a bundle kind carries the held rotation — sync, backup and import would move it');
+  assert.ok(reads.length >= SECRET_SLOTS.length, 'the control: the slot reads were not seen at all');
+  assert.ok(!reads.includes(held), 'a slot reads the held rotation — Protect, the door and history would treat it as the entry\'s');
+});
