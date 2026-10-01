@@ -14,7 +14,8 @@ import { Revision } from './revisionHistory';
 import { pinFieldRefusal } from './pinGate';
 import { unsealedText } from './secretOpener';
 import type { StoredSecret } from './storedSecret';
-import { MaskEntry, buildMaskTable, maskResponseBody } from './secretMasker';
+import { MaskEntry, buildMaskTable, maskResponseBody, maskText } from './secretMasker';
+import { describeError } from './describeError';
 import { fingerprintOf } from './rotationQuarantine';
 
 /**
@@ -157,14 +158,35 @@ async function run(
     // they are the map of where an agent will be tempted to generate the value itself.
     return ready.noGenerator === true ? refuseNoGenerator(ready.error) : refuse(ready.error);
   }
-  const { details, checked, secret, stored, was } = ready;
+  const values = newValues(ready.checked.slot, ready.secret, ready.stored);
+  return ranAndStored(ctx, ready, () => underlying.run(ctx, { [field]: substituteNewSecret(statement, ready.secret) }), deps).then(
+    (answer) => maskedAnswer(answer, values),
+    (error: unknown) => {
+      throw maskedFailure(error, values);
+    },
+  );
+}
 
-  const result = await underlying.run(ctx, { [field]: substituteNewSecret(statement, secret) });
-  // The far side did not change, so neither does the vault. Handed back as it came — but masked: the
-  // statement's own error is what says why, and a statement that printed its input and THEN failed may
-  // have changed the far side all the same.
-  const answer = succeeded(result) ? await commit(ctx, details, { slot: checked.slot, value: stored, was }, result, deps) : result;
-  return maskedAnswer(answer, newValues(checked.slot, secret, stored));
+/**
+ * The statement, and the store only after it SUCCEEDED. The far side did not change, so neither does the
+ * vault: its answer is handed back as it came (masked by the caller) — the statement's own error is what says
+ * why, and a statement that printed its input and THEN failed may have changed the far side all the same.
+ */
+async function ranAndStored(ctx: UseActionContext, ready: Ready, runIt: () => Promise<UseActionResult>, deps: RotateDeps): Promise<UseActionResult> {
+  const result = await runIt();
+  return succeeded(result) ? commit(ctx, ready.details, { slot: ready.checked.slot, value: ready.stored, was: ready.was }, result, deps) : result;
+}
+
+/**
+ * A rotation that THREW — the far side may have changed before it did — rethrown with the new value taken out
+ * of its message (the security review, finding 4). The broker masks a failure's reason with what storage
+ * holds, and the new value is in none of it: a driver error that quotes the statement it ran would put the
+ * new secret in the journal.
+ */
+function maskedFailure(error: unknown, values: readonly MaskEntry[]): Error {
+  const failure = new Error(maskText(describeError(error), buildMaskTable(values)).text);
+  failure.name = error instanceof Error ? error.name : 'Error';
+  return failure;
 }
 
 /**
@@ -303,9 +325,10 @@ async function draw(
     : { ok: false, error: stored.error };
 }
 
-type Prepared =
-  | { ok: true; details: EntityMetadata; checked: { slot: RotationSlot }; secret: string; stored: string; was: string }
-  | { ok: false; error: string; noGenerator?: boolean };
+type Prepared = Ready | { ok: false; error: string; noGenerator?: boolean };
+
+/** Everything a rotation needs once its checks passed: the entry, the slot, the drawn secret and its stored form. */
+type Ready = { ok: true; details: EntityMetadata; checked: { slot: RotationSlot }; secret: string; stored: string; was: string };
 
 /** The kind asked for, defaulting to a password — which is what a rotation almost always is. */
 function kindOf(body: unknown): string {
@@ -333,15 +356,37 @@ async function commit(
   result: UseActionResult,
   deps: RotateDeps,
 ): Promise<UseActionResult> {
-  await deps.record(ctx, await deps.snapshot(ctx, details));
+  const historyKept = await kept(ctx, details, deps);
   const where = await storedOrHanded(ctx, value, deps);
   deps.onRotated?.();
   // `stdout`, not `output`: it IS the far side's stdout, and calling it anything else was how
   // this answer escaped the masker for one release (security pass, 2026-08-27). The masker
   // covers every field now, and the honest name is still the right one.
   const rotated = { rotated: true, entity: ctx.entityName, stdout: outputOf(result) };
-  return { status: 200, body: { ...rotated, ...AGENT_WORDS[where] } };
+  const words: { message?: string } = AGENT_WORDS[where];
+  return { status: 200, body: { ...rotated, ...words, ...(historyKept ? {} : historyLost(words.message)) } };
 }
+
+/**
+ * The previous value into history, BEFORE the store — and a failure there does not stop the store (the
+ * security review, finding 4): the far side has changed, so the new value is the one that must not be lost;
+ * the previous one no longer works anywhere. The agent is told it was not kept (`historyLost`).
+ */
+async function kept(ctx: UseActionContext, details: EntityMetadata, deps: RotateDeps): Promise<boolean> {
+  try {
+    await deps.record(ctx, await deps.snapshot(ctx, details));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The answer's words when the history write failed — appended to whatever the store said. */
+function historyLost(message: string | undefined): { historyKept: false; message: string } {
+  return { historyKept: false, message: [message, HISTORY_LOST].filter((part) => part !== undefined).join(' ') };
+}
+
+const HISTORY_LOST = "The previous value could not be kept in the entry's history; the new value is where `stored` says.";
 
 /**
  * `stored` when the value is in the vault, `quarantined` when it is held beside the entry until its PIN,
@@ -385,7 +430,7 @@ const QUARANTINED = "The far side changed. The entry was protected with a PIN wh
  * Where the value is, in the answer's words — `stored` answers "where is it now": one field with three
  * answers that cannot contradict each other the way `stored: false, held: true` could (plan §4.3).
  */
-const AGENT_WORDS: Readonly<Record<StoreOutcome | 'handed', object>> = {
+const AGENT_WORDS: Readonly<Record<StoreOutcome | 'handed', { readonly stored?: unknown; readonly message?: string }>> = {
   stored: {},
   quarantined: { stored: 'quarantined', message: QUARANTINED },
   handed: { stored: false, message: NOT_STORED },

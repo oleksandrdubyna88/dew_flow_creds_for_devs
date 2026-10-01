@@ -66,6 +66,10 @@ interface FarSide {
   readonly exitCode?: number;
   /** `fails`: the keychain refuses the HOLD's item — the value exists in memory alone, E2's chain (plan §4.3 step 3). */
   readonly hold?: 'fails';
+  /** `throws`: the far side changed, then the call threw with the statement it ran in its message. */
+  readonly ends?: 'throws';
+  /** `fails`: the history write refuses — the snapshot of the previous value cannot be kept. */
+  readonly history?: 'fails';
 }
 
 /** What the far side printed and how the statement ended. */
@@ -106,6 +110,9 @@ async function world(inputs: (string | undefined)[], modal: ModalAnswer[], far: 
         await storage.updateNodeFields(ACCOUNT, ENTRY, protectionDecision(true));
         w.sealedBefore = carried(await storage.getDbConnection(ACCOUNT, ENTRY));
       }
+      if (far.ends === 'throws') {
+        throw new Error(`the driver failed after running: ${String((body as { query?: unknown }).query)}`);
+      }
       return farAnswer(far, body);
     },
   };
@@ -114,7 +121,7 @@ async function world(inputs: (string | undefined)[], modal: ModalAnswer[], far: 
     entity: (ctx) => storage.getNode(ctx.accountId, ctx.entityId)?.details,
     current: (ctx) => Promise.resolve(storage.getDbConnection(ctx.accountId, ctx.entityId)),
     snapshot: (ctx, d) => snapshotForRevision(storage, ctx.accountId, { id: ctx.entityId, name: ctx.entityName, details: d }),
-    record: (ctx, revision) => storage.recordRevision(ctx.accountId, ctx.entityId, revision),
+    record: (ctx, revision) => (far.history === 'fails' ? Promise.reject(new Error('the keychain refused the history write')) : storage.recordRevision(ctx.accountId, ctx.entityId, revision)),
     store: (ctx, slot, value, was) => storeRotated(storage, ctx, slot, value, was),
   };
   const action = rotateAction(farSide, 'query', deps);
@@ -369,4 +376,27 @@ test('after the copy, the message says it again: the automatic clear does not em
 
   assert.equal(w.s.clipboard.length, 1);
   assert.match(w.s.infos.join('\n'), HISTORY_WARNING, 'the post-copy message does not warn about clipboard history');
+});
+
+// ---- security review, finding 4: a rotation that throws, and a history that cannot be written ----
+
+test('the far side changed and the call then THREW with the statement in its message — the agent and the journal never read the new value', async () => {
+  const w = await world([], ['Later'], { ends: 'throws' });
+
+  const answer = await delivered(w);
+
+  assert.match(answer, /failed/, 'the setup: the call did not fail');
+  assert.ok(!answer.includes(NEW_SECRET), `the new value went out in a failure's reason: ${answer}`);
+});
+
+test('the history write fails after the far side changed — the new value is still held, and the agent is told the previous value was not kept', async () => {
+  const w = await world([], ['Later'], { history: 'fails' });
+
+  const result = await w.rotate();
+
+  assert.equal(result.status, 200, `the new value was lost to a history failure: ${JSON.stringify(result.body)}`);
+  assert.ok(await holdsTheNewValue(w), 'the far side has the new password and this machine holds it nowhere');
+  const body = result.body as { stored?: unknown; historyKept?: unknown; message?: unknown };
+  assert.deepEqual([body.stored, body.historyKept], ['quarantined', false]);
+  assert.match(String(body.message), /previous value could not be kept in the entry's history/);
 });
