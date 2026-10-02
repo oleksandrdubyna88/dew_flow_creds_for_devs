@@ -257,13 +257,14 @@ Disjoint otherwise: this plan touches the RECEIVING half of `shareInbox.ts`, the
 - [ ] `shareInbox.ts` well under 800 lines; typecheck, lint, `npm test`, plan lifecycle green.
 - [ ] §7 docs updated; plan promoted with its deviations.
 
-## 9. Open questions for the owner
+## 9. Decided (2026-10-02)
 
-1. **New subfolders an arrival creates under a folder that carries the preference** — one question for the
-   whole landing subtree (the PIN settled for the existing folder, proposed), or Add's literal behaviour: a
-   fresh first PIN, typed twice, per new subfolder (a 20-folder import would ask 20 times)? Either way a
-   folder that asks only because it HOLDS protected entries (no preference) does not reach a subfolder the
-   arrival creates — exactly as Add into an empty subfolder of it asks nothing today.
-2. **`shareRecipientPin.wrappedPayload`** — a second sealing road for a protected share into a folder that
-   asks nothing. Fold it into `writerForNew` + `applyCreatePin` in a follow-up, or leave it as the precedent
-   it is?
+1. **New subfolders an arrival creates under a folder that carries the preference — ONE question for the
+   whole landing subtree**, with the PIN settled for the existing folder (not Add's fresh PIN per new
+   subfolder: a 20-folder import would ask 20 times). A folder that asks only because it HOLDS protected
+   entries (no preference) does not reach a subfolder the arrival creates — as Add into an empty subfolder
+   of it asks nothing today.
+2. **`shareRecipientPin.wrappedPayload` is folded into `writerForNew` + `applyCreatePin` — as a separate
+   follow-up, not in this plan** (open tail): it is a second sealing road, and in a PIN folder it seals under
+   the recipient's own PIN, unchecked against the folder's, so one folder can hold two PINs. This plan must
+   not make that worse: where both apply, the folder's PIN wins and no second "own PIN" is asked (§3).

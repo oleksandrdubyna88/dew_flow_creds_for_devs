@@ -196,10 +196,14 @@ Disjoint otherwise: this plan touches the SENDING half of `shareInbox.ts`, the s
 - [ ] No sentence names a PIN for an entry without one.
 - [ ] Typecheck, lint, `npm test`, plan lifecycle green; §7 docs updated; plan promoted with its deviations.
 
-## 9. Open questions for the owner
+## 9. Decided (2026-10-02)
 
-1. **An agent's use of an unprotected entry with a waiting value** — release it first, unattended (exactly
-   the store the rotation would have made, one keychain `get` only for listed entries), or leave the ≤60 s
-   window to the sweep and the row's hint?
-2. **The sweep's release** — say it to the person (*"The new password of "X" … is now stored."*, once per
-   release), or keep it in the log as today?
+The owner's direction for both limits: *"главное как-то отобразить это"* — the person must see it.
+
+1. **An agent's use of an unprotected entry with a waiting value releases it first, unattended** — exactly
+   the store the rotation would have made (`releaseHeld` with the UNATTENDED proof, re-checked under the
+   lease), one keychain `get` only for entries the local index lists. A conflict (the slot changed since the
+   rotation) is NOT resolved automatically: the agent uses what is stored and the conflict waits for the
+   person's next door, as today. Built as its own story, RED first.
+2. **The sweep's release is said to the person**, once per release (*"The new password of "X" … is now
+   stored."*), through the same words the door uses (`rotationWaiting`) — not only in the log.
