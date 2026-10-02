@@ -2,7 +2,8 @@
 
 > Status: **IMPLEMENTED, 2026-10-02** (PR #179). Shipped as planned with the deviations in §5.1 — the main
 > ones: the masking covers every answer and every throw, not only `commit`; the release checks and commits
-> under ONE lease; the fingerprint is a salted HMAC (record v2, v1 read as legacy); a ONE-USE entry is not
+> under ONE lease; the fingerprint of the replaced value is scrypt (record v3 — CodeQL js/insufficient-password-hash
+> on PR #179; v1/v2 holds read with an unknown fingerprint, released only by the person); a ONE-USE entry is not
 > rotated at all (refused in `prepare`), and one that becomes one-use mid-rotation is offered the copy alone.
 > Two independent security reviews (7 + 4 findings) and three coai code rounds (all `proceed`). **Open tail:**
 > a click on an UNPROTECTED entry with a waiting value, in the ≤60 s before the sweep releases it, still
@@ -407,10 +408,10 @@ Every story's commit body carries its RED message and its break-it. What differs
        takes E2's awaited handed path for it (`6ebd4a71`) — narrowed to the COPY alone (`8d107e84`): *Store it*
        sealed the value into the entry the burn then took, the only copy lost; the modal now says the entry
        burns with this answer and the agent hears `stored: false`. The Q3 "quarantined at once" guard waits
-       15 s, not 5, under the parallel suite's load (`a1755c91`). Decided, not built: the fingerprint stays an
-       HMAC under a per-hold salt — scrypt would protect only the dead old value, beside a new one in the
-       clear; the v1 reader stays (two lines that keep a v1 hold from being a permanent plaintext orphan). The §4.3 text above describes the hold road for
-       every entry; the one-use exception is the deviation.
+       15 s, not 5, under the parallel suite's load (`a1755c91`). Decided then, REVERSED in item 16: "the
+       fingerprint stays an HMAC under a per-hold salt — scrypt would protect only the dead old value, beside
+       a new one in the clear; the v1 reader stays". The §4.3 text above describes the hold road for every
+       entry; the one-use exception is the deviation.
 14. **coai code round 2: session `4187565a` again, proceed, 8 of 8, 5 findings, all rejected with reasons.**
 15. **Final security review — 4 findings, 2026-10-02**, each fixed red-green with its break-it in the commit body:
     1. An UNPROTECTED one-use entry was rotated, stored, answered 200 and burned with the new value inside —
@@ -426,6 +427,19 @@ Every story's commit body carries its RED message and its break-it. What differs
     4. The one-use copy offer always said "protected with a PIN"; it now says so only for a PIN refusal and
        names the store's own failure otherwise (`cb920387`).
     The `creds_rotate` description lists no prepare refusal (woven, PIN), so it was not changed for fix 1.
+16. **The fingerprint is scrypt — CodeQL js/insufficient-password-hash (HIGH, required check) on PR #179**,
+    2026-10-02, replacing item 13.6's salted HMAC and the "no scrypt" decision of item 13.7. The replaced text
+    is a password, and any fast hash of it — HMAC-SHA-256 (v2) or the plain SHA-256 (v1) — was an offline
+    guessing check for whoever reads the item. Now `{ kdf: 'scrypt', N: 2^14, r: 8, p: 1, salt, key }`: async
+    `crypto.scrypt` on the thread pool, 16 random bytes of salt per hold, 32-byte key, compared with
+    `timingSafeEqual` after a length check; measured 30.7–36.5 ms, median 32.4 ms; the cost is stored so it
+    can be raised, and a cost read back is bounded (128·N·r ≤ 64 MiB). Record **v3**. Every fast hash of a
+    slot's text is gone; a v1/v2 record (development builds of this branch only, never released) is read as
+    HELD with an UNKNOWN fingerprint, which the release treats as a conflict — the door asks the person,
+    nothing automatic writes it, the UNATTENDED road (the sweep, Remove PIN) leaves it alone (`84954867`).
+    Sonar on the PR: S4624 (a nested template literal in `rotationStore.offerCopy`) and S7778 (two
+    consecutive pushes this branch added in `treeIcons.buildTooltip`) fixed; S9382 (await in a loop,
+    sequential by design) and S7718 (catch-parameter naming, not this repo's convention) left (`50abbc54`).
 
 ## 6. Test plan
 

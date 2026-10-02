@@ -1576,7 +1576,7 @@ proof. Getters and setters were still `string` then; E3 flipped them to `StoredS
   (locked path) and after `repairFalseMark` (unlocked path), AWAITED before the door answers, best-effort
   (`rotationQuarantine.releaseHeld`, which never throws): read the item; open the live slot through a
   silent gate; equal to the held value → only the drop is left (a release that died between its write and
-  its drop); its salted fingerprint does not match the item's `was` (below) → a CONFLICT, nothing written; otherwise
+  its drop); the item's `was` (below) does not match it — or cannot be checked at all — → a CONFLICT, nothing written; otherwise
   `sealingForUpdate` with doors that ask nothing (`AT_THE_DOOR`: the grant the door just took, no first
   PIN) and the write through `writerFor` — a sealed slot sealed in memory and committed under the lease
   (R3), a plain entry re-checked under the lease, marked-over-nothing stopped; then, under the lease, the
@@ -1607,12 +1607,15 @@ proof. Getters and setters were still `string` then; E3 flipped them to `StoredS
   plaintext item outlived its entry for good), and a protected ENTRY is still never written in the clear.
   **Its protection is the OS keychain's alone** — what an unprotected entry's password has — from the
   refused store until the next PIN (the owner's accepted trade-off). The item's `was` — the fingerprint of
-  what the rotation replaced; the release overwrites nothing else — is a `Fingerprint`: HMAC-SHA-256 of the
-  replaced text under 16 random bytes drawn per hold and kept beside it (record v2; a v1 record's plain
-  SHA-256 is still read and compared as it was written — finding 6). It gives whoever reads the item no
-  precomputed or cross-record check on the old value, which the entry keeps sealed under scrypt; it is not
-  protection against a guesser who holds the record and runs HMACs — that would take a slow derivation per
-  hold and per door, not taken. A local, never-synced `globalState` index (ids only) feeds the tree's
+  what the rotation replaced; the release overwrites nothing else — is a `Fingerprint`: **scrypt** of the
+  replaced text (`{ kdf: 'scrypt', N: 2^14, r: 8, p: 1, salt, key }`, 16 random bytes of salt per hold, a
+  32-byte key, async `crypto.scrypt` on the thread pool, ~32 ms; compared with `timingSafeEqual`), the cost
+  stored so it can be raised and bounded when read back (record v3; CodeQL js/insufficient-password-hash on
+  PR #179 — the replaced text is a password, and the salted HMAC before it was a fast offline guessing
+  check). No fast hash of a slot's text is computed anywhere in the feature. A v1 (plain SHA-256) or v2
+  (HMAC) record, written only by development builds and never released, is read as HELD with an UNKNOWN
+  fingerprint: never dropped, never written automatically — the door asks the person (a conflict), and the
+  unattended road leaves it alone. A local, never-synced `globalState` index (ids only) feeds the tree's
   *rotated password waiting* hint and the sweep; a permanent delete's confirmation — Delete, Empty Trash,
   *Burn Now…* (finding 7b) — names the copy it would lose.
 - **Restore goes through the re-checked road** (the E2 security review, finding 2). A plain restore hands

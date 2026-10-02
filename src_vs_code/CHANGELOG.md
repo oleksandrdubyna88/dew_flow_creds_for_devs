@@ -41,8 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   message says so. The agent hears `stored: false`.
 - **What waits beside an entry gives away nothing about what it replaced.** The record kept beside a
   waiting value carries a fingerprint of the value the rotation replaced, so the next PIN can tell whether
-  the entry changed since. That fingerprint is now salted per value: whoever can read the keychain item
-  gets no ready-made check on the old password.
+  the entry changed since. That fingerprint is now a slow, memory-hard derivation (scrypt) under a salt
+  drawn for each value — the same kind of protection the entry's own PIN seal uses: whoever can read the
+  keychain item gets no cheap way to test guesses at the old password.
 
 ### Changed — a stored secret has its own type (typed-secrets E3, 2026-10-01; for developers)
 
