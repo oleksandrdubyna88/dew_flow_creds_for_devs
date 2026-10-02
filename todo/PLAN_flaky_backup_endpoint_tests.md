@@ -49,24 +49,32 @@ people to re-run red checks without reading them.
    `AnEventLogThatCannotBeWrittenToDoesNotTurnAGoodRunIntoAFailedOne` pins and keeps pinning unchanged. So
    "`Succeeded` implies the row" holds whenever the log could be written; when it could not, the run is
    still `Succeeded` and the failure is logged, never stuck "running" (rule 8: durable status).
-2. **A wait with a budget that names the load.** Give `Corp.Eventually` an explicit budget parameter
-   (default unchanged) and pass a longer one (15 s) for the detached backup run's completion, so the
-   guard still fails a run that never finishes, with the load's margin. Its failure message names the
+2. **First, rule out shared state** (plan round, finding 1 — the repository's rule: *passes alone, fails in
+   the suite is a shared-state defect until shown otherwise*). Trace what `DownloadingStreamsTheArchive…`
+   shares with its siblings during a parallel run — data directories, the backup store and its run claim,
+   static locks or caches in `BackupRunner` / `BackupStore`, the key derivation — and record what was
+   found. Only if every per-test resource is isolated is the cause load, and only then does the wait move.
+3. **A wait with a budget that names the load — in ONE place** (plan round, finding 0). Give
+   `Corp.Eventually` an explicit budget parameter (default unchanged), and give `BackupEndpointTests` ONE
+   helper that waits for a detached run to finish with 15 s, through which EVERY backup wait in the file
+   goes (the two that failed and every sibling that waits for `Result`), so the guard still fails a run that
+   never finishes, with the load's margin. Its failure message names the
    budget it was given (`within {budget} {what}`), so a 15-second timeout never reads "within five seconds"
    (CodeRabbit on #183); the default still reads five seconds.
 
 ## 4. Build order and tests
 
 1. RED: a test that reads the status the moment it turns `Succeeded` and asserts the `BackupTaken` row is
-   already there (poll the status, and on the first `Succeeded` read the rows in the same step) — red
-   today by construction when the window is widened (a test seam that delays the row write, or the
-   runner's own order asserted). Then move the row write; GREEN; break-it by moving it back.
+   already there — the OBSERVABLE symptom of the CI failure, not a call order. The window is widened with a
+   delay hook scoped to THAT test's own server (its `WebApplicationFactory` / DI registration of the event
+   log), never a static or production seam in `BackupRunner.cs` (plan round, finding 2) — so no parallel
+   sibling is slowed. Red today; then move the row write; GREEN; break-it by moving it back.
 2. Guard, green before and after: `AnEventLogThatCannotBeWrittenToDoesNotTurnAGoodRunIntoAFailedOne` —
    an audit append that returns `false` leaves the run `Succeeded`, not stuck — unchanged.
 3. `Corp.Eventually(condition, what, budget)` with the default kept and the budget in its message; the
    two backup waits pass 15 s. No assertion changes.
 4. Run the server suite via its test executable (`CredVaultServer.Tests.exe`, never `dotnet test`) three
-   times under load; all green.
+   times under load in BOTH Debug and Release (plan round, finding 3 — the change touches ordering); all green.
 
 ## 5. Docs
 
@@ -79,5 +87,7 @@ then terminal status — and why. CHANGELOG of the server if it keeps one.
 - [ ] An audit append that returns `false` still leaves the run `Succeeded` and never stuck (the existing
       test, unchanged).
 - [ ] `Corp.Eventually` takes a budget; the backup waits use 15 s; no assertion edited.
-- [ ] The server suite green three runs in a row under load, via the test executable.
+- [ ] The shared-state trace recorded (what is shared, what is isolated) before any budget changed.
+- [ ] Every backup wait in `BackupEndpointTests` goes through one helper with the 15 s budget.
+- [ ] The server suite green three runs in a row under load, Debug and Release, via the test executable.
 - [ ] Module docs updated; coai plan round and code round `proceed`; plan promoted when done.
