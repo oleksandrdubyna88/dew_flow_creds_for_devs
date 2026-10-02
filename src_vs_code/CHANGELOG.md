@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.1] — 2026-10-02 — A protected entry is never written in the clear, and a rotation a PIN refused waits for that PIN
+
 ### Fixed — an agent's rotation could hand it the new secret (2026-10-01)
 
 - **A rotation whose statement printed what it was given showed the agent the new password.** The broker
