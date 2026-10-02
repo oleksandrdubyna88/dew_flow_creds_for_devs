@@ -12,6 +12,7 @@ import { DrawOptions, GenerationOutcome, NO_GENERATOR_OUTCOME } from './secretKi
 import { readSecretOptions } from './mcpSecretOptions';
 import { Revision } from './revisionHistory';
 import { pinFieldRefusal } from './pinGate';
+import { detailsBurnedByAgentUse } from './burnOnUse';
 import { unsealedText } from './secretOpener';
 import type { StoredSecret } from './storedSecret';
 import { MaskEntry, buildMaskTable, maskResponseBody, maskText } from './secretMasker';
@@ -254,8 +255,22 @@ async function notRotatable(
   slot: RotationSlot,
   deps: RotateDeps,
 ): Promise<string> {
-  const woven = wovenSlot(details, slot);
-  return woven === '' ? protectedSlot(ctx, slot, details, deps) : woven;
+  const refused = oneUseEntry(details) || wovenSlot(details, slot);
+  return refused === '' ? protectedSlot(ctx, slot, details, deps) : refused;
+}
+
+/**
+ * A ONE-USE entry is not one an agent may rotate (the final security review, fix 1). The broker burns it as
+ * soon as this call is answered, so a rotation would change the far side and then lose the new value with the
+ * entry — stored into it, held beside it or handed to nobody. Refused here, before anything is drawn or run:
+ * nothing changes, nothing is lost. (`rotationStore`'s copy-only road stays as the defence for an entry made
+ * one-use while the statement ran.)
+ */
+function oneUseEntry(details: EntityMetadata): string {
+  return detailsBurnedByAgentUse(details)
+    ? `"${details.name}" is one-use: it burns as soon as this agent call is answered, so a rotation would change the far side and `
+      + 'leave the new value nowhere to be kept. Nothing was run. To rotate it, first take "one use" off the entry.'
+    : '';
 }
 
 /**

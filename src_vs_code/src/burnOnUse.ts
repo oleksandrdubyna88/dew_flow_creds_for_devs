@@ -1,6 +1,6 @@
 import { burnsOnAgentUse } from './entityExpiry';
 import { canBurnOnAgentUse, resolveKind } from './entityKind';
-import { TreeNode } from './types';
+import { EntityMetadata, TreeNode } from './types';
 
 /**
  * Destroy an entry that was created to survive exactly one agent use.
@@ -36,6 +36,14 @@ export interface BurnStorage {
  */
 export function burnedByAgentUse(node: TreeNode | undefined): boolean {
   return node !== undefined && burnsOnAgentUse(node) && canBurnOnAgentUse(resolveKind(node.details));
+}
+
+/**
+ * The same answer from an entry's DETAILS — what the rotation holds when it decides (`rotateAction.prepare`
+ * refuses a one-use entry before anything is drawn or run; the final security review, fix 1).
+ */
+export function detailsBurnedByAgentUse(details: EntityMetadata | undefined): boolean {
+  return details !== undefined && burnedByAgentUse({ id: details.id, name: details.name, type: 'entity', parentId: null, details });
 }
 
 /** `true` when the entry was one-use and is now gone from the vault. */

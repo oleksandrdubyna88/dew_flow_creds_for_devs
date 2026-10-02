@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { describeError } from '../describeError';
-import { refreshFrom, runAndDeliver, tableFor } from '../brokerResponse';
+import { burnIfSpent, refreshFrom, runAndDeliver, tableFor } from '../brokerResponse';
 import { burnIfOneUse } from '../burnOnUse';
 import { protectEntity, unprotectEntity } from '../entityPin';
 import { maskEntriesFor } from '../maskEntries';
@@ -55,6 +55,8 @@ interface World {
   store: (slot: RotationSlot, value: string) => Promise<StoreOutcome>;
   /** The connection string as the other window sealed it, byte for byte, the moment it was protected. */
   sealedBefore: string | undefined;
+  /** How many times the far side ran the statement. */
+  ran: number;
 }
 
 /**
@@ -73,6 +75,8 @@ interface FarSide {
   readonly history?: 'fails';
   /** `true`: a ONE-USE entry — the broker burns it right after a successful answer (`burnOnUse.ts`). */
   readonly oneUse?: true;
+  /** `true`: the entry BECOMES one-use while the statement runs (another window) — past `prepare`'s refusal. */
+  readonly becomesOneUse?: true;
 }
 
 /** What the far side printed and how the statement ended. */
@@ -92,7 +96,7 @@ async function world(inputs: (string | undefined)[], modal: ModalAnswer[], far: 
   if (far.hold === 'fails') {
     refuseHolds(storage);
   }
-  const w = { sealedBefore: undefined } as World;
+  const w = { sealedBefore: undefined, ran: 0 } as World;
   // One graph: the store's `RotationNotStored` is the class the action catches.
   const [{ storeRotated }, { rotateAction }] = loadEachWithVscode(['../rotationStore', '../rotateAction'], stub) as [
     typeof import('../rotationStore'),
@@ -112,6 +116,10 @@ async function world(inputs: (string | undefined)[], modal: ModalAnswer[], far: 
         await protectEntity(storage, ACCOUNT, ENTRY, PIN);
         await storage.updateNodeFields(ACCOUNT, ENTRY, protectionDecision(true));
         w.sealedBefore = carried(await storage.getDbConnection(ACCOUNT, ENTRY));
+      }
+      w.ran += 1;
+      if (far.becomesOneUse === true) {
+        await storage.updateDetailsFields(ACCOUNT, ENTRY, { burnPolicy: 'oneUse' });
       }
       if (far.ends === 'throws') {
         throw new Error(`the driver failed after running: ${String((body as { query?: unknown }).query)}`);
@@ -219,7 +227,8 @@ async function delivered(w: World): Promise<string> {
       },
       log: () => undefined,
       // The real burn (`burnOneUseIn` wires it): a one-use entry is deleted right after the answer, every other entry is left alone.
-      burn: () => burnIfOneUse(w.storage, ACCOUNT, ENTRY).then(() => undefined),
+      // Through the broker's own gate (`burnIfSpent`): only a call that answered 200 spends the entry.
+      burn: (status) => burnIfSpent((a, e) => burnIfOneUse(w.storage, a, e), { accountId: ACCOUNT, entityId: ENTRY, entityName: 'orders-db' }, status, () => undefined),
       table: await tableFor(entriesFor, where),
       where: { grant: 'g1', entityName: 'orders-db', action: 'rotate', via: 'mcp', summary: 'rotate', caller: undefined },
       refresh: refreshFrom(entriesFor, where),
@@ -444,8 +453,8 @@ test('the hold failed and the person stored the new value under the PIN — an O
 /** Presses whichever button the modal on screen offers — what a person who wants to keep the value does. */
 const pressTheButton = (s: Sinks): ModalAnswer => () => Promise.resolve(s.modalButtons[s.modalButtons.length - 1]?.[0]);
 
-test('a ONE-USE entry protected while the far side changed: the person presses the one button offered and HOLDS the value — copied, and no road stored it in the entry the burn then took', async () => {
-  const w = await world([PIN], [], { oneUse: true });
+test('an entry made ONE-USE and protected while the far side changed: the person presses the one button offered and HOLDS the value — copied, and no road stored it in the entry the burn then took', async () => {
+  const w = await world([PIN], [], { becomesOneUse: true });
   w.s.modalAnswers.push(pressTheButton(w.s));
 
   const answer = await delivered(w);
@@ -467,8 +476,8 @@ test('a ONE-USE entry protected while the far side changed: the person presses t
   assert.ok(!answer.includes(NEW_SECRET), `the agent was handed the new value: ${answer}`);
 });
 
-test('a ONE-USE entry protected while the far side changed, the copy offer dismissed: nothing is copied, nothing is held or stored, the entry burns, and the agent hears stored: false', async () => {
-  const w = await world([], [undefined], { oneUse: true });
+test('an entry made ONE-USE and protected while the far side changed, the copy offer dismissed: nothing is copied, nothing is held or stored, the entry burns, and the agent hears stored: false', async () => {
+  const w = await world([], [undefined], { becomesOneUse: true });
 
   const answer = await delivered(w);
 
@@ -477,4 +486,19 @@ test('a ONE-USE entry protected while the far side changed, the copy offer dismi
   assert.deepEqual(inTheClear(w), [], 'the new value was held or stored for an entry about to burn');
   assert.equal(w.s.modals.length, 1, `the person was asked more than the one question: ${JSON.stringify(w.s.modalButtons)}`);
   assert.match(answer, /"stored":false/);
+});
+
+// ---- final security review, fix 1: a ONE-USE entry is not rotated at all ----
+
+test('rotating a ONE-USE entry is refused before anything is drawn or run: the far side is untouched, the entry keeps its value and is not burned', async () => {
+  const w = await world([], [], { oneUse: true, stays: 'plain' });
+
+  const answer = await delivered(w);
+
+  assert.equal(w.ran, 0, `the statement ran on the far side of a one-use entry — the agent got ${answer}`);
+  assert.notEqual(w.storage.getNode(ACCOUNT, ENTRY), undefined, 'the one-use entry burned with the new value inside it — nobody was offered a copy');
+  assert.equal(carried(await w.storage.getDbConnection(ACCOUNT, ENTRY)), CONN, 'the entry no longer holds the value the far side still accepts');
+  assert.match(answer, /is one-use: it burns as soon as this agent call is answered/);
+  assert.match(answer, /take \\"one use\\" off/, 'the refusal does not say how to rotate it');
+  assert.match(answer, /invalid_request/);
 });
