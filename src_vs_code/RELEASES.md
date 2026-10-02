@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.12.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.12.0...extension-v1.12.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **extension:** a rotated password the PIN refused waits on this machine until the PIN is entered, and an agent can no longer rotate a one-use entry ([0a66aed](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/0a66aedb1f4ff720e1f373a44b80f23f71d14997))
+* **extension:** every read of a stored secret goes through a PIN door, every write through one writer under the cross-window lease ([2be95db](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/2be95db5aa51a8513520ba80ba10dd67ce686758))
+* **extension:** two plaintext windows into a PIN-protected entry ([#175](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/175)) ([9f62e4d](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/9f62e4db07a05e247b0fa25ea380cac21909b323))
+* **mcp:** creds_rotate says what stored quarantined means ([0a66aed](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/0a66aedb1f4ff720e1f373a44b80f23f71d14997))
+
 ## [1.12.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.11.0...extension-v1.12.0) (2026-09-30)
 
 
