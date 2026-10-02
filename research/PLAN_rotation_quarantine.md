@@ -8,7 +8,8 @@
 > Two independent security reviews (7 + 4 findings) and three coai code rounds (all `proceed`). **Open tail:**
 > a click on an UNPROTECTED entry with a waiting value, in the ≤60 s before the sweep releases it, still
 > uses the old value (nothing lost); the share inbox's door releases without a "now stored" message; the
-> operator's cadence consultation (local model) gave no usable advice — recorded `not_solved` (§5.1).
+> operator's cadence consultation (local model) gave no usable advice — recorded `not_solved` (§5.1). The first
+> two are planned in [PLAN_waiting_rotation_visible.md](../todo/PLAN_waiting_rotation_visible.md) (2026-10-02).
 > Scope: the rotation's store
 > (`rotationStore.ts`, `rotateAction.ts`), a new per-entry quarantine item in the OS keychain
 > (`rotationQuarantine.ts`, `secretKeys.ts`), its release at the entry-PIN door (`pinAdmission.ts`,
