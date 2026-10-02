@@ -303,7 +303,9 @@ test('protected while the far side changed — the new value is held beside the 
   const modal = heldOpen();
   const w = await world([], [modal.answer]);
 
-  const result = await within(w.rotate(), 5_000, 'the agent\'s answer waited for the person to answer the modal');
+  // 15 s, not 5: the answer arrives in ~2 s alone, but under the parallel suite's load (scrypt in every
+  // neighbour) 5 s tripped twice at 5030–5048 ms with nothing wrong; a modal left open would still wait for ever.
+  const result = await within(w.rotate(), 15_000, 'the agent\'s answer waited for the person to answer the modal');
 
   assert.ok(await holdsTheNewValue(w), `the far side's new password is held nowhere — the agent got ${JSON.stringify(result.body)}`);
   assert.equal(carried(await w.storage.getDbConnection(ACCOUNT, ENTRY)), w.sealedBefore, 'the slot is not the sealed value the other window wrote, byte for byte');
