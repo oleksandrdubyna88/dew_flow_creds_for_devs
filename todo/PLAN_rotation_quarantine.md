@@ -333,8 +333,9 @@ Every story's commit body carries its RED message and its break-it. What differs
    `quarantine()` (the id quarantine on import). Still one field, still line-neutral (1015).
 3. **`QuarantineStore.read` and `listed` take no lease.** A single keychain `get` is atomic, and the door
    pays it on every open of every entry; every write and every read-modify-write (`holdRotated`,
-   `supersedeHeld`, `dropHeld`) holds the lease. The port's `drop` verb exists but the code drops through
-   `put` of the remainder (`settle`), which deletes the item when nothing is left.
+   `supersedeHeld`, `dropHeld`) holds the lease. The port has no `drop` verb (the plan named one;
+   nothing called it, so it was removed): the code drops through `put` of the remainder (`settle`), which
+   deletes the item when nothing is left.
 4. **The release takes a proof.** `releaseHeld(…, proof)` with `AT_THE_DOOR` (`sealingForUpdate`, doors
    that ask nothing) or `UNATTENDED` (`unattendedSealing` — what the plan called "the plain proof", exactly
    the store the rotation would have made). Remove PIN and the sweep use `UNATTENDED`; Remove PIN also

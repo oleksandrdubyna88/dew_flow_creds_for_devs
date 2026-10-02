@@ -81,7 +81,6 @@ export interface QuarantineStore {
   read(accountId: string, entityId: string): Promise<HeldSlots>;
   /** Writes the record — or deletes the item when it holds nothing. */
   put(accountId: string, entityId: string, slots: HeldSlots): Promise<void>;
-  drop(accountId: string, entityId: string): Promise<void>;
   /** The index: every pair that may have an item. A hint — an item is read before it is believed. */
   listed(): Promise<readonly HeldEntry[]>;
   list(accountId: string, entityId: string): Promise<void>;
@@ -94,7 +93,6 @@ export function quarantineStore(chest: SecretChest, state: IndexState, writes: L
   return {
     read: async (a, e) => heldOf(await chest.get(key(a, e))),
     put: (a, e, slots) => writes.run(() => Promise.resolve(isEmpty(slots) ? chest.delete(key(a, e)) : chest.store(key(a, e), serialised(slots)))),
-    drop: (a, e) => writes.run(() => Promise.resolve(chest.delete(key(a, e)))),
     listed: () => Promise.resolve(indexOf(state)),
     list: (a, e) => writes.run(() => Promise.resolve(state.update(QUARANTINE_INDEX_KEY, [...without(indexOf(state), a, e), { accountId: a, entityId: e }]))),
     unlist: (a, e) => writes.run(() => Promise.resolve(state.update(QUARANTINE_INDEX_KEY, nonEmpty(without(indexOf(state), a, e))))),
