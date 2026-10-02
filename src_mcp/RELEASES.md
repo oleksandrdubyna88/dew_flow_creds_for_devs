@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/mcp-v0.9.0...mcp-v0.9.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **extension:** a rotated password the PIN refused waits on this machine until the PIN is entered, and an agent can no longer rotate a one-use entry ([0a66aed](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/0a66aedb1f4ff720e1f373a44b80f23f71d14997))
+* **mcp:** creds_rotate says what stored quarantined means ([0a66aed](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/0a66aedb1f4ff720e1f373a44b80f23f71d14997))
+
 ## [0.9.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/mcp-v0.8.0...mcp-v0.9.0) (2026-09-30)
 
 
