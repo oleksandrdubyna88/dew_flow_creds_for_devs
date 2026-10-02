@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
+import * as crypto from 'node:crypto';
 import { test } from 'node:test';
 import { protectEntity, unprotectEntity } from '../entityPin';
 import { exportOpener } from '../exportSecrets';
 import type { PinGate } from '../pinGate';
-import { HeldSlots, ReleaseProof, fingerprintOf, holdRotated, releaseUnprotected, waitingKeys } from '../rotationQuarantine';
+import { Fingerprint, HeldSlots, ReleaseProof, UNATTENDED, fingerprintOf, holdRotated, releaseHeld, releaseUnprotected, waitingKeys } from '../rotationQuarantine';
 import { readSecret, unlockSecret } from '../secretEnvelope';
 import { rotationQuarantineSecretKey } from '../secretKeys';
 import type { StorageManager } from '../storageManager';
@@ -24,7 +25,7 @@ import { ACCOUNT, ModalAnswer, PIN, Sinks, carried, clickVscode, locked, memoryS
 const ENTRY = 'db1';
 const CONN = 'mysql://app:old-password-9f2c@db-01.example.internal:3306/orders';
 const HELD_CONN = 'mysql://app:HELD-rotated-77ab@db-01.example.internal:3306/orders';
-const WAS = 'a'.repeat(64);
+const WAS: Fingerprint = { salt: 'b'.repeat(32), mac: 'a'.repeat(64) };
 const ITEM = rotationQuarantineSecretKey(ACCOUNT, ENTRY);
 
 const details = (): EntityMetadata => ({ id: ENTRY, name: 'orders-db', kind: 'db', isSshEnabled: false, dbType: 'mysql' }) as EntityMetadata;
@@ -77,7 +78,7 @@ test('an item this build cannot read is nothing held: a damaged record, a wrong 
   const w = await world();
   const keychain = (w.storage as unknown as { secrets: { store(k: string, v: string): Promise<void> } }).secrets;
 
-  for (const damaged of ['{"v":1,"slots":{"dbConnection":{"value":"x","at":1,"was":"short"}}}', '{"v":2,"slots":{}}', '{not json', 'null']) {
+  for (const damaged of ['{"v":2,"slots":{"dbConnection":{"value":"x","at":1,"was":{"salt":"ab","mac":"short"}}}}', '{"v":1,"slots":{"dbConnection":{"value":"x","at":1,"was":"short"}}}', '{"v":3,"slots":{}}', '{not json', 'null']) {
     await keychain.store(ITEM, damaged);
     assert.deepEqual(await w.storage.heldRotations.read(ACCOUNT, ENTRY), {}, `read as held: ${damaged}`);
   }
@@ -545,4 +546,50 @@ test('the sweep does not drop the index entry of a hold that landed while it loo
   await releaseUnprotected(storage);
 
   assert.deepEqual(await storage.heldRotations.listed(), [{ accountId: ACCOUNT, entityId: ENTRY }], 'the index lost an entry whose item exists');
+});
+
+// ---- security review, finding 6: the fingerprint of the replaced value gives no offline check on it ----
+
+const plainSha256 = (text: string): string => crypto.createHash('sha256').update(text, 'utf8').digest('hex');
+
+/** An UNPROTECTED database entry, every keychain write logged — a release here takes the plain road. */
+async function plainEntry(): Promise<{ readonly storage: StorageManager; readonly written: string[] }> {
+  const written: string[] = [];
+  const storage = memoryStorage(clickVscode([], sinks()), written);
+  await seedEntry(storage, details(), { 'database connection': CONN });
+  written.length = 0;
+  return { storage, written };
+}
+
+const slotNow = async (storage: StorageManager): Promise<string | undefined> => carried(await storage.getDbConnection(ACCOUNT, ENTRY));
+
+test('a hold\'s record carries no plain SHA-256 of the value it replaced — and the release still tells an unchanged slot from a changed one', async () => {
+  const { storage, written } = await plainEntry();
+
+  await holdRotated(storage, ACCOUNT, ENTRY, 'dbConnection', HELD_CONN, fingerprintOf(CONN));
+
+  const record = written.find((value) => value.includes('"slots"'));
+  assert.ok(record !== undefined, 'the setup: no item was written');
+  assert.ok(!record.includes(plainSha256(CONN)), `the record carries the plain SHA-256 of the replaced value — an offline guessing check on it for whoever can read the keychain item: ${record}`);
+  // Unchanged since the rotation: released.
+  const unchanged = await releaseHeld(storage, ACCOUNT, ENTRY, 'orders-db', UNATTENDED);
+  assert.deepEqual([unchanged.released.map((one) => one.slot), unchanged.conflicts], [['dbConnection'], []], 'the release no longer recognises the value the rotation replaced');
+  assert.equal(await slotNow(storage), HELD_CONN);
+  // Changed after the rotation (another window, a sync): a conflict, nothing written.
+  await holdRotated(storage, ACCOUNT, ENTRY, 'dbConnection', V2, fingerprintOf(HELD_CONN));
+  await storage.setDbConnection(ACCOUNT, ENTRY, stored(OTHER_CONN));
+  const changed = await releaseHeld(storage, ACCOUNT, ENTRY, 'orders-db', UNATTENDED);
+  assert.deepEqual([changed.released, changed.conflicts.map((one) => one.slot)], [[], ['dbConnection']], 'a slot changed after the rotation was not seen as changed');
+  assert.equal(await slotNow(storage), OTHER_CONN, 'the release overwrote a value that changed after the rotation');
+});
+
+test('a record written before the salt (v1, never released) is still read, and its fingerprint compared as it was written', async () => {
+  const { storage } = await plainEntry();
+  const keychain = (storage as unknown as { secrets: { store(k: string, v: string): Promise<void> } }).secrets;
+  await keychain.store(ITEM, JSON.stringify({ v: 1, slots: { dbConnection: { value: HELD_CONN, at: AT, was: plainSha256(CONN) } } }));
+
+  const release = await releaseHeld(storage, ACCOUNT, ENTRY, 'orders-db', UNATTENDED);
+
+  assert.deepEqual(release.released.map((one) => one.slot), ['dbConnection'], 'a v1 hold was not released — read as nothing held, its value would wait forever');
+  assert.equal(await slotNow(storage), HELD_CONN);
 });

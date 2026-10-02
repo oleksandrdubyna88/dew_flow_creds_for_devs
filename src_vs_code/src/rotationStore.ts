@@ -4,7 +4,7 @@ import { NOTHING_OPENED } from './editPrefill';
 import { EntryWriter, UnattendedRefusal, writeUnattended, writerFor } from './entryWriter';
 import { admitEntry } from './pinPrompt';
 import { RotationNotStored, StoreOutcome } from './rotateAction';
-import { holdRotated, supersedeHeld } from './rotationQuarantine';
+import { Fingerprint, holdRotated, supersedeHeld } from './rotationQuarantine';
 import { sealingForUpdate } from './sealingAtWrite';
 import { copiedMessage, copySecret } from './secretClipboard';
 import type { RotationSlot } from './secretRotation';
@@ -41,7 +41,7 @@ import type { UseActionContext } from './useActions';
  * <p>No lease is held across any modal or the PIN box: the hold takes it for its one step, the plain writer
  * per write, and the sealing writer only to commit.</p>
  */
-export async function storeRotated(storage: StorageManager, ctx: UseActionContext, slot: RotationSlot, value: string, was: string): Promise<StoreOutcome> {
+export async function storeRotated(storage: StorageManager, ctx: UseActionContext, slot: RotationSlot, value: string, was: Fingerprint): Promise<StoreOutcome> {
   try {
     await writeUnattended(storage, ctx.accountId, { id: ctx.entityId, name: ctx.entityName }, (writer) => writeSlot(writer, ctx, slot, value));
   } catch (error) {
@@ -55,7 +55,7 @@ export async function storeRotated(storage: StorageManager, ctx: UseActionContex
 interface Refused {
   readonly slot: RotationSlot;
   readonly value: string;
-  readonly was: string;
+  readonly was: Fingerprint;
 }
 
 function writeSlot(writer: EntryWriter, ctx: UseActionContext, slot: RotationSlot, value: string): Promise<void> {

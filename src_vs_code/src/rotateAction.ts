@@ -16,7 +16,7 @@ import { unsealedText } from './secretOpener';
 import type { StoredSecret } from './storedSecret';
 import { MaskEntry, buildMaskTable, maskResponseBody, maskText } from './secretMasker';
 import { describeError } from './describeError';
-import { fingerprintOf } from './rotationQuarantine';
+import { Fingerprint, fingerprintOf } from './rotationQuarantine';
 
 /**
  * The `rotate` action: the window changes a secret on the far side and then stores it.
@@ -71,7 +71,7 @@ export interface RotateDeps {
    * (`rotationStore.ts`) — the far side has changed by then, so the value is never simply dropped. `was` is
    * the fingerprint of the text it replaces (`rotationQuarantine.fingerprintOf`), which a later release checks.
    */
-  store(ctx: UseActionContext, slot: RotationSlot, value: string, was: string): Promise<StoreOutcome>;
+  store(ctx: UseActionContext, slot: RotationSlot, value: string, was: Fingerprint): Promise<StoreOutcome>;
   /** Called after a successful rotation so the tree and any open viewer catch up. */
   onRotated?: () => void;
 }
@@ -328,7 +328,7 @@ async function draw(
 type Prepared = Ready | { ok: false; error: string; noGenerator?: boolean };
 
 /** Everything a rotation needs once its checks passed: the entry, the slot, the drawn secret and its stored form. */
-type Ready = { ok: true; details: EntityMetadata; checked: { slot: RotationSlot }; secret: string; stored: string; was: string };
+type Ready = { ok: true; details: EntityMetadata; checked: { slot: RotationSlot }; secret: string; stored: string; was: Fingerprint };
 
 /** The kind asked for, defaulting to a password — which is what a rotation almost always is. */
 function kindOf(body: unknown): string {
@@ -340,7 +340,7 @@ function kindOf(body: unknown): string {
 interface NewValue {
   readonly slot: RotationSlot;
   readonly value: string;
-  readonly was: string;
+  readonly was: Fingerprint;
 }
 
 /**

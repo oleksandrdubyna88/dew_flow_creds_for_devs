@@ -289,7 +289,7 @@ function heldOpen(): { answer: ModalAnswer; close: (pressed: string | undefined)
 const holdsTheNewValue = async (w: World): Promise<boolean> => ((await heldConnection(w)) ?? '').includes(NEW_SECRET);
 
 /** Every keychain write that carried the new value was the held item's record — and there was one. */
-const onlyInTheHeldItem = (w: World): boolean => inTheClear(w).length > 0 && inTheClear(w).every((value) => value.startsWith('{"v":1,"slots":'));
+const onlyInTheHeldItem = (w: World): boolean => inTheClear(w).length > 0 && inTheClear(w).every((value) => value.startsWith('{"v":2,"slots":'));
 
 const journalWord = (w: World, result: UseActionResult): string => (w.action.describeOutcome ?? String)(result);
 

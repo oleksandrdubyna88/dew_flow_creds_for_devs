@@ -48,8 +48,8 @@ import { StoredSecret, carried, stored } from './storedSecret';
 export interface Held {
   readonly value: StoredSecret;
   readonly at: number;
-  /** SHA-256 hex of the slot's text the rotation replaced — the release refuses to overwrite anything else. */
-  readonly was: string;
+  /** The fingerprint of the slot's text the rotation replaced — the release refuses to overwrite anything else. */
+  readonly was: Fingerprint;
 }
 
 /** What one entry's item holds, by slot — a password hold and a connection-string hold never overwrite each other. */
@@ -128,11 +128,38 @@ function isHeldEntry(value: unknown): value is HeldEntry {
 // ---- the hold (plan §4.3) ----
 
 /**
- * What a held value replaced, as the release compares it: SHA-256 hex of the slot's text when the rotation
- * read it — `''` for an empty slot. Never the text itself: the item holds the new value, not the old one.
+ * What a held value replaced, as the release compares it — never the text itself: the item holds the new
+ * value, not the old one. HMAC-SHA-256 of the slot's text (`''` for an empty slot) under a salt drawn at
+ * random for each hold (the security review, finding 6): a record that carried the plain SHA-256 handed
+ * whoever can read the keychain item a check on the OLD value — the one the entry keeps sealed under
+ * scrypt — against a precomputed table or any other copy of that hash. The salt rides in the record, so it
+ * defeats precomputation and linking, not a guesser who holds the record and the time to run HMACs; only a
+ * slow derivation would, at a cost per hold and per door this does not take.
  */
-export function fingerprintOf(text: string | undefined): string {
-  return crypto.createHash('sha256').update(text ?? '', 'utf8').digest('hex');
+export interface Fingerprint {
+  /** 16 random bytes, hex. `''` only in a record written before the salt (v1, never released): its `mac` is the plain SHA-256. */
+  readonly salt: string;
+  readonly mac: string;
+}
+
+export function fingerprintOf(text: string | undefined): Fingerprint {
+  const salt = crypto.randomBytes(SALT_BYTES).toString('hex');
+  return { salt, mac: macOf(salt, text) };
+}
+
+const SALT_BYTES = 16;
+
+/** Whether `text` is what the fingerprint was taken of — compared in constant time. */
+export function matchesFingerprint(was: Fingerprint, text: string | undefined): boolean {
+  const now = Buffer.from(macOf(was.salt, text), 'hex');
+  const kept = Buffer.from(was.mac, 'hex');
+  return now.length === kept.length && crypto.timingSafeEqual(now, kept);
+}
+
+/** HMAC-SHA-256 under the salt — or, for a v1 record's empty salt, the plain SHA-256 it was written with. */
+function macOf(salt: string, text: string | undefined): string {
+  const digest = salt === '' ? crypto.createHash('sha256') : crypto.createHmac('sha256', Buffer.from(salt, 'hex'));
+  return digest.update(text ?? '', 'utf8').digest('hex');
 }
 
 /**
@@ -140,7 +167,7 @@ export function fingerprintOf(text: string | undefined): string {
  * step under the lease. The last value wins: a second hold of the same slot overwrites the first, because the
  * far side holds the latest. Stored in its plain stored form (`plainSecret`), minted by `heldFor`.
  */
-export async function holdRotated(storage: StorageManager, accountId: string, entityId: string, slot: RotationSlot, value: string, was: string): Promise<void> {
+export async function holdRotated(storage: StorageManager, accountId: string, entityId: string, slot: RotationSlot, value: string, was: Fingerprint): Promise<void> {
   const store = storage.heldRotations;
   await storage.writes.run(async () => {
     await store.list(accountId, entityId);
@@ -149,7 +176,7 @@ export async function holdRotated(storage: StorageManager, accountId: string, en
 }
 
 /** The held form of a value the rotation drew — minted here, as the parse mints what it reads. */
-function heldFor(value: string, was: string): Held {
+function heldFor(value: string, was: Fingerprint): Held {
   return { value: stored(plainSecret(value, false)), at: Date.now(), was };
 }
 
@@ -302,7 +329,7 @@ async function releaseText(at: ReleaseAt, slot: RotationSlot, held: Held, text: 
 
 /** The slot no longer holds what the rotation replaced — and the person has not chosen the rotated value anyway. */
 function changedSince(live: string | undefined, held: Held, forced: boolean): boolean {
-  return !forced && fingerprintOf(live) !== held.was;
+  return !forced && !matchesFingerprint(held.was, live);
 }
 
 /**
@@ -535,7 +562,10 @@ function heldNames(entryName: string, held: HeldSlots): WaitingValue[] {
   return SLOTS.filter((slot) => held[slot] !== undefined).map((slot) => ({ entryName, slot }));
 }
 
-// ---- the item's wire form: `{ v: 1, slots: { password?: Held, dbConnection?: Held } }` ----
+// ---- the item's wire form: `{ v: 2, slots: { password?: { value, at, was: { salt, mac } }, dbConnection?: … } }` ----
+// v1 — never released; written by builds before the salt — carried `was` as the plain SHA-256 hex. It is
+// read as an empty salt and compared as it was written; nothing writes v1 again (a v1 hold carried forward
+// keeps its empty salt under v2).
 
 const SLOTS: readonly RotationSlot[] = ['password', 'dbConnection'];
 
@@ -554,9 +584,12 @@ interface WireRecord {
   readonly slots?: Partial<Record<RotationSlot, unknown>>;
 }
 
+const WIRE_VERSION = 2;
+const READABLE_VERSIONS: ReadonlySet<unknown> = new Set([1, WIRE_VERSION]);
+
 function parsedRecord(raw: string | undefined): WireRecord | undefined {
-  const parsed = parsedJson(raw) as WireRecord | null | undefined;
-  return parsed?.v === 1 ? parsed : undefined;
+  const parsed = (parsedJson(raw) ?? undefined) as WireRecord | undefined;
+  return parsed !== undefined && READABLE_VERSIONS.has(parsed.v) ? parsed : undefined;
 }
 
 function parsedJson(raw: string | undefined): unknown {
@@ -579,20 +612,36 @@ interface WireHeld {
 interface WellFormed {
   readonly value: string;
   readonly at: number;
-  readonly was: string;
 }
 
 function heldIn(wire: unknown): Held | undefined {
   const held = (wire ?? {}) as WireHeld;
-  return wellFormed(held) ? { value: stored(held.value), at: held.at, was: held.was } : undefined;
+  const was = fingerprintIn(held.was);
+  return wellFormed(held) && was !== undefined ? { value: stored(held.value), at: held.at, was } : undefined;
 }
 
 function wellFormed(held: WireHeld): held is WellFormed {
-  return typeof held.value === 'string' && Number.isFinite(held.at) && isFingerprint(held.was);
+  return typeof held.value === 'string' && Number.isFinite(held.at);
 }
 
-function isFingerprint(value: unknown): value is string {
-  return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+/** The fingerprint as written: v2's `{ salt, mac }` — or v1's bare SHA-256 hex, read as an empty salt. */
+function fingerprintIn(wire: unknown): Fingerprint | undefined {
+  return isHex(wire, MAC_HEX) ? { salt: '', mac: wire } : saltedIn((wire ?? {}) as Partial<Fingerprint>);
+}
+
+function saltedIn(was: Partial<Fingerprint>): Fingerprint | undefined {
+  return isSalt(was.salt) && isHex(was.mac, MAC_HEX) ? { salt: was.salt, mac: was.mac } : undefined;
+}
+
+const MAC_HEX = 64;
+
+/** A salt as `fingerprintOf` draws it — or none, in a v1 hold carried forward. */
+function isSalt(value: unknown): value is string {
+  return value === '' || isHex(value, SALT_BYTES * 2);
+}
+
+function isHex(value: unknown, length: number): value is string {
+  return typeof value === 'string' && value.length === length && /^[0-9a-f]*$/.test(value);
 }
 
 /** The serialiser — the stored form carried out as the bytes it is (`carried`). */
@@ -604,5 +653,5 @@ function serialised(slots: HeldSlots): string {
       wire[slot] = { value: carried(held.value), at: held.at, was: held.was };
     }
   }
-  return JSON.stringify({ v: 1, slots: wire });
+  return JSON.stringify({ v: WIRE_VERSION, slots: wire });
 }
