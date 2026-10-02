@@ -7,7 +7,7 @@ import { maskEntriesFor } from '../maskEntries';
 import { writeUnattended } from '../entryWriter';
 import { snapshotForRevision } from '../revisionSnapshot';
 import type { RotateDeps, StoreOutcome } from '../rotateAction';
-import { fingerprintOf } from '../rotationQuarantine';
+import { QuarantineStore, fingerprintOf } from '../rotationQuarantine';
 import { readSecret, unlockSecret } from '../secretEnvelope';
 import { NEW_SECRET_PLACEHOLDER, RotationSlot } from '../secretRotation';
 import type { MaskEntry } from '../secretMasker';
@@ -16,7 +16,7 @@ import { protectionDecision } from '../syncPinRule';
 import { EntityMetadata } from '../types';
 import type { UseAction, UseActionResult } from '../useActions';
 import { loadEachWithVscode } from './vscodeStub';
-import { ACCOUNT, ModalAnswer, PIN, Sinks, carried, clickVscode, memoryStorage, seedEntry, sinks } from './pinWorld';
+import { ACCOUNT, ModalAnswer, PIN, Sinks, carried, clickVscode, memoryStorage, seedEntry, sinks, stored } from './pinWorld';
 
 /**
  * A rotation never loses a password the far side already accepted (the E2 security review, finding 1;
@@ -399,4 +399,36 @@ test('the history write fails after the far side changed — the new value is st
   const body = result.body as { stored?: unknown; historyKept?: unknown; message?: unknown };
   assert.deepEqual([body.stored, body.historyKept], ['quarantined', false]);
   assert.match(String(body.message), /previous value could not be kept in the entry's history/);
+});
+
+// ---- security review, finding 5: a value the person stored under the PIN supersedes an older hold ----
+
+const OLDER_HELD = 'mysql://app:OLDER-hold-2c9e@db-01.example.internal:3306/orders';
+
+/** The keychain refuses the NEXT hold write only — the rotation's own; every write after it lands. */
+function refuseNextHold(storage: StorageManager): void {
+  const store = storage.heldRotations;
+  let refused = false;
+  const put: QuarantineStore['put'] = (accountId, entityId, slots) => {
+    if (refused) {
+      return store.put(accountId, entityId, slots);
+    }
+    refused = true;
+    return Promise.reject(new Error('the keychain refused the write'));
+  };
+  Object.defineProperty(storage, 'heldRotations', { value: { ...store, put } });
+}
+
+test('the hold failed and the person stored the new value under the PIN — an OLDER hold of that slot is gone, so no door can put it back over the new value', async () => {
+  // An older hold of a value the slot no longer holds: the door the person passes asks about it (dismissed) rather than releasing it.
+  const w = await world([PIN], [STORE_IT, undefined]);
+  await w.storage.heldRotations.list(ACCOUNT, ENTRY);
+  await w.storage.heldRotations.put(ACCOUNT, ENTRY, { dbConnection: { value: stored(OLDER_HELD), at: 1, was: fingerprintOf('a value from before this entry was last changed') } });
+  refuseNextHold(w.storage);
+
+  const result = await w.rotate();
+
+  assert.ok((await openedConnection(w))?.includes(NEW_SECRET) === true, `the setup: the person did not store the new value — ${JSON.stringify(result.body)}`);
+  assert.equal(await heldConnection(w), undefined, 'the older hold survived — "Store the rotated one" at the next door would put back a password the far side no longer accepts');
+  assert.deepEqual(await w.storage.heldRotations.listed(), [], 'the index still names an entry with nothing held');
 });

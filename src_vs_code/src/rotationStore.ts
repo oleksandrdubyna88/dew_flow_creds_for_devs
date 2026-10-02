@@ -70,6 +70,9 @@ async function heldOrHanded(storage: StorageManager, ctx: UseActionContext, refu
   );
   if (!held) {
     await handedToPerson(storage, ctx, refused.slot, refused.value, error);
+    // Stored under the PIN by the person: an older hold of that slot is superseded, as a landed store's is
+    // (the security review, finding 5) — kept, its *Store the rotated one* would put back the older value.
+    await supersedeHeld(storage, ctx.accountId, ctx.entityId, refused.slot);
     return 'stored';
   }
   void waitingNotice(storage, ctx, refused.slot).catch(() => undefined);
