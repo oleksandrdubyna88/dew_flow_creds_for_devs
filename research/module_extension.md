@@ -1177,9 +1177,9 @@ inherited at read time.
 | `editPrefill.ts` | Edit over a protected entry: `openEntryForEdit`, `pinForSave`, `NOTHING_OPENED` (its `sealedWriter` moved into `entryWriter.ts` in E2) |
 | `sealingAtWrite.ts` | R3 at write time: seal, write plain, or refuse — and since E2 the `Sealing` is a branded PROOF only this module makes: `sealingAtWrite` (Edit, Restore — decided right before the first write), `sealingForNew` (a brand-new entry), `sealingForUpdate` (a share's *Update it*, doors injected), `unattendedSealing` (the rotation: plain only with no sealed slot and no mark, never sealed) |
 | `entryWriter.ts` | the ONE road from text to a stored value (E2): `EntryWriter`, `writerFor(storage, a, e, sealing, opened)` — the plain writer, EVERY write of which runs under the storage's cross-window lease with its own re-check for a proof about an entry that existed (`ProtectedMeanwhile`), and whose new-id proof is verified at the first write (no node may carry the id), or the sealing writer (sealed in memory before each raw setter, an unchanged value skipped) — plus `writerForNew` and `writeUnattended` (`UnattendedRefusal`) |
-| `rotationStore.ts` | the rotation's store: unattended first (landed → any older hold of that slot superseded); refused because the entry was protected while the far side changed → HELD beside the entry (`quarantined`, the agent answered at once, the person told by a modal nobody waits for); only when even the hold fails, E2's chain — stored under the entry's PIN, or offered to copy with the clipboard-history warning — never dropped |
-| `rotationQuarantine.ts` | a rotated value the vault could not store, held until the entry's PIN (`PLAN_rotation_quarantine`): one keychain item per entry (`:rotationQuarantine`, in `ENTITY_KEY_BUILDERS`, in no slot and no bundle kind), a local never-synced index, the hold (`holdRotated`, `supersedeHeld`), the release (`releaseHeld` with the `AT_THE_DOOR` or `UNATTENDED` proof, `dropHeld`, `releaseUnprotected`) and the tree's and the delete confirmation's reads (`waitingKeys`, `waitingUnder`); the ONLY module that names the item (`rotationQuarantineBoundary.test.ts`) |
-| `rotationWaiting.ts` | the person's words for it: what the door released, the conflict question (*Store the rotated one* / *Keep the current one*), the row's *rotated password waiting* hint, the sentence a permanent delete adds |
+| `rotationStore.ts` | the rotation's store: unattended first (landed → any older hold of that slot superseded); refused because the entry was protected while the far side changed → HELD beside the entry (`quarantined`, the agent answered at once, the person told by a modal nobody waits for); when even the hold fails, or for a ONE-USE entry (the burn after the answer would take a hold with it — `burnOnUse.burnedByAgentUse`), E2's chain, awaited — stored under the entry's PIN (an older hold of the slot superseded after it, as after a landed store), or offered to copy with the clipboard-history warning — never dropped |
+| `rotationQuarantine.ts` | a rotated value the vault could not store, held until the entry's PIN (`PLAN_rotation_quarantine`): one keychain item per entry (`:rotationQuarantine`, in `ENTITY_KEY_BUILDERS`, in no slot and no bundle kind), a local never-synced index, the hold (`holdRotated` with a salted `Fingerprint` of the replaced value — HMAC-SHA-256 under 16 random bytes drawn per hold; `supersedeHeld`), the release (`releaseHeld` with the `AT_THE_DOOR` or `UNATTENDED` proof, `dropHeld`, `releaseUnprotected`), the deletion with an entry a bundle apply removes (`forgetHeld`) and the tree's and the delete confirmations' reads (`waitingKeys`, `waitingUnder`); the ONLY module that names the item (`rotationQuarantineBoundary.test.ts`) |
+| `rotationWaiting.ts` | the person's words for it: what the door released, the conflict question (*Store the rotated one* / *Keep the current one*), the row's *rotated password waiting* hint, the sentence a permanent delete — Delete, Empty Trash, *Burn Now…* — adds |
 | `secretOpener.ts` / `pinClick.ts` | the automatic opener and the click opener every sink stands behind; since E2 also `fieldReadingOf` (an opener's answer as a `FieldReading`), the owner-less reads `plainText` (hygiene) and `unsealedText` (masker, tree hints), and `pinClick.grantedOpener` (the click opener's silent half, for a value read right after a door) |
 | `historyPin.ts` / `historyHeal.ts` / `revisionDoor.ts` | kept versions: sealed, healed at the door, opened through the live entry's door |
 | `revisionRestore.ts` / `restoreVersion.ts` | *Restore This Version…*: the command, and the writes in the order that keeps R3 — a plain restore through `writerFor` with its plain proof (under the lease, re-checked), a sealed one with every value sealed first |
@@ -1556,11 +1556,17 @@ proof. Getters and setters were still `string` then; E3 flipped them to `StoredS
   and declined, dismissed, refused or failed, *Copy the new password / connection string* through
   `copySecret`, both modals carrying the clipboard-history sentence (a clipboard history keeps its own
   copy; the automatic clear does not reach it). The agent then gets `stored: false`, never the value.
+  A ONE-USE entry takes no hold road at all (the security review, finding 7c): the broker burns it right
+  after this very answer and the held item would go with it, unread — so for it the value is handed to the
+  person BEFORE the answer, awaited, exactly as for a failed hold (`rotationStore.held`, through the burn's
+  own predicate `burnOnUse.burnedByAgentUse`). And an older hold of the slot is superseded after the handed
+  store lands too, as after a landed one (finding 5) — kept, its *Store the rotated one* at the next door
+  would have put the older value back over the one the far side holds.
 - **The held value goes in at the next PIN.** `pinAdmission.admit` releases it after `healProtected`
   (locked path) and after `repairFalseMark` (unlocked path), AWAITED before the door answers, best-effort
   (`rotationQuarantine.releaseHeld`, which never throws): read the item; open the live slot through a
   silent gate; equal to the held value → only the drop is left (a release that died between its write and
-  its drop); its SHA-256 differs from the item's `was` → a CONFLICT, nothing written; otherwise
+  its drop); its salted fingerprint does not match the item's `was` (below) → a CONFLICT, nothing written; otherwise
   `sealingForUpdate` with doors that ask nothing (`AT_THE_DOOR`: the grant the door just took, no first
   PIN) and the write through `writerFor` — a sealed slot sealed in memory and committed under the lease
   (R3), a plain entry re-checked under the lease, marked-over-nothing stopped; then, under the lease, the
@@ -1583,12 +1589,20 @@ proof. Getters and setters were still `string` then; E3 flipped them to `StoredS
 - **The held value is not a slot, so R3 holds and it never travels.** It is one keychain item per entry
   (`${a}_${keyPart(e)}:rotationQuarantine`), in `ENTITY_KEY_BUILDERS` — deleted with the entry, its
   account, by the orphan sweep — and in neither `SECRET_SLOTS` nor `SECRET_KINDS`: Protect, Remove PIN,
-  the door's walk, the revision snapshot, Restore, sync, backup, a bundle apply, export and a share never
-  read or touch it, and a protected ENTRY is still never written in the clear. **Its protection is the OS
-  keychain's alone** — what an unprotected entry's password has — from the refused store until the next
-  PIN (the owner's accepted trade-off). A local, never-synced `globalState` index (ids only) feeds the
-  tree's *rotated password waiting* hint and the sweep; a permanent delete's confirmation names the copy
-  it would lose.
+  the door's walk, the revision snapshot, Restore, sync, backup, export and a share never read or touch
+  it; a bundle apply never reads it and touches it only to DELETE it with an entry the apply removes
+  (`forgetHeld` — an older backup restored, no tombstone; the security review, finding 7a — else the
+  plaintext item outlived its entry for good), and a protected ENTRY is still never written in the clear.
+  **Its protection is the OS keychain's alone** — what an unprotected entry's password has — from the
+  refused store until the next PIN (the owner's accepted trade-off). The item's `was` — the fingerprint of
+  what the rotation replaced; the release overwrites nothing else — is a `Fingerprint`: HMAC-SHA-256 of the
+  replaced text under 16 random bytes drawn per hold and kept beside it (record v2; a v1 record's plain
+  SHA-256 is still read and compared as it was written — finding 6). It gives whoever reads the item no
+  precomputed or cross-record check on the old value, which the entry keeps sealed under scrypt; it is not
+  protection against a guesser who holds the record and runs HMACs — that would take a slow derivation per
+  hold and per door, not taken. A local, never-synced `globalState` index (ids only) feeds the tree's
+  *rotated password waiting* hint and the sweep; a permanent delete's confirmation — Delete, Empty Trash,
+  *Burn Now…* (finding 7b) — names the copy it would lose.
 - **Restore goes through the re-checked road** (the E2 security review, finding 2). A plain restore hands
   `restoreVersion` its plain proof (`RestoreUnder`) and writes through `writerFor` — it used to drop the
   proof and write `slot.write(storage, …)` around the lease — and the node is rebuilt from the node as it
@@ -5752,7 +5766,7 @@ viewer case in `entityViewPage.test.ts`. Each guard was broken in turn and its t
 
 | What | Where | The rule it left behind |
 |---|---|---|
-| *Burn Now…* | `burnNow.ts` (the decision, pure), `burnNowCommand.ts` (the modal), `:burnable` in `treeRowText.ts` | Only on an entry with a lifetime; the one delete path (`deleteNodeRecursive`) — no second way to burn |
+| *Burn Now…* | `burnNow.ts` (the decision, pure), `burnNowCommand.ts` (the modal), `:burnable` in `treeRowText.ts` | Only on an entry with a lifetime; the one delete path (`deleteNodeRecursive`) — no second way to burn; the modal names a rotated value waiting beside the entry in Delete's words (`rotationWaiting.lostWithDeletion`) |
 | The lifetime on the card | `lifetime` in `EntityViewOptions`, from `describeRemaining` | The tree and the card say it in the same words, from the same function |
 | The burn across machines | `burnAcrossMachines.test.ts`, `burnPath.test.ts` | A burn on A is gone on B after a sync — node, history, every key; an old backup does not resurrect it (tombstone + horizon) |
 

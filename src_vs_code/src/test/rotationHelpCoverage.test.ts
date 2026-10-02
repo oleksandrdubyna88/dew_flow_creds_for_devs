@@ -13,6 +13,8 @@ import { HELP_LANGUAGES, HelpArticle, bodyFor, helpArticle } from '../helpConten
 const ROW = 'rotated password waiting';
 /** The agent's word, as the answer says it. */
 const WORD = 'quarantined';
+/** The command's name — kept in English by every translation, as every command name is (the security review, finding 7b). */
+const BURN = 'Burn Now…';
 
 function article(id: string): HelpArticle {
   const found = helpArticle(id);
@@ -27,6 +29,7 @@ for (const language of HELP_LANGUAGES) {
 
     assert.equal(pin.fallback, false, 'a real translation, not English standing in for one');
     assert.ok(pin.body.usage.includes(ROW), `the ${language} PIN article does not explain a waiting rotation — a stale translation reads as a complete one`);
+    assert.ok(pin.body.usage.includes(BURN), `the ${language} PIN article does not name Burn Now among the permanent deletions that lose a waiting value`);
     assert.ok(agents.body.usage.includes(WORD), `the ${language} agent article does not say where a rotation refused by a PIN is`);
   });
 }

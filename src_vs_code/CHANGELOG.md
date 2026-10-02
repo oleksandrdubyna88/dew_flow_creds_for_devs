@@ -25,12 +25,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   retry; and the next time you open the entry and enter its PIN, it is stored, sealed. The tree row says
   *rotated password waiting* until then. Removing the PIN, or the entry's protection removed elsewhere,
   stores it plain. If the stored value changed after the rotation, you are asked which one the far side
-  accepts. Deleting the entry permanently says it would lose that only copy. Until it is stored the value
+  accepts. Deleting the entry permanently — **Delete Permanently**, **Empty Trash** or **Burn Now…** — says
+  it would lose that only copy. Until it is stored the value
   has the protection an unprotected entry's password has (the OS keychain) and it never leaves this
   machine — not in a sync, a backup, an export or a share.
 - **The clipboard says what a clipboard history does.** Offered only when even keeping the value failed,
   and only after a click, the copy now says plainly that a clipboard history (Windows' Win+V, a clipboard
   manager, a remote-desktop clipboard) keeps its own copy, which the automatic clear does not empty.
+- **A one-use entry is handed to you, not kept waiting.** An agent's call deletes a one-use entry right
+  after its answer — which would take a waiting value with it. A rotation refused by a PIN on such an entry
+  therefore asks you then and there, before the agent is answered: store the value under the PIN, or copy
+  it — as every refused rotation did before this release.
+- **What waits beside an entry gives away nothing about what it replaced.** The record kept beside a
+  waiting value carries a fingerprint of the value the rotation replaced, so the next PIN can tell whether
+  the entry changed since. That fingerprint is now salted per value: whoever can read the keychain item
+  gets no ready-made check on the old password.
 
 ### Changed — a stored secret has its own type (typed-secrets E3, 2026-10-01; for developers)
 

@@ -1,7 +1,8 @@
 # PLAN — a rotated value the vault could not store waits in quarantine, not in the clipboard
 
-> Status: **Q1–Q6 built 2026-10-01 on `feat/rotation-quarantine` (commits and deviations in §5 and §5.1); Q7 — the
-> code round and the promotion — still open.** Scope: the rotation's store
+> Status: **Q1–Q6 built 2026-10-01 on `feat/rotation-quarantine`; the code round passed and the independent
+> security review's 7 findings were fixed 2026-10-02 (commits and deviations in §5 and §5.1); Q7 — the
+> promotion — still open.** Scope: the rotation's store
 > (`rotationStore.ts`, `rotateAction.ts`), a new per-entry quarantine item in the OS keychain
 > (`rotationQuarantine.ts`, `secretKeys.ts`), its release at the entry-PIN door (`pinAdmission.ts`,
 > `pinPrompt.ts`), *Remove PIN Protection…* (`pinCommands.ts`), the startup sweep (`ephemeralSweeper.ts`),
@@ -316,7 +317,9 @@ commit body. Typecheck, lint, the size ratchet (line-neutral in the two baseline
 - [ ] **Q7 — docs, contract, release notes, promotion.** §7. `review_code` over the whole diff; the plan
       promoted with its deviations. *Built so far: the `creds_rotate` description and the regenerated contract
       (`4b540885`), the help in five languages (`5e393bed`), `module_extension.md`, `module_tests.md` and the
-      CHANGELOG (the docs commit). Open: the code round and the promotion.*
+      CHANGELOG (the docs commit); the code round — coai session `4187565a`, verdict proceed, 8 of 8
+      reviewers answered, 7 findings, all rejected with reasons; the independent security review's 7
+      findings, each fixed (§5.1 item 13). Open: the promotion.*
 
 ### 5.1 What shipped differently (recorded at build time)
 
@@ -362,6 +365,36 @@ Every story's commit body carries its RED message and its break-it. What differs
 12. **The C# side gained a test** (`UseToolsTests.A_rotation_held_for_the_PIN_is_explained_so_the_agent_does_not_retry_it`,
     run through the test executable), and the description's "Needs the entry's switch" sentence starts its
     own paragraph.
+13. **Security review (independent, Opus) — 7 findings, 2026-10-02**, each fixed red-green with its break-it
+    in the commit body (the coai code round — session `4187565a`, proceed, 8 of 8, 7 findings, all rejected
+    with reasons — ran beside it and is recorded in Q7):
+    1. The release decided outside the lease and committed later; another window's newer value could be
+       overwritten with the older held one — `entryWriter.CommitGuard`, `unchangedSince` under the commit's
+       lease, `ReleaseOvertaken` (`c828e0d7`).
+    2. A click read its value BEFORE the door that released the hold — `beforeTheDoor`/`AfterTheDoor`,
+       `pinPrompt.admitted` (`520c1e65`).
+    3. The flags walk and the sweep unlisted an index entry whose item had just been written —
+       `unlistIfEmpty` under the lease (`e198c413`).
+    4. A rotation that THREW leaked the new value in its failure's reason, and a history failure lost the
+       value — `maskedFailure`, history best-effort with `historyKept: false` (`0716110d`).
+    5. The handed path (`storedUnderPin`) returned `stored` without superseding an older hold of the slot;
+       its *Store the rotated one* would have put the older value back — `supersedeHeld` after the handed
+       store (`9ef15ba0`).
+    6. `was` was the plain SHA-256 of the replaced text — an offline check on the old value for whoever reads
+       the item. Now a `Fingerprint { salt, mac }`: HMAC-SHA-256 under 16 random bytes per hold, compared in
+       constant time. **Wire form: version bumped to v2 with a v1 reader** — the shape of `was` changed, which
+       is what the version is for; a v1 record (never released, written only by earlier builds of this branch)
+       is read as an empty salt and compared as written, so such a hold still releases rather than being read
+       as nothing held and left in the clear; nothing writes v1 again. Honest limit, stated in the module doc:
+       the salt in the record defeats precomputation and linking, not a guesser who holds the record — that
+       would take a slow derivation per hold and per door (`f6e399c1`).
+    7. Three delete gaps: (a) a bundle apply that REMOVES an entry (an older backup, no tombstone) left its
+       held item orphaned in the clear — `forgetHeld` after `dropVanishedSecrets`, storageManager.ts
+       line-neutral (`23b257c8`); (b) *Burn Now…* did not name the waiting copy — `BurnDeps.lost` through
+       `lostWithDeletion`, Delete's words (`7f3d4950`); (c) a ONE-USE entry is burned right after the answer,
+       hold and all — the burn's predicate extracted as `burnOnUse.burnedByAgentUse` and the rotation's store
+       takes E2's awaited handed path for it (`6ebd4a71`). The §4.3 text above describes the hold road for
+       every entry; the one-use exception is the deviation.
 
 ## 6. Test plan
 
