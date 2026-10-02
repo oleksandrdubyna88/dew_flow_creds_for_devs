@@ -209,6 +209,47 @@ public class BackupStoreTests
     }
 
     [Fact]
+    public async Task AStatusWriteLandsWhileSomebodyIsReadingTheStatus()
+    {
+        // The status file has one writer — the run — and many readers: the page's poll, the scheduler's
+        // tick, a test waiting for a detached run. On Windows a replace is REFUSED ("Access to the path is
+        // denied") while any of them has the file open, and the run's terminal write was the casualty: the
+        // run became "failed", or, when the failure path's own write was refused too, stayed "in progress"
+        // with its hosted service dead. Measured before the fix: 102 to 152 of these 200 writes refused, over six runs.
+        // On Linux a rename never waits for a reader, so there this is green either way.
+        var store = Store(TempDir(), out _);
+        await store.WriteStatusAsync(new BackupStatus(1, BackupRunResults.InProgress, string.Empty, 0, [], 0), Ct);
+        using var stop = new CancellationTokenSource();
+        var reading = Task.Run(
+            async () =>
+            {
+                while (!stop.IsCancellationRequested)
+                {
+                    await store.ReadStatusAsync(Ct);
+                }
+            },
+            TestContext.Current.CancellationToken);
+        var refused = new List<string>();
+        for (var at = 2; at <= 201; at++)
+        {
+            try
+            {
+                await store.WriteStatusAsync(
+                    new BackupStatus(at, BackupRunResults.Succeeded, string.Empty, 1, [], at), Ct);
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                refused.Add(e.Message);
+            }
+        }
+        await stop.CancelAsync();
+        await reading;
+
+        refused.Should().BeEmpty("a reader must never cost the writer its write ({0} of 200 refused)", refused.Count);
+        (await store.ReadStatusAsync(Ct)).LastRunAt.Should().Be(201, "and the last write is the one on disk");
+    }
+
+    [Fact]
     public async Task AStatusFileNobodyCanParseAnswersTheDefaultRatherThanFailingABackup()
     {
         // Status is a convenience. Failing a whole deployment over a torn one would be the wrong trade,

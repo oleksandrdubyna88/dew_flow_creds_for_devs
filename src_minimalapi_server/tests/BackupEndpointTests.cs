@@ -200,6 +200,38 @@ public sealed class BackupEndpointTests
     }
 
     [Fact]
+    public async Task ARunFinishesOkWhileThePageIsPollingItsStatus()
+    {
+        // The shared state behind "within five seconds the run finished, but found False": the status
+        // file, written by the run and read by every poll — this suite's own wait included. On Windows
+        // the run's replace was refused while a poll had the file open, so the run ended "failed: Access
+        // to the path is denied", or stuck "in progress" when the failure path's write was refused too.
+        // The poll here is just faster than a page's, so the collision is likely rather than rare.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        (await cto.PostAsync("/api/org/backup/key", null, Ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+        using var stop = new CancellationTokenSource();
+        var polling = Task.Run(
+            () =>
+            {
+                while (!stop.IsCancellationRequested)
+                {
+                    _ = Result(server);
+                }
+            },
+            Ct);
+
+        (await cto.PostAsync("/api/org/backup/run", null, Ct)).StatusCode.Should().Be(HttpStatusCode.Accepted);
+        await Corp.Within(TimeSpan.FromSeconds(15), () => !BackupRunResults.IsRunning(Result(server)));
+        await stop.CancelAsync();
+        await polling;
+
+        var status = await Store(server).ReadStatusAsync(Ct);
+        status.LastResult.Should().Be(
+            BackupRunResults.Succeeded, "a reader of the status never costs the run its result ({0})", status.LastError);
+    }
+
+    [Fact]
     public async Task DownloadingStreamsTheArchiveWithALengthAndAFileName()
     {
         using var server = Corp.Server();
