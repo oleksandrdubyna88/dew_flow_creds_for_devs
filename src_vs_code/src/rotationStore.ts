@@ -70,7 +70,7 @@ function writeSlot(writer: EntryWriter, ctx: UseActionContext, slot: RotationSlo
 /** Held beside the entry, and the person told without being waited for — or, when even that failed, handed to them. */
 async function heldOrHanded(storage: StorageManager, ctx: UseActionContext, refused: Refused, error: unknown): Promise<StoreOutcome> {
   if (burnedByAgentUse(storage.getNode(ctx.accountId, ctx.entityId))) {
-    return copiedBeforeTheBurn(ctx, refused.slot, refused.value);
+    return copiedBeforeTheBurn(ctx, refused, error);
   }
   const held = await holdRotated(storage, ctx.accountId, ctx.entityId, refused.slot, refused.value, refused.was).then(
     () => true,
@@ -95,15 +95,25 @@ async function heldOrHanded(storage: StorageManager, ctx: UseActionContext, refu
  * said plainly — the far side changed, the entry burns after this answer, the value is stored nowhere — and
  * the clipboard-history warning. Nothing is copied without the button; the agent hears `stored: false`.
  */
-async function copiedBeforeTheBurn(ctx: UseActionContext, slot: RotationSlot, value: string): Promise<never> {
-  await offerCopy(ctx, slot, value, burnsWithThisAnswer(ctx.entityName, slot));
+async function copiedBeforeTheBurn(ctx: UseActionContext, refused: Refused, error: unknown): Promise<never> {
+  await offerCopy(ctx, refused.slot, refused.value, burnsWithThisAnswer(ctx.entityName, refused.slot, error));
   throw new RotationNotStored();
 }
 
-function burnsWithThisAnswer(name: string, slot: RotationSlot): string {
+/**
+ * Why the store did not happen, as this road says it: the PIN only when the PIN was the reason
+ * (`UnattendedRefusal`) — a keychain failure is named as itself (the final security review, fix 4).
+ */
+function whyNotStored(name: string, slot: RotationSlot, error: unknown): string {
+  return error instanceof UnattendedRefusal
+    ? `"${name}" was protected with a PIN while that ran — so nothing automatic may store the new ${what(slot)}`
+    : `storing the new ${what(slot)} failed (${describeError(error)})`;
+}
+
+function burnsWithThisAnswer(name: string, slot: RotationSlot, error: unknown): string {
   return (
-    `The ${what(slot)} of "${name}" WAS changed on the far side, and "${name}" was protected with a PIN while that ran — `
-    + `so nothing automatic may store the new ${what(slot)}. And "${name}" is one-use: it burns as soon as this agent call is answered, `
+    `The ${what(slot)} of "${name}" WAS changed on the far side, and ${whyNotStored(name, slot, error)}. `
+    + `And "${name}" is one-use: it burns as soon as this agent call is answered, `
     + `so the new ${what(slot)} cannot be kept in it or beside it. It is stored nowhere, and the old one no longer works: `
     + `copy it now and keep it yourself. ${CLIPBOARD_HISTORY}`
   );

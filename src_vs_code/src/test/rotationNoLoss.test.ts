@@ -522,3 +522,17 @@ test('the hold failed, the person chose "Store it" and the entry\u2019s door THR
   assert.equal((result.body as { stored?: unknown }).stored, false);
   assert.match(w.s.modals[1] ?? '', /was NOT stored in the vault \(the keychain did not answer\)/);
 });
+
+// ---- final security review, fix 4: the copy-only road says why the store failed, not always "protected" ----
+
+test('an unprotected entry made one-use while the far side changed, whose store FAILED: the copy offer names the failure, never a PIN', async () => {
+  const w = await world([], [undefined], { becomesOneUse: true, stays: 'plain' });
+  (w.storage as unknown as { setDbConnection: () => Promise<never> }).setDbConnection = () => Promise.reject(new Error('the keychain refused the write'));
+
+  await delivered(w);
+
+  const said = w.s.modals[0] ?? '';
+  assert.doesNotMatch(said, /protected with a PIN/, `the person was told of a PIN nobody set: ${said}`);
+  assert.match(said, /the keychain refused the write/, 'the person was not told why the new value could not be stored');
+  assert.match(said, /is one-use: it burns as soon as this agent call is answered/);
+});
