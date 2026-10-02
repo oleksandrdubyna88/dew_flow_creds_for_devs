@@ -1,6 +1,6 @@
 # PLAN — a finished backup run is audited before it says so, and its tests wait for what they assert
 
-> Status: **plan only, nothing implemented yet, 2026-10-02.** Scope: `src_minimalapi_server/src/BackupRunner.cs`
+> Status: **built 2026-10-02 on `fix/backup-audit-first` (`81d56e47`, `693b7fc9`, the wait helper); code round and PR pending.** Scope: `src_minimalapi_server/src/BackupRunner.cs`
 > (the order of the terminal status and the `BackupTaken` row), `src_minimalapi_server/tests/BackupEndpointTests.cs`
 > and the shared wait in `src_minimalapi_server/tests/Corp.cs`.
 >
@@ -35,6 +35,17 @@ people to re-run red checks without reading them.
 2. **A fixed five-second wait under a parallel suite.** `Corp.Eventually` (`Corp.cs:251-259`) polls for at
    most five seconds. A detached backup run (key derivation, sealing, writing) under the full suite's load
    can take longer; the run was not wrong, the budget was.
+
+### 2.1 The shared-state trace (done 2026-10-02, before any budget moved)
+
+What a backup run shares with its parallel siblings: each test has its own data directory (`TempDir()`),
+its own `BackupStore`, its own run claim and its own event log — none of those is shared. What IS shared,
+within one test, is the **status file between its one writer and its readers**: the run writes it, and the
+page, the scheduler and the test's own wait poll it. On Windows `File.Move(overwrite: true)` is REFUSED
+while any reader has the destination open — measured: 102 to 163 of 200 writes refused under a polling
+reader — so the run's terminal status write could fail, and the run ended "failed" or stuck "in progress".
+That, not the load, is what the five-second wait was waiting on locally. Fixed at the source
+(`VaultStore.MoveIntoPlaceAsync`, `81d56e47`); the 15 s budget below is then only the load's margin.
 
 ## 3. The fix
 
@@ -83,11 +94,14 @@ then terminal status — and why. CHANGELOG of the server if it keeps one.
 
 ## 6. Definition of Done
 
-- [ ] `BackupTaken` is recorded before the terminal `Succeeded` status; RED → GREEN → break-it recorded.
-- [ ] An audit append that returns `false` still leaves the run `Succeeded` and never stuck (the existing
+Built on Opus 5.5 (the plan's implementing agent found the shared state; the main session finished it after the agent's session limit). Server suite: 804/804 three runs in Debug and three in Release.
+
+
+- [x] `BackupTaken` is recorded before the terminal `Succeeded` status; RED → GREEN → break-it recorded.
+- [x] An audit append that returns `false` still leaves the run `Succeeded` and never stuck (the existing
       test, unchanged).
-- [ ] `Corp.Eventually` takes a budget; the backup waits use 15 s; no assertion edited.
-- [ ] The shared-state trace recorded (what is shared, what is isolated) before any budget changed.
-- [ ] Every backup wait in `BackupEndpointTests` goes through one helper with the 15 s budget.
-- [ ] The server suite green three runs in a row under load, Debug and Release, via the test executable.
+- [x] `Corp.Eventually` takes a budget; the backup waits use 15 s; no assertion edited.
+- [x] The shared-state trace recorded (what is shared, what is isolated) before any budget changed.
+- [x] Every backup wait in `BackupEndpointTests` goes through one helper with the 15 s budget.
+- [x] The server suite green three runs in a row under load, Debug and Release, via the test executable.
 - [ ] Module docs updated; coai plan round and code round `proceed`; plan promoted when done.
