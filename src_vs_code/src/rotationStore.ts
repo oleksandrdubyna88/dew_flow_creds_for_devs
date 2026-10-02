@@ -134,7 +134,7 @@ function keptWaiting(name: string, slot: RotationSlot): string {
 
 /** Stored under the entry's PIN with the person's help — or offered to them to copy, and `RotationNotStored`. */
 async function handedToPerson(storage: StorageManager, ctx: UseActionContext, slot: RotationSlot, value: string, error: unknown): Promise<void> {
-  const why = error instanceof UnattendedRefusal ? await storedUnderPin(storage, ctx, slot, value) : describeError(error);
+  const why = error instanceof UnattendedRefusal ? await storedUnderPinOrWhyNot(storage, ctx, slot, value) : describeError(error);
   if (why === STORED) {
     return;
   }
@@ -144,6 +144,15 @@ async function handedToPerson(storage: StorageManager, ctx: UseActionContext, sl
 
 const STORED = '';
 const STORE_IT = 'Store it (asks for the entry’s PIN)';
+
+/**
+ * The PIN road, whatever it does — ANY throw on it (the door, `sealingForUpdate`, the sealing writer) is a
+ * reason, never an exit: the value exists in memory alone here, so every road out of it leads to the copy
+ * (the final security review, fix 3 — only the write itself was caught, and a door that threw lost the value).
+ */
+function storedUnderPinOrWhyNot(storage: StorageManager, ctx: UseActionContext, slot: RotationSlot, value: string): Promise<string> {
+  return storedUnderPin(storage, ctx, slot, value).catch((failed: unknown) => describeError(failed));
+}
 
 /** `STORED` when the value went in sealed; otherwise why not — `'declined'` when the person said no. */
 async function storedUnderPin(storage: StorageManager, ctx: UseActionContext, slot: RotationSlot, value: string): Promise<string> {
@@ -156,10 +165,8 @@ async function storedUnderPin(storage: StorageManager, ctx: UseActionContext, sl
   if (sealing.kind === 'stopped') {
     return DECLINED;
   }
-  return writeSlot(writerFor(storage, ctx.accountId, ctx.entityId, sealing, NOTHING_OPENED), ctx, slot, value).then(
-    () => STORED,
-    (failed: unknown) => describeError(failed),
-  );
+  await writeSlot(writerFor(storage, ctx.accountId, ctx.entityId, sealing, NOTHING_OPENED), ctx, slot, value);
+  return STORED;
 }
 
 const DECLINED = 'declined';

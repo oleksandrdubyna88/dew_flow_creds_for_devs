@@ -502,3 +502,23 @@ test('rotating a ONE-USE entry is refused before anything is drawn or run: the f
   assert.match(answer, /take \\"one use\\" off/, 'the refusal does not say how to rotate it');
   assert.match(answer, /invalid_request/);
 });
+
+// ---- final security review, fix 3: whatever the PIN road throws, the copy is still offered ----
+
+test('the hold failed, the person chose "Store it" and the entry\u2019s door THREW — the copy is still offered, and the agent hears stored: false', async () => {
+  let storage: StorageManager | undefined;
+  const doorBreaks = (): Promise<string | undefined> => {
+    // From here on the entry's slots cannot be read: the door inside the PIN road throws.
+    (storage as unknown as { getNotes: () => Promise<never> }).getNotes = () => Promise.reject(new Error('the keychain did not answer'));
+    return Promise.resolve(STORE_IT);
+  };
+  const w = await world([PIN], [doorBreaks, COPY_IT], { hold: 'fails' });
+  storage = w.storage;
+
+  const result = await w.rotate();
+
+  assert.equal(w.s.clipboard.filter((value) => value.includes(NEW_SECRET)).length, 1, `the copy was never offered — the new value existed in memory alone and is gone; the agent got ${JSON.stringify(result.body)}`);
+  assert.equal(result.status, 200);
+  assert.equal((result.body as { stored?: unknown }).stored, false);
+  assert.match(w.s.modals[1] ?? '', /was NOT stored in the vault \(the keychain did not answer\)/);
+});
