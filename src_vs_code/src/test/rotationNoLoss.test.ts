@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { describeError } from '../describeError';
 import { refreshFrom, runAndDeliver, tableFor } from '../brokerResponse';
+import { burnIfOneUse } from '../burnOnUse';
 import { protectEntity, unprotectEntity } from '../entityPin';
 import { maskEntriesFor } from '../maskEntries';
 import { writeUnattended } from '../entryWriter';
@@ -41,7 +42,7 @@ const COPY_IT = 'Copy the new connection string';
 const CTX = { accountId: ACCOUNT, entityId: ENTRY, entityName: 'orders-db' };
 const STATEMENT = `ALTER USER app IDENTIFIED BY '${NEW_SECRET_PLACEHOLDER}'`;
 
-const details = (): EntityMetadata => ({ id: ENTRY, name: 'orders-db', kind: 'db', isSshEnabled: false, dbType: 'mysql' }) as EntityMetadata;
+const details = (burnPolicy?: EntityMetadata['burnPolicy']): EntityMetadata => ({ id: ENTRY, name: 'orders-db', kind: 'db', isSshEnabled: false, dbType: 'mysql', burnPolicy }) as EntityMetadata;
 
 interface World {
   storage: StorageManager;
@@ -70,6 +71,8 @@ interface FarSide {
   readonly ends?: 'throws';
   /** `fails`: the history write refuses — the snapshot of the previous value cannot be kept. */
   readonly history?: 'fails';
+  /** `true`: a ONE-USE entry — the broker burns it right after a successful answer (`burnOnUse.ts`). */
+  readonly oneUse?: true;
 }
 
 /** What the far side printed and how the statement ended. */
@@ -85,7 +88,7 @@ async function world(inputs: (string | undefined)[], modal: ModalAnswer[], far: 
   const stub = clickVscode([...inputs], s);
   const written: string[] = [];
   const storage = memoryStorage(stub, written);
-  await seedEntry(storage, details(), { 'database connection': CONN });
+  await seedEntry(storage, details(far.oneUse === true ? 'oneUse' : undefined), { 'database connection': CONN });
   if (far.hold === 'fails') {
     refuseHolds(storage);
   }
@@ -215,7 +218,8 @@ async function delivered(w: World): Promise<string> {
         sent = body;
       },
       log: () => undefined,
-      burn: () => Promise.resolve(),
+      // The real burn (`burnOneUseIn` wires it): a one-use entry is deleted right after the answer, every other entry is left alone.
+      burn: () => burnIfOneUse(w.storage, ACCOUNT, ENTRY).then(() => undefined),
       table: await tableFor(entriesFor, where),
       where: { grant: 'g1', entityName: 'orders-db', action: 'rotate', via: 'mcp', summary: 'rotate', caller: undefined },
       refresh: refreshFrom(entriesFor, where),
@@ -431,4 +435,18 @@ test('the hold failed and the person stored the new value under the PIN — an O
   assert.ok((await openedConnection(w))?.includes(NEW_SECRET) === true, `the setup: the person did not store the new value — ${JSON.stringify(result.body)}`);
   assert.equal(await heldConnection(w), undefined, 'the older hold survived — "Store the rotated one" at the next door would put back a password the far side no longer accepts');
   assert.deepEqual(await w.storage.heldRotations.listed(), [], 'the index still names an entry with nothing held');
+});
+
+// ---- security review, finding 7c: a one-use entry is burned right after the answer — a hold would go with it ----
+
+test('a ONE-USE entry protected while the far side changed: the person is handed the value BEFORE the answer, because the burn that follows the answer takes the entry — and would take a hold with it', async () => {
+  const w = await world([], [undefined, COPY_IT], { oneUse: true });
+
+  const answer = await delivered(w);
+
+  assert.equal(w.storage.getNode(ACCOUNT, ENTRY), undefined, 'the setup: the one-use entry was not burned after the answer');
+  assert.equal(w.s.clipboard.filter((value) => value.includes(NEW_SECRET)).length, 1, `the new value was burned with the one-use entry — the person was never handed it; the agent got ${answer}`);
+  assert.match(w.s.modals[0] ?? '', /so nothing automatic may store the new connection string/, 'the person saw the "kept on this machine" notice for a value the burn was about to take');
+  assert.match(answer, /"stored":false/);
+  assert.ok(!answer.includes(NEW_SECRET), `the agent was handed the new value: ${answer}`);
 });

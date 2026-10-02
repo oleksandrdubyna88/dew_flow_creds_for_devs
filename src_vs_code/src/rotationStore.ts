@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { burnedByAgentUse } from './burnOnUse';
 import { describeError } from './describeError';
 import { NOTHING_OPENED } from './editPrefill';
 import { EntryWriter, UnattendedRefusal, writeUnattended, writerFor } from './entryWriter';
@@ -32,9 +33,10 @@ import type { UseActionContext } from './useActions';
  *       outside its slots (`rotationQuarantine.holdRotated`), and the next time the entry's PIN is entered
  *       the door seals it in (`pinAdmission.admit`). The agent is answered at once; the person is told by a
  *       modal nobody waits for, with <i>Store it now</i> — that same door — and <i>Later</i>;</li>
- *   <li><b>handed to the person</b> — only when even the hold failed, so the value exists in memory alone:
- *       E2's chain, awaited — <i>Store it (asks for the entry's PIN)</i>, sealed by the sealing writer, and
- *       declined or failed, the copy offer, through `copySecret`. The agent hears `stored: false`
+ *   <li><b>handed to the person</b> — when even the hold failed, so the value exists in memory alone, or when
+ *       the entry is ONE-USE and the burn after this answer would take a hold with it (`held`): E2's chain,
+ *       awaited — <i>Store it (asks for the entry's PIN)</i>, sealed by the sealing writer, and declined or
+ *       failed, the copy offer, through `copySecret`. The agent hears `stored: false`
  *       (`rotateAction.RotationNotStored`), never the value.</li>
  * </ol>
  *
@@ -62,13 +64,9 @@ function writeSlot(writer: EntryWriter, ctx: UseActionContext, slot: RotationSlo
   return slot === 'password' ? writer.setPassword(ctx.accountId, ctx.entityId, value) : writer.setDbConnection(ctx.accountId, ctx.entityId, value);
 }
 
-/** Held beside the entry, and the person told without being waited for — or, when even that failed, handed to them. */
+/** Held beside the entry, and the person told without being waited for — or, when the hold is no road, handed to them. */
 async function heldOrHanded(storage: StorageManager, ctx: UseActionContext, refused: Refused, error: unknown): Promise<StoreOutcome> {
-  const held = await holdRotated(storage, ctx.accountId, ctx.entityId, refused.slot, refused.value, refused.was).then(
-    () => true,
-    () => false,
-  );
-  if (!held) {
+  if (!(await held(storage, ctx, refused))) {
     await handedToPerson(storage, ctx, refused.slot, refused.value, error);
     // Stored under the PIN by the person: an older hold of that slot is superseded, as a landed store's is
     // (the security review, finding 5) — kept, its *Store the rotated one* would put back the older value.
@@ -77,6 +75,22 @@ async function heldOrHanded(storage: StorageManager, ctx: UseActionContext, refu
   }
   void waitingNotice(storage, ctx, refused.slot).catch(() => undefined);
   return 'quarantined';
+}
+
+/**
+ * The hold — unless the entry is ONE-USE: the broker burns such an entry right after this call's answer
+ * (`burnOnUse.ts`), and the item beside it would go with the entry, unread (the security review, finding
+ * 7c). For it the value is handed to the person BEFORE the answer, as E2 did — store it under the PIN, else
+ * the copy offer — so they can act while the entry still exists. `false` too when the hold write failed.
+ */
+async function held(storage: StorageManager, ctx: UseActionContext, refused: Refused): Promise<boolean> {
+  if (burnedByAgentUse(storage.getNode(ctx.accountId, ctx.entityId))) {
+    return false;
+  }
+  return holdRotated(storage, ctx.accountId, ctx.entityId, refused.slot, refused.value, refused.was).then(
+    () => true,
+    () => false,
+  );
 }
 
 const STORE_NOW = 'Store it now (asks for the PIN)';
