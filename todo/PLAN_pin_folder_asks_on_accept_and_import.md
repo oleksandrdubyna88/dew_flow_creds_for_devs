@@ -71,7 +71,10 @@ into it and when something is imported into it, exactly as the person's own Add 
 
 ### 3.1 Where the decision is taken — `arrivalPin.ts` (new, ~90 lines)
 
-One small module, over `pinOnCreate`'s own question — reused, not copied:
+One small module, over `pinOnCreate`'s own question — reused, not copied. **It imports no `vscode`** (plan
+round, finding 5; the repository's rule 3): the question is a port, `AskFolderPin = (folderId) =>
+Promise<CreatePin>`, bound to `pinOnCreate.pinForNewEntry` (which does import `vscode`) only where the
+commands are registered, and faked in `arrivalPin.test.ts`:
 
 - **`landingOf(storage, accountId, under, chain)`** — pure, writes nothing: walks `chain` (folder names)
   from `under` exactly as `importShared` does (`shareInbox.ts:640-645`: reuse a child folder of that name),
@@ -129,7 +132,10 @@ the lease per write (`entryWriter.ts:159-166`, `:250-254`) and nothing holds it 
 4. **Writes** as §3.2: missing folders, the values through `writerForNew(…, settled)`, the node,
    `applyCreatePin`, the origin, the consume (`removeOwnShare`).
 
-`ShareLanding = 'landed' | 'left'`. `acceptOne` says *Accepted* only for `landed`; `acceptMany`'s
+**One share is one landing and one decision, taken before any write** (plan round, finding 1): a share
+carries ONE folder chain (`payload.folderPath`), every entry of a folder share lands in that chain's
+subtree, and the subtree is one question (§9.1) — so a share is written whole or not at all; there is no
+partial landing to retry. `ShareLanding = 'landed' | 'left'`. `acceptOne` says *Accepted* only for `landed`; `acceptMany`'s
 `importOpened` counts `left` with the pending ones (`shareInbox.ts:524-526`), and its tally names the folders
 that were declined. `acceptMany` creates ONE `arrivalPins` for the whole conversation, across its PIN rounds
 (`:480-516`), so three shares into one folder are one question however many transit PINs opened them.
@@ -148,7 +154,9 @@ that were declined. `acceptMany` creates ONE `arrivalPins` for the whole convers
   bundle node under `location.parentId` (`externalBundle.ts:76-106`); its folders are all new. Each entity's
   landing is `{ existing: location.parentId, creates }` from its remapped parents — so the whole bundle is
   at most ONE question. `applyExternalSecrets` (`externalSecretsApply.ts:57-67`) is widened with
-  `pinFor: (entityId) => SettledPin` (default `NO_PIN`, so its own test is unchanged) and passes it to
+  a REQUIRED `pinFor: (entityId) => SettledPin` — no `NO_PIN` default, so a caller cannot forget it and
+  write plain into a protected folder (plan round, finding 3); its own test passes `() => NO_PIN` explicitly,
+  a declared mechanical change — and passes it to
   `writerForNew` (`:63`). A declined landing removes its entities — and any remapped folder left holding
   nothing — from `remapped` before `applyExternalSecrets` and the node loop (`:591-594`);
   `applyCreatePin` runs for each sealed entity after its node; the message (`:607-609`) names the skipped.
@@ -208,7 +216,7 @@ Typecheck, lint (`max-lines` 800, `max-lines-per-function` 50), `npm test`, the 
 - [ ] **B7 — a bundle import honours the folder.** RED (`externalSecretsApply.test.ts` world plus the
       handler): `importExternal` into a protected folder → plain writes. GREEN: at most one question; sealed;
       declined → nothing of the bundle under that landing written, said. The coverage test over
-      `EXTERNAL_SECRET_KEYS` stays as it is. Break-it: default `pinFor` → red.
+      `EXTERNAL_SECRET_KEYS` stays as it is. Break-it: `pinFor` answering `NO_PIN` → red.
 - [ ] **B8 — docs and promotion** (§7). `review_code` over the whole diff, then `/promote-plan` in the same
       task, with the deviations.
 
