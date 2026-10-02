@@ -32,9 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The clipboard says what a clipboard history does.** Offered only when even keeping the value failed,
   and only after a click, the copy now says plainly that a clipboard history (Windows' Win+V, a clipboard
   manager, a remote-desktop clipboard) keeps its own copy, which the automatic clear does not empty.
-- **A one-use entry is handed to you, not kept waiting.** An agent's call deletes a one-use entry right
-  after its answer — which would take a waiting value with it. A rotation refused by a PIN on such an entry
-  therefore offers you a copy then and there, before the agent is answered — and only a copy, with the
+- **An agent can no longer rotate a one-use entry.** An agent's call deletes a one-use entry right after
+  its answer — and a rotation would have changed the password on the far side and then lost the new one
+  with the entry. The rotation is now refused before anything runs, and the agent is told to have "one use"
+  taken off the entry first. Only an entry that becomes one-use while a rotation is already running is
+  handed to you, then and there, before the agent is answered — as a copy, and only a copy, with the
   clipboard-history warning: storing it in an entry that burns with the answer would lose it, and the
   message says so. The agent hears `stored: false`.
 - **What waits beside an entry gives away nothing about what it replaced.** The record kept beside a

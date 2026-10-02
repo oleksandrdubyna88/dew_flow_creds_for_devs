@@ -1,8 +1,8 @@
 # PLAN — a rotated value the vault could not store waits in quarantine, not in the clipboard
 
 > Status: **Q1–Q6 built 2026-10-01 on `feat/rotation-quarantine`; the code round passed and the independent
-> security review's 7 findings were fixed 2026-10-02 (commits and deviations in §5 and §5.1); Q7 — the
-> promotion — still open.** Scope: the rotation's store
+> security review's 7 findings and the final review's 4 were fixed 2026-10-02 (commits and deviations in §5
+> and §5.1); Q7 — the promotion — still open.** Scope: the rotation's store
 > (`rotationStore.ts`, `rotateAction.ts`), a new per-entry quarantine item in the OS keychain
 > (`rotationQuarantine.ts`, `secretKeys.ts`), its release at the entry-PIN door (`pinAdmission.ts`,
 > `pinPrompt.ts`), *Remove PIN Protection…* (`pinCommands.ts`), the startup sweep (`ephemeralSweeper.ts`),
@@ -400,6 +400,21 @@ Every story's commit body carries its RED message and its break-it. What differs
        HMAC under a per-hold salt — scrypt would protect only the dead old value, beside a new one in the
        clear; the v1 reader stays (two lines that keep a v1 hold from being a permanent plaintext orphan). The §4.3 text above describes the hold road for
        every entry; the one-use exception is the deviation.
+14. **coai code round 2: session `4187565a` again, proceed, 8 of 8, 5 findings, all rejected with reasons.**
+15. **Final security review — 4 findings, 2026-10-02**, each fixed red-green with its break-it in the commit body:
+    1. An UNPROTECTED one-use entry was rotated, stored, answered 200 and burned with the new value inside —
+       nobody offered a copy. The operator's decision: `rotate` is refused for an entry the call would burn,
+       in `rotateAction.prepare` before anything is drawn or run (`burnOnUse.detailsBurnedByAgentUse`); the
+       copy-only road of 8d107e84 stays as defence in depth for an entry made one-use while the statement
+       runs, and its tests now reach it that way (`fd13fc16`).
+    2. A conflict settled with *Store the rotated one* was released inside `settleRelease`, invisible to the
+       click that asked — `settleRelease` returns the settled release and `admitted` hands it on
+       (`36acb108`).
+    3. On the handed road only the write's failure was caught; a door that threw lost the in-memory value —
+       the whole PIN road is wrapped (`storedUnderPinOrWhyNot`), every throw leads to the copy (`34641753`).
+    4. The one-use copy offer always said "protected with a PIN"; it now says so only for a PIN refusal and
+       names the store's own failure otherwise (`cb920387`).
+    The `creds_rotate` description lists no prepare refusal (woven, PIN), so it was not changed for fix 1.
 
 ## 6. Test plan
 

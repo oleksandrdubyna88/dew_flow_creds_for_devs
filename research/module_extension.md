@@ -1556,12 +1556,20 @@ proof. Getters and setters were still `string` then; E3 flipped them to `StoredS
   and declined, dismissed, refused or failed, *Copy the new password / connection string* through
   `copySecret`, both modals carrying the clipboard-history sentence (a clipboard history keeps its own
   copy; the automatic clear does not reach it). The agent then gets `stored: false`, never the value.
-  A ONE-USE entry takes no hold road at all (the security review, finding 7c): the broker burns it right
-  after this very answer and the held item would go with it, unread — so for it the value is handed to the
-  person BEFORE the answer, awaited — as a COPY ONLY (`copiedBeforeTheBurn`, `8d107e84`): *Store it* would
-  seal it into the entry the burn takes, so it is not offered, and the modal says the entry burns with this
-  answer; the agent hears `stored: false` (`rotationStore.held`, through the burn's
-  own predicate `burnOnUse.burnedByAgentUse`). And an older hold of the slot is superseded after the handed
+  **A ONE-USE entry is not rotated at all** (the final security review, fix 1): `rotateAction.prepare`
+  refuses it FIRST among `notRotatable`'s refusals — beside the woven and the PIN ones, before the secret is
+  drawn and before the statement runs — because the broker burns it right after the answer, new value and
+  all (an unprotected one-use entry stored the value, answered 200, and burned with it). The agent gets an
+  `invalid_request` saying the entry is one-use and to take "one use" off first; the journal counts it as
+  every prepare refusal (`burnOnUse.detailsBurnedByAgentUse`, the burn's own predicate over the details).
+  An entry made one-use WHILE the statement ran still takes no hold road (the security review, finding 7c):
+  the held item would burn unread — so the value is handed to the person BEFORE the answer, awaited — as a
+  COPY ONLY (`copiedBeforeTheBurn`, `8d107e84`): *Store it* would seal it into the entry the burn takes, so it
+  is not offered, and the modal says the entry burns with this answer, naming the PIN only when a PIN was the
+  reason and the store's own failure otherwise (fix 4); the agent hears `stored: false` (through
+  `burnOnUse.burnedByAgentUse`). On the awaited handed road ANY throw of the PIN road — the door included —
+  becomes the reason the copy offer names (`storedUnderPinOrWhyNot`, fix 3), so the in-memory value is
+  always offered. And an older hold of the slot is superseded after the handed
   store lands too, as after a landed one (finding 5) — kept, its *Store the rotated one* at the next door
   would have put the older value back over the one the far side holds.
 - **The held value goes in at the next PIN.** `pinAdmission.admit` releases it after `healProtected`
@@ -1574,7 +1582,9 @@ proof. Getters and setters were still `string` then; E3 flipped them to `StoredS
   (R3), a plain entry re-checked under the lease, marked-over-nothing stopped; then, under the lease, the
   slot is dropped from the item only if its `at` is unchanged. `Admission`'s `in` carries `released` and
   `conflicts` (ids and times). `admitEntry` says *"The new password of "X" from <time> is now stored,
-  sealed under its PIN."* and ASKS a conflict before it returns: *Store the rotated one* (a snapshot
+  sealed under its PIN."* and ASKS a conflict before it returns (what the person releases there is merged into
+  the release `pinPrompt.admitted` hands a click, so a click after *Store the rotated one* re-reads the slot —
+  the final security review, fix 2): *Store the rotated one* (a snapshot
   first, then the release past its check) or *Keep the current one* (confirmed, then dropped); dismissed
   → kept and asked at the next door. So Edit, a share and an export that admitted first read the
   released value. Without a door — *Remove PIN Protection…*, the startup sweep and every tick

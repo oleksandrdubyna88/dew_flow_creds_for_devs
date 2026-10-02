@@ -33,3 +33,10 @@ for (const language of HELP_LANGUAGES) {
     assert.ok(agents.body.usage.includes(WORD), `the ${language} agent article does not say where a rotation refused by a PIN is`);
   });
 }
+
+test('the English PIN article says an agent cannot rotate a one-use entry at all, and what to do instead', () => {
+  const { body } = bodyFor(article('entity-pin'), 'en');
+
+  assert.match(body.usage, /An agent cannot rotate a one-use entry at all/);
+  assert.match(body.usage, /taken off first/);
+});
