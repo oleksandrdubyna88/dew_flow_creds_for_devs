@@ -393,7 +393,12 @@ Every story's commit body carries its RED message and its break-it. What differs
        line-neutral (`23b257c8`); (b) *Burn Now…* did not name the waiting copy — `BurnDeps.lost` through
        `lostWithDeletion`, Delete's words (`7f3d4950`); (c) a ONE-USE entry is burned right after the answer,
        hold and all — the burn's predicate extracted as `burnOnUse.burnedByAgentUse` and the rotation's store
-       takes E2's awaited handed path for it (`6ebd4a71`). The §4.3 text above describes the hold road for
+       takes E2's awaited handed path for it (`6ebd4a71`) — narrowed to the COPY alone (`8d107e84`): *Store it*
+       sealed the value into the entry the burn then took, the only copy lost; the modal now says the entry
+       burns with this answer and the agent hears `stored: false`. The Q3 "quarantined at once" guard waits
+       15 s, not 5, under the parallel suite's load (`a1755c91`). Decided, not built: the fingerprint stays an
+       HMAC under a per-hold salt — scrypt would protect only the dead old value, beside a new one in the
+       clear; the v1 reader stays (two lines that keep a v1 hold from being a permanent plaintext orphan). The §4.3 text above describes the hold road for
        every entry; the one-use exception is the deviation.
 
 ## 6. Test plan

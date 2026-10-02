@@ -34,8 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   manager, a remote-desktop clipboard) keeps its own copy, which the automatic clear does not empty.
 - **A one-use entry is handed to you, not kept waiting.** An agent's call deletes a one-use entry right
   after its answer — which would take a waiting value with it. A rotation refused by a PIN on such an entry
-  therefore asks you then and there, before the agent is answered: store the value under the PIN, or copy
-  it — as every refused rotation did before this release.
+  therefore offers you a copy then and there, before the agent is answered — and only a copy, with the
+  clipboard-history warning: storing it in an entry that burns with the answer would lose it, and the
+  message says so. The agent hears `stored: false`.
 - **What waits beside an entry gives away nothing about what it replaced.** The record kept beside a
   waiting value carries a fingerprint of the value the rotation replaced, so the next PIN can tell whether
   the entry changed since. That fingerprint is now salted per value: whoever can read the keychain item
