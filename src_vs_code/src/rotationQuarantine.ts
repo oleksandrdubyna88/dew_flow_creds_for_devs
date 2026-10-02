@@ -127,37 +127,64 @@ function isHeldEntry(value: unknown): value is HeldEntry {
 
 /**
  * What a held value replaced, as the release compares it — never the text itself: the item holds the new
- * value, not the old one. HMAC-SHA-256 of the slot's text (`''` for an empty slot) under a salt drawn at
- * random for each hold (the security review, finding 6): a record that carried the plain SHA-256 handed
- * whoever can read the keychain item a check on the OLD value — the one the entry keeps sealed under
- * scrypt — against a precomputed table or any other copy of that hash. The salt rides in the record, so it
- * defeats precomputation and linking, not a guesser who holds the record and the time to run HMACs; only a
- * slow derivation would, at a cost per hold and per door this does not take.
+ * value, not the old one. The text replaced is a PASSWORD (or a connection string carrying one), so its
+ * fingerprint is a memory-hard derivation, as the entry's own seal is: scrypt of the slot's text (`''` for an
+ * empty slot) under 16 random bytes drawn for each hold, the cost written beside it so it can be raised later
+ * (CodeQL js/insufficient-password-hash on PR #179, replacing the salted HMAC of the security review's
+ * finding 6 — a fast hash, so an offline guessing check on the replaced password for whoever can read the
+ * keychain item). Derived on Node's thread pool (`crypto.scrypt`, never the synchronous one), about 32 ms at
+ * the cost below; a hold pays it once and a door once per held slot.
+ *
+ * <p>`unknown` is a hold whose fingerprint this build cannot check — a record written by a development build
+ * of this feature (v1: plain SHA-256, v2: HMAC-SHA-256), never released. It is still HELD (never a silent
+ * drop, never a plaintext orphan), and nothing automatic releases it: the door asks the person (a conflict).</p>
  */
-export interface Fingerprint {
-  /** 16 random bytes, hex. `''` only in a record written before the salt (v1, never released): its `mac` is the plain SHA-256. */
+export type Fingerprint = ScryptFingerprint | UnknownFingerprint;
+
+export interface ScryptFingerprint {
+  readonly kdf: 'scrypt';
+  readonly N: number;
+  readonly r: number;
+  readonly p: number;
+  /** 16 random bytes, hex. */
   readonly salt: string;
-  readonly mac: string;
+  /** The derived key, 32 bytes, hex. */
+  readonly key: string;
 }
 
-export function fingerprintOf(text: string | undefined): Fingerprint {
-  const salt = crypto.randomBytes(SALT_BYTES).toString('hex');
-  return { salt, mac: macOf(salt, text) };
+export interface UnknownFingerprint {
+  readonly kdf: 'unknown';
 }
 
+export const UNKNOWN_FINGERPRINT: UnknownFingerprint = { kdf: 'unknown' };
+
+/** scrypt's cost for a new hold: 16 MiB and ~32 ms — slow for a guesser, cheap for one hold and one door. */
+const COST = { N: 2 ** 14, r: 8, p: 1 } as const;
 const SALT_BYTES = 16;
+const KEY_BYTES = 32;
 
-/** Whether `text` is what the fingerprint was taken of — compared in constant time. */
-export function matchesFingerprint(was: Fingerprint, text: string | undefined): boolean {
-  const now = Buffer.from(macOf(was.salt, text), 'hex');
-  const kept = Buffer.from(was.mac, 'hex');
+export async function fingerprintOf(text: string | undefined): Promise<Fingerprint> {
+  const salt = crypto.randomBytes(SALT_BYTES).toString('hex');
+  return { kdf: 'scrypt', ...COST, salt, key: (await derived(text, salt, COST)).toString('hex') };
+}
+
+/** Whether `text` is what the fingerprint was taken of — compared in constant time. An unknown fingerprint matches nothing. */
+export async function matchesFingerprint(was: Fingerprint, text: string | undefined): Promise<boolean> {
+  if (was.kdf !== 'scrypt') {
+    return false;
+  }
+  const now = await derived(text, was.salt, was);
+  const kept = Buffer.from(was.key, 'hex');
   return now.length === kept.length && crypto.timingSafeEqual(now, kept);
 }
 
-/** HMAC-SHA-256 under the salt — or, for a v1 record's empty salt, the plain SHA-256 it was written with. */
-function macOf(salt: string, text: string | undefined): string {
-  const digest = salt === '' ? crypto.createHash('sha256') : crypto.createHmac('sha256', Buffer.from(salt, 'hex'));
-  return digest.update(text ?? '', 'utf8').digest('hex');
+/** scrypt on the thread pool, its memory bound to what the cost needs. */
+function derived(text: string | undefined, salt: string, cost: { readonly N: number; readonly r: number; readonly p: number }): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(text ?? '', Buffer.from(salt, 'hex'), KEY_BYTES, { N: cost.N, r: cost.r, p: cost.p, maxmem: 2 * 128 * cost.N * cost.r }, (error, key) =>
+      error === null ? resolve(key) : reject(error),
+    );
+  });
 }
 
 /**
@@ -335,12 +362,15 @@ async function releaseText(at: ReleaseAt, slot: RotationSlot, held: Held, text: 
   if (live.text === text) {
     return finished(at, slot, held, live.sealed);
   }
-  return changedSince(live.text, held, forced) ? { kind: 'conflict', conflict: { slot, at: held.at } } : written(at, slot, held, text, live.raw);
+  return (await changedSince(live.text, held, forced)) ? { kind: 'conflict', conflict: { slot, at: held.at } } : written(at, slot, held, text, live.raw);
 }
 
-/** The slot no longer holds what the rotation replaced — and the person has not chosen the rotated value anyway. */
-function changedSince(live: string | undefined, held: Held, forced: boolean): boolean {
-  return !forced && !matchesFingerprint(held.was, live);
+/**
+ * The slot no longer holds what the rotation replaced — and the person has not chosen the rotated value
+ * anyway. A fingerprint this build cannot check counts as changed: the person is asked, nothing is overwritten.
+ */
+async function changedSince(live: string | undefined, held: Held, forced: boolean): Promise<boolean> {
+  return !forced && !(await matchesFingerprint(held.was, live));
 }
 
 /**
@@ -573,10 +603,11 @@ function heldNames(entryName: string, held: HeldSlots): WaitingValue[] {
   return SLOTS.filter((slot) => held[slot] !== undefined).map((slot) => ({ entryName, slot }));
 }
 
-// ---- the item's wire form: `{ v: 2, slots: { password?: { value, at, was: { salt, mac } }, dbConnection?: … } }` ----
-// v1 — never released; written by builds before the salt — carried `was` as the plain SHA-256 hex. It is
-// read as an empty salt and compared as it was written; nothing writes v1 again (a v1 hold carried forward
-// keeps its empty salt under v2).
+// ---- the item's wire form: `{ v: 3, slots: { password?: { value, at, was }, dbConnection?: … } }` ----
+// `was` is `{ kdf: 'scrypt', N, r, p, salt, key }`, or `{ kdf: 'unknown' }`. v1 (`was` a plain SHA-256 hex) and
+// v2 (`was` an HMAC-SHA-256 `{ salt, mac }`) were written only by development builds of this feature, never
+// released: their holds are read with an UNKNOWN fingerprint — still held, released only by the person's
+// answer — and no fast hash of a slot's text is computed or written again.
 
 const SLOTS: readonly RotationSlot[] = ['password', 'dbConnection'];
 
@@ -595,8 +626,8 @@ interface WireRecord {
   readonly slots?: Partial<Record<RotationSlot, unknown>>;
 }
 
-const WIRE_VERSION = 2;
-const READABLE_VERSIONS: ReadonlySet<unknown> = new Set([1, WIRE_VERSION]);
+const WIRE_VERSION = 3;
+const READABLE_VERSIONS: ReadonlySet<unknown> = new Set([1, 2, WIRE_VERSION]);
 
 function parsedRecord(raw: string | undefined): WireRecord | undefined {
   const parsed = (parsedJson(raw) ?? undefined) as WireRecord | undefined;
@@ -628,28 +659,37 @@ interface WellFormed {
 function heldIn(wire: unknown): Held | undefined {
   const held = (wire ?? {}) as WireHeld;
   const was = fingerprintIn(held.was);
-  return wellFormed(held) && was !== undefined ? { value: stored(held.value), at: held.at, was } : undefined;
+  return wellFormed(held) ? { value: stored(held.value), at: held.at, was } : undefined;
 }
 
 function wellFormed(held: WireHeld): held is WellFormed {
   return typeof held.value === 'string' && Number.isFinite(held.at);
 }
 
-/** The fingerprint as written: v2's `{ salt, mac }` — or v1's bare SHA-256 hex, read as an empty salt. */
-function fingerprintIn(wire: unknown): Fingerprint | undefined {
-  return isHex(wire, MAC_HEX) ? { salt: '', mac: wire } : saltedIn((wire ?? {}) as Partial<Fingerprint>);
+/** The fingerprint as written — a scrypt one this build can check, or UNKNOWN (a v1/v2 fast hash, anything else). */
+function fingerprintIn(wire: unknown): Fingerprint {
+  const was = (wire ?? {}) as Partial<ScryptFingerprint>;
+  return isScrypt(was) ? { kdf: 'scrypt', N: was.N, r: was.r, p: was.p, salt: was.salt, key: was.key } : UNKNOWN_FINGERPRINT;
 }
 
-function saltedIn(was: Partial<Fingerprint>): Fingerprint | undefined {
-  return isSalt(was.salt) && isHex(was.mac, MAC_HEX) ? { salt: was.salt, mac: was.mac } : undefined;
+function isScrypt(was: Partial<ScryptFingerprint>): was is ScryptFingerprint {
+  return was.kdf === 'scrypt' && isCost(was.N, was.r, was.p) && isHex(was.salt, SALT_BYTES * 2) && isHex(was.key, KEY_BYTES * 2);
 }
 
-const MAC_HEX = 64;
-
-/** A salt as `fingerprintOf` draws it — or none, in a v1 hold carried forward. */
-function isSalt(value: unknown): value is string {
-  return value === '' || isHex(value, SALT_BYTES * 2);
+/** A cost a release may run: N a power of two from 2^10, r and p from 1, p at most 16, the memory (128·N·r) at most 64 MiB. */
+function isCost(N: unknown, r: unknown, p: unknown): boolean {
+  return isPowerOfTwo(N) && inRange(r, 1, MAX_SCRYPT_MEMORY / (128 * (N as number))) && inRange(p, 1, 16);
 }
+
+function isPowerOfTwo(n: unknown): n is number {
+  return Number.isInteger(n) && (n as number) >= 2 ** 10 && ((n as number) & ((n as number) - 1)) === 0;
+}
+
+function inRange(n: unknown, low: number, high: number): boolean {
+  return Number.isInteger(n) && (n as number) >= low && (n as number) <= high;
+}
+
+const MAX_SCRYPT_MEMORY = 64 * 1024 * 1024;
 
 function isHex(value: unknown, length: number): value is string {
   return typeof value === 'string' && value.length === length && /^[0-9a-f]*$/.test(value);

@@ -24,7 +24,7 @@ async function vault(s: Sinks = sinks()): Promise<StorageManager> {
   await seedEntry(storage, db('db1', 'orders-db'), { 'database connection': CONN });
   await seedEntry(storage, db('db2', 'plain-db'), { 'database connection': CONN });
   await storage.heldRotations.list(ACCOUNT, 'db1');
-  await storage.heldRotations.put(ACCOUNT, 'db1', { dbConnection: { value: stored(HELD_CONN), at: 1_000, was: fingerprintOf(CONN) } });
+  await storage.heldRotations.put(ACCOUNT, 'db1', { dbConnection: { value: stored(HELD_CONN), at: 1_000, was: await fingerprintOf(CONN) } });
   return storage;
 }
 
@@ -171,7 +171,7 @@ async function burnable(s: Sinks): Promise<StorageManager> {
   const storage = memoryStorage(clickVscode([], s));
   await seedEntry(storage, { ...db('db1', 'orders-db'), burnPolicy: 'ttl', expiresAt: Date.now() + 3600_000 }, { 'database connection': CONN });
   await storage.heldRotations.list(ACCOUNT, 'db1');
-  await storage.heldRotations.put(ACCOUNT, 'db1', { dbConnection: { value: stored(HELD_CONN), at: 1_000, was: fingerprintOf(CONN) } });
+  await storage.heldRotations.put(ACCOUNT, 'db1', { dbConnection: { value: stored(HELD_CONN), at: 1_000, was: await fingerprintOf(CONN) } });
   return storage;
 }
 

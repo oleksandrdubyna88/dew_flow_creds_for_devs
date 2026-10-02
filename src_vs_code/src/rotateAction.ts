@@ -336,7 +336,7 @@ async function draw(
   const current = unsealedText(await deps.current(ctx, checked.slot));
   const stored = storedValueFor(checked.slot, current, drawn.value, details.dbType);
   return stored.ok
-    ? { ok: true, details, checked, secret: drawn.value, stored: stored.value, was: fingerprintOf(current) }
+    ? { ok: true, details, checked, secret: drawn.value, stored: stored.value, was: await fingerprintOf(current) }
     : { ok: false, error: stored.error };
 }
 

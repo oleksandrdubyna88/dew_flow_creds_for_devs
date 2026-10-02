@@ -139,7 +139,7 @@ async function world(inputs: (string | undefined)[], modal: ModalAnswer[], far: 
   written.length = 0;
   const rotate = (): Promise<UseActionResult> =>
     action.run(CTX, { statement: STATEMENT }).catch((error: unknown) => ({ status: 500, body: { thrown: describeError(error) } }));
-  const store = (slot: RotationSlot, value: string): Promise<StoreOutcome> => storeRotated(storage, CTX, slot, value, fingerprintOf(CONN));
+  const store = async (slot: RotationSlot, value: string): Promise<StoreOutcome> => storeRotated(storage, CTX, slot, value, await fingerprintOf(CONN));
   return Object.assign(w, { storage, s, written, rotate, action, store });
 }
 
@@ -302,7 +302,7 @@ function heldOpen(): { answer: ModalAnswer; close: (pressed: string | undefined)
 const holdsTheNewValue = async (w: World): Promise<boolean> => ((await heldConnection(w)) ?? '').includes(NEW_SECRET);
 
 /** Every keychain write that carried the new value was the held item's record — and there was one. */
-const onlyInTheHeldItem = (w: World): boolean => inTheClear(w).length > 0 && inTheClear(w).every((value) => value.startsWith('{"v":2,"slots":'));
+const onlyInTheHeldItem = (w: World): boolean => inTheClear(w).length > 0 && inTheClear(w).every((value) => /^\{"v":\d+,"slots":/.test(value));
 
 const journalWord = (w: World, result: UseActionResult): string => (w.action.describeOutcome ?? String)(result);
 
@@ -438,7 +438,7 @@ test('the hold failed and the person stored the new value under the PIN — an O
   // An older hold of a value the slot no longer holds: the door the person passes asks about it (dismissed) rather than releasing it.
   const w = await world([PIN], [STORE_IT, undefined]);
   await w.storage.heldRotations.list(ACCOUNT, ENTRY);
-  await w.storage.heldRotations.put(ACCOUNT, ENTRY, { dbConnection: { value: stored(OLDER_HELD), at: 1, was: fingerprintOf('a value from before this entry was last changed') } });
+  await w.storage.heldRotations.put(ACCOUNT, ENTRY, { dbConnection: { value: stored(OLDER_HELD), at: 1, was: await fingerprintOf('a value from before this entry was last changed') } });
   refuseNextHold(w.storage);
 
   const result = await w.rotate();
