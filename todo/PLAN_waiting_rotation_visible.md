@@ -116,11 +116,11 @@ the existing `pinPrompt` import. The room comes from the sibling plan's extracti
 
 ### 3.4 Honest limits that remain (said, not fixed)
 
-- An AGENT's use of an unprotected entry inside the same window still reads the stored value: automatic
-  paths do not release (§9 Q1). The tree row shows the wait meanwhile.
+- An AGENT's use of an unprotected entry with a waiting value releases it first, unattended (§9.1, W5); a
+  CONFLICT is not resolved automatically — the agent uses what is stored and the person's next door asks.
 - A release that fails (a keychain error, `ReleaseOvertaken`) leaves the click on the stored value; the row
   keeps showing the wait, and the next door or tick retries.
-- The sweeper's own release is said only in the log (`ephemeralSweeper.ts:162`), not to the person (§9 Q2).
+- The sweeper's own release is said to the person too (§9.2, W6), not only in the log.
 
 ## 4. Build order — small stories, each RED first
 
@@ -150,6 +150,18 @@ lifecycle check.
       modal says *"was protected with a PIN"*; its row tooltip says *"enter its PIN"*. GREEN: the modal names
       the store's failure, no PIN, and *"within a minute"*; the tooltip of an unmarked entry names no PIN, a
       marked one still does. Break-it: restore the fixed sentence → red.
+- [ ] **W5 — an agent's use of an unprotected entry stores a waiting value first** (§9.1). Every automatic
+      reader that resolves a stored secret for an agent (`automaticOpener` callers: env apply, `creds://`, the
+      db query, the deploy key, ssh) asks `isWaiting` (index only) and, for a listed UNMARKED entry, runs
+      `releaseHeld(…, UNATTENDED)` before reading — the plain writer re-checked under the lease, never a PIN,
+      never a modal. RED: an agent's db query against an unprotected entry with a held newer connection string
+      uses the OLD one. GREEN: the new one is used, stored plain, the hold gone. A conflict: nothing written,
+      the agent uses the stored value, the hold waits. A marked entry: untouched (its door is the person's).
+      Cost guard: an unlisted entry reads no `:rotationQuarantine` key. Break-it: skip the release → red.
+- [ ] **W6 — the sweep's release is said to the person** (§9.2). The sweep's `releaseUnprotected` returns
+      WHICH entries and slots it released, and the sweeper says each once through `rotationWaiting`'s words
+      (*"The new password of "X" from <time> is now stored."*), not only in the log; a tick that released
+      nothing says nothing. RED: a sweep releasing a held value → no info shown. Break-it: drop the say → red.
 - [ ] **W4 — docs and promotion** (§7). `review_code` over the diff, then `/promote-plan` with the
       deviations; the rotation-quarantine plan's open tail updated to point at the promoted record.
 
@@ -189,7 +201,9 @@ Disjoint otherwise: this plan touches the SENDING half of `shareInbox.ts`, the s
 
 ## 8. Definition of Done
 
-- [ ] W1–W4 merged, each with its RED observation and break-it in the commit body.
+- [ ] W1–W6 merged, each with its RED observation and break-it in the commit body.
+- [ ] An agent's use of an unprotected entry with a waiting value uses the new value (W5); the sweep's release
+      is said to the person (W6).
 - [ ] A click on an unprotected entry with a waiting value uses the new value and says it was stored, with no
       PIN box — shown over the real storage; an unlisted entry's click reads nothing new.
 - [ ] The share door says what it released and asks a conflict.
