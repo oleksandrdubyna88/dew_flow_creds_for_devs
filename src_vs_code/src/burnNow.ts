@@ -10,8 +10,9 @@ import { hasLifetime } from './entityExpiry';
 
 export const BURN_BUTTON = 'Burn';
 
-export function burnNowText(name: string): string {
-  return `Burn "${name}" now? This is not the Trash: the secret, its history and every synced copy are gone for good.`;
+/** The question — and, after it, what the burn loses beyond the entry (`lost`, `''` when nothing waits beside it). */
+export function burnNowText(name: string, lost = ''): string {
+  return `Burn "${name}" now? This is not the Trash: the secret, its history and every synced copy are gone for good.${lost}`;
 }
 
 /** Whether the menu offers it: only an entry that carries a lifetime. */
@@ -24,13 +25,19 @@ export interface BurnDeps {
   readonly confirm: (text: string, button: string) => Promise<boolean>;
   /** The one delete path — `StorageManager.deleteNodeRecursive`. */
   readonly burn: (accountId: string, id: string) => Promise<string[]>;
+  /**
+   * What a permanent deletion of this entry loses beyond it — a rotated value waiting beside it
+   * (`rotationWaiting.lostWithDeletion`, the sentence Delete and Empty Trash add; the security review,
+   * finding 7b). `''` when nothing waits.
+   */
+  readonly lost: (accountId: string, id: string) => Promise<string>;
 }
 
 export async function burnNow(deps: BurnDeps, accountId: string, node: TreeNode): Promise<'burned' | 'kept'> {
   if (!canBurnNow(node)) {
     return 'kept';
   }
-  if (!(await deps.confirm(burnNowText(node.name), BURN_BUTTON))) {
+  if (!(await deps.confirm(burnNowText(node.name, await deps.lost(accountId, node.id)), BURN_BUTTON))) {
     return 'kept';
   }
   await deps.burn(accountId, node.id);

@@ -163,3 +163,27 @@ test('Empty Trash with such an entry inside names it too; one with nothing waiti
   assert.ok(detailOf(s, 0).includes(LOST), `Empty Trash did not name the only copy: ${detailOf(s, 0)}`);
   assert.doesNotMatch(detailOf(s, 1), /rotated/, 'a deletion with nothing waiting talks about a rotated value');
 });
+
+// ---- security review, finding 7b: Burn Now is a permanent deletion too ----
+
+/** `orders-db` with a lifetime — the one shape *Burn Now…* is offered on — and a rotated connection string waiting beside it. */
+async function burnable(s: Sinks): Promise<StorageManager> {
+  const storage = memoryStorage(clickVscode([], s));
+  await seedEntry(storage, { ...db('db1', 'orders-db'), burnPolicy: 'ttl', expiresAt: Date.now() + 3600_000 }, { 'database connection': CONN });
+  await storage.heldRotations.list(ACCOUNT, 'db1');
+  await storage.heldRotations.put(ACCOUNT, 'db1', { dbConnection: { value: stored(HELD_CONN), at: 1_000, was: fingerprintOf(CONN) } });
+  return storage;
+}
+
+const modalOf = (s: Sinks, index: number): string => s.modals[index] ?? '(no modal)';
+
+test('Burn Now on an entry with a rotated value waiting names the only copy, in the words Delete uses', async () => {
+  const s = sinks();
+  const storage = await burnable(s);
+  const { runBurnNow } = loadWithVscode<typeof import('../burnNowCommand')>('../burnNowCommand', clickVscode([], s));
+
+  await runBurnNow({ kind: 'node', accountId: ACCOUNT, node: storage.getNode(ACCOUNT, 'db1') as TreeNode }, storage, () => undefined);
+
+  assert.ok(modalOf(s, 0).includes(LOST), `Burn Now did not name the only copy: ${modalOf(s, 0)}`);
+  assert.ok(storage.getNode(ACCOUNT, 'db1') !== undefined, 'a dismissed confirmation burned the entry');
+});
