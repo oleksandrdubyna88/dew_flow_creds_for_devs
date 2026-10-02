@@ -12,8 +12,12 @@ import { DrawOptions, GenerationOutcome, NO_GENERATOR_OUTCOME } from './secretKi
 import { readSecretOptions } from './mcpSecretOptions';
 import { Revision } from './revisionHistory';
 import { pinFieldRefusal } from './pinGate';
+import { detailsBurnedByAgentUse } from './burnOnUse';
 import { unsealedText } from './secretOpener';
 import type { StoredSecret } from './storedSecret';
+import { MaskEntry, buildMaskTable, maskResponseBody, maskText } from './secretMasker';
+import { describeError } from './describeError';
+import { Fingerprint, fingerprintOf } from './rotationQuarantine';
 
 /**
  * The `rotate` action: the window changes a secret on the far side and then stores it.
@@ -34,9 +38,11 @@ import type { StoredSecret } from './storedSecret';
  * <p><b>Nobody sees the new secret.</b> Not the agent, which wrote a placeholder; not the
  * person, whose consent prompt shows the statement with the placeholder intact; not the audit
  * line, which records the same summary. The one place it could still escape is the far side's
- * own output — a statement can be composed to echo what it was given — and the broker's masker
- * closes that: by the time the response is masked the new value is stored, so it is in the mask
- * table like any other secret of that entry.</p>
+ * own output — a statement can be composed to echo what it was given. The rotation closes that
+ * ITSELF, with the values it holds (`maskedAnswer`): the drawn secret and the stored form are masked
+ * out of whatever it answers, stored or not, succeeded or not. The broker's masker could not — it
+ * reads the entry's values after the run, and a value stored sealed under a PIN, held outside the
+ * entry or stored nowhere is in no table it can build (rotation-quarantine plan §4.8, Q1).</p>
  */
 
 export interface RotateDeps {
@@ -60,14 +66,19 @@ export interface RotateDeps {
   snapshot(ctx: UseActionContext, details: EntityMetadata): Promise<Revision>;
   record(ctx: UseActionContext, revision: Revision): Promise<void>;
   /**
-   * Put the new value into the vault. Resolves when it is there; rejects with {@link RotationNotStored}
-   * when it could not be stored and was handed to the PERSON instead (`rotationStore.ts`) — the far side
-   * has changed by then, so the value is never simply dropped.
+   * Put the new value into the vault. Resolves `stored` when it is there, `quarantined` when the entry
+   * refused it and it is held beside the entry until its PIN is entered (`rotationQuarantine.ts`); rejects
+   * with {@link RotationNotStored} when even that failed and it was handed to the PERSON instead
+   * (`rotationStore.ts`) — the far side has changed by then, so the value is never simply dropped. `was` is
+   * the fingerprint of the text it replaces (`rotationQuarantine.fingerprintOf`), which a later release checks.
    */
-  store(ctx: UseActionContext, slot: RotationSlot, value: string): Promise<void>;
+  store(ctx: UseActionContext, slot: RotationSlot, value: string, was: Fingerprint): Promise<StoreOutcome>;
   /** Called after a successful rotation so the tree and any open viewer catch up. */
   onRotated?: () => void;
 }
+
+/** Where the new value is once the store returned: in the entry, or held beside it. */
+export type StoreOutcome = 'stored' | 'quarantined';
 
 /** The body field the wrapped action reads its statement from. */
 export type StatementField = 'query' | 'command';
@@ -106,7 +117,7 @@ export function rotateAction(
  */
 function describeRotation(result: UseActionResult): string {
   if (result.status === 200) {
-    return (result.body as { stored?: unknown }).stored === false ? ROTATED_NOT_STORED : 'rotated';
+    return JOURNAL_WORDS.get((result.body as { stored?: unknown }).stored) ?? 'rotated';
   }
   return (result.body as { noGenerator?: unknown }).noGenerator === true
     ? NO_GENERATOR_OUTCOME
@@ -148,14 +159,56 @@ async function run(
     // they are the map of where an agent will be tempted to generate the value itself.
     return ready.noGenerator === true ? refuseNoGenerator(ready.error) : refuse(ready.error);
   }
-  const { details, checked, secret, stored } = ready;
+  const values = newValues(ready.checked.slot, ready.secret, ready.stored);
+  return ranAndStored(ctx, ready, () => underlying.run(ctx, { [field]: substituteNewSecret(statement, ready.secret) }), deps).then(
+    (answer) => maskedAnswer(answer, values),
+    (error: unknown) => {
+      throw maskedFailure(error, values);
+    },
+  );
+}
 
-  const result = await underlying.run(ctx, { [field]: substituteNewSecret(statement, secret) });
-  // The far side did not change, so neither does the vault. Handed back as it came: the
-  // statement's own error is what says why, and rewording it here would lose that.
-  return succeeded(result)
-    ? await commit(ctx, details, checked.slot, stored, result, deps)
-    : result;
+/**
+ * The statement, and the store only after it SUCCEEDED. The far side did not change, so neither does the
+ * vault: its answer is handed back as it came (masked by the caller) — the statement's own error is what says
+ * why, and a statement that printed its input and THEN failed may have changed the far side all the same.
+ */
+async function ranAndStored(ctx: UseActionContext, ready: Ready, runIt: () => Promise<UseActionResult>, deps: RotateDeps): Promise<UseActionResult> {
+  const result = await runIt();
+  return succeeded(result) ? commit(ctx, ready.details, { slot: ready.checked.slot, value: ready.stored, was: ready.was }, result, deps) : result;
+}
+
+/**
+ * A rotation that THREW — the far side may have changed before it did — rethrown with the new value taken out
+ * of its message (the security review, finding 4). The broker masks a failure's reason with what storage
+ * holds, and the new value is in none of it: a driver error that quotes the statement it ran would put the
+ * new secret in the journal.
+ */
+function maskedFailure(error: unknown, values: readonly MaskEntry[]): Error {
+  const failure = new Error(maskText(describeError(error), buildMaskTable(values)).text);
+  failure.name = error instanceof Error ? error.name : 'Error';
+  return failure;
+}
+
+/**
+ * The rotation's answer with the new value taken out of every field (rotation-quarantine plan §4.8, Q1).
+ *
+ * <p>Here and not in the broker, because only here is the value in hand: stored under a PIN it is sealed
+ * (`maskEntries` cannot read a sealed value, by design), and handed to the person it is stored nowhere —
+ * so the post-run table the broker builds holds the OLD value and not the new one, and a statement
+ * composed to echo its input handed the agent the very secret this action exists to keep from it.</p>
+ */
+function maskedAnswer(answer: UseActionResult, values: readonly MaskEntry[]): UseActionResult {
+  return { status: answer.status, body: maskResponseBody(answer.body, buildMaskTable(values)).body };
+}
+
+/** The drawn secret and the stored form that carries it — a connection string carries the password inside it. */
+function newValues(slot: RotationSlot, secret: string, stored: string): MaskEntry[] {
+  const label = slot === 'password' ? 'NEW_PASSWORD' : 'NEW_DB_PASSWORD';
+  return [
+    { value: secret, label },
+    { value: stored, label: slot === 'password' ? label : 'NEW_DB_CONNECTION' },
+  ];
 }
 
 /**
@@ -202,8 +255,22 @@ async function notRotatable(
   slot: RotationSlot,
   deps: RotateDeps,
 ): Promise<string> {
-  const woven = wovenSlot(details, slot);
-  return woven === '' ? protectedSlot(ctx, slot, details, deps) : woven;
+  const refused = oneUseEntry(details) || wovenSlot(details, slot);
+  return refused === '' ? protectedSlot(ctx, slot, details, deps) : refused;
+}
+
+/**
+ * A ONE-USE entry is not one an agent may rotate (the final security review, fix 1). The broker burns it as
+ * soon as this call is answered, so a rotation would change the far side and then lose the new value with the
+ * entry — stored into it, held beside it or handed to nobody. Refused here, before anything is drawn or run:
+ * nothing changes, nothing is lost. (`rotationStore`'s copy-only road stays as the defence for an entry made
+ * one-use while the statement ran.)
+ */
+function oneUseEntry(details: EntityMetadata): string {
+  return detailsBurnedByAgentUse(details)
+    ? `"${details.name}" is one-use: it burns as soon as this agent call is answered, so a rotation would change the far side and `
+      + 'leave the new value nowhere to be kept. Nothing was run. To rotate it, first take "one use" off the entry.'
+    : '';
 }
 
 /**
@@ -266,15 +333,17 @@ async function draw(
     return { ok: false, error: drawn.message, noGenerator: true };
   }
   // Sealed values and marked entries were refused by `protectedSlot` before this ran; the text as stored.
-  const stored = storedValueFor(checked.slot, unsealedText(await deps.current(ctx, checked.slot)), drawn.value, details.dbType);
+  const current = unsealedText(await deps.current(ctx, checked.slot));
+  const stored = storedValueFor(checked.slot, current, drawn.value, details.dbType);
   return stored.ok
-    ? { ok: true, details, checked, secret: drawn.value, stored: stored.value }
+    ? { ok: true, details, checked, secret: drawn.value, stored: stored.value, was: await fingerprintOf(current) }
     : { ok: false, error: stored.error };
 }
 
-type Prepared =
-  | { ok: true; details: EntityMetadata; checked: { slot: RotationSlot }; secret: string; stored: string }
-  | { ok: false; error: string; noGenerator?: boolean };
+type Prepared = Ready | { ok: false; error: string; noGenerator?: boolean };
+
+/** Everything a rotation needs once its checks passed: the entry, the slot, the drawn secret and its stored form. */
+type Ready = { ok: true; details: EntityMetadata; checked: { slot: RotationSlot }; secret: string; stored: string; was: Fingerprint };
 
 /** The kind asked for, defaulting to a password — which is what a rotation almost always is. */
 function kindOf(body: unknown): string {
@@ -282,37 +351,68 @@ function kindOf(body: unknown): string {
   return typeof value === 'string' && value.length > 0 ? value : 'password';
 }
 
+/** What a successful far side hands the store: the slot, the stored form, and the fingerprint of what it replaces. */
+interface NewValue {
+  readonly slot: RotationSlot;
+  readonly value: string;
+  readonly was: Fingerprint;
+}
+
 /**
  * History first, then the write, then the tree. Only ever reached by a far side that changed — so a
- * store that could not happen is never an internal failure that drops the new value: the person was
- * handed it (`RotationNotStored`), and the agent is told plainly that it was not stored.
+ * store that could not happen is never an internal failure that drops the new value: it is held beside
+ * the entry until its PIN (`quarantined`), or — when even that failed — the person was handed it
+ * (`RotationNotStored`), and the agent is told plainly where the value is.
  */
 async function commit(
   ctx: UseActionContext,
   details: EntityMetadata,
-  slot: RotationSlot,
-  value: string,
+  value: NewValue,
   result: UseActionResult,
   deps: RotateDeps,
 ): Promise<UseActionResult> {
-  await deps.record(ctx, await deps.snapshot(ctx, details));
-  const stored = await storedOrHanded(ctx, slot, value, deps);
+  const historyKept = await kept(ctx, details, deps);
+  const where = await storedOrHanded(ctx, value, deps);
   deps.onRotated?.();
   // `stdout`, not `output`: it IS the far side's stdout, and calling it anything else was how
   // this answer escaped the masker for one release (security pass, 2026-08-27). The masker
   // covers every field now, and the honest name is still the right one.
   const rotated = { rotated: true, entity: ctx.entityName, stdout: outputOf(result) };
-  return { status: 200, body: stored ? rotated : { ...rotated, stored: false, message: NOT_STORED } };
+  const words: { message?: string } = AGENT_WORDS[where];
+  return { status: 200, body: { ...rotated, ...words, ...(historyKept ? {} : historyLost(words.message)) } };
 }
 
-/** `true` when the value is in the vault; `false` when the store handed it to the person instead. */
-async function storedOrHanded(ctx: UseActionContext, slot: RotationSlot, value: string, deps: RotateDeps): Promise<boolean> {
+/**
+ * The previous value into history, BEFORE the store — and a failure there does not stop the store (the
+ * security review, finding 4): the far side has changed, so the new value is the one that must not be lost;
+ * the previous one no longer works anywhere. The agent is told it was not kept (`historyLost`).
+ */
+async function kept(ctx: UseActionContext, details: EntityMetadata, deps: RotateDeps): Promise<boolean> {
   try {
-    await deps.store(ctx, slot, value);
+    await deps.record(ctx, await deps.snapshot(ctx, details));
     return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The answer's words when the history write failed — appended to whatever the store said. */
+function historyLost(message: string | undefined): { historyKept: false; message: string } {
+  return { historyKept: false, message: [message, HISTORY_LOST].filter((part) => part !== undefined).join(' ') };
+}
+
+const HISTORY_LOST = "The previous value could not be kept in the entry's history; the new value is where `stored` says.";
+
+/**
+ * `stored` when the value is in the vault, `quarantined` when it is held beside the entry until its PIN,
+ * `handed` when the store handed it to the person instead.
+ */
+async function storedOrHanded(ctx: UseActionContext, value: NewValue, deps: RotateDeps): Promise<StoreOutcome | 'handed'> {
+  try {
+    return await deps.store(ctx, value.slot, value.value, value.was);
   } catch (error) {
     if (error instanceof RotationNotStored) {
-      return false;
+      return 'handed';
     }
     throw error;
   }
@@ -333,8 +433,29 @@ export class RotationNotStored extends Error {
 const NOT_STORED = 'The far side changed; the new value was not stored in the vault; the person was told and offered the value. '
   + 'Do not retry the rotation: the old value no longer works, and the person holds the new one.';
 
-/** The journal's word for it — grep-able beside `rotated`. */
-const ROTATED_NOT_STORED = 'rotated, not stored';
+/**
+ * What the agent is told when the entry refused the value and it is held beside it (plan §4.3). The answer
+ * does NOT wait for the person: the value is safe, so nothing they answer changes what the agent should do
+ * (the owner's answer to the plan's open question 3).
+ */
+const QUARANTINED = "The far side changed. The entry was protected with a PIN while it ran, so the new value is kept on the person's "
+  + 'machine, outside the entry, until they next enter its PIN — then it is stored. Do not retry the rotation; the old value no longer works.';
+
+/**
+ * Where the value is, in the answer's words — `stored` answers "where is it now": one field with three
+ * answers that cannot contradict each other the way `stored: false, held: true` could (plan §4.3).
+ */
+const AGENT_WORDS: Readonly<Record<StoreOutcome | 'handed', { readonly stored?: unknown; readonly message?: string }>> = {
+  stored: {},
+  quarantined: { stored: 'quarantined', message: QUARANTINED },
+  handed: { stored: false, message: NOT_STORED },
+};
+
+/** The journal's words for it — grep-able beside `rotated`. */
+const JOURNAL_WORDS = new Map<unknown, string>([
+  [false, 'rotated, not stored'],
+  ['quarantined', 'rotated, quarantined'],
+]);
 
 /**
  * Did the far side actually change?
@@ -351,7 +472,7 @@ function succeeded(result: UseActionResult): boolean {
   return exitCode === undefined || exitCode === 0;
 }
 
-/** Whatever the statement printed, passed through — the masker takes the secret out of it. */
+/** Whatever the statement printed, passed through — `maskedAnswer` takes the new value out of it. */
 function outputOf(result: UseActionResult): unknown {
   return (result.body as { stdout?: unknown }).stdout ?? '';
 }

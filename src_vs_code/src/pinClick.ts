@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import type { SecretSlot } from './entitySlots';
 import { PinOpen, openStored, silentPinGate } from './pinGate';
-import { admitEntry } from './pinPrompt';
+import { admitted } from './pinPrompt';
+import { beforeTheDoor } from './rotationQuarantine';
 import { OpenedSecret, SecretOpener, SecretOwner } from './secretOpener';
 import { isLockedSecret } from './secretEnvelope';
 import type { StorageManager } from './storageManager';
@@ -38,14 +39,23 @@ export async function clickedSecret(
   return clickOpener(storage, accountId, purpose)(owner, await read(storage, accountId, owner.id));
 }
 
-/** The same, as an opener — for a path that resolves WHICH entry owns the value itself (an SSH key). */
+/**
+ * The same, as an opener — for a path that resolves WHICH entry owns the value itself (an SSH key).
+ *
+ * <p>The value arrives read BEFORE the door, and the door can put a rotated value that waited beside the
+ * entry into that very slot (`rotationQuarantine.ts`). So what the door releases is read again: a value
+ * equal to what the released slot held before the door is the dead one, and the slot's new value is opened
+ * instead (the security review, finding 2 — Copy, Connect, SSH and exec used the replaced password once).</p>
+ */
 export function clickOpener(storage: StorageManager, accountId: string, purpose: string): SecretOpener {
   const behindTheDoor = grantedOpener(accountId);
   return async (owner, stored) => {
-    if (needsDoor(owner, stored) && (await admitEntry(storage, accountId, owner.id, owner.name, purpose)) === undefined) {
-      return STOPPED;
+    if (!needsDoor(owner, stored)) {
+      return behindTheDoor(owner, stored);
     }
-    return behindTheDoor(owner, stored);
+    const reread = await beforeTheDoor(storage, accountId, owner.id);
+    const door = await admitted(storage, accountId, owner.id, owner.name, purpose);
+    return door === undefined ? STOPPED : behindTheDoor(owner, await reread(stored, door.release));
   };
 }
 

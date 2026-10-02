@@ -6,6 +6,7 @@ import { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
 import { isLockedSecret, readSecret } from './secretEnvelope';
 import { StoredSecret, carried } from './storedSecret';
+import { NOTHING_RELEASED, Release, releaseHeld } from './rotationQuarantine';
 
 /**
  * Being let into a protected entry — once, at the door, rather than field by field.
@@ -23,9 +24,13 @@ import { StoredSecret, carried } from './storedSecret';
  * <p>Pure of `vscode`: the prompt and the reporting arrive as functions.</p>
  */
 
-/** What the door said. Only `in` opens anything. */
+/**
+ * What the door said. Only `in` opens anything — and `in` says what it released on the way: a rotated value
+ * that was waiting beside the entry (`rotationQuarantine.ts`), now in it, and any it could not put in because
+ * the slot changed after the rotation (`conflicts`, for the person to decide). Ids and times, never a value.
+ */
 export type Admission =
-  | { readonly kind: 'in' }
+  | ({ readonly kind: 'in' } & Release)
   | { readonly kind: 'declined' }
   | { readonly kind: 'refused'; readonly reason: string };
 
@@ -43,13 +48,25 @@ export async function admit(
   const locked = await firstLockedStored(storage, accountId, entityId);
   if (locked === undefined) {
     await repairFalseMark(storage, accountId, entityId);
-    return { kind: 'in' };
+    return released(storage, accountId, entityId, gate);
   }
   const admission = decided(await openStored(locked, gate));
-  if (admission.kind === 'in') {
-    await healProtected(storage, accountId, entityId);
+  if (admission.kind !== 'in') {
+    return admission;
   }
-  return admission;
+  await healProtected(storage, accountId, entityId);
+  return released(storage, accountId, entityId, gate);
+}
+
+/**
+ * The door is the next time the PIN is entered — so it is where a rotated value that waited beside the entry
+ * goes in (rotation-quarantine plan §4.4). AWAITED before the door answers (the plan round's findings 2-3):
+ * Edit, a share and an export that admitted first then read the released value, and a form can never open
+ * over the old one and be saved back over the new. Best-effort like the repairs above: `releaseHeld` never
+ * throws, and a release that fails keeps the value for the next door.
+ */
+async function released(storage: StorageManager, accountId: string, entityId: string, gate: PinGate): Promise<Admission> {
+  return { kind: 'in', ...(await releaseHeld(storage, accountId, entityId, gate.entryName)) };
 }
 
 /**
@@ -86,7 +103,7 @@ async function restoreMark(storage: StorageManager, accountId: string, entityId:
 
 function decided(opened: PinOpen): Admission {
   if (opened.kind === 'value' || opened.kind === 'unprotected') {
-    return { kind: 'in' };
+    return { kind: 'in', ...NOTHING_RELEASED };
   }
   return opened.kind === 'cancelled' ? { kind: 'declined' } : { kind: 'refused', reason: opened.reason };
 }

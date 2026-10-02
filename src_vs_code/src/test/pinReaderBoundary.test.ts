@@ -78,6 +78,7 @@ const READERS: Readonly<Record<string, ReaderKind | readonly ReaderKind[]>> = {
   'restoreVersion.ts': 'carrier', // Restore's writes: sealed in memory before the first write
   'revisionRestore.ts': 'door', // Restore This Version…: the live door, then the version
   'revisionSnapshot.ts': 'carrier', // a snapshot keeps the stored strings as they are
+  'rotationQuarantine.ts': 'door', // the release of a held rotation: the live slot opened through a silent gate, after the door admitted the entry
   'sharePayloadBuild.ts': ['door', 'presence'], // a share, after the share's door; whether a seed exists
   'shareWithheld.ts': 'door', // the share's "not sent" notice, with the share's grant
   'sshAgentManager.ts': 'automatic', // Add Key to Agent (click opener passed in) and the startup sweep
@@ -215,6 +216,9 @@ const GATED_BY_CALLER: Readonly<Record<string, Readonly<Record<string, string>>>
   },
   'revisionRestore.ts': {
     agreed: 'counts and dates the kept versions for the confirmation; no value is used (typed since T5)',
+  },
+  'rotationQuarantine.ts': {
+    rawSlot: 'the live slot as stored: liveText opens it through openStored, the release’s commit guard compares it byte for byte, and a click’s re-read after its door hands it to grantedOpener — never used as a value here',
   },
   'sshCredential.ts': {
     passwordOwner: 'returns the stored password with its OWNER; the caller opens it through the opener it was given (typed since T5)',

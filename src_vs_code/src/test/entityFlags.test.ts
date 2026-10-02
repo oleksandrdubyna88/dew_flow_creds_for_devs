@@ -41,6 +41,7 @@ function fake(tree: Record<string, string[]>): Fake {
     passwordIds: new Set<string>(),
     urlIds: new Set<string>(),
     invalidConfigIds: new Set<string>(),
+    waitingIds: new Set<string>(),
     refreshes: 0,
     refresh(): void {
       target.refreshes += 1;

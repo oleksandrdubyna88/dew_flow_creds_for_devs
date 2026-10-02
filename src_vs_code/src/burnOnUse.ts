@@ -1,6 +1,6 @@
 import { burnsOnAgentUse } from './entityExpiry';
 import { canBurnOnAgentUse, resolveKind } from './entityKind';
-import { TreeNode } from './types';
+import { EntityMetadata, TreeNode } from './types';
 
 /**
  * Destroy an entry that was created to survive exactly one agent use.
@@ -28,18 +28,32 @@ export interface BurnStorage {
   deleteNodeRecursive(accountId: string, id: string): Promise<string[]>;
 }
 
+/**
+ * Whether a successful agent call takes this entry with it: one-use, and of a kind the burn can fire on —
+ * a `oneUse` on a kind that cannot is a policy nothing could ever fire, written before `stampKind` refused
+ * it. The ONE answer the burn below and the rotation's store share (`rotationStore.ts` must not hold a
+ * value beside an entry this call is about to burn — the security review, finding 7c).
+ */
+export function burnedByAgentUse(node: TreeNode | undefined): boolean {
+  return node !== undefined && burnsOnAgentUse(node) && canBurnOnAgentUse(resolveKind(node.details));
+}
+
+/**
+ * The same answer from an entry's DETAILS — what the rotation holds when it decides (`rotateAction.prepare`
+ * refuses a one-use entry before anything is drawn or run; the final security review, fix 1).
+ */
+export function detailsBurnedByAgentUse(details: EntityMetadata | undefined): boolean {
+  return details !== undefined && burnedByAgentUse({ id: details.id, name: details.name, type: 'entity', parentId: null, details });
+}
+
 /** `true` when the entry was one-use and is now gone from the vault. */
 export async function burnIfOneUse(
   storage: BurnStorage,
   accountId: string,
   entityId: string,
 ): Promise<boolean> {
-  const node = storage.getNode(accountId, entityId);
-  if (node === undefined || !burnsOnAgentUse(node)) {
+  if (!burnedByAgentUse(storage.getNode(accountId, entityId))) {
     return false;
-  }
-  if (!canBurnOnAgentUse(resolveKind(node.details))) {
-    return false; // a policy nothing could ever fire, written before that was refused
   }
   await storage.deleteNodeRecursive(accountId, entityId);
   return true;

@@ -136,7 +136,7 @@ function folderIconId(folderType: FolderType | undefined): string {
 const UNTYPED_FOLDER_ICON = 'folder-opened';
 
 // eslint-disable-next-line complexity
-export function buildTooltip(node: TreeNode): vscode.MarkdownString {
+export function buildTooltip(node: TreeNode, extra: readonly string[] = []): vscode.MarkdownString {
   // Entity fields can originate from another user (accepted shares), so the
   // tooltip must not render sender-controlled markdown/images. appendText
   // escapes every metacharacter; isTrusted stays false.
@@ -148,7 +148,8 @@ export function buildTooltip(node: TreeNode): vscode.MarkdownString {
   if (d0?.user) rows.push(`User: ${d0.user}`);
   if (d0?.port !== undefined) rows.push(`Port: ${d0.port}`);
   if (d0?.sshKeyPath) rows.push(`Key: ${d0.sshKeyPath}`);
-  rows.push(d0?.host ? 'Click: details · connects SSH via the play button' : 'Click: view details');
+  // Then any sentence the row's caller adds — a rotated value waiting for the PIN (`rotationWaiting.waitingHint`).
+  rows.push(d0?.host ? 'Click: details · connects SSH via the play button' : 'Click: view details', ...extra);
   if (d0?.notes) rows.push('', d0.notes);
   md.appendText(rows.join('\n'));
   return md;

@@ -6,6 +6,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — an agent's rotation could hand it the new secret (2026-10-01)
+
+- **A rotation whose statement printed what it was given showed the agent the new password.** The broker
+  masks a call's output with the entry's stored values — but a rotation into an entry that was being
+  protected with a PIN stored the new value sealed (unreadable to the masker, by design) or not at all, so
+  the masker held only the OLD password, and a statement composed to echo its input returned the new one
+  in the clear. The same happened when such a statement failed after printing. The rotation now masks its
+  own answer with the value it generated, whatever happened to it.
+
+### Changed — a rotation refused by a PIN keeps the new value until the PIN is entered (2026-10-01)
+
+- **Nothing to answer, nothing to lose.** When an entry is protected with a PIN while an agent's rotation
+  runs, the far side already has the new password and nothing automatic may write into the entry. Until now
+  the window asked you, then and there, to store it under the PIN — and if you were away or dismissed it,
+  the last resort was the clipboard. Now the new value is kept on this machine, outside the entry, the
+  moment the store is refused; the agent is answered at once (`stored: "quarantined"`) and told not to
+  retry; and the next time you open the entry and enter its PIN, it is stored, sealed. The tree row says
+  *rotated password waiting* until then. Removing the PIN, or the entry's protection removed elsewhere,
+  stores it plain. If the stored value changed after the rotation, you are asked which one the far side
+  accepts. Deleting the entry permanently — **Delete Permanently**, **Empty Trash** or **Burn Now…** — says
+  it would lose that only copy. Until it is stored the value
+  has the protection an unprotected entry's password has (the OS keychain) and it never leaves this
+  machine — not in a sync, a backup, an export or a share.
+- **The clipboard says what a clipboard history does.** Offered only when even keeping the value failed,
+  and only after a click, the copy now says plainly that a clipboard history (Windows' Win+V, a clipboard
+  manager, a remote-desktop clipboard) keeps its own copy, which the automatic clear does not empty.
+- **An agent can no longer rotate a one-use entry.** An agent's call deletes a one-use entry right after
+  its answer — and a rotation would have changed the password on the far side and then lost the new one
+  with the entry. The rotation is now refused before anything runs, and the agent is told to have "one use"
+  taken off the entry first. Only an entry that becomes one-use while a rotation is already running is
+  handed to you, then and there, before the agent is answered — as a copy, and only a copy, with the
+  clipboard-history warning: storing it in an entry that burns with the answer would lose it, and the
+  message says so. The agent hears `stored: false`.
+- **What waits beside an entry gives away nothing about what it replaced.** The record kept beside a
+  waiting value carries a fingerprint of the value the rotation replaced, so the next PIN can tell whether
+  the entry changed since. That fingerprint is now a slow, memory-hard derivation (scrypt) under a salt
+  drawn for each value — the same kind of protection the entry's own PIN seal uses: whoever can read the
+  keychain item gets no cheap way to test guesses at the old password.
+
 ### Changed — a stored secret has its own type (typed-secrets E3, 2026-10-01; for developers)
 
 - **Nothing you see changes.** Under the hood, every value the extension keeps in the keychain is now a

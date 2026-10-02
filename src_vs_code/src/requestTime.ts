@@ -12,10 +12,24 @@
 
 /** The line for an instant in a zone `offsetMinutes` east of UTC (UTC+03:00 is 180). */
 export function requestTimeLine(epochMs: number, offsetMinutes: number): string {
+  return `Requested ${wallTime(epochMs, offsetMinutes)}.`;
+}
+
+/**
+ * `2026-09-23 14:05:12 (UTC+03:00)` — the instant on the wall clock of a zone `offsetMinutes` east of UTC.
+ * The request line's time, and any other sentence that says WHEN something happened (a rotated value that
+ * waited for its entry's PIN, `rotationWaiting.ts`).
+ */
+export function wallTime(epochMs: number, offsetMinutes: number): string {
   // Shift the instant by the offset and read it as UTC: the fields ARE the local wall clock, and the
   // date rolls over, forward or back across a month and a year, by the calendar's own rules.
   const wall = new Date(epochMs + offsetMinutes * 60_000).toISOString();
-  return `Requested ${wall.slice(0, 10)} ${wall.slice(11, 19)} (${formatUtcOffset(offsetMinutes)}).`;
+  return `${wall.slice(0, 10)} ${wall.slice(11, 19)} (${formatUtcOffset(offsetMinutes)})`;
+}
+
+/** `wallTime` in this machine's zone at that instant — the offset in force then, as `localRequestTimeLine`. */
+export function localWallTime(date: Date): string {
+  return wallTime(date.getTime(), -date.getTimezoneOffset());
 }
 
 /**

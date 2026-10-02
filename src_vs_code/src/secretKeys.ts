@@ -133,6 +133,15 @@ export function totpSecretKey(accountId: string, entityId: string): string {
   return suffixed(accountId, entityId, 'totp');
 }
 
+/**
+ * SecretStorage key for a rotated value the vault could not store, held until the entry's PIN is entered
+ * (`rotationQuarantine.ts`). Owned by the entry — deleted with it — and in NO carried list: not a slot, not a
+ * bundle kind, so it never leaves this machine.
+ */
+export function rotationQuarantineSecretKey(accountId: string, entityId: string): string {
+  return suffixed(accountId, entityId, 'rotationQuarantine');
+}
+
 /** Every suffixed per-entity kind, so one list decides what an entity OWNS. */
 const ENTITY_KEY_BUILDERS: ReadonlyArray<(accountId: string, entityId: string) => string> = [
   secretKey,
@@ -149,6 +158,8 @@ const ENTITY_KEY_BUILDERS: ReadonlyArray<(accountId: string, entityId: string) =
   totpSecretKey,
   // Previous versions of a secret are secrets.
   historySecretKey,
+  // A rotated value waiting for the entry's PIN dies with the entry (rotation-quarantine plan §4.1).
+  rotationQuarantineSecretKey,
 ];
 
 /**

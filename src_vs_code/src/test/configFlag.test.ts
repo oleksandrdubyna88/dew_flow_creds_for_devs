@@ -36,6 +36,7 @@ function fake(nodes: readonly { id: string; details?: EntityMetadata }[], bodies
     passwordIds: new Set<string>(),
     urlIds: new Set<string>(),
     invalidConfigIds: new Set<string>(),
+    waitingIds: new Set<string>(),
     refresh: () => undefined,
   };
   const self: Fake = {

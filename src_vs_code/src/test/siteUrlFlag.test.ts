@@ -31,6 +31,7 @@ function walk(entries: Record<string, Entry>): Walk {
     passwordIds: new Set(),
     urlIds: new Set(),
     invalidConfigIds: new Set(),
+    waitingIds: new Set<string>(),
     refresh: () => undefined,
   };
   const source: EntityFlagSource = {

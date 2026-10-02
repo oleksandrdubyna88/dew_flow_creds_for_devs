@@ -25,9 +25,20 @@ function world(answer: boolean) {
       burned.push(id);
       return Promise.resolve([id]);
     },
+    lost: (): Promise<string> => Promise.resolve(''),
   };
   return { deps, burned, asked };
 }
+
+test('the question carries what the burn loses beyond the entry — a rotated value waiting beside it — after its own words', async () => {
+  const w = world(false);
+  const lost = ' "deploy token" holds a rotated password that was never stored; deleting it permanently loses the only copy.';
+
+  await burnNow({ ...w.deps, lost: () => Promise.resolve(lost) }, 'a1', ephemeral);
+
+  assert.ok(w.asked[0].text.endsWith(`gone for good.${lost}`), `the question does not name what the burn loses: ${w.asked[0].text}`);
+  assert.equal(burnNowText('x'), burnNowText('x', ''), 'nothing waiting adds nothing');
+});
 
 test('the question names the entry and says it is not the Trash; the one button is Burn', async () => {
   const w = world(true);

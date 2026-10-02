@@ -78,7 +78,7 @@ function world(
     },
     store: (_ctx, slot, value) => {
       log.stored.push({ slot, value });
-      return Promise.resolve();
+      return Promise.resolve('stored' as const);
     },
     onRotated: () => {
       log.refreshed += 1;
@@ -178,7 +178,7 @@ test('the entry going missing mid-flight is refused, not stored into', async () 
     current: () => Promise.resolve(stored(CONN)),
     snapshot: () => Promise.resolve({ at: 1, name: '', details: {} as EntityMetadata, secrets: {} }),
     record: () => Promise.resolve(),
-    store: () => Promise.resolve(),
+    store: () => Promise.resolve('stored' as const),
   });
 
   assert.equal((await gone.run(CTX, { statement: STATEMENT })).status, 400);

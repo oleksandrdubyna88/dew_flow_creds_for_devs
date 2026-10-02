@@ -14,6 +14,7 @@ import {
   orgEscrowShareSecretKey,
   paymentSecretKey,
   privateKeySecretKey,
+  rotationQuarantineSecretKey,
   secretKey,
   signingKeySecretKey,
   totpSecretKey,
@@ -55,6 +56,10 @@ test('every per-entity key is byte for byte what it was before the extraction', 
   assert.equal(imageSecretKey(A, E), 'acct-7_ent-42:image');
   assert.equal(dbConnSecretKey(A, E), 'acct-7_ent-42:dbConn');
   assert.equal(totpSecretKey(A, E), 'acct-7_ent-42:totp');
+});
+
+test('the rotation held value has its own key, beside the entry keys and owned by it (rotation-quarantine plan §4.1)', () => {
+  assert.equal(rotationQuarantineSecretKey(A, E), 'acct-7_ent-42:rotationQuarantine');
 });
 
 test('the two account-scoped keys are unchanged, and carry no entity part', () => {
@@ -102,6 +107,7 @@ const PER_ENTITY_BUILDERS: ReadonlyArray<[string, (a: string, e: string) => stri
   ['image', imageSecretKey],
   ['dbConn', dbConnSecretKey],
   ['totp', totpSecretKey],
+  ['rotationQuarantine', rotationQuarantineSecretKey],
 ];
 
 test('every per-entity builder escapes an id carrying all three reserved characters', () => {
@@ -118,9 +124,9 @@ test('every per-entity builder escapes an id carrying all three reserved charact
 });
 
 test('the builder list is complete, so a new kind cannot be added without a golden string', () => {
-  // Thirteen per-entity builders plus the two account-scoped ones. A fourteenth added to secretKeys.ts
+  // Fourteen per-entity builders plus the two account-scoped ones. A fifteenth added to secretKeys.ts
   // without a row here leaves the count wrong, which is the cheapest available reminder.
-  assert.equal(PER_ENTITY_BUILDERS.length, 13);
+  assert.equal(PER_ENTITY_BUILDERS.length, 14);
   const suffixes = PER_ENTITY_BUILDERS.map(([name]) => name);
   assert.equal(new Set(suffixes).size, suffixes.length, 'two builders claiming one suffix collide');
 });
@@ -184,12 +190,13 @@ test('entitySecretKeys still names every key it did before it moved modules', ()
       'acct-7_ent-42:image',
       'acct-7_ent-42:notes',
       'acct-7_ent-42:payment',
+      'acct-7_ent-42:rotationQuarantine',
       'acct-7_ent-42:second',
       'acct-7_ent-42:sshPrivateKey',
       'acct-7_ent-42:totp',
       'acct-7_ent-42:vpnConfig',
     ],
-    'thirteen keys — twelve secret kinds plus the revision history, because past versions are secrets',
+    'fourteen keys — twelve secret kinds, the revision history (past versions are secrets) and the rotation held value',
   );
 });
 

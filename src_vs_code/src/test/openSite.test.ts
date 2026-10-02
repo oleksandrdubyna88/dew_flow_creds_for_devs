@@ -48,7 +48,7 @@ type OpenSite = typeof import('../openSite');
  * UNSEALS — a stored value starting `SEALED:` comes back without it. So a path that skipped
  * `openedText` would hand `parseFields` the sealed text, find no URL, and fail the test.
  */
-function load(w: World, admission: unknown = { kind: 'in' }): OpenSite {
+function load(w: World, admission: unknown = { kind: 'in', released: [], conflicts: [] }): OpenSite {
   return loadWithVscode<OpenSite>('../openSite', w.vscode, {
     './pinAdmission': {
       admit: () => Promise.resolve(admission),
