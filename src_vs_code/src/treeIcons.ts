@@ -148,9 +148,8 @@ export function buildTooltip(node: TreeNode, extra: readonly string[] = []): vsc
   if (d0?.user) rows.push(`User: ${d0.user}`);
   if (d0?.port !== undefined) rows.push(`Port: ${d0.port}`);
   if (d0?.sshKeyPath) rows.push(`Key: ${d0.sshKeyPath}`);
-  rows.push(d0?.host ? 'Click: details · connects SSH via the play button' : 'Click: view details');
-  // A sentence the row's caller adds — a rotated value waiting for the PIN (`rotationWaiting.waitingHint`).
-  rows.push(...extra);
+  // Then any sentence the row's caller adds — a rotated value waiting for the PIN (`rotationWaiting.waitingHint`).
+  rows.push(d0?.host ? 'Click: details · connects SSH via the play button' : 'Click: view details', ...extra);
   if (d0?.notes) rows.push('', d0.notes);
   md.appendText(rows.join('\n'));
   return md;

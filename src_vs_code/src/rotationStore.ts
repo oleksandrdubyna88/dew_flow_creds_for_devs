@@ -187,7 +187,8 @@ async function offerCopy(ctx: UseActionContext, slot: RotationSlot, value: strin
   const answer = await vscode.window.showWarningMessage(text, { modal: true }, copy);
   if (answer === copy) {
     await copySecret(vscode.env.clipboard, value);
-    void vscode.window.showInformationMessage(`${copiedMessage(`The new ${what(slot)} of "${ctx.entityName}"`)} ${CLIPBOARD_HISTORY}`);
+    const copied = copiedMessage(`The new ${what(slot)} of "${ctx.entityName}"`);
+    void vscode.window.showInformationMessage(`${copied} ${CLIPBOARD_HISTORY}`);
   }
 }
 
