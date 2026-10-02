@@ -26,7 +26,7 @@ import { LeasedQueue, leasedWrites, sweepWithRetry } from './leasedWrites';
 import { EntityCreate, createEntityWithSecrets } from './entityWrite';
 import { CleanupPort, clearSecretsPending, isEmptyPending, markSecretsPending, parsePendingCleanup, finishBeforeReuse, removeWithIntent, resumePending } from './pendingCleanup';
 import { StoredSecret, carried, stored, storedRead } from './storedSecret';
-import { QuarantineStore, quarantineStore } from './rotationQuarantine';
+import { QuarantineStore, forgetHeld, quarantineStore } from './rotationQuarantine';
 import { dropVanishedSecrets, readSecretMaps, secretMapsOf, storeSecretMaps } from './secretMaps';
 import { attachmentSecretKey, configSecretKey, dbConnSecretKey, entitySecretKeys, fieldsSecretKey,
   imageSecretKey, notesSecretKey, paymentSecretKey, privateKeySecretKey, secretKey, totpSecretKey,
@@ -945,8 +945,7 @@ export class StorageManager implements vscode.Disposable {
     // Vanished ids come from the OLD tree, which after `saveNodes` is no longer there to iterate.
     const before = this.getNodes(accountId).filter((n) => n.type === 'entity').map((n) => n.id);
     await storeSecretMaps(this.secrets, accountId, maps);
-    // Rule B, with a LOCAL record rather than a tombstone — `pendingCleanup.ts` says why both shapes
-    // of tombstone were wrong here.
+    // Rule B, with a LOCAL record rather than a tombstone — `pendingCleanup.ts` says why both shapes of tombstone were wrong here.
     // Ids this bundle drops are recorded; ids it CARRIES stop waiting to be swept — one write, and it
     // lands HERE rather than before the secrets because no sweep can run beside this apply any more,
     // so clearing early would only risk losing the intent to a crash. See `serialQueue.ts`.
@@ -959,6 +958,7 @@ export class StorageManager implements vscode.Disposable {
       bundle.nodes.map((n) => ({ ...n, children: undefined })),
     );
     await dropVanishedSecrets(this.secrets, accountId, before, maps);
+    await forgetHeld(this, accountId, vanishing); // a removed entry's held rotation: no bundle carries it, no tombstone names it
     await port.write(clearSecretsPending(port.read(), accountId));
 
     // Stored notes are authoritative; drop any legacy plaintext copy.

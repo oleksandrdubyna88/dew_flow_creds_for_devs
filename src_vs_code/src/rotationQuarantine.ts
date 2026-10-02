@@ -205,6 +205,19 @@ async function settle(store: QuarantineStore, accountId: string, entityId: strin
   }
 }
 
+/**
+ * The entries a bundle apply REMOVES — an older backup restored, a sync that no longer carries them — own a
+ * held item that no bundle carries and no tombstone names (the security review, finding 7a): the apply
+ * deleted their kinds and left the item, a plaintext value in the keychain nothing would ever look for.
+ * Item first, then the index entry, under the lease; a failure propagates like the apply's other deletes,
+ * and the apply's pending-cleanup record then finishes it on the next sweep.
+ */
+export async function forgetHeld(storage: StorageManager, accountId: string, entityIds: readonly string[]): Promise<void> {
+  for (const entityId of entityIds) {
+    await storage.writes.run(() => settle(storage.heldRotations, accountId, entityId, {}));
+  }
+}
+
 // ---- the release (plan §4.4, §4.5) ----
 
 /** A slot whose held value is now in the entry — sealed under its PIN, or plain in an unprotected entry. */

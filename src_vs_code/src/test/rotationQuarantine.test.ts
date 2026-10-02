@@ -134,6 +134,17 @@ test('a bundle applied over the entry — even one that drops its kinds — leav
   assert.equal(await stillHeld(w), true, 'a bundle apply deleted the held rotation — sync decided something only this machine knows');
 });
 
+test('a bundle applied WITHOUT the entry — an older backup restored, no tombstone — deletes the value held beside it and unlists it', async () => {
+  const w = await world();
+  const bundle = await w.storage.exportBundle(ACCOUNT);
+
+  await w.storage.importBundle(ACCOUNT, { ...bundle, nodes: bundle.nodes.filter((node) => node.id !== ENTRY), dbConnections: {} });
+
+  assert.equal(w.storage.getNode(ACCOUNT, ENTRY), undefined, 'the setup: the apply did not remove the entry');
+  assert.equal(await stillHeld(w), false, 'the held rotation outlived the entry the apply removed — a plaintext item in the keychain that nothing will ever look for');
+  assert.deepEqual(await w.storage.heldRotations.listed(), [], 'the index still names the removed entry');
+});
+
 test('an export of the entry carries nothing of the held value', async () => {
   const w = await world();
 
