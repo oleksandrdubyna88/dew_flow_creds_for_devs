@@ -66,11 +66,15 @@ const DROP_IT = 'Drop It';
  * asked before the door answers — Edit then opens over whichever value the person chose. Dismissed, the
  * value stays and the next door asks again.
  */
-export async function settleRelease(storage: StorageManager, accountId: string, entityId: string, entryName: string, release: Release): Promise<void> {
+export async function settleRelease(storage: StorageManager, accountId: string, entityId: string, entryName: string, release: Release): Promise<Release> {
   sayReleased(entryName, release.released);
+  const forced: ReleasedSlot[] = [];
   for (const conflict of release.conflicts) {
-    await askConflict(storage, { accountId, entityId, entryName }, conflict);
+    forced.push(...(await askConflict(storage, { accountId, entityId, entryName }, conflict)));
   }
+  // What the door released AND what the person released past a conflict — a click that read its value before
+  // the door re-reads from this (`pinClick.clickOpener`; the final security review, fix 2).
+  return { released: [...release.released, ...forced], conflicts: release.conflicts.filter((one) => !forced.some((done) => done.slot === one.slot)) };
 }
 
 /** The entry a conflict is about. */
@@ -92,13 +96,16 @@ export function releasedMessage(entryName: string, slot: ReleasedSlot): string {
   return `The new ${rotatedWhat(slot.slot)} of "${entryName}" from ${localWallTime(new Date(slot.at))} is now stored${how}.`;
 }
 
-async function askConflict(storage: StorageManager, entry: Entry, conflict: HeldConflict): Promise<void> {
+/** The person's answer to one conflict — and the slot it released, when it was *Store the rotated one*. */
+async function askConflict(storage: StorageManager, entry: Entry, conflict: HeldConflict): Promise<readonly ReleasedSlot[]> {
   const answer = await vscode.window.showWarningMessage(conflictQuestion(entry.entryName, conflict), { modal: true }, STORE_ROTATED, KEEP_CURRENT);
   if (answer === STORE_ROTATED) {
-    await storeRotatedAnyway(storage, entry, conflict.slot);
-  } else if (answer === KEEP_CURRENT) {
+    return storeRotatedAnyway(storage, entry, conflict.slot);
+  }
+  if (answer === KEEP_CURRENT) {
     await keepCurrent(storage, entry, conflict);
   }
+  return [];
 }
 
 function conflictQuestion(entryName: string, conflict: HeldConflict): string {
@@ -113,13 +120,14 @@ function conflictQuestion(entryName: string, conflict: HeldConflict): string {
  * *Store the rotated one*: the value it replaces is NOT in history — the rotation recorded the one before it —
  * so a snapshot goes in first, as Restore and Edit do; then the release, past its conflict check.
  */
-async function storeRotatedAnyway(storage: StorageManager, entry: Entry, slot: RotationSlot): Promise<void> {
+async function storeRotatedAnyway(storage: StorageManager, entry: Entry, slot: RotationSlot): Promise<readonly ReleasedSlot[]> {
   const details = storage.getNode(entry.accountId, entry.entityId)?.details;
   if (details !== undefined) {
     await storage.recordRevision(entry.accountId, entry.entityId, await snapshotForRevision(storage, entry.accountId, { id: entry.entityId, name: entry.entryName, details }));
   }
   const release = await releaseHeld(storage, entry.accountId, entry.entityId, entry.entryName, AT_THE_DOOR, [slot]);
   sayReleased(entry.entryName, release.released);
+  return release.released;
 }
 
 /** *Keep the current one*: the rotated value may be the only copy of what the far side accepts — confirmed first. */

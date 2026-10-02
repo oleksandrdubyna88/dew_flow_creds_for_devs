@@ -149,6 +149,5 @@ export async function admitted(
   }
   healKeptVersions(storage, accountId, entityId, entryName);
   // A rotated value that waited beside the entry went in at the door: said, and a conflict asked (§4.6).
-  await settleRelease(storage, accountId, entityId, entryName, admission);
-  return { gate, release: admission };
+  return { gate, release: await settleRelease(storage, accountId, entityId, entryName, admission) };
 }

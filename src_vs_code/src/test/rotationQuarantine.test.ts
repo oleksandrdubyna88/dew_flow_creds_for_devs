@@ -604,3 +604,15 @@ test('a record written before the salt (v1, never released) is still read, and i
   assert.deepEqual(release.released.map((one) => one.slot), ['dbConnection'], 'a v1 hold was not released — read as nothing held, its value would wait forever');
   assert.equal(await slotNow(storage), HELD_CONN);
 });
+
+// ---- final security review, fix 2: the click after a conflict settled for the rotated value ----
+
+test('a click on an entry whose waiting value conflicts, answered "Store the rotated one", uses the ROTATED value', async () => {
+  const w = await doorWorld([PIN], [STORE_ROTATED], OTHER_CONN);
+  const [click] = loadEachWithVscode(['../pinClick'], clickVscode([PIN], w.s)) as [typeof import('../pinClick')];
+
+  const opened = await click.clickedSecret(w.storage, ACCOUNT, OWNER, (s, a, e) => s.getDbConnection(a, e), 'copy its connection string');
+
+  assert.equal(await openedSlot(w), HELD_CONN, 'the setup: the person\u2019s choice was not stored');
+  assert.equal(opened.kind === 'open' && opened.value, HELD_CONN, 'the click used the value the person had just chosen to replace');
+});
