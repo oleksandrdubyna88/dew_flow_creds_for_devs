@@ -1,8 +1,7 @@
 # PLAN — a stored secret has its own type: forgetting the PIN door stops compiling
 
 > Status: **IMPLEMENTED, 2026-10-01.** Three epics built in order, each with its plan round and code round
-> at `proceed`: E1 (T1, T2) merged as #176, E2 (T3, T4) merged as #177, E3 (T5, T6) on `feat/typed-secrets-e3`
-> (its PR opened after this promotion); the two plaintext windows of §2.7 were fixed ahead of them in #175.
+> at `proceed`: E1 (T1, T2) merged as #176, E2 (T3, T4) merged as #177, E3 (T5, T6) merged as #178; the two plaintext windows of §2.7 were fixed ahead of them in #175.
 > **Deviations:** E2 was planned on Fable (max) and built on Opus 5.5 (Fable was rate-limited); the writer
 > side closed at T5's FIRST flipped slot, not at the eleventh commit — the `| string` window only covered the
 > read seams (§3, *What the type does not catch*); T4's interim rule was retired only in part — its
@@ -12,8 +11,8 @@
 > legacy note, the public key) minted at their one function each; `rotateAction.draw`, a reader §10 had not
 > counted, reads through `unsealedText`; each story's own deviations are recorded under it (T1-T5).
 > **Open tail:** `syncProtection.SNAPSHOT_MAP` is still a hand copy of the slot → bundle-map pairing; the
-> funnel's type-aware half (§3 item 2) is unbuilt; **the release** — one for the whole plan (#175, #176,
-> #177, E3) — waits for the owner's approval of its content. §2.7's question (should a folder that asks for
+> funnel's type-aware half (§3 item 2) is unbuilt; **SHIPPED 2026-10-02** as extension **1.12.1** (and mcp **0.9.1**,
+> with the rotation quarantine #179), one release for the whole plan, approved by the owner. §2.7's question (should a folder that asks for
 > a PIN ask at accept and import too?) stays the owner's.
 >
 > History: written 2026-09-29, revised after the consultation
@@ -788,7 +787,7 @@ promotion records all three epics' rounds and deviations. Opus: volume, not judg
       **Open tail:** `syncProtection.SNAPSHOT_MAP` is still a third hand copy of the slot → bundle-map
       pairing (deriving it from the table needs a cast or a typed builder); the §3 item 2 type-aware half of
       the funnel is still unbuilt.
-- [x] **T6 (E3) — Docs, the last code round, promotion, release** — all but the release: release pending the owner's approval of its content. `research/module_extension.md` §*The
+- [x] **T6 (E3) — Docs, the last code round, promotion, release** — released 2026-10-02 as extension 1.12.1. `research/module_extension.md` §*The
       entry PIN keeps its promise* (`:1329-1517`): the type, the funnel table and the compile-fail harness as
       one subsection — the reader classes table STAYS, because the AST guard stays (§2.6; the 09-29 text
       said the API *replaces* it); `research/module_tests.md` §*A PIN-protected entry keeps its promise*
@@ -807,8 +806,9 @@ promotion records all three epics' rounds and deviations. Opus: volume, not judg
       (`sealValue` split into `sealText(text) → text` and `sealValue(stored) → stored`); the independent
       test-diff check's two funnel weakenings closed — the storage bound to another name reported again
       (`3fbb7565`), the two metadata mints allowlisted per function (`455714be`); promoted to `research/`.
-      **The release is pending the owner's approval of its content** (version numbers, the `[Unreleased]`
-      section, the suite on `main` after E3's merge and `main`'s CI).
+      **Released 2026-10-02** after the owner approved its content: extension 1.12.1 (#180, Marketplace
+      `remsoftdev.creds-for-devs` and the GitHub release with the `.vsix`) and mcp 0.9.1 (#181, six platform
+      archives); the CHANGELOG heading in #182; every suite green on the candidate `0a66aedb`.
 
 **E3 DoD:** §7 in full — it is the plan's DoD, and E3 is where the plan ends; plus `review_plan`
 (epic 3/3) and `review_code` over E3's diff against E2's last commit both `proceed`, and the PR merged
