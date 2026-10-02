@@ -15,7 +15,7 @@ import type { UseActionContext } from './useActions';
 
 /**
  * The rotation's store — and what happens when it cannot store (the E2 security review, finding 1; the
- * code round's findings 5 and 14; `todo/PLAN_rotation_quarantine.md` §4.3).
+ * code round's findings 5 and 14; `research/PLAN_rotation_quarantine.md` §4.3).
  *
  * <p>A rotation changes the far side FIRST, then the vault. The store is unattended
  * (`entryWriter.writeUnattended`): nothing automatic holds a PIN, so an entry protected while the

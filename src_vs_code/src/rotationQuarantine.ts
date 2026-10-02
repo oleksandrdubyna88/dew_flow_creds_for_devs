@@ -17,7 +17,7 @@ import { StoredSecret, carried, stored } from './storedSecret';
 
 /**
  * A rotated value the vault could not store, kept on this machine until the entry's PIN is entered
- * (`todo/PLAN_rotation_quarantine.md`).
+ * (`research/PLAN_rotation_quarantine.md`).
  *
  * <p>A rotation changes the far side FIRST and stores after. An entry protected with a PIN while the
  * statement ran refuses the unattended store — nothing automatic holds a PIN — and until this module the

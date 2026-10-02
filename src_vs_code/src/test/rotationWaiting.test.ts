@@ -8,7 +8,7 @@ import { loadEachWithVscode, loadWithVscode } from './vscodeStub';
 import { ACCOUNT, Sinks, clickVscode, memoryStorage, seedEntry, sinks, stored } from './pinWorld';
 
 /**
- * The person sees a rotated value that waits for its entry's PIN (`todo/PLAN_rotation_quarantine.md` §4.6,
+ * The person sees a rotated value that waits for its entry's PIN (`research/PLAN_rotation_quarantine.md` §4.6,
  * Q6): the tree says so on the row and says how to store it, and a permanent deletion names what it would
  * lose. Over the REAL `StorageManager`.
  */

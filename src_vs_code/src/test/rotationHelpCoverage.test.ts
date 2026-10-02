@@ -4,7 +4,7 @@ import { HELP_LANGUAGES, HelpArticle, bodyFor, helpArticle } from '../helpConten
 
 /**
  * Every language explains a rotation that lands while its entry is being protected
- * (`todo/PLAN_rotation_quarantine.md` §7): the tree's own words, which every translation keeps in
+ * (`research/PLAN_rotation_quarantine.md` §7): the tree's own words, which every translation keeps in
  * English because the row does, in the PIN article — and the agent surface says where such a value is.
  * `bodyFor` marks a MISSING translation, never a STALE one; this is the check for the stale one.
  */

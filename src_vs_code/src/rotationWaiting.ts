@@ -9,7 +9,7 @@ import type { EntityMetadata } from './types';
 
 /**
  * What the person is told about a rotated value that waited beside its entry, in `vscode`'s words
- * (`todo/PLAN_rotation_quarantine.md` §4.6). The logic is `rotationQuarantine.ts`, which is pure of `vscode`;
+ * (`research/PLAN_rotation_quarantine.md` §4.6). The logic is `rotationQuarantine.ts`, which is pure of `vscode`;
  * this is its thin edge — the one place the wording lives, so every surface says the same thing.
  *
  * <p>The person-facing word is <i>waiting</i>, never "quarantine": `idQuarantine.ts` already means

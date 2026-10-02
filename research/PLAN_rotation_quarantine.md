@@ -1,17 +1,23 @@
 # PLAN — a rotated value the vault could not store waits in quarantine, not in the clipboard
 
-> Status: **Q1–Q6 built 2026-10-01 on `feat/rotation-quarantine`; the code round passed and the independent
-> security review's 7 findings and the final review's 4 were fixed 2026-10-02 (commits and deviations in §5
-> and §5.1); Q7 — the promotion — still open.** Scope: the rotation's store
+> Status: **IMPLEMENTED, 2026-10-02** (PR #179). Shipped as planned with the deviations in §5.1 — the main
+> ones: the masking covers every answer and every throw, not only `commit`; the release checks and commits
+> under ONE lease; the fingerprint is a salted HMAC (record v2, v1 read as legacy); a ONE-USE entry is not
+> rotated at all (refused in `prepare`), and one that becomes one-use mid-rotation is offered the copy alone.
+> Two independent security reviews (7 + 4 findings) and three coai code rounds (all `proceed`). **Open tail:**
+> a click on an UNPROTECTED entry with a waiting value, in the ≤60 s before the sweep releases it, still
+> uses the old value (nothing lost); the share inbox's door releases without a "now stored" message; the
+> operator's cadence consultation (local model) gave no usable advice — recorded `not_solved` (§5.1).
+> Scope: the rotation's store
 > (`rotationStore.ts`, `rotateAction.ts`), a new per-entry quarantine item in the OS keychain
 > (`rotationQuarantine.ts`, `secretKeys.ts`), its release at the entry-PIN door (`pinAdmission.ts`,
 > `pinPrompt.ts`), *Remove PIN Protection…* (`pinCommands.ts`), the startup sweep (`ephemeralSweeper.ts`),
 > the tree hint (`entityFlags.ts`, `treeDataProvider.ts`), the `creds_rotate` answer and description.
 >
-> Related: [PLAN_typed_stored_secrets.md](../research/PLAN_typed_stored_secrets.md) (ships in the SAME release, after
-> its E3), [PLAN_entry_pin_keeps_its_promise.md](../research/PLAN_entry_pin_keeps_its_promise.md) (R3),
-> [module_extension.md](../research/module_extension.md) §*The entry PIN keeps its promise*,
-> [module_tests.md](../research/module_tests.md) §*A PIN-protected entry keeps its promise*.
+> Related: [PLAN_typed_stored_secrets.md](PLAN_typed_stored_secrets.md) (ships in the SAME release, after
+> its E3), [PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise.md) (R3),
+> [module_extension.md](module_extension.md) §*The entry PIN keeps its promise*,
+> [module_tests.md](module_tests.md) §*A PIN-protected entry keeps its promise*.
 
 ## 1. The symptom
 
@@ -314,12 +320,16 @@ commit body. Typecheck, lint, the size ratchet (line-neutral in the two baseline
       stale index entry; the row description says `rotated password waiting`; the rotation modal's text
       and buttons; the clipboard modal and the post-copy message carry the clipboard-history sentence; no
       clipboard write happens without the button. Break-it: remove the warning sentence → red.
-- [ ] **Q7 — docs, contract, release notes, promotion.** §7. `review_code` over the whole diff; the plan
+- [x] **Q7 — docs, contract, release notes, promotion.** §7. `review_code` over the whole diff; the plan
       promoted with its deviations. *Built so far: the `creds_rotate` description and the regenerated contract
       (`4b540885`), the help in five languages (`5e393bed`), `module_extension.md`, `module_tests.md` and the
       CHANGELOG (the docs commit); the code round — coai session `4187565a`, verdict proceed, 8 of 8
       reviewers answered, 7 findings, all rejected with reasons; the independent security review's 7
-      findings, each fixed (§5.1 item 13). Open: the promotion.*
+      findings, each fixed (§5.1 item 13); the final review's 4, fixed (`fd13fc16`, `36acb108`, `34641753`,
+      `cb920387`); code round 3 — session `4187565a` again, epic 1/1, proceed, 4 of 4 (the panel's local
+      model), 7 findings, all rejected with reasons; the cadence consultation the epic declaration then owed
+      (`ae775cba…`) closed `not_solved` — the local consultant could not read the checkout. Promoted
+      2026-10-02.*
 
 ### 5.1 What shipped differently (recorded at build time)
 
@@ -454,15 +464,15 @@ Real `StorageManager` over the logged in-memory keychain (`test/pinWorld.ts`) th
 
 ## 8. Definition of Done
 
-- [ ] Q1–Q7 merged, each with its RED observation and its break-it recorded in the commit body.
-- [ ] A rotation refused by a PIN answers `stored: "quarantined"`, and the value is in the entry, sealed,
+- [x] Q1–Q7 merged, each with its RED observation and its break-it recorded in the commit body.
+- [x] A rotation refused by a PIN answers `stored: "quarantined"`, and the value is in the entry, sealed,
       after the next door with the PIN — shown by test over the real storage.
-- [ ] The item is in no bundle, export, share, history, agent listing, log or journal line; deleted with its
+- [x] The item is in no bundle, export, share, history, agent listing, log or journal line; deleted with its
       entry and its account (tests in §6).
-- [ ] The rotation's own answer never carries the new value, whatever the store did.
-- [ ] Typecheck, lint, the size ratchet (line-neutral in `storageManager.ts` and `extension.ts`),
+- [x] The rotation's own answer never carries the new value, whatever the store did.
+- [x] Typecheck, lint, the size ratchet (line-neutral in `storageManager.ts` and `extension.ts`),
       `npm test`, the plan lifecycle check, all green.
-- [ ] Docs of §7 updated; `review_plan` and `review_code` `proceed`; the plan promoted with its deviations.
+- [x] Docs of §7 updated; `review_plan` and `review_code` `proceed`; the plan promoted with its deviations.
 
 ## 9. Questions the owner decided (2026-10-01 — the proposed defaults)
 

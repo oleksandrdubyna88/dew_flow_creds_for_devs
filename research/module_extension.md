@@ -1542,7 +1542,7 @@ proof. Getters and setters were still `string` then; E3 flipped them to `StoredS
   write had just stored, and the plain writer's re-check guarded nothing against it. Protecting an EMPTY
   entry is the mark alone, a leased node write the re-check reads under.
 - **A rotation never drops what the far side accepted, and never waits on a person for it** (the E2
-  security review, finding 1; code round findings 5 and 14; [PLAN_rotation_quarantine.md](../todo/PLAN_rotation_quarantine.md),
+  security review, finding 1; code round findings 5 and 14; [PLAN_rotation_quarantine.md](PLAN_rotation_quarantine.md),
   2026-10-01). The far side changes first; the store (`rotationStore.storeRotated`) is unattended. Landed
   → any older hold of that slot is superseded (`supersedeHeld`), and the agent hears what it always
   heard. An entry protected while the statement ran refuses it (`UnattendedRefusal` — the PIN sentence, or

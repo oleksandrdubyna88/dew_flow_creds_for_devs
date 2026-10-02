@@ -15,7 +15,7 @@ import { ACCOUNT, ModalAnswer, PIN, Sinks, carried, clickVscode, locked, memoryS
 
 /**
  * A rotated value the vault could not store waits in its own keychain item until the entry's PIN is entered
- * (`todo/PLAN_rotation_quarantine.md`). Over the REAL `StorageManager` with every keychain read logged.
+ * (`research/PLAN_rotation_quarantine.md`). Over the REAL `StorageManager` with every keychain read logged.
  *
  * <p>Q2 — the item and its exclusions: it is the entry's (deleted with it, with its account, by the orphan
  * sweep) and it is in nothing that leaves this machine — no sync or backup snapshot reads it, a bundle apply
