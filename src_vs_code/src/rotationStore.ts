@@ -33,11 +33,14 @@ import type { UseActionContext } from './useActions';
  *       outside its slots (`rotationQuarantine.holdRotated`), and the next time the entry's PIN is entered
  *       the door seals it in (`pinAdmission.admit`). The agent is answered at once; the person is told by a
  *       modal nobody waits for, with <i>Store it now</i> — that same door — and <i>Later</i>;</li>
- *   <li><b>handed to the person</b> — when even the hold failed, so the value exists in memory alone, or when
- *       the entry is ONE-USE and the burn after this answer would take a hold with it (`held`): E2's chain,
- *       awaited — <i>Store it (asks for the entry's PIN)</i>, sealed by the sealing writer, and declined or
- *       failed, the copy offer, through `copySecret`. The agent hears `stored: false`
- *       (`rotateAction.RotationNotStored`), never the value.</li>
+ *   <li><b>handed to the person</b> — only when even the hold failed, so the value exists in memory alone:
+ *       E2's chain, awaited — <i>Store it (asks for the entry's PIN)</i>, sealed by the sealing writer, and
+ *       declined or failed, the copy offer, through `copySecret`. The agent hears `stored: false`
+ *       (`rotateAction.RotationNotStored`), never the value;</li>
+ *   <li><b>copied, for a ONE-USE entry</b> — the broker burns such an entry as soon as this call is answered,
+ *       so a hold would burn unread and a value stored under the PIN would burn with the entry: the only road
+ *       that keeps the far side's new value is the person's own copy, offered before the answer and awaited
+ *       (`copiedBeforeTheBurn`). The agent hears `stored: false`.</li>
  * </ol>
  *
  * <p>No lease is held across any modal or the PIN box: the hold takes it for its one step, the plain writer
@@ -64,9 +67,16 @@ function writeSlot(writer: EntryWriter, ctx: UseActionContext, slot: RotationSlo
   return slot === 'password' ? writer.setPassword(ctx.accountId, ctx.entityId, value) : writer.setDbConnection(ctx.accountId, ctx.entityId, value);
 }
 
-/** Held beside the entry, and the person told without being waited for — or, when the hold is no road, handed to them. */
+/** Held beside the entry, and the person told without being waited for — or, when even that failed, handed to them. */
 async function heldOrHanded(storage: StorageManager, ctx: UseActionContext, refused: Refused, error: unknown): Promise<StoreOutcome> {
-  if (!(await held(storage, ctx, refused))) {
+  if (burnedByAgentUse(storage.getNode(ctx.accountId, ctx.entityId))) {
+    return copiedBeforeTheBurn(ctx, refused.slot, refused.value);
+  }
+  const held = await holdRotated(storage, ctx.accountId, ctx.entityId, refused.slot, refused.value, refused.was).then(
+    () => true,
+    () => false,
+  );
+  if (!held) {
     await handedToPerson(storage, ctx, refused.slot, refused.value, error);
     // Stored under the PIN by the person: an older hold of that slot is superseded, as a landed store's is
     // (the security review, finding 5) — kept, its *Store the rotated one* would put back the older value.
@@ -78,18 +88,24 @@ async function heldOrHanded(storage: StorageManager, ctx: UseActionContext, refu
 }
 
 /**
- * The hold — unless the entry is ONE-USE: the broker burns such an entry right after this call's answer
- * (`burnOnUse.ts`), and the item beside it would go with the entry, unread (the security review, finding
- * 7c). For it the value is handed to the person BEFORE the answer, as E2 did — store it under the PIN, else
- * the copy offer — so they can act while the entry still exists. `false` too when the hold write failed.
+ * A ONE-USE entry (the security review, finding 7c): the broker burns it as soon as this call is answered
+ * (`burnOnUse.burnedByAgentUse`, the burn's own predicate), so a hold beside it would burn unread, and a
+ * value stored under the PIN would burn with the entry — <i>Store it</i> was a trap. The only road that keeps
+ * the far side's new value is the person's own copy: offered BEFORE the answer, awaited, with the three facts
+ * said plainly — the far side changed, the entry burns after this answer, the value is stored nowhere — and
+ * the clipboard-history warning. Nothing is copied without the button; the agent hears `stored: false`.
  */
-async function held(storage: StorageManager, ctx: UseActionContext, refused: Refused): Promise<boolean> {
-  if (burnedByAgentUse(storage.getNode(ctx.accountId, ctx.entityId))) {
-    return false;
-  }
-  return holdRotated(storage, ctx.accountId, ctx.entityId, refused.slot, refused.value, refused.was).then(
-    () => true,
-    () => false,
+async function copiedBeforeTheBurn(ctx: UseActionContext, slot: RotationSlot, value: string): Promise<never> {
+  await offerCopy(ctx, slot, value, burnsWithThisAnswer(ctx.entityName, slot));
+  throw new RotationNotStored();
+}
+
+function burnsWithThisAnswer(name: string, slot: RotationSlot): string {
+  return (
+    `The ${what(slot)} of "${name}" WAS changed on the far side, and "${name}" was protected with a PIN while that ran — `
+    + `so nothing automatic may store the new ${what(slot)}. And "${name}" is one-use: it burns as soon as this agent call is answered, `
+    + `so the new ${what(slot)} cannot be kept in it or beside it. It is stored nowhere, and the old one no longer works: `
+    + `copy it now and keep it yourself. ${CLIPBOARD_HISTORY}`
   );
 }
 
@@ -122,7 +138,7 @@ async function handedToPerson(storage: StorageManager, ctx: UseActionContext, sl
   if (why === STORED) {
     return;
   }
-  await offerCopy(ctx, slot, value, why);
+  await offerCopy(ctx, slot, value, notStored(ctx.entityName, slot, why));
   throw new RotationNotStored();
 }
 
@@ -148,10 +164,10 @@ async function storedUnderPin(storage: StorageManager, ctx: UseActionContext, sl
 
 const DECLINED = 'declined';
 
-/** The last offer: the value to the person's clipboard (cleared on its own), never to anything else. */
-async function offerCopy(ctx: UseActionContext, slot: RotationSlot, value: string, why: string): Promise<void> {
+/** The last offer: the value to the person's clipboard (cleared on its own), never to anything else. `text` says why it came to this. */
+async function offerCopy(ctx: UseActionContext, slot: RotationSlot, value: string, text: string): Promise<void> {
   const copy = `Copy the new ${what(slot)}`;
-  const answer = await vscode.window.showWarningMessage(notStored(ctx.entityName, slot, why), { modal: true }, copy);
+  const answer = await vscode.window.showWarningMessage(text, { modal: true }, copy);
   if (answer === copy) {
     await copySecret(vscode.env.clipboard, value);
     void vscode.window.showInformationMessage(`${copiedMessage(`The new ${what(slot)} of "${ctx.entityName}"`)} ${CLIPBOARD_HISTORY}`);

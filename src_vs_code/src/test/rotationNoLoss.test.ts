@@ -439,16 +439,42 @@ test('the hold failed and the person stored the new value under the PIN — an O
   assert.deepEqual(await w.storage.heldRotations.listed(), [], 'the index still names an entry with nothing held');
 });
 
-// ---- security review, finding 7c: a one-use entry is burned right after the answer — a hold would go with it ----
+// ---- security review, finding 7c: a one-use entry is burned right after the answer — a hold, or a store into it, would go with it ----
 
-test('a ONE-USE entry protected while the far side changed: the person is handed the value BEFORE the answer, because the burn that follows the answer takes the entry — and would take a hold with it', async () => {
-  const w = await world([], [undefined, COPY_IT], { oneUse: true });
+/** Presses whichever button the modal on screen offers — what a person who wants to keep the value does. */
+const pressTheButton = (s: Sinks): ModalAnswer => () => Promise.resolve(s.modalButtons[s.modalButtons.length - 1]?.[0]);
+
+test('a ONE-USE entry protected while the far side changed: the person presses the one button offered and HOLDS the value — copied, and no road stored it in the entry the burn then took', async () => {
+  const w = await world([PIN], [], { oneUse: true });
+  w.s.modalAnswers.push(pressTheButton(w.s));
 
   const answer = await delivered(w);
 
   assert.equal(w.storage.getNode(ACCOUNT, ENTRY), undefined, 'the setup: the one-use entry was not burned after the answer');
-  assert.equal(w.s.clipboard.filter((value) => value.includes(NEW_SECRET)).length, 1, `the new value was burned with the one-use entry — the person was never handed it; the agent got ${answer}`);
-  assert.match(w.s.modals[0] ?? '', /so nothing automatic may store the new connection string/, 'the person saw the "kept on this machine" notice for a value the burn was about to take');
+  assert.equal(
+    w.s.clipboard.filter((value) => value.includes(NEW_SECRET)).length,
+    1,
+    `the person pressed ${JSON.stringify(w.s.modalButtons[0])} and holds no copy — the value went into the one-use entry, which the burn then took; the agent got ${answer}`,
+  );
+  assert.deepEqual(w.s.modalButtons[0], [COPY_IT], 'a one-use entry offered something other than the copy — the only road that keeps the value');
+  assert.deepEqual(inTheClear(w), [], 'the new value reached the keychain — in an entry or an item the burn then took');
+  const said = w.s.modals[0] ?? '';
+  assert.match(said, /WAS changed on the far side/);
+  assert.match(said, /is one-use: it burns as soon as this agent call is answered/);
+  assert.match(said, /stored nowhere/);
+  assert.match(said, HISTORY_WARNING);
   assert.match(answer, /"stored":false/);
   assert.ok(!answer.includes(NEW_SECRET), `the agent was handed the new value: ${answer}`);
+});
+
+test('a ONE-USE entry protected while the far side changed, the copy offer dismissed: nothing is copied, nothing is held or stored, the entry burns, and the agent hears stored: false', async () => {
+  const w = await world([], [undefined], { oneUse: true });
+
+  const answer = await delivered(w);
+
+  assert.equal(w.storage.getNode(ACCOUNT, ENTRY), undefined, 'the setup: the one-use entry was not burned after the answer');
+  assert.deepEqual(w.s.clipboard, [], 'the value was copied without the button');
+  assert.deepEqual(inTheClear(w), [], 'the new value was held or stored for an entry about to burn');
+  assert.equal(w.s.modals.length, 1, `the person was asked more than the one question: ${JSON.stringify(w.s.modalButtons)}`);
+  assert.match(answer, /"stored":false/);
 });
