@@ -5,6 +5,8 @@ import { firstPinFor } from './pinOnCreate';
 import { admitEntry } from './pinPrompt';
 import { grantedPin } from './pinSession';
 import { snapshotForRevision } from './revisionSnapshot';
+import { sealedRevision } from './historyPin';
+import type { Revision } from './revisionHistory';
 import { UpdateDoors, sealingForUpdate } from './sealingAtWrite';
 import type { StorageManager } from './storageManager';
 import { SharePayload, TreeNode, withOwnId } from './types';
@@ -48,6 +50,9 @@ export interface InPlaceUpdate {
  * Update `previousId` in place: through the door when it is protected, then the revision of what it
  * was, then the node rebuilt with the recipient's marks. `undefined` — the person declined the PIN,
  * or it was wrong (said by the door) — updates nothing, and the share stays in the inbox.
+ *
+ * <p>`historyPin`, when given, is the PIN the update makes the entry protected under (its new folder's —
+ * `shareImport`): the revision of what it was is sealed under it in memory before it is written.</p>
  */
 export async function updateInPlace(
   storage: StorageManager,
@@ -55,6 +60,7 @@ export async function updateInPlace(
   previousId: string,
   payload: SharePayload,
   parentId: string | null,
+  historyPin?: string,
 ): Promise<InPlaceUpdate | undefined> {
   const existing = storage.getNode(accountId, previousId);
   const current = existing ?? payload.node;
@@ -65,8 +71,16 @@ export async function updateInPlace(
   }
   // Keep its place in the tree and its own id; record what it was first.
   const was = { id: previousId, name: current.name, details: current.details ?? payload.node.details! };
-  await storage.recordRevision(accountId, previousId, await snapshotForRevision(storage, accountId, was));
+  await storage.recordRevision(accountId, previousId, await keptVersion(storage, accountId, was, historyPin));
   return { node: rebuilt(payload, existing, previousId, parentId), store: writerFor(storage, accountId, previousId, sealing, NOTHING_OPENED) };
+}
+
+/** What it was, as a revision — sealed under `historyPin` in memory first when the update protects the entry. */
+async function keptVersion(
+  storage: StorageManager, accountId: string, was: { id: string; name: string; details: NonNullable<TreeNode['details']> }, historyPin: string | undefined,
+): Promise<Revision> {
+  const revision = await snapshotForRevision(storage, accountId, was);
+  return historyPin === undefined ? revision : sealedRevision(revision, accountId, historyPin);
 }
 
 /**

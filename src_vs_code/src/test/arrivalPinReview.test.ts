@@ -188,3 +188,39 @@ test('Update it on a PROTECTED entry from a share its sender protected seals und
   assert.equal(entry.details?.pinAskOnImport, undefined, 'the sender’s instruction is spent');
   assert.equal(entry.details?.pinProtected, true);
 });
+
+/** Any keychain write that carried `old-db`'s values — what its revision holds — in the clear. */
+function oldValuesInTheClear(w: Arrivals): string[] {
+  return w.written.filter((v) => v.includes(`${SECRET}-old-db`) || v.includes(`${NOTE}-old-db`));
+}
+
+test('Update it that moves an unprotected entry into a folder that asks writes the revision of its OLD values sealed — never in the clear', async () => {
+  const w = await arrivals({ protectedIn: ['Production'] }, []);
+  const id = await plainRootEntry(w);
+
+  w.inputs.push(TRANSIT, PIN);
+  w.s.modalAnswers.push('Update it', 'Use this PIN');
+  await w.inbox.acceptOne(owned(folderShare('new-db', ['Production'], {}, SAME_ENTRY)));
+
+  assert.equal(w.storage.getNode(ACCOUNT, id)?.details?.pinProtected, true, `precondition: the update moved and protected the entry: ${infos(w)}`);
+  assert.deepEqual(oldValuesInTheClear(w), [], 'the revision of the old values reached the keychain in the clear under an entry that is now protected (R3)');
+});
+
+test('a crash after the revision and the node, before the mark, leaves no plaintext history under the moved entry', async () => {
+  const w = await arrivals({ protectedIn: ['Production'] }, []);
+  const id = await plainRootEntry(w);
+  const updateNode = w.storage.updateNode.bind(w.storage);
+  w.storage.updateNode = async (accountId, node) => {
+    await updateNode(accountId, node);
+    throw new Error('the window was closed');
+  };
+
+  w.inputs.push(TRANSIT, PIN);
+  w.s.modalAnswers.push('Update it', 'Use this PIN');
+  await w.inbox.acceptOne(owned(folderShare('new-db', ['Production'], {}, SAME_ENTRY)));
+
+  assert.equal(w.storage.getNode(ACCOUNT, id)?.parentId, w.folderId('Production'), 'precondition: the crash landed after the node moved');
+  const history = JSON.stringify(await w.storage.getHistory(ACCOUNT, id));
+  assert.ok(history.includes('"name":"old-db"'), `precondition: a revision was kept: ${history}`);
+  assert.ok(!history.includes(`${SECRET}-old-db`) && !history.includes(`${NOTE}-old-db`), `plaintext history under the moved entry: ${history}`);
+});

@@ -132,8 +132,13 @@ async function updatedInPlace(
   if (arriving === undefined || decision === undefined) {
     return undefined;
   }
-  const update = await updateInPlace(deps.storage, share.accountId, previousId, arriving, chain.parentId);
+  const update = await updateInPlace(deps.storage, share.accountId, previousId, arriving, chain.parentId, pinOf(decision.folder));
   return update === undefined ? DISMISSED : updatedArrival(deps, share, landing, chain, arriving, update, decision.folder);
+}
+
+/** The folder's PIN an update protects the entry under — what its revision is sealed under before it is written. */
+function pinOf(folder: SettledPin): string | undefined {
+  return folder.kind === 'pin' ? folder.pin : undefined;
 }
 
 /** What an update was decided with: the folder's answer, and whether the sender's instruction is spent. */
