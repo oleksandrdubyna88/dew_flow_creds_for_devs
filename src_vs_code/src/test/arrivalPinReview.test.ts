@@ -116,3 +116,48 @@ test('a declined door on Update it writes nothing — not even the folders the s
   assert.equal(w.storage.getNode(ACCOUNT, id)?.name, 'old-db', 'the entry was updated although its door was declined');
   assert.equal(w.removed.length, 1, 'the declined update consumed its share');
 });
+
+/** Accept `old-db` at the root, unprotected — the entry a later share of the same sender updates. */
+async function plainRootEntry(w: Arrivals): Promise<string> {
+  w.inputs.push(TRANSIT);
+  await w.inbox.acceptOne(owned(folderShare('old-db', [], {}, SAME_ENTRY)));
+  const [entry] = w.entries();
+  w.written.length = 0;
+  w.events.length = 0;
+  return entry.id;
+}
+
+/** The arriving values of `new-db`, as any keychain write that carried them in the clear would show them. */
+function newValuesInTheClear(w: Arrivals): string[] {
+  return w.written.filter((v) => v.includes(`${SECRET}-new-db`) || v.includes(`${NOTE}-new-db`));
+}
+
+test('Update it that moves an unprotected root entry into a folder that asks is asked that folder’s PIN, and seals what arrives', async () => {
+  const w = await arrivals({ protectedIn: ['Production'] }, []);
+  const id = await plainRootEntry(w);
+
+  w.inputs.push(TRANSIT, PIN);
+  w.s.modalAnswers.push('Update it', 'Use this PIN');
+  await w.inbox.acceptOne(owned(folderShare('new-db', ['Production'], {}, SAME_ENTRY)));
+
+  assert.deepEqual(newValuesInTheClear(w), [], 'the update moved the entry into a folder that asks and wrote what arrived in the clear');
+  const entry = w.storage.getNode(ACCOUNT, id) as TreeNode;
+  assert.equal(entry.parentId, w.folderId('Production'), 'precondition: the update placed the root entry in the share’s folder');
+  await sealedUnder(w, entry, PIN);
+});
+
+test('declined, an Update it into a folder that asks writes nothing, and the share stays', async () => {
+  const w = await arrivals({ protectedIn: ['Production'] }, []);
+  const id = await plainRootEntry(w);
+
+  w.inputs.push(TRANSIT, undefined);
+  w.s.modalAnswers.push('Update it');
+  await w.inbox.acceptOne(owned(folderShare('new-db', ['Production'], {}, SAME_ENTRY)));
+
+  assert.deepEqual(w.written, [], 'the keychain was written although the folder’s PIN was declined');
+  const entry = w.storage.getNode(ACCOUNT, id) as TreeNode;
+  assert.equal(entry.name, 'old-db');
+  assert.equal(entry.parentId, null, 'the entry was moved although the folder’s PIN was declined');
+  assert.equal(w.removed.length, 1, 'the declined update consumed its share');
+  assert.ok(w.s.infos.some((m) => m.includes('"Production" asks for a PIN on every entry in it')), infos(w));
+});

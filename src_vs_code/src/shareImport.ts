@@ -3,12 +3,15 @@ import { StorageManager } from './storageManager';
 import type { ShareInboxDeps } from './shareInbox';
 import { recordOrigin, resolveOrigin } from './shareOrigin';
 import { InPlaceUpdate, updateInPlace } from './shareUpdateSeal';
-import { EntryWriter, writerForNew } from './entryWriter';
+import { EntryWriter, writerFor, writerForNew } from './entryWriter';
+import { NOTHING_OPENED } from './editPrefill';
+import { isMarked, sealingForNew } from './sealingAtWrite';
+import { lockedSlotCount } from './entityPin';
 import { redactArrivedPayment } from './paymentRedaction';
 import { declinedMessage, forThisRecipient } from './shareRecipientPin';
 import { describeError } from './describeError';
 import { ArrivalPins, Landing, declinedLanding, folderNameOf, landingOf } from './arrivalPin';
-import { CreatePin, applyCreatePin } from './pinOnCreate';
+import { CreatePin, SettledPin, applyCreatePin } from './pinOnCreate';
 import { OwnedShare, SharePayload, TreeNode, withOwnId } from './types';
 
 /**
@@ -91,7 +94,9 @@ export async function landShare(deps: ShareInboxDeps, share: OwnedShare, payload
  *
  * <p>In place: the revision first, the recipient's marks kept (#122) — and a PROTECTED entry through its
  * door, its values sealed before they are written (entry-PIN plan, D9; `shareUpdateSeal.ts`). An update
- * writes an EXISTING id, so no folder PIN is asked for it (`sealingForUpdate` owns that).</p>
+ * writes an EXISTING id, so its own PIN is `sealingForUpdate`'s — but an update that PLACES an unprotected
+ * root entry in the share's folder, and that folder asks, is asked the folder's question first, through the
+ * same memo, as a new id would be (the security review, finding 1).</p>
  */
 async function originArrival(
   deps: ShareInboxDeps, share: OwnedShare, payload: SharePayload, landing: Landing, pins: ArrivalPins, previousId: string,
@@ -120,14 +125,52 @@ const DISMISSED = 'dismissed';
 async function updatedInPlace(
   deps: ShareInboxDeps, share: OwnedShare, payload: SharePayload, landing: Landing, pins: ArrivalPins, previousId: string,
 ): Promise<Arrival | undefined | typeof DISMISSED> {
-  const arriving = await sealedForRecipient(share, payload);
-  if (arriving === undefined) {
-    return undefined;
-  }
   // The chain is PLANNED, not written: a door declined below must leave no folder behind (finding 4).
   const chain = plannedChain(deps.storage, landing, pins);
+  const folder = await folderPinForUpdate(deps, share, landing, pins, previousId, chain.parentId);
+  const arriving = await arrivingForUpdate(share, payload, folder);
+  if (arriving === undefined || folder === undefined) {
+    return undefined;
+  }
   const update = await updateInPlace(deps.storage, share.accountId, previousId, arriving, chain.parentId);
-  return update === undefined ? DISMISSED : updatedArrival(deps, share, landing, chain, arriving, update);
+  return update === undefined ? DISMISSED : updatedArrival(deps, share, landing, chain, arriving, update, folder);
+}
+
+/**
+ * The folder's answer for an update that MOVES an unprotected entry into a folder that asks — `none` for
+ * every other update; `undefined` when it was declined, said.
+ */
+async function folderPinForUpdate(
+  deps: ShareInboxDeps, share: OwnedShare, landing: Landing, pins: ArrivalPins, previousId: string, target: string | null,
+): Promise<SettledPin | undefined> {
+  const settled = (await movesUnprotected(deps.storage, share.accountId, previousId, target)) ? await pins.settledFor(landing) : NO_PIN;
+  if (settled.kind !== 'cancelled') {
+    return settled;
+  }
+  void vscode.window.showInformationMessage(`Left in "Shared with me" — ${declinedLanding(folderNameOf(deps.storage, pins.askedFolder(landing)))}.`);
+  return undefined;
+}
+
+/** An entry at the root takes the share's folder (`shareUpdateSeal.recipientsOwn`); one in a folder keeps it. */
+function movedTo(storage: StorageManager, accountId: string, id: string, target: string | null): boolean {
+  return (storage.getNode(accountId, id)?.parentId ?? null) === null && target !== null;
+}
+
+async function movesUnprotected(storage: StorageManager, accountId: string, id: string, target: string | null): Promise<boolean> {
+  return movedTo(storage, accountId, id, target) && !(await protectedNow(storage, accountId, id));
+}
+
+/** Protected now: a sealed slot, or the mark — the entry's own door owns its PIN then. */
+async function protectedNow(storage: StorageManager, accountId: string, id: string): Promise<boolean> {
+  return isMarked(storage, accountId, id) || (await lockedSlotCount(storage, accountId, id)).locked > 0;
+}
+
+/** What an update writes: the folder's PIN spends the sender's instruction; otherwise the recipient's own offer. */
+async function arrivingForUpdate(share: OwnedShare, payload: SharePayload, folder: SettledPin | undefined): Promise<SharePayload | undefined> {
+  if (folder === undefined) {
+    return undefined;
+  }
+  return folder.kind === 'pin' ? spentInstruction(payload) : sealedForRecipient(share, payload);
 }
 
 /**
@@ -135,18 +178,20 @@ async function updatedInPlace(
  * placed in them — an entry that already sits in a folder keeps it — and only then, just before its node.
  */
 function updatedArrival(
-  deps: ShareInboxDeps, share: OwnedShare, landing: Landing, chain: PlannedChain, arriving: SharePayload, update: InPlaceUpdate,
+  deps: ShareInboxDeps, share: OwnedShare, landing: Landing, chain: PlannedChain, arriving: SharePayload, update: InPlaceUpdate, folder: SettledPin,
 ): Arrival {
   const usesChain = landing.creates.length > 0 && update.node.parentId === chain.parentId;
   return {
     payload: arriving,
     node: update.node,
-    store: update.store,
+    // Moved into a folder that asks: sealed under the folder's PIN before the first write, and marked after
+    // the node (`applyCreatePin` — its sweep seals what the update left plain, its history pass the revision).
+    store: folder.kind === 'pin' ? writerFor(deps.storage, share.accountId, update.node.id, sealingForNew(folder), NOTHING_OPENED) : update.store,
     writeNode: async () => {
       await (usesChain ? chain.write() : Promise.resolve());
       await deps.storage.updateNode(share.accountId, update.node);
     },
-    settled: NO_PIN,
+    settled: folder,
   };
 }
 
