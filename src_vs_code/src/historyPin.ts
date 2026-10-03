@@ -80,18 +80,35 @@ export async function protectHistory(
   pin: string,
   stillWanted?: () => Promise<boolean>,
 ): Promise<number> {
-  const plain = [...new Set(storedValues(await storage.getHistory(accountId, entityId)))].filter(
-    (stored) => readSecret(stored).kind === 'value',
-  );
-  if (plain.length === 0) {
+  const sealed = await sealedInMemory(storedValues(await storage.getHistory(accountId, entityId)), accountId, pin);
+  if (sealed.size === 0) {
     return 0;
   }
-  const sealed = new Map(await Promise.all(plain.map(async (stored) => [stored, await sealValue(stored, accountId, pin)] as const)));
   if (stillWanted !== undefined && !(await stillWanted())) {
     return 0;
   }
   await rewriteHistory(storage, accountId, entityId, sealed);
   return sealed.size;
+}
+
+/**
+ * Every value in the clear among `values`, sealed in memory under `pin` — the ONE rule kept versions are
+ * sealed by (`protectHistory` and `sealedRevision`): only a `value` is sealed, a locked or corrupt one is
+ * left as it is.
+ */
+async function sealedInMemory(values: readonly StoredSecret[], accountId: string, pin: string): Promise<Map<StoredSecret, StoredSecret>> {
+  const plain = [...new Set(values)].filter((stored) => readSecret(stored).kind === 'value');
+  return new Map(await Promise.all(plain.map(async (stored) => [stored, await sealValue(stored, accountId, pin)] as const)));
+}
+
+/**
+ * One revision with every value in the clear sealed under `pin`, in memory, BEFORE it is written — for a
+ * revision recorded of an entry that the same write makes protected (*Update it* moving an unprotected entry
+ * into a folder that asks: the security review's follow-up to finding 1). Rule R3 for kept versions: written
+ * plain and swept afterwards, a crash in between would leave plaintext history under a protected entry.
+ */
+export async function sealedRevision(revision: Revision, accountId: string, pin: string): Promise<Revision> {
+  return revised(revision, await sealedInMemory(storedValues([revision]), accountId, pin));
 }
 
 /** What opening the kept versions with one PIN produced, in memory — nothing has been written yet. */

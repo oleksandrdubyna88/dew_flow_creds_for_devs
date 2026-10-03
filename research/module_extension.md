@@ -387,8 +387,8 @@ tombstoned, which the sweep deliberately refuses to touch: the deletion is merel
 | edit (`entityEditCommands`) | additions → node → removals | the case a single call cannot serve |
 | delete (`storageManager`) | tombstone → node → secrets | Rule B |
 | **restore / sync-apply (`importBundle`)** | **secrets → record vanishing → tree → drop-vanished → clear** | had it backwards in BOTH halves; the record is LOCAL, not a tombstone |
-| share accept (`shareInbox`) | node, then secrets — a fresh id, so nothing pre-exists to claim | the fresh id must reach `details.id` too — see *An arriving entry must NAME ITSELF* |
-| **import (`importCommands`)** | **secrets → node, per entity, compensated** | inverted; every entry in a file had its own window |
+| share accept (`shareImport.landShare`) | folder decision (`arrivalPin`) → folders → secrets → node → mark (`applyCreatePin`) | the fresh id must reach `details.id` too — see *An arriving entry must NAME ITSELF*; a folder that asks is asked BEFORE its folders are written (2026-10-03) |
+| **import (`importCommands`)** | **folder decision → folders → secrets → node → mark, per entity, compensated** | inverted; every entry in a file had its own window. The decision before the folders (2026-10-03): a declined destination writes no folder shell |
 | **agent create (`mcpHooks`)** | **secret → node, compensated** | the secret may have been GENERATED here, so a lost one is a value nobody asked for |
 | **account removal (`storageManager`)** | **record intent → unlist → secrets → tree/tombstones/horizon → clear** | the record is LOCAL. See `pendingCleanup.ts` |
 
@@ -1168,7 +1168,9 @@ inherited at read time.
 | `pinPrompt.ts` | the thin `vscode` edge: the one input box, with the one wording |
 | `pinCommands.ts` | the three commands, and the folder run |
 | `pinFolderPlan.ts` | what a folder run would do, and the sentences it says before doing it |
-| `pinOnCreate.ts` | a new entry in a folder whose entries are protected; `firstPinFor`, the first PIN of an entry protected while empty; `SettledPin`, what a new entry's writer is made from (`entryWriter.writerForNew` since E2 — it was `writerForNewEntry` here) |
+| `pinOnCreate.ts` | a new entry in a folder whose entries are protected; `firstPinFor`, the first PIN of an entry protected while empty; `SettledPin`, what a new entry's writer is made from (`entryWriter.writerForNew` since E2 — it was `writerForNewEntry` here); `folderPrefersPin` (the preference walk, exported 2026-10-03) and `folderQuestion(storage)`, the port an arrival is asked through |
+| `arrivalPin.ts` | where an ARRIVAL lands and the answer once per folder per command: `landingOf`, `arrivalPins` (the memo, `declined()` for a batch tally), `FolderQuestion` — no `vscode` |
+| `shareImport.ts` | `landShare` — an opened share landing in the tree (extracted from `shareInbox.ts`, 2026-10-03): the origin question, the folder decision, the recipient's own PIN where the folder asks none, the write; `ShareLanding` |
 | `sharePayloadBuild.ts` | the payload builder, lifted out of `shareInbox` when this pushed it over its ceiling |
 | `shareTotpQuestion.ts` | *"What travels with this share?"* — the same lift, for the same ceiling |
 | `nodeOwnId.ts` | `withOwnId`: the node's record names the node it is in, at the import and at every read |
@@ -1305,7 +1307,7 @@ why. **The wrap happens in memory, before a single write**: import-then-protect 
 copy on disk if anything fails between the two steps, which is exactly what "declining imports
 nothing" promises against.
 
-Two ways to get nothing, and they are DIFFERENT facts, so `ShareInbox.sealedForRecipient` is the step
+Two ways to get nothing, and they are DIFFERENT facts, so `sealedForRecipient` (in `shareImport.ts` since 2026-10-03, asked inside the landing) is the step
 that tells them apart: a decline is a decision and the message says how to change it; a wrap that
 FAILED is a machine problem whose reason has to reach the person, and it used to escape `acceptOne`
 past both of its try blocks, leaving only VS Code's generic command failure. Either way nothing is
@@ -1483,6 +1485,76 @@ write logged, then shown red again with its fix reverted:
   secret asks nothing (`FirstSeal.adds`, asked of the share). A mark over values in the clear stays the
   0.99.0 false mark the door clears at the next open, and is updated as the plain entry it is.
   `shareUpdateSeal.test.ts` holds the three cases through the real `ShareInbox`.
+
+**A share or an import into a folder that asks (2026-10-03,
+[PLAN_pin_folder_asks_on_accept_and_import.md](PLAN_pin_folder_asks_on_accept_and_import.md)).**
+The owner's answer to the typed-secrets plan's §2.7 question: a folder that asks for a PIN asks it too when
+something ARRIVES in it. Until then an accepted share and both imports wrote their new ids through
+`writerForNew(…, NO_PIN)` — no question, no mark — so a protected folder could hold plain entries while
+still reading as protected. Now the four roads that put a new entry into a folder are one road:
+
+- **The decision — `arrivalPin.ts`, free of `vscode`.** `landingOf(storage, a, under, chain)` walks a share's
+  folder chain the way the landing always has (reuse a child folder of that name) and answers
+  `{ accountId, existing, creates }`, writing nothing. `arrivalPins(question)` is the per-command memo — one
+  answer per (account, folder), a decline included, dropped with the command, nothing persisted or granted.
+  The root asks nothing; a landing that creates no folder is asked what Add asks there; a landing that
+  creates folders lands in empty ones, so only a PREFERENCE on the existing folder or above reaches it, and
+  then the answer settled for the existing folder covers its whole new subtree (one question, not Add's
+  fresh first PIN per new subfolder — §9.1 of the plan). The question is a port (`FolderQuestion`: `ask` +
+  `prefers`), bound by `pinOnCreate.folderQuestion(storage)` to `pinForNewEntry` and `folderPrefersPin`.
+- **The write — Add's road, unchanged.** `writerForNew(…, settled)` (sealed in memory before each raw setter,
+  rule R3), the node, then `applyCreatePin` (the mark and the first `pinEpoch`, last). Asked before the first
+  write of its landing — the folders the arrival creates included — so a decline writes nothing: no value,
+  no node, no folder shell. No lease is held across a box: the writers take it per write, after.
+- **Shares (`shareImport.landShare`).** One share carries ONE chain, so it is one landing and one decision,
+  written whole or not at all; it answers `ShareLanding` (`landed` | `left`). Declined, the share stays in
+  *Shared with me* and says why. `acceptMany` keeps ONE memo for the whole conversation, across its
+  transit-PIN rounds and accounts, and its tally names the declined folders.
+- **The sender's protection and the folder's ask are one question.** `pinAskOnImport` asks the recipient's
+  own PIN (`shareRecipientPin.forThisRecipient`, now called inside the landing) only where the folder settled
+  no PIN; where it settled one, the instruction is spent on the node and the folder's PIN seals the values.
+  *Update it* asks the own PIN after the question, so a dismissed share asks none.
+- **Imports (`importCommands`).** `importEntities(storage, location, entities, question)` — the question is
+  REQUIRED — answers `{ created, skipped }`; each entry's landing is built directly (the import's folders are
+  always new), a decline skips its entries and the folders made only for them, and the command names them.
+  A CredsForDevs bundle lands through `landBundle`: every root sits under one existing folder, so the bundle
+  asks the folder it lands in at most once — plus, since the security review, one first PIN for each folder it
+  recreates that asks (below); `applyExternalSecrets` takes a REQUIRED `pinFor`.
+
+```mermaid
+flowchart LR
+  A[accepted share / import / bundle] --> L["landingOf / importLanding<br/>existing + creates (nothing written)"]
+  L --> M{"arrivalPins memo<br/>(account, folder)"}
+  M -->|root, or creates + no preference| N[none]
+  M -->|"ask (pinForNewEntry) once"| Q{answer}
+  Q -->|PIN| S["writerForNew(settled): sealed in memory<br/>→ node → applyCreatePin"]
+  Q -->|declined| D["nothing written<br/>share left pending / import names skipped"]
+  N --> P["writerForNew(none) — as before<br/>(a share: the sender's own-PIN offer)"]
+```
+
+**The security review's six (2026-10-03).** *Update it* is asked too where it would place an UNPROTECTED
+root entry in a folder that asks (an update keeps the entry's folder, but a root entry takes the share's):
+the folder's question through the same memo, the values sealed under its PIN and the entry marked —
+declined, nothing written, the entry not moved. The revision of what it was is sealed under that PIN in
+memory BEFORE it is written (`updateInPlace(…, historyPin)` → `historyPin.sealedRevision`, which shares
+`sealedInMemory` with `protectHistory`): R3 for kept versions, so no crash can leave plaintext history under
+the protected entry. On an entry already PROTECTED, a `pinAskOnImport` share
+asks no own PIN: the door's PIN is the one question. The share's missing folders of an update are only
+PLANNED (`plannedChain`) and written after the update's decision, just before its node. A bundle carries
+each folder's `folderAsksForPin` (`FolderSeg`), and a landing that creates such a folder is asked its first
+PIN once (`FolderQuestion.first`) for everything under it. `ArrivalPins.created` hands a folder the batch
+created to later landings inside it, so it is not asked again; `declined()` never rejects — a failed
+question is not a decline, and the batch still ends with its tally. Tests: `arrivalPinReview.test.ts`.
+
+**The memo, after the second code round (2026-10-03).** `arrivalPins` is the class `ArrivalMemo`. An answer a
+folder INHERITED from the landing that created it covers later landings into it — unless it is no PIN and a
+folder the later landing creates asks: that folder is decided on its own (a plain `Project` no longer hands
+"no PIN" to `Project/Secrets`). `created` gives each created folder the answer of the landing that ENDS at it,
+and only an answer a question gave at or above it — never to a plain ancestor — reading the memo without
+asking (it runs while folders are written). Each answer is kept with the folder it was asked in, which
+`askedFolder` consults first, so an inherited decline names the folder that was asked. A recreated folder's
+first PIN names it (`first(accountId, folderName)` → `pinOnCreate.firstPinIn`). Tests:
+`arrivalPinMemo.test.ts` (the memo alone) and `arrivalPinReview.test.ts`.
 
 **The doors and the one writer (typed-secrets plan, E2 — T3 and T4, 2026-10-01).** The second epic of
 [PLAN_typed_stored_secrets.md](PLAN_typed_stored_secrets.md): every read of a stored string
@@ -3542,8 +3614,9 @@ crypto, `sharingManager.ts` is the data source (team lists, the inbox files), `s
 `transitPinPrompt.ts` are the transit PIN and everything said about it, and `ShareInbox`
 (`shareInbox.ts`, explicit-deps constructor after the `SyncManager` pattern) is the rest of the
 CONVERSATION — recipient picking, delivery and its error report, the sender check, the accept
-round-robin, and the import into the tree (fresh local id; same-sender update recorded as a
-revision first). The `activate()` handlers only resolve what was clicked.
+round-robin — and, through `shareImport.landShare` (extracted 2026-10-03), the landing in the tree (fresh
+local id; same-sender update recorded as a revision first; a folder that asks for a PIN asked first — *A
+share or an import into a folder that asks*). The `activate()` handlers only resolve what was clicked.
 `shareInbox.test.ts` drives the accept paths through the REAL seal/open crypto.
 
 ### An arriving entry must NAME ITSELF, or it arrives empty
@@ -3589,7 +3662,10 @@ had protected with a PIN of their own landed unprotected, and the instruction th
 an entry was honoured on `acceptOne` alone. Clearing an inbox in one go is the ordinary way to
 accept, so this was the common route past the protection, not a corner. Both paths now go through
 `sealedForRecipient`; a declined or failed wrap consumes nothing, and is COUNTED as still pending —
-an item neither imported nor still locked is counted nowhere and vanishes from the tally.
+an item neither imported nor still locked is counted nowhere and vanishes from the tally. Since
+2026-10-03 that step is asked INSIDE the landing and only where the destination folder asks no PIN: in a
+folder that asks, the folder's PIN is the one question and spends the instruction (one question, not
+two). A dismissed *Update it / Keep both* is `left` too — no longer announced or counted as accepted.
 
 ### The transit PIN is drawn before it is asked for, and lands on the clipboard
 

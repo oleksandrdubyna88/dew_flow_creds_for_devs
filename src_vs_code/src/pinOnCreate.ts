@@ -8,6 +8,7 @@ import { pinValidator } from './pinInput';
 import { newPin, refusedWhileCooling } from './pinPrompt';
 import { grantPin } from './pinSession';
 import { entriesUnder } from './pinFolderPlan';
+import type { FolderQuestion } from './arrivalPin';
 
 /**
  * A new entry created inside a folder whose entries are protected.
@@ -88,7 +89,7 @@ export function typedButDeclined(settled: CreatePin): boolean {
  * asked on its own so a caller with a deadline can tell "nothing to ask" from "asked, and waiting".
  */
 export async function asksForPinOnCreate(storage: StorageManager, accountId: string, parentId: string | null): Promise<boolean> {
-  return (await protectedSiblings(storage, accountId, parentId)).length > 0 || asksAnyway(storage, accountId, parentId);
+  return (await protectedSiblings(storage, accountId, parentId)).length > 0 || folderPrefersPin(storage, accountId, parentId);
 }
 
 /**
@@ -107,12 +108,24 @@ export function pinForNewEntry(
   // No sibling to check against, but the folder may still have been told to ask — the empty-folder
   // case. There the PIN is typed TWICE, which is the only check available and the same one every
   // other new PIN in this product gets.
-  const alone = (): Promise<CreatePin> => (asksAnyway(storage, accountId, parentId) ? firstPinHere(ask.token) : Promise.resolve(NONE));
+  const alone = (): Promise<CreatePin> => (folderPrefersPin(storage, accountId, parentId) ? firstPinHere(ask.token) : Promise.resolve(NONE));
   return pinCheckedAgainstFolder(storage, accountId, parentId, NEW_ENTRY, alone, ask);
 }
 
 const NONE: CreatePin = { kind: 'none' };
 const NEW_ENTRY = 'The new entry';
+
+/**
+ * The question Add asks, as the port an arrival's decision takes (`arrivalPin.FolderQuestion`): bound
+ * here, where `vscode` is, so `arrivalPin.ts` stays free of it (the plan round's finding 5).
+ */
+export function folderQuestion(storage: StorageManager): FolderQuestion {
+  return {
+    ask: (accountId, folderId) => pinForNewEntry(storage, accountId, folderId),
+    prefers: (accountId, folderId) => folderPrefersPin(storage, accountId, folderId),
+    first: (_accountId, folderName) => firstPinIn(folderName),
+  };
+}
 
 /**
  * The PIN an entry with nothing sealed yet goes under, in a folder that may hold protected entries:
@@ -164,8 +177,12 @@ async function typedTwice(name: string): Promise<CreatePin> {
   return typed === undefined ? { kind: 'cancelled' } : { kind: 'pin', pin: typed };
 }
 
-/** Does this folder, or any folder above it, carry the preference? */
-function asksAnyway(storage: StorageManager, accountId: string, parentId: string | null): boolean {
+/**
+ * Does this folder, or any folder above it, carry the preference? Exported for an arrival
+ * (`arrivalPin.ts`): a share or an import that CREATES folders lands in folders that are empty, where
+ * only the preference can ask (`PLAN_pin_folder_asks_on_accept_and_import.md` §3.1, §9.1).
+ */
+export function folderPrefersPin(storage: StorageManager, accountId: string, parentId: string | null): boolean {
   // By ID, one ancestor at a time. Building a Map of every node in the account to walk a handful of
   // them made an Add cost O(everything stored) — and `getNode` is already indexed. (A reviewer's
   // finding, three times over.)
@@ -207,6 +224,12 @@ function above(node: TreeNode, storage: StorageManager, accountId: string): Tree
 /** The first PIN in a folder that asks: typed twice, because there is nothing here to check it against. */
 async function firstPinHere(token?: vscode.CancellationToken): Promise<CreatePin> {
   const typed = await newPin('this entry', 'entry', FIRST_HERE, token);
+  return typed === undefined ? { kind: 'cancelled' } : { kind: 'pin', pin: typed };
+}
+
+/** The first PIN of a folder an arrival recreates with the preference — the box names the folder it protects. */
+async function firstPinIn(folderName: string): Promise<CreatePin> {
+  const typed = await newPin(folderName, 'entry', FIRST_IN(folderName));
   return typed === undefined ? { kind: 'cancelled' } : { kind: 'pin', pin: typed };
 }
 
@@ -337,6 +360,10 @@ const FIRST_VALUE =
   'This entry was protected with a PIN while it held nothing, so nothing has checked that PIN yet — the '
   + 'value you are saving is the first it will seal. Type the PIN it goes under: it is stored nowhere, so it '
   + 'is typed twice.';
+
+const FIRST_IN = (folderName: string): string =>
+  `The folder "${folderName}" asks for a PIN on every entry created in it, and nothing in it is protected yet — `
+  + 'so the entries arriving in it are the first, and its PIN is yours to choose. It is stored nowhere, so type it twice.';
 
 const FIRST_HERE =
   'This folder asks for a PIN on every entry created in it, and nothing here is protected yet — so '

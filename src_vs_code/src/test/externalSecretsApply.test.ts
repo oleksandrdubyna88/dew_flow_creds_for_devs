@@ -69,12 +69,15 @@ const EVERY_SECRET: ExternalSecrets = {
   url: 'https://example.internal',
 };
 
+/** Every entity's landing settled no folder PIN — these tests are about the field list (`pinFor` is required). */
+const NO_PIN = (): { kind: 'none' } => ({ kind: 'none' });
+
 test('every key an external bundle can carry is restored on import', async () => {
   // The test that would have caught both bugs. Driven from the key list rather than a hand-written
   // set of assertions, so the NEXT field added to ExternalSecrets and forgotten in the applier fails
   // here instead of silently vanishing on somebody's import.
   const { storage, written } = fakeStorage();
-  await applyExternalSecrets(storage as never, 'acc-1', { e1: EVERY_SECRET });
+  await applyExternalSecrets(storage as never, 'acc-1', { e1: EVERY_SECRET }, NO_PIN);
 
   for (const key of EXTERNAL_SECRET_KEYS) {
     assert.ok(
@@ -87,7 +90,7 @@ test('every key an external bundle can carry is restored on import', async () =>
 test('the payment record survives an export and an import', async () => {
   // Mine, and the one the review found: the card arrived as an entry with no card.
   const { storage, written } = fakeStorage();
-  await applyExternalSecrets(storage as never, 'acc-1', { e1: { payment: EVERY_SECRET.payment } });
+  await applyExternalSecrets(storage as never, 'acc-1', { e1: { payment: EVERY_SECRET.payment } }, NO_PIN);
 
   assert.deepEqual(written.calls.setPaymentRaw, ['acc-1', 'e1', EVERY_SECRET.payment]);
 });
@@ -96,14 +99,14 @@ test('the config document survives an export and an import', async () => {
   // Pre-existing, and older than the payment kind: found while fixing mine, because the loop had the
   // same hole for it. Its own test, so it cannot be read as a payment detail.
   const { storage, written } = fakeStorage();
-  await applyExternalSecrets(storage as never, 'acc-1', { e1: { config: '{"a":1}' } });
+  await applyExternalSecrets(storage as never, 'acc-1', { e1: { config: '{"a":1}' } }, NO_PIN);
 
   assert.deepEqual(written.calls.setConfigBody, ['acc-1', 'e1', '{"a":1}']);
 });
 
 test('an absent field writes nothing, rather than writing an empty value over one', async () => {
   const { storage, written } = fakeStorage();
-  await applyExternalSecrets(storage as never, 'acc-1', { e1: { password: 'pw' } });
+  await applyExternalSecrets(storage as never, 'acc-1', { e1: { password: 'pw' } }, NO_PIN);
 
   assert.equal(written.calls.setPaymentRaw, undefined, 'no payment in the bundle, no payment write');
   assert.equal(written.calls.setConfigBody, undefined);
@@ -114,7 +117,7 @@ test('login and url are restored together, as the one record they are stored as'
   // They share a keychain key, so they are one write and not two — the shape `entityFields.ts` exists
   // to keep. Asserted because a per-field loop would be the obvious wrong simplification here.
   const { storage, written } = fakeStorage();
-  await applyExternalSecrets(storage as never, 'acc-1', { e1: { login: 'ada', url: 'https://x' } });
+  await applyExternalSecrets(storage as never, 'acc-1', { e1: { login: 'ada', url: 'https://x' } }, NO_PIN);
 
   assert.deepEqual(written.calls.setFields, ['acc-1', 'e1', { login: 'ada', url: 'https://x' }]);
 });

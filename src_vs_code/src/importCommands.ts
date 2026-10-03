@@ -6,24 +6,89 @@ export interface NodeLocation {
 }
 
 import { EntryLandedError } from './entityWrite';
+import { type ArrivalPins, type FolderQuestion, type FolderSeg, type Landing, arrivalPins, declinedLanding, folderNameOf } from './arrivalPin';
+import { CreatePin, SettledPin, applyCreatePin } from './pinOnCreate';
+import type { ExternalBundle } from './externalBundle';
+import { applyExternalSecrets } from './externalSecretsApply';
 import { EntryWriter, writerForNew } from './entryWriter';
 import { StorageManager } from './storageManager';
 import { ImportedEntity } from './importFormats';
 import { toTreeNodes } from './importFormats';
-import { TreeElement } from './types';
+import { TreeElement, TreeNode } from './types';
 import { pickAccount } from './dialogs';
+/** What an import did: how many entries it created, and the ones it skipped, each with the reason. */
+export interface ImportOutcome {
+  readonly created: number;
+  readonly skipped: readonly string[];
+}
+
 /**
  * Land an import: the folders it asked for, then the nodes, then their secrets.
  *
  * <p>Folders are created once and reused, so a hundred rows from one Bitwarden folder produce
  * one folder here rather than a hundred. Secrets go through `StorageManager`, which puts them
  * in the keychain — never into the node metadata that syncs in plaintext.</p>
+ *
+ * <p><b>Into a folder that asks for a PIN, the import asks it</b> (`PLAN_pin_folder_asks_on_accept_and_import.md`,
+ * B6) — the question Add asks there, once per destination (`arrivalPin.ts`), BEFORE any write. An entry
+ * whose landing settled a PIN is sealed under it before its first write and marked after its node, the
+ * road Add takes; a declined landing writes nothing — no value, no node, no folder made only for it —
+ * and is named in `skipped`. `question` is REQUIRED: a caller that forgot it would write plain into a
+ * protected folder.</p>
  */
 export async function importEntities(
   storage: StorageManager,
   location: NodeLocation,
   entities: readonly ImportedEntity[],
-): Promise<number> {
+  question: FolderQuestion,
+): Promise<ImportOutcome> {
+  const asked = arrivalPins(question);
+  const settled = await settleEach(asked, location, entities);
+  const going = entities.filter((_, at) => settled[at].kind !== 'cancelled');
+  const pins = settled.filter((pin): pin is SettledPin => pin.kind !== 'cancelled');
+  const parents = await foldersFor(storage, location, going);
+  const made = toTreeNodes(going, () => StorageManager.newId(), (folder) => parents.get(folder ?? '') ?? null);
+  for (const [at, { node, secrets }] of made.entries()) {
+    await landImported(storage, location, node, secrets, pins[at]);
+  }
+  return { created: made.length, skipped: skippedFor(storage, asked, location, entities, settled) };
+}
+
+/** Each entry's answer, asked in order and before anything is written. */
+async function settleEach(pins: ArrivalPins, location: NodeLocation, entities: readonly ImportedEntity[]): Promise<CreatePin[]> {
+  const settled: CreatePin[] = [];
+  for (const entity of entities) {
+    settled.push(await pins.settledFor(importLanding(location, entity.folder)));
+  }
+  return settled;
+}
+
+/**
+ * Where one imported entry lands: in the folder the import was started on, or in the folder named for it
+ * there — always a NEW folder (`foldersFor` never reuses one), so its landing creates it.
+ */
+function importLanding(location: NodeLocation, folder: string | undefined): Landing {
+  const creates = folder === undefined || folder.length === 0 ? [] : [{ name: folder }];
+  return { accountId: location.accountId, existing: location.parentId, creates };
+}
+
+/** The entries a declined landing kept out, each with the sentence that says why. */
+function skippedFor(storage: StorageManager, asked: ArrivalPins, location: NodeLocation, entities: readonly ImportedEntity[], settled: readonly CreatePin[]): string[] {
+  return entities.flatMap((entity, at) => (settled[at].kind === 'cancelled' ? [declinedEntry(storage, asked, entity.name, importLanding(location, entity.folder))] : []));
+}
+
+/** One entry a decline kept out, named with the folder that asked. */
+function declinedEntry(storage: StorageManager, asked: ArrivalPins, name: string, landing: Landing): string {
+  return `"${name}" — ${declinedLanding(folderNameOf(storage, asked.askedFolder(landing)))}`;
+}
+
+/** The import's skipped entries said in one sentence for the closing message, or `''`. */
+export function notImported(skipped: readonly string[]): string {
+  return skipped.length === 0 ? '' : ` ${skipped.length} not imported: ${skipped.slice(0, 8).join('; ')}.`;
+}
+
+/** The folders the GOING entries asked for, created once each — none for an entry a decline kept out. */
+async function foldersFor(storage: StorageManager, location: NodeLocation, entities: readonly ImportedEntity[]): Promise<Map<string, string | null>> {
   const folders = new Map<string, string>();
   const folderFor = async (name: string | undefined): Promise<string | null> => {
     if (name === undefined || name.length === 0) {
@@ -53,24 +118,102 @@ export async function importEntities(
       parents.set(key, await folderFor(entity.folder));
     }
   }
+  return parents;
+}
 
-  const made = toTreeNodes(entities, () => StorageManager.newId(), (folder) => parents.get(folder ?? '') ?? null);
-  for (const { node, secrets } of made) {
-    // A landed-but-failed entry is a PARTIAL SUCCESS for a batch: the entry is in the tree with its
-    // secrets, and throwing here would abandon every row after it while reporting the whole import
-    // failed — after which a retry duplicates the rows that did land. Raised by the review; the count
-    // this returns still includes it, because it is there.
-    // Secrets, then the node — and on any observable failure the secrets go back, so a refused
-    await landedIsFine(() => storage.runCreate({
-      writeSecrets: () => writeImportedSecrets(writerForNew(storage, location.accountId, node.id), location.accountId, node.id, secrets),
-      writeNode: () => storage.addNode(location.accountId, node),
-      presence: () => storage.nodePresence(location.accountId, node.id),
-      deferCleanup: () => storage.deferSecretCleanup(location.accountId, node.id),
-      finishCleanup: () => storage.endSecretCleanup(location.accountId, node.id),
-      undoSecrets: () => undoImportedSecrets(storage, location.accountId, node.id),
-    }));
+/**
+ * One imported entry: its secrets through the writer its landing settled — sealed under the folder's PIN
+ * before the first write when it asked (rule R3) — then its node, then the mark (`applyCreatePin`, last).
+ *
+ * <p>A landed-but-failed entry is a PARTIAL SUCCESS for a batch: the entry is in the tree with its
+ * secrets, and throwing here would abandon every row after it while reporting the whole import
+ * failed — after which a retry duplicates the rows that did land. Raised by the review; the count
+ * this returns still includes it, because it is there. Secrets, then the node — and on any observable
+ * failure the secrets go back.</p>
+ */
+async function landImported(storage: StorageManager, location: NodeLocation, node: TreeNode, secrets: ImportedEntity['secrets'], pin: SettledPin): Promise<void> {
+  await landedIsFine(() => storage.runCreate({
+    writeSecrets: () => writeImportedSecrets(writerForNew(storage, location.accountId, node.id, pin), location.accountId, node.id, secrets),
+    writeNode: () => storage.addNode(location.accountId, node),
+    presence: () => storage.nodePresence(location.accountId, node.id),
+    deferCleanup: () => storage.deferSecretCleanup(location.accountId, node.id),
+    finishCleanup: () => storage.endSecretCleanup(location.accountId, node.id),
+    undoSecrets: () => undoImportedSecrets(storage, location.accountId, node.id),
+  }));
+  await applyCreatePin(pin, storage, location.accountId, node.id);
+}
+
+/** What a bundle import wrote, and the entries a declined landing kept out. */
+export interface BundleLanding {
+  readonly nodes: readonly TreeNode[];
+  readonly skipped: readonly string[];
+}
+
+/**
+ * Land a CredsForDevs bundle (ids already remapped, every root under `location.parentId`): the secrets,
+ * then the nodes — Rule A (`applyFormSecrets.ts`), the widest window the audit found: the whole tree used
+ * to be committed and visible before one secret landed — then the marks.
+ *
+ * <p>Into a folder that asks for a PIN (B7): every node of the bundle lands under the same existing folder,
+ * so the bundle asks that folder at most once — plus one first PIN for each folder it recreates that asks for
+ * one (`FolderSeg.folderAsksForPin`, the security review's finding 3) — before anything is written. An entry
+ * whose landing settled a PIN is sealed under it before its first write and marked after its node; a
+ * declined landing removes its entities, and the bundle folders it alone would have filled, before anything
+ * is written, and they are named in `skipped`.</p>
+ */
+export async function landBundle(storage: StorageManager, location: NodeLocation, bundle: ExternalBundle, question: FolderQuestion): Promise<BundleLanding> {
+  const asked = arrivalPins(question);
+  const settled = await settleBundle(asked, location, bundle.nodes);
+  const nodes = bundle.nodes.filter((node) => settled.get(node.id)?.kind !== 'cancelled');
+  const kept = new Set(nodes.map((node) => node.id));
+  const secrets = Object.fromEntries(Object.entries(bundle.secrets).filter(([id]) => kept.has(id)));
+  await applyExternalSecrets(storage, location.accountId, secrets, (id) => settledOrNone(settled.get(id)));
+  for (const node of nodes) {
+    await storage.addNode(location.accountId, node);
   }
-  return made.length;
+  for (const node of nodes.filter((n) => n.type === 'entity')) {
+    await applyCreatePin(settledOrNone(settled.get(node.id)), storage, location.accountId, node.id);
+  }
+  const declined = bundle.nodes.filter((node) => node.type === 'entity' && !kept.has(node.id));
+  const byId = new Map(bundle.nodes.map((node) => [node.id, node]));
+  return { nodes, skipped: declined.map((node) => declinedEntry(storage, asked, node.name, bundleLanding(location, byId, node))) };
+}
+
+const NONE: SettledPin = { kind: 'none' };
+
+function settledOrNone(settled: CreatePin | undefined): SettledPin {
+  return settled === undefined || settled.kind === 'cancelled' ? NONE : settled;
+}
+
+/** Every node's answer, asked in order before anything is written — one memo, so one folder is one question. */
+async function settleBundle(pins: ArrivalPins, location: NodeLocation, nodes: readonly TreeNode[]): Promise<Map<string, CreatePin>> {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const settled = new Map<string, CreatePin>();
+  for (const node of nodes) {
+    settled.set(node.id, await pins.settledFor(bundleLanding(location, byId, node)));
+  }
+  return settled;
+}
+
+/** Where one bundle node lands: under the folder the import was started on, below the bundle folders above it. */
+function bundleLanding(location: NodeLocation, byId: ReadonlyMap<string, TreeNode>, node: TreeNode): Landing {
+  return { accountId: location.accountId, existing: location.parentId, creates: chainOf(byId, node) };
+}
+
+/** The bundle folders a node lands in, root first — the folder itself included for a folder. All are new. */
+function chainOf(byId: ReadonlyMap<string, TreeNode>, node: TreeNode): FolderSeg[] {
+  return foldersAbove(byId, node.type === 'folder' ? node : byId.get(node.parentId ?? ''));
+}
+
+function foldersAbove(byId: ReadonlyMap<string, TreeNode>, start: TreeNode | undefined): FolderSeg[] {
+  const chain: FolderSeg[] = [];
+  const seen = new Set<string>();
+  for (let at = start; at !== undefined && !seen.has(at.id); at = byId.get(at.parentId ?? '')) {
+    seen.add(at.id);
+    // The preference travels with the folder (finding 3): a folder that asked where it was exported asks here.
+    chain.unshift({ name: at.name, folderType: at.folderType, folderAsksForPin: at.folderAsksForPin });
+  }
+  return chain;
 }
 
 /** Where a new node goes, based on what the command was invoked on. */
@@ -109,9 +252,8 @@ async function undoImportedSecrets(storage: StorageManager, accountId: string, e
  * `setNotes(undefined)` DELETE, and a deletion is a removal that belongs after the node — on an
  * import there is nothing to delete, so the honest form is not to call them at all.</p>
  *
- * <p>Through the writer `entryWriter.writerForNew` gives a new id with no folder PIN asked — never the
- * storage itself (the typed-secrets plan's T4; whether an import into a PIN folder should ask is §2.7's
- * question for the owner).</p>
+ * <p>Through the writer `entryWriter.writerForNew` gives a new id under the PIN its landing settled — never
+ * the storage itself (the typed-secrets plan's T4; the PIN-folder plan's B6 answered §2.7's question).</p>
  */
 async function writeImportedSecrets(
   writer: EntryWriter,

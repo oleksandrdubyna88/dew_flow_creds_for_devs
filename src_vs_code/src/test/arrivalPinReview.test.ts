@@ -1,0 +1,256 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { isExternalBundle } from '../externalBundle';
+import type { EntityMetadata, SharePayload, TreeNode } from '../types';
+import { protectEntity } from '../entityPin';
+import { ACCOUNT, PIN } from './pinWorld';
+import { Arrivals, FIRST_PIN, FOLDER_BOX, NOTE, SECRET, TRANSIT, arrivals, boxes, folderShare, infos, opened, owned, sealedUnder } from './arrivalWorld';
+
+/**
+ * The security review of `PLAN_pin_folder_asks_on_accept_and_import.md` (2026-10-03): six findings after
+ * the code round, each a test here, RED first, over the same arrival world as `arrivalPin.test.ts`.
+ */
+
+test('a folder question that FAILS still ends the batch with its tally, and keeps the shares', async () => {
+  const w = await arrivals({ protectedIn: ['Production'] }, [TRANSIT]);
+  w.boxRule(FOLDER_BOX, new Error('the input box broke'));
+
+  await w.inbox.acceptMany([owned(folderShare('alpha', ['Production'])), owned(folderShare('beta', ['Production']))])
+    .catch((error: unknown) => assert.fail(`acceptMany threw instead of showing its tally: ${String(error)}`));
+
+  const tally = w.s.infos.find((m) => m.startsWith('Accepted')) ?? '';
+  assert.match(tally, /^Accepted 0 item\(s\), 2 still pending\./, infos(w));
+  assert.deepEqual(w.removed, [], 'a share whose folder question failed was consumed');
+  assert.deepEqual(w.entries(), []);
+});
+
+/** The first PIN of a folder that asks while holding nothing — typed twice (`pinOnCreate.firstPinHere`). */
+const FIRST_PIN_BOX = /A PIN for "this entry"/;
+
+test('a batch is not asked again for a subfolder the same batch created — one question for the whole landing', async () => {
+  const w = await arrivals({ prefersIn: ['Production'] }, [TRANSIT, FIRST_PIN, FIRST_PIN]);
+
+  await w.inbox.acceptMany([owned(folderShare('alpha', ['Production', 'Sub'])), owned(folderShare('beta', ['Production', 'Sub']))]);
+
+  assert.equal(boxes(w, FOLDER_BOX), 0, `the subfolder the batch itself created was asked again: ${w.events.join(' | ')}`);
+  assert.equal(boxes(w, FIRST_PIN_BOX), 2, 'one first PIN, typed twice, for both shares');
+  const entries = w.entries();
+  assert.deepEqual(entries.map((n) => n.name).sort(), ['alpha', 'beta'], infos(w));
+  for (const entry of entries) {
+    assert.equal(entry.parentId, w.folderId('Sub'));
+    await sealedUnder(w, entry, FIRST_PIN);
+  }
+});
+
+/**
+ * A CredsForDevs export of a folder that ASKS for a PIN: the export strips `pinProtected` from its entries but
+ * keeps the folder's `folderAsksForPin` — `alpha` inside `Vault`, and `loose` at the bundle's root.
+ */
+function preferringBundle(): string {
+  const entry = (id: string, name: string, parentId: string | null): TreeNode => ({
+    id, name, type: 'entity', parentId, details: { id, name, isSshEnabled: false } as EntityMetadata,
+  });
+  const bundle = {
+    format: 'creds-for-devs-external',
+    version: 1,
+    nodes: [{ id: 'b-vault', name: 'Vault', type: 'folder', parentId: null, folderType: 'any', folderAsksForPin: true }, entry('b-alpha', 'alpha', 'b-vault'), entry('b-loose', 'loose', null)],
+    secrets: {
+      'b-alpha': { password: `${SECRET}-alpha`, notes: `${NOTE}-alpha` },
+      'b-loose': { password: `${SECRET}-loose`, notes: `${NOTE}-loose` },
+    },
+  };
+  assert.ok(isExternalBundle(bundle), 'the fixture is not a bundle the import accepts');
+  return JSON.stringify(bundle);
+}
+
+test('a bundle that recreates a folder asking for a PIN seals what lands in it — one first PIN — even at the root', async () => {
+  const w = await arrivals({}, [FIRST_PIN, FIRST_PIN]);
+
+  await w.importInto('credSshManager.importExternal', '', '/exports/handover.json', preferringBundle());
+
+  // The first PIN names the folder it protects (second code round, finding 4): a bundle can recreate several.
+  assert.equal(boxes(w, /A PIN for "Vault"/), 2, `the folder that asks was recreated and filled with no question naming it: ${w.events.join(' | ')}`);
+  assert.ok(w.s.boxPrompts.some((prompt) => prompt.includes('"Vault"')), `the first PIN's prompt does not name the folder it protects: ${w.s.boxPrompts.join(' | ')}`);
+  const byName = new Map(w.entries().map((n) => [n.name, n]));
+  await sealedUnder(w, byName.get('alpha') as TreeNode, FIRST_PIN);
+  assert.deepEqual(w.written.filter((v) => v.includes(`${SECRET}-alpha`) || v.includes(`${NOTE}-alpha`)), [], 'alpha reached the keychain in the clear (R3)');
+  const loose = byName.get('loose') as TreeNode;
+  assert.equal(await w.storage.getPassword(ACCOUNT, loose.id), `${SECRET}-loose`, 'an entry outside the folder that asks is written as before');
+});
+
+test('declined, nothing of what that folder would hold is written — not the folder either — and the rest of the bundle lands', async () => {
+  const w = await arrivals({}, [undefined]);
+
+  await w.importInto('credSshManager.importExternal', '', '/exports/handover.json', preferringBundle());
+
+  assert.equal(w.folderId('Vault'), undefined, 'the folder that asks was written for an entry a decline kept out');
+  assert.deepEqual(w.entries().map((n) => n.name), ['loose']);
+  assert.match(infos(w), /1 not imported: "alpha" — the folder "Vault" asks for a PIN on every entry in it, and none was given/, infos(w));
+});
+
+/** The sender's id every share of one entry carries, so a second share of it is an UPDATE candidate. */
+const SAME_ENTRY = 'same-sender-entry';
+
+/**
+ * Accept `old-db` at the root, then protect the local copy with `PIN` the way Protect does — the entry a
+ * later share of the same sender updates. The write log and the events start empty after it.
+ */
+async function protectedRootEntry(w: Arrivals): Promise<string> {
+  w.inputs.push(TRANSIT);
+  await w.inbox.acceptOne(owned(folderShare('old-db', [], {}, SAME_ENTRY)));
+  const [entry] = w.entries();
+  await protectEntity(w.storage, ACCOUNT, entry.id, PIN);
+  await w.storage.updateDetailsFields(ACCOUNT, entry.id, { pinProtected: true });
+  w.written.length = 0;
+  w.events.length = 0;
+  return entry.id;
+}
+
+test('a declined door on Update it writes nothing — not even the folders the share would have placed the entry in', async () => {
+  const w = await arrivals({}, []);
+  const id = await protectedRootEntry(w);
+
+  w.inputs.push(TRANSIT, undefined);
+  w.s.modalAnswers.push('Update it');
+  await w.inbox.acceptOne(owned(folderShare('new-db', ['Fresh'], {}, SAME_ENTRY)));
+
+  assert.equal(w.folderId('Fresh'), undefined, 'an empty folder was written for an update whose door was declined');
+  assert.equal(w.storage.getNode(ACCOUNT, id)?.name, 'old-db', 'the entry was updated although its door was declined');
+  assert.equal(w.removed.length, 1, 'the declined update consumed its share');
+});
+
+/** Accept `old-db` at the root, unprotected — the entry a later share of the same sender updates. */
+async function plainRootEntry(w: Arrivals): Promise<string> {
+  w.inputs.push(TRANSIT);
+  await w.inbox.acceptOne(owned(folderShare('old-db', [], {}, SAME_ENTRY)));
+  const [entry] = w.entries();
+  w.written.length = 0;
+  w.events.length = 0;
+  return entry.id;
+}
+
+/** The arriving values of `new-db`, as any keychain write that carried them in the clear would show them. */
+function newValuesInTheClear(w: Arrivals): string[] {
+  return w.written.filter((v) => v.includes(`${SECRET}-new-db`) || v.includes(`${NOTE}-new-db`));
+}
+
+test('Update it that moves an unprotected root entry into a folder that asks is asked that folder’s PIN, and seals what arrives', async () => {
+  const w = await arrivals({ protectedIn: ['Production'] }, []);
+  const id = await plainRootEntry(w);
+
+  w.inputs.push(TRANSIT, PIN);
+  w.s.modalAnswers.push('Update it', 'Use this PIN');
+  await w.inbox.acceptOne(owned(folderShare('new-db', ['Production'], {}, SAME_ENTRY)));
+
+  assert.deepEqual(newValuesInTheClear(w), [], 'the update moved the entry into a folder that asks and wrote what arrived in the clear');
+  const entry = w.storage.getNode(ACCOUNT, id) as TreeNode;
+  assert.equal(entry.parentId, w.folderId('Production'), 'precondition: the update placed the root entry in the share’s folder');
+  await sealedUnder(w, entry, PIN);
+});
+
+test('declined, an Update it into a folder that asks writes nothing, and the share stays', async () => {
+  const w = await arrivals({ protectedIn: ['Production'] }, []);
+  const id = await plainRootEntry(w);
+
+  w.inputs.push(TRANSIT, undefined);
+  w.s.modalAnswers.push('Update it');
+  await w.inbox.acceptOne(owned(folderShare('new-db', ['Production'], {}, SAME_ENTRY)));
+
+  assert.deepEqual(w.written, [], 'the keychain was written although the folder’s PIN was declined');
+  const entry = w.storage.getNode(ACCOUNT, id) as TreeNode;
+  assert.equal(entry.name, 'old-db');
+  assert.equal(entry.parentId, null, 'the entry was moved although the folder’s PIN was declined');
+  assert.equal(w.removed.length, 1, 'the declined update consumed its share');
+  assert.ok(w.s.infos.some((m) => m.includes('"Production" asks for a PIN on every entry in it')), infos(w));
+});
+
+/** The recipient's OWN PIN box for an entry its sender had protected (`shareRecipientPin` → `newPin`). */
+const OWN_PIN_BOX = /A PIN for "new-db"/;
+const OWN_PIN = 'recipient-own-9753';
+
+/** What `pin` opens of a stored value — or the sentence that it opens nothing. */
+async function openedWith(w: Arrivals, id: string, pin: string): Promise<string> {
+  return opened(await w.storage.getPassword(ACCOUNT, id), pin).catch(() => `nothing: ${pin} does not open it`);
+}
+
+test('Update it on a PROTECTED entry from a share its sender protected seals under the entry’s own PIN — no second PIN', async () => {
+  const w = await arrivals({}, []);
+  const id = await protectedRootEntry(w);
+  w.boxRule(OWN_PIN_BOX, OWN_PIN);
+
+  w.inputs.push(TRANSIT, PIN);
+  w.s.modalAnswers.push('Update it');
+  await w.inbox.acceptOne(owned(folderShare('new-db', [], { pinAskOnImport: true }, SAME_ENTRY)));
+
+  const entry = w.storage.getNode(ACCOUNT, id) as TreeNode;
+  assert.equal(entry.name, 'new-db', `the update did not land: ${infos(w)}`);
+  assert.equal(await openedWith(w, id, PIN), `${SECRET}-new-db`, 'the entry’s own PIN no longer opens what arrived — it was sealed under a second PIN');
+  assert.equal(await openedWith(w, id, OWN_PIN), `nothing: ${OWN_PIN} does not open it`, 'a second PIN opens the entry');
+  assert.equal(boxes(w, OWN_PIN_BOX), 0, `a second, own PIN was asked for an entry that already has one: ${w.events.join(' | ')}`);
+  assert.equal(entry.details?.pinAskOnImport, undefined, 'the sender’s instruction is spent');
+  assert.equal(entry.details?.pinProtected, true);
+});
+
+/** Any keychain write that carried `old-db`'s values — what its revision holds — in the clear. */
+function oldValuesInTheClear(w: Arrivals): string[] {
+  return w.written.filter((v) => v.includes(`${SECRET}-old-db`) || v.includes(`${NOTE}-old-db`));
+}
+
+test('Update it that moves an unprotected entry into a folder that asks writes the revision of its OLD values sealed — never in the clear', async () => {
+  const w = await arrivals({ protectedIn: ['Production'] }, []);
+  const id = await plainRootEntry(w);
+
+  w.inputs.push(TRANSIT, PIN);
+  w.s.modalAnswers.push('Update it', 'Use this PIN');
+  await w.inbox.acceptOne(owned(folderShare('new-db', ['Production'], {}, SAME_ENTRY)));
+
+  assert.equal(w.storage.getNode(ACCOUNT, id)?.details?.pinProtected, true, `precondition: the update moved and protected the entry: ${infos(w)}`);
+  assert.deepEqual(oldValuesInTheClear(w), [], 'the revision of the old values reached the keychain in the clear under an entry that is now protected (R3)');
+});
+
+test('a crash after the revision and the node, before the mark, leaves no plaintext history under the moved entry', async () => {
+  const w = await arrivals({ protectedIn: ['Production'] }, []);
+  const id = await plainRootEntry(w);
+  const updateNode = w.storage.updateNode.bind(w.storage);
+  w.storage.updateNode = async (accountId, node) => {
+    await updateNode(accountId, node);
+    throw new Error('the window was closed');
+  };
+
+  w.inputs.push(TRANSIT, PIN);
+  w.s.modalAnswers.push('Update it', 'Use this PIN');
+  await w.inbox.acceptOne(owned(folderShare('new-db', ['Production'], {}, SAME_ENTRY)));
+
+  assert.equal(w.storage.getNode(ACCOUNT, id)?.parentId, w.folderId('Production'), 'precondition: the crash landed after the node moved');
+  const history = JSON.stringify(await w.storage.getHistory(ACCOUNT, id));
+  assert.ok(history.includes('"name":"old-db"'), `precondition: a revision was kept: ${history}`);
+  assert.ok(!history.includes(`${SECRET}-old-db`) && !history.includes(`${NOTE}-old-db`), `plaintext history under the moved entry: ${history}`);
+});
+
+/**
+ * A share whose chain names a folder that ASKS for a PIN below a plain one — what a folder share carries when
+ * its sender's chain says so (`isSharePayload` takes any segment with a name, and the landing reads the
+ * preference off it). `landingOf` copies the segment as it came.
+ */
+function chainShare(name: string, chain: readonly { name: string; folderAsksForPin?: boolean }[]): SharePayload {
+  const plain = folderShare(name, []);
+  return { ...plain, folderPath: chain.map((seg) => ({ folderType: 'any' as const, ...seg })) };
+}
+
+test('a batch that creates a plain folder and then a folder inside it that asks seals what lands in the one that asks', async () => {
+  const w = await arrivals({}, [TRANSIT, FIRST_PIN, FIRST_PIN]);
+
+  await w.inbox.acceptMany([
+    owned(chainShare('readme', [{ name: 'Project' }])),
+    owned(chainShare('vault-key', [{ name: 'Project' }, { name: 'Secrets', folderAsksForPin: true }])),
+  ]);
+
+  assert.deepEqual(
+    w.written.filter((v) => v.includes(`${SECRET}-vault-key`) || v.includes(`${NOTE}-vault-key`)),
+    [],
+    `the folder that asks inside a folder the batch created took its parent's "no PIN" — written in the clear: ${w.events.join(' | ')}`,
+  );
+  const byName = new Map(w.entries().map((n) => [n.name, n]));
+  await sealedUnder(w, byName.get('vault-key') as TreeNode, FIRST_PIN);
+  assert.equal(await w.storage.getPassword(ACCOUNT, (byName.get('readme') as TreeNode).id), `${SECRET}-readme`, 'the plain folder\'s entry is written as before');
+});

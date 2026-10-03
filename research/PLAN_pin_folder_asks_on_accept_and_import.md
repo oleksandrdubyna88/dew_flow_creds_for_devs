@@ -1,17 +1,17 @@
 # PLAN — a folder that asks for a PIN asks it too when a share or an import lands in it
 
-> Status: **plan only, nothing implemented yet, 2026-10-02.** Scope: `src_vs_code/src` — `shareInbox.ts`
+> Status: **IMPLEMENTED, 2026-10-03** (PR #187). B1–B8 as planned with the deviations in §10 — the main ones: the folder question is a port of three functions (`ask`, `prefers`, `first`); a landing carries its account and the memo is a class keyed by (account, folder); an independent security review found six more holes (an *Update it* that moved an entry into a folder that asks, a second PIN on a protected update, a bundle that recreated a folder that asks, empty folders after a declined update, a re-asked subfolder, a lost tally) and the second code round a blocking interaction (a plain folder's inherited "no PIN" covering a subfolder that asks) — all fixed red-first (§10.1). **Open tail:** `shareRecipientPin.wrappedPayload` folded into the one road, as its own follow-up (§9.2). Scope: `src_vs_code/src` — `shareInbox.ts`
 > (its import half extracted to a new `shareImport.ts`), `shareRecipientPin.ts`, a new `arrivalPin.ts`,
 > `pinOnCreate.ts` (one export widened), `importCommands.ts`, `externalSecretsApply.ts`, the two import
 > handlers in `commands/treeMutationCommands.ts`, and their tests. Extension only; no format, contract or
 > server change.
 >
-> Answers the open question of [PLAN_typed_stored_secrets.md](../research/PLAN_typed_stored_secrets.md) §2.7
+> Answers the open question of [PLAN_typed_stored_secrets.md](PLAN_typed_stored_secrets.md) §2.7
 > (*"Checked and left as they are, with the question named"*). Related:
-> [PLAN_entry_pin_keeps_its_promise.md](../research/PLAN_entry_pin_keeps_its_promise.md) (R3, R5),
-> [PLAN_agent_creates_what_the_folder_holds.md](../research/PLAN_agent_creates_what_the_folder_holds.md) (D-B),
-> [module_extension.md](../research/module_extension.md) §*The entry PIN keeps its promise* and §*The type takes
-> over*. Shares one story with [PLAN_waiting_rotation_visible.md](PLAN_waiting_rotation_visible.md) (§6).
+> [PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise.md) (R3, R5),
+> [PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md) (D-B),
+> [module_extension.md](module_extension.md) §*The entry PIN keeps its promise* and §*The type takes
+> over*. Shares one story with [PLAN_waiting_rotation_visible.md](../todo/PLAN_waiting_rotation_visible.md) (§6).
 
 All `file:line` references are to `src_vs_code/src/` and were read on `main` at `95a4f58f` on 2026-10-02.
 
@@ -71,7 +71,10 @@ into it and when something is imported into it, exactly as the person's own Add 
 
 ### 3.1 Where the decision is taken — `arrivalPin.ts` (new, ~90 lines)
 
-One small module, over `pinOnCreate`'s own question — reused, not copied:
+One small module, over `pinOnCreate`'s own question — reused, not copied. **It imports no `vscode`** (plan
+round, finding 5; the repository's rule 3): the question is a port, `AskFolderPin = (folderId) =>
+Promise<CreatePin>`, bound to `pinOnCreate.pinForNewEntry` (which does import `vscode`) only where the
+commands are registered, and faked in `arrivalPin.test.ts`:
 
 - **`landingOf(storage, accountId, under, chain)`** — pure, writes nothing: walks `chain` (folder names)
   from `under` exactly as `importShared` does (`shareInbox.ts:640-645`: reuse a child folder of that name),
@@ -129,7 +132,10 @@ the lease per write (`entryWriter.ts:159-166`, `:250-254`) and nothing holds it 
 4. **Writes** as §3.2: missing folders, the values through `writerForNew(…, settled)`, the node,
    `applyCreatePin`, the origin, the consume (`removeOwnShare`).
 
-`ShareLanding = 'landed' | 'left'`. `acceptOne` says *Accepted* only for `landed`; `acceptMany`'s
+**One share is one landing and one decision, taken before any write** (plan round, finding 1): a share
+carries ONE folder chain (`payload.folderPath`), every entry of a folder share lands in that chain's
+subtree, and the subtree is one question (§9.1) — so a share is written whole or not at all; there is no
+partial landing to retry. `ShareLanding = 'landed' | 'left'`. `acceptOne` says *Accepted* only for `landed`; `acceptMany`'s
 `importOpened` counts `left` with the pending ones (`shareInbox.ts:524-526`), and its tally names the folders
 that were declined. `acceptMany` creates ONE `arrivalPins` for the whole conversation, across its PIN rounds
 (`:480-516`), so three shares into one folder are one question however many transit PINs opened them.
@@ -148,7 +154,9 @@ that were declined. `acceptMany` creates ONE `arrivalPins` for the whole convers
   bundle node under `location.parentId` (`externalBundle.ts:76-106`); its folders are all new. Each entity's
   landing is `{ existing: location.parentId, creates }` from its remapped parents — so the whole bundle is
   at most ONE question. `applyExternalSecrets` (`externalSecretsApply.ts:57-67`) is widened with
-  `pinFor: (entityId) => SettledPin` (default `NO_PIN`, so its own test is unchanged) and passes it to
+  a REQUIRED `pinFor: (entityId) => SettledPin` — no `NO_PIN` default, so a caller cannot forget it and
+  write plain into a protected folder (plan round, finding 3); its own test passes `() => NO_PIN` explicitly,
+  a declared mechanical change — and passes it to
   `writerForNew` (`:63`). A declined landing removes its entities — and any remapped folder left holding
   nothing — from `remapped` before `applyExternalSecrets` and the node loop (`:591-594`);
   `applyCreatePin` runs for each sealed entity after its node; the message (`:607-609`) names the skipped.
@@ -171,16 +179,16 @@ see red, restore) recorded in the commit body. Over the real `StorageManager` wi
 (`test/pinWorld.ts`, the `addEntityPin.test.ts` pattern) and the share world (`test/shareWorld.ts`).
 Typecheck, lint (`max-lines` 800, `max-lines-per-function` 50), `npm test`, the plan lifecycle check.
 
-- [ ] **B1 — extract the share import.** `importShared` (with the imports only it uses) moves to
+- [x] **B1 — extract the share import.** *(e7224b39)* `importShared` (with the imports only it uses) moves to
       `shareImport.ts` verbatim; `ShareInbox` calls `landShare(this.deps, …)`. No behaviour changes, so no
       RED: the whole share suite (`shareInbox`, `shareUpdateSeal`, `recipientPin`, `sharePayment`,
       `shareArrivalReadable`, `shareBatchRefusal`, `writeOrderPaths`) stays green unmodified, and
       `shareInbox.ts` drops to ~650 lines. Shared with Plan C (§6).
-- [ ] **B2 — an accept says what happened.** `ShareLanding`. RED (`shareInbox.test.ts`): dismiss *Update
+- [x] **B2 — an accept says what happened.** *(febc4e77)* `ShareLanding`. RED (`shareInbox.test.ts`): dismiss *Update
       it / Keep both* in `acceptOne` → today the infos say *Accepted "X"* after *Left in "Shared with me"*;
       in `acceptMany` → the tally says *Accepted 1 item(s)* with the share still in the inbox. Break-it:
       count `left` as landed → red.
-- [ ] **B3 — one accepted share into a folder that asks is sealed under its PIN.** `arrivalPin.ts`,
+- [x] **B3 — one accepted share into a folder that asks is sealed under its PIN.** *(16bb9c9b)* `arrivalPin.ts`,
       `folderPrefersPin`, steps 2 and 4 of §3.3. RED (new `test/arrivalPin.test.ts`): a folder share whose
       chain names an existing folder holding a protected entry → *"the keychain was handed the arriving
       password in the clear"*, and the entry carries no mark. GREEN: every slot write is an envelope, the
@@ -188,29 +196,29 @@ Typecheck, lint (`max-lines` 800, `max-lines-per-function` 50), `npm test`, the 
       folder created, the share still pending and the sentence said. A share whose chain names nothing that
       exists, and a single-entry share (root), ask nothing — written as today. Break-it: hand `landShare`
       `NO_PIN` → red.
-- [ ] **B4 — a batch asks once per folder.** RED: `acceptMany` over three shares into one protected folder →
+- [x] **B4 — a batch asks once per folder.** *(4d6d6855)* RED: `acceptMany` over three shares into one protected folder →
       today no box and three plain entries; GREEN: exactly one PIN box and one *Use this PIN* modal, three
       sealed entries; two folders → two boxes; the first declined → its shares left and counted pending, the
       second folder still asked. The same through two transit-PIN rounds (one memo per conversation). And
       the box is never inside the lease: from the stubbed box, a second window's `runOrSkip` over the same
       lock is not skipped. Break-it: a memo per share → three boxes, red.
-- [ ] **B5 — the sender's protection and the folder's ask are one question.** Step 3 of §3.3. RED: a
+- [x] **B5 — the sender's protection and the folder's ask are one question.** *(984a29eb)* Step 3 of §3.3. RED: a
       `pinAskOnImport` share into a folder that asks → today the own-PIN box (typed twice) is asked, the
       folder's is not, and the entry is sealed under a PIN that opens none of the folder's protected
       entries (*"sealed under a PIN the folder's entries do not use"*). GREEN: one box (the folder's), the
       node carries the mark and no `pinAskOnImport`. Into a folder that asks nothing: `recipientPin.test.ts`
       unchanged. An update candidate asks its own PIN after *Update it*. Break-it: ask `forThisRecipient`
       unconditionally → two boxes, red.
-- [ ] **B6 — an import from another tool honours the folder.** RED (`writeOrderPaths`-style, real storage):
+- [x] **B6 — an import from another tool honours the folder.** *(075f52b9)* RED (`writeOrderPaths`-style, real storage):
       `importEntities` into a protected folder → plain writes. GREEN: one question per destination; sealed
       entries; declined → those entries and their would-be folders not written, `skipped` names them, the
       rest imported. Break-it: drop `pinFor` → red.
-- [ ] **B7 — a bundle import honours the folder.** RED (`externalSecretsApply.test.ts` world plus the
+- [x] **B7 — a bundle import honours the folder.** *(a4b87619)* RED (`externalSecretsApply.test.ts` world plus the
       handler): `importExternal` into a protected folder → plain writes. GREEN: at most one question; sealed;
       declined → nothing of the bundle under that landing written, said. The coverage test over
-      `EXTERNAL_SECRET_KEYS` stays as it is. Break-it: default `pinFor` → red.
-- [ ] **B8 — docs and promotion** (§7). `review_code` over the whole diff, then `/promote-plan` in the same
-      task, with the deviations.
+      `EXTERNAL_SECRET_KEYS` stays as it is. Break-it: `pinFor` answering `NO_PIN` → red.
+- [ ] **B8 — docs and promotion** (§7). The docs are written (the B8 docs commit); `review_code` over the whole
+      diff and `/promote-plan` with the deviations are still to come.
 
 ## 5. Test plan
 
@@ -228,7 +236,7 @@ Typecheck, lint (`max-lines` 800, `max-lines-per-function` 50), `npm test`, the 
 
 | Item | Built by | The other plan's part |
 |---|---|---|
-| Extract `importShared` from `shareInbox.ts` (798 lines) | **this plan, B1** | [PLAN_waiting_rotation_visible.md](PLAN_waiting_rotation_visible.md) W2 adds one line to `shareInbox.ts` and needs the room: it lands after B1, or lands B1 first exactly as written here and this plan skips it |
+| Extract `importShared` from `shareInbox.ts` (798 lines) | **this plan, B1** | [PLAN_waiting_rotation_visible.md](../todo/PLAN_waiting_rotation_visible.md) W2 adds one line to `shareInbox.ts` and needs the room: it lands after B1, or lands B1 first exactly as written here and this plan skips it |
 | The share's sender-side door (`payloadsFor`) | the sibling, W2 | nothing here |
 
 Disjoint otherwise: this plan touches the RECEIVING half of `shareInbox.ts`, the sibling the SENDING half.
@@ -249,13 +257,13 @@ Disjoint otherwise: this plan touches the RECEIVING half of `shareInbox.ts`, the
 
 ## 8. Definition of Done
 
-- [ ] B1–B8 merged, each behavioural story with its RED observation and break-it in the commit body.
-- [ ] An accepted folder share and both imports into a folder that asks are sealed before their first write,
+- [x] B1–B8 merged, each behavioural story with its RED observation and break-it in the commit body.
+- [x] An accepted folder share and both imports into a folder that asks are sealed before their first write,
       marked, and asked once per folder — shown over the real storage's write log.
-- [ ] A decline writes nothing for that folder; the share stays pending; the import names what it skipped.
-- [ ] `writerForNew` and `applyCreatePin` are the only sealing road these arrivals take; no new sealer.
-- [ ] `shareInbox.ts` well under 800 lines; typecheck, lint, `npm test`, plan lifecycle green.
-- [ ] §7 docs updated; plan promoted with its deviations.
+- [x] A decline writes nothing for that folder; the share stays pending; the import names what it skipped.
+- [x] `writerForNew` and `applyCreatePin` are the only sealing road these arrivals take; no new sealer.
+- [x] `shareInbox.ts` well under 800 lines; typecheck, lint, `npm test`, plan lifecycle green.
+- [x] §7 docs updated; plan promoted with its deviations.
 
 ## 9. Decided (2026-10-02)
 
@@ -268,3 +276,81 @@ Disjoint otherwise: this plan touches the RECEIVING half of `shareInbox.ts`, the
    follow-up, not in this plan** (open tail): it is a second sealing road, and in a PIN folder it seals under
    the recipient's own PIN, unchecked against the folder's, so one folder can hold two PINs. This plan must
    not make that worse: where both apply, the folder's PIN wins and no second "own PIN" is asked (§3).
+
+## 10. As built — deviations from the text above (2026-10-03)
+
+Each story's RED message and break-it are in its commit body (§4 names the commits).
+
+1. **The port carries two functions, not one.** `AskFolderPin` became `FolderQuestion { ask, prefers }`:
+   `folderPrefersPin` lives in `pinOnCreate.ts`, which imports `vscode`, so `arrivalPin.ts` could not call it
+   and stay free of `vscode` (finding 5). The binder is `pinOnCreate.folderQuestion(storage)` — a second
+   export of `pinOnCreate` beside `folderPrefersPin`, where §3.1 named one widening.
+2. **A landing carries its account, and the memo takes no storage.** `Landing = { accountId, existing,
+   creates }`, `arrivalPins(question)`, memo key (account, folder): one memo serves an `acceptMany` whose
+   shares are for different accounts, as §3.3 asks (*ONE `arrivalPins` for the whole conversation*).
+   `ArrivalPins.declined()` was added for the batch tally that names the declined folders.
+3. **An import's landing is built directly, not with `landingOf`.** `landingOf` reuses a folder of the same
+   name; `folderFor` never does, so an existing same-named folder would have been asked instead of the new
+   folder the entry really lands in. `importLanding` / `chainOf` construct `{ existing: location.parentId,
+   creates }` — what §3.4 describes in words.
+4. **`importEntities`' question is REQUIRED too** (the plan said so only of `pinFor`), for finding 3's reason.
+   Declared mechanical edit: `writeOrderPaths.test.ts`'s five calls pass a question that asks nothing, and
+   `count` → `count.created`. `externalSecretsApply.test.ts`'s five calls pass `() => NO_PIN` (as planned).
+   `pinWorld.memoryStorage` gained an optional `lockDir` (additive) for the lease probe.
+5. **The bundle import moved out of the command.** `importCommands.landBundle` holds the decision, the secrets,
+   the nodes and the marks; the `importExternal` handler calls it (`treeMutationCommands.ts` 755 → 746 lines).
+6. **`landShare` was decomposed** (`originArrival`, `newArrival`, `updatedInPlace`, `writeChain`, `writeArrival`,
+   `settleShare`) and lost its `eslint-disable`; `sealedForRecipient` moved from `ShareInbox` into
+   `shareImport.ts`. `shareInbox.ts` ends at 621 lines (from 798).
+7. **B3 gave each batch share its own memo; B4 hoisted it.** So B4's RED is three boxes for three shares (B3's
+   interim state), not §4's *"no box and three plain entries"* (the pre-plan state).
+8. **B5's RED symptom** is *"the recipient's own PIN was asked as well as the folder's"* — the own-PIN box took
+   the folder PIN as its first entry, the confirm box mismatched and nothing landed — rather than an entry
+   sealed under a PIN the folder does not use; the guarantee asserted is the same (one box, the folder's).
+9. **A declined folder is said per share as well as in the batch tally** (`Left in "Shared with me" — the folder
+   "X" asks for a PIN on every entry in it, and none was given.`); `ShareLanding` stays two-valued.
+10. **The folder chain of an update.** *Update it* writes the share's missing folders only after the question
+    and the own PIN (it used to be the very first write); *Keep both* writes them only after the folder's
+    decision.
+11. **B7's §9.1 test was strengthened during its break-it**: with `pinFor` planted to answer `NO_PIN` it stayed
+    green, because `applyCreatePin`'s sweep sealed the entry afterwards; it now asserts the write log never saw
+    that entry's values in the clear, and goes red under the plant.
+12. **Help:** one new paragraph per language after the protected-folder paragraph (*"What arrives in such a
+    folder is asked the same"*), naming accept and both imports and the one-question rule.
+
+### 10.1 The security review (2026-10-03) — six findings, each fixed RED first
+
+After the code round, an independent security review found six more; each is a test in
+`test/arrivalPinReview.test.ts` (the arrival harness moved to `test/arrivalWorld.ts`, 2ea92cfd), RED with the
+real symptom, then GREEN, then a break-it — all in the commit bodies.
+
+| # | Severity | Finding | Fix | Commit |
+|---|---|---|---|---|
+| 1 | MEDIUM | *Update it* placed an unprotected ROOT entry in the share's folder (`shareUpdateSeal`: `existing.parentId ?? parentId`) — into a folder that asks, in the clear | an update that moves an entry holding nothing protected into a folder that asks is asked that folder's question through the same memo, and sealed + marked under it; declined → `left`, nothing written; an update that keeps the entry's folder is unchanged. Follow-up: the revision of its OLD values is sealed under that PIN in memory before it is written (`historyPin.sealedRevision`, sharing `sealedInMemory` with `protectHistory` — no second sealer) | 6709760a, 38c413b9 |
+| 2 | MEDIUM | *Update it* on a PROTECTED entry from a `pinAskOnImport` share sealed the new values under a second, own PIN the entry's door does not use | B5's one-question rule for updates: an entry already protected (sealed slot or mark) spends the instruction and the door's PIN seals; the own PIN only for an update that would otherwise be plain | 593383be |
+| 3 | MEDIUM | a CredsForDevs bundle recreated a folder with `folderAsksForPin` and filled it plain | `FolderSeg.folderAsksForPin`; a landing whose CREATED chain includes such a folder is asked its first PIN once (`FolderQuestion.first`), its whole subtree under that answer; declines name that folder (`askedFolder`, `folderNameOf`) | 106b34bb |
+| 4 | LOW | a declined door on *Update it* left the share's folders, empty | the chain is planned (ids minted) and written only after the update's decision, only when the entry is placed in it | b8775512 |
+| 5 | LOW | a batch asked again for a subfolder the same batch created | `ArrivalPins.created(landing, ids)`: a later landing inside a folder this command created takes that landing's answer | ed1fc9a5 |
+| 6 | LOW | a rejected folder question made `declined()` reject, so `acceptMany` threw and showed no tally | `declined()` reads a rejected answer as `failed`, never rejects | fdf03d64 |
+
+The second code round (`proceed`, 4 of 4) then found that fixes 3 and 5 interacted; accepted and fixed the
+same way, each RED first (the memo's own contract in `test/arrivalPinMemo.test.ts` — `arrivalPin.ts` has no
+`vscode` — and end to end where a caller reaches it):
+
+| # | Severity | Finding | Fix | Commit |
+|---|---|---|---|---|
+| A (0, 2) | BLOCKING | `answerFor` took an INHERITED answer before the landing's own created chain: a plain `Project` the batch created handed "no PIN" to `Project/Secrets`, which asks — written in the clear | an inherited answer covers a landing unless it is no PIN and a folder the landing creates asks: that folder is decided on its own | 5c387e9f |
+| B (3) | — | `created` handed the answer to EVERY created folder, a plain ancestor too — a later arrival into `Docs` sealed under (or blocked by) `Keys` below it | each created folder takes the answer of the landing that ends at it, only one a question gave at or above it; read from the memo, never asked (it had been able to raise a box mid-write) | e2a6c5a2 |
+| C (1, 6) | — | `askedFolder` ignored inherited answers: an inherited decline named the created folder, or none | the memo keeps each answer with its folder (`Known`); `askedFolder` consults the inherited one first. The memo became a class (`ArrivalMemo`) to stay under the 50-line ceiling | e25604bd |
+| D (4) | — | `first(accountId)` could not name the folder its first PIN protects | `first(accountId, folderName)`; the box and its prompt name the folder (`pinOnCreate.firstPinIn`) | aa5ec7a6 |
+
+Rejected: finding 5 (`askedFolder` is consulted only for a declined answer, which exists only after a question).
+
+Deviations they add: `FolderQuestion` has a THIRD function (`first(accountId, folderName)`), bound in
+`pinOnCreate.folderQuestion` to the private `firstPinIn` (aa5ec7a6; it was `firstPinHere`, which names no folder); `ArrivalPins` gained `created` and `askedFolder`, `FolderRef` an optional `name`;
+`writeOrderPaths.test.ts`'s `ASKS_NOTHING` gained `first` (mechanical). The three `./arrivalPin` imports of
+`importCommands.ts` are one line (106b34bb). `updateInPlace` takes an optional `historyPin` (38c413b9): the
+revision an update records of an entry it moves into a folder that asks is sealed under that folder's PIN
+before it is written — it was first written plain and swept by `applyCreatePin`'s history pass, which the
+owner ruled not acceptable (R3 holds for kept versions: a crash between the two left plaintext history under
+a protected entry).

@@ -67,6 +67,44 @@ test('dismissing the Update/Keep-both question leaves the share in the inbox', a
   assert.equal(w.removed.length, 1, 'only the FIRST accept consumed its share');
 });
 
+/**
+ * The accept's word must match the inbox (`PLAN_pin_folder_asks_on_accept_and_import.md`, B2): a
+ * dismissed *Update it / Keep both* returned normally from the landing, so `acceptOne` went on to say
+ * *Accepted* and `acceptMany` counted it as imported — while the share was still waiting in the inbox.
+ */
+test('a dismissed Update / Keep both is not reported as accepted — the share is still in the inbox', async () => {
+  const w = world();
+  ui.inputs = [PIN];
+  await w.inbox.acceptOne(sealedShare(payloadFor('prod api', 'sender-side-id'), PIN));
+  ui.infos = [];
+
+  ui.inputs = [PIN];
+  ui.warningAnswer = undefined; // Esc on the modal
+  await w.inbox.acceptOne(sealedShare(payloadFor('prod api v2', 'sender-side-id'), PIN));
+
+  assert.ok(ui.infos.some((m) => m.startsWith('Left in "Shared with me"')), ui.infos.join(' | '));
+  assert.deepEqual(
+    ui.infos.filter((m) => m.startsWith('Accepted')),
+    [],
+    `the window said the share was accepted while it is still in the inbox: ${ui.infos.join(' | ')}`,
+  );
+});
+
+test('acceptMany counts a dismissed update as still pending, not as accepted', async () => {
+  const w = world();
+  ui.inputs = [PIN];
+  await w.inbox.acceptOne(sealedShare(payloadFor('prod api', 'sender-side-id'), PIN));
+  ui.infos = [];
+
+  ui.inputs = [PIN];
+  ui.warningAnswer = undefined; // Esc on the modal
+  await w.inbox.acceptMany([sealedShare(payloadFor('prod api v2', 'sender-side-id'), PIN)]);
+
+  const tally = ui.infos.find((m) => m.startsWith('Accepted')) ?? '';
+  assert.equal(tally, 'Accepted 0 item(s), 1 still pending.', `the tally miscounts the dismissed update: ${ui.infos.join(' | ')}`);
+  assert.equal(w.removed.length, 1, 'only the first accept consumed its share');
+});
+
 test('a server-stamped sender is never second-guessed: no modal before the PIN prompt', async () => {
   const w = world();
   ui.inputs = [PIN];

@@ -85,9 +85,10 @@ export function writerFor(storage: StorageManager, accountId: string, entityId: 
 
 /**
  * A BRAND-NEW entry's writer: `sealingForNew`'s proof over `NOTHING_OPENED` — the plain writer when the
- * folder asks for no PIN, the sealing writer under the folder's PIN when it does. The person's Add and an
- * agent's create take it with the settled PIN; an accepted share and an import, which write new ids and
- * ask no folder PIN (§2.7), take it with `NO_PIN` — their plain proof visible rather than silent.
+ * folder asks for no PIN, the sealing writer under the folder's PIN when it does. The person's Add, an
+ * agent's create, an accepted share and both imports take it with the PIN their folder settled — the last
+ * three since `PLAN_pin_folder_asks_on_accept_and_import.md` answered §2.7 (`arrivalPin.ts` asks). `NO_PIN`,
+ * the default, is what a folder that asks nothing settles.
  */
 export function writerForNew(storage: StorageManager, accountId: string, entityId: string, settled: SettledPin = NO_PIN): EntryWriter {
   return writerFor(storage, accountId, entityId, sealingForNew(settled), NOTHING_OPENED);

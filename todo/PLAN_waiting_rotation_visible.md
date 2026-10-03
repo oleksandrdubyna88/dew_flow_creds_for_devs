@@ -10,7 +10,7 @@
 >
 > The open tail of [PLAN_rotation_quarantine.md](../research/PLAN_rotation_quarantine.md) (its status line and
 > §5.1). Related: [module_extension.md](../research/module_extension.md) §*The entry PIN keeps its promise*
-> (the rotation paragraphs), [PLAN_pin_folder_asks_on_accept_and_import.md](PLAN_pin_folder_asks_on_accept_and_import.md)
+> (the rotation paragraphs), [PLAN_pin_folder_asks_on_accept_and_import.md](../research/PLAN_pin_folder_asks_on_accept_and_import.md)
 > (owns the `shareInbox.ts` extraction, §6).
 
 All `file:line` references are to `src_vs_code/src/` and were read on `main` at `95a4f58f` on 2026-10-02.
@@ -190,7 +190,7 @@ lifecycle check.
 
 | Item | Built by | This plan's part |
 |---|---|---|
-| Extract `importShared` from `shareInbox.ts` (798 lines) | [PLAN_pin_folder_asks_on_accept_and_import.md](PLAN_pin_folder_asks_on_accept_and_import.md) **B1** | W2 needs the room: it lands after B1 — or, if this plan is built first, lands B1 first exactly as written there, and that plan skips it |
+| Extract `importShared` from `shareInbox.ts` (798 lines) | [PLAN_pin_folder_asks_on_accept_and_import.md](../research/PLAN_pin_folder_asks_on_accept_and_import.md) **B1** | W2 needs the room: it lands after B1 — or, if this plan is built first, lands B1 first exactly as written there, and that plan skips it |
 | The share's sender-side door (`payloadsFor`) | **this plan, W2** | nothing there |
 
 Disjoint otherwise: this plan touches the SENDING half of `shareInbox.ts`, the sibling the RECEIVING half.

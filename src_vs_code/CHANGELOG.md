@@ -6,6 +6,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — a folder that asks for a PIN asks it too when something arrives in it
+
+- **Accepting a folder share into, or importing into, a folder whose entries are protected asks its PIN
+  and seals before writing** — the same question as adding an entry there yourself, asked once per folder
+  for a whole batch (several shares, a file of many entries, a CredsForDevs export), and every value is
+  sealed under that PIN before it is first written, the entry marked as protected. Declined, nothing of it
+  is written — no value, no entry, no folder: a share stays in *Shared with me*, and an import names the
+  entries it skipped. Until now an accepted share and an import wrote their entries in the clear into such a
+  folder, with no question and nothing said.
+- **A share its sender protected asks one PIN, not two, in such a folder.** The folder's PIN protects it,
+  and the recipient is no longer also asked to choose a PIN of their own for it. In a folder that asks
+  nothing, the recipient still chooses their own. For a share that updates an entry you already have, that
+  question now comes after *Update it* — never for a share you dismiss.
+- **Updating an entry from a share honours the folder too.** *Update it* on an unprotected entry at the top
+  of your tree, from a share that places it in a folder whose entries are protected, asks that folder's PIN
+  and seals what arrives; declined, nothing changes. *Update it* on an entry you already protected with a
+  PIN seals the new values under that PIN — you are no longer asked to choose a second one. A declined
+  update leaves no empty folders behind.
+- **An export file that recreates a folder which asks for a PIN asks it.** Importing a CredsForDevs export
+  of such a folder asks for its first PIN once and seals every entry that lands in it; declined, neither the
+  folder nor its entries are written.
+- **One question per folder, even for a folder the same accept created**, and an accept whose PIN question
+  fails still says how many shares are left pending.
+
+### Fixed
+
+- **A dismissed update no longer says *Accepted*.** Dismissing *Update it / Keep both* left the share in
+  *Shared with me* and then announced it as accepted; *Accept All…* counted it as imported. It is now
+  reported as still pending.
+
 ### Fixed — a rotated value waiting beside an entry WITHOUT a PIN is used, and you are told (2026-10-03)
 
 - **A click on an entry whose rotated password was waiting used the old one.** A rotation that could not
