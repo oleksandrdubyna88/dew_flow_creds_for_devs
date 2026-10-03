@@ -213,17 +213,25 @@ public sealed class BackupEndpointTests
         var polling = Task.Run(
             () =>
             {
-                while (!stop.IsCancellationRequested)
+                while (!stop.IsCancellationRequested && !Ct.IsCancellationRequested)
                 {
                     _ = Result(server);
                 }
             },
             Ct);
 
-        (await cto.PostAsync("/api/org/backup/run", null, Ct)).StatusCode.Should().Be(HttpStatusCode.Accepted);
-        await RunSettles(server, result => !BackupRunResults.IsRunning(result), "the run finished");
-        await stop.CancelAsync();
-        await polling;
+        // The poller stops whatever happens below: a failed assertion must not leave it spinning on the
+        // status file for every test after this one (code round, finding 1).
+        try
+        {
+            (await cto.PostAsync("/api/org/backup/run", null, Ct)).StatusCode.Should().Be(HttpStatusCode.Accepted);
+            await RunSettles(server, result => !BackupRunResults.IsRunning(result), "the run finished");
+        }
+        finally
+        {
+            await stop.CancelAsync();
+            await polling;
+        }
 
         var status = await Store(server).ReadStatusAsync(Ct);
         status.LastResult.Should().Be(
@@ -908,7 +916,6 @@ public sealed class BackupEndpointTests
     private static BackupStore Store(VaultServer server) =>
         (BackupStore)server.Services.GetService(typeof(BackupStore))!;
 
-    /// <summary>The persisted result, read off the disk — what a restarted process would read.</summary>
     /// <summary>
     /// The ONE wait for a detached backup run in this file (PLAN_flaky_backup_endpoint_tests.md §3.3): fifteen
     /// seconds, because a run seals and writes an archive and the whole suite runs in parallel beside it — five
@@ -919,6 +926,7 @@ public sealed class BackupEndpointTests
 
     private static readonly TimeSpan DetachedRun = TimeSpan.FromSeconds(15);
 
+    /// <summary>The persisted result, read off the disk — what a restarted process would read.</summary>
     private static string Result(VaultServer server) =>
         Store(server).ReadStatusAsync(CancellationToken.None).GetAwaiter().GetResult().LastResult;
 

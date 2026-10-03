@@ -468,7 +468,8 @@ public sealed partial class VaultStore
     /// </remarks>
     private static async Task MoveIntoPlaceAsync(string temp, string path, bool overwrite, CancellationToken ct)
     {
-        var deadline = DateTime.UtcNow + ReplaceWait;
+        // Monotonic: a wall clock stepped back by NTP must not stretch a one-second wait (code round, finding 0).
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
         while (true)
         {
             try
@@ -477,7 +478,8 @@ public sealed partial class VaultStore
                 return;
             }
             catch (Exception e) when (overwrite && OperatingSystem.IsWindows()
-                && e is UnauthorizedAccessException or IOException && DateTime.UtcNow < deadline)
+                && e is UnauthorizedAccessException or IOException
+                && System.Diagnostics.Stopwatch.GetElapsedTime(started) < ReplaceWait)
             {
                 await Task.Delay(ReplacePoll, ct);
             }
