@@ -97,7 +97,7 @@ function withConfig(line: string, configPath: string, family: ShellFamily): stri
 export async function writeVpnConfig(ctx: VpnRunContext, fileName: string): Promise<string | undefined> {
   // Opened for the click (entry-PIN plan, D6): the tunnel reads the file this writes, so an envelope
   // here was a config the VPN client could not parse. A temporary file, so no outside-the-PIN note.
-  const opened = await clickedSecret(ctx.storage, ctx.accountId, ctx.details, (s, a, e) => s.getVpnConfig(a, e), 'start the VPN');
+  const opened = await clickedSecret(ctx.storage, ctx.accountId, ctx.details, (s, a, e) => s.getVpnConfig(a, e), 'start the VPN', undefined);
   if (opened.kind !== 'open') {
     return undefined;
   }

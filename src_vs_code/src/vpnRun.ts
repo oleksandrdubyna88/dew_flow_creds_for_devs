@@ -208,7 +208,7 @@ export async function saveVpnConfigToFile(
   details: EntityMetadata,
   storage: StorageManager,
 ): Promise<void> {
-  const opened = await clickedSecret(storage, accountId, details, (s, a, e) => s.getVpnConfig(a, e), 'save its VPN configuration');
+  const opened = await clickedSecret(storage, accountId, details, (s, a, e) => s.getVpnConfig(a, e), 'save its VPN configuration', undefined);
   if (opened.kind !== 'open') {
     return;
   }

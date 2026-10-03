@@ -519,7 +519,8 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
     await this.remember(via, grant, asked, rungs);
-
+    // A waiting rotated value goes in FIRST, so the table below holds the value the action will use (`brokerHooks.ts`).
+    await Promise.resolve(this.hooks.releaseWaiting?.(grant.accountId, grant.entityId)).catch(() => undefined);
     // Read BEFORE anything runs, and a read that will not answer refuses the call — see `tableOrFail`.
     const table = await tableOrFail(this.hooks.maskEntriesFor, grant, (why) =>
       this.respondError(res, 'internal', MASKING_UNAVAILABLE, grant, action, `${summary} · ${why}`, via, caller),

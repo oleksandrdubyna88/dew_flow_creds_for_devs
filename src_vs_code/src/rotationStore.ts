@@ -5,12 +5,13 @@ import { NOTHING_OPENED } from './editPrefill';
 import { EntryWriter, UnattendedRefusal, writeUnattended, writerFor } from './entryWriter';
 import { admitEntry } from './pinPrompt';
 import { RotationNotStored, StoreOutcome } from './rotateAction';
-import { Fingerprint, holdRotated, supersedeHeld } from './rotationQuarantine';
+import { Fingerprint, holdRotated, releaseBeforeAutomaticUse, supersedeHeld } from './rotationQuarantine';
 import { sealingForUpdate } from './sealingAtWrite';
 import { copiedMessage, copySecret } from './secretClipboard';
 import type { RotationSlot } from './secretRotation';
 import { updateDoors } from './shareUpdateSeal';
 import type { StorageManager } from './storageManager';
+import type { StoredSecret } from './storedSecret';
 import type { UseActionContext } from './useActions';
 
 /**
@@ -56,6 +57,18 @@ export async function storeRotated(storage: StorageManager, ctx: UseActionContex
   return 'stored';
 }
 
+/**
+ * What the rotation replaces, as `RotateDeps.current` reads it for `prepare` — whose fingerprint becomes the hold's `was`.
+ * Read AFTER a rotated value waiting beside an unprotected entry went in (`releaseBeforeAutomaticUse`, the index first):
+ * the statement runs against that value (the broker and the automatic opener release it too), so a `was` taken from the
+ * value before it would make the next door see a conflict that is not one (the security review of
+ * `PLAN_waiting_rotation_visible`, fix 2). A protected entry is left alone, as everywhere automatic.
+ */
+export async function rotationCurrent(storage: StorageManager, ctx: UseActionContext, slot: RotationSlot): Promise<StoredSecret | undefined> {
+  await releaseBeforeAutomaticUse(storage, ctx.accountId, ctx.entityId);
+  return slot === 'password' ? storage.getPassword(ctx.accountId, ctx.entityId) : storage.getDbConnection(ctx.accountId, ctx.entityId);
+}
+
 /** The value a refused store keeps: its slot, its stored form, and the fingerprint of what it replaced. */
 interface Refused {
   readonly slot: RotationSlot;
@@ -83,7 +96,7 @@ async function heldOrHanded(storage: StorageManager, ctx: UseActionContext, refu
     await supersedeHeld(storage, ctx.accountId, ctx.entityId, refused.slot);
     return 'stored';
   }
-  void waitingNotice(storage, ctx, refused.slot).catch(() => undefined);
+  void waitingNotice(storage, ctx, refused.slot, error).catch(() => undefined);
   return 'quarantined';
 }
 
@@ -120,21 +133,41 @@ function burnsWithThisAnswer(name: string, slot: RotationSlot, error: unknown): 
 }
 
 const STORE_NOW = 'Store it now (asks for the PIN)';
+const STORE_NOW_PLAIN = 'Store it now';
 const LATER = 'Later';
 
 /**
  * The modal at a hold — shown, never awaited by the rotation: the value is safe, and a modal left open must
  * not hold a broker call open for minutes. *Store it now* is the entry's own door; there is no copy button,
  * because the value is safe and after the PIN the entry's own *Copy* exists.
+ *
+ * <p>It says the store's own reason (`whyNotStored`): the PIN only when the PIN refused it. A hold after any
+ * other failure — a keychain error on an entry with no PIN — is stored the next time the entry is used (a click
+ * takes the door, an agent's use releases first) or by the sweep within a minute, and *Store it now* asks for
+ * nothing there: the door of an unprotected entry releases without a box (`PLAN_waiting_rotation_visible.md` W3).</p>
  */
-async function waitingNotice(storage: StorageManager, ctx: UseActionContext, slot: RotationSlot): Promise<void> {
-  const answer = await vscode.window.showWarningMessage(keptWaiting(ctx.entityName, slot), { modal: true }, STORE_NOW, LATER);
-  if (answer === STORE_NOW) {
+async function waitingNotice(storage: StorageManager, ctx: UseActionContext, slot: RotationSlot, error: unknown): Promise<void> {
+  const storeNow = error instanceof UnattendedRefusal ? STORE_NOW : STORE_NOW_PLAIN;
+  const answer = await vscode.window.showWarningMessage(keptWaiting(ctx.entityName, slot, error), { modal: true }, storeNow, LATER);
+  if (answer === storeNow) {
     await admitEntry(storage, ctx.accountId, ctx.entityId, ctx.entityName, `store the new ${what(slot)}`);
   }
 }
 
-function keptWaiting(name: string, slot: RotationSlot): string {
+function keptWaiting(name: string, slot: RotationSlot, error: unknown): string {
+  return error instanceof UnattendedRefusal ? keptForThePin(name, slot) : keptForTheNextUse(name, slot, error);
+}
+
+/** Held after a failure that was not the PIN: named as itself, and when the value goes in. */
+function keptForTheNextUse(name: string, slot: RotationSlot, error: unknown): string {
+  return (
+    `The ${what(slot)} of "${name}" WAS changed on the far side, and ${whyNotStored(name, slot, error)}. The new ${what(slot)} `
+    + `is being kept on this machine, outside the entry. It is stored the next time you use "${name}", or within a minute. `
+    + `Until then the entry still holds the old ${what(slot)}, which no longer works.`
+  );
+}
+
+function keptForThePin(name: string, slot: RotationSlot): string {
   return (
     `The ${what(slot)} of "${name}" WAS changed on the far side. "${name}" was protected with a PIN while that ran, so the new `
     + `${what(slot)} is being kept on this machine, outside the entry, until its PIN is entered — then it is stored, sealed. `

@@ -37,20 +37,18 @@ import { KeyAddHost, offerKeyMigration } from './securityKeyAdd';
 import { snapshotForRevision } from './revisionSnapshot';
 import { judgeOrgRecovery } from './orgRecoveryPinning';
 import { readOrgAccessInto } from './orgRecoveryAccess';
-import { policyHeartbeatKey } from './corpPolicy';
+import { CorpPolicyState, policyHeartbeatKey } from './corpPolicy';
 import { refreshOrgPolicy } from './orgPolicyRefresh';
 import { checkBackups } from './backupWatch';
 import { corpPolicyWiring, policiedAccounts, vscodeBackupWatch } from './corpPolicyWiring';
-import { CorpPolicyState } from './corpPolicy';
 import { LoginKeySession } from './devLoginKeySession';
 import { evictAndLock, wireCorpEscrow, wireDevBinding } from './corpBindingWiring';
 import { RecoverySessionKeys } from './breakGlass';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
-import { ArrivalHighlights } from './arrivalHighlight';
+import { ARRIVAL_WINDOW_MS, ArrivalHighlights } from './arrivalHighlight';
 import { ViewerClicks } from './viewerClicks';
 import { warnIfKeyringMissing } from './keyringWarningHost';
 import { AgentDoors, DoorSources, doorsOf } from './agentDoors';
-import { ARRIVAL_WINDOW_MS } from './arrivalHighlight';
 import { DepDecorationProvider } from './depDecorations';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
 import { formPanels, lockNotice } from './formPanels';
@@ -71,8 +69,9 @@ import { maskEntriesFor } from './maskEntries';
 import { visibleConfigDetails, visibleMcpEntries } from './mcpEntries';
 import { McpEntriesCache } from './mcpEntriesCache';
 import { RotateDeps, rotateAction } from './rotateAction';
-import { storeRotated } from './rotationStore';
-import { releaseUnprotected, waitingKeys } from './rotationQuarantine';
+import { rotationCurrent, storeRotated } from './rotationStore';
+import { announceReleasesWith, releaseBeforeAutomaticUse, waitingKeys } from './rotationQuarantine';
+import { releaseAndSay, sayReleasedValues } from './rotationWaiting';
 import { generateSecret } from './secretKinds';
 import { CREDS_CLI, CredsProduct, ridFor } from './credsInstall';
 import { binaryPath, installMenu } from './binaryInstaller';
@@ -101,8 +100,7 @@ import { StoredAccount, EntityMetadata, TreeNode } from './types';
 import { mcpCreateHooks, mcpUseHooks, moveEntryToTrash } from './mcpHooks';
 import { standingConsentFor } from './mcpAccess';
 import { runVpn } from './vpnRun';
-import { nodeAt } from './entityViewerCommands';
-import { openRevisionViewer } from './entityViewerCommands';
+import { nodeAt, openRevisionViewer } from './entityViewerCommands';
 import { applyInstallChoice } from './installFlow';
 import { collectConfigHolders, configBodyReading } from './configCommands';
 import { onPath } from './installFlow';
@@ -141,6 +139,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   const storage = new StorageManager(context.globalState, context.secrets, context.globalStorageUri.fsPath);
   context.subscriptions.push(storage); // it listens to SecretStorage changes
+  announceReleasesWith(storage, sayReleasedValues); // an agent's use that stores a waiting rotated value is said (rotationWaiting.ts)
   // Seal-at-rest for the local metadata cache (audit B8): load or mint the device key and
   // seal any plaintext node slots BEFORE anything renders a tree. globalState is a plain
   // SQLite file in the profile; the topology it held (hosts, users, CLI args, env-var names)
@@ -279,14 +278,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   void sharing.reload();
 
   // NAS auto-sync (two-way merge); after pulling it re-renders the tree, stores a rotated value whose entry the pull
-  // unprotected (`rotationQuarantine.ts`), and re-reads the per-entity flags — a pulled merge can add or remove a password.
+  // unprotected and says so (`rotationWaiting.releaseAndSay`), and re-reads the per-entity flags — a pulled merge can add or remove a password.
   const sync = new SyncManager(
     storage,
     vaultKeys,
     transports,
     () => {
       provider.refresh();
-      void releaseUnprotected(storage).finally(() => void refreshEntityFlags());
+      void releaseAndSay(storage).finally(() => void refreshEntityFlags());
     },
     () => void sharing.reload(),
     (accountId) => void context.globalState.update(`syncReminder.lastOk.${accountId}`, Date.now()),
@@ -314,14 +313,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(backups);
 
   // Short-lived entries: delete what has run out of clock, renew the lease on what this window holds open, and store a
-  // rotated value whose entry is no longer protected. Started here rather than lazily: a window OPENING is when what a
+  // rotated value whose entry is no longer protected (said to the person). Started here rather than lazily: a window OPENING is when what a
   // crashed window left behind is found — that first pass is the whole crash-safety story, and a lazy start skips it.
   const ephemeral = new EphemeralSweeper(
     storage,
     context.globalState,
     (message) => log.info('ephemeral', message),
     () => provider.refresh(),
-    () => releaseUnprotected(storage),
+    () => releaseAndSay(storage),
   );
   ephemeral.start();
   context.subscriptions.push(ephemeral);
@@ -522,6 +521,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // What makes masking live: the broker asks for the grant entity's own secret values and
     // redacts them out of whatever the agent is about to read.
     maskEntriesFor: (accountId, entityId) => maskEntriesFor(storage, accountId, entityId),
+    releaseWaiting: (accountId, entityId) => releaseBeforeAutomaticUse(storage, accountId, entityId), // before the table: brokerHooks.ts
     // What makes "until an agent uses it once" real: a successful call destroys the entry through
     // the one deletion path, tombstone and revision history included.
     burnAfterUse: burnOneUseIn(storage, () => provider.refresh()),
@@ -679,10 +679,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const rotateDeps: RotateDeps = {
     generate: (kind, options) => generateSecret(kind, options),
     entity: (ctx) => storage.getNode(ctx.accountId, ctx.entityId)?.details,
-    current: (ctx, slot) =>
-      slot === 'password'
-        ? Promise.resolve(storage.getPassword(ctx.accountId, ctx.entityId))
-        : Promise.resolve(storage.getDbConnection(ctx.accountId, ctx.entityId)),
+    current: (ctx, slot) => rotationCurrent(storage, ctx, slot), // after a waiting value went in (rotationStore.ts)
     snapshot: (ctx, details) =>
       snapshotForRevision(storage, ctx.accountId, { id: ctx.entityId, name: ctx.entityName, details }),
     record: (ctx, revision) => storage.recordRevision(ctx.accountId, ctx.entityId, revision),

@@ -20,7 +20,8 @@ import { capturedRun, hostShell, osMismatch } from './hostShell';
 import { isCommandTrusted } from './commandTrust';
 import { lockToOwner, materializedKeyPath } from './materializedKeys';
 import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from './dbCliLauncher';
-import { automaticOpener, fieldReadingOf } from './secretOpener';
+import { fieldReadingOf } from './secretOpener';
+import { automaticOpenerFor } from './automaticRead';
 
 /**
  * The broker's non-SSH capabilities: a stored script, a stored terminal command, and a
@@ -303,9 +304,9 @@ export function dbQueryAction(
       }
       // Rule R2 of the entry-PIN plan: nothing automatic gets a sealed value, and the refusal is
       // SAID. Wrap first, mark second — an agent reaches this entry only while its mark is lost — and a
-      // damaged wrap as damaged (`automaticOpener`, typed-secrets plan T3: until then its text was
-      // handed to the client as the connection string).
-      const stored = fieldReadingOf(await automaticOpener(entity, await deps.storage.getDbConnection(ctx.accountId, ctx.entityId)));
+      // damaged wrap as damaged (`automaticOpenerFor`, typed-secrets plan T3: until then its text was
+      // handed to the client as the connection string), and a rotated value waiting beside an unprotected entry first.
+      const stored = fieldReadingOf(await automaticOpenerFor(deps.storage, ctx.accountId)(entity, await deps.storage.getDbConnection(ctx.accountId, ctx.entityId), 'dbConnection'));
       if (stored.kind !== 'value') {
         return fail('no_credential', stored.kind === 'withheld' ? stored.reason : `"${ctx.entityName}" has no stored connection string.`);
       }

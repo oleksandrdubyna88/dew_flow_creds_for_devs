@@ -1177,10 +1177,11 @@ inherited at read time.
 | `editPrefill.ts` | Edit over a protected entry: `openEntryForEdit`, `pinForSave`, `NOTHING_OPENED` (its `sealedWriter` moved into `entryWriter.ts` in E2) |
 | `sealingAtWrite.ts` | R3 at write time: seal, write plain, or refuse — and since E2 the `Sealing` is a branded PROOF only this module makes: `sealingAtWrite` (Edit, Restore — decided right before the first write), `sealingForNew` (a brand-new entry), `sealingForUpdate` (a share's *Update it*, doors injected), `unattendedSealing` (the rotation: plain only with no sealed slot and no mark, never sealed) |
 | `entryWriter.ts` | the ONE road from text to a stored value (E2): `EntryWriter`, `writerFor(storage, a, e, sealing, opened)` — the plain writer, EVERY write of which runs under the storage's cross-window lease with its own re-check for a proof about an entry that existed (`ProtectedMeanwhile`), and whose new-id proof is verified at the first write (no node may carry the id), or the sealing writer (sealed in memory before each raw setter, an unchanged value skipped) — plus `writerForNew` and `writeUnattended` (`UnattendedRefusal`) |
-| `rotationStore.ts` | the rotation's store: unattended first (landed → any older hold of that slot superseded); refused because the entry was protected while the far side changed → HELD beside the entry (`quarantined`, the agent answered at once, the person told by a modal nobody waits for); when even the hold fails, E2's chain, awaited (a ONE-USE entry — `burnOnUse.burnedByAgentUse` — is offered the copy ALONE, awaited before the answer, because the burn after it would take a hold or a store with it) — stored under the entry's PIN (an older hold of the slot superseded after it, as after a landed store), or offered to copy with the clipboard-history warning — never dropped |
-| `rotationQuarantine.ts` | a rotated value the vault could not store, held until the entry's PIN (`PLAN_rotation_quarantine`): one keychain item per entry (`:rotationQuarantine`, in `ENTITY_KEY_BUILDERS`, in no slot and no bundle kind), a local never-synced index, the hold (`holdRotated` with a salted `Fingerprint` of the replaced value — HMAC-SHA-256 under 16 random bytes drawn per hold; `supersedeHeld`), the release (`releaseHeld` with the `AT_THE_DOOR` or `UNATTENDED` proof, `dropHeld`, `releaseUnprotected`), the deletion with an entry a bundle apply removes (`forgetHeld`) and the tree's and the delete confirmations' reads (`waitingKeys`, `waitingUnder`); the ONLY module that names the item (`rotationQuarantineBoundary.test.ts`) |
-| `rotationWaiting.ts` | the person's words for it: what the door released, the conflict question (*Store the rotated one* / *Keep the current one*), the row's *rotated password waiting* hint, the sentence a permanent delete — Delete, Empty Trash, *Burn Now…* — adds |
-| `secretOpener.ts` / `pinClick.ts` | the automatic opener and the click opener every sink stands behind; since E2 also `fieldReadingOf` (an opener's answer as a `FieldReading`), the owner-less reads `plainText` (hygiene) and `unsealedText` (masker, tree hints), and `pinClick.grantedOpener` (the click opener's silent half, for a value read right after a door) |
+| `rotationStore.ts` | `rotationCurrent` — what the rotation replaces, read after a waiting value went in (the security review's fix 2) — and the rotation's store: unattended first (landed → any older hold of that slot superseded); refused because the entry was protected while the far side changed, or failed for any other reason → HELD beside the entry (`quarantined`, the agent answered at once, the person told by a modal nobody waits for — which names the PIN only for a PIN refusal; after any other failure it names that failure, says the value goes in at the entry's next use or within a minute, and offers *Store it now*, the door, which asks nothing on a plain entry — `PLAN_waiting_rotation_visible` W3); when even the hold fails, E2's chain, awaited (a ONE-USE entry — `burnOnUse.burnedByAgentUse` — is offered the copy ALONE, awaited before the answer, because the burn after it would take a hold or a store with it) — stored under the entry's PIN (an older hold of the slot superseded after it, as after a landed store), or offered to copy with the clipboard-history warning — never dropped |
+| `rotationQuarantine.ts` | a rotated value the vault could not store, held until the entry's PIN (`PLAN_rotation_quarantine`): one keychain item per entry (`:rotationQuarantine`, in `ENTITY_KEY_BUILDERS`, in no slot and no bundle kind), a local never-synced index, the hold (`holdRotated` with a salted `Fingerprint` of the replaced value — HMAC-SHA-256 under 16 random bytes drawn per hold; `supersedeHeld`), the release (`releaseHeld` with the `AT_THE_DOOR` or `UNATTENDED` proof, `dropHeld`, `releaseUnprotected`), the deletion with an entry a bundle apply removes (`forgetHeld`) and the tree's and the delete confirmations' reads (`waitingKeys`, `waitingUnder`); since `PLAN_waiting_rotation_visible` also `isWaiting` (the index ALONE — a memento read, no keychain `get` — which a click on an unprotected entry asks before taking the door, W1), `releaseBeforeAutomaticUse` (the release `automaticRead.automaticOpenerFor` makes at every automatic read, W5, telling the person through the words `announceReleasesWith(storage, …)` gave THAT storage — kept on its `QuarantineStore`, never in this module) and `releaseUnprotected` answering WHICH values went in (`ReleasedValue`, entry name and slot, W6); the ONLY module that names the item (`rotationQuarantineBoundary.test.ts`) |
+| `rotationWaiting.ts` | the person's words for it: what the door released, the conflict question (*Store the rotated one* / *Keep the current one*), the row's *rotated password waiting* hint (its tooltip names the PIN only for an entry that carries the mark; an unprotected one's says the value goes in at the next use or within a minute — W3), the sentence a permanent delete — Delete, Empty Trash, *Burn Now…* — adds, `releaseAndSay` — the sweeper's and the post-pull release, each value said once in the door's words (W6) — and `sayReleasedValues`, the same words for an agent's release |
+| `automaticRead.ts` | `automaticOpenerFor(storage, accountId)` — the ONE automatic opener (`PLAN_waiting_rotation_visible` W5, the code round of 2026-10-03): a rotated value waiting beside an unprotected owner goes in first and a value read before it is re-read, then `secretOpener.automaticOpener` decides; every automatic reader opens through it, and the bare opener is named nowhere else (scanned in `waitingRotationVisible.test.ts`) |
+| `secretOpener.ts` / `pinClick.ts` | the automatic opener and the click opener every sink stands behind; since E2 also `fieldReadingOf` (an opener's answer as a `FieldReading`), the owner-less reads `plainText` (hygiene) and `unsealedText` (masker, tree hints), and `pinClick.grantedOpener` (the click opener's silent half, for a value read right after a door); the click opener skips the door for an unmarked entry with an unsealed value UNLESS the local index lists a rotated value waiting beside it (`needsDoor` asks `rotationQuarantine.isWaiting` last — `PLAN_waiting_rotation_visible` W1) |
 | `historyPin.ts` / `historyHeal.ts` / `revisionDoor.ts` | kept versions: sealed, healed at the door, opened through the live entry's door |
 | `revisionRestore.ts` / `restoreVersion.ts` | *Restore This Version…*: the command, and the writes in the order that keeps R3 — a plain restore through `writerFor` with its plain proof (under the lease, re-checked), a sealed one with every value sealed first |
 | `shareUpdateSeal.ts` | a share's *Update it* into a protected entry: the door, then every arriving value sealed; into an entry protected while empty, its first PIN first — since E2 the decision is `sealingAtWrite.sealingForUpdate` and the writer `entryWriter.writerFor`, never the storage itself |
@@ -1591,6 +1592,57 @@ proof. Getters and setters were still `string` then; E3 flipped them to `StoredS
   (`EphemeralSweeper.releaseWaiting`), a pulled sync — `releaseUnprotected`/`releaseHeld` with the
   `UNATTENDED` proof store it PLAIN in an entry that is neither marked nor sealed, exactly the store the
   rotation would have made; a protected entry's hold is left alone, even while this window holds its PIN.
+- **A value waiting beside an UNPROTECTED entry is used and said** (`todo/PLAN_waiting_rotation_visible.md`,
+  W1/W3/W5/W6; the share door's W2 is still open). An unprotected entry holds one when the rotation's store
+  failed for a reason other than the PIN (a keychain error — `heldOrHanded` holds on every failure), or when
+  its PIN was removed by a sync or another window after the hold. Until this plan a click skipped the door for
+  such an entry and used the replaced password until the sweep's tick (≤60 s), an agent did the same, and the
+  sweep's release went to the log alone.
+  - **A click takes the door when, and only when, something waits** (W1). `pinClick.needsDoor` asks, last,
+    `rotationQuarantine.isWaiting` — the local index alone, a memento read — so an unlisted entry's click still
+    reads the clicked slot and nothing else. A listed one goes down the protected road: `beforeTheDoor` →
+    `pinPrompt.admitted` → `admit`'s unlocked branch, which releases under `AT_THE_DOOR` → `plainOver(false)`
+    (the plain writer, re-checked under the lease) → `settleRelease` says *"The new password of "X" from <time>
+    is now stored."* (no "sealed" for a plain slot) and asks a conflict after the release returned (no lease
+    across the modal) → `rereadAfter`, so the click opens the released value. A PIN box appears only for a SEALED slot: an entry whose mark was lost while a slot stayed sealed is asked for its PIN at that door, which is right by R3 — an entry with no mark and nothing sealed is never asked. A release that fails keeps the item and the index entry; the click uses
+    the stored value and the row keeps saying the value waits.
+  - **Every automatic read releases first, unattended — by construction** (W5, the owner's decision; the code
+    round of 2026-10-03). `automaticRead.automaticOpenerFor(storage, accountId)` is the ONE automatic opener:
+    before `secretOpener.automaticOpener` decides (sealed or claiming a PIN → refused, damaged → refused), it asks
+    the index (`isWaiting`, no keychain read for an unlisted owner); for a listed owner it takes `beforeTheDoor`'s
+    snapshot, releases (`rotationQuarantine.releaseBeforeAutomaticUse` — the sweep's own `releaseIfUnprotected`:
+    a marked or sealed owner is skipped before its slots are walked, otherwise `releaseHeld` with the
+    `UNATTENDED` proof) and re-reads a value its reader read before the release. Every automatic reader opens
+    through it: `creds_query` (`agentUseActions.dbQueryAction`), `envApply.bindableFieldReading` (env apply,
+    `creds_export_env`, `creds://` through `entityFieldReading`, the viewer's set-env), notes and TOTP
+    references, config bodies (`configCommands`), the deploy key (`transportFactory`), the agent's ssh credential
+    (`sshCredential`'s default opener; the person's Connect passes a click opener whose door says it) and the SSH
+    agent's startup sweep (`sshAgentManager.load`'s default). The bare `automaticOpener` is named only in
+    `secretOpener.ts` and `automaticRead.ts`, and `waitingRotationVisible.test.ts` scans for any other use. A
+    conflict is never decided there: nothing is written, the item and its index entry stay, the reader gets what
+    is stored and the person's next door asks. The opener re-reads only a value read from the RELEASED slot — the
+    reader names it — `SecretOpener`'s third parameter, REQUIRED (`RotationSlot | undefined`, so every reader and
+    click states its slot or `undefined`; the compile-fail harness keeps it required) — and a slot that was EMPTY
+    before the rotation is re-read too (`undefined` compared as what the slot held) — never one whose text merely
+    equals the replaced value (the security review, fix 3: notes equal to the old password came back as the new
+    password). **The broker releases first** (fix 1): `CredsAgentServer.handle` runs the `releaseWaiting` hook
+    (`rotationQuarantine.releaseBeforeAutomaticUse`) BEFORE `tableOrFail`, so the pre-run mask table holds the value
+    the action will use and a printed new password is masked; the opener's release stays the backstop. **A rotation
+    fingerprints what it really replaces** (fix 2): `RotateDeps.current` is `rotationStore.rotationCurrent`, which
+    releases before it reads, so a failed store's hold carries the `was` of the value the statement ran against.
+    What went in is SAID (the owner's follow-up): through
+    `storage.heldRotations.announce`, the words THAT storage was given — `announceReleasesWith(storage, …)`,
+    which `extension.ts` calls once at activation with `rotationWaiting.sayReleasedValues` (the code round: per
+    storage, never a module-level hook). An info message, never a modal, never awaited, so the agent's call is
+    not held; injected because the quarantine module and every automatic reader stay free of `vscode`.
+  - **The sweep and a pulled sync say what they stored** (W6 and the owner's follow-up): `releaseUnprotected`
+    returns `ReleasedValue[]` and `rotationWaiting.releaseAndSay` — what `extension.ts` wires into
+    `EphemeralSweeper.releaseWaiting` AND calls in the sync's post-pull callback — says each once in the door's
+    words; a pass that stored nothing says nothing.
+  - **The words match the entry** (W3): the hold's modal names the PIN only for `UnattendedRefusal`; after any
+    other failure it names that failure (`whyNotStored`), says *"It is stored the next time you use "X", or
+    within a minute"*, and its button is *Store it now* (the door, which asks nothing on a plain entry). The
+    row's tooltip says *"open the entry and enter its PIN"* only for an entry with the mark.
 - **The rotation's own answer never carries the new value** (Q1 of that plan). It masks its answer with
   the values it holds — the drawn secret and the stored form — whatever the store did, and on the failed
   statement's path too (`rotateAction.maskedAnswer`). The broker's post-run table could not: a value
@@ -3033,7 +3085,9 @@ at all, which is why `maskEntriesFor` throws `MaskSourceUnavailable` rather than
 list; an entity that exists and holds no secrets still runs normally.
 
 The order is the fix: the table is read first, and a read that will not answer refuses the call while
-there is still nothing to undo. Then `run` → re-read → mask → log → answer → burn. The re-read happens
+there is still nothing to undo. (Just before it, the `releaseWaiting` hook stores a rotated value waiting beside the
+grant's unprotected entry, so the table holds the value the action will use — `PLAN_waiting_rotation_visible`, the
+security review's fix 1.) Then `run` → re-read → mask → log → answer → burn. The re-read happens
 only for an action that declares `mutatesSecrets` — a ROTATION writes its new value *during* the run,
 so no earlier table can hold it, and a failed re-read there WITHHOLDS rather than falling back to a
 table that would mask the old credential and send the fresh one in the clear. The same rule covers the

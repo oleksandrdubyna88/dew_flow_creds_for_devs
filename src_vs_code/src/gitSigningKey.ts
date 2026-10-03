@@ -42,7 +42,7 @@ function publishedHalf(details: EntityMetadata): string | undefined {
 }
 
 async function fromPrivateKey(storage: StorageManager, accountId: string, details: EntityMetadata): Promise<string | undefined> {
-  const opened = await clickedSecret(storage, accountId, details, readKey, 'read its public key');
+  const opened = await clickedSecret(storage, accountId, details, readKey, 'read its public key', undefined);
   if (opened.kind !== 'open') {
     return undefined;
   }

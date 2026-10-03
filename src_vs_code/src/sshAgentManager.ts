@@ -7,7 +7,8 @@ import { withTimeout } from './withTimeout';
 import { describeError } from './describeError';
 import { AgentKey, SshAgentServer, agentSocketPath } from './sshAgentServer';
 import { ParsedSshKey, parseSshPrivateKey } from './sshKeyParse';
-import { SecretOpener, automaticOpener } from './secretOpener';
+import { SecretOpener } from './secretOpener';
+import { automaticOpenerFor } from './automaticRead';
 import {
   ALLOW_ONCE,
   ALLOW_WINDOW,
@@ -121,7 +122,7 @@ export class SshAgentManager implements vscode.Disposable {
    * every reason `parseSshPrivateKey` gives is.
    *
    * <p>`open` is how the stored key is opened (entry-PIN plan, D6/D7): the startup sweep takes the
-   * default, `automaticOpener`, which refuses a protected key with the PIN sentence and never
+   * default, `automaticOpenerFor`, which refuses a protected key with the PIN sentence and never
    * prompts; the *Add Key to Agent* click passes a click opener, which asks that entry's PIN. A
    * click's stop comes back with `reason: ''` — it has been said already, or the person declined.
    * Until 1.12 both parsed the envelope and said the key "could not be read".</p>
@@ -129,9 +130,9 @@ export class SshAgentManager implements vscode.Disposable {
   async load(
     accountId: string,
     details: EntityMetadata,
-    open: SecretOpener = automaticOpener,
+    open: SecretOpener = automaticOpenerFor(this.storage, accountId),
   ): Promise<{ ok: true; fingerprint: string } | { ok: false; reason: string }> {
-    const opened = await open(details, await this.storage.getPrivateKey(accountId, details.id));
+    const opened = await open(details, await this.storage.getPrivateKey(accountId, details.id), undefined);
     if (opened.kind === 'stopped') {
       return { ok: false, reason: opened.reason };
     }

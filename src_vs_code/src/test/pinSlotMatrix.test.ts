@@ -308,7 +308,7 @@ async function prefillHolds(w: World, field: SlotField): Promise<void> {
 
 /** The click door every sink stands behind. */
 async function clickOpens(w: World): Promise<void> {
-  const clicked = await w.m.click.clickedSecret(w.storage, ACCOUNT, w.details, w.slot.read, 'use it');
+  const clicked = await w.m.click.clickedSecret(w.storage, ACCOUNT, w.details, w.slot.read, 'use it', undefined);
   assert.ok(clicked.kind === 'open', `the click was stopped: ${JSON.stringify(clicked)}`);
   assert.equal(w.fixture.canon(String(clicked.value)), w.fixture.canon(w.fixture.plain), 'the sink got something other than the plaintext');
 }

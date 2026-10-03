@@ -6,6 +6,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a rotated value waiting beside an entry WITHOUT a PIN is used, and you are told (2026-10-03)
+
+- **A click on an entry whose rotated password was waiting used the old one.** A rotation that could not
+  store its new value keeps it beside the entry — and that happens to an entry with no PIN too, when the
+  store failed for another reason (a keychain error) or after the PIN was removed in another window or by a
+  sync. Until the background sweep stored it (up to a minute), **Copy Password**, **Connect SSH** and every
+  other click handed out the password the far side no longer accepts. Now a click on such an entry stores the
+  waiting value first, says *"The new password of "X" from … is now stored."*, and uses it; if the stored value
+  changed after the rotation, it asks which one the far side accepts. No PIN is asked, and a click on any
+  other entry costs what it did.
+- **An agent's use did the same.** `creds_query`, `creds_exec`, an environment binding, `creds_export_env`
+  and a `creds://` reference now store a value waiting beside an unprotected entry first — exactly the store
+  the rotation would have made — use the new one, and tell you so (a notification, never a dialog: the
+  agent's call does not wait for you). A value whose stored counterpart changed after the rotation is never
+  decided automatically: the agent uses what is stored, and your next click asks.
+- **The background sweep, and the store right after a sync, put a waiting value in without telling you.**
+  Both now say so, once per value, in the same words as every other place that stores one.
+- **The help says all of it in every language**, and a test now fails if a translation drops it.
+- **The waiting modal and the row named a PIN on an entry without one.** After a keychain failure the modal
+  said the entry "was protected with a PIN" and the row's tooltip said to enter its PIN. Both now say what
+  happened and when the value goes in; the modal's button is **Store it now**, which asks for nothing on an
+  entry without a PIN.
+
 ## [1.12.1] — 2026-10-02 — A protected entry is never written in the clear, and a rotation a PIN refused waits for that PIN
 
 ### Fixed — an agent's rotation could hand it the new secret (2026-10-01)

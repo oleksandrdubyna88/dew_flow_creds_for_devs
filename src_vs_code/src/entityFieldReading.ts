@@ -1,7 +1,8 @@
 import { BindableField } from './envBinding';
 import { EntityMetadata } from './types';
 import { FieldReading, readingOf } from './fieldReading';
-import { automaticOpener, fieldReadingOf } from './secretOpener';
+import { fieldReadingOf } from './secretOpener';
+import { automaticOpenerFor } from './automaticRead';
 import { stored } from './storedSecret';
 import { bindableFieldReading } from './envApply';
 import { SecretRefField } from './secretRef';
@@ -53,7 +54,7 @@ function fieldOf(
 /**
  * The stored note, or the plaintext one an older entry still carries in its metadata — withheld, with
  * the sentence, for a protected entry (entry-PIN plan, D7: until 1.12 a reference resolved to the
- * envelope). Opened by `automaticOpener`, which asks the wrap first and the mark second exactly as the
+ * envelope). Opened by `automaticOpenerFor`, which asks the wrap first and the mark second exactly as the
  * env bindings do, and refuses a damaged wrap as damaged (typed-secrets plan, T3 — until then its text
  * resolved as the note). The metadata note is what is stored for an older entry, so it is opened the same way.
  */
@@ -64,7 +65,7 @@ async function notesReading(
 ): Promise<FieldReading> {
   const held = await storage.getNotes(accountId, details.id);
   // A metadata value read as the plain stored form it is: the legacy note kept in node metadata.
-  return fieldReadingOf(await automaticOpener(details, held ?? stored(details.notes)), details);
+  return fieldReadingOf(await automaticOpenerFor(storage, accountId)(details, held ?? stored(details.notes), undefined), details);
 }
 
 /**
@@ -78,6 +79,6 @@ async function totpReading(
   details: EntityMetadata,
   now: number,
 ): Promise<FieldReading> {
-  const seed = fieldReadingOf(await automaticOpener(details, await storage.getTotp(accountId, details.id)), details);
+  const seed = fieldReadingOf(await automaticOpenerFor(storage, accountId)(details, await storage.getTotp(accountId, details.id), undefined), details);
   return seed.kind === 'value' ? readingOf(totpSnapshot(seed.value, now)?.code) : seed;
 }
