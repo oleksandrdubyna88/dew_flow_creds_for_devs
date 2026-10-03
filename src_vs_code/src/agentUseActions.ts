@@ -21,6 +21,7 @@ import { isCommandTrusted } from './commandTrust';
 import { lockToOwner, materializedKeyPath } from './materializedKeys';
 import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from './dbCliLauncher';
 import { automaticOpener, fieldReadingOf } from './secretOpener';
+import { releaseBeforeAutomaticUse } from './rotationQuarantine';
 
 /**
  * The broker's non-SSH capabilities: a stored script, a stored terminal command, and a
@@ -304,7 +305,9 @@ export function dbQueryAction(
       // Rule R2 of the entry-PIN plan: nothing automatic gets a sealed value, and the refusal is
       // SAID. Wrap first, mark second — an agent reaches this entry only while its mark is lost — and a
       // damaged wrap as damaged (`automaticOpener`, typed-secrets plan T3: until then its text was
-      // handed to the client as the connection string).
+      // handed to the client as the connection string). A rotated connection string waiting beside an
+      // unprotected entry goes in first (`PLAN_waiting_rotation_visible.md` W5).
+      await releaseBeforeAutomaticUse(deps.storage, ctx.accountId, ctx.entityId);
       const stored = fieldReadingOf(await automaticOpener(entity, await deps.storage.getDbConnection(ctx.accountId, ctx.entityId)));
       if (stored.kind !== 'value') {
         return fail('no_credential', stored.kind === 'withheld' ? stored.reason : `"${ctx.entityName}" has no stored connection string.`);

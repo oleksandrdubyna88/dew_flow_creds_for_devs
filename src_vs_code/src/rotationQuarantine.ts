@@ -507,6 +507,22 @@ export async function releaseUnprotected(storage: StorageManager): Promise<numbe
   return released;
 }
 
+/**
+ * Before an AGENT's automatic read of these entries (`PLAN_waiting_rotation_visible.md` W5, the owner's decision
+ * §9.1): a rotated value waiting beside an UNPROTECTED entry goes in first — the sweep's own release, with the
+ * UNATTENDED proof, i.e. exactly the store the rotation would have made (the plain writer, re-checked under the
+ * lease). Never a PIN, never a modal: a marked or sealed entry is left to the person's door, and a CONFLICT is
+ * written nowhere — the agent reads what is stored and the person's next door asks. The index is asked first,
+ * so an unlisted entry — every entry, almost always — costs one memento read and no keychain `get`. Never throws.
+ */
+export async function releaseBeforeAutomaticUse(storage: StorageManager, accountId: string, ...entityIds: readonly string[]): Promise<void> {
+  for (const entityId of entityIds) {
+    if (await isWaiting(storage, accountId, entityId).catch(() => false)) {
+      await releaseIfUnprotected(storage, { accountId, entityId }).catch(() => 0);
+    }
+  }
+}
+
 async function releaseIfUnprotected(storage: StorageManager, entry: HeldEntry): Promise<number> {
   const node = storage.getNode(entry.accountId, entry.entityId);
   if (node === undefined) {

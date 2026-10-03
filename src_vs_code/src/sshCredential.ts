@@ -2,6 +2,7 @@ import { EntityMetadata } from './types';
 import { StorageManager } from './storageManager';
 import { OpenedSecret, SecretOpener, automaticOpener } from './secretOpener';
 import type { StoredSecret } from './storedSecret';
+import { releaseBeforeAutomaticUse } from './rotationQuarantine';
 
 /**
  * What an SSH connection should authenticate with, resolved from the vault.
@@ -92,6 +93,7 @@ async function passwordOf(
   open: SecretOpener,
   warning: string | undefined,
 ): Promise<SshCredentialSource | SshCredentialStopped> {
+  await waitingStoredFirst(storage, accountId, open, [keySource.id, entity.id]);
   const { owner, stored } = await passwordOwner(storage, accountId, entity, keySource);
   if (stored === undefined) {
     return { kind: 'none', warning };
@@ -101,6 +103,17 @@ async function passwordOf(
     return { kind: 'stopped', reason: opened.reason, ownerName: owner.name, warning };
   }
   return opened.value === undefined ? { kind: 'none', warning } : { kind: 'password', password: opened.value, warning };
+}
+
+/**
+ * The AGENT's road — the automatic opener, the default — stores a rotated password waiting beside an
+ * unprotected owner first (`PLAN_waiting_rotation_visible.md` W5). The person's Connect passes a click opener,
+ * whose own door stores it and says so (W1), so it is not released here behind that door's back.
+ */
+async function waitingStoredFirst(storage: StorageManager, accountId: string, open: SecretOpener, owners: readonly string[]): Promise<void> {
+  if (open === automaticOpener) {
+    await releaseBeforeAutomaticUse(storage, accountId, ...owners);
+  }
 }
 
 async function passwordOwner(

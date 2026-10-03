@@ -230,3 +230,126 @@ test('the row of an entry with NO PIN names no PIN in its tooltip; a protected e
   assert.match(marked, /open the entry and enter its PIN to store it/, 'a protected entry\'s row no longer says how to store the waiting value');
   assert.equal(waitingHint(details(), true).description, 'rotated password waiting');
 });
+
+// ---- W5: an agent's use of an unprotected entry stores a waiting value first (the owner's decision §9.1) ----
+
+const DB = 'db1';
+const OLD_CONN = 'mysql://app:old-password-9f2c@db-01.example.internal:3306/orders';
+const NEW_CONN = 'mysql://app:HELD-rotated-77ab@db-01.example.internal:3306/orders';
+const OTHER_CONN = 'mysql://app:CHANGED-elsewhere-5e0f@db-01.example.internal:3306/orders';
+const DB_CTX = { accountId: ACCOUNT, entityId: DB, entityName: 'orders-db' };
+
+const dbDetails = (): EntityMetadata => ({ id: DB, name: 'orders-db', kind: 'db', isSshEnabled: false, dbType: 'mysql' }) as EntityMetadata;
+
+interface AgentWorld {
+  readonly storage: StorageManager;
+  readonly reads: string[];
+  readonly written: string[];
+  /** The environment each launched database client was handed — where the connection's password travels. */
+  readonly launched: string[];
+  readonly query: () => Promise<unknown>;
+}
+
+/**
+ * An UNPROTECTED database entry whose slot holds `live`, with — when `waiting` — a rotated connection string
+ * held beside it that replaced `OLD_CONN`, and the REAL `creds_query` action over it, the client's launch
+ * captured instead of spawned.
+ */
+async function agentWorld(live: string = OLD_CONN, waiting = true): Promise<AgentWorld> {
+  const s = sinks();
+  const stub = clickVscode([], s);
+  const reads: string[] = [];
+  const written: string[] = [];
+  const launched: string[] = [];
+  const storage = memoryStorage(stub, written, reads);
+  await seedEntry(storage, dbDetails(), { 'database connection': live });
+  if (waiting) {
+    await holdRotated(storage, ACCOUNT, DB, 'dbConnection', NEW_CONN, await fingerprintOf(OLD_CONN));
+  }
+  const runner = { ...(require('../sshExecRunner') as object), runBounded: (_exe: string, _args: string[], _shell: boolean, options: { env?: object }) => {
+    launched.push(JSON.stringify(options.env ?? {}));
+    return Promise.resolve({ exitCode: 0, stdout: '', stderr: '' });
+  } };
+  const [{ dbQueryAction }] = loadEachWithVscode(['../agentUseActions'], stub, { './sshExecRunner': runner }) as [typeof import('../agentUseActions')];
+  const action = dbQueryAction({
+    storage,
+    storageDir: '/tmp/does-not-matter',
+    signal: new AbortController().signal,
+    acquireExecSlot: () => () => undefined,
+    note: () => undefined,
+    trustStore: { get: () => [], update: () => Promise.resolve() },
+    applyEnv: () => Promise.resolve({ written: [], withheld: [] }),
+    onPath: () => true,
+  });
+  reads.length = 0;
+  written.length = 0;
+  return { storage, reads, written, launched, query: () => action.run(DB_CTX, { query: 'select 1' }) };
+}
+
+const connNow = async (w: AgentWorld): Promise<string | undefined> => carried(await w.storage.getDbConnection(ACCOUNT, DB));
+
+const heldConn = async (w: AgentWorld): Promise<string | undefined> => carried((await w.storage.heldRotations.read(ACCOUNT, DB)).dbConnection?.value);
+
+test('an agent\'s query against an UNPROTECTED entry with a rotated connection string waiting uses the NEW one — stored plain first, the hold gone', async () => {
+  const w = await agentWorld();
+
+  await w.query();
+
+  assert.equal(w.launched.length, 1, 'the setup: the database client was never launched');
+  assert.match(w.launched[0], /HELD-rotated-77ab/, 'the agent\'s query used the connection string the rotation replaced');
+  assert.equal(await connNow(w), NEW_CONN, 'the entry still holds the old connection string after the agent used it');
+  assert.equal(await heldConn(w), undefined, 'the held value survived its release');
+  assert.deepEqual(await w.storage.heldRotations.listed(), [], 'the index still names a released entry');
+});
+
+test('an agent\'s query when the stored connection string changed after the rotation: nothing written, the stored one used, the hold waits for the person', async () => {
+  const w = await agentWorld(OTHER_CONN);
+
+  await w.query();
+
+  assert.match(w.launched[0] ?? '', /CHANGED-elsewhere-5e0f/, 'the agent did not use the stored connection string');
+  assert.deepEqual(w.written, [], 'a conflict was resolved automatically');
+  assert.equal(await heldConn(w), NEW_CONN, 'the conflicting hold was dropped without the person');
+});
+
+test('an agent\'s query against an entry with nothing waiting reads no :rotationQuarantine key', async () => {
+  const w = await agentWorld(OLD_CONN, false);
+
+  await w.query();
+
+  assert.match(w.launched[0] ?? '', /old-password-9f2c/);
+  assert.ok(!w.reads.includes(rotationQuarantineSecretKey(ACCOUNT, DB)), 'an unlisted entry\'s agent use read the held-rotation item');
+});
+
+test('a MARKED entry\'s waiting value is left to the person\'s door — an agent\'s use writes nothing', async () => {
+  const w = await agentWorld();
+  await w.storage.updateDetailsFields(ACCOUNT, DB, { pinProtected: true });
+  w.written.length = 0;
+
+  await w.query();
+
+  assert.deepEqual(w.written, [], 'an agent\'s use stored a waiting value into an entry that claims a PIN');
+  assert.equal(await heldConn(w), NEW_CONN);
+  assert.deepEqual(w.launched, [], 'an entry that claims a PIN was used automatically');
+});
+
+test('env apply and creds:// (bindableFieldReading) on an unprotected entry with a rotated password waiting read the NEW one', async () => {
+  const w = await world();
+  const [{ bindableFieldReading }] = loadEachWithVscode(['../envApply'], clickVscode([], w.s)) as [typeof import('../envApply')];
+
+  const reading = await bindableFieldReading(w.storage, ACCOUNT, details(), 'password');
+
+  assert.deepEqual(reading, { kind: 'value', value: NEW }, 'the binding read the password the rotation replaced');
+  assert.equal(await slotNow(w), NEW);
+  assert.equal(await stillHeld(w), false);
+});
+
+test('the agent\'s ssh credential (the automatic opener) on an unprotected entry with a rotated password waiting is the NEW password', async () => {
+  const w = await world();
+  const [{ resolveSshCredential }] = loadEachWithVscode(['../sshCredential'], clickVscode([], w.s)) as [typeof import('../sshCredential')];
+
+  const source = await resolveSshCredential(w.storage, ACCOUNT, { ...details(), kind: 'ssh', isSshEnabled: true });
+
+  assert.equal(source.kind === 'password' && source.password, NEW, 'the agent\'s ssh login used the password the rotation replaced');
+  assert.equal(await stillHeld(w), false);
+});

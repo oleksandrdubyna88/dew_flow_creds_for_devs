@@ -11,6 +11,7 @@ import { EntityMetadata } from './types';
 import { FieldReading, readingOf, valueOf, withheld } from './fieldReading';
 import { pinFieldRefusal } from './pinGate';
 import { OpenedSecret, automaticOpener, fieldReadingOf } from './secretOpener';
+import { releaseBeforeAutomaticUse } from './rotationQuarantine';
 import { StoredSecret, stored } from './storedSecret';
 
 /**
@@ -108,6 +109,8 @@ export async function bindableFieldReading(
   if (woven !== '') {
     return withheld(woven);
   }
+  // A rotated value waiting beside an unprotected entry goes in first (`PLAN_waiting_rotation_visible.md` W5).
+  await releaseBeforeAutomaticUse(storage, accountId, details.id);
   const reading = fieldReadingOf(await openedField(storage, accountId, details, field), details);
   return field === 'dbPassword' ? dbPasswordOf(reading) : reading;
 }
