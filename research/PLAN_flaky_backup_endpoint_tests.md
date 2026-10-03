@@ -1,11 +1,11 @@
 # PLAN — a finished backup run is audited before it says so, and its tests wait for what they assert
 
-> Status: **built 2026-10-02 on `fix/backup-audit-first` (`81d56e47`, `693b7fc9`, the wait helper); code round and PR pending.** Scope: `src_minimalapi_server/src/BackupRunner.cs`
+> Status: **IMPLEMENTED, 2026-10-02** (PR #185). **Deviation:** the shared-state trace (§2.1) found the LOCAL failure was not load at all but a real product defect — on Windows a status replace was refused while a reader had the file open — fixed in `VaultStore.MoveIntoPlaceAsync` (`81d56e47`); the 15 s budget is only the load's margin. The CI failure was the audit order, fixed as planned (`693b7fc9`). Code-round findings fixed in `89318c61` (a monotonic deadline, a poller that always stops). **Open tail:** none. Scope: `src_minimalapi_server/src/BackupRunner.cs`
 > (the order of the terminal status and the `BackupTaken` row), `src_minimalapi_server/tests/BackupEndpointTests.cs`
 > and the shared wait in `src_minimalapi_server/tests/Corp.cs`.
 >
-> Related: [module_server.md](../research/module_server.md); found while releasing
-> extension 1.12.1 / mcp 0.9.1 ([PLAN_rotation_quarantine.md](../research/PLAN_rotation_quarantine.md)).
+> Related: [module_server.md](module_server.md); found while releasing
+> extension 1.12.1 / mcp 0.9.1 ([PLAN_rotation_quarantine.md](PLAN_rotation_quarantine.md)).
 
 ## 1. The symptom
 
@@ -104,4 +104,4 @@ Built on Opus 5.5 (the plan's implementing agent found the shared state; the mai
 - [x] The shared-state trace recorded (what is shared, what is isolated) before any budget changed.
 - [x] Every backup wait in `BackupEndpointTests` goes through one helper with the 15 s budget.
 - [x] The server suite green three runs in a row under load, Debug and Release, via the test executable.
-- [ ] Module docs updated; coai plan round and code round `proceed`; plan promoted when done.
+- [x] Module docs updated; coai plan round (`7c3acd1c`, proceed, 4 accepted) and code round `proceed` (the first attempt reviewed nothing — all four reviewers rate-limited; the person had it run again: 4 of 4, 3 findings, all accepted and fixed in `89318c61`); plan promoted.
