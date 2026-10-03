@@ -27,7 +27,8 @@ import type { RotationSlot } from './secretRotation';
  * rotated value waiting beside it (`rotationQuarantine.isWaiting`, the index alone, no keychain read). Then the
  * click takes the door a protected entry takes, whose unlocked branch stores the waiting value plain, says so
  * and asks a conflict, so the click uses the new value instead of the one the rotation replaced
- * (`PLAN_waiting_rotation_visible.md` W1). No PIN box can appear: the door asks only when a slot is locked.</p>
+ * (`PLAN_waiting_rotation_visible.md` W1). A PIN box appears only when a slot is SEALED — an entry whose mark was
+ * lost while a slot stayed sealed is asked at this door, rightly (R3); an unmarked entry with nothing sealed never is.</p>
  */
 
 /** How a slot is read — `SecretSlot.read`'s shape, so a row of the slot table can be passed as it is. */

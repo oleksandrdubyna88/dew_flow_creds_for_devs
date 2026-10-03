@@ -2,8 +2,8 @@
 
 > Status: **partly built, 2026-10-03 — W1, W3, W5 and W6 are in (`1bceeabb`, `ac19cdcd`, `e0e65b58`,
 > `bf3a6c3b`) with W4's docs, the owner's three follow-ups (§10.7) and the code round's two fixes (§10.8, the
-> round passed: proceed, 4 of 4); W2 waits on the sibling plan's B1; the promotion is open (§10 records what was
-> built differently).** Planned 2026-10-02. Scope: `src_vs_code/src` — `pinClick.ts`,
+> round passed: proceed, 4 of 4) and the security review's three fixes (§10.9); W2 waits on the sibling plan's B1;
+> the promotion is open (§10 records what was built differently).** Planned 2026-10-02. Scope: `src_vs_code/src` — `pinClick.ts`,
 > `pinPrompt.ts` (one half of `admitted` extracted), `shareInbox.ts` (one line, after the extraction its sibling
 > plan owns), `rotationQuarantine.ts` (one index-only read exported), `rotationStore.ts` and
 > `rotationWaiting.ts` (wording), and their tests. Extension only; no format, contract or server change.
@@ -85,7 +85,9 @@ Why it is the same write as the sweep's: for an entry with no mark and no sealed
 re-checked under the lease (`entryWriter.ts:159-166`), refusing with `ProtectedMeanwhile` if the entry was
 protected meanwhile. What the door adds is exactly what the owner asked for: `settleRelease` says *"The new
 password of "X" from <time> is now stored."* (`rotationWaiting.ts:94-97` — no "sealed" for a plain slot) and
-asks a conflict. **No PIN box can appear:** `admit` asks only when a slot is locked (`pinAdmission.ts:48`).
+asks a conflict. **A PIN box appears only for a SEALED slot:** `admit` asks only when a slot is locked
+(`pinAdmission.ts:48`) — so an entry with no mark and nothing sealed is never asked, while an entry whose mark was
+lost and that still holds a sealed slot is, which is right by R3 (corrected at the security review, §10.9).
 **No lease across a modal:** the conflict modal is asked after the release returned. **Nothing lost:** a
 release that fails keeps the item (`rotationQuarantine.ts:305-315`); the click then uses the stored value,
 and the row keeps saying the value waits.
@@ -243,8 +245,12 @@ the text above:
    and the SSH agent's startup sweep go through it too (they hold no rotation slot today; the release is a
    memento read for them). The release is `rotationQuarantine.releaseBeforeAutomaticUse`, which reuses the
    sweep's own `releaseIfUnprotected` rather than calling `releaseHeld(…, UNATTENDED)` bare: a marked or sealed
-   entry is skipped before the slots are walked, at the cost of one item `get` for a LISTED marked entry (an
-   unlisted one still reads nothing). The plan asked for no message here; the owner's follow-up (item 7) added one.
+   entry is skipped before the slots are walked. **What a LISTED entry costs** (corrected at the security review): an
+   unlisted one reads nothing from the keychain; a listed MARKED one reads the held item at the broker's release,
+   then at the opener the item and each held slot's raw value (`beforeTheDoor`'s snapshot) and the item once more —
+   the mark answers before any slot walk; a listed entry WITHOUT the mark that holds a sealed slot also walks every
+   slot (`lockedSlotCount`). Nothing is written for either. The plan asked for no message here; the owner's
+   follow-up (item 7) added one.
 3. **W6's saying is injected.** `rotationWaiting.releaseAndSay` releases and says each value;
    `EphemeralSweeper.releaseWaiting` is typed to the list and stays free of `vscode` at run time (its own suite
    loads it without a stub), and `extension.ts` wires `releaseAndSay` in — line-neutral at 1037 by merging its
@@ -292,3 +298,20 @@ the text above:
       `rotationQuarantine.ts` already imports `secretOpener.ts`, so the release there would be an import cycle; a
       factory beside it plus the scan gives the same guarantee. RED: a new automatic reader written in the test,
       through the common opener, was handed the replaced password; the scan listed the seven readers.
+9. **The security review (2026-10-03, after the second code round passed: proceed, 4 of 4, no findings)** — three
+   findings, each red-first with its break-it in the commit body:
+   1. **MEDIUM — the broker releases before the mask table** (`f31e18b6`). The table is read before the action and a
+      non-mutating action is delivered with it; since W5 the action could release the new value mid-run and print it
+      unmasked. A new broker hook, `releaseWaiting` (`rotationQuarantine.releaseBeforeAutomaticUse`), runs in
+      `CredsAgentServer.handle` before `tableOrFail`; the opener's release stays the backstop. RED over the real broker,
+      masker and storage: the printed new password came back unmasked.
+   2. **LOW — the rotation fingerprints what it really replaces** (`d22f00b4`). `RotateDeps.current` read the slot raw;
+      `rotationStore.rotationCurrent` releases first. RED: a rotation whose own store failed left a hold whose `was` was
+      the pre-release value — a spurious conflict at the next release. `extension.ts` shrank to 1034 and the ratchet
+      baseline is locked there.
+   3. **LOW — a re-read by slot, not by text** (`114a7876`). `rereadAfter` re-read any value equal to what a released
+      slot held; `SecretOpener` (and `AfterTheDoor`) now take the slot the value was read from, and only that slot is
+      re-read. RED: `creds://…/notes` equal to the old password answered the new password, and a click on such a
+      config body was handed it — the click door shared the defect and is fixed with it.
+   Corrected wording: §3.1's "no PIN box can appear" (a mark-lost entry with a sealed slot IS asked, by R3) and
+   §10.2's cost of a listed entry.
