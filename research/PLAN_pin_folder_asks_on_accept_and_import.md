@@ -1,20 +1,17 @@
 # PLAN — a folder that asks for a PIN asks it too when a share or an import lands in it
 
-> Status: **in progress, 2026-10-03 — B1–B7 built on `feat/pin-folder-accept-import`, B8's documentation
-> written, the code round passed (`proceed`, 4 of 4), the security review's six findings and the second
-> code round's four accepted ones fixed (§10.1);
-> the move out of `todo/` follows** (deviations: §10). Scope: `src_vs_code/src` — `shareInbox.ts`
+> Status: **IMPLEMENTED, 2026-10-03** (PR #187). B1–B8 as planned with the deviations in §10 — the main ones: the folder question is a port of three functions (`ask`, `prefers`, `first`); a landing carries its account and the memo is a class keyed by (account, folder); an independent security review found six more holes (an *Update it* that moved an entry into a folder that asks, a second PIN on a protected update, a bundle that recreated a folder that asks, empty folders after a declined update, a re-asked subfolder, a lost tally) and the second code round a blocking interaction (a plain folder's inherited "no PIN" covering a subfolder that asks) — all fixed red-first (§10.1). **Open tail:** `shareRecipientPin.wrappedPayload` folded into the one road, as its own follow-up (§9.2). Scope: `src_vs_code/src` — `shareInbox.ts`
 > (its import half extracted to a new `shareImport.ts`), `shareRecipientPin.ts`, a new `arrivalPin.ts`,
 > `pinOnCreate.ts` (one export widened), `importCommands.ts`, `externalSecretsApply.ts`, the two import
 > handlers in `commands/treeMutationCommands.ts`, and their tests. Extension only; no format, contract or
 > server change.
 >
-> Answers the open question of [PLAN_typed_stored_secrets.md](../research/PLAN_typed_stored_secrets.md) §2.7
+> Answers the open question of [PLAN_typed_stored_secrets.md](PLAN_typed_stored_secrets.md) §2.7
 > (*"Checked and left as they are, with the question named"*). Related:
-> [PLAN_entry_pin_keeps_its_promise.md](../research/PLAN_entry_pin_keeps_its_promise.md) (R3, R5),
-> [PLAN_agent_creates_what_the_folder_holds.md](../research/PLAN_agent_creates_what_the_folder_holds.md) (D-B),
-> [module_extension.md](../research/module_extension.md) §*The entry PIN keeps its promise* and §*The type takes
-> over*. Shares one story with [PLAN_waiting_rotation_visible.md](PLAN_waiting_rotation_visible.md) (§6).
+> [PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise.md) (R3, R5),
+> [PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md) (D-B),
+> [module_extension.md](module_extension.md) §*The entry PIN keeps its promise* and §*The type takes
+> over*. Shares one story with [PLAN_waiting_rotation_visible.md](../todo/PLAN_waiting_rotation_visible.md) (§6).
 
 All `file:line` references are to `src_vs_code/src/` and were read on `main` at `95a4f58f` on 2026-10-02.
 
@@ -239,7 +236,7 @@ Typecheck, lint (`max-lines` 800, `max-lines-per-function` 50), `npm test`, the 
 
 | Item | Built by | The other plan's part |
 |---|---|---|
-| Extract `importShared` from `shareInbox.ts` (798 lines) | **this plan, B1** | [PLAN_waiting_rotation_visible.md](PLAN_waiting_rotation_visible.md) W2 adds one line to `shareInbox.ts` and needs the room: it lands after B1, or lands B1 first exactly as written here and this plan skips it |
+| Extract `importShared` from `shareInbox.ts` (798 lines) | **this plan, B1** | [PLAN_waiting_rotation_visible.md](../todo/PLAN_waiting_rotation_visible.md) W2 adds one line to `shareInbox.ts` and needs the room: it lands after B1, or lands B1 first exactly as written here and this plan skips it |
 | The share's sender-side door (`payloadsFor`) | the sibling, W2 | nothing here |
 
 Disjoint otherwise: this plan touches the RECEIVING half of `shareInbox.ts`, the sibling the SENDING half.
@@ -260,13 +257,13 @@ Disjoint otherwise: this plan touches the RECEIVING half of `shareInbox.ts`, the
 
 ## 8. Definition of Done
 
-- [ ] B1–B8 merged, each behavioural story with its RED observation and break-it in the commit body.
-- [ ] An accepted folder share and both imports into a folder that asks are sealed before their first write,
+- [x] B1–B8 merged, each behavioural story with its RED observation and break-it in the commit body.
+- [x] An accepted folder share and both imports into a folder that asks are sealed before their first write,
       marked, and asked once per folder — shown over the real storage's write log.
-- [ ] A decline writes nothing for that folder; the share stays pending; the import names what it skipped.
-- [ ] `writerForNew` and `applyCreatePin` are the only sealing road these arrivals take; no new sealer.
-- [ ] `shareInbox.ts` well under 800 lines; typecheck, lint, `npm test`, plan lifecycle green.
-- [ ] §7 docs updated; plan promoted with its deviations.
+- [x] A decline writes nothing for that folder; the share stays pending; the import names what it skipped.
+- [x] `writerForNew` and `applyCreatePin` are the only sealing road these arrivals take; no new sealer.
+- [x] `shareInbox.ts` well under 800 lines; typecheck, lint, `npm test`, plan lifecycle green.
+- [x] §7 docs updated; plan promoted with its deviations.
 
 ## 9. Decided (2026-10-02)
 

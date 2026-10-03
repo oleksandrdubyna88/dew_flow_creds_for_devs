@@ -14,7 +14,7 @@
 > funnel's type-aware half (§3 item 2) is unbuilt; **SHIPPED 2026-10-02** as extension **1.12.1** (and mcp **0.9.1**,
 > with the rotation quarantine #179), one release for the whole plan, approved by the owner. §2.7's question (should a
 > folder that asks for a PIN ask at accept and import too?) was answered by the owner on 2026-10-02 — yes — and is
-> answered in code by [PLAN_pin_folder_asks_on_accept_and_import.md](../todo/PLAN_pin_folder_asks_on_accept_and_import.md)
+> answered in code by [PLAN_pin_folder_asks_on_accept_and_import.md](PLAN_pin_folder_asks_on_accept_and_import.md)
 > (B1–B7 built on `feat/pin-folder-accept-import`, 2026-10-03): an accepted share and both imports into a
 > folder that asks take Add's road — `writerForNew(…, settled)` and `applyCreatePin` — asked once per folder.
 >

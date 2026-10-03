@@ -1487,7 +1487,7 @@ write logged, then shown red again with its fix reverted:
   `shareUpdateSeal.test.ts` holds the three cases through the real `ShareInbox`.
 
 **A share or an import into a folder that asks (2026-10-03,
-[PLAN_pin_folder_asks_on_accept_and_import.md](../todo/PLAN_pin_folder_asks_on_accept_and_import.md)).**
+[PLAN_pin_folder_asks_on_accept_and_import.md](PLAN_pin_folder_asks_on_accept_and_import.md)).**
 The owner's answer to the typed-secrets plan's §2.7 question: a folder that asks for a PIN asks it too when
 something ARRIVES in it. Until then an accepted share and both imports wrote their new ids through
 `writerForNew(…, NO_PIN)` — no question, no mark — so a protected folder could hold plain entries while
