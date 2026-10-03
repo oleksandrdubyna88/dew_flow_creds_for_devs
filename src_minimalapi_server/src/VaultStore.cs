@@ -436,7 +436,7 @@ public sealed partial class VaultStore
         await File.WriteAllBytesAsync(temp, content, ct);
         try
         {
-            File.Move(temp, path, overwrite);
+            await MoveIntoPlaceAsync(temp, path, overwrite, ct);
         }
         catch
         {
@@ -444,4 +444,57 @@ public sealed partial class VaultStore
             throw;
         }
     }
+
+    /// <summary>How long a replace waits out a reader that has the destination open. A read holds it for one small file.</summary>
+    private static readonly TimeSpan ReplaceWait = TimeSpan.FromSeconds(1);
+
+    private static readonly TimeSpan ReplacePoll = TimeSpan.FromMilliseconds(5);
+
+    /// <summary>
+    /// The move, with a reader's open handle waited out rather than turned into a failed write.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Windows refuses a replace while ANY handle is open on the destination</b> — a reader in
+    /// the middle of a read included, and sharing <c>FileShare.Delete</c> does not change that (measured
+    /// 2026-10-02: a status file read in a loop refused 102 to 152 of 200 replaces with "Access to the
+    /// path is denied"). Every file written here is also polled: the backup status by the page, the
+    /// scheduler and every test that waits for a detached run. The cost was a backup run whose terminal
+    /// status write was refused — reported "failed", or stuck "in progress" when the failure path's own
+    /// write was refused as well (<c>PLAN_flaky_backup_endpoint_tests.md</c> §2).</para>
+    /// <para>So a refused REPLACE is retried for <see cref="ReplaceWait"/>, and only on Windows: a POSIX
+    /// rename never waits for a reader, so there the first refusal is a real one (a permission, a full
+    /// disk) and is reported at once, exactly as before. A create-if-absent (<c>overwrite: false</c>) is
+    /// never retried — its refusal is the answer it exists to give.</para>
+    /// </remarks>
+    private static Task MoveIntoPlaceAsync(string temp, string path, bool overwrite, CancellationToken ct) =>
+        RetryReplaceAsync(() => File.Move(temp, path, overwrite), overwrite, OperatingSystem.IsWindows(), ct);
+
+    /// <summary>
+    /// The retry itself, with the move and the platform handed in — so the Windows-only road is a plain unit
+    /// test on every platform, the Linux CI included, instead of a branch only a Windows machine runs.
+    /// </summary>
+    internal static async Task RetryReplaceAsync(Action move, bool overwrite, bool onWindows, CancellationToken ct)
+    {
+        // Monotonic: a wall clock stepped back by NTP must not stretch a one-second wait (code round, finding 0).
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        while (true)
+        {
+            try
+            {
+                move();
+                return;
+            }
+            catch (Exception e) when (IsReaderRefusal(e, overwrite, onWindows) && WithinReplaceWait(started))
+            {
+                await Task.Delay(ReplacePoll, ct);
+            }
+        }
+    }
+
+    /// <summary>A REPLACE refused on Windows the way an open reader refuses it — the one refusal worth waiting out.</summary>
+    private static bool IsReaderRefusal(Exception e, bool overwrite, bool onWindows) =>
+        overwrite && onWindows && e is UnauthorizedAccessException or IOException;
+
+    private static bool WithinReplaceWait(long started) =>
+        System.Diagnostics.Stopwatch.GetElapsedTime(started) < ReplaceWait;
 }

@@ -1339,6 +1339,13 @@ org/backup/status.json    the last run's outcome, and the instant of the last ru
 org/backup/archives/      where story 3 puts them
 ```
 
+**A successful run is audited before its status says so:** `FinishAsync` appends the `BackupTaken` row,
+THEN writes the terminal status. **When the append succeeds**, a reader that sees the run finished sees its row
+too, and a process that dies between the two leaves the row and a status still "in progress" for the startup
+sweep. The row stays best-effort: when `OrgEventLog.AppendAsync` returns `false` (or throws), the failure is
+logged and the run is still `Succeeded` WITHOUT a `BackupTaken` row — the archive is real, and that is the
+one case the ordering does not cover. Found by CI on #181; `PLAN_flaky_backup_endpoint_tests.md`.
+
 Settings and status are separate files because they have separate writers: a run writes status every
 time it runs, and one file would mean a run overwriting an admin's edit through a read-modify-write
 window. Both answer their defaults when absent — and when unreadable, deliberately: they are
@@ -1824,6 +1831,13 @@ is here", and it is read defensively — a malformed or locked sidecar is skippe
 
 Every write is atomic: write `<path>.<random>.tmp`, then `File.Move(overwrite: true)`. A reader
 therefore never sees a partial blob, which is what lets `deploy/backup.sh` archive a live server.
+**On Windows a replace is refused while any handle is open on the destination** (`FileShare.Delete`
+notwithstanding), and the files written here are also polled — the backup status by the page, the scheduler
+and every test that waits for a run — so `MoveIntoPlaceAsync` retries a refused REPLACE for up to a second,
+on Windows only; a POSIX rename never waits for a reader, so there a refusal is real and reported at once,
+and a create-if-absent is never retried. Measured before the fix: 102 to 163 of 200 status writes refused
+while a reader polled (`BackupStoreTests.AStatusWriteLandsWhileSomebodyIsReadingTheStatus`) — a run's
+terminal write was the casualty, ending "failed: Access to the path is denied" or stuck "in progress".
 
 `org/` appears only when something is written into it — a personal deployment never has one, which is
 how an operator looking at the disk can tell a server with a roster from one without. The first

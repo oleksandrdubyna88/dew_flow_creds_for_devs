@@ -115,8 +115,7 @@ public sealed class BackupEndpointTests
 
         (await cto.PostAsync("/api/org/backup/run", null, Ct)).StatusCode.Should().Be(HttpStatusCode.Accepted);
 
-        await Corp.Eventually(
-            () => Result(server) == BackupRunResults.Succeeded, "the detached run finished and said so");
+        await RunSettles(server, result => result == BackupRunResults.Succeeded, "the detached run finished and said so");
         var status = await StatusAsync(cto);
         status.GetProperty("localArchiveName").GetString().Should().StartWith("cred-vault-").And.EndWith(".cvbk");
         status.GetProperty("localArchiveBytes").GetInt64().Should().BeGreaterThan(0);
@@ -200,13 +199,53 @@ public sealed class BackupEndpointTests
     }
 
     [Fact]
+    public async Task ARunFinishesOkWhileThePageIsPollingItsStatus()
+    {
+        // The shared state behind "within five seconds the run finished, but found False": the status
+        // file, written by the run and read by every poll — this suite's own wait included. On Windows
+        // the run's replace was refused while a poll had the file open, so the run ended "failed: Access
+        // to the path is denied", or stuck "in progress" when the failure path's write was refused too.
+        // The poll here is just faster than a page's, so the collision is likely rather than rare.
+        using var server = Corp.Server();
+        using var cto = server.ClientFor(Corp.Cto);
+        (await cto.PostAsync("/api/org/backup/key", null, Ct)).StatusCode.Should().Be(HttpStatusCode.OK);
+        using var stop = new CancellationTokenSource();
+        var polling = Task.Run(
+            () =>
+            {
+                while (!stop.IsCancellationRequested && !Ct.IsCancellationRequested)
+                {
+                    _ = Result(server);
+                }
+            },
+            Ct);
+
+        // The poller stops whatever happens below: a failed assertion must not leave it spinning on the
+        // status file for every test after this one (code round, finding 1).
+        try
+        {
+            (await cto.PostAsync("/api/org/backup/run", null, Ct)).StatusCode.Should().Be(HttpStatusCode.Accepted);
+            await RunSettles(server, result => !BackupRunResults.IsRunning(result), "the run finished");
+        }
+        finally
+        {
+            await stop.CancelAsync();
+            await polling;
+        }
+
+        var status = await Store(server).ReadStatusAsync(Ct);
+        status.LastResult.Should().Be(
+            BackupRunResults.Succeeded, "a reader of the status never costs the run its result ({0})", status.LastError);
+    }
+
+    [Fact]
     public async Task DownloadingStreamsTheArchiveWithALengthAndAFileName()
     {
         using var server = Corp.Server();
         using var cto = server.ClientFor(Corp.Cto);
         (await cto.PostAsync("/api/org/backup/key", null, Ct)).StatusCode.Should().Be(HttpStatusCode.OK);
         (await cto.PostAsync("/api/org/backup/run", null, Ct)).StatusCode.Should().Be(HttpStatusCode.Accepted);
-        await Corp.Eventually(() => Result(server) == BackupRunResults.Succeeded, "the run finished");
+        await RunSettles(server, result => result == BackupRunResults.Succeeded, "the run finished");
 
         var response = await cto.GetAsync("/api/org/backup/archive", Ct);
 
@@ -251,8 +290,9 @@ public sealed class BackupEndpointTests
         using var restarted = Corp.RestartedOn(first.DataDir);
         using var again = restarted.ClientFor(Corp.Cto);
 
-        await Corp.Eventually(
-            () => Result(restarted) == BackupRunResults.Failed,
+        await RunSettles(
+            restarted,
+            result => result == BackupRunResults.Failed,
             "the startup sweep turned the interrupted run into a failure");
         var swept = await StatusAsync(again);
         swept.GetProperty("running").GetBoolean().Should().BeFalse("and the page no longer shows a spinner");
@@ -875,6 +915,16 @@ public sealed class BackupEndpointTests
     /// <summary>The store the server itself is using, for the states only a restart can produce.</summary>
     private static BackupStore Store(VaultServer server) =>
         (BackupStore)server.Services.GetService(typeof(BackupStore))!;
+
+    /// <summary>
+    /// The ONE wait for a detached backup run in this file (PLAN_flaky_backup_endpoint_tests.md §3.3): fifteen
+    /// seconds, because a run seals and writes an archive and the whole suite runs in parallel beside it — five
+    /// seconds tripped with nothing wrong. Still a guard: a run that never settles fails it.
+    /// </summary>
+    private static Task RunSettles(VaultServer server, Func<string, bool> settled, string what) =>
+        Corp.Eventually(() => settled(Result(server)), what, DetachedRun);
+
+    private static readonly TimeSpan DetachedRun = TimeSpan.FromSeconds(15);
 
     /// <summary>The persisted result, read off the disk — what a restarted process would read.</summary>
     private static string Result(VaultServer server) =>
