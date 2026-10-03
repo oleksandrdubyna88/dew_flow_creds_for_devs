@@ -6,7 +6,7 @@ import { loadWithVscode } from './vscodeStub';
 import type { EntityFormValues } from '../entityFormPanel';
 
 /** The folder question an import now requires — at the account root, where these imports land, nothing asks. */
-const ASKS_NOTHING = { ask: () => Promise.resolve({ kind: 'none' as const }), prefers: () => false };
+const ASKS_NOTHING = { ask: () => Promise.resolve({ kind: 'none' as const }), prefers: () => false, first: () => Promise.resolve({ kind: 'none' as const }) };
 
 /** `importCommands` reaches `vscode` through `dialogs`, so it loads against the shared stub. */
 const { importEntities } = loadWithVscode<typeof import('../importCommands')>('../importCommands', {

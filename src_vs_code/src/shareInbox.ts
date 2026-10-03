@@ -32,7 +32,7 @@ import {
 import { withheldNoteFor } from './shareWithheld';
 import { OwnedShare, SharePayload, TeamMember, TreeNode } from './types';
 import { ShareLanding, landShare } from './shareImport';
-import { ArrivalPins, arrivalPins } from './arrivalPin';
+import { ArrivalPins, arrivalPins, folderNameOf } from './arrivalPin';
 import { folderQuestion } from './pinOnCreate';
 
 /**
@@ -534,7 +534,7 @@ export class ShareInbox {
 
   /** The folders a batch left shares out of because their PIN was not given — said in the tally, or ''. */
   private async declinedNote(folderPins: ArrivalPins): Promise<string> {
-    const names = (await folderPins.declined()).map((f) => `"${this.deps.storage.getNode(f.accountId, f.folderId)?.name ?? ''}"`);
+    const names = (await folderPins.declined()).map((f) => `"${folderNameOf(this.deps.storage, f)}"`);
     return names.length === 0 ? '' : ` Left in "Shared with me": no PIN was given for the folder(s) ${names.join(', ')}, which ask for one on every entry in them.`;
   }
 

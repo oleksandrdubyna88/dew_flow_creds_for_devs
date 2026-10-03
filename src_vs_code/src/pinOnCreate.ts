@@ -123,6 +123,7 @@ export function folderQuestion(storage: StorageManager): FolderQuestion {
   return {
     ask: (accountId, folderId) => pinForNewEntry(storage, accountId, folderId),
     prefers: (accountId, folderId) => folderPrefersPin(storage, accountId, folderId),
+    first: () => firstPinHere(),
   };
 }
 

@@ -21,6 +21,11 @@ import type { FolderType } from './types';
 export interface FolderSeg {
   readonly name: string;
   readonly folderType?: FolderType;
+  /**
+   * The folder asks for a PIN on every entry created in it (`TreeNode.folderAsksForPin`) — a CredsForDevs
+   * export keeps that preference, so a bundle can recreate such a folder (the security review, finding 3).
+   */
+  readonly folderAsksForPin?: boolean;
 }
 
 /** Where an arrival lands: its account, the deepest folder that exists (`null`, the root), and what it creates below it. */
@@ -32,17 +37,21 @@ export interface Landing {
 
 /**
  * The question Add asks, as a port. `ask` is `pinOnCreate.pinForNewEntry` in that folder; `prefers` is
- * `pinOnCreate.folderPrefersPin` — whether the folder, or one above it, carries the preference.
+ * `pinOnCreate.folderPrefersPin` — whether the folder, or one above it, carries the preference; `first` is
+ * the first PIN of a folder that asks and holds nothing yet, typed twice — what Add asks in a folder the
+ * arrival itself creates WITH the preference.
  */
 export interface FolderQuestion {
   readonly ask: (accountId: string, folderId: string) => Promise<CreatePin>;
   readonly prefers: (accountId: string, folderId: string) => boolean;
+  readonly first: (accountId: string) => Promise<CreatePin>;
 }
 
-/** A folder of one account. */
+/** A folder of one account — or, for a folder the arrival creates, its `name` and no id yet (`folderId` `''`). */
 export interface FolderRef {
   readonly accountId: string;
   readonly folderId: string;
+  readonly name?: string;
 }
 
 /** The per-command memo: one answer per destination folder. */
@@ -60,6 +69,8 @@ export interface ArrivalPins {
    * Never rejects: a batch must still end with its tally (the security review, finding 6).
    */
   declined(): Promise<readonly FolderRef[]>;
+  /** The folder a landing is asked in — what its decline names — or nothing when it asks nothing. Asks nothing itself. */
+  askedFolder(landing: Landing): FolderRef | undefined;
 }
 
 const NONE: CreatePin = { kind: 'none' };
@@ -100,10 +111,9 @@ export function arrivalPins(question: FolderQuestion): ArrivalPins {
   const settled = new Map<string, { readonly folder: FolderRef; readonly answer: Promise<CreatePin> }>();
   /** A folder this command created → the answer of the landing that created it. */
   const inherited = new Map<string, Promise<CreatePin>>();
-  const askedIn = (accountId: string, folderId: string): Promise<CreatePin> => {
-    const key = JSON.stringify([accountId, folderId]);
-    const known = settled.get(key) ?? { folder: { accountId, folderId }, answer: question.ask(accountId, folderId) };
-    settled.set(key, known);
+  const asked = (asking: Asking): Promise<CreatePin> => {
+    const known = settled.get(asking.key) ?? { folder: asking.folder, answer: asking.ask() };
+    settled.set(asking.key, known);
     return known.answer;
   };
   return {
@@ -112,6 +122,7 @@ export function arrivalPins(question: FolderQuestion): ArrivalPins {
       return answers.filter((a) => a.kind === 'cancelled').map((a) => a.folder);
     },
     settledFor: (landing) => answerFor(landing),
+    askedFolder: (landing) => askingFor(question, landing)?.folder,
     created: (landing, folderIds) => {
       const answer = answerFor(landing);
       for (const folderId of folderIds) {
@@ -124,12 +135,49 @@ export function arrivalPins(question: FolderQuestion): ArrivalPins {
     return inherited.get(JSON.stringify([landing.accountId, landing.existing])) ?? decided(landing);
   }
 
-  function decided({ accountId, existing, creates }: Landing): Promise<CreatePin> {
-    if (existing === null) {
-      return Promise.resolve(NONE);
-    }
-    return creates.length === 0 || question.prefers(accountId, existing) ? askedIn(accountId, existing) : Promise.resolve(NONE);
+  function decided(landing: Landing): Promise<CreatePin> {
+    const asking = askingFor(question, landing);
+    return asking === undefined ? Promise.resolve(NONE) : asked(asking);
   }
+}
+
+/** Which question a landing is asked, keyed for the memo — not asked yet. */
+interface Asking {
+  readonly key: string;
+  readonly folder: FolderRef;
+  readonly ask: () => Promise<CreatePin>;
+}
+
+/**
+ * The question for one landing, or none: the existing folder's (Add's question there) when the landing creates
+ * nothing or the existing folder carries the preference; otherwise the first PIN of the first folder the
+ * landing CREATES that carries the preference — one answer for everything landing under it (§9.1).
+ */
+function askingFor(question: FolderQuestion, landing: Landing): Asking | undefined {
+  const { accountId, existing, creates } = landing;
+  if (existing !== null && (creates.length === 0 || question.prefers(accountId, existing))) {
+    return { key: JSON.stringify([accountId, existing]), folder: { accountId, folderId: existing }, ask: () => question.ask(accountId, existing) };
+  }
+  return preferringCreated(question, landing);
+}
+
+/** The first created folder that carries the preference, asked its first PIN — keyed by the chain down to it. */
+function preferringCreated(question: FolderQuestion, { accountId, existing, creates }: Landing): Asking | undefined {
+  const at = creates.findIndex((seg) => seg.folderAsksForPin === true);
+  if (at < 0) {
+    return undefined;
+  }
+  const chain = creates.slice(0, at + 1).map((seg) => seg.name);
+  return { key: JSON.stringify([accountId, existing, ...chain]), folder: { accountId, folderId: '', name: chain[at] }, ask: () => question.first(accountId) };
+}
+
+/** A folder's name for a sentence: its own when the arrival creates it, the node's otherwise, `''` for none. */
+export function folderNameOf(storage: StorageManager, folder: FolderRef | undefined): string {
+  return folder?.name ?? nodeName(storage, folder);
+}
+
+function nodeName(storage: StorageManager, folder: FolderRef | undefined): string {
+  return folder === undefined ? '' : (storage.getNode(folder.accountId, folder.folderId)?.name ?? '');
 }
 
 /** An answer's kind — `failed` for a question that rejected, which is neither a PIN nor a decline. */

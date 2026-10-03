@@ -6,10 +6,8 @@ export interface NodeLocation {
 }
 
 import { EntryLandedError } from './entityWrite';
-import { FolderQuestion, Landing, arrivalPins, declinedLanding } from './arrivalPin';
-import type { ArrivalPins } from './arrivalPin';
+import { type ArrivalPins, type FolderQuestion, type FolderSeg, type Landing, arrivalPins, declinedLanding, folderNameOf } from './arrivalPin';
 import { CreatePin, SettledPin, applyCreatePin } from './pinOnCreate';
-import type { FolderSeg } from './arrivalPin';
 import type { ExternalBundle } from './externalBundle';
 import { applyExternalSecrets } from './externalSecretsApply';
 import { EntryWriter, writerForNew } from './entryWriter';
@@ -44,7 +42,8 @@ export async function importEntities(
   entities: readonly ImportedEntity[],
   question: FolderQuestion,
 ): Promise<ImportOutcome> {
-  const settled = await settleEach(arrivalPins(question), location, entities);
+  const asked = arrivalPins(question);
+  const settled = await settleEach(asked, location, entities);
   const going = entities.filter((_, at) => settled[at].kind !== 'cancelled');
   const pins = settled.filter((pin): pin is SettledPin => pin.kind !== 'cancelled');
   const parents = await foldersFor(storage, location, going);
@@ -52,7 +51,7 @@ export async function importEntities(
   for (const [at, { node, secrets }] of made.entries()) {
     await landImported(storage, location, node, secrets, pins[at]);
   }
-  return { created: made.length, skipped: skippedFor(storage, location, entities, settled) };
+  return { created: made.length, skipped: skippedFor(storage, asked, location, entities, settled) };
 }
 
 /** Each entry's answer, asked in order and before anything is written. */
@@ -74,14 +73,13 @@ function importLanding(location: NodeLocation, folder: string | undefined): Land
 }
 
 /** The entries a declined landing kept out, each with the sentence that says why. */
-function skippedFor(storage: StorageManager, location: NodeLocation, entities: readonly ImportedEntity[], settled: readonly CreatePin[]): string[] {
-  return declinedNames(storage, location, entities.filter((_, at) => settled[at].kind === 'cancelled').map((entity) => entity.name));
+function skippedFor(storage: StorageManager, asked: ArrivalPins, location: NodeLocation, entities: readonly ImportedEntity[], settled: readonly CreatePin[]): string[] {
+  return entities.flatMap((entity, at) => (settled[at].kind === 'cancelled' ? [declinedEntry(storage, asked, entity.name, importLanding(location, entity.folder))] : []));
 }
 
-/** Each name a decline in the folder the import was started on kept out, with the sentence that says why. */
-function declinedNames(storage: StorageManager, location: NodeLocation, names: readonly string[]): string[] {
-  const folder = location.parentId === null ? '' : (storage.getNode(location.accountId, location.parentId)?.name ?? '');
-  return names.map((name) => `"${name}" — ${declinedLanding(folder)}`);
+/** One entry a decline kept out, named with the folder that asked. */
+function declinedEntry(storage: StorageManager, asked: ArrivalPins, name: string, landing: Landing): string {
+  return `"${name}" — ${declinedLanding(folderNameOf(storage, asked.askedFolder(landing)))}`;
 }
 
 /** The import's skipped entries said in one sentence for the closing message, or `''`. */
@@ -163,7 +161,8 @@ export interface BundleLanding {
  * is written, and they are named in `skipped`.</p>
  */
 export async function landBundle(storage: StorageManager, location: NodeLocation, bundle: ExternalBundle, question: FolderQuestion): Promise<BundleLanding> {
-  const settled = await settleBundle(arrivalPins(question), location, bundle.nodes);
+  const asked = arrivalPins(question);
+  const settled = await settleBundle(asked, location, bundle.nodes);
   const nodes = bundle.nodes.filter((node) => settled.get(node.id)?.kind !== 'cancelled');
   const kept = new Set(nodes.map((node) => node.id));
   const secrets = Object.fromEntries(Object.entries(bundle.secrets).filter(([id]) => kept.has(id)));
@@ -175,7 +174,8 @@ export async function landBundle(storage: StorageManager, location: NodeLocation
     await applyCreatePin(settledOrNone(settled.get(node.id)), storage, location.accountId, node.id);
   }
   const declined = bundle.nodes.filter((node) => node.type === 'entity' && !kept.has(node.id));
-  return { nodes, skipped: declinedNames(storage, location, declined.map((node) => node.name)) };
+  const byId = new Map(bundle.nodes.map((node) => [node.id, node]));
+  return { nodes, skipped: declined.map((node) => declinedEntry(storage, asked, node.name, bundleLanding(location, byId, node))) };
 }
 
 const NONE: SettledPin = { kind: 'none' };
@@ -189,9 +189,14 @@ async function settleBundle(pins: ArrivalPins, location: NodeLocation, nodes: re
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const settled = new Map<string, CreatePin>();
   for (const node of nodes) {
-    settled.set(node.id, await pins.settledFor({ accountId: location.accountId, existing: location.parentId, creates: chainOf(byId, node) }));
+    settled.set(node.id, await pins.settledFor(bundleLanding(location, byId, node)));
   }
   return settled;
+}
+
+/** Where one bundle node lands: under the folder the import was started on, below the bundle folders above it. */
+function bundleLanding(location: NodeLocation, byId: ReadonlyMap<string, TreeNode>, node: TreeNode): Landing {
+  return { accountId: location.accountId, existing: location.parentId, creates: chainOf(byId, node) };
 }
 
 /** The bundle folders a node lands in, root first — the folder itself included for a folder. All are new. */
@@ -204,7 +209,8 @@ function foldersAbove(byId: ReadonlyMap<string, TreeNode>, start: TreeNode | und
   const seen = new Set<string>();
   for (let at = start; at !== undefined && !seen.has(at.id); at = byId.get(at.parentId ?? '')) {
     seen.add(at.id);
-    chain.unshift({ name: at.name, folderType: at.folderType });
+    // The preference travels with the folder (finding 3): a folder that asked where it was exported asks here.
+    chain.unshift({ name: at.name, folderType: at.folderType, folderAsksForPin: at.folderAsksForPin });
   }
   return chain;
 }

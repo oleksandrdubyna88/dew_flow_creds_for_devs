@@ -7,7 +7,7 @@ import { EntryWriter, writerForNew } from './entryWriter';
 import { redactArrivedPayment } from './paymentRedaction';
 import { declinedMessage, forThisRecipient } from './shareRecipientPin';
 import { describeError } from './describeError';
-import { ArrivalPins, Landing, declinedLanding, landingOf } from './arrivalPin';
+import { ArrivalPins, Landing, declinedLanding, folderNameOf, landingOf } from './arrivalPin';
 import { CreatePin, applyCreatePin } from './pinOnCreate';
 import { OwnedShare, SharePayload, TreeNode, withOwnId } from './types';
 
@@ -153,7 +153,7 @@ async function newArrival(
 ): Promise<Arrival | undefined> {
   const settled = await pins.settledFor(landing);
   if (settled.kind === 'cancelled') {
-    void vscode.window.showInformationMessage(`Left in "Shared with me" — ${declinedLanding(folderName(deps.storage, landing))}.`);
+    void vscode.window.showInformationMessage(`Left in "Shared with me" — ${declinedLanding(folderNameOf(deps.storage, pins.askedFolder(landing)))}.`);
     return undefined;
   }
   // The folder's PIN answers the sender's instruction; only a folder that asks nothing leaves it to the recipient's own.
@@ -204,11 +204,6 @@ async function sealedForRecipient(share: OwnedShare, payload: SharePayload): Pro
     );
   }
   return undefined;
-}
-
-/** The name of the folder a landing is asked in — what a declined landing names. */
-function folderName(storage: StorageManager, landing: Landing): string {
-  return landing.existing === null ? '' : (storage.getNode(landing.accountId, landing.existing)?.name ?? '');
 }
 
 /**
