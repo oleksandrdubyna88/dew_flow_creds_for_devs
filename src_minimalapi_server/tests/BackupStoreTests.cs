@@ -209,6 +209,34 @@ public class BackupStoreTests
     }
 
     [Fact]
+    public async Task AStatusWriteWaitsOutAReaderThatHoldsTheFileOpen()
+    {
+        // The deterministic form of the race (CodeRabbit on #185): a reader holds the status file open for
+        // 200 ms — far inside the replace's one-second wait — while the run writes its result. On Windows the
+        // replace is refused for as long as the handle is open, so without the wait the write throws "Access
+        // to the path is denied". On Linux a rename never waits for a reader and this is green either way.
+        var dir = TempDir();
+        var store = Store(dir, out _);
+        await store.WriteStatusAsync(new BackupStatus(1, BackupRunResults.InProgress, string.Empty, 0, [], 0), Ct);
+        var status = Path.Combine(dir, "org", "backup", "status.json");
+        var reader = new FileStream(status, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        var released = Task.Run(
+            async () =>
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(200), Ct);
+                await reader.DisposeAsync();
+            },
+            Ct);
+
+        var write = await Record.ExceptionAsync(() =>
+            store.WriteStatusAsync(new BackupStatus(2, BackupRunResults.Succeeded, string.Empty, 1, [], 2), Ct));
+        await released;
+
+        write.Should().BeNull("a reader holding the status open must not cost the run its write");
+        (await store.ReadStatusAsync(Ct)).LastResult.Should().Be(BackupRunResults.Succeeded, "and the new value is on disk");
+    }
+
+    [Fact]
     public async Task AStatusWriteLandsWhileSomebodyIsReadingTheStatus()
     {
         // The status file has one writer — the run — and many readers: the page's poll, the scheduler's

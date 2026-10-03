@@ -477,12 +477,17 @@ public sealed partial class VaultStore
                 File.Move(temp, path, overwrite);
                 return;
             }
-            catch (Exception e) when (overwrite && OperatingSystem.IsWindows()
-                && e is UnauthorizedAccessException or IOException
-                && System.Diagnostics.Stopwatch.GetElapsedTime(started) < ReplaceWait)
+            catch (Exception e) when (IsReaderRefusal(e, overwrite) && WithinReplaceWait(started))
             {
                 await Task.Delay(ReplacePoll, ct);
             }
         }
     }
+
+    /// <summary>A REPLACE refused on Windows the way an open reader refuses it — the one refusal worth waiting out.</summary>
+    private static bool IsReaderRefusal(Exception e, bool overwrite) =>
+        overwrite && OperatingSystem.IsWindows() && e is UnauthorizedAccessException or IOException;
+
+    private static bool WithinReplaceWait(long started) =>
+        System.Diagnostics.Stopwatch.GetElapsedTime(started) < ReplaceWait;
 }

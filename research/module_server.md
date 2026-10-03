@@ -1340,10 +1340,11 @@ org/backup/archives/      where story 3 puts them
 ```
 
 **A successful run is audited before its status says so:** `FinishAsync` appends the `BackupTaken` row,
-THEN writes the terminal status, so a reader that sees the run finished sees its row too, and a process that
-dies between the two leaves the row and a status still "in progress" for the startup sweep — never a success
-the org history does not show. The row stays best-effort: an append that fails is logged and the run is
-still `Succeeded` (the archive is real). Found by CI on #181; `PLAN_flaky_backup_endpoint_tests.md`.
+THEN writes the terminal status. **When the append succeeds**, a reader that sees the run finished sees its row
+too, and a process that dies between the two leaves the row and a status still "in progress" for the startup
+sweep. The row stays best-effort: when `OrgEventLog.AppendAsync` returns `false` (or throws), the failure is
+logged and the run is still `Succeeded` WITHOUT a `BackupTaken` row — the archive is real, and that is the
+one case the ordering does not cover. Found by CI on #181; `PLAN_flaky_backup_endpoint_tests.md`.
 
 Settings and status are separate files because they have separate writers: a run writes status every
 time it runs, and one file would mean a run overwriting an admin's edit through a read-modify-write
