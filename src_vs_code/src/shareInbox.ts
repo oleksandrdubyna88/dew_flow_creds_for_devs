@@ -477,6 +477,9 @@ export class ShareInbox {
     let imported = 0;
     let declined = 0; // opened, then left in the inbox: no PIN chosen, or the wrap failed
     const failed: OwnedShare[] = []; // opened, and the save failed — kept, logged, named in the tally
+    // ONE set of folder-PIN answers for the whole conversation, across its transit-PIN rounds: three shares
+    // into one protected folder are one question, however many transit PINs opened them (B4).
+    const folderPins = this.arrivalPins();
     while (remaining.length > 0) {
       const next = remaining[0];
       const pin = await vscode.window.showInputBox({
@@ -505,7 +508,7 @@ export class ShareInbox {
         (owned) => this.deps.sharing.serverStamped(owned),
         (owned, f, reason) => rememberAttempt(attempted, owned.item.id, attemptOf(f, reason, pin)),
       );
-      const round = await this.importOpened(opened, pin, attempted);
+      const round = await this.importOpened(opened, pin, attempted, folderPins);
       imported += round.imported;
       declined += round.declined;
       failed.push(...round.failed);
@@ -523,7 +526,7 @@ export class ShareInbox {
     // `imported`. Counted nowhere, it would vanish from the tally that says whether this is done.
     const pending = remaining.length + declined + failed.length;
     const stillPending = pending > 0 ? `, ${pending} still pending` : '';
-    void vscode.window.showInformationMessage(`Accepted ${imported} item(s)${stillPending}.${notSavedNote(failed, attempted)}`);
+    void vscode.window.showInformationMessage(`Accepted ${imported} item(s)${stillPending}.${await this.declinedNote(folderPins)}${notSavedNote(failed, attempted)}`);
   }
 
   /**
@@ -540,7 +543,7 @@ export class ShareInbox {
    * for the log and the tally, and the rest still imported (the E2 security review, finding 5).</p>
    */
   private async importOpened(
-    opened: readonly (OwnedShare & { payload: SharePayload })[], pin: string, attempted: Map<string, ShareAttempt>,
+    opened: readonly (OwnedShare & { payload: SharePayload })[], pin: string, attempted: Map<string, ShareAttempt>, folderPins: ArrivalPins,
   ): Promise<{ imported: number; declined: number; failed: OwnedShare[] }> {
     let imported = 0;
     let declined = 0;
@@ -552,7 +555,7 @@ export class ShareInbox {
         continue;
       }
       // A share LEFT in the inbox (a dismissed update) is still pending — counted with the declined ones.
-      await landShare(this.deps, share, arriving, this.arrivalPins()).then((landing) => (landing === 'landed' ? imported++ : declined++), (error: unknown) => {
+      await landShare(this.deps, share, arriving, folderPins).then((landing) => (landing === 'landed' ? imported++ : declined++), (error: unknown) => {
         rememberAttempt(attempted, share.item.id, attemptOf('', error, pin));
         failed.push(share);
       });
@@ -566,6 +569,12 @@ export class ShareInbox {
    */
   private arrivalPins(): ArrivalPins {
     return arrivalPins(folderQuestion(this.deps.storage));
+  }
+
+  /** The folders a batch left shares out of because their PIN was not given — said in the tally, or ''. */
+  private async declinedNote(folderPins: ArrivalPins): Promise<string> {
+    const names = (await folderPins.declined()).map((f) => `"${this.deps.storage.getNode(f.accountId, f.folderId)?.name ?? ''}"`);
+    return names.length === 0 ? '' : ` Left in "Shared with me": no PIN was given for the folder(s) ${names.join(', ')}, which ask for one on every entry in them.`;
   }
 
   /**

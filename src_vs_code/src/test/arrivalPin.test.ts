@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { test } from 'node:test';
 import { sealShare } from '../shareFormat';
 import { isLockedSecret, readSecret, unlockSecret } from '../secretEnvelope';
@@ -286,5 +289,82 @@ test('a folder that only HOLDS protected entries does not reach a subfolder the 
   const [entry] = w.entries();
   assert.equal(entry?.parentId, w.folderId('db'));
   assert.equal(await w.storage.getPassword(ACCOUNT, entry.id), `${SECRET}-prod-db`);
+});
+
+// ---------------------------------------------------------------------------------------------
+// B4 — a batch asks once per folder, and never inside the lease.
+// ---------------------------------------------------------------------------------------------
+
+/** The modals that asked to agree to the count a typed PIN opens — Add's *Use this PIN*. */
+function agreements(w: Arrivals): number {
+  return w.events.filter((e) => e.startsWith('modal:This PIN opens')).length;
+}
+
+test('acceptMany over three shares into one protected folder asks its PIN once — one box, one Use this PIN — and seals all three', async () => {
+  const w = await arrivals({ protectedIn: ['Production'] }, [TRANSIT, PIN]);
+  w.s.modalAnswers.push('Use this PIN');
+
+  await w.inbox.acceptMany(['alpha', 'beta', 'gamma'].map((name) => owned(folderShare(name, ['Production']))));
+
+  assert.equal(boxes(w, FOLDER_BOX), 1, `the folder was asked once per share: ${w.events.join(' | ')}`);
+  assert.equal(agreements(w), 1, 'one agreement for the whole batch');
+  neverInTheClear(w);
+  const entries = w.entries();
+  assert.equal(entries.length, 3, infos(w));
+  for (const entry of entries) {
+    await sealedUnder(w, entry, PIN);
+  }
+  assert.ok(w.s.infos.includes('Accepted 3 item(s).'), infos(w));
+});
+
+test('two folders are two questions; the first declined leaves its shares pending and named, and the second is still asked', async () => {
+  const w = await arrivals({ protectedIn: ['Production', 'Staging'] }, [TRANSIT, undefined, PIN]);
+  w.s.modalAnswers.push('Use this PIN');
+
+  await w.inbox.acceptMany([
+    owned(folderShare('alpha', ['Production'])),
+    owned(folderShare('beta', ['Production'])),
+    owned(folderShare('gamma', ['Staging'])),
+  ]);
+
+  assert.equal(boxes(w, FOLDER_BOX), 2, `one question per folder: ${w.events.join(' | ')}`);
+  assert.deepEqual(w.entries().map((n) => n.name), ['gamma'], 'only the share into the folder that was answered arrived');
+  await sealedUnder(w, w.entries()[0], PIN);
+  assert.deepEqual(w.removed.map((share) => share.item.entityName), ['gamma'], 'the declined folder’s shares stay in the inbox');
+  const tally = w.s.infos.find((m) => m.startsWith('Accepted')) ?? '';
+  assert.match(tally, /^Accepted 1 item\(s\), 2 still pending\./, infos(w));
+  assert.match(tally, /"Production"/, `the tally does not name the declined folder: ${tally}`);
+});
+
+test('the answer spans the whole conversation: shares opened by two transit PINs into one folder are one question', async () => {
+  const w = await arrivals({ protectedIn: ['Production'] }, [TRANSIT, PIN, 'transit-pin-2222']);
+  w.s.modalAnswers.push('Use this PIN');
+
+  await w.inbox.acceptMany([owned(folderShare('alpha', ['Production'])), owned(folderShare('beta', ['Production']), 'transit-pin-2222')]);
+
+  assert.equal(boxes(w, FOLDER_BOX), 1, `asked again in the second PIN round: ${w.events.join(' | ')}`);
+  assert.equal(w.entries().length, 2, infos(w));
+  for (const entry of w.entries()) {
+    await sealedUnder(w, entry, PIN);
+  }
+});
+
+test('no lease is held across the folder’s PIN box — a second window’s runOrSkip from inside the box runs', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arrival-lease-'));
+  try {
+    const w = await arrivals({ protectedIn: ['Production'], lockDir: dir }, [TRANSIT, PIN]);
+    w.s.modalAnswers.push('Use this PIN');
+    // The control: the probe CAN see a held lease — from inside this window's own write, it is skipped.
+    const control = await w.storage.writes.run(() => w.probe());
+    assert.equal(control, 'skipped', 'the probe cannot see a held lease, so it proves nothing');
+
+    await w.inbox.acceptMany([owned(folderShare('alpha', ['Production'])), owned(folderShare('beta', ['Production']))]);
+
+    assert.ok(w.probes.length > 0, 'precondition: the folder’s PIN box was raised');
+    assert.deepEqual(w.probes.filter((p) => p !== 'ran'), [], 'the folder’s PIN box was raised while this window held the lease');
+    assert.equal(w.entries().length, 2, infos(w));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 

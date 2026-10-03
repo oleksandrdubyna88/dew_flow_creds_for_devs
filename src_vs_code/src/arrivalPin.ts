@@ -39,9 +39,17 @@ export interface FolderQuestion {
   readonly prefers: (accountId: string, folderId: string) => boolean;
 }
 
+/** A folder of one account. */
+export interface FolderRef {
+  readonly accountId: string;
+  readonly folderId: string;
+}
+
 /** The per-command memo: one answer per destination folder. */
 export interface ArrivalPins {
   settledFor(landing: Landing): Promise<CreatePin>;
+  /** The folders whose question was declined in this command — what a batch's tally names. */
+  declined(): Promise<readonly FolderRef[]>;
 }
 
 const NONE: CreatePin = { kind: 'none' };
@@ -79,14 +87,18 @@ export function landingOf(storage: StorageManager, accountId: string, under: str
  * <p>Every answer is kept, a decline too: a folder declined is not asked again within the same command.</p>
  */
 export function arrivalPins(question: FolderQuestion): ArrivalPins {
-  const settled = new Map<string, Promise<CreatePin>>();
+  const settled = new Map<string, { readonly folder: FolderRef; readonly answer: Promise<CreatePin> }>();
   const askedIn = (accountId: string, folderId: string): Promise<CreatePin> => {
     const key = JSON.stringify([accountId, folderId]);
-    const known = settled.get(key) ?? question.ask(accountId, folderId);
+    const known = settled.get(key) ?? { folder: { accountId, folderId }, answer: question.ask(accountId, folderId) };
     settled.set(key, known);
-    return known;
+    return known.answer;
   };
   return {
+    declined: async () => {
+      const answers = await Promise.all([...settled.values()].map(async ({ folder, answer }) => ({ folder, kind: (await answer).kind })));
+      return answers.filter((a) => a.kind === 'cancelled').map((a) => a.folder);
+    },
     settledFor: ({ accountId, existing, creates }) => {
       if (existing === null) {
         return Promise.resolve(NONE);
