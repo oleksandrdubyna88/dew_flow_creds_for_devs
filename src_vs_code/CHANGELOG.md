@@ -53,6 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decided automatically: the agent uses what is stored, and your next click asks.
 - **The background sweep, and the store right after a sync, put a waiting value in without telling you.**
   Both now say so, once per value, in the same words as every other place that stores one.
+- **Sharing an entry stored its waiting value without telling you, and never asked about a conflict.** Sharing
+  an entry whose rotated value was waiting — protected or not, on its own or inside a shared folder — now says
+  *"The new password of "X" from … is now stored"* like every other place, and if the stored value changed after
+  the rotation it asks which one the far side accepts before anything is sent: the share carries your choice.
 - **The help says all of it in every language**, and a test now fails if a translation drops it.
 - **The waiting modal and the row named a PIN on an entry without one.** After a keychain failure the modal
   said the entry "was protected with a PIN" and the row's tooltip said to enter its PIN. Both now say what

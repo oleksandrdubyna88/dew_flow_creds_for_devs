@@ -42,7 +42,7 @@ test('the English PIN article says an agent cannot rotate a one-use entry at all
 });
 
 /**
- * The waiting value beside an entry WITHOUT a PIN (`todo/PLAN_waiting_rotation_visible.md`): the sentence that says
+ * The waiting value beside an entry WITHOUT a PIN (`research/PLAN_waiting_rotation_visible.md`): the sentence that says
  * its next use — a click or an agent's — stores it first, else the sweep within a minute, and that each time the
  * person is told. Translated, so each language is pinned by its own opening and its own "you are told"; a language
  * with no entry here fails rather than passing unchecked, so a sixth translation cannot slip past.

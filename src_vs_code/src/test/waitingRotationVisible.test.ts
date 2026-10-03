@@ -16,7 +16,7 @@ import { ACCOUNT, ModalAnswer, Sinks, carried, clickVscode, memoryStorage, memor
 
 /**
  * A rotated value that waits beside an UNPROTECTED entry is used, and said, at every door
- * (`todo/PLAN_waiting_rotation_visible.md`). Over the REAL `StorageManager` with every keychain read and
+ * (`research/PLAN_waiting_rotation_visible.md`). Over the REAL `StorageManager` with every keychain read and
  * write logged (`pinWorld.ts`), in the shape of the rotation worlds of `rotationQuarantine.test.ts`.
  *
  * <p>The rotation-quarantine plan shipped with two limits: a click on an unprotected entry used the old value
