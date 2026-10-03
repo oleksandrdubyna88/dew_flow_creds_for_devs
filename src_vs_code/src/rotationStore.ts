@@ -5,12 +5,13 @@ import { NOTHING_OPENED } from './editPrefill';
 import { EntryWriter, UnattendedRefusal, writeUnattended, writerFor } from './entryWriter';
 import { admitEntry } from './pinPrompt';
 import { RotationNotStored, StoreOutcome } from './rotateAction';
-import { Fingerprint, holdRotated, supersedeHeld } from './rotationQuarantine';
+import { Fingerprint, holdRotated, releaseBeforeAutomaticUse, supersedeHeld } from './rotationQuarantine';
 import { sealingForUpdate } from './sealingAtWrite';
 import { copiedMessage, copySecret } from './secretClipboard';
 import type { RotationSlot } from './secretRotation';
 import { updateDoors } from './shareUpdateSeal';
 import type { StorageManager } from './storageManager';
+import type { StoredSecret } from './storedSecret';
 import type { UseActionContext } from './useActions';
 
 /**
@@ -54,6 +55,18 @@ export async function storeRotated(storage: StorageManager, ctx: UseActionContex
   }
   await supersedeHeld(storage, ctx.accountId, ctx.entityId, slot);
   return 'stored';
+}
+
+/**
+ * What the rotation replaces, as `RotateDeps.current` reads it for `prepare` — whose fingerprint becomes the hold's `was`.
+ * Read AFTER a rotated value waiting beside an unprotected entry went in (`releaseBeforeAutomaticUse`, the index first):
+ * the statement runs against that value (the broker and the automatic opener release it too), so a `was` taken from the
+ * value before it would make the next door see a conflict that is not one (the security review of
+ * `PLAN_waiting_rotation_visible`, fix 2). A protected entry is left alone, as everywhere automatic.
+ */
+export async function rotationCurrent(storage: StorageManager, ctx: UseActionContext, slot: RotationSlot): Promise<StoredSecret | undefined> {
+  await releaseBeforeAutomaticUse(storage, ctx.accountId, ctx.entityId);
+  return slot === 'password' ? storage.getPassword(ctx.accountId, ctx.entityId) : storage.getDbConnection(ctx.accountId, ctx.entityId);
 }
 
 /** The value a refused store keeps: its slot, its stored form, and the fingerprint of what it replaced. */

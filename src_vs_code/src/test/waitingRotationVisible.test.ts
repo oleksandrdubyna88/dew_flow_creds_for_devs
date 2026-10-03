@@ -8,6 +8,7 @@ import { fingerprintOf, holdRotated } from '../rotationQuarantine';
 import { rotationQuarantineSecretKey, secretKey } from '../secretKeys';
 import type { StorageManager } from '../storageManager';
 import { EntityMetadata } from '../types';
+import type { UseAction } from '../useActions';
 import { loadEachWithVscode } from './vscodeStub';
 import { world as brokerWorld, call, share } from './brokerWorld';
 import { ACCOUNT, ModalAnswer, Sinks, carried, clickVscode, memoryStorage, memoryStorages, seedEntry, sinks } from './pinWorld';
@@ -593,4 +594,61 @@ test('the window hands the broker its release-before-the-table — or the test a
     extensionLines().some((line) => line.includes('releaseWaiting: (accountId, entityId) => releaseBeforeAutomaticUse(storage, accountId, entityId)')),
     'extension.ts never gives the broker releaseWaiting: an agent could print a released password the mask table never saw',
   );
+});
+
+// ---- the security review (2026-10-03), fix 2: the rotation reads what it replaces AFTER a waiting value went in ----
+
+test("a rotation of an entry whose rotated value was waiting fingerprints the value it really replaced — no spurious conflict when its own store fails", async () => {
+  const s = sinks();
+  s.modalAnswers.push('Later');
+  const stub = clickVscode([], s);
+  const storage = memoryStorage(stub);
+  await seedEntry(storage, dbDetails(), { 'database connection': OLD_CONN });
+  await holdRotated(storage, ACCOUNT, DB, 'dbConnection', NEW_CONN, await fingerprintOf(OLD_CONN));
+  const [{ rotateAction }, { rotationCurrent, storeRotated }, { automaticOpenerFor }, quarantine, { snapshotForRevision }, { NEW_SECRET_PLACEHOLDER }] = loadEachWithVscode(
+    ['../rotateAction', '../rotationStore', '../automaticRead', '../rotationQuarantine', '../revisionSnapshot', '../secretRotation'],
+    stub,
+  ) as [typeof import('../rotateAction'), typeof import('../rotationStore'), typeof import('../automaticRead'), typeof import('../rotationQuarantine'), typeof import('../revisionSnapshot'), typeof import('../secretRotation')];
+  const host = storage as unknown as { setDbConnection: (...args: unknown[]) => Promise<unknown> };
+  const farSide: UseAction = {
+    kind: 'db',
+    action: 'query',
+    mutatesSecrets: false,
+    verb: 'run a query against',
+    validate: () => ({ ok: true }),
+    summarize: () => '',
+    describeOutcome: () => 'ok',
+    run: async () => {
+      // The query reads its connection the automatic way — which stores the waiting value — and the far side
+      // takes the new password. Then the rotation's own store fails (a keychain error).
+      await automaticOpenerFor(storage, ACCOUNT)(dbDetails(), await storage.getDbConnection(ACCOUNT, DB));
+      const real = host.setDbConnection.bind(storage);
+      host.setDbConnection = () => {
+        host.setDbConnection = real;
+        return Promise.reject(new Error('the keychain refused the write (injected)'));
+      };
+      return { status: 200, body: { exitCode: 0, stdout: 'ALTER\n', stderr: '' } };
+    },
+  };
+  // The rotation's dependencies as `extension.ts` builds them — `current` is the window's own.
+  const action = rotateAction(farSide, 'query', {
+    generate: () => ({ ok: true, value: 'NEWER-generated-Pw-31d7', kind: 'password' }),
+    entity: (ctx) => storage.getNode(ctx.accountId, ctx.entityId)?.details,
+    current: (ctx, slot) => rotationCurrent(storage, ctx, slot),
+    snapshot: (ctx, d) => snapshotForRevision(storage, ctx.accountId, { id: ctx.entityId, name: ctx.entityName, details: d }),
+    record: (ctx, revision) => storage.recordRevision(ctx.accountId, ctx.entityId, revision),
+    store: (ctx, slot, value, was) => storeRotated(storage, ctx, slot, value, was),
+  });
+
+  await action.run(DB_CTX, { statement: `ALTER USER app IDENTIFIED BY '${NEW_SECRET_PLACEHOLDER}'` });
+
+  assert.equal(carried(await storage.getDbConnection(ACCOUNT, DB)), NEW_CONN, 'the setup: the waiting value did not go in during the rotation');
+  assert.match(carried((await storage.heldRotations.read(ACCOUNT, DB)).dbConnection?.value) ?? '', /NEWER-generated/, 'the setup: the failed store did not hold the rotated value');
+  const release = await quarantine.releaseHeld(storage, ACCOUNT, DB, 'orders-db', quarantine.UNATTENDED);
+  assert.deepEqual(release.conflicts, [], "a spurious conflict: the hold's fingerprint was taken from the value the waiting one had already replaced");
+  assert.match(carried(await storage.getDbConnection(ACCOUNT, DB)) ?? '', /NEWER-generated/);
+});
+
+test("the window's rotation reads what it replaces through rotationCurrent", () => {
+  assert.ok(extensionLines().some((line) => line.includes('current: (ctx, slot) => rotationCurrent(storage, ctx, slot)')), "extension.ts's rotation reads the slot raw again");
 });

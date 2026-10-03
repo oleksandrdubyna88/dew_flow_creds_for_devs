@@ -69,7 +69,7 @@ import { maskEntriesFor } from './maskEntries';
 import { visibleConfigDetails, visibleMcpEntries } from './mcpEntries';
 import { McpEntriesCache } from './mcpEntriesCache';
 import { RotateDeps, rotateAction } from './rotateAction';
-import { storeRotated } from './rotationStore';
+import { rotationCurrent, storeRotated } from './rotationStore';
 import { announceReleasesWith, releaseBeforeAutomaticUse, waitingKeys } from './rotationQuarantine';
 import { releaseAndSay, sayReleasedValues } from './rotationWaiting';
 import { generateSecret } from './secretKinds';
@@ -679,10 +679,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const rotateDeps: RotateDeps = {
     generate: (kind, options) => generateSecret(kind, options),
     entity: (ctx) => storage.getNode(ctx.accountId, ctx.entityId)?.details,
-    current: (ctx, slot) =>
-      slot === 'password'
-        ? Promise.resolve(storage.getPassword(ctx.accountId, ctx.entityId))
-        : Promise.resolve(storage.getDbConnection(ctx.accountId, ctx.entityId)),
+    current: (ctx, slot) => rotationCurrent(storage, ctx, slot), // after a waiting value went in (rotationStore.ts)
     snapshot: (ctx, details) =>
       snapshotForRevision(storage, ctx.accountId, { id: ctx.entityId, name: ctx.entityName, details }),
     record: (ctx, revision) => storage.recordRevision(ctx.accountId, ctx.entityId, revision),
