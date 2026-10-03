@@ -46,3 +46,39 @@ test('a folder the landing creates that asks for a PIN is asked even inside a pl
 
   assert.deepEqual(secrets, KEYS_PIN, `the folder that asks took its plain parent's "no PIN" — its entries would be written in the clear (asked: ${asked.join(', ')})`);
 });
+
+const DECLINED: CreatePin = { kind: 'cancelled' };
+
+/** One landing that creates a plain `Docs` and, inside it, `Keys` — which asks for a PIN. */
+const DOCS_THEN_KEYS = landing(null, { name: 'Docs' }, { name: 'Keys', folderAsksForPin: true });
+
+test('the answer of a folder that asks is handed to it and below — not to the plain folder above it', async () => {
+  const { question, asked } = recorded({ first: [KEYS_PIN] });
+  const pins = arrivalPins(question);
+  assert.deepEqual(await pins.settledFor(DOCS_THEN_KEYS), KEYS_PIN, 'precondition: Keys was asked its first PIN');
+  pins.created(DOCS_THEN_KEYS, ['docs-id', 'keys-id']);
+
+  assert.deepEqual(await pins.settledFor(landing('keys-id')), KEYS_PIN, 'a later arrival into Keys is Keys\' question, already answered');
+  const docs = await pins.settledFor(landing('docs-id'));
+
+  assert.deepEqual(docs, NONE, 'a later arrival into the plain Docs was sealed under the PIN of Keys, the folder below it');
+  assert.deepEqual(asked, ['first', 'ask:docs-id'], 'Docs is asked what Add asks there');
+});
+
+test('a decline in a folder that asks is not handed to the plain folder above it', async () => {
+  const { question } = recorded({ first: [DECLINED] });
+  const pins = arrivalPins(question);
+  await pins.settledFor(DOCS_THEN_KEYS);
+  pins.created(DOCS_THEN_KEYS, ['docs-id', 'keys-id']);
+
+  assert.deepEqual(await pins.settledFor(landing('docs-id')), NONE, 'a later arrival into the plain Docs was blocked by the decline of Keys below it');
+});
+
+test('recording what a landing created asks no question of its own — it is called while writing', async () => {
+  const { question, asked } = recorded({ prefers: ['top-id'] });
+  const pins = arrivalPins(question);
+
+  pins.created(landing('top-id', { name: 'New' }), ['new-id']);
+
+  assert.deepEqual(asked, [], 'created() raised a PIN box in the middle of the writes');
+});

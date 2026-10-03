@@ -124,12 +124,34 @@ export function arrivalPins(question: FolderQuestion): ArrivalPins {
     settledFor: (landing) => answerFor(landing).answer,
     askedFolder: (landing) => askingFor(question, landing)?.folder,
     created: (landing, folderIds) => {
-      const known = answerFor(landing);
-      for (const folderId of folderIds) {
-        inherited.set(JSON.stringify([landing.accountId, folderId]), known);
+      // Each created folder takes the answer of the landing that ENDS at it, and only an answer a QUESTION gave
+      // at or above it: a folder that asks hands its answer to itself and below, never to a plain folder above
+      // it — which is asked what Add asks there when something lands in it later (second code round, finding
+      // 3). Read from the memo, never asked: this runs while the folders are written.
+      for (const [at, folderId] of folderIds.entries()) {
+        const known = peek({ ...landing, creates: landing.creates.slice(0, at + 1) });
+        if (known !== undefined) {
+          inherited.set(JSON.stringify([landing.accountId, folderId]), known);
+        }
       }
     },
   };
+
+  /** The answer the memo already holds for a landing — a folder it creates that asks first — or none yet. */
+  function peek(landing: Landing): Known | undefined {
+    const own = preferringCreated(question, landing);
+    return (own === undefined ? undefined : settled.get(own.key)) ?? levelKnown(landing);
+  }
+
+  /** The answer of the level the landing starts from: inherited, or the existing folder's question if one was asked. */
+  function levelKnown(landing: Landing): Known | undefined {
+    const up = inherited.get(JSON.stringify([landing.accountId, landing.existing]));
+    if (up !== undefined) {
+      return up;
+    }
+    const asking = askingFor(question, landing);
+    return asking === undefined ? undefined : settled.get(asking.key);
+  }
 
   function answerFor(landing: Landing): Known {
     const up = inherited.get(JSON.stringify([landing.accountId, landing.existing]));
