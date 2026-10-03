@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import type { SecretSlot } from './entitySlots';
 import { PinOpen, openStored, silentPinGate } from './pinGate';
 import { admitted } from './pinPrompt';
-import { beforeTheDoor } from './rotationQuarantine';
+import { beforeTheDoor, isWaiting } from './rotationQuarantine';
 import { OpenedSecret, SecretOpener, SecretOwner } from './secretOpener';
 import { isLockedSecret } from './secretEnvelope';
 import type { StorageManager } from './storageManager';
@@ -22,7 +22,11 @@ import type { StoredSecret } from './storedSecret';
  * second box the person cannot tell from the first.</p>
  *
  * <p>An entry with no mark and a value that is not sealed skips the door: there is nothing to ask
- * about, and the door would read every slot of the entry to find that out.</p>
+ * about, and the door would read every slot of the entry to find that out — UNLESS the local index lists a
+ * rotated value waiting beside it (`rotationQuarantine.isWaiting`, the index alone, no keychain read). Then the
+ * click takes the door a protected entry takes, whose unlocked branch stores the waiting value plain, says so
+ * and asks a conflict, so the click uses the new value instead of the one the rotation replaced
+ * (`PLAN_waiting_rotation_visible.md` W1). No PIN box can appear: the door asks only when a slot is locked.</p>
  */
 
 /** How a slot is read — `SecretSlot.read`'s shape, so a row of the slot table can be passed as it is. */
@@ -50,7 +54,7 @@ export async function clickedSecret(
 export function clickOpener(storage: StorageManager, accountId: string, purpose: string): SecretOpener {
   const behindTheDoor = grantedOpener(accountId);
   return async (owner, stored) => {
-    if (!needsDoor(owner, stored)) {
+    if (!(await needsDoor(storage, accountId, owner, stored))) {
       return behindTheDoor(owner, stored);
     }
     const reread = await beforeTheDoor(storage, accountId, owner.id);
@@ -74,8 +78,9 @@ export function grantedOpener(accountId: string): SecretOpener {
 /** Said already, or declined: the caller has nothing left to say. */
 const STOPPED: OpenedSecret = { kind: 'stopped', reason: '' };
 
-function needsDoor(owner: SecretOwner, stored: StoredSecret | undefined): boolean {
-  return owner.pinProtected === true || isLockedSecret(stored);
+/** A PIN to ask, or a rotated value waiting beside an unprotected entry — the index asked last, and only then. */
+async function needsDoor(storage: StorageManager, accountId: string, owner: SecretOwner, stored: StoredSecret | undefined): Promise<boolean> {
+  return owner.pinProtected === true || isLockedSecret(stored) || (await isWaiting(storage, accountId, owner.id).catch(() => false));
 }
 
 /** The value — or nothing, and nothing only after the reason has been put in front of somebody. */

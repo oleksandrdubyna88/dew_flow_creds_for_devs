@@ -535,6 +535,16 @@ async function protectedNow(storage: StorageManager, entry: HeldEntry): Promise<
 // ---- what the person sees (plan §4.6) ----
 
 /**
+ * Whether the local index lists this entry — the index ALONE, a memento read and no keychain `get`
+ * (`PLAN_waiting_rotation_visible.md` §3.1). A hint like every read of the index: a listed entry is read
+ * before anything is believed, and an unlisted one — every entry, almost always — costs nothing more. What
+ * lets a click on an UNPROTECTED entry take its door only when a rotated value waits beside it.
+ */
+export async function isWaiting(storage: StorageManager, accountId: string, entityId: string): Promise<boolean> {
+  return (await storage.heldRotations.listed()).some((entry) => entry.accountId === accountId && entry.entityId === entityId);
+}
+
+/**
  * The tree's hint: every entry with a value held beside it, as `entityFlags.entityKey` — read from the local
  * index, verified by one keychain get per LISTED entry (the tree cannot await, so the flags walk asks this).
  * An index entry whose entry or item is gone is dropped here too; one whose tree cannot be read is kept, and
