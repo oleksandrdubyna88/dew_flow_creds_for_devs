@@ -44,6 +44,12 @@ export interface Arrivals {
   readonly probes: string[];
   /** A second window's `runOrSkip` now: `ran`, `skipped` while this window holds the lease. */
   probe(): Promise<string>;
+  /**
+   * Answer every box whose title matches `title` with `answer` instead of the queue — an `Error` makes the
+   * box REJECT. For a conversation whose order is the thing under test, where a queue would answer the
+   * wrong box.
+   */
+  boxRule(title: RegExp, answer: string | undefined | Error): void;
   folderId(name: string): string | undefined;
   /** Run a registered import command on the named folder, its file picker answering `path` holding `text`. */
   importInto(command: string, folder: string, path: string, text: string): Promise<void>;
@@ -75,6 +81,25 @@ async function folderWithSibling(storage: StorageManager, name: string, prefers:
   await storage.setPassword(ACCOUNT, sibling, stored(await locked('the sibling’s password')));
 }
 
+/** A box answered by its title rather than from the queue (`Arrivals.boxRule`). */
+type BoxRule = readonly [RegExp, string | undefined | Error];
+
+/** The answer a rule gives this box, or nothing when no rule matches it. */
+function ruledAnswer(rules: readonly BoxRule[], title: string): { readonly answer: Promise<string | undefined> } | undefined {
+  const rule = rules.find(([match]) => match.test(title));
+  if (rule === undefined) {
+    return undefined;
+  }
+  return { answer: rule[1] instanceof Error ? Promise.reject(rule[1]) : Promise.resolve(rule[1]) };
+}
+
+/** From inside the folder's PIN box, the second window's probe runs — "no lease across a box". */
+async function probedIfFolderBox(title: string, probe: () => Promise<void>): Promise<void> {
+  if (FOLDER_BOX.test(title)) {
+    await probe();
+  }
+}
+
 /** The file an import command's picker answers, and what reading it returns. */
 interface PickedFile {
   path: string;
@@ -82,17 +107,16 @@ interface PickedFile {
 }
 
 /** The `vscode` the accept and import paths touch: `pinWorld`'s sinks, a server location, a picked file, and an event log. */
-function arrivalVscode(inputs: (string | undefined)[], s: Sinks, events: string[], probe: () => Promise<void>, picked: PickedFile): Record<string, unknown> {
+function arrivalVscode(inputs: (string | undefined)[], s: Sinks, events: string[], probe: () => Promise<void>, picked: PickedFile, rules: readonly BoxRule[] = []): Record<string, unknown> {
   const stub = clickVscode(inputs, s);
   const window = stub.window as Record<string, (...args: never[]) => unknown>;
   const box = window.showInputBox as unknown as (options: { title?: string }, token?: unknown) => Promise<string | undefined>;
   const warn = window.showWarningMessage as unknown as (message: string, options?: { modal?: boolean }, ...buttons: string[]) => Promise<string | undefined>;
   window.showInputBox = (async (options: { title?: string }, token?: unknown) => {
-    events.push(`box:${options.title ?? ''}`);
-    if (FOLDER_BOX.test(options.title ?? '')) {
-      await probe();
-    }
-    return box(options, token);
+    const title = options.title ?? '';
+    events.push(`box:${title}`);
+    await probedIfFolderBox(title, probe);
+    return (ruledAnswer(rules, title) ?? { answer: box(options, token) }).answer;
   }) as never;
   window.showWarningMessage = ((message: string, options?: { modal?: boolean }, ...buttons: string[]) => {
     if (options?.modal === true) {
@@ -120,9 +144,10 @@ export async function arrivals(setup: Setup, inputs: (string | undefined)[]): Pr
   let second: StorageManager | undefined;
   const probe = (): Promise<string> => second?.writes.runOrSkip(() => Promise.resolve('ran'), () => 'skipped') ?? Promise.resolve('no second window');
   const picked: PickedFile = { path: '', text: '' };
+  const rules: BoxRule[] = [];
   const stub = arrivalVscode(queue, s, events, async () => {
     probes.push(await probe());
-  }, picked);
+  }, picked, rules);
   const storage = memoryStorage(stub, written, undefined, setup.lockDir);
   second = secondWindow(stub, setup.lockDir);
   await seedFolders(storage, setup);
@@ -153,11 +178,13 @@ export async function arrivals(setup: Setup, inputs: (string | undefined)[]): Pr
     events,
     probes,
     probe,
+    boxRule: (title, answer) => void rules.unshift([title, answer]),
     folderId: (name) => storage.getNodes(ACCOUNT).find((n) => n.type === 'folder' && n.name === name)?.id,
     importInto: async (command, folder, path, text) => {
       Object.assign(picked, { path, text });
+      // No folder name: the command runs on the account itself, so the import lands at the root.
       const node = storage.getNodes(ACCOUNT).find((n) => n.type === 'folder' && n.name === folder);
-      await handlers.get(command)?.({ kind: 'node', accountId: ACCOUNT, node });
+      await handlers.get(command)?.(folder === '' ? { kind: 'account', account: storage.getAccount(ACCOUNT) } : { kind: 'node', accountId: ACCOUNT, node });
     },
     importEntities: (location, entities) => imports.importEntities(storage, location, entities, pinOnCreate.folderQuestion(storage)),
     entries: () => storage.getNodes(ACCOUNT).filter((n) => n.type === 'entity' && !n.id.startsWith(SIBLING)),

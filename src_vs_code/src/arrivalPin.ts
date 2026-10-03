@@ -48,7 +48,11 @@ export interface FolderRef {
 /** The per-command memo: one answer per destination folder. */
 export interface ArrivalPins {
   settledFor(landing: Landing): Promise<CreatePin>;
-  /** The folders whose question was declined in this command — what a batch's tally names. */
+  /**
+   * The folders whose question was declined in this command — what a batch's tally names. A question that
+   * FAILED (rejected) is not a decline and is not named; the shares it stopped are already counted as failed.
+   * Never rejects: a batch must still end with its tally (the security review, finding 6).
+   */
   declined(): Promise<readonly FolderRef[]>;
 }
 
@@ -96,7 +100,7 @@ export function arrivalPins(question: FolderQuestion): ArrivalPins {
   };
   return {
     declined: async () => {
-      const answers = await Promise.all([...settled.values()].map(async ({ folder, answer }) => ({ folder, kind: (await answer).kind })));
+      const answers = await Promise.all([...settled.values()].map(async ({ folder, answer }) => ({ folder, kind: await kindOf(answer) })));
       return answers.filter((a) => a.kind === 'cancelled').map((a) => a.folder);
     },
     settledFor: ({ accountId, existing, creates }) => {
@@ -106,6 +110,11 @@ export function arrivalPins(question: FolderQuestion): ArrivalPins {
       return creates.length === 0 || question.prefers(accountId, existing) ? askedIn(accountId, existing) : Promise.resolve(NONE);
     },
   };
+}
+
+/** An answer's kind — `failed` for a question that rejected, which is neither a PIN nor a decline. */
+function kindOf(answer: Promise<CreatePin>): Promise<CreatePin['kind'] | 'failed'> {
+  return answer.then((pin) => pin.kind, () => 'failed' as const);
 }
 
 /** Why an arrival into this folder wrote nothing — the sentence a declined landing says. */
