@@ -698,3 +698,34 @@ test('a click on a CONFIG BODY whose text equals the replaced password gets the 
   assert.equal(carried(await storage.getPassword(ACCOUNT, ENTRY)), NEW, 'the setup: the click did not release the waiting password');
   assert.equal(opened.kind === 'open' && opened.value, OLD, 'the click on the config body was handed the released PASSWORD');
 });
+
+// ---- the code round 3 (2026-10-03), finding 4: a slot that was EMPTY before the rotation ----
+
+/** An unprotected entry with NO password, and a rotated one waiting beside it — the rotation replaced nothing. */
+async function emptyBeforeTheRotation(): Promise<{ readonly storage: StorageManager; readonly stub: Record<string, unknown> }> {
+  const stub = clickVscode([], sinks());
+  const storage = memoryStorage(stub);
+  await seedEntry(storage, details(), {});
+  await holdRotated(storage, ACCOUNT, ENTRY, 'password', NEW, await fingerprintOf(undefined));
+  return { storage, stub };
+}
+
+test('Copy Password on an entry whose password was EMPTY before the rotation copies the rotated password the door just stored', async () => {
+  const { storage, stub } = await emptyBeforeTheRotation();
+  const [click] = loadEachWithVscode(['../pinClick'], stub) as [typeof import('../pinClick')];
+
+  const opened = await click.clickedSecret(storage, ACCOUNT, OWNER, readPassword, 'copy its password', 'password');
+
+  assert.equal(carried(await storage.getPassword(ACCOUNT, ENTRY)), NEW, 'the setup: the door did not store the waiting password');
+  assert.equal(opened.kind === 'open' && opened.value, NEW, 'the click copied nothing — "no stored password" — though the rotated password is now stored');
+});
+
+test('an automatic read of a password that was EMPTY before the rotation gets the rotated password the opener just stored', async () => {
+  const { storage, stub } = await emptyBeforeTheRotation();
+  const [{ automaticOpenerFor }] = loadEachWithVscode(['../automaticRead'], stub) as [typeof import('../automaticRead')];
+
+  const opened = await automaticOpenerFor(storage, ACCOUNT)(details(), await storage.getPassword(ACCOUNT, ENTRY), 'password');
+
+  assert.equal(carried(await storage.getPassword(ACCOUNT, ENTRY)), NEW, 'the setup: the opener did not store the waiting password');
+  assert.equal(opened.kind === 'open' && opened.value, NEW, 'the automatic reader got nothing though the rotated password is now stored');
+});

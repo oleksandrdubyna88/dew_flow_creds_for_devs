@@ -479,9 +479,14 @@ async function slotsNow(storage: StorageManager, accountId: string, entityId: st
   return now;
 }
 
+/**
+ * The reader's slot was released, and what it read is what that slot held at the snapshot — an EMPTY slot included:
+ * a rotation that replaced nothing leaves a reader holding `undefined`, and the door has just stored the value (code
+ * round 3, finding 4 — the click copied nothing). Only a slot the snapshot took is compared.
+ */
 function rereadAfter(storage: StorageManager, accountId: string, entityId: string, before: Partial<Record<RotationSlot, StoredSecret | undefined>>): AfterTheDoor {
   return async (value, release, slot) => {
-    const replaced = release.released.find((one) => one.slot === slot && value !== undefined && before[one.slot] === value);
+    const replaced = release.released.find((one) => one.slot === slot && one.slot in before && before[one.slot] === value);
     return replaced === undefined ? value : rawSlot({ storage, accountId, entityId }, replaced.slot);
   };
 }
