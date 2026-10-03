@@ -45,11 +45,10 @@ import { LoginKeySession } from './devLoginKeySession';
 import { evictAndLock, wireCorpEscrow, wireDevBinding } from './corpBindingWiring';
 import { RecoverySessionKeys } from './breakGlass';
 import { CredTreeDataProvider, VIEW_ID } from './treeDataProvider';
-import { ArrivalHighlights } from './arrivalHighlight';
+import { ARRIVAL_WINDOW_MS, ArrivalHighlights } from './arrivalHighlight';
 import { ViewerClicks } from './viewerClicks';
 import { warnIfKeyringMissing } from './keyringWarningHost';
 import { AgentDoors, DoorSources, doorsOf } from './agentDoors';
-import { ARRIVAL_WINDOW_MS } from './arrivalHighlight';
 import { DepDecorationProvider } from './depDecorations';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
 import { formPanels, lockNotice } from './formPanels';
@@ -71,7 +70,7 @@ import { visibleConfigDetails, visibleMcpEntries } from './mcpEntries';
 import { McpEntriesCache } from './mcpEntriesCache';
 import { RotateDeps, rotateAction } from './rotateAction';
 import { storeRotated } from './rotationStore';
-import { announceReleasesWith, waitingKeys } from './rotationQuarantine';
+import { announceReleasesWith, releaseBeforeAutomaticUse, waitingKeys } from './rotationQuarantine';
 import { releaseAndSay, sayReleasedValues } from './rotationWaiting';
 import { generateSecret } from './secretKinds';
 import { CREDS_CLI, CredsProduct, ridFor } from './credsInstall';
@@ -522,6 +521,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // What makes masking live: the broker asks for the grant entity's own secret values and
     // redacts them out of whatever the agent is about to read.
     maskEntriesFor: (accountId, entityId) => maskEntriesFor(storage, accountId, entityId),
+    releaseWaiting: (accountId, entityId) => releaseBeforeAutomaticUse(storage, accountId, entityId), // before the table: brokerHooks.ts
     // What makes "until an agent uses it once" real: a successful call destroys the entry through
     // the one deletion path, tombstone and revision history included.
     burnAfterUse: burnOneUseIn(storage, () => provider.refresh()),

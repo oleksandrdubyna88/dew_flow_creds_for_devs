@@ -58,6 +58,15 @@ export interface BrokerHooks {
   readonly maskEntriesFor?: (accountId: string, entityId: string) => Promise<readonly MaskEntry[]>;
 
   /**
+   * Store a rotated value waiting beside the grant's entity, when it is unprotected, BEFORE the mask table is read
+   * (`rotationQuarantine.releaseBeforeAutomaticUse`; the security review of `PLAN_waiting_rotation_visible`, 2026-10-03).
+   * The action's automatic read would store it mid-run and use it, and a non-mutating action is delivered with
+   * the PRE-run table — so the new value, printed, would reach the agent unmasked. Released first, the table
+   * holds the value the action will use. Absent means nothing is released here; never throws into the call.
+   */
+  readonly releaseWaiting?: (accountId: string, entityId: string) => Promise<unknown>;
+
+  /**
    * Destroy the entity if it was marked to live for exactly one agent use; answers whether it did.
    *
    * <p>The DECISION lives outside on purpose. The broker knows a grant, not a stored record — it
@@ -175,6 +184,7 @@ export interface BrokerHooks {
 const HOOK_KINDS = {
   storageDir: 'string',
   maskEntriesFor: 'function',
+  releaseWaiting: 'function',
   burnAfterUse: 'function',
   isOneUse: 'function',
   resolveAlias: 'function',

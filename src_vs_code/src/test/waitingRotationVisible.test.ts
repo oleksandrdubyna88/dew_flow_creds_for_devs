@@ -9,6 +9,7 @@ import { rotationQuarantineSecretKey, secretKey } from '../secretKeys';
 import type { StorageManager } from '../storageManager';
 import { EntityMetadata } from '../types';
 import { loadEachWithVscode } from './vscodeStub';
+import { world as brokerWorld, call, share } from './brokerWorld';
 import { ACCOUNT, ModalAnswer, Sinks, carried, clickVscode, memoryStorage, memoryStorages, seedEntry, sinks } from './pinWorld';
 
 /**
@@ -549,4 +550,47 @@ test('the scan for the bare opener: a planted reader is reported, and the scan s
 
   assert.deepEqual(bareOpenerUses([planted]), ['newReader.ts:1', 'newReader.ts:2']);
   assert.ok(bareOpenerUses(productionFiles()).some((use) => use.startsWith('automaticRead.ts:')), 'the sanctioned use in automaticRead.ts is no longer seen — the scan matches nothing');
+});
+
+// ---- the security review (2026-10-03), fix 1: the mask table is read AFTER the waiting value went in ----
+
+test("an agent's output that prints a password released by its own call is MASKED — the broker releases before it reads the mask table", async () => {
+  // The grant the broker harness shares is a1/e1 "prod": an unprotected ssh entry with a rotated password waiting.
+  const storage = memoryStorage(clickVscode([], sinks()));
+  const prod = { id: 'e1', name: 'prod', kind: 'ssh', isSshEnabled: true } as EntityMetadata;
+  await seedEntry(storage, prod, { password: OLD });
+  await holdRotated(storage, ACCOUNT, 'e1', 'password', NEW, await fingerprintOf(OLD));
+  const [{ maskEntriesFor }, { automaticOpenerFor }, quarantine] = loadEachWithVscode(['../maskEntries', '../automaticRead', '../rotationQuarantine'], clickVscode([], sinks())) as [
+    typeof import('../maskEntries'),
+    typeof import('../automaticRead'),
+    typeof import('../rotationQuarantine'),
+  ];
+  // The window's hooks, as `extension.ts` passes them: the real masker and the real release.
+  const w = brokerWorld({
+    masker: (accountId, entityId) => maskEntriesFor(storage, accountId, entityId),
+    hooks: { releaseWaiting: (accountId: string, entityId: string) => quarantine.releaseBeforeAutomaticUse(storage, accountId, entityId) },
+  });
+  // A non-mutating action that reads its password the automatic way — releasing the waiting one — and prints it.
+  w.hold = async (): Promise<void> => {
+    const opened = await automaticOpenerFor(storage, ACCOUNT)(prod, await storage.getPassword(ACCOUNT, 'e1'));
+    w.result = { status: 200, body: { exitCode: 0, stdout: `the password is ${opened.kind === 'open' ? opened.value : '?'}\n`, stderr: '' } };
+  };
+  try {
+    const { port, secret } = await share(w);
+
+    const answer = await call(port, '/v1/use/exec', { token: secret, body: { command: 'echo $PW' } });
+
+    assert.equal(carried(await storage.getPassword(ACCOUNT, 'e1')), NEW, 'the setup: the call did not release the waiting password');
+    assert.ok(!JSON.stringify(answer.body).includes(NEW), `the agent's output carried the released password UNMASKED: ${JSON.stringify(answer.body)}`);
+    assert.match(String(answer.body.stdout), /the password is /);
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('the window hands the broker its release-before-the-table — or the test above is about a wiring no window makes', () => {
+  assert.ok(
+    extensionLines().some((line) => line.includes('releaseWaiting: (accountId, entityId) => releaseBeforeAutomaticUse(storage, accountId, entityId)')),
+    'extension.ts never gives the broker releaseWaiting: an agent could print a released password the mask table never saw',
+  );
 });
