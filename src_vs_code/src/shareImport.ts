@@ -100,7 +100,7 @@ async function originArrival(
   if (choice === 'Keep both') {
     return newArrival(deps, share, payload, landing, pins);
   }
-  const update = choice === 'Update it' ? await updatedInPlace(deps, share, payload, landing, previousId) : DISMISSED;
+  const update = choice === 'Update it' ? await updatedInPlace(deps, share, payload, landing, pins, previousId) : DISMISSED;
   if (update === DISMISSED) {
     // Dismissed on purpose — or the entry's PIN declined: the human wants to look before deciding.
     // The share must survive that — consuming it here would destroy the only copy of the decision.
@@ -118,13 +118,13 @@ const DISMISSED = 'dismissed';
  * by `sealedForRecipient`), `dismissed` when the entry's door was.
  */
 async function updatedInPlace(
-  deps: ShareInboxDeps, share: OwnedShare, payload: SharePayload, landing: Landing, previousId: string,
+  deps: ShareInboxDeps, share: OwnedShare, payload: SharePayload, landing: Landing, pins: ArrivalPins, previousId: string,
 ): Promise<Arrival | undefined | typeof DISMISSED> {
   const arriving = await sealedForRecipient(share, payload);
   if (arriving === undefined) {
     return undefined;
   }
-  const update = await updateInPlace(deps.storage, share.accountId, previousId, arriving, await writeChain(deps.storage, landing));
+  const update = await updateInPlace(deps.storage, share.accountId, previousId, arriving, await writeChain(deps.storage, landing, pins));
   return update === undefined
     ? DISMISSED
     : { payload: arriving, node: update.node, store: update.store, writeNode: () => deps.storage.updateNode(share.accountId, update.node), settled: NO_PIN };
@@ -161,7 +161,7 @@ async function newArrival(
   if (arriving === undefined) {
     return undefined;
   }
-  const parentId = await writeChain(deps.storage, landing);
+  const parentId = await writeChain(deps.storage, landing, pins);
   const node = withOwnId({ ...arriving.node, id: StorageManager.newId(), parentId, children: undefined });
   return {
     payload: arriving,
@@ -213,15 +213,19 @@ function folderName(storage: StorageManager, landing: Landing): string {
 
 /**
  * The folders the landing creates below the deepest one that exists — written only once its decision is
- * taken, so a declined arrival leaves no folder shell. Answers the folder the entry goes into.
+ * taken, so a declined arrival leaves no folder shell. Answers the folder the entry goes into. The folders
+ * are recorded with the memo, so a later share of the same command landing inside them is not asked again.
  */
-async function writeChain(storage: StorageManager, landing: Landing): Promise<string | null> {
+async function writeChain(storage: StorageManager, landing: Landing, pins: ArrivalPins): Promise<string | null> {
   let parentId = landing.existing;
+  const made: string[] = [];
   for (const seg of landing.creates) {
     const folderId = StorageManager.newId();
     await storage.addNode(landing.accountId, { id: folderId, name: seg.name, type: 'folder', parentId, folderType: seg.folderType });
+    made.push(folderId);
     parentId = folderId;
   }
+  pins.created(landing, made);
   return parentId;
 }
 

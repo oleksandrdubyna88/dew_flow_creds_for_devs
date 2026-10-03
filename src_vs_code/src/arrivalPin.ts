@@ -49,6 +49,12 @@ export interface FolderRef {
 export interface ArrivalPins {
   settledFor(landing: Landing): Promise<CreatePin>;
   /**
+   * The folders `landing` CREATED, once written: a later landing inside one of them is that landing's
+   * question, already answered — not a new one (the security review, finding 5: a batch whose first share
+   * created `Prod/Sub` asked `Sub` again for the second, which now held the first one's protected entry).
+   */
+  created(landing: Landing, folderIds: readonly string[]): void;
+  /**
    * The folders whose question was declined in this command — what a batch's tally names. A question that
    * FAILED (rejected) is not a decline and is not named; the shares it stopped are already counted as failed.
    * Never rejects: a batch must still end with its tally (the security review, finding 6).
@@ -92,6 +98,8 @@ export function landingOf(storage: StorageManager, accountId: string, under: str
  */
 export function arrivalPins(question: FolderQuestion): ArrivalPins {
   const settled = new Map<string, { readonly folder: FolderRef; readonly answer: Promise<CreatePin> }>();
+  /** A folder this command created → the answer of the landing that created it. */
+  const inherited = new Map<string, Promise<CreatePin>>();
   const askedIn = (accountId: string, folderId: string): Promise<CreatePin> => {
     const key = JSON.stringify([accountId, folderId]);
     const known = settled.get(key) ?? { folder: { accountId, folderId }, answer: question.ask(accountId, folderId) };
@@ -103,13 +111,25 @@ export function arrivalPins(question: FolderQuestion): ArrivalPins {
       const answers = await Promise.all([...settled.values()].map(async ({ folder, answer }) => ({ folder, kind: await kindOf(answer) })));
       return answers.filter((a) => a.kind === 'cancelled').map((a) => a.folder);
     },
-    settledFor: ({ accountId, existing, creates }) => {
-      if (existing === null) {
-        return Promise.resolve(NONE);
+    settledFor: (landing) => answerFor(landing),
+    created: (landing, folderIds) => {
+      const answer = answerFor(landing);
+      for (const folderId of folderIds) {
+        inherited.set(JSON.stringify([landing.accountId, folderId]), answer);
       }
-      return creates.length === 0 || question.prefers(accountId, existing) ? askedIn(accountId, existing) : Promise.resolve(NONE);
     },
   };
+
+  function answerFor(landing: Landing): Promise<CreatePin> {
+    return inherited.get(JSON.stringify([landing.accountId, landing.existing])) ?? decided(landing);
+  }
+
+  function decided({ accountId, existing, creates }: Landing): Promise<CreatePin> {
+    if (existing === null) {
+      return Promise.resolve(NONE);
+    }
+    return creates.length === 0 || question.prefers(accountId, existing) ? askedIn(accountId, existing) : Promise.resolve(NONE);
+  }
 }
 
 /** An answer's kind — `failed` for a question that rejected, which is neither a PIN nor a decline. */
