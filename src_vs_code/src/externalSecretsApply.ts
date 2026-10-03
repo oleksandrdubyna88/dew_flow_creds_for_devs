@@ -1,5 +1,6 @@
 import type { ExternalSecrets } from './externalBundle';
 import { EntryWriter, writerForNew } from './entryWriter';
+import type { SettledPin } from './pinOnCreate';
 import type { StorageManager } from './storageManager';
 
 /**
@@ -48,8 +49,11 @@ export const EXTERNAL_SECRET_KEYS = [
 
 /**
  * Restore one bundle's secrets, entity by entity — each entity's through its own writer
- * (`entryWriter.writerForNew`: the ids are new, and an import asks no folder PIN — §2.7 of the
- * typed-secrets plan), never through the storage itself (T4).
+ * (`entryWriter.writerForNew`: the ids are new), never through the storage itself (T4).
+ *
+ * <p>`pinFor` says, per entity, the PIN its landing settled — the folder's, sealing every value before its
+ * first write, or none (`PLAN_pin_folder_asks_on_accept_and_import.md` B7). REQUIRED, with no default: a
+ * caller that could leave it out could write plain into a protected folder without noticing.</p>
  *
  * <p>Sequential rather than parallel, matching the loop it replaces: each write is a read-modify-write
  * of shared storage state, and two in flight would drop one.</p>
@@ -58,9 +62,10 @@ export async function applyExternalSecrets(
   storage: StorageManager,
   accountId: string,
   secrets: Readonly<Record<string, ExternalSecrets>>,
+  pinFor: (entityId: string) => SettledPin,
 ): Promise<void> {
   for (const [entityId, s] of Object.entries(secrets)) {
-    const writer = writerForNew(storage, accountId, entityId);
+    const writer = writerForNew(storage, accountId, entityId, pinFor(entityId));
     await applySimpleFields(writer, accountId, entityId, s);
     await applyFields(writer, accountId, entityId, s);
   }

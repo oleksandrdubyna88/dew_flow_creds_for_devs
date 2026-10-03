@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { sealShare } from '../shareFormat';
+import { isExternalBundle } from '../externalBundle';
 import { isLockedSecret, readSecret, unlockSecret } from '../secretEnvelope';
 import type { StorageManager } from '../storageManager';
 import { StoredSecret, stored } from '../storedSecret';
@@ -526,4 +527,65 @@ test('importEntities: a declined destination skips only its own entries — the 
   const [filed] = w.entries();
   assert.equal(filed?.name, 'filed', 'a folder that only HOLDS protected entries does not reach a folder the import makes (§9.1)');
   assert.equal(await w.storage.getPassword(ACCOUNT, filed.id), `${SECRET}-filed`);
+});
+
+// ---------------------------------------------------------------------------------------------
+// B7 — a CredsForDevs bundle import honours the folder.
+// ---------------------------------------------------------------------------------------------
+
+/** A plain CredsForDevs export: `alpha` at its root, `beta` inside its folder `Team` — checked by the real validator. */
+function bundleFile(): string {
+  const entry = (id: string, name: string, parentId: string | null): TreeNode => ({
+    id, name, type: 'entity', parentId, details: { id, name, isSshEnabled: false } as EntityMetadata,
+  });
+  const bundle = {
+    format: 'creds-for-devs-external',
+    version: 1,
+    nodes: [entry('b-alpha', 'alpha', null), { id: 'b-team', name: 'Team', type: 'folder', parentId: null, folderType: 'any' }, entry('b-beta', 'beta', 'b-team')],
+    secrets: {
+      'b-alpha': { password: `${SECRET}-alpha`, notes: `${NOTE}-alpha` },
+      'b-beta': { password: `${SECRET}-beta`, notes: `${NOTE}-beta` },
+    },
+  };
+  assert.ok(isExternalBundle(bundle), 'the fixture is not a bundle the import accepts — every assertion below would be about nothing');
+  return JSON.stringify(bundle);
+}
+
+test('a bundle imported into a folder that asks is sealed under its PIN before its first write — at most one question for the whole bundle', async () => {
+  const w = await arrivals({ prefersIn: ['Production'] }, [FIRST_PIN, FIRST_PIN]);
+
+  await w.importInto('credSshManager.importExternal', 'Production', '/exports/handover.json', bundleFile());
+
+  neverInTheClear(w);
+  assert.equal(w.events.filter((e) => e.startsWith('box:')).length, 2, `one first PIN, typed twice, for the whole bundle: ${w.events.join(' | ')}`);
+  assert.deepEqual(w.entries().map((n) => n.name).sort(), ['alpha', 'beta']);
+  for (const entry of w.entries()) {
+    await sealedUnder(w, entry, FIRST_PIN);
+  }
+  assert.equal(w.storage.getNode(ACCOUNT, w.folderId('Team') ?? '')?.parentId, w.folderId('Production'));
+});
+
+test('declined, nothing of the bundle under that folder is written — no value, no entry, no folder — and the message says so', async () => {
+  const w = await arrivals({ prefersIn: ['Production'] }, [undefined]);
+
+  await w.importInto('credSshManager.importExternal', 'Production', '/exports/handover.json', bundleFile());
+
+  assert.deepEqual(w.written, [], 'the keychain was written although the folder’s PIN was declined');
+  assert.deepEqual(w.entries(), []);
+  assert.equal(w.folderId('Team'), undefined, 'the bundle’s folder was written for entries a decline kept out');
+  assert.match(infos(w), /Imported 0 node\(s\) from handover\.json\. 2 not imported: "alpha" — the folder "Production" asks for a PIN/, infos(w));
+});
+
+test('a folder that only HOLDS protected entries seals the bundle’s root entry under its PIN, and not the entry in a folder the bundle makes (§9.1)', async () => {
+  const w = await arrivals({ protectedIn: ['Production'] }, [PIN]);
+  w.s.modalAnswers.push('Use this PIN');
+
+  await w.importInto('credSshManager.importExternal', 'Production', '/exports/handover.json', bundleFile());
+
+  assert.equal(boxes(w, FOLDER_BOX), 1, w.events.join(' | '));
+  const byName = new Map(w.entries().map((n) => [n.name, n]));
+  await sealedUnder(w, byName.get('alpha') as TreeNode, PIN);
+  assert.deepEqual(w.written.filter((v) => v.includes(`${SECRET}-alpha`) || v.includes(`${NOTE}-alpha`)), [], 'the root entry reached the keychain in the clear before it was sealed (R3)');
+  const beta = byName.get('beta') as TreeNode;
+  assert.equal(await w.storage.getPassword(ACCOUNT, beta.id), `${SECRET}-beta`, 'Add into an empty subfolder of it asks nothing, and neither does a bundle');
 });

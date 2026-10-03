@@ -9,6 +9,9 @@ import { EntryLandedError } from './entityWrite';
 import { FolderQuestion, Landing, arrivalPins, declinedLanding } from './arrivalPin';
 import type { ArrivalPins } from './arrivalPin';
 import { CreatePin, SettledPin, applyCreatePin } from './pinOnCreate';
+import type { FolderSeg } from './arrivalPin';
+import type { ExternalBundle } from './externalBundle';
+import { applyExternalSecrets } from './externalSecretsApply';
 import { EntryWriter, writerForNew } from './entryWriter';
 import { StorageManager } from './storageManager';
 import { ImportedEntity } from './importFormats';
@@ -72,8 +75,13 @@ function importLanding(location: NodeLocation, folder: string | undefined): Land
 
 /** The entries a declined landing kept out, each with the sentence that says why. */
 function skippedFor(storage: StorageManager, location: NodeLocation, entities: readonly ImportedEntity[], settled: readonly CreatePin[]): string[] {
+  return declinedNames(storage, location, entities.filter((_, at) => settled[at].kind === 'cancelled').map((entity) => entity.name));
+}
+
+/** Each name a decline in the folder the import was started on kept out, with the sentence that says why. */
+function declinedNames(storage: StorageManager, location: NodeLocation, names: readonly string[]): string[] {
   const folder = location.parentId === null ? '' : (storage.getNode(location.accountId, location.parentId)?.name ?? '');
-  return entities.flatMap((entity, at) => (settled[at].kind === 'cancelled' ? [`"${entity.name}" — ${declinedLanding(folder)}`] : []));
+  return names.map((name) => `"${name}" — ${declinedLanding(folder)}`);
 }
 
 /** The import's skipped entries said in one sentence for the closing message, or `''`. */
@@ -135,6 +143,70 @@ async function landImported(storage: StorageManager, location: NodeLocation, nod
     undoSecrets: () => undoImportedSecrets(storage, location.accountId, node.id),
   }));
   await applyCreatePin(pin, storage, location.accountId, node.id);
+}
+
+/** What a bundle import wrote, and the entries a declined landing kept out. */
+export interface BundleLanding {
+  readonly nodes: readonly TreeNode[];
+  readonly skipped: readonly string[];
+}
+
+/**
+ * Land a CredsForDevs bundle (ids already remapped, every root under `location.parentId`): the secrets,
+ * then the nodes — Rule A (`applyFormSecrets.ts`), the widest window the audit found: the whole tree used
+ * to be committed and visible before one secret landed — then the marks.
+ *
+ * <p>Into a folder that asks for a PIN (B7): every node of the bundle lands under the same existing folder,
+ * so the whole bundle is at most ONE question, asked before anything is written (`arrivalPin.ts`). An entry
+ * whose landing settled a PIN is sealed under it before its first write and marked after its node; a
+ * declined landing removes its entities, and the bundle folders it alone would have filled, before anything
+ * is written, and they are named in `skipped`.</p>
+ */
+export async function landBundle(storage: StorageManager, location: NodeLocation, bundle: ExternalBundle, question: FolderQuestion): Promise<BundleLanding> {
+  const settled = await settleBundle(arrivalPins(question), location, bundle.nodes);
+  const nodes = bundle.nodes.filter((node) => settled.get(node.id)?.kind !== 'cancelled');
+  const kept = new Set(nodes.map((node) => node.id));
+  const secrets = Object.fromEntries(Object.entries(bundle.secrets).filter(([id]) => kept.has(id)));
+  await applyExternalSecrets(storage, location.accountId, secrets, (id) => settledOrNone(settled.get(id)));
+  for (const node of nodes) {
+    await storage.addNode(location.accountId, node);
+  }
+  for (const node of nodes.filter((n) => n.type === 'entity')) {
+    await applyCreatePin(settledOrNone(settled.get(node.id)), storage, location.accountId, node.id);
+  }
+  const declined = bundle.nodes.filter((node) => node.type === 'entity' && !kept.has(node.id));
+  return { nodes, skipped: declinedNames(storage, location, declined.map((node) => node.name)) };
+}
+
+const NONE: SettledPin = { kind: 'none' };
+
+function settledOrNone(settled: CreatePin | undefined): SettledPin {
+  return settled === undefined || settled.kind === 'cancelled' ? NONE : settled;
+}
+
+/** Every node's answer, asked in order before anything is written — one memo, so one folder is one question. */
+async function settleBundle(pins: ArrivalPins, location: NodeLocation, nodes: readonly TreeNode[]): Promise<Map<string, CreatePin>> {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const settled = new Map<string, CreatePin>();
+  for (const node of nodes) {
+    settled.set(node.id, await pins.settledFor({ accountId: location.accountId, existing: location.parentId, creates: chainOf(byId, node) }));
+  }
+  return settled;
+}
+
+/** The bundle folders a node lands in, root first — the folder itself included for a folder. All are new. */
+function chainOf(byId: ReadonlyMap<string, TreeNode>, node: TreeNode): FolderSeg[] {
+  return foldersAbove(byId, node.type === 'folder' ? node : byId.get(node.parentId ?? ''));
+}
+
+function foldersAbove(byId: ReadonlyMap<string, TreeNode>, start: TreeNode | undefined): FolderSeg[] {
+  const chain: FolderSeg[] = [];
+  const seen = new Set<string>();
+  for (let at = start; at !== undefined && !seen.has(at.id); at = byId.get(at.parentId ?? '')) {
+    seen.add(at.id);
+    chain.unshift({ name: at.name, folderType: at.folderType });
+  }
+  return chain;
 }
 
 /** Where a new node goes, based on what the command was invoked on. */

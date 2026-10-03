@@ -46,8 +46,7 @@ import { runRestoreFromTrash } from '../restoreCommandHost';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { parseImport } from '../importFormats';
-import { importEntities, notImported } from '../importCommands';
-import { applyExternalSecrets } from '../externalSecretsApply';
+import { importEntities, landBundle, notImported } from '../importCommands';
 import { decryptJson } from '../cryptoUtils';
 import { describeError } from '../describeError';
 import { isExternalBundle } from '../externalBundle';
@@ -586,27 +585,18 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
 
     // NEW ids for everything — the sender's ids belong to the sender's tree.
     const remapped = remapExternalIds(payload, () => StorageManager.newId(), location.parentId);
-    // ADDITIONS first, then the nodes — Rule A (`applyFormSecrets.ts`). This had the widest window
-    // of the paths the audit found: the ENTIRE tree was committed and visible before one secret
-    // landed, so an interruption left every imported entry claiming values nobody had written.
-    await applyExternalSecrets(storage, location.accountId, remapped.secrets);
-    for (const n of remapped.nodes) {
-      await storage.addNode(location.accountId, n);
-    }
-    // The secrets landed above, before the nodes. What used to be here was a hand-written loop that
-    // had silently stopped agreeing with `ExternalSecrets` TWICE — `config` had never been restored
-    // since the kind shipped, and `payment` was added to the export and not here — so an
-    // export-then-import round trip created the entry and discarded the card. It lives in
-    // `externalSecretsApply.ts` now, where a test drives the field list.
+    // A folder that asks for a PIN asks it before anything is written; then the secrets, the nodes and
+    // the marks, in that order (`landBundle`; Rule A, and the field list `externalSecretsApply.ts` drives).
+    const landed = await landBundle(storage, location, remapped, folderQuestion(storage));
     mutated();
     // The first imported ROOT is where the reveal lands: the import's whole shape arrived
     // under it, and highlighting all N rows would highlight nothing.
-    const firstRoot = remapped.nodes.find((n) => n.parentId === location.parentId);
+    const firstRoot = landed.nodes.find((n) => n.parentId === location.parentId);
     if (firstRoot !== undefined) {
       await announceArrival(location.accountId, firstRoot.id);
     }
     void vscode.window.showInformationMessage(
-      `Imported ${remapped.nodes.length} node(s) from ${path.basename(uri.fsPath)}.`,
+      `Imported ${landed.nodes.length} node(s) from ${path.basename(uri.fsPath)}.${notImported(landed.skipped)}`,
     );
   });
 
