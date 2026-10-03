@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.13.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.12.1...extension-v1.13.0) (2026-10-03)
+
+
+### Features
+
+* **extension:** a folder that asks for a PIN asks it when a share or an import lands in it ([#187](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/187)) ([94befe4](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/94befe4b9c16c94fd18d7da9359e2ce7a522811a))
+* **extension:** a waiting rotated value is used at the click and by an agent, and the person is told ([#186](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/186)) ([10e917f](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/10e917f614644584a8e6277f29031797ad8ad15b))
+* **extension:** the share door says what it released and asks a conflict, like every door ([#188](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/188)) ([aef2187](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/aef21870122f0a29fe0e8e1cd7a9e7ea81b86da5))
+
 ## [1.12.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.12.0...extension-v1.12.1) (2026-10-02)
 
 
