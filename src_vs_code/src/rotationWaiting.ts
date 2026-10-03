@@ -31,7 +31,9 @@ export function releasedSentence(release: Release): string {
 
 /**
  * The tree row's hint (§4.6): *rotated password waiting* in the description, and how to store it in the tooltip.
- * A database entry rotates its connection string; every other kind its password (`secretRotation.slotFor`).
+ * A database entry rotates its connection string; every other kind its password (`secretRotation.slotFor`). The
+ * tooltip names a PIN only for an entry that carries the mark: an unprotected entry's value goes in at its next
+ * use or at the sweep's next tick (`PLAN_waiting_rotation_visible.md` W3).
  */
 export function waitingHint(details: EntityMetadata | undefined, waiting: boolean): { readonly description: string; readonly tooltip: readonly string[] } {
   if (!waiting) {
@@ -40,8 +42,12 @@ export function waitingHint(details: EntityMetadata | undefined, waiting: boolea
   const what = rotatedWhat(resolveKind(details) === 'db' ? 'dbConnection' : 'password');
   return {
     description: `rotated ${what} waiting`,
-    tooltip: ['', `A rotated ${what} is waiting on this machine, outside the entry — open the entry and enter its PIN to store it.`],
+    tooltip: ['', `A rotated ${what} is waiting on this machine, outside the entry — ${howItIsStored(details)}.`],
   };
+}
+
+function howItIsStored(details: EntityMetadata | undefined): string {
+  return details?.pinProtected === true ? 'open the entry and enter its PIN to store it' : 'it is stored the next time you use the entry, or within a minute';
 }
 
 /**

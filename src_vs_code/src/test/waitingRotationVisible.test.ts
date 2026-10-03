@@ -158,3 +158,75 @@ test('a click on an unprotected entry with nothing waiting reads the clicked slo
   assert.ok(!w.reads.includes(rotationQuarantineSecretKey(ACCOUNT, ENTRY)), 'an unlisted entry\'s click read the held-rotation item');
   assert.deepEqual(w.reads, [secretKey(ACCOUNT, ENTRY)], 'an unlisted entry\'s click read more than the slot it clicked');
 });
+
+// ---- W3: what the person reads about a waiting value is true of THIS entry ----
+
+const CTX = { accountId: ACCOUNT, entityId: ENTRY, entityName: 'portal' };
+
+/** Every call of `name` on `host` after this one rejects once with `reason`, then works again. */
+function failsOnce(host: object, name: string, reason: string): void {
+  const target = host as Record<string, (...args: unknown[]) => Promise<unknown>>;
+  const real = target[name].bind(target);
+  let failed = false;
+  target[name] = (...args: unknown[]): Promise<unknown> => {
+    if (failed) {
+      return real(...args);
+    }
+    failed = true;
+    return Promise.reject(new Error(reason));
+  };
+}
+
+/** Wait until `done` holds, or give up after two seconds — for what a modal nobody awaits goes on to do. */
+async function eventually(done: () => Promise<boolean>): Promise<boolean> {
+  for (let tries = 0; tries < 100; tries += 1) {
+    if (await done()) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return false;
+}
+
+/**
+ * The rotation's own store on an UNPROTECTED entry whose keychain refuses the write once: the hold lands
+ * beside it, and the modal at the hold is raised (shown, never awaited by the rotation).
+ */
+async function heldAfterAKeychainFailure(modal: ModalAnswer[] = ['Later']): Promise<World & { readonly outcome: string }> {
+  const w = await world({ waiting: false, modal });
+  failsOnce(w.storage, 'setPassword', 'the keychain refused the write');
+  const [{ storeRotated }] = loadEachWithVscode(['../rotationStore'], clickVscode([], w.s)) as [typeof import('../rotationStore')];
+  const outcome = await storeRotated(w.storage, CTX, 'password', NEW, await fingerprintOf(OLD));
+  return { ...w, outcome };
+}
+
+test('the modal at a hold after a KEYCHAIN failure on an unprotected entry names that failure — never a PIN — and says when the value goes in', async () => {
+  const w = await heldAfterAKeychainFailure();
+
+  assert.equal(w.outcome, 'quarantined', 'the setup: the failed store did not hold the value');
+  const said = w.s.modals[0] ?? '(no modal)';
+  assert.doesNotMatch(said, /protected with a PIN|until its PIN is entered/, `the person was told of a PIN nobody set: ${said}`);
+  assert.match(said, /the keychain refused the write/, 'the person was not told why the new password could not be stored');
+  assert.match(said, /stored the next time you use "portal", or within a minute/, 'the person was not told when the waiting password goes in');
+  assert.deepEqual(w.s.modalButtons[0], ['Store it now', 'Later'], 'the button of an entry with no PIN says it asks for one');
+});
+
+test('"Store it now" at that modal stores the waiting password plain, with no PIN box, and says so', async () => {
+  const w = await heldAfterAKeychainFailure(['Store it now']);
+
+  assert.ok(await eventually(async () => (await slotNow(w)) === NEW), 'the button did not store the waiting password');
+  assert.equal(w.s.boxes, 0, 'a PIN box was raised for an entry with no PIN');
+  assert.ok(await eventually(() => Promise.resolve(w.s.infos.some((info) => /The new password of "portal" from .* is now stored\./.test(info)))), 'the release was not said');
+});
+
+test('the row of an entry with NO PIN names no PIN in its tooltip; a protected entry\'s row still does', () => {
+  const [{ waitingHint }] = loadEachWithVscode(['../rotationWaiting'], clickVscode([], sinks())) as [typeof import('../rotationWaiting')];
+
+  const plain = waitingHint(details(), true).tooltip.join('\n');
+  const marked = waitingHint({ ...details(), pinProtected: true }, true).tooltip.join('\n');
+
+  assert.doesNotMatch(plain, /PIN/, `the row of an entry with no PIN tells the person to enter its PIN: ${plain}`);
+  assert.match(plain, /stored the next time you use the entry, or within a minute/);
+  assert.match(marked, /open the entry and enter its PIN to store it/, 'a protected entry\'s row no longer says how to store the waiting value');
+  assert.equal(waitingHint(details(), true).description, 'rotated password waiting');
+});
