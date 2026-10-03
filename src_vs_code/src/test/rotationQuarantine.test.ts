@@ -380,7 +380,7 @@ test('an entry unprotected by a sync: the sweep stores the waiting value, plain,
 
   const released = await w.quarantine.releaseUnprotected(w.storage);
 
-  assert.equal(released, 1);
+  assert.equal(released.length, 1);
   assert.equal(await plainSlot(w), HELD_CONN, 'the sweep left an unprotected entry on the old connection string');
   assert.deepEqual(await heldNow(w), {});
   assert.deepEqual(await w.storage.heldRotations.listed(), []);
@@ -411,7 +411,7 @@ test('a protected entry\'s held value is left alone by the sweep — even while 
 
   const released = await w.quarantine.releaseUnprotected(w.storage);
 
-  assert.equal(released, 0);
+  assert.equal(released.length, 0);
   assert.deepEqual(w.written, [], 'the sweep wrote into a protected entry — nothing automatic may use a PIN');
   assert.ok((await heldNow(w)).dbConnection !== undefined);
   assert.equal(await openedSlot(w), CONN);
@@ -426,6 +426,8 @@ test('the sweep drops an index entry whose item is gone', async () => {
   assert.deepEqual(await w.storage.heldRotations.listed(), [], 'a stale index entry survived the sweep');
 });
 
+const RELEASED = { entryName: 'orders-db', slot: { slot: 'dbConnection', at: 1_000, sealed: false } } as const;
+
 test('the sweeper runs the release on its own trigger, says so, and repaints', async () => {
   const lines: string[] = [];
   let repainted = 0;
@@ -439,7 +441,7 @@ test('the sweeper runs the release on its own trigger, says so, and repaints', a
     resumeAccountRemovals: () => Promise.resolve([]),
   };
   const state = { get: () => undefined, update: () => Promise.resolve() } as never;
-  const sweeper = new EphemeralSweeper(quiet, state, (line) => lines.push(line), () => (repainted += 1), () => Promise.resolve(2));
+  const sweeper = new EphemeralSweeper(quiet, state, (line) => lines.push(line), () => (repainted += 1), () => Promise.resolve([RELEASED, RELEASED]));
 
   await sweeper.runOnce();
 
@@ -637,7 +639,7 @@ for (const version of [1, 2] as const) {
 
     const released = await releaseUnprotected(storage);
 
-    assert.equal(released, 0);
+    assert.equal(released.length, 0);
     assert.equal(await slotNow(storage), CONN, `the sweep wrote a v${version} hold with no fingerprint it can check`);
     assert.ok((await storage.heldRotations.read(ACCOUNT, ENTRY)).dbConnection !== undefined, `the v${version} hold was dropped`);
   });

@@ -497,14 +497,21 @@ const UNREADABLE = 'unreadable';
  * no door to open it (plan §4.5): the startup sweep's and a pulled sync's half. Through the same release with
  * the UNATTENDED proof, i.e. exactly the store the rotation would have made; a protected entry's hold is left
  * alone — nothing automatic holds a PIN, even one this window was given. An index entry whose entry or item
- * is gone is dropped; one whose tree cannot be read is kept. How many values went in; never throws.
+ * is gone is dropped; one whose tree cannot be read is kept. WHICH values went in — by entry name and slot, so
+ * the sweeper can say each one to the person (`PLAN_waiting_rotation_visible.md` W6); never throws.
  */
-export async function releaseUnprotected(storage: StorageManager): Promise<number> {
-  let released = 0;
+export async function releaseUnprotected(storage: StorageManager): Promise<readonly ReleasedValue[]> {
+  const released: ReleasedValue[] = [];
   for (const entry of await Promise.resolve(storage.heldRotations.listed()).catch(() => [])) {
-    released += await releaseIfUnprotected(storage, entry).catch(() => 0);
+    released.push(...(await releaseIfUnprotected(storage, entry).catch(() => [])));
   }
   return released;
+}
+
+/** One value a release without a door put into its entry: the entry's name and the slot — never the value. */
+export interface ReleasedValue {
+  readonly entryName: string;
+  readonly slot: ReleasedSlot;
 }
 
 /**
@@ -518,29 +525,33 @@ export async function releaseUnprotected(storage: StorageManager): Promise<numbe
 export async function releaseBeforeAutomaticUse(storage: StorageManager, accountId: string, ...entityIds: readonly string[]): Promise<void> {
   for (const entityId of entityIds) {
     if (await isWaiting(storage, accountId, entityId).catch(() => false)) {
-      await releaseIfUnprotected(storage, { accountId, entityId }).catch(() => 0);
+      await releaseIfUnprotected(storage, { accountId, entityId }).catch(() => []);
     }
   }
 }
 
-async function releaseIfUnprotected(storage: StorageManager, entry: HeldEntry): Promise<number> {
+async function releaseIfUnprotected(storage: StorageManager, entry: HeldEntry): Promise<readonly ReleasedValue[]> {
   const node = storage.getNode(entry.accountId, entry.entityId);
   if (node === undefined) {
     return forgetIfAbsent(storage, entry);
   }
   if (isEmpty(await storage.heldRotations.read(entry.accountId, entry.entityId))) {
     await unlistIfEmpty(storage, entry);
-    return 0;
+    return [];
   }
-  return (await protectedNow(storage, entry)) ? 0 : (await releaseHeld(storage, entry.accountId, entry.entityId, node.name, UNATTENDED)).released.length;
+  return (await protectedNow(storage, entry)) ? [] : releasedValues(node.name, await releaseHeld(storage, entry.accountId, entry.entityId, node.name, UNATTENDED));
+}
+
+function releasedValues(entryName: string, release: Release): readonly ReleasedValue[] {
+  return release.released.map((slot) => ({ entryName, slot }));
 }
 
 /** No node — gone, or a tree that cannot be read (`metadataFault`), which is "unknown", never "absent". */
-async function forgetIfAbsent(storage: StorageManager, entry: HeldEntry): Promise<number> {
+async function forgetIfAbsent(storage: StorageManager, entry: HeldEntry): Promise<readonly ReleasedValue[]> {
   if (storage.nodePresence(entry.accountId, entry.entityId) === 'absent') {
     await storage.heldRotations.unlist(entry.accountId, entry.entityId);
   }
-  return 0;
+  return [];
 }
 
 /** The mark, or a sealed slot — the protection `unattendedSealing` refuses on, asked before anything is read. */

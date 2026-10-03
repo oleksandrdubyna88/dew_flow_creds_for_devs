@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { localWallTime } from './requestTime';
 import { snapshotForRevision } from './revisionSnapshot';
 import { resolveKind } from './entityKind';
-import { AT_THE_DOOR, HeldConflict, Release, ReleasedSlot, WaitingValue, dropHeld, releaseHeld, waitingUnder } from './rotationQuarantine';
+import { AT_THE_DOOR, HeldConflict, Release, ReleasedSlot, ReleasedValue, WaitingValue, dropHeld, releaseHeld, releaseUnprotected, waitingUnder } from './rotationQuarantine';
 import type { RotationSlot } from './secretRotation';
 import type { StorageManager } from './storageManager';
 import type { EntityMetadata } from './types';
@@ -88,6 +88,19 @@ interface Entry {
   readonly accountId: string;
   readonly entityId: string;
   readonly entryName: string;
+}
+
+/**
+ * The sweeper's release (`rotationQuarantine.releaseUnprotected`), SAID: each value that went in without a door
+ * is told to the person once, in the words every door uses — not only in the log (the owner's decision,
+ * `PLAN_waiting_rotation_visible.md` §9.2, W6). A tick that stored nothing says nothing. Which went in.
+ */
+export async function releaseAndSay(storage: StorageManager): Promise<readonly ReleasedValue[]> {
+  const released = await releaseUnprotected(storage);
+  for (const value of released) {
+    sayReleased(value.entryName, [value.slot]);
+  }
+  return released;
 }
 
 function sayReleased(entryName: string, released: readonly ReleasedSlot[]): void {

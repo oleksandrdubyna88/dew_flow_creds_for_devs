@@ -3,6 +3,7 @@ import { describeError } from './describeError';
 import { LeaseMap, classifyLeases, leaseKey, prunedLeases } from './ephemeralLease';
 import { burnsOnClose, expiredNodes, isExpired } from './entityExpiry';
 import { StoredAccount, TreeNode } from './types';
+import type { ReleasedValue } from './rotationQuarantine';
 
 /**
  * The clock behind short-lived entries: deletes what has run out, and renews the lease on
@@ -74,9 +75,11 @@ export class EphemeralSweeper implements vscode.Disposable {
     private readonly onChanged: () => void = () => {},
     /**
      * Store every rotated value that waits beside an entry no longer protected — unprotected by a sync or
-     * another window, with no door to open it (`rotationQuarantine.releaseUnprotected`). How many went in.
+     * another window, with no door to open it (`rotationQuarantine.releaseUnprotected`) — and SAY each one to
+     * the person, not only in this log (`rotationWaiting.releaseAndSay`, `PLAN_waiting_rotation_visible.md` W6).
+     * Which went in. Injected, so this class stays free of `vscode` at run time.
      */
-    private readonly releaseWaiting: () => Promise<number> = () => Promise.resolve(0),
+    private readonly releaseWaiting: () => Promise<readonly ReleasedValue[]> = () => Promise.resolve([]),
   ) {}
 
   /** Begin sweeping, starting with one pass now — a window opening is when orphans surface. */
@@ -158,8 +161,8 @@ export class EphemeralSweeper implements vscode.Disposable {
    */
   private async releaseHeldRotations(): Promise<void> {
     const released = await this.releaseWaiting();
-    if (released > 0) {
-      this.log(`Stored ${released} rotated value(s) that waited beside an entry no longer protected.`);
+    if (released.length > 0) {
+      this.log(`Stored ${released.length} rotated value(s) that waited beside an entry no longer protected.`);
       this.onChanged();
     }
   }

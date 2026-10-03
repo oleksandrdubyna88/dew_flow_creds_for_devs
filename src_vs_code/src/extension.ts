@@ -73,6 +73,7 @@ import { McpEntriesCache } from './mcpEntriesCache';
 import { RotateDeps, rotateAction } from './rotateAction';
 import { storeRotated } from './rotationStore';
 import { releaseUnprotected, waitingKeys } from './rotationQuarantine';
+import { releaseAndSay } from './rotationWaiting';
 import { generateSecret } from './secretKinds';
 import { CREDS_CLI, CredsProduct, ridFor } from './credsInstall';
 import { binaryPath, installMenu } from './binaryInstaller';
@@ -101,8 +102,7 @@ import { StoredAccount, EntityMetadata, TreeNode } from './types';
 import { mcpCreateHooks, mcpUseHooks, moveEntryToTrash } from './mcpHooks';
 import { standingConsentFor } from './mcpAccess';
 import { runVpn } from './vpnRun';
-import { nodeAt } from './entityViewerCommands';
-import { openRevisionViewer } from './entityViewerCommands';
+import { nodeAt, openRevisionViewer } from './entityViewerCommands';
 import { applyInstallChoice } from './installFlow';
 import { collectConfigHolders, configBodyReading } from './configCommands';
 import { onPath } from './installFlow';
@@ -314,14 +314,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(backups);
 
   // Short-lived entries: delete what has run out of clock, renew the lease on what this window holds open, and store a
-  // rotated value whose entry is no longer protected. Started here rather than lazily: a window OPENING is when what a
+  // rotated value whose entry is no longer protected (said to the person). Started here rather than lazily: a window OPENING is when what a
   // crashed window left behind is found — that first pass is the whole crash-safety story, and a lazy start skips it.
   const ephemeral = new EphemeralSweeper(
     storage,
     context.globalState,
     (message) => log.info('ephemeral', message),
     () => provider.refresh(),
-    () => releaseUnprotected(storage),
+    () => releaseAndSay(storage),
   );
   ephemeral.start();
   context.subscriptions.push(ephemeral);

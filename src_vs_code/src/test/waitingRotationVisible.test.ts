@@ -353,3 +353,40 @@ test('the agent\'s ssh credential (the automatic opener) on an unprotected entry
   assert.equal(source.kind === 'password' && source.password, NEW, 'the agent\'s ssh login used the password the rotation replaced');
   assert.equal(await stillHeld(w), false);
 });
+
+// ---- W6: the sweep's release is said to the person (the owner's decision §9.2) ----
+
+/** A `Memento` the sweeper's leases live in — empty, as a fresh window's is. */
+function leases(): { get<T>(key: string, fallback?: T): T | undefined; update(key: string, value: unknown): Promise<void> } {
+  const map = new Map<string, unknown>();
+  return {
+    get: <T>(key: string, fallback?: T): T | undefined => (map.has(key) ? (map.get(key) as T) : fallback),
+    update: (key: string, value: unknown): Promise<void> => {
+      map.set(key, value);
+      return Promise.resolve();
+    },
+  };
+}
+
+test('the sweep that stores a waiting password says so to the person, once — and a tick that stores nothing says nothing', async () => {
+  const w = await world();
+  // Wired as `extension.ts` wires it: the sweeper's release is `rotationWaiting.releaseAndSay`.
+  const [{ EphemeralSweeper }, { releaseAndSay }] = loadEachWithVscode(['../ephemeralSweeper', '../rotationWaiting'], clickVscode([], w.s)) as [
+    typeof import('../ephemeralSweeper'),
+    typeof import('../rotationWaiting'),
+  ];
+  const lines: string[] = [];
+  const sweeper = new EphemeralSweeper(w.storage, leases() as never, (line) => lines.push(line), () => undefined, () => releaseAndSay(w.storage));
+
+  await sweeper.runOnce();
+
+  assert.equal(await slotNow(w), NEW, 'the setup: the sweep did not store the waiting password');
+  const said = w.s.infos.filter((info) => /The new password of "portal" from .* is now stored\./.test(info));
+  assert.equal(said.length, 1, `the sweep stored a waiting password and the person was never told (the log alone said: ${lines.join(' | ')})`);
+  assert.doesNotMatch(said[0], /sealed/);
+  const before = w.s.infos.length;
+
+  await sweeper.runOnce();
+
+  assert.equal(w.s.infos.length, before, 'a tick that stored nothing said something');
+});
