@@ -5,6 +5,8 @@ import { recordOrigin, resolveOrigin } from './shareOrigin';
 import { updateInPlace } from './shareUpdateSeal';
 import { EntryWriter, writerForNew } from './entryWriter';
 import { redactArrivedPayment } from './paymentRedaction';
+import { declinedMessage, forThisRecipient } from './shareRecipientPin';
+import { describeError } from './describeError';
 import { ArrivalPins, Landing, declinedLanding, landingOf } from './arrivalPin';
 import { CreatePin, applyCreatePin } from './pinOnCreate';
 import { OwnedShare, SharePayload, TreeNode, withOwnId } from './types';
@@ -24,6 +26,14 @@ import { OwnedShare, SharePayload, TreeNode, withOwnId } from './types';
  * the node follows, and `applyCreatePin` writes the mark and the first `pinEpoch` last — the road Add and
  * an agent's create take. Declined, nothing is written: no value, no node, no folder of the chain. One
  * share carries ONE chain, so it is one landing and one decision — written whole or not at all.</p>
+ *
+ * <p><b>The sender's protection and the folder's ask are ONE question</b> (B5). A share its sender had
+ * protected carries `pinAskOnImport`, and the recipient is offered a PIN of their own for it
+ * (`shareRecipientPin.ts`). Into a folder that asks, the folder's PIN already seals it — so that own-PIN box
+ * is asked only where the folder settled no PIN, and the instruction is otherwise spent on the node. Asked
+ * both, the entry ended up sealed under a PIN none of the folder's protected entries use, with nobody told.
+ * A share that is an update candidate asks its own PIN only after *Update it* — never for a share the
+ * person then dismisses.</p>
  */
 
 /** Where the (their address, their id) -> our id map lives in the memento. */
@@ -39,6 +49,8 @@ export type ShareLanding = 'landed' | 'left';
 
 /** One arrival, decided and not yet written: the node, the writer its values go through, the PIN to mark. */
 interface Arrival {
+  /** The payload as it ARRIVES — the recipient's own wrap applied, or the spent instruction. */
+  readonly payload: SharePayload;
   readonly node: TreeNode;
   readonly store: EntryWriter;
   /** Deferred so every ADDITION lands first — Rule A; see `applyFormSecrets.ts`. */
@@ -68,9 +80,9 @@ export async function landShare(deps: ShareInboxDeps, share: OwnedShare, payload
   if (arrival === undefined) {
     return 'left';
   }
-  const unreadablePayment = await writeArrival(deps, share, payload, arrival);
+  const unreadablePayment = await writeArrival(deps, share, arrival);
   await deps.state.update(ORIGINS_KEY, recordOrigin(origins, share.item.fromEmail, payload.node.id, arrival.node.id));
-  await settleShare(deps, share, payload, arrival.node, unreadablePayment);
+  await settleShare(deps, share, arrival.payload, arrival.node, unreadablePayment);
   return 'landed';
 }
 
@@ -88,16 +100,34 @@ async function originArrival(
   if (choice === 'Keep both') {
     return newArrival(deps, share, payload, landing, pins);
   }
-  const update = choice === 'Update it'
-    ? await updateInPlace(deps.storage, share.accountId, previousId, payload, await writeChain(deps.storage, landing))
-    : undefined;
-  if (update === undefined) {
+  const update = choice === 'Update it' ? await updatedInPlace(deps, share, payload, landing, previousId) : DISMISSED;
+  if (update === DISMISSED) {
     // Dismissed on purpose — or the entry's PIN declined: the human wants to look before deciding.
     // The share must survive that — consuming it here would destroy the only copy of the decision.
     void vscode.window.showInformationMessage('Left in "Shared with me" — accept it again when you have decided.');
     return undefined;
   }
-  return { node: update.node, store: update.store, writeNode: () => deps.storage.updateNode(share.accountId, update.node), settled: NO_PIN };
+  return update;
+}
+
+const DISMISSED = 'dismissed';
+
+/**
+ * *Update it*: the recipient's own PIN first when the sender had the entry protected — after the question,
+ * not before it — then the update through the entry's door. `undefined` when the own PIN was declined (said
+ * by `sealedForRecipient`), `dismissed` when the entry's door was.
+ */
+async function updatedInPlace(
+  deps: ShareInboxDeps, share: OwnedShare, payload: SharePayload, landing: Landing, previousId: string,
+): Promise<Arrival | undefined | typeof DISMISSED> {
+  const arriving = await sealedForRecipient(share, payload);
+  if (arriving === undefined) {
+    return undefined;
+  }
+  const update = await updateInPlace(deps.storage, share.accountId, previousId, arriving, await writeChain(deps.storage, landing));
+  return update === undefined
+    ? DISMISSED
+    : { payload: arriving, node: update.node, store: update.store, writeNode: () => deps.storage.updateNode(share.accountId, update.node), settled: NO_PIN };
 }
 
 /** The question a share from the same sender asks first — in a modal, which a dismissal answers `undefined`. */
@@ -126,14 +156,54 @@ async function newArrival(
     void vscode.window.showInformationMessage(`Left in "Shared with me" — ${declinedLanding(folderName(deps.storage, landing))}.`);
     return undefined;
   }
+  // The folder's PIN answers the sender's instruction; only a folder that asks nothing leaves it to the recipient's own.
+  const arriving = settled.kind === 'pin' ? spentInstruction(payload) : await sealedForRecipient(share, payload);
+  if (arriving === undefined) {
+    return undefined;
+  }
   const parentId = await writeChain(deps.storage, landing);
-  const node = withOwnId({ ...payload.node, id: StorageManager.newId(), parentId, children: undefined });
+  const node = withOwnId({ ...arriving.node, id: StorageManager.newId(), parentId, children: undefined });
   return {
+    payload: arriving,
     node,
     store: writerForNew(deps.storage, share.accountId, node.id, settled),
     writeNode: () => deps.storage.addNode(share.accountId, node),
     settled,
   };
+}
+
+/**
+ * The payload with `pinAskOnImport` SPENT, as `wrappedPayload` spends it: the folder's PIN has acted on the
+ * instruction, and the mark `applyCreatePin` writes is what the entry carries from here.
+ */
+function spentInstruction(payload: SharePayload): SharePayload {
+  const details = payload.node.details;
+  return details?.pinAskOnImport === true ? { ...payload, node: { ...payload.node, details: { ...details, pinAskOnImport: undefined } } } : payload;
+}
+
+/**
+ * The payload as it should ARRIVE in a folder that asks nothing — or nothing, with the person already told why.
+ *
+ * <p>The sender had this protected, so the recipient is offered one of their own — BEFORE the import, and
+ * the values are wrapped in memory rather than written and wrapped afterwards (three reviewers: written
+ * first, a crash between the two steps leaves an unprotected copy on disk). Its own step because there are
+ * TWO ways to get nothing and they are different facts. A decline is a decision, and the message says how
+ * to change it. A wrap that FAILED is a machine problem, and its reason has to reach the person. Either way
+ * nothing is written: the wrap builds a payload or rejects, and the payload is what the landing takes.</p>
+ */
+async function sealedForRecipient(share: OwnedShare, payload: SharePayload): Promise<SharePayload | undefined> {
+  try {
+    const arriving = await forThisRecipient(payload, share.accountId, share.item.fromEmail);
+    if (arriving !== undefined) {
+      return arriving;
+    }
+    void vscode.window.showInformationMessage(declinedMessage(share.item.entityName));
+  } catch (error) {
+    void vscode.window.showErrorMessage(
+      `"${share.item.entityName}" was NOT imported — protecting it with your PIN failed: ${describeError(error)}`,
+    );
+  }
+  return undefined;
 }
 
 /** The name of the folder a landing is asked in — what a declined landing names. */
@@ -167,8 +237,8 @@ async function writeChain(storage: StorageManager, landing: Landing): Promise<st
  * writes it (`applyCreatePin`: the idempotent sweep, the history, the mark and the first `pinEpoch`).
  * Answers whether a payment record arrived that this build cannot read — which decides whether the share is kept.</p>
  */
-async function writeArrival(deps: ShareInboxDeps, share: OwnedShare, payload: SharePayload, arrival: Arrival): Promise<boolean> {
-  const unreadablePayment = await writeSecrets(arrival.store, share.accountId, arrival.node.id, payload.secrets);
+async function writeArrival(deps: ShareInboxDeps, share: OwnedShare, arrival: Arrival): Promise<boolean> {
+  const unreadablePayment = await writeSecrets(arrival.store, share.accountId, arrival.node.id, arrival.payload.secrets);
   await arrival.writeNode();
   await applyCreatePin(arrival.settled, deps.storage, share.accountId, arrival.node.id);
   return unreadablePayment;

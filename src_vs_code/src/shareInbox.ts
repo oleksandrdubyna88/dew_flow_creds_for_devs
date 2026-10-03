@@ -3,7 +3,6 @@ import { deliverToRecipient, projectsOfPayloads, refuseForRecipient } from './sh
 import { buildSharePayload, countTotpEntries, nothingToShare } from './sharePayloadBuild';
 import { isNotForExport } from './exportScope';
 import { admit } from './pinAdmission';
-import { declinedMessage, forThisRecipient } from './shareRecipientPin';
 import { entryPinGate } from './pinPrompt';
 import { describeError } from './describeError';
 import { DiagnosticWriter } from './diagnosticWriter';
@@ -409,17 +408,11 @@ export class ShareInbox {
       );
       return;
     }
-    // The sender had this protected, so the recipient is offered one of their own — BEFORE the
-    // import, and the values are wrapped in memory rather than written and wrapped afterwards.
-    // Three reviewers made the same point: written first, a crash between the two steps leaves an
-    // unprotected copy on disk, which is exactly what "declining imports nothing" promises against.
-    const arriving = await this.sealedForRecipient(share, payload);
-    if (arriving === undefined) {
-      return;
-    }
+    // The sender's protection (the recipient's own PIN) and the folder's PIN are asked inside the landing,
+    // as ONE question, before anything is written (`shareImport.ts`).
     let landing: ShareLanding;
     try {
-      landing = await landShare(this.deps, share, arriving, this.arrivalPins());
+      landing = await landShare(this.deps, share, payload, this.arrivalPins());
     } catch (error) {
       void vscode.window.showErrorMessage(
         `"${share.item.entityName}" opened, but saving it failed: ${describeError(error)}`,
@@ -432,33 +425,6 @@ export class ShareInbox {
     this.deps.onMutated();
     void this.deps.sharing.reload();
     void vscode.window.showInformationMessage(`Accepted "${share.item.entityName}".`);
-  }
-
-  /**
-   * The payload as it should ARRIVE — or nothing, with the person already told why.
-   *
-   * <p>Its own step because there are TWO ways to get nothing and they are different facts. A
-   * decline is a decision, and the message says how to change it. A wrap that FAILED is a machine
-   * problem, and its reason has to reach the person — it used to escape `acceptOne` past both of
-   * its try blocks, so all they saw was VS Code's generic command failure. Either way nothing is
-   * written: the wrap builds a payload or rejects, and the payload is what the import takes.</p>
-   */
-  private async sealedForRecipient(
-    share: OwnedShare,
-    payload: SharePayload,
-  ): Promise<SharePayload | undefined> {
-    try {
-      const arriving = await forThisRecipient(payload, share.accountId, share.item.fromEmail);
-      if (arriving !== undefined) {
-        return arriving;
-      }
-      void vscode.window.showInformationMessage(declinedMessage(share.item.entityName));
-    } catch (error) {
-      void vscode.window.showErrorMessage(
-        `"${share.item.entityName}" was NOT imported — protecting it with your PIN failed: ${describeError(error)}`,
-      );
-    }
-    return undefined;
   }
 
   /**
@@ -537,7 +503,7 @@ export class ShareInbox {
    * with such an entry was honoured on one of the two accept paths. Clearing an inbox in one go is
    * the ordinary way to accept, so this was the common route past the protection, not a corner.</p>
    *
-   * <p>Declined, or a wrap that failed: `sealedForRecipient` has said which, the share is NOT
+   * <p>Declined, or a wrap that failed: the landing (`shareImport.sealedForRecipient`) has said which, the share is NOT
    * consumed, and it is COUNTED — an item neither imported nor still locked is counted nowhere. A save
    * that FAILED (a write refused, `ProtectedMeanwhile`) is that share's alone: kept, its reason recorded
    * for the log and the tally, and the rest still imported (the E2 security review, finding 5).</p>
@@ -549,13 +515,8 @@ export class ShareInbox {
     let declined = 0;
     const failed: OwnedShare[] = [];
     for (const share of opened) {
-      const arriving = await this.sealedForRecipient(share, share.payload);
-      if (arriving === undefined) {
-        declined++;
-        continue;
-      }
-      // A share LEFT in the inbox (a dismissed update) is still pending — counted with the declined ones.
-      await landShare(this.deps, share, arriving, folderPins).then((landing) => (landing === 'landed' ? imported++ : declined++), (error: unknown) => {
+      // A share LEFT in the inbox — a dismissed update, a PIN declined — is still pending: counted with the declined ones.
+      await landShare(this.deps, share, share.payload, folderPins).then((landing) => (landing === 'landed' ? imported++ : declined++), (error: unknown) => {
         rememberAttempt(attempted, share.item.id, attemptOf('', error, pin));
         failed.push(share);
       });

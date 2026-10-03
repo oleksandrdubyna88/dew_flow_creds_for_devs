@@ -368,3 +368,56 @@ test('no lease is held across the folder’s PIN box — a second window’s run
   }
 });
 
+// ---------------------------------------------------------------------------------------------
+// B5 — the sender's protection and the folder's ask are one question.
+// ---------------------------------------------------------------------------------------------
+
+/** The recipient's OWN PIN box for an entry its sender had protected (`shareRecipientPin` → `newPin`). */
+const OWN_PIN_BOX = (name: string): RegExp => new RegExp(`A PIN for "${name}"$`);
+const OWN_PIN = 'recipient-own-9753';
+
+test('a share its sender protected, into a folder that asks, is asked ONE question — the folder’s — and sealed under the folder’s PIN', async () => {
+  const w = await arrivals({ protectedIn: ['Production'] }, [TRANSIT, PIN, OWN_PIN, OWN_PIN]);
+  w.s.modalAnswers.push('Use this PIN');
+
+  await w.inbox.acceptOne(owned(folderShare('prod-db', ['Production'], { pinAskOnImport: true })));
+
+  assert.equal(boxes(w, OWN_PIN_BOX('prod-db')), 0, `the recipient’s own PIN was asked as well as the folder’s: ${w.events.join(' | ')}`);
+  assert.equal(boxes(w, FOLDER_BOX), 1, `the folder was not asked: ${w.events.join(' | ')}`);
+  neverInTheClear(w);
+  const [entry] = w.entries();
+  assert.ok(entry !== undefined, infos(w));
+  assert.equal(entry.details?.pinAskOnImport, undefined, 'the sender’s instruction is spent — the folder’s PIN acted on it');
+  await sealedUnder(w, entry, PIN);
+});
+
+test('into a folder that asks nothing, the sender’s protection still asks the recipient’s own PIN, as before', async () => {
+  const w = await arrivals({}, [TRANSIT, OWN_PIN, OWN_PIN]);
+
+  await w.inbox.acceptOne(owned(folderShare('prod-db', [], { pinAskOnImport: true })));
+
+  assert.equal(boxes(w, OWN_PIN_BOX('prod-db')), 2, 'typed twice');
+  const [entry] = w.entries();
+  assert.ok(entry !== undefined, infos(w));
+  assert.equal(entry.details?.pinProtected, true);
+  assert.equal(await opened(await w.storage.getPassword(ACCOUNT, entry.id), OWN_PIN), `${SECRET}-prod-db`);
+});
+
+test('an update candidate asks the recipient’s own PIN only AFTER Update it — and not at all when the question is dismissed', async () => {
+  const w = await arrivals({}, [TRANSIT]);
+  await w.inbox.acceptOne(owned(folderShare('prod-db', [], {}, 'same-sender-id')));
+  w.events.length = 0;
+
+  w.inputs.push(TRANSIT);
+  w.s.modalAnswers.push(undefined);
+  await w.inbox.acceptOne(owned(folderShare('prod-db', [], { pinAskOnImport: true }, 'same-sender-id')));
+  assert.equal(boxes(w, OWN_PIN_BOX('prod-db')), 0, `a PIN was asked for a share the person then dismissed: ${w.events.join(' | ')}`);
+
+  w.events.length = 0;
+  w.inputs.push(TRANSIT, OWN_PIN, OWN_PIN);
+  w.s.modalAnswers.push('Update it');
+  await w.inbox.acceptOne(owned(folderShare('prod-db', [], { pinAskOnImport: true }, 'same-sender-id')));
+  const question = w.events.findIndex((e) => e.startsWith('modal:') && e.includes('already came from'));
+  const own = w.events.findIndex((e) => e.startsWith('box:') && OWN_PIN_BOX('prod-db').test(e));
+  assert.ok(question >= 0 && own > question, `the own PIN must come after Update it: ${w.events.join(' | ')}`);
+});
