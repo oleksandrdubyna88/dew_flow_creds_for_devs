@@ -1,16 +1,18 @@
 # PLAN — a waiting rotated value is used at the click and announced at every door
 
-> Status: **partly built, 2026-10-03 — W1, W3, W5 and W6 are in (`1bceeabb`, `ac19cdcd`, `e0e65b58`,
-> `bf3a6c3b`) with W4's docs, the owner's three follow-ups (§10.7) and the code round's two fixes (§10.8, the
-> round passed: proceed, 4 of 4) the security review's three fixes (§10.9) and the third code round's (§10.10); W2 waits on the sibling plan's B1;
-> the promotion is open (§10 records what was built differently).** Planned 2026-10-02. Scope: `src_vs_code/src` — `pinClick.ts`,
+> Status: **IMPLEMENTED, 2026-10-03** — W1, W3, W5 and W6 in PR #186 (`1bceeabb`, `ac19cdcd`, `e0e65b58`,
+> `bf3a6c3b`), W2 (`ab20c377`) after the sibling plan's B1 shipped in PR #187. As planned with the deviations in §10 —
+> the main ones: every automatic reader goes through ONE opener that releases first (§10.8.2), the broker releases
+> before it builds its mask table (§10.9.1), a re-read is by slot rather than by text (§10.9.3), and the owner's
+> follow-ups made the release after a pulled sync and an agent's release speak (§10.7). **Open tail:** none of
+> this plan's. Planned 2026-10-02. Scope: `src_vs_code/src` — `pinClick.ts`,
 > `pinPrompt.ts` (one half of `admitted` extracted), `shareInbox.ts` (one line, after the extraction its sibling
 > plan owns), `rotationQuarantine.ts` (one index-only read exported), `rotationStore.ts` and
 > `rotationWaiting.ts` (wording), and their tests. Extension only; no format, contract or server change.
 >
-> The open tail of [PLAN_rotation_quarantine.md](../research/PLAN_rotation_quarantine.md) (its status line and
-> §5.1). Related: [module_extension.md](../research/module_extension.md) §*The entry PIN keeps its promise*
-> (the rotation paragraphs), [PLAN_pin_folder_asks_on_accept_and_import.md](../research/PLAN_pin_folder_asks_on_accept_and_import.md)
+> The open tail of [PLAN_rotation_quarantine.md](PLAN_rotation_quarantine.md) (its status line and
+> §5.1). Related: [module_extension.md](module_extension.md) §*The entry PIN keeps its promise*
+> (the rotation paragraphs), [PLAN_pin_folder_asks_on_accept_and_import.md](PLAN_pin_folder_asks_on_accept_and_import.md)
 > (owns the `shareInbox.ts` extraction, §6).
 
 All `file:line` references are to `src_vs_code/src/` and were read on `main` at `95a4f58f` on 2026-10-02.
@@ -145,8 +147,8 @@ lifecycle check.
       click, and *Store the rotated one* is what the click uses. Cost guard: an unlisted unprotected entry →
       the keychain read log holds no `:rotationQuarantine` read and no slot beyond the one clicked. Break-it:
       `needsDoor` without the index question → red.
-- [ ] **W2 — the share door says what it released.** *(NOT built on 2026-10-03: it waits on the sibling plan's B1,
-      the `shareInbox.ts` extraction, which is being built in another worktree; `shareInbox.ts` was not touched.)*
+- [x] **W2 — the share door says what it released.** *(`ab20c377`, 2026-10-03, after the sibling's B1 shipped in PR #187;
+      §10.11.)*
       Lands after the sibling's B1 (§6). `pastTheDoor`.
       RED (share world): sharing a protected entry with a waiting value → the payload carries the new value
       but the infos hold no *"is now stored, sealed under its PIN"*; with a conflict → no question, and the
@@ -170,8 +172,7 @@ lifecycle check.
       WHICH entries and slots it released, and the sweeper says each once through `rotationWaiting`'s words
       (*"The new password of "X" from <time> is now stored."*), not only in the log; a tick that released
       nothing says nothing. RED: a sweep releasing a held value → no info shown. Break-it: drop the say → red.
-- [ ] **W4 — docs and promotion** (§7). *(The §7 docs are updated for W1/W3/W5/W6, 2026-10-03; the code round, W2's
-      docs and the promotion are open.)* `review_code` over the diff, then `/promote-plan` with the
+- [x] **W4 — docs and promotion** (§7). *(2026-10-03: the §7 docs for W1–W6, the code rounds, and the promotion.)* `review_code` over the diff, then `/promote-plan` with the
       deviations; the rotation-quarantine plan's open tail updated to point at the promoted record.
 
 ## 5. Test plan
@@ -190,7 +191,7 @@ lifecycle check.
 
 | Item | Built by | This plan's part |
 |---|---|---|
-| Extract `importShared` from `shareInbox.ts` (798 lines) | [PLAN_pin_folder_asks_on_accept_and_import.md](../research/PLAN_pin_folder_asks_on_accept_and_import.md) **B1** | W2 needs the room: it lands after B1 — or, if this plan is built first, lands B1 first exactly as written there, and that plan skips it |
+| Extract `importShared` from `shareInbox.ts` (798 lines) | [PLAN_pin_folder_asks_on_accept_and_import.md](PLAN_pin_folder_asks_on_accept_and_import.md) **B1** | W2 needs the room: it lands after B1 — or, if this plan is built first, lands B1 first exactly as written there, and that plan skips it |
 | The share's sender-side door (`payloadsFor`) | **this plan, W2** | nothing there |
 
 Disjoint otherwise: this plan touches the SENDING half of `shareInbox.ts`, the sibling the RECEIVING half.
@@ -210,14 +211,14 @@ Disjoint otherwise: this plan touches the SENDING half of `shareInbox.ts`, the s
 
 ## 8. Definition of Done
 
-- [ ] W1–W6 merged, each with its RED observation and break-it in the commit body.
+- [x] W1–W6 merged, each with its RED observation and break-it in the commit body.
 - [x] An agent's use of an unprotected entry with a waiting value uses the new value (W5); the sweep's release
       is said to the person (W6).
 - [x] A click on an unprotected entry with a waiting value uses the new value and says it was stored, with no
       PIN box — shown over the real storage; an unlisted entry's click reads nothing new.
-- [ ] The share door says what it released and asks a conflict.
+- [x] The share door says what it released and asks a conflict.
 - [x] No sentence names a PIN for an entry without one.
-- [ ] Typecheck, lint, `npm test`, plan lifecycle green; §7 docs updated; plan promoted with its deviations.
+- [x] Typecheck, lint, `npm test`, plan lifecycle green; §7 docs updated; plan promoted with its deviations.
 
 ## 9. Decided (2026-10-02)
 
@@ -233,7 +234,7 @@ The owner's direction for both limits: *"главное как-то отобра
 
 ## 10. What was built differently (recorded at build time, 2026-10-03)
 
-Each built story's commit body carries its RED messages and its break-it. W2 is not built (§4). What differs from
+Each built story's commit body carries its RED messages and its break-it. W2 was built last (item 11). What differs from
 the text above:
 
 1. **W1 as planned.** `needsDoor` became async and asks `isWaiting` LAST, behind the mark and the sealed check,
@@ -331,3 +332,16 @@ the text above:
        `'password'` and was not red; the RED is the compile-fail harness — two fixtures in
        `test/fixtures/typed/` (an opener and a click without the slot) compiled, and must be TS2554, with a
        positive control that states `undefined` and `'password'`.
+11. **W2 — the share door (`ab20c377`, 2026-10-03), as planned**, once the sibling plan's B1 had made the room
+    (`shareInbox.ts` at 621 lines). `pinPrompt.pastTheDoor(storage, a, e, name, release)` is the half of `admitted`
+    after `admit` answered `in` (`healKeptVersions` + `settleRelease`) and returns the settled `Release`; `admitted`
+    and `shareInbox.payloadsFor` both call it, the latter keeping its own `admit` and its own decline wording. The
+    payload is read from storage after the call, so the share carries what the person chose; the folder walk reaches
+    the same line through `payloadsFor`. The RED was the one §4 predicted: the payload already carried the released
+    value (`admit` had released it) and no sentence was said; a conflict was never asked (`'(nothing asked)'`).
+    Help unchanged — the waiting paragraph already says that whatever uses the value next stores it first and that
+    you are told. Gated on its own branch, `feat/share-door-past-the-door` (coai session `974ff22a`): the plan round
+    passed (proceed, 3 findings) — accepted: assert the delivered payload in the no-conflict cases (the tests already
+    did); rejected: returning an updated entry from `pastTheDoor` (there is no in-memory value — the payload is read
+    from storage) and aborting the share on a dismissed conflict (no door does: the stored value is used and the
+    hold waits for the next door). The code round over the whole diff passed: proceed, 4 of 4 reviewers, no findings.

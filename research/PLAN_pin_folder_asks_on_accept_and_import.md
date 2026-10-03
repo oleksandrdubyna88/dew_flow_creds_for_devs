@@ -11,7 +11,7 @@
 > [PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise.md) (R3, R5),
 > [PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_the_folder_holds.md) (D-B),
 > [module_extension.md](module_extension.md) §*The entry PIN keeps its promise* and §*The type takes
-> over*. Shares one story with [PLAN_waiting_rotation_visible.md](../todo/PLAN_waiting_rotation_visible.md) (§6).
+> over*. Shares one story with [PLAN_waiting_rotation_visible.md](PLAN_waiting_rotation_visible.md) (§6).
 
 All `file:line` references are to `src_vs_code/src/` and were read on `main` at `95a4f58f` on 2026-10-02.
 
@@ -236,7 +236,7 @@ Typecheck, lint (`max-lines` 800, `max-lines-per-function` 50), `npm test`, the 
 
 | Item | Built by | The other plan's part |
 |---|---|---|
-| Extract `importShared` from `shareInbox.ts` (798 lines) | **this plan, B1** | [PLAN_waiting_rotation_visible.md](../todo/PLAN_waiting_rotation_visible.md) W2 adds one line to `shareInbox.ts` and needs the room: it lands after B1, or lands B1 first exactly as written here and this plan skips it |
+| Extract `importShared` from `shareInbox.ts` (798 lines) | **this plan, B1** | [PLAN_waiting_rotation_visible.md](PLAN_waiting_rotation_visible.md) W2 adds one line to `shareInbox.ts` and needs the room: it lands after B1, or lands B1 first exactly as written here and this plan skips it |
 | The share's sender-side door (`payloadsFor`) | the sibling, W2 | nothing here |
 
 Disjoint otherwise: this plan touches the RECEIVING half of `shareInbox.ts`, the sibling the SENDING half.

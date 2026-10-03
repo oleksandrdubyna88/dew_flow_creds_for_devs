@@ -1165,7 +1165,7 @@ inherited at read time.
 | `pinSession.ts` | the grant: a module-level Map in the extension host and nothing else |
 | `pinGate.ts` | opening one value for an operation somebody CLICKED; `automaticPinRefusal` for everything else |
 | `pinAdmission.ts` | the door — asked ONCE per entry, not per field |
-| `pinPrompt.ts` | the thin `vscode` edge: the one input box, with the one wording |
+| `pinPrompt.ts` | the thin `vscode` edge: the one input box, with the one wording; `admitted` and `pastTheDoor` — what every door does after `admit` answered `in` (the kept versions healed, a released value said, a conflict asked), shared by the share door (`PLAN_waiting_rotation_visible` W2) |
 | `pinCommands.ts` | the three commands, and the folder run |
 | `pinFolderPlan.ts` | what a folder run would do, and the sentences it says before doing it |
 | `pinOnCreate.ts` | a new entry in a folder whose entries are protected; `firstPinFor`, the first PIN of an entry protected while empty; `SettledPin`, what a new entry's writer is made from (`entryWriter.writerForNew` since E2 — it was `writerForNewEntry` here); `folderPrefersPin` (the preference walk, exported 2026-10-03) and `folderQuestion(storage)`, the port an arrival is asked through |
@@ -1664,8 +1664,8 @@ proof. Getters and setters were still `string` then; E3 flipped them to `StoredS
   (`EphemeralSweeper.releaseWaiting`), a pulled sync — `releaseUnprotected`/`releaseHeld` with the
   `UNATTENDED` proof store it PLAIN in an entry that is neither marked nor sealed, exactly the store the
   rotation would have made; a protected entry's hold is left alone, even while this window holds its PIN.
-- **A value waiting beside an UNPROTECTED entry is used and said** (`todo/PLAN_waiting_rotation_visible.md`,
-  W1/W3/W5/W6; the share door's W2 is still open). An unprotected entry holds one when the rotation's store
+- **A value waiting beside an UNPROTECTED entry is used and said** (`research/PLAN_waiting_rotation_visible.md`,
+  W1–W6). An unprotected entry holds one when the rotation's store
   failed for a reason other than the PIN (a keychain error — `heldOrHanded` holds on every failure), or when
   its PIN was removed by a sync or another window after the hold. Until this plan a click skipped the door for
   such an entry and used the replaced password until the sweep's tick (≤60 s), an agent did the same, and the
@@ -1678,6 +1678,12 @@ proof. Getters and setters were still `string` then; E3 flipped them to `StoredS
     is now stored."* (no "sealed" for a plain slot) and asks a conflict after the release returned (no lease
     across the modal) → `rereadAfter`, so the click opens the released value. A PIN box appears only for a SEALED slot: an entry whose mark was lost while a slot stayed sealed is asked for its PIN at that door, which is right by R3 — an entry with no mark and nothing sealed is never asked. A release that fails keeps the item and the index entry; the click uses
     the stored value and the row keeps saying the value waits.
+  - **The share door says it and asks, like every door** (W2). `shareInbox.payloadsFor` keeps its own `admit` and
+    its own decline wording and, on `in`, calls `pinPrompt.pastTheDoor` — the half of `admitted` after the door
+    (`healKeptVersions` + `settleRelease`), extracted so both doors run one copy. A value that went in at the share is
+    said (*"…is now stored, sealed under its PIN."* for a protected entry, no "sealed" for a plain one), a conflict is
+    asked, and the payload is built after, from storage — so *Store the rotated one* is what travels; dismissed, the
+    stored value travels and the hold waits for the next door. A folder share reaches the same line through its walk.
   - **Every automatic read releases first, unattended — by construction** (W5, the owner's decision; the code
     round of 2026-10-03). `automaticRead.automaticOpenerFor(storage, accountId)` is the ONE automatic opener:
     before `secretOpener.automaticOpener` decides (sealed or claiming a PIN → refused, damaged → refused), it asks

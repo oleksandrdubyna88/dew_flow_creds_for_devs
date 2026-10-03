@@ -3,7 +3,7 @@ import { deliverToRecipient, projectsOfPayloads, refuseForRecipient } from './sh
 import { buildSharePayload, countTotpEntries, nothingToShare } from './sharePayloadBuild';
 import { isNotForExport } from './exportScope';
 import { admit } from './pinAdmission';
-import { entryPinGate } from './pinPrompt';
+import { entryPinGate, pastTheDoor } from './pinPrompt';
 import { describeError } from './describeError';
 import { DiagnosticWriter } from './diagnosticWriter';
 import { ShareAttempt, attemptOf, noteAcceptFailures, notSavedNote, rememberAttempt } from './shareDiagnostics';
@@ -237,6 +237,9 @@ export class ShareInbox {
       this.reportAdmission(admission, node.name);
       return undefined;
     }
+    // Past the door like every other: a waiting rotated value that went in is said, a conflict asked — and the
+    // payload is built AFTER, so it carries what the person chose (`PLAN_waiting_rotation_visible.md` W2).
+    await pastTheDoor(this.deps.storage, accountId, node.id, node.name, admission);
     return [await buildSharePayload(this.deps.storage, accountId, node, includeTotp, gate)];
   }
 

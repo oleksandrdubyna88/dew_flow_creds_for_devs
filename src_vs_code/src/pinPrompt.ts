@@ -147,7 +147,16 @@ export async function admitted(
   if (admission.kind !== 'in') {
     return undefined;
   }
+  return { gate, release: await pastTheDoor(storage, accountId, entityId, entryName, admission) };
+}
+
+/**
+ * What every door does once `admit` answered `in`: the kept versions healed in the background, and a rotated value
+ * that waited beside the entry and went in at the door said — a conflict asked (§4.6). `admitted` and the share's
+ * door (`shareInbox.payloadsFor`, which keeps its own `admit` for its own decline wording) both stand here
+ * (`PLAN_waiting_rotation_visible.md` W2). What was released, the person's answers included.
+ */
+export async function pastTheDoor(storage: StorageManager, accountId: string, entityId: string, entryName: string, admission: Release): Promise<Release> {
   healKeptVersions(storage, accountId, entityId, entryName);
-  // A rotated value that waited beside the entry went in at the door: said, and a conflict asked (§4.6).
-  return { gate, release: await settleRelease(storage, accountId, entityId, entryName, admission) };
+  return settleRelease(storage, accountId, entityId, entryName, admission);
 }
