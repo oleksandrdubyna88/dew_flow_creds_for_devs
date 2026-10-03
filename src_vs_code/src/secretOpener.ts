@@ -42,9 +42,11 @@ export type OpenedSecret =
  * Opens one stored value of `owner`. `slot` names the rotation slot the value was read from — the password or the
  * connection string — when it is one: only such a value is read again after a rotated value waiting beside the
  * entry went in. A value is never re-read because its TEXT matches the replaced one (the security review of
- * `PLAN_waiting_rotation_visible`, fix 3: notes equal to the old password came back as the new password).
+ * `PLAN_waiting_rotation_visible`, fix 3: notes equal to the old password came back as the new password). REQUIRED,
+ * `undefined` stated for every other slot: a reader that left it out was handed the replaced value in silence (code
+ * round 3, finding 5); `test/fixtures/typed/an_opener_names_its_slot.ts` keeps it required.
  */
-export type SecretOpener = (owner: SecretOwner, stored: StoredSecret | undefined, slot?: RotationSlot) => Promise<OpenedSecret>;
+export type SecretOpener = (owner: SecretOwner, stored: StoredSecret | undefined, slot: RotationSlot | undefined) => Promise<OpenedSecret>;
 
 /**
  * Nothing automatic asks, and nothing automatic is handed a value of a protected entry: a sealed

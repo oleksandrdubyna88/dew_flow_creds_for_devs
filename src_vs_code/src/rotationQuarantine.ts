@@ -452,7 +452,7 @@ export async function dropHeld(storage: StorageManager, accountId: string, entit
  * Re-reads, after a door, the value a click read before it — see `beforeTheDoor`. `slot` is the rotation slot the
  * value was read from; a value read from any other slot is never re-read, whatever its text (fix 3 above).
  */
-export type AfterTheDoor = (value: StoredSecret | undefined, release: Release, slot?: RotationSlot) => Promise<StoredSecret | undefined>;
+export type AfterTheDoor = (value: StoredSecret | undefined, release: Release, slot: RotationSlot | undefined) => Promise<StoredSecret | undefined>;
 
 const AS_READ: AfterTheDoor = (value) => Promise.resolve(value);
 

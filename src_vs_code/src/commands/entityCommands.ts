@@ -72,7 +72,7 @@ async function clickedValue(
   read: SlotRead,
   purpose: string,
   missing: (name: string) => string,
-  slot?: RotationSlot,
+  slot: RotationSlot | undefined,
 ): Promise<{ details: EntityMetadata; value: string } | undefined> {
   host.vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
   const entry = clickedEntry(target);
@@ -157,7 +157,7 @@ async function connectDb(host: EntityCommandsHost, target: unknown): Promise<voi
 async function copyTotpCode(host: EntityCommandsHost, target: unknown): Promise<void> {
   const noSeed = (name: string): string =>
     `"${name}" has no one-time code seed — open Edit and paste the otpauth:// URI or the base32 secret.`;
-  const got = await clickedValue(host, target, readTotp, 'copy its one-time code', noSeed);
+  const got = await clickedValue(host, target, readTotp, 'copy its one-time code', noSeed, undefined);
   if (got === undefined) {
     return;
   }
@@ -210,7 +210,7 @@ async function installSshKey(host: EntityCommandsHost, target: unknown): Promise
   if (entry === undefined) {
     return;
   }
-  const opened = await clickedSecret(host.storage, entry.accountId, entry.details, readKey, 'install its key');
+  const opened = await clickedSecret(host.storage, entry.accountId, entry.details, readKey, 'install its key', undefined);
   if (opened.kind === 'open') {
     await installKeyToSystem(entry.details, opened.value, outsidePinNote(opened));
   }

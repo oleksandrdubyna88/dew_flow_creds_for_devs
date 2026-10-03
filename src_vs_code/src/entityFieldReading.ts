@@ -65,7 +65,7 @@ async function notesReading(
 ): Promise<FieldReading> {
   const held = await storage.getNotes(accountId, details.id);
   // A metadata value read as the plain stored form it is: the legacy note kept in node metadata.
-  return fieldReadingOf(await automaticOpenerFor(storage, accountId)(details, held ?? stored(details.notes)), details);
+  return fieldReadingOf(await automaticOpenerFor(storage, accountId)(details, held ?? stored(details.notes), undefined), details);
 }
 
 /**
@@ -79,6 +79,6 @@ async function totpReading(
   details: EntityMetadata,
   now: number,
 ): Promise<FieldReading> {
-  const seed = fieldReadingOf(await automaticOpenerFor(storage, accountId)(details, await storage.getTotp(accountId, details.id)), details);
+  const seed = fieldReadingOf(await automaticOpenerFor(storage, accountId)(details, await storage.getTotp(accountId, details.id), undefined), details);
   return seed.kind === 'value' ? readingOf(totpSnapshot(seed.value, now)?.code) : seed;
 }

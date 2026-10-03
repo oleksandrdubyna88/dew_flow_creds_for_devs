@@ -132,7 +132,7 @@ export class SshAgentManager implements vscode.Disposable {
     details: EntityMetadata,
     open: SecretOpener = automaticOpenerFor(this.storage, accountId),
   ): Promise<{ ok: true; fingerprint: string } | { ok: false; reason: string }> {
-    const opened = await open(details, await this.storage.getPrivateKey(accountId, details.id));
+    const opened = await open(details, await this.storage.getPrivateKey(accountId, details.id), undefined);
     if (opened.kind === 'stopped') {
       return { ok: false, reason: opened.reason };
     }

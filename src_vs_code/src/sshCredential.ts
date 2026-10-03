@@ -49,7 +49,7 @@ export async function resolveSshCredential(
   const { keySource, warning } = keySourceOf(storage, accountId, entity);
   const storedKey = await storage.getPrivateKey(accountId, keySource.id);
   if (storedKey !== undefined) {
-    return keyFrom(await open(keySource, storedKey), keySource, warning);
+    return keyFrom(await open(keySource, storedKey, undefined), keySource, warning);
   }
   // `!== undefined` rather than truthiness: an empty stored path historically
   // meant "no -i flag, but still not the password branch", and changing that

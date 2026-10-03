@@ -40,7 +40,7 @@ interface DeployKey {
  * until then a damaged wrap's text was materialised as the key, and git failed with nothing saying why.
  */
 async function usableDeployKey(storage: StorageManager, found: DeployKey, location: string): Promise<string> {
-  const key = fieldReadingOf(await automaticOpenerFor(storage, found.accountId)(found.owner, found.key));
+  const key = fieldReadingOf(await automaticOpenerFor(storage, found.accountId)(found.owner, found.key, undefined));
   if (key.kind !== 'value') {
     const why = key.kind === 'withheld' ? key.reason : `"${found.owner.name}" holds no key.`;
     throw new Error(`${why} It is the deploy key for ${location}, so this sync cannot authenticate with it.`);

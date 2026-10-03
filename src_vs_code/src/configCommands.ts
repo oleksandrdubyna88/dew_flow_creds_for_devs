@@ -81,11 +81,11 @@ async function openedBodies(
   previousRaw: StoredSecret,
   at: number,
 ): Promise<ComparedBodies | undefined> {
-  const current = bodyText(await clickedSecret(storage, accountId, details, (s, a, e) => s.getConfigBody(a, e), COMPARE));
+  const current = bodyText(await clickedSecret(storage, accountId, details, (s, a, e) => s.getConfigBody(a, e), COMPARE, undefined));
   if (current === undefined) {
     return undefined;
   }
-  const previous = bodyText(await grantedOpener(accountId)(details, previousRaw));
+  const previous = bodyText(await grantedOpener(accountId)(details, previousRaw, undefined));
   return previous === undefined ? undefined : { format: details.configFormat ?? 'json', previous, current, at };
 }
 
@@ -124,7 +124,7 @@ export function addConfigHolder(
  * envelope. An empty body is still a body, as it always was.</p>
  */
 export async function configBodyReading(storage: StorageManager, holder: ConfigHolder): Promise<FieldReading> {
-  const opened = await automaticOpenerFor(storage, holder.accountId)(holderOwner(storage, holder), await storage.getConfigBody(holder.accountId, holder.entityId));
+  const opened = await automaticOpenerFor(storage, holder.accountId)(holderOwner(storage, holder), await storage.getConfigBody(holder.accountId, holder.entityId), undefined);
   if (opened.kind === 'stopped') {
     return withheld(opened.reason);
   }

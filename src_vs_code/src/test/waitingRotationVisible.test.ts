@@ -693,7 +693,7 @@ test('a click on a CONFIG BODY whose text equals the replaced password gets the 
   const { storage, stub } = await sameTextElsewhere('config body');
   const [click] = loadEachWithVscode(['../pinClick'], stub) as [typeof import('../pinClick')];
 
-  const opened = await click.clickedSecret(storage, ACCOUNT, OWNER, (s, a, e) => s.getConfigBody(a, e), 'write its config file');
+  const opened = await click.clickedSecret(storage, ACCOUNT, OWNER, (s, a, e) => s.getConfigBody(a, e), 'write its config file', undefined);
 
   assert.equal(carried(await storage.getPassword(ACCOUNT, ENTRY)), NEW, 'the setup: the click did not release the waiting password');
   assert.equal(opened.kind === 'open' && opened.value, OLD, 'the click on the config body was handed the released PASSWORD');

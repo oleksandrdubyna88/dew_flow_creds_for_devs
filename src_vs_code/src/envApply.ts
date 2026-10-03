@@ -131,15 +131,15 @@ async function openedField(
   details: EntityMetadata,
   field: BindableField,
 ): Promise<OpenedSecret> {
-  const open = (held: StoredSecret | undefined, slot?: RotationSlot): Promise<OpenedSecret> => automaticOpenerFor(storage, accountId)(details, held, slot);
+  const open = (held: StoredSecret | undefined, slot: RotationSlot | undefined): Promise<OpenedSecret> => automaticOpenerFor(storage, accountId)(details, held, slot);
   switch (field) {
     case 'password':
       return open(await storage.getPassword(accountId, details.id), 'password');
     case 'privateKey':
-      return open(await storage.getPrivateKey(accountId, details.id));
+      return open(await storage.getPrivateKey(accountId, details.id), undefined);
     case 'publicKey':
       // A metadata value read as the plain stored form it is: the public key kept in node metadata.
-      return open(stored(details.publicKey));
+      return open(stored(details.publicKey), undefined);
     case 'dbConnection':
     case 'dbPassword':
       return open(await storage.getDbConnection(accountId, details.id), 'dbConnection');

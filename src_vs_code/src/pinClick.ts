@@ -41,7 +41,7 @@ export async function clickedSecret(
   owner: SecretOwner,
   read: SlotRead,
   purpose: string,
-  slot?: RotationSlot,
+  slot: RotationSlot | undefined,
 ): Promise<OpenedSecret> {
   return clickOpener(storage, accountId, purpose)(owner, await read(storage, accountId, owner.id), slot);
 }
@@ -58,11 +58,11 @@ export function clickOpener(storage: StorageManager, accountId: string, purpose:
   const behindTheDoor = grantedOpener(accountId);
   return async (owner, stored, slot) => {
     if (!(await needsDoor(storage, accountId, owner, stored))) {
-      return behindTheDoor(owner, stored);
+      return behindTheDoor(owner, stored, slot);
     }
     const reread = await beforeTheDoor(storage, accountId, owner.id);
     const door = await admitted(storage, accountId, owner.id, owner.name, purpose);
-    return door === undefined ? STOPPED : behindTheDoor(owner, await reread(stored, door.release, slot));
+    return door === undefined ? STOPPED : behindTheDoor(owner, await reread(stored, door.release, slot), slot);
   };
 }
 
