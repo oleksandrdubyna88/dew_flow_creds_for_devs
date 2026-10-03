@@ -18,10 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   other entry costs what it did.
 - **An agent's use did the same.** `creds_query`, `creds_exec`, an environment binding, `creds_export_env`
   and a `creds://` reference now store a value waiting beside an unprotected entry first — exactly the store
-  the rotation would have made — and use the new one. A value whose stored counterpart changed after the
-  rotation is never decided automatically: the agent uses what is stored, and your next click asks.
-- **The background sweep stored a waiting value without telling you.** It now says so, once per value, in
-  the same words as every other place that stores one.
+  the rotation would have made — use the new one, and tell you so (a notification, never a dialog: the
+  agent's call does not wait for you). A value whose stored counterpart changed after the rotation is never
+  decided automatically: the agent uses what is stored, and your next click asks.
+- **The background sweep, and the store right after a sync, put a waiting value in without telling you.**
+  Both now say so, once per value, in the same words as every other place that stores one.
+- **The help says all of it in every language**, and a test now fails if a translation drops it.
 - **The waiting modal and the row named a PIN on an entry without one.** After a keychain failure the modal
   said the entry "was protected with a PIN" and the row's tooltip said to enter its PIN. Both now say what
   happened and when the value goes in; the modal's button is **Store it now**, which asks for nothing on an

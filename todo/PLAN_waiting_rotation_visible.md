@@ -1,8 +1,8 @@
 # PLAN — a waiting rotated value is used at the click and announced at every door
 
 > Status: **partly built, 2026-10-03 — W1, W3, W5 and W6 are in (`1bceeabb`, `ac19cdcd`, `e0e65b58`,
-> `bf3a6c3b`) with W4's docs; W2 waits on the sibling plan's B1; the code round and the promotion are open
-> (§10 records what was built differently).** Planned 2026-10-02. Scope: `src_vs_code/src` — `pinClick.ts`,
+> `bf3a6c3b`) with W4's docs and the owner's three follow-ups (§10.7); W2 waits on the sibling plan's B1; the
+> code round and the promotion are open (§10 records what was built differently).** Planned 2026-10-02. Scope: `src_vs_code/src` — `pinClick.ts`,
 > `pinPrompt.ts` (one half of `admitted` extracted), `shareInbox.ts` (one line, after the extraction its sibling
 > plan owns), `rotationQuarantine.ts` (one index-only read exported), `rotationStore.ts` and
 > `rotationWaiting.ts` (wording), and their tests. Extension only; no format, contract or server change.
@@ -244,20 +244,35 @@ the text above:
    key, and no rotation holds one (`RotationSlot` is `password | dbConnection`). The helper is
    `rotationQuarantine.releaseBeforeAutomaticUse`, which reuses the sweep's own `releaseIfUnprotected` rather than
    calling `releaseHeld(…, UNATTENDED)` bare: a marked or sealed entry is skipped before the slots are walked,
-   at the cost of one item `get` for a LISTED marked entry (an unlisted one still reads nothing). Nothing is said
-   to the person when an agent's use releases a value — the plan asks for none (§3.4, §9.1).
+   at the cost of one item `get` for a LISTED marked entry (an unlisted one still reads nothing). The plan asked
+   for no message here; the owner's follow-up (item 7) added one.
 3. **W6's saying is injected.** `rotationWaiting.releaseAndSay` releases and says each value;
    `EphemeralSweeper.releaseWaiting` is typed to the list and stays free of `vscode` at run time (its own suite
    loads it without a stub), and `extension.ts` wires `releaseAndSay` in — line-neutral at 1037 by merging its
-   two imports from `entityViewerCommands`. **The post-pull release after a sync** (`extension.ts`, the sync
-   callback) still calls `releaseUnprotected` and says nothing: the plan scopes W6 to the sweep — an open
-   question for the owner.
+   two imports from `entityViewerCommands`. The plan scoped W6 to the sweep; the release right after a pulled
+   sync was made to speak by the owner's follow-up (item 7).
 4. **W3's branch is the store's error, not the entry's mark.** `UnattendedRefusal` keeps the PIN sentence and the
    *Store it now (asks for the PIN)* button; any other failure names itself (`whyNotStored`), says *"It is stored
    the next time you use "X", or within a minute"*, and offers *Store it now*.
-5. **Help:** one sentence added to the waiting paragraph of the PIN article in all five languages. No coverage
-   test pins it (`rotationHelpCoverage.test.ts` pins the row's words, *Burn Now…* and *quarantined* only).
+5. **Help:** one sentence added to the waiting paragraph of the PIN article in all five languages — an entry
+   without a PIN can have a value waiting; its next use (a click or an agent's) stores it first, else the sweep
+   within a minute, and each time the person is told. Pinned per language by item 7's coverage test.
 6. **Declared mechanical test edits:** `rotationWaiting.test.ts` — the row test's db entry carries the mark, so it
    still asserts the PIN tooltip for a protected entry (W3); `rotationQuarantine.test.ts` — three
    `assert.equal(released, N)` read `released.length`, and the sweeper test's stub resolves two `ReleasedValue`
    items instead of the number 2 (W6). No other existing assertion changed.
+7. **The owner's follow-ups (2026-10-03, "the person must SEE it")** — beyond the plan's text, each red-first with
+   its break-it in the commit body:
+   1. **The release right after a pulled sync is said** (`a65ab0e5`): the sync's post-pull callback in
+      `extension.ts` calls `rotationWaiting.releaseAndSay` instead of the silent `releaseUnprotected`. The test
+      reads that callback's release out of `extension.ts` (the `agentDoors.test.ts` precedent — the callback is a
+      lambda inside `activate`) and runs it, with a positive control on the sweeper's wiring.
+   2. **An agent's use that stores a waiting value is said** (`408a6305`): `releaseBeforeAutomaticUse` hands what
+      it stored to a port, `rotationQuarantine.announceReleasesWith`, which `extension.ts` sets once to
+      `rotationWaiting.sayReleasedValues` — an info message, never a modal, never awaited, so the agent's call is
+      not held. Injected because the module and the readers that call it stay free of `vscode` at run time. A
+      conflict, or nothing waiting, says nothing. `extension.ts` stays at 1037 by merging its two `corpPolicy`
+      imports.
+   3. **Every help language pins the sentence** (`37b150ed`): `rotationHelpCoverage.test.ts` checks, per
+      `HELP_LANGUAGES`, the sentence's opening and its "you are told" in that language; a language with no pinned
+      fragments fails. Red first against `helpDe.ts` with the sentence removed.
