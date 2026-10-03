@@ -1,6 +1,8 @@
 # PLAN — a waiting rotated value is used at the click and announced at every door
 
-> Status: **plan only, nothing implemented yet, 2026-10-02.** Scope: `src_vs_code/src` — `pinClick.ts`,
+> Status: **partly built, 2026-10-03 — W1, W3, W5 and W6 are in (`1bceeabb`, `ac19cdcd`, `e0e65b58`,
+> `bf3a6c3b`) with W4's docs; W2 waits on the sibling plan's B1; the code round and the promotion are open
+> (§10 records what was built differently).** Planned 2026-10-02. Scope: `src_vs_code/src` — `pinClick.ts`,
 > `pinPrompt.ts` (one half of `admitted` extracted), `shareInbox.ts` (one line, after the extraction its sibling
 > plan owns), `rotationQuarantine.ts` (one index-only read exported), `rotationStore.ts` and
 > `rotationWaiting.ts` (wording), and their tests. Extension only; no format, contract or server change.
@@ -131,7 +133,7 @@ real `StorageManager` with the keychain read and write logs (`test/pinWorld.ts`)
 `test/waitingRotationVisible.test.ts` (the existing file is 665 lines). Typecheck, lint, `npm test`, the plan
 lifecycle check.
 
-- [ ] **W1 — a click on an unprotected entry with a waiting value uses the new one.** `isWaiting`,
+- [x] **W1 — a click on an unprotected entry with a waiting value uses the new one.** *(`1bceeabb`, 2026-10-03.)* `isWaiting`,
       `needsDoor`. RED: an unmarked entry with a plain password and a held newer one → *Copy Password*
       (`clickedSecret`) copies the OLD value (*"the click used the password the rotation replaced"*). GREEN: the
       new value is copied, the slot holds it plain, the item and its index entry are gone, the infos say
@@ -140,17 +142,20 @@ lifecycle check.
       click, and *Store the rotated one* is what the click uses. Cost guard: an unlisted unprotected entry →
       the keychain read log holds no `:rotationQuarantine` read and no slot beyond the one clicked. Break-it:
       `needsDoor` without the index question → red.
-- [ ] **W2 — the share door says what it released.** Lands after the sibling's B1 (§6). `pastTheDoor`.
+- [ ] **W2 — the share door says what it released.** *(NOT built on 2026-10-03: it waits on the sibling plan's B1,
+      the `shareInbox.ts` extraction, which is being built in another worktree; `shareInbox.ts` was not touched.)*
+      Lands after the sibling's B1 (§6). `pastTheDoor`.
       RED (share world): sharing a protected entry with a waiting value → the payload carries the new value
       but the infos hold no *"is now stored, sealed under its PIN"*; with a conflict → no question, and the
       payload carries the current value while the hold waits. GREEN: the sentence said; the conflict asked;
       *Store the rotated one* → the payload carries the rotated value. A declined PIN still says the share's
       own sentence. Break-it: drop the `pastTheDoor` call → red.
-- [ ] **W3 — the words match the entry.** RED: a hold after a keychain failure on an unprotected entry → the
+- [x] **W3 — the words match the entry.** *(`ac19cdcd`, 2026-10-03.)* RED: a hold after a keychain failure on an unprotected entry → the
       modal says *"was protected with a PIN"*; its row tooltip says *"enter its PIN"*. GREEN: the modal names
       the store's failure, no PIN, and *"within a minute"*; the tooltip of an unmarked entry names no PIN, a
       marked one still does. Break-it: restore the fixed sentence → red.
-- [ ] **W5 — an agent's use of an unprotected entry stores a waiting value first** (§9.1). Every automatic
+- [x] **W5 — an agent's use of an unprotected entry stores a waiting value first** (§9.1). *(`e0e65b58`, 2026-10-03;
+      the reader list differs — §10.2.)* Every automatic
       reader that resolves a stored secret for an agent (`automaticOpener` callers: env apply, `creds://`, the
       db query, the deploy key, ssh) asks `isWaiting` (index only) and, for a listed UNMARKED entry, runs
       `releaseHeld(…, UNATTENDED)` before reading — the plain writer re-checked under the lease, never a PIN,
@@ -158,11 +163,12 @@ lifecycle check.
       uses the OLD one. GREEN: the new one is used, stored plain, the hold gone. A conflict: nothing written,
       the agent uses the stored value, the hold waits. A marked entry: untouched (its door is the person's).
       Cost guard: an unlisted entry reads no `:rotationQuarantine` key. Break-it: skip the release → red.
-- [ ] **W6 — the sweep's release is said to the person** (§9.2). The sweep's `releaseUnprotected` returns
+- [x] **W6 — the sweep's release is said to the person** (§9.2). *(`bf3a6c3b`, 2026-10-03.)* The sweep's `releaseUnprotected` returns
       WHICH entries and slots it released, and the sweeper says each once through `rotationWaiting`'s words
       (*"The new password of "X" from <time> is now stored."*), not only in the log; a tick that released
       nothing says nothing. RED: a sweep releasing a held value → no info shown. Break-it: drop the say → red.
-- [ ] **W4 — docs and promotion** (§7). `review_code` over the diff, then `/promote-plan` with the
+- [ ] **W4 — docs and promotion** (§7). *(The §7 docs are updated for W1/W3/W5/W6, 2026-10-03; the code round, W2's
+      docs and the promotion are open.)* `review_code` over the diff, then `/promote-plan` with the
       deviations; the rotation-quarantine plan's open tail updated to point at the promoted record.
 
 ## 5. Test plan
@@ -202,12 +208,12 @@ Disjoint otherwise: this plan touches the SENDING half of `shareInbox.ts`, the s
 ## 8. Definition of Done
 
 - [ ] W1–W6 merged, each with its RED observation and break-it in the commit body.
-- [ ] An agent's use of an unprotected entry with a waiting value uses the new value (W5); the sweep's release
+- [x] An agent's use of an unprotected entry with a waiting value uses the new value (W5); the sweep's release
       is said to the person (W6).
-- [ ] A click on an unprotected entry with a waiting value uses the new value and says it was stored, with no
+- [x] A click on an unprotected entry with a waiting value uses the new value and says it was stored, with no
       PIN box — shown over the real storage; an unlisted entry's click reads nothing new.
 - [ ] The share door says what it released and asks a conflict.
-- [ ] No sentence names a PIN for an entry without one.
+- [x] No sentence names a PIN for an entry without one.
 - [ ] Typecheck, lint, `npm test`, plan lifecycle green; §7 docs updated; plan promoted with its deviations.
 
 ## 9. Decided (2026-10-02)
@@ -221,3 +227,37 @@ The owner's direction for both limits: *"главное как-то отобра
    person's next door, as today. Built as its own story, RED first.
 2. **The sweep's release is said to the person**, once per release (*"The new password of "X" … is now
    stored."*), through the same words the door uses (`rotationWaiting`) — not only in the log.
+
+## 10. What was built differently (recorded at build time, 2026-10-03)
+
+Each built story's commit body carries its RED messages and its break-it. W2 is not built (§4). What differs from
+the text above:
+
+1. **W1 as planned.** `needsDoor` became async and asks `isWaiting` LAST, behind the mark and the sealed check,
+   with a failed index read counted as "nothing waits". The lease guard is a modal stub that runs
+   `storage.writes.runOrSkip` and races it against two seconds — `ran`, not `blocked behind the click`.
+2. **W5's readers.** The release is called in three places, not five: `agentUseActions.dbQueryAction`
+   (`creds_query`), `envApply.bindableFieldReading` — ONE call that covers env apply, `creds_export_env` and
+   `creds://` (through `entityFieldReading`), and also the viewer's set-env, which runs after its own door — and
+   `sshCredential.passwordOf` when the opener is the automatic one (the agent's ssh/exec; the person's Connect
+   passes a click opener, whose door says it, W1). **The deploy key is not touched:** it reads only a private
+   key, and no rotation holds one (`RotationSlot` is `password | dbConnection`). The helper is
+   `rotationQuarantine.releaseBeforeAutomaticUse`, which reuses the sweep's own `releaseIfUnprotected` rather than
+   calling `releaseHeld(…, UNATTENDED)` bare: a marked or sealed entry is skipped before the slots are walked,
+   at the cost of one item `get` for a LISTED marked entry (an unlisted one still reads nothing). Nothing is said
+   to the person when an agent's use releases a value — the plan asks for none (§3.4, §9.1).
+3. **W6's saying is injected.** `rotationWaiting.releaseAndSay` releases and says each value;
+   `EphemeralSweeper.releaseWaiting` is typed to the list and stays free of `vscode` at run time (its own suite
+   loads it without a stub), and `extension.ts` wires `releaseAndSay` in — line-neutral at 1037 by merging its
+   two imports from `entityViewerCommands`. **The post-pull release after a sync** (`extension.ts`, the sync
+   callback) still calls `releaseUnprotected` and says nothing: the plan scopes W6 to the sweep — an open
+   question for the owner.
+4. **W3's branch is the store's error, not the entry's mark.** `UnattendedRefusal` keeps the PIN sentence and the
+   *Store it now (asks for the PIN)* button; any other failure names itself (`whyNotStored`), says *"It is stored
+   the next time you use "X", or within a minute"*, and offers *Store it now*.
+5. **Help:** one sentence added to the waiting paragraph of the PIN article in all five languages. No coverage
+   test pins it (`rotationHelpCoverage.test.ts` pins the row's words, *Burn Now…* and *quarantined* only).
+6. **Declared mechanical test edits:** `rotationWaiting.test.ts` — the row test's db entry carries the mark, so it
+   still asserts the PIN tooltip for a protected entry (W3); `rotationQuarantine.test.ts` — three
+   `assert.equal(released, N)` read `released.length`, and the sweeper test's stub resolves two `ReleasedValue`
+   items instead of the number 2 (W6). No other existing assertion changed.
