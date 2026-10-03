@@ -448,8 +448,11 @@ export async function dropHeld(storage: StorageManager, accountId: string, entit
   });
 }
 
-/** Re-reads, after a door, the value a click read before it — see `beforeTheDoor`. */
-export type AfterTheDoor = (value: StoredSecret | undefined, release: Release) => Promise<StoredSecret | undefined>;
+/**
+ * Re-reads, after a door, the value a click read before it — see `beforeTheDoor`. `slot` is the rotation slot the
+ * value was read from; a value read from any other slot is never re-read, whatever its text (fix 3 above).
+ */
+export type AfterTheDoor = (value: StoredSecret | undefined, release: Release, slot?: RotationSlot) => Promise<StoredSecret | undefined>;
 
 const AS_READ: AfterTheDoor = (value) => Promise.resolve(value);
 
@@ -477,8 +480,8 @@ async function slotsNow(storage: StorageManager, accountId: string, entityId: st
 }
 
 function rereadAfter(storage: StorageManager, accountId: string, entityId: string, before: Partial<Record<RotationSlot, StoredSecret | undefined>>): AfterTheDoor {
-  return async (value, release) => {
-    const replaced = release.released.find((one) => value !== undefined && before[one.slot] === value);
+  return async (value, release, slot) => {
+    const replaced = release.released.find((one) => one.slot === slot && value !== undefined && before[one.slot] === value);
     return replaced === undefined ? value : rawSlot({ storage, accountId, entityId }, replaced.slot);
   };
 }

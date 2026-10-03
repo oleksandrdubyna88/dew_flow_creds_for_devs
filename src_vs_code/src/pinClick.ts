@@ -7,6 +7,7 @@ import { OpenedSecret, SecretOpener, SecretOwner } from './secretOpener';
 import { isLockedSecret } from './secretEnvelope';
 import type { StorageManager } from './storageManager';
 import type { StoredSecret } from './storedSecret';
+import type { RotationSlot } from './secretRotation';
 
 /**
  * A value somebody CLICKED for — opened through the entry's door first (entry-PIN plan, rule R1).
@@ -39,8 +40,9 @@ export async function clickedSecret(
   owner: SecretOwner,
   read: SlotRead,
   purpose: string,
+  slot?: RotationSlot,
 ): Promise<OpenedSecret> {
-  return clickOpener(storage, accountId, purpose)(owner, await read(storage, accountId, owner.id));
+  return clickOpener(storage, accountId, purpose)(owner, await read(storage, accountId, owner.id), slot);
 }
 
 /**
@@ -53,13 +55,13 @@ export async function clickedSecret(
  */
 export function clickOpener(storage: StorageManager, accountId: string, purpose: string): SecretOpener {
   const behindTheDoor = grantedOpener(accountId);
-  return async (owner, stored) => {
+  return async (owner, stored, slot) => {
     if (!(await needsDoor(storage, accountId, owner, stored))) {
       return behindTheDoor(owner, stored);
     }
     const reread = await beforeTheDoor(storage, accountId, owner.id);
     const door = await admitted(storage, accountId, owner.id, owner.name, purpose);
-    return door === undefined ? STOPPED : behindTheDoor(owner, await reread(stored, door.release));
+    return door === undefined ? STOPPED : behindTheDoor(owner, await reread(stored, door.release, slot));
   };
 }
 

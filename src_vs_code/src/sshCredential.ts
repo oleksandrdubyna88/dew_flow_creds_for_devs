@@ -97,7 +97,7 @@ async function passwordOf(
   if (stored === undefined) {
     return { kind: 'none', warning };
   }
-  const opened = await open(owner, stored);
+  const opened = await open(owner, stored, 'password');
   if (opened.kind === 'stopped') {
     return { kind: 'stopped', reason: opened.reason, ownerName: owner.name, warning };
   }

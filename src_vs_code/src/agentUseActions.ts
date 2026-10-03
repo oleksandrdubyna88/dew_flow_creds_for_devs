@@ -306,7 +306,7 @@ export function dbQueryAction(
       // SAID. Wrap first, mark second — an agent reaches this entry only while its mark is lost — and a
       // damaged wrap as damaged (`automaticOpenerFor`, typed-secrets plan T3: until then its text was
       // handed to the client as the connection string), and a rotated value waiting beside an unprotected entry first.
-      const stored = fieldReadingOf(await automaticOpenerFor(deps.storage, ctx.accountId)(entity, await deps.storage.getDbConnection(ctx.accountId, ctx.entityId)));
+      const stored = fieldReadingOf(await automaticOpenerFor(deps.storage, ctx.accountId)(entity, await deps.storage.getDbConnection(ctx.accountId, ctx.entityId), 'dbConnection'));
       if (stored.kind !== 'value') {
         return fail('no_credential', stored.kind === 'withheld' ? stored.reason : `"${ctx.entityName}" has no stored connection string.`);
       }

@@ -27,6 +27,7 @@ import { openEntrySite } from '../openSite';
 import { EntityMetadata } from '../types';
 import { SlotRead, clickedSecret, outsidePinNote } from '../pinClick';
 import type { OpenedSecret } from '../secretOpener';
+import type { RotationSlot } from '../secretRotation';
 export interface EntityCommandsHost {
   readonly doorsAt: (accountId: string, node: TreeNode) => AgentDoors;
   readonly mutated: () => void;
@@ -71,13 +72,14 @@ async function clickedValue(
   read: SlotRead,
   purpose: string,
   missing: (name: string) => string,
+  slot?: RotationSlot,
 ): Promise<{ details: EntityMetadata; value: string } | undefined> {
   host.vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
   const entry = clickedEntry(target);
   if (entry === undefined) {
     return undefined;
   }
-  return presentValue(await clickedSecret(host.storage, entry.accountId, entry.details, read, purpose), entry.details, missing);
+  return presentValue(await clickedSecret(host.storage, entry.accountId, entry.details, read, purpose, slot), entry.details, missing);
 }
 
 /** An opened value that is there; an absent one is said, a stopped one has been said already. */
@@ -110,7 +112,7 @@ const readKey: SlotRead = (s, a, e) => s.getPrivateKey(a, e);
 /** Every click that copies or hands over a stored value — each through the entry's door (D6). */
 function registerSecretCopies(host: EntityCommandsHost): void {
   host.register('credSshManager.copyPassword', async (target) => {
-    const got = await clickedValue(host, target, readPassword, 'copy its password', (name) => `"${name}" has no stored password.`);
+    const got = await clickedValue(host, target, readPassword, 'copy its password', (name) => `"${name}" has no stored password.`, 'password');
     if (got !== undefined) {
       await copied(got.value, copiedMessage(`Password of "${got.details.name}"`));
     }
@@ -120,7 +122,7 @@ function registerSecretCopies(host: EntityCommandsHost): void {
   // when the clipboard TTL clears it.
   host.register('credSshManager.copyTotpCode', (target) => copyTotpCode(host, target));
   host.register('credSshManager.copyDbConnectionNoPassword', async (target) => {
-    const got = await clickedValue(host, target, readDb, 'copy its connection string', () => 'No connection string stored for this entry.');
+    const got = await clickedValue(host, target, readDb, 'copy its connection string', () => 'No connection string stored for this entry.', 'dbConnection');
     if (got !== undefined) {
       await copied(withoutPassword(got.value), 'Connection string copied WITHOUT the password. It clears from the clipboard shortly.');
     }
@@ -128,7 +130,7 @@ function registerSecretCopies(host: EntityCommandsHost): void {
   // Open a database entity in the matching DB extension — which says itself when there is no string.
   host.register('credSshManager.connectDb', (target) => connectDb(host, target));
   host.register('credSshManager.copyDbConnection', async (target) => {
-    const got = await clickedValue(host, target, readDb, 'copy its connection string', (name) => `"${name}" has no stored connection string.`);
+    const got = await clickedValue(host, target, readDb, 'copy its connection string', (name) => `"${name}" has no stored connection string.`, 'dbConnection');
     if (got !== undefined) {
       await copied(got.value, copiedMessage(`Connection string of "${got.details.name}"`));
     }
@@ -141,7 +143,7 @@ async function connectDb(host: EntityCommandsHost, target: unknown): Promise<voi
   if (entry === undefined) {
     return;
   }
-  const opened = await clickedSecret(host.storage, entry.accountId, entry.details, readDb, 'connect');
+  const opened = await clickedSecret(host.storage, entry.accountId, entry.details, readDb, 'connect', 'dbConnection');
   if (opened.kind === 'open') {
     await openInDbExtension(entry.details, opened.value);
   }

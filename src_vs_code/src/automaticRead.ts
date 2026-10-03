@@ -1,5 +1,6 @@
 import { beforeTheDoor, isWaiting, releaseBeforeAutomaticUse } from './rotationQuarantine';
 import { SecretOpener, automaticOpener } from './secretOpener';
+import type { RotationSlot } from './secretRotation';
 import type { StorageManager } from './storageManager';
 import type { StoredSecret } from './storedSecret';
 
@@ -20,14 +21,14 @@ import type { StoredSecret } from './storedSecret';
  * agent the value a rotation replaced, and `waitingRotationVisible.test.ts` fails on any such use.</p>
  */
 export function automaticOpenerFor(storage: StorageManager, accountId: string): SecretOpener {
-  return async (owner, stored) => automaticOpener(owner, await releasedFirst(storage, accountId, owner.id, stored));
+  return async (owner, stored, slot) => automaticOpener(owner, await releasedFirst(storage, accountId, owner.id, stored, slot));
 }
 
 /** `stored`, or — when a waiting value went in over it — what the slot holds now. */
-async function releasedFirst(storage: StorageManager, accountId: string, entityId: string, stored: StoredSecret | undefined): Promise<StoredSecret | undefined> {
+async function releasedFirst(storage: StorageManager, accountId: string, entityId: string, stored: StoredSecret | undefined, slot?: RotationSlot): Promise<StoredSecret | undefined> {
   if (!(await isWaiting(storage, accountId, entityId).catch(() => false))) {
     return stored;
   }
   const reread = await beforeTheDoor(storage, accountId, entityId);
-  return reread(stored, await releaseBeforeAutomaticUse(storage, accountId, entityId));
+  return reread(stored, await releaseBeforeAutomaticUse(storage, accountId, entityId), slot);
 }

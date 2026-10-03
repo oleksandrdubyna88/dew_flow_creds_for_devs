@@ -86,7 +86,7 @@ const stillHeld = async (w: World): Promise<boolean> => (await w.storage.heldRot
 test('Copy Password on an UNPROTECTED entry with a rotated password waiting copies the NEW one, stores it plain, and says so — no PIN box', async () => {
   const w = await world();
 
-  const opened = await w.click.clickedSecret(w.storage, ACCOUNT, OWNER, readPassword, 'copy its password');
+  const opened = await w.click.clickedSecret(w.storage, ACCOUNT, OWNER, readPassword, 'copy its password', 'password');
 
   assert.equal(opened.kind === 'open' && opened.value, NEW, 'the click used the password the rotation replaced');
   assert.equal(await slotNow(w), NEW, 'the entry still holds the old password after the click');
@@ -102,7 +102,7 @@ test('a click opener handed the value read BEFORE its door (Connect, SSH, exec) 
   const w = await world();
   const readFirst = await w.storage.getPassword(ACCOUNT, ENTRY);
 
-  const opened = await w.click.clickOpener(w.storage, ACCOUNT, 'connect')(OWNER, readFirst);
+  const opened = await w.click.clickOpener(w.storage, ACCOUNT, 'connect')(OWNER, readFirst, 'password');
 
   assert.equal(opened.kind === 'open' && opened.value, NEW, 'the opener used the password the rotation replaced');
   assert.equal(w.s.boxes, 0, 'a PIN box was raised for an entry with no PIN');
@@ -111,7 +111,7 @@ test('a click opener handed the value read BEFORE its door (Connect, SSH, exec) 
 test('a click on an unprotected entry whose password changed after the rotation ASKS — and "Store the rotated one" is what the click uses', async () => {
   const w = await world({ live: OTHER, modal: [STORE_ROTATED] });
 
-  const opened = await w.click.clickedSecret(w.storage, ACCOUNT, OWNER, readPassword, 'copy its password');
+  const opened = await w.click.clickedSecret(w.storage, ACCOUNT, OWNER, readPassword, 'copy its password', 'password');
 
   assert.match(w.s.modals[0] ?? '(nothing asked)', /changed after it/, 'the conflict between the waiting password and the stored one was never asked');
   assert.equal(opened.kind === 'open' && opened.value, NEW, 'the click used the password the person had just chosen to replace');
@@ -130,7 +130,7 @@ test('the conflict modal at a click is asked with no lease held — another wind
     return undefined;
   });
 
-  await w.click.clickedSecret(w.storage, ACCOUNT, OWNER, readPassword, 'copy its password');
+  await w.click.clickedSecret(w.storage, ACCOUNT, OWNER, readPassword, 'copy its password', 'password');
 
   assert.equal(w.s.modals.length, 1, 'the conflict was never asked at the click');
   assert.equal(other, 'ran', 'the click held the lease across the conflict modal');
@@ -146,7 +146,7 @@ test('a release that FAILS at the click keeps the waiting value — the click us
     return Promise.reject(new Error('the keychain refused the write (injected)'));
   };
 
-  const opened = await w.click.clickedSecret(w.storage, ACCOUNT, OWNER, readPassword, 'copy its password');
+  const opened = await w.click.clickedSecret(w.storage, ACCOUNT, OWNER, readPassword, 'copy its password', 'password');
 
   assert.ok(attempted > 0, 'the setup: the click never tried to store the waiting password');
   assert.equal(opened.kind === 'open' && opened.value, OLD, 'a failed release changed what the click used');
@@ -157,7 +157,7 @@ test('a release that FAILS at the click keeps the waiting value — the click us
 test('a click on an unprotected entry with nothing waiting reads the clicked slot and nothing else — no :rotationQuarantine read', async () => {
   const w = await world({ waiting: false });
 
-  const opened = await w.click.clickedSecret(w.storage, ACCOUNT, OWNER, readPassword, 'copy its password');
+  const opened = await w.click.clickedSecret(w.storage, ACCOUNT, OWNER, readPassword, 'copy its password', 'password');
 
   assert.equal(opened.kind === 'open' && opened.value, OLD);
   assert.ok(!w.reads.includes(rotationQuarantineSecretKey(ACCOUNT, ENTRY)), 'an unlisted entry\'s click read the held-rotation item');
@@ -494,7 +494,7 @@ test('a NEW automatic reader — written here, through the common automatic open
   const [{ automaticOpenerFor }] = loadEachWithVscode(['../automaticRead'], clickVscode([], w.s)) as [typeof import('../automaticRead')];
   const stored = await w.storage.getPassword(ACCOUNT, ENTRY);
 
-  const opened = await automaticOpenerFor(w.storage, ACCOUNT)(details(), stored);
+  const opened = await automaticOpenerFor(w.storage, ACCOUNT)(details(), stored, 'password');
 
   assert.equal(opened.kind === 'open' && opened.value, NEW, 'a new automatic reader was handed the password the rotation replaced');
   assert.equal(await slotNow(w), NEW);
@@ -506,7 +506,7 @@ test('the common automatic opener on an entry with nothing waiting reads no :rot
   const [{ automaticOpenerFor }] = loadEachWithVscode(['../automaticRead'], clickVscode([], w.s)) as [typeof import('../automaticRead')];
   const stored = await w.storage.getPassword(ACCOUNT, ENTRY);
 
-  const opened = await automaticOpenerFor(w.storage, ACCOUNT)(details(), stored);
+  const opened = await automaticOpenerFor(w.storage, ACCOUNT)(details(), stored, 'password');
 
   assert.equal(opened.kind === 'open' && opened.value, OLD);
   assert.deepEqual(w.reads, [secretKey(ACCOUNT, ENTRY)], 'the automatic opener read more than the slot its reader read');
@@ -573,7 +573,7 @@ test("an agent's output that prints a password released by its own call is MASKE
   });
   // A non-mutating action that reads its password the automatic way — releasing the waiting one — and prints it.
   w.hold = async (): Promise<void> => {
-    const opened = await automaticOpenerFor(storage, ACCOUNT)(prod, await storage.getPassword(ACCOUNT, 'e1'));
+    const opened = await automaticOpenerFor(storage, ACCOUNT)(prod, await storage.getPassword(ACCOUNT, 'e1'), 'password');
     w.result = { status: 200, body: { exitCode: 0, stdout: `the password is ${opened.kind === 'open' ? opened.value : '?'}\n`, stderr: '' } };
   };
   try {
@@ -621,7 +621,7 @@ test("a rotation of an entry whose rotated value was waiting fingerprints the va
     run: async () => {
       // The query reads its connection the automatic way — which stores the waiting value — and the far side
       // takes the new password. Then the rotation's own store fails (a keychain error).
-      await automaticOpenerFor(storage, ACCOUNT)(dbDetails(), await storage.getDbConnection(ACCOUNT, DB));
+      await automaticOpenerFor(storage, ACCOUNT)(dbDetails(), await storage.getDbConnection(ACCOUNT, DB), 'dbConnection');
       const real = host.setDbConnection.bind(storage);
       host.setDbConnection = () => {
         host.setDbConnection = real;
@@ -651,4 +651,35 @@ test("a rotation of an entry whose rotated value was waiting fingerprints the va
 
 test("the window's rotation reads what it replaces through rotationCurrent", () => {
   assert.ok(extensionLines().some((line) => line.includes('current: (ctx, slot) => rotationCurrent(storage, ctx, slot)')), "extension.ts's rotation reads the slot raw again");
+});
+
+// ---- the security review (2026-10-03), fix 3: a value is re-read by its SLOT, never because its text matches ----
+
+/** An unprotected entry whose password and `slotLabel` both hold OLD, with a rotated password waiting. */
+async function sameTextElsewhere(slotLabel: string): Promise<{ readonly storage: StorageManager; readonly stub: Record<string, unknown> }> {
+  const stub = clickVscode([], sinks());
+  const storage = memoryStorage(stub);
+  await seedEntry(storage, details(), { password: OLD, [slotLabel]: OLD });
+  await holdRotated(storage, ACCOUNT, ENTRY, 'password', NEW, await fingerprintOf(OLD));
+  return { storage, stub };
+}
+
+test('a creds:// reference to NOTES whose text equals the replaced password answers the notes — never the released password', async () => {
+  const { storage, stub } = await sameTextElsewhere('notes');
+  const [{ entityFieldReading }] = loadEachWithVscode(['../entityFieldReading'], stub) as [typeof import('../entityFieldReading')];
+
+  const reading = await entityFieldReading(storage, ACCOUNT, ENTRY, 'notes');
+
+  assert.equal(carried(await storage.getPassword(ACCOUNT, ENTRY)), NEW, 'the setup: the waiting password did not go in');
+  assert.deepEqual(reading, { kind: 'value', value: OLD }, `creds://…/notes was answered with the released PASSWORD: ${JSON.stringify(reading)}`);
+});
+
+test('a click on a CONFIG BODY whose text equals the replaced password gets the body — never the released password', async () => {
+  const { storage, stub } = await sameTextElsewhere('config body');
+  const [click] = loadEachWithVscode(['../pinClick'], stub) as [typeof import('../pinClick')];
+
+  const opened = await click.clickedSecret(storage, ACCOUNT, OWNER, (s, a, e) => s.getConfigBody(a, e), 'write its config file');
+
+  assert.equal(carried(await storage.getPassword(ACCOUNT, ENTRY)), NEW, 'the setup: the click did not release the waiting password');
+  assert.equal(opened.kind === 'open' && opened.value, OLD, 'the click on the config body was handed the released PASSWORD');
 });

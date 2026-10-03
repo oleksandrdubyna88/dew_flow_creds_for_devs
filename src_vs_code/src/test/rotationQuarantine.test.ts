@@ -501,7 +501,7 @@ const OWNER = { id: ENTRY, name: 'orders-db', pinProtected: true };
 test('Copy Connection String on an entry with a rotated value waiting copies the NEW value, not the one the door just replaced', async () => {
   const w = await clickWorld();
 
-  const opened = await w.click.clickedSecret(w.storage, ACCOUNT, OWNER, (s, a, e) => s.getDbConnection(a, e), 'copy its connection string');
+  const opened = await w.click.clickedSecret(w.storage, ACCOUNT, OWNER, (s, a, e) => s.getDbConnection(a, e), 'copy its connection string', 'dbConnection');
 
   assert.equal(opened.kind === 'open' && opened.value, HELD_CONN, 'the click used the value read before its door released the rotated one — a password that no longer works');
 });
@@ -510,7 +510,7 @@ test('a click opener handed a value read before its door (Connect, SSH, exec) us
   const w = await clickWorld();
   const readFirst = await w.storage.getDbConnection(ACCOUNT, ENTRY);
 
-  const opened = await w.click.clickOpener(w.storage, ACCOUNT, 'connect')(OWNER, readFirst);
+  const opened = await w.click.clickOpener(w.storage, ACCOUNT, 'connect')(OWNER, readFirst, 'dbConnection');
 
   assert.equal(opened.kind === 'open' && opened.value, HELD_CONN, 'the opener used the pre-release value');
 });
@@ -660,7 +660,7 @@ test('a click on an entry whose waiting value conflicts, answered "Store the rot
   const w = await doorWorld([PIN], [STORE_ROTATED], OTHER_CONN);
   const [click] = loadEachWithVscode(['../pinClick'], clickVscode([PIN], w.s)) as [typeof import('../pinClick')];
 
-  const opened = await click.clickedSecret(w.storage, ACCOUNT, OWNER, (s, a, e) => s.getDbConnection(a, e), 'copy its connection string');
+  const opened = await click.clickedSecret(w.storage, ACCOUNT, OWNER, (s, a, e) => s.getDbConnection(a, e), 'copy its connection string', 'dbConnection');
 
   assert.equal(await openedSlot(w), HELD_CONN, 'the setup: the person\u2019s choice was not stored');
   assert.equal(opened.kind === 'open' && opened.value, HELD_CONN, 'the click used the value the person had just chosen to replace');

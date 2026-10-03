@@ -2,6 +2,7 @@ import { FieldReading, readingOf, withheld } from './fieldReading';
 import { corruptReason, pinFieldRefusal } from './pinGate';
 import { readSecret } from './secretEnvelope';
 import { StoredSecret, carried } from './storedSecret';
+import type { RotationSlot } from './secretRotation';
 
 /**
  * Opening one stored value for one operation — the seam a path that may be a CLICK or may be
@@ -37,8 +38,13 @@ export type OpenedSecret =
     }
   | { readonly kind: 'stopped'; readonly reason: string };
 
-/** Opens one stored value of `owner`. */
-export type SecretOpener = (owner: SecretOwner, stored: StoredSecret | undefined) => Promise<OpenedSecret>;
+/**
+ * Opens one stored value of `owner`. `slot` names the rotation slot the value was read from — the password or the
+ * connection string — when it is one: only such a value is read again after a rotated value waiting beside the
+ * entry went in. A value is never re-read because its TEXT matches the replaced one (the security review of
+ * `PLAN_waiting_rotation_visible`, fix 3: notes equal to the old password came back as the new password).
+ */
+export type SecretOpener = (owner: SecretOwner, stored: StoredSecret | undefined, slot?: RotationSlot) => Promise<OpenedSecret>;
 
 /**
  * Nothing automatic asks, and nothing automatic is handed a value of a protected entry: a sealed
