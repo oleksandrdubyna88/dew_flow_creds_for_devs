@@ -32,7 +32,7 @@ import {
 } from './transitPinPrompt';
 import { withheldNoteFor } from './shareWithheld';
 import { OwnedShare, SharePayload, TeamMember, TreeNode } from './types';
-import { landShare } from './shareImport';
+import { ShareLanding, landShare } from './shareImport';
 
 /**
  * Sharing, as one object: sealing and delivering shares to teammates, and receiving
@@ -415,13 +415,17 @@ export class ShareInbox {
     if (arriving === undefined) {
       return;
     }
+    let landing: ShareLanding;
     try {
-      await landShare(this.deps, share, arriving);
+      landing = await landShare(this.deps, share, arriving);
     } catch (error) {
       void vscode.window.showErrorMessage(
         `"${share.item.entityName}" opened, but saving it failed: ${describeError(error)}`,
       );
       return;
+    }
+    if (landing === 'left') {
+      return; // still in "Shared with me", and the landing has said why
     }
     this.deps.onMutated();
     void this.deps.sharing.reload();
@@ -545,7 +549,8 @@ export class ShareInbox {
         declined++;
         continue;
       }
-      await landShare(this.deps, share, arriving).then(() => imported++, (error: unknown) => {
+      // A share LEFT in the inbox (a dismissed update) is still pending — counted with the declined ones.
+      await landShare(this.deps, share, arriving).then((landing) => (landing === 'landed' ? imported++ : declined++), (error: unknown) => {
         rememberAttempt(attempted, share.item.id, attemptOf('', error, pin));
         failed.push(share);
       });

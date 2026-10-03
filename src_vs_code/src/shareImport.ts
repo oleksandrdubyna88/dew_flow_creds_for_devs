@@ -19,10 +19,18 @@ import { OwnedShare, SharePayload, TreeNode, withOwnId } from './types';
 /** Where the (their address, their id) -> our id map lives in the memento. */
 const ORIGINS_KEY = 'credSshManager.shareOrigins';
 
+/**
+ * What became of one share: it `landed` in the tree, or it was `left` in *Shared with me* — a dismissed
+ * *Update it / Keep both*, a declined PIN. A left share is still pending, and the accept paths say so
+ * rather than *Accepted* (B2: a dismissed update used to return normally, and was announced and counted
+ * as accepted while it sat in the inbox).
+ */
+export type ShareLanding = 'landed' | 'left';
+
 /** Import an opened payload into the recipient's tree. */
 // Moved as written (A1, then B1 of the PIN-folder plan); the pre-existing complexity is marked, not hidden.
 // eslint-disable-next-line complexity, max-lines-per-function
-export async function landShare(deps: ShareInboxDeps, share: OwnedShare, payload: SharePayload): Promise<void> {
+export async function landShare(deps: ShareInboxDeps, share: OwnedShare, payload: SharePayload): Promise<ShareLanding> {
   // Recreate (or reuse by name) the sender's folder chain, if any.
   let parentId: string | null = null;
   for (const seg of payload.folderPath ?? []) {
@@ -76,7 +84,7 @@ export async function landShare(deps: ShareInboxDeps, share: OwnedShare, payload
       void vscode.window.showInformationMessage(
         'Left in "Shared with me" — accept it again when you have decided.',
       );
-      return;
+      return 'left';
     }
     if (update !== undefined) {
       ({ node, store } = update);
@@ -173,4 +181,5 @@ export async function landShare(deps: ShareInboxDeps, share: OwnedShare, payload
     await deps.sharing.removeOwnShare(share, 'accepted');
   }
   deps.onArrived?.(share.accountId, node.id);
+  return 'landed';
 }
