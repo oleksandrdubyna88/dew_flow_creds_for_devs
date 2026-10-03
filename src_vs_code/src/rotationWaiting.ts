@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { localWallTime } from './requestTime';
 import { snapshotForRevision } from './revisionSnapshot';
 import { resolveKind } from './entityKind';
-import { AT_THE_DOOR, HeldConflict, Release, ReleasedSlot, WaitingValue, dropHeld, releaseHeld, waitingUnder } from './rotationQuarantine';
+import { AT_THE_DOOR, HeldConflict, Release, ReleasedSlot, ReleasedValue, WaitingValue, dropHeld, releaseHeld, releaseUnprotected, waitingUnder } from './rotationQuarantine';
 import type { RotationSlot } from './secretRotation';
 import type { StorageManager } from './storageManager';
 import type { EntityMetadata } from './types';
@@ -31,7 +31,9 @@ export function releasedSentence(release: Release): string {
 
 /**
  * The tree row's hint (§4.6): *rotated password waiting* in the description, and how to store it in the tooltip.
- * A database entry rotates its connection string; every other kind its password (`secretRotation.slotFor`).
+ * A database entry rotates its connection string; every other kind its password (`secretRotation.slotFor`). The
+ * tooltip names a PIN only for an entry that carries the mark: an unprotected entry's value goes in at its next
+ * use or at the sweep's next tick (`PLAN_waiting_rotation_visible.md` W3).
  */
 export function waitingHint(details: EntityMetadata | undefined, waiting: boolean): { readonly description: string; readonly tooltip: readonly string[] } {
   if (!waiting) {
@@ -40,8 +42,12 @@ export function waitingHint(details: EntityMetadata | undefined, waiting: boolea
   const what = rotatedWhat(resolveKind(details) === 'db' ? 'dbConnection' : 'password');
   return {
     description: `rotated ${what} waiting`,
-    tooltip: ['', `A rotated ${what} is waiting on this machine, outside the entry — open the entry and enter its PIN to store it.`],
+    tooltip: ['', `A rotated ${what} is waiting on this machine, outside the entry — ${howItIsStored(details)}.`],
   };
+}
+
+function howItIsStored(details: EntityMetadata | undefined): string {
+  return details?.pinProtected === true ? 'open the entry and enter its PIN to store it' : 'it is stored the next time you use the entry, or within a minute';
 }
 
 /**
@@ -82,6 +88,28 @@ interface Entry {
   readonly accountId: string;
   readonly entityId: string;
   readonly entryName: string;
+}
+
+/**
+ * The sweeper's release (`rotationQuarantine.releaseUnprotected`), SAID: each value that went in without a door
+ * is told to the person once, in the words every door uses — not only in the log (the owner's decision,
+ * `PLAN_waiting_rotation_visible.md` §9.2, W6) — the sweeper's tick and the release right after a pulled sync. A
+ * pass that stored nothing says nothing. Which went in.
+ */
+export async function releaseAndSay(storage: StorageManager): Promise<readonly ReleasedValue[]> {
+  const released = await releaseUnprotected(storage);
+  sayReleasedValues(released);
+  return released;
+}
+
+/**
+ * Each value that went in without a door, said once — an info message, never awaited. What the sweep says, and what
+ * an agent's use that stored a waiting value says (`rotationQuarantine.announceReleasesWith`, set by `extension.ts`).
+ */
+export function sayReleasedValues(released: readonly ReleasedValue[]): void {
+  for (const value of released) {
+    sayReleased(value.entryName, [value.slot]);
+  }
 }
 
 function sayReleased(entryName: string, released: readonly ReleasedSlot[]): void {

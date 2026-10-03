@@ -79,6 +79,8 @@ function world(options: {
    * secrets".</p>
    */
   maskerFails?: 'before' | 'after' | 'entityGone';
+  /** The REAL masker over a real storage — for a test about what the table holds, not about how the read fails. */
+  masker?: (accountId: string, entityId: string) => Promise<readonly { value: string; label: string }[]>;
   /**
    * A value the action writes into storage DURING the run — a rotation, in one word.
    *
@@ -251,8 +253,13 @@ function hooksFor(w: World, options: Parameters<typeof world>[0]): Record<string
  */
 function maskerFor(
   w: World,
-  options: { secrets?: readonly { value: string; label: string }[]; maskerFails?: string; rotatesTo?: string },
-): (() => Promise<readonly { value: string; label: string }[]>) | undefined {
+  options: Parameters<typeof world>[0],
+): ((accountId: string, entityId: string) => Promise<readonly { value: string; label: string }[]>) | undefined {
+  return options.masker ?? scriptedMasker(w, options);
+}
+
+/** The masker a test scripts by its `secrets` and `maskerFails` — absent when it asked for neither. */
+function scriptedMasker(w: World, options: Parameters<typeof world>[0]): (() => Promise<readonly { value: string; label: string }[]>) | undefined {
   const { secrets, maskerFails, rotatesTo } = options;
   if (secrets === undefined && maskerFails === undefined) {
     return undefined;

@@ -40,3 +40,29 @@ test('the English PIN article says an agent cannot rotate a one-use entry at all
   assert.match(body.usage, /An agent cannot rotate a one-use entry at all/);
   assert.match(body.usage, /taken off first/);
 });
+
+/**
+ * The waiting value beside an entry WITHOUT a PIN (`todo/PLAN_waiting_rotation_visible.md`): the sentence that says
+ * its next use — a click or an agent's — stores it first, else the sweep within a minute, and that each time the
+ * person is told. Translated, so each language is pinned by its own opening and its own "you are told"; a language
+ * with no entry here fails rather than passing unchecked, so a sixth translation cannot slip past.
+ */
+const WAITING_WITHOUT_A_PIN: Readonly<Record<string, readonly [string, string]>> = {
+  en: ['An entry without a PIN can have one waiting too', 'each time, you are told'],
+  de: ['Auch ein Eintrag ohne PIN kann einen wartenden Wert haben', 'jedes Mal wird es Ihnen gesagt'],
+  es: ['También una entrada sin PIN puede tener uno esperando', 'cada vez se le avisa'],
+  ru: ['Ожидающее значение бывает и у записи без PIN-кода', 'каждый раз вам об этом сообщат'],
+  uk: ['Значення, що чекає, буває й у запису без PIN-коду', 'щоразу вам про це повідомлять'],
+};
+
+for (const language of HELP_LANGUAGES) {
+  test(`the ${language} help says a value waiting beside an entry WITHOUT a PIN goes in at its next use, and that the person is told`, () => {
+    const pinned = WAITING_WITHOUT_A_PIN[language];
+    assert.ok(pinned !== undefined, `the ${language} help has no pinned waiting-without-a-PIN sentence — add its fragments here`);
+    const { body } = bodyFor(article('entity-pin'), language);
+
+    for (const fragment of pinned) {
+      assert.ok(body.usage.includes(fragment), `the ${language} PIN article does not say a waiting value beside an entry without a PIN is used and told — missing: "${fragment}"`);
+    }
+  });
+}

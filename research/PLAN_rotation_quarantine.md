@@ -10,6 +10,11 @@
 > uses the old value (nothing lost); the share inbox's door releases without a "now stored" message; the
 > operator's cadence consultation (local model) gave no usable advice — recorded `not_solved` (§5.1). The first
 > two are planned in [PLAN_waiting_rotation_visible.md](../todo/PLAN_waiting_rotation_visible.md) (2026-10-02).
+> Built there on 2026-10-03 (not yet promoted): the click limit is CLOSED — a click on an unprotected entry the
+> index lists takes the door, stores the waiting value plain and says so (W1); an agent's use releases it first,
+> unattended, and says so (W5); the sweep and the release after a pulled sync say what they store (W6); the
+> waiting modal and row name a PIN only when there is
+> one (W3). The share inbox's door (W2) is still open — it waits on the sibling plan's `shareInbox.ts` extraction.
 > Scope: the rotation's store
 > (`rotationStore.ts`, `rotateAction.ts`), a new per-entry quarantine item in the OS keychain
 > (`rotationQuarantine.ts`, `secretKeys.ts`), its release at the entry-PIN door (`pinAdmission.ts`,

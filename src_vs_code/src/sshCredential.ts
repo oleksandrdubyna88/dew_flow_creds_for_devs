@@ -1,7 +1,8 @@
 import { EntityMetadata } from './types';
 import { StorageManager } from './storageManager';
-import { OpenedSecret, SecretOpener, automaticOpener } from './secretOpener';
+import { OpenedSecret, SecretOpener } from './secretOpener';
 import type { StoredSecret } from './storedSecret';
+import { automaticOpenerFor } from './automaticRead';
 
 /**
  * What an SSH connection should authenticate with, resolved from the vault.
@@ -18,7 +19,7 @@ import type { StoredSecret } from './storedSecret';
  * <p><b>Every value is opened by its OWNER</b> (entry-PIN plan, D6/D7). The two paths differ in
  * exactly one place, the opener: the person's Connect passes a click opener, which asks the PIN of
  * the entry that holds the value — the borrowed key entity, not the connection that was clicked —
- * and the agent's exec takes the default, `automaticOpener`, which refuses a protected value with the
+ * and the agent's exec takes the default, `automaticOpenerFor`, which refuses a protected value with the
  * sentence and never prompts. Until then both read the raw getter, so a protected key reached `ssh`
  * (and the disk) as its envelope.</p>
  */
@@ -43,12 +44,12 @@ export async function resolveSshCredential(
   storage: StorageManager,
   accountId: string,
   entity: EntityMetadata,
-  open: SecretOpener = automaticOpener,
+  open: SecretOpener = automaticOpenerFor(storage, accountId),
 ): Promise<SshCredentialSource | SshCredentialStopped> {
   const { keySource, warning } = keySourceOf(storage, accountId, entity);
   const storedKey = await storage.getPrivateKey(accountId, keySource.id);
   if (storedKey !== undefined) {
-    return keyFrom(await open(keySource, storedKey), keySource, warning);
+    return keyFrom(await open(keySource, storedKey, undefined), keySource, warning);
   }
   // `!== undefined` rather than truthiness: an empty stored path historically
   // meant "no -i flag, but still not the password branch", and changing that
@@ -96,7 +97,7 @@ async function passwordOf(
   if (stored === undefined) {
     return { kind: 'none', warning };
   }
-  const opened = await open(owner, stored);
+  const opened = await open(owner, stored, 'password');
   if (opened.kind === 'stopped') {
     return { kind: 'stopped', reason: opened.reason, ownerName: owner.name, warning };
   }

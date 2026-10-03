@@ -33,7 +33,7 @@ async function forms(): Promise<Record<'plain' | 'woven' | 'sealed' | 'damaged',
 test('fieldReadingOf: an automatic opener\'s five answers become the three a consumer must tell apart', async () => {
   const f = await forms();
   const read = async (stored: string | undefined, owner: { id: string; name: string; pinProtected?: boolean } = OWNER) =>
-    fieldReadingOf(await automaticOpener(owner, mint(stored)));
+    fieldReadingOf(await automaticOpener(owner, mint(stored), undefined));
 
   assert.deepEqual(await read(undefined), { kind: 'absent' }, 'absent is not a refusal');
   assert.deepEqual(await read(''), { kind: 'absent' }, 'an empty string is nothing, as every consumer already read it');
@@ -71,12 +71,12 @@ test('unsealedText: everything stored is seen as it is, except a sealed value', 
 
 test('fieldReadingOf with the entry: a protected entry withholds even a field it does not hold — absent stays absent without it', async () => {
   const marked = { ...OWNER, pinProtected: true };
-  const nothing = await automaticOpener(marked, undefined);
+  const nothing = await automaticOpener(marked, undefined, undefined);
   assert.deepEqual(nothing, { kind: 'open', value: undefined, protectedEntry: false }, 'the opener itself: nothing stored is nothing to withhold');
 
   const withheldReading = fieldReadingOf(nothing, marked);
   assert.equal(withheldReading.kind, 'withheld', 'a terminal variable or creds:// reference would tell which fields a protected entry does not hold');
   assert.match(withheldReading.kind === 'withheld' ? withheldReading.reason : '', /"prod db" is protected with its own PIN/);
   assert.deepEqual(fieldReadingOf(nothing), { kind: 'absent' }, 'without the entry, absent is absent');
-  assert.deepEqual(fieldReadingOf(await automaticOpener(OWNER, undefined), OWNER), { kind: 'absent' }, 'an entry that claims no PIN holds nothing there');
+  assert.deepEqual(fieldReadingOf(await automaticOpener(OWNER, undefined, undefined), OWNER), { kind: 'absent' }, 'an entry that claims no PIN holds nothing there');
 });

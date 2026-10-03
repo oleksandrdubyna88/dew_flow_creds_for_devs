@@ -85,12 +85,23 @@ export interface QuarantineStore {
   listed(): Promise<readonly HeldEntry[]>;
   list(accountId: string, entityId: string): Promise<void>;
   unlist(accountId: string, entityId: string): Promise<void>;
+  /**
+   * Tell the person what an automatic use stored, in the words THIS storage's window gave (`announceReleasesWith`) —
+   * nothing until then. Per store, never per module: two storages never hear each other (the code round, 2026-10-03).
+   */
+  announce(released: readonly ReleasedValue[]): void;
+  announceWith(say: (released: readonly ReleasedValue[]) => void): void;
 }
 
 /** The store over the profile's keychain and local state — made once, by `StorageManager`. */
 export function quarantineStore(chest: SecretChest, state: IndexState, writes: LeasedQueue): QuarantineStore {
   const key = rotationQuarantineSecretKey;
+  let say: (released: readonly ReleasedValue[]) => void = () => undefined;
   return {
+    announce: (released) => say(released),
+    announceWith: (words) => {
+      say = words;
+    },
     read: async (a, e) => heldOf(await chest.get(key(a, e))),
     put: (a, e, slots) => writes.run(() => Promise.resolve(isEmpty(slots) ? chest.delete(key(a, e)) : chest.store(key(a, e), serialised(slots)))),
     listed: () => Promise.resolve(indexOf(state)),
@@ -437,8 +448,11 @@ export async function dropHeld(storage: StorageManager, accountId: string, entit
   });
 }
 
-/** Re-reads, after a door, the value a click read before it — see `beforeTheDoor`. */
-export type AfterTheDoor = (value: StoredSecret | undefined, release: Release) => Promise<StoredSecret | undefined>;
+/**
+ * Re-reads, after a door, the value a click read before it — see `beforeTheDoor`. `slot` is the rotation slot the
+ * value was read from; a value read from any other slot is never re-read, whatever its text (fix 3 above).
+ */
+export type AfterTheDoor = (value: StoredSecret | undefined, release: Release, slot: RotationSlot | undefined) => Promise<StoredSecret | undefined>;
 
 const AS_READ: AfterTheDoor = (value) => Promise.resolve(value);
 
@@ -465,9 +479,14 @@ async function slotsNow(storage: StorageManager, accountId: string, entityId: st
   return now;
 }
 
+/**
+ * The reader's slot was released, and what it read is what that slot held at the snapshot — an EMPTY slot included:
+ * a rotation that replaced nothing leaves a reader holding `undefined`, and the door has just stored the value (code
+ * round 3, finding 4 — the click copied nothing). Only a slot the snapshot took is compared.
+ */
 function rereadAfter(storage: StorageManager, accountId: string, entityId: string, before: Partial<Record<RotationSlot, StoredSecret | undefined>>): AfterTheDoor {
-  return async (value, release) => {
-    const replaced = release.released.find((one) => value !== undefined && before[one.slot] === value);
+  return async (value, release, slot) => {
+    const replaced = release.released.find((one) => one.slot === slot && one.slot in before && before[one.slot] === value);
     return replaced === undefined ? value : rawSlot({ storage, accountId, entityId }, replaced.slot);
   };
 }
@@ -497,34 +516,83 @@ const UNREADABLE = 'unreadable';
  * no door to open it (plan §4.5): the startup sweep's and a pulled sync's half. Through the same release with
  * the UNATTENDED proof, i.e. exactly the store the rotation would have made; a protected entry's hold is left
  * alone — nothing automatic holds a PIN, even one this window was given. An index entry whose entry or item
- * is gone is dropped; one whose tree cannot be read is kept. How many values went in; never throws.
+ * is gone is dropped; one whose tree cannot be read is kept. WHICH values went in — by entry name and slot, so
+ * the sweeper can say each one to the person (`PLAN_waiting_rotation_visible.md` W6); never throws.
  */
-export async function releaseUnprotected(storage: StorageManager): Promise<number> {
-  let released = 0;
+export async function releaseUnprotected(storage: StorageManager): Promise<readonly ReleasedValue[]> {
+  const released: ReleasedValue[] = [];
   for (const entry of await Promise.resolve(storage.heldRotations.listed()).catch(() => [])) {
-    released += await releaseIfUnprotected(storage, entry).catch(() => 0);
+    released.push(...(await releaseIfUnprotected(storage, entry).catch(() => [])));
   }
   return released;
 }
 
-async function releaseIfUnprotected(storage: StorageManager, entry: HeldEntry): Promise<number> {
+/** One value a release without a door put into its entry: the entry's name and the slot — never the value. */
+export interface ReleasedValue {
+  readonly entryName: string;
+  readonly slot: ReleasedSlot;
+}
+
+/**
+ * At an AUTOMATIC read of this entry (`PLAN_waiting_rotation_visible.md` W5, the owner's decision §9.1): a rotated
+ * value waiting beside it, when it is UNPROTECTED, goes in first — the sweep's own release, with the UNATTENDED
+ * proof, i.e. exactly the store the rotation would have made (the plain writer, re-checked under the lease). Never a
+ * PIN, never a modal: a marked or sealed entry is left to the person's door, and a CONFLICT is written nowhere — the
+ * reader gets what is stored and the person's next door asks. What went in is said through the storage's words.
+ * The index is asked first, so an unlisted entry — every entry, almost always — costs one memento read and no
+ * keychain `get`. Called by ONE place, `automaticRead.automaticOpenerFor` (the code round, 2026-10-03). Never throws.
+ */
+export async function releaseBeforeAutomaticUse(storage: StorageManager, accountId: string, entityId: string): Promise<Release> {
+  if (!(await isWaiting(storage, accountId, entityId).catch(() => false))) {
+    return NOTHING_RELEASED;
+  }
+  const released = await releaseIfUnprotected(storage, { accountId, entityId }).catch(() => []);
+  told(storage, released);
+  return { released: released.map((value) => value.slot), conflicts: [] };
+}
+
+/** What an agent's use stored, handed to the storage's words — a failure to tell never fails the agent's call. */
+function told(storage: StorageManager, released: readonly ReleasedValue[]): void {
+  try {
+    storage.heldRotations.announce(released);
+  } catch {
+    /* the value is stored either way; the row's hint is gone, which is the other way the person sees it */
+  }
+}
+
+/**
+ * The window's words for a value an AGENT's use stored in THIS storage (the owner's follow-up to W5: the person must
+ * see it). This module is free of `vscode`, and so are the automatic readers — so `extension.ts` hands the storage it
+ * built `rotationWaiting.sayReleasedValues` once, at activation. Kept on the storage's own store, not in this
+ * module: a second storage (another test, another run) never says through them (the code round, 2026-10-03). An
+ * info message, never a modal, never awaited; until it is set — a test, a host with no window — nothing is said.
+ */
+export function announceReleasesWith(storage: StorageManager, say: (released: readonly ReleasedValue[]) => void): void {
+  storage.heldRotations.announceWith(say);
+}
+
+async function releaseIfUnprotected(storage: StorageManager, entry: HeldEntry): Promise<readonly ReleasedValue[]> {
   const node = storage.getNode(entry.accountId, entry.entityId);
   if (node === undefined) {
     return forgetIfAbsent(storage, entry);
   }
   if (isEmpty(await storage.heldRotations.read(entry.accountId, entry.entityId))) {
     await unlistIfEmpty(storage, entry);
-    return 0;
+    return [];
   }
-  return (await protectedNow(storage, entry)) ? 0 : (await releaseHeld(storage, entry.accountId, entry.entityId, node.name, UNATTENDED)).released.length;
+  return (await protectedNow(storage, entry)) ? [] : releasedValues(node.name, await releaseHeld(storage, entry.accountId, entry.entityId, node.name, UNATTENDED));
+}
+
+function releasedValues(entryName: string, release: Release): readonly ReleasedValue[] {
+  return release.released.map((slot) => ({ entryName, slot }));
 }
 
 /** No node — gone, or a tree that cannot be read (`metadataFault`), which is "unknown", never "absent". */
-async function forgetIfAbsent(storage: StorageManager, entry: HeldEntry): Promise<number> {
+async function forgetIfAbsent(storage: StorageManager, entry: HeldEntry): Promise<readonly ReleasedValue[]> {
   if (storage.nodePresence(entry.accountId, entry.entityId) === 'absent') {
     await storage.heldRotations.unlist(entry.accountId, entry.entityId);
   }
-  return 0;
+  return [];
 }
 
 /** The mark, or a sealed slot — the protection `unattendedSealing` refuses on, asked before anything is read. */
@@ -533,6 +601,16 @@ async function protectedNow(storage: StorageManager, entry: HeldEntry): Promise<
 }
 
 // ---- what the person sees (plan §4.6) ----
+
+/**
+ * Whether the local index lists this entry — the index ALONE, a memento read and no keychain `get`
+ * (`PLAN_waiting_rotation_visible.md` §3.1). A hint like every read of the index: a listed entry is read
+ * before anything is believed, and an unlisted one — every entry, almost always — costs nothing more. What
+ * lets a click on an UNPROTECTED entry take its door only when a rotated value waits beside it.
+ */
+export async function isWaiting(storage: StorageManager, accountId: string, entityId: string): Promise<boolean> {
+  return (await storage.heldRotations.listed()).some((entry) => entry.accountId === accountId && entry.entityId === entityId);
+}
 
 /**
  * The tree's hint: every entry with a value held beside it, as `entityFlags.entityKey` — read from the local

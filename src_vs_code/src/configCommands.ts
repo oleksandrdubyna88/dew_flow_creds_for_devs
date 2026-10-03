@@ -12,7 +12,8 @@ import { isTrackedHere } from './gitTracked';
 import { trackedCopyWarning } from './configFile';
 import type { ConfigFormat } from './configFormat';
 import { clickedSecret, grantedOpener } from './pinClick';
-import { OpenedSecret, SecretOwner, automaticOpener } from './secretOpener';
+import { OpenedSecret, SecretOwner } from './secretOpener';
+import { automaticOpenerFor } from './automaticRead';
 import { FieldReading, withheld } from './fieldReading';
 import type { StoredSecret } from './storedSecret';
 /**
@@ -80,11 +81,11 @@ async function openedBodies(
   previousRaw: StoredSecret,
   at: number,
 ): Promise<ComparedBodies | undefined> {
-  const current = bodyText(await clickedSecret(storage, accountId, details, (s, a, e) => s.getConfigBody(a, e), COMPARE));
+  const current = bodyText(await clickedSecret(storage, accountId, details, (s, a, e) => s.getConfigBody(a, e), COMPARE, undefined));
   if (current === undefined) {
     return undefined;
   }
-  const previous = bodyText(await grantedOpener(accountId)(details, previousRaw));
+  const previous = bodyText(await grantedOpener(accountId)(details, previousRaw, undefined));
   return previous === undefined ? undefined : { format: details.configFormat ?? 'json', previous, current, at };
 }
 
@@ -117,13 +118,13 @@ export function addConfigHolder(
  * What the config route may serve for one holder: the body, READ — never an envelope.
  *
  * <p>The route is AUTOMATIC — an application calls it with a key and no window asks anybody — so the
- * body goes through `automaticOpener` (entry-PIN plan, rule R2): a sealed body, or any body of an
+ * body goes through `automaticOpenerFor` (entry-PIN plan, rule R2): a sealed body, or any body of an
  * entry that claims a PIN, is `withheld` with the sentence, and the route answers it as the refusal
  * it already has. Until 1.12 this was the raw getter, and a protected config was served as its
  * envelope. An empty body is still a body, as it always was.</p>
  */
 export async function configBodyReading(storage: StorageManager, holder: ConfigHolder): Promise<FieldReading> {
-  const opened = await automaticOpener(holderOwner(storage, holder), await storage.getConfigBody(holder.accountId, holder.entityId));
+  const opened = await automaticOpenerFor(storage, holder.accountId)(holderOwner(storage, holder), await storage.getConfigBody(holder.accountId, holder.entityId), undefined);
   if (opened.kind === 'stopped') {
     return withheld(opened.reason);
   }

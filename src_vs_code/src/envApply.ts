@@ -10,8 +10,10 @@ import { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
 import { FieldReading, readingOf, valueOf, withheld } from './fieldReading';
 import { pinFieldRefusal } from './pinGate';
-import { OpenedSecret, automaticOpener, fieldReadingOf } from './secretOpener';
+import { OpenedSecret, fieldReadingOf } from './secretOpener';
+import { automaticOpenerFor } from './automaticRead';
 import { StoredSecret, stored } from './storedSecret';
+import type { RotationSlot } from './secretRotation';
 
 /**
  * Writing bound secret fields into VS Code's environment variable collection — the
@@ -56,7 +58,7 @@ export function automaticRefusal(details: EntityMetadata, field: BindableField):
  * stored string already in hand.
  *
  * <p>`bindableFieldReading` asks the same two policies through the opener since the typed-secrets plan
- * (T3): the woven one here (`automaticRefusal`), the PIN one through `secretOpener.automaticOpener`, which
+ * (T3): the woven one here (`automaticRefusal`), the PIN one through `automaticRead.automaticOpenerFor`, which
  * asks `pinGate.pinFieldRefusal` — this function's second half — and refuses a damaged wrap as well.</p>
  *
  * <p>Two policies today. The woven one is a fact about the ENTRY (`passwordWoven` is a field) and
@@ -94,7 +96,7 @@ export function automaticFieldRefusal(
  * refusal with it.</p>
  *
  * <p>The woven policy first — a fact about the entry, needing no value — then the value opened by
- * `automaticOpener` and read through `fieldReadingOf` (typed-secrets plan, T3): sealed, or of an entry
+ * `automaticOpenerFor` and read through `fieldReadingOf` (typed-secrets plan, T3): sealed, or of an entry
  * that claims a PIN, is withheld with the PIN sentence; a damaged wrap is withheld as damaged — until T3
  * its text was handed to the terminal as the value; absent is absent.</p>
  */
@@ -129,18 +131,18 @@ async function openedField(
   details: EntityMetadata,
   field: BindableField,
 ): Promise<OpenedSecret> {
-  const open = (held: StoredSecret | undefined): Promise<OpenedSecret> => automaticOpener(details, held);
+  const open = (held: StoredSecret | undefined, slot: RotationSlot | undefined): Promise<OpenedSecret> => automaticOpenerFor(storage, accountId)(details, held, slot);
   switch (field) {
     case 'password':
-      return open(await storage.getPassword(accountId, details.id));
+      return open(await storage.getPassword(accountId, details.id), 'password');
     case 'privateKey':
-      return open(await storage.getPrivateKey(accountId, details.id));
+      return open(await storage.getPrivateKey(accountId, details.id), undefined);
     case 'publicKey':
       // A metadata value read as the plain stored form it is: the public key kept in node metadata.
-      return open(stored(details.publicKey));
+      return open(stored(details.publicKey), undefined);
     case 'dbConnection':
     case 'dbPassword':
-      return open(await storage.getDbConnection(accountId, details.id));
+      return open(await storage.getDbConnection(accountId, details.id), 'dbConnection');
   }
 }
 

@@ -90,7 +90,8 @@ const tipOf = (item: FakeTreeItem): string => item.tooltip?.value ?? '';
 const row = (id: string, name: string, details: EntityMetadata): TreeNode => ({ id, name, type: 'entity', parentId: null, details });
 
 test('the row of an entry with a rotated value waiting says so, and its tooltip says how to store it', async () => {
-  const orders = row('db1', 'orders-db', db('db1', 'orders-db'));
+  // A PROTECTED entry: its tooltip names the PIN (an unprotected one's does not — waitingRotationVisible.test.ts, W3).
+  const orders = row('db1', 'orders-db', { ...db('db1', 'orders-db'), pinProtected: true });
   const login = row('c1', 'portal', { id: 'c1', name: 'portal', kind: 'credential', isSshEnabled: false } as EntityMetadata);
   const tree = provider([orders, login]);
   tree.waitingIds.add(`${ACCOUNT}:db1`);

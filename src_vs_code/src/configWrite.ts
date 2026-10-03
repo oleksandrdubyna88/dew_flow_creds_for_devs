@@ -61,7 +61,7 @@ export async function writeStoredConfig(
 
 /** The body and its note — or nothing, when the door stopped it or there is nothing to write (said). */
 async function openedBody(storage: StorageManager, accountId: string, details: EntityMetadata): Promise<{ body: string; note: string } | undefined> {
-  const opened = await clickedSecret(storage, accountId, details, (s, a, e) => s.getConfigBody(a, e), 'write its config file');
+  const opened = await clickedSecret(storage, accountId, details, (s, a, e) => s.getConfigBody(a, e), 'write its config file', undefined);
   if (opened.kind !== 'open') {
     return undefined;
   }
