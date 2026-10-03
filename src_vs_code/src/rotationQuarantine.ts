@@ -85,12 +85,23 @@ export interface QuarantineStore {
   listed(): Promise<readonly HeldEntry[]>;
   list(accountId: string, entityId: string): Promise<void>;
   unlist(accountId: string, entityId: string): Promise<void>;
+  /**
+   * Tell the person what an automatic use stored, in the words THIS storage's window gave (`announceReleasesWith`) —
+   * nothing until then. Per store, never per module: two storages never hear each other (the code round, 2026-10-03).
+   */
+  announce(released: readonly ReleasedValue[]): void;
+  announceWith(say: (released: readonly ReleasedValue[]) => void): void;
 }
 
 /** The store over the profile's keychain and local state — made once, by `StorageManager`. */
 export function quarantineStore(chest: SecretChest, state: IndexState, writes: LeasedQueue): QuarantineStore {
   const key = rotationQuarantineSecretKey;
+  let say: (released: readonly ReleasedValue[]) => void = () => undefined;
   return {
+    announce: (released) => say(released),
+    announceWith: (words) => {
+      say = words;
+    },
     read: async (a, e) => heldOf(await chest.get(key(a, e))),
     put: (a, e, slots) => writes.run(() => Promise.resolve(isEmpty(slots) ? chest.delete(key(a, e)) : chest.store(key(a, e), serialised(slots)))),
     listed: () => Promise.resolve(indexOf(state)),
@@ -525,32 +536,29 @@ export interface ReleasedValue {
 export async function releaseBeforeAutomaticUse(storage: StorageManager, accountId: string, ...entityIds: readonly string[]): Promise<void> {
   for (const entityId of entityIds) {
     if (await isWaiting(storage, accountId, entityId).catch(() => false)) {
-      told(await releaseIfUnprotected(storage, { accountId, entityId }).catch(() => []));
+      told(storage, await releaseIfUnprotected(storage, { accountId, entityId }).catch(() => []));
     }
   }
 }
 
-/** What an agent's use stored, handed to the window's words — a failure to tell never fails the agent's call. */
-function told(released: readonly ReleasedValue[]): void {
+/** What an agent's use stored, handed to the storage's words — a failure to tell never fails the agent's call. */
+function told(storage: StorageManager, released: readonly ReleasedValue[]): void {
   try {
-    announce(released);
+    storage.heldRotations.announce(released);
   } catch {
     /* the value is stored either way; the row's hint is gone, which is the other way the person sees it */
   }
 }
 
-/** Who hears that a value went in without a door — see `announceReleasesWith`. Silent until the window says. */
-let announce: (released: readonly ReleasedValue[]) => void = () => undefined;
-
 /**
- * The window's words for a value an AGENT's use stored (the owner's follow-up to W5: the person must see it). This
- * module is free of `vscode`, and so are the automatic readers that call `releaseBeforeAutomaticUse` — so
- * `extension.ts` hands it `rotationWaiting.sayReleasedValues` once, at activation. An info message, never a modal,
- * and never awaited: an agent's call is not held by what the person is told. Until it is set — a test, a host
- * with no window — nothing is said.
+ * The window's words for a value an AGENT's use stored in THIS storage (the owner's follow-up to W5: the person must
+ * see it). This module is free of `vscode`, and so are the automatic readers — so `extension.ts` hands the storage it
+ * built `rotationWaiting.sayReleasedValues` once, at activation. Kept on the storage's own store, not in this
+ * module: a second storage (another test, another run) never says through them (the code round, 2026-10-03). An
+ * info message, never a modal, never awaited; until it is set — a test, a host with no window — nothing is said.
  */
-export function announceReleasesWith(say: (released: readonly ReleasedValue[]) => void): void {
-  announce = say;
+export function announceReleasesWith(storage: StorageManager, say: (released: readonly ReleasedValue[]) => void): void {
+  storage.heldRotations.announceWith(say);
 }
 
 async function releaseIfUnprotected(storage: StorageManager, entry: HeldEntry): Promise<readonly ReleasedValue[]> {

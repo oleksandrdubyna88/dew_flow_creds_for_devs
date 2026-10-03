@@ -140,7 +140,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   const storage = new StorageManager(context.globalState, context.secrets, context.globalStorageUri.fsPath);
   context.subscriptions.push(storage); // it listens to SecretStorage changes
-  announceReleasesWith(sayReleasedValues); // an agent's use that stores a waiting rotated value is said (rotationWaiting.ts)
+  announceReleasesWith(storage, sayReleasedValues); // an agent's use that stores a waiting rotated value is said (rotationWaiting.ts)
   // Seal-at-rest for the local metadata cache (audit B8): load or mint the device key and
   // seal any plaintext node slots BEFORE anything renders a tree. globalState is a plain
   // SQLite file in the profile; the topology it held (hosts, users, CLI args, env-var names)

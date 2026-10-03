@@ -8,7 +8,7 @@ import { rotationQuarantineSecretKey, secretKey } from '../secretKeys';
 import type { StorageManager } from '../storageManager';
 import { EntityMetadata } from '../types';
 import { loadEachWithVscode } from './vscodeStub';
-import { ACCOUNT, ModalAnswer, Sinks, carried, clickVscode, memoryStorage, seedEntry, sinks } from './pinWorld';
+import { ACCOUNT, ModalAnswer, Sinks, carried, clickVscode, memoryStorage, memoryStorages, seedEntry, sinks } from './pinWorld';
 
 /**
  * A rotated value that waits beside an UNPROTECTED entry is used, and said, at every door
@@ -279,7 +279,7 @@ async function agentWorld(live: string = OLD_CONN, waiting = true): Promise<Agen
     typeof import('../rotationWaiting'),
   ];
   // As `extension.ts` does at activation: an agent's use that stores a waiting value is said in the door's words.
-  quarantine.announceReleasesWith(words.sayReleasedValues);
+  quarantine.announceReleasesWith(storage, words.sayReleasedValues);
   const action = dbQueryAction({
     storage,
     storageDir: '/tmp/does-not-matter',
@@ -449,7 +449,7 @@ test("an agent's query that stores a waiting connection string TELLS the person 
 
 test("the window hands an agent's release its words — extension.ts registers them, or every test above is about a wiring no window makes", () => {
   assert.ok(
-    extensionLines().some((line) => line.includes('announceReleasesWith(sayReleasedValues)')),
+    extensionLines().some((line) => line.includes('announceReleasesWith(storage, sayReleasedValues)')),
     "extension.ts never hands rotationQuarantine the words for an agent's release: the person would never be told",
   );
 });
@@ -462,4 +462,24 @@ test("an agent's query that stores NOTHING says nothing — a conflict, or nothi
   await quiet.query();
 
   assert.deepEqual([conflict.s.infos, quiet.s.infos], [[], []]);
+});
+
+// ---- the code round (2026-10-03): the words belong to ONE storage, never to the module ----
+
+test("the words for an agent's release belong to the storage they were given to — another storage's release is never said through them", async () => {
+  // Two storages and the quarantine module from ONE module graph, as one extension host has them: what a module
+  // would share between them is what this test can see.
+  const storages = memoryStorages(clickVscode([], sinks()), 2);
+  const quarantine = require('../rotationQuarantine') as typeof import('../rotationQuarantine');
+  for (const storage of storages) {
+    await seedEntry(storage, dbDetails(), { 'database connection': OLD_CONN });
+    await quarantine.holdRotated(storage, ACCOUNT, DB, 'dbConnection', NEW_CONN, await quarantine.fingerprintOf(OLD_CONN));
+  }
+  const heard: string[][] = [[], []];
+  storages.forEach((storage, index) => quarantine.announceReleasesWith(storage, (released) => heard[index].push(...released.map((value) => value.entryName))));
+
+  await quarantine.releaseBeforeAutomaticUse(storages[0], ACCOUNT, DB);
+
+  assert.equal(carried(await storages[0].getDbConnection(ACCOUNT, DB)), NEW_CONN, 'the setup: the first storage did not release its waiting value');
+  assert.deepEqual(heard, [['orders-db'], []], "the first storage's release was told through the second storage's words — the announcer is shared, not the storage's own");
 });

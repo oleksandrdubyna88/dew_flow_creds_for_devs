@@ -212,6 +212,16 @@ export function memoryStorage(stub: Record<string, unknown>, written: string[] =
   return new StorageManager(memento() as never, keychain(written, reads) as never);
 }
 
+/**
+ * Several real `StorageManager`s from ONE module graph, as one extension host holds them — for state that must belong
+ * to a storage and not to a module (`rotationQuarantine.announceReleasesWith`). `memoryStorage` loads a fresh graph
+ * per call, so two of those could never show a module-level value being shared.
+ */
+export function memoryStorages(stub: Record<string, unknown>, count: number): StorageManager[] {
+  const { StorageManager } = loadWithVscode<typeof import('../storageManager')>('../storageManager', stub);
+  return Array.from({ length: count }, () => new StorageManager(memento() as never, keychain([]) as never));
+}
+
 /** Add one entry and write its slots by LABEL, through the slot table — the names the product uses. */
 export async function seedEntry(storage: StorageManager, details: EntityMetadata, slots: Record<string, string>): Promise<void> {
   // Listed as an account, so the sweeps that walk `getAccounts()` (the SSH agent's `loadMarked`) see it.
