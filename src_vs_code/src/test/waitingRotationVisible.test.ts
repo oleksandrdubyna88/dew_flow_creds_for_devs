@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { test } from 'node:test';
 import type { SlotRead } from '../pinClick';
 import { fingerprintOf, holdRotated } from '../rotationQuarantine';
@@ -389,4 +391,40 @@ test('the sweep that stores a waiting password says so to the person, once — a
   await sweeper.runOnce();
 
   assert.equal(w.s.infos.length, before, 'a tick that stored nothing said something');
+});
+
+// ---- the owner's follow-up (2026-10-03): the release right after a pulled sync is said too ----
+
+/** The non-comment lines of `extension.ts` — where the window wires the release after a pulled sync. */
+function extensionLines(): string[] {
+  const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'extension.ts'), 'utf8');
+  return source.split(/\r?\n/).filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line));
+}
+
+/** The function the sync's post-pull callback releases through — the line that then refreshes the entity flags. */
+function postPullRelease(): string {
+  const wired = extensionLines().flatMap((line) => {
+    const found = /void (\w+)\(storage\)\.finally\(\(\) => void refreshEntityFlags\(\)\)/.exec(line);
+    return found === null ? [] : [found[1]];
+  });
+  assert.equal(wired.length, 1, 'the scan no longer finds the release in the sync\'s post-pull callback — fix the scan, not the wiring');
+  return wired[0];
+}
+
+test('a sync that unprotects an entry with a waiting value releases it AND tells the person', async () => {
+  const release = postPullRelease();
+  // What a pulled sync leaves: the entry protected when the hold was written, unprotected by the pull.
+  const w = await world();
+  const [waiting] = loadEachWithVscode(['../rotationWaiting'], clickVscode([], w.s)) as [typeof import('../rotationWaiting')];
+  const wiredRelease = (waiting as unknown as Record<string, (storage: StorageManager) => Promise<unknown>>)[release] ?? (() => Promise.resolve(undefined));
+
+  await wiredRelease(w.storage);
+
+  assert.equal(release, 'releaseAndSay', `a sync that unprotects an entry with a waiting value releases it and the person is never told — extension.ts releases through ${release}`);
+  assert.equal(await slotNow(w), NEW);
+  assert.equal(w.s.infos.filter((info) => /The new password of "portal" from .* is now stored\./.test(info)).length, 1, 'the release after the pull was not said once');
+});
+
+test('the positive control: the scan of extension.ts still finds the sweeper\'s speaking release', () => {
+  assert.ok(extensionLines().some((line) => line.includes('() => releaseAndSay(storage)')), 'the sweeper\'s wiring is no longer where the scan looks');
 });

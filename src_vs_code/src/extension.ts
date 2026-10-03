@@ -72,7 +72,7 @@ import { visibleConfigDetails, visibleMcpEntries } from './mcpEntries';
 import { McpEntriesCache } from './mcpEntriesCache';
 import { RotateDeps, rotateAction } from './rotateAction';
 import { storeRotated } from './rotationStore';
-import { releaseUnprotected, waitingKeys } from './rotationQuarantine';
+import { waitingKeys } from './rotationQuarantine';
 import { releaseAndSay } from './rotationWaiting';
 import { generateSecret } from './secretKinds';
 import { CREDS_CLI, CredsProduct, ridFor } from './credsInstall';
@@ -279,14 +279,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   void sharing.reload();
 
   // NAS auto-sync (two-way merge); after pulling it re-renders the tree, stores a rotated value whose entry the pull
-  // unprotected (`rotationQuarantine.ts`), and re-reads the per-entity flags — a pulled merge can add or remove a password.
+  // unprotected and says so (`rotationWaiting.releaseAndSay`), and re-reads the per-entity flags — a pulled merge can add or remove a password.
   const sync = new SyncManager(
     storage,
     vaultKeys,
     transports,
     () => {
       provider.refresh();
-      void releaseUnprotected(storage).finally(() => void refreshEntityFlags());
+      void releaseAndSay(storage).finally(() => void refreshEntityFlags());
     },
     () => void sharing.reload(),
     (accountId) => void context.globalState.update(`syncReminder.lastOk.${accountId}`, Date.now()),
