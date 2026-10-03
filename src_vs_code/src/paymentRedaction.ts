@@ -256,7 +256,7 @@ export class PaymentRecordUnreadableError extends Error {
  *
  * <p>Accepted from the code review, and it overturns a decision I had argued for. My reasoning was
  * that redacting on both sides means two opinions about one rule; the reviewer's is that
- * `importShared` is a TRUST BOUNDARY, and everything arriving there was written by somebody else's
+ * the share landing (`shareImport.landShare`, once `importShared`) is a TRUST BOUNDARY, and everything arriving there was written by somebody else's
  * process. Both are right, and they reconcile: this calls the SAME function the sender calls, so
  * there is one opinion applied twice rather than two opinions. That is the shape the repository
  * already uses for sender identity — stamped from a verified token, never accepted from the body.</p>
