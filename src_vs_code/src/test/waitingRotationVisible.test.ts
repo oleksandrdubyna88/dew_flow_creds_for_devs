@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
+import * as ts from 'typescript';
 import type { SlotRead } from '../pinClick';
 import { fingerprintOf, holdRotated } from '../rotationQuarantine';
 import { rotationQuarantineSecretKey, secretKey } from '../secretKeys';
@@ -482,4 +483,70 @@ test("the words for an agent's release belong to the storage they were given to 
 
   assert.equal(carried(await storages[0].getDbConnection(ACCOUNT, DB)), NEW_CONN, 'the setup: the first storage did not release its waiting value');
   assert.deepEqual(heard, [['orders-db'], []], "the first storage's release was told through the second storage's words — the announcer is shared, not the storage's own");
+});
+
+// ---- the code round (2026-10-03): the release is in the ONE automatic opener, not at each reader ----
+
+test('a NEW automatic reader — written here, through the common automatic opener and calling nothing else — is handed the rotated value', async () => {
+  const w = await world();
+  const [{ automaticOpenerFor }] = loadEachWithVscode(['../automaticRead'], clickVscode([], w.s)) as [typeof import('../automaticRead')];
+  const stored = await w.storage.getPassword(ACCOUNT, ENTRY);
+
+  const opened = await automaticOpenerFor(w.storage, ACCOUNT)(details(), stored);
+
+  assert.equal(opened.kind === 'open' && opened.value, NEW, 'a new automatic reader was handed the password the rotation replaced');
+  assert.equal(await slotNow(w), NEW);
+  assert.equal(await stillHeld(w), false);
+});
+
+test('the common automatic opener on an entry with nothing waiting reads no :rotationQuarantine key and nothing beyond the slot read', async () => {
+  const w = await world({ waiting: false });
+  const [{ automaticOpenerFor }] = loadEachWithVscode(['../automaticRead'], clickVscode([], w.s)) as [typeof import('../automaticRead')];
+  const stored = await w.storage.getPassword(ACCOUNT, ENTRY);
+
+  const opened = await automaticOpenerFor(w.storage, ACCOUNT)(details(), stored);
+
+  assert.equal(opened.kind === 'open' && opened.value, OLD);
+  assert.deepEqual(w.reads, [secretKey(ACCOUNT, ENTRY)], 'the automatic opener read more than the slot its reader read');
+});
+
+/** Every production file that names the bare `automaticOpener` (an identifier — a comment is not a use). */
+function bareOpenerUses(files: readonly { readonly name: string; readonly text: string }[]): string[] {
+  return files.flatMap(({ name, text }) => {
+    const source = ts.createSourceFile(name, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+    const found: string[] = [];
+    const visit = (node: ts.Node): void => {
+      if (ts.isIdentifier(node) && node.text === 'automaticOpener') {
+        found.push(`${name}:${source.getLineAndCharacterOfPosition(node.getStart()).line + 1}`);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+    return found;
+  });
+}
+
+function productionFiles(dir: string = path.join(__dirname, '..', '..', 'src'), prefix = ''): { name: string; text: string }[] {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    if (entry.isDirectory()) {
+      return entry.name === 'test' ? [] : productionFiles(path.join(dir, entry.name), `${prefix}${entry.name}/`);
+    }
+    return entry.name.endsWith('.ts') ? [{ name: `${prefix}${entry.name}`, text: fs.readFileSync(path.join(dir, entry.name), 'utf8') }] : [];
+  });
+}
+
+/** Where the bare opener may be named: its definition, and the one opener every automatic reader goes through. */
+const BARE_OPENER_ALLOWED = new Set(['secretOpener.ts', 'automaticRead.ts']);
+
+test('no automatic reader opens a stored value with the bare automaticOpener — every one takes automaticOpenerFor, which stores a waiting value first', () => {
+  const outside = bareOpenerUses(productionFiles()).filter((use) => !BARE_OPENER_ALLOWED.has(use.split(':')[0]));
+
+  assert.deepEqual(outside, [], 'an automatic reader opens with the bare automaticOpener — it would hand an agent the value a rotation replaced; use automaticRead.automaticOpenerFor');
+});
+
+test('the scan for the bare opener: a planted reader is reported, and the scan still finds the sanctioned use', () => {
+  const planted = { name: 'newReader.ts', text: "import { automaticOpener } from './secretOpener';\nexport const read = (s: S) => automaticOpener(owner, s);" };
+
+  assert.deepEqual(bareOpenerUses([planted]), ['newReader.ts:1', 'newReader.ts:2']);
+  assert.ok(bareOpenerUses(productionFiles()).some((use) => use.startsWith('automaticRead.ts:')), 'the sanctioned use in automaticRead.ts is no longer seen — the scan matches nothing');
 });

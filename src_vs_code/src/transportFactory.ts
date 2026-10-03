@@ -5,7 +5,8 @@ import { FolderTransport } from './folderTransport';
 import { GitTransport } from './gitTransport';
 import { GitAuth, parseGitRemote } from './gitRemote';
 import { materializePrivateKey } from './keyInstaller';
-import { SecretOwner, automaticOpener, fieldReadingOf } from './secretOpener';
+import { SecretOwner, fieldReadingOf } from './secretOpener';
+import { automaticOpenerFor } from './automaticRead';
 import { runBounded } from './sshExecRunner';
 import { GoogleAuthProvider } from './googleAuthProvider';
 import { nasPathFor } from './nasPaths';
@@ -30,15 +31,16 @@ interface DeployKey {
   /** As stored — opened only by `usableDeployKey`. */
   readonly key: StoredSecret;
   readonly owner: SecretOwner;
+  readonly accountId: string;
 }
 
 /**
- * The key, opened by `automaticOpener` — sealed, of an entry that claims a PIN, or damaged, it is
+ * The key, opened by `automaticOpenerFor` — sealed, of an entry that claims a PIN, or damaged, it is
  * refused, and the throw is what the sync failure path says. Damaged is the typed-secrets plan's (T3):
  * until then a damaged wrap's text was materialised as the key, and git failed with nothing saying why.
  */
-async function usableDeployKey(found: DeployKey, location: string): Promise<string> {
-  const key = fieldReadingOf(await automaticOpener(found.owner, found.key));
+async function usableDeployKey(storage: StorageManager, found: DeployKey, location: string): Promise<string> {
+  const key = fieldReadingOf(await automaticOpenerFor(storage, found.accountId)(found.owner, found.key));
   if (key.kind !== 'value') {
     const why = key.kind === 'withheld' ? key.reason : `"${found.owner.name}" holds no key.`;
     throw new Error(`${why} It is the deploy key for ${location}, so this sync cannot authenticate with it.`);
@@ -281,7 +283,7 @@ export class TransportFactory {
     const found = keyEntityId === undefined ? undefined : await this.findPrivateKey(keyEntityId);
     return found === undefined
       ? { kind: 'inherit' }
-      : { kind: 'ssh', keyPath: materializePrivateKey(storageDir, `git-${keyEntityId}`, await usableDeployKey(found, location)) };
+      : { kind: 'ssh', keyPath: materializePrivateKey(storageDir, `git-${keyEntityId}`, await usableDeployKey(this.storage, found, location)) };
   }
 
   /** The stored private key with this entity id, under whichever account holds it, with its entry. */
@@ -289,7 +291,7 @@ export class TransportFactory {
     for (const account of this.storage.getAccounts()) {
       const key = await this.storage.getPrivateKey(account.accountId, entityId);
       if (key !== undefined && !isEmptySecret(key)) {
-        return { key, owner: this.ownerOf(account.accountId, entityId) };
+        return { key, owner: this.ownerOf(account.accountId, entityId), accountId: account.accountId };
       }
     }
     return undefined;

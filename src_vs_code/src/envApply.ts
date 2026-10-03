@@ -10,8 +10,8 @@ import { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
 import { FieldReading, readingOf, valueOf, withheld } from './fieldReading';
 import { pinFieldRefusal } from './pinGate';
-import { OpenedSecret, automaticOpener, fieldReadingOf } from './secretOpener';
-import { releaseBeforeAutomaticUse } from './rotationQuarantine';
+import { OpenedSecret, fieldReadingOf } from './secretOpener';
+import { automaticOpenerFor } from './automaticRead';
 import { StoredSecret, stored } from './storedSecret';
 
 /**
@@ -57,7 +57,7 @@ export function automaticRefusal(details: EntityMetadata, field: BindableField):
  * stored string already in hand.
  *
  * <p>`bindableFieldReading` asks the same two policies through the opener since the typed-secrets plan
- * (T3): the woven one here (`automaticRefusal`), the PIN one through `secretOpener.automaticOpener`, which
+ * (T3): the woven one here (`automaticRefusal`), the PIN one through `automaticRead.automaticOpenerFor`, which
  * asks `pinGate.pinFieldRefusal` — this function's second half — and refuses a damaged wrap as well.</p>
  *
  * <p>Two policies today. The woven one is a fact about the ENTRY (`passwordWoven` is a field) and
@@ -95,7 +95,7 @@ export function automaticFieldRefusal(
  * refusal with it.</p>
  *
  * <p>The woven policy first — a fact about the entry, needing no value — then the value opened by
- * `automaticOpener` and read through `fieldReadingOf` (typed-secrets plan, T3): sealed, or of an entry
+ * `automaticOpenerFor` and read through `fieldReadingOf` (typed-secrets plan, T3): sealed, or of an entry
  * that claims a PIN, is withheld with the PIN sentence; a damaged wrap is withheld as damaged — until T3
  * its text was handed to the terminal as the value; absent is absent.</p>
  */
@@ -109,8 +109,6 @@ export async function bindableFieldReading(
   if (woven !== '') {
     return withheld(woven);
   }
-  // A rotated value waiting beside an unprotected entry goes in first (`PLAN_waiting_rotation_visible.md` W5).
-  await releaseBeforeAutomaticUse(storage, accountId, details.id);
   const reading = fieldReadingOf(await openedField(storage, accountId, details, field), details);
   return field === 'dbPassword' ? dbPasswordOf(reading) : reading;
 }
@@ -132,7 +130,7 @@ async function openedField(
   details: EntityMetadata,
   field: BindableField,
 ): Promise<OpenedSecret> {
-  const open = (held: StoredSecret | undefined): Promise<OpenedSecret> => automaticOpener(details, held);
+  const open = (held: StoredSecret | undefined): Promise<OpenedSecret> => automaticOpenerFor(storage, accountId)(details, held);
   switch (field) {
     case 'password':
       return open(await storage.getPassword(accountId, details.id));

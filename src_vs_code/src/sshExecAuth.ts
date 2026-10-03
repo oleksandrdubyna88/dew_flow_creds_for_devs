@@ -105,7 +105,7 @@ function byPassword(
  * under every other that was still authenticating with it.</p>
  *
  * <p>`open` is how a stored value is opened (entry-PIN plan, D6/D7). The agent broker takes the
- * default — `automaticOpener`, which refuses a protected value with the sentence and never prompts;
+ * default — `automaticOpenerFor`, which refuses a protected value with the sentence and never prompts;
  * the person's own bridge and remote-install clicks pass a click opener, which asks the PIN of the
  * entry that owns the value. Until then only the password branch was gated, so a connection that
  * borrows a protected key entity wrote the envelope to disk as its SSH key.</p>

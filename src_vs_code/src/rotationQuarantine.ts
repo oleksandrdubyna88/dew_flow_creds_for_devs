@@ -526,19 +526,21 @@ export interface ReleasedValue {
 }
 
 /**
- * Before an AGENT's automatic read of these entries (`PLAN_waiting_rotation_visible.md` W5, the owner's decision
- * §9.1): a rotated value waiting beside an UNPROTECTED entry goes in first — the sweep's own release, with the
- * UNATTENDED proof, i.e. exactly the store the rotation would have made (the plain writer, re-checked under the
- * lease). Never a PIN, never a modal: a marked or sealed entry is left to the person's door, and a CONFLICT is
- * written nowhere — the agent reads what is stored and the person's next door asks. The index is asked first,
- * so an unlisted entry — every entry, almost always — costs one memento read and no keychain `get`. Never throws.
+ * At an AUTOMATIC read of this entry (`PLAN_waiting_rotation_visible.md` W5, the owner's decision §9.1): a rotated
+ * value waiting beside it, when it is UNPROTECTED, goes in first — the sweep's own release, with the UNATTENDED
+ * proof, i.e. exactly the store the rotation would have made (the plain writer, re-checked under the lease). Never a
+ * PIN, never a modal: a marked or sealed entry is left to the person's door, and a CONFLICT is written nowhere — the
+ * reader gets what is stored and the person's next door asks. What went in is said through the storage's words.
+ * The index is asked first, so an unlisted entry — every entry, almost always — costs one memento read and no
+ * keychain `get`. Called by ONE place, `automaticRead.automaticOpenerFor` (the code round, 2026-10-03). Never throws.
  */
-export async function releaseBeforeAutomaticUse(storage: StorageManager, accountId: string, ...entityIds: readonly string[]): Promise<void> {
-  for (const entityId of entityIds) {
-    if (await isWaiting(storage, accountId, entityId).catch(() => false)) {
-      told(storage, await releaseIfUnprotected(storage, { accountId, entityId }).catch(() => []));
-    }
+export async function releaseBeforeAutomaticUse(storage: StorageManager, accountId: string, entityId: string): Promise<Release> {
+  if (!(await isWaiting(storage, accountId, entityId).catch(() => false))) {
+    return NOTHING_RELEASED;
   }
+  const released = await releaseIfUnprotected(storage, { accountId, entityId }).catch(() => []);
+  told(storage, released);
+  return { released: released.map((value) => value.slot), conflicts: [] };
 }
 
 /** What an agent's use stored, handed to the storage's words — a failure to tell never fails the agent's call. */
