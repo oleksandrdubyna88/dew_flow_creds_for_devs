@@ -1,8 +1,9 @@
 # PLAN — a waiting rotated value is used at the click and announced at every door
 
 > Status: **partly built, 2026-10-03 — W1, W3, W5 and W6 are in (`1bceeabb`, `ac19cdcd`, `e0e65b58`,
-> `bf3a6c3b`) with W4's docs and the owner's three follow-ups (§10.7); W2 waits on the sibling plan's B1; the
-> code round and the promotion are open (§10 records what was built differently).** Planned 2026-10-02. Scope: `src_vs_code/src` — `pinClick.ts`,
+> `bf3a6c3b`) with W4's docs, the owner's three follow-ups (§10.7) and the code round's two fixes (§10.8, the
+> round passed: proceed, 4 of 4); W2 waits on the sibling plan's B1; the promotion is open (§10 records what was
+> built differently).** Planned 2026-10-02. Scope: `src_vs_code/src` — `pinClick.ts`,
 > `pinPrompt.ts` (one half of `admitted` extracted), `shareInbox.ts` (one line, after the extraction its sibling
 > plan owns), `rotationQuarantine.ts` (one index-only read exported), `rotationStore.ts` and
 > `rotationWaiting.ts` (wording), and their tests. Extension only; no format, contract or server change.
@@ -236,16 +237,14 @@ the text above:
 1. **W1 as planned.** `needsDoor` became async and asks `isWaiting` LAST, behind the mark and the sealed check,
    with a failed index read counted as "nothing waits". The lease guard is a modal stub that runs
    `storage.writes.runOrSkip` and races it against two seconds — `ran`, not `blocked behind the click`.
-2. **W5's readers.** The release is called in three places, not five: `agentUseActions.dbQueryAction`
-   (`creds_query`), `envApply.bindableFieldReading` — ONE call that covers env apply, `creds_export_env` and
-   `creds://` (through `entityFieldReading`), and also the viewer's set-env, which runs after its own door — and
-   `sshCredential.passwordOf` when the opener is the automatic one (the agent's ssh/exec; the person's Connect
-   passes a click opener, whose door says it, W1). **The deploy key is not touched:** it reads only a private
-   key, and no rotation holds one (`RotationSlot` is `password | dbConnection`). The helper is
-   `rotationQuarantine.releaseBeforeAutomaticUse`, which reuses the sweep's own `releaseIfUnprotected` rather than
-   calling `releaseHeld(…, UNATTENDED)` bare: a marked or sealed entry is skipped before the slots are walked,
-   at the cost of one item `get` for a LISTED marked entry (an unlisted one still reads nothing). The plan asked
-   for no message here; the owner's follow-up (item 7) added one.
+2. **W5's readers.** First built (`e0e65b58`) as three explicit calls — `agentUseActions.dbQueryAction`,
+   `envApply.bindableFieldReading`, `sshCredential.passwordOf` — and **replaced by the code round (item 8.2)**
+   with ONE automatic opener every automatic reader goes through, so the deploy key, config bodies, notes, TOTP
+   and the SSH agent's startup sweep go through it too (they hold no rotation slot today; the release is a
+   memento read for them). The release is `rotationQuarantine.releaseBeforeAutomaticUse`, which reuses the
+   sweep's own `releaseIfUnprotected` rather than calling `releaseHeld(…, UNATTENDED)` bare: a marked or sealed
+   entry is skipped before the slots are walked, at the cost of one item `get` for a LISTED marked entry (an
+   unlisted one still reads nothing). The plan asked for no message here; the owner's follow-up (item 7) added one.
 3. **W6's saying is injected.** `rotationWaiting.releaseAndSay` releases and says each value;
    `EphemeralSweeper.releaseWaiting` is typed to the list and stays free of `vscode` at run time (its own suite
    loads it without a stub), and `extension.ts` wires `releaseAndSay` in — line-neutral at 1037 by merging its
@@ -270,9 +269,26 @@ the text above:
    2. **An agent's use that stores a waiting value is said** (`408a6305`): `releaseBeforeAutomaticUse` hands what
       it stored to a port, `rotationQuarantine.announceReleasesWith`, which `extension.ts` sets once to
       `rotationWaiting.sayReleasedValues` — an info message, never a modal, never awaited, so the agent's call is
-      not held. Injected because the module and the readers that call it stay free of `vscode` at run time. A
+      not held (per storage since item 8.1). Injected because the module and the readers stay free of `vscode`. A
       conflict, or nothing waiting, says nothing. `extension.ts` stays at 1037 by merging its two `corpPolicy`
       imports.
    3. **Every help language pins the sentence** (`37b150ed`): `rotationHelpCoverage.test.ts` checks, per
       `HELP_LANGUAGES`, the sentence's opening and its "you are told" in that language; a language with no pinned
       fragments fails. Red first against `helpDe.ts` with the sentence removed.
+8. **The coai code round (2026-10-03: proceed, 4 of 4; two Major findings, both accepted)** — each red-first with
+   its break-it in the commit body:
+   1. **No module-global hook** (`d1069b67`). Item 7.2's announcer lived in a module-level variable of
+      `rotationQuarantine.ts`, shared by every storage, test and run in one module graph. It now lives on the
+      storage's own `QuarantineStore` (`announce` / `announceWith`, a closure in `quarantineStore`, saying nothing
+      until set); `announceReleasesWith(storage, say)` sets it on THAT storage, and `extension.ts` passes the
+      storage it built. RED: two `StorageManager`s from one module graph (`pinWorld.memoryStorages`, new) — the
+      first's release was heard through the second's words.
+   2. **The release by construction** (`b4cdb9f5`). New `automaticRead.automaticOpenerFor(storage, accountId)`:
+      the index first, then the release and a re-read of a value read before it, then
+      `secretOpener.automaticOpener`'s decision. Every automatic reader opens through it; the three explicit
+      calls and `sshCredential.waitingStoredFirst` are gone; the bare `automaticOpener` is named only in
+      `secretOpener.ts` and `automaticRead.ts`, and a scan (negative fixture, positive control) fails on any other
+      use. **Not inside `automaticOpener` itself:** it is `(owner, stored)` — no storage, no account — and
+      `rotationQuarantine.ts` already imports `secretOpener.ts`, so the release there would be an import cycle; a
+      factory beside it plus the scan gives the same guarantee. RED: a new automatic reader written in the test,
+      through the common opener, was handed the replaced password; the scan listed the seven readers.
