@@ -68,7 +68,9 @@ test('a bundle that recreates a folder asking for a PIN seals what lands in it â
 
   await w.importInto('credSshManager.importExternal', '', '/exports/handover.json', preferringBundle());
 
-  assert.equal(boxes(w, FIRST_PIN_BOX), 2, `the folder that asks was recreated and filled with no question: ${w.events.join(' | ')}`);
+  // The first PIN names the folder it protects (second code round, finding 4): a bundle can recreate several.
+  assert.equal(boxes(w, /A PIN for "Vault"/), 2, `the folder that asks was recreated and filled with no question naming it: ${w.events.join(' | ')}`);
+  assert.ok(w.s.boxPrompts.some((prompt) => prompt.includes('"Vault"')), `the first PIN's prompt does not name the folder it protects: ${w.s.boxPrompts.join(' | ')}`);
   const byName = new Map(w.entries().map((n) => [n.name, n]));
   await sealedUnder(w, byName.get('alpha') as TreeNode, FIRST_PIN);
   assert.deepEqual(w.written.filter((v) => v.includes(`${SECRET}-alpha`) || v.includes(`${NOTE}-alpha`)), [], 'alpha reached the keychain in the clear (R3)');

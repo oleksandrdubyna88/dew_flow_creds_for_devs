@@ -123,7 +123,7 @@ export function folderQuestion(storage: StorageManager): FolderQuestion {
   return {
     ask: (accountId, folderId) => pinForNewEntry(storage, accountId, folderId),
     prefers: (accountId, folderId) => folderPrefersPin(storage, accountId, folderId),
-    first: () => firstPinHere(),
+    first: (_accountId, folderName) => firstPinIn(folderName),
   };
 }
 
@@ -224,6 +224,12 @@ function above(node: TreeNode, storage: StorageManager, accountId: string): Tree
 /** The first PIN in a folder that asks: typed twice, because there is nothing here to check it against. */
 async function firstPinHere(token?: vscode.CancellationToken): Promise<CreatePin> {
   const typed = await newPin('this entry', 'entry', FIRST_HERE, token);
+  return typed === undefined ? { kind: 'cancelled' } : { kind: 'pin', pin: typed };
+}
+
+/** The first PIN of a folder an arrival recreates with the preference — the box names the folder it protects. */
+async function firstPinIn(folderName: string): Promise<CreatePin> {
+  const typed = await newPin(folderName, 'entry', FIRST_IN(folderName));
   return typed === undefined ? { kind: 'cancelled' } : { kind: 'pin', pin: typed };
 }
 
@@ -354,6 +360,10 @@ const FIRST_VALUE =
   'This entry was protected with a PIN while it held nothing, so nothing has checked that PIN yet — the '
   + 'value you are saving is the first it will seal. Type the PIN it goes under: it is stored nowhere, so it '
   + 'is typed twice.';
+
+const FIRST_IN = (folderName: string): string =>
+  `The folder "${folderName}" asks for a PIN on every entry created in it, and nothing in it is protected yet — `
+  + 'so the entries arriving in it are the first, and its PIN is yours to choose. It is stored nowhere, so type it twice.';
 
 const FIRST_HERE =
   'This folder asks for a PIN on every entry created in it, and nothing here is protected yet — so '

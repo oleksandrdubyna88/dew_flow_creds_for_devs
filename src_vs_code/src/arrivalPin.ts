@@ -39,12 +39,13 @@ export interface Landing {
  * The question Add asks, as a port. `ask` is `pinOnCreate.pinForNewEntry` in that folder; `prefers` is
  * `pinOnCreate.folderPrefersPin` — whether the folder, or one above it, carries the preference; `first` is
  * the first PIN of a folder that asks and holds nothing yet, typed twice — what Add asks in a folder the
- * arrival itself creates WITH the preference.
+ * arrival itself creates WITH the preference; `folderName` names that folder in the box, because one arrival
+ * can recreate several (second code round, finding 4).
  */
 export interface FolderQuestion {
   readonly ask: (accountId: string, folderId: string) => Promise<CreatePin>;
   readonly prefers: (accountId: string, folderId: string) => boolean;
-  readonly first: (accountId: string) => Promise<CreatePin>;
+  readonly first: (accountId: string, folderName: string) => Promise<CreatePin>;
 }
 
 /** A folder of one account — or, for a folder the arrival creates, its `name` and no id yet (`folderId` `''`). */
@@ -237,7 +238,7 @@ function preferringCreated(question: FolderQuestion, { accountId, existing, crea
     return undefined;
   }
   const chain = creates.slice(0, at + 1).map((seg) => seg.name);
-  return { key: JSON.stringify([accountId, existing, ...chain]), folder: { accountId, folderId: '', name: chain[at] }, ask: () => question.first(accountId) };
+  return { key: JSON.stringify([accountId, existing, ...chain]), folder: { accountId, folderId: '', name: chain[at] }, ask: () => question.first(accountId, chain[at]) };
 }
 
 /** A folder's name for a sentence: its own when the arrival creates it, the node's otherwise, `''` for none. */
