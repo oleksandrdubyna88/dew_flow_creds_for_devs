@@ -1,7 +1,8 @@
 # PLAN — a folder that asks for a PIN asks it too when a share or an import lands in it
 
 > Status: **in progress, 2026-10-03 — B1–B7 built on `feat/pin-folder-accept-import`, B8's documentation
-> written, the code round passed (`proceed`, 4 of 4) and the security review's six findings fixed (§10.1);
+> written, the code round passed (`proceed`, 4 of 4), the security review's six findings and the second
+> code round's four accepted ones fixed (§10.1);
 > the move out of `todo/` follows** (deviations: §10). Scope: `src_vs_code/src` — `shareInbox.ts`
 > (its import half extracted to a new `shareImport.ts`), `shareRecipientPin.ts`, a new `arrivalPin.ts`,
 > `pinOnCreate.ts` (one export widened), `importCommands.ts`, `externalSecretsApply.ts`, the two import
@@ -335,8 +336,21 @@ real symptom, then GREEN, then a break-it — all in the commit bodies.
 | 5 | LOW | a batch asked again for a subfolder the same batch created | `ArrivalPins.created(landing, ids)`: a later landing inside a folder this command created takes that landing's answer | ed1fc9a5 |
 | 6 | LOW | a rejected folder question made `declined()` reject, so `acceptMany` threw and showed no tally | `declined()` reads a rejected answer as `failed`, never rejects | fdf03d64 |
 
-Deviations they add: `FolderQuestion` has a THIRD function (`first`), bound in `pinOnCreate.folderQuestion` to the
-private `firstPinHere`; `ArrivalPins` gained `created` and `askedFolder`, `FolderRef` an optional `name`;
+The second code round (`proceed`, 4 of 4) then found that fixes 3 and 5 interacted; accepted and fixed the
+same way, each RED first (the memo's own contract in `test/arrivalPinMemo.test.ts` — `arrivalPin.ts` has no
+`vscode` — and end to end where a caller reaches it):
+
+| # | Severity | Finding | Fix | Commit |
+|---|---|---|---|---|
+| A (0, 2) | BLOCKING | `answerFor` took an INHERITED answer before the landing's own created chain: a plain `Project` the batch created handed "no PIN" to `Project/Secrets`, which asks — written in the clear | an inherited answer covers a landing unless it is no PIN and a folder the landing creates asks: that folder is decided on its own | 5c387e9f |
+| B (3) | — | `created` handed the answer to EVERY created folder, a plain ancestor too — a later arrival into `Docs` sealed under (or blocked by) `Keys` below it | each created folder takes the answer of the landing that ends at it, only one a question gave at or above it; read from the memo, never asked (it had been able to raise a box mid-write) | e2a6c5a2 |
+| C (1, 6) | — | `askedFolder` ignored inherited answers: an inherited decline named the created folder, or none | the memo keeps each answer with its folder (`Known`); `askedFolder` consults the inherited one first. The memo became a class (`ArrivalMemo`) to stay under the 50-line ceiling | e25604bd |
+| D (4) | — | `first(accountId)` could not name the folder its first PIN protects | `first(accountId, folderName)`; the box and its prompt name the folder (`pinOnCreate.firstPinIn`) | aa5ec7a6 |
+
+Rejected: finding 5 (`askedFolder` is consulted only for a declined answer, which exists only after a question).
+
+Deviations they add: `FolderQuestion` has a THIRD function (`first(accountId, folderName)`), bound in
+`pinOnCreate.folderQuestion` to the private `firstPinIn` (aa5ec7a6; it was `firstPinHere`, which names no folder); `ArrivalPins` gained `created` and `askedFolder`, `FolderRef` an optional `name`;
 `writeOrderPaths.test.ts`'s `ASKS_NOTHING` gained `first` (mechanical). The three `./arrivalPin` imports of
 `importCommands.ts` are one line (106b34bb). `updateInPlace` takes an optional `historyPin` (38c413b9): the
 revision an update records of an entry it moves into a folder that asks is sealed under that folder's PIN

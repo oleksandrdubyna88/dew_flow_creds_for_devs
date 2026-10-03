@@ -1545,6 +1545,16 @@ PIN once (`FolderQuestion.first`) for everything under it. `ArrivalPins.created`
 created to later landings inside it, so it is not asked again; `declined()` never rejects — a failed
 question is not a decline, and the batch still ends with its tally. Tests: `arrivalPinReview.test.ts`.
 
+**The memo, after the second code round (2026-10-03).** `arrivalPins` is the class `ArrivalMemo`. An answer a
+folder INHERITED from the landing that created it covers later landings into it — unless it is no PIN and a
+folder the later landing creates asks: that folder is decided on its own (a plain `Project` no longer hands
+"no PIN" to `Project/Secrets`). `created` gives each created folder the answer of the landing that ENDS at it,
+and only an answer a question gave at or above it — never to a plain ancestor — reading the memo without
+asking (it runs while folders are written). Each answer is kept with the folder it was asked in, which
+`askedFolder` consults first, so an inherited decline names the folder that was asked. A recreated folder's
+first PIN names it (`first(accountId, folderName)` → `pinOnCreate.firstPinIn`). Tests:
+`arrivalPinMemo.test.ts` (the memo alone) and `arrivalPinReview.test.ts`.
+
 **The doors and the one writer (typed-secrets plan, E2 — T3 and T4, 2026-10-01).** The second epic of
 [PLAN_typed_stored_secrets.md](PLAN_typed_stored_secrets.md): every read of a stored string
 outside a handful of modules goes through an opener, and every write through one writer made from a
