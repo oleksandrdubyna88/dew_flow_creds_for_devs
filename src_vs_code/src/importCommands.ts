@@ -155,7 +155,8 @@ export interface BundleLanding {
  * to be committed and visible before one secret landed — then the marks.
  *
  * <p>Into a folder that asks for a PIN (B7): every node of the bundle lands under the same existing folder,
- * so the whole bundle is at most ONE question, asked before anything is written (`arrivalPin.ts`). An entry
+ * so the bundle asks that folder at most once — plus one first PIN for each folder it recreates that asks for
+ * one (`FolderSeg.folderAsksForPin`, the security review's finding 3) — before anything is written. An entry
  * whose landing settled a PIN is sealed under it before its first write and marked after its node; a
  * declined landing removes its entities, and the bundle folders it alone would have filled, before anything
  * is written, and they are named in `skipped`.</p>

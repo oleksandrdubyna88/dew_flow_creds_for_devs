@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the recipient is no longer also asked to choose a PIN of their own for it. In a folder that asks
   nothing, the recipient still chooses their own. For a share that updates an entry you already have, that
   question now comes after *Update it* — never for a share you dismiss.
+- **Updating an entry from a share honours the folder too.** *Update it* on an unprotected entry at the top
+  of your tree, from a share that places it in a folder whose entries are protected, asks that folder's PIN
+  and seals what arrives; declined, nothing changes. *Update it* on an entry you already protected with a
+  PIN seals the new values under that PIN — you are no longer asked to choose a second one. A declined
+  update leaves no empty folders behind.
+- **An export file that recreates a folder which asks for a PIN asks it.** Importing a CredsForDevs export
+  of such a folder asks for its first PIN once and seals every entry that lands in it; declined, neither the
+  folder nor its entries are written.
+- **One question per folder, even for a folder the same accept created**, and an accept whose PIN question
+  fails still says how many shares are left pending.
 
 ### Fixed
 

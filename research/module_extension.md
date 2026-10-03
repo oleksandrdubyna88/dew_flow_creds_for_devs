@@ -1517,7 +1517,8 @@ still reading as protected. Now the four roads that put a new entry into a folde
   REQUIRED — answers `{ created, skipped }`; each entry's landing is built directly (the import's folders are
   always new), a decline skips its entries and the folders made only for them, and the command names them.
   A CredsForDevs bundle lands through `landBundle`: every root sits under one existing folder, so the bundle
-  is at most one question; `applyExternalSecrets` takes a REQUIRED `pinFor`.
+  asks the folder it lands in at most once — plus, since the security review, one first PIN for each folder it
+  recreates that asks (below); `applyExternalSecrets` takes a REQUIRED `pinFor`.
 
 ```mermaid
 flowchart LR
@@ -1529,6 +1530,17 @@ flowchart LR
   Q -->|declined| D["nothing written<br/>share left pending / import names skipped"]
   N --> P["writerForNew(none) — as before<br/>(a share: the sender's own-PIN offer)"]
 ```
+
+**The security review's six (2026-10-03).** *Update it* is asked too where it would place an UNPROTECTED
+root entry in a folder that asks (an update keeps the entry's folder, but a root entry takes the share's):
+the folder's question through the same memo, the values sealed under its PIN and the entry marked —
+declined, nothing written, the entry not moved. On an entry already PROTECTED, a `pinAskOnImport` share
+asks no own PIN: the door's PIN is the one question. The share's missing folders of an update are only
+PLANNED (`plannedChain`) and written after the update's decision, just before its node. A bundle carries
+each folder's `folderAsksForPin` (`FolderSeg`), and a landing that creates such a folder is asked its first
+PIN once (`FolderQuestion.first`) for everything under it. `ArrivalPins.created` hands a folder the batch
+created to later landings inside it, so it is not asked again; `declined()` never rejects — a failed
+question is not a decline, and the batch still ends with its tally. Tests: `arrivalPinReview.test.ts`.
 
 **The doors and the one writer (typed-secrets plan, E2 — T3 and T4, 2026-10-01).** The second epic of
 [PLAN_typed_stored_secrets.md](PLAN_typed_stored_secrets.md): every read of a stored string

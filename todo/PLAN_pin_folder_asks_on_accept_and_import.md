@@ -1,7 +1,8 @@
 # PLAN — a folder that asks for a PIN asks it too when a share or an import lands in it
 
 > Status: **in progress, 2026-10-03 — B1–B7 built on `feat/pin-folder-accept-import`, B8's documentation
-> written; the code round and the move out of `todo/` follow** (deviations: §10). Scope: `src_vs_code/src` — `shareInbox.ts`
+> written, the code round passed (`proceed`, 4 of 4) and the security review's six findings fixed (§10.1);
+> the move out of `todo/` follows** (deviations: §10). Scope: `src_vs_code/src` — `shareInbox.ts`
 > (its import half extracted to a new `shareImport.ts`), `shareRecipientPin.ts`, a new `arrivalPin.ts`,
 > `pinOnCreate.ts` (one export widened), `importCommands.ts`, `externalSecretsApply.ts`, the two import
 > handlers in `commands/treeMutationCommands.ts`, and their tests. Extension only; no format, contract or
@@ -318,3 +319,25 @@ Each story's RED message and break-it are in its commit body (§4 names the comm
     that entry's values in the clear, and goes red under the plant.
 12. **Help:** one new paragraph per language after the protected-folder paragraph (*"What arrives in such a
     folder is asked the same"*), naming accept and both imports and the one-question rule.
+
+### 10.1 The security review (2026-10-03) — six findings, each fixed RED first
+
+After the code round, an independent security review found six more; each is a test in
+`test/arrivalPinReview.test.ts` (the arrival harness moved to `test/arrivalWorld.ts`, 2ea92cfd), RED with the
+real symptom, then GREEN, then a break-it — all in the commit bodies.
+
+| # | Severity | Finding | Fix | Commit |
+|---|---|---|---|---|
+| 1 | MEDIUM | *Update it* placed an unprotected ROOT entry in the share's folder (`shareUpdateSeal`: `existing.parentId ?? parentId`) — into a folder that asks, in the clear | an update that moves an entry holding nothing protected into a folder that asks is asked that folder's question through the same memo, and sealed + marked under it; declined → `left`, nothing written; an update that keeps the entry's folder is unchanged | 6709760a |
+| 2 | MEDIUM | *Update it* on a PROTECTED entry from a `pinAskOnImport` share sealed the new values under a second, own PIN the entry's door does not use | B5's one-question rule for updates: an entry already protected (sealed slot or mark) spends the instruction and the door's PIN seals; the own PIN only for an update that would otherwise be plain | 593383be |
+| 3 | MEDIUM | a CredsForDevs bundle recreated a folder with `folderAsksForPin` and filled it plain | `FolderSeg.folderAsksForPin`; a landing whose CREATED chain includes such a folder is asked its first PIN once (`FolderQuestion.first`), its whole subtree under that answer; declines name that folder (`askedFolder`, `folderNameOf`) | 106b34bb |
+| 4 | LOW | a declined door on *Update it* left the share's folders, empty | the chain is planned (ids minted) and written only after the update's decision, only when the entry is placed in it | b8775512 |
+| 5 | LOW | a batch asked again for a subfolder the same batch created | `ArrivalPins.created(landing, ids)`: a later landing inside a folder this command created takes that landing's answer | ed1fc9a5 |
+| 6 | LOW | a rejected folder question made `declined()` reject, so `acceptMany` threw and showed no tally | `declined()` reads a rejected answer as `failed`, never rejects | fdf03d64 |
+
+Deviations they add: `FolderQuestion` has a THIRD function (`first`), bound in `pinOnCreate.folderQuestion` to the
+private `firstPinHere`; `ArrivalPins` gained `created` and `askedFolder`, `FolderRef` an optional `name`;
+`writeOrderPaths.test.ts`'s `ASKS_NOTHING` gained `first` (mechanical). The three `./arrivalPin` imports of
+`importCommands.ts` are one line (106b34bb). Not changed, said: the revision an update records of an
+UNPROTECTED entry is written as the entry was (its old values, plain) and sealed afterwards by
+`applyCreatePin`'s history pass when the update moved it into a folder that asks.
