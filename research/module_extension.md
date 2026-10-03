@@ -1534,7 +1534,10 @@ flowchart LR
 **The security review's six (2026-10-03).** *Update it* is asked too where it would place an UNPROTECTED
 root entry in a folder that asks (an update keeps the entry's folder, but a root entry takes the share's):
 the folder's question through the same memo, the values sealed under its PIN and the entry marked —
-declined, nothing written, the entry not moved. On an entry already PROTECTED, a `pinAskOnImport` share
+declined, nothing written, the entry not moved. The revision of what it was is sealed under that PIN in
+memory BEFORE it is written (`updateInPlace(…, historyPin)` → `historyPin.sealedRevision`, which shares
+`sealedInMemory` with `protectHistory`): R3 for kept versions, so no crash can leave plaintext history under
+the protected entry. On an entry already PROTECTED, a `pinAskOnImport` share
 asks no own PIN: the door's PIN is the one question. The share's missing folders of an update are only
 PLANNED (`plannedChain`) and written after the update's decision, just before its node. A bundle carries
 each folder's `folderAsksForPin` (`FolderSeg`), and a landing that creates such a folder is asked its first

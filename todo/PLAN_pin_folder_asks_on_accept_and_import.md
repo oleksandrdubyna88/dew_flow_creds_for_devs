@@ -328,7 +328,7 @@ real symptom, then GREEN, then a break-it — all in the commit bodies.
 
 | # | Severity | Finding | Fix | Commit |
 |---|---|---|---|---|
-| 1 | MEDIUM | *Update it* placed an unprotected ROOT entry in the share's folder (`shareUpdateSeal`: `existing.parentId ?? parentId`) — into a folder that asks, in the clear | an update that moves an entry holding nothing protected into a folder that asks is asked that folder's question through the same memo, and sealed + marked under it; declined → `left`, nothing written; an update that keeps the entry's folder is unchanged | 6709760a |
+| 1 | MEDIUM | *Update it* placed an unprotected ROOT entry in the share's folder (`shareUpdateSeal`: `existing.parentId ?? parentId`) — into a folder that asks, in the clear | an update that moves an entry holding nothing protected into a folder that asks is asked that folder's question through the same memo, and sealed + marked under it; declined → `left`, nothing written; an update that keeps the entry's folder is unchanged. Follow-up: the revision of its OLD values is sealed under that PIN in memory before it is written (`historyPin.sealedRevision`, sharing `sealedInMemory` with `protectHistory` — no second sealer) | 6709760a, 38c413b9 |
 | 2 | MEDIUM | *Update it* on a PROTECTED entry from a `pinAskOnImport` share sealed the new values under a second, own PIN the entry's door does not use | B5's one-question rule for updates: an entry already protected (sealed slot or mark) spends the instruction and the door's PIN seals; the own PIN only for an update that would otherwise be plain | 593383be |
 | 3 | MEDIUM | a CredsForDevs bundle recreated a folder with `folderAsksForPin` and filled it plain | `FolderSeg.folderAsksForPin`; a landing whose CREATED chain includes such a folder is asked its first PIN once (`FolderQuestion.first`), its whole subtree under that answer; declines name that folder (`askedFolder`, `folderNameOf`) | 106b34bb |
 | 4 | LOW | a declined door on *Update it* left the share's folders, empty | the chain is planned (ids minted) and written only after the update's decision, only when the entry is placed in it | b8775512 |
@@ -338,6 +338,8 @@ real symptom, then GREEN, then a break-it — all in the commit bodies.
 Deviations they add: `FolderQuestion` has a THIRD function (`first`), bound in `pinOnCreate.folderQuestion` to the
 private `firstPinHere`; `ArrivalPins` gained `created` and `askedFolder`, `FolderRef` an optional `name`;
 `writeOrderPaths.test.ts`'s `ASKS_NOTHING` gained `first` (mechanical). The three `./arrivalPin` imports of
-`importCommands.ts` are one line (106b34bb). Not changed, said: the revision an update records of an
-UNPROTECTED entry is written as the entry was (its old values, plain) and sealed afterwards by
-`applyCreatePin`'s history pass when the update moved it into a folder that asks.
+`importCommands.ts` are one line (106b34bb). `updateInPlace` takes an optional `historyPin` (38c413b9): the
+revision an update records of an entry it moves into a folder that asks is sealed under that folder's PIN
+before it is written — it was first written plain and swept by `applyCreatePin`'s history pass, which the
+owner ruled not acceptable (R3 holds for kept versions: a crash between the two left plaintext history under
+a protected entry).
