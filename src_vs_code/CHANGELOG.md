@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.0] — 2026-10-03 — A folder that asks for a PIN asks it on arrival, and a waiting rotated value is stored and said at every door
+
 ### Changed — a folder that asks for a PIN asks it too when something arrives in it
 
 - **Accepting a folder share into, or importing into, a folder whose entries are protected asks its PIN
