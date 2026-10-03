@@ -33,6 +33,8 @@ import {
 import { withheldNoteFor } from './shareWithheld';
 import { OwnedShare, SharePayload, TeamMember, TreeNode } from './types';
 import { ShareLanding, landShare } from './shareImport';
+import { ArrivalPins, arrivalPins } from './arrivalPin';
+import { folderQuestion } from './pinOnCreate';
 
 /**
  * Sharing, as one object: sealing and delivering shares to teammates, and receiving
@@ -417,7 +419,7 @@ export class ShareInbox {
     }
     let landing: ShareLanding;
     try {
-      landing = await landShare(this.deps, share, arriving);
+      landing = await landShare(this.deps, share, arriving, this.arrivalPins());
     } catch (error) {
       void vscode.window.showErrorMessage(
         `"${share.item.entityName}" opened, but saving it failed: ${describeError(error)}`,
@@ -550,12 +552,20 @@ export class ShareInbox {
         continue;
       }
       // A share LEFT in the inbox (a dismissed update) is still pending — counted with the declined ones.
-      await landShare(this.deps, share, arriving).then((landing) => (landing === 'landed' ? imported++ : declined++), (error: unknown) => {
+      await landShare(this.deps, share, arriving, this.arrivalPins()).then((landing) => (landing === 'landed' ? imported++ : declined++), (error: unknown) => {
         rememberAttempt(attempted, share.item.id, attemptOf('', error, pin));
         failed.push(share);
       });
     }
     return { imported, declined, failed };
+  }
+
+  /**
+   * The folder-PIN answers for one accept command (`arrivalPin.ts`): a share landing in a folder whose
+   * entries are protected is asked that folder's PIN, as the person's Add there is, before it is written.
+   */
+  private arrivalPins(): ArrivalPins {
+    return arrivalPins(folderQuestion(this.deps.storage));
   }
 
   /**

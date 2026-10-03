@@ -5,6 +5,8 @@ import { recordOrigin, resolveOrigin } from './shareOrigin';
 import { updateInPlace } from './shareUpdateSeal';
 import { EntryWriter, writerForNew } from './entryWriter';
 import { redactArrivedPayment } from './paymentRedaction';
+import { ArrivalPins, Landing, declinedLanding, landingOf } from './arrivalPin';
+import { CreatePin, applyCreatePin } from './pinOnCreate';
 import { OwnedShare, SharePayload, TreeNode, withOwnId } from './types';
 
 /**
@@ -14,6 +16,14 @@ import { OwnedShare, SharePayload, TreeNode, withOwnId } from './types';
  * <p>Moved out of `shareInbox.ts` verbatim (`PLAN_pin_folder_asks_on_accept_and_import.md`, B1): that
  * file sat at 798 of eslint's 800 lines, and both the folder-PIN question on accept and the sibling
  * plan's sending half needed room in it. The inbox keeps the conversation; this module keeps the write.</p>
+ *
+ * <p><b>A folder that asks for a PIN asks it here too</b> (B3). A folder share lands where its chain
+ * names — reusing a folder of the same name — and when that folder's entries are protected, the share
+ * is asked the question Add asks there (`arrivalPin.ts`), BEFORE anything is written: the values go
+ * through the sealing writer under the folder's PIN (rule R3, never in the clear, not even for a moment),
+ * the node follows, and `applyCreatePin` writes the mark and the first `pinEpoch` last — the road Add and
+ * an agent's create take. Declined, nothing is written: no value, no node, no folder of the chain. One
+ * share carries ONE chain, so it is one landing and one decision — written whole or not at all.</p>
  */
 
 /** Where the (their address, their id) -> our id map lives in the memento. */
@@ -27,30 +37,21 @@ const ORIGINS_KEY = 'credSshManager.shareOrigins';
  */
 export type ShareLanding = 'landed' | 'left';
 
-/** Import an opened payload into the recipient's tree. */
-// Moved as written (A1, then B1 of the PIN-folder plan); the pre-existing complexity is marked, not hidden.
-// eslint-disable-next-line complexity, max-lines-per-function
-export async function landShare(deps: ShareInboxDeps, share: OwnedShare, payload: SharePayload): Promise<ShareLanding> {
-  // Recreate (or reuse by name) the sender's folder chain, if any.
-  let parentId: string | null = null;
-  for (const seg of payload.folderPath ?? []) {
-    const existing: TreeNode | undefined = deps.storage
-      .getChildren(share.accountId, parentId)
-      .find((n) => n.type === 'folder' && n.name === seg.name);
-    if (existing !== undefined) {
-      parentId = existing.id;
-    } else {
-      const folderId = StorageManager.newId();
-      await deps.storage.addNode(share.accountId, {
-        id: folderId,
-        name: seg.name,
-        type: 'folder',
-        parentId,
-        folderType: seg.folderType,
-      });
-      parentId = folderId;
-    }
-  }
+/** One arrival, decided and not yet written: the node, the writer its values go through, the PIN to mark. */
+interface Arrival {
+  readonly node: TreeNode;
+  readonly store: EntryWriter;
+  /** Deferred so every ADDITION lands first — Rule A; see `applyFormSecrets.ts`. */
+  readonly writeNode: () => Promise<void>;
+  readonly settled: CreatePin;
+}
+
+const NO_PIN: CreatePin = { kind: 'none' };
+
+/** Land an opened payload in the recipient's tree — or leave it in the inbox, said why. */
+export async function landShare(deps: ShareInboxDeps, share: OwnedShare, payload: SharePayload, pins: ArrivalPins): Promise<ShareLanding> {
+  // Where the sender's folder chain lands — read, nothing written yet.
+  const landing = landingOf(deps.storage, share.accountId, null, payload.folderPath ?? []);
   // Is this an update of something the SAME sender sent before? The map is ours,
   // keyed by (their address, their id) — a sender can never address an entry they
   // never sent, which is what the fresh-id rule was protecting.
@@ -61,118 +62,175 @@ export async function landShare(deps: ShareInboxDeps, share: OwnedShare, payload
     payload.node.id,
     (id) => deps.storage.getNode(share.accountId, id) !== undefined,
   );
+  const arrival = previousId === undefined
+    ? await newArrival(deps, share, payload, landing, pins)
+    : await originArrival(deps, share, payload, landing, pins, previousId);
+  if (arrival === undefined) {
+    return 'left';
+  }
+  const unreadablePayment = await writeArrival(deps, share, payload, arrival);
+  await deps.state.update(ORIGINS_KEY, recordOrigin(origins, share.item.fromEmail, payload.node.id, arrival.node.id));
+  await settleShare(deps, share, payload, arrival.node, unreadablePayment);
+  return 'landed';
+}
 
-  let node: TreeNode;
-  /** Deferred so every ADDITION lands first — Rule A; see `applyFormSecrets.ts`. */
-  let writeNode: () => Promise<void>;
-  /** A NEW id's writer asks no folder PIN (§2.7 of the typed-secrets plan); an update's comes from its own decision. */
-  let store: EntryWriter;
-  if (previousId !== undefined) {
-    const existing = deps.storage.getNode(share.accountId, previousId);
-    const choice = await vscode.window.showWarningMessage(
-      `"${existing?.name}" already came from ${share.item.fromEmail}. Update it in place, or keep both?`,
-      { modal: true },
-      'Update it',
-      'Keep both',
-    );
-    // In place: the revision first, the recipient's marks kept (#122) — and a PROTECTED entry through
-    // its door, its values sealed before they are written (entry-PIN plan, D9; `shareUpdateSeal.ts`).
-    const update = choice === 'Update it' ? await updateInPlace(deps.storage, share.accountId, previousId, payload, parentId) : undefined;
-    if (choice === undefined || (choice === 'Update it' && update === undefined)) {
-      // Dismissed on purpose — or the entry's PIN declined: the human wants to look before deciding.
-      // The share must survive that — consuming it here would destroy the only copy of the decision.
-      void vscode.window.showInformationMessage(
-        'Left in "Shared with me" — accept it again when you have decided.',
-      );
-      return 'left';
-    }
-    if (update !== undefined) {
-      ({ node, store } = update);
-      writeNode = () => deps.storage.updateNode(share.accountId, node);
-    } else {
-      node = withOwnId({ ...payload.node, id: StorageManager.newId(), parentId, children: undefined });
-      store = writerForNew(deps.storage, share.accountId, node.id);
-      writeNode = () => deps.storage.addNode(share.accountId, node);
-    }
-  } else {
-    // A fresh local id: a peer must never address (and thus silently overwrite) an entity that
-    // already exists in our vault. Through `withOwnId`, like both branches above: the new id has
-    // to reach the record INSIDE the node too, or nothing can read what this import writes.
-    node = withOwnId({ ...payload.node, id: StorageManager.newId(), parentId, children: undefined });
-    store = writerForNew(deps.storage, share.accountId, node.id);
-    writeNode = () => deps.storage.addNode(share.accountId, node);
+/**
+ * A share the same sender sent before: *Update it* in place, *Keep both* as a new entry, or dismissed.
+ *
+ * <p>In place: the revision first, the recipient's marks kept (#122) — and a PROTECTED entry through its
+ * door, its values sealed before they are written (entry-PIN plan, D9; `shareUpdateSeal.ts`). An update
+ * writes an EXISTING id, so no folder PIN is asked for it (`sealingForUpdate` owns that).</p>
+ */
+async function originArrival(
+  deps: ShareInboxDeps, share: OwnedShare, payload: SharePayload, landing: Landing, pins: ArrivalPins, previousId: string,
+): Promise<Arrival | undefined> {
+  const choice = await updateOrKeep(deps.storage, share, previousId);
+  if (choice === 'Keep both') {
+    return newArrival(deps, share, payload, landing, pins);
   }
-  const { password, privateKey, vpnConfig, dbConnection } = payload.secrets;
-  /** A payment record arrived that this build cannot read — decides whether the share is kept. */
-  let unreadablePayment = false;
-  // Rule A: every ADDITION before the node write. I had this path writing the node first and
-  // justified it by the id being fresh — both reviewers blocked that independently, and they were
-  // right: a fresh id stops an OVERWRITE, and does nothing about a node that syncs while claiming
-  // secrets nobody wrote. `setPassword(undefined)` is a removal, so it waits until after.
-  if (password !== undefined) {
-    await store.setPassword(share.accountId, node.id, password);
+  const update = choice === 'Update it'
+    ? await updateInPlace(deps.storage, share.accountId, previousId, payload, await writeChain(deps.storage, landing))
+    : undefined;
+  if (update === undefined) {
+    // Dismissed on purpose — or the entry's PIN declined: the human wants to look before deciding.
+    // The share must survive that — consuming it here would destroy the only copy of the decision.
+    void vscode.window.showInformationMessage('Left in "Shared with me" — accept it again when you have decided.');
+    return undefined;
   }
-  if (privateKey !== undefined) {
-    await store.setPrivateKey(share.accountId, node.id, privateKey);
-  }
-  if (vpnConfig !== undefined) {
-    await store.setVpnConfig(share.accountId, node.id, vpnConfig);
-  }
-  if (dbConnection !== undefined) {
-    await store.setDbConnection(share.accountId, node.id, dbConnection);
-  }
-  if (payload.secrets.notes !== undefined) {
-    await store.setNotes(share.accountId, node.id, payload.secrets.notes);
-  }
-  if (payload.secrets.totp !== undefined) {
-    await store.setTotp(share.accountId, node.id, payload.secrets.totp);
-  }
-  if (payload.secrets.config !== undefined) {
-    await store.setConfigBody(share.accountId, node.id, payload.secrets.config);
-  }
-  if (payload.secrets.fields !== undefined) {
-    await store.setFieldsRaw(share.accountId, node.id, payload.secrets.fields);
-  }
-  if (payload.secrets.payment !== undefined) {
-    // Redacted AGAIN on arrival, through the same function the sender used. This is a trust
-    // boundary: everything here was written by somebody else's process, so "a share cannot carry a
-    // CVV" has to be true of what ARRIVES and not merely of what we send. One function called at
-    // both ends is one opinion applied twice, not two opinions — the shape this repository already
-    // uses for sender identity, which is stamped from a verified token and never accepted from the
-    // body. Accepted from the S1.3 code review, which overturned the opposite decision.
-    const arrived = redactArrivedPayment(payload.secrets.payment);
-    await store.setPaymentRaw(share.accountId, node.id, arrived.raw);
-    unreadablePayment = arrived.unreadable;
-  }
-  // THE NODE, after every addition and before the one removal. A crash anywhere above leaves
-  // secrets nothing points at — the tolerated torn state — rather than an entry that syncs while
-  // claiming values nobody wrote.
-  await writeNode();
-  await deps.state.update(
-    ORIGINS_KEY,
-    recordOrigin(origins, share.item.fromEmail, payload.node.id, node.id),
+  return { node: update.node, store: update.store, writeNode: () => deps.storage.updateNode(share.accountId, update.node), settled: NO_PIN };
+}
+
+/** The question a share from the same sender asks first — in a modal, which a dismissal answers `undefined`. */
+function updateOrKeep(storage: StorageManager, share: OwnedShare, previousId: string): Thenable<string | undefined> {
+  const existing = storage.getNode(share.accountId, previousId);
+  return vscode.window.showWarningMessage(
+    `"${existing?.name}" already came from ${share.item.fromEmail}. Update it in place, or keep both?`,
+    { modal: true },
+    'Update it',
+    'Keep both',
   );
-  // The one REMOVAL on this path: an update whose payload carries no password clears the one the
-  // entry had, and by here the node no longer claims it.
-  //
-  // `deletePassword`, not `setPassword(undefined)` — which KEEPS. The comment above was written as
-  // if it deleted, and for as long as that was wrong this branch did nothing at all: a sender who
-  // removed a password and re-shared as an update left the old credential on the recipient's
-  // machine indefinitely. Found by an audit of the write paths; the asymmetry is documented in
-  // `storageManager.setPassword` and asserted in `writeOrderPaths.test.ts`.
-  if (password === undefined) {
+}
+
+/**
+ * A NEW local id — no origin, or *Keep both* — landing where the chain says, after the folder's question.
+ *
+ * <p>A fresh local id: a peer must never address (and thus silently overwrite) an entity that already
+ * exists in our vault. Through `withOwnId`: the new id has to reach the record INSIDE the node too, or
+ * nothing can read what this import writes.</p>
+ */
+async function newArrival(
+  deps: ShareInboxDeps, share: OwnedShare, payload: SharePayload, landing: Landing, pins: ArrivalPins,
+): Promise<Arrival | undefined> {
+  const settled = await pins.settledFor(landing);
+  if (settled.kind === 'cancelled') {
+    void vscode.window.showInformationMessage(`Left in "Shared with me" — ${declinedLanding(folderName(deps.storage, landing))}.`);
+    return undefined;
+  }
+  const parentId = await writeChain(deps.storage, landing);
+  const node = withOwnId({ ...payload.node, id: StorageManager.newId(), parentId, children: undefined });
+  return {
+    node,
+    store: writerForNew(deps.storage, share.accountId, node.id, settled),
+    writeNode: () => deps.storage.addNode(share.accountId, node),
+    settled,
+  };
+}
+
+/** The name of the folder a landing is asked in — what a declined landing names. */
+function folderName(storage: StorageManager, landing: Landing): string {
+  return landing.existing === null ? '' : (storage.getNode(landing.accountId, landing.existing)?.name ?? '');
+}
+
+/**
+ * The folders the landing creates below the deepest one that exists — written only once its decision is
+ * taken, so a declined arrival leaves no folder shell. Answers the folder the entry goes into.
+ */
+async function writeChain(storage: StorageManager, landing: Landing): Promise<string | null> {
+  let parentId = landing.existing;
+  for (const seg of landing.creates) {
+    const folderId = StorageManager.newId();
+    await storage.addNode(landing.accountId, { id: folderId, name: seg.name, type: 'folder', parentId, folderType: seg.folderType });
+    parentId = folderId;
+  }
+  return parentId;
+}
+
+/**
+ * The values, the node, and the mark — in that order.
+ *
+ * <p>Rule A: every ADDITION before the node write. I had this path writing the node first and justified it
+ * by the id being fresh — both reviewers blocked that independently, and they were right: a fresh id stops an
+ * OVERWRITE, and does nothing about a node that syncs while claiming secrets nobody wrote.
+ * `setPassword(undefined)` is a removal, so it waits until after. THE NODE, after every addition and before
+ * the one removal: a crash anywhere above leaves secrets nothing points at — the tolerated torn state —
+ * rather than an entry that syncs while claiming values nobody wrote. The mark after the node, last, as Add
+ * writes it (`applyCreatePin`: the idempotent sweep, the history, the mark and the first `pinEpoch`).
+ * Answers whether a payment record arrived that this build cannot read — which decides whether the share is kept.</p>
+ */
+async function writeArrival(deps: ShareInboxDeps, share: OwnedShare, payload: SharePayload, arrival: Arrival): Promise<boolean> {
+  const unreadablePayment = await writeSecrets(arrival.store, share.accountId, arrival.node.id, payload.secrets);
+  await arrival.writeNode();
+  await applyCreatePin(arrival.settled, deps.storage, share.accountId, arrival.node.id);
+  return unreadablePayment;
+}
+
+/** Every arriving value but the payment record, in the order they were always written. */
+async function writeSecrets(store: EntryWriter, accountId: string, id: string, secrets: SharePayload['secrets']): Promise<boolean> {
+  const writes: ReadonlyArray<readonly [string | undefined, (value: string) => Promise<void>]> = [
+    [secrets.password, (v) => store.setPassword(accountId, id, v)],
+    [secrets.privateKey, (v) => store.setPrivateKey(accountId, id, v)],
+    [secrets.vpnConfig, (v) => store.setVpnConfig(accountId, id, v)],
+    [secrets.dbConnection, (v) => store.setDbConnection(accountId, id, v)],
+    [secrets.notes, (v) => store.setNotes(accountId, id, v)],
+    [secrets.totp, (v) => store.setTotp(accountId, id, v)],
+    [secrets.config, (v) => store.setConfigBody(accountId, id, v)],
+    [secrets.fields, (v) => store.setFieldsRaw(accountId, id, v)],
+  ];
+  for (const [value, write] of writes) {
+    if (value !== undefined) {
+      await write(value);
+    }
+  }
+  return writePayment(store, accountId, id, secrets.payment);
+}
+
+/**
+ * The payment record, redacted AGAIN on arrival, through the same function the sender used. This is a trust
+ * boundary: everything here was written by somebody else's process, so "a share cannot carry a CVV" has to be
+ * true of what ARRIVES and not merely of what we send. One function called at both ends is one opinion
+ * applied twice, not two opinions — the shape this repository already uses for sender identity, which is
+ * stamped from a verified token and never accepted from the body. Accepted from the S1.3 code review, which
+ * overturned the opposite decision. Answers whether the record arrived in a format this build cannot read.
+ */
+async function writePayment(store: EntryWriter, accountId: string, id: string, payment: string | undefined): Promise<boolean> {
+  if (payment === undefined) {
+    return false;
+  }
+  const arrived = redactArrivedPayment(payment);
+  await store.setPaymentRaw(accountId, id, arrived.raw);
+  return arrived.unreadable;
+}
+
+/**
+ * After the node: the one removal, then the share consumed — or KEPT, said, when its payment record could
+ * not be read.
+ *
+ * <p>The one REMOVAL on this path: an update whose payload carries no password clears the one the entry had,
+ * and by here the node no longer claims it. `deletePassword`, not `setPassword(undefined)` — which KEEPS. The
+ * comment above was written as if it deleted, and for as long as that was wrong this branch did nothing at
+ * all: a sender who removed a password and re-shared as an update left the old credential on the recipient's
+ * machine indefinitely. Found by an audit of the write paths; the asymmetry is documented in
+ * `storageManager.setPassword` and asserted in `writeOrderPaths.test.ts`.</p>
+ */
+async function settleShare(deps: ShareInboxDeps, share: OwnedShare, payload: SharePayload, node: TreeNode, unreadablePayment: boolean): Promise<void> {
+  if (payload.secrets.password === undefined) {
     await deps.storage.deletePassword(share.accountId, node.id);
   }
   if (unreadablePayment) {
-    // Reported, never silent. Both reviewers rejected the silent drop independently and were right
-    // about the half I had wrong: keeping the ENTRY is justified, being quiet about a dropped card
-    // is not. Somebody told the entry arrived would act on it believing it complete, with no way to
-    // know a re-send is worth asking for.
-    //
-    // And the QUEUED COPY IS KEPT, which the first version of this got wrong: it advised checking
-    // for an update while `removeOwnShare` had already discarded the only copy, so there was
-    // nothing left to accept again after updating. Advice the code makes impossible is worse than
-    // no advice. The share stays pending, so accepting it on a newer build is a real option.
+    // Reported, never silent. Both reviewers rejected the silent drop independently and were right about the
+    // half I had wrong: keeping the ENTRY is justified, being quiet about a dropped card is not. And the
+    // QUEUED COPY IS KEPT: advice to check for an update is only real while there is a share left to accept
+    // again after updating.
     void vscode.window.showWarningMessage(
       `"${node.name}" arrived, but its payment details are in a format this version cannot read, so they were not saved. The rest of the entry is here, and the share is KEPT — check for an update and accept it again.`,
     );
@@ -181,5 +239,4 @@ export async function landShare(deps: ShareInboxDeps, share: OwnedShare, payload
     await deps.sharing.removeOwnShare(share, 'accepted');
   }
   deps.onArrived?.(share.accountId, node.id);
-  return 'landed';
 }

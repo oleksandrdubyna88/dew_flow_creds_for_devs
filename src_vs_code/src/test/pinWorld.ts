@@ -206,10 +206,14 @@ function keychain(written: string[], reads?: string[]): object {
   };
 }
 
-/** The real `StorageManager`, loaded under `stub`, with every value it stores logged in `written`. */
-export function memoryStorage(stub: Record<string, unknown>, written: string[] = [], reads?: string[]): StorageManager {
+/**
+ * The real `StorageManager`, loaded under `stub`, with every value it stores logged in `written`. With
+ * `lockDir` its writes go through the real cross-window lease there — a second storage over the same
+ * directory is a second window, for "no lease is held across a box".
+ */
+export function memoryStorage(stub: Record<string, unknown>, written: string[] = [], reads?: string[], lockDir?: string): StorageManager {
   const { StorageManager } = loadWithVscode<typeof import('../storageManager')>('../storageManager', stub);
-  return new StorageManager(memento() as never, keychain(written, reads) as never);
+  return new StorageManager(memento() as never, keychain(written, reads) as never, lockDir);
 }
 
 /** Add one entry and write its slots by LABEL, through the slot table — the names the product uses. */
