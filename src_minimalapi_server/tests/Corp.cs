@@ -246,17 +246,25 @@ internal static class Corp
     /// <summary>
     /// Poll until <paramref name="condition"/> holds, or fail naming what never happened. For the tests that
     /// let a request run on after its client hung up: the server's continuation has no response to await,
-    /// so the disk is the only place to watch. Five seconds, ten-millisecond steps.
+    /// so the disk is the only place to watch. Five seconds unless <paramref name="budget"/> says otherwise —
+    /// and the failure names the budget it was given, so a longer wait never reads "within five seconds" —
+    /// ten-millisecond steps.
     /// </summary>
-    public static async Task Eventually(Func<bool> condition, string what)
+    public static async Task Eventually(Func<bool> condition, string what, TimeSpan? budget = null)
     {
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        var within = budget ?? DefaultBudget;
+        var deadline = DateTime.UtcNow + within;
         while (!condition() && DateTime.UtcNow < deadline)
         {
             await Task.Delay(10, Ct);
         }
-        condition().Should().BeTrue("within five seconds {0}", what);
+        condition().Should().BeTrue("within {0} {1}", Spoken(within), what);
     }
+
+    private static readonly TimeSpan DefaultBudget = TimeSpan.FromSeconds(5);
+
+    private static string Spoken(TimeSpan budget) =>
+        budget == DefaultBudget ? "five seconds" : $"{budget.TotalSeconds:0} seconds";
 
     /// <summary>
     /// Wait until <paramref name="condition"/> holds or <paramref name="atMost"/> passes — and assert

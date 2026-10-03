@@ -600,6 +600,33 @@ public class BackupRunnerTests
     }
 
     [Fact]
+    public async Task ASuccessfulRunIsAuditedBeforeItsStatusSaysSo()
+    {
+        // The CI failure on #181: a reader waited for the status to say ok and found no BackupTaken row,
+        // because the run wrote the terminal status FIRST and appended the row after it. The event log's
+        // clock is read at the start of every append, so a clock that reads the run's status records what a
+        // reader would have seen at the very moment the row went in — scoped to this test's own log, with
+        // no seam in the runner.
+        var world = await Ready();
+        var seen = new List<string>();
+        var events = new OrgEventLog(world.Dir, NullLogger<OrgEventLog>.Instance, () =>
+        {
+            seen.Add(world.Backups.ReadStatusAsync(CancellationToken.None).GetAwaiter().GetResult().LastResult);
+            return Noon;
+        });
+        var runner = new BackupRunner(
+            world.Backups, world.Dir, Config(), events, world.Targets, Clock(), NullLogger<BackupRunner>.Instance);
+
+        (await runner.RunAsync("admin@corp.com", Ct)).Started.Should().BeTrue();
+
+        seen.Should().NotBeEmpty("the run appended its BackupTaken row");
+        seen[^1].Should().Be(
+            BackupRunResults.InProgress,
+            "the BackupTaken row is appended BEFORE the status says the run finished — a reader that sees ok sees the row too");
+        (await world.Backups.ReadStatusAsync(Ct)).LastResult.Should().Be(BackupRunResults.Succeeded);
+    }
+
+    [Fact]
     public async Task AnEventLogThatCannotBeWrittenToDoesNotTurnAGoodRunIntoAFailedOne()
     {
         // The archive is written and the status already says ok by the time the row is appended. An
