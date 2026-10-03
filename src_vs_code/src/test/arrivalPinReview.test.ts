@@ -4,7 +4,7 @@ import { isExternalBundle } from '../externalBundle';
 import type { EntityMetadata, TreeNode } from '../types';
 import { protectEntity } from '../entityPin';
 import { ACCOUNT, PIN } from './pinWorld';
-import { Arrivals, FIRST_PIN, FOLDER_BOX, NOTE, SECRET, TRANSIT, arrivals, boxes, folderShare, infos, owned, sealedUnder } from './arrivalWorld';
+import { Arrivals, FIRST_PIN, FOLDER_BOX, NOTE, SECRET, TRANSIT, arrivals, boxes, folderShare, infos, opened, owned, sealedUnder } from './arrivalWorld';
 
 /**
  * The security review of `PLAN_pin_folder_asks_on_accept_and_import.md` (2026-10-03): six findings after
@@ -160,4 +160,31 @@ test('declined, an Update it into a folder that asks writes nothing, and the sha
   assert.equal(entry.parentId, null, 'the entry was moved although the folder’s PIN was declined');
   assert.equal(w.removed.length, 1, 'the declined update consumed its share');
   assert.ok(w.s.infos.some((m) => m.includes('"Production" asks for a PIN on every entry in it')), infos(w));
+});
+
+/** The recipient's OWN PIN box for an entry its sender had protected (`shareRecipientPin` → `newPin`). */
+const OWN_PIN_BOX = /A PIN for "new-db"/;
+const OWN_PIN = 'recipient-own-9753';
+
+/** What `pin` opens of a stored value — or the sentence that it opens nothing. */
+async function openedWith(w: Arrivals, id: string, pin: string): Promise<string> {
+  return opened(await w.storage.getPassword(ACCOUNT, id), pin).catch(() => `nothing: ${pin} does not open it`);
+}
+
+test('Update it on a PROTECTED entry from a share its sender protected seals under the entry’s own PIN — no second PIN', async () => {
+  const w = await arrivals({}, []);
+  const id = await protectedRootEntry(w);
+  w.boxRule(OWN_PIN_BOX, OWN_PIN);
+
+  w.inputs.push(TRANSIT, PIN);
+  w.s.modalAnswers.push('Update it');
+  await w.inbox.acceptOne(owned(folderShare('new-db', [], { pinAskOnImport: true }, SAME_ENTRY)));
+
+  const entry = w.storage.getNode(ACCOUNT, id) as TreeNode;
+  assert.equal(entry.name, 'new-db', `the update did not land: ${infos(w)}`);
+  assert.equal(await openedWith(w, id, PIN), `${SECRET}-new-db`, 'the entry’s own PIN no longer opens what arrived — it was sealed under a second PIN');
+  assert.equal(await openedWith(w, id, OWN_PIN), `nothing: ${OWN_PIN} does not open it`, 'a second PIN opens the entry');
+  assert.equal(boxes(w, OWN_PIN_BOX), 0, `a second, own PIN was asked for an entry that already has one: ${w.events.join(' | ')}`);
+  assert.equal(entry.details?.pinAskOnImport, undefined, 'the sender’s instruction is spent');
+  assert.equal(entry.details?.pinProtected, true);
 });

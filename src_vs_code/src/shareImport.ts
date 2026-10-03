@@ -127,23 +127,42 @@ async function updatedInPlace(
 ): Promise<Arrival | undefined | typeof DISMISSED> {
   // The chain is PLANNED, not written: a door declined below must leave no folder behind (finding 4).
   const chain = plannedChain(deps.storage, landing, pins);
-  const folder = await folderPinForUpdate(deps, share, landing, pins, previousId, chain.parentId);
-  const arriving = await arrivingForUpdate(share, payload, folder);
-  if (arriving === undefined || folder === undefined) {
+  const decision = await decideUpdate(deps, share, landing, pins, previousId, chain.parentId);
+  const arriving = await arrivingForUpdate(share, payload, decision);
+  if (arriving === undefined || decision === undefined) {
     return undefined;
   }
   const update = await updateInPlace(deps.storage, share.accountId, previousId, arriving, chain.parentId);
-  return update === undefined ? DISMISSED : updatedArrival(deps, share, landing, chain, arriving, update, folder);
+  return update === undefined ? DISMISSED : updatedArrival(deps, share, landing, chain, arriving, update, decision.folder);
+}
+
+/** What an update was decided with: the folder's answer, and whether the sender's instruction is spent. */
+interface UpdateDecision {
+  readonly folder: SettledPin;
+  readonly spend: boolean;
 }
 
 /**
- * The folder's answer for an update that MOVES an unprotected entry into a folder that asks — `none` for
- * every other update; `undefined` when it was declined, said.
+ * The one question an update is asked (B5's rule, applied to *Update it* — the security review, finding 2):
+ * an entry already PROTECTED (a sealed slot, or the mark) answers the sender's `pinAskOnImport` with its own
+ * PIN, through its door — no second, own PIN is offered, which used to seal the new values under a PIN the
+ * entry's door does not use; an unprotected entry moved into a folder that asks is asked that folder's
+ * question (finding 1). `undefined` when the folder's question was declined, said.
  */
-async function folderPinForUpdate(
+async function decideUpdate(
   deps: ShareInboxDeps, share: OwnedShare, landing: Landing, pins: ArrivalPins, previousId: string, target: string | null,
-): Promise<SettledPin | undefined> {
-  const settled = (await movesUnprotected(deps.storage, share.accountId, previousId, target)) ? await pins.settledFor(landing) : NO_PIN;
+): Promise<UpdateDecision | undefined> {
+  const guarded = await protectedNow(deps.storage, share.accountId, previousId);
+  const folder = await folderPinForUpdate(deps, landing, pins, !guarded && movedTo(deps.storage, share.accountId, previousId, target));
+  return folder === undefined ? undefined : { folder, spend: guarded || folder.kind === 'pin' };
+}
+
+/**
+ * The folder's answer for an update that MOVES an unprotected entry into a folder that asks (`asks`) —
+ * `none` for every other update; `undefined` when it was declined, said.
+ */
+async function folderPinForUpdate(deps: ShareInboxDeps, landing: Landing, pins: ArrivalPins, asks: boolean): Promise<SettledPin | undefined> {
+  const settled = asks ? await pins.settledFor(landing) : NO_PIN;
   if (settled.kind !== 'cancelled') {
     return settled;
   }
@@ -156,21 +175,17 @@ function movedTo(storage: StorageManager, accountId: string, id: string, target:
   return (storage.getNode(accountId, id)?.parentId ?? null) === null && target !== null;
 }
 
-async function movesUnprotected(storage: StorageManager, accountId: string, id: string, target: string | null): Promise<boolean> {
-  return movedTo(storage, accountId, id, target) && !(await protectedNow(storage, accountId, id));
-}
-
 /** Protected now: a sealed slot, or the mark — the entry's own door owns its PIN then. */
 async function protectedNow(storage: StorageManager, accountId: string, id: string): Promise<boolean> {
   return isMarked(storage, accountId, id) || (await lockedSlotCount(storage, accountId, id)).locked > 0;
 }
 
-/** What an update writes: the folder's PIN spends the sender's instruction; otherwise the recipient's own offer. */
-async function arrivingForUpdate(share: OwnedShare, payload: SharePayload, folder: SettledPin | undefined): Promise<SharePayload | undefined> {
-  if (folder === undefined) {
+/** What an update writes: a PIN already answers the sender's instruction (spent); otherwise the recipient's own offer. */
+async function arrivingForUpdate(share: OwnedShare, payload: SharePayload, decision: UpdateDecision | undefined): Promise<SharePayload | undefined> {
+  if (decision === undefined) {
     return undefined;
   }
-  return folder.kind === 'pin' ? spentInstruction(payload) : sealedForRecipient(share, payload);
+  return decision.spend ? spentInstruction(payload) : sealedForRecipient(share, payload);
 }
 
 /**
