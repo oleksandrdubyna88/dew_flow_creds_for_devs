@@ -1,6 +1,6 @@
 # PLAN — a waiting rotated value is used at the click and announced at every door
 
-> Status: **IMPLEMENTED, 2026-10-03** — W1, W3, W5 and W6 in PR #186 (`1bceeabb`, `ac19cdcd`, `e0e65b58`,
+> Status: **IMPLEMENTED, 2026-10-03**; **shipped 2026-10-03** in extension 1.13.0 — W1, W3, W5 and W6 in PR #186 (`1bceeabb`, `ac19cdcd`, `e0e65b58`,
 > `bf3a6c3b`), W2 (`ab20c377`) after the sibling plan's B1 shipped in PR #187. As planned with the deviations in §10 —
 > the main ones: every automatic reader goes through ONE opener that releases first (§10.8.2), the broker releases
 > before it builds its mask table (§10.9.1), a re-read is by slot rather than by text (§10.9.3), and the owner's
