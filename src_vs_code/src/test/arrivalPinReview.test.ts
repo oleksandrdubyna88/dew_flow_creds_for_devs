@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isExternalBundle } from '../externalBundle';
 import type { EntityMetadata, TreeNode } from '../types';
-import { ACCOUNT } from './pinWorld';
-import { FIRST_PIN, FOLDER_BOX, NOTE, SECRET, TRANSIT, arrivals, boxes, folderShare, infos, owned, sealedUnder } from './arrivalWorld';
+import { protectEntity } from '../entityPin';
+import { ACCOUNT, PIN } from './pinWorld';
+import { Arrivals, FIRST_PIN, FOLDER_BOX, NOTE, SECRET, TRANSIT, arrivals, boxes, folderShare, infos, owned, sealedUnder } from './arrivalWorld';
 
 /**
  * The security review of `PLAN_pin_folder_asks_on_accept_and_import.md` (2026-10-03): six findings after
@@ -83,4 +84,35 @@ test('declined, nothing of what that folder would hold is written — not the fo
   assert.equal(w.folderId('Vault'), undefined, 'the folder that asks was written for an entry a decline kept out');
   assert.deepEqual(w.entries().map((n) => n.name), ['loose']);
   assert.match(infos(w), /1 not imported: "alpha" — the folder "Vault" asks for a PIN on every entry in it, and none was given/, infos(w));
+});
+
+/** The sender's id every share of one entry carries, so a second share of it is an UPDATE candidate. */
+const SAME_ENTRY = 'same-sender-entry';
+
+/**
+ * Accept `old-db` at the root, then protect the local copy with `PIN` the way Protect does — the entry a
+ * later share of the same sender updates. The write log and the events start empty after it.
+ */
+async function protectedRootEntry(w: Arrivals): Promise<string> {
+  w.inputs.push(TRANSIT);
+  await w.inbox.acceptOne(owned(folderShare('old-db', [], {}, SAME_ENTRY)));
+  const [entry] = w.entries();
+  await protectEntity(w.storage, ACCOUNT, entry.id, PIN);
+  await w.storage.updateDetailsFields(ACCOUNT, entry.id, { pinProtected: true });
+  w.written.length = 0;
+  w.events.length = 0;
+  return entry.id;
+}
+
+test('a declined door on Update it writes nothing — not even the folders the share would have placed the entry in', async () => {
+  const w = await arrivals({}, []);
+  const id = await protectedRootEntry(w);
+
+  w.inputs.push(TRANSIT, undefined);
+  w.s.modalAnswers.push('Update it');
+  await w.inbox.acceptOne(owned(folderShare('new-db', ['Fresh'], {}, SAME_ENTRY)));
+
+  assert.equal(w.folderId('Fresh'), undefined, 'an empty folder was written for an update whose door was declined');
+  assert.equal(w.storage.getNode(ACCOUNT, id)?.name, 'old-db', 'the entry was updated although its door was declined');
+  assert.equal(w.removed.length, 1, 'the declined update consumed its share');
 });

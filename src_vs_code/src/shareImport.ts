@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { StorageManager } from './storageManager';
 import type { ShareInboxDeps } from './shareInbox';
 import { recordOrigin, resolveOrigin } from './shareOrigin';
-import { updateInPlace } from './shareUpdateSeal';
+import { InPlaceUpdate, updateInPlace } from './shareUpdateSeal';
 import { EntryWriter, writerForNew } from './entryWriter';
 import { redactArrivedPayment } from './paymentRedaction';
 import { declinedMessage, forThisRecipient } from './shareRecipientPin';
@@ -124,10 +124,30 @@ async function updatedInPlace(
   if (arriving === undefined) {
     return undefined;
   }
-  const update = await updateInPlace(deps.storage, share.accountId, previousId, arriving, await writeChain(deps.storage, landing, pins));
-  return update === undefined
-    ? DISMISSED
-    : { payload: arriving, node: update.node, store: update.store, writeNode: () => deps.storage.updateNode(share.accountId, update.node), settled: NO_PIN };
+  // The chain is PLANNED, not written: a door declined below must leave no folder behind (finding 4).
+  const chain = plannedChain(deps.storage, landing, pins);
+  const update = await updateInPlace(deps.storage, share.accountId, previousId, arriving, chain.parentId);
+  return update === undefined ? DISMISSED : updatedArrival(deps, share, landing, chain, arriving, update);
+}
+
+/**
+ * The update, decided and not yet written. The share's missing folders are written only if the entry is
+ * placed in them — an entry that already sits in a folder keeps it — and only then, just before its node.
+ */
+function updatedArrival(
+  deps: ShareInboxDeps, share: OwnedShare, landing: Landing, chain: PlannedChain, arriving: SharePayload, update: InPlaceUpdate,
+): Arrival {
+  const usesChain = landing.creates.length > 0 && update.node.parentId === chain.parentId;
+  return {
+    payload: arriving,
+    node: update.node,
+    store: update.store,
+    writeNode: async () => {
+      await (usesChain ? chain.write() : Promise.resolve());
+      await deps.storage.updateNode(share.accountId, update.node);
+    },
+    settled: NO_PIN,
+  };
 }
 
 /** The question a share from the same sender asks first — in a modal, which a dismissal answers `undefined`. */
@@ -212,16 +232,26 @@ async function sealedForRecipient(share: OwnedShare, payload: SharePayload): Pro
  * are recorded with the memo, so a later share of the same command landing inside them is not asked again.
  */
 async function writeChain(storage: StorageManager, landing: Landing, pins: ArrivalPins): Promise<string | null> {
-  let parentId = landing.existing;
-  const made: string[] = [];
-  for (const seg of landing.creates) {
-    const folderId = StorageManager.newId();
-    await storage.addNode(landing.accountId, { id: folderId, name: seg.name, type: 'folder', parentId, folderType: seg.folderType });
-    made.push(folderId);
-    parentId = folderId;
-  }
-  pins.created(landing, made);
-  return parentId;
+  const chain = plannedChain(storage, landing, pins);
+  await chain.write();
+  return chain.parentId;
+}
+
+/** The folders a landing creates, their ids minted and nothing written yet; `parentId` is where the entry goes. */
+interface PlannedChain {
+  readonly parentId: string | null;
+  readonly write: () => Promise<void>;
+}
+
+function plannedChain(storage: StorageManager, landing: Landing, pins: ArrivalPins): PlannedChain {
+  const ids = landing.creates.map(() => StorageManager.newId());
+  const write = async (): Promise<void> => {
+    for (const [at, seg] of landing.creates.entries()) {
+      await storage.addNode(landing.accountId, { id: ids[at], name: seg.name, type: 'folder', parentId: at === 0 ? landing.existing : ids[at - 1], folderType: seg.folderType });
+    }
+    pins.created(landing, ids);
+  };
+  return { parentId: ids.length === 0 ? landing.existing : ids[ids.length - 1], write };
 }
 
 /**
