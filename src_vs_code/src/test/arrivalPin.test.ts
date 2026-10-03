@@ -8,6 +8,8 @@ import { isLockedSecret, readSecret, unlockSecret } from '../secretEnvelope';
 import type { StorageManager } from '../storageManager';
 import { StoredSecret, stored } from '../storedSecret';
 import type { EntityMetadata, OwnedShare, SharePayload, StoredAccount, TreeNode } from '../types';
+import type { ImportedEntity } from '../importFormats';
+import type { ImportOutcome, NodeLocation } from '../importCommands';
 import { loadEachWithVscode } from './vscodeStub';
 import { ACCOUNT, PIN, Sinks, clickVscode, locked, memoryStorage, sinks } from './pinWorld';
 
@@ -51,6 +53,10 @@ interface Arrivals {
   /** A second window's `runOrSkip` now: `ran`, `skipped` while this window holds the lease. */
   probe(): Promise<string>;
   folderId(name: string): string | undefined;
+  /** Run a registered import command on the named folder, its file picker answering `path` holding `text`. */
+  importInto(command: string, folder: string, path: string, text: string): Promise<void>;
+  /** The import's own entry point, with the question bound the way the command binds it. */
+  importEntities(location: NodeLocation, entities: readonly ImportedEntity[]): Promise<ImportOutcome>;
   /** The entries the arrivals made — the protected siblings of the setup excluded. */
   entries(): TreeNode[];
 }
@@ -77,8 +83,14 @@ async function folderWithSibling(storage: StorageManager, name: string, prefers:
   await storage.setPassword(ACCOUNT, sibling, stored(await locked('the sibling’s password')));
 }
 
-/** The `vscode` the accept paths touch: `pinWorld`'s sinks, a server location, and an event log. */
-function arrivalVscode(inputs: (string | undefined)[], s: Sinks, events: string[], probe: () => Promise<void>): Record<string, unknown> {
+/** The file an import command's picker answers, and what reading it returns. */
+interface PickedFile {
+  path: string;
+  text: string;
+}
+
+/** The `vscode` the accept and import paths touch: `pinWorld`'s sinks, a server location, a picked file, and an event log. */
+function arrivalVscode(inputs: (string | undefined)[], s: Sinks, events: string[], probe: () => Promise<void>, picked: PickedFile): Record<string, unknown> {
   const stub = clickVscode(inputs, s);
   const window = stub.window as Record<string, (...args: never[]) => unknown>;
   const box = window.showInputBox as unknown as (options: { title?: string }, token?: unknown) => Promise<string | undefined>;
@@ -96,8 +108,14 @@ function arrivalVscode(inputs: (string | undefined)[], s: Sinks, events: string[
     }
     return warn(message, options, ...buttons);
   }) as never;
+  window.showOpenDialog = (() => Promise.resolve([{ fsPath: picked.path }])) as never;
   // A server location: the sender is stamped by a verified sign-in, so the sender check passes silently.
-  stub.workspace = { ...(stub.workspace as object), getConfiguration: () => ({ get: (key: string, fallback: unknown) => (key === 'nasBackupPath' ? 'https://vault.corp.com' : fallback) }) };
+  const workspace = stub.workspace as { fs: object };
+  stub.workspace = {
+    ...workspace,
+    getConfiguration: () => ({ get: (key: string, fallback: unknown) => (key === 'nasBackupPath' ? 'https://vault.corp.com' : fallback) }),
+    fs: { ...workspace.fs, readFile: () => Promise.resolve(Buffer.from(picked.text, 'utf8')) },
+  };
   return stub;
 }
 
@@ -109,14 +127,18 @@ async function arrivals(setup: Setup, inputs: (string | undefined)[]): Promise<A
   const written: string[] = [];
   let second: StorageManager | undefined;
   const probe = (): Promise<string> => second?.writes.runOrSkip(() => Promise.resolve('ran'), () => 'skipped') ?? Promise.resolve('no second window');
+  const picked: PickedFile = { path: '', text: '' };
   const stub = arrivalVscode(queue, s, events, async () => {
     probes.push(await probe());
-  });
+  }, picked);
   const storage = memoryStorage(stub, written, undefined, setup.lockDir);
   second = secondWindow(stub, setup.lockDir);
   await seedFolders(storage, setup);
   const removed: OwnedShare[] = [];
-  const [inboxModule] = loadEachWithVscode(['../shareInbox'], stub) as [typeof import('../shareInbox')];
+  const [inboxModule, commands, imports, pinOnCreate] = loadEachWithVscode(['../shareInbox', '../commands/treeMutationCommands', '../importCommands', '../pinOnCreate'], stub) as [
+    typeof import('../shareInbox'), typeof import('../commands/treeMutationCommands'), typeof import('../importCommands'), typeof import('../pinOnCreate'),
+  ];
+  const handlers = registered(commands, storage);
   const inbox = new inboxModule.ShareInbox({
     storage,
     sharing: {
@@ -140,8 +162,33 @@ async function arrivals(setup: Setup, inputs: (string | undefined)[]): Promise<A
     probes,
     probe,
     folderId: (name) => storage.getNodes(ACCOUNT).find((n) => n.type === 'folder' && n.name === name)?.id,
+    importInto: async (command, folder, path, text) => {
+      Object.assign(picked, { path, text });
+      const node = storage.getNodes(ACCOUNT).find((n) => n.type === 'folder' && n.name === folder);
+      await handlers.get(command)?.({ kind: 'node', accountId: ACCOUNT, node });
+    },
+    importEntities: (location, entities) => imports.importEntities(storage, location, entities, pinOnCreate.folderQuestion(storage)),
     entries: () => storage.getNodes(ACCOUNT).filter((n) => n.type === 'entity' && !n.id.startsWith(SIBLING)),
   };
+}
+
+type Handler = (...args: unknown[]) => unknown;
+
+/** The tree-mutation commands, registered over `storage` as `addEntityPin.test.ts` registers them. */
+function registered(commands: typeof import('../commands/treeMutationCommands'), storage: StorageManager): Map<string, Handler> {
+  const handlers = new Map<string, Handler>();
+  commands.registerTreeMutationCommands({
+    announceArrival: () => Promise.resolve(),
+    log: { write: (): void => undefined },
+    doorsFor: () => ({}),
+    mutated: () => undefined,
+    policyOf: () => undefined,
+    register: (command: string, handler: Handler) => handlers.set(command, handler),
+    storage,
+    transports: {},
+    vaultKeys: { noteUserActivity: () => undefined },
+  } as never);
+  return handlers;
 }
 
 /** Another window of the same profile — a storage over the same lock directory — or none without one. */
@@ -420,4 +467,63 @@ test('an update candidate asks the recipient’s own PIN only AFTER Update it �
   const question = w.events.findIndex((e) => e.startsWith('modal:') && e.includes('already came from'));
   const own = w.events.findIndex((e) => e.startsWith('box:') && OWN_PIN_BOX('prod-db').test(e));
   assert.ok(question >= 0 && own > question, `the own PIN must come after Update it: ${w.events.join(' | ')}`);
+});
+
+// ---------------------------------------------------------------------------------------------
+// B6 — an import from another tool honours the folder.
+// ---------------------------------------------------------------------------------------------
+
+/** A CSV export as a password manager writes it — one row per entry, each filed under `folder`. */
+function csvExport(names: readonly string[], folder = 'Team'): string {
+  return ['name,password,notes,folder', ...names.map((name) => `${name},${SECRET}-${name},${NOTE}-${name},${folder}`)].join('\n');
+}
+
+test('an import from another tool into a folder that asks is sealed under its PIN before its first write — one question for the whole file', async () => {
+  const w = await arrivals({ prefersIn: ['Production'] }, [FIRST_PIN, FIRST_PIN]);
+  w.s.modalAnswers.push('Import');
+
+  await w.importInto('credSshManager.importFrom', 'Production', '/exports/bitwarden.csv', csvExport(['alpha', 'beta']));
+
+  neverInTheClear(w);
+  assert.equal(w.events.filter((e) => e.startsWith('box:')).length, 2, `one first PIN, typed twice, for both entries: ${w.events.join(' | ')}`);
+  const team = w.folderId('Team');
+  assert.equal(w.storage.getNode(ACCOUNT, team ?? '')?.parentId, w.folderId('Production'), 'the file’s folder lands in the folder it was imported into');
+  assert.deepEqual(w.entries().map((n) => n.name).sort(), ['alpha', 'beta']);
+  for (const entry of w.entries()) {
+    assert.equal(entry.parentId, team);
+    await sealedUnder(w, entry, FIRST_PIN);
+  }
+});
+
+test('declined, the import writes nothing of what that folder would have held — not even the folder made for it — and says which entries it skipped', async () => {
+  const w = await arrivals({ prefersIn: ['Production'] }, [undefined]);
+  w.s.modalAnswers.push('Import');
+
+  await w.importInto('credSshManager.importFrom', 'Production', '/exports/bitwarden.csv', csvExport(['alpha', 'beta']));
+
+  assert.deepEqual(w.written, [], 'the keychain was written although the folder’s PIN was declined');
+  assert.deepEqual(w.entries(), []);
+  assert.equal(w.folderId('Team'), undefined, 'a folder was made for entries a decline kept out');
+  const said = infos(w);
+  assert.match(said, /Imported 0 entr\(ies\)/, said);
+  assert.match(said, /2 not imported: "alpha" — the folder "Production" asks for a PIN on every entry in it, and none was given; "beta"/, said);
+});
+
+test('importEntities: a declined destination skips only its own entries — the rest of the file is imported', async () => {
+  const w = await arrivals({ protectedIn: ['Production'] }, [undefined]);
+  const parentId = w.folderId('Production') ?? null;
+  const entity = (name: string, folder?: string): ImportedEntity => ({
+    name,
+    ...(folder === undefined ? {} : { folder }),
+    details: { name, isSshEnabled: false },
+    secrets: { password: `${SECRET}-${name}` },
+  });
+
+  const outcome = await w.importEntities({ accountId: ACCOUNT, parentId }, [entity('direct'), entity('filed', 'Other')]);
+
+  assert.equal(outcome.created, 1);
+  assert.deepEqual(outcome.skipped, ['"direct" — the folder "Production" asks for a PIN on every entry in it, and none was given']);
+  const [filed] = w.entries();
+  assert.equal(filed?.name, 'filed', 'a folder that only HOLDS protected entries does not reach a folder the import makes (§9.1)');
+  assert.equal(await w.storage.getPassword(ACCOUNT, filed.id), `${SECRET}-filed`);
 });

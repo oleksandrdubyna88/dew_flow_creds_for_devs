@@ -6,7 +6,7 @@ import { noteImportFailed, sealedBlobOf } from '../shareDiagnostics';
 import { describeTransitSecret } from '../transitSecretReport';
 import { DoorsFor } from '../entityEditCommands';
 import { StorageManager } from '../storageManager';
-import { applyCreatePin, pinForNewEntry } from '../pinOnCreate';
+import { applyCreatePin, folderQuestion, pinForNewEntry } from '../pinOnCreate';
 import { writerForNew } from '../entryWriter';
 import { TransportFactory } from '../transportFactory';
 import { VaultKeys } from '../vaultKeys';
@@ -46,7 +46,7 @@ import { runRestoreFromTrash } from '../restoreCommandHost';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { parseImport } from '../importFormats';
-import { importEntities } from '../importCommands';
+import { importEntities, notImported } from '../importCommands';
 import { applyExternalSecrets } from '../externalSecretsApply';
 import { decryptJson } from '../cryptoUtils';
 import { describeError } from '../describeError';
@@ -509,11 +509,12 @@ export function registerTreeMutationCommands(host: TreeMutationCommandsHost): vo
     if (confirmed !== 'Import') {
       return;
     }
-    const created = await importEntities(storage, location, parsed.entities);
+    // A folder that asks for a PIN asks it here too, before anything is written (`importEntities`).
+    const outcome = await importEntities(storage, location, parsed.entities, folderQuestion(storage));
     mutated();
     void vscode.window.showInformationMessage(
-      `Imported ${created} entr(ies) into ${storage.getAccount(location.accountId)?.email ?? 'the profile'}.` +
-        (parsed.skipped.length > 0 ? ` ${parsed.skipped.length} skipped.` : ''),
+      `Imported ${outcome.created} entr(ies) into ${storage.getAccount(location.accountId)?.email ?? 'the profile'}.` +
+        (parsed.skipped.length > 0 ? ` ${parsed.skipped.length} skipped.` : '') + notImported(outcome.skipped),
     );
   });
 

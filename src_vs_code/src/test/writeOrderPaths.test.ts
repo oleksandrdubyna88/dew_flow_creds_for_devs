@@ -5,6 +5,9 @@ import { applyAdditions, applyRemovals } from '../applyFormSecrets';
 import { loadWithVscode } from './vscodeStub';
 import type { EntityFormValues } from '../entityFormPanel';
 
+/** The folder question an import now requires — at the account root, where these imports land, nothing asks. */
+const ASKS_NOTHING = { ask: () => Promise.resolve({ kind: 'none' as const }), prefers: () => false };
+
 /** `importCommands` reaches `vscode` through `dialogs`, so it loads against the shared stub. */
 const { importEntities } = loadWithVscode<typeof import('../importCommands')>('../importCommands', {
   window: { showQuickPick: () => Promise.resolve(undefined), showInputBox: () => Promise.resolve(undefined) },
@@ -205,9 +208,10 @@ test('importing entries writes every secret BEFORE the node that claims it', asy
         secrets: { password: 'pw', notes: 'n', privateKey: 'k', dbConnection: 'c', totp: 'otpauth://x' },
       } as never,
     ],
+    ASKS_NOTHING,
   );
 
-  assert.equal(count, 1);
+  assert.equal(count.created, 1);
   const node = calls.indexOf('addNode');
   assert.ok(node >= 0, 'the node was written');
   for (const secret of ['setPassword', 'setNotes', 'setPrivateKey', 'setDbConnection', 'setTotp']) {
@@ -224,7 +228,7 @@ test('importing writes no deletions at all, because an import has nothing to del
   const { calls, storage } = recorder();
   await importEntities(storage as never, { accountId: 'a1', parentId: null }, [
     { name: 'bare', details: { name: 'bare', isSshEnabled: false }, secrets: {} } as never,
-  ]);
+  ], ASKS_NOTHING);
   assert.deepEqual(calls, ['addNode'], 'a bare entry writes its node and nothing else');
 });
 
@@ -306,7 +310,7 @@ test('an import whose node write fails leaves NO secret of any kind behind', asy
         details: { name: 'prod', isSshEnabled: false },
         secrets: { password: 'pw', notes: 'n', privateKey: 'k', dbConnection: 'c', totp: 'otpauth://x' },
       } as never,
-    ]),
+    ], ASKS_NOTHING),
   );
 
   for (const kind of IMPORTED_KINDS) {
@@ -339,7 +343,7 @@ test('the import undo asks where the node IS, and deletes only on a proven absen
   await assert.rejects(() =>
     importEntities(storage as never, { accountId: 'a1', parentId: null }, [
       { name: 'x', details: { name: 'x', isSshEnabled: false }, secrets: { password: 'pw' } } as never,
-    ]),
+    ], ASKS_NOTHING),
   );
 
   assert.deepEqual(order, ['nodePresence', 'deletePassword']);
@@ -354,7 +358,7 @@ test('a successful import leaves every secret in place and undoes nothing', asyn
       details: { name: 'prod', isSshEnabled: false },
       secrets: { password: 'pw', notes: 'n', privateKey: 'k', dbConnection: 'c', totp: 'otpauth://x' },
     } as never,
-  ]);
+  ], ASKS_NOTHING);
 
   assert.equal(chain.size, IMPORTED_KINDS.length, 'all five kinds stored');
   assert.equal(tree.length, 1);
