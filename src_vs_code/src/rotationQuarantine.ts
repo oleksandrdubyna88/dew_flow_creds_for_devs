@@ -525,9 +525,32 @@ export interface ReleasedValue {
 export async function releaseBeforeAutomaticUse(storage: StorageManager, accountId: string, ...entityIds: readonly string[]): Promise<void> {
   for (const entityId of entityIds) {
     if (await isWaiting(storage, accountId, entityId).catch(() => false)) {
-      await releaseIfUnprotected(storage, { accountId, entityId }).catch(() => []);
+      told(await releaseIfUnprotected(storage, { accountId, entityId }).catch(() => []));
     }
   }
+}
+
+/** What an agent's use stored, handed to the window's words — a failure to tell never fails the agent's call. */
+function told(released: readonly ReleasedValue[]): void {
+  try {
+    announce(released);
+  } catch {
+    /* the value is stored either way; the row's hint is gone, which is the other way the person sees it */
+  }
+}
+
+/** Who hears that a value went in without a door — see `announceReleasesWith`. Silent until the window says. */
+let announce: (released: readonly ReleasedValue[]) => void = () => undefined;
+
+/**
+ * The window's words for a value an AGENT's use stored (the owner's follow-up to W5: the person must see it). This
+ * module is free of `vscode`, and so are the automatic readers that call `releaseBeforeAutomaticUse` — so
+ * `extension.ts` hands it `rotationWaiting.sayReleasedValues` once, at activation. An info message, never a modal,
+ * and never awaited: an agent's call is not held by what the person is told. Until it is set — a test, a host
+ * with no window — nothing is said.
+ */
+export function announceReleasesWith(say: (released: readonly ReleasedValue[]) => void): void {
+  announce = say;
 }
 
 async function releaseIfUnprotected(storage: StorageManager, entry: HeldEntry): Promise<readonly ReleasedValue[]> {

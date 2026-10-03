@@ -93,14 +93,23 @@ interface Entry {
 /**
  * The sweeper's release (`rotationQuarantine.releaseUnprotected`), SAID: each value that went in without a door
  * is told to the person once, in the words every door uses — not only in the log (the owner's decision,
- * `PLAN_waiting_rotation_visible.md` §9.2, W6). A tick that stored nothing says nothing. Which went in.
+ * `PLAN_waiting_rotation_visible.md` §9.2, W6) — the sweeper's tick and the release right after a pulled sync. A
+ * pass that stored nothing says nothing. Which went in.
  */
 export async function releaseAndSay(storage: StorageManager): Promise<readonly ReleasedValue[]> {
   const released = await releaseUnprotected(storage);
+  sayReleasedValues(released);
+  return released;
+}
+
+/**
+ * Each value that went in without a door, said once — an info message, never awaited. What the sweep says, and what
+ * an agent's use that stored a waiting value says (`rotationQuarantine.announceReleasesWith`, set by `extension.ts`).
+ */
+export function sayReleasedValues(released: readonly ReleasedValue[]): void {
   for (const value of released) {
     sayReleased(value.entryName, [value.slot]);
   }
-  return released;
 }
 
 function sayReleased(entryName: string, released: readonly ReleasedSlot[]): void {

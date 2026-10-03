@@ -245,6 +245,7 @@ const dbDetails = (): EntityMetadata => ({ id: DB, name: 'orders-db', kind: 'db'
 
 interface AgentWorld {
   readonly storage: StorageManager;
+  readonly s: Sinks;
   readonly reads: string[];
   readonly written: string[];
   /** The environment each launched database client was handed — where the connection's password travels. */
@@ -272,7 +273,13 @@ async function agentWorld(live: string = OLD_CONN, waiting = true): Promise<Agen
     launched.push(JSON.stringify(options.env ?? {}));
     return Promise.resolve({ exitCode: 0, stdout: '', stderr: '' });
   } };
-  const [{ dbQueryAction }] = loadEachWithVscode(['../agentUseActions'], stub, { './sshExecRunner': runner }) as [typeof import('../agentUseActions')];
+  const [{ dbQueryAction }, quarantine, words] = loadEachWithVscode(['../agentUseActions', '../rotationQuarantine', '../rotationWaiting'], stub, { './sshExecRunner': runner }) as [
+    typeof import('../agentUseActions'),
+    typeof import('../rotationQuarantine'),
+    typeof import('../rotationWaiting'),
+  ];
+  // As `extension.ts` does at activation: an agent's use that stores a waiting value is said in the door's words.
+  quarantine.announceReleasesWith(words.sayReleasedValues);
   const action = dbQueryAction({
     storage,
     storageDir: '/tmp/does-not-matter',
@@ -285,7 +292,7 @@ async function agentWorld(live: string = OLD_CONN, waiting = true): Promise<Agen
   });
   reads.length = 0;
   written.length = 0;
-  return { storage, reads, written, launched, query: () => action.run(DB_CTX, { query: 'select 1' }) };
+  return { storage, s, reads, written, launched, query: () => action.run(DB_CTX, { query: 'select 1' }) };
 }
 
 const connNow = async (w: AgentWorld): Promise<string | undefined> => carried(await w.storage.getDbConnection(ACCOUNT, DB));
@@ -427,4 +434,32 @@ test('a sync that unprotects an entry with a waiting value releases it AND tells
 
 test('the positive control: the scan of extension.ts still finds the sweeper\'s speaking release', () => {
   assert.ok(extensionLines().some((line) => line.includes('() => releaseAndSay(storage)')), 'the sweeper\'s wiring is no longer where the scan looks');
+});
+
+test("an agent's query that stores a waiting connection string TELLS the person — an info message, never a modal", async () => {
+  const w = await agentWorld();
+
+  await w.query();
+
+  assert.equal(await connNow(w), NEW_CONN, "the setup: the agent's use did not store the waiting value");
+  const said = w.s.infos.filter((info) => /The new connection string of "orders-db" from .* is now stored\./.test(info));
+  assert.equal(said.length, 1, `the agent's query stored the waiting value and nothing was said to the person (infos: ${JSON.stringify(w.s.infos)})`);
+  assert.deepEqual(w.s.modals, [], "an agent's use raised a modal — the call would wait on the person");
+});
+
+test("the window hands an agent's release its words — extension.ts registers them, or every test above is about a wiring no window makes", () => {
+  assert.ok(
+    extensionLines().some((line) => line.includes('announceReleasesWith(sayReleasedValues)')),
+    "extension.ts never hands rotationQuarantine the words for an agent's release: the person would never be told",
+  );
+});
+
+test("an agent's query that stores NOTHING says nothing — a conflict, or nothing waiting", async () => {
+  const conflict = await agentWorld(OTHER_CONN);
+  const quiet = await agentWorld(OLD_CONN, false);
+
+  await conflict.query();
+  await quiet.query();
+
+  assert.deepEqual([conflict.s.infos, quiet.s.infos], [[], []]);
 });

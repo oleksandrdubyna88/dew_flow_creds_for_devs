@@ -37,11 +37,10 @@ import { KeyAddHost, offerKeyMigration } from './securityKeyAdd';
 import { snapshotForRevision } from './revisionSnapshot';
 import { judgeOrgRecovery } from './orgRecoveryPinning';
 import { readOrgAccessInto } from './orgRecoveryAccess';
-import { policyHeartbeatKey } from './corpPolicy';
+import { CorpPolicyState, policyHeartbeatKey } from './corpPolicy';
 import { refreshOrgPolicy } from './orgPolicyRefresh';
 import { checkBackups } from './backupWatch';
 import { corpPolicyWiring, policiedAccounts, vscodeBackupWatch } from './corpPolicyWiring';
-import { CorpPolicyState } from './corpPolicy';
 import { LoginKeySession } from './devLoginKeySession';
 import { evictAndLock, wireCorpEscrow, wireDevBinding } from './corpBindingWiring';
 import { RecoverySessionKeys } from './breakGlass';
@@ -72,8 +71,8 @@ import { visibleConfigDetails, visibleMcpEntries } from './mcpEntries';
 import { McpEntriesCache } from './mcpEntriesCache';
 import { RotateDeps, rotateAction } from './rotateAction';
 import { storeRotated } from './rotationStore';
-import { waitingKeys } from './rotationQuarantine';
-import { releaseAndSay } from './rotationWaiting';
+import { announceReleasesWith, waitingKeys } from './rotationQuarantine';
+import { releaseAndSay, sayReleasedValues } from './rotationWaiting';
 import { generateSecret } from './secretKinds';
 import { CREDS_CLI, CredsProduct, ridFor } from './credsInstall';
 import { binaryPath, installMenu } from './binaryInstaller';
@@ -141,6 +140,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   const storage = new StorageManager(context.globalState, context.secrets, context.globalStorageUri.fsPath);
   context.subscriptions.push(storage); // it listens to SecretStorage changes
+  announceReleasesWith(sayReleasedValues); // an agent's use that stores a waiting rotated value is said (rotationWaiting.ts)
   // Seal-at-rest for the local metadata cache (audit B8): load or mint the device key and
   // seal any plaintext node slots BEFORE anything renders a tree. globalState is a plain
   // SQLite file in the profile; the topology it held (hosts, users, CLI args, env-var names)
