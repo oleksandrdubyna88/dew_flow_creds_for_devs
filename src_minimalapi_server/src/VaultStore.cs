@@ -466,7 +466,14 @@ public sealed partial class VaultStore
     /// disk) and is reported at once, exactly as before. A create-if-absent (<c>overwrite: false</c>) is
     /// never retried — its refusal is the answer it exists to give.</para>
     /// </remarks>
-    private static async Task MoveIntoPlaceAsync(string temp, string path, bool overwrite, CancellationToken ct)
+    private static Task MoveIntoPlaceAsync(string temp, string path, bool overwrite, CancellationToken ct) =>
+        RetryReplaceAsync(() => File.Move(temp, path, overwrite), overwrite, OperatingSystem.IsWindows(), ct);
+
+    /// <summary>
+    /// The retry itself, with the move and the platform handed in — so the Windows-only road is a plain unit
+    /// test on every platform, the Linux CI included, instead of a branch only a Windows machine runs.
+    /// </summary>
+    internal static async Task RetryReplaceAsync(Action move, bool overwrite, bool onWindows, CancellationToken ct)
     {
         // Monotonic: a wall clock stepped back by NTP must not stretch a one-second wait (code round, finding 0).
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -474,10 +481,10 @@ public sealed partial class VaultStore
         {
             try
             {
-                File.Move(temp, path, overwrite);
+                move();
                 return;
             }
-            catch (Exception e) when (IsReaderRefusal(e, overwrite) && WithinReplaceWait(started))
+            catch (Exception e) when (IsReaderRefusal(e, overwrite, onWindows) && WithinReplaceWait(started))
             {
                 await Task.Delay(ReplacePoll, ct);
             }
@@ -485,8 +492,8 @@ public sealed partial class VaultStore
     }
 
     /// <summary>A REPLACE refused on Windows the way an open reader refuses it — the one refusal worth waiting out.</summary>
-    private static bool IsReaderRefusal(Exception e, bool overwrite) =>
-        overwrite && OperatingSystem.IsWindows() && e is UnauthorizedAccessException or IOException;
+    private static bool IsReaderRefusal(Exception e, bool overwrite, bool onWindows) =>
+        overwrite && onWindows && e is UnauthorizedAccessException or IOException;
 
     private static bool WithinReplaceWait(long started) =>
         System.Diagnostics.Stopwatch.GetElapsedTime(started) < ReplaceWait;
