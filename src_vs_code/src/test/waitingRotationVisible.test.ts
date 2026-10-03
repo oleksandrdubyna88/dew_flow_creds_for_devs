@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
+import type { Memento } from 'vscode';
 import * as ts from 'typescript';
 import type { SlotRead } from '../pinClick';
-import { fingerprintOf, holdRotated } from '../rotationQuarantine';
+import { fingerprintOf, holdRotated, releaseUnprotected } from '../rotationQuarantine';
 import { rotationQuarantineSecretKey, secretKey } from '../secretKeys';
 import type { StorageManager } from '../storageManager';
 import { EntityMetadata } from '../types';
@@ -29,7 +30,15 @@ const NEW = 'NEW-rotated-Password-7c1e';
 const OTHER = 'CHANGED-elsewhere-Password-5e0f';
 const STORE_ROTATED = 'Store the rotated one';
 
-const details = (): EntityMetadata => ({ id: ENTRY, name: 'portal', kind: 'credential', isSshEnabled: false }) as EntityMetadata;
+/**
+ * An entry's metadata, TYPED: the compiler checks every field `EntityMetadata` requires, so a field added to it later
+ * breaks this build instead of every test that uses the fixture (typescript doctrine §3 — no cast in a fixture).
+ */
+function entry(fields: Pick<EntityMetadata, 'id' | 'name'> & Partial<EntityMetadata>): EntityMetadata {
+  return { isSshEnabled: false, ...fields };
+}
+
+const details = (): EntityMetadata => entry({ id: ENTRY, name: 'portal', kind: 'credential' });
 
 /** The click's owner of an entry with no PIN mark. */
 const OWNER = { id: ENTRY, name: 'portal' };
@@ -140,8 +149,7 @@ test('the conflict modal at a click is asked with no lease held — another wind
 test('a release that FAILS at the click keeps the waiting value — the click uses the stored password and nothing is lost', async () => {
   const w = await world();
   let attempted = 0;
-  const host = w.storage as unknown as { setPassword: () => Promise<never> };
-  host.setPassword = () => {
+  w.storage.setPassword = () => {
     attempted += 1;
     return Promise.reject(new Error('the keychain refused the write (injected)'));
   };
@@ -168,12 +176,11 @@ test('a click on an unprotected entry with nothing waiting reads the clicked slo
 
 const CTX = { accountId: ACCOUNT, entityId: ENTRY, entityName: 'portal' };
 
-/** Every call of `name` on `host` after this one rejects once with `reason`, then works again. */
-function failsOnce(host: object, name: string, reason: string): void {
-  const target = host as Record<string, (...args: unknown[]) => Promise<unknown>>;
-  const real = target[name].bind(target);
+/** The next `setPassword` of `storage` rejects with `reason`; every one after it works again. */
+function setPasswordFailsOnce(storage: StorageManager, reason: string): void {
+  const real = storage.setPassword.bind(storage);
   let failed = false;
-  target[name] = (...args: unknown[]): Promise<unknown> => {
+  storage.setPassword = (...args) => {
     if (failed) {
       return real(...args);
     }
@@ -199,7 +206,7 @@ async function eventually(done: () => Promise<boolean>): Promise<boolean> {
  */
 async function heldAfterAKeychainFailure(modal: ModalAnswer[] = ['Later']): Promise<World & { readonly outcome: string }> {
   const w = await world({ waiting: false, modal });
-  failsOnce(w.storage, 'setPassword', 'the keychain refused the write');
+  setPasswordFailsOnce(w.storage, 'the keychain refused the write');
   const [{ storeRotated }] = loadEachWithVscode(['../rotationStore'], clickVscode([], w.s)) as [typeof import('../rotationStore')];
   const outcome = await storeRotated(w.storage, CTX, 'password', NEW, await fingerprintOf(OLD));
   return { ...w, outcome };
@@ -244,7 +251,7 @@ const NEW_CONN = 'mysql://app:HELD-rotated-77ab@db-01.example.internal:3306/orde
 const OTHER_CONN = 'mysql://app:CHANGED-elsewhere-5e0f@db-01.example.internal:3306/orders';
 const DB_CTX = { accountId: ACCOUNT, entityId: DB, entityName: 'orders-db' };
 
-const dbDetails = (): EntityMetadata => ({ id: DB, name: 'orders-db', kind: 'db', isSshEnabled: false, dbType: 'mysql' }) as EntityMetadata;
+const dbDetails = (): EntityMetadata => entry({ id: DB, name: 'orders-db', kind: 'db', dbType: 'mysql' });
 
 interface AgentWorld {
   readonly storage: StorageManager;
@@ -368,16 +375,24 @@ test('the agent\'s ssh credential (the automatic opener) on an unprotected entry
 
 // ---- W6: the sweep's release is said to the person (the owner's decision §9.2) ----
 
-/** A `Memento` the sweeper's leases live in — empty, as a fresh window's is. */
-function leases(): { get<T>(key: string, fallback?: T): T | undefined; update(key: string, value: unknown): Promise<void> } {
-  const map = new Map<string, unknown>();
-  return {
-    get: <T>(key: string, fallback?: T): T | undefined => (map.has(key) ? (map.get(key) as T) : fallback),
-    update: (key: string, value: unknown): Promise<void> => {
-      map.set(key, value);
-      return Promise.resolve();
-    },
-  };
+/** The `Memento` the sweeper's leases live in — empty, as a fresh window's is; a real one, typed by its interface. */
+class Leases implements Memento {
+  private readonly map = new Map<string, unknown>();
+
+  keys(): readonly string[] {
+    return [...this.map.keys()];
+  }
+
+  get<T>(key: string): T | undefined;
+  get<T>(key: string, fallback: T): T;
+  get<T>(key: string, fallback?: T): T | undefined {
+    return this.map.has(key) ? (this.map.get(key) as T) : fallback;
+  }
+
+  update(key: string, value: unknown): Promise<void> {
+    this.map.set(key, value);
+    return Promise.resolve();
+  }
 }
 
 test('the sweep that stores a waiting password says so to the person, once — and a tick that stores nothing says nothing', async () => {
@@ -388,7 +403,7 @@ test('the sweep that stores a waiting password says so to the person, once — a
     typeof import('../rotationWaiting'),
   ];
   const lines: string[] = [];
-  const sweeper = new EphemeralSweeper(w.storage, leases() as never, (line) => lines.push(line), () => undefined, () => releaseAndSay(w.storage));
+  const sweeper = new EphemeralSweeper(w.storage, new Leases(), (line) => lines.push(line), () => undefined, () => releaseAndSay(w.storage));
 
   await sweeper.runOnce();
 
@@ -426,7 +441,8 @@ test('a sync that unprotects an entry with a waiting value releases it AND tells
   // What a pulled sync leaves: the entry protected when the hold was written, unprotected by the pull.
   const w = await world();
   const [waiting] = loadEachWithVscode(['../rotationWaiting'], clickVscode([], w.s)) as [typeof import('../rotationWaiting')];
-  const wiredRelease = (waiting as unknown as Record<string, (storage: StorageManager) => Promise<unknown>>)[release] ?? (() => Promise.resolve(undefined));
+  const releases: Readonly<Record<string, (storage: StorageManager) => Promise<unknown>>> = { releaseAndSay: waiting.releaseAndSay, releaseUnprotected };
+  const wiredRelease = releases[release] ?? (() => Promise.resolve(undefined));
 
   await wiredRelease(w.storage);
 
@@ -558,7 +574,7 @@ test('the scan for the bare opener: a planted reader is reported, and the scan s
 test("an agent's output that prints a password released by its own call is MASKED — the broker releases before it reads the mask table", async () => {
   // The grant the broker harness shares is a1/e1 "prod": an unprotected ssh entry with a rotated password waiting.
   const storage = memoryStorage(clickVscode([], sinks()));
-  const prod = { id: 'e1', name: 'prod', kind: 'ssh', isSshEnabled: true } as EntityMetadata;
+  const prod = entry({ id: 'e1', name: 'prod', kind: 'ssh', isSshEnabled: true });
   await seedEntry(storage, prod, { password: OLD });
   await holdRotated(storage, ACCOUNT, 'e1', 'password', NEW, await fingerprintOf(OLD));
   const [{ maskEntriesFor }, { automaticOpenerFor }, quarantine] = loadEachWithVscode(['../maskEntries', '../automaticRead', '../rotationQuarantine'], clickVscode([], sinks())) as [
@@ -609,7 +625,6 @@ test("a rotation of an entry whose rotated value was waiting fingerprints the va
     ['../rotateAction', '../rotationStore', '../automaticRead', '../rotationQuarantine', '../revisionSnapshot', '../secretRotation'],
     stub,
   ) as [typeof import('../rotateAction'), typeof import('../rotationStore'), typeof import('../automaticRead'), typeof import('../rotationQuarantine'), typeof import('../revisionSnapshot'), typeof import('../secretRotation')];
-  const host = storage as unknown as { setDbConnection: (...args: unknown[]) => Promise<unknown> };
   const farSide: UseAction = {
     kind: 'db',
     action: 'query',
@@ -622,9 +637,9 @@ test("a rotation of an entry whose rotated value was waiting fingerprints the va
       // The query reads its connection the automatic way — which stores the waiting value — and the far side
       // takes the new password. Then the rotation's own store fails (a keychain error).
       await automaticOpenerFor(storage, ACCOUNT)(dbDetails(), await storage.getDbConnection(ACCOUNT, DB), 'dbConnection');
-      const real = host.setDbConnection.bind(storage);
-      host.setDbConnection = () => {
-        host.setDbConnection = real;
+      const real = storage.setDbConnection.bind(storage);
+      storage.setDbConnection = () => {
+        storage.setDbConnection = real;
         return Promise.reject(new Error('the keychain refused the write (injected)'));
       };
       return { status: 200, body: { exitCode: 0, stdout: 'ALTER\n', stderr: '' } };
