@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/server-v0.10.0...server-v0.10.1) (2026-10-03)
+
+
+### Bug Fixes
+
+* **server:** a backup is audited before it reports, and a status write waits out a reader ([#185](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/185)) ([6e218fa](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/6e218faf15e624369f832bcfdc719ea0fc3e6b00))
+
 ## [0.10.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/server-v0.9.0...server-v0.10.0) (2026-09-26)
 
 
