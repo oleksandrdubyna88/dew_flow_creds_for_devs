@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isExternalBundle } from '../externalBundle';
-import type { EntityMetadata, TreeNode } from '../types';
+import type { EntityMetadata, SharePayload, TreeNode } from '../types';
 import { protectEntity } from '../entityPin';
 import { ACCOUNT, PIN } from './pinWorld';
 import { Arrivals, FIRST_PIN, FOLDER_BOX, NOTE, SECRET, TRANSIT, arrivals, boxes, folderShare, infos, opened, owned, sealedUnder } from './arrivalWorld';
@@ -223,4 +223,32 @@ test('a crash after the revision and the node, before the mark, leaves no plaint
   const history = JSON.stringify(await w.storage.getHistory(ACCOUNT, id));
   assert.ok(history.includes('"name":"old-db"'), `precondition: a revision was kept: ${history}`);
   assert.ok(!history.includes(`${SECRET}-old-db`) && !history.includes(`${NOTE}-old-db`), `plaintext history under the moved entry: ${history}`);
+});
+
+/**
+ * A share whose chain names a folder that ASKS for a PIN below a plain one — what a folder share carries when
+ * its sender's chain says so (`isSharePayload` takes any segment with a name, and the landing reads the
+ * preference off it). `landingOf` copies the segment as it came.
+ */
+function chainShare(name: string, chain: readonly { name: string; folderAsksForPin?: boolean }[]): SharePayload {
+  const plain = folderShare(name, []);
+  return { ...plain, folderPath: chain.map((seg) => ({ folderType: 'any' as const, ...seg })) };
+}
+
+test('a batch that creates a plain folder and then a folder inside it that asks seals what lands in the one that asks', async () => {
+  const w = await arrivals({}, [TRANSIT, FIRST_PIN, FIRST_PIN]);
+
+  await w.inbox.acceptMany([
+    owned(chainShare('readme', [{ name: 'Project' }])),
+    owned(chainShare('vault-key', [{ name: 'Project' }, { name: 'Secrets', folderAsksForPin: true }])),
+  ]);
+
+  assert.deepEqual(
+    w.written.filter((v) => v.includes(`${SECRET}-vault-key`) || v.includes(`${NOTE}-vault-key`)),
+    [],
+    `the folder that asks inside a folder the batch created took its parent's "no PIN" — written in the clear: ${w.events.join(' | ')}`,
+  );
+  const byName = new Map(w.entries().map((n) => [n.name, n]));
+  await sealedUnder(w, byName.get('vault-key') as TreeNode, FIRST_PIN);
+  assert.equal(await w.storage.getPassword(ACCOUNT, (byName.get('readme') as TreeNode).id), `${SECRET}-readme`, 'the plain folder\'s entry is written as before');
 });
