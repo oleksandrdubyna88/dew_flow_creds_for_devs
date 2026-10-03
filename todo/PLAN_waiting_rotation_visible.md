@@ -2,7 +2,7 @@
 
 > Status: **partly built, 2026-10-03 — W1, W3, W5 and W6 are in (`1bceeabb`, `ac19cdcd`, `e0e65b58`,
 > `bf3a6c3b`) with W4's docs, the owner's three follow-ups (§10.7) and the code round's two fixes (§10.8, the
-> round passed: proceed, 4 of 4) and the security review's three fixes (§10.9); W2 waits on the sibling plan's B1;
+> round passed: proceed, 4 of 4) the security review's three fixes (§10.9) and the third code round's (§10.10); W2 waits on the sibling plan's B1;
 > the promotion is open (§10 records what was built differently).** Planned 2026-10-02. Scope: `src_vs_code/src` — `pinClick.ts`,
 > `pinPrompt.ts` (one half of `admitted` extracted), `shareInbox.ts` (one line, after the extraction its sibling
 > plan owns), `rotationQuarantine.ts` (one index-only read exported), `rotationStore.ts` and
@@ -315,3 +315,19 @@ the text above:
       config body was handed it — the click door shared the defect and is fixed with it.
    Corrected wording: §3.1's "no PIN box can appear" (a mark-lost entry with a sealed slot IS asked, by R3) and
    §10.2's cost of a listed entry.
+10. **The third coai code round (2026-10-03: proceed, 4 of 4, findings accepted; rejected: removing the slot
+    altogether, and moving the release into `maskEntriesFor`)** — each red-first where it is behaviour, with its
+    break-it in the commit body:
+    1. **No fixture cast** (`11a9685c`, findings 0+1): `waitingRotationVisible.test.ts` builds its entries with a
+       typed `entry()` factory, replaces the storage's own methods instead of double casts, gives the sweeper a real
+       `Memento` class, and looks the post-pull release up in a typed table. No assertion changed.
+    2. **An EMPTY slot is re-read too** (`f4333116`, finding 4): `rereadAfter` required `value !== undefined`, so a
+       rotation that replaced nothing left Copy Password copying nothing after the door had stored the value. It now
+       compares `before[slot] === value` for a slot the snapshot took, `undefined` included. RED: the click copied
+       nothing; the automatic reader got nothing.
+    3. **The slot is REQUIRED** (`1d3a524a`, finding 5): `SecretOpener`, `AfterTheDoor`, `clickedSecret` and
+       `clickedValue` take `slot: RotationSlot | undefined`; every caller states its slot or `undefined`. The
+       behavioural path the finding named (`creds://…/password` through `entityFieldReading`) already named
+       `'password'` and was not red; the RED is the compile-fail harness — two fixtures in
+       `test/fixtures/typed/` (an opener and a click without the slot) compiled, and must be TS2554, with a
+       positive control that states `undefined` and `'password'`.

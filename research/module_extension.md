@@ -1621,7 +1621,9 @@ proof. Getters and setters were still `string` then; E3 flipped them to `StoredS
     `secretOpener.ts` and `automaticRead.ts`, and `waitingRotationVisible.test.ts` scans for any other use. A
     conflict is never decided there: nothing is written, the item and its index entry stay, the reader gets what
     is stored and the person's next door asks. The opener re-reads only a value read from the RELEASED slot — the
-    reader names it (`SecretOpener`'s third argument; the click door takes it too) — never one whose text merely
+    reader names it — `SecretOpener`'s third parameter, REQUIRED (`RotationSlot | undefined`, so every reader and
+    click states its slot or `undefined`; the compile-fail harness keeps it required) — and a slot that was EMPTY
+    before the rotation is re-read too (`undefined` compared as what the slot held) — never one whose text merely
     equals the replaced value (the security review, fix 3: notes equal to the old password came back as the new
     password). **The broker releases first** (fix 1): `CredsAgentServer.handle` runs the `releaseWaiting` hook
     (`rotationQuarantine.releaseBeforeAutomaticUse`) BEFORE `tableOrFail`, so the pre-run mask table holds the value
