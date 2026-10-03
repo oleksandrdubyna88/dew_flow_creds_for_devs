@@ -454,6 +454,11 @@ public sealed class BackupRunner(
         var archive = backups.NewestArchive();
         var finishedAt = clock.GetUtcNow().ToUnixTimeMilliseconds();
         var verdict = Verdict(uploads);
+        // The row FIRST, the terminal status after it: a reader that sees the run finished sees its
+        // BackupTaken row too, and a process that dies between the two leaves the row and a status still
+        // "in progress", which the startup sweep turns into a terminal state — never a success the history
+        // does not show (PLAN_flaky_backup_endpoint_tests.md §3.1; CI on #181 caught the old order).
+        await RowAsync(OrgEventKinds.BackupTaken, actor, archive.Name, ct);
         var previous = await backups.ReadStatusAsync(ct);
         await backups.WriteStatusAsync(
             previous with
@@ -475,7 +480,6 @@ public sealed class BackupRunner(
             archive.Bytes,
             archive.Name,
             (int)(clock.GetUtcNow() - startedAt).TotalSeconds);
-        await RowAsync(OrgEventKinds.BackupTaken, actor, archive.Name, ct);
     }
 
     private async Task FailAsync(
@@ -517,11 +521,11 @@ public sealed class BackupRunner(
         {
             await AppendRowAsync(kind, actor, detail);
         }
-        // BEST EFFORT, and only after the terminal status is on disk. Without this, an event log that
-        // could not be appended to would turn a run that SUCCEEDED — archive written, status already
-        // recorded as ok — into a failed one, because the catch-all in ContinueAsync would route the
-        // append's exception through FailAsync. A reader would then have a good archive, a success and
-        // a failure about the same run, and no way to tell which to believe.
+        // BEST EFFORT. A successful run appends its row just BEFORE its terminal status (FinishAsync), and an
+        // event log that could not be appended to must not turn that run into a failed one: the archive is
+        // written, so without this catch the catch-all in ContinueAsync would route the append's exception
+        // through FailAsync, and a reader would have a good archive and a failure about the same run. So a
+        // row that cannot be written is logged and the run goes on to record its result.
         catch (Exception e)
         {
             log.LogError(

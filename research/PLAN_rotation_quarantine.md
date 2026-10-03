@@ -1,6 +1,6 @@
 # PLAN — a rotated value the vault could not store waits in quarantine, not in the clipboard
 
-> Status: **IMPLEMENTED, 2026-10-02** (PR #179). Shipped as planned with the deviations in §5.1 — the main
+> Status: **IMPLEMENTED, 2026-10-02** (PR #179); **shipped 2026-10-02** in extension 1.12.1 and mcp 0.9.1. Shipped as planned with the deviations in §5.1 — the main
 > ones: the masking covers every answer and every throw, not only `commit`; the release checks and commits
 > under ONE lease; the fingerprint of the replaced value is scrypt (record v3 — CodeQL js/insufficient-password-hash
 > on PR #179; v1/v2 holds read with an unknown fingerprint, released only by the person); a ONE-USE entry is not
