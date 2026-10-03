@@ -82,3 +82,18 @@ test('recording what a landing created asks no question of its own — it is cal
 
   assert.deepEqual(asked, [], 'created() raised a PIN box in the middle of the writes');
 });
+
+test('a decline a created folder inherited names the folder that was asked — not the created one, and not none', async () => {
+  const { question } = recorded({ ask: { 'top-id': DECLINED }, prefers: ['top-id'] });
+  const pins = arrivalPins(question);
+  const intoSub = landing('top-id', { name: 'Sub' });
+  assert.deepEqual(await pins.settledFor(intoSub), DECLINED, 'precondition: the folder that asks was declined');
+  pins.created(intoSub, ['sub-id']);
+
+  const inside = landing('sub-id');
+  const deeper = landing('sub-id', { name: 'Deeper' });
+
+  assert.deepEqual(await pins.settledFor(inside), DECLINED, 'precondition: the decline is inherited');
+  assert.deepEqual(pins.askedFolder(inside), { accountId: ACCOUNT, folderId: 'top-id' }, 'the decline names the wrong folder');
+  assert.deepEqual(pins.askedFolder(deeper), { accountId: ACCOUNT, folderId: 'top-id' }, 'the decline names no folder');
+});

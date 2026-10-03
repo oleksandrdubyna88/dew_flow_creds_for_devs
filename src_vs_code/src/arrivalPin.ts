@@ -108,54 +108,81 @@ export function landingOf(storage: StorageManager, accountId: string, under: str
  * <p>Every answer is kept, a decline too: a folder declined is not asked again within the same command.</p>
  */
 export function arrivalPins(question: FolderQuestion): ArrivalPins {
-  const settled = new Map<string, Known>();
+  return new ArrivalMemo(question);
+}
+
+/** The memo behind `arrivalPins`: the answers asked, and what each folder this command created inherited. */
+class ArrivalMemo implements ArrivalPins {
+  private readonly settled = new Map<string, Known>();
   /** A folder this command created → the answer of the landing that created it. */
-  const inherited = new Map<string, Known>();
-  const asked = (asking: Asking): Known => {
-    const known = settled.get(asking.key) ?? { folder: asking.folder, answer: asking.ask() };
-    settled.set(asking.key, known);
-    return known;
-  };
-  return {
-    declined: async () => {
-      const answers = await Promise.all([...settled.values()].map(async ({ folder, answer }) => ({ folder, kind: await kindOf(answer) })));
-      return answers.filter((a) => a.kind === 'cancelled').flatMap((a) => (a.folder === undefined ? [] : [a.folder]));
-    },
-    settledFor: (landing) => answerFor(landing).answer,
-    askedFolder: (landing) => askingFor(question, landing)?.folder,
-    created: (landing, folderIds) => {
-      // Each created folder takes the answer of the landing that ENDS at it, and only an answer a QUESTION gave
-      // at or above it: a folder that asks hands its answer to itself and below, never to a plain folder above
-      // it — which is asked what Add asks there when something lands in it later (second code round, finding
-      // 3). Read from the memo, never asked: this runs while the folders are written.
-      for (const [at, folderId] of folderIds.entries()) {
-        const known = peek({ ...landing, creates: landing.creates.slice(0, at + 1) });
-        if (known !== undefined) {
-          inherited.set(JSON.stringify([landing.accountId, folderId]), known);
-        }
+  private readonly inherited = new Map<string, Known>();
+
+  constructor(private readonly question: FolderQuestion) {}
+
+  settledFor(landing: Landing): Promise<CreatePin> {
+    return this.answerFor(landing).answer;
+  }
+
+  /**
+   * The folder a landing's answer came from: the one it inherited from, unless a folder it creates asks on
+   * its own (second code round, findings 1 and 6 — an inherited decline named the created folder, or none).
+   */
+  askedFolder(landing: Landing): FolderRef | undefined {
+    const up = this.upOf(landing);
+    return up === undefined ? askingFor(this.question, landing)?.folder : this.belowFolder(up, landing);
+  }
+
+  created(landing: Landing, folderIds: readonly string[]): void {
+    // Each created folder takes the answer of the landing that ENDS at it, and only an answer a QUESTION gave
+    // at or above it: a folder that asks hands its answer to itself and below, never to a plain folder above
+    // it — which is asked what Add asks there when something lands in it later (second code round, finding
+    // 3). Read from the memo, never asked: this runs while the folders are written.
+    for (const [at, folderId] of folderIds.entries()) {
+      const known = this.peek({ ...landing, creates: landing.creates.slice(0, at + 1) });
+      if (known !== undefined) {
+        this.inherited.set(JSON.stringify([landing.accountId, folderId]), known);
       }
-    },
-  };
+    }
+  }
+
+  async declined(): Promise<readonly FolderRef[]> {
+    const answers = await Promise.all([...this.settled.values()].map(async ({ folder, answer }) => ({ folder, kind: await kindOf(answer) })));
+    return answers.filter((a) => a.kind === 'cancelled').flatMap((a) => (a.folder === undefined ? [] : [a.folder]));
+  }
+
+  private upOf(landing: Landing): Known | undefined {
+    return this.inherited.get(JSON.stringify([landing.accountId, landing.existing]));
+  }
+
+  private belowFolder(up: Known, landing: Landing): FolderRef | undefined {
+    return preferringCreated(this.question, landing)?.folder ?? up.folder;
+  }
+
+  private asked(asking: Asking): Known {
+    const known = this.settled.get(asking.key) ?? { folder: asking.folder, answer: asking.ask() };
+    this.settled.set(asking.key, known);
+    return known;
+  }
 
   /** The answer the memo already holds for a landing — a folder it creates that asks first — or none yet. */
-  function peek(landing: Landing): Known | undefined {
-    const own = preferringCreated(question, landing);
-    return (own === undefined ? undefined : settled.get(own.key)) ?? levelKnown(landing);
+  private peek(landing: Landing): Known | undefined {
+    const own = preferringCreated(this.question, landing);
+    return (own === undefined ? undefined : this.settled.get(own.key)) ?? this.levelKnown(landing);
   }
 
   /** The answer of the level the landing starts from: inherited, or the existing folder's question if one was asked. */
-  function levelKnown(landing: Landing): Known | undefined {
-    const up = inherited.get(JSON.stringify([landing.accountId, landing.existing]));
+  private levelKnown(landing: Landing): Known | undefined {
+    const up = this.upOf(landing);
     if (up !== undefined) {
       return up;
     }
-    const asking = askingFor(question, landing);
-    return asking === undefined ? undefined : settled.get(asking.key);
+    const asking = askingFor(this.question, landing);
+    return asking === undefined ? undefined : this.settled.get(asking.key);
   }
 
-  function answerFor(landing: Landing): Known {
-    const up = inherited.get(JSON.stringify([landing.accountId, landing.existing]));
-    return up === undefined ? decided(landing) : below(up, landing);
+  private answerFor(landing: Landing): Known {
+    const up = this.upOf(landing);
+    return up === undefined ? this.decided(landing) : this.below(up, landing);
   }
 
   /**
@@ -164,14 +191,14 @@ export function arrivalPins(question: FolderQuestion): ArrivalPins {
    * round's finding 0: a plain `Project` the batch created handed its "no PIN" to `Project/Secrets`, which
    * asks, and its entries were written in the clear).
    */
-  function below(up: Known, landing: Landing): Known {
-    const own = preferringCreated(question, landing);
-    return own === undefined ? up : { folder: own.folder, answer: up.answer.then((answer) => (answer.kind === 'pin' ? answer : asked(own).answer)) };
+  private below(up: Known, landing: Landing): Known {
+    const own = preferringCreated(this.question, landing);
+    return own === undefined ? up : { folder: own.folder, answer: up.answer.then((answer) => (answer.kind === 'pin' ? answer : this.asked(own).answer)) };
   }
 
-  function decided(landing: Landing): Known {
-    const asking = askingFor(question, landing);
-    return asking === undefined ? NO_QUESTION : asked(asking);
+  private decided(landing: Landing): Known {
+    const asking = askingFor(this.question, landing);
+    return asking === undefined ? NO_QUESTION : this.asked(asking);
   }
 }
 
