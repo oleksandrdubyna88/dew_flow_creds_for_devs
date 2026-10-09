@@ -217,7 +217,7 @@ An environment variable `MARKETPLACE_AUTH` in `marketplace` chooses the path:
 3. `env -u VSCE_PAT npx vsce verify-pat remsoftdev --azure-credential`, with **no**
    `continue-on-error`. Before O5 the run is red, as expected, and step 2 has already printed the id.
    After O5 a green run is the evidence.
-4. `npx vsce show remsoftdev.creds-for-devs --json`, with `if: always()`, printing the served version.
+4. `npx --no-install vsce show remsoftdev.creds-for-devs --json`, with `if: always() && steps.install.outcome == 'success'` on the step (2b carries `id: install`), printing the served version. It still runs when step 3 failed, but **never after a failed install**: with no local vsce, a plain `npx` would download whatever version is newest and run it in a job holding `id-token: write`. Every `npx vsce` in this plan means `npx --no-install vsce`, which refuses to download.
    This is a public read with no credential.
 5. A boolean input, `check_pat` (default false). When it is true, steps 1, 2 and 3 are **skipped** (2b still runs), and one step
    runs `npx vsce verify-pat remsoftdev` with `VSCE_PAT` in its own `env:`. That separate run proves the
@@ -295,7 +295,7 @@ It stays after the migration. It is the cheap answer to "does publishing still a
      on the Members page by eye.
   2. Dispatch once more with `check_pat`; it must pass, which proves the rollback.
 - **O7 — record the PAT's expiry.** Write it in §11 here by 2026-10-31. S2 then moves it into
-  `POST_DEPLOY.md` beside the row S2 adds, which does not exist before S2. The expiry cannot be later
+  `src_vs_code/docs/PUBLISHING.md` beside the check S2 adds, which does not exist before S2. The expiry cannot be later
   than 2026-12-01. **The rollback is only as long as the PAT.** If the expiry falls before S3 plus
   a few days, the owner chooses one of two things before S2 merges:
   - **Renew the PAT** with an expiry of 2026-12-01 (still allowed, F1), then re-run O6 step 2.
@@ -320,7 +320,7 @@ The target dates leave a week of slack before the deadline.
 | O1–O3 | identity, trust, environment | owner | 2026-10-24 |
 | **S1** | PR: `marketplace-identity.yml` (3.5) + test T2. It is small enough to land as soon as O0 says go, so O4/O5, the real go/no-go, can run early. | agent | 2026-10-24 |
 | O4–O7 | profile id, membership, dry proof, PAT expiry | owner | 2026-10-31 |
-| **S2** | PR: the three jobs (3.3) and the switch (3.4). Update `PUBLISHING.md:39-48` and `:84-117` (Entra first; the PAT section marked as the dated rollback), `research/architecture.md:318,341` and `research/module_extension.md:6662` where they describe the publish, the `release.yml:1-8` header, and `POST_DEPLOY.md` (a manual row: "the publish credential authenticates" = the probe; the PAT expiry line). Also:<br>• `PUBLISHING.md:41-42` ("on the organisation that owns the publisher") contradicts `:90` ("All accessible organizations"); reconcile them.<br>• `:32-33` changes for `--skip-duplicate`.<br>• `:35-37` documents the non-`main` dispatch refusal.<br>• `src_vs_code/package.json:68` `"publish": "vsce publish"` is the local PAT route, which dies on 2026-12-01. It is removed, or `PUBLISHING.md` says it is break-glass only until then.<br>• `POST_DEPLOY.md` is in `ci-server.yml`'s push `paths` (`:17`), so merging S2 runs the server pipeline and the image chain. That is accepted knowingly: a rebuild of unchanged code, no deploy.<br>Test T1. | agent | 2026-11-07 |
+| **S2** | PR: the three jobs (3.3) and the switch (3.4). Update `PUBLISHING.md:39-48` and `:84-117` (Entra first; the PAT section marked as the dated rollback), `research/architecture.md:318,341` and `research/module_extension.md:6662` where they describe the publish, the `release.yml:1-8` header, and the extension-owned checklist in `src_vs_code/docs/PUBLISHING.md` (*Verifying what you are about to ship*, `:143-152`): a check "the publish credential authenticates" (the probe) and the PAT expiry line. NOT the root `POST_DEPLOY.md`, which is the server deploy checklist; its `:51-53` says extension checks belong with the extension, which ships on its own clock. Also:<br>• `PUBLISHING.md:41-42` ("on the organisation that owns the publisher") contradicts `:90` ("All accessible organizations"); reconcile them.<br>• `:32-33` changes for `--skip-duplicate`.<br>• `:35-37` documents the non-`main` dispatch refusal.<br>• `src_vs_code/package.json:68` `"publish": "vsce publish"` is the local PAT route, which dies on 2026-12-01. It is removed, or `PUBLISHING.md` says it is break-glass only until then.<br>• `POST_DEPLOY.md` stays untouched, which also keeps S2 out of `ci-server.yml`'s push `paths` (`:17`), so merging it does not rebuild the server image.<br>Test T1. | agent | 2026-11-07 |
 | R1 | The next `extension-v*` tag publishes through Entra, observed (V4). If none is due by 2026-11-14, the owner decides whether to cut a patch release to prove it. | owner + agent | 2026-11-14 |
 | **S3** | PR: delete the `pat` path and `check_pat`; `PUBLISHING.md` loses the PAT section. Then O8. | agent, owner | 2026-11-24 |
 | — | **deadline** | | **2026-12-01** |
@@ -366,7 +366,7 @@ Tests go in `src_vs_code/src/test/`, next to `credsInstall.test.ts:46-57`, which
   outputs go in the PR.
 - **T2 (S1)**: the probe workflow is dispatch-only, in `marketplace`, and runs
   `npm ci --ignore-scripts` before its first `vsce`. Its Entra `verify-pat` starts with
-  `env -u VSCE_PAT` and has no `continue-on-error`, and its `vsce show` is `if: always()`. Its `az rest`
+  `env -u VSCE_PAT` and has no `continue-on-error`, and its `vsce show` runs only after a successful install (`steps.install.outcome == 'success'`). No `npx` in the plan may download (`--no-install`). Its `az rest`
   prints a `--query` projection, not the raw response.
 - `npm run typecheck` and `npm test` in `src_vs_code`, the server suite (untouched, as a guard), and
   `ci-server.yml`'s actionlint job (`ci-server.yml:238`) over the two workflow files.
@@ -440,7 +440,7 @@ answers `use_immutable_subject: true` (read 2026-10-09). The same comment also p
       rollback was declared manual-only (O7).
 - [ ] S2 merged; `id-token: write` only on `extension-marketplace`; T1 watched failing with `VSCE_PAT`
       in the Entra step and passing without it; `PUBLISHING.md`, `architecture.md`,
-      `module_extension.md` and `POST_DEPLOY.md` say Entra.
+      and `module_extension.md` say Entra, and `PUBLISHING.md` carries the extension-owned credential check.
 - [ ] One real `extension-v*` release published through Entra and observed (V4), **before 2026-12-01**.
 - [ ] S3 merged before 2026-11-24 (in any case before 2026-12-01); `VSCE_PAT` deleted here; the
       token revoked once no repository needs it.
