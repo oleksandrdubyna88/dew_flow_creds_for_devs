@@ -60,6 +60,12 @@ leaks this way stays useful.
      passed, so a refused key is not echoed into a log that captures stderr. No deprecation window: the owner's
      decision of 2026-10-09 is that a form which leaks the key is not kept "for one release", because every release
      that accepts it is a release in which a snippet or a script keeps using it.
+   - **What refusing does NOT do** (plan round 1): a caller that still runs `creds config <key>` has put the key in
+     the new process's command line before any of our code runs, so the refusal cannot un-expose it — it only makes
+     the exposure short and loud instead of silent and successful. The guarantee is therefore about the product's own
+     paths: no snippet, no relay hop and no shipped caller (`coai` § 7) passes a key as an argument. The release notes
+     say plainly that a key which was ever passed as an argument — by an old snippet, a script, or a refused call —
+     should be rotated.
 2. **`--help` advertises the new form with a stable marker**, `config-key-stdin`, on its own line. It is the string a
    caller probes for before it sends a key on stdin — the WSL relay below, and `coai`'s `KeyVault`. The constant lives
    in `CommandLine.ConfigStdinMarker`, a test pins its exact value, and changing it is a breaking change for those
@@ -113,12 +119,20 @@ leaks this way stays useful.
 
 `src_cli/tests` and `src_broker_client/tests` (MTP executables, never `dotnet test`): S1, S2, S4. `src_vs_code`
 `npm run typecheck && npm test`: S3. Before release, every .NET test executable in the repository and the extension
-suite. Manual on a WSL machine after the release: an app using the new snippet → no `creds`/`creds.exe` process's
-command line holds the key during the read.
+suite.
+
+**Before the release, on a real WSL machine** (plan round 1 — the seams in S2 prove the wiring, not the bridge): the
+Linux `creds` built from this branch, `CREDS_WINDOWS_BINARY` pointed at the Windows `creds.exe` built from this branch,
+a marker value as the key (never a real one). While `creds config -` runs, sample every process's command line on both
+sides — `ps -eo args` in the distribution, `Win32_Process.CommandLine` on Windows — and assert the marker appears in
+none of them; and assert the Windows half answered for the marker (it reaches the window as a bearer and is refused as
+unknown, which is the expected outcome for a value no window minted). Repeated with an OLD Windows binary: refused
+with "update creds.exe", and no `creds.exe config` process is started at all.
 
 ## 6. Definition of Done
 
-- [ ] No product path puts a config key in argv; the argument form is refused without echoing what it was given.
+- [ ] No product path puts a config key in argv; the argument form is refused without echoing what it was given (a
+      legacy caller's own argv is exposed before the refusal runs — the release notes say to rotate such a key).
 - [ ] Every snippet passes the key on stdin (C++ and Elixir: environment, with the reason in place); tests pin it.
 - [ ] Across WSL the key crosses on stdin, and an old Windows binary is refused rather than fed an argument.
 - [ ] Docs, help and copy updated; release notes say the argument form is gone and when to rotate.
@@ -134,6 +148,11 @@ snippets) release ships first; `coai` then probes the CLI's `--help` for `config
 and refuses — naming "update the creds CLI" — when it is absent. Between the two releases a machine that has updated
 `creds` but not `coai` loses its vault keys until `coai` is updated; that window is the cost of not keeping the leaking
 form alive, and the owner accepted it.
+
+**Within this repository the CLI goes before the extension** (plan round 1). The two halves ship independently, and a
+new snippet run against an old CLI sends `-` as if it were the key and fails. So the `cli` release is merged and its
+release workflow is green before the `extension` release pull request is merged; neither falls back to the argument
+form.
 
 ## 8. What grows
 
