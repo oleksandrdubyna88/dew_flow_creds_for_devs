@@ -1,8 +1,15 @@
 # PLAN — a config key never travels on a command line
 
-> Status: **plan only, nothing implemented yet, 2026-10-09.** Scope: `src_cli/src` (`CommandLine.cs`, `Program.cs`
-> `ReadConfigAsync`, the WSL relay of the `config` verb), `src_vs_code/src` (`configSnippetBodies.ts`, the code-access
-> page copy, help), `src_broker_client/src/WslInterop.cs` (only if the relay needs a stdin path).
+> Status: **plan only, nothing implemented yet, 2026-10-09** (revised the same day: the argument form is refused at
+> once instead of deprecated — owner's decision, agreed with the consultant). Scope: `src_cli/src` (`CommandLine.cs`,
+> `Program.cs` `ReadConfigAsync`, a new `ConfigKeyInput.cs` and `ConfigRelay.cs`), `src_broker_client/src/WslInterop.cs`
+> (one new launch helper on `WindowsBridge`), `src_vs_code/src` (`configSnippetBodies.ts`, `configCodePanel.ts`,
+> `configAccess.ts`, the five `help*.ts`), `src_vs_code/README.md`, `src_cli/README.md`.
+>
+> **Crosses a repository boundary.** `dew_flow_connect_other_ais` reads its vendor keys through `creds config`
+> (`src_mcp/src/Server/KeyVault.cs`, the `RunFirstInstalledAsync` launch, line 103 on 2026-10-09) and passes the
+> key as an argument today. Its half is `dew_flow_connect_other_ais · todo/PLAN_creds_config_key_on_stdin.md`; the
+> order between the two is § 7.
 >
 > Found by [RESULTS_wsl_bridge_orphans.md](../research/RESULTS_wsl_bridge_orphans.md) (§ Side findings) while tracing
 > leaked processes; split out of [PLAN_wsl_bridge_outlives_its_client.md](PLAN_wsl_bridge_outlives_its_client.md) by the
@@ -25,48 +32,110 @@ leaks this way stays useful.
 ## 2. What exists today — verified 2026-10-09
 
 - `creds config` accepts the key **only as an argument**: `CommandLine.cs:83-88` (`argv.Count == 2` →
-  `Request.ReadConfig(argv[1])`), consumed by `Program.cs:81-82` → `ReadConfigAsync` (`Program.cs:282`).
+  `Request.ReadConfig(argv[1])`), consumed by `Program.cs:81-82` → `ReadConfigAsync` (`Program.cs:282`). The CLI
+  performs **no** `cfgk_` shape check of its own; the shape check is the window's (`configKey.ts:53`
+  `isConfigKeyShape`), applied when the bearer arrives.
 - The product already names an environment variable for the key, `CREDSFORDEVS_KEY` (`configKey.ts:44`), and tells
   people to keep the key there (`configAccess.ts:77`, `README.md:569`) — but every generated snippet then reads that
-  variable and passes the key **as an argument** (`configSnippetBodies.ts:21-48` for C#, and the F#, VB, Java and other
-  bodies after it). The safe place exists; the last hop undoes it.
-- Inside WSL the `config` verb is relayed to the Windows `creds.exe` with inherited streams (`WindowsBridge.Relay`); an
-  environment variable does not cross into the Windows half without `WSLENV`, but stdin does.
+  variable and passes the key **as an argument** (`configSnippetBodies.ts:21-541`, all twenty-two bodies; C++ and C#
+  for .NET Framework even concatenate it into one command string). The safe place exists; the last hop undoes it.
+- Inside WSL **every** verb, `config` included, is handed to the Windows `creds.exe` with inherited streams before any
+  argument is parsed (`Program.cs:46-60` → `WindowsBridge.Relay`, `WslInterop.cs:152-158`). So inside WSL the key sits
+  in two command lines: the Linux `creds` and the Windows `creds.exe`. An environment variable does not cross into the
+  Windows half without `WSLENV`; stdin does.
+- A bounded, hermetic `--help` probe of the Windows binary already exists: `WindowsBridge.CaptureAsync`
+  (`WslInterop.cs:193`), used by `creds-mcp`'s `CallerForwarding` (`src_mcp/src/CallerForwarding.cs:46-84`) for the same
+  question this plan has — does the Windows half on disk know the new shape?
 
 ## 3. Design
 
-1. **`creds config` with no argument reads the key from `CREDSFORDEVS_KEY`; `creds config -` reads one line from stdin.**
-   The argument form keeps working for one minor release and prints a one-line deprecation to stderr naming the two
-   safe forms; it is removed in the next minor. (The deprecation sentence never echoes the key.)
-2. **Across the WSL bridge** the Linux half resolves the key (env or stdin) and hands it to the Windows half on **stdin**
-   (`creds.exe config -`), never in argv — so the Windows command line is clean too.
-3. **Every snippet** sets nothing on the command line: it starts `creds config` with the environment it already has
-   (the variable is inherited) — or, for a key held in memory, writes it to the child's stdin and closes it. One shape
-   per language, kept as `ArgumentList` code with no shell in between, as today.
-4. **Validation unchanged**: the `cfgk_` prefix check and the error texts stay; an empty variable and an empty stdin
-   line are the same "no key" error.
-5. Help text, the code-access page copy and `README.md` describe the variable/stdin forms only.
+1. **Three forms of `creds config`, and only two of them work.**
+   - `creds config -` reads **one line** from stdin (UTF-8, a leading BOM and surrounding whitespace/CR stripped, at
+     most 4 KiB before the newline). An explicit `-` selects stdin and nothing else: an empty line or EOF is the "no
+     key" error **even when `CREDSFORDEVS_KEY` is set** — a caller who chose stdin and sent nothing has a bug, and
+     quietly reading another source would hide it.
+   - `creds config` with no argument reads `CREDSFORDEVS_KEY`. Unset or blank is the "no key" error.
+   - `creds config <anything other than ->`, and any extra argument after `-`, is **refused at once**: exit `usage`,
+     one fixed sentence on stderr naming both safe forms. The sentence is a constant — it never interpolates what was
+     passed, so a refused key is not echoed into a log that captures stderr. No deprecation window: the owner's
+     decision of 2026-10-09 is that a form which leaks the key is not kept "for one release", because every release
+     that accepts it is a release in which a snippet or a script keeps using it.
+2. **`--help` advertises the new form with a stable marker**, `config-key-stdin`, on its own line. It is the string a
+   caller probes for before it sends a key on stdin — the WSL relay below, and `coai`'s `KeyVault`. The constant lives
+   in `CommandLine.ConfigStdinMarker`, a test pins its exact value, and changing it is a breaking change for those
+   callers.
+3. **Across the WSL bridge the key crosses on stdin.** `config` is taken out of the general relay and handled first
+   (`ConfigRelay`): the Linux half parses the arguments itself (a refused form is refused here and never reaches
+   Windows), resolves the key from its own stdin or environment, probes the Windows binary's `--help` through
+   `CaptureAsync` (10 s bound) for the marker, and then starts `creds.exe config -` with **only stdin redirected**:
+   the key and one newline are written, stdin is closed, and stdout/stderr stay inherited — byte-for-byte untouched,
+   as `Relay` leaves them today. The helper is `WindowsBridge.RelayWithInput(args, input)`. A Windows binary without
+   the marker, or one that does not answer the probe, is refused with "update creds.exe" (exit `toolMissing`) —
+   **never** a fall-back to the argument form, which would put the key back on the Windows command line. A binary
+   that cannot be started keeps today's sentence and exit.
+4. **Every snippet reads the variable whose name the person gave it and writes the key to the child's stdin** —
+   `creds config -`, the key plus a newline, stdin closed, no shell, no key in any argument. Two languages cannot do
+   that in their standard library and say so in place:
+   - **C++** — `popen` is one-directional and the standard library has no other process API, so the snippet puts the
+     key into the child's environment as `CREDSFORDEVS_KEY` and runs the constant `creds config`. The command string
+     carries nothing variable, so the shell `popen` uses has nothing to reinterpret, and the old alphabet check goes.
+   - **Elixir** — `System.cmd` cannot write to the child's stdin and a `Port` cannot close stdin alone, so it passes
+     `env: [{"CREDSFORDEVS_KEY", key}]` to `System.cmd("creds", ["config"])`.
+   The environment of a process is readable only by its owner (`/proc/<pid>/environ` is `0400`), unlike its command
+   line, and the application holding the key already carries it in its own environment, so this adds no new reader.
+5. **Copy says the same thing everywhere**: `--help`, `src_cli/README.md`, the code panel's "Open to code" line, the
+   mint dialog (`configAccess.ts:77`, which also stops naming `AddCredsForDevs()` — a package that was never built,
+   [PLAN_config_entities.md](../research/PLAN_config_entities.md) deviation 1), the config topic of the five help
+   languages, and `src_vs_code/README.md:569`.
+6. **The key never appears in any diagnostic.** No `Note`, refusal, exception message or test failure text carries it;
+   a test drives every refusal path with a marker value and greps everything written to stderr for it, with a positive
+   control proving the grep can see a planted copy.
 
 ## 4. Build order
 
-- **S1 RED → green** `CommandLine` tests: no argument + variable set → `ReadConfig`; `-` → reads stdin; argument form →
-  `ReadConfig` plus the deprecation flag; none of the three puts the key in any produced string other than the request.
-- **S2** the WSL relay over stdin; a process test that the Windows-side command line carries no key (inspect the started
-  child's arguments through the `WindowsBridge` seam with a fake binary).
-- **S3** the snippets and copy; snippet tests assert no body contains `ArgumentList.Add(key)` (or the language's
-  equivalent) and each passes the key by environment or stdin.
-- **S4** release notes: the deprecation, the two safe forms, and that existing keys need no rotation unless they were
-  exposed — but a key that sat in a long-running process's command line should be rotated.
+- **S1 RED → green** `CommandLine` tests: no argument → `ReadConfig(Environment)`; `-` → `ReadConfig(Stdin)`; `<key>`,
+  `- extra`, `--` → `Failed` with the fixed sentence, which does not contain the argument. `ConfigKeyInput` tests: stdin
+  line read, BOM/CRLF stripped, empty line and EOF with the variable SET → error, over-long line → error, env blank →
+  error. Help carries `config-key-stdin`, pinned by value.
+- **S2 RED → green** `ConfigRelay` through injected seams (key source, probe, launcher): the launched argv is exactly
+  `["config", "-"]` and stdin is exactly key + `\n`; a refused form never launches anything; a help without the marker,
+  and a probe that answers null, refuse with "update creds.exe" and launch nothing; a launch failure keeps
+  `toolMissing`. `WindowsBridge.RelayWithInput` against a real process: stdin is delivered and closed (a child that
+  reads to EOF exits), its exit code comes back, and only stdin is redirected.
+- **S3 RED → green** the snippets: per language, the launch names `config` and `-` and nothing else, the key is written
+  to stdin and stdin is closed (C++/Elixir: the environment form, and the reason in place); no body contains any of the
+  argument shapes it used to; the variable name is still substituted. Copy updated.
+- **S4** the no-echo sweep over every refusal path (§ 3.6), `CHANGELOG.md` `[Unreleased]` (extension) and the CLI
+  README: the breaking change, the two safe forms, and that a key which sat in a long-running process's command line
+  should be rotated.
 
 ## 5. Test plan
 
-`src_cli/tests` (MTP executable, never `dotnet test`): S1, S2. `src_vs_code` `npm test`: S3 snippet bodies. Manual on a
-WSL machine: an app using the new snippet → `/proc/<pid>/cmdline` of every `creds` process during the read holds no key.
+`src_cli/tests` and `src_broker_client/tests` (MTP executables, never `dotnet test`): S1, S2, S4. `src_vs_code`
+`npm run typecheck && npm test`: S3. Before release, every .NET test executable in the repository and the extension
+suite. Manual on a WSL machine after the release: an app using the new snippet → no `creds`/`creds.exe` process's
+command line holds the key during the read.
 
 ## 6. Definition of Done
 
-- [ ] No product path puts a config key in argv; the argument form warns and is scheduled for removal.
-- [ ] Every snippet passes the key by environment or stdin; tests pin it.
-- [ ] Across WSL the key crosses on stdin.
-- [ ] Docs, help and copy updated; release notes say whether to rotate.
-- [ ] Plan, code rounds of the review gate passed; promoted on completion.
+- [ ] No product path puts a config key in argv; the argument form is refused without echoing what it was given.
+- [ ] Every snippet passes the key on stdin (C++ and Elixir: environment, with the reason in place); tests pin it.
+- [ ] Across WSL the key crosses on stdin, and an old Windows binary is refused rather than fed an argument.
+- [ ] Docs, help and copy updated; release notes say the argument form is gone and when to rotate.
+- [ ] Plan and code rounds of the review gate passed; the plan is promoted on completion.
+- [ ] `coai`'s half (§ 7) shipped after this one's release.
+
+## 7. Release order — and why it is an order
+
+`coai`'s review gate reads vendor keys from the vault through `creds config`. A `coai` that sends `config -` to a CLI
+that predates it gets a usage error and every vendor that needs a vault key drops out of every round; a new CLI with
+an old `coai` refuses `coai`'s argument form the same way. So: this repository's `cli` (and `extension`, for the
+snippets) release ships first; `coai` then probes the CLI's `--help` for `config-key-stdin` before sending anything,
+and refuses — naming "update the creds CLI" — when it is absent. Between the two releases a machine that has updated
+`creds` but not `coai` loses its vault keys until `coai` is updated; that window is the cost of not keeping the leaking
+form alive, and the owner accepted it.
+
+## 8. What grows
+
+Nothing. One extra `creds.exe --help` launch per `creds config` call inside WSL (an AOT start-up, milliseconds), no
+state, no file, no table.
