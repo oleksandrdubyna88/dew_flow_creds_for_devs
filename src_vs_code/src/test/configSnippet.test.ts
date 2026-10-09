@@ -231,6 +231,19 @@ test('the two environment snippets run `creds config` with no argument and say w
   }
 });
 
+test('C++ takes the key back out of its own environment as soon as the child has it (code round)', () => {
+  // setenv changes the APPLICATION's environment, not only the child's: left there, every child
+  // the application starts later would inherit a key it was never meant to have. The previous
+  // value is put back — or the variable removed — right after popen, before anything else runs.
+  const cpp = snippetFor('cpp', 'default', CONTEXT).code;
+  const launched = cpp.indexOf('popen("creds config", "r")');
+  const restored = cpp.search(/unsetenv\("CREDSFORDEVS_KEY"\)/);
+
+  assert.match(cpp, /const char\* before = std::getenv\("CREDSFORDEVS_KEY"\)/, 'the previous value is not saved');
+  assert.ok(restored > launched, 'the variable is not removed after popen');
+  assert.match(cpp, /setenv\("CREDSFORDEVS_KEY", previous\.c_str\(\), 1\)/, 'a previous value is not put back');
+});
+
 test('NO snippet passes the key as an argument — none of the shapes they used to', () => {
   for (const { id, code } of everySnippet()) {
     for (const shape of ARGUMENT_SHAPES) {

@@ -5,7 +5,14 @@ namespace CredsCli;
 /// <summary>A config key, or the sentence for why there is none. The sentence never contains a key.</summary>
 internal abstract record ConfigKey
 {
-    internal sealed record Found(string Value) : ConfigKey;
+    internal sealed record Found(string Value) : ConfigKey
+    {
+        /// <summary>
+        /// Never the key. A record's generated <c>ToString</c> prints every member, so one
+        /// interpolated log line or one failed assertion would otherwise write it out.
+        /// </summary>
+        public override string ToString() => "Found { Value = *** }";
+    }
 
     internal sealed record Missing(string Message) : ConfigKey;
 }

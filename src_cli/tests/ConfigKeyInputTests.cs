@@ -25,6 +25,18 @@ public class ConfigKeyInputTests
     private static Func<Stream> NeverOpened() => () => throw new InvalidOperationException("stdin was opened for the environment form");
 
     [Fact]
+    public void A_found_key_never_prints_itself()
+    {
+        // A positional record's generated ToString prints every member. One interpolated log line
+        // or one failed assertion that formats the object would then write the key out.
+        var found = new ConfigKey.Found(FakeKey);
+
+        found.ToString().Should().NotContain(FakeKey).And.NotContain("FAKE");
+        $"{found}".Should().NotContain("FAKE");
+        found.Value.Should().Be(FakeKey, "the value itself is still there for the one call that sends it");
+    }
+
+    [Fact]
     public void The_variable_is_the_one_the_extension_names()
     {
         // configKey.ts:44 — the panel, the mint dialog and every snippet say this name.

@@ -247,7 +247,7 @@ def readFromVault(key: String): String = {
   val out = new StringBuilder
   val stdin = new ByteArrayInputStream((key + "\\n").getBytes(UTF_8))
   // The Seq form, never a single string: no shell is involved.
-  val exit = (Seq("creds", "config", "-") #< stdin).!(ProcessLogger(line => out.append(line).append('\\n'), _ => ()))
+  val exit = (Seq("creds", "config", "-") #< stdin).!(ProcessLogger(line => out.append(line).append('\\n'), line => System.err.println(line)))
   // Loudly: a silently empty configuration starts against the wrong database.
   if (exit != 0) throw new IllegalStateException("creds config exited " + exit)
   out.toString
@@ -464,11 +464,21 @@ CONFIG = JSON.parse(read_from_vault(vault_key)).freeze`,
 // popen does go through a shell, so the command is a constant: nothing in it can be
 // reinterpreted. On Windows use _putenv_s, _popen and _pclose.
 std::string readFromVault(const std::string& key) {
+    // setenv changes THIS program's environment, so the key is taken back out the moment the
+    // child has it — otherwise every process started later would inherit it too.
+    const char* before = std::getenv("CREDSFORDEVS_KEY");
+    const bool hadBefore = before != nullptr;
+    const std::string previous = hadBefore ? before : "";
     setenv("CREDSFORDEVS_KEY", key.c_str(), 1);
+    FILE* pipe = popen("creds config", "r");
+    if (hadBefore) {
+        setenv("CREDSFORDEVS_KEY", previous.c_str(), 1);
+    } else {
+        unsetenv("CREDSFORDEVS_KEY");
+    }
+    if (pipe == nullptr) throw std::runtime_error("could not run creds");
     std::array<char, 4096> buffer{};
     std::string out;
-    FILE* pipe = popen("creds config", "r");
-    if (pipe == nullptr) throw std::runtime_error("could not run creds");
     while (std::fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
         out += buffer.data();
     }
