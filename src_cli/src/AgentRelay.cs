@@ -3,6 +3,8 @@ using System.Runtime.InteropServices;
 using System.Text;
 
 using CredsBroker;
+using CredsForDevs.ServiceDefaults;
+using Serilog;
 
 namespace CredsCli;
 
@@ -27,9 +29,19 @@ namespace CredsCli;
 /// running as that user. The mitigation is not the socket's mode — it is that every signature
 /// still raises the consent dialog on Windows, so the worst a process in WSL can do is ask,
 /// visibly. The relay is opt-in and never starts itself.</para>
+/// <para><b>It logs to a file</b> (since 2026-10-09, <c>creds-relay</c>): its start, every connection it
+/// carried and how that connection ended, and why it stopped — the record that would have shown a relay
+/// holding 27 children for 0 connections (todo/PLAN_wsl_bridge_outlives_its_client.md §2.1 C). The console
+/// half goes to stderr; stdout keeps the one <c>export SSH_AUTH_SOCK=</c> line it always carried.</para>
 /// </remarks>
 internal static class AgentRelay
 {
+    /// <summary>The log file prefix of a relay run.</summary>
+    internal const string AppName = "creds-relay";
+
+    /// <summary>This binary's version, for the start line.</summary>
+    internal static string Version => typeof(AgentRelay).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
+
     /// <summary>
     /// Set the file-creation mask so the socket is owner-only the moment it EXISTS.
     /// </summary>
@@ -112,7 +124,7 @@ internal static class AgentRelay
     /// otherwise read a number that looks like it fits.
     /// </remarks>
     internal static string TooLongMessage(string path) =>
-        $"[creds-for-devs] {path} is {Encoding.UTF8.GetByteCount(path)} bytes; a unix socket path "
+        $"{path} is {Encoding.UTF8.GetByteCount(path)} bytes; a unix socket path "
             + $"may be at most {MaxSocketPathBytes} on this platform. Set {SocketOverrideVariable} "
             + "to something shorter.";
 
@@ -169,19 +181,42 @@ internal static class AgentRelay
             return contract.Exit("usage");
         }
 
+        using var log = CredsLogging.Create(AppName);
+        var run = HostRun.Start(log, "relay", Version);
+        try
+        {
+            return run.End(await ListenAsync(contract, log).ConfigureAwait(false));
+        }
+        catch (Exception e)
+        {
+            run.Crash(e);
+            throw;
+        }
+    }
+
+    /// <summary>Refuse a path that cannot be ours, or serve it until stopped. Never on Windows (see RunAsync).</summary>
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    private static async Task<HostEnding> ListenAsync(BrokerContract contract, ILogger log)
+    {
         var path = SocketPathHere();
-        var tooLong = await RefuseIfTooLongAsync(path, contract).ConfigureAwait(false);
+        var tooLong = await RefuseIfTooLongAsync(path, contract, log).ConfigureAwait(false);
         if (tooLong is { } refusal)
         {
-            return refusal;
+            return new HostEnding(refusal, "socketPathTooLong");
         }
 
-        var claimed = await ClaimAsync(path, contract).ConfigureAwait(false);
+        var claimed = await ClaimAsync(path, contract, log).ConfigureAwait(false);
         if (claimed != 0)
         {
-            return claimed;
+            return new HostEnding(claimed, "busy");
         }
 
+        return await BindAndServeAsync(path, contract, log).ConfigureAwait(false);
+    }
+
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    private static async Task<HostEnding> BindAndServeAsync(string path, BrokerContract contract, ILogger log)
+    {
         // Owner-only from the instant the socket exists, not a line later. See SetUmask.
         SetUmask(OwnerOnlyMask);
         using var listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
@@ -200,8 +235,8 @@ internal static class AgentRelay
         catch (Exception e)
             when (e is SocketException or IOException or UnauthorizedAccessException or ArgumentException)
         {
-            Console.Error.WriteLine($"[creds-for-devs] could not listen on {path}: {e.Message}");
-            return contract.Exit("brokerFailure");
+            log.Error("could not listen on {Socket}: {Reason}", path, e.Message);
+            return new HostEnding(contract.Exit("brokerFailure"), "listenFailed");
         }
 
         using var stopping = new CancellationTokenSource();
@@ -212,12 +247,12 @@ internal static class AgentRelay
         };
         AppDomain.CurrentDomain.ProcessExit += (_, _) => Remove(path);
 
-        Console.Error.WriteLine($"[creds-for-devs] relay listening on {path}");
+        log.Information("relay listening on {Socket}", path);
         // On stdout so `eval "$(creds relay &)"` is not needed and a person can simply read it.
         Console.Out.WriteLine($"export SSH_AUTH_SOCK={path}");
-        await AcceptLoopAsync(listener, stopping.Token).ConfigureAwait(false);
+        await AcceptLoopAsync(listener, log, stopping.Token).ConfigureAwait(false);
         Remove(path);
-        return 0;
+        return new HostEnding(0, stopping.IsCancellationRequested ? "interrupted" : "listenerClosed");
     }
 
     /// <summary>
@@ -232,36 +267,44 @@ internal static class AgentRelay
     /// unhandled <c>ArgumentOutOfRangeException</c> from a binary whose whole job is to print one
     /// line for <c>eval</c> is the least useful failure it could have.</para>
     /// </remarks>
-    internal static async Task<int?> RefuseIfTooLongAsync(string path, BrokerContract contract)
+    internal static Task<int?> RefuseIfTooLongAsync(string path, BrokerContract contract, ILogger log)
     {
         if (!TooLongForSocket(path))
         {
-            return null;
+            return Task.FromResult<int?>(null);
         }
-        await Console.Error.WriteLineAsync(TooLongMessage(path)).ConfigureAwait(false);
-        return contract.Exit("usage");
+        log.Error("{Sentence}", TooLongMessage(path));
+        return Task.FromResult<int?>(contract.Exit("usage"));
     }
 
     /// <summary>Take the path, or refuse it to whoever is already serving it.</summary>
-    private static async Task<int> ClaimAsync(string path, BrokerContract contract)
+    /// <remarks>
+    /// The refusal is a Warning, and the logger's floor can never be raised past Warning
+    /// (<c>CredsLogging.FloorFrom</c>): this sentence is how the extension adopts a working relay
+    /// (<c>socketFromBusyLine</c> in wslRelay.ts) instead of declaring it broken.
+    /// </remarks>
+    private static async Task<int> ClaimAsync(string path, BrokerContract contract, ILogger log)
     {
         if (await IsStaleAsync(path).ConfigureAwait(false))
         {
             Remove(path);
+            log.Information("removed a stale socket at {Socket}", path);
             return 0;
         }
         if (!File.Exists(path))
         {
             return 0;
         }
-        Console.Error.WriteLine(
-            $"[creds-for-devs] {path} is already served by a live relay. Use that one, or set "
-                + $"{SocketOverrideVariable} to a different path.");
+        log.Warning(
+            "{Socket} is already served by a live relay. Use that one, or set {Variable} to a different path.",
+            path,
+            SocketOverrideVariable);
         return contract.Exit("busy");
     }
 
-    private static async Task AcceptLoopAsync(Socket listener, CancellationToken token)
+    private static async Task AcceptLoopAsync(Socket listener, ILogger log, CancellationToken token)
     {
+        var connections = 0;
         while (!token.IsCancellationRequested)
         {
             Socket accepted;
@@ -275,27 +318,40 @@ internal static class AgentRelay
             }
             // Deliberately not awaited: one slow signature must not hold up the next connection,
             // and every connection owns its own Windows child.
-            _ = ServeAsync(accepted);
+            _ = ServeAsync(accepted, ++connections, log);
         }
     }
 
-    private static async Task ServeAsync(Socket accepted)
+    /// <remarks>
+    /// One Information line per connection, when it ends: which side ended it, how long it lasted,
+    /// the child's pid — and whether that child was still running when the relay let go of it, which
+    /// is defect C of todo/PLAN_wsl_bridge_outlives_its_client.md observed rather than inferred.
+    /// </remarks>
+    private static async Task ServeAsync(Socket accepted, int number, ILogger log)
     {
         using var connection = accepted;
         await using var stream = new NetworkStream(connection, ownsSocket: false);
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
         try
         {
             using var child = WslInterop.Creds.StartPiped(["relay-pipe"]);
             var toWindows = stream.CopyToAsync(child.StandardInput.BaseStream);
             var fromWindows = child.StandardOutput.BaseStream.CopyToAsync(stream);
-            await Task.WhenAny(toWindows, fromWindows).ConfigureAwait(false);
+            var first = await Task.WhenAny(toWindows, fromWindows).ConfigureAwait(false);
+            log.Information(
+                "connection {Connection} ended ({Ending}) after {Seconds:0.000} s; relay-pipe pid {ChildPid}, still running: {ChildAlive}",
+                number,
+                first == toWindows ? "ssh closed" : "the Windows side closed",
+                System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalSeconds,
+                child.Id,
+                !child.HasExited);
         }
         catch (Exception e) when (e is IOException or InvalidOperationException
             or System.ComponentModel.Win32Exception or ObjectDisposedException)
         {
             // One failed connection is ssh trying another authentication method next, not a reason
             // to take the relay down for every other terminal in this distribution.
-            Console.Error.WriteLine($"[creds-for-devs] a connection could not be served: {e.Message}");
+            log.Warning("connection {Connection} could not be served: {Reason}", number, e.Message);
         }
     }
 

@@ -24,6 +24,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Starts the built binary and finds the log file its run wrote — one helper, linked into each
+         binary's test project rather than copied (src_service_defaults owns it). -->
+    <Compile Include="..\..\src_service_defaults\tests\Support\HostProcess.cs" Link="Support\HostProcess.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\src\CredsMcp.csproj" />
   </ItemGroup>
 

@@ -17,7 +17,7 @@
 | Tier | Where | Count | What it proves |
 |---|---|---|---|
 | Unit, extension | `src_vs_code/src/test/*.test.ts`, node:test | 4,205 (4 skipped) | logic, in-process, `vscode` stubbed |
-| Unit, .NET | `src_minimalapi_server/tests`, `src_cli/tests`, `src_mcp/tests`, `src_broker_client/tests` — xUnit | 447 | server 300, cli 78, mcp 40, broker 29 |
+| Unit, .NET | `src_minimalapi_server/tests`, `src_cli/tests`, `src_mcp/tests`, `src_broker_client/tests`, `src_service_defaults/tests` — xUnit | 1,146 (2026-10-09) | server 809, cli 93, mcp 88, broker 125, logging 31. The cli and mcp suites include PROCESS tests since E1 of PLAN_wsl_bridge_outlives_its_client: the built binary run with a marker in argv, environment and protocol bodies, its log file grepped for it after positive controls (`ServingLogTests`, `RelayLogTests`; helper `src_service_defaults/tests/Support/HostProcess.cs`, linked into both) |
 | HTTP contract | `http/http-run.mjs` over `http/*.http` | 82 requests, 9 files | the real server over HTTP, with a coverage report that refuses an unlisted route |
 | Scenario | `src_vs_code/scripts/*-itest.cjs` | 9 harnesses | a real process, a real socket, a real binary |
 

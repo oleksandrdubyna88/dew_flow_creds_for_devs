@@ -2,6 +2,8 @@ using System.IO.Pipes;
 using System.Net.Sockets;
 
 using CredsBroker;
+using CredsForDevs.ServiceDefaults;
+using Serilog;
 
 namespace CredsCli;
 
@@ -22,9 +24,17 @@ namespace CredsCli;
 /// <para>An announcement is a hint and never a promise: a window that crashed cannot delete its
 /// own file. What decides is whether the connection opens, so the newest announcement that
 /// answers wins and the rest are passed over in silence.</para>
+/// <para><b>It logs to a file</b> (since 2026-10-09, <c>creds-relay-pipe</c>), sparse at Information: its
+/// start, and its outcome — which side ended the connection, or why there was none. One file per run,
+/// which is one per agent connection; the growth this costs is budgeted in §8 of
+/// todo/PLAN_wsl_bridge_outlives_its_client.md. stdout and stdin carry the agent protocol, so the console
+/// half goes to stderr.</para>
 /// </remarks>
 internal static class RelayPipe
 {
+    /// <summary>The log file prefix of a relay-pipe run.</summary>
+    internal const string AppName = "creds-relay-pipe";
+
     private const string PipePrefix = @"\\.\pipe\";
 
     /// <summary>The pipe name inside an address, or null when it is not a pipe address.</summary>
@@ -49,13 +59,28 @@ internal static class RelayPipe
 
     internal static async Task<int> RunAsync(BrokerContract contract)
     {
+        using var log = CredsLogging.Create(AppName);
+        var run = HostRun.Start(log, "relay-pipe", AgentRelay.Version);
+        try
+        {
+            return run.End(await ConnectAndPumpAsync(contract, log).ConfigureAwait(false));
+        }
+        catch (Exception e)
+        {
+            run.Crash(e);
+            throw;
+        }
+    }
+
+    private static async Task<HostEnding> ConnectAndPumpAsync(BrokerContract contract, ILogger log)
+    {
         var addresses = AgentAddresses(Endpoints.Read(Endpoints.DirectoryHere()));
         if (addresses.Count == 0)
         {
-            Console.Error.WriteLine(
-                "[creds-for-devs] no VS Code window is serving an SSH agent. Load a key into the "
-                    + "agent from the SSH keys view, then try again.");
-            return contract.Exit("brokerUnreachable");
+            log.Warning(
+                "no VS Code window is serving an SSH agent. Load a key into the agent from the SSH keys view, "
+                    + "then try again.");
+            return new HostEnding(contract.Exit("brokerUnreachable"), "noAgentAnnounced");
         }
 
         foreach (var address in addresses)
@@ -65,16 +90,16 @@ internal static class RelayPipe
             {
                 await using (stream)
                 {
-                    await PumpAsync(stream).ConfigureAwait(false);
+                    return new HostEnding(0, await PumpAsync(stream).ConfigureAwait(false));
                 }
-                return 0;
             }
         }
 
-        Console.Error.WriteLine(
-            "[creds-for-devs] an SSH agent was announced but none answered — the window that "
-                + "wrote it is gone, or its key was unloaded.");
-        return contract.Exit("brokerUnreachable");
+        log.Warning(
+            "an SSH agent was announced but none answered — the window that wrote it is gone, or its key "
+                + "was unloaded ({Candidates} announced).",
+            addresses.Count);
+        return new HostEnding(contract.Exit("brokerUnreachable"), "noAgentAnswered");
     }
 
     private static async Task<Stream?> TryConnectAsync(string address)
@@ -121,12 +146,13 @@ internal static class RelayPipe
     /// though stdin will never reach end-of-stream on its own, and a client that hangs up must not
     /// leave a copy waiting on a socket nobody will write to again.
     /// </remarks>
-    private static async Task PumpAsync(Stream agent)
+    private static async Task<string> PumpAsync(Stream agent)
     {
         await using var stdin = Console.OpenStandardInput();
         await using var stdout = Console.OpenStandardOutput();
         var toAgent = stdin.CopyToAsync(agent);
         var fromAgent = agent.CopyToAsync(stdout);
-        await Task.WhenAny(toAgent, fromAgent).ConfigureAwait(false);
+        var first = await Task.WhenAny(toAgent, fromAgent).ConfigureAwait(false);
+        return first == toAgent ? "relayClosed" : "agentClosed";
     }
 }

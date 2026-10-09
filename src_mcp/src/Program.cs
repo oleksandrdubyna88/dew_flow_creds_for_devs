@@ -1,6 +1,8 @@
 using System.Text.Json.Nodes;
 using CredsBroker;
+using CredsForDevs.ServiceDefaults;
 using ModelContextProtocol.Server;
+using Serilog;
 
 namespace CredsMcp;
 
@@ -23,10 +25,23 @@ namespace CredsMcp;
 /// precaution taken on principle: the SDK's own hosted default logs to stdout, which was
 /// measured on 2026-08-27, and is exactly why this program builds the server by hand instead of
 /// taking the generic host.</para>
+/// <para><b>A serving run logs to a file</b> (since 2026-10-09): its start, the client that shook hands,
+/// and why it ended — <c>creds-mcp</c> natively, <c>creds-mcp-wsl</c> for the Linux half of the bridge,
+/// through the repository's one logging configuration (<see cref="CredsLogging"/>), console on stderr.
+/// <c>--help</c> and a usage error are one-shot answers and write no file.</para>
 /// </remarks>
 internal static class Program
 {
     private const string ServerName = "creds-for-devs";
+
+    /// <summary>The log file prefix of a run that serves the protocol here.</summary>
+    internal const string AppName = "creds-mcp";
+
+    /// <summary>The log file prefix of the Linux half of the WSL bridge — a pump, not a server.</summary>
+    internal const string WslAppName = "creds-mcp-wsl";
+
+    /// <summary>The same source <c>ServerInfo.Version</c> answers the client from.</summary>
+    internal static string Version => typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
     private static void Note(string message) => Console.Error.WriteLine($"[creds-for-devs] {message}");
 
@@ -107,26 +122,51 @@ internal static class Program
     /// </remarks>
     private static async Task<int> ServeAsync(BrokerContract contract, string? forwarded)
     {
-        var caller = forwarded is null ? CallerIdentity.Current(agent: string.Empty) : CallerIdentity.Decode(forwarded);
-        if (WslInterop.ShouldRelayHere())
+        var relayed = WslInterop.ShouldRelayHere();
+        using var log = CredsLogging.Create(relayed ? WslAppName : AppName);
+        var run = HostRun.Start(log, ModeOf(relayed, forwarded), Version);
+        try
         {
-            return await RelayAsync(contract, caller);
+            var caller = forwarded is null ? CallerIdentity.Current(agent: string.Empty) : CallerIdentity.Decode(forwarded);
+            return run.End(relayed
+                ? await RelayAsync(contract, caller, log)
+                : await ServeHereAsync(contract, caller, forwarded is null, log));
         }
+        catch (Exception e)
+        {
+            run.Crash(e);
+            throw;
+        }
+    }
 
+    /// <summary>
+    /// The start line's mode. A forwarded caller record is named only as PRESENT — its content is a
+    /// session id and a folder name, and nothing from argv is ever logged (plan §5.1).
+    /// </summary>
+    internal static string ModeOf(bool relayed, string? forwarded) =>
+        (relayed, forwarded) switch
+        {
+            (true, _) => "wsl-pump",
+            (false, null) => "serve",
+            _ => "serve, caller forwarded by the Linux half",
+        };
+
+    private static async Task<HostEnding> ServeHereAsync(BrokerContract contract, CallerRecord caller, bool ownSession, ILogger log)
+    {
         try
         {
             // The tab title is read per call, and only from THIS process's own environment: a
             // record forwarded from the Linux half gets no provider, because here the environment
             // belongs to wsl.exe and would name somebody else's session (issue #136, D6).
-            await RunAsync(contract, new CallerSource(caller, forwarded is null ? CallerIdentity.TabTitleSource() : null));
-            return 0;
+            await RunAsync(contract, new CallerSource(caller, ownSession ? CallerIdentity.TabTitleSource() : null), log);
+            return new HostEnding(0, "clientClosed");
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException)
         {
             // The client went away mid-stream. Not a failure of ours, and not worth a stack
             // trace in somebody's editor log.
-            Note("the MCP client closed the connection.");
-            return 0;
+            log.Information("the MCP client closed the connection");
+            return new HostEnding(0, "clientDisconnected");
         }
     }
 
@@ -138,7 +178,7 @@ internal static class Program
     /// person can fix — and the message has to name the variable, since <c>creds-mcp.exe</c> is
     /// installed into the extension's own storage and deliberately not put on the PATH.
     /// </remarks>
-    private static async Task<int> RelayAsync(BrokerContract contract, CallerRecord caller)
+    private static async Task<HostEnding> RelayAsync(BrokerContract contract, CallerRecord caller, ILogger log)
     {
         try
         {
@@ -149,25 +189,26 @@ internal static class Program
                 caller,
                 () => WslInterop.CredsMcp.CaptureAsync(["--help"], CallerForwarding.ProbeTimeout),
                 CallerForwarding.ProbeTimeout,
-                Note);
-            return await WslPump.RunAsync(args);
+                sentence => log.Warning("{Sentence}", sentence));
+            return await WslPump.RunAsync(args, log);
         }
         catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
-            Note(
-                $"this looks like WSL, but creds-mcp.exe could not be started ({e.Message}). Set "
-                    + $"{WslInterop.McpBinaryOverrideVariable} to its full path — \"Install the MCP Server…\" "
-                    + "puts it in the extension's storage rather than on the PATH.");
-            return contract.Exit("toolMissing");
+            log.Error(
+                "this looks like WSL, but creds-mcp.exe could not be started ({Reason}). Set {Variable} to its "
+                    + "full path — \"Install the MCP Server…\" puts it in the extension's storage rather than on the PATH.",
+                e.Message,
+                WslInterop.McpBinaryOverrideVariable);
+            return new HostEnding(contract.Exit("toolMissing"), "windowsHalfMissing");
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException)
         {
-            Note("the MCP client closed the connection.");
-            return 0;
+            log.Information("the MCP client closed the connection");
+            return new HostEnding(0, "clientDisconnected");
         }
     }
 
-    private static async Task RunAsync(BrokerContract contract, CallerSource source)
+    private static async Task RunAsync(BrokerContract contract, CallerSource source, ILogger log)
     {
         var options = new McpServerOptions
         {
@@ -197,6 +238,9 @@ internal static class Program
         {
             options.ToolCollection.Add(UseTool(contract, tool, source));
         }
+
+        // Method names and the client's name only — never a body (plan §5.1).
+        options.Filters.Message.IncomingFilters.Add(new ClientNaming(log).Filter);
 
         await using var transport = new StdioServerTransport(ServerName);
         await using var server = McpServer.Create(transport, options);

@@ -236,7 +236,7 @@ public class AgentRelayTests
     {
         var fits = new string('x', AgentRelay.MaxSocketPathBytes);
 
-        (await AgentRelay.RefuseIfTooLongAsync(fits, BrokerContract.Current)).Should().BeNull(
+        (await AgentRelay.RefuseIfTooLongAsync(fits, BrokerContract.Current, Serilog.Core.Logger.None)).Should().BeNull(
             "null means carry on — the relay has a path it can bind");
     }
 
@@ -247,7 +247,7 @@ public class AgentRelayTests
         // and a wrong path is the person's mistake to correct rather than a broker that is down.
         var tooLong = new string('x', AgentRelay.MaxSocketPathBytes + 1);
 
-        var refusal = await AgentRelay.RefuseIfTooLongAsync(tooLong, BrokerContract.Current);
+        var refusal = await AgentRelay.RefuseIfTooLongAsync(tooLong, BrokerContract.Current, Serilog.Core.Logger.None);
 
         refusal.Should().Be(BrokerContract.Current.Exit("usage"));
     }
@@ -269,9 +269,14 @@ public class AgentRelayTests
             return;
         }
         var before = Environment.GetEnvironmentVariable(AgentRelay.SocketOverrideVariable);
+        // The relay logs its run since 2026-10-09; a test's run goes to a temporary folder, never into
+        // the log folder of whoever runs the suite.
+        var logsBefore = Environment.GetEnvironmentVariable(CredsForDevs.ServiceDefaults.CredsLogging.DirectoryVariable);
+        var logs = Path.Combine(Path.GetTempPath(), "creds-relay-refusal-" + Guid.NewGuid().ToString("N"));
         Environment.SetEnvironmentVariable(
             AgentRelay.SocketOverrideVariable,
             "/tmp/" + new string('x', AgentRelay.MaxSocketPathBytes) + ".sock");
+        Environment.SetEnvironmentVariable(CredsForDevs.ServiceDefaults.CredsLogging.DirectoryVariable, logs);
         try
         {
             var code = await AgentRelay.RunAsync(BrokerContract.Current);
@@ -281,6 +286,11 @@ public class AgentRelayTests
         finally
         {
             Environment.SetEnvironmentVariable(AgentRelay.SocketOverrideVariable, before);
+            Environment.SetEnvironmentVariable(CredsForDevs.ServiceDefaults.CredsLogging.DirectoryVariable, logsBefore);
+            if (Directory.Exists(logs))
+            {
+                Directory.Delete(logs, recursive: true);
+            }
         }
     }
 }
