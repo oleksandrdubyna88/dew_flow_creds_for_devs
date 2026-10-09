@@ -22,6 +22,9 @@
          two binaries each embedding their own copy of a generated specification is the drift
          the generated file exists to prevent, with extra steps. -->
     <ProjectReference Include="..\..\src_broker_client\src\BrokerClient.csproj" />
+    <!-- The repository's one logging configuration (src_service_defaults): a coloured console on
+         stderr and a file per serving run, the same sinks the server writes through. -->
+    <ProjectReference Include="..\..\src_service_defaults\src\CredsForDevs.ServiceDefaults.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -29,6 +29,9 @@
          client owns its server's process lifetime and the extension has zero runtime
          dependencies; it does not exist because the protocol is different. -->
     <ProjectReference Include="..\..\src_broker_client\src\BrokerClient.csproj" />
+    <!-- The repository's one logging configuration (src_service_defaults): a coloured console on
+         stderr and a file per serving run, the same sinks the server writes through. -->
+    <ProjectReference Include="..\..\src_service_defaults\src\CredsForDevs.ServiceDefaults.csproj" />
   </ItemGroup>
 
   <ItemGroup>

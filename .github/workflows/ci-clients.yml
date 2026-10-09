@@ -59,11 +59,16 @@ jobs:
       # The three test projects are built by name: the solution file does not carry all of them, and
       # a project the solution never built is a runner executable that does not exist — which is how
       # this job's first run failed on `No such file or directory`.
-      - name: Build the three test projects
+      #
+      # A fourth since 2026-10-09: src_service_defaults, the logging the two binaries share with the
+      # server. Its log ROOT is a per-platform decision (LOCALAPPDATA, XDG, ~/Library/Logs), which is
+      # exactly what this job's macOS leg is for.
+      - name: Build the four test projects
         run: |
           dotnet build src_cli/tests/CredsCli.Tests.csproj -c Release
           dotnet build src_mcp/tests/CredsMcp.Tests.csproj -c Release
           dotnet build src_broker_client/tests/BrokerClient.Tests.csproj -c Release
+          dotnet build src_service_defaults/tests/CredsForDevs.ServiceDefaults.Tests.csproj -c Release
       # xUnit v3 on Microsoft Testing Platform: each test project is its own runner executable, and
       # `dotnet test` has no VSTest host here — it would abort with a tooling error, not a test result.
       # The executable is named by <AssemblyName>, which for the broker client is CredsBroker.Tests.
@@ -73,3 +78,5 @@ jobs:
         run: ./src_mcp/tests/bin/Release/net10.0/CredsMcp.Tests
       - name: Test the broker client
         run: ./src_broker_client/tests/bin/Release/net10.0/CredsBroker.Tests
+      - name: Test the shared logging
+        run: ./src_service_defaults/tests/bin/Release/net10.0/CredsForDevs.ServiceDefaults.Tests

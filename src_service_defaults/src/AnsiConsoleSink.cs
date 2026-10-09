@@ -2,7 +2,7 @@ using Serilog.Core;
 using Serilog.Events;
 using Serilog.Formatting.Display;
 
-namespace CredVaultServer;
+namespace CredsForDevs.ServiceDefaults;
 
 /// <summary>
 /// Writes coloured log lines to stdout with ANSI escapes, unconditionally.

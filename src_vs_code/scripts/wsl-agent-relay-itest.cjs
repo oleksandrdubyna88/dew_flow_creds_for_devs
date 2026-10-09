@@ -90,14 +90,17 @@ async function buildLinuxCli() {
   console.log('      building the Linux CLI inside WSL (once)…');
   const repoLinux = REPO.replace(/^([A-Za-z]):/, (_, d) => `/mnt/${d.toLowerCase()}`).replace(/\\/g, '/');
   const build = await wsl(
-    // Both projects: the CLI references src_broker_client, so copying src_cli alone stopped
+    // All three projects: the CLI references src_broker_client, so copying src_cli alone stopped
     // building the day that library was extracted — and this test then SKIPPED rather than
-    // failed, which is a test quietly not running.
-    `rm -rf ${LINUX_BUILD} && mkdir -p ${LINUX_BUILD}/src_cli/src ${LINUX_BUILD}/src_broker_client/src ${LINUX_BUILD}/contract && ` +
+    // failed, which is a test quietly not running. The same happened again in waiting with the
+    // shared logging (src_service_defaults, 2026-10-09), which also brings the first package into
+    // the CLI's graph — so Directory.Packages.props and nuget.config are copied now too.
+    `rm -rf ${LINUX_BUILD} && mkdir -p ${LINUX_BUILD}/src_cli/src ${LINUX_BUILD}/src_broker_client/src ${LINUX_BUILD}/src_service_defaults/src ${LINUX_BUILD}/contract && ` +
       `cp ${repoLinux}/src_cli/src/*.cs ${repoLinux}/src_cli/src/*.csproj ${LINUX_BUILD}/src_cli/src/ && ` +
       `cp ${repoLinux}/src_broker_client/src/*.cs ${repoLinux}/src_broker_client/src/*.csproj ${LINUX_BUILD}/src_broker_client/src/ && ` +
+      `cp ${repoLinux}/src_service_defaults/src/*.cs ${repoLinux}/src_service_defaults/src/*.csproj ${LINUX_BUILD}/src_service_defaults/src/ && ` +
       `cp ${repoLinux}/contract/broker-v1.json ${LINUX_BUILD}/contract/ && ` +
-      `cp ${repoLinux}/Directory.Build.props ${LINUX_BUILD}/ && ` +
+      `cp ${repoLinux}/Directory.Build.props ${repoLinux}/Directory.Packages.props ${repoLinux}/nuget.config ${LINUX_BUILD}/ && ` +
       // No AOT: the distribution has the SDK but not a native linker, and the code under test is
       // the same either way — only the packaging differs.
       `cd ${LINUX_BUILD}/src_cli/src && dotnet build -c Debug -p:PublishAot=false 2>&1 | tail -3`,
@@ -293,7 +296,9 @@ async function main() {
   restarted.dispose();
 
   // ---- the lifecycle rules ----------------------------------------------------
-  const second = await wsl(`${env}; ${LINUX_CLI} relay 2>&1 | tail -1`);
+  // The refusal line, found by its words rather than by being LAST: since the relay logs through the
+  // shared logger (2026-10-09) its exit line follows the refusal on stderr.
+  const second = await wsl(`${env}; ${LINUX_CLI} relay 2>&1 | grep 'already served' | tail -1`);
   check(
     'a second relay refuses a socket someone is already serving',
     second.stdout.includes('already served by a live relay'),

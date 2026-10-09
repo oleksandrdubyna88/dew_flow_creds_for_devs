@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>CredsForDevs.ServiceDefaults</AssemblyName>
+    <RootNamespace>CredsForDevs.ServiceDefaults</RootNamespace>
+    <!-- The one logging configuration of this repository, per
+         .claude/rules/shared/common/logging-serilog.md ("never configure Serilog in more than one
+         place"). Referenced by the server and by both Native AOT binaries, so the trim/AOT analyzers
+         run on THIS project while it is written rather than in whichever binary is published next.
+         A library: it configures no host on its own; each host calls one of its two entry points. -->
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Sinks.File" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CredsForDevs.ServiceDefaults.Tests" />
+  </ItemGroup>
+
+</Project>

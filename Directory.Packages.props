@@ -13,6 +13,16 @@
     <!-- Serilog: the one logging stack, per .claude/rules/shared/common/logging-serilog.md. Apache-2.0. -->
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
 
+    <!-- src_service_defaults: the shared sinks the server and both AOT binaries use. Serilog core is
+         the latest stable (4.4.0, 2026-07-10), Apache-2.0. Serilog.Sinks.File 7.0.0 is the latest
+         stable too, last released 2025-04-28 — over the policy's twelve months, and taken anyway on
+         the record: it was already in the server's graph through Serilog.AspNetCore (the sink
+         DailyRunFileSink has always written through), it is the family's file sink, and the owner
+         approved the plan that names it (todo/PLAN_wsl_bridge_outlives_its_client.md §5.1).
+         Apache-2.0. -->
+    <PackageVersion Include="Serilog" Version="4.4.0" />
+    <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
+
     <!-- creds-mcp: the official MCP SDK. The first package either binary has taken, and the
          reason it is affordable was measured rather than assumed (2026-08-27): with PublishAot
          and JsonSerializerIsReflectionEnabledByDefault=false it publishes with zero trim

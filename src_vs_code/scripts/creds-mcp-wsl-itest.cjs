@@ -113,12 +113,14 @@ async function buildLinuxMcp() {
   console.log('      building the Linux creds-mcp inside WSL (once, a minute or so)…');
   const repo = asLinux(REPO);
   const build = await wsl(
-    // Both projects and BOTH props files: central package management means the MCP SDK has no
+    // All three projects and BOTH props files: central package management means the MCP SDK has no
     // version of its own, so a copy without Directory.Packages.props fails to restore — and the
-    // failure would present as this test SKIPPING, which is a test quietly not running.
-    `rm -rf ${LINUX_BUILD} && mkdir -p ${LINUX_BUILD}/src_mcp/src ${LINUX_BUILD}/src_broker_client/src ${LINUX_BUILD}/contract && ` +
+    // failure would present as this test SKIPPING, which is a test quietly not running. The third
+    // project is the shared logging (src_service_defaults, 2026-10-09), referenced by the binary.
+    `rm -rf ${LINUX_BUILD} && mkdir -p ${LINUX_BUILD}/src_mcp/src ${LINUX_BUILD}/src_broker_client/src ${LINUX_BUILD}/src_service_defaults/src ${LINUX_BUILD}/contract && ` +
       `cp ${repo}/src_mcp/src/*.cs ${repo}/src_mcp/src/*.csproj ${LINUX_BUILD}/src_mcp/src/ && ` +
       `cp ${repo}/src_broker_client/src/*.cs ${repo}/src_broker_client/src/*.csproj ${LINUX_BUILD}/src_broker_client/src/ && ` +
+      `cp ${repo}/src_service_defaults/src/*.cs ${repo}/src_service_defaults/src/*.csproj ${LINUX_BUILD}/src_service_defaults/src/ && ` +
       `cp ${repo}/contract/broker-v1.json ${LINUX_BUILD}/contract/ && ` +
       `cp ${repo}/Directory.Build.props ${repo}/Directory.Packages.props ${repo}/nuget.config ${LINUX_BUILD}/ && ` +
       // No AOT: the distribution has the SDK but not a native linker, and the code under test is
