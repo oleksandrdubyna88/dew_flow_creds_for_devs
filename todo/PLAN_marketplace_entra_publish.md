@@ -64,10 +64,10 @@ cite a fact by its content, not by its number, across the two. The facts this pl
 | F1 | Global PATs stop working on **2026-12-01**. The block on creating new global PATs announced for 2026-03-15 was withdrawn: *"You may continue creating global PATs until December 1."* | <https://devblogs.microsoft.com/devops/retirement-of-global-personal-access-tokens-in-azure-devops/> (2025-12-12, updated 03/05) |
 | F2 | The VS Code guide (DateApproved 10/7/2026) tells publishers to move to *"secure automated publishing with Microsoft Entra ID"*. The steps are: a **user-assigned managed identity**; a federated credential; the identity's id read with `az rest -u https://app.vssps.visualstudio.com/_apis/profile/profiles/me --resource 499b84ac-1321-427f-aa17-267ca6975798`; that id *"as a member of your publisher"* with role **Contributor**; then `vsce publish --azure-credential` (vsce ≥ 2.26.1). The recipe is written for Azure Pipelines; there is no GitHub Actions example. | <https://code.visualstudio.com/api/working-with-extensions/publishing-extension#secure-automated-publishing-to-visual-studio-marketplace> |
 | F3 | Uploading a `.vsix` by hand on the management page is a documented way to publish, and needs no PAT. | same page; <https://marketplace.visualstudio.com/manage> |
-| F4 | `--azure-credential` asks for scope `499b84ac-…/.default` through a chain that includes `AzureCliCredential`, so an `azure/login` session is enough. | `microsoft/vscode-vsce · src/auth.ts` @ v4.0.0 |
-| F5 | **A PAT beats `--azure-credential`.** `getPAT` returns `options.pat` first, and `--pat` **defaults to `process.env.VSCE_PAT`**. With `VSCE_PAT` in the step's environment, `--azure-credential` is silently ignored. | `src/publish.ts` (`getPAT`), `src/main.ts` @ v4.0.0 and v3.9.2 |
-| F6 | `vsce verify-pat [publisher] --azure-credential` succeeds for **any** publisher role, Reader included. A green result proves membership, not publish rights. `vsce show` takes no credential. | `src/store.ts`, `src/main.ts` @ v4.0.0 |
-| F7 | This repository runs vsce **4.0.0** (`src_vs_code/package.json:83` `^4.0.0`, `src_vs_code/package-lock.json:1512`) and `@azure/identity` 4.13.3. | read 2026-10-09 |
+| F4 | `--azure-credential` asks for scope `499b84ac-…/.default` through a chain that includes `AzureCliCredential`, so an `azure/login` session is enough. | <https://github.com/microsoft/vscode-vsce/blob/v4.0.0/src/auth.ts> |
+| F5 | **A PAT beats `--azure-credential`.** `getPAT` returns `options.pat` first, and `--pat` **defaults to `process.env.VSCE_PAT`**. With `VSCE_PAT` in the step's environment, `--azure-credential` is silently ignored. | <https://github.com/microsoft/vscode-vsce/blob/v4.0.0/src/publish.ts> (`getPAT`), <https://github.com/microsoft/vscode-vsce/blob/v4.0.0/src/main.ts> (`publish` and `verify-pat` options); same order at <https://github.com/microsoft/vscode-vsce/blob/v3.9.2/src/publish.ts> |
+| F6 | `vsce verify-pat [publisher] --azure-credential` succeeds for **any** publisher role, Reader included. A green result proves membership, not publish rights. `vsce show` takes no credential. | <https://github.com/microsoft/vscode-vsce/blob/v4.0.0/src/store.ts> (`verifyPat`), <https://github.com/microsoft/vscode-vsce/blob/v4.0.0/src/main.ts> (`show`) |
+| F7 | This repository runs vsce **4.0.0** (`src_vs_code/package.json:83` `^4.0.0`, `src_vs_code/package-lock.json:1512`) and `@azure/identity` 4.13.3. | this repository, read 2026-10-09; releases: <https://github.com/microsoft/vscode-vsce/releases/tag/v4.0.0> |
 | F8 | Federated credential: issuer `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`. A subject must match exactly; a wrong one is accepted at creation and fails silently at exchange. At most 20 credentials per identity; no wildcards. | <https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation-create-trust-user-assigned-managed-identity> |
 | F9 | A job that references an environment presents a subject ending in `:environment:<NAME>`, and needs `id-token: write`. | <https://docs.github.com/en/actions/reference/security/oidc> |
 | F10 | **This repository emits the IMMUTABLE subject:** `gh api repos/oleksandrdubyna88/dew_flow_creds_for_devs/actions/oidc/customization/sub` → `use_immutable_subject: true`, prefix `repo:oleksandrdubyna88@71817001/dew_flow_creds_for_devs@1343621986`. So the subject to trust is `repo:oleksandrdubyna88@71817001/dew_flow_creds_for_devs@1343621986:environment:marketplace`. | API read 2026-10-09; <https://learn.microsoft.com/en-us/entra/workload-id/workload-identities-github-immutable-subjects> |
@@ -140,13 +140,13 @@ the order of effects stays the same:
 - id: mode   # writes path=entra|pat|manual; never "exit 0 to skip", which would not stop later steps
   # unset/entra -> entra (and a missing vars.AZURE_CLIENT_ID is RED, as a missing VSCE_PAT is today, :706-709)
   # pat -> pat (RED on/after 2026-12-01);  manual -> manual;  ANY other value -> RED, naming the three
-- provenance (entra): git fetch origin main && git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+- provenance (entra): checkout with fetch-depth: 0 (the default depth-1 clone cannot prove ancestry of a tag behind main's tip), then git merge-base --is-ancestor "$GITHUB_SHA" origin/main
 - azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0          if: steps.mode.outputs.path == 'entra'
   with: client-id: ${{ vars.AZURE_CLIENT_ID }}, tenant-id: ${{ vars.AZURE_TENANT_ID }}, allow-no-subscriptions: true
 - env -u VSCE_PAT npx vsce verify-pat remsoftdev --azure-credential       (entra; membership preflight, F6)
 - env -u VSCE_PAT npx vsce publish --skip-duplicate --packagePath creds-for-devs.vsix --azure-credential   (entra)
 - npx vsce publish --skip-duplicate --packagePath creds-for-devs.vsix --pat "${VSCE_PAT}"   (pat; VSCE_PAT in THIS step's env only)
-- npx vsce show remsoftdev.creds-for-devs --json   (manual; green only if the gallery serves needs.extension.outputs.version)
+- npx vsce show remsoftdev.creds-for-devs --json   (manual; parse .versions[0].version from the JSON and fail unless it EQUALS needs.extension.outputs.version — vsce show exits 0 for any existing extension, so the exit code proves nothing)
 ```
 
 Every step but `mode` carries an `if:` on `steps.mode.outputs.path`. Environment-scoped variables
@@ -345,6 +345,8 @@ Tests go in `src_vs_code/src/test/`, next to `credsInstall.test.ts:46-57`, which
   - `azure/login@` is followed by a 40-hex SHA and immediately by the two Entra vsce steps;
   - the provenance step precedes it;
   - `mode` rejects unknown values, and the `pat` path carries the 2026-12-01 refusal;
+  - the provenance checkout has `fetch-depth: 0`, and the `manual` step compares the served version with
+    `needs.extension.outputs.version` rather than trusting `vsce show`'s exit code;
   - `extension-release` `needs` both jobs, so a failed publish never makes the release public, and
     its title reads `needs.extension.outputs.version`, never `steps.version`;
   - both new jobs set `working-directory: src_vs_code` and download the artifact into it.
