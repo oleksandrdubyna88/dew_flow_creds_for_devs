@@ -566,7 +566,8 @@ password: never in plain metadata, never in a share's label, never handed to an 
   against the file on disk, so a colleague's edit is readable before it is taken.
 - ***Enable Code Access…*** mints a long-lived key for applications: shown **once**, copied to
   the clipboard, and the vault keeps only a SHA-256 of it. The app reads the config through
-  `POST /v1/config/read` or `creds config <key>`; the key travels in `CREDSFORDEVS_KEY`. ***Revoke
+  `POST /v1/config/read` or `creds config -`; the key lives in `CREDSFORDEVS_KEY` and reaches
+  `creds` on stdin — never as an argument, which any process on the machine can read. ***Revoke
   Code Access…*** retires it. The viewer's *Read this from code* panel gives the exact snippet in
   twenty languages — and names the file it goes into ("Program.cs, before builder.Build().").
 - **Sharing carries the document.** A shared config arrives with its body; the code-access key

@@ -455,6 +455,12 @@ Three consequences worth stating, because each was a decision:
 - **A session is carried, not relayed.** `creds` uses `WindowsBridge.Relay` (one call, streams
   inherited, an exit code back); MCP is a long-lived JSON-RPC conversation in both directions, so
   this uses `StartPiped` and a pump that closes both halves together.
+- **`creds config` is the one verb that is NOT relayed as typed (2026-10-09).** Its key would sit in
+  two command lines. The Linux half parses and refuses the argument form itself, reads the key from
+  its own stdin or `CREDSFORDEVS_KEY`, checks the Windows `creds.exe --help` for `config-key-stdin`,
+  and starts `creds.exe config -` through `WindowsBridge.RelayWithInput` — stdin carries the key,
+  stdout and stderr stay inherited. An old Windows binary is refused, never fed the key as an
+  argument.
 - **The Windows half does the finding.** No Linux-side guess at `/mnt/c/Users/…`, which breaks on
   the first machine whose disk is not `C:`.
 

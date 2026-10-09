@@ -74,7 +74,7 @@ function mintedDetail(key: string): string {
     '',
     'This is the only time it is shown. The vault keeps a hash, not the key, so it cannot be read back — losing it means minting a new one.',
     '',
-    `Put it in ${CONFIG_KEY_ENV}, or pass it to AddCredsForDevs() directly. Keep it out of git, like any other secret.`,
+    `Put it in ${CONFIG_KEY_ENV}: the snippets read it from there and hand it to creds config on stdin — never as an argument, which any process on the machine can read. Keep it out of git, like any other secret.`,
     `Anything starting with ${CONFIG_KEY_PREFIX} is one of these — ${describeConfigKey(key)} is how this one appears in the audit log.`,
   ].join('\n');
 }

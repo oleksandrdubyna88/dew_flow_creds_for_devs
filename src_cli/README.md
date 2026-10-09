@@ -13,6 +13,8 @@ creds script <token>                   run the saved script
 creds db <token> -- "select 1"         run a query
 creds env <token>                      export the secret into new VS Code terminals
 creds vpn-up <token> / vpn-down        control the tunnel
+creds config -                         print one config file; the key is read from stdin
+creds config                           the same, with the key from CREDSFORDEVS_KEY
 ```
 
 The token comes from **Share with Claude Code…** in VS Code. It stops working when that window
@@ -66,6 +68,26 @@ Publishing needs the host linker — `clang` and `zlib1g-dev` on Linux, the MSVC
 Windows. CI installs them; a workstation without them builds and tests fine but cannot produce
 the native binary. Release binaries are built for all four RIDs by the `cli-binaries` job in
 `.github/workflows/release.yml`, on a `cli-v*` tag.
+
+## `creds config` — the key is never an argument
+
+An application reads one config at startup with a long-lived config key (*Enable Code Access…*).
+That key is **never** taken from the command line: a command line is readable by every user inside
+WSL (procfs is mounted without `hidepid` by default) and by every process of the same user on
+Windows, and the key lives for a year. So:
+
+- `creds config -` reads one line from stdin — write the key and a newline, then close stdin. An
+  explicit `-` with nothing on stdin is an error even when `CREDSFORDEVS_KEY` is set.
+- `creds config` reads `CREDSFORDEVS_KEY`.
+- `creds config <anything else>` is refused (exit 96) with one fixed sentence that never repeats
+  what it was given. The process that ran it has still had the key in its command line — rotate a
+  key that was ever passed that way.
+
+`--help` carries the marker `config-key-stdin`; a caller that needs to know whether a binary reads
+the key from stdin looks for it there. Inside WSL the Linux binary reads the key on its own side,
+checks that the Windows `creds.exe` carries the marker, and hands the key over on its stdin — never
+in either command line. A Windows binary without the marker is refused with *update creds.exe*
+(exit 99) rather than given the key as an argument.
 
 ## Names, and where it runs
 

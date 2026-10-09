@@ -52,7 +52,7 @@ export function configCodePanel(options: CodePanelOptions): string {
  */
 function accessLine(options: CodePanelOptions): string {
   if (options.hasKey) {
-    return `<p class="hint">Open to code. The key lives in <code>${escapeHtml(options.envVar)}</code> — it was shown once when you enabled access, and the vault keeps only a hash of it.</p>`;
+    return `<p class="hint">Open to code. The key lives in <code>${escapeHtml(options.envVar)}</code> — it was shown once when you enabled access, and the vault keeps only a hash of it. The snippet hands it to <code>creds config</code> on stdin, never as an argument: any process on the machine can read a command line.</p>`;
   }
   return `<p class="hint bad">Not open to code yet. Right-click this entry and choose <b>Enable Code Access…</b>; a key is minted, copied to your clipboard, and shown once.</p>`;
 }
