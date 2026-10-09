@@ -43,7 +43,15 @@ internal static class Program
         // even argument errors should be reported by the side that will handle the request.
         // `relay` is the one verb that must stay on this side: it IS the Linux end of the
         // bridge, and handing it to Windows would start a listener in the wrong kernel.
+        // `config` is the other exception, for a different reason: relayed as typed, its key would sit
+        // in two command lines. ConfigRelay reads the key on this side and hands it over on stdin.
         var staysHere = args.Length > 0 && args[0] == "relay";
+        var isConfig = args.Length > 0 && args[0] == "config";
+        if (isConfig && WslInterop.ShouldRelayHere())
+        {
+            return await ConfigRelay.RunAsync(args, contract, ConfigRelaySeams.ForThisMachine(Note), ConfigRelay.ProbeTimeout);
+        }
+
         if (!staysHere && WslInterop.ShouldRelayHere())
         {
             try
@@ -79,7 +87,7 @@ internal static class Program
                 return await RunAsync(use, contract, caller);
 
             case Request.ReadConfig config:
-                return await ReadConfigAsync(config.Key, contract);
+                return await ReadConfigAsync(config.Source, contract);
 
             case Request.Relay relay:
                 return relay.Listen
@@ -278,9 +286,19 @@ internal static class Program
     /// <para>The body goes to stdout with NOTHING added: no trailing newline of ours, no banner,
     /// no progress. Whatever is printed here is parsed by a program, and a friendly extra line is
     /// a parse error somewhere else.</para>
+    /// <para>The key comes from stdin or <c>CREDSFORDEVS_KEY</c> (<see cref="ConfigKeyInput"/>), never
+    /// from the arguments, and it is read before any window is looked for, so a missing key is said as
+    /// such rather than as "no window".</para>
     /// </remarks>
-    private static async Task<int> ReadConfigAsync(string key, BrokerContract contract)
+    private static async Task<int> ReadConfigAsync(ConfigKeySource source, BrokerContract contract)
     {
+        var resolved = ConfigKeyInput.Resolve(source, Environment.GetEnvironmentVariable, Console.OpenStandardInput);
+        if (resolved is not ConfigKey.Found { Value: var key })
+        {
+            Note(resolved is ConfigKey.Missing missing ? missing.Message : ConfigKeyInput.VariableNotSet);
+            return contract.Exit("usage");
+        }
+
         var endpoints = BrokerClient.SocketPath() is not null
             ? [new Endpoint(0, 1, BrokerClient.SocketPath(), string.Empty)]
             : Endpoints.Read(Endpoints.DirectoryHere());

@@ -23,6 +23,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="CredsCli.Tests" />
     <InternalsVisibleTo Include="CredsMcp.Tests" />
+    <InternalsVisibleTo Include="CredsBroker.Tests" />
   </ItemGroup>
 
 </Project>
