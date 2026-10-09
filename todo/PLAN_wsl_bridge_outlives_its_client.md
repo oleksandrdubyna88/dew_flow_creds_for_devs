@@ -238,8 +238,11 @@ Shared because both the MCP wrapper and the relay need exactly this, and today e
 ### 5.8 A stale WSL install says so — `src_vs_code/src`
 
 - The extension does not write a client's MCP config; it copies a block (`wslMcpInstall.ts:79`, `mcpClientConfig.ts`).
-  So the check asks the install itself: `wsl -d <distro> -e bash -lc 'creds-mcp --version'` (§5.2), compared with
-  `compareVersions` (`credsInstall.ts:151`) against what the extension ships.
+  So the check asks the install itself: `wsl -d <distro> -e bash -lc '<path> --version'` (§5.2), compared with
+  `compareVersions` (`credsInstall.ts:151`) against what the extension ships. **`<path>` is the exact executable the
+  copied config block names** (the install path `installIntoWsl` wrote), never a bare `creds-mcp` resolved through the
+  shell's PATH — a current binary earlier on the PATH would report "current" while the client still launches the stale
+  one (E1 plan round, finding 1). The verdict says which path it checked.
 - Pure verdict `staleVerdict(versionOutput, expected)` in `wslMcpInstall.ts` (current / older / no `--version` = older),
   host wiring next to `staleBinaryWarning` (`wslMcpInstall.ts:108`, shown from `mcpInstallTarget.ts:113`).
 - When: after every MCP install into WSL; at activation at most once a day per distribution, **only for running
@@ -291,6 +294,9 @@ Both are named back from those plans in the same change that lands this one.
 3. **`server/discover` + `subscriptions/listen` fixture** captured from Claude Code 2.1.295 (the shim log in the
    RESULTS record), stored under `src_mcp/tests/fixtures/` — not invented.
 4. Whether `McpServer.Create` can take an `ILoggerFactory` (so SDK lines reach the file) without reflection.
+   **Answered in E1:** it can, and is deliberately not given one — the SDK logs outgoing JSON at Trace and a client's
+   cancellation reason at Information, which would carry protocol bodies into the file (§5.1). The client's name and
+   method names come through an incoming message filter instead. Record: the RESULTS file, §7.2 section.
 
 ## 8. Growth budget
 
@@ -442,3 +448,46 @@ answered** (codex; gemini rate-limited — the verdict is one vendor's, not a pa
 
 The round's operator commands: build this plan without re-splitting it (the five epics above ARE its split, made
 before the round); work autonomously per the six orders; ask the question consultant before the person.
+
+### Epic E1 — the logs say why a process lived and why it ended (branch `feat/e1-logs-on-disk`)
+
+**Plan round (2026-10-09, session `889ae40d`) — `proceed`**, gating 2 against threshold 6, **1 of 2 reviewers
+answered** (codex; gemini rate-limited — one vendor's verdict, not a panel's).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | §3.1/§3.3 leave the modal promise unresolved while E4 defaults to a modal that stays visible | **rejected** — outside E1's scope and already recorded as the owner's open decision: §3.3 names both shapes, E4 ships (a), (b) only on the owner's word as E4.S3, and §13 requires "the owner has decided §3.3" before the plan closes |
+| 1 | §5.8 checks the PATH's `creds-mcp`, not the binary the copied config launches | **accepted** — §5.8 now checks the exact executable path the config block names and says which path it checked |
+
+**Cadence consultation, epics 1–3** (owed before this epic's code round; codex). Verified and acted on: (1) the
+relay's *already served* refusal is read by the extension (`socketFromBusyLine`), so a raised `CREDS_LOG_LEVEL`
+must not hide it — the AOT floor is capped at Warning and a process test runs the refusal at `fatal` through the
+extension's own pattern; (2) the new project had to reach the server's Dockerfile, the main-push path filter of
+`ci-server.yml`, and the two WSL itests' explicit copy lists (the relay's also lacked `Directory.Packages.props`,
+which the first package in the CLI's graph now needs) — all four done, the image built and run; the itest's
+`tail -1` read of the refusal became a `grep`, since the exit line now follows it; (3) do not hand the SDK an
+`ILoggerFactory` (§7.4 above); (4) read the client name before AND after the handshake message is handled.
+Its fifth point — E2's Unix parent watch reuses §5.4's poll, which sits in E3.S1 — is for E2's branch: the
+primitive moves into E2 and E3 reuses it. Also new in E1 and reusable there: `ParentProcess.Id()` in
+`src_service_defaults` (getppid / `NtQueryInformationProcess`) — the observation half of §5.4/§5.9's watch.
+
+**What shipped, and where it differs from §5.1/§10:**
+
+- `src_service_defaults/src` (`CredsForDevs.ServiceDefaults`) with the three sinks MOVED (`git mv`, namespace only),
+  plus `CredsLogging` (core `Build` + AOT factory `Create`), `LogLevels`, `LogRoot`, `UtcTimestampEnricher` (moved out
+  of the server's `Logging.cs`), `HostRun`/`HostEnding` (start and exit lines) and `ParentProcess`. The server's
+  `Logging.cs` keeps its `appsettings` keys and calls the core — the contract and the server's output are unchanged
+  (container built, run, file written under `/logs`).
+- **Deviation:** the server's `LoggingSinkTests` pass byte-for-byte unmodified (a `<Using>` in the test project
+  supplies the new namespace), but `ConfigKeysTests` had to drop `LogRetention.cs` from its list of server files
+  that read configuration — the file moved, and it never read a key itself (`Logging:RetentionDays` is read in
+  `Logging.cs`, which stays in the list).
+- **Deviation:** `CREDS_LOG_LEVEL` lowers freely but never raises the floor above Warning (consultation point 1).
+- The human `[creds-for-devs] …` sentences of the SERVING paths go through the logger at Warning/Error (they keep
+  their words; the console prefix becomes `[time LVL] creds-relay:`); the one-shot paths keep the plain stderr line
+  and write no file, as §5.1 says.
+- A fourth .NET test project, `src_service_defaults/tests`, run by `ci-clients` (Linux and macOS), Sonar and both
+  release legs. The process-test helper lives there and is LINKED into the mcp and cli test projects.
+- §7.2: +1.20 MiB (`creds-mcp`) / +1.25 MiB (`creds`), about 1–9 ms on the first response — Serilog kept.
+- Release smoke: each published `creds-mcp` serves one handshake and each `creds` runs `relay-pipe` with nothing
+  behind it; both must leave their file with its start and exit lines.

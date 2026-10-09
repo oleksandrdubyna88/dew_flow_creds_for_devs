@@ -23,7 +23,10 @@
          the generated file exists to prevent, with extra steps. -->
     <ProjectReference Include="..\..\src_broker_client\src\BrokerClient.csproj" />
     <!-- The repository's one logging configuration (src_service_defaults): a coloured console on
-         stderr and a file per serving run, the same sinks the server writes through. -->
+         stderr and a file per serving run, the same sinks the server writes through. Its cost was
+         MEASURED against a refusal criterion fixed in advance (> 3 MB or > 50 ms added to the first
+         response would have meant a hand-written sink): +1.25 MiB (6.26 to 7.56 MB, win-x64), and nothing measurable on a one-shot verb, which never builds a logger, zero trim/AOT warnings and no
+         IL2104 suppression needed (research/RESULTS_wsl_bridge_orphans.md, §7.2 section). -->
     <ProjectReference Include="..\..\src_service_defaults\src\CredsForDevs.ServiceDefaults.csproj" />
   </ItemGroup>
 

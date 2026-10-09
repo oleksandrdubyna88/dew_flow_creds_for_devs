@@ -116,3 +116,49 @@ The 39 creds-mcp proxies whose parent was the subreaper (no live wrapper) and th
 of a relay with no connections were SIGKILLed by PID; their Windows halves exited within 8 s
 (51 → 13 `creds-mcp.exe`: the 7 live WSL sessions, the native Windows sessions, and new ones;
 27 → 2 `creds.exe`). Live sessions were not touched.
+
+## Serilog in the AOT binaries — §7.2 of the plan, measured 2026-10-09 (E1.S3)
+
+The plan fixed the refusal criterion before measuring: **more than 3 MB, or more than 50 ms added to
+the first response**, and the hosts would get a hand-written sink honouring the same contract instead.
+Measured on the same Windows 11 machine, `win-x64` Native AOT `Release` publishes of the branch that
+adds the shared logging (`feat/e1-logs-on-disk`) against `origin/main` at `7dbf592b`.
+
+| Binary | Without Serilog | With Serilog | Added |
+|---|---|---|---|
+| `creds-mcp.exe` | 14,346,240 B | 15,600,640 B | **+1,254,400 B (1.20 MiB)** |
+| `creds.exe` | 6,255,616 B | 7,563,776 B | **+1,308,160 B (1.25 MiB)** |
+
+**Trim/AOT warnings: none.** Both publish clean under `TreatWarningsAsErrors` with no `NoWarn`, on
+Serilog 4.4.0 — the `IL2104` the server's project suppresses (recorded there against Serilog core's
+`@`-destructuring internals) did not appear in either binary, so neither carries the suppression.
+
+**Cold start of `creds-mcp`** — spawn to the first stdout line answering `initialize` (2025-06-18),
+40 interleaved runs per series after 3 warm-ups each, with a log file written by every "with" run
+(`coldstart.mjs`, a node harness: `spawn`, write one request, time the first `\n` on stdout):
+
+| Series | p10 without / with | p25 | p50 | machine |
+|---|---|---|---|---|
+| 1 | 100.2 / 95.1 ms | 116.3 / 107.2 | 144.9 / 164.2 | busy |
+| 2 | 74.8 / 76.1 | 87.4 / 92.4 | 137.1 / 126.2 | busy |
+| 3 | 72.4 / 73.7 | 82.0 / 84.6 | 101.8 / 99.2 | busy |
+| A/A control: without vs without | 68.1 / 68.0 | 73.4 / 72.5 | 83.2 / 82.0 | quiet |
+| 4 | 51.8 / 59.2 | 61.2 / 68.2 | 69.8 / 78.8 | quiet |
+| 5 | 66.8 / 67.5 | 71.7 / 73.9 | 77.1 / 80.8 | quiet |
+
+On the quiet machine — where the A/A control agrees with itself to about a millisecond — logging adds
+**about 1–9 ms** to the first response: creating the day folder, opening the run's file and the
+retention sweep's directory listing. On the busy machine the arms swap places from series to series,
+which is the noise, not the logger. `creds --help`, a one-shot verb that never builds a logger, is
+unchanged within noise (p50 43.4 / 41.5 and 61.4 / 61.3 ms; A/A 40.8 / 38.3).
+
+**Decision: Serilog stays.** Both numbers sit far inside the criterion (1.2 MiB of 3 MB; single-digit
+milliseconds of 50), so no hand-written sink and no rule deviation for it. Not measured: the Linux and
+macOS binaries (no native AOT linker in the measuring distribution); the release workflow's smoke step
+now runs every published `creds-mcp` and `creds` on its own runner and checks the file it writes.
+
+**§7.4, answered on the way:** `McpServer.Create` does take an `ILoggerFactory`, and it is deliberately
+NOT given one. The SDK writes outgoing JSON at Trace and a client's cancellation reason at Information
+(the cadence consultation read `McpSessionHandler` 2.2.0), so routing it into the file would carry
+protocol bodies there at a raised floor — exactly what §5.1 forbids. The client's name and the incoming
+method names are taken through an incoming message filter instead (`ClientNaming`).
