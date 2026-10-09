@@ -1,6 +1,7 @@
 # PLAN — every creds process ends when the client it serves is gone
 
-> Status: **plan only, nothing implemented yet, 2026-10-09.** Scope: `src_mcp/src` (`Program.cs`, `WslPump.cs`, the
+> Status: **plan only, nothing implemented yet, 2026-10-09.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
+> round — §14); each epic is re-gated on its own branch. Scope: `src_mcp/src` (`Program.cs`, `WslPump.cs`, the
 > tool lambdas, `Windows.cs`, a new `ServerLifetime`), `src_broker_client/src` (`BrokerClient.cs`, `WslInterop.cs`, a
 > new shared `ChildLifetime`), `src_cli/src` (`AgentRelay.cs`, `RelayPipe.cs`), `src_vs_code/src` (the broker's
 > consent and perform path, the WSL MCP install check), a new shared logging project `src_service_defaults`, the
@@ -224,6 +225,11 @@ Shared because both the MCP wrapper and the relay need exactly this, and today e
   `credsAgentServer.consent` / `ask` / `perform` and `brokerCall`'s `useAction.run` (`brokerCall.ts:126`).
 - After every await on that path (`ask` returning, `consent` returning, before `runAndDeliver`) an aborted signal ends
   the request as **abandoned**: no `grants.allow`/`deny`, nothing remembered, nothing run, one audit line `ABANDONED`.
+- **The action boundary itself refuses an aborted request** (gate round 1, finding 0): a check before `runAndDeliver`
+  leaves a window between the check and the start. So the signal is an argument of the action start, and the check is
+  made in the same synchronous step that starts it — no await between them — and every `useAction.run` that spawns a
+  process or sends a request takes the signal, so a disconnect after the start cancels the work rather than only its
+  reply. A test disconnects exactly at that boundary.
 - The shared `consenting` map (`credsAgentServer.ts:64, 608-614`) keys a prompt by grant secret; the MCP door mints a
   grant per request (`:275`), but token doors share one — so an abandoned waiter **detaches** from a shared prompt and
   never decides it for another live request.
@@ -349,7 +355,8 @@ only with the owner's OK on the notes.
 
 - **E4.S1 RED → green** abort on `res` close threaded through consent/perform/run (§5.7). TS tests: the client drops
   during the modal, the test clicks **Allow** → no grant allowed, nothing run, `ABANDONED` logged; a token grant shared
-  by two waiters — one abandons, the other still gets its answer.
+  by two waiters — one abandons, the other still gets its answer; the client drops between consent and the action start
+  → the action never starts; the client drops after the start → the action's signal fires.
 - **E4.S2** stale WSL install check (§5.8): pure `staleVerdict` tests; host wiring; the command; never on a stopped
   distribution.
 - **E4.S3** *only on the owner's word (§3.3)*: the consent surface as a QuickPick with `ignoreFocusOut`, hidden on abort.
@@ -357,7 +364,10 @@ only with the owner's OK on the notes.
 ### Epic E5 — proof on the real bridge, and the tail
 
 - **E5.S1** `wslStrays.cjs`: `watchWindowsPids(image, exePath)` — set difference of Windows PIDs filtered to the test's
-  own binary path, polled up to 5 s, swept **by PID only**. `creds-mcp-wsl-itest.cjs`: a Claude-Code-2.1.295-shaped client
+  own binary path, polled up to 5 s, swept **by PID only**. Each itest run copies the binaries it starts into a
+  **run-unique directory** (gate round 1, finding 1), so a process another user or test started from the shared build
+  output can never match, and the sweep re-checks each PID's `ExecutablePath` against that directory immediately before
+  stopping it. `creds-mcp-wsl-itest.cjs`: a Claude-Code-2.1.295-shaped client
   (`server/discover`, `subscriptions/listen`, `tools/list`) ended by SIGINT, SIGTERM, SIGHUP and by a stdin close —
   0 Windows survivors each; SIGKILL of the wrapper — 0 survivors (proves A alone suffices). `wsl-agent-relay-itest.cjs`:
   10 `ssh-add -l` → 0 new `relay-pipe`, relay fd count back to baseline; `manager.dispose()` → 0 survivors.
@@ -421,4 +431,14 @@ Every bug test is shown red with the real symptom before the fix and green after
 
 ## 14. Review record
 
-*(filled by the review gate's rounds)*
+**Plan round 1 (2026-10-09, session `a87435eb`) — `proceed`**, gating 2 against threshold 6, **1 of 2 reviewers
+answered** (codex; gemini rate-limited — the verdict is one vendor's, not a panel's).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | §5.7: a race between the last abort check and starting the action | **accepted** — the action boundary itself refuses an aborted request, checked in the same synchronous step; boundary test added (§5.7, E4.S1) |
+| 1 | E5.S1 could stop an unrelated process started from the same test binary | **accepted** — run-unique binary directory, `ExecutablePath` re-checked before each stop (E5.S1) |
+| 2 | §8 retention could delete a still-running host's folder | **rejected** — the moved `DailyRunFileSink` rolls a running host into the new day's folder (`DailyRunFileSink.cs:52-93`) and `LogRetention.cs:15` states the invariant; an idle-for-the-whole-window host loses only out-of-window lines |
+
+The round's operator commands: build this plan without re-splitting it (the five epics above ARE its split, made
+before the round); work autonomously per the six orders; ask the question consultant before the person.
