@@ -105,8 +105,10 @@ that its launcher is gone; one that does not dies by the default disposition, sk
   build. No Windows half received `--caller`, so caller forwarding (#61) was inactive for WSL sessions —
   and a fix released through the extension would not have reached them.
 - **A config access key in argv.** A `creds.exe config <key>` process had been stopped (`T`) for over
-  six hours with the key in its command line, readable by any process in the distribution through
-  `/proc/<pid>/cmdline`. Tracked separately.
+  six hours with the key in its command line, readable by any user's process in the distribution through
+  `/proc/<pid>/cmdline` — measured: `/proc` mounted without `hidepid`, `cmdline` mode `0444`, and an unprivileged user
+  read root's PID 1 command line. Tracked separately in
+  [PLAN_config_key_off_the_command_line.md](../todo/PLAN_config_key_off_the_command_line.md).
 
 ## Cleanup done on the measured machine
 

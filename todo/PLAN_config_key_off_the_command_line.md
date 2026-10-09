@@ -13,8 +13,11 @@
 ## 1. The symptom
 
 On a developer machine a `creds.exe config <key>` process sat stopped for over six hours with its config access key in
-its command line. A command line is not private: on Linux and inside WSL any process of any user reads it from
-`/proc/<pid>/cmdline` (and `ps` prints it); on Windows any process of the same user reads it through WMI
+its command line. A command line is not private. On Linux and inside WSL, `/proc/<pid>/cmdline` is readable by every
+user unless procfs is mounted with `hidepid` — measured on the same distribution 2026-10-09: `/proc` mounted
+`rw,nosuid,nodev,noexec,noatime` (no `hidepid`, the default), `cmdline` mode `0444`, and an unprivileged user read the
+command line of root's PID 1 — so `ps` prints the key to anyone there. The product cannot assume a hardened mount. On
+Windows any process of the same user reads it through WMI
 (`Win32_Process.CommandLine`), and process-monitoring and crash-reporting tools record it. The key is long-lived by
 design (`src_vs_code/src/configKey.ts:1-20` — it survives a year of restarts and has its own revoke), so a key that
 leaks this way stays useful.
