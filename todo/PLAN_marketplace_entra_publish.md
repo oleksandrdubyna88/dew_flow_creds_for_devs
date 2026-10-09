@@ -131,16 +131,18 @@ the order of effects stays the same:
 | Job | Does | Permissions | Environment |
 |---|---|---|---|
 | `extension` | `release.yml:655-715` unchanged: install, typecheck, test, the publisher and version guards, package, upload `extension-vsix`. **The publish step leaves.** It gains `outputs: version: ${{ steps.version.outputs.version }}`, because `:747` reads that step and a different job cannot. | `contents: read` (it no longer writes the release) | — |
-| `extension-marketplace` (new) | `needs: extension`; `defaults.run.working-directory: src_vs_code`. Checkout + `npm ci --ignore-scripts`, so the lockfile decides which vsce runs (F7). Download `extension-vsix` with `path: src_vs_code`, using the `actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1` pin already used at `release.yml:226`. Then the steps below, in this order. | `contents: read`, `id-token: write` | `marketplace` |
+| `extension-marketplace` (new) | `needs: extension`; `defaults.run.working-directory: src_vs_code`. **One** checkout, with `fetch-depth: 0`. A second checkout would `git clean -ffdx` away `node_modules` and the downloaded `.vsix`, because the action's default is `clean: true`. Provenance comes next (below), then `npm ci --ignore-scripts`, so the lockfile decides which vsce runs (F7). Then download `extension-vsix` with `path: src_vs_code`, using the `actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1` pin already used at `release.yml:226`. Then the steps below, in this order. | `contents: read`, `id-token: write` | `marketplace` |
 | `extension-release` (new) | `needs: [extension, extension-marketplace]`, `if:` tag; `defaults.run.working-directory: src_vs_code`. Checkout, for `package.json` and `CHANGELOG.md`, and the artifact with `path: src_vs_code`. Then `release.yml:719-749`, with its `GH_TOKEN` env (`:735-736`) and **one** change: the title at `:747` reads `needs.extension.outputs.version`. | `contents: write` | — |
 
 `extension-marketplace`, step by step:
 
 ```yaml
+- provenance: git merge-base --is-ancestor "$GITHUB_SHA" origin/main, right after the single fetch-depth: 0
+  checkout and before anything is installed (a depth-1 clone cannot prove that a tag behind main's tip
+  is an ancestor)
 - id: mode   # writes path=entra|pat|manual; never "exit 0 to skip", which would not stop later steps
   # unset/entra -> entra (and a missing vars.AZURE_CLIENT_ID is RED, as a missing VSCE_PAT is today, :706-709)
   # pat -> pat (RED on/after 2026-12-01);  manual -> manual;  ANY other value -> RED, naming the three
-- provenance (entra): checkout with fetch-depth: 0 (the default depth-1 clone cannot prove ancestry of a tag behind main's tip), then git merge-base --is-ancestor "$GITHUB_SHA" origin/main
 - azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0          if: steps.mode.outputs.path == 'entra'
   with: client-id: ${{ vars.AZURE_CLIENT_ID }}, tenant-id: ${{ vars.AZURE_TENANT_ID }}, allow-no-subscriptions: true
 - env -u VSCE_PAT npx vsce verify-pat remsoftdev --azure-credential       (entra; membership preflight, F6)
@@ -170,9 +172,15 @@ Notes:
   the client. The version is still guarded by the tag/manifest check (`:684-695`), and the tag by the
   ruleset (D2). `PUBLISHING.md:32-33` ("Re-tagging the same version fails at `vsce publish`") changes
   in S2 to say that a re-run of a published version is now green and does nothing.
-- **Provenance.** The environment admits any `extension-v*` tag. Here only the release App can create
-  one (D2), but the job still refuses a commit that is not on `main` before `azure/login`. That costs one
-  `git fetch` and holds even if the ruleset is ever relaxed.
+- **Provenance guards against accidents, not against a writer.** The job refuses a commit that is not
+  on `main`, which catches a run on the wrong commit. It cannot stop someone who can change the workflow
+  at that commit, or who dispatches a workflow naming the environment against an `extension-v*` tag
+  (`workflow_dispatch` accepts a tag ref). The real boundaries are outside the workflow:
+  - the tag ruleset (D2): only the release App creates `extension-v*` tags;
+  - `main`'s pull-request protection;
+  - the single collaborator.
+
+  The plan does not claim more than those.
 - **Actions stay pinned by SHA.** The `azure/login` pin is re-resolved at implementation (F11).
   Dependabot's `github-actions` ecosystem (`.github/dependabot.yml:67`) keeps it fresh.
 - **`AZURE_*` values go to `azure/login` as `with:` inputs**, never exported into the vsce step.
@@ -197,19 +205,21 @@ An environment variable `MARKETPLACE_AUTH` in `marketplace` chooses the path:
 `.github/workflows/marketplace-identity.yml` is `workflow_dispatch` only. It has one job in
 `marketplace`, with `contents: read` and `id-token: write`. Its steps:
 
-0. Checkout (`persist-credentials: false`), `setup-node`, then `npm ci --ignore-scripts` in
-   `src_vs_code`. This runs before any `vsce`, so `npx vsce` resolves the lockfile's 4.0.0 (F7) from
-   `node_modules/.bin`. A fresh runner has no vsce of its own, and `npx` with nothing installed would
-   fetch whatever version is newest.
+0. Checkout (`persist-credentials: false`), the job's only one.
 1. `azure/login` (as above).
 2. `az rest -u https://app.vssps.visualstudio.com/_apis/profile/profiles/me --resource 499b84ac-1321-427f-aa17-267ca6975798 --query "{id:id,displayName:displayName}"`.
-   This prints the profile `id`, which O5 pastes. It is an identifier, not a secret.
+   This prints the profile `id`, which O5 pastes. It is an identifier, not a secret. It is the cheapest
+   first answer to N6, and it runs before any Node setup.
+
+   2b. `setup-node`, then `npm ci --ignore-scripts` in `src_vs_code`. This runs before any `vsce`, so
+   `npx vsce` resolves the lockfile's 4.0.0 (F7) from `node_modules/.bin`. A fresh runner has no vsce of
+   its own, and `npx` with nothing installed would fetch whatever version is newest.
 3. `env -u VSCE_PAT npx vsce verify-pat remsoftdev --azure-credential`, with **no**
    `continue-on-error`. Before O5 the run is red, as expected, and step 2 has already printed the id.
    After O5 a green run is the evidence.
 4. `npx vsce show remsoftdev.creds-for-devs --json`, with `if: always()`, printing the served version.
    This is a public read with no credential.
-5. A boolean input, `check_pat` (default false). When it is true, steps 1–3 are **skipped**, and one step
+5. A boolean input, `check_pat` (default false). When it is true, steps 1, 2 and 3 are **skipped** (2b still runs), and one step
    runs `npx vsce verify-pat remsoftdev` with `VSCE_PAT` in its own `env:`. That separate run proves the
    rollback authenticates, without publishing.
 
@@ -343,7 +353,7 @@ Tests go in `src_vs_code/src/test/`, next to `credsInstall.test.ts:46-57`, which
   - `vsce publish` appears **only** in `extension-marketplace`, so the old publish cannot linger in
     `extension`, publish with the PAT first, and make R1 prove nothing;
   - `azure/login@` is followed by a 40-hex SHA and immediately by the two Entra vsce steps;
-  - the provenance step precedes it;
+  - the provenance step comes right after the single checkout, before `npm ci`, and there is exactly one checkout in the job;
   - `mode` rejects unknown values, and the `pat` path carries the 2026-12-01 refusal;
   - the provenance checkout has `fetch-depth: 0`, and the `manual` step compares the served version with
     `needs.extension.outputs.version` rather than trusting `vsce show`'s exit code;
@@ -374,7 +384,7 @@ On the real services:
   v<version>`, with no `VSCE_PAT` in its environment. `npx vsce show remsoftdev.creds-for-devs` serves
   that version within minutes. The GitHub release became public only after that.
 - **V5 (S1, negative)** — a probe dispatched from a branch other than `main` is refused by the
-  environment (F12). That covers branches only. Tags are covered by V6 and by the provenance step.
+  environment (F12). That covers branches only. Tags are covered by the ruleset (V6). The provenance step only catches accidents (3.3).
 - **V6 (O3, negative)** — the tag guard D2 relies on. Read
   `gh api repos/oleksandrdubyna88/dew_flow_creds_for_devs/rulesets/23780086`. It must still list
   `refs/tags/extension-v*` with the rules `creation`, `update` and `deletion`, and only the release App
