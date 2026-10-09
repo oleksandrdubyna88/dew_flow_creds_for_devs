@@ -148,7 +148,7 @@ the order of effects stays the same:
 - env -u VSCE_PAT npx vsce verify-pat remsoftdev --azure-credential       (entra; membership preflight, F6)
 - env -u VSCE_PAT npx vsce publish --skip-duplicate --packagePath creds-for-devs.vsix --azure-credential   (entra)
 - npx vsce publish --skip-duplicate --packagePath creds-for-devs.vsix --pat "${VSCE_PAT}"   (pat; VSCE_PAT in THIS step's env only)
-- npx vsce show remsoftdev.creds-for-devs --json   (manual; parse .versions[0].version from the JSON and fail unless it EQUALS needs.extension.outputs.version — vsce show exits 0 for any existing extension, so the exit code proves nothing)
+- npx vsce show remsoftdev.creds-for-devs --json   (manual; parse .versions[0].version from the JSON and fail unless it EQUALS needs.extension.outputs.version — vsce show exits 0 for any existing extension, so the exit code proves nothing; polled every 30 s for up to 10 min, printing what the gallery serves each time, because a hand upload takes minutes to show; red on timeout)
 ```
 
 Every step but `mode` carries an `if:` on `steps.mode.outputs.path`. Environment-scoped variables
