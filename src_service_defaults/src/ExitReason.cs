@@ -34,9 +34,6 @@ public enum ExitReason
     /// <summary>The relay could not bind or listen.</summary>
     ListenFailed,
 
-    /// <summary>Ctrl-C (the console's cancel key) stopped the relay.</summary>
-    Interrupted,
-
     /// <summary>The relay's accept loop ended on its own.</summary>
     ListenerClosed,
 
@@ -55,7 +52,7 @@ public enum ExitReason
     /// <summary>A copy between the two sides failed rather than ended — a broken pipe, a reset.</summary>
     CopyFailed,
 
-    /// <summary>A handled termination signal (SIGINT, SIGTERM, SIGHUP, SIGQUIT) ended the run; the code is 128 + n.</summary>
+    /// <summary>A handled termination signal (SIGINT, SIGTERM, SIGHUP, SIGQUIT) ended the run; the code is 128 + n. Ctrl-C in a terminal is SIGINT, so the relay's old <c>Interrupted</c> word is this one.</summary>
     Signalled,
 
     /// <summary>The process that started this one is gone — it died, or was replaced under the same pid.</summary>
