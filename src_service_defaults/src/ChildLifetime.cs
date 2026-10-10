@@ -26,6 +26,12 @@ namespace CredsForDevs.ServiceDefaults;
 /// cancelled, and with the signal's default disposition suppressed nothing else would end the process.</para>
 /// <para><b><c>ProcessExit</c></b> stops every tracked child synchronously, with a bound — the path a forced exit
 /// takes, and the one the pump's old hook was meant for.</para>
+/// <para><b>One stop per child, shared.</b> A connection's own stop of its child and the shutdown's stop of every
+/// child meet on the same process (the relay: a connection that ended just before the signal). Whoever asks second
+/// gets the stop already in flight, and <see cref="StopAllAsync"/> waits for every stop in flight — not only the
+/// children it found still tracked — so the relay cannot remove its socket and return while a child's grace is still
+/// running (own review, code round 1). And a child tracked once the stop has BEGUN is stopped at once: the flag is set
+/// under the lock before the snapshot, not published after it (code round 1, finding 0).</para>
 /// </remarks>
 public sealed class ChildLifetime : IDisposable
 {
@@ -46,8 +52,10 @@ public sealed class ChildLifetime : IDisposable
     private readonly CancellationTokenSource _shutdown = new();
     private readonly TaskCompletionSource<HostEnding> _ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly HashSet<IManagedChild> _children = [];
+    private readonly Dictionary<IManagedChild, Task> _stops = [];
     private readonly Lock _gate = new();
     private readonly Lazy<Task> _stopAll;
+    private bool _stopping;
     private readonly List<IDisposable> _owned = [];
     private IDisposable _backstop = Nothing.Instance;
     private bool _disposed;
@@ -116,7 +124,7 @@ public sealed class ChildLifetime : IDisposable
         lock (_gate)
         {
             _children.Add(child);
-            stopping = _stopAll.IsValueCreated;
+            stopping = _stopping;
         }
         if (stopping)
         {
@@ -134,14 +142,29 @@ public sealed class ChildLifetime : IDisposable
     /// Stop one child: close its stdin, wait <paramref name="grace"/> for it to leave, kill its tree if it has not.
     /// </summary>
     /// <remarks>
-    /// The one killer. Nothing here is ever found by name: the child is the handle the owner started.
+    /// The one killer. Nothing here is ever found by name: the child is the handle the owner started. A stop already
+    /// in flight for this child is the task returned — the grace of the first caller stands.
     /// </remarks>
-    public async Task StopAsync(IManagedChild child, TimeSpan grace)
+    public Task StopAsync(IManagedChild child, TimeSpan grace)
     {
         lock (_gate)
         {
             _children.Remove(child);
+            if (_stops.TryGetValue(child, out var inFlight))
+            {
+                return inFlight;
+            }
+            var stop = StopGuardedAsync(child, grace);
+            _stops[child] = stop;
+            return stop;
         }
+    }
+
+    private async Task StopGuardedAsync(IManagedChild child, TimeSpan grace)
+    {
+        // Registered under the lock, run off it: a child's stdin close can block (a full pipe, a slow far end), and a
+        // stop that ran its first step while holding the lock would stall every Track and every other stop with it.
+        await Task.Yield();
         // Read before anything can throw: a stop must never fail in its own catch block.
         var pid = child.Id;
         try
@@ -150,7 +173,30 @@ public sealed class ChildLifetime : IDisposable
         }
         catch (Exception e) when (ManagedProcess.IsAlreadyGone(e))
         {
+            Survived(child, pid, e);
+        }
+        finally
+        {
+            Forget(child);
+        }
+    }
+
+    /// <summary>A step threw: the ordinary race when the child has left — and the one line a person must read when it has not.</summary>
+    private void Survived(IManagedChild child, int pid, Exception e)
+    {
+        if (child.HasExited)
+        {
             _log.Debug(e, "child {ChildPid} had already ended", pid);
+            return;
+        }
+        _log.Warning(e, "child {ChildPid} is still running: its stop was refused, and nothing more can end it from here", pid);
+    }
+
+    private void Forget(IManagedChild child)
+    {
+        lock (_gate)
+        {
+            _stops.Remove(child);
         }
     }
 
@@ -209,13 +255,20 @@ public sealed class ChildLifetime : IDisposable
 
     private async Task StopEveryChildAsync()
     {
-        IManagedChild[] children;
+        Task[] stops;
         lock (_gate)
         {
-            children = [.. _children];
+            // The flag first, under the lock: from here a Track is a stop. Then every child still tracked, plus every
+            // stop already in flight — a connection's own, a late Track's.
+            _stopping = true;
+            foreach (var child in _children.ToArray())
+            {
+                _ = StopAsync(child);
+            }
+            stops = [.. _stops.Values];
         }
-        // StopAsync swallows what a child that already left throws, so one child never holds up the rest.
-        await Task.WhenAll(children.Select(StopAsync));
+        // Each stop swallows what a child that already left throws, so one child never holds up the rest.
+        await Task.WhenAll(stops);
     }
 
     private async Task EndAsync(IManagedChild child, TimeSpan grace)
@@ -232,7 +285,10 @@ public sealed class ChildLifetime : IDisposable
             grace.TotalSeconds);
         child.KillTree();
         // A killed tree ends at once; bounded anyway, so a wait on a handle that will not signal cannot hold a shutdown.
-        await ExitedWithinAsync(child, _backstopAfterGrace);
+        if (!await ExitedWithinAsync(child, _backstopAfterGrace))
+        {
+            _log.Warning("child {ChildPid} is still running after its tree was killed; nothing more can end it from here", child.Id);
+        }
     }
 
     private async Task<bool> ExitedWithinAsync(IManagedChild child, TimeSpan bound)

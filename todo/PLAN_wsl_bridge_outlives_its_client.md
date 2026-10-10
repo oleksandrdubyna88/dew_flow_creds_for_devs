@@ -217,6 +217,10 @@ Shared because both the MCP wrapper and the relay need exactly this, and today e
   is `grace + 2 s`, as planned; it exits through `HostRun.ForcedExit(log)` — the server's deadline exit, moved into
   `HostRun` so the two cannot drift.
 - **`ProcessExit`** runs `StopAllAsync` synchronously with the same bound.
+- **One stop per child, shared** (code round 1): a connection's own stop and the shutdown's stop of every child meet
+  on the same process; the second caller gets the stop in flight, `StopAllAsync` waits for every stop in flight,
+  each stop runs off the lock, and a child tracked once the stop began is stopped at once (the flag is set under the
+  lock before the snapshot, not published after it). A child that survives its kill is a Warning, not a Debug line.
 
 ### 5.5 The WSL wrapper stops the Windows half — `src_mcp/src/WslPump.cs` — defect B
 
@@ -1119,3 +1123,26 @@ relay's SIGHUP path. Five real `claude -p` sessions inside WSL on the new bridge
 wrapper's exit line written every time; three more with a pre-E2 Windows half still in defect A: 0, 0, 0. Measured on
 the way: Claude Code 2.1.296's exit is SIGINT, SIGTERM +100 ms, SIGKILL ~+450 ms — which is why a signalled session
 gets no grace (§5.5 *As built*).
+
+**Code round 1 (2026-10-10, session `36622fa5`, after the rebase onto #212) — `proceed`**, gating 1 against threshold
+5, **4 of 12 reviewers answered** (codex's four roles; gemini's four rate-limited, the local engine's four without a
+model — one vendor's verdict).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | A child tracked while `StopAllAsync` is snapshotting is missed: `Track` read `Lazy.IsValueCreated`, false until the factory returns | **accepted** — a `_stopping` flag set under the lock before the snapshot; `Track` reads it. The deterministic RED (a stdin close that blocks inside the snapshot: *"the condition did not hold within 00:00:10"* — the late child never stopped) also showed each stop ran its first step under the lock, so a blocking close stalled every other `Track` and stop: each stop now runs off the lock. With that, the window the test held open no longer exists and the test pins the behaviour rather than reproduces the race; what remains is the lock-to-publish gap, closed by the flag by construction |
+| 1 | The six-second drain after a hang-up is invisible in the wrapper's log | **accepted** — *the client hung up; waiting up to 6 s for the Windows half's last reply* when the wait begins; RED (the line absent) → GREEN → RED again |
+
+Own review (a separate reviewer reading the final files, the gate's other half): no high-confidence defect; its lower
+notes, each verified: (1) `StopAllAsync` returned while a connection's own stop of the same child was still in its
+grace, so the relay could remove its socket and exit first — **taken**: one stop per child, shared, and every stop in
+flight awaited; RED (*"Expected stopAll.IsCompleted to be False because a stop still in flight is part of stopping
+everything, but found True"*) → GREEN → RED again. (2) The same snapshot race as finding 0. (3) `Process.ExitCode`
+throws for a child that could not be ended, which ended the pump without its exit line and read as a missing Windows
+binary — **taken**: `WslPump.ExitCodeOf` answers 1 with a Warning; RED → GREEN → RED again. (4) A signal arriving
+during the 2 s / 5 s settle of a child that already saw end-of-stream or closed its stdout does not shorten that wait —
+**recorded, not taken**: the child in that state is leaving; the client's kill of the wrapper then leaves at most that
+window, after which the Windows half ends by E2's end-of-stream rule; cutting it short would need a second kill path
+beside the one shared stop. (5) An access-denied kill was logged at Debug as "already ended" — **taken**: a child that
+has not exited after a refused or completed kill is a Warning; RED (*"to have an item matching m.Contains("child 777 is
+still running")"*) → GREEN.

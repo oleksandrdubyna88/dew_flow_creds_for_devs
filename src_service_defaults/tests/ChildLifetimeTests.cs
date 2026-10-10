@@ -55,6 +55,49 @@ public sealed class ChildLifetimeTests : IDisposable
         }
     }
 
+    /// <summary>A child whose stdin close BLOCKS until the test says — the window in which the races below are real.</summary>
+    private sealed class SlowChild(int id) : IManagedChild
+    {
+        private readonly TaskCompletionSource _exited = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal ManualResetEventSlim Release { get; } = new(false);
+
+        internal List<string> Steps { get; } = [];
+
+        public int Id => id;
+
+        public bool HasExited => _exited.Task.IsCompleted;
+
+        public void CloseStdin()
+        {
+            Steps.Add("stdin closing");
+            Release.Wait(TimeSpan.FromSeconds(10));
+            Steps.Add("stdin closed");
+            _exited.TrySetResult();
+        }
+
+        public Task WaitForExitAsync(CancellationToken ct) => _exited.Task.WaitAsync(ct);
+
+        public void KillTree() => Steps.Add("tree killed");
+    }
+
+    /// <summary>A child whose kill is refused and that never leaves — an access-denied kill, or a tree the kernel keeps.</summary>
+    private sealed class UnkillableChild : IManagedChild
+    {
+        public int Id => 777;
+
+        public bool HasExited => false;
+
+        public void CloseStdin()
+        {
+            // Ignored.
+        }
+
+        public Task WaitForExitAsync(CancellationToken ct) => Task.Delay(Timeout.Infinite, ct);
+
+        public void KillTree() => throw new System.ComponentModel.Win32Exception(5, "Access is denied");
+    }
+
     /// <summary>A child whose every step throws what a process that already left throws.</summary>
     private sealed class GoneChild : IManagedChild
     {
@@ -277,6 +320,58 @@ public sealed class ChildLifetimeTests : IDisposable
         child.Id.Should().Be(id, "the pid is remembered from when the child was alive, so a log line can still name it");
         child.HasExited.Should().BeTrue("a child nobody holds any more is over as far as a stop is concerned");
         await lifetime.StopAllAsync().WaitAsync(Bound, TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task A_child_tracked_while_every_child_is_being_stopped_is_stopped_too()
+    {
+        // Code round 1, finding 0: StopAllAsync snapshots the tracked children and only then publishes its task, so a
+        // child tracked in that window — a connection still launching its relay-pipe when the signal came — was in
+        // neither the snapshot nor the "stopped at once" path. The window is held open here by a child whose stdin
+        // close blocks.
+        using var lifetime = Lifetime(Hour, Hour);
+        var slow = new SlowChild(10);
+        lifetime.Track(slow);
+        var stopAll = Task.Run(() => lifetime.StopAllAsync(), TestContext.Current.CancellationToken);
+        await WaitUntilAsync(() => slow.Steps.Contains("stdin closing"));
+
+        var late = new FakeChild(11, leavesOnEof: true);
+        lifetime.Track(late);
+        slow.Release.Set();
+
+        await stopAll.WaitAsync(Bound, TestContext.Current.CancellationToken);
+        await WaitUntilAsync(() => late.Steps.Count > 0);
+        late.Steps.Should().Equal(["stdin closed"], "a child that arrives while the others are being stopped must not be left running");
+    }
+
+    [Fact]
+    public async Task Stopping_every_child_waits_for_a_stop_a_connection_already_started()
+    {
+        // The own review's finding: a connection that ended just before the signal has its own StopAsync in flight;
+        // StopAllAsync must not return — and the relay must not remove its socket and exit — before that stop ends.
+        using var lifetime = Lifetime(Hour, Hour);
+        var slow = new SlowChild(12);
+        lifetime.Track(slow);
+        var own = Task.Run(() => lifetime.StopAsync(slow), TestContext.Current.CancellationToken);
+        await WaitUntilAsync(() => slow.Steps.Contains("stdin closing"));
+
+        var stopAll = lifetime.StopAllAsync();
+        await Task.Delay(100, TestContext.Current.CancellationToken);
+        stopAll.IsCompleted.Should().BeFalse("a stop still in flight is part of stopping everything");
+
+        slow.Release.Set();
+        await Task.WhenAll(own, stopAll).WaitAsync(Bound, TestContext.Current.CancellationToken);
+        slow.Steps.Count(step => step == "stdin closing").Should().Be(1, "one stop per child, shared by whoever asks");
+    }
+
+    [Fact]
+    public async Task A_child_that_survives_its_kill_is_said_so_at_warning_not_hidden_at_debug()
+    {
+        using var lifetime = Lifetime(Short, Short);
+
+        await lifetime.StopAsync(new UnkillableChild()).WaitAsync(Bound, TestContext.Current.CancellationToken);
+
+        _sink.Messages.Should().Contain(m => m.Contains("child 777 is still running"), "the one case a person must read: the lifetime could not end it");
     }
 
     [Fact]

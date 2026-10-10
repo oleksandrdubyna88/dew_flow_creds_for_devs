@@ -116,12 +116,32 @@ internal static class WslPump
             child.StandardOutput.BaseStream,
             toClient,
             lifetime.Shutdown,
-            HangUpBound).ConfigureAwait(false);
+            HangUpBound,
+            log).ConfigureAwait(false);
         log.Information("the session ended: {Ending:l}", ending.ToString());
 
-        var code = await SettleAsync(tracked, child, ending, lifetime).ConfigureAwait(false);
+        await SettleAsync(tracked, ending, lifetime).ConfigureAwait(false);
+        var code = ExitCodeOf(tracked, child, log);
         log.Information("the Windows half exited with code {ChildExitCode}", code);
         return lifetime.EndingOr(new HostEnding(code, ReasonOf(ending)));
+    }
+
+    /// <summary>The exit code this process answers with when the Windows half could not be ended at all.</summary>
+    internal const int ChildStillRunning = 1;
+
+    /// <summary>
+    /// The child's exit code — or, for a child the lifetime could not end (a refused kill), <see cref="ChildStillRunning"/>
+    /// rather than the exception <c>Process.ExitCode</c> throws for a process that has not exited, which would end
+    /// the pump without its exit line and read as a missing Windows binary.
+    /// </summary>
+    internal static int ExitCodeOf(IManagedChild tracked, Process child, ILogger log)
+    {
+        if (tracked.HasExited)
+        {
+            return child.ExitCode;
+        }
+        log.Warning("the Windows half (pid {ChildPid}) is still running; its exit code is unknown", tracked.Id);
+        return ChildStillRunning;
     }
 
     /// <summary>The exit reason an ending is logged as — an interrupted session is the signal's or the parent's, which <see cref="ChildLifetime.EndingOr"/> supplies.</summary>
@@ -133,9 +153,9 @@ internal static class WslPump
             _ => ExitReason.Signalled,
         };
 
-    /// <summary>The pump as it was before E3: no shutdown token, the Windows half's bound after a hang-up.</summary>
+    /// <summary>The pump as it was before E3: no shutdown token, the Windows half's bound after a hang-up, no log.</summary>
     internal static Task<Ending> PumpAsync(Stream fromClient, Stream toChild, Stream fromChild, Stream toClient) =>
-        PumpAsync(fromClient, toChild, fromChild, toClient, CancellationToken.None, HangUpBound);
+        PumpAsync(fromClient, toChild, fromChild, toClient, CancellationToken.None, HangUpBound, Serilog.Core.Logger.None);
 
     /// <summary>
     /// Carry both directions until the conversation ends, and decide which ending it was.
@@ -159,7 +179,8 @@ internal static class WslPump
         Stream fromChild,
         Stream toClient,
         CancellationToken shutdown,
-        TimeSpan hangUpBound)
+        TimeSpan hangUpBound,
+        ILogger log)
     {
         var upstream = CarryThenCloseAsync(fromClient, toChild);
         var downstream = CarryAsync(fromChild, toClient);
@@ -175,17 +196,22 @@ internal static class WslPump
         // scheduler tick earlier (the two raced on Linux; the exit code is the child's either way).
         if (upstream.IsCompleted)
         {
-            return await LastWordsAsync(downstream, interrupted, hangUpBound).ConfigureAwait(false);
+            return await LastWordsAsync(downstream, interrupted, hangUpBound, log).ConfigureAwait(false);
         }
         return Ending.WindowsHalfClosed;
     }
 
     /// <summary>
     /// The client hung up: wait for the child's stdout — its last reply — but not past <paramref name="bound"/>,
-    /// and not past an interruption.
+    /// and not past an interruption. Said in the log when it begins, so a wrapper seen waiting is a wrapper
+    /// draining, not one that hangs (code round 1, finding 1).
     /// </summary>
-    private static async Task<Ending> LastWordsAsync(Task downstream, Task interrupted, TimeSpan bound)
+    private static async Task<Ending> LastWordsAsync(Task downstream, Task interrupted, TimeSpan bound, ILogger log)
     {
+        if (!downstream.IsCompleted)
+        {
+            log.Information("the client hung up; waiting up to {BoundSeconds} s for the Windows half's last reply", bound.TotalSeconds);
+        }
         using var cut = new CancellationTokenSource();
         var window = Task.Delay(bound, cut.Token);
         var first = await Task.WhenAny(downstream, interrupted, window).ConfigureAwait(false);
@@ -263,8 +289,7 @@ internal static class WslPump
     }
 
     /// <summary>
-    /// Wait for the Windows half, and take its exit code — or end it if it will not end, through the lifetime's
-    /// one killer.
+    /// Wait for the Windows half to end — or end it if it will not, through the lifetime's one killer.
     /// </summary>
     /// <remarks>
     /// <para>A child that closed its stdout on its own is already leaving and gets <see cref="Grace"/> to finish —
@@ -279,11 +304,8 @@ internal static class WslPump
     /// A — would outlive the session exactly as before. So its stdin is closed and its tree stopped at once; the
     /// Windows half's own log then ends without an exit line, which is the truth of how it ended.</para>
     /// </remarks>
-    private static async Task<int> SettleAsync(IManagedChild tracked, Process child, Ending ending, ChildLifetime lifetime)
-    {
-        await lifetime.StopAsync(tracked, GraceFor(ending, lifetime)).ConfigureAwait(false);
-        return child.ExitCode;
-    }
+    private static Task SettleAsync(IManagedChild tracked, Ending ending, ChildLifetime lifetime) =>
+        lifetime.StopAsync(tracked, GraceFor(ending, lifetime));
 
     /// <summary>How long the Windows half may take to leave on its own, by what ended the session.</summary>
     internal static TimeSpan GraceFor(Ending ending, ChildLifetime lifetime) =>

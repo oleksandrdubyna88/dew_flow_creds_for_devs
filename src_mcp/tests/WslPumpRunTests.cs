@@ -120,6 +120,40 @@ public sealed class WslPumpRunTests : IDisposable
         ending.Reason.Should().Be(ExitReason.ClientClosed);
         await ChildGoneAsync(child, ct);
         _sink.Messages.Should().Contain("the session ended: ClientClosed");
+        _sink.Messages.Should().Contain(m => m.StartsWith("the client hung up; waiting up to ", StringComparison.Ordinal), "a wrapper seen waiting is a wrapper draining, and its log says so (code round 1, finding 1)");
+    }
+
+    /// <summary>A child the lifetime could not end: its stop was refused and it is still there.</summary>
+    private sealed class SurvivingChild : IManagedChild
+    {
+        public int Id => 4242;
+
+        public bool HasExited => false;
+
+        public void CloseStdin()
+        {
+            // Ignored.
+        }
+
+        public Task WaitForExitAsync(CancellationToken ct) => Task.Delay(Timeout.Infinite, ct);
+
+        public void KillTree()
+        {
+            // Refused.
+        }
+    }
+
+    [Fact]
+    public void A_child_that_could_not_be_ended_yields_a_code_of_its_own_rather_than_an_exception()
+    {
+        // Process.ExitCode throws for a process that has not exited; thrown from here it ended the pump without its
+        // exit line and was read by RelayAsync as a missing Windows binary (own review, code round 1).
+        using var process = Process.GetCurrentProcess();
+
+        var code = WslPump.ExitCodeOf(new SurvivingChild(), process, _log);
+
+        code.Should().Be(WslPump.ChildStillRunning);
+        _sink.Messages.Should().Contain(m => m.Contains("pid 4242") && m.Contains("still running"));
     }
 
     [Fact]
