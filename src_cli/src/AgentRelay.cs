@@ -337,7 +337,9 @@ internal static class AgentRelay
                 return;
             }
             // Deliberately not awaited: one slow signature must not hold up the next connection,
-            // and every connection owns its own Windows child.
+            // and every connection owns its own Windows child. Its child is nevertheless started and
+            // tracked HERE, synchronously — the handler's first await is inside the carry, after
+            // StartPiped and Track — so this loop cannot return to a signal with a child untracked.
             _ = ServeConnectionAsync(accepted, ++connections, windowsHalf, lifetime, log);
         }
     }

@@ -1188,3 +1188,8 @@ reviewers answered** (codex's four roles). One finding, **accepted**: a signal r
 returned still granted the child 5 s / 2 s, which the client's SIGKILL would cut off — `GraceFor` now reads
 `ChildLifetime.Signalled` first and answers zero whatever the pump's own ending; RED (*"Expected default, but found
 500ms"*, the test that had pinned the 5 s flipped) → GREEN → RED again with the check removed.
+
+**Checkpoint round over that fix (`again`, 2026-10-10) — `proceed`**, gating 1 against threshold 5, **all 4 reviewers
+answered** (codex's four roles). One finding — the relay's connection handler "can pause before tracking its child" —
+**rejected** as in the earlier checkpoint round, with no new argument: the handler runs synchronously up to its first
+await, which is inside the carry after `StartPiped` and `Track`; a comment at the accept loop now states it.
