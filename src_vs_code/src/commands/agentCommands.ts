@@ -61,6 +61,7 @@ import { clickOpener } from '../pinClick';
 import { gitSigningConfig } from '../gitSigningConfig';
 import { gitSigningClipboardText } from '../gitSigningConfig';
 import { showMcpLog } from '../mcpLogPanel';
+import { registerWslMcpCheck } from '../mcpInstallTarget';
 import { CREDS_MCP } from '../credsInstall';
 import { CREDS_CLI } from '../credsInstall';
 import { WslRelayManager } from '../wslRelayManager';
@@ -735,6 +736,9 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
   register('credSshManager.showMcpLog', () => showMcpLog(storageDir));
 
   register('credSshManager.installMcpServer', () => offerInstall(CREDS_MCP));
+
+  // Plan §5.8 (E4.S2): the stale WSL MCP install check — the button beside this one, and a daily look at activation.
+  registerWslMcpCheck(register, { storageDir, state }, (message) => log.warn('wsl-mcp', message));
 
   register('credSshManager.installCli', () => offerInstall(CREDS_CLI));
 }

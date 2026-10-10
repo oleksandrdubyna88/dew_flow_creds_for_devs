@@ -44,7 +44,7 @@ async function toldAfterNaming(details: EntityMetadata): Promise<string> {
     agentServer: { setFolderHooks: (): void => undefined },
     aliasMap: () => ({}),
     bridges: {},
-    log: {},
+    log: { warn: (): void => undefined }, // the daily WSL MCP check (plan §5.8) reports a failure here
     mutated: (): void => undefined,
     offerInstall: (): Promise<void> => Promise.resolve(),
     provider: {},

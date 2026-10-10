@@ -62,7 +62,22 @@ export interface InstallHost {
 
 /** Where this product's binary lives once installed. */
 export function binaryPath(host: InstallHost, product: CredsProduct, rid: CredsRid): vscode.Uri {
-  return vscode.Uri.joinPath(host.storage, 'bin', binaryNameFor(product, rid));
+  return binaryIn(host.storage, product, rid);
+}
+
+/** The same path from the storage folder alone — for a caller that holds no whole `InstallHost`. */
+export function binaryIn(storage: vscode.Uri, product: CredsProduct, rid: CredsRid): vscode.Uri {
+  return vscode.Uri.joinPath(storage, 'bin', binaryNameFor(product, rid));
+}
+
+/**
+ * The version recorded when this product was last installed here — `''` when it never was.
+ *
+ * <p>The stale WSL install check compares against it (plan §5.8): it is the Windows half the copied
+ * WSL block points at, so it is what "current" means for a distribution.</p>
+ */
+export function recordedVersion(state: Pick<vscode.Memento, 'get'>, product: CredsProduct): string {
+  return state.get<InstallRecord>(stateKey(product))?.version ?? '';
 }
 
 async function installedRecord(

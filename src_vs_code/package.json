@@ -907,6 +907,12 @@
         "icon": "$(plug)"
       },
       {
+        "command": "credSshManager.checkWslMcpInstall",
+        "title": "Check the WSL MCP install",
+        "category": "CredsForDevs",
+        "icon": "$(versions)"
+      },
+      {
         "command": "credSshManager.installCli",
         "title": "Install `creds` (terminal CLI)…",
         "category": "CredsForDevs",
@@ -1211,6 +1217,10 @@
     "menus": {
       "commandPalette": [
         {
+          "command": "credSshManager.checkWslMcpInstall",
+          "when": "isWindows"
+        },
+        {
           "command": "credSshManager.openSiteInBrowser",
           "when": "false"
         },
@@ -1239,6 +1249,11 @@
         {
           "command": "credSshManager.installMcpServer",
           "group": "here@2"
+        },
+        {
+          "command": "credSshManager.checkWslMcpInstall",
+          "when": "isWindows",
+          "group": "here@3"
         },
         {
           "command": "credSshManager.copyInstallCommand",

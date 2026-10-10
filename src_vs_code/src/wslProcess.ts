@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { killChild } from './childKill';
 import { withTimeout } from './withTimeout';
 import { wslPathArgv } from './wslMcpInstall';
-import { SOCKET_ALIVE, socketAliveArgv } from './wslRelay';
+import { SOCKET_ALIVE, parseDistros, socketAliveArgv } from './wslRelay';
 
 /**
  * Running `wsl.exe` and reading what it said.
@@ -113,26 +113,110 @@ export async function runWslBounded(
   ms: number,
   spawn: WslSpawner = spawnWsl,
 ): Promise<string> {
+  const outcome = await runWslOutcome(args, ms, spawn);
+  return outcome.kind === 'exited' && outcome.code === 0 ? outcome.stdout : '';
+}
+
+/** How a bounded `wsl.exe` run ended: it exited (with its code, `null` when it never started), or it timed out. */
+export type WslOutcome = { kind: 'timeout' } | { kind: 'exited'; code: number | null; stdout: string };
+
+/**
+ * The bounded run, without folding its endings together.
+ *
+ * <p><b>Widened out of `runWslBounded`, not written beside it</b> (plan §5.8, E4.S2): the stale WSL
+ * install check needs the one difference that function deliberately discards — a non-zero exit is a
+ * `creds-mcp` older than `--version`, while a timeout is a distribution that did not answer, and the
+ * second is no evidence of the first. Same spawn, same deadline, same tree kill.</p>
+ */
+export async function runWslOutcome(
+  args: readonly string[],
+  ms: number,
+  spawn: WslSpawner = spawnWsl,
+): Promise<WslOutcome> {
+  const outcome = await runWslBytes(args, ms, spawn);
+  return outcome.kind === 'timeout'
+    ? outcome
+    : { kind: 'exited', code: outcome.code, stdout: outcome.bytes.toString('utf8') };
+}
+
+type ByteOutcome = { kind: 'timeout' } | { kind: 'exited'; code: number | null; bytes: Buffer };
+
+/**
+ * How much of a child's stdout is kept — the rest is read and dropped (code round, finding 2).
+ *
+ * <p>The stale-install check runs a recorded binary unattended at activation; one that printed without
+ * end would otherwise grow the extension host's memory until the deadline. Every answer this module
+ * reads — a path, a distribution list, two version lines — sits far inside the first 64 KiB.</p>
+ */
+export const OUTPUT_CAP_BYTES = 64 * 1024;
+
+/** The one bounded spawn under both readings: text (above) and the UTF-16 a listing answers in (below). */
+async function runWslBytes(args: readonly string[], ms: number, spawn: WslSpawner): Promise<ByteOutcome> {
   const child = spawn(args);
   const answered = await withTimeout(collect(child), ms);
   if (answered === undefined) {
     killChild(child, { tree: true });
-    return '';
+    return { kind: 'timeout' };
   }
   return answered;
 }
 
-/** Stdout if it exited cleanly, `''` for every other ending. Never rejects — `withTimeout` forbids it. */
-function collect(child: childProcess.ChildProcess): Promise<string> {
+/**
+ * Stdout as bytes and the exit code. Never rejects — `withTimeout` forbids it.
+ *
+ * <p>Bytes, decoded by the caller, because the two readers disagree: `wsl -l` answers in UTF-16LE
+ * (`parseDistros`), everything run INSIDE a distribution answers in UTF-8. A chunk that already
+ * arrives as text is taken as it is.</p>
+ */
+function collect(child: childProcess.ChildProcess): Promise<ByteOutcome> {
   return new Promise((resolve) => {
-    let out = '';
-    child.stdout?.setEncoding('utf8');
-    child.stdout?.on('data', (chunk: string) => {
-      out += chunk;
+    const chunks: Buffer[] = [];
+    let kept = 0;
+    child.stdout?.on('data', (chunk: Buffer | string) => {
+      const bytes = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk;
+      const room = OUTPUT_CAP_BYTES - kept;
+      if (room > 0) {
+        chunks.push(bytes.subarray(0, room));
+        kept += Math.min(room, bytes.length);
+      }
     });
-    child.on('error', () => resolve(''));
-    child.on('close', (code) => resolve(code === 0 ? out : ''));
+    child.on('error', () => resolve({ kind: 'exited', code: null, bytes: Buffer.alloc(0) }));
+    child.on('close', (code: number | null) => resolve({ kind: 'exited', code, bytes: Buffer.concat(chunks) }));
   });
+}
+
+/** How long listing the running distributions may take. */
+export const LIST_TIMEOUT_MS = 5_000;
+
+/**
+ * The distributions that are RUNNING right now — `wsl -l --running -q`, bounded.
+ *
+ * <p>The stale-install check at activation asks only these (plan §5.8): running anything inside a
+ * stopped distribution starts its VM, which is seconds of the person's machine for a check nobody
+ * asked for. Listing does not start one. Every failure — no `wsl.exe`, a timeout, a non-zero exit —
+ * answers "none running", so the check then does nothing.</p>
+ */
+export async function runningDistros(ms: number = LIST_TIMEOUT_MS, spawn: WslSpawner = spawnWsl): Promise<string[]> {
+  const listing = await listRunning(ms, spawn);
+  return listing.kind === 'listed' ? listing.distros : [];
+}
+
+/** A listing that answered — possibly with nothing running — or one that did not answer at all. */
+export type RunningList = { kind: 'listed'; distros: string[] } | { kind: 'failed' };
+
+/**
+ * The same listing, keeping a FAILURE apart from an empty answer (pre-merge checkpoint round): the
+ * command must not tell a person "no distribution is running" when `wsl.exe` merely did not answer.
+ * The activation check reads both as "nothing to ask", which is right for a reminder.
+ */
+export async function listRunning(ms: number = LIST_TIMEOUT_MS, spawn: WslSpawner = spawnWsl): Promise<RunningList> {
+  return listingOf(await runWslBytes(['-l', '--running', '-q'], ms, spawn));
+}
+
+function listingOf(outcome: ByteOutcome): RunningList {
+  return outcome.kind === 'exited' && outcome.code === 0
+    ? { kind: 'listed', distros: parseDistros(outcome.bytes) }
+    : { kind: 'failed' };
 }
 
 /** How long a path translation may take before the click is refused instead of waiting. */

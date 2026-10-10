@@ -1,6 +1,6 @@
 # PLAN — every creds process ends when the client it serves is gone
 
-> Status: **in progress, 2026-10-10 — E1 (#201), E4.S1 (#205), E2 (#211) and E4.S3 implemented (§14; §5.7 *As built*); E3, E4.S2 and E5 not yet.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
+> Status: **in progress, 2026-10-10 — E1 (#201), E4.S1 (#205), E2 (#211), E4.S3 (#212) and E4.S2 implemented (§14; §5.7 and §5.8 *As built*); E3 and E5 not yet.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
 > round — §14); each epic is re-gated on its own branch. Scope: `src_mcp/src` (`Program.cs`, `WslPump.cs`, the
 > tool lambdas, `Windows.cs`, a new `ServerLifetime`), `src_broker_client/src` (`BrokerClient.cs`, `WslInterop.cs`, a
 > new shared `ChildLifetime`), `src_cli/src` (`AgentRelay.cs`, `RelayPipe.cs`), `src_vs_code/src` (the broker's
@@ -364,6 +364,57 @@ below).
 - What the person sees: the distribution, both versions, the Windows-half path the install uses, and **Update** (the
   existing `installIntoWsl`, then the config block with the new path on the clipboard), **Later**, **Not for this version**.
 
+**E4.S2 design, settled before its plan round** (question consultation `85327e0e`, codex — verified against the code):
+
+- **Which executable — the block's two values, remembered.** The extension cannot see the client's config, and does
+  not read it: a client's per-user file also holds other servers' env values and account data, and a credential manager
+  pulling that file across the WSL boundary to recover two strings it already wrote is poor data minimisation (the
+  consultant's word). So `installIntoWsl` records, per distribution, the two values the copied block names — the Linux
+  binary (`installedPathFrom`) and the translated Windows binary — in `globalState` the moment the block is on the
+  clipboard. The check replays exactly that pair: `wsl -d <distro> -e env CREDS_MCP_WINDOWS_BINARY=<windows> <linux>
+  --version` — `env` because the Windows half `--version` reports is resolved from that variable, and without it the
+  probe would ask a different half than the client launches. A Linux path that is not absolute or contains `=` (which
+  `env` would read as an assignment) is refused, never quoted.
+- **An install the extension did not make is "not recorded"**, not guessed at. The command says so for a running
+  distribution and offers **Update** — which, followed by the paste and the client restart the install message already
+  asks for, is the fix for the motivating case (a manual install from August). Asking the person to paste their
+  config's command was rejected as the default: it would still need the Windows path too, and still not prove the client
+  uses it.
+- **Expected** = the `creds-mcp` version the extension recorded installing on Windows (`binaryInstaller`'s record) — the
+  half the block points at. **Below the first release with `--version` (`mcp` 0.10.0)** the check cannot judge and says
+  nothing at activation (a current install of that version has no `--version` either — flagging it would loop Update).
+- **Verdict:** `current` when the Linux half answers a version ≥ expected and the Windows half answers one ≥ expected;
+  `older` when the Linux half has no `--version` (a non-zero exit — a build older than the flag, or a binary that is
+  gone), answers less, or the Windows half answers less, or answers one of E2's three words (`older than --version, or
+  no answer`, `answered without a version`, `not started`); **`unknown`** when the probe timed out — a hung distribution
+  is not evidence of an old binary (consultant), so it is reported by the command and silent at activation. The bounded
+  run is `runWslBounded`'s core widened to tell a timeout from an exit, not a second spawner.
+- **When:** after every install into WSL (shown only when not current); at activation for recorded, running
+  (`wsl -l --running -q`), due (24 h per distribution) installs, skipping a distribution whose **Not for this version**
+  names the current expected version; and the command **Check the WSL MCP install**, which ignores both throttle and
+  dismissal. Activation spawns nothing when no install is recorded.
+- **Where:** the panel button lives in the view's **Install…** submenu, beside *Install the MCP Server…* (owner's rule,
+  2026-10-09: every action is a panel button, the palette duplicates); it is the same command id, so the button and the
+  palette run one handler. The orchestration is a `vscode`-free module with injected `runningDistros`, `probe`, state
+  and clock, so the stopped-distribution, throttle and dismissal rules are unit tests.
+
+**As built (E4.S2, where the code refined the block above):**
+
+- **Every message claims only the copied block** (plan round, finding 1): "the MCP server whose config this
+  extension last copied for <distro>", never "your client runs" — copying a block does not prove it was pasted.
+- **The explicit command also offers only RUNNING distributions** (`wsl -l --running -q`), not only activation: it
+  never starts a VM either; with none running it says so. With one running it asks that one; with several, a pick.
+- **The Update straight after an install is not offered**: an install whose verdict is already `older` (a Windows
+  half that does not start, say) is reported with **Later** / **Not for this version** only, because Update would
+  install the same release again.
+- **Registered from `agentCommands.ts`, beside *Install the MCP Server…***, not from `extension.ts` (whose size
+  ratchet forbids growth) — with plain values (`storageDir`, `state`), so registering needs nothing of the editor's
+  API, and an activation-check failure goes to the diagnostic log instead of an unhandled rejection.
+- **The bounded run was widened, not copied**: `runWslOutcome` and `runningDistros` share `runWslBounded`'s one
+  spawn, deadline and tree kill; the core now collects bytes, because `wsl -l` answers in UTF-16 and a
+  distribution's programs in UTF-8. `binaryInstaller` gained `recordedVersion` and `binaryIn` (the storage-only
+  half of `binaryPath`).
+
 ### 5.9 Native parent watch for the server — `src_mcp/src/ParentWatch.cs` (new)
 
 - Only when the server is not relayed (`WslInterop.RelayedVariable` unset, `WslInterop.cs:59`): under the relay the
@@ -480,8 +531,9 @@ only with the owner's OK on the notes.
   during the modal, the test clicks **Allow** → no grant allowed, nothing run, `ABANDONED` logged; a token grant shared
   by two waiters — one abandons, the other still gets its answer; the client drops between consent and the action start
   → the action never starts; the client drops after the start → the action's signal fires.
-- **E4.S2** stale WSL install check (§5.8): pure `staleVerdict` tests; host wiring; the command; never on a stopped
-  distribution.
+- **E4.S2** stale WSL install check (§5.8): pure `staleVerdict` tests (every state, an old Windows half, no
+  `--version`, a timeout); host orchestration tests (a stopped distribution is never probed, once a day, *Not for this
+  version*); the panel button and the command are one id; the install records the block's two paths.
 
 - **E4.S3 RED → green** a gone request starts no VPN (§5.7, *E4.S3*). TS tests under the `vscode` stub, each holding
   one await open, firing the request's signal, then releasing it: the built-in start (no config file, no line sent),
@@ -878,3 +930,85 @@ found between every await and the next effect, the reorder costing the person's 
 `requestGone` — now the shared one. Recorded, not taken: the two open-tail items above. Answered: the stop test is
 caught by `runVpn`'s entry check, and `sendToVpnTerminal`'s own check is held by the OpenVPN Connect test (break-it
 #14); `configFor`'s last check is belt-and-braces now that `settle` reads the gate after every step.
+
+### Epic E4, story S2 — a stale WSL install says so (branch `feat/e4s2-stale-wsl-install-says-so`)
+
+**Question consultation before the plan round** (`85327e0e`, codex `gpt-6-astra`, one of one row answered): which
+executable the check may run when the extension cannot see the client's config. Its answer — record the copied
+block's two paths per distribution and replay them, report an unrecorded distribution as such, keep a timeout
+`unknown` rather than `older` — was verified against `wslMcpInstall.ts` and `wslProcess.ts` and is the design block
+of §5.8.
+
+**Plan round (2026-10-10, session `07bee33e`) — `proceed`**, gating 2 against threshold 6, **1 of 3 reviewers
+answered** (codex; gemini rate-limited, quota reset ~89 h; the local engine misconfigured — "model is required").
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | §5.7/§9 promise a gone request runs nothing, but the VPN start is not gated | **rejected** — outside E4.S2: §5.7's recorded open tail, closed by its own story on its own branch (PR #212, re-gated there) |
+| 1 | §5.8 treats copying a block as proof the client uses its paths | **accepted** — the check and every message are worded as verifying the block this extension last copied, never the client's config; a "pending until confirmed" state was not added, since the paste cannot be observed |
+
+The round's operator commands, applied: build the story as one unit without re-splitting; work autonomously
+(RED → GREEN → RED again, docs with the change, every suite before the PR, the PR process end to end); questions to
+the question consultant before the person.
+
+**Tests, red first.** Before the code existed, the new suites failed for the missing feature: the panel test with
+*"credSshManager.checkWslMcpInstall is not contributed"* and *"the check has no panel button — the palette would be
+its only way in"*, the verdict and orchestration suites with `staleVerdict` / `runWslOutcome` not defined. Green
+after: the 4 new and widened suites, 71 tests. Break-it, each fix removed from the compiled code and the suite run
+again: the running-distribution filter removed → *"a STOPPED distribution is never probed at activation"* red
+(*"a stopped distribution was asked, which starts its VM"*); the 24-hour clock removed → *"at most once a day"* and
+*"per distribution"* red; the Windows half left unjudged → four verdict tests red, *"an older WINDOWS half is older
+even when the Linux half is current"* first; a missing version read as current → four red; the panel button
+removed from the manifest → two red. Full extension suite: 5531 tests, 5527 pass, 0 fail, 4 skipped.
+
+**Code round (2026-10-10, same session) — `proceed`**, gating 3 against threshold 5, **4 of 12 reviewers answered**
+(codex's four roles; gemini rate-limited, the local engine misconfigured — one vendor's verdict).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | The flow has no scenario test and `module_tests.md` does not name it | **accepted in part** — `module_tests.md` now names the flow, what stands in for a harness and its exact limit, and the one read-only manual run against the real bridge; **the scenario leg itself is not added here**: the only harness that can drive it is the manual WSL itest, which deletes and rebuilds a `/tmp` tree inside the distribution and is what E5.S1 rewrites with run-unique directories — the leg belongs to that rewrite |
+| 1 | The per-distribution maps are written as whole-map read-modify-write | **rejected** — within one window the read and the write are one synchronous step and a `Memento` reflects an `update` immediately, so two installs cannot interleave; across two windows the loss is one record, which degrades to the explicit *not recorded* path whose remedy (Update) restores it; the same whole-map shape holds the CLI aliases (`ALIAS_KEY`) |
+| 2 | The bounded run buffers unlimited stdout until the deadline | **accepted** — `OUTPUT_CAP_BYTES` (64 KiB) kept, the rest read and dropped; RED (*"kept 4194321 bytes of an endless answer"*) → GREEN → RED again with the cap removed |
+| 3 | A distribution named `constructor`/`toString` reads an inherited member as an install | **accepted** — own-property reads for all three maps; RED (*"TypeError: Cannot read properties of undefined (reading 'startsWith')"*) → GREEN → RED again, plus the same for the daily clock |
+| 4 | The post-install probe can look like a hung install | **accepted** — it runs under a progress notification (UI only; no unit test can observe it) |
+| 5 | Activation probes distributions serially | **rejected** — deliberate: one `wsl.exe` at a time at activation, each bounded at 15 s, fire-and-forget off the activation path; the recorded set is the distributions a person installed into through this extension, one or two in practice |
+
+Own review (a separate reviewer, same time): no high-confidence defect; its minor note that `offerStale` is not
+awaited at two call sites, so a failing Update or dismissal would surface as an unhandled rejection, was taken — the
+choice is applied under a `try` that shows the error.
+
+**Final code round (`again`, 2026-10-10) — `proceed`**, gating 5 against threshold 5, **4 of 12 reviewers answered**
+(codex; gemini rate-limited, the local engine misconfigured). Nothing accepted.
+
+| # | Finding | Decision |
+|---|---|---|
+| 0–3 | The German, Spanish, Russian and Ukrainian help sentences break the English-only text rule | **rejected** — the built-in help is localized by design (the README's language switch; every article in five languages; the owner's decision of 2026-10-09); the rule governs chrome, and every label inside the sentences stays English |
+| 4 | No scenario test for the flow (re-raised) | **rejected** — no new argument; the only harness able to drive it deletes and rebuilds a tree inside the distribution, which this story may not do; the leg belongs to E5.S1's rewrite, and `module_tests.md` states the gap |
+| 5 | Whole-map writes across two windows (re-raised) | **rejected** — on the first round's reasons |
+| 6 | Activation probes serially without showing progress | **rejected** — a background reminder nobody waits on; each stale result is reported as its probe finishes |
+
+**Pull request #213's automated reviewers.** CodeRabbit: reviewed, no actionable comments. SonarCloud (gate failed on
+new-code coverage 76.4 % < 80, 4 issues), all four fixed and the coverage raised: what the person is shown is now
+decided by a pure `noticeFor` (the dialog code only shows it), and the window's half — the command, Update, the
+dismissal, the post-install notice, the install-first redirect — runs in-process under the `vscode` stub with
+`wsl.exe` stood in for (`wslMcpCheckHost.test.ts`, written against code that already passed, so its teeth were proven
+by break-it: the install record removed → two red; the no-running guard removed → *"with no distribution running the
+command says so and probes nothing"* red; Update offered after an install → red). `await` inside the activation loop
+(three issues, S9382): the due distributions are now asked side by side — this reverses the code round's rejection of
+finding 5; the stamp's read-modify-write has no await inside it, so two cannot interleave. The backtracking pattern
+for the Windows-half line (S8786) became string steps, and the version pattern too; RED with the old pattern put back
+(*"a hostile Windows-half line is read in linear time"*, 1384 ms against a 1 s bound) → GREEN.
+
+**Pre-merge checkpoint round (`again`, 2026-10-10) — `proceed`**, gating 1 against threshold 5, **all 4 reviewers
+answered** (codex). The four help-language findings were raised again and discounted; rejected again, and the conflict
+between the shared rule *User-facing text is English* and the five-language help goes to the owner. The whole-map
+writes were raised a third time and rejected on the same reasons. Taken: **a failed `wsl -l --running -q` is no
+longer read as "no distribution is running"**. `listRunning` keeps a failure apart from an empty answer, and the
+command says it could not list. RED (the host test showed *"No WSL distribution is running…"* for a failed listing)
+→ GREEN → RED again with the check removed.
+
+**Final pre-merge round (`again`, 2026-10-10) — `proceed`**, gating 1 against threshold 5, **all 4 reviewers
+answered** (codex). Nothing taken. The help-language conflict was raised again and goes to the owner. The whole-map
+writes were raised a fourth time and rejected. The stamp before the probe is deliberate (a hung distribution is not
+asked again on every reload), and the cost is one day's reminder after a crash mid-probe. One prompt per stale
+distribution was rejected: the recorded set is one or two distributions, and each notice names its own.

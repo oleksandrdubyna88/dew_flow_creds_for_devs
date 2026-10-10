@@ -42,7 +42,7 @@ export async function runInstall(
       void vscode.window.showInformationMessage(`${product.label} ${version} installed at ${target.fsPath} — path copied.`);
       return;
     }
-    await offerMcpClientConfig(target.fsPath);
+    await offerMcpClientConfig(target.fsPath, { storageDir: host.storage.fsPath, state: host.state });
   } catch (error) {
     void vscode.window.showErrorMessage(`Could not install ${product.label}: ${describeError(error)}`);
   }

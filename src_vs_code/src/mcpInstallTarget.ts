@@ -1,9 +1,26 @@
+import * as fs from 'node:fs';
 import * as vscode from 'vscode';
 
+import { binaryIn, recordedVersion } from './binaryInstaller';
+import { CREDS_MCP, ridFor } from './credsInstall';
+import { describeError } from './describeError';
 import { MCP_CLIENT_TARGETS, installedMessage, mcpServerBlock } from './mcpClientConfig';
 import { parseDistros } from './wslRelay';
-import { runWsl, runWslRaw } from './wslProcess';
+import { listRunning, runWsl, runWslOutcome, runWslRaw, runningDistros } from './wslProcess';
 import {
+  CheckResult,
+  CheckStore,
+  WslCheckDeps,
+  activationCheck,
+  checkDistro,
+  dismissForVersion,
+  noticeFor,
+  rememberInstall,
+} from './wslMcpCheck';
+import {
+  RecordedWslInstall,
+  canJudge,
+  cannotJudgeMessage,
   helpArgv,
   installArgv,
   installFailure,
@@ -30,12 +47,12 @@ import {
  * may have several clients, and a credential manager silently editing the file that grants an
  * agent access to itself is the wrong instinct in the wrong place.</p>
  */
-export async function offerMcpClientConfig(windowsBinary: string): Promise<void> {
+export async function offerMcpClientConfig(windowsBinary: string, host: WslCheckHost): Promise<void> {
   const distro = await chooseAgentHome();
   if (distro === undefined) {
     return;
   }
-  await (distro === WINDOWS ? offerForWindows(windowsBinary) : installIntoWsl(distro, windowsBinary));
+  await (distro === WINDOWS ? offerForWindows(windowsBinary) : installIntoWsl(distro, windowsBinary, host));
 }
 
 /** The sentinel for "the agent runs here", told apart from a distribution named anything. */
@@ -84,7 +101,7 @@ async function offerForWindows(windowsBinary: string): Promise<void> {
  * button run a DIFFERENT installer than the one we tell people to paste would be two things to
  * keep correct.</p>
  */
-async function installIntoWsl(distro: string, windowsBinary: string): Promise<void> {
+async function installIntoWsl(distro: string, windowsBinary: string, host: WslCheckHost): Promise<void> {
   const output = await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Installing the MCP server in ${distro}…` },
     () => runWsl(installArgv(distro)),
@@ -105,17 +122,188 @@ async function installIntoWsl(distro: string, windowsBinary: string): Promise<vo
     return;
   }
 
-  await vscode.env.clipboard.writeText(wslServerBlock(linuxBinary, translated));
+  await handOver(distro, { linuxBinary, windowsBinary: translated }, host);
+}
+
+/**
+ * The block on the clipboard, remembered, and the binary asked whether it is any good.
+ *
+ * <p>Remembered the moment it is on the clipboard (plan §5.8): those two paths are all the stale
+ * check can ever know about this distribution, because the client's config is never read.</p>
+ */
+async function handOver(distro: string, install: RecordedWslInstall, host: WslCheckHost): Promise<void> {
+  await vscode.env.clipboard.writeText(wslServerBlock(install.linuxBinary, install.windowsBinary));
+  await rememberInstall(host.state, distro, install);
 
   // Asked of the binary itself, because the alternative failure is silent: a release published
   // before the bridge answers "no window answered" — word for word what a closed window says.
-  if (!knowsTheBridge(await runWsl(helpArgv(distro, linuxBinary)))) {
-    void vscode.window.showWarningMessage(staleBinaryWarning(distro, linuxBinary));
+  if (!knowsTheBridge(await runWsl(helpArgv(distro, install.linuxBinary)))) {
+    void vscode.window.showWarningMessage(staleBinaryWarning(distro, install.linuxBinary));
     return;
   }
-
+  if (await staleAfterInstall(distro, host)) {
+    return;
+  }
   void vscode.window.showInformationMessage(
-    wslInstalledMessage(distro, linuxBinary),
+    wslInstalledMessage(distro, install.linuxBinary),
     ...MCP_CLIENT_TARGETS.map((target) => target.path),
   );
+}
+
+// ---------- a stale install says so (plan §5.8, E4.S2) ----------
+
+/**
+ * What the install and the check need of the window: its storage folder (where the Windows half lives)
+ * and a state store — plain values, so registering the check needs nothing of the editor's API.
+ */
+export interface WslCheckHost {
+  /** The extension's global storage folder — where the Windows half is installed. */
+  readonly storageDir: string;
+  readonly state: CheckStore;
+}
+
+/** How long the `--version` probe may take: the Windows half it asks is bounded at 3 s inside it. */
+const VERSION_TIMEOUT_MS = 15_000;
+
+/**
+ * The command, and the once-a-day look at activation.
+ *
+ * <p>The activation look is fire-and-forget: it must never hold up activation, and it starts no
+ * `wsl.exe` at all on a machine where no WSL install is recorded (`activationCheck`). It can never
+ * fail activation either — a failure only means no reminder today, and it is written to the
+ * diagnostic log rather than left as an unhandled rejection.</p>
+ */
+export function registerWslMcpCheck(
+  register: (command: string, handler: (...args: unknown[]) => unknown) => void,
+  host: WslCheckHost,
+  warn: (message: string) => void,
+  platform: string = process.platform,
+): void {
+  // One id: the panel's *Install…* submenu button and the palette entry run this one handler.
+  register('credSshManager.checkWslMcpInstall', () => checkWslMcpInstall(host));
+  if (platform === 'win32') {
+    checkAtActivation(host).catch((error: unknown) => warn(`the daily WSL MCP install check failed: ${String(error)}`));
+  }
+}
+
+function checkDeps(host: WslCheckHost): WslCheckDeps {
+  return {
+    state: host.state,
+    runningDistros: () => runningDistros(),
+    probe: (argv) => runWslOutcome(argv, VERSION_TIMEOUT_MS),
+    now: () => Date.now(),
+  };
+}
+
+async function checkAtActivation(host: WslCheckHost): Promise<void> {
+  const expected = recordedVersion(host.state, CREDS_MCP);
+  await activationCheck(checkDeps(host), expected, (result) => {
+    // Not awaited: a notification nobody clicks must not hold up the next distribution.
+    void present(result, expected, host, true);
+    return Promise.resolve();
+  });
+}
+
+/** *Check the WSL MCP install* — a running distribution, its recorded install, the verdict, always shown. */
+async function checkWslMcpInstall(host: WslCheckHost): Promise<void> {
+  const expected = recordedVersion(host.state, CREDS_MCP);
+  if (!canJudge(expected)) {
+    await offerInstallFirst(cannotJudgeMessage(expected));
+    return;
+  }
+  const distro = await pickRunningDistro();
+  if (distro === undefined) {
+    return;
+  }
+  const result = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Asking the MCP server in ${distro} its version…` },
+    () => checkDistro(checkDeps(host), distro, expected),
+  );
+  await present(result, expected, host, true);
+}
+
+/** Only RUNNING distributions are offered — the explicit check never starts a VM either. */
+async function pickRunningDistro(): Promise<string | undefined> {
+  const listing = await listRunning();
+  if (listing.kind === 'failed') {
+    void vscode.window.showWarningMessage(
+      'Could not list the running WSL distributions — wsl.exe did not answer. Nothing was checked; try again in a moment.',
+    );
+    return undefined;
+  }
+  const running = listing.distros;
+  if (running.length === 0) {
+    void vscode.window.showInformationMessage(
+      'No WSL distribution is running. Start the one your agent lives in, then check again — this ' +
+        'check never starts one.',
+    );
+    return undefined;
+  }
+  return running.length === 1
+    ? running[0]
+    : vscode.window.showQuickPick(running, { title: 'Which distribution does the agent run in?' });
+}
+
+/**
+ * Show the notice `noticeFor` decided, and do what was clicked. Later is nothing at all: the
+ * once-a-day clock asks again tomorrow.
+ *
+ * <p>Callers at activation and after an install do not await it (a notification nobody clicks must
+ * not hold anything up), so a failing Update or dismissal is said here rather than left as an
+ * unhandled rejection (own review, code round).</p>
+ */
+async function present(result: CheckResult, expected: string, host: WslCheckHost, withUpdate: boolean): Promise<void> {
+  const notice = noticeFor(result, expected, withUpdate);
+  const show = notice.level === 'info' ? vscode.window.showInformationMessage : vscode.window.showWarningMessage;
+  const picked = await show(notice.text, ...notice.choices);
+  try {
+    await applyChoice(picked, result.distro, expected, host);
+  } catch (error) {
+    void vscode.window.showErrorMessage(`Could not finish that for ${result.distro}: ${describeError(error)}`);
+  }
+}
+
+async function applyChoice(picked: string | undefined, distro: string, expected: string, host: WslCheckHost): Promise<void> {
+  if (picked === 'Update') {
+    await updateWslInstall(distro, host);
+  } else if (picked === 'Not for this version') {
+    await dismissForVersion(host.state, distro, expected);
+  }
+}
+
+/** Update = the existing install into WSL, pointed at this window's Windows half — then its block on the clipboard. */
+async function updateWslInstall(distro: string, host: WslCheckHost): Promise<void> {
+  const rid = ridFor(process.platform, process.arch);
+  const windowsBinary = rid === undefined ? '' : binaryIn(vscode.Uri.file(host.storageDir), CREDS_MCP, rid).fsPath;
+  if (windowsBinary === '' || !fs.existsSync(windowsBinary)) {
+    await offerInstallFirst('The MCP server is not installed on this machine, so there is no Windows half to point at.');
+    return;
+  }
+  await installIntoWsl(distro, windowsBinary, host);
+}
+
+async function offerInstallFirst(text: string): Promise<void> {
+  const install = 'Install the MCP Server…';
+  if ((await vscode.window.showWarningMessage(text, install)) === install) {
+    await vscode.commands.executeCommand('credSshManager.installMcpServer');
+  }
+}
+
+/** After an install: older is said at once (without Update — it would install the same release again). */
+async function staleAfterInstall(distro: string, host: WslCheckHost): Promise<boolean> {
+  const expected = recordedVersion(host.state, CREDS_MCP);
+  if (!canJudge(expected)) {
+    return false;
+  }
+  // Under a progress notification: the probe may take its whole bound, and the install must not
+  // look hung meanwhile (code round, finding 4).
+  const result = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Checking the MCP server just installed in ${distro}…` },
+    () => checkDistro(checkDeps(host), distro, expected),
+  );
+  if (result.kind !== 'verdict' || result.verdict.kind !== 'older') {
+    return false;
+  }
+  void present(result, expected, host, false);
+  return true;
 }

@@ -5514,6 +5514,55 @@ it) rather than composed as `/mnt/c/...`, which is the default automount root an
 `mcpServerBlock` gained an optional `env`, used for exactly one thing: telling the Linux half where
 the Windows one is, since the extension installs it off the PATH on purpose.
 
+**A stale WSL install says so (2026-10-10, E4.S2 of
+[PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md) §5.8).** The
+owner's WSL client config pointed at a manual install from August while the extension shipped newer
+builds, so no fix — and no `--caller` forwarding — reached any WSL session, and nothing said so.
+`creds-mcp --version` (E2) now prints `creds-mcp <v>` and, inside WSL, `windows half: <v | one of three
+words> (<path>)`; the extension asks it.
+
+```mermaid
+flowchart LR
+  I[installIntoWsl] -->|block on clipboard| R[(globalState<br/>wslMcpCheck.installs<br/>per distribution)]
+  A[activation, Windows] --> D{recorded?<br/>expected ≥ 0.10.0?}
+  D -->|no| X[spawn nothing]
+  D -->|yes| L[wsl -l --running -q]
+  L --> F{running · due 24 h ·<br/>not dismissed}
+  F --> P["wsl -d d -e env CREDS_MCP_WINDOWS_BINARY=w l --version"]
+  B[panel: Install… → Check the WSL MCP install<br/>= palette, one id] --> P
+  I --> P
+  P --> V[staleVerdict] -->|older| U[Update · Later · Not for this version]
+```
+
+- **Which binary.** The extension never writes — or reads — the client's config (it also holds other
+  servers' env values; question consultation `85327e0e`). So `installIntoWsl` records the copied block's
+  two values per distribution (`wslMcpCheck.rememberInstall`) the moment the block is on the clipboard,
+  and the probe replays exactly that pair through `env` (no shell; a Linux path that is not absolute or
+  holds `=` is refused, never quoted — `versionArgv`). A distribution with nothing recorded is *not
+  recorded*, and **Update** is the remedy. Every message says it checked the block it last COPIED, never
+  "your client runs …" (plan round, finding 1).
+- **Against what.** `binaryInstaller.recordedVersion(CREDS_MCP)` — the Windows half the block points at.
+  Below `VERSION_FLAG_SINCE` (0.10.0, the first release with `--version`) nothing is judged: a current
+  install of an older release has no `--version` either, and flagging it would loop Update.
+- **The verdict** (`wslMcpInstall.staleVerdict`, pure): `current`; `older` when the Linux half exits
+  non-zero or prints no version, or either half is below expected, or the Windows half answers one of
+  E2's three words; `unknown` on a timeout — a busy distribution is not an old binary. The bounded run is
+  `wslProcess.runWslOutcome`, widened out of `runWslBounded` (same spawn, deadline and tree kill) to tell
+  a timeout from an exit; `runningDistros` reads the UTF-16 listing through the same core.
+- **What is shown** is decided by the pure `wslMcpCheck.noticeFor` (level, text, buttons); the dialog code
+  in `mcpInstallTarget.ts` only shows it and applies the click (`wslMcpCheckHost.test.ts` drives it under the
+  `vscode` stub).
+- **When** (`wslMcpCheck.ts`, `vscode`-free): after every install into WSL (older is said at once,
+  without an Update that would reinstall the same release); at activation — the due distributions asked
+  side by side — for recorded, RUNNING, due
+  (24 h per distribution, a clock set back counts as due) installs not dismissed for this version — a
+  stopped distribution is never asked, because running anything in it starts its VM; and the command,
+  which ignores the clock and the dismissal but still offers only running distributions.
+- **Where.** The panel button is in the view's **Install…** submenu beside *Install the MCP Server…*
+  (Windows only); the palette entry is the same id (`wslMcpCheckButton.test.ts`). Registered from
+  `agentCommands.ts` next to the install command, with plain values (`storageDir`, `state`) so
+  registering needs nothing of the editor's API; an activation-check failure goes to the diagnostic log.
+
 **The history, kept because the reasoning is not obvious from the code.** `ridFor(process.platform, ...)` always resolves
 to Windows -- the extension is `extensionKind: ["ui"]`, so its host is on Windows even in a
 Remote-WSL window -- and the clipboard config names that `.exe`, which a shell inside the
