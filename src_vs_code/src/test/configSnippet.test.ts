@@ -348,6 +348,32 @@ function childEnv(dir: string): NodeJS.ProcessEnv {
   return env;
 }
 
+/** Run the real PowerShell body under `shell` against the fake `creds`; the BYTES it wrote to the config file. */
+function writtenByPowerShell(shell: string): Buffer {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-pwsh-'));
+  try {
+    fakeCreds(dir);
+    const file = path.join(dir, 'written.json');
+    const script = path.join(dir, 'snippet.ps1');
+    fs.writeFileSync(script, snippetFor('powershell', 'default', { ...CONTEXT, fileName: file }).code);
+
+    execFileSync(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { env: childEnv(dir), stdio: 'pipe', timeout: SPAWN_TIMEOUT_MS });
+
+    return fs.readFileSync(file);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const UTF8_BOM = [0xef, 0xbb, 0xbf];
+
+/** The document the file holds, line by line — and no byte-order mark in front of it. */
+function documentWritten(written: Buffer): void {
+  assert.notDeepEqual([...written.subarray(0, 3)], UTF8_BOM, 'a byte-order mark was written — a strict JSON reader rejects the file');
+  const text = written.toString('utf8');
+  assert.deepEqual(text.split(/\r?\n/).filter((line) => line !== ''), THREE_LINE_DOCUMENT, `the file on disk reads:\n${text}`);
+}
+
 test(
   'the PowerShell snippet writes a multi-line config with its lines intact — run through a real pwsh',
   { skip: !has('pwsh', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0']) },
@@ -355,20 +381,17 @@ test(
     // `$configText` is an ARRAY of lines (PowerShell splits a native command's output), and
     // `Set-Content -NoNewline` concatenates its inputs with nothing between them: a three-line JSON
     // landed on disk as one line with every newline gone — a config with `//` comments, destroyed.
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-pwsh-'));
-    try {
-      fakeCreds(dir);
-      const file = path.join(dir, 'written.json');
-      const script = path.join(dir, 'snippet.ps1');
-      fs.writeFileSync(script, snippetFor('powershell', 'default', { ...CONTEXT, fileName: file }).code);
+    documentWritten(writtenByPowerShell('pwsh'));
+  },
+);
 
-      execFileSync('pwsh', ['-NoProfile', '-NonInteractive', '-File', script], { env: childEnv(dir), stdio: 'pipe', timeout: SPAWN_TIMEOUT_MS });
-
-      const written = fs.readFileSync(file, 'utf8');
-      assert.deepEqual(written.split(/\r?\n/).filter((line) => line !== ''), THREE_LINE_DOCUMENT, `the file on disk reads:\n${written}`);
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+test(
+  'the PowerShell snippet under Windows PowerShell 5.1 writes the same lines and no byte-order mark',
+  { skip: process.platform !== 'win32' || !has('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0']) },
+  () => {
+    // `-Encoding utf8` was offered for 5.1 and refused by the code round: there it ADDS a byte-order mark,
+    // which a strict JSON reader rejects. No encoding flag — pwsh 7 writes UTF-8 without a mark anyway.
+    documentWritten(writtenByPowerShell('powershell.exe'));
   },
 );
 

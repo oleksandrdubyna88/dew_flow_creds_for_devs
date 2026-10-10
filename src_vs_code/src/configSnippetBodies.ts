@@ -489,16 +489,17 @@ std::string readFromVault(const std::string& key) {
     FILE* pipe = popen("creds config", "r");
     const int restored = hadBefore ? setenv("CREDSFORDEVS_KEY", previous.c_str(), 1) : unsetenv("CREDSFORDEVS_KEY");
 #endif
-    if (pipe == nullptr) throw std::runtime_error("could not run creds");
-    // A key that could not be taken back out would reach every process started later: stop here.
-    if (restored != 0) {
-        closeCreds(pipe);
-        throw std::runtime_error("could not take the key back out of the environment");
-    }
+    if (pipe == nullptr) throw std::runtime_error(restored != 0 ? "could not run creds, and the key is still in this program's environment" : "could not run creds");
     std::array<char, 4096> buffer{};
     std::string out;
     while (std::fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
         out += buffer.data();
+    }
+    // A key that could not be taken back out would reach every process started later: stop here —
+    // after the child has been read, so closing it never waits on output nobody drained.
+    if (restored != 0) {
+        closeCreds(pipe);
+        throw std::runtime_error("could not take the key back out of the environment");
     }
     // Loudly. A silently empty configuration starts against the wrong database.
     if (closeCreds(pipe) != 0) throw std::runtime_error("creds config failed");
@@ -645,7 +646,9 @@ $connection = $config.ConnectionStrings.Default
 # ...or straight to the file your program already reads. Written only after creds
 # succeeded, so a failed read never truncates a good file. $configText is one string per
 # LINE (PowerShell splits what a command prints), and Set-Content writes them as lines;
-# -NoNewline would glue them into one line with every newline gone. UTF-8, so a config
-# with non-ASCII text survives Windows PowerShell 5.1, whose default is the ANSI code page.
-Set-Content -Path '__FILE__' -Value $configText -Encoding utf8`,
+# -NoNewline would glue them into one line with every newline gone. No -Encoding: pwsh 7
+# writes UTF-8 without a byte-order mark, and Windows PowerShell 5.1's "utf8" would ADD one,
+# which a strict JSON reader rejects. 5.1 writes the system code page — a config with
+# non-ASCII text wants pwsh 7.
+Set-Content -Path '__FILE__' -Value $configText`,
 };
