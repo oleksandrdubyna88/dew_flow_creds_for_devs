@@ -75,7 +75,7 @@ public sealed class BrokerClient(BrokerContract contract, HttpClient http) : IDi
     {
         try
         {
-            using var cts = Bounded(ct, HealthTimeout);
+            using var cts = Bounded(HealthTimeout, ct);
             using var response = await http.GetAsync(Url(port, contract.Health.Path), cts.Token);
             if (!response.IsSuccessStatusCode)
             {
@@ -94,7 +94,7 @@ public sealed class BrokerClient(BrokerContract contract, HttpClient http) : IDi
 
     public async Task<BrokerReply> PostAsync(GrantToken token, string route, string requestJson, CancellationToken ct = default)
     {
-        using var cts = Bounded(ct, CallTimeout);
+        using var cts = Bounded(CallTimeout, ct);
         using var request = new HttpRequestMessage(HttpMethod.Post, Url(token.Port, route))
         {
             Content = new StringContent(requestJson, Encoding.UTF8, "application/json"),
@@ -116,7 +116,7 @@ public sealed class BrokerClient(BrokerContract contract, HttpClient http) : IDi
     /// </remarks>
     public async Task<BrokerReply> PostAliasAsync(int port, string route, string requestJson, CancellationToken ct = default)
     {
-        using var cts = Bounded(ct, CallTimeout);
+        using var cts = Bounded(CallTimeout, ct);
         using var content = new StringContent(requestJson, Encoding.UTF8, "application/json");
         using var response = await http.PostAsync(Url(port, route), content, cts.Token);
         var body = await response.Content.ReadAsStringAsync(cts.Token);
@@ -135,7 +135,7 @@ public sealed class BrokerClient(BrokerContract contract, HttpClient http) : IDi
     /// </remarks>
     public async Task<BrokerReply> PostBearerAsync(int port, string route, string bearer, CancellationToken ct = default)
     {
-        using var cts = Bounded(ct, CallTimeout);
+        using var cts = Bounded(CallTimeout, ct);
         using var request = new HttpRequestMessage(HttpMethod.Post, Url(port, route))
         {
             Content = new StringContent("{}", Encoding.UTF8, "application/json"),
@@ -150,7 +150,7 @@ public sealed class BrokerClient(BrokerContract contract, HttpClient http) : IDi
     /// <summary>Read the names this window has enabled. No token, and none comes back.</summary>
     public async Task<BrokerReply> GetAsync(int port, string route, CancellationToken ct = default)
     {
-        using var cts = Bounded(ct, HealthTimeout);
+        using var cts = Bounded(HealthTimeout, ct);
         using var response = await http.GetAsync(Url(port, route), cts.Token);
         var body = await response.Content.ReadAsStringAsync(cts.Token);
         return new BrokerReply((int)response.StatusCode, body);
@@ -161,7 +161,7 @@ public sealed class BrokerClient(BrokerContract contract, HttpClient http) : IDi
     /// the call (and closes its connection, which is how the window learns the requester is gone) instead of the
     /// call holding on for its full ceiling (plan §5.3).
     /// </summary>
-    private static CancellationTokenSource Bounded(CancellationToken ct, TimeSpan ceiling)
+    private static CancellationTokenSource Bounded(TimeSpan ceiling, CancellationToken ct)
     {
         var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(ceiling);

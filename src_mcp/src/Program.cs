@@ -110,7 +110,7 @@ internal static class Program
                 return 0;
 
             case Startup.Version:
-                Console.Out.WriteLine(await VersionTextAsync(WslInterop.ShouldRelayHere(), WslInterop.CredsMcp));
+                await Console.Out.WriteLineAsync(await VersionTextAsync(WslInterop.ShouldRelayHere(), WslInterop.CredsMcp));
                 return 0;
 
             case Startup.Usage:
@@ -243,11 +243,12 @@ internal static class Program
     /// <summary>
     /// The parent watch for a server answering here (plan §5.9) — or, with the reason in the log, none.
     /// </summary>
-    private static ParentWatch WatchParent(ILogger log)
+    private static ParentWatch WatchParent(ILogger log) => WatchParent(log, Environment.GetEnvironmentVariable);
+
+    /// <summary><see cref="WatchParent(ILogger)"/> over an injectable environment, so both branches run in a test.</summary>
+    internal static ParentWatch WatchParent(ILogger log, Func<string, string?> env)
     {
-        var off = ParentWatchOff(
-            Environment.GetEnvironmentVariable(WslInterop.RelayedVariable),
-            Environment.GetEnvironmentVariable(NoParentWatchVariable));
+        var off = ParentWatchOff(env(WslInterop.RelayedVariable), env(NoParentWatchVariable));
         return off.Length > 0 ? ParentWatch.Off(off, log) : ParentWatch.Start(log);
     }
 
@@ -636,10 +637,7 @@ internal static class Program
                     contract,
                     tool,
                     caller.Current,
-                    entry,
-                    statement,
-                    secretKind,
-                    Draw(length, lower, upper, digits, symbols, avoidAmbiguous, words, separator),
+                    new UseTools.Rotation(entry, statement, secretKind, Draw(length, lower, upper, digits, symbols, avoidAmbiguous, words, separator)),
                     cancellationToken)),
             // The one shape with no entry id: there is no entry yet. The parameter names are
             // what a model fills in, so they are the words the broker's body uses.

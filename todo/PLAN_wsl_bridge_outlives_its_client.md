@@ -714,3 +714,11 @@ deterministic test); (5) `ParentWatch.Attach` split under the complexity ceiling
 | # | Finding | Decision |
 |---|---|---|
 | 0 | The deadline is armed only after `CancelAsync` returns, so a cancellation callback that blocks keeps it from ever existing | **accepted** — the timer is created before the cancel; RED (*a callback that never returns — "System.TimeoutException: The operation has timed out"*, no forced exit) → GREEN → RED again with the order reversed |
+
+**Pull request #211's automated reviewers.** CodeRabbit: rate-limited (no review; skipped by the owner's standing
+decision). SonarCloud (gate failed on new-code coverage 79.5 % < 80, 4 issues): every issue fixed — an awaited
+`WriteLineAsync` for `--version`, an assertion-less test given its assertions, `BrokerClient.Bounded` takes the token
+last, and `UseTools.RotateAsync` takes a `Rotation` record instead of eight parameters. Coverage: the read walk
+became `Windows.ReadFromAsync` and is driven against the stub window in-process, the grant and bearer posts are
+cancelled in-process, the parent-watch decision runs through `Program.WatchParent(log, env)` in a test, and on
+Linux/macOS a real SIGHUP is sent to the test process to prove the handler runs and the default disposition does not.

@@ -386,17 +386,21 @@ internal static class UseTools
     /// <see cref="InvokeAsync"/>'s, and the body is still built here rather than handed over by a
     /// model.
     /// </remarks>
+    /// <summary>What a rotation asks for: the entry, the statement, and what kind of secret to make, shaped how.</summary>
+    internal sealed record Rotation(
+        string EntryId,
+        string Statement,
+        string? SecretKind,
+        IReadOnlyList<(string Key, string? Value)>? Draw = null);
+
     internal static async Task<string> RotateAsync(
         BrokerContract contract,
         UseTool tool,
         CallerRecord caller,
-        string entryId,
-        string statement,
-        string? secretKind,
-        IReadOnlyList<(string Key, string? Value)>? draw = null,
+        Rotation rotation,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(entryId))
+        if (string.IsNullOrWhiteSpace(rotation.EntryId))
         {
             return Failure("No entry id was given.", "Call creds_list first and pass an entry's `id`.");
         }
@@ -404,7 +408,7 @@ internal static class UseTools
         var reply = await Windows.PostAsync(
             contract,
             RouteFor(contract, tool),
-            RotateBody(contract, caller, entryId, statement, secretKind, draw),
+            RotateBody(contract, caller, rotation.EntryId, rotation.Statement, rotation.SecretKind, rotation.Draw),
             ct);
         if (reply is null)
         {

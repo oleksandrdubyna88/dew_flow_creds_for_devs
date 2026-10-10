@@ -79,6 +79,40 @@ public sealed class ToolCancellationTests : IDisposable
         await broker.PostClosed.WaitAsync(TimeSpan.FromSeconds(10), ct);
     }
 
+    [Theory]
+    [InlineData("grant")]
+    [InlineData("bearer")]
+    public async Task Every_authenticated_post_lets_go_of_its_connection_when_cancelled(string shape)
+    {
+        // The CLI's two posts (a grant token, a config key) take the same linked source as the MCP alias post.
+        var ct = TestContext.Current.CancellationToken;
+        await using var broker = new StubBroker();
+        using var client = BrokerClient.Create(BrokerContract.Current, socketPath: null);
+        using var cancel = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        var posting = shape == "grant"
+            ? client.PostAsync(new GrantToken(broker.Port, "not-a-real-grant"), "/v1/use/exec", "{}", cancel.Token)
+            : client.PostBearerAsync(broker.Port, "/v1/config/read", "not-a-real-key", cancel.Token);
+        await broker.PostArrived.WaitAsync(TimeSpan.FromSeconds(30), ct);
+        await cancel.CancelAsync();
+
+        await posting.Invoking(p => p.WaitAsync(TimeSpan.FromSeconds(10), ct)).Should().ThrowAsync<OperationCanceledException>();
+        await broker.PostClosed.WaitAsync(TimeSpan.FromSeconds(10), ct);
+    }
+
+    [Fact]
+    public async Task The_read_walk_answers_from_a_live_window_in_process()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var broker = new StubBroker();
+        using var client = BrokerClient.Create(BrokerContract.Current, socketPath: null);
+
+        var read = await Windows.ReadFromAsync(client, [broker.Endpoint], "/v1/mcp/entries", ct);
+
+        read.Bodies.Should().ContainSingle("the stub answers every GET with 200").Which.Should().Contain(BrokerContract.Current.Service);
+        read.RouteRefused.Should().Be(0);
+    }
+
     [Fact]
     public async Task A_cancelled_health_probe_is_a_cancellation_not_a_window_that_is_not_ours()
     {

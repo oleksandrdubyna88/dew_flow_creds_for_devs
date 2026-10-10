@@ -88,6 +88,31 @@ public sealed class VersionTests : IDisposable
         Program.ParentWatchOff(relayed, killSwitch).Should().Be(off);
 
     [Fact]
+    public void The_kill_switch_turns_the_watch_off_and_says_so()
+    {
+        var sink = new CollectingSink();
+        using var log = sink.Logger();
+
+        using var watch = Program.WatchParent(log, name => name == Program.NoParentWatchVariable ? "1" : null);
+
+        watch.Watching.Should().BeFalse();
+        sink.Messages.Should().Contain($"parent watch off: {Program.NoParentWatchVariable}=1");
+    }
+
+    [Fact]
+    public void With_nothing_set_the_parent_is_watched_the_platforms_way()
+    {
+        Assert.SkipWhen(CredsForDevs.ServiceDefaults.ParentProcess.Id() <= 1, "this runner was started by init; there is no parent to watch");
+        var sink = new CollectingSink();
+        using var log = sink.Logger();
+
+        using var watch = Program.WatchParent(log, _ => null);
+
+        watch.Watching.Should().BeTrue();
+        watch.Gone.IsCompleted.Should().BeFalse("this test's own parent is alive");
+    }
+
+    [Fact]
     public void The_help_names_the_version_flag_and_the_kill_switch()
     {
         Program.HelpText.Should().Contain("--version").And.Contain(Program.NoParentWatchVariable);

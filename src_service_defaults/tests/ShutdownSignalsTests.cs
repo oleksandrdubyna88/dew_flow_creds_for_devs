@@ -32,6 +32,22 @@ public sealed class ShutdownSignalsTests
         signals.Received.IsCompleted.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task A_real_signal_is_handled_and_reported_instead_of_ending_the_process()
+    {
+        // Linux and macOS only: a real SIGHUP sent to this test process. Registered with Cancel = true, it must
+        // be reported and must NOT take the default disposition — which would end the test run itself.
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows maps these onto console events, not signals a process can send itself");
+        using var signals = ShutdownSignals.Register();
+
+        Kill(Environment.ProcessId, ShutdownSignals.Number(PosixSignal.SIGHUP)).Should().Be(0);
+
+        (await signals.Received.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken)).Should().Be(PosixSignal.SIGHUP);
+    }
+
+    [System.Runtime.InteropServices.DllImport("libc", EntryPoint = "kill", SetLastError = true)]
+    private static extern int Kill(int pid, int signal);
+
     [Theory]
     [InlineData(PosixSignal.SIGHUP, 1)]
     [InlineData(PosixSignal.SIGINT, 2)]

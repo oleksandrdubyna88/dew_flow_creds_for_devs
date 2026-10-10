@@ -62,6 +62,8 @@ public sealed class ParentWatchTests
         using var watch = ParentWatch.ForWindows(4242, Self, _ => throw new ArgumentException("not running"), log);
 
         await watch.Gone.WaitAsync(Bound, TestContext.Current.CancellationToken);
+        watch.Watching.Should().BeFalse("there was nothing left to watch");
+        _sink.Messages.Should().Contain(m => m.Contains("already exited"));
     }
 
     [Fact]

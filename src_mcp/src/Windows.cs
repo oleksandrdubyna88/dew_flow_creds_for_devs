@@ -50,6 +50,13 @@ internal static class Windows
         }
 
         using var client = BrokerClient.Create(contract);
+        return await ReadFromAsync(client, endpoints, route, ct);
+    }
+
+    /// <summary>The read walk over endpoints already found — separate, like <see cref="PostToAsync"/>, so a test can point it at a stub.</summary>
+    internal static async Task<WindowRead> ReadFromAsync(
+        BrokerClient client, IReadOnlyList<Endpoint> endpoints, string route, CancellationToken ct)
+    {
         var bodies = new List<string>();
         var refused = 0;
         foreach (var endpoint in endpoints)
