@@ -237,6 +237,13 @@ everything an agent asked for and did not get. Install the server from
 **⋯ → Install the MCP Server…**; it is a separate binary, and the extension still has zero runtime
 dependencies.
 
+`creds-mcp --version` prints the version of the executable you ran — so to check what a client launches, run
+it by the exact path the client's MCP config names (a bare `creds-mcp` resolved through `PATH` may be a different
+copy). Inside WSL it also asks the Windows half and names the executable it asked. The server ends with its
+session: when the client closes stdin, on SIGINT/SIGTERM/SIGHUP/SIGQUIT, or when the process that started it
+exits. If a launcher starts `creds-mcp` as a child and then exits itself while the client keeps talking to it, set
+`CREDS_MCP_NO_PARENT_WATCH=1`.
+
 ## Two honest caveats
 
 **Linux without a Secret Service.** VS Code stores secrets in the OS keychain. On a Linux box with no

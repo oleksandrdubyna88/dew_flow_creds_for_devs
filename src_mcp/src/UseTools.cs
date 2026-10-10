@@ -264,7 +264,8 @@ internal static class UseTools
         CallerRecord caller,
         string entryId,
         string? extraName,
-        string? extraValue)
+        string? extraValue,
+        CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(entryId))
         {
@@ -272,7 +273,7 @@ internal static class UseTools
         }
 
         var route = RouteFor(contract, tool);
-        var reply = await Windows.PostAsync(contract, route, Body(contract, caller, entryId, extraName, extraValue));
+        var reply = await Windows.PostAsync(contract, route, Body(contract, caller, entryId, extraName, extraValue), ct);
         if (reply is null)
         {
             return Failure(
@@ -306,7 +307,8 @@ internal static class UseTools
         string? user,
         int? port = null,
         IReadOnlyList<(string Key, string? Value)>? draw = null,
-        JsonObject? fields = null)
+        JsonObject? fields = null,
+        CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -319,7 +321,7 @@ internal static class UseTools
         // the update, and nothing is created.
         if (fields is not null)
         {
-            var probe = await Windows.ReadAllAsync(contract, contract.ReadRoute("mcpKinds", "/v1/mcp/kinds"));
+            var probe = await Windows.ReadAllAsync(contract, contract.ReadRoute("mcpKinds", "/v1/mcp/kinds"), ct);
             if (probe.Bodies.Count == 0)
             {
                 return Tools.NoAnswer(probe.RouteRefused);
@@ -329,7 +331,8 @@ internal static class UseTools
         var reply = await Windows.PostAsync(
             contract,
             RouteFor(contract, tool),
-            CreateBody(contract, caller, name, kind, secretKind, secret, folder, host, user, port, draw, fields));
+            CreateBody(contract, caller, name, kind, secretKind, secret, folder, host, user, port, draw, fields),
+            ct);
         if (reply is null)
         {
             return Failure(
@@ -383,16 +386,21 @@ internal static class UseTools
     /// <see cref="InvokeAsync"/>'s, and the body is still built here rather than handed over by a
     /// model.
     /// </remarks>
+    /// <summary>What a rotation asks for: the entry, the statement, and what kind of secret to make, shaped how.</summary>
+    internal sealed record Rotation(
+        string EntryId,
+        string Statement,
+        string? SecretKind,
+        IReadOnlyList<(string Key, string? Value)>? Draw = null);
+
     internal static async Task<string> RotateAsync(
         BrokerContract contract,
         UseTool tool,
         CallerRecord caller,
-        string entryId,
-        string statement,
-        string? secretKind,
-        IReadOnlyList<(string Key, string? Value)>? draw = null)
+        Rotation rotation,
+        CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(entryId))
+        if (string.IsNullOrWhiteSpace(rotation.EntryId))
         {
             return Failure("No entry id was given.", "Call creds_list first and pass an entry's `id`.");
         }
@@ -400,7 +408,8 @@ internal static class UseTools
         var reply = await Windows.PostAsync(
             contract,
             RouteFor(contract, tool),
-            RotateBody(contract, caller, entryId, statement, secretKind, draw));
+            RotateBody(contract, caller, rotation.EntryId, rotation.Statement, rotation.SecretKind, rotation.Draw),
+            ct);
         if (reply is null)
         {
             return Failure(

@@ -439,7 +439,7 @@ Four things about it are decided ACROSS modules rather than inside one:
 | The CLI | [../src_cli/README.md](../src_cli/README.md) | `creds` — the terminal client of the broker. A .NET Native AOT binary holding no secret: it relays a request to the VS Code window named by a grant token and prints what comes back |
 | The broker client | `src_broker_client/` | Discovery, the health probe, the wire contract and the WSL bridge — shared by both binaries, so a fix to any of it is made once. The bridge is an instance per binary (`WslInterop.Creds`, `WslInterop.CredsMcp`), each with its own override variable, because one shared `creds.exe` would have sent an MCP handshake to the CLI |
 | The shared logging | [module_service_defaults.md](module_service_defaults.md) | `CredsForDevs.ServiceDefaults` — the repository's one Serilog configuration, used by the server and both AOT binaries: the coloured console, the file per run, retention, the level binding, and `HostRun`'s start and exit lines. See *Logging* above |
-| The MCP server | `src_mcp/` | `creds-mcp` — what an AI agent talks to. **Eighteen tools** over the same broker, across two objects: entries (list, use, rotate, create, delete, export-env, and `creds_config_snippet` — read-only public text, how code reads a config, from the viewer's own catalog) and folders (list, create, edit, delete, since 0.85.0) — plus, since 1.12.0 / relay 0.9.0, the kind catalogue `creds_kinds` / `creds_kind_help` (`GET /v1/mcp/kinds`, `/v1/mcp/kind-help`, read-only, answered from the window's one per-kind table `agentKindFields.ts`: a folder says what it `holds`, a kind which fields an agent may set, and `creds_create` refuses anything else). Every one is gated by a switch that is off by default — **two ladders, ten switches, inherited down the whole tree** — and by the same consent prompt. Holds no secret and can obtain none, and no request it can compose has a field the switches could arrive in. **Inside WSL it carries the session rather than serving it** — see below |
+| The MCP server | [module_mcp.md](module_mcp.md) (`src_mcp/`) | `creds-mcp` — what an AI agent talks to. **Eighteen tools** over the same broker, across two objects: entries (list, use, rotate, create, delete, export-env, and `creds_config_snippet` — read-only public text, how code reads a config, from the viewer's own catalog) and folders (list, create, edit, delete, since 0.85.0) — plus, since 1.12.0 / relay 0.9.0, the kind catalogue `creds_kinds` / `creds_kind_help` (`GET /v1/mcp/kinds`, `/v1/mcp/kind-help`, read-only, answered from the window's one per-kind table `agentKindFields.ts`: a folder says what it `holds`, a kind which fields an agent may set, and `creds_create` refuses anything else). Every one is gated by a switch that is off by default — **two ladders, ten switches, inherited down the whole tree** — and by the same consent prompt. Holds no secret and can obtain none, and no request it can compose has a field the switches could arrive in. **Inside WSL it carries the session rather than serving it** — see below |
 
 ### Connecting over SSH from a remote window (2026-09-17)
 
@@ -530,6 +530,44 @@ Three consequences worth stating, because each was a decision:
 **Each half logs its own run (2026-10-09)**: the Linux half as `creds-mcp-wsl` (the Windows child's pid,
 which side ended the session, the child's exit code), the Windows half as `creds-mcp` on Windows. Log
 settings do not cross the bridge (no `WSLENV`), so the Windows half runs at its own defaults.
+
+### How long a `creds-mcp` lives (2026-10-10)
+
+*A creds process that serves a client ends within a bounded time of losing it, and says in its log which
+signal it was* — [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md).
+For the server answering here (natively, or as the Windows half of the bridge) that is `ServerLifetime`
+(`src_mcp/src`), which holds the token of the SDK's `RunAsync`. The SDK does not end on its own once a
+client opened `subscriptions/listen` — every Claude Code session does — so without that token a closed
+session left its server running (51 on one machine in a day, [RESULTS](RESULTS_wsl_bridge_orphans.md)).
+
+```mermaid
+flowchart TB
+    eof["stdin end-of-stream<br/>MessageReader.Completion"] --> drain["drain 1 s<br/>(the last reply still goes out)"]
+    sig["SIGINT · SIGTERM · SIGHUP · SIGQUIT<br/>ShutdownSignals"] --> cancel
+    parent["parent gone<br/>ParentWatch"] --> cancel
+    drain -->|run still going| cancel["cancel the run token<br/>listen + tool calls + broker HTTP"]
+    drain -->|run finished| done["exit line · return"]
+    cancel -->|stopped| done
+    cancel -->|5 s deadline, dedicated timer<br/>covers closing the transport too| forced["exit line · flush · Environment.Exit"]
+```
+
+- **Exit codes:** 0 for end-of-stream and a lost parent, 128 + n for a handled signal — also when the signal
+  arrives during the drain; the reason (`clientClosed`, `parentGone`, `signalled`) is the log's, never a new
+  contract exit name, and the exit line is written once whichever path ends the run.
+- **Cancellation reaches the broker.** Every tool delegate takes the request's `CancellationToken`, and it
+  flows through `Windows` into every `BrokerClient` call as a linked source bounded by the call's own
+  ceiling — so the window sees the connection close the moment the session ends, not ten minutes later.
+- **The parent watch** (`ParentWatch`, shared in `src_service_defaults`): a handle on the parent on Windows,
+  with a start-time check that catches a reused pid; `getppid()` every 2 s elsewhere. **Off** for the Windows
+  half of the bridge (`CREDS_RELAYED_FROM_WSL` — its parent is the distribution's session-long `wsl.exe`),
+  for a process that started with ppid 1, and with `CREDS_MCP_NO_PARENT_WATCH=1`.
+- **`creds-mcp --version`** prints `creds-mcp <version>` at once; inside WSL a second line follows once the
+  Windows half has answered, `windows half: <its answer> (<the executable asked>)` — where no answer (a usage
+  error, which is what a half too old for the flag gives, or a timeout) reads `older than --version, or no
+  answer`, an answer with no version in it `answered without a version`, and a half that cannot be started
+  `not started`.
+
+The Linux half of the bridge (the pump) and the SSH-agent relay get the same guarantees in the plan's E3.
 
 `CREDS_MCP_WINDOWS_BINARY` overrides the executable — its own variable, never the CLI's. Design
 record and what the build taught: [PLAN_mcp_wsl_bridge.md](PLAN_mcp_wsl_bridge.md); the caller

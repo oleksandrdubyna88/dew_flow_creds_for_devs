@@ -103,10 +103,10 @@ internal static class FolderTools
     /// in two windows would otherwise be listed twice, and an agent would read that as two
     /// folders where there is one.
     /// </remarks>
-    internal static async Task<string> ListAsync(BrokerContract contract)
+    internal static async Task<string> ListAsync(BrokerContract contract, CancellationToken ct = default)
     {
         var route = contract.ReadRoute("mcpFolders", "/v1/mcp/folders");
-        var read = await Windows.ReadAllAsync(contract, route);
+        var read = await Windows.ReadAllAsync(contract, route, ct);
         if (read.Bodies.Count == 0)
         {
             return Tools.NoAnswer(read.RouteRefused);
@@ -151,9 +151,10 @@ internal static class FolderTools
         BrokerContract contract,
         string action,
         CallerRecord caller,
-        IReadOnlyList<(string Key, string? Value)> fields)
+        IReadOnlyList<(string Key, string? Value)> fields,
+        CancellationToken ct = default)
     {
-        var reply = await Windows.PostAsync(contract, contract.FolderRoute(action), Body(contract, caller, fields));
+        var reply = await Windows.PostAsync(contract, contract.FolderRoute(action), Body(contract, caller, fields), ct);
         if (reply is null)
         {
             return UseTools.Failure(

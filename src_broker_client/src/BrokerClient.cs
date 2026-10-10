@@ -66,11 +66,16 @@ public sealed class BrokerClient(BrokerContract contract, HttpClient http) : IDi
     }
 
     /// <summary>Whether a CredsForDevs broker is still listening on this port.</summary>
-    public async Task<bool> IsOurBrokerAsync(int port)
+    /// <remarks>
+    /// A probe that times out is a window that is not there (<c>false</c>); a probe the CALLER cancelled is not
+    /// an answer about the window at all, so it propagates rather than read as "not ours" — a session that is
+    /// over must stop, not walk on to the next window.
+    /// </remarks>
+    public async Task<bool> IsOurBrokerAsync(int port, CancellationToken ct = default)
     {
         try
         {
-            using var cts = new CancellationTokenSource(HealthTimeout);
+            using var cts = Bounded(HealthTimeout, ct);
             using var response = await http.GetAsync(Url(port, contract.Health.Path), cts.Token);
             if (!response.IsSuccessStatusCode)
             {
@@ -81,15 +86,15 @@ public sealed class BrokerClient(BrokerContract contract, HttpClient http) : IDi
             var health = JsonSerializer.Deserialize(json, BrokerJsonContext.Default.HealthResponse);
             return health?.Service == contract.Service;
         }
-        catch (Exception e) when (e is HttpRequestException or TaskCanceledException or JsonException)
+        catch (Exception e) when ((e is HttpRequestException or TaskCanceledException or JsonException) && !ct.IsCancellationRequested)
         {
             return false;
         }
     }
 
-    public async Task<BrokerReply> PostAsync(GrantToken token, string route, string requestJson)
+    public async Task<BrokerReply> PostAsync(GrantToken token, string route, string requestJson, CancellationToken ct = default)
     {
-        using var cts = new CancellationTokenSource(CallTimeout);
+        using var cts = Bounded(CallTimeout, ct);
         using var request = new HttpRequestMessage(HttpMethod.Post, Url(token.Port, route))
         {
             Content = new StringContent(requestJson, Encoding.UTF8, "application/json"),
@@ -109,9 +114,9 @@ public sealed class BrokerClient(BrokerContract contract, HttpClient http) : IDi
     /// prefix rather than the same one with an optional field: a reader of either side can tell
     /// at a glance which calls carry a copied secret and which lean on the consent modal.
     /// </remarks>
-    public async Task<BrokerReply> PostAliasAsync(int port, string route, string requestJson)
+    public async Task<BrokerReply> PostAliasAsync(int port, string route, string requestJson, CancellationToken ct = default)
     {
-        using var cts = new CancellationTokenSource(CallTimeout);
+        using var cts = Bounded(CallTimeout, ct);
         using var content = new StringContent(requestJson, Encoding.UTF8, "application/json");
         using var response = await http.PostAsync(Url(port, route), content, cts.Token);
         var body = await response.Content.ReadAsStringAsync(cts.Token);
@@ -128,9 +133,9 @@ public sealed class BrokerClient(BrokerContract contract, HttpClient http) : IDi
     /// <para>Empty body on purpose: the key identifies the entry, so there is nothing else to
     /// say, and a body would be one more thing for two implementations to agree about.</para>
     /// </remarks>
-    public async Task<BrokerReply> PostBearerAsync(int port, string route, string bearer)
+    public async Task<BrokerReply> PostBearerAsync(int port, string route, string bearer, CancellationToken ct = default)
     {
-        using var cts = new CancellationTokenSource(CallTimeout);
+        using var cts = Bounded(CallTimeout, ct);
         using var request = new HttpRequestMessage(HttpMethod.Post, Url(port, route))
         {
             Content = new StringContent("{}", Encoding.UTF8, "application/json"),
@@ -143,12 +148,24 @@ public sealed class BrokerClient(BrokerContract contract, HttpClient http) : IDi
     }
 
     /// <summary>Read the names this window has enabled. No token, and none comes back.</summary>
-    public async Task<BrokerReply> GetAsync(int port, string route)
+    public async Task<BrokerReply> GetAsync(int port, string route, CancellationToken ct = default)
     {
-        using var cts = new CancellationTokenSource(HealthTimeout);
+        using var cts = Bounded(HealthTimeout, ct);
         using var response = await http.GetAsync(Url(port, route), cts.Token);
         var body = await response.Content.ReadAsStringAsync(cts.Token);
         return new BrokerReply((int)response.StatusCode, body);
+    }
+
+    /// <summary>
+    /// The caller's token, bounded by this call's own ceiling — a LINKED source, so a session that ends cancels
+    /// the call (and closes its connection, which is how the window learns the requester is gone) instead of the
+    /// call holding on for its full ceiling (plan §5.3).
+    /// </summary>
+    private static CancellationTokenSource Bounded(TimeSpan ceiling, CancellationToken ct)
+    {
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(ceiling);
+        return cts;
     }
 
     private static string Url(int port, string path) => $"http://127.0.0.1:{port}{path}";

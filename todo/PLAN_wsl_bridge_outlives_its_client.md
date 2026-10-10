@@ -1,7 +1,7 @@
 # PLAN — every creds process ends when the client it serves is gone
 
-> Status: **in progress, 2026-10-09 — E1 and E4.S1 implemented (§14; §5.7 *As built*); E2, E3, E4.S2 and E5 not yet.** Plan
-> gate passed (`proceed`, 1 of 2 reviewers, one round — §14); each epic is re-gated on its own branch. Scope: `src_mcp/src` (`Program.cs`, `WslPump.cs`, the
+> Status: **in progress, 2026-10-10 — E1 (#201), E4.S1 (#205) and E2 implemented (§14; §5.7 *As built*); E3, E4.S2 and E5 not yet.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
+> round — §14); each epic is re-gated on its own branch. Scope: `src_mcp/src` (`Program.cs`, `WslPump.cs`, the
 > tool lambdas, `Windows.cs`, a new `ServerLifetime`), `src_broker_client/src` (`BrokerClient.cs`, `WslInterop.cs`, a
 > new shared `ChildLifetime`), `src_cli/src` (`AgentRelay.cs`, `RelayPipe.cs`), `src_vs_code/src` (the broker's
 > consent and perform path, the WSL MCP install check), a new shared logging project `src_service_defaults`, the
@@ -276,7 +276,9 @@ Shared because both the MCP wrapper and the relay need exactly this, and today e
 ### 5.8 A stale WSL install says so — `src_vs_code/src`
 
 - The extension does not write a client's MCP config; it copies a block (`wslMcpInstall.ts:79`, `mcpClientConfig.ts`).
-  So the check asks the install itself: `wsl -d <distro> -e bash -lc '<path> --version'` (§5.2), compared with
+  So the check asks the install itself: `wsl -d <distro> -e <path> --version` (§5.2) — the path and the flag as
+  separate arguments, no shell between them (E2 plan round, finding 0: a path with a quote in it must not become a
+  command), bounded by a timeout that kills the process tree — compared with
   `compareVersions` (`credsInstall.ts:151`) against what the extension ships. **`<path>` is the exact executable the
   copied config block names** (the install path `installIntoWsl` wrote), never a bare `creds-mcp` resolved through the
   shell's PATH — a current binary earlier on the PATH would report "current" while the client still launches the stale
@@ -297,7 +299,8 @@ Shared because both the MCP wrapper and the relay need exactly this, and today e
   the original parent is already gone (PID reuse) → `parentGone` now. Then `WaitForExitAsync`. Access denied → log and
   run without the watch; EOF remains the primary signal.
 - **Linux/macOS:** the `getppid()` poll from §5.4.
-- Kill switch `CREDS_MCP_NO_PARENT_WATCH=1` for a launcher that execs and exits.
+- Kill switch `CREDS_MCP_NO_PARENT_WATCH=1` for a launcher that starts the server as a child and exits (corrected on
+  PR #211: a launcher that `exec`s is replaced by the server, so it has no separate death to watch).
 
 ### 5.10 Upstream
 
@@ -642,3 +645,112 @@ credential broker — each point verified, then acted on:
 Own review (a subagent reading the diff in context, the gate's other half): no high-confidence defect; two of its low
 notes were taken — an action that throws after its client left is now journalled `ABANDONED` rather than `internal`
 (test watched red without it), and the folder routes got their own abandoned test.
+
+### Epic E2 — the server ends when its client is gone (branch `feat/e2-server-ends-with-its-client`)
+
+**Plan round (2026-10-10, session `5cc39dba`) — `proceed`**, gating 2 against threshold 6, **1 of 2 reviewers
+answered** (codex; gemini failed to authenticate — one vendor's verdict, not a panel's).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | §5.8 builds the WSL version check as a shell command a quoted path could break out of, with no bound | **accepted** — §5.8 now runs `wsl -d <distro> -e <path> --version` with the path and the flag as separate arguments, bounded by a timeout that kills the tree (E4 builds it) |
+| 1 | §3.1 promises to remove an abandoned modal, §3.3 makes it optional | **rejected** — outside E2, and rejected on the same argument in E1's plan round: §3.3 is the owner's open decision, E4 ships (a), (b) only on the owner's word, and §13 cannot close before the owner decides |
+
+The round's operator commands, applied: build the epic as one unit without re-splitting; work autonomously
+(RED → GREEN → RED again for every fix, docs with every change, every test suite before the PR, the PR process
+end to end); questions to the question consultant before the person.
+
+**What shipped, and where it differs from §5.2, §5.3, §5.9 and §10:**
+
+- **The fixture is a fresh capture, not the 2026-10-09 shim log** — that log recorded method names only. A
+  transparent shim between `claude -p` (Claude Code **2.1.289**, native Windows) and `creds-mcp` recorded the four
+  client lines verbatim on 2026-10-10: `server/discover` (a version probe), `subscriptions/listen`,
+  `server/discover`, `tools/list` — the 2.1.295 sequence plus the probe
+  ([RESULTS](../research/RESULTS_wsl_bridge_orphans.md), *The fixture*).
+- **`ShutdownSignals` and `ParentWatch` live in `src_service_defaults`**, not in `src_mcp` and not in E3's
+  `ChildLifetime`: the server needs them now, the pump and the relay need them in E3, and one copy is the reuse
+  rule (cadence consultation, point 5). E3's `ChildLifetime` composes them rather than re-implementing either.
+- **`ExitReason` gained `Signalled` and `ParentGone`.** A deadline exit keeps the reason that began the shutdown
+  in its exit line; a Warning line before it says the deadline passed (no separate reason word).
+- **The Windows parent is read when serving starts, not first thing in `Main`** — a few milliseconds later; the
+  start-time comparison is what makes the timing irrelevant (a reused pid is caught either way).
+- **`Program.ServeOnAsync(transport, …)`** takes the transport, so the whole server runs in-process over pipes in a
+  test (`ServeOnTests`) — the coverage tool sees only in-process code (the E1 lesson).
+- **`IsOurBrokerAsync` propagates the caller's cancellation** instead of reading it as "not our window" (it used to
+  swallow every `TaskCanceledException`), and `Windows.PostToAsync` is the walk over already-found endpoints.
+- **Observed, not planned:** with the run token alone and no per-tool token, the 5 s deadline already ended the
+  process — the E2.S3 test therefore asserts the connection closes BEFORE `drain + deadline` and that the log has
+  no "did not stop within" line, which is what tells a cancelled call from a killed process.
+
+**Tests, red first.** E2.S1: *"Expected exited to be True because creds-mcp must exit within 10 s of stdin EOF with a
+subscriptions/listen open, but it is still running, but found False"* → green; break-it (`ServeOnAsync` back to a
+bare `await server.RunAsync()`) red again. E2.S3: *"Expected closedAt.Elapsed to be less than 6s because the cancelled
+call closes its connection, it does not wait for the process to die, but found 6s, 30ms"* → green; break-it
+(`creds_exec`'s delegate drops the token) red again. E2.S4: *"Expected exited to be True because creds-mcp must exit
+once its parent is gone, but it is still running, but found False"* → green; break-it (the watch always off) red
+again. Suites: mcp 126, service defaults 55, cli 133, broker 127, server 809.
+
+**Code round (2026-10-10, same session) — `proceed`**, gating 1 against threshold 5, **4 of 8 reviewers answered**
+(codex's four roles; all four gemini roles rate-limited — one vendor's verdict).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | The parent-watch process test launches through `cmd /c` / `sh -c` despite "exe + argv, never a shell string" | **rejected** — the intermediary IS the subject of E2.S4 as the plan states it; it is launched as exe + argv (`ProcessStartInfo.ArgumentList`), the `sh -c` script is a constant and the binary path travels as `$0`, never interpolated into a command string, and every wait is bounded with the child killed by its own handle on dispose |
+| 1 | No `research/module_mcp.md` describes the new serving lifetime | **rejected** — there is no `module_mcp.md`: the MCP server is documented in `architecture.md`, which gained *How long a `creds-mcp` lives* (diagram, exit codes, cancellation, parent watch, `--version`), and the shared primitives are in `module_service_defaults.md` |
+| 2 | A signal during the end-of-stream drain is reported as a client close, exit 0 | **accepted** — the task that ends the drain decides the ending: a signal gives 128 + n, a lost parent `parentGone`; RED (*"Expected … to be HostEnding … 130, Signalled"*, two tests) → GREEN → RED again with the reassignment removed |
+
+Own review (a separate reviewer, same time), all verified and taken: (1) the same drain finding; (2) the deadline
+did not cover closing the transport — `ServeOnAsync` now owns the transport and disposes it inside the run, under
+the deadline; RED (*a transport that hangs while closing — "System.TimeoutException: The operation has timed out"*,
+the forced exit never came) → GREEN → RED again with the disposal moved out — and `HostRun.End` writes one exit
+line per run, since the deadline and a normal return can meet (RED: *"to contain a single item, but found
+{"exited: code 143 …", "exited: code 0 …"}"* → GREEN → RED again); (3) the real-parent test skips a runner started
+by init (a container entrypoint) instead of failing there; (4) `ParentWatch` reads its cancellation token once,
+so a dispose between two ticks cannot raise `ObjectDisposedException` in a discarded task (a race, no
+deterministic test); (5) `ParentWatch.Attach` split under the complexity ceiling.
+
+**Final code round (`again`, 2026-10-10) — `proceed`**, gating 1 against threshold 5, **4 of 8 reviewers answered**
+(codex; gemini rate-limited).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | The deadline is armed only after `CancelAsync` returns, so a cancellation callback that blocks keeps it from ever existing | **accepted** — the timer is created before the cancel; RED (*a callback that never returns — "System.TimeoutException: The operation has timed out"*, no forced exit) → GREEN → RED again with the order reversed |
+
+**Pull request #211's automated reviewers.** CodeRabbit: rate-limited (no review; skipped by the owner's standing
+decision). SonarCloud (gate failed on new-code coverage 79.5 % < 80, 4 issues): every issue fixed — an awaited
+`WriteLineAsync` for `--version`, an assertion-less test given its assertions, `BrokerClient.Bounded` takes the token
+last, and `UseTools.RotateAsync` takes a `Rotation` record instead of eight parameters. Coverage: the read walk
+became `Windows.ReadFromAsync` and is driven against the stub window in-process, the grant and bearer posts are
+cancelled in-process, the parent-watch decision runs through `Program.WatchParent(log, env)` in a test, and on
+Linux/macOS a real SIGHUP is sent to the test process to prove the handler runs and the default disposition does not.
+
+**Checkpoint code round after the SonarCloud fixes (`again`, 2026-10-10) — `proceed`**, gating 2 against threshold 5,
+**4 of 8 reviewers answered** (codex; gemini rate-limited).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | The lifetime flow has no scenario-harness test | **rejected** — it has one, in the shape `scenario-tests.md` names first: the C# suite drives the BUILT binary over its real transport (stdio JSON-RPC) with a real client's captured session, in CI on Linux and macOS (`ServerEndsWithClientTests`, `ToolCancellationTests`, `ParentWatchProcessTests`), and `module_tests.md` names them; the same flow across the real WSL bridge is E5.S1's node itest, as §10 orders |
+| 1 | `--version` reads "no answer" and "an empty answer" as the same state | **accepted** — three words: `older than --version, or no answer` (null: a usage error or a timeout), `answered without a version` (empty), the version itself; RED (*"Expected Program.WindowsHalfAnswer(stdout) to be … but they differ"*, three cases) → GREEN → RED again with the empty case folded back |
+| 2 | `--version` inside WSL holds this build's line until the Windows half answers | **accepted** — `WriteVersionAsync` writes and flushes this build's line before the probe starts; the test holds the probe open and reads the first line (written against the new seam, so its teeth were proven by break-it: the probe moved first → red) |
+
+**Final code round (`again`, 2026-10-10) — `proceed`**, gating 1 against threshold 5, **4 of 8 reviewers answered**
+(codex; gemini rate-limited). One finding — `WindowsHalfAnswer` takes `string?` — **rejected**: the null is the
+existing contract of the shared `WindowsBridge.CaptureAsync` probe the `--caller` forwarding has used since
+2026-09-12, read at exactly one boundary and turned at once into one of three tested words; changing that shared
+API is outside E2.
+
+**Checkpoint code round after the rebase onto #205 (`again`, 2026-10-10) — `proceed`**, gating 1 against threshold
+5, **4 of 8 reviewers answered** (codex; gemini rate-limited). The rebase conflicted only in documentation (this
+plan's status line and §14, the `todo/README.md` row); E4.S1's record and behaviour are kept.
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | `src_mcp` has no `research/module_*.md` of its own (raised a second time, now as blocking) | **accepted** — reversing the code round's rejection: the knowledge-base rule asks for a module doc per module, and the server had only paragraphs in `architecture.md`. [module_mcp.md](../research/module_mcp.md) now holds its purpose, diagram, entities, entry points, lifetime, dependencies and tests, linked from `architecture.md`'s module map and `research/README.md` |
+
+**PR #211's automated reviewers.** CodeRabbit (it reviewed this time) raised two README sentences, both accurate and
+fixed: the kill switch is for a launcher that starts `creds-mcp` as a child and exits (an `exec`ing one is replaced
+by it), and `--version` checks the executable that ran, so an install is checked by the path the client's config
+names. **Pre-merge checkpoint round (`again`) — `proceed`**, gating 1 against threshold 5, 4 of 12 reviewers
+answered (codex; gemini rate-limited, the local engine misconfigured): the shell intermediary of the parent-watch
+test raised again — **rejected** again, on the code round's reason (the plan's own E2.S4 test, exe + argv, nothing
+interpolated).

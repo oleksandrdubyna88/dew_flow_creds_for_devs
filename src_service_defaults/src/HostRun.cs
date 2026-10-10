@@ -19,6 +19,7 @@ public sealed class HostRun
 {
     private readonly ILogger _log;
     private readonly long _startedAt;
+    private int _ended;
 
     private HostRun(ILogger log)
     {
@@ -39,11 +40,19 @@ public sealed class HostRun
     }
 
     /// <summary>Log the end — code, reason, uptime — and hand the code back for <c>Main</c> to return.</summary>
+    /// <remarks>
+    /// Once per run: a shutdown deadline and a normal return can reach this in the same instant, and a file with
+    /// two exit lines would say the run ended twice. The first caller's line stands; every caller still gets its
+    /// own code back.
+    /// </remarks>
     public int End(HostEnding ending)
     {
-        _log.Information(
-            "exited: code {ExitCode}, reason {Reason}, after {UptimeSeconds:0.000} s",
-            ending.Code, Word(ending.Reason), Stopwatch.GetElapsedTime(_startedAt).TotalSeconds);
+        if (Interlocked.Exchange(ref _ended, 1) == 0)
+        {
+            _log.Information(
+                "exited: code {ExitCode}, reason {Reason}, after {UptimeSeconds:0.000} s",
+                ending.Code, Word(ending.Reason), Stopwatch.GetElapsedTime(_startedAt).TotalSeconds);
+        }
         return ending.Code;
     }
 

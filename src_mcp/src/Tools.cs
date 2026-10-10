@@ -60,13 +60,13 @@ internal static class Tools
     /// refusal the answer.</para>
     /// </remarks>
     internal static async Task<string> ConfigSnippetAsync(
-        BrokerContract contract, string entry, string? language, string? variant)
+        BrokerContract contract, string entry, string? language, string? variant, CancellationToken ct = default)
     {
         var route = contract.ReadRoute("mcpConfigSnippet", "/v1/mcp/config-snippet");
         var query = $"{route}?id={Uri.EscapeDataString(entry)}"
             + (string.IsNullOrEmpty(language) ? "" : $"&language={Uri.EscapeDataString(language)}")
             + (string.IsNullOrEmpty(variant) ? "" : $"&variant={Uri.EscapeDataString(variant)}");
-        var read = await Windows.ReadAllAsync(contract, query);
+        var read = await Windows.ReadAllAsync(contract, query, ct);
         if (read.Bodies.Count == 0)
         {
             return NoAnswer(read.RouteRefused);
@@ -116,17 +116,17 @@ internal static class Tools
     /// window of one extension version, and two windows on different versions are a state the
     /// person resolves by updating, not one this binary should paper over by merging.
     /// </remarks>
-    internal static async Task<string> KindsAsync(BrokerContract contract)
+    internal static async Task<string> KindsAsync(BrokerContract contract, CancellationToken ct = default)
     {
-        var read = await Windows.ReadAllAsync(contract, contract.ReadRoute("mcpKinds", "/v1/mcp/kinds"));
+        var read = await Windows.ReadAllAsync(contract, contract.ReadRoute("mcpKinds", "/v1/mcp/kinds"), ct);
         return read.Bodies.Count == 0 ? NoAnswer(read.RouteRefused) : read.Bodies[0];
     }
 
     /// <summary>One kind's help. A word that is not a kind comes back as the window's own refusal.</summary>
-    internal static async Task<string> KindHelpAsync(BrokerContract contract, string kind)
+    internal static async Task<string> KindHelpAsync(BrokerContract contract, string kind, CancellationToken ct = default)
     {
         var route = contract.ReadRoute("mcpKindHelp", "/v1/mcp/kind-help");
-        var read = await Windows.ReadAllAsync(contract, $"{route}?kind={Uri.EscapeDataString(kind)}");
+        var read = await Windows.ReadAllAsync(contract, $"{route}?kind={Uri.EscapeDataString(kind)}", ct);
         return read.Bodies.Count == 0 ? NoAnswer(read.RouteRefused) : read.Bodies[0];
     }
 
@@ -161,10 +161,10 @@ internal static class Tools
     /// error with no sentence it can act on; "no window is open" is something a person fixes in
     /// two seconds when the answer says so.</para>
     /// </remarks>
-    internal static async Task<string> ListAsync(BrokerContract contract)
+    internal static async Task<string> ListAsync(BrokerContract contract, CancellationToken ct = default)
     {
         var route = contract.ReadRoute("mcpEntries", "/v1/mcp/entries");
-        var read = await Windows.ReadAllAsync(contract, route);
+        var read = await Windows.ReadAllAsync(contract, route, ct);
         if (read.Bodies.Count == 0)
         {
             return NoAnswer(read.RouteRefused);

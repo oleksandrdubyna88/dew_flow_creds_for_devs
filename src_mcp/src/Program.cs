@@ -1,8 +1,10 @@
 using System.Text.Json.Nodes;
 using CredsBroker;
 using CredsForDevs.ServiceDefaults;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Serilog;
+using Serilog.Core;
 
 namespace CredsMcp;
 
@@ -40,6 +42,12 @@ internal static class Program
     /// <summary>The log file prefix of the Linux half of the WSL bridge — a pump, not a server.</summary>
     internal const string WslAppName = "creds-mcp-wsl";
 
+    /// <summary>
+    /// Set to <c>1</c> to serve without watching the parent — for a launcher that starts this binary as a child and exits,
+    /// whose disappearance says nothing about the client (plan §5.9).
+    /// </summary>
+    internal const string NoParentWatchVariable = "CREDS_MCP_NO_PARENT_WATCH";
+
     /// <summary>The same source <c>ServerInfo.Version</c> answers the client from.</summary>
     internal static string Version => typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
@@ -56,10 +64,13 @@ internal static class Program
 
         /// <summary>Speak the protocol — here, or through the Windows half.</summary>
         Serve,
+
+        /// <summary>Print this build's version (and, inside WSL, the Windows half's) and leave.</summary>
+        Version,
     }
 
     /// <summary>
-    /// Which of the three this invocation is.
+    /// Which of the four this invocation is.
     /// </summary>
     /// <remarks>
     /// <para>Pure, and separate from <see cref="Main"/>, because one of its consequences is not
@@ -77,6 +88,7 @@ internal static class Program
         {
             [] => Startup.Serve,
             ["--help" or "-h" or "help", ..] => Startup.Help,
+            ["--version"] => Startup.Version,
             [CallerForwarding.Flag, _] => Startup.Serve,
             _ => Startup.Usage,
         };
@@ -97,8 +109,12 @@ internal static class Program
                 Console.Out.WriteLine(HelpText);
                 return 0;
 
+            case Startup.Version:
+                await WriteVersionAsync(Console.Out, WslInterop.ShouldRelayHere(), AskWindowsHalf(WslInterop.CredsMcp), WslInterop.CredsMcp.WindowsBinary());
+                return 0;
+
             case Startup.Usage:
-                Note($"unknown argument '{args[0]}' — this binary takes none by hand; an MCP client speaks to it over stdin.");
+                Note($"unknown argument '{args[0]}' — by hand this binary takes only --help and --version; an MCP client speaks to it over stdin.");
                 return contract.Exit("usage");
 
             default:
@@ -130,7 +146,7 @@ internal static class Program
             var caller = forwarded is null ? CallerIdentity.Current(agent: string.Empty) : CallerIdentity.Decode(forwarded);
             return run.End(relayed
                 ? await RelayAsync(contract, caller, log)
-                : await ServeHereAsync(contract, caller, forwarded is null, log));
+                : await ServeHereAsync(contract, caller, forwarded is null, log, run));
         }
         catch (Exception e)
         {
@@ -151,15 +167,20 @@ internal static class Program
             _ => "serve, caller forwarded by the Linux half",
         };
 
-    private static async Task<HostEnding> ServeHereAsync(BrokerContract contract, CallerRecord caller, bool ownSession, ILogger log)
+    private static async Task<HostEnding> ServeHereAsync(BrokerContract contract, CallerRecord caller, bool ownSession, Logger log, HostRun run)
     {
         try
         {
             // The tab title is read per call, and only from THIS process's own environment: a
             // record forwarded from the Linux half gets no provider, because here the environment
             // belongs to wsl.exe and would name somebody else's session (issue #136, D6).
-            await RunAsync(contract, new CallerSource(caller, ownSession ? CallerIdentity.TabTitleSource() : null), log);
-            return new HostEnding(0, ExitReason.ClientClosed);
+            var source = new CallerSource(caller, ownSession ? CallerIdentity.TabTitleSource() : null);
+            // Not `await using`: ServeOnAsync owns it and closes it inside the shutdown deadline.
+            var transport = new StdioServerTransport(ServerName);
+            using var signals = ShutdownSignals.Register();
+            using var parent = WatchParent(log);
+            var lifetime = new LifetimeSignals(transport.MessageReader.Completion, parent.Gone, signals.Received);
+            return await ServeOnAsync(transport, contract, source, log, lifetime, LifetimeTimings.Default, ForceExit(run, log));
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException)
         {
@@ -219,15 +240,148 @@ internal static class Program
         return new HostEnding(contract.Exit("toolMissing"), ExitReason.WindowsHalfMissing);
     }
 
-    private static async Task RunAsync(BrokerContract contract, CallerSource source, ILogger log)
+    /// <summary>
+    /// The parent watch for a server answering here (plan §5.9) — or, with the reason in the log, none.
+    /// </summary>
+    private static ParentWatch WatchParent(ILogger log) => WatchParent(log, Environment.GetEnvironmentVariable);
+
+    /// <summary><see cref="WatchParent(ILogger)"/> over an injectable environment, so both branches run in a test.</summary>
+    internal static ParentWatch WatchParent(ILogger log, Func<string, string?> env)
     {
-        var options = new McpServerOptions
+        var off = ParentWatchOff(env(WslInterop.RelayedVariable), env(NoParentWatchVariable));
+        return off.Length > 0 ? ParentWatch.Off(off, log) : ParentWatch.Start(log);
+    }
+
+    /// <summary>
+    /// Why the parent is NOT watched, or empty when it is.
+    /// </summary>
+    /// <remarks>
+    /// <para>Started by the Linux half of the WSL bridge (<see cref="WslInterop.RelayedVariable"/> present, the same
+    /// test <see cref="WslInterop.ShouldRelayHere"/> makes): the Windows parent of an interop child is the
+    /// distribution's session-long <c>wsl.exe</c>, whose life says nothing about the client — end-of-stream, which
+    /// the bridge delivers (measured), is the signal there.</para>
+    /// <para>The kill switch is for a launcher that starts this binary as a child and then exits (one that execs it is
+    /// replaced by it, and there is nothing to lose): its disappearance is
+    /// normal, and watching it would end every session it starts.</para>
+    /// </remarks>
+    internal static string ParentWatchOff(string? relayedFromWsl, string? killSwitch) =>
+        (relayedFromWsl, killSwitch) switch
         {
-            ServerInfo = new ModelContextProtocol.Protocol.Implementation
-            {
-                Name = ServerName,
-                Version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
-            },
+            (_, "1") => $"{NoParentWatchVariable}=1",
+            (not null, _) => "started by the Linux half of the WSL bridge, whose parent says nothing about the client",
+            _ => string.Empty,
+        };
+
+    /// <summary>
+    /// What <c>--version</c> prints: this build, and inside WSL the Windows half the bridge would start.
+    /// </summary>
+    /// <remarks>
+    /// <para>The first line is <c>creds-mcp &lt;version&gt;</c> from <see cref="Version"/> — the same source the
+    /// protocol's <c>ServerInfo.Version</c> answers from. It exists because nothing could tell which build a
+    /// client's config points at (plan §4): the extension's stale-install check (§5.8) reads it.</para>
+    /// <para>Inside WSL a second line asks the Windows half with the same bounded, hermetic probe the
+    /// <c>--caller</c> check uses, and names the executable it asked. A half older than this flag answers with a
+    /// usage error — a non-zero exit, read as <c>older than --version</c>; one that cannot be started is said so.</para>
+    /// <para>This build's line is written FIRST and flushed before the probe starts (final code round, finding 2):
+    /// a Windows half that is slow to start must not hide the answer this binary already has.</para>
+    /// </remarks>
+    internal static async Task WriteVersionAsync(TextWriter output, bool insideWsl, Func<Task<string?>> askWindowsHalf, string windowsPath)
+    {
+        await output.WriteLineAsync($"creds-mcp {Version}");
+        await output.FlushAsync();
+        if (insideWsl)
+        {
+            await output.WriteLineAsync($"windows half: {await WindowsHalfAsync(askWindowsHalf)} ({windowsPath})");
+        }
+    }
+
+    /// <summary>The hermetic, bounded <c>--version</c> probe of one Windows half.</summary>
+    internal static Func<Task<string?>> AskWindowsHalf(WindowsBridge windowsHalf) =>
+        () => windowsHalf.CaptureAsync(["--version"], CallerForwarding.ProbeTimeout);
+
+    /// <summary>The Windows half's own first line, or why there is none.</summary>
+    private static async Task<string> WindowsHalfAsync(Func<Task<string?>> askWindowsHalf)
+    {
+        try
+        {
+            return WindowsHalfAnswer(await askWindowsHalf());
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            return "not started";
+        }
+    }
+
+    /// <summary>
+    /// The probe's stdout as one line. Three different facts, three different words (final code round, finding 1):
+    /// no answer at all — a usage error or a timeout, which is what a half older than this flag gives — is not the
+    /// same as an answer that holds no version.
+    /// </summary>
+    internal static string WindowsHalfAnswer(string? stdout) =>
+        stdout switch
+        {
+            null => "older than --version, or no answer",
+            _ when FirstLine(stdout) is { Length: > 0 } first => first,
+            _ => "answered without a version",
+        };
+
+    private static string FirstLine(string text) =>
+        text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) is [var first, ..] ? first : string.Empty;
+
+    /// <summary>
+    /// Serve one session over <paramref name="transport"/> until the client, a signal or the parent ends it.
+    /// </summary>
+    /// <remarks>
+    /// <para>The transport is a parameter so the whole server — tools, filter, lifetime — runs in-process over
+    /// a pair of pipes in a test, not only as the built binary over the console (<c>ServeOnAsync</c> tests).</para>
+    /// <para><b>Never <c>server.RunAsync()</c> without a token</b> (defect A): <see cref="ServerLifetime"/> holds
+    /// it, and cancelling it is the only thing that ends an open <c>subscriptions/listen</c>.</para>
+    /// <para><b>The transport is OWNED from here on</b>: it is disposed inside the run, after the server, so the
+    /// shutdown deadline covers closing it as well (own review, finding 2). After a signal or a lost parent stdin
+    /// is still open, and closing it is the step most likely to hang.</para>
+    /// </remarks>
+    internal static Task<HostEnding> ServeOnAsync(
+        TransportBase transport,
+        BrokerContract contract,
+        CallerSource source,
+        ILogger log,
+        LifetimeSignals signals,
+        LifetimeTimings timings,
+        Action<HostEnding> forceExit) =>
+        ServerLifetime.RunAsync(
+            ct => ServeUntilAsync(transport, Options(contract, source, log), source, ct), signals, timings, log, forceExit, TimeProvider.System);
+
+    /// <summary>The run itself: the server over the transport until <paramref name="ct"/>, then both closed.</summary>
+    private static async Task ServeUntilAsync(TransportBase transport, McpServerOptions options, CallerSource source, CancellationToken ct)
+    {
+        await using (transport)
+        {
+            await using var server = McpServer.Create(transport, options);
+            // The side that spoke to the client names the client.
+            source.Bind(server);
+            await server.RunAsync(ct);
+        }
+    }
+
+    /// <summary>
+    /// The way out when the shutdown deadline passes: the exit line, a flushed log, then the process ends.
+    /// </summary>
+    /// <remarks>
+    /// A normal return is what writes the exit line and disposes the logger everywhere else; <see cref="Environment.Exit"/>
+    /// skips both, so this does them first — a file with no exit line reads as "killed hard", which this is not.
+    /// </remarks>
+    private static Action<HostEnding> ForceExit(HostRun run, Logger log) =>
+        ending =>
+        {
+            run.End(ending);
+            log.Dispose();
+            Environment.Exit(ending.Code);
+        };
+
+    private static McpServerOptions Options(BrokerContract contract, CallerSource source, ILogger log) =>
+        new()
+        {
+            ServerInfo = new ModelContextProtocol.Protocol.Implementation { Name = ServerName, Version = Version },
             ServerInstructions = Instructions,
             // Method names and the client's name only — never a body (plan §5.1). Part of the options as
             // constructed rather than added to them afterwards.
@@ -235,33 +389,30 @@ internal static class Program
             {
                 Message = new McpMessageFilters { IncomingFilters = [new ClientNaming(log).Filter] },
             },
+            ToolCollection = [.. ToolsFor(contract, source)],
         };
-        // The tools capture the holder, not a value: ClientInfo is null until the handshake this
-        // process is about to answer, so the client's name and the tab title are read per call
-        // (CallerSource explains why).
-        options.ToolCollection ??= [];
-        options.ToolCollection.Add(ListTool(contract));
-        options.ToolCollection.Add(ConfigSnippetTool(contract));
-        options.ToolCollection.Add(FolderListTool(contract));
-        foreach (var tool in KindTools(contract))
-        {
-            options.ToolCollection.Add(tool);
-        }
-        foreach (var tool in FolderTool(contract, source))
-        {
-            options.ToolCollection.Add(tool);
-        }
-        foreach (var tool in UseTools.All)
-        {
-            options.ToolCollection.Add(UseTool(contract, tool, source));
-        }
 
-        await using var transport = new StdioServerTransport(ServerName);
-        await using var server = McpServer.Create(transport, options);
-        // The side that spoke to the client names the client.
-        source.Bind(server);
-        await server.RunAsync();
-    }
+    /// <summary>
+    /// Every tool this server offers. The tools capture the holder, not a value: ClientInfo is null until the
+    /// handshake this process is about to answer, so the client's name and the tab title are read per call
+    /// (<see cref="CallerSource"/> explains why).
+    /// </summary>
+    /// <remarks>
+    /// Every delegate takes a <see cref="CancellationToken"/> as its LAST parameter: the SDK binds it to the
+    /// request — cancelled by the client's <c>notifications/cancelled</c> and by the run token
+    /// <see cref="ServerLifetime"/> cancels — and leaves it out of the schema a model sees (asserted by
+    /// <c>ToolCancellationTests</c>). It flows to the broker call, so a session that ends closes its connection
+    /// instead of holding it for the broker's ten-minute ceiling (plan §5.3).
+    /// </remarks>
+    internal static IEnumerable<McpServerTool> ToolsFor(BrokerContract contract, CallerSource source) =>
+    [
+        ListTool(contract),
+        ConfigSnippetTool(contract),
+        FolderListTool(contract),
+        .. KindTools(contract),
+        .. FolderTool(contract, source),
+        .. UseTools.All.Select(tool => UseTool(contract, tool, source)),
+    ];
 
     /// <summary>
     /// The one tool, with the hints an MCP client uses to decide how carefully to treat it.
@@ -274,7 +425,7 @@ internal static class Program
     /// </remarks>
     private static McpServerTool ListTool(BrokerContract contract) =>
         McpServerTool.Create(
-            async () => Answer.From(await Tools.ListAsync(contract)),
+            async (CancellationToken cancellationToken = default) => Answer.From(await Tools.ListAsync(contract, cancellationToken)),
             new McpServerToolCreateOptions
             {
                 Name = Tools.ListName,
@@ -306,8 +457,8 @@ internal static class Program
     /// </summary>
     private static McpServerTool ConfigSnippetTool(BrokerContract contract) =>
         McpServerTool.Create(
-            async (string entry, string? language, string? variant) =>
-                Answer.From(await Tools.ConfigSnippetAsync(contract, entry, language, variant)),
+            async (string entry, string? language, string? variant, CancellationToken cancellationToken = default) =>
+                Answer.From(await Tools.ConfigSnippetAsync(contract, entry, language, variant, cancellationToken)),
             new McpServerToolCreateOptions
             {
                 Name = Tools.ConfigSnippetName,
@@ -329,7 +480,7 @@ internal static class Program
     /// </remarks>
     private static McpServerTool FolderListTool(BrokerContract contract) =>
         McpServerTool.Create(
-            async () => Answer.From(await FolderTools.ListAsync(contract)),
+            async (CancellationToken cancellationToken = default) => Answer.From(await FolderTools.ListAsync(contract, cancellationToken)),
             new McpServerToolCreateOptions
             {
                 Name = FolderTools.ListName,
@@ -353,10 +504,10 @@ internal static class Program
     private static IEnumerable<McpServerTool> KindTools(BrokerContract contract) =>
     [
         McpServerTool.Create(
-            async () => Answer.From(await Tools.KindsAsync(contract)),
+            async (CancellationToken cancellationToken = default) => Answer.From(await Tools.KindsAsync(contract, cancellationToken)),
             ReadOptions(Tools.KindsName, "List the kinds of entry", Tools.KindsDescription)),
         McpServerTool.Create(
-            async (string kind) => Answer.From(await Tools.KindHelpAsync(contract, kind)),
+            async (string kind, CancellationToken cancellationToken = default) => Answer.From(await Tools.KindHelpAsync(contract, kind, cancellationToken)),
             ReadOptions(Tools.KindHelpName, "What one kind of entry takes", Tools.KindHelpDescription)),
     ];
 
@@ -388,15 +539,16 @@ internal static class Program
     private static IEnumerable<McpServerTool> FolderTool(BrokerContract contract, CallerSource caller) =>
     [
         McpServerTool.Create(
-            async (string name, string parent, string? folderType = null) =>
-                Answer.From(await FolderTools.InvokeAsync(contract, "create", caller.Current, [("name", name), ("parent", parent), ("folderType", folderType)])),
+            async (string name, string parent, string? folderType = null, CancellationToken cancellationToken = default) =>
+                Answer.From(await FolderTools.InvokeAsync(contract, "create", caller.Current, [("name", name), ("parent", parent), ("folderType", folderType)], cancellationToken)),
             FolderOptions(FolderTools.CreateName, "Create a folder", FolderTools.CreateDescription)),
         McpServerTool.Create(
-            async (string folder, string? name = null, string? parent = null, string? folderType = null) =>
-                Answer.From(await FolderTools.InvokeAsync(contract, "edit", caller.Current, [("folder", folder), ("name", name), ("parent", parent), ("folderType", folderType)])),
+            async (string folder, string? name = null, string? parent = null, string? folderType = null, CancellationToken cancellationToken = default) =>
+                Answer.From(await FolderTools.InvokeAsync(contract, "edit", caller.Current, [("folder", folder), ("name", name), ("parent", parent), ("folderType", folderType)], cancellationToken)),
             FolderOptions(FolderTools.EditName, "Rename, move or retype a folder", FolderTools.EditDescription)),
         McpServerTool.Create(
-            async (string folder) => Answer.From(await FolderTools.InvokeAsync(contract, "delete", caller.Current, [("folder", folder)])),
+            async (string folder, CancellationToken cancellationToken = default) =>
+                Answer.From(await FolderTools.InvokeAsync(contract, "delete", caller.Current, [("folder", folder)], cancellationToken)),
             FolderOptions(FolderTools.DeleteName, "Move a folder to the Trash", FolderTools.DeleteDescription)),
     ];
 
@@ -476,10 +628,10 @@ internal static class Program
     private static Delegate ArgumentsFor(BrokerContract contract, UseTools.UseTool tool, CallerSource caller) =>
         tool.Action switch
         {
-            "exec" => async (string entry, string command) =>
-                Answer.From(await UseTools.InvokeAsync(contract, tool, caller.Current, entry, "command", command)),
-            "query" => async (string entry, string query) =>
-                Answer.From(await UseTools.InvokeAsync(contract, tool, caller.Current, entry, "query", query)),
+            "exec" => async (string entry, string command, CancellationToken cancellationToken = default) =>
+                Answer.From(await UseTools.InvokeAsync(contract, tool, caller.Current, entry, "command", command, cancellationToken)),
+            "query" => async (string entry, string query, CancellationToken cancellationToken = default) =>
+                Answer.From(await UseTools.InvokeAsync(contract, tool, caller.Current, entry, "query", query, cancellationToken)),
             // `delete` takes only the entry: there is no second argument, because there is no
             // second destination. That is the permission, not a default.
             // The generation options ride along, named one by one. A model cannot add a field to
@@ -495,15 +647,14 @@ internal static class Program
                     bool? symbols = null,
                     bool? avoidAmbiguous = null,
                     int? words = null,
-                    string? separator = null) =>
+                    string? separator = null,
+                    CancellationToken cancellationToken = default) =>
                 Answer.From(await UseTools.RotateAsync(
                     contract,
                     tool,
                     caller.Current,
-                    entry,
-                    statement,
-                    secretKind,
-                    Draw(length, lower, upper, digits, symbols, avoidAmbiguous, words, separator))),
+                    new UseTools.Rotation(entry, statement, secretKind, Draw(length, lower, upper, digits, symbols, avoidAmbiguous, words, separator)),
+                    cancellationToken)),
             // The one shape with no entry id: there is no entry yet. The parameter names are
             // what a model fills in, so they are the words the broker's body uses.
             // Defaults, not just nullable types: a parameter with no default is REQUIRED in the
@@ -530,7 +681,8 @@ internal static class Program
                     bool? symbols = null,
                     bool? avoidAmbiguous = null,
                     int? words = null,
-                    string? separator = null) =>
+                    string? separator = null,
+                    CancellationToken cancellationToken = default) =>
                 Answer.From(await UseTools.CreateAsync(
                     contract,
                     tool,
@@ -544,8 +696,10 @@ internal static class Program
                     user,
                     port,
                     Draw(length, lower, upper, digits, symbols, avoidAmbiguous, words, separator),
-                    fields)),
-            _ => async (string entry) => Answer.From(await UseTools.InvokeAsync(contract, tool, caller.Current, entry, null, null)),
+                    fields,
+                    cancellationToken)),
+            _ => async (string entry, CancellationToken cancellationToken = default) =>
+                Answer.From(await UseTools.InvokeAsync(contract, tool, caller.Current, entry, null, null, cancellationToken)),
         };
 
     /// <summary>
@@ -604,8 +758,9 @@ internal static class Program
         """
         creds-mcp — the MCP server for CredsForDevs.
 
-        It takes no arguments by hand and is not run by hand: an MCP client starts it and speaks
-        JSON-RPC to it over stdin and stdout. Everything it answers comes from a running VS Code
+        It is not run by hand: an MCP client starts it and speaks JSON-RPC to it over stdin and
+        stdout. By hand it answers only --help and --version (which, inside WSL, also asks the
+        Windows half for its version and names the executable it asked). Everything it answers comes from a running VS Code
         window with the CredsForDevs extension, over the loopback, and only for entries whose
         Agent access switches are on.
 
@@ -626,6 +781,10 @@ internal static class Program
         this process's environment. Under WSL the Linux half computes that record and passes it to
         creds-mcp.exe as `--caller <base64url json>`; the Windows half never recomputes it. It is a
         label the person sees, never a permission — the modal says so.
+
+        It ends when its client is gone: stdin closing (in-flight work gets a second to finish),
+        SIGINT/SIGTERM/SIGHUP/SIGQUIT, or the process that started it exiting. Set
+        CREDS_MCP_NO_PARENT_WATCH=1 when a launcher starts it as a child and then exits.
 
         Tools: creds_list, creds_folders, creds_kinds and creds_kind_help, then creds_exec /
         creds_query / creds_run / creds_open_terminal / creds_vpn_up / creds_vpn_down /

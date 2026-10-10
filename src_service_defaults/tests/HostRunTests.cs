@@ -36,6 +36,22 @@ public sealed class HostRunTests
     }
 
     [Fact]
+    public void A_run_has_one_exit_line_even_when_two_paths_end_it()
+    {
+        // The shutdown deadline and the normal return can both reach End in the same instant (E2 own review,
+        // finding 2); a file with two exit lines says the run ended twice.
+        var sink = new CollectingSink();
+        using var log = sink.Logger();
+
+        var run = HostRun.Start(log, "serve", "1.0.0");
+        run.End(new HostEnding(143, ExitReason.Signalled)).Should().Be(143);
+        run.End(new HostEnding(0, ExitReason.ClientClosed)).Should().Be(0, "the code is still handed back to its caller");
+
+        sink.Messages.Where(m => m.Contains("exited:")).Should().ContainSingle()
+            .Which.Should().Contain("code 143");
+    }
+
+    [Fact]
     public void A_crash_is_logged_with_its_exception_first()
     {
         var sink = new CollectingSink();

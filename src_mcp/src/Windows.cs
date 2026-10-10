@@ -41,7 +41,7 @@ internal static class Windows
     /// Bodies rather than parsed objects: the caller knows what shape it asked for, and this
     /// stays the one place that knows how to find a window.
     /// </remarks>
-    internal static async Task<WindowRead> ReadAllAsync(BrokerContract contract, string route)
+    internal static async Task<WindowRead> ReadAllAsync(BrokerContract contract, string route, CancellationToken ct = default)
     {
         var endpoints = Endpoints.Read(Endpoints.DirectoryHere());
         if (endpoints.Count == 0)
@@ -50,11 +50,18 @@ internal static class Windows
         }
 
         using var client = BrokerClient.Create(contract);
+        return await ReadFromAsync(client, endpoints, route, ct);
+    }
+
+    /// <summary>The read walk over endpoints already found — separate, like <see cref="PostToAsync"/>, so a test can point it at a stub.</summary>
+    internal static async Task<WindowRead> ReadFromAsync(
+        BrokerClient client, IReadOnlyList<Endpoint> endpoints, string route, CancellationToken ct)
+    {
         var bodies = new List<string>();
         var refused = 0;
         foreach (var endpoint in endpoints)
         {
-            var body = await ReadOneAsync(client, endpoint, route, () => refused++);
+            var body = await ReadOneAsync(client, endpoint, route, () => refused++, ct);
             if (body is not null)
             {
                 bodies.Add(body);
@@ -64,13 +71,13 @@ internal static class Windows
     }
 
     private static async Task<string?> ReadOneAsync(
-        BrokerClient client, Endpoint endpoint, string route, Action onRouteRefused)
+        BrokerClient client, Endpoint endpoint, string route, Action onRouteRefused, CancellationToken ct)
     {
-        if (!await client.IsOurBrokerAsync(endpoint.Port))
+        if (!await client.IsOurBrokerAsync(endpoint.Port, ct))
         {
             return null;
         }
-        var reply = await client.GetAsync(endpoint.Port, route);
+        var reply = await client.GetAsync(endpoint.Port, route, ct);
         if (reply.Status == 200)
         {
             return reply.Body;
@@ -100,7 +107,7 @@ internal static class Windows
     /// other refusal is a real answer from the window that owns the entry, and asking the next
     /// window after one would raise a second consent modal for a call already decided.</para>
     /// </remarks>
-    internal static async Task<BrokerReply?> PostAsync(BrokerContract contract, string route, string json)
+    internal static async Task<BrokerReply?> PostAsync(BrokerContract contract, string route, string json, CancellationToken ct = default)
     {
         var endpoints = Endpoints.Read(Endpoints.DirectoryHere());
         if (endpoints.Count == 0)
@@ -109,13 +116,24 @@ internal static class Windows
         }
 
         using var client = BrokerClient.Create(contract);
+        return await PostToAsync(client, endpoints, route, json, ct);
+    }
+
+    /// <summary>
+    /// The walk itself, over endpoints already found — separate so a test can point it at a stub window without
+    /// an announcement directory. <paramref name="ct"/> is the tool request's: a session that ends cancels the
+    /// post, which closes its connection (plan §5.3).
+    /// </summary>
+    internal static async Task<BrokerReply?> PostToAsync(
+        BrokerClient client, IReadOnlyList<Endpoint> endpoints, string route, string json, CancellationToken ct)
+    {
         foreach (var endpoint in endpoints)
         {
-            if (!await client.IsOurBrokerAsync(endpoint.Port))
+            if (!await client.IsOurBrokerAsync(endpoint.Port, ct))
             {
                 continue;
             }
-            var reply = await client.PostAliasAsync(endpoint.Port, route, json);
+            var reply = await client.PostAliasAsync(endpoint.Port, route, json, ct);
             if (!MeansNotMine(reply))
             {
                 return reply;

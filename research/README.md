@@ -18,6 +18,7 @@ exists today?*
 | [module_server.md](module_server.md) | Every endpoint, its authorization rule, the storage layout — **the single statement of the HTTP contract** |
 | [module_deployment.md](module_deployment.md) | The container stack, the four TLS modes, updates and backups, and why each is shaped that way |
 | [module_tests.md](module_tests.md) | Every scenario harness: what it drives, whether CI runs it and why, and **what none of them covers** |
+| [module_mcp.md](module_mcp.md) | `creds-mcp`: what an agent talks to — its tools, the WSL bridge, the caller record, and how long it lives (end-of-stream, signals, parent watch, `--version`) |
 | [module_service_defaults.md](module_service_defaults.md) | The one logging configuration the server and both AOT binaries share: where each host's file goes, what a line may and may never carry, who prunes |
 
 ## Reviews
