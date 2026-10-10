@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security — a config key never travels on a command line
 
-- **Every *Read this from code* snippet now hands the key to `creds config -` on stdin** and closes
+- **Twenty of the twenty-two *Read this from code* snippets now hand the key to `creds config -` on stdin** and close
   it, instead of passing it as an argument. A command line is readable by every user inside WSL and
   by every process of the same user on Windows, and a config key lives for a year. C++ and Elixir,
   whose standard libraries cannot write to a child's stdin, put it in the child's
