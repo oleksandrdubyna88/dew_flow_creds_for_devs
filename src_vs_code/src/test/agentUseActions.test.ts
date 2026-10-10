@@ -6,6 +6,8 @@ import {
   dbQueryAction,
   scriptRunAction,
   terminalRunAction,
+  VpnUseDeps,
+  vpnAction,
 } from '../agentUseActions';
 
 /**
@@ -237,4 +239,49 @@ test('dbQueryAction refuses a DAMAGED connection string as damaged — the datab
 
   assert.equal(code(result), 'no_credential', `answered ${code(result)}: ${message(result)}`);
   assert.match(message(result), /"prod-db" holds a protected value that cannot be read/);
+});
+
+/** The VPN action over an `open` that records the gate it was handed and answers `opens` (E4.S3). */
+function vpnDeps(opens: boolean, gates: (AbortSignal | undefined)[], during?: () => void): VpnUseDeps {
+  return {
+    storage: { getNode: () => ({ id: 'e1', name: 'prod-vpn', type: 'entity', details: { id: 'e1', name: 'prod-vpn', isSshEnabled: false, isVpn: true } }) },
+    open: (_accountId, _entityId, _action, startGate) => {
+      gates.push(startGate);
+      during?.();
+      return Promise.resolve(opens);
+    },
+  };
+}
+
+test('vpnAction hands open the request’s signal as its start gate (E4.S3)', async () => {
+  const gates: (AbortSignal | undefined)[] = [];
+  const request = new AbortController();
+
+  await vpnAction(vpnDeps(true, gates), 'up').run({ ...ctx, signal: request.signal }, {});
+
+  assert.equal(gates.length, 1);
+  assert.equal(gates[0], request.signal, 'the VPN start was not told which request it serves');
+});
+
+test('vpnAction: nothing started and the request gone is that request’s abandonment, not a refusal (E4.S3)', async () => {
+  // What brokerCall journals as ABANDONED is an action that THROWS once its signal fired — the exit
+  // runBounded gives a refused launch. A refusal answered as no_credential would be journalled as one,
+  // and written to a socket nobody reads.
+  const request = new AbortController();
+  const run = vpnAction(vpnDeps(false, [], () => request.abort()), 'up').run({ ...ctx, signal: request.signal }, {});
+
+  await assert.rejects(run, (error: Error) => error.name === 'AbortError' && /Not started/.test(error.message));
+});
+
+test('vpnAction: nothing started for a live request is still the refusal it always was', async () => {
+  const result = await vpnAction(vpnDeps(false, []), 'up').run(ctx, {});
+
+  assert.equal(code(result), 'no_credential');
+});
+
+test('vpnAction: a start that was sent before the client left answers as it always did', async () => {
+  const request = new AbortController();
+  const result = await vpnAction(vpnDeps(true, [], () => request.abort()), 'down').run({ ...ctx, signal: request.signal }, {});
+
+  assert.deepEqual(result, { status: 200, body: { opened: true } });
 });

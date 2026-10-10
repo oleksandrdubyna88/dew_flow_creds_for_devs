@@ -4010,13 +4010,60 @@ sequenceDiagram
   launch but never a running statement, whose new value is stored only once it succeeds. The agent's SSH terminal
   passes `startGate` into `connectEntity`, which checks it after its last await before any terminal opens (a
   terminal already open stays: it is the person's). An action that throws after its client left is journalled as
-  `ABANDONED`, not `internal`. Not gated: a VPN start, whose OS administrator prompt a person answers (plan §5.7).
+  `ABANDONED`, not `internal` — and so, since E4.S3, is an SSH terminal its gate refused (`notOpened` throws
+  `requestLife.notStarted()` for a gone request), and the SSH install offer carries the same gate.
 - **Tests**: `brokerAbandoned.test.ts` (the real broker over real HTTP, every door; each test watched red on
   the unfixed code), `sharedPrompt.test.ts`, `requestLife.test.ts`, the launch refusals in
   `sshExecRunner.test.ts`, `useActions.test.ts`, `rotateAction.test.ts` and `agentCreatePin.test.ts`; and
   level 8 of `creds-mcp-itest.cjs`, which kills the REAL binary mid-consent and then answers Allow. Not covered
   until Epic E2: a client that only closes `creds-mcp`'s stdin — the binary does not yet cancel its in-flight
   broker call on EOF, so the window cannot see that client leave.
+
+**A gone request starts no VPN (E4.S3 of the same plan, §5.7).** The E4.S1 tail: an agent's `creds_vpn_up` /
+`creds_vpn_down` reached `runVpn` with no signal, and `runVpn` awaits before it types anything — the dependency
+chain (its modal, its terminal's shell integration, every step and *Continue* question), the config read and the
+entry's PIN door, a custom launcher's trust modal, OpenVPN Connect's import question, the install offer. A client
+gone in any of them still got its config written to a private file, its installers run, a launcher typed with no
+administrator prompt of its own, a profile imported, or the tunnel started (a WireGuard tunnel service outlives
+VS Code; `wg-quick up` stays until stopped). Now the request's signal is the start's gate:
+
+```mermaid
+flowchart LR
+    A["vpnAction.run(ctx)"] -->|"open(…, ctx.signal)"| O["extension open"]
+    O -->|"runVpn(…, startGate)"| V["runVpn → VpnRunContext.startGate"]
+    V --> D["runDependenciesFirst<br/>DependencyRunRequest.startGate"]
+    V --> L["runWithLauncher → configFor"]
+    V --> B["runBuiltIn → sendToVpnTerminal"]
+    V --> I["offerToInstall(tool, startGate)"]
+    D --> W["writeVpnConfig → storedConfig"]
+    L --> W
+    B --> W
+    A -->|"nothing started + gate fired"| X["throw notStarted() → brokerCall: ABANDONED"]
+```
+
+- **The one reading**: `requestLife.requestGone(startGate)` — `false` when there is no gate, which is the person's
+  own Start and Stop (`entityCommands.ts`), unchanged.
+- **Where it is read**: at `runVpn`'s entry (a request already gone is asked nothing); in the chain before its
+  modal, after it, and before each step (`runStep`); in `storedConfig` before the entry's door and again before
+  the config is materialised; in the custom launcher's `configFor`, immediately before its line; in
+  `sendToVpnTerminal`, immediately before the built-in start/stop line or OpenVPN Connect's import line; in
+  `offerToInstall` before the modal and before the recipe is sent. A fired gate answers `false` with no warning.
+- **The config is written last**: the built-in start finds its launcher first and writes the config only for a
+  line it will send (`startLine`; after *Import profile* for OpenVPN Connect; never for a missing launcher), with no
+  await between the write and the send — so neither a gone request nor a declined import leaves it on disk.
+- **The agent's opener** is `vpnRun.agentVpnOpener(storage, storageDir, vaultKeys, trust)` — what `extension.ts`
+  registers as `open` — so the gate's hand-off to `runVpn` is held by a test, not only by activation code. A chain
+  step that finishes after its request has gone ends the chain without a *Continue* question.
+- **The exit**: `vpnAction`'s `vpnOutcome` throws `notStarted()` (moved from `sshExecRunner.ts` to
+  `requestLife.ts`, shared) when nothing started and the gate fired, so `brokerCall` journals the request's
+  `ABANDONED` ("it was not launched") and answers nobody. A line already typed is the shell's: a sent command
+  and a tunnel already up are not revoked (plan §5.7, open tail).
+- **Tests**: `vpnGoneRequest.test.ts` (each await held open, the gate fired, then released — built-in start,
+  chain modal and steps, install offer, custom launcher, OpenVPN Connect, stop, live and ungated starts),
+  `toolEnsure.test.ts`, the VPN cases of `agentUseActions.test.ts`, the real-broker case in
+  `brokerAbandoned.test.ts`, and the SSH install offer and terminal cases in `sshConnect.test.ts` /
+  `sshUseActions.test.ts`. The VPN world is shared with `dependencyChain.test.ts` as `vpnWorld.ts`. Every gate
+  check was watched red with its line removed.
 
 **Whose session registry, and the rule the code round added.** The session NAME comes from
 `~/.claude/sessions/<CLAUDE_PID>.json`, which is one product's file — and `CLAUDE_PID` is inherited

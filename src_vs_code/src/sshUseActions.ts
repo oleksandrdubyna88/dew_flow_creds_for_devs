@@ -15,6 +15,7 @@ import { SshExecAuth, buildSshExecArgv, validateRemoteCommand } from './sshExecC
 import { resolveJumpChain } from './sshOptions';
 import { materializeKnownHosts } from './hostKeyTrust';
 import { runSshExec } from './sshExecRunner';
+import { notStarted } from './requestLife';
 import { agentForwardEnv, openSshBinary } from './sshProgram';
 import { resolveExecAuth } from './sshExecAuth';
 import { describeSshTarget } from './terminalManager';
@@ -264,16 +265,25 @@ export function sshTerminalAction(deps: SshUseDeps): UseAction {
       // failure was an entity with no host — and is not, now that a remote window can REFUSE. An
       // agent told a terminal is open waits at one that is not there.
       if (!opened) {
-        return fail(
-          'internal',
-          `Could not open an SSH terminal for "${ctx.entityName}" — the window said why.`,
-        );
+        return notOpened(ctx);
       }
       void vscode.window.showInformationMessage(openedMessage(ctx.entityName, entity));
       const response: TerminalResponseBody = { opened: true };
       return { status: 200, body: response };
     },
   };
+}
+
+/**
+ * No terminal opened. For a request whose client has gone that is its start gate refusing, and it is that
+ * request's abandonment — thrown, so the broker journals `ABANDONED` and answers nobody (E4.S3) — not an
+ * internal failure written to a socket nobody reads. For a live request the window said why.
+ */
+function notOpened(ctx: UseActionContext): UseActionResult {
+  if (ctx.signal.aborted) {
+    throw notStarted();
+  }
+  return fail('internal', `Could not open an SSH terminal for "${ctx.entityName}" — the window said why.`);
 }
 
 /** The target named where it can be — an entity with no host still opened something. */

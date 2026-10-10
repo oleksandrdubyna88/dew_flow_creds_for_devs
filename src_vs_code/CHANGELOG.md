@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cancelled with it. A rotation already running is left to finish, so its new password is never lost.
 - **The folder PIN box of an agent's create closes when the agent leaves**, instead of taking a PIN — and
   counting wrong ones — for nobody.
+- **An agent's VPN start stops the moment the agent leaves.** `creds_vpn_up` / `creds_vpn_down` wait before they
+  type anything — the steps the VPN runs first, the config read and its PIN, a launcher's *Run* question, OpenVPN
+  Connect's import question, an install offer. If the agent had gone by then, answering any of those used to
+  write the VPN config to a file, run the installers, type the launcher or start the tunnel anyway. Now nothing
+  more is written or typed for it, and the journal says `ABANDONED`. A command already typed, and a tunnel
+  already up, are not taken back. Your own **Start** and **Stop** are unchanged.
+- **An SSH terminal an agent asked for, and its offer to install `ssh`, follow the same rule**: a late
+  **Install** installs nothing for an agent that has gone, and a terminal refused because the agent left is
+  journalled `ABANDONED`, not as an internal failure.
 
 ## [1.13.1] — 2026-10-10 — A config key never travels on a command line
 

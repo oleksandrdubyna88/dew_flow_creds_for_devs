@@ -5,6 +5,7 @@ import { ShellContext, entryShell } from './hostShell';
 import { pinnedShell, pinnedTerminal, shellContext } from './pinnedTerminal';
 import { EntityMetadata, TreeNode } from './types';
 import { isInTrash } from './trash';
+import { requestGone } from './requestLife';
 
 /**
  * Running an entry's executable dependencies before it is used (issue #103) — the `vscode` half.
@@ -29,6 +30,13 @@ export interface DependencyRunRequest {
   /** The entry being used — named in the pre-run modal and the terminal title. */
   readonly ownerName: string;
   readonly trust: TrustStore;
+  /**
+   * The agent request this chain runs for, when an agent asked (a VPN start — E4.S3). Fired means its
+   * client has gone: nothing more runs. Read before the approval modal, after it, and before each step,
+   * so a person answering a modal nobody waits for any more starts nothing. Absent for the person's own
+   * click. A step already typed is the shell's, and is not taken back.
+   */
+  readonly startGate?: AbortSignal;
 }
 
 /** What a storage lookup must answer for a chain — `getNode` of this account. */
@@ -64,13 +72,18 @@ export function liveDetails(source: NodeSource, accountId: string, id: string): 
  * box, so a caller can call this unconditionally.</p>
  */
 export async function runDependenciesFirst(request: DependencyRunRequest): Promise<boolean> {
+  if (requestGone(request.startGate)) {
+    return false;
+  }
   const ctx = shellContext();
   const plan = planDependencyRun(request.roots, request.nodeOf, (name, os) => refusalIn(ctx, name, os), request.exclude);
-  if (!plan.ok) {
-    return refuse(plan.reason);
-  }
-  const pinned = chainIsPinned(ctx, plan.steps);
-  return (await approve(request, plan.steps, plan.missing, pinned)) && runSteps(request.ownerName, plan.steps, pinned);
+  return plan.ok ? approveAndRun(request, plan.steps, plan.missing, chainIsPinned(ctx, plan.steps)) : refuse(plan.reason);
+}
+
+/** The modal, then — if the request it serves is still there — the steps. */
+async function approveAndRun(request: DependencyRunRequest, steps: readonly RunStep[], missing: readonly string[], pinned: boolean): Promise<boolean> {
+  const approved = await approve(request, steps, missing, pinned);
+  return approved && !requestGone(request.startGate) && runSteps(request, steps, pinned);
 }
 
 function refusalIn(ctx: ShellContext, name: string, terminalOs: string | undefined): string | undefined {
@@ -123,18 +136,18 @@ async function trustAll(trust: TrustStore, steps: readonly RunStep[]): Promise<t
   return true;
 }
 
-async function runSteps(ownerName: string, steps: readonly RunStep[], pinned: boolean): Promise<boolean> {
+async function runSteps(request: DependencyRunRequest, steps: readonly RunStep[], pinned: boolean): Promise<boolean> {
   if (steps.length === 0) {
     return true;
   }
-  const opened = chainTerminal(`CredsForDevs: before ${ownerName}`, pinned);
+  const opened = chainTerminal(`CredsForDevs: before ${request.ownerName}`, pinned);
   if (!opened.ok) {
     return refuse(opened.reason);
   }
   const integration = await shellIntegrationOf(opened.terminal);
   return integration === 'closed'
     ? refuse(`The ${opened.shellName} terminal closed before it was ready, so nothing ran. That shell may not be reachable from this window.`)
-    : runAll(opened.terminal, integration, steps);
+    : runAll(opened.terminal, integration, steps, request.startGate);
 }
 
 type ChainTerminal = { ok: true; terminal: vscode.Terminal; shellName: string } | { ok: false; reason: string };
@@ -180,9 +193,9 @@ function shellIntegrationOf(terminal: vscode.Terminal): Promise<Integration | 'c
 }
 
 /** Each step in order; the first that does not end well stops the rest. */
-async function runAll(terminal: vscode.Terminal, integration: Integration, steps: readonly RunStep[]): Promise<boolean> {
+async function runAll(terminal: vscode.Terminal, integration: Integration, steps: readonly RunStep[], startGate: AbortSignal | undefined): Promise<boolean> {
   for (const step of steps) {
-    if (!(await runStep(terminal, integration, step))) {
+    if (!(await runStep(terminal, integration, step, startGate))) {
       return false;
     }
   }
@@ -191,9 +204,14 @@ async function runAll(terminal: vscode.Terminal, integration: Integration, steps
 
 /**
  * One step. A terminal the person closed while a Continue question sat open is checked for FIRST:
- * typing into a disposed terminal throws, and an execution on one never ends.
+ * typing into a disposed terminal throws, and an execution on one never ends. Then the request the
+ * chain serves: a client gone during the step before — or while its Continue question sat open — gets
+ * no further step, quietly (E4.S3).
  */
-async function runStep(terminal: vscode.Terminal, integration: Integration, step: RunStep): Promise<boolean> {
+async function runStep(terminal: vscode.Terminal, integration: Integration, step: RunStep, startGate: AbortSignal | undefined): Promise<boolean> {
+  if (requestGone(startGate)) {
+    return false;
+  }
   if (terminal.exitStatus !== undefined) {
     return refuse(`The terminal was closed before "${step.name}" could run — nothing after it ran.`);
   }
@@ -201,10 +219,18 @@ async function runStep(terminal: vscode.Terminal, integration: Integration, step
     terminal.sendText(step.line, true);
     return askToContinue(`CredsForDevs cannot tell when "${step.name}" finishes in this terminal (it reports no shell integration). Continue once it has finished successfully.`);
   }
-  return settle(stepVerdict(step.name, await executed(terminal, integration, step.line)));
+  return settle(stepVerdict(step.name, await executed(terminal, integration, step.line)), startGate);
 }
 
-function settle(verdict: StepVerdict): boolean | Promise<boolean> {
+/**
+ * What a finished step means for the chain. The request is read FIRST: a client gone while the step ran
+ * is not followed by a question — a person asked to continue a chain nobody waits for any more is asked
+ * for nothing (E4.S3, checkpoint round). A step already run is the shell's.
+ */
+function settle(verdict: StepVerdict, startGate: AbortSignal | undefined): boolean | Promise<boolean> {
+  if (requestGone(startGate)) {
+    return false;
+  }
   if (verdict.kind === 'next') {
     return true;
   }

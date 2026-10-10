@@ -4,7 +4,8 @@ import { TrustStore } from './commandTrust';
 import { EntityMetadata } from './types';
 import { materializedKeyPath, materializeVpnConfig } from './keyInstaller';
 import { executableLine } from './dependencyRun';
-import { dependencyRequest, runDependenciesFirst } from './dependencyRunHost';
+import { DependencyRunRequest, dependencyRequest, runDependenciesFirst } from './dependencyRunHost';
+import { requestGone } from './requestLife';
 import { ShellFamily, entryShell } from './hostShell';
 import { entryTerminal, shellContext } from './pinnedTerminal';
 import { confirmTrusted } from './trustPrompt';
@@ -28,6 +29,18 @@ export interface VpnRunContext {
   readonly storage: StorageManager;
   readonly storageDir: string;
   readonly trust: TrustStore;
+  /**
+   * The agent request this start serves, when an agent asked (`PLAN_wsl_bridge_outlives_its_client.md`
+   * §5.7, E4.S3) — the shape of SSH's `ConnectOptions.startGate`. Fired means its client has gone: no
+   * config is written and no line is typed for it. Read after every await on the start's path and
+   * immediately before each effect. Absent for the person's own Start and Stop.
+   */
+  readonly startGate?: AbortSignal;
+}
+
+/** The dependency chain of `roots`, carrying the request this start serves. */
+export function vpnDependencies(ctx: VpnRunContext, roots: readonly EntityMetadata[], exclude?: ReadonlySet<string>): DependencyRunRequest {
+  return { ...dependencyRequest(ctx.storage, ctx.accountId, roots, ctx.details.name, ctx.trust, exclude), startGate: ctx.startGate };
 }
 
 export async function runWithLauncher(ctx: VpnRunContext, launcher: EntityMetadata, action: 'start' | 'stop'): Promise<boolean> {
@@ -63,15 +76,12 @@ async function dependenciesThenLaunch(ctx: VpnRunContext, launcher: EntityMetada
   // Both ask for themselves: the VPN's own dependencies when it ticked the box, and the launcher's
   // (the installer, in the owner's example) when IT did. The launcher is the main action, so it is
   // excluded from the chain even when the VPN also lists it as a dependency.
-  const ready = await runDependenciesFirst(
-    dependencyRequest(ctx.storage, ctx.accountId, [ctx.details, launcher], ctx.details.name, ctx.trust, new Set([launcher.id])),
-  );
+  const ready = await runDependenciesFirst(vpnDependencies(ctx, [ctx.details, launcher], new Set([launcher.id])));
   return ready && launch(ctx, launcher, line);
 }
 
 async function launch(ctx: VpnRunContext, launcher: EntityMetadata, line: string): Promise<boolean> {
-  // Written only when the line asks for it: a launcher that knows its own profile needs no file.
-  const configPath = usesConfig(line) ? await writeVpnConfig(ctx, launcherConfigFileName(ctx.details)) : '';
+  const configPath = await configFor(ctx, line);
   if (configPath === undefined) {
     return false;
   }
@@ -86,6 +96,17 @@ async function launch(ctx: VpnRunContext, launcher: EntityMetadata, line: string
   return true;
 }
 
+/**
+ * The `{config}` path for `line` — `''` when the line needs no file, `undefined` when nothing may be
+ * typed: no config to write, or the request gone. Read last, after the only await before the line, so it is
+ * the check immediately before the launcher's line is sent (E4.S3).
+ */
+async function configFor(ctx: VpnRunContext, line: string): Promise<string | undefined> {
+  // Written only when the line asks for it: a launcher that knows its own profile needs no file.
+  const configPath = usesConfig(line) ? await writeVpnConfig(ctx, launcherConfigFileName(ctx.details)) : '';
+  return requestGone(ctx.startGate) ? undefined : configPath;
+}
+
 function withConfig(line: string, configPath: string, family: ShellFamily): string {
   return configPath === '' ? line : substituteConfig(line, configPath, family);
 }
@@ -95,19 +116,37 @@ function withConfig(line: string, configPath: string, family: ShellFamily): stri
  * having told the person, when there is no config to write. Shared with the built-in launcher.
  */
 export async function writeVpnConfig(ctx: VpnRunContext, fileName: string): Promise<string | undefined> {
-  // Opened for the click (entry-PIN plan, D6): the tunnel reads the file this writes, so an envelope
-  // here was a config the VPN client could not parse. A temporary file, so no outside-the-PIN note.
-  const opened = await clickedSecret(ctx.storage, ctx.accountId, ctx.details, (s, a, e) => s.getVpnConfig(a, e), 'start the VPN', undefined);
-  if (opened.kind !== 'open') {
-    return undefined;
-  }
-  const config = opened.value;
-  if (config === undefined || config.trim().length === 0) {
-    void vscode.window.showWarningMessage(
-      `"${ctx.details.name}" has no stored VPN config — open Edit and upload the file first.`,
-    );
+  const config = await storedConfig(ctx);
+  if (config === undefined) {
     return undefined;
   }
   materializeVpnConfig(ctx.storageDir, fileName, config);
   return materializedKeyPath(ctx.storageDir, fileName);
+}
+
+/**
+ * The stored config, opened — or `undefined` when there is none to write, having said so, and when the
+ * request this start serves has gone (E4.S3): read before the entry's door, so a gone request is not
+ * asked for a PIN, and again after it, because the door can wait on the PIN box — and the file this
+ * feeds is the secret itself, outside the vault.
+ */
+async function storedConfig(ctx: VpnRunContext): Promise<string | undefined> {
+  if (requestGone(ctx.startGate)) {
+    return undefined;
+  }
+  // Opened for the click (entry-PIN plan, D6): the tunnel reads the file this writes, so an envelope
+  // here was a config the VPN client could not parse. A temporary file, so no outside-the-PIN note.
+  const opened = await clickedSecret(ctx.storage, ctx.accountId, ctx.details, (s, a, e) => s.getVpnConfig(a, e), 'start the VPN', undefined);
+  if (opened.kind !== 'open' || requestGone(ctx.startGate)) {
+    return undefined;
+  }
+  return usableConfig(ctx.details.name, opened.value);
+}
+
+function usableConfig(entryName: string, config: string | undefined): string | undefined {
+  if (config === undefined || config.trim().length === 0) {
+    void vscode.window.showWarningMessage(`"${entryName}" has no stored VPN config — open Edit and upload the file first.`);
+    return undefined;
+  }
+  return config;
 }

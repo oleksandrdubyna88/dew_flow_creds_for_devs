@@ -294,3 +294,16 @@ test('a live request is not refused — the gate only reads a fired signal', asy
   assert.equal(opened, true);
   assert.equal(w.sshTerminals.length, 1);
 });
+
+test('the ssh install offer is handed the agent request it serves, so a late Install starts nothing for a gone client (E4.S3)', async () => {
+  // Found while gating the VPN start: this offer is a modal, and the installer it sends ran for a request
+  // whose client had left while it was open — the same class as the VPN's own install offer.
+  const request = new AbortController();
+  const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS, sshMissing: true });
+
+  const opened = await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage', startGate: request.signal });
+
+  assert.equal(opened, false);
+  assert.deepEqual(w.installOffers.map((o) => o.tool), ['ssh']);
+  assert.equal(w.installOffers[0].startGate, request.signal, 'the install offer was not told which request it serves');
+});

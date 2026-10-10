@@ -71,7 +71,11 @@ const vaultKeys = { noteUserActivity: () => undefined };
 
 test('a VPN with no stored config reports FALSE — an agent is never told "opened" about nothing', async () => {
   const s = stub();
-  const { runVpn } = loadWithVscode<{ runVpn: RunVpn }>('../vpnRun', s.vscode);
+  // The launcher is found BEFORE the config is read (a config is written only for a line that will be
+  // sent — E4.S3), so the question "no config" is asked of a machine that has the client.
+  const { runVpn } = loadWithVscode<{ runVpn: RunVpn }>('../vpnRun', s.vscode, {
+    './vpnExec': { resolveVpnLauncher: () => ({ kind: 'cli', exe: 'openvpn' }) },
+  });
   const storage = { getVpnConfig: () => Promise.resolve(undefined) };
 
   const started = await runVpn(vpnNode('openvpn'), 'start', storage, 'C:\\store', vaultKeys);

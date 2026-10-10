@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { MAX_STREAM_BYTES } from './brokerProtocol';
+import { notStarted } from './requestLife';
 
 /**
  * Running one `ssh` for an agent. The part that cannot be unit tested honestly
@@ -215,11 +216,4 @@ function killSignals(options: SshExecOptions): readonly AbortSignal[] {
     return [];
   }
   return given instanceof AbortSignal ? [given] : given;
-}
-
-/** The refusal to launch for a caller already gone; named `AbortError`, as an aborted spawn is. */
-function notStarted(): Error {
-  const error = new Error('Not started: the request it was for had already ended.');
-  error.name = 'AbortError';
-  return error;
 }

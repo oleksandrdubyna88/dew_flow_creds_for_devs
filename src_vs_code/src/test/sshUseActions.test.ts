@@ -461,3 +461,19 @@ test('the terminal action does NOT report success when the window refused the co
     cleanup(w);
   }
 });
+
+test('the terminal action refused because its client left is that request’s abandonment, not an internal failure (E4.S3)', async () => {
+  // `connectEntity` answers false for a request whose start gate fired; reported as `internal`, the
+  // journal carried a failure nobody caused and a reply was written to a socket nobody reads.
+  const parts: Parts = { source: KEY_SOURCE, connectRefuses: true };
+  const w = world(parts);
+  try {
+    const request = new AbortController();
+    request.abort();
+    const action = w.mod.sshTerminalAction(deps(w, parts) as never);
+
+    await assert.rejects(action.run({ ...CTX, signal: request.signal }, {}), (error: Error) => error.name === 'AbortError');
+  } finally {
+    cleanup(w);
+  }
+});

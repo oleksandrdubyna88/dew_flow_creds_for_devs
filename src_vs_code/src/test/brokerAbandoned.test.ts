@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import * as http from 'node:http';
 import { test } from 'node:test';
+import { VpnUseDeps, vpnAction } from '../agentUseActions';
 import { World, call, share, world } from './brokerWorld';
 
 /**
@@ -420,6 +421,42 @@ test('a queued call whose client left spends no use of a capped grant', async ()
       w.ran.map((r) => r.body.command),
       ['first', 'third'],
     );
+  } finally {
+    release();
+    w.server.dispose();
+  }
+});
+
+test('a VPN start whose client left while it was prepared is that request’s ABANDONED, never a refusal (E4.S3)', async () => {
+  // The real VPN action, over an `open` that stands for `runVpn`: it waits (the dependency chain, the
+  // config read) and then honours its gate — a fired one starts nothing. Before E4.S3 the action had
+  // no gate to hand on, and a VPN that did not start answered `no_credential` to a socket nobody read.
+  let release = (): void => undefined;
+  const gates: AbortSignal[] = [];
+  const deps: VpnUseDeps = {
+    storage: { getNode: () => ({ id: 'e1', name: 'prod', type: 'entity', details: { id: 'e1', name: 'prod', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' } }) },
+    open: (_accountId, _entityId, _action, startGate) => {
+      gates.push(startGate);
+      return new Promise<boolean>((resolve) => {
+        release = () => resolve(startGate?.aborted !== true);
+      });
+    },
+  };
+  const realAction = vpnAction(deps, 'up');
+  const w = world({ realAction });
+  try {
+    const { port, secret } = await share(w);
+    const gone = hanging(port, '/v1/use/exec', { command: 'up' }, secret);
+    await until(() => gates.length === 1, 'the VPN start to begin');
+
+    gone.hangUp();
+    await pause(CLOSE_SEEN_MS);
+    release();
+    await until(() => w.audit.some((line) => /ABANDONED| opened | 409 /.test(line)), 'the call to be journalled');
+
+    assert.ok(!w.audit.some((line) => / (opened|409|internal) /.test(line)), `a VPN start for a gone request was journalled as something other than its abandonment: ${w.audit.join(' | ')}`);
+    assert.equal(abandonedLines(w).length, 1, w.audit.join(' | '));
+    assert.match(abandonedLines(w)[0], /it was not launched/);
   } finally {
     release();
     w.server.dispose();

@@ -1,5 +1,6 @@
 import { loadWithVscode } from './vscodeStub';
 import { EntityMetadata } from '../types';
+import * as sshProgram from '../sshProgram';
 
 /**
  * The human Connect path (audit A3).
@@ -54,6 +55,8 @@ export interface World {
   closeTerminal(t: unknown): void;
   /** What `openSshTerminal` returned — the terminal the wipe is registered against. */
   sshTerminalHandle?: unknown;
+  /** Every install offer made, with the gate it was handed — only when the world says ssh is missing. */
+  installOffers: { tool: string; startGate?: AbortSignal }[];
 }
 
 export interface Parts {
@@ -72,6 +75,8 @@ export interface Parts {
   chooseButton?: boolean;
   /** Runs while the credential is being looked up — where an agent's client can leave (E4.S1). */
   duringLookup?: () => void;
+  /** This machine has no ssh client, so the connect path offers to install one (E4.S3). */
+  sshMissing?: boolean;
 }
 
 export function world(parts: Parts): World {
@@ -88,16 +93,11 @@ export function world(parts: Parts): World {
     offered: [],
     errors: [],
     translated: [],
+    installOffers: [],
     closeTerminal: (t: unknown): void => closeListeners.forEach((l) => l(t)),
   };
   if (parts.existingNamed !== undefined) {
-    const stale: Terminal = { name: parts.existingNamed, sent: [], disposed: false };
-    Object.assign(stale, {
-      dispose: (): void => {
-        stale.disposed = true;
-      },
-    });
-    w.existing.push(stale);
+    w.existing.push(staleTerminal(parts.existingNamed));
   }
   // The object `openSshTerminal` hands back. A test closes THIS one, because the wipe is
   // registered against it and must not fire for anybody else's terminal.
@@ -201,11 +201,39 @@ export function world(parts: Parts): World {
           CREDS_PASSWORD: password,
         }),
       },
+      ...missingSsh(w, parts.sshMissing === true),
     },
   );
   return w;
 }
 
+
+/** A terminal already open under `name` — one a fresh session must dispose rather than reuse. */
+function staleTerminal(name: string): Terminal {
+  const stale: Terminal = { name, sent: [], disposed: false };
+  Object.assign(stale, {
+    dispose: (): void => {
+      stale.disposed = true;
+    },
+  });
+  return stale;
+}
+
+/** No ssh client on this machine: the offer is recorded, never shown, and nothing is installed. */
+function missingSsh(w: World, missing: boolean): Record<string, unknown> {
+  if (!missing) {
+    return {};
+  }
+  return {
+    './sshProgram': { ...sshProgram, sshClientPresent: (): boolean => false },
+    './toolEnsure': {
+      offerToInstall: (tool: string, startGate?: AbortSignal): Promise<void> => {
+        w.installOffers.push({ tool, startGate });
+        return Promise.resolve();
+      },
+    },
+  };
+}
 
 export const entity = (extra: Partial<EntityMetadata> = {}): EntityMetadata =>
   ({ id: 'e1', name: 'prod', kind: 'ssh', host: 'prod.corp.com', ...extra }) as unknown as EntityMetadata;

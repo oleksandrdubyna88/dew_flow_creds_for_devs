@@ -99,7 +99,7 @@ import {
 import { StoredAccount, EntityMetadata, TreeNode } from './types';
 import { mcpCreateHooks, mcpUseHooks, moveEntryToTrash } from './mcpHooks';
 import { standingConsentFor } from './mcpAccess';
-import { runVpn } from './vpnRun';
+import { agentVpnOpener } from './vpnRun';
 import { nodeAt, openRevisionViewer } from './entityViewerCommands';
 import { applyInstallChoice } from './installFlow';
 import { collectConfigHolders, configBodyReading } from './configCommands';
@@ -654,17 +654,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     applyEnv: (details: EntityMetadata, accountId: string) =>
       applyEnvBindings(envCollection(), storage, accountId, details),
     onPath,
-    // The grant carries the account, so the tree element runVpn expects can be rebuilt
-    // exactly — the same function the human Start button calls, so an agent-opened
-    // tunnel is indistinguishable in mechanism from a hand-opened one.
-    open: async (accountId: string, entityId: string, action: 'start' | 'stop'): Promise<boolean> => {
-      const node = storage.getNode(accountId, entityId);
-      if (node === undefined) {
-        return false;
-      }
-      // runVpn's own answer: a refusal the person saw must not reach the agent as "opened".
-      return runVpn({ kind: 'node', accountId, node }, action, storage, storageDir, vaultKeys, context.globalState);
-    },
+    // The human Start button's own function, plus the request's start gate (E4.S3).
+    open: agentVpnOpener(storage, storageDir, vaultKeys, context.globalState),
   };
   useActions.register(scriptRunAction(agentDeps));
   useActions.register(terminalRunAction(agentDeps));
