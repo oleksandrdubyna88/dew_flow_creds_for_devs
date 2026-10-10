@@ -79,14 +79,19 @@ function marker(): string {
   return path.join(os.tmpdir(), `creds-runner-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
 }
 
-const writes = (file: string): string => `require('fs').writeFileSync(${JSON.stringify(file)}, 'ran')`;
+// The marker's path travels as an ARGUMENT (`process.argv[1]` under `node -e`), never spliced into the
+// script: code built from a path is code built from data (CodeQL js/bad-code-sanitization).
+const WRITES = "require('fs').writeFileSync(process.argv[1], 'ran')";
 
 test('an already-aborted signal launches nothing — the child is never spawned', async () => {
   const file = marker();
   const gone = new AbortController();
   gone.abort();
 
-  await assert.rejects(run(writes(file), 10_000, gone.signal), { name: 'AbortError' });
+  await assert.rejects(
+    runBounded(node, ['-e', WRITES, file], false, { env: process.env, timeoutMs: 10_000, signal: gone.signal }),
+    { name: 'AbortError' },
+  );
   await new Promise((resolve) => setTimeout(resolve, 300));
 
   assert.equal(fs.existsSync(file), false, 'a child was launched for a caller already gone');
@@ -98,7 +103,7 @@ test('a fired start gate launches nothing either', async () => {
   gone.abort();
 
   await assert.rejects(
-    runBounded(node, ['-e', writes(file)], false, { env: process.env, timeoutMs: 10_000, startGate: gone.signal }),
+    runBounded(node, ['-e', WRITES, file], false, { env: process.env, timeoutMs: 10_000, startGate: gone.signal }),
     { name: 'AbortError' },
   );
   await new Promise((resolve) => setTimeout(resolve, 300));
@@ -111,7 +116,7 @@ test('a start gate that fires AFTER the launch does not kill the child — that 
   // stops the start, never the run (`useActions.launchGuards`, finishOnceStarted).
   const file = marker();
   const gate = new AbortController();
-  const p = runBounded(node, ['-e', `setTimeout(() => { ${writes(file)}; process.exit(0) }, 400)`], false, {
+  const p = runBounded(node, ['-e', `setTimeout(() => { ${WRITES}; process.exit(0) }, 400)`, file], false, {
     env: process.env,
     timeoutMs: 10_000,
     startGate: gate.signal,
