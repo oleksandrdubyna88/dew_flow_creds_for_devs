@@ -46,7 +46,7 @@ export class SharedPrompts<T> {
     if (signal.aborted) {
       return Promise.resolve(ABANDONED);
     }
-    const prompt = this.open.get(key) ?? this.raise(key, ask);
+    const prompt = this.listening(key) ?? this.raise(key, ask);
     prompt.waiting.add(signal);
     return new Promise((resolve, reject) => {
       const leave = (): void => {
@@ -69,6 +69,19 @@ export class SharedPrompts<T> {
         },
       );
     });
+  }
+
+  /**
+   * The prompt open under `key` that a request may still join — one with a live waiter.
+   *
+   * <p>A prompt every waiter has left is ORPHANED: still on screen, showing the request that left — its
+   * command, its caller — and a later request joining it would be allowed by a person reading somebody
+   * else's details (the review gate, code round 2 of E4.S1). It takes no new waiters; the next request
+   * raises its own prompt, and the orphan, whenever it is answered, decides nothing.</p>
+   */
+  private listening(key: string): OpenPrompt<T> | undefined {
+    const prompt = this.open.get(key);
+    return prompt !== undefined && prompt.waiting.size > 0 ? prompt : undefined;
   }
 
   /** Whether a prompt is open under `key` — for tests and for nothing that decides anything. */

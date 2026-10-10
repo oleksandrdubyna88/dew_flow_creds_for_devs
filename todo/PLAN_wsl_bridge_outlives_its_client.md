@@ -609,6 +609,15 @@ answered** (codex's four roles; gemini's four rate-limited, quota reset ~95 h �
 | 2 | `creds-mcp-itest.cjs`: the new leg is over 50 lines | **accepted** — the window and the binary moved into two helpers |
 | 3 | a queued one-use call whose client left had already spent a use of a capped grant | **accepted** — rejected in the plan round as low-impact, raised a third time with a concrete consequence (a capped grant refusing a live call after fewer calls had run). The use is now counted at the action boundary; RED first: *"the second of two allowed calls was refused: … reached its limit of 2 calls"*, green after |
 
+**E4.S1 code round 2 (2026-10-09, `again`) — `proceed`**, gating 3 against threshold 5, **4 of 8 reviewers answered**
+(gemini rate-limited again).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | `sharedPrompt.ts` mutates its waiter `Set` and prompt `Map` | **rejected** — `SharedPrompts` is a stateful registry, the very `Map` it replaced in `credsAgentServer.ts` (`consenting.set/delete`); this codebase's registries (`GrantRegistry`, `OneUseLane`) hold mutable state by design, and the immutability rule governs data, not a service's own state |
+| 1 | `research/architecture.md` does not mention the new cross-module flow | **accepted** — a paragraph on the gate being bound to a live request, with the cross-process half (E2.S3) named |
+| 2 | a later request could join an ORPHANED modal that still shows the request that left, and be allowed by a person reading another request's command | **accepted** — an orphaned prompt takes no new waiters; the next request raises its own. RED first (*"the later request joined a modal showing the request that had left"*), green after |
+
 **Risk consultation for E4.S1** (codex `gpt-6-astra`, `bb3ab088…`), named as risky because it is the consent path of a
 credential broker — each point verified, then acted on:
 

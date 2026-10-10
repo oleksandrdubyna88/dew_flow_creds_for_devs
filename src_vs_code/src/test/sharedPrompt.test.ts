@@ -93,21 +93,29 @@ test('a request that has already ended neither joins nor raises a prompt', async
   assert.equal(s.raised, 0, 'a modal was raised for a request already gone');
 });
 
-test('a new request may join a prompt its earlier waiters left — it is still on screen, and still answers', async () => {
+test('a new request does not join a prompt every earlier waiter left — it is asked with its own details', async () => {
+  // The review gate's finding on E4.S1 (code round 2): the defused modal stays on screen showing the
+  // request that LEFT — its command, its caller. A later request joining it would be allowed by a person
+  // reading somebody else's command. So an orphaned prompt takes no new waiters; it is answered to nobody.
   const prompts = new SharedPrompts<string>();
-  const s = scripted();
+  const first = scripted();
+  const second = scripted();
   const gone = new AbortController();
   const later = new AbortController();
 
-  const left = prompts.join('grant', gone.signal, s.ask);
+  const left = prompts.join('grant', gone.signal, first.ask);
   gone.abort();
   await left;
-  const joined = prompts.join('grant', later.signal, s.ask);
-  s.answer('Deny');
+  const joined = prompts.join('grant', later.signal, second.ask);
 
+  assert.equal(second.raised, 1, 'the later request joined a modal showing the request that had left');
+  first.answer('Allow');
+  await tick();
+  assert.deepEqual(first.wantedAtAnswer, [false], 'the orphaned modal decided something');
+  second.answer('Deny');
   assert.equal(await joined, 'Deny');
-  assert.equal(s.raised, 1, 'a second modal was stacked on the first');
-  assert.deepEqual(s.wantedAtAnswer, [true]);
+  assert.deepEqual(second.wantedAtAnswer, [true]);
+  assert.equal(prompts.isOpen('grant'), false, 'the stale prompt settling later must not forget the new one');
 });
 
 test('different keys are different prompts', async () => {

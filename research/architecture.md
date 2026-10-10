@@ -80,6 +80,15 @@ the agent has is a token that buys one entity's worth of work in the window that
 a modal and written down in an audit channel. See
 [module_extension.md](module_extension.md#the-agent-broker--using-a-credential-without-handing-it-over).
 
+**The gate is bound to a live request (2026-10-09).** A click authorises only a request that is still
+there to be answered: the broker ties each request to its connection (`requestLife.ts`), and a client
+that leaves — `creds-mcp` killed, the CLI interrupted, any HTTP client hanging up — turns its request into
+an `ABANDONED` line wherever it is on the path. The modal it raised stays on screen (VS Code cannot close
+one) but answering it decides nothing; nothing is remembered, no use is counted, nothing starts, and a
+child already started is cancelled. The cross-process half is the client's: a process that is still
+alive keeps its connection open, which is why `creds-mcp` cancelling its broker call when its own client
+goes is part of the same plan (E2.S3). Record: [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md) §5.7.
+
 What the server contributes is the thing a shared folder cannot: **authenticated identity**. It
 knows who is calling, because the caller presents a token their identity provider signed, and it
 uses that identity for exactly three decisions — which vault you may read, which inbox you may read,

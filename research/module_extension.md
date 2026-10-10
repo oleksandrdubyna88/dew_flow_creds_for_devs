@@ -3990,7 +3990,9 @@ sequenceDiagram
   through `sharedPrompt.ts`: every waiter joins a grant's prompt with its own signal and detaches the moment
   it fires; the answer is applied — `grants.allow`/`deny`, presence, the ALLOWED/DENIED line — only while a
   live waiter is still attached. A token grant shared by two calls therefore still answers the one that
-  stayed. `ConsentOutcome` gained `abandoned`.
+  stayed. A prompt every waiter has left takes no new waiters: it still shows the request that left, so the
+  next request on the token raises its own prompt with its own details (code round 2). `ConsentOutcome` gained
+  `abandoned`.
 - **Every door**: the token and alias routes pass the signal to `perform`; the MCP and folder routes get it on
   the per-request `BrokerDoor` (`doorFor(signal)` — `door.signal`, `door.abandon`), whose handlers check it
   before the move to the Trash, after the create's folder-PIN step (which the signal also closes — a box left
