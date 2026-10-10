@@ -46,7 +46,6 @@ public class ConfigKeysTests
     [
         "Program.cs",
         "Logging.cs",
-        "LogRetention.cs",
     ];
 
     [Fact]

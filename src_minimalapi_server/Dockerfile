@@ -21,9 +21,12 @@ RUN apt-get update     && apt-get install -y --no-install-recommends clang zlib1
 # Restore on the project files alone first, so a source-only edit reuses this layer.
 COPY global.json nuget.config Directory.Build.props Directory.Packages.props ./
 COPY src_minimalapi_server/src/CredVaultServer.csproj src_minimalapi_server/src/
+# The repository's shared logging (sinks, retention, level binding) — a project reference of the server.
+COPY src_service_defaults/src/CredsForDevs.ServiceDefaults.csproj src_service_defaults/src/
 RUN dotnet restore src_minimalapi_server/src/CredVaultServer.csproj -a $TARGETARCH
 
 COPY src_minimalapi_server/src/ src_minimalapi_server/src/
+COPY src_service_defaults/src/ src_service_defaults/src/
 RUN mkdir /empty
 # The version the release tag names — /api/metrics and the log report it. A local build says so.
 ARG VERSION=0.0.0-local

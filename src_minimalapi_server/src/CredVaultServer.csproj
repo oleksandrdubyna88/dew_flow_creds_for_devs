@@ -25,6 +25,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The repository's one logging configuration: the sinks, retention and level binding moved out of
+         this project on 2026-10-09 so the AOT binaries share them. Logging.cs here keeps the
+         appsettings contract. -->
+    <ProjectReference Include="..\..\src_service_defaults\src\CredsForDevs.ServiceDefaults.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="CredVaultServer.Tests" />
   </ItemGroup>
 

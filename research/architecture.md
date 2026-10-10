@@ -265,6 +265,47 @@ A file per run rather than a rolling daily file, because the question during an 
 always "what did *that* run do". Levels come from configuration; changing verbosity is a config
 edit and a restart, never an edited call site.
 
+**One configuration for every .NET host (2026-10-09).** The sinks (`AnsiConsoleSink`,
+`DailyRunFileSink`), the retention sweep (`LogRetention`), the UTC enricher and the explicit level
+binding live in `src_service_defaults` (`CredsForDevs.ServiceDefaults`, AOT-compatible), moved there
+unchanged out of the server. Two entry points over one core, `CredsLogging.Build`:
+
+```mermaid
+flowchart LR
+    subgraph shared["src_service_defaults"]
+        build["CredsLogging.Build<br/>prune · console · file"]
+        create["CredsLogging.Create<br/>env: CREDS_LOG_*"]
+        run["HostRun<br/>start line · exit line"]
+    end
+    server["server<br/>AddCredVaultLogging<br/>appsettings Serilog:* / Logging:*"] --> build
+    mcp["creds-mcp serve<br/>creds-mcp-wsl pump"] --> create
+    relay["creds relay<br/>creds relay-pipe"] --> create
+    create --> build
+    mcp --> run
+    relay --> run
+    build --> files[("{root}/{yyyy-MM-dd}/<br/>{app}-{HH-mm-ss}-{pid}.log")]
+```
+
+| Host | App name | Root | Console |
+|---|---|---|---|
+| the server | `cred-vault-server` | `Logging:Directory`, else `logs/` beside the binary (the container mounts `/logs`) | stdout |
+| `creds-mcp`, serving natively | `creds-mcp` | `CREDS_LOG_DIR`, else `%LOCALAPPDATA%\creds-for-devs\logs`, `$XDG_STATE_HOME/creds-for-devs/logs` (or `~/.local/state/…`), `~/Library/Logs/creds-for-devs` | **stderr** — stdout is JSON-RPC |
+| `creds-mcp`, the Linux half of the WSL bridge | `creds-mcp-wsl` | as above, on the Linux side; the Windows half writes its own `creds-mcp` file on Windows | stderr |
+| `creds relay` | `creds-relay` | as above | stderr — stdout is the `export SSH_AUTH_SOCK=` line |
+| `creds relay-pipe` | `creds-relay-pipe` | as above, on Windows | stderr — stdio is the agent protocol |
+
+The AOT binaries take their levels from the environment — `CREDS_LOG_LEVEL` (verbose or debug for more;
+Information is both the default and the ceiling, so the start and exit lines and the sentences a person or
+the extension reads — the relay's *already served* refusal among them — always reach the file), `CREDS_LOG_RETENTION_DAYS` (14, 0 disables) — because a
+single-file binary ships no `appsettings.json`; the deviation coai records for `COAI_LOG_LEVEL`.
+One-shot verbs (`--help`, `ls`, `ssh`, `config`, a usage error) write no file and keep their plain
+`[creds-for-devs]` line on stderr. Every serving run writes a **start line** (mode, version, pid,
+parent pid) and an **exit line** (code, reason, uptime); the MCP server adds the client's name once
+the handshake names it and, at Debug, each incoming method NAME. The relay's socket path is logged (it prints
+it on stdout anyway). **Never logged:** argument values, other environment values, the forwarded caller record (only that one was present), protocol bodies, tool
+arguments or results, stream bytes, tokens — a process test greps a marker out of every one of those
+places. Design record: [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md) §5.1.
+
 Container logs are separately capped by Docker's json-file driver at 10 MB × 5 per service, so a
 log loop cannot fill the disk that holds the vaults.
 
@@ -282,7 +323,7 @@ boundary where continuing is correct rather than optimistic:
 |---|---|---|
 | `VaultStore.ListVaultOwners` | `IOException`, `UnauthorizedAccessException` | One locked sidecar must not break team discovery for everyone |
 | `VaultStore.ReadShareOrNullAsync` | `JsonException`, `FileNotFoundException` | One corrupted inbox item must not fail the whole listing |
-| `CredVaultLogging` | `IOException`, `UnauthorizedAccessException` | An unwritable log mount is a degraded log, not an outage |
+| `CredsLogging` (all .NET hosts) | `IOException`, `UnauthorizedAccessException`, `ArgumentException`, `NotSupportedException` | An unwritable log mount is a degraded log, not an outage |
 
 Startup is the opposite: misconfiguration **throws and stops the host**, because a credential
 server that silently accepts everyone is worse than one that does not start.
@@ -388,6 +429,7 @@ Four things about it are decided ACROSS modules rather than inside one:
 | The deployment | [module_deployment.md](module_deployment.md) | Containers, TLS, updates, backups |
 | The CLI | [../src_cli/README.md](../src_cli/README.md) | `creds` — the terminal client of the broker. A .NET Native AOT binary holding no secret: it relays a request to the VS Code window named by a grant token and prints what comes back |
 | The broker client | `src_broker_client/` | Discovery, the health probe, the wire contract and the WSL bridge — shared by both binaries, so a fix to any of it is made once. The bridge is an instance per binary (`WslInterop.Creds`, `WslInterop.CredsMcp`), each with its own override variable, because one shared `creds.exe` would have sent an MCP handshake to the CLI |
+| The shared logging | [module_service_defaults.md](module_service_defaults.md) | `CredsForDevs.ServiceDefaults` — the repository's one Serilog configuration, used by the server and both AOT binaries: the coloured console, the file per run, retention, the level binding, and `HostRun`'s start and exit lines. See *Logging* above |
 | The MCP server | `src_mcp/` | `creds-mcp` — what an AI agent talks to. **Eighteen tools** over the same broker, across two objects: entries (list, use, rotate, create, delete, export-env, and `creds_config_snippet` — read-only public text, how code reads a config, from the viewer's own catalog) and folders (list, create, edit, delete, since 0.85.0) — plus, since 1.12.0 / relay 0.9.0, the kind catalogue `creds_kinds` / `creds_kind_help` (`GET /v1/mcp/kinds`, `/v1/mcp/kind-help`, read-only, answered from the window's one per-kind table `agentKindFields.ts`: a folder says what it `holds`, a kind which fields an agent may set, and `creds_create` refuses anything else). Every one is gated by a switch that is off by default — **two ladders, ten switches, inherited down the whole tree** — and by the same consent prompt. Holds no secret and can obtain none, and no request it can compose has a field the switches could arrive in. **Inside WSL it carries the session rather than serving it** — see below |
 
 ### Connecting over SSH from a remote window (2026-09-17)
@@ -475,6 +517,10 @@ Three consequences worth stating, because each was a decision:
   without the flag. The Windows half fills only the agent's name, from the client that shakes hands
   with it — *the side that spoke to the environment names the session; the side that spoke to the
   client names the client.*
+
+**Each half logs its own run (2026-10-09)**: the Linux half as `creds-mcp-wsl` (the Windows child's pid,
+which side ended the session, the child's exit code), the Windows half as `creds-mcp` on Windows. Log
+settings do not cross the bridge (no `WSLENV`), so the Windows half runs at its own defaults.
 
 `CREDS_MCP_WINDOWS_BINARY` overrides the executable — its own variable, never the CLI's. Design
 record and what the build taught: [PLAN_mcp_wsl_bridge.md](PLAN_mcp_wsl_bridge.md); the caller

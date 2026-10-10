@@ -1,6 +1,8 @@
 using System.Diagnostics;
 
 using CredsBroker;
+using CredsForDevs.ServiceDefaults;
+using Serilog;
 
 namespace CredsMcp;
 
@@ -28,6 +30,16 @@ namespace CredsMcp;
 /// </remarks>
 internal static class WslPump
 {
+    /// <summary>Which side ended the conversation first.</summary>
+    internal enum Ending
+    {
+        /// <summary>The client closed its stdin — the MCP stdio transport's own shutdown signal.</summary>
+        ClientClosed,
+
+        /// <summary>The Windows half closed its stdout — it left, or it was ended.</summary>
+        WindowsHalfClosed,
+    }
+
     /// <summary>
     /// Big enough for any JSON-RPC message worth one read, small enough to stay a message pump.
     /// </summary>
@@ -43,13 +55,16 @@ internal static class WslPump
     /// What the Windows half is started with — <c>--caller &lt;record&gt;</c> when it knows the flag,
     /// nothing otherwise; decided by <see cref="CallerForwarding"/> before this is called.
     /// </param>
+    /// <param name="log">The wrapper's own log (<c>creds-mcp-wsl</c>): the child it started, which side
+    /// ended, and the child's exit code. The Windows half writes its own file on its own side.</param>
     /// <remarks>
     /// The exit code is the child's, so a client that reads one learns what the half that did the
     /// work decided rather than what the pump felt about it.
     /// </remarks>
-    internal static async Task<int> RunAsync(IReadOnlyList<string> args)
+    internal static async Task<HostEnding> RunAsync(IReadOnlyList<string> args, ILogger log)
     {
         using var child = WslInterop.CredsMcp.StartPiped(args);
+        log.Information("started the Windows half, pid {ChildPid}", child.Id);
         // Neither half may outlive the other: an MCP client considers a server alive for exactly
         // as long as the process it started, so a Windows copy left behind would hold a window's
         // consent machinery open for a session nobody is in any more.
@@ -57,14 +72,20 @@ internal static class WslPump
 
         await using var fromClient = Console.OpenStandardInput();
         await using var toClient = Console.OpenStandardOutput();
-        await PumpAsync(
+        var ending = await PumpAsync(
             fromClient,
             child.StandardInput.BaseStream,
             child.StandardOutput.BaseStream,
             toClient).ConfigureAwait(false);
 
-        return await SettleAsync(child).ConfigureAwait(false);
+        var code = await SettleAsync(child, log).ConfigureAwait(false);
+        log.Information("the Windows half exited with code {ChildExitCode}", code);
+        return new HostEnding(code, ReasonOf(ending));
     }
+
+    /// <summary>The exit reason an ending is logged as.</summary>
+    internal static ExitReason ReasonOf(Ending ending) =>
+        ending == Ending.ClientClosed ? ExitReason.ClientClosed : ExitReason.WindowsHalfClosed;
 
     /// <summary>
     /// Carry both directions until the conversation ends, and decide which ending it was.
@@ -80,7 +101,7 @@ internal static class WslPump
     /// than a claim: a real process on the other side of a kernel boundary is not something a
     /// test can assert about, which is what the integration script is for.</para>
     /// </remarks>
-    internal static async Task PumpAsync(Stream fromClient, Stream toChild, Stream fromChild, Stream toClient)
+    internal static async Task<Ending> PumpAsync(Stream fromClient, Stream toChild, Stream fromChild, Stream toClient)
     {
         var upstream = CarryThenCloseAsync(fromClient, toChild);
         var downstream = CarryAsync(fromChild, toClient);
@@ -89,7 +110,9 @@ internal static class WslPump
         if (first == upstream)
         {
             await downstream.ConfigureAwait(false);
+            return Ending.ClientClosed;
         }
+        return Ending.WindowsHalfClosed;
     }
 
     /// <summary>
@@ -156,15 +179,16 @@ internal static class WslPump
     /// that has closed its stdout and then hangs would otherwise keep a client believing its
     /// server is still shutting down, forever.
     /// </remarks>
-    private static async Task<int> SettleAsync(Process child)
+    private static async Task<int> SettleAsync(Process child, ILogger log)
     {
         try
         {
             using var grace = new CancellationTokenSource(Grace);
             await child.WaitForExitAsync(grace.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException e)
         {
+            log.Warning(e, "the Windows half did not exit within {GraceSeconds} s of closing its stdout; stopping it", Grace.TotalSeconds);
             Stop(child);
             child.WaitForExit();
         }

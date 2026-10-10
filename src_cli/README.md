@@ -152,6 +152,14 @@ you. The mitigation is not the socket mode — it is that a signature still has 
 Windows, so the worst a process in WSL can do is ask, visibly. The relay is opt-in and never
 starts itself.
 
+**The relay logs to a file** (since 2026-10-09): `creds-relay-{HH-mm-ss}-{pid}.log` under a folder per
+UTC day in `$XDG_STATE_HOME/creds-for-devs/logs` (or `~/.local/state/creds-for-devs/logs`) — its
+start, one line per connection it carried and how that connection ended, and why it stopped. Each
+`relay-pipe` it starts on Windows writes `creds-relay-pipe-…` under `%LOCALAPPDATA%\creds-for-devs\logs`.
+`CREDS_LOG_DIR` moves the folder, `CREDS_LOG_LEVEL` (`verbose`, `debug`; `information` is the default and
+the most it can be raised to, so the start and exit lines are always there) sets the floor, `CREDS_LOG_RETENTION_DAYS` (default 14, 0 keeps everything) the sweep. Console lines go to
+stderr; stdout stays the one `export` line. No argument or environment value is ever written there.
+
 If you set `CREDS_ENDPOINT_DIR` for a non-standard VS Code install, name it in `WSLENV`
 (`export WSLENV=CREDS_ENDPOINT_DIR/p`): environment variables do **not** cross from WSL into a
 Windows child on their own — measured, including from .NET's own process API.

@@ -136,6 +136,7 @@ jobs:
           dotnet-coverage collect -f xml -o coverage/cli.xml -- ./src_cli/tests/bin/Release/net10.0/CredsCli.Tests
           dotnet-coverage collect -f xml -o coverage/mcp.xml -- ./src_mcp/tests/bin/Release/net10.0/CredsMcp.Tests
           dotnet-coverage collect -f xml -o coverage/broker.xml -- ./src_broker_client/tests/bin/Release/net10.0/CredsBroker.Tests
+          dotnet-coverage collect -f xml -o coverage/logging.xml -- ./src_service_defaults/tests/bin/Release/net10.0/CredsForDevs.ServiceDefaults.Tests
       # The extension is TypeScript and the .NET scanner does not run its tests, so every change to
       # src_vs_code arrived at the gate as 0 % coverage of new code — a number about the analysis
       # rather than about the change. Measured on PR #18: 339 new lines to cover, 339 uncovered, from

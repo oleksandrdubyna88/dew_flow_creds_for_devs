@@ -238,8 +238,11 @@ Shared because both the MCP wrapper and the relay need exactly this, and today e
 ### 5.8 A stale WSL install says so — `src_vs_code/src`
 
 - The extension does not write a client's MCP config; it copies a block (`wslMcpInstall.ts:79`, `mcpClientConfig.ts`).
-  So the check asks the install itself: `wsl -d <distro> -e bash -lc 'creds-mcp --version'` (§5.2), compared with
-  `compareVersions` (`credsInstall.ts:151`) against what the extension ships.
+  So the check asks the install itself: `wsl -d <distro> -e bash -lc '<path> --version'` (§5.2), compared with
+  `compareVersions` (`credsInstall.ts:151`) against what the extension ships. **`<path>` is the exact executable the
+  copied config block names** (the install path `installIntoWsl` wrote), never a bare `creds-mcp` resolved through the
+  shell's PATH — a current binary earlier on the PATH would report "current" while the client still launches the stale
+  one (E1 plan round, finding 1). The verdict says which path it checked.
 - Pure verdict `staleVerdict(versionOutput, expected)` in `wslMcpInstall.ts` (current / older / no `--version` = older),
   host wiring next to `staleBinaryWarning` (`wslMcpInstall.ts:108`, shown from `mcpInstallTarget.ts:113`).
 - When: after every MCP install into WSL; at activation at most once a day per distribution, **only for running
@@ -291,6 +294,9 @@ Both are named back from those plans in the same change that lands this one.
 3. **`server/discover` + `subscriptions/listen` fixture** captured from Claude Code 2.1.295 (the shim log in the
    RESULTS record), stored under `src_mcp/tests/fixtures/` — not invented.
 4. Whether `McpServer.Create` can take an `ILoggerFactory` (so SDK lines reach the file) without reflection.
+   **Answered in E1:** it can, and is deliberately not given one — the SDK logs outgoing JSON at Trace and a client's
+   cancellation reason at Information, which would carry protocol bodies into the file (§5.1). The client's name and
+   method names come through an incoming message filter instead. Record: the RESULTS file, §7.2 section.
 
 ## 8. Growth budget
 
@@ -442,3 +448,95 @@ answered** (codex; gemini rate-limited — the verdict is one vendor's, not a pa
 
 The round's operator commands: build this plan without re-splitting it (the five epics above ARE its split, made
 before the round); work autonomously per the six orders; ask the question consultant before the person.
+
+### Epic E1 — the logs say why a process lived and why it ended (branch `feat/e1-logs-on-disk`)
+
+**Plan round (2026-10-09, session `889ae40d`) — `proceed`**, gating 2 against threshold 6, **1 of 2 reviewers
+answered** (codex; gemini rate-limited — one vendor's verdict, not a panel's).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | §3.1/§3.3 leave the modal promise unresolved while E4 defaults to a modal that stays visible | **rejected** — outside E1's scope and already recorded as the owner's open decision: §3.3 names both shapes, E4 ships (a), (b) only on the owner's word as E4.S3, and §13 requires "the owner has decided §3.3" before the plan closes |
+| 1 | §5.8 checks the PATH's `creds-mcp`, not the binary the copied config launches | **accepted** — §5.8 now checks the exact executable path the config block names and says which path it checked |
+
+**Cadence consultation, epics 1–3** (owed before this epic's code round; codex). Verified and acted on: (1) the
+relay's *already served* refusal is read by the extension (`socketFromBusyLine`), so a raised `CREDS_LOG_LEVEL`
+must not hide it — the AOT floor is capped at Warning and a process test runs the refusal at `fatal` through the
+extension's own pattern; (2) the new project had to reach the server's Dockerfile, the main-push path filter of
+`ci-server.yml`, and the two WSL itests' explicit copy lists (the relay's also lacked `Directory.Packages.props`,
+which the first package in the CLI's graph now needs) — all four done, the image built and run; the itest's
+`tail -1` read of the refusal became a `grep`, since the exit line now follows it; (3) do not hand the SDK an
+`ILoggerFactory` (§7.4 above); (4) read the client name before AND after the handshake message is handled.
+Its fifth point — E2's Unix parent watch reuses §5.4's poll, which sits in E3.S1 — is for E2's branch: the
+primitive moves into E2 and E3 reuses it. Also new in E1 and reusable there: `ParentProcess.Id()` in
+`src_service_defaults` (getppid / `NtQueryInformationProcess`) — the observation half of §5.4/§5.9's watch.
+
+**What shipped, and where it differs from §5.1/§10:**
+
+- `src_service_defaults/src` (`CredsForDevs.ServiceDefaults`) with the three sinks MOVED (`git mv`, namespace only),
+  plus `CredsLogging` (core `Build` + AOT factory `Create`), `LogLevels`, `LogRoot`, `UtcTimestampEnricher` (moved out
+  of the server's `Logging.cs`), `HostRun`/`HostEnding` (start and exit lines) and `ParentProcess`. The server's
+  `Logging.cs` keeps its `appsettings` keys and calls the core — the contract and the server's output are unchanged
+  (container built, run, file written under `/logs`).
+- **Deviation:** the server's `LoggingSinkTests` pass byte-for-byte unmodified (a `<Using>` in the test project
+  supplies the new namespace), but `ConfigKeysTests` had to drop `LogRetention.cs` from its list of server files
+  that read configuration — the file moved, and it never read a key itself (`Logging:RetentionDays` is read in
+  `Logging.cs`, which stays in the list).
+- **Deviation:** `CREDS_LOG_LEVEL` lowers freely but never raises the floor above Information — first capped at
+  Warning (consultation point 1), then at Information after CodeRabbit on #201 showed a Warning floor dropping the
+  start and exit lines this epic exists for; the first CI run caught the same thing in the busy-refusal test.
+- The human `[creds-for-devs] …` sentences of the SERVING paths go through the logger at Warning/Error (they keep
+  their words; the console prefix becomes `[time LVL] creds-relay:`); the one-shot paths keep the plain stderr line
+  and write no file, as §5.1 says.
+- A fourth .NET test project, `src_service_defaults/tests`, run by `ci-clients` (Linux and macOS), Sonar and both
+  release legs. The process-test helper lives there and is LINKED into the mcp and cli test projects.
+- §7.2: +1.20 MiB (`creds-mcp`) / +1.25 MiB (`creds`), about 1–9 ms on the first response — Serilog kept.
+- Release smoke: each published `creds-mcp` serves one handshake and each `creds` runs `relay-pipe` with nothing
+  behind it; both must leave their file with its start line, a real parent pid and its exit line.
+
+**Code round (2026-10-09, same session) — `proceed`**, gating 3 against threshold 5, **4 of 8 reviewers answered**
+(codex's four roles; all four gemini roles rate-limited — one vendor's verdict).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | The new module has no `research/module_*.md` | **accepted** — [module_service_defaults.md](../research/module_service_defaults.md), linked from `architecture.md` and `research/README.md` |
+| 1 | `HostEnding.Reason` is an untyped string | **accepted** — `ExitReason`, a closed enum written as its camelCase word; a test enumerates the type |
+| 2 | One host's retention prunes another app's logs in a shared root | **rejected** — day-folder pruning per root is the rule's shape and the moved `LogRetention`'s; one root has one window, so the shortest window set wins — now stated in the module doc |
+| 3 | A client can forge a log line through its name (CR/LF) | **accepted** — client name and method names go through `CallerIdentity.Clean`; RED ("Expected sink.Messages to contain only items matching (Not(message.Contains(…") → GREEN → RED again with the fix removed |
+| 4 | A negative `CREDS_LOG_RETENTION_DAYS` is accepted | **rejected** — inaccurate: `NumberStyles.None` refuses a sign, `-3` falls back to 14, pinned by a test |
+
+Own review (a separate reviewer, same time): the parent pid had no test that would notice a broken P/Invoke — the
+process tests now assert the host's parent IS the test process, and the release smokes grep a non-zero parent; two
+relay methods and `LogRoot.For` were over the complexity ceiling — helpers extracted; the socket path in the relay's
+lines is deliberately allowed (it is the relay's address, printed on stdout already) and the docs now say so. It also
+named `RelayPipe.PumpAsync` reporting an orderly close when the first copy FAULTED; deferred to E3 at first, and
+taken in the final round below once a reviewer raised it independently.
+
+**Final code round (`again`, 2026-10-10) — `proceed`**, gating 1 against threshold 5, **4 of 8 reviewers answered**
+(codex; gemini rate-limited).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | `LogLevels.Overrides` is a required positional list, not an init-only `[]` default | **accepted** — `Overrides { get; init; } = []` |
+| 1 | The rule's two overrides are forced on every host | **rejected** — they ARE the rule's, for every host (`logging-serilog.md`, *Levels come from configuration*); a host adds its own after them |
+| 2 | The WSL start failure logs `e.Message`, which can carry the path `CREDS_MCP_WINDOWS_BINARY` named | **accepted** — the exception's type is logged instead (an environment value is never logged) |
+| 3 | relay-pipe logs a FAILED copy as an orderly close | **accepted** — `ExitReason.CopyFailed`; RED ("Expected RelayPipe.EndingOf(broken, broken) to be ExitReason.CopyFailed … but found ExitReason.RelayClosed") → GREEN → RED again with the check removed |
+
+**Pull request #201's automated reviewers.** CodeRabbit: a floor of Warning dropped the start and exit lines →
+the ceiling moved to Information (RED → GREEN; the first CI run of the busy-refusal test had failed on exactly that);
+the WSL itests' persistent `/tmp` build cache → answered: it predates this PR and E5.S1 replaces it. SonarCloud
+(gate failed on new-code coverage 79.6 % < 80, 21 issues): every issue fixed — exceptions passed to catch-block
+logs (except the creds-mcp.exe start failure, which logs the exception TYPE from its own method so an
+environment-named path stays out), nested ternaries, a parameter name, plan paths read as TODO markers,
+`LibraryImport` in the shared library (coai's `AllowUnsafeBlocks` precedent), a generated regex — and relay-pipe's
+two no-agent paths now run in-process, where the scanner can see them.
+
+**Checkpoint code round after the rebase onto #202 (`again`, 2026-10-10) — `proceed`**, gating 3 against threshold
+5, **4 of 8 reviewers answered** (codex; gemini rate-limited).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | The process-test helper has no path that kills the child on a timeout | **accepted** — `HostProcess.KillOnDispose`, used by every process test: the child's tree is killed, by its own handle, if the test leaves it running |
+| 1 | The message filter is added by mutating the options' collection | **accepted** — the filter is part of `McpServerOptions` as constructed |
+| 2 | The unwritable-log fallback prints the configured root and the error on stderr | **rejected** — stderr only, never the file; the server's moved, unchanged sentence; a directory the person configured is the one thing that makes it actionable, and a filesystem location is the class of value the plan already allows (the relay's socket path) |
+| 3 | The mcp release smoke has no time bound on macOS | **accepted** — `timeout`, else `gtimeout`, else perl's `alarm` before `exec` |

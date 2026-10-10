@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace CredVaultServer;
+namespace CredsForDevs.ServiceDefaults;
 
 /// <summary>
 /// The named owner of <c>logs/</c> retention: a startup prune, per the shared logging rule's

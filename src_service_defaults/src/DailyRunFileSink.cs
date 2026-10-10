@@ -3,7 +3,7 @@ using Serilog;
 using Serilog.Core;
 using Serilog.Events;
 
-namespace CredVaultServer;
+namespace CredsForDevs.ServiceDefaults;
 
 /// <summary>
 /// The run's log on disk: a folder per day, a file per run — and, for a run that outlives the

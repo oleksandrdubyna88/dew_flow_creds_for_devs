@@ -44,10 +44,10 @@ whole server is ~2,100 lines.
 | `src/LoginKeyStore.cs` | Custody of the per-developer login key S under `org/login-keys/`: AES-256-GCM under the deployment KEK, minted once by create-if-absent, and a three-answer lookup whose unreadable branch NEVER mints a replacement |
 | `src/LoginKeyKek.cs` | Reading that KEK out of configuration and refusing anything that is not exactly 32 bytes of base64, plus the startup line an operator gets when theirs is unusable |
 | `src/OrgEndpoints.cs` | The corporate surface `/api/org/*`, mapped from its own file (`Program.cs` is past the size ceiling and four more epics add routes): `GET /api/org/me`, the admin's roster, role and settings routes, the block/unblock route `PUT /api/org/members/{email}/active`, the JSON `FailJson` every refusal there uses, and the registration hook `PUT /api/vault` calls. The gates stay in `Program.cs` and cross over as delegates in one `OrgEndpointDeps` record |
-| `src/Logging.cs` | Serilog wiring: the coloured console + the segmenting run file |
-| `src/AnsiConsoleSink.cs` | Hand-written ANSI colour (ported from the family — Serilog's own theme writes zero escapes once stdout is redirected, and a container's captured stdout always is) |
-| `src/DailyRunFileSink.cs` | A file per run, segmenting at UTC midnight (`00-00-00-<pid>.log` in the next day's folder) so a never-restarting container cannot grow one file for months |
-| `src/LogRetention.cs` | The named owner of `logs/`: day folders older than `Logging:RetentionDays` (14, the extension's own number) swept at startup |
+| `src/Logging.cs` | The server's entry into the shared logging: reads its `appsettings` contract (`Serilog:MinimumLevel:*`, `Logging:Directory`, `Logging:RetentionDays`) and calls `CredsLogging.Build`. Unchanged contract |
+| `../src_service_defaults/src/AnsiConsoleSink.cs` | Hand-written ANSI colour (ported from the family — Serilog's own theme writes zero escapes once stdout is redirected, and a container's captured stdout always is). Moved out of the server 2026-10-09, unchanged, so the AOT binaries share it |
+| `../src_service_defaults/src/DailyRunFileSink.cs` | A file per run, segmenting at UTC midnight (`00-00-00-<pid>.log` in the next day's folder) so a never-restarting container cannot grow one file for months. Moved the same day |
+| `../src_service_defaults/src/LogRetention.cs` | The named owner of `logs/`: day folders older than `Logging:RetentionDays` (14, the extension's own number) swept at startup. Moved the same day |
 | `src/InstanceFile.cs` | Publishes where this instance is listening, for the DewFlow editor panel |
 | `src/HealthProbe.cs` | The container healthcheck the binary runs against itself (no curl in the image) |
 | `src/AppJsonContext.cs` | The `JsonSerializerContext` source-gen contract that makes Native AOT possible |

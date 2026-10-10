@@ -5,26 +5,22 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
-    <RootNamespace>CredVaultServer.Tests</RootNamespace>
+    <AssemblyName>CredsForDevs.ServiceDefaults.Tests</AssemblyName>
+    <RootNamespace>CredsForDevs.ServiceDefaults.Tests</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- xunit.v3 does not contribute an implicit using of its own. -->
     <Using Include="Xunit" />
-    <!-- The logging sinks moved to src_service_defaults (2026-10-09); their tests here did not move and
-         did not change — this using is what lets them compile byte for byte as they were. -->
-    <Using Include="CredsForDevs.ServiceDefaults" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="FluentAssertions" />
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
-    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\src\CredVaultServer.csproj" />
+    <ProjectReference Include="..\src\CredsForDevs.ServiceDefaults.csproj" />
   </ItemGroup>
 
 </Project>

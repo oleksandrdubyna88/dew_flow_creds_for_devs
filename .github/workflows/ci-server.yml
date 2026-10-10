@@ -10,6 +10,8 @@ on:
     branches: [main]
     paths:
       - 'src_minimalapi_server/**'
+      # The server's logging lives here since 2026-10-09 — a change to it is a change to the server.
+      - 'src_service_defaults/**'
       - 'deploy/**'
       # The contract suite and the post-deploy checklist are part of this pipeline's verdict,
       # so a change to either has to re-run it.

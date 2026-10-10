@@ -2,9 +2,11 @@
   <Folder Name="/src/">
     <Project Path="src_minimalapi_server/src/CredVaultServer.csproj" />
     <Project Path="src_mcp/src/CredsMcp.csproj" />
+    <Project Path="src_service_defaults/src/CredsForDevs.ServiceDefaults.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="src_minimalapi_server/tests/CredVaultServer.Tests.csproj" />
     <Project Path="src_mcp/tests/CredsMcp.Tests.csproj" />
+    <Project Path="src_service_defaults/tests/CredsForDevs.ServiceDefaults.Tests.csproj" />
   </Folder>
 </Solution>
