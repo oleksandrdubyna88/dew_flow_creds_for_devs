@@ -618,6 +618,15 @@ answered** (codex's four roles; gemini's four rate-limited, quota reset ~95 h �
 | 1 | `research/architecture.md` does not mention the new cross-module flow | **accepted** — a paragraph on the gate being bound to a live request, with the cross-process half (E2.S3) named |
 | 2 | a later request could join an ORPHANED modal that still shows the request that left, and be allowed by a person reading another request's command | **accepted** — an orphaned prompt takes no new waiters; the next request raises its own. RED first (*"the later request joined a modal showing the request that had left"*), green after |
 
+**E4.S1 code round 3 (2026-10-09, `again`) — `proceed`**, gating 2 against threshold 5, **4 of 8 reviewers answered**
+(gemini rate-limited). Nothing accepted; the session is closed.
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | the immutability rule, re-raised for `sharedPrompt.ts` | **rejected** — no new argument; the rule names its subject (*immutable data*), and `stillWanted()` must see a waiter leave synchronously, which copy-on-write would break |
+| 1 | `ConsentOutcome` lives in `brokerMcpDoor.ts` | **rejected** — that is the `vscode`-free module holding the door contract; `brokerConsent.ts` imports `vscode` and takes the type only |
+| 2 | a client leaving while the consent memory is written leaves the grant allowed | **rejected** — the Allow was given to a live request (checked at the answer, no await before `remember`); only the MCP door remembers, and it mints a grant per call that is never handed out; the request's action still does not run |
+
 **Risk consultation for E4.S1** (codex `gpt-6-astra`, `bb3ab088…`), named as risky because it is the consent path of a
 credential broker — each point verified, then acted on:
 
