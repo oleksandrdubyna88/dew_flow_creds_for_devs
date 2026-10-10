@@ -286,7 +286,7 @@ internal static class AgentRelay
 
     /// <summary>Take the path, or refuse it to whoever is already serving it.</summary>
     /// <remarks>
-    /// The refusal is a Warning, and the logger's floor can never be raised past Warning
+    /// The refusal is a Warning, and the logger's floor can never be raised past Information
     /// (<c>CredsLogging.FloorFrom</c>): this sentence is how the extension adopts a working relay
     /// (<c>socketFromBusyLine</c> in wslRelay.ts) instead of declaring it broken.
     /// </remarks>

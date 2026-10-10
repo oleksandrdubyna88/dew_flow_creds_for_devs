@@ -294,9 +294,9 @@ flowchart LR
 | `creds relay` | `creds-relay` | as above | stderr — stdout is the `export SSH_AUTH_SOCK=` line |
 | `creds relay-pipe` | `creds-relay-pipe` | as above, on Windows | stderr — stdio is the agent protocol |
 
-The AOT binaries take their levels from the environment — `CREDS_LOG_LEVEL` (default Information,
-never raised past Warning: the sentences a person or the extension reads, the relay's *already served*
-refusal among them, are Warning or above), `CREDS_LOG_RETENTION_DAYS` (14, 0 disables) — because a
+The AOT binaries take their levels from the environment — `CREDS_LOG_LEVEL` (verbose or debug for more;
+Information is both the default and the ceiling, so the start and exit lines and the sentences a person or
+the extension reads — the relay's *already served* refusal among them — always reach the file), `CREDS_LOG_RETENTION_DAYS` (14, 0 disables) — because a
 single-file binary ships no `appsettings.json`; the deviation coai records for `COAI_LOG_LEVEL`.
 One-shot verbs (`--help`, `ls`, `ssh`, `config`, a usage error) write no file and keep their plain
 `[creds-for-devs]` line on stderr. Every serving run writes a **start line** (mode, version, pid,

@@ -482,7 +482,9 @@ primitive moves into E2 and E3 reuses it. Also new in E1 and reusable there: `Pa
   supplies the new namespace), but `ConfigKeysTests` had to drop `LogRetention.cs` from its list of server files
   that read configuration — the file moved, and it never read a key itself (`Logging:RetentionDays` is read in
   `Logging.cs`, which stays in the list).
-- **Deviation:** `CREDS_LOG_LEVEL` lowers freely but never raises the floor above Warning (consultation point 1).
+- **Deviation:** `CREDS_LOG_LEVEL` lowers freely but never raises the floor above Information — first capped at
+  Warning (consultation point 1), then at Information after CodeRabbit on #201 showed a Warning floor dropping the
+  start and exit lines this epic exists for; the first CI run caught the same thing in the busy-refusal test.
 - The human `[creds-for-devs] …` sentences of the SERVING paths go through the logger at Warning/Error (they keep
   their words; the console prefix becomes `[time LVL] creds-relay:`); the one-shot paths keep the plain stderr line
   and write no file, as §5.1 says.

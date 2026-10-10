@@ -89,15 +89,16 @@ public sealed class CredsLoggingTests : IDisposable
     [InlineData("", LogEventLevel.Information)]
     [InlineData("debug", LogEventLevel.Debug)]
     [InlineData("Verbose", LogEventLevel.Verbose)]
-    [InlineData("warning", LogEventLevel.Warning)]
-    [InlineData("error", LogEventLevel.Warning)]
-    [InlineData("Fatal", LogEventLevel.Warning)]
+    [InlineData("warning", LogEventLevel.Information)]
+    [InlineData("error", LogEventLevel.Information)]
+    [InlineData("Fatal", LogEventLevel.Information)]
     [InlineData("loud", LogEventLevel.Information)]
     [InlineData("42", LogEventLevel.Information)]
-    public void The_floor_is_lowered_freely_and_never_raised_above_warning(string? value, LogEventLevel expected)
+    public void The_floor_is_lowered_freely_and_never_raised_above_information(string? value, LogEventLevel expected)
     {
-        // Above Warning would hide the sentences the extension reads — the relay's "already served"
-        // refusal among them — which turns a diagnostic switch into a behaviour change.
+        // Above Information would drop the start and exit lines — the reason this logging exists
+        // (CodeRabbit on #201) — and above Warning the sentences the extension reads, the relay's
+        // "already served" refusal among them. The variable adds detail; it never removes the story.
         CredsLogging.FloorFrom(value).Should().Be(expected);
     }
 
@@ -116,10 +117,10 @@ public sealed class CredsLoggingTests : IDisposable
     public void A_floor_from_the_environment_reaches_the_file()
     {
         var started = DateTime.UtcNow;
-        using (var log = CredsLogging.Create("creds-floor", true, Env((CredsLogging.LevelVariable, "warning")), started, new StringWriter()))
+        using (var log = CredsLogging.Create("creds-floor", true, Env((CredsLogging.LevelVariable, "debug")), started, new StringWriter()))
         {
-            log.Information("chatter");
-            log.Warning("worth reading");
+            log.Verbose("chatter");
+            log.Debug("worth reading");
         }
 
         var text = Read(Directory.GetFiles(_root, "creds-floor-*.log", SearchOption.AllDirectories).Single());

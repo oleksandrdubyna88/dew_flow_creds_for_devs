@@ -66,8 +66,8 @@ flowchart TB
   (`UtcTimestamp`, `Application`, `ProcessId`, a default `SourceContext`), the coloured console and the file. An
   unwritable or undeterminable root → console only, said once on stderr, start never blocked.
 - **`CredsLogging.Create(appName, consoleToStdErr: true)`** — the AOT hosts' factory. `CREDS_LOG_DIR`,
-  `CREDS_LOG_LEVEL` (verbose/debug/information/warning; never raised above Warning, because the sentences a person
-  or the extension reads are Warning or above), `CREDS_LOG_RETENTION_DAYS` (default 14, 0 disables).
+  `CREDS_LOG_LEVEL` (verbose/debug for more; Information is the default AND the ceiling, because the start and
+  exit lines are Information and the sentences a person or the extension reads are Warning or above), `CREDS_LOG_RETENTION_DAYS` (default 14, 0 disables).
 - **`HostRun.Start` / `End` / `Crash`** — the two lines every serving run writes.
 
 ## Behaviour worth knowing

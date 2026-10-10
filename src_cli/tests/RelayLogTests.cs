@@ -94,8 +94,11 @@ public sealed class RelayLogTests : IDisposable
                 .FirstOrDefault(match => match.Success);
             busy.Should().NotBeNull("the refusal is on stderr at a floor of fatal: {0}", stderr);
             busy!.Groups[1].Value.Should().Be(socket, "the extension adopts exactly the socket named");
-            HostProcess.Read(HostProcess.LogFileOf(_root, AgentRelay.AppName, second.Id))
-                .Should().Contain("reason busy");
+            // And the file still says why the run ended: "fatal" is capped at Information, so the exit line
+            // survives (the first CI run caught a Warning cap dropping it — CodeRabbit on #201).
+            var file = HostProcess.Read(HostProcess.LogFileOf(_root, AgentRelay.AppName, second.Id));
+            file.Should().Contain("is already served by a live relay");
+            file.Should().Contain("reason busy");
         }
         finally
         {

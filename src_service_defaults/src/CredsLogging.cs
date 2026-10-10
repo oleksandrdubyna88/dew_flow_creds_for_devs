@@ -43,7 +43,7 @@ public sealed record LogSetup(
 /// </remarks>
 public static class CredsLogging
 {
-    /// <summary>The floor for an AOT binary: verbose, debug, information (default) or warning.</summary>
+    /// <summary>The floor for an AOT binary: verbose, debug or information (the default, and the ceiling).</summary>
     public const string LevelVariable = "CREDS_LOG_LEVEL";
 
     /// <summary>Overrides the platform's log root (see <see cref="LogRoot"/>).</summary>
@@ -88,20 +88,21 @@ public static class CredsLogging
     internal static TextWriter ConsoleFor(bool toStdErr) => toStdErr ? Console.Error : Console.Out;
 
     /// <summary>
-    /// The floor an AOT binary runs at: lowered freely, never raised above Warning.
+    /// The floor an AOT binary runs at: lowered freely, never raised above Information.
     /// </summary>
     /// <remarks>
-    /// The ceiling is the consultant's catch (cadence consultation, epics 1–3): the sentences a person or the
-    /// extension READS go through this logger at Warning or above — the relay's "already served" refusal is
-    /// how the extension adopts a working relay instead of declaring it broken — so a floor of Error or
-    /// Fatal would silently turn a diagnostic setting into a behaviour change. An unknown value is the
-    /// default, never an error: logging must not stop a start.
+    /// <para>The variable adds detail; it never removes the story. Two readers depend on that. The start and
+    /// exit lines (<see cref="HostRun"/>) are Information, and they are the reason this logging exists — a
+    /// floor of Warning would leave a file that cannot say why its process lived or ended (CodeRabbit on
+    /// #201). And the sentences a person or the extension READS are Warning or above — the relay's "already
+    /// served" refusal is how the extension adopts a working relay (cadence consultation, epics 1–3).</para>
+    /// <para>An unknown value is the default, never an error: logging must not stop a start.</para>
     /// </remarks>
     internal static LogEventLevel FloorFrom(string? value) =>
         LogLevels.Parse(value, LogEventLevel.Information) switch
         {
             var level when !Enum.IsDefined(level) => LogEventLevel.Information,
-            > LogEventLevel.Warning => LogEventLevel.Warning,
+            > LogEventLevel.Information => LogEventLevel.Information,
             var level => level,
         };
 
