@@ -20,6 +20,9 @@ public interface IManagedChild
     /// <summary>Whether it has already ended.</summary>
     bool HasExited { get; }
 
+    /// <summary>How it ended — read only once <see cref="HasExited"/> is true.</summary>
+    int ExitCode { get; }
+
     /// <summary>Close the child's stdin: the end-of-stream every creds child ends on by itself.</summary>
     void CloseStdin();
 
@@ -74,6 +77,8 @@ public sealed class ManagedProcess : IManagedChild
             }
         }
     }
+
+    public int ExitCode => _process.ExitCode;
 
     public void CloseStdin()
     {

@@ -130,6 +130,8 @@ public sealed class WslPumpRunTests : IDisposable
 
         public bool HasExited => false;
 
+        public int ExitCode => throw new InvalidOperationException("Process must exit before requested information can be determined.");
+
         public void CloseStdin()
         {
             // Ignored.
@@ -148,12 +150,40 @@ public sealed class WslPumpRunTests : IDisposable
     {
         // Process.ExitCode throws for a process that has not exited; thrown from here it ended the pump without its
         // exit line and was read by RelayAsync as a missing Windows binary (own review, code round 1).
-        using var process = Process.GetCurrentProcess();
-
-        var code = WslPump.ExitCodeOf(new SurvivingChild(), process, _log);
+        var code = WslPump.ExitCodeOf(new SurvivingChild(), _log);
 
         code.Should().Be(WslPump.ChildStillRunning);
         _sink.Messages.Should().Contain(m => m.Contains("pid 4242") && m.Contains("still running"));
+    }
+
+    /// <summary>A child that ended, with a code of its own.</summary>
+    private sealed class EndedChild : IManagedChild
+    {
+        public int Id => 4243;
+
+        public bool HasExited => true;
+
+        public int ExitCode => 7;
+
+        public void CloseStdin()
+        {
+            // Already gone.
+        }
+
+        public Task WaitForExitAsync(CancellationToken ct) => Task.CompletedTask;
+
+        public void KillTree()
+        {
+            // Already gone.
+        }
+    }
+
+    [Fact]
+    public void An_ended_child_answers_with_its_own_code_through_the_interface()
+    {
+        // Final code round, finding 1: the exit code reaches the pump through IManagedChild, not a concrete Process.
+        WslPump.ExitCodeOf(new EndedChild(), _log).Should().Be(7);
+        _sink.Messages.Should().BeEmpty("nothing to warn about");
     }
 
     [Fact]

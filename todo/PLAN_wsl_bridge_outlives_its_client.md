@@ -1146,3 +1146,12 @@ window, after which the Windows half ends by E2's end-of-stream rule; cutting it
 beside the one shared stop. (5) An access-denied kill was logged at Debug as "already ended" — **taken**: a child that
 has not exited after a refused or completed kill is a Warning; RED (*"to have an item matching m.Contains("child 777 is
 still running")"*) → GREEN.
+
+**Final code round (`again`, 2026-10-10) — `proceed`**, gating 2 against threshold 5, **all 4 reviewers answered**
+(codex's four roles; the panel had no gemini and no local engine this time).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | `ChildLifetime` mutates its own state despite the immutability rule | **rejected** — the rule names its subject, immutable DATA, and keeps `class` for stateful services, which a registry of a process's live children is (as `ParentWatch`, `ShutdownSignals`, `GrantRegistry`, `SharedPrompts`); E4.S1's rounds 2 and 3 rejected the same finding on the same reasoning; the data here (`HostEnding`, `ConnectionEnding`) is records |
+| 1 | `WslPump.ExitCodeOf` needs a concrete `Process` beside the `IManagedChild` | **accepted** — `IManagedChild.ExitCode`; the pump reads the ending through the interface; a fake with a code of its own pins it |
+| 2 | A child started by a connection task after `StopAllAsync`'s snapshot is stopped by its `Track` but not awaited, so the relay could remove its socket and exit first | **accepted as a hardening** — `StopAllAsync` returns only when no stop is in flight (a late `Track`'s included); RED (*"Expected stopAll.IsCompleted to be False because the late child's stop is still in flight … but found True"*) → GREEN → RED again. The interleaving as described cannot occur in the relay today — `ServeConnectionAsync` starts and tracks the child synchronously inside the accept loop's iteration, before the loop can observe the token and return — but the invariant should not depend on that ordering |

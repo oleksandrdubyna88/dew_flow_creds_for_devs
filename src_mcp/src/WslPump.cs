@@ -121,7 +121,7 @@ internal static class WslPump
         log.Information("the session ended: {Ending:l}", ending.ToString());
 
         await SettleAsync(tracked, ending, lifetime).ConfigureAwait(false);
-        var code = ExitCodeOf(tracked, child, log);
+        var code = ExitCodeOf(tracked, log);
         log.Information("the Windows half exited with code {ChildExitCode}", code);
         return lifetime.EndingOr(new HostEnding(code, ReasonOf(ending)));
     }
@@ -134,11 +134,11 @@ internal static class WslPump
     /// rather than the exception <c>Process.ExitCode</c> throws for a process that has not exited, which would end
     /// the pump without its exit line and read as a missing Windows binary.
     /// </summary>
-    internal static int ExitCodeOf(IManagedChild tracked, Process child, ILogger log)
+    internal static int ExitCodeOf(IManagedChild tracked, ILogger log)
     {
         if (tracked.HasExited)
         {
-            return child.ExitCode;
+            return tracked.ExitCode;
         }
         log.Warning("the Windows half (pid {ChildPid}) is still running; its exit code is unknown", tracked.Id);
         return ChildStillRunning;

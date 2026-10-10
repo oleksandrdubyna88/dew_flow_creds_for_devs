@@ -269,6 +269,26 @@ public sealed class ChildLifetime : IDisposable
         }
         // Each stop swallows what a child that already left throws, so one child never holds up the rest.
         await Task.WhenAll(stops);
+        // A child tracked while those ran started a stop of its own (Track, once the flag is set); stopping everything
+        // is over only when no stop is in flight — never by the order a signal and an accept happened to interleave.
+        await InFlightAsync();
+    }
+
+    private async Task InFlightAsync()
+    {
+        while (true)
+        {
+            Task[] pending;
+            lock (_gate)
+            {
+                pending = [.. _stops.Values];
+            }
+            if (pending.Length == 0)
+            {
+                return;
+            }
+            await Task.WhenAll(pending);
+        }
     }
 
     private async Task EndAsync(IManagedChild child, TimeSpan grace)

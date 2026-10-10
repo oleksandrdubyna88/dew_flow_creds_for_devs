@@ -45,6 +45,8 @@ public sealed class AgentRelayConnectionTests : IDisposable
 
         public bool HasExited => _exited.Task.IsCompleted;
 
+        public int ExitCode => 0;
+
         public void CloseStdin()
         {
             Steps.Add("stdin closed");

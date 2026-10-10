@@ -37,6 +37,8 @@ public sealed class ChildLifetimeTests : IDisposable
 
         public bool HasExited => _exited.Task.IsCompleted;
 
+        public int ExitCode => 0;
+
         public void CloseStdin()
         {
             Steps.Add("stdin closed");
@@ -68,6 +70,8 @@ public sealed class ChildLifetimeTests : IDisposable
 
         public bool HasExited => _exited.Task.IsCompleted;
 
+        public int ExitCode => 0;
+
         public void CloseStdin()
         {
             Steps.Add("stdin closing");
@@ -88,6 +92,8 @@ public sealed class ChildLifetimeTests : IDisposable
 
         public bool HasExited => false;
 
+        public int ExitCode => throw new InvalidOperationException("still running");
+
         public void CloseStdin()
         {
             // Ignored.
@@ -104,6 +110,8 @@ public sealed class ChildLifetimeTests : IDisposable
         public int Id => 404;
 
         public bool HasExited => true;
+
+        public int ExitCode => throw new InvalidOperationException("No process is associated with this object.");
 
         public void CloseStdin() => throw new InvalidOperationException("No process is associated with this object.");
 
@@ -342,6 +350,29 @@ public sealed class ChildLifetimeTests : IDisposable
         await stopAll.WaitAsync(Bound, TestContext.Current.CancellationToken);
         await WaitUntilAsync(() => late.Steps.Count > 0);
         late.Steps.Should().Equal(["stdin closed"], "a child that arrives while the others are being stopped must not be left running");
+    }
+
+    [Fact]
+    public async Task Stopping_every_child_waits_for_the_stop_of_a_child_tracked_while_it_ran()
+    {
+        // Final code round, finding 2: a child tracked after the snapshot starts its own stop, and StopAllAsync must not
+        // return — the relay must not remove its socket and exit — until that stop has ended too.
+        using var lifetime = Lifetime(Hour, Hour);
+        var first = new SlowChild(20);
+        lifetime.Track(first);
+        var stopAll = Task.Run(() => lifetime.StopAllAsync(), TestContext.Current.CancellationToken);
+        await WaitUntilAsync(() => first.Steps.Contains("stdin closing"));
+
+        var late = new SlowChild(21);
+        lifetime.Track(late);
+        await WaitUntilAsync(() => late.Steps.Contains("stdin closing"));
+        first.Release.Set();
+        await Task.Delay(100, TestContext.Current.CancellationToken);
+
+        stopAll.IsCompleted.Should().BeFalse("the late child's stop is still in flight, and stopping everything is not over until it is");
+        late.Release.Set();
+        await stopAll.WaitAsync(Bound, TestContext.Current.CancellationToken);
+        late.Steps.Should().Equal(["stdin closing", "stdin closed"]);
     }
 
     [Fact]
