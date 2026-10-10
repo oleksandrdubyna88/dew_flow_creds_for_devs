@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 
 import { binaryIn, recordedVersion } from './binaryInstaller';
 import { CREDS_MCP, ridFor } from './credsInstall';
+import { describeError } from './describeError';
 import { MCP_CLIENT_TARGETS, installedMessage, mcpServerBlock } from './mcpClientConfig';
 import { parseDistros } from './wslRelay';
 import { runWsl, runWslOutcome, runWslRaw, runningDistros } from './wslProcess';
@@ -290,9 +291,17 @@ async function applyStaleChoice(
   expected: string,
   host: WslCheckHost,
 ): Promise<void> {
-  if (picked === 'Update') {
-    await updateWslInstall(distro, host);
-  } else if (picked === 'Not for this version') {
+  try {
+    await (picked === 'Update' ? updateWslInstall(distro, host) : dismissIf(picked, distro, expected, host));
+  } catch (error) {
+    // Its callers do not await it (a notification nobody clicks must not hold anything up), so a
+    // failure is said here rather than left as an unhandled rejection (own review, code round).
+    void vscode.window.showErrorMessage(`Could not finish that for ${distro}: ${describeError(error)}`);
+  }
+}
+
+async function dismissIf(picked: string | undefined, distro: string, expected: string, host: WslCheckHost): Promise<void> {
+  if (picked === 'Not for this version') {
     await dismissForVersion(host.state, distro, expected);
   }
 }
@@ -327,7 +336,12 @@ async function staleAfterInstall(distro: string, host: WslCheckHost): Promise<bo
   if (!canJudge(expected)) {
     return false;
   }
-  const result = await checkDistro(checkDeps(host), distro, expected);
+  // Under a progress notification: the probe may take its whole bound, and the install must not
+  // look hung meanwhile (code round, finding 4).
+  const result = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Checking the MCP server just installed in ${distro}…` },
+    () => checkDistro(checkDeps(host), distro, expected),
+  );
   if (result.kind !== 'verdict' || result.verdict.kind !== 'older') {
     return false;
   }

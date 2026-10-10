@@ -6,6 +6,7 @@ import {
   TRANSLATE_TIMEOUT_MS,
   WslSpawner,
   runWslBounded,
+  OUTPUT_CAP_BYTES,
   runWslOutcome,
   runningDistros,
   translateWindowsPath,
@@ -244,4 +245,25 @@ test('a listing that hangs or fails answers "none running", so nothing is then a
   const failed = new FakeChild();
   says(failed, '', 1);
   assert.deepEqual(await runningDistros(1_000, spawning(failed).spawn), []);
+});
+
+test('a child that prints without end is held to a bounded buffer, not the extension host\'s memory', async () => {
+  // Code round, finding 2: the activation check runs a recorded binary unattended. Whatever it prints,
+  // only the first OUTPUT_CAP_BYTES are kept — the version lines are at the very top.
+  const child = new FakeChild();
+  const { spawn } = spawning(child);
+  setImmediate(() => {
+    child.stdout.emit('data', Buffer.from('creds-mcp 0.12.0\n'));
+    for (let i = 0; i < 64; i += 1) {
+      child.stdout.emit('data', Buffer.alloc(64 * 1024, 0x61));
+    }
+    child.emit('close', 0);
+  });
+
+  const outcome = await runWslOutcome(['-e', '/x', '--version'], 1_000, spawn);
+
+  assert.equal(outcome.kind, 'exited');
+  const stdout = outcome.kind === 'exited' ? outcome.stdout : '';
+  assert.ok(stdout.length <= OUTPUT_CAP_BYTES, `kept ${stdout.length} bytes of an endless answer`);
+  assert.ok(stdout.startsWith('creds-mcp 0.12.0\n'), 'the top of the answer is what is kept');
 });

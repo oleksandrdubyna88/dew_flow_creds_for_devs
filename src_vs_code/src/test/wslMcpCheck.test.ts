@@ -214,3 +214,22 @@ test('a recorded path the probe cannot pass safely is refused, not run', async (
   assert.equal(result.kind, 'refused');
   assert.deepEqual(w.probed, []);
 });
+
+test('a distribution named like an object property is not mistaken for a recorded one', async () => {
+  // Code round, finding 3: `{}`'s inherited `constructor`/`toString` must not read as an install.
+  const w = world(['constructor', 'toString']);
+  await rememberInstall(w.state, 'Ubuntu', install);
+
+  assert.deepEqual(await checkDistro(w.deps, 'constructor', '0.12.0'), { kind: 'not-recorded', distro: 'constructor' });
+  assert.deepEqual(await checkDistro(w.deps, 'toString', '0.12.0'), { kind: 'not-recorded', distro: 'toString' });
+  assert.equal(recordedInstall(w.state, '__proto__'), undefined);
+  assert.deepEqual(w.probed, []);
+});
+
+test('a RECORDED distribution named like an object property is still due at activation', async () => {
+  // The daily clock and the dismissal are maps too: an inherited `constructor` must not read as a stamp.
+  const w = world(['constructor']);
+  await rememberInstall(w.state, 'constructor', install);
+
+  assert.deepEqual(await reported(w), ['constructor']);
+});

@@ -1013,6 +1013,18 @@ Named rather than implied, because the rule asks for exactly this.
   VS Code re-serializes a `Uri`, so a percent-encoded `%26`, `%2F` or `%2B` inside a query value may
   not reach the browser as stored. The judge keeps the query as stored; the editor's last step is
   unverified.
+- **The stale WSL MCP install check (2026-10-10, E4.S2 of
+  [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md) §5.8).** No
+  harness clicks *Install… → Check the WSL MCP install* or answers its dialog. What stands in: the verdict
+  over E2's real `--version` format, the probe's argv and its refusals (`wslMcpStale.test.ts`); when it runs
+  — never a stopped distribution, once a day, the dismissal, nothing spawned with nothing recorded, an
+  object-property distribution name (`wslMcpCheck.test.ts`); the bounded run's timeout-versus-exit, its
+  UTF-16 listing and its output cap (`wslProcess.test.ts`); the panel button being the palette's one id
+  (`wslMcpCheckButton.test.ts`). It was run once by hand, read-only, against the real bridge on a Windows
+  machine with two running distributions — the argv crossed `wsl.exe` and both pre-0.10.0 binaries read as
+  `older`. **The limit is exact**: a `current` verdict from a real 0.10.0 install has not been observed (no
+  such release existed yet), and the dialog and its Update are unexercised. The automated leg belongs in
+  `creds-mcp-wsl-itest.cjs`, which E5.S1 rewrites with run-unique directories.
 - **The Marketplace artefact.** `npm run package` runs in CI, and nothing installs the resulting
   `.vsix` into a real editor and opens it. The publish step is verified by reading the release run.
 - **The server and the extension end to end.** `server-transport-itest.cjs` would do it, and it is

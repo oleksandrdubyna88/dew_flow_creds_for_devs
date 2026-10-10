@@ -141,6 +141,15 @@ export async function runWslOutcome(
 
 type ByteOutcome = { kind: 'timeout' } | { kind: 'exited'; code: number | null; bytes: Buffer };
 
+/**
+ * How much of a child's stdout is kept — the rest is read and dropped (code round, finding 2).
+ *
+ * <p>The stale-install check runs a recorded binary unattended at activation; one that printed without
+ * end would otherwise grow the extension host's memory until the deadline. Every answer this module
+ * reads — a path, a distribution list, two version lines — sits far inside the first 64 KiB.</p>
+ */
+export const OUTPUT_CAP_BYTES = 64 * 1024;
+
 /** The one bounded spawn under both readings: text (above) and the UTF-16 a listing answers in (below). */
 async function runWslBytes(args: readonly string[], ms: number, spawn: WslSpawner): Promise<ByteOutcome> {
   const child = spawn(args);
@@ -162,8 +171,14 @@ async function runWslBytes(args: readonly string[], ms: number, spawn: WslSpawne
 function collect(child: childProcess.ChildProcess): Promise<ByteOutcome> {
   return new Promise((resolve) => {
     const chunks: Buffer[] = [];
+    let kept = 0;
     child.stdout?.on('data', (chunk: Buffer | string) => {
-      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk);
+      const bytes = typeof chunk === 'string' ? Buffer.from(chunk, 'utf8') : chunk;
+      const room = OUTPUT_CAP_BYTES - kept;
+      if (room > 0) {
+        chunks.push(bytes.subarray(0, room));
+        kept += Math.min(room, bytes.length);
+      }
     });
     child.on('error', () => resolve({ kind: 'exited', code: null, bytes: Buffer.alloc(0) }));
     child.on('close', (code: number | null) => resolve({ kind: 'exited', code, bytes: Buffer.concat(chunks) }));

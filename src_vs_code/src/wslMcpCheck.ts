@@ -52,7 +52,13 @@ export async function rememberInstall(state: CheckStore, distro: string, install
 
 /** The block last copied for `distro`, or nothing when this extension never set one up there. */
 export function recordedInstall(state: CheckStore, distro: string): RecordedWslInstall | undefined {
-  return installs(state)[distro];
+  // An OWN property only: a distribution named `constructor` or `toString` must not read `{}`'s
+  // inherited member as an install (code round, finding 3).
+  return ownValue(installs(state), distro);
+}
+
+function ownValue<T>(map: Readonly<Record<string, T>>, key: string): T | undefined {
+  return Object.hasOwn(map, key) ? map[key] : undefined;
 }
 
 /** *Not for this version*: stay quiet about `distro` at activation while `expected` is what this window ships. */
@@ -117,7 +123,7 @@ async function dueDistros(deps: WslCheckDeps, expected: string): Promise<string[
   const checked = mapAt<number>(deps.state, LAST_CHECKED);
   const dismissed = mapAt<string>(deps.state, DISMISSED);
   return recorded.filter(
-    (distro) => running.has(distro) && isDue(checked[distro], deps.now()) && dismissed[distro] !== expected,
+    (distro) => running.has(distro) && isDue(ownValue(checked, distro), deps.now()) && ownValue(dismissed, distro) !== expected,
   );
 }
 

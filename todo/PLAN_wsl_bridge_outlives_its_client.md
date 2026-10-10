@@ -960,3 +960,19 @@ again: the running-distribution filter removed → *"a STOPPED distribution is n
 *"per distribution"* red; the Windows half left unjudged → four verdict tests red, *"an older WINDOWS half is older
 even when the Linux half is current"* first; a missing version read as current → four red; the panel button
 removed from the manifest → two red. Full extension suite: 5531 tests, 5527 pass, 0 fail, 4 skipped.
+
+**Code round (2026-10-10, same session) — `proceed`**, gating 3 against threshold 5, **4 of 12 reviewers answered**
+(codex's four roles; gemini rate-limited, the local engine misconfigured — one vendor's verdict).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | The flow has no scenario test and `module_tests.md` does not name it | **accepted in part** — `module_tests.md` now names the flow, what stands in for a harness and its exact limit, and the one read-only manual run against the real bridge; **the scenario leg itself is not added here**: the only harness that can drive it is the manual WSL itest, which deletes and rebuilds a `/tmp` tree inside the distribution and is what E5.S1 rewrites with run-unique directories — the leg belongs to that rewrite |
+| 1 | The per-distribution maps are written as whole-map read-modify-write | **rejected** — within one window the read and the write are one synchronous step and a `Memento` reflects an `update` immediately, so two installs cannot interleave; across two windows the loss is one record, which degrades to the explicit *not recorded* path whose remedy (Update) restores it; the same whole-map shape holds the CLI aliases (`ALIAS_KEY`) |
+| 2 | The bounded run buffers unlimited stdout until the deadline | **accepted** — `OUTPUT_CAP_BYTES` (64 KiB) kept, the rest read and dropped; RED (*"kept 4194321 bytes of an endless answer"*) → GREEN → RED again with the cap removed |
+| 3 | A distribution named `constructor`/`toString` reads an inherited member as an install | **accepted** — own-property reads for all three maps; RED (*"TypeError: Cannot read properties of undefined (reading 'startsWith')"*) → GREEN → RED again, plus the same for the daily clock |
+| 4 | The post-install probe can look like a hung install | **accepted** — it runs under a progress notification (UI only; no unit test can observe it) |
+| 5 | Activation probes distributions serially | **rejected** — deliberate: one `wsl.exe` at a time at activation, each bounded at 15 s, fire-and-forget off the activation path; the recorded set is the distributions a person installed into through this extension, one or two in practice |
+
+Own review (a separate reviewer, same time): no high-confidence defect; its minor note that `offerStale` is not
+awaited at two call sites, so a failing Update or dismissal would surface as an unhandled rejection, was taken — the
+choice is applied under a `try` that shows the error.
