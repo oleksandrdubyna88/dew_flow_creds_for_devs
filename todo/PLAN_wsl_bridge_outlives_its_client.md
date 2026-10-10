@@ -746,3 +746,11 @@ plan's status line and §14, the `todo/README.md` row); E4.S1's record and behav
 | # | Finding | Decision |
 |---|---|---|
 | 0 | `src_mcp` has no `research/module_*.md` of its own (raised a second time, now as blocking) | **accepted** — reversing the code round's rejection: the knowledge-base rule asks for a module doc per module, and the server had only paragraphs in `architecture.md`. [module_mcp.md](../research/module_mcp.md) now holds its purpose, diagram, entities, entry points, lifetime, dependencies and tests, linked from `architecture.md`'s module map and `research/README.md` |
+
+**PR #211's automated reviewers.** CodeRabbit (it reviewed this time) raised two README sentences, both accurate and
+fixed: the kill switch is for a launcher that starts `creds-mcp` as a child and exits (an `exec`ing one is replaced
+by it), and `--version` checks the executable that ran, so an install is checked by the path the client's config
+names. **Pre-merge checkpoint round (`again`) — `proceed`**, gating 1 against threshold 5, 4 of 12 reviewers
+answered (codex; gemini rate-limited, the local engine misconfigured): the shell intermediary of the parent-watch
+test raised again — **rejected** again, on the code round's reason (the plan's own E2.S4 test, exe + argv, nothing
+interpolated).
