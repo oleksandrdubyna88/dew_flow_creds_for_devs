@@ -24,12 +24,37 @@ public sealed class VersionTests : IDisposable
         Program.Classify(["-v"]).Should().Be(Program.Startup.Usage, "one spelling, the one the check sends");
     }
 
+    /// <summary>What <c>--version</c> writes, as lines, for this bridge.</summary>
+    private static async Task<string[]> VersionLinesAsync(bool insideWsl, WindowsBridge half)
+    {
+        using var output = new StringWriter();
+        await Program.WriteVersionAsync(output, insideWsl, Program.AskWindowsHalf(half), half.WindowsBinary());
+        return output.ToString().Split(output.NewLine, StringSplitOptions.RemoveEmptyEntries);
+    }
+
     [Fact]
     public async Task Natively_it_is_one_line_from_the_same_source_as_the_protocols_server_info()
     {
-        var text = await Program.VersionTextAsync(insideWsl: false, WslInterop.CredsMcp);
+        var lines = await VersionLinesAsync(insideWsl: false, WslInterop.CredsMcp);
 
-        text.Should().Be($"creds-mcp {Program.Version}");
+        lines.Should().Equal($"creds-mcp {Program.Version}");
+    }
+
+    [Fact]
+    public async Task This_builds_line_is_out_before_the_windows_half_is_asked()
+    {
+        // Final code round, finding 2: a slow Windows half must not hide what this binary already knows.
+        var ct = TestContext.Current.CancellationToken;
+        var probe = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var output = new StringWriter();
+
+        var writing = Program.WriteVersionAsync(output, insideWsl: true, () => probe.Task, "creds-mcp.exe");
+        await Task.Delay(50, ct);
+
+        output.ToString().Should().Be($"creds-mcp {Program.Version}{output.NewLine}", "the probe has not answered yet");
+        probe.SetResult("creds-mcp 9.9.9");
+        await writing.WaitAsync(TimeSpan.FromSeconds(10), ct);
+        output.ToString().Should().EndWith($"windows half: creds-mcp 9.9.9 (creds-mcp.exe){output.NewLine}");
     }
 
     [Fact]
@@ -38,9 +63,9 @@ public sealed class VersionTests : IDisposable
         // The built binary stands in for the Windows half: the same probe, a real process, a real answer.
         var half = new WindowsBridge(HostProcess.Binary("creds-mcp"), "CREDS_TEST_UNSET_" + Guid.NewGuid().ToString("N"));
 
-        var text = await Program.VersionTextAsync(insideWsl: true, half);
+        var lines = await VersionLinesAsync(insideWsl: true, half);
 
-        text.Split('\n').Should().Equal(
+        lines.Should().Equal(
             $"creds-mcp {Program.Version}",
             $"windows half: creds-mcp {Program.Version} ({HostProcess.Binary("creds-mcp")})");
     }
@@ -50,17 +75,18 @@ public sealed class VersionTests : IDisposable
     {
         var half = new WindowsBridge(Path.Combine(_root, "no-such-binary.exe"), "CREDS_TEST_UNSET_" + Guid.NewGuid().ToString("N"));
 
-        var text = await Program.VersionTextAsync(insideWsl: true, half);
+        var lines = await VersionLinesAsync(insideWsl: true, half);
 
-        text.Should().EndWith($"windows half: not started ({half.WindowsBinary()})");
+        lines[^1].Should().Be($"windows half: not started ({half.WindowsBinary()})");
     }
 
     [Theory]
-    [InlineData(null, "older than --version")]
-    [InlineData("", "older than --version")]
+    [InlineData(null, "older than --version, or no answer")]
+    [InlineData("", "answered without a version")]
+    [InlineData(" \r\n ", "answered without a version")]
     [InlineData("creds-mcp 0.45.0\r\n", "creds-mcp 0.45.0")]
     [InlineData("\n  creds-mcp 0.45.0  \nsecond", "creds-mcp 0.45.0")]
-    public void An_old_windows_half_answers_with_a_usage_error_which_reads_as_older(string? stdout, string answer) =>
+    public void No_answer_an_empty_answer_and_a_version_are_three_different_words(string? stdout, string answer) =>
         Program.WindowsHalfAnswer(stdout).Should().Be(answer);
 
     [Fact]

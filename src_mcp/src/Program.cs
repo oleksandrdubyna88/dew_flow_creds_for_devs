@@ -110,7 +110,7 @@ internal static class Program
                 return 0;
 
             case Startup.Version:
-                await Console.Out.WriteLineAsync(await VersionTextAsync(WslInterop.ShouldRelayHere(), WslInterop.CredsMcp));
+                await WriteVersionAsync(Console.Out, WslInterop.ShouldRelayHere(), AskWindowsHalf(WslInterop.CredsMcp), WslInterop.CredsMcp.WindowsBinary());
                 return 0;
 
             case Startup.Usage:
@@ -281,24 +281,29 @@ internal static class Program
     /// <para>Inside WSL a second line asks the Windows half with the same bounded, hermetic probe the
     /// <c>--caller</c> check uses, and names the executable it asked. A half older than this flag answers with a
     /// usage error — a non-zero exit, read as <c>older than --version</c>; one that cannot be started is said so.</para>
+    /// <para>This build's line is written FIRST and flushed before the probe starts (final code round, finding 2):
+    /// a Windows half that is slow to start must not hide the answer this binary already has.</para>
     /// </remarks>
-    internal static async Task<string> VersionTextAsync(bool insideWsl, WindowsBridge windowsHalf)
+    internal static async Task WriteVersionAsync(TextWriter output, bool insideWsl, Func<Task<string?>> askWindowsHalf, string windowsPath)
     {
-        var mine = $"creds-mcp {Version}";
-        if (!insideWsl)
+        await output.WriteLineAsync($"creds-mcp {Version}");
+        await output.FlushAsync();
+        if (insideWsl)
         {
-            return mine;
+            await output.WriteLineAsync($"windows half: {await WindowsHalfAsync(askWindowsHalf)} ({windowsPath})");
         }
-        var answer = await AskWindowsHalfAsync(windowsHalf);
-        return $"{mine}\nwindows half: {answer} ({windowsHalf.WindowsBinary()})";
     }
 
+    /// <summary>The hermetic, bounded <c>--version</c> probe of one Windows half.</summary>
+    internal static Func<Task<string?>> AskWindowsHalf(WindowsBridge windowsHalf) =>
+        () => windowsHalf.CaptureAsync(["--version"], CallerForwarding.ProbeTimeout);
+
     /// <summary>The Windows half's own first line, or why there is none.</summary>
-    private static async Task<string> AskWindowsHalfAsync(WindowsBridge windowsHalf)
+    private static async Task<string> WindowsHalfAsync(Func<Task<string?>> askWindowsHalf)
     {
         try
         {
-            return WindowsHalfAnswer(await windowsHalf.CaptureAsync(["--version"], CallerForwarding.ProbeTimeout));
+            return WindowsHalfAnswer(await askWindowsHalf());
         }
         catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
@@ -306,11 +311,21 @@ internal static class Program
         }
     }
 
-    /// <summary>The probe's stdout as one line; no answer (a usage error, a timeout) is an older half.</summary>
+    /// <summary>
+    /// The probe's stdout as one line. Three different facts, three different words (final code round, finding 1):
+    /// no answer at all — a usage error or a timeout, which is what a half older than this flag gives — is not the
+    /// same as an answer that holds no version.
+    /// </summary>
     internal static string WindowsHalfAnswer(string? stdout) =>
-        stdout?.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) is [var first, ..]
-            ? first
-            : "older than --version";
+        stdout switch
+        {
+            null => "older than --version, or no answer",
+            _ when FirstLine(stdout) is { Length: > 0 } first => first,
+            _ => "answered without a version",
+        };
+
+    private static string FirstLine(string text) =>
+        text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) is [var first, ..] ? first : string.Empty;
 
     /// <summary>
     /// Serve one session over <paramref name="transport"/> until the client, a signal or the parent ends it.

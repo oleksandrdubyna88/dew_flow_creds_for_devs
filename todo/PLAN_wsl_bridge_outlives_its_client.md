@@ -722,3 +722,12 @@ last, and `UseTools.RotateAsync` takes a `Rotation` record instead of eight para
 became `Windows.ReadFromAsync` and is driven against the stub window in-process, the grant and bearer posts are
 cancelled in-process, the parent-watch decision runs through `Program.WatchParent(log, env)` in a test, and on
 Linux/macOS a real SIGHUP is sent to the test process to prove the handler runs and the default disposition does not.
+
+**Checkpoint code round after the SonarCloud fixes (`again`, 2026-10-10) — `proceed`**, gating 2 against threshold 5,
+**4 of 8 reviewers answered** (codex; gemini rate-limited).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | The lifetime flow has no scenario-harness test | **rejected** — it has one, in the shape `scenario-tests.md` names first: the C# suite drives the BUILT binary over its real transport (stdio JSON-RPC) with a real client's captured session, in CI on Linux and macOS (`ServerEndsWithClientTests`, `ToolCancellationTests`, `ParentWatchProcessTests`), and `module_tests.md` names them; the same flow across the real WSL bridge is E5.S1's node itest, as §10 orders |
+| 1 | `--version` reads "no answer" and "an empty answer" as the same state | **accepted** — three words: `older than --version, or no answer` (null: a usage error or a timeout), `answered without a version` (empty), the version itself; RED (*"Expected Program.WindowsHalfAnswer(stdout) to be … but they differ"*, three cases) → GREEN → RED again with the empty case folded back |
+| 2 | `--version` inside WSL holds this build's line until the Windows half answers | **accepted** — `WriteVersionAsync` writes and flushes this build's line before the probe starts; the test holds the probe open and reads the first line (written against the new seam, so its teeth were proven by break-it: the probe moved first → red) |

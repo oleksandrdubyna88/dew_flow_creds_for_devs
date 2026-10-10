@@ -561,9 +561,11 @@ flowchart TB
   with a start-time check that catches a reused pid; `getppid()` every 2 s elsewhere. **Off** for the Windows
   half of the bridge (`CREDS_RELAYED_FROM_WSL` — its parent is the distribution's session-long `wsl.exe`),
   for a process that started with ppid 1, and with `CREDS_MCP_NO_PARENT_WATCH=1`.
-- **`creds-mcp --version`** prints `creds-mcp <version>`; inside WSL a second line,
-  `windows half: <its answer> (<the executable asked>)`, where a half too old for the flag reads
-  `older than --version`.
+- **`creds-mcp --version`** prints `creds-mcp <version>` at once; inside WSL a second line follows once the
+  Windows half has answered, `windows half: <its answer> (<the executable asked>)` — where no answer (a usage
+  error, which is what a half too old for the flag gives, or a timeout) reads `older than --version, or no
+  answer`, an answer with no version in it `answered without a version`, and a half that cannot be started
+  `not started`.
 
 The Linux half of the bridge (the pump) and the SSH-agent relay get the same guarantees in the plan's E3.
 
