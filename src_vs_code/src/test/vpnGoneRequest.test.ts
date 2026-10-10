@@ -384,6 +384,39 @@ test('a client gone while a step’s Continue question is open: Continue runs no
   }
 });
 
+test('a client gone while a step’s Continue question is open: Stop runs nothing more, and the typed step is still named (code round 2)', async () => {
+  // The question was asked of a live request; the client left while it sat open; the person clicked Stop.
+  // The chain stops without passing its post-step check — and a plain refusal would read "not launched"
+  // about a step the shell already ran.
+  const request = new AbortController();
+  const only: EntityMetadata = { id: 'a', name: 'only', isSshEnabled: false, isTerminal: true, command: 'only-step', terminalOs: hostOs };
+  const nodes = { a: only, ...wireguard({ dependsOn: ['a'], runDependencies: true }) };
+  const w = world({ 'only-step': 1 }, { holdDialogs: /exited with code/ });
+  const run = startVpn(w, nodes, { startGate: request.signal, mocks: CLI });
+  await until(() => w.held.length === 1, 'the Continue question');
+
+  request.abort();
+  w.held[0].answer('Stop');
+  const { started, dir, ended } = await run;
+  try {
+    assert.deepEqual(w.terminals.flatMap((t) => t.executed), ['only-step']);
+    assert.deepEqual(filesUnder(dir), []);
+    assert.equal(started, false);
+    endedAfterATypedStep(ended);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('an unexpected failure inside a start is NOT read as a request’s end — the test world rethrows it (code round 2)', async () => {
+  // A vault that will not answer the config read is a failure, not an abandoned request: it must reach the
+  // test, never hide behind a passing "nothing started".
+  const w = world({});
+  const broken = storageOf(wireguard(), () => Promise.reject(new Error('the vault would not answer')));
+
+  await assert.rejects(startVpn(w, wireguard(), { startGate: new AbortController().signal, storage: broken, mocks: CLI }), /the vault would not answer/);
+});
+
 test('the built-in start: a client gone while the config is read AFTER a typed step is journalled with the step (code round 1)', async () => {
   // The chain ran to its end while the client was there; the client left during the config read that
   // follows. The later gate answers "nothing started" — and the journal would say "not launched" about a

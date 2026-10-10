@@ -4103,9 +4103,11 @@ flowchart LR
   can come from two module graphs, and never the error's shape, since a foreign `AbortError` with a `stage` of its
   own must not put unmasked words into the journal). The dependency chain throws
   `endedAfter('a dependency step had been typed')` from `settle` (before any *Continue* question) and after each step
-  in `runAll` (a *Continue* answered after the client left); a chain that ran to its end answers a `ChainEnd`
-  (`ready`, `typed`), and `vpnLauncherRun.afterTheChain` throws the same end when nothing started, the chain had
-  typed, and the request has gone since — a client gone during the config read AFTER a live step (code round 1).
+  in `runAll` (a *Continue* answered after the client left) and from `stopped` when a chain that had typed a step
+  stops for a gone request (a *Stop* answered after the client left — code round 2); a chain that ran to its end
+  answers a `ChainEnd` (`ready`, `typed`), and `vpnLauncherRun.afterTheChain` throws the same end when nothing
+  started, the chain had typed, and the request has gone since — a client gone during the config read AFTER a
+  live step (code round 1).
   `brokerResponse.failed` hands the stage to `Delivery.fail(reason, actionRan, ended?)`, and the journal line reads
   *the client left after a dependency step had been typed — it is the shell's and is not taken back; nothing more was
   started*. Before any step was typed the chain answers `ready: false` as before, the person's own chain (no gate)

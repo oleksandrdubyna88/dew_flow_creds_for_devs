@@ -1295,13 +1295,16 @@ end to end); consultants before the person.
   `refuseAndOfferTheFix` take the gate as a REQUIRED `AbortSignal | undefined`; the five existing test calls pass
   `undefined`, the person's click.
 - `RequestEndedError.stage`, `NOT_LAUNCHED` (one literal, shared with `brokerCall`'s fallback), `endedAfter(what)`
-  and `endedStage(error)`. **Deviation:** `endedStage` recognises the error by SHAPE — an `AbortError` carrying a
-  string `stage` — never by `instanceof`: the broker and the action that threw can come from two module graphs (the
-  test harness loads each under its own `vscode` stub; a bundler may split them), and the first version's
-  `instanceof` would have fallen back to *not launched* in exactly the test written to prove the opposite. The chain
-  throws from `settle` (before any *Continue* question) and from `runAll` after each step (a *Continue* answered after
-  the client left); `Delivery.fail(reason, actionRan, ended?)`; `failedOrAbandoned` journals
-  `ended ?? (ran ? cancelled : NOT_LAUNCHED)`.
+  and `endedStage(error)`. **Deviation:** `endedStage` recognises the error by a `Symbol.for` BRAND it carries —
+  never by `instanceof`: the broker and the action that threw can come from two module graphs (the test harness
+  loads each under its own `vscode` stub; a bundler may split them), and the first version's `instanceof` would
+  have fallen back to *not launched* in exactly the test written to prove the opposite — and never by the error's
+  shape, which the first commit read and the own review refused: a foreign `AbortError` carrying a `stage` must
+  not put unmasked words into the journal. The chain throws from `settle` (before any *Continue* question), from
+  `runAll` after each step (a *Continue* answered after the client left) and from `stopped` when a chain that had
+  typed a step stops for a gone request (a *Stop* answered after the client left — code round 2); a chain that ran
+  to its end answers a `ChainEnd` whose `typed` reaches `afterTheChain` (code round 1);
+  `Delivery.fail(reason, actionRan, ended?)`; `failedOrAbandoned` journals `ended ?? (ran ? cancelled : NOT_LAUNCHED)`.
 - The typed `deps()`: the REAL `StorageManager` through `pinWorld.memoryStorage` + `seedEntry` (reused, not copied),
   `world()` async, the seven `as never` casts gone; the two `describeOutcome` casts went with them (a
   `UseActionResult` has `body: unknown`).
@@ -1342,3 +1345,18 @@ every copy of the module) and only the brand is read (RED: a forged `AbortError`
 request's end → GREEN → RED again with the brand check loosened). Nothing found on the other awaits of the SSH
 path, the person's Connect, the chain's callers (`runCommands` has no gate and never throws), file sizes or
 complexity.
+
+**E4.S4 code round 2 (`again`, 2026-10-10) — `proceed`**, gating 3 against threshold 5, **4 of 4 reviewers
+answered** (codex's four roles — one vendor's verdict).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | the *What shipped* bullet still said `endedStage` reads the error's SHAPE, while the code reads the brand | **accepted** — the sentence corrected above; the as-built paragraph in §5.7 already said brand |
+| 1 | `vpnWorld.startVpn` turned EVERY throw into `started: false` with an `ended`, so an unexpected storage or terminal error could hide behind a passing "nothing started" | **accepted** — only a branded request's end is handed back; anything else is rethrown. A test hands the start a vault that throws and expects the rejection |
+| 2 | a *Stop* (or a dismissal) on a *Continue* question the client left open answers `next: false` and `runAll` returned `{ ready: false, typed: true }` without the post-step check — the journal then said *not launched* about a step the shell ran | **accepted** — `stopped(typed, startGate)`: a chain that stops after a typed step reads the gate and throws the request's end. RED first (*"the start answered as if nothing had been typed — the journal would say 'not launched'"*, the question held open, the client gone, *Stop* clicked) → GREEN → RED again with the check removed. The own review of the delta found the same path independently (and a second one — a terminal closed at the next step after a typed one — which the same helper covers, though no client can leave between a settled step and the next step's entry without an await) |
+| 3 | the entry's PIN box stays open after the agent disconnects | **rejected** — round 1's finding 4, no new argument: the recorded open tail |
+
+Own review of the delta (a separate reviewer): finding 2 above, independently; the brand is an own enumerable
+instance field a second module graph reads, and a forged `AbortError` fails it; no other await in
+`connectionOptions` without a gate; `tally` survives the world's spread by reference; no new `as never` in the two
+fixtures; every touched function at complexity ≤ 4.

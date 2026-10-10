@@ -228,13 +228,26 @@ async function runAll(terminal: vscode.Terminal, integration: Integration, steps
     const end = await runStep(terminal, integration, step, startGate);
     typed = typed || end.typed;
     if (!end.next) {
-      return { ready: false, typed };
+      return stopped(typed, startGate);
     }
     // The step is the shell's now. A client gone while it ran — or while its Continue question sat open, which
     // is an await the step's own check sits before — is told so, not "not launched".
     typedAndStillWanted(startGate);
   }
   return { ready: true, typed };
+}
+
+/**
+ * A chain that stopped — a refused step, a *Stop* on its question, a closed terminal. After a typed step, a
+ * client gone since is told so here too: a *Stop* clicked on a question the client left open answers
+ * `next: false` without passing the post-step check, and a plain refusal would read as "not launched"
+ * (code round 2). A live request's stop stays a plain refusal.
+ */
+function stopped(typed: boolean, startGate: AbortSignal | undefined): ChainEnd {
+  if (typed) {
+    typedAndStillWanted(startGate);
+  }
+  return { ready: false, typed };
 }
 
 /** One step's end: whether the chain goes on, and whether the step was handed to the shell at all. */

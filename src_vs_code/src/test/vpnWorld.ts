@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { loadWithVscode } from './vscodeStub';
+import { endedStage } from '../requestLife';
 import { EntityMetadata } from '../types';
 
 /**
@@ -240,7 +241,9 @@ export interface StartOptions {
  * Start (or stop) the VPN entry `vpn` of `nodes`, in a fresh storage directory.
  *
  * <p>`ended` is the request's end THROWN from inside the start — a chain that had typed a step when the
- * client left says so that way (E4.S4) — caught here so the directory is still handed back for cleanup.</p>
+ * client left says so that way (E4.S4) — caught here so the directory is still handed back for cleanup.
+ * ONLY that: any other failure is rethrown, so an unexpected storage or terminal error still fails the
+ * test instead of hiding behind `started: false` (code round 2).</p>
  */
 export async function startVpn(w: World, nodes: Record<string, EntityMetadata>, o: StartOptions = {}): Promise<{ started: boolean; dir: string; ended?: Error }> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-chain-'));
@@ -250,7 +253,7 @@ export async function startVpn(w: World, nodes: Record<string, EntityMetadata>, 
   try {
     return { started: await runVpn(target, actionOf(o), storage, dir, { noteUserActivity: () => undefined }, memoryTrust(), o.startGate), dir };
   } catch (error) {
-    return { started: false, dir, ended: asError(error) };
+    return { started: false, dir, ended: requestsEnd(error) };
   }
 }
 
@@ -258,8 +261,12 @@ function actionOf(o: StartOptions): 'start' | 'stop' {
   return o.action ?? 'start';
 }
 
-function asError(error: unknown): Error {
-  return error instanceof Error ? error : new Error(String(error));
+/** The thrown request's end — or the throw itself, for anything that is not one. */
+function requestsEnd(error: unknown): Error {
+  if (endedStage(error) === undefined) {
+    throw error;
+  }
+  return error as Error;
 }
 
 /** Every file under `dir` — what a start left on disk. */
