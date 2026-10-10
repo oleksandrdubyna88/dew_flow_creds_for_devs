@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
-import { setTimeout as delay } from 'node:timers/promises';
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import {
   Clipboard,
   clearIfUnchanged,
@@ -35,24 +34,50 @@ class FakeClipboard implements Clipboard {
   }
 }
 
-test('a secret left untouched is wiped when its time is up', async () => {
+/**
+ * Every timing test here runs on `node:test`'s mocked `setTimeout`, never on the wall clock.
+ *
+ * <p>They measure windows of tens of milliseconds, and on real timers a loaded machine that overslept one
+ * short wait saw a wipe fire early and failed a full run about once (*copying the same secret again…*,
+ * queued for PLAN_wsl_bridge_outlives_its_client.md E5). On the mocked clock time moves only when
+ * {@link advance} says so, by exactly that much, so each assertion is about the order of deadlines —
+ * the thing under test — and never about how busy the machine was.</p>
+ */
+function mockedClock(t: TestContext): void {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+}
+
+/**
+ * Move the mocked clock, then let the wipe that fired finish: its callback starts an async
+ * read-then-write of the clipboard, which settles on promise callbacks, not on timers.
+ */
+async function advance(t: TestContext, ms: number): Promise<void> {
+  t.mock.timers.tick(ms);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+}
+
+test('a secret left untouched is wiped when its time is up', async (t) => {
+  mockedClock(t);
   const clipboard = new FakeClipboard();
 
   await copySecret(clipboard, 'hunter2', 10);
   assert.equal(clipboard.peek(), 'hunter2', 'it must be pastable immediately');
 
-  await delay(40);
+  await advance(t, 9);
+  assert.equal(clipboard.peek(), 'hunter2', 'not a millisecond early');
+  await advance(t, 1);
 
   assert.equal(clipboard.peek(), '', 'the secret must not outlive its window');
 });
 
-test("a secret the user has replaced is left alone — we never wipe somebody else's data", async () => {
+test("a secret the user has replaced is left alone — we never wipe somebody else's data", async (t) => {
+  mockedClock(t);
   const clipboard = new FakeClipboard();
 
   await copySecret(clipboard, 'hunter2', 10);
   clipboard.setExternally('a paragraph the user copied afterwards');
 
-  await delay(40);
+  await advance(t, 10);
 
   assert.equal(clipboard.peek(), 'a paragraph the user copied afterwards');
 });
@@ -65,12 +90,13 @@ test('clearing reports whether it actually cleared', async () => {
   assert.equal(await clearIfUnchanged(clipboard, 'secret'), false, 'already gone');
 });
 
-test('an empty value never triggers a wipe of unrelated clipboard content', async () => {
+test('an empty value never triggers a wipe of unrelated clipboard content', async (t) => {
+  mockedClock(t);
   const clipboard = new FakeClipboard();
   clipboard.setExternally('something the user copied');
 
   await copySecret(clipboard, '', 10);
-  await delay(40);
+  await advance(t, 10);
 
   assert.equal(shouldClear('something the user copied', ''), false);
 });
@@ -106,30 +132,35 @@ test('the configured clipboard TTL is used, and nonsense falls back to the defau
  * clipboard and wipes it, EARLIER than the message just told them. A copy must therefore cancel
  * the wipe it is superseding.
  */
-test('copying the same secret again restarts its window instead of racing the first', async () => {
+test('copying the same secret again restarts its window instead of racing the first', async (t) => {
+  mockedClock(t);
   const clipboard = new FakeClipboard();
 
   await copySecret(clipboard, 'hunter2', 30);
-  await delay(20);
+  await advance(t, 20);
   await copySecret(clipboard, 'hunter2', 30); // the re-copy, 20ms into the first window
 
-  await delay(20); // now past the FIRST timer's deadline, well short of the second's
+  await advance(t, 20); // now past the FIRST timer's deadline, well short of the second's
   assert.equal(
     clipboard.peek(),
     'hunter2',
     "the superseded copy's timer must not wipe the window the person was just promised",
   );
 
-  await delay(30);
+  await advance(t, 10); // exactly the second window's end
   assert.equal(clipboard.peek(), '', 'and the new window still ends');
 });
 
-test('a superseded timer never wipes a DIFFERENT secret copied after it', async () => {
+test('a superseded timer never wipes a DIFFERENT secret copied after it', async (t) => {
+  mockedClock(t);
   const clipboard = new FakeClipboard();
 
   await copySecret(clipboard, 'first', 30);
   await copySecret(clipboard, 'second', 300);
 
-  await delay(60);
+  await advance(t, 60);
   assert.equal(clipboard.peek(), 'second', "the first copy's deadline is not the second's");
+
+  await advance(t, 240);
+  assert.equal(clipboard.peek(), '', 'and the second keeps its own deadline');
 });
