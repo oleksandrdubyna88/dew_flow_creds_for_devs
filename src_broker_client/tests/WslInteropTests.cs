@@ -160,6 +160,9 @@ public class WslInteropTests
         start.RedirectStandardError.Should().BeFalse("a diagnostic from the Windows side reaches the terminal");
         start.ArgumentList.Should().Equal("config", "-");
         start.Environment[WslInterop.RelayedVariable].Should().Be("1");
+        start.Environment[WslInterop.WslEnvVariable].Should().Contain(
+            WslInterop.RelayedVariable,
+            "the variable crosses the bridge only when WSLENV names it (E3: the Windows half watched the wrong parent without it)");
     }
 
     [Fact]
@@ -180,5 +183,20 @@ public class WslInteropTests
     public void The_two_override_variables_are_not_the_same_name()
     {
         WslInterop.McpBinaryOverrideVariable.Should().NotBe(WslInterop.BinaryOverrideVariable);
+    }
+
+    [Theory]
+    [InlineData(null, "CREDS_RELAYED_FROM_WSL")]
+    [InlineData("", "CREDS_RELAYED_FROM_WSL")]
+    [InlineData("CREDS_ENDPOINT_DIR/p", "CREDS_ENDPOINT_DIR/p:CREDS_RELAYED_FROM_WSL")]
+    [InlineData("CREDS_RELAYED_FROM_WSL", "CREDS_RELAYED_FROM_WSL")]
+    [InlineData("A:CREDS_RELAYED_FROM_WSL/u:B", "A:B:CREDS_RELAYED_FROM_WSL")]
+    [InlineData("CREDS_RELAYED_FROM_WSL/w", "CREDS_RELAYED_FROM_WSL")]
+    public void The_relayed_variable_is_appended_to_the_persons_WSLENV_once(string? existing, string expected)
+    {
+        // A person's own list (the itests name CREDS_ENDPOINT_DIR/p there) is kept; ours is added once, as the bare
+        // name — an entry somebody gave a /u flag (Windows-to-WSL only) would otherwise keep the marker on this side
+        // (checkpoint round, finding 2).
+        WslInterop.WslEnvFor(existing).Should().Be(expected);
     }
 }

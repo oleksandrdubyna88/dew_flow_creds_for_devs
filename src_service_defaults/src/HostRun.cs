@@ -63,6 +63,24 @@ public sealed class HostRun
         return string.Concat(char.ToLowerInvariant(name[0]).ToString(), name[1..]);
     }
 
+    /// <summary>
+    /// The way out when a shutdown deadline passes: the exit line, the logger flushed and closed, then the process
+    /// ends through <see cref="Environment.Exit"/>.
+    /// </summary>
+    /// <remarks>
+    /// A normal return writes the exit line and disposes the logger everywhere else; <see cref="Environment.Exit"/>
+    /// skips both, so this does them first — a file with no exit line reads as "killed hard", which this is not.
+    /// One shape for the server's deadline (<c>ServerLifetime</c>) and the child holders' backstop
+    /// (<c>ChildLifetime</c>), so the two cannot drift apart.
+    /// </remarks>
+    public Action<HostEnding> ForcedExit(IDisposable log) =>
+        ending =>
+        {
+            End(ending);
+            log.Dispose();
+            Environment.Exit(ending.Code);
+        };
+
     /// <summary>Log an end nobody planned: the exception first, as the doctrine asks, then the uptime.</summary>
     public void Crash(Exception exception) =>
         _log.Fatal(

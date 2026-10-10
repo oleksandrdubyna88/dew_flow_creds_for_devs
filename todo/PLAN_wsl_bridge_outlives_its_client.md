@@ -1,6 +1,6 @@
 # PLAN — every creds process ends when the client it serves is gone
 
-> Status: **in progress, 2026-10-10 — E1 (#201), E4.S1 (#205), E2 (#211), E4.S3 (#212) and E4.S2 implemented (§14; §5.7 and §5.8 *As built*); E3 and E5 not yet.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
+> Status: **in progress, 2026-10-10 — E1 (#201), E4.S1 (#205), E2 (#211), E4.S3 (#212), E4.S2 (#213) and E3 implemented (§14; §5.4–§5.8 *As built*); E5 not yet.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
 > round — §14); each epic is re-gated on its own branch. Scope: `src_mcp/src` (`Program.cs`, `WslPump.cs`, the
 > tool lambdas, `Windows.cs`, a new `ServerLifetime`), `src_broker_client/src` (`BrokerClient.cs`, `WslInterop.cs`, a
 > new shared `ChildLifetime`), `src_cli/src` (`AgentRelay.cs`, `RelayPipe.cs`), `src_vs_code/src` (the broker's
@@ -198,6 +198,30 @@ Shared because both the MCP wrapper and the relay need exactly this, and today e
   cannot be cancelled, and with the default disposition suppressed nothing else would end the process.
 - **Reason and exit code** exposed as `ShutdownReason` (`None`, never null) and 128+n.
 
+**As built (E3.S1, 2026-10-10):**
+
+- **`src_service_defaults/src/ChildLifetime.cs`, not `src_broker_client`.** It composes E2's `ShutdownSignals` and
+  `ParentWatch` (no second registration, no second `getppid()` poll — the §5.4 bullets on signals and the parent
+  watch are those two classes) and the logger, and `src_broker_client` references none of that. One copy, beside
+  the primitives it is made of.
+- **`IManagedChild` / `ManagedProcess`** is the shape of a child (`CloseStdin`, `WaitForExitAsync`, `KillTree`); the
+  `Process` adapter swallows a second close of a stdin the owner already disposed. `Track(Process)` returns it.
+- **`StopAsync(child, grace)` is the one killer** — the per-connection stop the relay needs and the stop `StopAllAsync`
+  applies to every tracked child in parallel; a stopped child is forgotten, a child tracked after the stop began is
+  stopped at once. `StopAllAsync` is a `Lazy<Task>`: one shared task, whoever asks.
+- **No `None` word was added to `ExitReason`.** The ending is a `Task<HostEnding> Ended` (incomplete while the session
+  lives) and `EndingOr(ordinary)`, so an owner whose loop ended for its own reason still reports a signal that
+  arrived meanwhile as 128 + n — E2's drain rule, reused.
+- **The grace is 2 s, not 1 s** (`DefaultGrace`): the Windows half's own end-of-stream drain is 1 s (E2), and a 1 s
+  grace would kill it at the moment it was leaving on its own, costing its log the exit line every time. The backstop
+  is `grace + 2 s`, as planned; it exits through `HostRun.ForcedExit(log)` — the server's deadline exit, moved into
+  `HostRun` so the two cannot drift.
+- **`ProcessExit`** runs `StopAllAsync` synchronously with the same bound.
+- **One stop per child, shared** (code round 1): a connection's own stop and the shutdown's stop of every child meet
+  on the same process; the second caller gets the stop in flight, `StopAllAsync` waits for every stop in flight,
+  each stop runs off the lock, and a child tracked once the stop began is stopped at once (the flag is set under the
+  lock before the snapshot, not published after it). A child that survives its kill is a Warning, not a Debug line.
+
 ### 5.5 The WSL wrapper stops the Windows half — `src_mcp/src/WslPump.cs` — defect B
 
 - `RunAsync` (`:50-67`): a `ChildLifetime` with the parent watch on; `Track(child)` replaces `ProcessExit += Stop`
@@ -209,6 +233,29 @@ Shared because both the MCP wrapper and the relay need exactly this, and today e
   forever; a fired `Shutdown` token returns at once. `SettleAsync` (`:159-172`) is unchanged.
 - The ownership comments (`:53-55`, `:99-111`) are kept; the measured buffering decision does not move.
 
+**As built (E3.S2, 2026-10-10):**
+
+- `Program.RelayAsync` makes the lifetime (`ChildLifetime.Start`, the parent watched by the server's own rule
+  `WatchParent` — so the kill switch applies to the pump too) and hands it to `WslPump.RunAsync(args, lifetime, log)`;
+  the testable core `RunAsync(windowsHalf, args, fromClient, toClient, lifetime, log)` runs in-process against a script.
+- `PumpAsync` gained a shutdown token and a hang-up bound (`HangUpBound` = the Windows half's drain + deadline, 6 s);
+  the four-stream overload the old tests use delegates to it. A third `Ending.Interrupted` is what a fired token
+  returns, also during the wait for the last reply.
+- **A signalled session gets NO grace — a deviation from "a 1 s grace", forced by measurement.** Claude Code 2.1.296
+  ends a server with SIGINT, SIGTERM 100 ms later and SIGKILL about 450 ms after that (a logging shim between the real
+  `claude -p` and the wrapper, 2026-10-10 — RESULTS, *The fix, measured*). A wrapper that waited any grace would be
+  killed before it reached its kill, and a Windows half that ignores end-of-stream — a stale install still in defect
+  A — would outlive the session exactly as before. So on a signal the child's stdin is closed and its tree killed at
+  once (`GraceFor`); the Windows half's log then ends without an exit line, which is the truth. A lost parent or a
+  client that hung up gives the child the lifetime's 2 s; a child that closed its own stdout keeps the old 5 s — and
+  none of them applies once a signal is recorded, whatever the pump's own ending was (SonarCloud round).
+  `SettleAsync` is therefore not unchanged: it stops through the lifetime, with the grace `GraceFor` decides.
+- **Found on the real bridge, not planned:** `CREDS_RELAYED_FROM_WSL` never reached the Windows half, because
+  environment variables do not cross WSL interop (§5.1 says so) — E2's "the parent watch is off for the Windows half"
+  was a sentence the bridge did not honour (its log read *watching the parent 19532*, the session-long `wsl.exe`:
+  harmless, and wrong). `WindowsBridge.StartInfo` now names the variable in `WSLENV`, appended once to the person's
+  own list (`WslInterop.WslEnvFor`); the end-to-end log reads *parent watch off: started by the Linux half*.
+
 ### 5.6 The relay closes what it opened — `src_cli/src/AgentRelay.cs` — defect C
 
 - `RunAsync` (`:159-221`): `ChildLifetime` without the parent watch replaces `CancelKeyPress` + `stopping`; after the
@@ -218,6 +265,20 @@ Shared because both the MCP wrapper and the relay need exactly this, and today e
   first direction ends, **dispose the child's stdin** (the EOF `Process.Close` never sends), wait ≤ 2 s, kill the tree,
   dispose its stdout so the pending copy ends; every child is `Track`ed for the relay's own shutdown.
 - `RelayPipe.PumpAsync` (`src_cli/src/RelayPipe.cs:124-131`) already ends on either side; a test pins that.
+
+**As built (E3.S3, 2026-10-10):**
+
+- `AgentRelay.RunAsync` makes the lifetime with `ParentWatch.Off` and a 2 s grace; `ListenAsync(path, contract,
+  windowsHalf, lifetime, log)` is the in-process seam — bind, accept, carry, `StopAllAsync`, `Remove(path)`,
+  `EndingOr(ListenerClosed)`. `Console.CancelKeyPress` and `ExitReason.Interrupted` are gone: Ctrl-C is SIGINT, and
+  the exit code is the shell's 130.
+- `CarryConnectionAsync(client, toChild, fromChild, child, lifetime)` returns a `ConnectionEnding` — `SshClosed`,
+  `WindowsSideClosed`, **`CopyFailed` with the exception** (the plan round's finding; `relay-pipe`'s own exit line
+  already said `copyFailed` since E1) or `Interrupted`: the copies take the lifetime's token, so a relay ended by a
+  signal does not wait for ssh or the Windows side to close a connection nobody will finish (SonarCloud on #214). The copy still reading from ssh after the Windows side closed is observed but
+  **not awaited**: awaiting it would hold the connection until ssh gave up, since the socket is the caller's to close.
+- The relay logs each connection's child at its start (`connection N opened; relay-pipe pid P`), so a live child can
+  be found by a test or a person without waiting for the connection to end.
 
 ### 5.7 A request that is gone can authorise nothing — `src_vs_code/src` — §2.3
 
@@ -1012,3 +1073,123 @@ answered** (codex). Nothing taken. The help-language conflict was raised again a
 writes were raised a fourth time and rejected. The stamp before the probe is deliberate (a hung distribution is not
 asked again on every reload), and the cost is one day's reminder after a crash mid-probe. One prompt per stale
 distribution was rejected: the recorded set is one or two distributions, and each notice names its own.
+
+### Epic E3 — the bridge and the relay stop what they started (branch `fix/e3-bridge-and-relay-stop-their-children`)
+
+**Plan round (2026-10-10, session `36622fa5`) — `proceed`**, gating 1 against threshold 6, **1 of 3 reviewers
+answered** (codex `gpt-6-luna`; gemini rate-limited, reset ~89 h; the local engine named no model — one vendor's
+verdict, not a panel's).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | E3 does not carry the `CopyFailed` outcome for relay stream faults | **accepted** in part — `relay-pipe`'s own exit line already says `copyFailed` (E1's final code round, finding 3); what was still true is the RELAY's per-connection line, which read a faulted copy as "ssh closed". `CarryConnectionAsync` returns a typed `ConnectionEnding` with `CopyFailed` and the exception, logged; a test injects a fault in each direction |
+
+The round's operator commands, applied: build the epic as one unit without re-splitting; work autonomously
+(RED → GREEN → RED again, docs with every change, every suite before the PR, the PR end to end); consultants before
+the person. The cadence consultation for epics 1–3 was already closed in E1; no risk item was named for E3.
+
+**What shipped, and where it differs from §5.4–§5.6:** the *As built* blocks under each section — the helper lives
+in `src_service_defaults`, the grace is 2 s, a signalled pump session gets none, `CREDS_RELAYED_FROM_WSL` now crosses
+the bridge through `WSLENV`, and the relay's connection line distinguishes a failed copy.
+
+**Tests, red first — the fixes removed behind their API (`ShutdownSignals` left unregistered, the hang-up bound
+infinite, the relay only disposing its child), the process tests run on Linux, then the fixes restored:**
+
+- E3.S2, a signal to the pump (SIGINT, SIGTERM, SIGHUP, the built binary on the pump path, no WSL): *"Expected
+  (Posix.GoneWithinAsync(child, Bound, ct)) to be True because the Windows half (pid 227656) must be stopped by the
+  pump, but it is still running, but found False"* → green → red again.
+- E3.S2, a hang-up on a child that never closes its stdout: *"Expected (HostProcess.ExitsWithinAsync(host, within,
+  ct)) to be True because the pump must end within 00:00:11.999 of the client hanging up, but it is still running,
+  but found False"* → green → red again.
+- E3.S3, twenty connections: *"Expected alive to be empty because every relay-pipe child must be gone once its
+  connection ended, but these still run, but found at least one item {227771}"* → green → red again.
+- E3.S3, SIGTERM and SIGHUP to the relay: *"Expected File.Exists(socket) to be False because the relay removes its
+  socket on the way out — a corpse is what the next relay has to dial first, but found True"* → green → red again.
+- E3.S1's `ChildLifetimeTests` (17) and the in-process twins (`WslPumpTests` +4, `WslPumpRunTests` 7,
+  `AgentRelayConnectionTests` 5, `WslInteropTests` +5) were written against the new seams; `§7.1` and the end-to-end
+  runs are in the RESULTS record.
+
+Suites after E3 on Windows: service defaults 74, mcp 151 (4 skipped — the pump host tests, Unix only), cli 141
+(4 skipped — the relay host tests), broker 132. On Linux, inside WSL: the same, plus five E2/E1 process tests that
+fail INSIDE a distribution on `origin/main` too (`VersionTests`, `ServerEndsWithClientTests`, `ServingLogTests`,
+`ToolCancellationTests`, `RelayLogTests`): there the built binary takes the pump path and `creds relay-pipe` is
+relayed to Windows — they are written for CI's plain Linux, where they pass. The extension: `npm run typecheck`
+clean, `npm test` 5,487 (4 skipped, 0 failed); the server 809.
+
+**E3.S4 — the real bridge, before the PR** (the RESULTS record, *The fix, measured*): §7.1 answered — the Native
+AOT wrapper (published inside the distribution with gcc as the linker) handles SIGINT, SIGTERM and SIGHUP from a
+node parent after a `SigIgn` check, exits 130/143/129 with its exit line, and the stubborn child is gone. The two
+WSL harnesses run by hand against this build: `creds-mcp-wsl-itest.cjs` — all checks passed; `wsl-agent-relay-itest.cjs`
+— all checks passed, including *disposing the manager takes it down — nothing outlives the window*, which is the
+relay's SIGHUP path. Five real `claude -p` sessions inside WSL on the new bridge: **0 Windows survivors in each**, the
+wrapper's exit line written every time; three more with a pre-E2 Windows half still in defect A: 0, 0, 0. Measured on
+the way: Claude Code 2.1.296's exit is SIGINT, SIGTERM +100 ms, SIGKILL ~+450 ms — which is why a signalled session
+gets no grace (§5.5 *As built*).
+
+**Code round 1 (2026-10-10, session `36622fa5`, after the rebase onto #212) — `proceed`**, gating 1 against threshold
+5, **4 of 12 reviewers answered** (codex's four roles; gemini's four rate-limited, the local engine's four without a
+model — one vendor's verdict).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | A child tracked while `StopAllAsync` is snapshotting is missed: `Track` read `Lazy.IsValueCreated`, false until the factory returns | **accepted** — a `_stopping` flag set under the lock before the snapshot; `Track` reads it. The deterministic RED (a stdin close that blocks inside the snapshot: *"the condition did not hold within 00:00:10"* — the late child never stopped) also showed each stop ran its first step under the lock, so a blocking close stalled every other `Track` and stop: each stop now runs off the lock. With that, the window the test held open no longer exists and the test pins the behaviour rather than reproduces the race; what remains is the lock-to-publish gap, closed by the flag by construction |
+| 1 | The six-second drain after a hang-up is invisible in the wrapper's log | **accepted** — *the client hung up; waiting up to 6 s for the Windows half's last reply* when the wait begins; RED (the line absent) → GREEN → RED again |
+
+Own review (a separate reviewer reading the final files, the gate's other half): no high-confidence defect; its lower
+notes, each verified: (1) `StopAllAsync` returned while a connection's own stop of the same child was still in its
+grace, so the relay could remove its socket and exit first — **taken**: one stop per child, shared, and every stop in
+flight awaited; RED (*"Expected stopAll.IsCompleted to be False because a stop still in flight is part of stopping
+everything, but found True"*) → GREEN → RED again. (2) The same snapshot race as finding 0. (3) `Process.ExitCode`
+throws for a child that could not be ended, which ended the pump without its exit line and read as a missing Windows
+binary — **taken**: `WslPump.ExitCodeOf` answers 1 with a Warning; RED → GREEN → RED again. (4) A signal arriving
+during the 2 s / 5 s settle of a child that already saw end-of-stream or closed its stdout does not shorten that wait —
+**recorded, not taken**: the child in that state is leaving; the client's kill of the wrapper then leaves at most that
+window, after which the Windows half ends by E2's end-of-stream rule; cutting it short would need a second kill path
+beside the one shared stop. (5) An access-denied kill was logged at Debug as "already ended" — **taken**: a child that
+has not exited after a refused or completed kill is a Warning; RED (*"to have an item matching m.Contains("child 777 is
+still running")"*) → GREEN.
+
+**Final code round (`again`, 2026-10-10) — `proceed`**, gating 2 against threshold 5, **all 4 reviewers answered**
+(codex's four roles; the panel had no gemini and no local engine this time).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | `ChildLifetime` mutates its own state despite the immutability rule | **rejected** — the rule names its subject, immutable DATA, and keeps `class` for stateful services, which a registry of a process's live children is (as `ParentWatch`, `ShutdownSignals`, `GrantRegistry`, `SharedPrompts`); E4.S1's rounds 2 and 3 rejected the same finding on the same reasoning; the data here (`HostEnding`, `ConnectionEnding`) is records |
+| 1 | `WslPump.ExitCodeOf` needs a concrete `Process` beside the `IManagedChild` | **accepted** — `IManagedChild.ExitCode`; the pump reads the ending through the interface; a fake with a code of its own pins it |
+| 2 | A child started by a connection task after `StopAllAsync`'s snapshot is stopped by its `Track` but not awaited, so the relay could remove its socket and exit first | **accepted as a hardening** — `StopAllAsync` returns only when no stop is in flight (a late `Track`'s included); RED (*"Expected stopAll.IsCompleted to be False because the late child's stop is still in flight … but found True"*) → GREEN → RED again. The interleaving as described cannot occur in the relay today — `ServeConnectionAsync` starts and tracks the child synchronously inside the accept loop's iteration, before the loop can observe the token and return — but the invariant should not depend on that ordering |
+
+**Checkpoint round after those two (`again`, 2026-10-10) — `proceed`**, gating 2 against threshold 5, **all 4
+reviewers answered** (codex's four roles).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | `Track(Process)` accepts a process this host did not start, which the lifetime would then close and kill | **accepted** — `ManagedProcess` refuses a `Process` not started by this host with a redirected stdin (one looked up by pid has no readable `StartInfo`; .NET throws), with an `ArgumentException` naming the rule; RED (*"Expected a <System.ArgumentException> to be thrown, but no exception was thrown"* for `Process.GetProcessById(Environment.ProcessId)`) → GREEN |
+| 1 | `Track` started a late child's stop after releasing the lock, a gap `InFlightAsync` could look through | **accepted** — the stop is started under the same (reentrant) lock, so it is registered before any empty snapshot; structural — the gap is between a lock release and the next statement and cannot be held open by a test; the late-stop test pins the behaviour |
+| 2 | A person's `CREDS_RELAYED_FROM_WSL/u` entry would keep the marker from crossing | **accepted** — `WslEnvFor` drops any entry of theirs for the variable, flags included, and appends the bare name once; RED (two theory rows) → GREEN |
+
+**Last checkpoint round before the pull request (`again`, 2026-10-10) — `proceed`**, gating 1 against threshold 5,
+**all 4 reviewers answered** (codex's four roles). One finding — only a process started *by the lifetime* should be
+trackable — **rejected**: §9's rule is "only what THIS PROCESS started", which readable `StartInfo` plus a redirected
+stdin proves; the lifetime cannot start processes (the binary and the interop launch are `WindowsBridge`'s, in a project
+`src_service_defaults` cannot reference), and `Track` is the owner's explicit act one line after `StartPiped` in both
+hosts.
+
+**Pull request #214's automated reviewers.** CodeRabbit: rate-limited (no review; skipped by the owner's standing
+decision). SonarCloud (gate failed on the reliability rating; new-code coverage 95.3 %): every issue judged by
+behaviour and fixed — the relay's two copies take the lifetime's token (the data path, not the cleanup: a signal now
+ends a held connection as `Interrupted`; RED *"The operation has timed out"* → GREEN → RED again with the token
+removed), the `ProcessExit` hook's wait names `CancellationToken.None` with its reason (that wait IS the cleanup the
+fired token must not cut short), the pump's three Information lines in one block became two (the session's ending and
+the child's exit code on one line), `PumpAsync` takes its token last, `Posix` uses `LibraryImport` and discards the
+kill's result on purpose, a test helper returns the concrete array.
+
+**Code round after the SonarCloud fixes (`again`, 2026-10-10) — `proceed`**, gating 1 against threshold 5, **all 4
+reviewers answered** (codex's four roles). One finding, **accepted**: a signal recorded a moment after the pump
+returned still granted the child 5 s / 2 s, which the client's SIGKILL would cut off — `GraceFor` now reads
+`ChildLifetime.Signalled` first and answers zero whatever the pump's own ending; RED (*"Expected default, but found
+500ms"*, the test that had pinned the 5 s flipped) → GREEN → RED again with the check removed.
+
+**Checkpoint round over that fix (`again`, 2026-10-10) — `proceed`**, gating 1 against threshold 5, **all 4 reviewers
+answered** (codex's four roles). One finding — the relay's connection handler "can pause before tracking its child" —
+**rejected** as in the earlier checkpoint round, with no new argument: the handler runs synchronously up to its first
+await, which is inside the carry after `StartPiped` and `Track`; a comment at the accept loop now states it.

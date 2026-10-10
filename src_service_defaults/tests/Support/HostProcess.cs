@@ -70,6 +70,20 @@ internal static class HostProcess
         }
     }
 
+    /// <summary>Wait for the host to exit, at most <paramref name="bound"/>; true when it did.</summary>
+    internal static async Task<bool> ExitsWithinAsync(Process host, TimeSpan bound, CancellationToken ct)
+    {
+        try
+        {
+            await host.WaitForExitAsync(ct).WaitAsync(bound, ct);
+            return true;
+        }
+        catch (TimeoutException)
+        {
+            return false;
+        }
+    }
+
     /// <summary>The one file a run of <paramref name="app"/> with this pid wrote under <paramref name="root"/>.</summary>
     internal static string LogFileOf(string root, string app, int pid) =>
         Directory.GetFiles(root, $"{app}-*-{pid}.log", SearchOption.AllDirectories).Single();

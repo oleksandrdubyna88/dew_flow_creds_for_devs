@@ -5,6 +5,8 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <!-- Support/Posix.cs uses [LibraryImport] (the source generator needs this), as the shared library does. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>CredsForDevs.ServiceDefaults.Tests</AssemblyName>
     <RootNamespace>CredsForDevs.ServiceDefaults.Tests</RootNamespace>
   </PropertyGroup>

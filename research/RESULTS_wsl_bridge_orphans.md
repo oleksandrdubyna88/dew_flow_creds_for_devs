@@ -7,7 +7,8 @@
 > survivors were counted by **set difference of `creds-mcp.exe` PIDs**, because interop children are
 > parented to the distribution's long-lived `wsl.exe`, never to the `wsl.exe` that ran the probe.
 >
-> The fix is planned in [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md).
+> The fix is planned in [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md);
+> what E3 measured on the same machine on 2026-10-10 is the last section, *The fix, measured*.
 
 ## The symptom
 
@@ -184,3 +185,94 @@ NOT given one. The SDK writes outgoing JSON at Trace and a client's cancellation
 (the cadence consultation read `McpSessionHandler` 2.2.0), so routing it into the file would carry
 protocol bodies there at a raised floor — exactly what §5.1 forbids. The client's name and the incoming
 method names are taken through an incoming message filter instead (`ClientNaming`).
+
+## The fix, measured — E3 on the same machine, 2026-10-10
+
+The same Windows 11 machine and Ubuntu WSL2 distribution; Claude Code **2.1.296** (the VS Code WSL server's
+Linux build, run as `claude -p --model haiku` inside the distribution with `--mcp-config` naming only the server
+under test and `--strict-mcp-config`); the Linux wrapper **published Native AOT for linux-x64 inside the
+distribution** (gcc as the linker, `-p:CppCompilerAndLinker=gcc` — the distribution has no clang; 14,972,472 B,
+zero AOT warnings); the Windows half built from the same branch. Windows survivors were counted exactly as in
+the first measurement — a set difference of `creds-mcp.exe` pids before and 15 s after the session, filtered to
+the executable path of THIS build so nobody else's `creds-mcp.exe` is counted or stopped — and the only
+processes ever stopped were in that difference, by pid.
+
+### §7.1 — `PosixSignalRegistration` under Native AOT: it works
+
+A node parent (never a bash `&` job, which ignores SIGINT) spawned the AOT wrapper with a script standing in for
+`creds-mcp.exe` that answers `--help` at once and otherwise never reads stdin, never closes stdout and ignores
+TERM, HUP and INT — a Windows half that will not leave on its own. `/proc/<pid>/status` was read first: `SigIgn`
+did not include the signal.
+
+| Signal sent | Wrapper exit | Took | Its exit line | The stubborn child afterwards |
+|---|---|---|---|---|
+| SIGINT | 130 | 2.06 s | `exited: code 130, reason signalled, after 2.147 s` | gone |
+| SIGTERM | 143 | 1.96 s | `exited: code 143, reason signalled, after 2.130 s` | gone |
+| SIGHUP | 129 | 2.09 s | `exited: code 129, reason signalled, after 2.171 s` | gone |
+
+(The two seconds were the grace of that build; the signal path has none now, for the reason below.)
+
+### What the client actually does at exit — the half-second ladder
+
+A transparent node shim between the real `claude -p` and the wrapper, forwarding both streams and every signal,
+writing a 100 ms heartbeat so its own death is visible as the last beat:
+
+```
++     0ms shim started
++     6ms wrapper started
++  2153ms shim got SIGINT -> forwarded to wrapper
++  2253ms shim got SIGTERM -> forwarded to wrapper
++  2618ms heartbeat          (the last one: the shim was SIGKILLed within the next 100 ms)
+```
+
+**SIGINT, SIGTERM 100 ms later, SIGKILL about 450 ms after that.** The 2026-10-09 shim saw only the SIGINT
+because the old wrapper died from it at once. The consequence decided E3's shape: a wrapper that handles SIGINT and
+then gives its child a grace — the plan's 1 s, E3's first 2 s — never reaches its kill, and a Windows half that
+ignores end-of-stream would outlive the session exactly as before. So on a signal the pump closes the child's
+stdin and kills its tree at once; the grace is kept for a client that hangs up and for a lost parent. The first
+end-to-end run, before that change, showed it: the wrapper's log ended at *the session ended: Interrupted* with no
+exit line — killed during its grace — while the Windows half still ended by itself (its stdin had been closed).
+
+### End to end — real Claude Code sessions, Windows survivors
+
+Each row: a `claude -p` session inside WSL that shakes hands with `creds` (server/discover, subscriptions/listen,
+tools/list — the handshake every session makes), answers *OK*, and exits.
+
+| Bridge | Runs | New `creds-mcp-wsl` log / new `creds-mcp` log per run | Windows survivors 15 s after exit | The wrapper's last line |
+|---|---|---|---|---|
+| **after E3**: this branch's AOT wrapper + this branch's `creds-mcp.exe` | 5 | 1 / 1 | **0, 0, 0, 0, 0** | `exited: code 130, reason signalled` (after 1.77–2.55 s) — every run |
+| E3's wrapper + a **pre-E2** `creds-mcp.exe` (built from `9494a67c`, still in defect A) | 3 | 1 / 1 | **0, 0, 0** | `exited: code 130, reason signalled` — every run |
+| `origin/main` (E2 merged, E3 not): the old wrapper + the E2 `creds-mcp.exe` | 5 | 1 / 1 | 0, 0, 0, 0, 0 | `started the Windows half, pid …` — no exit line: killed by the client's ladder |
+| the old wrapper + the **pre-E2** `creds-mcp.exe` — the 2026-10-09 pair, as near as this branch can build it | 3 | 1 / 1 | 0, 0, 0 | `started the Windows half, pid …` — no exit line |
+
+Two things in that table, stated rather than smoothed over:
+
+- **The 2026-10-09 leak — one `creds-mcp.exe` per session, 5 of 5 — did not reproduce on 2026-10-10 with a pre-E2
+  Windows half under Claude Code 2.1.296.** The Windows half's log ends at *client: claude-code 2.1.296* with no
+  exit line in every row above, so it was ended hard each time; under 2.1.296's SIGINT/SIGTERM/SIGKILL ladder the
+  `/init` interop proxy evidently dies with the wrapper's process group, and the Windows half then ends by the
+  bridge's end-of-stream (the first measurement's *What did NOT leak* table). Whether 2.1.295 delivered only the
+  SIGINT the shim then recorded, or the owner's 2026-08-31 install differed in some other way, cannot be settled
+  from here. **E3 does not depend on the client's ladder**: the pump ends the child itself, and the stubborn-child
+  tests (`WslPumpHostTests`, `WslPumpRunTests`) are the proof that holds whatever a client does.
+- **What E3 visibly changes on this machine** is the wrapper's own ending: an exit line with the signal's code and
+  reason, written before the client's kill arrives (1.8–2.5 s after start, within the 450 ms the ladder allows after
+  SIGINT), where `origin/main`'s wrapper leaves a file with no ending at all. The Windows half's log ends without
+  an exit line after a signalled session — by design now: it is killed, and a file with no exit line is the truth.
+
+### Also seen in the logs, and fixed in E3
+
+The Windows half of the bridge logged *watching the parent 19532* — the distribution's session-long `wsl.exe` — in
+the first end-to-end run, while E2 had documented its parent watch as off under the relay. The reason: the variable
+that switches it off, `CREDS_RELAYED_FROM_WSL`, is set on `ProcessStartInfo.Environment`, and environment variables
+do not cross WSL interop (measured 2026-08-26). The bridge now names it in `WSLENV`, appended to the person's own
+list; the after-runs' Windows half logs *parent watch off: started by the Linux half of the WSL bridge, whose parent
+says nothing about the client*.
+
+### The relay
+
+The relay's fix (defect C) was measured in process tests on Linux rather than on the real bridge: twenty
+connections through the built `creds relay` against an echo child left **0** `relay-pipe` children alive (the same
+twenty left them all alive with the fix removed), and SIGTERM and SIGHUP — the latter what a killed `wsl.exe`
+delivers — stopped a held connection's stubborn child and removed the socket (`AgentRelayHostTests`). The
+hand-run `wsl-agent-relay-itest.cjs` against this build, on the real bridge, is recorded in the plan's §14.

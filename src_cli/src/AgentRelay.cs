@@ -33,6 +33,10 @@ namespace CredsCli;
 /// carried and how that connection ended, and why it stopped — the record that would have shown a relay
 /// holding 27 children for 0 connections (PLAN_wsl_bridge_outlives_its_client.md §2.1 C). The console
 /// half goes to stderr; stdout keeps the one <c>export SSH_AUTH_SOCK=</c> line it always carried.</para>
+/// <para><b>It closes what it opened</b> (since 2026-10-10, E3 of the same plan, defect C). One Windows child per
+/// connection, and each is stopped when its connection ends: stdin closed by name — <c>Process.Close</c> never
+/// did that — a grace, then its tree. A termination signal (SIGINT, SIGTERM, the SIGHUP a killed <c>wsl.exe</c>
+/// delivers, SIGQUIT) stops every child before the socket is removed, and the exit code is the shell's 128 + n.</para>
 /// </remarks>
 internal static class AgentRelay
 {
@@ -185,7 +189,15 @@ internal static class AgentRelay
         var run = HostRun.Start(log, "relay", Version);
         try
         {
-            return run.End(await ListenAsync(contract, log).ConfigureAwait(false));
+            // The relay legitimately outlives whatever started it — a shell profile, the extension's wsl.exe —
+            // so its parent is not watched. A killed wsl.exe delivers SIGHUP instead (measured, the RESULTS
+            // record), which the lifetime handles like the other three.
+            using var lifetime = ChildLifetime.Start(
+                log,
+                ParentWatch.Off("the relay outlives the shell or wsl.exe that started it, by design", log),
+                ChildLifetime.DefaultGrace,
+                run.ForcedExit(log));
+            return run.End(await ListenAsync(SocketPathHere(), contract, WslInterop.Creds, lifetime, log).ConfigureAwait(false));
         }
         catch (Exception e)
         {
@@ -194,11 +206,17 @@ internal static class AgentRelay
         }
     }
 
-    /// <summary>Refuse a path that cannot be ours, or serve it until stopped. Never on Windows (see RunAsync).</summary>
+    /// <summary>
+    /// Refuse a path that cannot be ours, or serve it until stopped. Never on Windows (see RunAsync).
+    /// </summary>
+    /// <remarks>
+    /// The path, the Windows half and the lifetime are parameters so the whole relay — bind, accept, carry, stop
+    /// every child, remove the socket — runs in-process in a test against a script standing in for
+    /// <c>creds.exe relay-pipe</c>, where the coverage tool can see it.
+    /// </remarks>
     [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
-    private static async Task<HostEnding> ListenAsync(BrokerContract contract, ILogger log)
+    internal static async Task<HostEnding> ListenAsync(string path, BrokerContract contract, WindowsBridge windowsHalf, ChildLifetime lifetime, ILogger log)
     {
-        var path = SocketPathHere();
         var tooLong = await RefuseIfTooLongAsync(path, contract, log).ConfigureAwait(false);
         if (tooLong is { } refusal)
         {
@@ -211,11 +229,11 @@ internal static class AgentRelay
             return new HostEnding(claimed, ExitReason.Busy);
         }
 
-        return await BindAndServeAsync(path, contract, log).ConfigureAwait(false);
+        return await BindAndServeAsync(path, contract, windowsHalf, lifetime, log).ConfigureAwait(false);
     }
 
     [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
-    private static async Task<HostEnding> BindAndServeAsync(string path, BrokerContract contract, ILogger log)
+    private static async Task<HostEnding> BindAndServeAsync(string path, BrokerContract contract, WindowsBridge windowsHalf, ChildLifetime lifetime, ILogger log)
     {
         // Owner-only from the instant the socket exists, not a line later. See SetUmask.
         SetUmask(OwnerOnlyMask);
@@ -238,29 +256,22 @@ internal static class AgentRelay
             return new HostEnding(contract.Exit("brokerFailure"), ExitReason.ListenFailed);
         }
 
-        using var stopping = new CancellationTokenSource();
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            stopping.Cancel();
-        };
         AppDomain.CurrentDomain.ProcessExit += (_, _) => Remove(path);
 
         log.Information("relay listening on {Socket}", path);
         // On stdout so `eval "$(creds relay &)"` is not needed and a person can simply read it.
         Console.Out.WriteLine($"export SSH_AUTH_SOCK={path}");
-        await AcceptLoopAsync(listener, log, stopping.Token).ConfigureAwait(false);
+        await AcceptLoopAsync(listener, windowsHalf, lifetime, log).ConfigureAwait(false);
+        // Every child first, the socket after: the children are what a signal was sent to end (defect C's
+        // 27 relay-pipe processes), and the file is reclaimed by the next relay either way.
+        await lifetime.StopAllAsync().ConfigureAwait(false);
         Remove(path);
-        return new HostEnding(0, StoppedBecause(stopping.IsCancellationRequested));
+        return lifetime.EndingOr(new HostEnding(0, ExitReason.ListenerClosed));
     }
 
     /// <summary>What the bind or listen may refuse with — the endpoint's constructor refuses a VALUE.</summary>
     private static bool IsListenFailure(Exception e) =>
         e is SocketException or IOException or UnauthorizedAccessException or ArgumentException;
-
-    /// <summary>The cancel key, or the accept loop ending on its own.</summary>
-    private static ExitReason StoppedBecause(bool cancelled) =>
-        cancelled ? ExitReason.Interrupted : ExitReason.ListenerClosed;
 
     /// <summary>
     /// The exit code when this path cannot be a socket at all, or null when it can.
@@ -309,9 +320,11 @@ internal static class AgentRelay
         return contract.Exit("busy");
     }
 
-    private static async Task AcceptLoopAsync(Socket listener, ILogger log, CancellationToken token)
+    /// <summary>Accept until the lifetime's token fires — a signal; the relay's parent is not watched.</summary>
+    private static async Task AcceptLoopAsync(Socket listener, WindowsBridge windowsHalf, ChildLifetime lifetime, ILogger log)
     {
         var connections = 0;
+        var token = lifetime.Shutdown;
         while (!token.IsCancellationRequested)
         {
             Socket accepted;
@@ -324,34 +337,36 @@ internal static class AgentRelay
                 return;
             }
             // Deliberately not awaited: one slow signature must not hold up the next connection,
-            // and every connection owns its own Windows child.
-            _ = ServeAsync(accepted, ++connections, log);
+            // and every connection owns its own Windows child. Its child is nevertheless started and
+            // tracked HERE, synchronously — the handler's first await is inside the carry, after
+            // StartPiped and Track — so this loop cannot return to a signal with a child untracked.
+            _ = ServeConnectionAsync(accepted, ++connections, windowsHalf, lifetime, log);
         }
     }
 
     /// <remarks>
     /// One Information line per connection, when it ends: which side ended it, how long it lasted,
     /// the child's pid — and whether that child was still running when the relay let go of it, which
-    /// is defect C of PLAN_wsl_bridge_outlives_its_client.md observed rather than inferred.
+    /// is defect C of PLAN_wsl_bridge_outlives_its_client.md observed rather than inferred (it reads
+    /// <c>False</c> since E3: the child is stopped before the line is written).
     /// </remarks>
-    private static async Task ServeAsync(Socket accepted, int number, ILogger log)
+    private static async Task ServeConnectionAsync(Socket accepted, int number, WindowsBridge windowsHalf, ChildLifetime lifetime, ILogger log)
     {
         using var connection = accepted;
         await using var stream = new NetworkStream(connection, ownsSocket: false);
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
         try
         {
-            using var child = WslInterop.Creds.StartPiped(["relay-pipe"]);
-            var toWindows = stream.CopyToAsync(child.StandardInput.BaseStream);
-            var fromWindows = child.StandardOutput.BaseStream.CopyToAsync(stream);
-            var first = await Task.WhenAny(toWindows, fromWindows).ConfigureAwait(false);
-            log.Information(
-                "connection {Connection} ended ({Ending}) after {Seconds:0.000} s; relay-pipe pid {ChildPid}, still running: {ChildAlive}",
-                number,
-                WhichSideClosed(first == toWindows),
-                System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalSeconds,
-                child.Id,
-                !child.HasExited);
+            using var child = windowsHalf.StartPiped(["relay-pipe"]);
+            var tracked = lifetime.Track(child);
+            log.Information("connection {Connection} opened; relay-pipe pid {ChildPid}", number, child.Id);
+            var ending = await CarryConnectionAsync(
+                stream,
+                child.StandardInput.BaseStream,
+                child.StandardOutput.BaseStream,
+                tracked,
+                lifetime).ConfigureAwait(false);
+            LogEnding(log, number, ending, System.Diagnostics.Stopwatch.GetElapsedTime(started), tracked);
         }
         catch (Exception e) when (IsServeFailure(e))
         {
@@ -361,12 +376,122 @@ internal static class AgentRelay
         }
     }
 
+    private static void LogEnding(ILogger log, int number, ConnectionEnding ending, TimeSpan lasted, IManagedChild child)
+    {
+        foreach (var failure in ending.Failures)
+        {
+            log.Warning(failure, "connection {Connection}: a copy failed", number);
+        }
+        log.Information(
+            "connection {Connection} ended ({Ending:l}) after {Seconds:0.000} s; relay-pipe pid {ChildPid}, still running: {ChildAlive}",
+            number,
+            Describe(ending.End),
+            lasted.TotalSeconds,
+            child.Id,
+            !child.HasExited);
+    }
+
+    /// <summary>How one carried connection ended.</summary>
+    internal enum ConnectionEnd
+    {
+        /// <summary>ssh closed its side of the socket first.</summary>
+        SshClosed,
+
+        /// <summary>The Windows half — <c>relay-pipe</c>, or the agent behind it — closed first.</summary>
+        WindowsSideClosed,
+
+        /// <summary>A copy FAILED rather than ended: a broken pipe, a reset.</summary>
+        CopyFailed,
+
+        /// <summary>A signal ended the relay while the connection was still open on both sides.</summary>
+        Interrupted,
+    }
+
+    /// <summary>Which side ended a connection, and what failed if one did — never an orderly close for a fault.</summary>
+    /// <param name="End">Who closed, or that a copy failed.</param>
+    /// <param name="Failures">What the failed copy threw; empty for an orderly close.</param>
+    internal sealed record ConnectionEnding(ConnectionEnd End, IReadOnlyList<Exception> Failures);
+
+    /// <summary>
+    /// Carry one connection both ways until either side ends it, then stop the child this connection started —
+    /// defect C, fixed.
+    /// </summary>
+    /// <remarks>
+    /// <para>Shaped like <c>WslPump.PumpAsync</c>: the streams and the child are parameters, so the stop order is a
+    /// unit test over fakes. After the first direction ends: <b>dispose the child's stdin</b> — the end-of-stream
+    /// <c>Process.Close</c> never sends, which is how a relay with no connections held 27 children — then the
+    /// lifetime's stop (the grace, then the tree), then its stdout, so the pending copy ends instead of waiting
+    /// on a pipe nobody will write to.</para>
+    /// <para>A copy that FAILED is its own ending (plan round, finding 0): a broken pipe must not read as "ssh
+    /// closed" in the one line somebody opens the log for.</para>
+    /// </remarks>
+    internal static async Task<ConnectionEnding> CarryConnectionAsync(Stream client, Stream toChild, Stream fromChild, IManagedChild child, ChildLifetime lifetime)
+    {
+        // The copies take the lifetime's token: a relay ended by a signal does not wait for ssh or the Windows side
+        // to close a connection nobody will finish. The stop below runs whatever ended the copies.
+        var toWindows = client.CopyToAsync(toChild, lifetime.Shutdown);
+        var fromWindows = fromChild.CopyToAsync(client, lifetime.Shutdown);
+        var first = await Task.WhenAny(toWindows, fromWindows).ConfigureAwait(false);
+
+        await CloseAsync(toChild).ConfigureAwait(false);
+        await lifetime.StopAsync(child).ConfigureAwait(false);
+        await CloseAsync(fromChild).ConfigureAwait(false);
+        // Not awaited: when the Windows side closed first, the other copy is still reading from ssh on a socket this
+        // method does not own — waiting here would hold the connection open until ssh gave up. The caller closes the
+        // socket, which ends that read, and its fault is observed here rather than left to nobody.
+        _ = SettledAsync(toWindows, fromWindows);
+        return EndingOf(first, toWindows);
+    }
+
+    /// <summary>The ending the first copy to finish stands for — a cancelled copy is the relay being ended.</summary>
+    internal static ConnectionEnding EndingOf(Task first, Task toWindows) =>
+        (first.IsCanceled, first.IsFaulted, first == toWindows) switch
+        {
+            (true, _, _) => new ConnectionEnding(ConnectionEnd.Interrupted, []),
+            (_, true, _) => new ConnectionEnding(ConnectionEnd.CopyFailed, [.. first.Exception?.InnerExceptions ?? []]),
+            (_, _, true) => new ConnectionEnding(ConnectionEnd.SshClosed, []),
+            _ => new ConnectionEnding(ConnectionEnd.WindowsSideClosed, []),
+        };
+
+    private static async Task CloseAsync(Stream stream)
+    {
+        try
+        {
+            await stream.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (IOException)
+        {
+            // The far end closed it first, which is one of the ordinary endings.
+        }
+    }
+
+    /// <summary>Observe both copies and swallow what the closes made them throw — never a fault nobody sees.</summary>
+    private static async Task SettledAsync(Task toWindows, Task fromWindows)
+    {
+        try
+        {
+            await Task.WhenAll(toWindows, fromWindows).ConfigureAwait(false);
+        }
+        catch (Exception e) when (IsServeFailure(e) || e is OperationCanceledException or NotSupportedException)
+        {
+            // The copy that was still pending ended on a stream somebody closed. Its sibling's fault, if it was the
+            // one that ended the connection, is reported through the ending instead.
+        }
+    }
+
     /// <summary>What ends ONE connection without taking the relay down.</summary>
     private static bool IsServeFailure(Exception e) =>
         e is IOException or InvalidOperationException or System.ComponentModel.Win32Exception or ObjectDisposedException;
 
-    /// <summary>The connection line's wording for which copy finished first.</summary>
-    private static string WhichSideClosed(bool sshFirst) => sshFirst ? "ssh closed" : "the Windows side closed";
+    /// <summary>The connection line's wording.</summary>
+    private static string Describe(ConnectionEnd end) =>
+        end switch
+        {
+            ConnectionEnd.SshClosed => "ssh closed",
+            ConnectionEnd.WindowsSideClosed => "the Windows side closed",
+            ConnectionEnd.Interrupted => "the relay was ended",
+            _ => "a copy failed",
+        };
 
     private static void Remove(string path)
     {

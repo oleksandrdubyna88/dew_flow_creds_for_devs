@@ -145,7 +145,7 @@ internal static class Program
         {
             var caller = forwarded is null ? CallerIdentity.Current(agent: string.Empty) : CallerIdentity.Decode(forwarded);
             return run.End(relayed
-                ? await RelayAsync(contract, caller, log)
+                ? await RelayAsync(contract, caller, log, run)
                 : await ServeHereAsync(contract, caller, forwarded is null, log, run));
         }
         catch (Exception e)
@@ -180,7 +180,7 @@ internal static class Program
             using var signals = ShutdownSignals.Register();
             using var parent = WatchParent(log);
             var lifetime = new LifetimeSignals(transport.MessageReader.Completion, parent.Gone, signals.Received);
-            return await ServeOnAsync(transport, contract, source, log, lifetime, LifetimeTimings.Default, ForceExit(run, log));
+            return await ServeOnAsync(transport, contract, source, log, lifetime, LifetimeTimings.Default, run.ForcedExit(log));
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException)
         {
@@ -195,14 +195,19 @@ internal static class Program
     /// Inside WSL: become the stdio of the Windows binary, which can reach the window.
     /// </summary>
     /// <remarks>
-    /// The one failure worth a sentence is a missing Windows binary, because it is the one a
+    /// <para>The one failure worth a sentence is a missing Windows binary, because it is the one a
     /// person can fix — and the message has to name the variable, since <c>creds-mcp.exe</c> is
-    /// installed into the extension's own storage and deliberately not put on the PATH.
+    /// installed into the extension's own storage and deliberately not put on the PATH.</para>
+    /// <para>The pump holds its Windows child in a <see cref="ChildLifetime"/> (E3): the four termination signals
+    /// — Claude Code ends a server with SIGINT — and this process's parent, watched by the same rule as a server
+    /// answering here (<see cref="WatchParent(ILogger)"/>: off under the kill switch), end the session and stop
+    /// the child; past the backstop the process is exited through the same forced exit the server uses.</para>
     /// </remarks>
-    private static async Task<HostEnding> RelayAsync(BrokerContract contract, CallerRecord caller, ILogger log)
+    private static async Task<HostEnding> RelayAsync(BrokerContract contract, CallerRecord caller, Logger log, HostRun run)
     {
         try
         {
+            using var lifetime = ChildLifetime.Start(log, WatchParent(log), ChildLifetime.DefaultGrace, run.ForcedExit(log));
             // Once per session, never per call: ask the Windows half whether it knows `--caller`,
             // and hand it the record only if it does. An old half handed the flag would die with a
             // usage error before the handshake — a dead server, not a degraded one.
@@ -211,7 +216,7 @@ internal static class Program
                 () => WslInterop.CredsMcp.CaptureAsync(["--help"], CallerForwarding.ProbeTimeout),
                 CallerForwarding.ProbeTimeout,
                 sentence => log.Warning("{Sentence}", sentence));
-            return await WslPump.RunAsync(args, log);
+            return await WslPump.RunAsync(args, lifetime, log);
         }
         catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
@@ -362,21 +367,6 @@ internal static class Program
             await server.RunAsync(ct);
         }
     }
-
-    /// <summary>
-    /// The way out when the shutdown deadline passes: the exit line, a flushed log, then the process ends.
-    /// </summary>
-    /// <remarks>
-    /// A normal return is what writes the exit line and disposes the logger everywhere else; <see cref="Environment.Exit"/>
-    /// skips both, so this does them first — a file with no exit line reads as "killed hard", which this is not.
-    /// </remarks>
-    private static Action<HostEnding> ForceExit(HostRun run, Logger log) =>
-        ending =>
-        {
-            run.End(ending);
-            log.Dispose();
-            Environment.Exit(ending.Code);
-        };
 
     private static McpServerOptions Options(BrokerContract contract, CallerSource source, ILogger log) =>
         new()

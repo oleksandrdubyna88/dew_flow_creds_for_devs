@@ -23,6 +23,10 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="CredsForDevs.ServiceDefaults.Tests" />
+    <!-- The two binaries' suites drive ChildLifetime through its seam (fake signals, fake children) so a pump or a
+         relay ending is an in-process test the coverage tool can see, not only a process test. -->
+    <InternalsVisibleTo Include="CredsMcp.Tests" />
+    <InternalsVisibleTo Include="CredsCli.Tests" />
   </ItemGroup>
 
 </Project>

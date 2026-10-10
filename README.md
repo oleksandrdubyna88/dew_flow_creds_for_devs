@@ -242,7 +242,9 @@ it by the exact path the client's MCP config names (a bare `creds-mcp` resolved 
 copy). Inside WSL it also asks the Windows half and names the executable it asked. The server ends with its
 session: when the client closes stdin, on SIGINT/SIGTERM/SIGHUP/SIGQUIT, or when the process that started it
 exits. If a launcher starts `creds-mcp` as a child and then exits itself while the client keeps talking to it, set
-`CREDS_MCP_NO_PARENT_WATCH=1`.
+`CREDS_MCP_NO_PARENT_WATCH=1`. Inside WSL the Linux half ends the same way, and takes the `creds-mcp.exe` it started
+with it — closing its stdin first and killing it when a signal gives it no time to leave on its own — so a closed
+session leaves no Windows process behind.
 
 ## Two honest caveats
 

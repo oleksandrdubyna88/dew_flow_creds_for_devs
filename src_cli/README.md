@@ -160,6 +160,12 @@ start, one line per connection it carried and how that connection ended, and why
 the most it can be raised to, so the start and exit lines are always there) sets the floor, `CREDS_LOG_RETENTION_DAYS` (default 14, 0 keeps everything) the sweep. Console lines go to
 stderr; stdout stays the one `export` line. No argument or environment value is ever written there.
 
+**The relay closes what it opened** (since 2026-10-10). Each connection's `relay-pipe` is stopped the moment the
+connection ends — its stdin closed (the end-of-stream it leaves on), two seconds, then its process tree — and a
+termination signal (SIGINT, SIGTERM, SIGHUP, SIGQUIT; a killed `wsl.exe` delivers SIGHUP) stops every child before the
+socket is removed, with the shell's exit code `128 + n`. Before that, a relay with no connections could hold dozens of
+`relay-pipe` processes on Windows: `Process.Close` never closes a stdin the relay had written to.
+
 If you set `CREDS_ENDPOINT_DIR` for a non-standard VS Code install, name it in `WSLENV`
 (`export WSLENV=CREDS_ENDPOINT_DIR/p`): environment variables do **not** cross from WSL into a
 Windows child on their own — measured, including from .NET's own process API.

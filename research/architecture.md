@@ -436,9 +436,9 @@ Four things about it are decided ACROSS modules rather than inside one:
 | The extension | [module_extension.md](module_extension.md) | All cryptography, the data model, sync and sharing, the UI |
 | The server | [module_server.md](module_server.md) | The HTTP contract, authorization, storage |
 | The deployment | [module_deployment.md](module_deployment.md) | Containers, TLS, updates, backups |
-| The CLI | [../src_cli/README.md](../src_cli/README.md) | `creds` — the terminal client of the broker. A .NET Native AOT binary holding no secret: it relays a request to the VS Code window named by a grant token and prints what comes back |
+| The CLI | [../src_cli/README.md](../src_cli/README.md) | `creds` — the terminal client of the broker. A .NET Native AOT binary holding no secret: it relays a request to the VS Code window named by a grant token and prints what comes back. `creds relay` inside WSL is its one long-lived verb: a unix socket whose every connection becomes a Windows `relay-pipe` child — stopped when the connection ends, and all of them when a signal ends the relay (E3) |
 | The broker client | `src_broker_client/` | Discovery, the health probe, the wire contract and the WSL bridge — shared by both binaries, so a fix to any of it is made once. The bridge is an instance per binary (`WslInterop.Creds`, `WslInterop.CredsMcp`), each with its own override variable, because one shared `creds.exe` would have sent an MCP handshake to the CLI |
-| The shared logging | [module_service_defaults.md](module_service_defaults.md) | `CredsForDevs.ServiceDefaults` — the repository's one Serilog configuration, used by the server and both AOT binaries: the coloured console, the file per run, retention, the level binding, and `HostRun`'s start and exit lines. See *Logging* above |
+| The shared logging and lifetimes | [module_service_defaults.md](module_service_defaults.md) | `CredsForDevs.ServiceDefaults` — the repository's one Serilog configuration, used by the server and both AOT binaries: the coloured console, the file per run, retention, the level binding, and `HostRun`'s start and exit lines (see *Logging* above) — and, since E2/E3, the process-lifetime primitives every serving host composes: `ShutdownSignals`, `ParentWatch`, `ChildLifetime` |
 | The MCP server | [module_mcp.md](module_mcp.md) (`src_mcp/`) | `creds-mcp` — what an AI agent talks to. **Eighteen tools** over the same broker, across two objects: entries (list, use, rotate, create, delete, export-env, and `creds_config_snippet` — read-only public text, how code reads a config, from the viewer's own catalog) and folders (list, create, edit, delete, since 0.85.0) — plus, since 1.12.0 / relay 0.9.0, the kind catalogue `creds_kinds` / `creds_kind_help` (`GET /v1/mcp/kinds`, `/v1/mcp/kind-help`, read-only, answered from the window's one per-kind table `agentKindFields.ts`: a folder says what it `holds`, a kind which fields an agent may set, and `creds_create` refuses anything else). Every one is gated by a switch that is off by default — **two ladders, ten switches, inherited down the whole tree** — and by the same consent prompt. Holds no secret and can obtain none, and no request it can compose has a field the switches could arrive in. **Inside WSL it carries the session rather than serving it** — see below |
 
 ### Connecting over SSH from a remote window (2026-09-17)
@@ -529,7 +529,28 @@ Three consequences worth stating, because each was a decision:
 
 **Each half logs its own run (2026-10-09)**: the Linux half as `creds-mcp-wsl` (the Windows child's pid,
 which side ended the session, the child's exit code), the Windows half as `creds-mcp` on Windows. Log
-settings do not cross the bridge (no `WSLENV`), so the Windows half runs at its own defaults.
+settings do not cross the bridge (no `WSLENV` for them), so the Windows half runs at its own defaults. The one
+variable the bridge does name in `WSLENV` is `CREDS_RELAYED_FROM_WSL` (E3): the Windows half's loop guard and the
+reason its parent watch is off, which nothing carried across before.
+
+**Neither half outlives the other (2026-10-10, E3 — the promise [PLAN_mcp_wsl_bridge.md](PLAN_mcp_wsl_bridge.md)
+made and the RESULTS record found broken).** The Linux half holds its Windows child in a `ChildLifetime`
+([module_service_defaults.md](module_service_defaults.md)) and ends it by whichever of three things comes first:
+
+```mermaid
+flowchart TB
+    eof["the client hangs up<br/>stdin end-of-stream"] --> close1["close the child's stdin"] --> wait["wait for its stdout<br/>at most 6 s (drain + deadline)"] --> grace2["grace 2 s · then the tree"] --> exit0["exit: the child's code, clientClosed"]
+    sig["SIGINT · SIGTERM · SIGHUP · SIGQUIT<br/>(Claude Code: SIGINT, SIGTERM +100 ms, SIGKILL +~450 ms)"] --> now["PumpAsync returns at once"] --> kill["close stdin · kill the tree NOW<br/>(the /init proxy dies, the Windows half with it)"] --> exit128["exit 128 + n, signalled"]
+    parent["the parent is gone<br/>getppid poll"] --> now2["PumpAsync returns at once"] --> grace["close stdin · grace 2 s · the tree"] --> exitP["exit 0, parentGone"]
+    stdout["the child closes its stdout"] --> grace5["grace 5 s · the tree"] --> exitW["exit: the child's code, windowsHalfClosed"]
+```
+
+A signal gets no grace because the client's SIGKILL arrives before any grace would end (measured through a shim,
+[RESULTS](RESULTS_wsl_bridge_orphans.md), *The fix, measured*), and a Windows half that still ignores end-of-stream
+— a stale install in defect A — must not get the half-second it needs to be left behind. The same lifetime serves
+the SSH-agent relay: `creds relay` stops every `relay-pipe` child it started when a signal ends it (the SIGHUP a killed
+`wsl.exe` delivers included) and removes its socket after them, and each connection's child is stopped — stdin
+closed by name, 2 s, the tree — the moment its connection ends, which is defect C fixed.
 
 ### How long a `creds-mcp` lives (2026-10-10)
 
@@ -567,7 +588,10 @@ flowchart TB
   answer`, an answer with no version in it `answered without a version`, and a half that cannot be started
   `not started`.
 
-The Linux half of the bridge (the pump) and the SSH-agent relay get the same guarantees in the plan's E3.
+The Linux half of the bridge (the pump) and the SSH-agent relay have the same guarantees since the plan's E3
+(2026-10-10): both hold their Windows children in the shared `ChildLifetime`, both end on the four signals with
+128 + n, the pump on its parent's death too, and each stops what it started before it goes — the diagram and the
+grace rule are under *The MCP server inside WSL* above, the relay's half in `src_cli/README.md`.
 
 `CREDS_MCP_WINDOWS_BINARY` overrides the executable — its own variable, never the CLI's. Design
 record and what the build taught: [PLAN_mcp_wsl_bridge.md](PLAN_mcp_wsl_bridge.md); the caller
