@@ -464,6 +464,8 @@ test('a config already open to code says that instead, and never shows a key', (
   const html = currentPanel.webview.html;
 
   assert.ok(html.includes('Open to code'), 'an enabled config still says it is not open');
+  // Said beside the key's home, because the panel is where somebody decides how to pass it on.
+  assert.ok(html.includes('on stdin, never as an argument'), 'the panel does not say how the key reaches creds');
   assert.equal(html.includes('cfgk_'), false, 'something key-shaped reached the page');
   // The stored hash is not a secret, but it has no business being rendered either.
   assert.equal(html.includes('Zm9vYmFyZm9v'), false, 'the stored hash reached the page');

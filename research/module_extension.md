@@ -4458,6 +4458,15 @@ every switch that had not been taught about it — four of them.
 | `configSnippet.ts` + `configSnippetBodies.ts` | Twenty languages of "read this from code" |
 | `brokerConfigRoute.ts` | `POST /v1/config/read`, apart from `brokerReadRoutes.ts` because it authenticates |
 
+**The key reaches `creds` on stdin, never as an argument (2026-10-09).** A command line is readable
+by every user inside WSL and by every process of the same user on Windows; a config key lives for a
+year. So every snippet starts `creds config -` and writes the key and a newline to its stdin (C++ and
+Elixir, whose standard libraries cannot, put it in the child's `CREDSFORDEVS_KEY` and run
+`creds config`), and the CLI refuses `creds config <key>` with a constant sentence that never echoes
+the argument. `configSnippet.test.ts` pins the launch and the stdin write per language, and a
+positive control proves its detector still catches every argument shape the snippets used to ship.
+Plan: [PLAN_config_key_off_the_command_line.md](PLAN_config_key_off_the_command_line.md).
+
 **The Fields tab is a VIEW over the raw text.** Parse-edit-serialise cannot keep a document —
 `JSON.parse` then `JSON.stringify` loses the indentation somebody chose, the blank lines and the
 trailing newline; for `.env` it loses every comment. So a field records WHERE its value sits and an

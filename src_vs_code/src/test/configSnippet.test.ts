@@ -82,28 +82,207 @@ test('every snippet fails loudly — none of them can start an application again
   }
 });
 
-test('the key is passed as an ARGUMENT, not built into a command line for a shell', () => {
-  // The one real injection surface a snippet like this has. C++ is the stated exception — popen
-  // takes a command string — and it guards by checking the key's alphabet first, which is why it
-  // is allowed to concatenate at all.
-  // Matched on the CONCATENATION itself, not on the words: every snippet's comment contains the
-  // phrase "creds config <key>", and a detector that looked for that flagged all twenty-two.
-  const concatenating = everySnippet().filter(({ code }) => /config " \+ key/.test(code));
+/**
+ * How each snippet hands the key to `creds`: the launch it makes, and the line that feeds the key.
+ *
+ * <p>Pinned per language rather than matched by one clever regex, because the property is
+ * per-language syntax and a generic detector is exactly what let the old argument form look safe:
+ * it checked for a shell, and the leak was the argument list itself, readable by every process on
+ * the machine (research/PLAN_config_key_off_the_command_line.md).</p>
+ */
+const STDIN_FEEDS: Readonly<Record<string, { launch: RegExp; feed: RegExp }>> = {
+  'csharp:net6': {
+    launch: /ArgumentList\.Add\("config"\);\s*start\.ArgumentList\.Add\("-"\);/,
+    feed: /StandardInput\.WriteLine\(key\);\s*process\.StandardInput\.Close\(\);/,
+  },
+  'csharp:netfx': {
+    launch: /new ProcessStartInfo\("creds", "config -"\)/,
+    feed: /StandardInput\.WriteLine\(key\);\s*process\.StandardInput\.Close\(\);/,
+  },
+  'fsharp:default': {
+    launch: /ArgumentList\.Add\("config"\)\s*start\.ArgumentList\.Add\("-"\)/,
+    feed: /StandardInput\.WriteLine\(key\)\s*p\.StandardInput\.Close\(\)/,
+  },
+  'vbnet:default': {
+    launch: /ArgumentList\.Add\("config"\)\s*start\.ArgumentList\.Add\("-"\)/,
+    feed: /StandardInput\.WriteLine\(key\)\s*process\.StandardInput\.Close\(\)/,
+  },
+  'java:default': {
+    launch: /new ProcessBuilder\("creds", "config", "-"\)/,
+    feed: /try \(var stdin = process\.getOutputStream\(\)\) \{\s*stdin\.write\(\(key \+ "\\n"\)/,
+  },
+  'kotlin:default': {
+    launch: /ProcessBuilder\("creds", "config", "-"\)/,
+    feed: /outputStream\.use \{ it\.write\(\(key \+ "\\n"\)/,
+  },
+  'scala:default': {
+    launch: /Seq\("creds", "config", "-"\) #< stdin/,
+    feed: /new ByteArrayInputStream\(\(key \+ "\\n"\)/,
+  },
+  'python:default': {
+    launch: /\["creds", "config", "-"\]/,
+    feed: /input=key \+ "\\n"/,
+  },
+  'javascript:esm': {
+    launch: /execFileSync\('creds', \['config', '-'\]/,
+    feed: /input: key \+ '\\n'/,
+  },
+  'javascript:cjs': {
+    launch: /execFileSync\('creds', \['config', '-'\]/,
+    feed: /input: key \+ '\\n'/,
+  },
+  'typescript:default': {
+    launch: /execFileSync\('creds', \['config', '-'\]/,
+    feed: /input: key \+ '\\n'/,
+  },
+  'go:default': {
+    launch: /exec\.Command\("creds", "config", "-"\)/,
+    feed: /cmd\.Stdin = strings\.NewReader\(key \+ "\\n"\)/,
+  },
+  'rust:default': {
+    launch: /Command::new\("creds"\)\s*\.args\(\["config", "-"\]\)\s*\.stdin\(Stdio::piped\(\)\)/,
+    feed: /stdin\.take\(\)[^;]*\.write_all\(format!\("\{key\}\\n"\)\.as_bytes\(\)\)/,
+  },
+  'php:default': {
+    launch: /proc_open\(\['creds', 'config', '-'\], \[0 => \['pipe', 'r'\]/,
+    feed: /fwrite\(\$pipes\[0\], \$key \. "\\n"\);\s*fclose\(\$pipes\[0\]\);/,
+  },
+  'ruby:default': {
+    launch: /Open3\.capture2\('creds', 'config', '-', /,
+    feed: /stdin_data: key \+ "\\n"/,
+  },
+  'swift:default': {
+    launch: /process\.arguments = \["creds", "config", "-"\]/,
+    feed: /input\.fileHandleForWriting\.write\(Data\(\(key \+ "\\n"\)\.utf8\)\)\s*try input\.fileHandleForWriting\.close\(\)/,
+  },
+  'dart:default': {
+    launch: /Process\.start\('creds', \['config', '-'\]\)/,
+    feed: /process\.stdin\.writeln\(key\);\s*await process\.stdin\.close\(\);/,
+  },
+  'perl:default': {
+    launch: /open2\(my \$out, my \$in, 'creds', 'config', '-'\)/,
+    feed: /print \{\$in\} "\$key\\n";\s*close\(\$in\);/,
+  },
+  'bash:default': {
+    launch: /\| creds config -\)/,
+    feed: /printf '%s\\n' "\$\{CREDSFORDEVS_KEY\}" \| creds config -/,
+  },
+  'powershell:default': {
+    launch: /\| & creds config -$/m,
+    feed: /\$env:CREDSFORDEVS_KEY \| & creds config -/,
+  },
+};
 
-  assert.deepEqual(
-    concatenating.map((one) => one.id).sort(),
-    ['cpp:default', 'csharp:netfx'],
-    'a new snippet builds a command line for a shell — say why, in place, or use an argument list',
-  );
+/**
+ * The two whose standard library cannot write to a child's stdin and read its stdout at once — so
+ * the key goes into the CHILD's environment, which only its owner can read, and `creds config`
+ * runs with no argument at all.
+ */
+const ENVIRONMENT_FEEDS: Readonly<Record<string, { launch: RegExp; feed: RegExp; why: RegExp }>> = {
+  'cpp:default': {
+    launch: /popen\("creds config", "r"\)/,
+    feed: /setenv\("CREDSFORDEVS_KEY", key\.c_str\(\), 1\)/,
+    why: /popen can read OR write/,
+  },
+  'elixir:default': {
+    launch: /System\.cmd\("creds", \["config"\], env: \[\{"CREDSFORDEVS_KEY", key\}\]\)/,
+    feed: /env: \[\{"CREDSFORDEVS_KEY", key\}\]/,
+    why: /System\.cmd cannot write to/,
+  },
+};
+
+/** Every shape the snippets used to pass the key in. Any one of them back is the leak back. */
+const ARGUMENT_SHAPES: readonly RegExp[] = [
+  /ArgumentList\.Add\(key\)/,
+  /"config", key\b/,
+  /'config', key\b/,
+  /'config', \$key\b/,
+  /\.arg\(key\)/,
+  /config " \+ key/,
+  /creds config "\$\{/,
+  /creds config \$env:/,
+  /\["config", key\]/,
+];
+
+test('every snippet is accounted for: on stdin, or in the environment with its reason', () => {
+  const ids = everySnippet().map((one) => one.id).sort();
+
+  assert.deepEqual(ids, [...Object.keys(STDIN_FEEDS), ...Object.keys(ENVIRONMENT_FEEDS)].sort());
 });
 
-test('the two snippets that DO concatenate say so and guard it', () => {
+test('the stdin snippets start `creds config -` and write the key to its stdin, then close it', () => {
+  for (const [id, { launch, feed }] of Object.entries(STDIN_FEEDS)) {
+    const [language, variant] = id.split(':');
+    const code = snippetFor(language, variant, CONTEXT).code;
+
+    assert.match(code, launch, `${id} does not start creds config with "-"`);
+    assert.match(code, feed, `${id} does not write the key to stdin and close it`);
+  }
+});
+
+test('the two environment snippets run `creds config` with no argument and say why', () => {
+  for (const [id, { launch, feed, why }] of Object.entries(ENVIRONMENT_FEEDS)) {
+    const [language, variant] = id.split(':');
+    const code = snippetFor(language, variant, CONTEXT).code;
+
+    assert.match(code, launch, `${id} does not run a constant creds config`);
+    assert.match(code, feed, `${id} does not put the key in the child's CREDSFORDEVS_KEY`);
+    assert.match(code, why, `${id} does not say why it is not stdin`);
+  }
+});
+
+test('C++ takes the key back out of its own environment as soon as the child has it (code round)', () => {
+  // setenv changes the APPLICATION's environment, not only the child's: left there, every child
+  // the application starts later would inherit a key it was never meant to have. The previous
+  // value is put back — or the variable removed — right after popen, before anything else runs.
   const cpp = snippetFor('cpp', 'default', CONTEXT).code;
+  const launched = cpp.indexOf('popen("creds config", "r")');
+  const restored = cpp.search(/unsetenv\("CREDSFORDEVS_KEY"\)/);
+
+  assert.match(cpp, /const char\* before = std::getenv\("CREDSFORDEVS_KEY"\)/, 'the previous value is not saved');
+  assert.ok(restored > launched, 'the variable is not removed after popen');
+  assert.match(cpp, /setenv\("CREDSFORDEVS_KEY", previous\.c_str\(\), 1\)/, 'a previous value is not put back');
+});
+
+test('NO snippet passes the key as an argument — none of the shapes they used to', () => {
+  for (const { id, code } of everySnippet()) {
+    for (const shape of ARGUMENT_SHAPES) {
+      assert.equal(shape.test(code), false, `${id} passes the key as an argument again: ${shape}`);
+    }
+  }
+});
+
+test('the old shapes are what the detector catches — a positive control', () => {
+  // Without this, a detector that matched nothing would pass the test above forever. Each line is
+  // the launch a snippet shipped with up to extension 1.13.0.
+  const old = [
+    'start.ArgumentList.Add(key);',
+    'new ProcessBuilder("creds", "config", key)',
+    "execFileSync('creds', ['config', key], { encoding: 'utf8' })",
+    "proc_open(['creds', 'config', $key], [], $pipes)",
+    'Command::new("creds").arg("config").arg(key)',
+    'new ProcessStartInfo("creds", "config " + key)',
+    'config=$(creds config "${CREDSFORDEVS_KEY}")',
+    '$configText = & creds config $env:CREDSFORDEVS_KEY',
+  ];
+  for (const line of old) {
+    assert.ok(ARGUMENT_SHAPES.some((shape) => shape.test(line)), `the detector misses: ${line}`);
+  }
+});
+
+test('no command string handed to a shell carries anything variable', () => {
+  // C++ is the one snippet whose launch goes through a shell (popen). Its command is now a
+  // constant, so there is nothing a shell could reinterpret and no alphabet check is needed.
+  const cpp = snippetFor('cpp', 'default', CONTEXT).code;
+
+  assert.match(cpp, /popen\("creds config", "r"\)/);
+  assert.equal(/popen\([^"]/.test(cpp), false, 'C++ hands popen something other than a literal');
+});
+
+test('the Framework snippet says why it needs no ArgumentList', () => {
   const netfx = snippetFor('csharp', 'netfx', CONTEXT).code;
 
-  assert.match(cpp, /find_first_not_of/, 'C++ concatenates without checking the alphabet first');
-  assert.match(cpp, /popen DOES go through a shell/, 'the reason is not stated where it applies');
-  assert.match(netfx, /no ArgumentList/, 'the Framework snippet does not say why it concatenates');
+  assert.match(netfx, /no ArgumentList/);
 });
 
 test('a version picker exists only where the code genuinely differs', () => {

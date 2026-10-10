@@ -158,6 +158,46 @@ public sealed record WindowsBridge(string DefaultBinary, string OverrideVariable
     }
 
     /// <summary>
+    /// <see cref="Relay"/>, except that the child's stdin is fed <paramref name="input"/> and then closed.
+    /// </summary>
+    /// <remarks>
+    /// <para>For a value that must cross the bridge and must NOT be an argument — the config key of
+    /// <c>creds config -</c>. A command line is readable by every user inside WSL and by every process
+    /// of the same user on Windows; a pipe is readable by the two ends of it.</para>
+    /// <para>Only stdin is redirected. stdout and stderr stay inherited, so what the Windows half prints
+    /// reaches the caller byte for byte, exactly as <see cref="Relay"/> delivers it — no pump, no
+    /// re-encoding. The text is written as UTF-8 without a byte order mark.</para>
+    /// <para>A child that exits before reading all of it breaks the pipe; that is its answer, not ours to
+    /// raise, so the write failure is swallowed and the child's exit code returned.</para>
+    /// </remarks>
+    public int RelayWithInput(IReadOnlyList<string> args, string input)
+    {
+        using var child = Process.Start(StartInfoWithInput(args))
+            ?? throw new InvalidOperationException($"could not start {WindowsBinary()}");
+        try
+        {
+            child.StandardInput.Write(input);
+            child.StandardInput.Close();
+        }
+        catch (IOException)
+        {
+            // The child closed its end first — it has already decided; its exit code says what.
+        }
+
+        child.WaitForExit();
+        return child.ExitCode;
+    }
+
+    /// <summary>The launch <see cref="RelayWithInput"/> makes: stdin redirected, nothing else.</summary>
+    internal ProcessStartInfo StartInfoWithInput(IReadOnlyList<string> args)
+    {
+        var start = StartInfo(args);
+        start.RedirectStandardInput = true;
+        start.StandardInputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+        return start;
+    }
+
+    /// <summary>
     /// The same launch, but with stdin and stdout as pipes the caller owns.
     /// </summary>
     /// <remarks>

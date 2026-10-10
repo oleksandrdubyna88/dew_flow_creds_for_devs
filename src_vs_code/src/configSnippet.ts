@@ -10,8 +10,9 @@
  * <p><b>No snippet ever contains the key.</b> It cannot: the vault keeps only a SHA-256 of it
  * (see `configKey.ts`), so there is nothing to interpolate. That is the right shape anyway — a
  * snippet is pasted into a repository, and a key baked into one would be precisely the leak this
- * whole feature exists to end. Every snippet reads the key from the environment, and a test
- * asserts that none of them does anything else.</p>
+ * whole feature exists to end. Every snippet reads the key from the environment and hands it to
+ * `creds config -` on STDIN — never as an argument, which other processes can read — and a test
+ * pins that, language by language.</p>
  *
  * <p><b>Depth is stated rather than implied.</b> Three languages plug into their platform's own
  * configuration stack; the rest hand you a parsed document and let you do what you like with it.

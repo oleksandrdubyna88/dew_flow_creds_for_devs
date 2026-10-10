@@ -75,7 +75,7 @@ from `/proc` and a shim.
 4. The orphans on the measured machine were cleaned up the same day, by PID, after proving each was an orphan.
 5. An upstream issue goes to `modelcontextprotocol/csharp-sdk` (draft in §5.10; posted only after the owner's OK on the
    text).
-6. The config key in argv (a side finding) gets its own plan: [PLAN_config_key_off_the_command_line.md](PLAN_config_key_off_the_command_line.md).
+6. The config key in argv (a side finding) gets its own plan: [PLAN_config_key_off_the_command_line.md](../research/PLAN_config_key_off_the_command_line.md).
 7. The owner's WSL MCP install is refreshed after the release ships.
 
 ### 3.2 The question consultant (consultation `33635809`, one of two rows answered — the other was rate-limited)

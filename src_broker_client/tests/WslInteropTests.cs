@@ -149,6 +149,34 @@ public class WslInteropTests
     }
 
     [Fact]
+    public void A_relay_with_input_redirects_stdin_and_nothing_else()
+    {
+        // stdout and stderr stay inherited, exactly as Relay leaves them: the config document is
+        // parsed by a program, and a pump in between is how a bridge quietly re-encodes it.
+        var start = new WindowsBridge("some-binary", "CREDS_TEST_UNSET_VARIABLE").StartInfoWithInput(["config", "-"]);
+
+        start.RedirectStandardInput.Should().BeTrue();
+        start.RedirectStandardOutput.Should().BeFalse("stdout passes through byte for byte");
+        start.RedirectStandardError.Should().BeFalse("a diagnostic from the Windows side reaches the terminal");
+        start.ArgumentList.Should().Equal("config", "-");
+        start.Environment[WslInterop.RelayedVariable].Should().Be("1");
+    }
+
+    [Fact]
+    public void A_relay_with_input_delivers_the_text_and_closes_stdin()
+    {
+        // A real child that reads stdin to EOF and says by its exit code whether the text arrived.
+        // One left with stdin open would hang here instead of exiting.
+        var (binary, args) = OperatingSystem.IsWindows()
+            ? ("findstr", new[] { "/c:needle-7f3a" })
+            : ("grep", new[] { "-q", "needle-7f3a" });
+        var bridge = new WindowsBridge(binary, "CREDS_TEST_UNSET_VARIABLE");
+
+        bridge.RelayWithInput(args, "needle-7f3a\n").Should().Be(0);
+        bridge.RelayWithInput(args, "haystack\n").Should().NotBe(0);
+    }
+
+    [Fact]
     public void The_two_override_variables_are_not_the_same_name()
     {
         WslInterop.McpBinaryOverrideVariable.Should().NotBe(WslInterop.BinaryOverrideVariable);
