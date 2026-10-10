@@ -59,6 +59,34 @@ public static class WslInterop
     public const string RelayedVariable = "CREDS_RELAYED_FROM_WSL";
 
     /// <summary>
+    /// The one variable WSL reads to decide which of a Linux process's variables a Windows child it starts may see.
+    /// </summary>
+    /// <remarks>
+    /// Environment variables do NOT cross WSL interop on their own — measured 2026-08-26, including from
+    /// <c>ProcessStartInfo.Environment</c> — so until 2026-10-10 <see cref="RelayedVariable"/> never reached the
+    /// Windows half at all: the loop guard held only because <c>isWindows</c> short-circuits there, and E2's "the
+    /// parent watch is off for the Windows half of the bridge" was a line in a document the real bridge did not
+    /// honour (the Windows half watched the session-long <c>wsl.exe</c>; seen in E3's end-to-end log). Naming the
+    /// variable here, APPENDED to whatever the person's own <c>WSLENV</c> already lists, is what makes it cross.
+    /// </remarks>
+    public const string WslEnvVariable = "WSLENV";
+
+    /// <summary>The <c>WSLENV</c> a Windows child is started with: the person's list, plus <see cref="RelayedVariable"/> once.</summary>
+    public static string WslEnvFor(string? existing)
+    {
+        var list = existing ?? string.Empty;
+        if (Names(list, RelayedVariable))
+        {
+            return list;
+        }
+        return list.Length == 0 ? RelayedVariable : $"{list}:{RelayedVariable}";
+    }
+
+    /// <summary>Whether a <c>WSLENV</c> list already names the variable, with or without its <c>/p</c>-style flags.</summary>
+    private static bool Names(string wslenv, string variable) =>
+        wslenv.Split(':', StringSplitOptions.RemoveEmptyEntries).Any(entry => entry.Split('/')[0] == variable);
+
+    /// <summary>
     /// Whether this process should hand the call to the Windows binary.
     /// </summary>
     /// <param name="isWindows">Whether we are already the Windows binary.</param>
@@ -137,6 +165,8 @@ public sealed record WindowsBridge(string DefaultBinary, string OverrideVariable
             start.ArgumentList.Add(arg);
         }
         start.Environment[WslInterop.RelayedVariable] = "1";
+        // Named in WSLENV, or it stays on this side of the bridge (see WslEnvVariable).
+        start.Environment[WslInterop.WslEnvVariable] = WslInterop.WslEnvFor(Environment.GetEnvironmentVariable(WslInterop.WslEnvVariable));
         return start;
     }
 

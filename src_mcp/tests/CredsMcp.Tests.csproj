@@ -27,6 +27,11 @@
     <!-- Starts the built binary and finds the log file its run wrote — one helper, linked into each
          binary's test project rather than copied (src_service_defaults owns it). -->
     <Compile Include="..\..\src_service_defaults\tests\Support\HostProcess.cs" Link="Support\HostProcess.cs" />
+    <!-- E3: scripts standing in for the Windows half, and the POSIX side of a process test (a real signal, a pid's
+         fate, the SigIgn check) - shared the same way. -->
+    <Compile Include="..\..\src_service_defaults\tests\Support\FakeChild.cs" Link="Support\FakeChild.cs" />
+    <Compile Include="..\..\src_service_defaults\tests\Support\Posix.cs" Link="Support\Posix.cs" />
+    <Compile Include="..\..\src_service_defaults\tests\Support\TestStreams.cs" Link="Support\TestStreams.cs" />
   </ItemGroup>
 
   <ItemGroup>

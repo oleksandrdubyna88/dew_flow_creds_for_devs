@@ -85,16 +85,6 @@ internal static class McpScript
     }
 
     /// <summary>Wait for the host to exit, at most <paramref name="bound"/>; true when it did.</summary>
-    internal static async Task<bool> ExitsWithinAsync(Process host, TimeSpan bound, CancellationToken ct)
-    {
-        try
-        {
-            await host.WaitForExitAsync(ct).WaitAsync(bound, ct);
-            return true;
-        }
-        catch (TimeoutException)
-        {
-            return false;
-        }
-    }
+    internal static Task<bool> ExitsWithinAsync(Process host, TimeSpan bound, CancellationToken ct) =>
+        CredsForDevs.ServiceDefaults.Tests.Support.HostProcess.ExitsWithinAsync(host, bound, ct);
 }
