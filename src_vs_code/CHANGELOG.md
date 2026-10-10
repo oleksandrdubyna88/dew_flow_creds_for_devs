@@ -6,14 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.1] — 2026-10-10 — A config key never travels on a command line
+
 ### Security — a config key never travels on a command line
 
-- **Every *Read this from code* snippet now hands the key to `creds config -` on stdin** and closes
+- **Twenty of the twenty-two *Read this from code* snippets now hand the key to `creds config -` on stdin** and close
   it, instead of passing it as an argument. A command line is readable by every user inside WSL and
   by every process of the same user on Windows, and a config key lives for a year. C++ and Elixir,
   whose standard libraries cannot write to a child's stdin, put it in the child's
   `CREDSFORDEVS_KEY` and run `creds config` with no argument — each says so in place.
-- **Needs `creds` CLI 0.4.0 or later**, which reads the key from stdin or `CREDSFORDEVS_KEY` and
+- **Needs `creds` CLI 0.3.1 or later**, which reads the key from stdin or `CREDSFORDEVS_KEY` and
   refuses it as an argument. Update the CLI first (*Install `creds` (terminal CLI)…*), then paste
   the new snippet.
 - **Rotate a key that was ever passed as an argument** — by an earlier snippet, a script, or a
