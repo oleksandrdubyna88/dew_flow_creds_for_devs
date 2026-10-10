@@ -18,6 +18,7 @@ import { liveDetails, runDependenciesFirst } from './dependencyRunHost';
 import { quoteFor } from './hostShell';
 import { VpnRunContext, runWithLauncher, vpnDependencies, writeVpnConfig } from './vpnLauncherRun';
 import { requestGone } from './requestLife';
+import type { VpnUseDeps } from './agentUseActions';
 import { resolveVpnLauncher } from './vpnExec';
 import { onPath } from './installFlow';
 import { offerToInstall } from './toolEnsure';
@@ -25,6 +26,20 @@ import { EntityMetadata, VpnType } from './types';
 import { saveTextAs } from './saveTextAs';
 import { pinnedRefusal, sendPinned } from './pinnedTerminal';
 import { clickedSecret, outsidePinNote } from './pinClick';
+
+/**
+ * The agent's VPN opener — `vpnAction`'s `open` — as a factory, so the one line that matters in it, handing
+ * the request's gate to the start, is held by a test rather than only by `extension.ts` (E4.S3, checkpoint
+ * round). The grant carries the account, so the tree element `runVpn` expects is rebuilt exactly: the same
+ * function the human Start button calls, plus the request's start gate. `runVpn`'s own answer goes back, so a
+ * refusal the person saw never reaches the agent as "opened".
+ */
+export function agentVpnOpener(storage: StorageManager, storageDir: string, vaultKeys: VaultKeys, trust: TrustStore): VpnUseDeps['open'] {
+  return async (accountId, entityId, action, startGate) => {
+    const node = storage.getNode(accountId, entityId);
+    return node === undefined ? false : runVpn({ kind: 'node', accountId, node }, action, storage, storageDir, vaultKeys, trust, startGate);
+  };
+}
 
 /**
  * Bring a VPN tunnel up or down.

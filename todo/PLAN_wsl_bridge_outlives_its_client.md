@@ -333,8 +333,13 @@ below).
 - **Deviation, a wider test seam:** the VPN world moved out of `dependencyChain.test.ts` into `test/vpnWorld.ts`
   (both suites use it; it gained held dialogs and an `onExecute` hook), `brokerWorld` gained `realAction` so the
   real `vpnAction` runs behind the real broker, and `sshConnectWorld` gained `sshMissing`.
-- **Not pinned by a test:** the one line in `extension.ts` that hands `open`'s gate to `runVpn` — thin DI wiring
-  in the activation function, which no unit test loads. The required parameter is what keeps it honest.
+- **The agent's opener is a factory**, `vpnRun.agentVpnOpener`, registered by `extension.ts` — the line that hands
+  `open`'s gate to `runVpn` is held by a test (checkpoint round, finding 3); it was activation wiring no test loaded.
+- A chain step that finishes after its request has gone ends the chain with no *Continue* question (`settle` reads the
+  gate first — checkpoint round, finding 4). `notStarted()` builds a `RequestEndedError` whose `name` is part of the
+  instance (finding 2).
+- The flows are catalogued in [module_tests.md](../research/module_tests.md), *A gone request starts no VPN*, with the
+  scenario-harness gap and its reason.
 
 ### 5.8 A stale WSL install says so — `src_vs_code/src`
 
@@ -848,3 +853,15 @@ answered** (codex's four roles; gemini's four rate-limited, the local engine's f
 Break-it for the story: every gate check reverted one at a time — 17 of 17 went red with the real symptom (e.g.
 *"the stored VPN config was written for a request whose client had gone"*, *"a step ran after the client had gone"*,
 *"the installer ran for a request whose client had gone"*).
+
+**E4.S3 checkpoint round after the rebase onto #211 (`again`, 2026-10-10) — `proceed`**, gating 2 against threshold 5,
+**4 of 12 reviewers answered** (codex; gemini rate-limited, the local engine misconfigured). The rebase conflicted only
+in this plan's status line and §14; E2's record is kept above.
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | `sshUseActions.test.ts`: the fixture cast `as never` (raised again) | **rejected** — no new argument: the file's one `deps()` helper, cast at all ten call sites; a follow-up |
+| 1 | the VPN flow has no scenario test and no `module_tests.md` entry | **accepted as the rule allows** — catalogued in [module_tests.md](../research/module_tests.md) with every covering test, and the scenario-harness leg recorded as NOT covered with its reason: the only harness that could reach it stubs `vscode` with terminals that record nothing, and no test may start a real tunnel or installer |
+| 2 | `notStarted()` assigns `error.name` after construction | **accepted** — `RequestEndedError`, its `name` part of the instance; a refactor with no behaviour to watch red — the existing `AbortError` assertions hold it |
+| 3 | the `extension.ts` line handing the gate to `runVpn` is held by no test | **accepted** — `vpnRun.agentVpnOpener`, tested; written against the new seam, so its teeth were proven by break-it (the gate dropped → *"the agent opener started a VPN for a request whose client had gone"*) |
+| 4 | a step that finishes after its request has gone still asks the person to *Continue* | **accepted** — `settle` reads the gate first; RED (*"the person was asked to continue a chain nobody waits for"*) → GREEN → RED again with the check removed |

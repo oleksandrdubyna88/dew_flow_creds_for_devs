@@ -219,10 +219,18 @@ async function runStep(terminal: vscode.Terminal, integration: Integration, step
     terminal.sendText(step.line, true);
     return askToContinue(`CredsForDevs cannot tell when "${step.name}" finishes in this terminal (it reports no shell integration). Continue once it has finished successfully.`);
   }
-  return settle(stepVerdict(step.name, await executed(terminal, integration, step.line)));
+  return settle(stepVerdict(step.name, await executed(terminal, integration, step.line)), startGate);
 }
 
-function settle(verdict: StepVerdict): boolean | Promise<boolean> {
+/**
+ * What a finished step means for the chain. The request is read FIRST: a client gone while the step ran
+ * is not followed by a question — a person asked to continue a chain nobody waits for any more is asked
+ * for nothing (E4.S3, checkpoint round). A step already run is the shell's.
+ */
+function settle(verdict: StepVerdict, startGate: AbortSignal | undefined): boolean | Promise<boolean> {
+  if (requestGone(startGate)) {
+    return false;
+  }
   if (verdict.kind === 'next') {
     return true;
   }

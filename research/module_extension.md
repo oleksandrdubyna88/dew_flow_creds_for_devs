@@ -4051,6 +4051,9 @@ flowchart LR
 - **The config is written last**: the built-in start finds its launcher first and writes the config only for a
   line it will send (`startLine`; after *Import profile* for OpenVPN Connect; never for a missing launcher), with no
   await between the write and the send — so neither a gone request nor a declined import leaves it on disk.
+- **The agent's opener** is `vpnRun.agentVpnOpener(storage, storageDir, vaultKeys, trust)` — what `extension.ts`
+  registers as `open` — so the gate's hand-off to `runVpn` is held by a test, not only by activation code. A chain
+  step that finishes after its request has gone ends the chain without a *Continue* question.
 - **The exit**: `vpnAction`'s `vpnOutcome` throws `notStarted()` (moved from `sshExecRunner.ts` to
   `requestLife.ts`, shared) when nothing started and the gate fired, so `brokerCall` journals the request's
   `ABANDONED` ("it was not launched") and answers nobody. A line already typed is the shell's: a sent command

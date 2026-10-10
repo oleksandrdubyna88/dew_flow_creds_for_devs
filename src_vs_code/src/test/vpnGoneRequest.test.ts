@@ -1,8 +1,13 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { test } from 'node:test';
 import { EntityMetadata } from '../types';
-import { STORED_CONFIG, World, filesUnder, hostOs, ownerChain, startVpn, storageOf, until, world } from './vpnWorld';
+import { loadWithVscode } from './vscodeStub';
+import { STORED_CONFIG, World, filesUnder, hostOs, memoryTrust, ownerChain, startVpn, storageOf, until, world } from './vpnWorld';
+
+type AgentVpnOpener = (storage: unknown, storageDir: string, vaultKeys: unknown, trust: unknown) => (accountId: string, entityId: string, action: 'start' | 'stop', startGate: AbortSignal) => Promise<boolean>;
 
 /**
  * A gone request starts no VPN (`PLAN_wsl_bridge_outlives_its_client.md` §5.7, story E4.S3).
@@ -319,6 +324,41 @@ test('a start with no launcher on this machine writes no config — nothing woul
   try {
     assert.deepEqual(filesUnder(dir), [], 'the VPN config was written with no launcher to read it');
     assert.equal(started, false);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('a client gone while a dependency step runs is not asked whether to continue (checkpoint round, finding 4)', async () => {
+  const request = new AbortController();
+  const only: EntityMetadata = { id: 'a', name: 'only', isSshEnabled: false, isTerminal: true, command: 'only-step', terminalOs: hostOs };
+  const nodes = { a: only, ...wireguard({ dependsOn: ['a'], runDependencies: true }) };
+  const w = world({ 'only-step': 1 }, { onExecute: () => request.abort() });
+
+  const { started, dir } = await startVpn(w, nodes, { startGate: request.signal, mocks: CLI });
+  try {
+    assert.deepEqual(w.infos.filter((t) => /exited with code/.test(t)), [], 'the person was asked to continue a chain nobody waits for');
+    assert.equal(started, false);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('the agent VPN opener hands its gate to the start: a request already gone starts nothing (checkpoint round, finding 3)', async () => {
+  const request = new AbortController();
+  request.abort();
+  const w = world({});
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-opener-'));
+  try {
+    const { agentVpnOpener } = loadWithVscode<{ agentVpnOpener: AgentVpnOpener }>('../vpnRun', w.vscode, CLI);
+    const open = agentVpnOpener(storageOf(wireguard()), dir, { noteUserActivity: () => undefined }, memoryTrust());
+
+    const gone = await open('a1', 'vpn', 'start', request.signal);
+    assert.deepEqual(w.terminals.map((t) => t.name), [], 'the agent opener started a VPN for a request whose client had gone');
+    assert.equal(gone, false);
+
+    assert.equal(await open('a1', 'vpn', 'start', new AbortController().signal), true, w.warnings.join('\n'));
+    assert.equal(await open('a1', 'missing', 'start', new AbortController().signal), false, 'an entry that is gone opens nothing');
   } finally {
     cleanup(dir);
   }

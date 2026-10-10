@@ -52,7 +52,14 @@ export function requestGone(startGate: AbortSignal | undefined): boolean {
  * answering nobody. An `AbortError`, as Node names a cancelled operation.
  */
 export function notStarted(): Error {
-  const error = new Error('Not started: the request it was for had already ended.');
-  error.name = 'AbortError';
-  return error;
+  return new RequestEndedError();
+}
+
+/** Named `AbortError` as part of the instance, as Node names a cancelled operation — never assigned after. */
+class RequestEndedError extends Error {
+  override readonly name = 'AbortError';
+
+  constructor() {
+    super('Not started: the request it was for had already ended.');
+  }
 }

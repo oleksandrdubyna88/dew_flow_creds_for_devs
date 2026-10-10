@@ -957,6 +957,31 @@ plan's first Definition-of-Done item, left open until 1.12.0 and relay 0.9.0 are
 boxes of D-B are stubbed input boxes; the real editor's box staying on screen after the step's time
 ran out is not observed by any test.
 
+## A gone request starts no VPN (2026-10-10, E4.S3)
+
+The flows story E4.S3 of [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md)
+gated: an agent's `creds_vpn_up` / `creds_vpn_down` whose client leaves while the start waits. Every case holds ONE
+await open, fires the request's signal, then lets it go — the moment a person answers a modal nobody waits for.
+Command: `npm test`, or `node --test out/test/<file>.js`.
+
+| Flow | Test | What it holds down |
+|---|---|---|
+| The built-in start | `vpnGoneRequest.test.ts` | a client gone while the config is read: no config file, no tunnel line; gone during the last chain step: the config is not even read; the config is written LAST, so a declined OpenVPN Connect import or a missing launcher leaves no file |
+| The dependency chain | `vpnGoneRequest.test.ts`, `dependencyChain.test.ts` | gone at its modal: no chain terminal; gone during a step: no next step, no *Continue* question |
+| The install offer | `vpnGoneRequest.test.ts`, `toolEnsure.test.ts`, `sshConnect.test.ts` | a late **Install** installs nothing; a request already gone is not asked; the SSH offer carries the SSH request's gate |
+| The custom launcher | `vpnGoneRequest.test.ts` | gone at its trust modal: no chain modal, no line; gone while `{config}` is read: no file, no line; gone after its last dependency: no line |
+| OpenVPN Connect, a stop, an already-gone start | `vpnGoneRequest.test.ts` | no import line; no stop line; no question at all |
+| The agent's opener and the action's exit | `vpnGoneRequest.test.ts`, `agentUseActions.test.ts` | `agentVpnOpener` hands its gate to the start; nothing started for a gone request THROWS (`ABANDONED`), a live refusal stays `no_credential`, a start sent before the client left answers `opened` |
+| Through the real broker | `brokerAbandoned.test.ts` | the real `vpnAction` behind the real broker over HTTP, the client hung up mid-start: one `ABANDONED` line, never `409` or `opened` |
+| Unchanged | `vpnGoneRequest.test.ts`, `vpnRunReports.test.ts`, `dependencyChain.test.ts` | a live request and the person's own click (no gate) start exactly as before |
+
+**Not covered by a scenario harness, and why.** No `*-itest.cjs` drives a VPN start: the one harness that could reach
+it, `agent-broker-itest.cjs`, stubs `vscode` with terminals that record nothing and modals that answer at once, and a
+harness that started a REAL tunnel or installer is exactly what a test may never do. The cross-process half — that the
+window sees a client leave at all — is level 8 of `creds-mcp-itest.cjs` (E4.S1). **What none of this proves:** a real
+VS Code modal or terminal, and a real tunnel; a command already typed, and a tunnel already up, are not revoked by
+design (plan §5.7, open tail).
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.
