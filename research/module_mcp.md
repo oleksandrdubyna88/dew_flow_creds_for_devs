@@ -86,7 +86,8 @@ flowchart TB
   SIGKILL about half a second later (measured), so any grace would be a grace that never ends in a kill, and a
   Windows half still in defect A (a stale install) would outlive the session as before; killing the `/init` interop
   proxy ends the Windows half (measured). A lost parent or a client that hung up gives the child 2 s to leave on
-  its own; a child that closed its own stdout gets 5 s. After a hang-up the pump waits for the child's stdout at most
+  its own; a child that closed its own stdout gets 5 s — unless a signal has been recorded by then, which gives none
+  whatever the pump's own ending was. After a hang-up the pump waits for the child's stdout at most
   6 s instead of forever (the second half of defect B), and says so when the wait begins. A child the lifetime could
   not end answers with exit code 1 and a Warning rather than the exception `Process.ExitCode` throws. Exit code: the child's, or 128 + n after a signal, with the
   reason (`signalled`, `parentGone`) in the exit line; a backstop exits the process through the same forced exit as

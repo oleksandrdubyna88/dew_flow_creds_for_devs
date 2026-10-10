@@ -77,8 +77,15 @@ public sealed class WslPumpRunTests : IDisposable
         await signalled.Ended.WaitAsync(Bound, ct);
 
         WslPump.GraceFor(WslPump.Ending.Interrupted, signalled).Should().Be(TimeSpan.Zero);
-        WslPump.GraceFor(WslPump.Ending.ClientClosed, signalled).Should().Be(signalled.Grace);
-        WslPump.GraceFor(WslPump.Ending.WindowsHalfClosed, signalled).Should().Be(TimeSpan.FromSeconds(5));
+        // Whatever the pump's own ending: a signal the lifetime recorded a moment after the pump returned means the
+        // client's SIGKILL is on its way, and a grace would never end in a kill (SonarCloud round, finding 0).
+        WslPump.GraceFor(WslPump.Ending.ClientClosed, signalled).Should().Be(TimeSpan.Zero);
+        WslPump.GraceFor(WslPump.Ending.WindowsHalfClosed, signalled).Should().Be(TimeSpan.Zero);
+
+        // Its own, unfired signal: the fixture's was set above and would make this one signalled too.
+        using var quiet = new ChildLifetime(new TaskCompletionSource<PosixSignal>().Task, new TaskCompletionSource().Task, TimeSpan.FromMilliseconds(500), Hour, _log, TimeProvider.System, _ => { });
+        WslPump.GraceFor(WslPump.Ending.ClientClosed, quiet).Should().Be(quiet.Grace);
+        WslPump.GraceFor(WslPump.Ending.WindowsHalfClosed, quiet).Should().Be(TimeSpan.FromSeconds(5));
 
         var lostParent = new TaskCompletionSource<PosixSignal>();
         using var parentGone = new ChildLifetime(lostParent.Task, Task.CompletedTask, TimeSpan.FromMilliseconds(500), Hour, _log, TimeProvider.System, _ => { });

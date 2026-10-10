@@ -247,7 +247,8 @@ Shared because both the MCP wrapper and the relay need exactly this, and today e
   killed before it reached its kill, and a Windows half that ignores end-of-stream — a stale install still in defect
   A — would outlive the session exactly as before. So on a signal the child's stdin is closed and its tree killed at
   once (`GraceFor`); the Windows half's log then ends without an exit line, which is the truth. A lost parent or a
-  client that hung up gives the child the lifetime's 2 s; a child that closed its own stdout keeps the old 5 s.
+  client that hung up gives the child the lifetime's 2 s; a child that closed its own stdout keeps the old 5 s — and
+  none of them applies once a signal is recorded, whatever the pump's own ending was (SonarCloud round).
   `SettleAsync` is therefore not unchanged: it stops through the lifetime, with the grace `GraceFor` decides.
 - **Found on the real bridge, not planned:** `CREDS_RELAYED_FROM_WSL` never reached the Windows half, because
   environment variables do not cross WSL interop (§5.1 says so) — E2's "the parent watch is off for the Windows half"
@@ -1181,3 +1182,9 @@ removed), the `ProcessExit` hook's wait names `CancellationToken.None` with its 
 fired token must not cut short), the pump's three Information lines in one block became two (the session's ending and
 the child's exit code on one line), `PumpAsync` takes its token last, `Posix` uses `LibraryImport` and discards the
 kill's result on purpose, a test helper returns the concrete array.
+
+**Code round after the SonarCloud fixes (`again`, 2026-10-10) — `proceed`**, gating 1 against threshold 5, **all 4
+reviewers answered** (codex's four roles). One finding, **accepted**: a signal recorded a moment after the pump
+returned still granted the child 5 s / 2 s, which the client's SIGKILL would cut off — `GraceFor` now reads
+`ChildLifetime.Signalled` first and answers zero whatever the pump's own ending; RED (*"Expected default, but found
+500ms"*, the test that had pinned the 5 s flipped) → GREEN → RED again with the check removed.

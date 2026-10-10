@@ -306,12 +306,17 @@ internal static class WslPump
     private static Task SettleAsync(IManagedChild tracked, Ending ending, ChildLifetime lifetime) =>
         lifetime.StopAsync(tracked, GraceFor(ending, lifetime));
 
-    /// <summary>How long the Windows half may take to leave on its own, by what ended the session.</summary>
-    internal static TimeSpan GraceFor(Ending ending, ChildLifetime lifetime) =>
-        ending switch
+    /// <summary>
+    /// How long the Windows half may take to leave on its own, by what ended the session — and none at all once a
+    /// signal is recorded, whatever the pump's own ending was: a signal that lands a moment after the pump returned
+    /// still means the client's kill is on its way (SonarCloud round, finding 0).
+    /// </summary>
+    internal static TimeSpan GraceFor(Ending ending, ChildLifetime lifetime)
+    {
+        if (lifetime.Signalled)
         {
-            Ending.WindowsHalfClosed => Grace,
-            Ending.Interrupted when lifetime.EndingOr(new HostEnding(0, ExitReason.ParentGone)).Reason == ExitReason.Signalled => TimeSpan.Zero,
-            _ => lifetime.Grace,
-        };
+            return TimeSpan.Zero;
+        }
+        return ending == Ending.WindowsHalfClosed ? Grace : lifetime.Grace;
+    }
 }

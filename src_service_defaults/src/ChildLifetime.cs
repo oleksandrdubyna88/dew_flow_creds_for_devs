@@ -91,6 +91,9 @@ public sealed class ChildLifetime : IDisposable
     /// <summary>Whether a signal or the parent has ended the session.</summary>
     public bool ShuttingDown => _ended.Task.IsCompleted;
 
+    /// <summary>Whether a handled SIGNAL ended the session — the client's kill of this process is then on its way.</summary>
+    public bool Signalled => _ended.Task.IsCompletedSuccessfully && _ended.Task.Result.Reason == ExitReason.Signalled;
+
     /// <summary>
     /// Register the four termination signals and begin: the lifetime owns <paramref name="parent"/> and the
     /// registration, and hooks <c>ProcessExit</c> to stop every tracked child.
