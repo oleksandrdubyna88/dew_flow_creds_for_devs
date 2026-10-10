@@ -272,10 +272,21 @@ test('an entry with CLI aliases shows the copyable command, verb by kind', async
 });
 
 test('a config entry with two names shows its one command once — the command carries no name', () => {
-  const html = renderEntityViewHtml(options({ details: metadata({ isConfig: true } as never), cliAliases: ['app-config', 'cfg'] }));
+  const html = renderEntityViewHtml(options({ details: metadata({ isConfig: true }), cliAliases: ['app-config', 'cfg'] }));
 
   assert.equal((html.match(/value="creds config -"/g) ?? []).length, 1, 'the same command was shown once per name');
   assert.doesNotMatch(html, /creds config (app-config|cfg)/);
+});
+
+test('rows collapse by the COMMAND, not by a flag: an ssh entry keeps a row per name', () => {
+  // The rows follow `cliCommandFor`'s own answer — each distinct command once — so a kind whose command
+  // carries the name keeps every name, and only a config entry (one command for every name) collapses.
+  const ssh = metadata({ kind: 'ssh', isSshEnabled: true, host: 'box.example.com' });
+  const html = renderEntityViewHtml(options({ details: ssh, cliAliases: ['box', 'box2'] }));
+
+  assert.match(html, /value="creds ssh box"/);
+  assert.match(html, /value="creds ssh box2"/);
+  assert.doesNotMatch(html, /creds config/);
 });
 
 test('the verb follows the kind: ssh, run, script, vpn-up, config, env', () => {

@@ -203,6 +203,11 @@ function variantsOf(languageId: string): readonly SnippetVariant[] {
  * password is copied. A config is the one thing an application READS, so it is the one that needs
  * to say how.</p>
  */
+/** The command of each name, each distinct command once, in the names' order. */
+function distinctCliCommands(details: EntityMetadata, aliases: readonly string[]): string[] {
+  return [...new Set(aliases.map((alias) => cliCommandFor(details, alias)))];
+}
+
 function codePanelFor(options: EntityViewOptions): string {
   const details = options.details;
   if (details.isConfig !== true) {
@@ -396,14 +401,16 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     </div>`;
 
   // T23a: what the CLI can reach, said where agent access is already said — and the command
-  // to copy, because a capability nobody can see is a capability nobody uses. A config entry's
-  // command carries no name (`creds config -`), so it is shown once however many names it has.
+  // to copy, because a capability nobody can see is a capability nobody uses. Each DISTINCT
+  // command once: a config entry's carries no name (`creds config -`), so its names collapse to
+  // one row, while every other kind's differ per name and all stay. The copy field's index is
+  // the alias index — equal to the row's, since collapsing happens only where the alias is not read.
   const cliRow =
     (options.cliAliases ?? []).length === 0
       ? ''
-      : `<div class="row"><label>CLI access</label>${(d.isConfig === true ? (options.cliAliases ?? []).slice(0, 1) : (options.cliAliases ?? []))
+      : `<div class="row"><label>CLI access</label>${distinctCliCommands(d, options.cliAliases ?? [])
           .map(
-            (alias, i) => `<div class="line"><input readonly value="${escapeHtml(cliCommandFor(d, alias))}">
+            (command, i) => `<div class="line"><input readonly value="${escapeHtml(command)}">
         <button data-field="cli${i}" data-action="copy" class="icon" title="Copy the CLI command" aria-label="Copy the CLI command">${COPY_ICON}</button>
       </div>`,
           )

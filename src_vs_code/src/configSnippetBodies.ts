@@ -464,6 +464,14 @@ CONFIG = JSON.parse(read_from_vault(vault_key)).freeze`,
 // popen does go through a shell, so the command is a constant: nothing in it can be
 // reinterpreted. The Windows CRT spells the same calls _putenv_s, _popen and _pclose — the
 // _WIN32 branches below; an empty _putenv_s removes the variable.
+static int closeCreds(FILE* pipe) {
+#ifdef _WIN32
+    return _pclose(pipe);
+#else
+    return pclose(pipe);
+#endif
+}
+
 std::string readFromVault(const std::string& key) {
     // setenv changes THIS program's environment, so the key is taken back out the moment the
     // child has it — otherwise every process started later would inherit it too.
@@ -475,33 +483,25 @@ std::string readFromVault(const std::string& key) {
 #ifdef _WIN32
     if (_putenv_s("CREDSFORDEVS_KEY", key.c_str()) != 0) throw std::runtime_error("could not hand creds its key");
     FILE* pipe = _popen("creds config", "r");
-    if (hadBefore) {
-        _putenv_s("CREDSFORDEVS_KEY", previous.c_str());
-    } else {
-        _putenv_s("CREDSFORDEVS_KEY", "");
-    }
+    const int restored = hadBefore ? _putenv_s("CREDSFORDEVS_KEY", previous.c_str()) : _putenv_s("CREDSFORDEVS_KEY", "");
 #else
     if (setenv("CREDSFORDEVS_KEY", key.c_str(), 1) != 0) throw std::runtime_error("could not hand creds its key");
     FILE* pipe = popen("creds config", "r");
-    if (hadBefore) {
-        setenv("CREDSFORDEVS_KEY", previous.c_str(), 1);
-    } else {
-        unsetenv("CREDSFORDEVS_KEY");
-    }
+    const int restored = hadBefore ? setenv("CREDSFORDEVS_KEY", previous.c_str(), 1) : unsetenv("CREDSFORDEVS_KEY");
 #endif
     if (pipe == nullptr) throw std::runtime_error("could not run creds");
+    // A key that could not be taken back out would reach every process started later: stop here.
+    if (restored != 0) {
+        closeCreds(pipe);
+        throw std::runtime_error("could not take the key back out of the environment");
+    }
     std::array<char, 4096> buffer{};
     std::string out;
     while (std::fgets(buffer.data(), static_cast<int>(buffer.size()), pipe) != nullptr) {
         out += buffer.data();
     }
     // Loudly. A silently empty configuration starts against the wrong database.
-#ifdef _WIN32
-    const int exitCode = _pclose(pipe);
-#else
-    const int exitCode = pclose(pipe);
-#endif
-    if (exitCode != 0) throw std::runtime_error("creds config failed");
+    if (closeCreds(pipe) != 0) throw std::runtime_error("creds config failed");
     return out;
 }
 

@@ -290,6 +290,12 @@ test('C++ has a Windows branch — _putenv_s, _popen, _pclose — that restores 
   // A key that could not be set must not launch creds against whatever key was there before (code round).
   assert.match(windows, /if \(_putenv_s\("CREDSFORDEVS_KEY", key\.c_str\(\)\) != 0\) throw/, 'Windows launches creds even when the key could not be set');
   assert.match(posix, /if \(setenv\("CREDSFORDEVS_KEY", key\.c_str\(\), 1\) != 0\) throw/, 'POSIX launches creds even when the key could not be set');
+  // A key that could not be taken back out would reach every later child: both branches hand the result on,
+  // and the function stops on it, closing the pipe first (code round 2).
+  const cpp = snippetFor('cpp', 'default', CONTEXT).code;
+  assert.match(windows, /const int restored = hadBefore \? _putenv_s\("CREDSFORDEVS_KEY", previous\.c_str\(\)\) : _putenv_s\("CREDSFORDEVS_KEY", ""\);/, 'Windows does not keep the restore result');
+  assert.match(posix, /const int restored = hadBefore \? setenv\("CREDSFORDEVS_KEY", previous\.c_str\(\), 1\) : unsetenv\("CREDSFORDEVS_KEY"\);/, 'POSIX does not keep the restore result');
+  assert.match(cpp, /if \(restored != 0\) \{\s*closeCreds\(pipe\);\s*throw std::runtime_error/, 'a failed restore does not stop the read');
   assert.equal(/\b_?setenv\(|\b_?putenv|\b_?p(?:open|close)\(/.test(outside), false, `a launch or an environment write sits outside both branches:\n${outside}`);
 });
 
@@ -300,12 +306,19 @@ const THREE_LINE_DOCUMENT = ['{', '  "ConnectionStrings": {', '    "Default": "S
 /** Nothing spawned here may hold the suite: a probe, a shell, a compiler or the built program gets a minute. */
 const SPAWN_TIMEOUT_MS = 60_000;
 
+/**
+ * Whether `command` is on this machine — `false` only when it is NOT there. A tool that is there and fails its
+ * own probe is a broken machine, and the probe says so instead of quietly skipping the test (code round).
+ */
 function has(command: string, args: string[]): boolean {
   try {
     execFileSync(command, args, { stdio: 'ignore', timeout: SPAWN_TIMEOUT_MS });
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if ((error as { code?: unknown }).code === 'ENOENT') {
+      return false;
+    }
+    throw error;
   }
 }
 
