@@ -4465,7 +4465,7 @@ Elixir, whose standard libraries cannot, put it in the child's `CREDSFORDEVS_KEY
 `creds config`), and the CLI refuses `creds config <key>` with a constant sentence that never echoes
 the argument. `configSnippet.test.ts` pins the launch and the stdin write per language, and a
 positive control proves its detector still catches every argument shape the snippets used to ship.
-Plan: [PLAN_config_key_off_the_command_line.md](../todo/PLAN_config_key_off_the_command_line.md).
+Plan: [PLAN_config_key_off_the_command_line.md](PLAN_config_key_off_the_command_line.md).
 
 **The Fields tab is a VIEW over the raw text.** Parse-edit-serialise cannot keep a document —
 `JSON.parse` then `JSON.stringify` loses the indentation somebody chose, the blank lines and the

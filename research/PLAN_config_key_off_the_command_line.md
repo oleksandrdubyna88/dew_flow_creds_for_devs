@@ -1,7 +1,7 @@
 # PLAN — a config key never travels on a command line
 
-> Status: **plan only, nothing implemented yet, 2026-10-09** (revised the same day: the argument form is refused at
-> once instead of deprecated — owner's decision, agreed with the consultant). Scope: `src_cli/src` (`CommandLine.cs`,
+> Status: **IMPLEMENTED, 2026-10-10** (creds side; `coai`'s half is its own plan, § 7). The argument form is refused at
+> once instead of deprecated — owner's decision, agreed with the consultant; deviations and the open tail are § 9. Scope: `src_cli/src` (`CommandLine.cs`,
 > `Program.cs` `ReadConfigAsync`, a new `ConfigKeyInput.cs` and `ConfigRelay.cs`), `src_broker_client/src/WslInterop.cs`
 > (one new launch helper on `WindowsBridge`), `src_vs_code/src` (`configSnippetBodies.ts`, `configCodePanel.ts`,
 > `configAccess.ts`, the five `help*.ts`), `src_vs_code/README.md`, `src_cli/README.md`.
@@ -11,11 +11,11 @@
 > key as an argument today. Its half is `dew_flow_connect_other_ais · todo/PLAN_creds_config_key_on_stdin.md`; the
 > order between the two is § 7.
 >
-> Found by [RESULTS_wsl_bridge_orphans.md](../research/RESULTS_wsl_bridge_orphans.md) (§ Side findings) while tracing
-> leaked processes; split out of [PLAN_wsl_bridge_outlives_its_client.md](PLAN_wsl_bridge_outlives_its_client.md) by the
+> Found by [RESULTS_wsl_bridge_orphans.md](RESULTS_wsl_bridge_orphans.md) (§ Side findings) while tracing
+> leaked processes; split out of [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md) by the
 > owner's decision of 2026-10-09.
 >
-> Related docs: [PLAN_config_entities.md](../research/PLAN_config_entities.md), [module_extension.md](../research/module_extension.md).
+> Related docs: [PLAN_config_entities.md](PLAN_config_entities.md), [module_extension.md](module_extension.md).
 
 ## 1. The symptom
 
@@ -91,7 +91,7 @@ leaks this way stays useful.
    line, and the application holding the key already carries it in its own environment, so this adds no new reader.
 5. **Copy says the same thing everywhere**: `--help`, `src_cli/README.md`, the code panel's "Open to code" line, the
    mint dialog (`configAccess.ts:77`, which also stops naming `AddCredsForDevs()` — a package that was never built,
-   [PLAN_config_entities.md](../research/PLAN_config_entities.md) deviation 1), the config topic of the five help
+   [PLAN_config_entities.md](PLAN_config_entities.md) deviation 1), the config topic of the five help
    languages, and `src_vs_code/README.md:569`.
 6. **The key never appears in any diagnostic.** No `Note`, refusal, exception message or test failure text carries it;
    a test drives every refusal path with a marker value and greps everything written to stderr for it, with a positive
@@ -158,3 +158,31 @@ form.
 
 Nothing. One extra `creds.exe --help` launch per `creds config` call inside WSL (an AOT start-up, milliseconds), no
 state, no file, no table.
+
+## 9. What shipped, and how it differs from this plan
+
+Built as planned (S1–S4), with these deviations — recorded because they are what the next reader needs:
+
+1. **Code round, two additions.** `ConfigKey.Found` overrides `ToString`: a positional record prints every member, so
+   one interpolated log line or a failed assertion would have written the key (found by our own reviewer). The C++
+   snippet takes `CREDSFORDEVS_KEY` back out of the APPLICATION's environment right after `popen` (restoring a previous
+   value), because `setenv` changes the parent, not only the child (found by the gate). The Scala snippet stopped
+   discarding creds' stderr.
+2. **The real WSL check ran before release, with counts only** (2026-10-10, Ubuntu on WSL2, this branch's Linux
+   `creds` and Windows `creds.exe`, a fake key). New Windows binary: 1032 process-table samples taken while both
+   halves were running, the fake key in **0** command lines on the WSL side and 0 of 576 Windows `Win32_Process`
+   samples; the Windows half reached the window and was refused as an unknown key (exit 92), for both `config -` and
+   `config`. A Windows binary built from `main` before this change: refused with "update creds.exe" (exit 99), the
+   fake key in no command line. The argument form: refused, exit 96. **The sampler stores counts, never command
+   lines** — the first attempt stored lines and caught a REAL key in the command line of a running `creds config`
+   started by an older installed CLI on the same machine, which is this plan's symptom observed live; that sample
+   file was deleted at once and the value written nowhere.
+3. **Not a hang, a slow refusal (pre-existing, not changed here).** An unknown key is tried against every endpoint
+   file — 34 on the test machine, a health probe of up to 2 s each — so a refusal took ~67 s there. A key a window
+   holds returns at the first match. Why so many endpoint files survive is not this plan's subject; it is noted
+   here so the next reader does not mistake the wait for a bridge hang, as the first run of the check did.
+
+**Open tail:** `dew_flow_connect_other_ais` still passes the key as an argument until its own half ships
+(`dew_flow_connect_other_ais · todo/PLAN_creds_config_key_on_stdin.md`), after this repository's `cli` release. The
+copyable CLI row for a config entry with a CLI alias reads `creds config <alias>`, which never worked (there is no
+alias route for configs) and is now refused like any argument — reported, not changed here.

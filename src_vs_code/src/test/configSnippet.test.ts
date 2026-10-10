@@ -88,7 +88,7 @@ test('every snippet fails loudly — none of them can start an application again
  * <p>Pinned per language rather than matched by one clever regex, because the property is
  * per-language syntax and a generic detector is exactly what let the old argument form look safe:
  * it checked for a shell, and the leak was the argument list itself, readable by every process on
- * the machine (todo/PLAN_config_key_off_the_command_line.md).</p>
+ * the machine (research/PLAN_config_key_off_the_command_line.md).</p>
  */
 const STDIN_FEEDS: Readonly<Record<string, { launch: RegExp; feed: RegExp }>> = {
   'csharp:net6': {

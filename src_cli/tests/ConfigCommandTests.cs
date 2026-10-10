@@ -12,7 +12,7 @@ namespace CredsCli.Tests;
 /// argument, because a config key is not a grant token: a grant carries the window's port in its
 /// own text and dies with that window, while this outlives it and carries nothing.</para>
 /// <para>The argument form was refused outright on 2026-10-09
-/// (<c>todo/PLAN_config_key_off_the_command_line.md</c>): a command line is readable by every user
+/// (<c>research/PLAN_config_key_off_the_command_line.md</c>): a command line is readable by every user
 /// inside WSL and by every process of the same user on Windows, and a config key lives for a year.</para>
 /// </remarks>
 public class ConfigCommandTests

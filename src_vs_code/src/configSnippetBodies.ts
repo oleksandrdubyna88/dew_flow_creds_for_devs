@@ -12,7 +12,7 @@
  *
  * <p><b>The key never travels as an argument.</b> A command line is readable by every user inside
  * WSL and by every process of the same user on Windows, and a config key lives for a year
- * (todo/PLAN_config_key_off_the_command_line.md). So each snippet starts `creds config -` and
+ * (research/PLAN_config_key_off_the_command_line.md). So each snippet starts `creds config -` and
  * writes the key and a newline to its STDIN, then closes it — with no shell in between. Two cannot:
  * C++ (`popen` reads OR writes a child, and the standard library has nothing else) and Elixir
  * (`System.cmd` has no stdin) put the key into the CHILD's environment as `CREDSFORDEVS_KEY` and

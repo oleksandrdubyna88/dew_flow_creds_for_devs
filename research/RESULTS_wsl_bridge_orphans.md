@@ -108,7 +108,7 @@ that its launcher is gone; one that does not dies by the default disposition, sk
   six hours with the key in its command line, readable by any user's process in the distribution through
   `/proc/<pid>/cmdline` — measured: `/proc` mounted without `hidepid`, `cmdline` mode `0444`, and an unprivileged user
   read root's PID 1 command line. Tracked separately in
-  [PLAN_config_key_off_the_command_line.md](../todo/PLAN_config_key_off_the_command_line.md).
+  [PLAN_config_key_off_the_command_line.md](PLAN_config_key_off_the_command_line.md).
 
 ## Cleanup done on the measured machine
 
