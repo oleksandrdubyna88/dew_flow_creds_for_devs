@@ -5549,8 +5549,12 @@ flowchart LR
   E2's three words; `unknown` on a timeout — a busy distribution is not an old binary. The bounded run is
   `wslProcess.runWslOutcome`, widened out of `runWslBounded` (same spawn, deadline and tree kill) to tell
   a timeout from an exit; `runningDistros` reads the UTF-16 listing through the same core.
+- **What is shown** is decided by the pure `wslMcpCheck.noticeFor` (level, text, buttons); the dialog code
+  in `mcpInstallTarget.ts` only shows it and applies the click (`wslMcpCheckHost.test.ts` drives it under the
+  `vscode` stub).
 - **When** (`wslMcpCheck.ts`, `vscode`-free): after every install into WSL (older is said at once,
-  without an Update that would reinstall the same release); at activation for recorded, RUNNING, due
+  without an Update that would reinstall the same release); at activation — the due distributions asked
+  side by side — for recorded, RUNNING, due
   (24 h per distribution, a clock set back counts as due) installs not dismissed for this version — a
   stopped distribution is never asked, because running anything in it starts its VM; and the command,
   which ignores the clock and the dismissal but still offers only running distributions.

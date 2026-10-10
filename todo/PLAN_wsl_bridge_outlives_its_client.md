@@ -986,3 +986,15 @@ choice is applied under a `try` that shows the error.
 | 4 | No scenario test for the flow (re-raised) | **rejected** — no new argument; the only harness able to drive it deletes and rebuilds a tree inside the distribution, which this story may not do; the leg belongs to E5.S1's rewrite, and `module_tests.md` states the gap |
 | 5 | Whole-map writes across two windows (re-raised) | **rejected** — on the first round's reasons |
 | 6 | Activation probes serially without showing progress | **rejected** — a background reminder nobody waits on; each stale result is reported as its probe finishes |
+
+**Pull request #213's automated reviewers.** CodeRabbit: reviewed, no actionable comments. SonarCloud (gate failed on
+new-code coverage 76.4 % < 80, 4 issues), all four fixed and the coverage raised: what the person is shown is now
+decided by a pure `noticeFor` (the dialog code only shows it), and the window's half — the command, Update, the
+dismissal, the post-install notice, the install-first redirect — runs in-process under the `vscode` stub with
+`wsl.exe` stood in for (`wslMcpCheckHost.test.ts`, written against code that already passed, so its teeth were proven
+by break-it: the install record removed → two red; the no-running guard removed → *"with no distribution running the
+command says so and probes nothing"* red; Update offered after an install → red). `await` inside the activation loop
+(three issues, S9382): the due distributions are now asked side by side — this reverses the code round's rejection of
+finding 5; the stamp's read-modify-write has no await inside it, so two cannot interleave. The backtracking pattern
+for the Windows-half line (S8786) became string steps, and the version pattern too; RED with the old pattern put back
+(*"a hostile Windows-half line is read in linear time"*, 1384 ms against a 1 s bound) → GREEN.

@@ -14,23 +14,19 @@ import {
   activationCheck,
   checkDistro,
   dismissForVersion,
+  noticeFor,
   rememberInstall,
 } from './wslMcpCheck';
 import {
   RecordedWslInstall,
   canJudge,
   cannotJudgeMessage,
-  currentInstallMessage,
   helpArgv,
   installArgv,
   installFailure,
   installedPathFrom,
-  knowsTheBridge,
-  notRecordedMessage,
-  refusedPathMessage,
-  staleBinaryWarning,
-  staleInstallMessage,
-  unansweredMessage,
+  knowsTheBridge,
+  staleBinaryWarning,
   wslInstalledMessage,
   wslPathArgv,
   wslServerBlock,
@@ -181,10 +177,11 @@ export function registerWslMcpCheck(
   register: (command: string, handler: (...args: unknown[]) => unknown) => void,
   host: WslCheckHost,
   warn: (message: string) => void,
+  platform: string = process.platform,
 ): void {
   // One id: the panel's *Install…* submenu button and the palette entry run this one handler.
   register('credSshManager.checkWslMcpInstall', () => checkWslMcpInstall(host));
-  if (process.platform === 'win32') {
+  if (platform === 'win32') {
     checkAtActivation(host).catch((error: unknown) => warn(`the daily WSL MCP install check failed: ${String(error)}`));
   }
 }
@@ -202,7 +199,7 @@ async function checkAtActivation(host: WslCheckHost): Promise<void> {
   const expected = recordedVersion(host.state, CREDS_MCP);
   await activationCheck(checkDeps(host), expected, (result) => {
     // Not awaited: a notification nobody clicks must not hold up the next distribution.
-    void offerStale(result, expected, host, true);
+    void present(result, expected, host, true);
     return Promise.resolve();
   });
 }
@@ -222,7 +219,7 @@ async function checkWslMcpInstall(host: WslCheckHost): Promise<void> {
     { location: vscode.ProgressLocation.Notification, title: `Asking the MCP server in ${distro} its version…` },
     () => checkDistro(checkDeps(host), distro, expected),
   );
-  await showResult(result, expected, host);
+  await present(result, expected, host, true);
 }
 
 /** Only RUNNING distributions are offered — the explicit check never starts a VM either. */
@@ -240,75 +237,30 @@ async function pickRunningDistro(): Promise<string | undefined> {
     : vscode.window.showQuickPick(running, { title: 'Which distribution does the agent run in?' });
 }
 
-async function showResult(result: CheckResult, expected: string, host: WslCheckHost): Promise<void> {
-  switch (result.kind) {
-    case 'not-recorded':
-      return offerUpdate(notRecordedMessage(result.distro), result.distro, host);
-    case 'refused':
-      return offerUpdate(refusedPathMessage(result.distro), result.distro, host);
-    default:
-      return showVerdict(result, expected, host);
-  }
-}
-
-async function showVerdict(result: CheckResult & { kind: 'verdict' }, expected: string, host: WslCheckHost): Promise<void> {
-  const { verdict, distro, install } = result;
-  if (verdict.kind === 'unknown') {
-    void vscode.window.showWarningMessage(unansweredMessage(distro));
-    return;
-  }
-  if (verdict.kind === 'current') {
-    void vscode.window.showInformationMessage(currentInstallMessage(distro, install.linuxBinary, verdict));
-    return;
-  }
-  await offerStale(result, expected, host, true);
-}
-
 /**
- * Older: the person's three answers — **Update**, **Later**, **Not for this version**.
+ * Show the notice `noticeFor` decided, and do what was clicked. Later is nothing at all: the
+ * once-a-day clock asks again tomorrow.
  *
- * <p>Straight after an install there is no Update to offer (`withUpdate` false): it would install the
- * same release again. What is left to say is that it is older, and the person can silence it.</p>
+ * <p>Callers at activation and after an install do not await it (a notification nobody clicks must
+ * not hold anything up), so a failing Update or dismissal is said here rather than left as an
+ * unhandled rejection (own review, code round).</p>
  */
-async function offerStale(
-  result: CheckResult & { kind: 'verdict' },
-  expected: string,
-  host: WslCheckHost,
-  withUpdate: boolean,
-): Promise<void> {
-  if (result.verdict.kind !== 'older') {
-    return;
-  }
-  const text = staleInstallMessage(result.distro, result.install.linuxBinary, expected, result.verdict);
-  const choices = withUpdate ? ['Update', 'Later', 'Not for this version'] : ['Later', 'Not for this version'];
-  await applyStaleChoice(await vscode.window.showWarningMessage(text, ...choices), result.distro, expected, host);
-}
-
-/** Later is nothing at all: the once-a-day clock asks again tomorrow. */
-async function applyStaleChoice(
-  picked: string | undefined,
-  distro: string,
-  expected: string,
-  host: WslCheckHost,
-): Promise<void> {
+async function present(result: CheckResult, expected: string, host: WslCheckHost, withUpdate: boolean): Promise<void> {
+  const notice = noticeFor(result, expected, withUpdate);
+  const show = notice.level === 'info' ? vscode.window.showInformationMessage : vscode.window.showWarningMessage;
+  const picked = await show(notice.text, ...notice.choices);
   try {
-    await (picked === 'Update' ? updateWslInstall(distro, host) : dismissIf(picked, distro, expected, host));
+    await applyChoice(picked, result.distro, expected, host);
   } catch (error) {
-    // Its callers do not await it (a notification nobody clicks must not hold anything up), so a
-    // failure is said here rather than left as an unhandled rejection (own review, code round).
-    void vscode.window.showErrorMessage(`Could not finish that for ${distro}: ${describeError(error)}`);
+    void vscode.window.showErrorMessage(`Could not finish that for ${result.distro}: ${describeError(error)}`);
   }
 }
 
-async function dismissIf(picked: string | undefined, distro: string, expected: string, host: WslCheckHost): Promise<void> {
-  if (picked === 'Not for this version') {
-    await dismissForVersion(host.state, distro, expected);
-  }
-}
-
-async function offerUpdate(text: string, distro: string, host: WslCheckHost): Promise<void> {
-  if ((await vscode.window.showWarningMessage(text, 'Update', 'Later')) === 'Update') {
+async function applyChoice(picked: string | undefined, distro: string, expected: string, host: WslCheckHost): Promise<void> {
+  if (picked === 'Update') {
     await updateWslInstall(distro, host);
+  } else if (picked === 'Not for this version') {
+    await dismissForVersion(host.state, distro, expected);
   }
 }
 
@@ -345,6 +297,6 @@ async function staleAfterInstall(distro: string, host: WslCheckHost): Promise<bo
   if (result.kind !== 'verdict' || result.verdict.kind !== 'older') {
     return false;
   }
-  void offerStale(result, expected, host, false);
+  void present(result, expected, host, false);
   return true;
 }

@@ -1020,10 +1020,11 @@ Named rather than implied, because the rule asks for exactly this.
   — never a stopped distribution, once a day, the dismissal, nothing spawned with nothing recorded, an
   object-property distribution name (`wslMcpCheck.test.ts`); the bounded run's timeout-versus-exit, its
   UTF-16 listing and its output cap (`wslProcess.test.ts`); the panel button being the palette's one id
-  (`wslMcpCheckButton.test.ts`). It was run once by hand, read-only, against the real bridge on a Windows
+  (`wslMcpCheckButton.test.ts`); and the window's half — the command, each click, Update's new block and
+  record — in-process under the `vscode` stub with `wsl.exe` stood in for (`wslMcpCheckHost.test.ts`). It was run once by hand, read-only, against the real bridge on a Windows
   machine with two running distributions — the argv crossed `wsl.exe` and both pre-0.10.0 binaries read as
   `older`. **The limit is exact**: a `current` verdict from a real 0.10.0 install has not been observed (no
-  such release existed yet), and the dialog and its Update are unexercised. The automated leg belongs in
+  such release existed yet), and the real editor's dialogs and a real `wsl.exe` under them are unexercised. The automated leg belongs in
   `creds-mcp-wsl-itest.cjs`, which E5.S1 rewrites with run-unique directories.
 - **The Marketplace artefact.** `npm run package` runs in CI, and nothing installs the resulting
   `.vsix` into a real editor and opens it. The publish step is verified by reading the release run.

@@ -264,13 +264,18 @@ function lineStarting(lines: readonly string[], prefix: string): string {
  * E2's fixed words — so the FIRST ` (` splits, and a path like `Program Files (x86)` stays whole.
  */
 function windowsHalfIn(line: string): { windows: string; windowsPath: string } {
-  const match = /^windows half: (.*?) \((.*)\)$/.exec(line);
-  return match === null ? { windows: '', windowsPath: '' } : { windows: match[1], windowsPath: match[2] };
+  // String steps, not a regular expression: `(.*?) \((.*)\)` backtracks super-linearly on a long line
+  // (SonarCloud S8786 on #213), and the line comes from a binary inside the distribution.
+  const rest = line.slice('windows half: '.length);
+  const open = rest.indexOf(' (');
+  const whole = line.startsWith('windows half: ') && open > 0 && rest.endsWith(')');
+  return whole ? { windows: rest.slice(0, open), windowsPath: rest.slice(open + 2, -1) } : { windows: '', windowsPath: '' };
 }
 
 /** `creds-mcp 0.12.0` → `0.12.0`; anything else → `''`. */
 function versionIn(line: string): string {
-  return /^creds-mcp (\d+(?:\.\d+)*\S*)$/.exec(line)?.[1] ?? '';
+  const rest = line.startsWith('creds-mcp ') ? line.slice('creds-mcp '.length) : '';
+  return /^\d\S*$/.test(rest) ? rest : '';
 }
 
 function isBehind(version: string, expected: string): boolean {

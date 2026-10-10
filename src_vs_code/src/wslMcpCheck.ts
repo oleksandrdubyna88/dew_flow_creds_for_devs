@@ -3,7 +3,12 @@ import {
   RecordedWslInstall,
   StaleVerdict,
   canJudge,
+  currentInstallMessage,
+  notRecordedMessage,
+  refusedPathMessage,
+  staleInstallMessage,
   staleVerdict,
+  unansweredMessage,
   versionArgv,
 } from './wslMcpInstall';
 
@@ -105,12 +110,25 @@ export async function activationCheck(
   expected: string,
   report: (result: CheckResult & { kind: 'verdict' }) => Promise<void>,
 ): Promise<void> {
-  for (const distro of await dueDistros(deps, expected)) {
-    await stamp(deps, distro);
-    const result = await checkDistro(deps, distro, expected);
-    if (result.kind === 'verdict' && result.verdict.kind === 'older') {
-      await report(result);
-    }
+  const due = await dueDistros(deps, expected);
+  await Promise.all(due.map((distro) => checkOne(deps, distro, expected, report)));
+}
+
+/**
+ * One distribution: stamp, ask, report if older. The due distributions are asked side by side
+ * (SonarCloud S9382 on #213): each probe is bounded, and the set is only what a person installed into
+ * through this extension. The stamp's read-modify-write has no await inside it, so two cannot interleave.
+ */
+async function checkOne(
+  deps: WslCheckDeps,
+  distro: string,
+  expected: string,
+  report: (result: CheckResult & { kind: 'verdict' }) => Promise<void>,
+): Promise<void> {
+  await stamp(deps, distro);
+  const result = await checkDistro(deps, distro, expected);
+  if (result.kind === 'verdict' && result.verdict.kind === 'older') {
+    await report(result);
   }
 }
 
@@ -141,4 +159,43 @@ export function isDue(lastMs: number | undefined, nowMs: number): boolean {
 
 async function stamp(deps: WslCheckDeps, distro: string): Promise<void> {
   await deps.state.update(LAST_CHECKED, { ...mapAt<number>(deps.state, LAST_CHECKED), [distro]: deps.now() });
+}
+
+/** What the person is shown for one result — decided here, so the dialog code only shows it. */
+export interface CheckNotice {
+  readonly level: 'info' | 'warning';
+  readonly text: string;
+  /** The buttons, in order: some of `Update`, `Later`, `Not for this version`. */
+  readonly choices: readonly string[];
+}
+
+/**
+ * The notice for a result. `withUpdate` is false straight after an install: Update would install the
+ * same release again, so an older install is then reported with Later and the dismissal only.
+ */
+export function noticeFor(result: CheckResult, expected: string, withUpdate: boolean): CheckNotice {
+  switch (result.kind) {
+    case 'not-recorded':
+      return { level: 'warning', text: notRecordedMessage(result.distro), choices: ['Update', 'Later'] };
+    case 'refused':
+      return { level: 'warning', text: refusedPathMessage(result.distro), choices: ['Update', 'Later'] };
+    default:
+      return verdictNotice(result, expected, withUpdate);
+  }
+}
+
+function verdictNotice(result: CheckResult & { kind: 'verdict' }, expected: string, withUpdate: boolean): CheckNotice {
+  const { verdict, distro, install } = result;
+  switch (verdict.kind) {
+    case 'unknown':
+      return { level: 'warning', text: unansweredMessage(distro), choices: [] };
+    case 'current':
+      return { level: 'info', text: currentInstallMessage(distro, install.linuxBinary, verdict), choices: [] };
+    default:
+      return {
+        level: 'warning',
+        text: staleInstallMessage(distro, install.linuxBinary, expected, verdict),
+        choices: withUpdate ? ['Update', 'Later', 'Not for this version'] : ['Later', 'Not for this version'],
+      };
+  }
 }

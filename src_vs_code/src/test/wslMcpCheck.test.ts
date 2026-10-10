@@ -2,15 +2,17 @@ import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   CHECK_INTERVAL_MS,
+  CheckResult,
   CheckStore,
   WslCheckDeps,
   activationCheck,
   checkDistro,
   dismissForVersion,
+  noticeFor,
   recordedInstall,
   rememberInstall,
 } from '../wslMcpCheck';
-import { ProbeAnswer } from '../wslMcpInstall';
+import { ProbeAnswer, cannotJudgeMessage, staleVerdict } from '../wslMcpInstall';
 
 /**
  * Plan §5.8 / E4.S2 — WHEN the stale-install check runs, without a distribution to run it in.
@@ -233,3 +235,61 @@ test('a RECORDED distribution named like an object property is still due at acti
 
   assert.deepEqual(await reported(w), ['constructor']);
 });
+
+// --- what the person is shown, decided without an editor (SonarCloud coverage on #213) ------------
+
+test('older offers Update, Later and Not for this version — and names both versions and both paths', () => {
+  const notice = noticeFor(older(), '0.12.0', true);
+
+  assert.equal(notice.level, 'warning');
+  assert.deepEqual(notice.choices, ['Update', 'Later', 'Not for this version']);
+  for (const part of ['Ubuntu', '0.12.0', '0.10.0', LINUX, WINDOWS]) {
+    assert.ok(notice.text.includes(part), `the notice leaves out ${part}`);
+  }
+});
+
+test('older straight after an install offers no Update — it would install the same release again', () => {
+  assert.deepEqual(noticeFor(older(), '0.12.0', false).choices, ['Later', 'Not for this version']);
+});
+
+test('current is information with nothing to click, and keeps the honest limit', () => {
+  const notice = noticeFor(verdictOf(currentAnswer()), '0.12.0', true);
+
+  assert.equal(notice.level, 'info');
+  assert.deepEqual(notice.choices, []);
+  assert.ok(notice.text.includes('is current'));
+  assert.ok(notice.text.includes('not covered'), 'a current verdict must still say it checked only the copied block');
+});
+
+test('a timeout is said as unanswered, concludes nothing, and offers nothing', () => {
+  const notice = noticeFor(verdictOf({ kind: 'timeout' }), '0.12.0', true);
+
+  assert.equal(notice.level, 'warning');
+  assert.deepEqual(notice.choices, []);
+  assert.ok(notice.text.includes('did not answer'));
+  assert.ok(notice.text.includes('Nothing was concluded'));
+});
+
+test('not recorded and a refused path both offer Update and Later, never a dismissal', () => {
+  const notRecorded = noticeFor({ kind: 'not-recorded', distro: 'Ubuntu' }, '0.12.0', true);
+  const refused = noticeFor({ kind: 'refused', distro: 'Ubuntu', install }, '0.12.0', true);
+
+  assert.deepEqual(notRecorded.choices, ['Update', 'Later']);
+  assert.ok(notRecorded.text.includes('has not recorded'));
+  assert.deepEqual(refused.choices, ['Update', 'Later']);
+  assert.ok(refused.text.includes('cannot be checked safely'));
+});
+
+test('a window whose own creds-mcp predates --version is told what it needs, by version or by absence', () => {
+  assert.ok(cannotJudgeMessage('0.9.1').includes('creds-mcp 0.9.1'));
+  assert.ok(cannotJudgeMessage('0.9.1').includes('0.10.0'));
+  assert.ok(cannotJudgeMessage('').includes('no creds-mcp installed by this extension'));
+});
+
+function verdictOf(answer: ProbeAnswer): CheckResult {
+  return { kind: 'verdict', distro: 'Ubuntu', install, verdict: staleVerdict(answer, '0.12.0') };
+}
+
+function older(): CheckResult {
+  return verdictOf(olderAnswer());
+}

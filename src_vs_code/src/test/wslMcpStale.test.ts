@@ -193,3 +193,14 @@ test('an install this extension did not record is said to be not recorded, with 
 function never(): never {
   throw new Error('unreachable verdict');
 }
+
+test('a hostile Windows-half line is read in linear time, not by a backtracking pattern', () => {
+  // SonarCloud S8786 on #213: `(.*?) \((.*)\)$` backtracks quadratically on a long line with many ` (`
+  // and no closing parenthesis. The line comes from a binary inside the distribution.
+  const hostile = `creds-mcp 0.12.0\nwindows half: ${' ('.repeat(30_000)}x\n`;
+  const started = Date.now();
+  const verdict = staleVerdict(answered(hostile), '0.12.0');
+
+  assert.ok(Date.now() - started < 1_000, `took ${Date.now() - started} ms`);
+  assert.equal(verdict.kind === 'older' && verdict.windowsPath, '');
+});
