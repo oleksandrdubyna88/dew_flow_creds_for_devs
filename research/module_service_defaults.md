@@ -14,6 +14,13 @@ fix to how a log is written is made once. Before it, only the server wrote files
 
 It configures nothing by itself. A library never picks sinks for a host; each host calls one of its two entry points.
 
+**Since E2 (2026-10-10) it also holds the two process-lifetime primitives** a serving host needs to notice its
+client is gone — `ShutdownSignals` (the four termination signals, handled instead of dying by the default
+disposition) and `ParentWatch` (the parent process, built on `ParentProcess`). They live here rather than in one
+binary because the server uses them now and the WSL pump and the SSH-agent relay use them in E3: one copy, per the
+reuse rule and the cadence consultation's fifth point (plan §14). Like the logging, they observe and report; ending
+the process is the host's decision (`ServerLifetime` in `src_mcp`).
+
 ## Diagram
 
 ```mermaid
@@ -32,6 +39,8 @@ flowchart TB
         file["DailyRunFileSink"]
         run["HostRun · HostEnding · ExitReason"]
         ppid["ParentProcess.Id"]
+        watch["ParentWatch<br/>handle + start time · getppid poll"]
+        signals["ShutdownSignals<br/>INT · TERM · HUP · QUIT"]
     end
     server -->|"LogSetup from appsettings"| build
     mcp --> create
@@ -44,6 +53,9 @@ flowchart TB
     mcp --> run
     relay --> run
     run --> ppid
+    mcp --> watch
+    mcp --> signals
+    watch --> ppid
 ```
 
 ## Core entities
@@ -53,11 +65,13 @@ flowchart TB
 | `LogSetup` (record) | Everything one logger is built from: app name, root (empty = console only), start time, levels, retention days, console writer, default source |
 | `LogLevels` (record) | The floor and per-source overrides, bound EXPLICITLY — `Serilog.Settings.Configuration` scans assemblies, which AOT cannot |
 | `LogPlatform` (enum) | Windows / MacOS / Linux — which folder convention the root follows |
-| `ExitReason` (enum) | The closed vocabulary of the exit line (`clientClosed`, `busy`, `noAgentAnnounced`, …), written as its camelCase word; never a contract exit name |
+| `ExitReason` (enum) | The closed vocabulary of the exit line (`clientClosed`, `busy`, `noAgentAnnounced`, `signalled`, `parentGone`, …), written as its camelCase word; never a contract exit name |
 | `HostEnding` (record) | Exit code + `ExitReason` — the code stays the contract's |
 | `HostRun` | Writes the start line (mode, version, pid, parent pid) and the exit line (code, reason, uptime); `Crash` logs the exception first |
 | `AnsiConsoleSink`, `DailyRunFileSink`, `LogRetention`, `UtcTimestampEnricher` | Moved unchanged from the server (see [module_server.md](module_server.md)) |
 | `ParentProcess` | The parent pid: `getppid()` or `NtQueryInformationProcess`; 0 when the platform will not say |
+| `ShutdownSignals` | SIGINT/SIGTERM/SIGHUP/SIGQUIT registered with `Cancel = true`; `Received` completes with the FIRST; `ExitCode` = 128 + the POSIX number (129, 130, 131, 143) |
+| `ParentWatch` | `Gone` completes when the parent is gone. Windows: the parent opened at once by handle, and a holder of its pid that started after this process means the pid was reused (gone already); a parent that cannot be found is gone; one that cannot be opened is logged and not watched. Linux/macOS: `getppid()` every 2 s on a `PeriodicTimer`, a change means re-parented; a start with ppid ≤ 1 is not watched. `Off(reason)` logs why and never completes |
 
 ## Entry points
 
@@ -69,6 +83,8 @@ flowchart TB
   `CREDS_LOG_LEVEL` (verbose/debug for more; Information is the default AND the ceiling, because the start and
   exit lines are Information and the sentences a person or the extension reads are Warning or above), `CREDS_LOG_RETENTION_DAYS` (default 14, 0 disables).
 - **`HostRun.Start` / `End` / `Crash`** — the two lines every serving run writes.
+- **`ShutdownSignals.Register()`** and **`ParentWatch.Start(log)` / `ParentWatch.Off(reason, log)`** — the lifetime
+  primitives; `creds-mcp` passes their tasks to `ServerLifetime` with the transport's end-of-stream.
 
 ## Behaviour worth knowing
 
@@ -94,5 +110,7 @@ flowchart TB
 `src_service_defaults/tests` (xUnit v3, MTP executable `CredsForDevs.ServiceDefaults.Tests`): the path shape, UTC
 lines, the stderr choice, the floor and its ceiling, retention parsing and pruning, the unwritable fallback, the
 override order, the root ladder per platform, the exit-reason words (enumerated from the type), the start/exit lines,
-a real parent pid. `Support/HostProcess.cs` starts a built binary and finds its run's file; it is LINKED into the
+a real parent pid; `ShutdownSignalsTests` (first signal wins, the POSIX numbers, registration with the OS) and
+`ParentWatchTests` (pid reuse → gone at once, a missing parent → gone, access denied → not watched, exit → gone,
+ppid change → gone, ppid 1 → off, the real opener on a real process, the real watch of the runner's own parent). `Support/HostProcess.cs` starts a built binary and finds its run's file; it is LINKED into the
 mcp and cli test projects rather than copied.

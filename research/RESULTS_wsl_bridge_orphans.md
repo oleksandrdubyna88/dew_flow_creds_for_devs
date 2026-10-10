@@ -98,6 +98,28 @@ the same way and its `wsl.exe` then killed from Windows, recorded **`trap-HUP`**
 that its launcher is gone; one that does not dies by the default disposition, skipping
 `ProcessExit`, exactly as SIGINT does in defect B.
 
+## The fixture — a real Claude Code session start, captured 2026-10-10
+
+Plan §7.3 asked for the `server/discover` + `subscriptions/listen` handshake as a test fixture, captured
+rather than composed. The 2026-10-09 shim above recorded only method names and timings, so the fixture was
+captured again on 2026-10-10: a transparent node shim between `claude -p` (Claude Code **2.1.289**, native
+Windows, `--mcp-config` naming the shim) and a `creds-mcp` built from `origin/main` at `9494a67c`, logging each
+client line verbatim. What the client sent, in order:
+
+| # | Method | id |
+|---|---|---|
+| 1 | `server/discover` | `server-discover-probe-1` |
+| 2 | `subscriptions/listen` `{"notifications":{"toolsListChanged":true}}` | `listen:0` |
+| 3 | `server/discover` | `0` |
+| 4 | `tools/list` | `1` |
+
+The same sequence 2.1.295 sent inside WSL, plus the version probe 2.1.289 sends first; every request carries the
+2026-07-28 per-request `_meta` (`protocolVersion`, `clientInfo`, `clientCapabilities`). The server acknowledged the
+listen and answered the rest; the client then closed stdin (natively on Windows it ends by EOF, not by SIGINT as it
+did inside WSL), and the server did not exit. The four client lines are
+`src_mcp/tests/fixtures/claude-code-2.1.289-handshake-2026-07-28.jsonl`, unmodified. They carry the client's own
+public product metadata and nothing of this machine.
+
 ## Side findings, outside the leak
 
 - **The WSL MCP configuration pointed at a manual install** (`%LOCALAPPDATA%\Programs\creds\creds-mcp.exe`

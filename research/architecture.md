@@ -531,6 +531,41 @@ Three consequences worth stating, because each was a decision:
 which side ended the session, the child's exit code), the Windows half as `creds-mcp` on Windows. Log
 settings do not cross the bridge (no `WSLENV`), so the Windows half runs at its own defaults.
 
+### How long a `creds-mcp` lives (2026-10-10)
+
+*A creds process that serves a client ends within a bounded time of losing it, and says in its log which
+signal it was* — [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md).
+For the server answering here (natively, or as the Windows half of the bridge) that is `ServerLifetime`
+(`src_mcp/src`), which holds the token of the SDK's `RunAsync`. The SDK does not end on its own once a
+client opened `subscriptions/listen` — every Claude Code session does — so without that token a closed
+session left its server running (51 on one machine in a day, [RESULTS](RESULTS_wsl_bridge_orphans.md)).
+
+```mermaid
+flowchart TB
+    eof["stdin end-of-stream<br/>MessageReader.Completion"] --> drain["drain 1 s<br/>(the last reply still goes out)"]
+    sig["SIGINT · SIGTERM · SIGHUP · SIGQUIT<br/>ShutdownSignals"] --> cancel
+    parent["parent gone<br/>ParentWatch"] --> cancel
+    drain -->|run still going| cancel["cancel the run token<br/>listen + tool calls + broker HTTP"]
+    drain -->|run finished| done["exit line · return"]
+    cancel -->|stopped| done
+    cancel -->|5 s deadline, dedicated timer| forced["exit line · flush · Environment.Exit"]
+```
+
+- **Exit codes:** 0 for end-of-stream and a lost parent, 128 + n for a handled signal; the reason
+  (`clientClosed`, `parentGone`, `signalled`) is the log's, never a new contract exit name.
+- **Cancellation reaches the broker.** Every tool delegate takes the request's `CancellationToken`, and it
+  flows through `Windows` into every `BrokerClient` call as a linked source bounded by the call's own
+  ceiling — so the window sees the connection close the moment the session ends, not ten minutes later.
+- **The parent watch** (`ParentWatch`, shared in `src_service_defaults`): a handle on the parent on Windows,
+  with a start-time check that catches a reused pid; `getppid()` every 2 s elsewhere. **Off** for the Windows
+  half of the bridge (`CREDS_RELAYED_FROM_WSL` — its parent is the distribution's session-long `wsl.exe`),
+  for a process that started with ppid 1, and with `CREDS_MCP_NO_PARENT_WATCH=1`.
+- **`creds-mcp --version`** prints `creds-mcp <version>`; inside WSL a second line,
+  `windows half: <its answer> (<the executable asked>)`, where a half too old for the flag reads
+  `older than --version`.
+
+The Linux half of the bridge (the pump) and the SSH-agent relay get the same guarantees in the plan's E3.
+
 `CREDS_MCP_WINDOWS_BINARY` overrides the executable — its own variable, never the CLI's. Design
 record and what the build taught: [PLAN_mcp_wsl_bridge.md](PLAN_mcp_wsl_bridge.md); the caller
 record: [PLAN_caller_identity_in_consent.md](PLAN_caller_identity_in_consent.md).

@@ -1,7 +1,7 @@
 # PLAN — every creds process ends when the client it serves is gone
 
-> Status: **in progress, 2026-10-09 — E1 and E4.S1 implemented (§14; §5.7 *As built*); E2, E3, E4.S2 and E5 not yet.** Plan
-> gate passed (`proceed`, 1 of 2 reviewers, one round — §14); each epic is re-gated on its own branch. Scope: `src_mcp/src` (`Program.cs`, `WslPump.cs`, the
+> Status: **in progress, 2026-10-10 — E1 (#201), E4.S1 (#205) and E2 implemented (§14; §5.7 *As built*); E3, E4.S2 and E5 not yet.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
+> round — §14); each epic is re-gated on its own branch. Scope: `src_mcp/src` (`Program.cs`, `WslPump.cs`, the
 > tool lambdas, `Windows.cs`, a new `ServerLifetime`), `src_broker_client/src` (`BrokerClient.cs`, `WslInterop.cs`, a
 > new shared `ChildLifetime`), `src_cli/src` (`AgentRelay.cs`, `RelayPipe.cs`), `src_vs_code/src` (the broker's
 > consent and perform path, the WSL MCP install check), a new shared logging project `src_service_defaults`, the
@@ -276,7 +276,9 @@ Shared because both the MCP wrapper and the relay need exactly this, and today e
 ### 5.8 A stale WSL install says so — `src_vs_code/src`
 
 - The extension does not write a client's MCP config; it copies a block (`wslMcpInstall.ts:79`, `mcpClientConfig.ts`).
-  So the check asks the install itself: `wsl -d <distro> -e bash -lc '<path> --version'` (§5.2), compared with
+  So the check asks the install itself: `wsl -d <distro> -e <path> --version` (§5.2) — the path and the flag as
+  separate arguments, no shell between them (E2 plan round, finding 0: a path with a quote in it must not become a
+  command), bounded by a timeout that kills the process tree — compared with
   `compareVersions` (`credsInstall.ts:151`) against what the extension ships. **`<path>` is the exact executable the
   copied config block names** (the install path `installIntoWsl` wrote), never a bare `creds-mcp` resolved through the
   shell's PATH — a current binary earlier on the PATH would report "current" while the client still launches the stale
@@ -642,3 +644,47 @@ credential broker — each point verified, then acted on:
 Own review (a subagent reading the diff in context, the gate's other half): no high-confidence defect; two of its low
 notes were taken — an action that throws after its client left is now journalled `ABANDONED` rather than `internal`
 (test watched red without it), and the folder routes got their own abandoned test.
+
+### Epic E2 — the server ends when its client is gone (branch `feat/e2-server-ends-with-its-client`)
+
+**Plan round (2026-10-10, session `5cc39dba`) — `proceed`**, gating 2 against threshold 6, **1 of 2 reviewers
+answered** (codex; gemini failed to authenticate — one vendor's verdict, not a panel's).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | §5.8 builds the WSL version check as a shell command a quoted path could break out of, with no bound | **accepted** — §5.8 now runs `wsl -d <distro> -e <path> --version` with the path and the flag as separate arguments, bounded by a timeout that kills the tree (E4 builds it) |
+| 1 | §3.1 promises to remove an abandoned modal, §3.3 makes it optional | **rejected** — outside E2, and rejected on the same argument in E1's plan round: §3.3 is the owner's open decision, E4 ships (a), (b) only on the owner's word, and §13 cannot close before the owner decides |
+
+The round's operator commands, applied: build the epic as one unit without re-splitting; work autonomously
+(RED → GREEN → RED again for every fix, docs with every change, every test suite before the PR, the PR process
+end to end); questions to the question consultant before the person.
+
+**What shipped, and where it differs from §5.2, §5.3, §5.9 and §10:**
+
+- **The fixture is a fresh capture, not the 2026-10-09 shim log** — that log recorded method names only. A
+  transparent shim between `claude -p` (Claude Code **2.1.289**, native Windows) and `creds-mcp` recorded the four
+  client lines verbatim on 2026-10-10: `server/discover` (a version probe), `subscriptions/listen`,
+  `server/discover`, `tools/list` — the 2.1.295 sequence plus the probe
+  ([RESULTS](../research/RESULTS_wsl_bridge_orphans.md), *The fixture*).
+- **`ShutdownSignals` and `ParentWatch` live in `src_service_defaults`**, not in `src_mcp` and not in E3's
+  `ChildLifetime`: the server needs them now, the pump and the relay need them in E3, and one copy is the reuse
+  rule (cadence consultation, point 5). E3's `ChildLifetime` composes them rather than re-implementing either.
+- **`ExitReason` gained `Signalled` and `ParentGone`.** A deadline exit keeps the reason that began the shutdown
+  in its exit line; a Warning line before it says the deadline passed (no separate reason word).
+- **The Windows parent is read when serving starts, not first thing in `Main`** — a few milliseconds later; the
+  start-time comparison is what makes the timing irrelevant (a reused pid is caught either way).
+- **`Program.ServeOnAsync(transport, …)`** takes the transport, so the whole server runs in-process over pipes in a
+  test (`ServeOnTests`) — the coverage tool sees only in-process code (the E1 lesson).
+- **`IsOurBrokerAsync` propagates the caller's cancellation** instead of reading it as "not our window" (it used to
+  swallow every `TaskCanceledException`), and `Windows.PostToAsync` is the walk over already-found endpoints.
+- **Observed, not planned:** with the run token alone and no per-tool token, the 5 s deadline already ended the
+  process — the E2.S3 test therefore asserts the connection closes BEFORE `drain + deadline` and that the log has
+  no "did not stop within" line, which is what tells a cancelled call from a killed process.
+
+**Tests, red first.** E2.S1: *"Expected exited to be True because creds-mcp must exit within 10 s of stdin EOF with a
+subscriptions/listen open, but it is still running, but found False"* → green; break-it (`ServeOnAsync` back to a
+bare `await server.RunAsync()`) red again. E2.S3: *"Expected closedAt.Elapsed to be less than 6s because the cancelled
+call closes its connection, it does not wait for the process to die, but found 6s, 30ms"* → green; break-it
+(`creds_exec`'s delegate drops the token) red again. E2.S4: *"Expected exited to be True because creds-mcp must exit
+once its parent is gone, but it is still running, but found False"* → green; break-it (the watch always off) red
+again. Suites: mcp 126, service defaults 55, cli 133, broker 127, server 809.
