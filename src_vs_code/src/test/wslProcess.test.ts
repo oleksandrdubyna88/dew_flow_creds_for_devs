@@ -8,6 +8,7 @@ import {
   runWslBounded,
   OUTPUT_CAP_BYTES,
   runWslOutcome,
+  listRunning,
   runningDistros,
   translateWindowsPath,
   wslBinary,
@@ -266,4 +267,15 @@ test('a child that prints without end is held to a bounded buffer, not the exten
   const stdout = outcome.kind === 'exited' ? outcome.stdout : '';
   assert.ok(stdout.length <= OUTPUT_CAP_BYTES, `kept ${stdout.length} bytes of an endless answer`);
   assert.ok(stdout.startsWith('creds-mcp 0.12.0\n'), 'the top of the answer is what is kept');
+});
+
+test('a listing that FAILED is told apart from an empty one — "none running" is not a guess', async () => {
+  // Pre-merge checkpoint round: a timed-out or failed `wsl -l --running -q` used to read as "no
+  // distribution is running", and the command told the person to start one.
+  const hung = new FakeChild();
+  assert.deepEqual(await listRunning(50, spawning(hung).spawn), { kind: 'failed' });
+
+  const empty = new FakeChild();
+  says(empty, '', 0);
+  assert.deepEqual(await listRunning(1_000, spawning(empty).spawn), { kind: 'listed', distros: [] });
 });

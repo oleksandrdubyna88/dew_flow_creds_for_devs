@@ -998,3 +998,11 @@ command says so and probes nothing"* red; Update offered after an install → re
 finding 5; the stamp's read-modify-write has no await inside it, so two cannot interleave. The backtracking pattern
 for the Windows-half line (S8786) became string steps, and the version pattern too; RED with the old pattern put back
 (*"a hostile Windows-half line is read in linear time"*, 1384 ms against a 1 s bound) → GREEN.
+
+**Pre-merge checkpoint round (`again`, 2026-10-10) — `proceed`**, gating 1 against threshold 5, **all 4 reviewers
+answered** (codex). The four help-language findings were raised again and discounted; rejected again, and the conflict
+between the shared rule *User-facing text is English* and the five-language help goes to the owner. The whole-map
+writes were raised a third time and rejected on the same reasons. Taken: **a failed `wsl -l --running -q` is no
+longer read as "no distribution is running"**. `listRunning` keeps a failure apart from an empty answer, and the
+command says it could not list. RED (the host test showed *"No WSL distribution is running…"* for a failed listing)
+→ GREEN → RED again with the check removed.

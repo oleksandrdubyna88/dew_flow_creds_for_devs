@@ -31,6 +31,8 @@ interface Shown {
 
 interface Options {
   readonly running: readonly string[];
+  /** The listing itself failed (no answer, a non-zero exit). */
+  readonly listFails?: boolean;
   readonly version?: WslOutcome;
   readonly clicks?: readonly (string | undefined)[];
   readonly expected?: string;
@@ -101,6 +103,8 @@ function harness(options: Options): Harness {
   };
   const wslProcess = {
     runningDistros: (): Promise<string[]> => Promise.resolve([...options.running]),
+    listRunning: () =>
+      Promise.resolve(options.listFails === true ? { kind: 'failed' } : { kind: 'listed', distros: [...options.running] }),
     runWslOutcome: (argv: readonly string[]): Promise<WslOutcome> => {
       probed.push([...argv]);
       return Promise.resolve(options.version ?? olderAnswer);
@@ -263,4 +267,15 @@ test('a timed-out probe is said as unanswered and offers nothing', async () => {
 
   assert.ok(h.shown[0]?.text.includes('did not answer'));
   assert.deepEqual(h.shown[0]?.choices, []);
+});
+
+test('a listing that failed is said as a failure, never as "no distribution is running"', async () => {
+  const h = harness({ running: [], listFails: true });
+  recordInstall(h, 'Ubuntu');
+
+  await h.run();
+
+  assert.deepEqual(h.probed, []);
+  assert.ok(!h.shown.some((shown) => shown.text.includes('No WSL distribution is running')), JSON.stringify(h.shown));
+  assert.ok(h.shown[0]?.text.includes('Could not list'), JSON.stringify(h.shown));
 });

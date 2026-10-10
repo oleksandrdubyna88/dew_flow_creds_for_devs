@@ -1019,7 +1019,7 @@ Named rather than implied, because the rule asks for exactly this.
   over E2's real `--version` format, the probe's argv and its refusals (`wslMcpStale.test.ts`); when it runs
   — never a stopped distribution, once a day, the dismissal, nothing spawned with nothing recorded, an
   object-property distribution name (`wslMcpCheck.test.ts`); the bounded run's timeout-versus-exit, its
-  UTF-16 listing and its output cap (`wslProcess.test.ts`); the panel button being the palette's one id
+  UTF-16 listing, a failed listing told apart from an empty one, and its output cap (`wslProcess.test.ts`); the panel button being the palette's one id
   (`wslMcpCheckButton.test.ts`); and the window's half — the command, each click, Update's new block and
   record — in-process under the `vscode` stub with `wsl.exe` stood in for (`wslMcpCheckHost.test.ts`). It was run once by hand, read-only, against the real bridge on a Windows
   machine with two running distributions — the argv crossed `wsl.exe` and both pre-0.10.0 binaries read as

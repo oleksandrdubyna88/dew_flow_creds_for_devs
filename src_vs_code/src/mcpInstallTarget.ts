@@ -6,7 +6,7 @@ import { CREDS_MCP, ridFor } from './credsInstall';
 import { describeError } from './describeError';
 import { MCP_CLIENT_TARGETS, installedMessage, mcpServerBlock } from './mcpClientConfig';
 import { parseDistros } from './wslRelay';
-import { runWsl, runWslOutcome, runWslRaw, runningDistros } from './wslProcess';
+import { listRunning, runWsl, runWslOutcome, runWslRaw, runningDistros } from './wslProcess';
 import {
   CheckResult,
   CheckStore,
@@ -25,8 +25,8 @@ import {
   installArgv,
   installFailure,
   installedPathFrom,
-  knowsTheBridge,
-  staleBinaryWarning,
+  knowsTheBridge,
+  staleBinaryWarning,
   wslInstalledMessage,
   wslPathArgv,
   wslServerBlock,
@@ -224,7 +224,14 @@ async function checkWslMcpInstall(host: WslCheckHost): Promise<void> {
 
 /** Only RUNNING distributions are offered — the explicit check never starts a VM either. */
 async function pickRunningDistro(): Promise<string | undefined> {
-  const running = await runningDistros();
+  const listing = await listRunning();
+  if (listing.kind === 'failed') {
+    void vscode.window.showWarningMessage(
+      'Could not list the running WSL distributions — wsl.exe did not answer. Nothing was checked; try again in a moment.',
+    );
+    return undefined;
+  }
+  const running = listing.distros;
   if (running.length === 0) {
     void vscode.window.showInformationMessage(
       'No WSL distribution is running. Start the one your agent lives in, then check again — this ' +

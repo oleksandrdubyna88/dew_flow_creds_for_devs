@@ -197,11 +197,26 @@ export const LIST_TIMEOUT_MS = 5_000;
  * answers "none running", so the check then does nothing.</p>
  */
 export async function runningDistros(ms: number = LIST_TIMEOUT_MS, spawn: WslSpawner = spawnWsl): Promise<string[]> {
-  return distrosIn(await runWslBytes(['-l', '--running', '-q'], ms, spawn));
+  const listing = await listRunning(ms, spawn);
+  return listing.kind === 'listed' ? listing.distros : [];
 }
 
-function distrosIn(outcome: ByteOutcome): string[] {
-  return outcome.kind === 'exited' && outcome.code === 0 ? parseDistros(outcome.bytes) : [];
+/** A listing that answered — possibly with nothing running — or one that did not answer at all. */
+export type RunningList = { kind: 'listed'; distros: string[] } | { kind: 'failed' };
+
+/**
+ * The same listing, keeping a FAILURE apart from an empty answer (pre-merge checkpoint round): the
+ * command must not tell a person "no distribution is running" when `wsl.exe` merely did not answer.
+ * The activation check reads both as "nothing to ask", which is right for a reminder.
+ */
+export async function listRunning(ms: number = LIST_TIMEOUT_MS, spawn: WslSpawner = spawnWsl): Promise<RunningList> {
+  return listingOf(await runWslBytes(['-l', '--running', '-q'], ms, spawn));
+}
+
+function listingOf(outcome: ByteOutcome): RunningList {
+  return outcome.kind === 'exited' && outcome.code === 0
+    ? { kind: 'listed', distros: parseDistros(outcome.bytes) }
+    : { kind: 'failed' };
 }
 
 /** How long a path translation may take before the click is refused instead of waiting. */
