@@ -4065,6 +4065,56 @@ flowchart LR
   `sshUseActions.test.ts`. The VPN world is shared with `dependencyChain.test.ts` as `vpnWorld.ts`. Every gate
   check was watched red with its line removed.
 
+**A gone request reaches no SSH prompt (E4.S4 of the same plan, §5.7).** E4.S3's open tail: `connectEntity`
+(`sshConnect.ts`) read its `startGate` only after the relay probe, immediately before a terminal opens — so a
+terminal never opened for a gone request, but every prompt before it still did. The credential lookup (the entry's
+PIN box), the host-key conversation (`connectionOptions` → `settleHostKey` → `confirmHostKey`'s modal, then
+`persistPin` onto the entity and `materializeKnownHosts`) and a window's refusal (`refuseAndOfferTheFix`: the modal,
+its remedy — relay setup, *Add Key to Agent* — and the retry) all awaited before that check. A client gone during
+the PIN box still got the host-key question raised for it, and *Trust and connect* then wrote the pin onto the
+entity (synced metadata); a client gone while a refusal's modal was open still got its remedy run and the retry
+asked the PIN and the host key again.
+
+```mermaid
+flowchart LR
+    T["sshTerminalAction.run(ctx)"] -->|"startGate: ctx.signal"| C["connectEntity — gate at the ENTRY"]
+    C --> L["resolveSshCredential (PIN box)"] -->|"gate after the await"| R{remoteRoute}
+    R -->|refuse| F["refuseAndOfferTheFix<br/>gate before the modal, gate after it → actOnRefusal"]
+    R -->|route| O["connectionOptions(…, startGate)<br/>settleHostKey: gate before the scan; trusted(): gate after the question"]
+    O --> P["translate / relay probe → the E4.S1 gates → terminal"]
+    F -. "a gone request: no remedy, no copy, no retry" .-> X["false, quietly"]
+    O -. "a gone request: no persistPin, no known_hosts" .-> X
+```
+
+- **Where the gate is read**: `connectEntity`'s entry (a request already gone is asked nothing — not even its PIN;
+  this also ends a remedy's retry); after the credential lookup, before the warning, the route and the host key;
+  inside `connectionOptions` before the host-key scan (which the same signal cancels) and again after the question,
+  before the pin is written — a trust answer given to a dialog nobody waits for decides nothing, the next live
+  connect asks again; inside `refuseAndOfferTheFix` before its modal and again after it, before the remedy, the
+  clipboard copy and the retry. `connectionOptions` and `refuseAndOfferTheFix` take the gate as a REQUIRED
+  `AbortSignal | undefined` (the `runVpn` precedent), `undefined` for the person's own Connect, which is unchanged.
+- **The journal tells the truth about a typed step**: `brokerCall.failedOrAbandoned` used to write *as the action
+  was starting — it was not launched* for every non-rotating action, chosen by `Delivery.mutatesSecrets` — true of a
+  VPN whose chain had typed nothing, false once a *run first* step was handed to the shell. `RequestEndedError`
+  carries a `stage` (`requestLife.ts`: `notStarted()` keeps `NOT_LAUNCHED`; `endedAfter(what)` names what the shell
+  has; `endedStage(error)` reads it by SHAPE — an `AbortError` with a string `stage` — never by `instanceof`, since the
+  broker and the action can come from two module graphs). The dependency chain throws
+  `endedAfter('a dependency step had been typed')` from `settle` (before any *Continue* question) and after each step
+  in `runAll` (a *Continue* answered after the client left); `brokerResponse.failed` hands the stage to
+  `Delivery.fail(reason, actionRan, ended?)`, and the journal line reads *the client left after a dependency step had
+  been typed — it is the shell's and is not taken back; nothing more was started*. Before any step was typed the chain
+  answers `false` as before, and the person's own chain (no gate) never throws.
+- **Tests**: `sshConnect.test.ts` (the entry, the lookup, the gate hand-off to the host-key conversation, a refusal's
+  button after the client left, a late refusal shown no modal), `connectionOptions.test.ts` (already gone: no
+  question; gone during the question: no pin, no file; gone during the scan: the scan is cancelled, nothing asked or
+  written; the person's click unchanged), `brokerAbandoned.test.ts` (the real `sshTerminalAction` behind the real
+  broker over real HTTP, the client hung up during the lookup — no host-key question; the real `vpnAction` whose
+  chain had typed a step — the journal names it), `vpnGoneRequest.test.ts` (the chain's gone-after-typing cases
+  assert the stage; a *Continue* answered after the client left). Every check was watched red with its line removed.
+  The `deps()` fixture of `sshUseActions.test.ts` is typed: the real `StorageManager` over memory
+  (`pinWorld.memoryStorage`), seeded with the entry — narrowing `SshUseDeps.storage` was refused, because the
+  credential, PIN and rotation modules behind it each take the whole manager.
+
 **Whose session registry, and the rule the code round added.** The session NAME comes from
 `~/.claude/sessions/<CLAUDE_PID>.json`, which is one product's file — and `CLAUDE_PID` is inherited
 by everything Claude Code spawns, a terminal and any other vendor's CLI started inside one included.

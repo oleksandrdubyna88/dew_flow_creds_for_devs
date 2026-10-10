@@ -5,7 +5,7 @@ import { ShellContext, entryShell } from './hostShell';
 import { pinnedShell, pinnedTerminal, shellContext } from './pinnedTerminal';
 import { EntityMetadata, TreeNode } from './types';
 import { isInTrash } from './trash';
-import { requestGone } from './requestLife';
+import { endedAfter, requestGone } from './requestLife';
 
 /**
  * Running an entry's executable dependencies before it is used (issue #103) — the `vscode` half.
@@ -70,6 +70,12 @@ export function liveDetails(source: NodeSource, accountId: string, id: string): 
  *
  * <p>`true` immediately when nothing is to be run — which is every entry that did not tick the
  * box, so a caller can call this unconditionally.</p>
+ *
+ * <p>An agent's request found gone BEFORE any step was typed answers `false`, quietly. Found gone AFTER a
+ * step was handed to the shell, the chain THROWS the request's end naming that step
+ * (`requestLife.endedAfter`), so the request's journal says what the shell already has — a `false` could
+ * only be read as "nothing was launched", true of the VPN and false of the step (E4.S4). The person's own
+ * chain has no request behind it and never throws.</p>
  */
 export async function runDependenciesFirst(request: DependencyRunRequest): Promise<boolean> {
   if (requestGone(request.startGate)) {
@@ -198,8 +204,22 @@ async function runAll(terminal: vscode.Terminal, integration: Integration, steps
     if (!(await runStep(terminal, integration, step, startGate))) {
       return false;
     }
+    // The step is the shell's now. A client gone while it ran — or while its Continue question sat open, which
+    // is an await the step's own check sits before — is told so, not "not launched".
+    typedAndStillWanted(startGate);
   }
   return true;
+}
+
+/**
+ * After a step has been handed to the shell: a client gone since ends the chain by THROWING the request's
+ * end, naming the step (E4.S4). Answering `false` here would let the journal claim nothing was launched.
+ * The person's own chain has no gate and never throws.
+ */
+function typedAndStillWanted(startGate: AbortSignal | undefined): void {
+  if (requestGone(startGate)) {
+    throw endedAfter('a dependency step had been typed');
+  }
 }
 
 /**
@@ -225,12 +245,11 @@ async function runStep(terminal: vscode.Terminal, integration: Integration, step
 /**
  * What a finished step means for the chain. The request is read FIRST: a client gone while the step ran
  * is not followed by a question — a person asked to continue a chain nobody waits for any more is asked
- * for nothing (E4.S3, checkpoint round). A step already run is the shell's.
+ * for nothing (E4.S3, checkpoint round). A step already run is the shell's, and the request's end says so
+ * (E4.S4).
  */
 function settle(verdict: StepVerdict, startGate: AbortSignal | undefined): boolean | Promise<boolean> {
-  if (requestGone(startGate)) {
-    return false;
-  }
+  typedAndStillWanted(startGate);
   if (verdict.kind === 'next') {
     return true;
   }

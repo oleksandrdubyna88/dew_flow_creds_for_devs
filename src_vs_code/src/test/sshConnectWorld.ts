@@ -57,6 +57,10 @@ export interface World {
   sshTerminalHandle?: unknown;
   /** Every install offer made, with the gate it was handed — only when the world says ssh is missing. */
   installOffers: { tool: string; startGate?: AbortSignal }[];
+  /** The gate each host-key conversation (`connectionOptions`) was handed, in order (E4.S4). */
+  hostKeyAsked: (AbortSignal | undefined)[];
+  /** Every line put on the clipboard — a refusal's *Copy the Windows command* button. */
+  copied: string[];
 }
 
 export interface Parts {
@@ -77,6 +81,12 @@ export interface Parts {
   duringLookup?: () => void;
   /** This machine has no ssh client, so the connect path offers to install one (E4.S3). */
   sshMissing?: boolean;
+  /** Runs while the host-key conversation is open — where an agent's client can leave (E4.S4). */
+  duringHostKey?: () => void;
+  /** Runs while a refusal's modal is open, before the person's button is read (E4.S4). */
+  duringRefusal?: () => void;
+  /** Runs while the distribution is asked to translate a path — the last await before a late refusal (E4.S4). */
+  duringTranslate?: () => void;
 }
 
 export function world(parts: Parts): World {
@@ -94,6 +104,8 @@ export function world(parts: Parts): World {
     errors: [],
     translated: [],
     installOffers: [],
+    hostKeyAsked: [],
+    copied: [],
     closeTerminal: (t: unknown): void => closeListeners.forEach((l) => l(t)),
   };
   if (parts.existingNamed !== undefined) {
@@ -106,40 +118,7 @@ export function world(parts: Parts): World {
 
   w.mod = loadWithVscode<Connect>(
     '../sshConnect',
-    {
-      window: {
-        terminals: w.existing,
-        createTerminal: (o: { name: string; env?: Record<string, string> }): Terminal => {
-          const t: Terminal = { name: o.name, env: o.env, sent: [], disposed: false };
-          Object.assign(t, {
-            show: (): void => undefined,
-            sendText: (line: string): void => {
-              t.sent.push(line);
-            },
-            dispose: (): void => {
-              t.disposed = true;
-            },
-          });
-          w.created.push(t);
-          return t;
-        },
-        onDidCloseTerminal: (listener: (t: unknown) => void): { dispose(): void } => {
-          closeListeners.push(listener);
-          return { dispose: (): void => undefined };
-        },
-        showWarningMessage: (m: string, ...rest: unknown[]): Promise<string | undefined> => {
-          w.warnings.push(m);
-          const labels = rest.filter((r): r is string => typeof r === 'string');
-          w.offered.push(labels);
-          // `chooseButton` presses the offered button, so the remedy-and-retry path is drivable.
-          return Promise.resolve(parts.chooseButton === true ? labels[0] : undefined);
-        },
-        showErrorMessage: (m: string): Promise<undefined> => {
-          w.errors.push(m);
-          return Promise.resolve(undefined);
-        },
-      },
-    },
+    vscodeStub(w, parts, closeListeners),
     {
       './sshCredential': {
         resolveSshCredential: (_s: unknown, _a: unknown, _e: unknown, open: unknown): Promise<unknown> => {
@@ -149,7 +128,12 @@ export function world(parts: Parts): World {
         },
       },
       './connectionOptions': {
-        connectionOptions: (): Promise<unknown> => Promise.resolve(parts.options),
+        // RECORDED with the gate it was handed: the host-key question is the agent's request's to refuse (E4.S4).
+        connectionOptions: (_a: unknown, _e: unknown, _s: unknown, _d: unknown, startGate?: AbortSignal): Promise<unknown> => {
+          w.hostKeyAsked.push(startGate);
+          parts.duringHostKey?.();
+          return Promise.resolve(parts.options);
+        },
       },
       './keyInstaller': {
         materializePrivateKey: (_dir: string, entityId: string): string => {
@@ -174,6 +158,7 @@ export function world(parts: Parts): World {
           // a translation test whose Windows path had lost its separators to `\k` and `\s` before it
           // ever reached here, so it asserted a round trip of a string no Windows machine produces.
           w.translated.push({ distro, windowsPath });
+          parts.duringTranslate?.();
           return Promise.resolve(parts.translated ?? `/mnt/c${windowsPath}`);
         },
       },
@@ -207,6 +192,55 @@ export function world(parts: Parts): World {
   return w;
 }
 
+
+/** The `vscode` the connect path sees: terminals and dialogs that record, a clipboard that records (E4.S4). */
+function vscodeStub(w: World, parts: Parts, closeListeners: ((t: unknown) => void)[]): Record<string, unknown> {
+  return {
+    window: {
+      terminals: w.existing,
+      createTerminal: (o: { name: string; env?: Record<string, string> }): Terminal => {
+        const t: Terminal = { name: o.name, env: o.env, sent: [], disposed: false };
+        Object.assign(t, {
+          show: (): void => undefined,
+          sendText: (line: string): void => {
+            t.sent.push(line);
+          },
+          dispose: (): void => {
+            t.disposed = true;
+          },
+        });
+        w.created.push(t);
+        return t;
+      },
+      onDidCloseTerminal: (listener: (t: unknown) => void): { dispose(): void } => {
+        closeListeners.push(listener);
+        return { dispose: (): void => undefined };
+      },
+      showWarningMessage: (m: string, ...rest: unknown[]): Promise<string | undefined> => {
+        w.warnings.push(m);
+        const labels = rest.filter((r): r is string => typeof r === 'string');
+        w.offered.push(labels);
+        // The client can leave while the modal sits open; the person's button is read after that.
+        parts.duringRefusal?.();
+        // `chooseButton` presses the offered button, so the remedy-and-retry path is drivable.
+        return Promise.resolve(parts.chooseButton === true ? labels[0] : undefined);
+      },
+      showErrorMessage: (m: string): Promise<undefined> => {
+        w.errors.push(m);
+        return Promise.resolve(undefined);
+      },
+      showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined),
+    },
+    env: {
+      clipboard: {
+        writeText: (text: string): Promise<void> => {
+          w.copied.push(text);
+          return Promise.resolve();
+        },
+      },
+    },
+  };
+}
 
 /** A terminal already open under `name` — one a fresh session must dispose rather than reuse. */
 function staleTerminal(name: string): Terminal {

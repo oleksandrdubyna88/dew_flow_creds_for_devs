@@ -1,8 +1,16 @@
 import * as assert from 'node:assert/strict';
+import * as fs from 'node:fs';
 import * as http from 'node:http';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { test } from 'node:test';
 import { VpnUseDeps, vpnAction } from '../agentUseActions';
+import { endedAfter } from '../requestLife';
+import * as sshProgram from '../sshProgram';
+import type { SshUseDeps } from '../sshUseActions';
 import { World, call, share, world } from './brokerWorld';
+import { memoryStorage, seedEntry } from './pinWorld';
+import { loadWithVscode } from './vscodeStub';
 
 /**
  * A request whose client is gone can authorise nothing (`PLAN_wsl_bridge_outlives_its_client.md` §2.3,
@@ -460,5 +468,137 @@ test('a VPN start whose client left while it was prepared is that request’s AB
   } finally {
     release();
     w.server.dispose();
+  }
+});
+
+test('a VPN start whose chain had typed a step when the client left is journalled as exactly that, never "not launched" (E4.S4)', async () => {
+  // The chain reports the step it had handed to the shell by throwing the request's end with that stage
+  // (`requestLife.endedAfter`); the broker's line used to read "as the action was starting — it was not
+  // launched" for every non-rotating action, which was true of the VPN and false of the step.
+  let release = (): void => undefined;
+  const gates: AbortSignal[] = [];
+  const deps: VpnUseDeps = {
+    storage: { getNode: () => ({ id: 'e1', name: 'prod', type: 'entity', details: { id: 'e1', name: 'prod', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' } }) },
+    open: (_accountId, _entityId, _action, startGate) => {
+      gates.push(startGate);
+      return new Promise<boolean>((resolve, reject) => {
+        release = () => (startGate.aborted ? reject(endedAfter('a dependency step had been typed')) : resolve(true));
+      });
+    },
+  };
+  const w = world({ realAction: vpnAction(deps, 'up') });
+  try {
+    const { port, secret } = await share(w);
+    const gone = hanging(port, '/v1/use/exec', { command: 'up' }, secret);
+    await until(() => gates.length === 1, 'the VPN start to begin');
+
+    gone.hangUp();
+    await pause(CLOSE_SEEN_MS);
+    release();
+    await until(() => w.audit.some((line) => /ABANDONED| opened | 409 | internal /.test(line)), 'the call to be journalled');
+
+    assert.equal(abandonedLines(w).length, 1, w.audit.join(' | '));
+    assert.match(abandonedLines(w)[0], /the client left after a dependency step had been typed/, 'the journal does not name the step the shell already has');
+    assert.doesNotMatch(abandonedLines(w)[0], /not launched/, 'the journal claims nothing was launched although a step was typed');
+  } finally {
+    release();
+    w.server.dispose();
+  }
+});
+
+/**
+ * The real SSH terminal action behind the real broker, its credential lookup held open (the entry's PIN box,
+ * in the window) — the plan round's first finding: the signal a real request's close fires must reach the
+ * gate BEFORE the host-key question, not only the one before the terminal.
+ */
+interface SshTerminalWorld {
+  actions: typeof import('../sshUseActions');
+  deps(): Promise<SshUseDeps>;
+  lookups: number;
+  hostKeyAsked: unknown[];
+  terminals: number;
+  releaseLookup: () => void;
+}
+
+function sshTerminalWorld(): SshTerminalWorld {
+  const stub = {
+    window: {
+      terminals: [],
+      showWarningMessage: (): Promise<undefined> => Promise.resolve(undefined),
+      showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined),
+      showErrorMessage: (): Promise<undefined> => Promise.resolve(undefined),
+      onDidCloseTerminal: (): { dispose(): void } => ({ dispose: (): void => undefined }),
+    },
+  };
+  const state: SshTerminalWorld = {
+    actions: undefined as never,
+    lookups: 0,
+    hostKeyAsked: [],
+    terminals: 0,
+    releaseLookup: (): void => undefined,
+    deps: async (): Promise<SshUseDeps> => {
+      const storage = memoryStorage(stub);
+      await seedEntry(storage, { id: 'e1', name: 'prod', isSshEnabled: true, kind: 'ssh', host: 'prod.example.com' }, {});
+      return {
+        storage,
+        storageDir: fs.mkdtempSync(path.join(os.tmpdir(), 'creds-abandoned-')),
+        signal: new AbortController().signal,
+        acquireExecSlot: () => (): void => undefined,
+        note: (): void => undefined,
+        agentSocket: (): undefined => undefined,
+      };
+    },
+  };
+  state.actions = loadWithVscode<typeof import('../sshUseActions')>('../sshUseActions', stub, {
+    './sshCredential': {
+      resolveSshCredential: (): Promise<unknown> =>
+        new Promise((resolve) => {
+          state.lookups += 1;
+          state.releaseLookup = () => resolve({ kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' });
+        }),
+    },
+    './connectionOptions': {
+      connectionOptions: (_a: unknown, _e: unknown, _s: unknown, _d: unknown, startGate: unknown): Promise<unknown> => {
+        state.hostKeyAsked.push(startGate);
+        return Promise.resolve({ knownHostsFile: undefined });
+      },
+    },
+    './keyInstaller': { materializePrivateKey: (): string => '/k', forgetMaterializedKey: (): void => undefined, writeAskpassScriptFile: (): string => '/a' },
+    './terminalManager': {
+      openSshTerminal: (): unknown => {
+        state.terminals += 1;
+        return { name: 'ssh', dispose: (): void => undefined };
+      },
+      buildSshCommand: (): string => 'ssh prod',
+      describeSshTarget: (): string => 'prod',
+    },
+    './sshProgram': { ...sshProgram, sshClientPresent: (): boolean => true },
+    './pinnedTerminal': { composedShellPath: (): undefined => undefined },
+  });
+  return state;
+}
+
+test('an SSH terminal whose client left during the credential lookup is asked no host-key question, through the real broker (E4.S4)', async () => {
+  const ssh = sshTerminalWorld();
+  const deps = await ssh.deps();
+  const w = world({ realAction: ssh.actions.sshTerminalAction(deps) });
+  try {
+    const { port, secret } = await share(w);
+    const gone = hanging(port, '/v1/use/exec', { command: 'terminal' }, secret);
+    await until(() => ssh.lookups === 1, 'the credential lookup to begin');
+
+    gone.hangUp();
+    await pause(CLOSE_SEEN_MS);
+    ssh.releaseLookup();
+    await until(() => w.audit.some((line) => /ABANDONED| opened | internal /.test(line)), 'the call to be journalled');
+
+    assert.deepEqual(ssh.hostKeyAsked, [], 'the host-key question was raised for a request whose client had gone');
+    assert.equal(ssh.terminals, 0, 'a terminal opened for a request whose client had gone');
+    assert.equal(abandonedLines(w).length, 1, w.audit.join(' | '));
+    assert.match(abandonedLines(w)[0], /not launched/);
+  } finally {
+    ssh.releaseLookup();
+    w.server.dispose();
+    fs.rmSync(deps.storageDir, { recursive: true, force: true });
   }
 });

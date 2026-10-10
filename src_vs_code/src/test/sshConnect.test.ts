@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { OPTIONS, entity, storage, world } from './sshConnectWorld';
+import { OPTIONS, OUR_PIN, WSL_NO_RELAY, WSL_READY, entity, storage, world } from './sshConnectWorld';
 
 /**
  * The human Connect path (audit A3): WHICH credential reaches ssh, and what each way leaves behind.
@@ -306,4 +306,116 @@ test('the ssh install offer is handed the agent request it serves, so a late Ins
   assert.equal(opened, false);
   assert.deepEqual(w.installOffers.map((o) => o.tool), ['ssh']);
   assert.equal(w.installOffers[0].startGate, request.signal, 'the install offer was not told which request it serves');
+});
+
+/**
+ * A gone request reaches no SSH prompt (`PLAN_wsl_bridge_outlives_its_client.md` §5.7, story E4.S4).
+ *
+ * <p>E4.S1's gate sits after the last await before a terminal opens, so a terminal never opened for a gone
+ * request — but every prompt before it still did: the credential lookup's PIN box, the host-key question,
+ * a window's refusal with its remedy and its retry. Each case here fires the request's signal at one of
+ * those awaits and then lets the path continue, which is the moment a person answers a dialog nobody waits
+ * for.</p>
+ */
+test('a request already gone at the entry is asked nothing — not even its credential lookup (E4.S4)', async () => {
+  const request = new AbortController();
+  request.abort();
+  const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS, sshTerminal: {} });
+
+  const opened = await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage', startGate: request.signal });
+
+  assert.equal(opened, false);
+  assert.equal(w.openers.length, 0, 'the credential was looked up — its PIN asked — for a request whose client had gone');
+  assert.deepEqual(w.hostKeyAsked, [], 'the host-key question was raised for a request whose client had gone');
+  assert.deepEqual(w.warnings, [], 'a person who did not ask was told something');
+});
+
+test('a client that leaves during the credential lookup is shown no host-key question and no warning (E4.S4)', async () => {
+  const request = new AbortController();
+  const w = world({
+    source: { kind: 'keyPath', path: '/k', warning: 'the referenced key entity is gone' },
+    options: OPTIONS,
+    sshTerminal: {},
+    duringLookup: () => request.abort(),
+  });
+
+  const opened = await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage', startGate: request.signal });
+
+  assert.equal(opened, false);
+  assert.deepEqual(w.hostKeyAsked, [], 'the host-key question was raised for a request whose client had gone');
+  assert.deepEqual(w.warnings, [], 'the credential warning was shown to a person who did not ask');
+});
+
+test('the host-key conversation is handed the request it serves; the person’s own Connect hands it none (E4.S4)', async () => {
+  const request = new AbortController();
+  const agent = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS, sshTerminal: {} });
+  await agent.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage', startGate: request.signal });
+
+  const person = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS, sshTerminal: {} });
+  await person.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage' });
+
+  assert.equal(agent.hostKeyAsked[0], request.signal, 'the host-key question was not told which request it serves');
+  assert.equal(agent.sshTerminals.length, 1, 'a live request still connects');
+  assert.deepEqual(person.hostKeyAsked, [undefined], 'the person’s own click has no request behind it');
+  assert.equal(person.sshTerminals.length, 1);
+});
+
+test('a client gone while a refusal’s modal is open: the button runs no remedy, copies nothing and retries nothing (E4.S4)', async () => {
+  // A WSL window with a stored key and no relay refuses, offering *Set Up the Relay*; the person presses it
+  // after the client has left. The remedy — a relay started, a key loaded into the agent — and the retry
+  // that asks the PIN and the host key again are not for a request nobody waits for.
+  const request = new AbortController();
+  const remedies: string[] = [];
+  const w = world({
+    source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' },
+    options: OPTIONS,
+    chooseButton: true,
+    duringRefusal: () => request.abort(),
+  });
+
+  const opened = await w.mod.connectEntity('a1', entity(), {
+    storage,
+    storageDir: '/storage',
+    agentServesKey: false,
+    remote: {
+      ...WSL_NO_RELAY,
+      runRemedy: async (action): Promise<boolean> => {
+        remedies.push(action);
+        return true;
+      },
+    },
+    startGate: request.signal,
+  });
+
+  assert.equal(opened, false);
+  assert.equal(w.warnings.length, 1, 'the refusal was shown once, to a live request');
+  assert.deepEqual(remedies, [], 'a remedy ran for a request whose client had gone');
+  assert.deepEqual(w.copied, [], 'a command was copied for a request whose client had gone');
+  assert.equal(w.openers.length, 1, 'the connect was retried — its PIN asked again — for a request whose client had gone');
+});
+
+test('a request already gone at a late refusal is shown no modal, and its pin file is taken back (E4.S4)', async () => {
+  // The relay route translates the pinned host key's path through the distribution — the last await before
+  // a refusal `known-hosts-translation-failed`. A client gone during it gets no modal at all.
+  const request = new AbortController();
+  const w = world({
+    source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' },
+    options: { knownHostsFile: OUR_PIN },
+    translated: '',
+    chooseButton: true,
+    duringTranslate: () => request.abort(),
+  });
+
+  const opened = await w.mod.connectEntity('a1', entity(), {
+    storage,
+    storageDir: '/storage',
+    agentServesKey: true,
+    remote: WSL_READY,
+    startGate: request.signal,
+  });
+
+  assert.equal(opened, false);
+  assert.deepEqual(w.warnings, [], 'a refusal was shown to a person who did not ask');
+  assert.deepEqual(w.forgotten, [OUR_PIN], 'the pin file written for the connection was left behind');
+  assert.deepEqual(w.sshTerminals, []);
 });

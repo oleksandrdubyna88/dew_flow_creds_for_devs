@@ -6,6 +6,7 @@ import { reservationRefused } from './brokerRequests';
 import { Grant, GrantLimits, GrantLookup, GrantRegistry } from './grantRegistry';
 import { grantLimits } from './grantLimits';
 import { OneUseLane, laneKeyFor } from './oneUseLane';
+import { NOT_LAUNCHED } from './requestLife';
 import { MaskTable } from './secretMasker';
 import { UseAction, UseActionResult } from './useActions';
 
@@ -172,7 +173,7 @@ function deliver(deps: CallDeps, call: CallSubject, started: Promise<UseActionRe
       respond: deps.respond,
       log: deps.log,
       burn: deps.burn,
-      fail: (why, ran) => failedOrAbandoned(deps, call, why, ran),
+      fail: (why, ran, ended) => failedOrAbandoned(deps, call, why, ran, ended),
       mutatesSecrets: useAction.mutatesSecrets,
       refresh: deps.refresh,
       table,
@@ -187,10 +188,14 @@ function deliver(deps: CallDeps, call: CallSubject, started: Promise<UseActionRe
  * An action that threw after its client left — refused at its launch, or killed mid-run by the request's
  * signal — is that request's abandonment, not an internal failure: one `ABANDONED` line, and nothing
  * written to a socket nobody reads. A failure while the client is still there is reported as before.
+ *
+ * <p>The line says what the action met its request's end at when the action said so (`ended`, from a
+ * `requestLife` error — *after a dependency step had been typed*); for any other error it says what the
+ * broker knows: a mutating action may have run, anything else was not launched (E4.S4).</p>
  */
-function failedOrAbandoned(deps: CallDeps, call: CallSubject, why: string, ran: boolean): void {
+function failedOrAbandoned(deps: CallDeps, call: CallSubject, why: string, ran: boolean, ended: string | undefined): void {
   if (call.signal.aborted) {
-    deps.abandon(ran ? 'while the action ran — it was cancelled' : 'as the action was starting — it was not launched');
+    deps.abandon(ended ?? (ran ? 'while the action ran — it was cancelled' : NOT_LAUNCHED));
     return;
   }
   deps.failed(why, ran);

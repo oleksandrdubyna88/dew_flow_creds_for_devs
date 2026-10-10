@@ -28,29 +28,37 @@ interface World {
   updated: TreeNode[];
   storage: unknown;
   dir: string;
+  /** The signal each host-key scan was handed — the agent request's, when an agent asked (E4.S4). */
+  scanSignals: (AbortSignal | undefined)[];
+}
+
+interface WorldOptions {
+  scanned?: HostKey;
+  answer?: string;
+  /** Runs while the host-key question is open, before the person's answer is read (E4.S4). */
+  duringAsk?: () => void;
+  /** The scan does not answer until its signal fires, and then fails as a killed `ssh-keyscan` does (E4.S4). */
+  holdScan?: boolean;
 }
 
 /**
  * `scanHostKey` spawns `ssh-keyscan`, which a unit test must not do — so the host answers
  * through a stubbed `runBounded`, exactly as the real scan reads it.
  */
-function world(options: { scanned?: HostKey; answer?: string } = {}): World {
+function world(options: WorldOptions = {}): World {
   const warnings: string[] = [];
   const updated: TreeNode[] = [];
+  const scanSignals: (AbortSignal | undefined)[] = [];
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-conn-'));
   const nodes = new Map<string, TreeNode>();
 
+  const answer = (m: string): Promise<string | undefined> => {
+    warnings.push(m);
+    options.duringAsk?.();
+    return Promise.resolve(options.answer);
+  };
   const stub = {
-    window: {
-      showWarningMessage: (m: string): Promise<string | undefined> => {
-        warnings.push(m);
-        return Promise.resolve(options.answer);
-      },
-      showErrorMessage: (m: string): Promise<string | undefined> => {
-        warnings.push(m);
-        return Promise.resolve(options.answer);
-      },
-    },
+    window: { showWarningMessage: answer, showErrorMessage: answer },
     workspace: { getConfiguration: () => ({ get: <T>(_k: string, d: T): T => d }) },
   };
 
@@ -77,10 +85,15 @@ function world(options: { scanned?: HostKey; answer?: string } = {}): World {
   };
 
   const mod = loadWithVscode<Options>('../connectionOptions', stub);
-  // The scan is reached through sshExecRunner; make it answer with the fixture host key.
+  // The scan is reached through sshExecRunner; make it answer with the fixture host key — or, held, not
+  // until the request it serves ends, when it fails the way a killed `ssh-keyscan` does.
   const runner = require('../sshExecRunner') as { runBounded: unknown };
-  (runner as { runBounded: unknown }).runBounded = (): Promise<unknown> =>
-    Promise.resolve({
+  (runner as { runBounded: unknown }).runBounded = (_c: unknown, _a: unknown, _s: unknown, o: { signal?: AbortSignal }): Promise<unknown> => {
+    scanSignals.push(o.signal);
+    if (options.holdScan === true) {
+      return scanKilledWhen(o.signal);
+    }
+    return Promise.resolve({
       exitCode: 0,
       stdout:
         options.scanned === undefined
@@ -88,8 +101,24 @@ function world(options: { scanned?: HostKey; answer?: string } = {}): World {
           : `host ${options.scanned.algorithm} ${options.scanned.base64}\n`,
       stderr: '',
     });
+  };
 
-  return { mod, warnings, updated, storage, dir };
+  return { mod, warnings, updated, storage, dir, scanSignals };
+}
+
+/** A scan that never answers on its own: it ends only when its signal fires, as a killed child's promise does. */
+function scanKilledWhen(signal: AbortSignal | undefined): Promise<never> {
+  return new Promise((_resolve, reject) => {
+    const killed = (): void => reject(Object.assign(new Error('ssh-keyscan was killed'), { name: 'AbortError' }));
+    if (signal === undefined) {
+      return;
+    }
+    if (signal.aborted) {
+      killed();
+      return;
+    }
+    signal.addEventListener('abort', killed, { once: true });
+  });
 }
 
 function entity(over: Partial<EntityMetadata> = {}): EntityMetadata {
@@ -99,7 +128,7 @@ function entity(over: Partial<EntityMetadata> = {}): EntityMetadata {
 test('an entity with no host needs no host-key conversation at all', async () => {
   const w = world();
 
-  const got = await w.mod.connectionOptions('acc', entity({ host: undefined }), w.storage as never, w.dir);
+  const got = await w.mod.connectionOptions('acc', entity({ host: undefined }), w.storage as never, w.dir, undefined);
 
   assert.ok(got !== undefined, 'a credential without a host is not a refusal');
   assert.deepEqual(w.warnings, []);
@@ -114,6 +143,7 @@ test('a jump chain that cannot be built REFUSES, and says why once', async () =>
     entity({ jumpHostEntityId: 'missing-entity' }),
     w.storage as never,
     w.dir,
+    undefined,
   );
 
   assert.equal(got, undefined);
@@ -134,6 +164,7 @@ test('a refused host key refuses the CONNECTION, not just the pin', async () => 
     entity({ hostKey: formatHostKey(KEY) }),
     w.storage as never,
     w.dir,
+    undefined,
   );
 
   assert.equal(got, undefined, 'a changed key that nobody accepted must not connect');
@@ -151,7 +182,7 @@ test('an accepted key is PERSISTED, so the other machines are not on first conta
     details: entity(),
   });
 
-  const got = await w.mod.connectionOptions('acc', entity(), w.storage as never, w.dir);
+  const got = await w.mod.connectionOptions('acc', entity(), w.storage as never, w.dir, undefined);
 
   assert.ok(got !== undefined);
   assert.equal(got.pin, formatHostKey(KEY), 'handed back to the caller');
@@ -166,8 +197,75 @@ test('the options carry a known_hosts file, so ssh ENFORCES the pin rather than 
     entity({ hostKey: formatHostKey(KEY) }),
     w.storage as never,
     w.dir,
+    undefined,
   );
 
   assert.ok(got?.knownHostsFile !== undefined);
   assert.match(fs.readFileSync(got.knownHostsFile, 'utf8'), /prod\.example\.com/);
+});
+
+/**
+ * A gone request reaches no host-key question (`PLAN_wsl_bridge_outlives_its_client.md` §5.7, E4.S4).
+ *
+ * <p>The conversation used to run with no idea whose request it served: a client gone during the PIN box
+ * before it still got the first-contact question raised, and a person who clicked *Trust and connect* wrote
+ * the pin onto the entity — synced metadata — for a connection that never happened.</p>
+ */
+const filesUnder = (dir: string): string[] => fs.readdirSync(dir, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).map((e) => e.name);
+
+test('a request already gone is asked no host-key question, and nothing is written (E4.S4)', async () => {
+  const request = new AbortController();
+  request.abort();
+  const w = world({ scanned: KEY, answer: 'Trust and connect' });
+  (w.storage as { _put(n: TreeNode): void })._put({ id: 'e1', name: 'prod', type: 'entity', details: entity() });
+
+  const got = await w.mod.connectionOptions('acc', entity(), w.storage as never, w.dir, request.signal);
+
+  assert.equal(got, undefined, 'the connection went ahead for a request whose client had gone');
+  assert.deepEqual(w.warnings, [], 'the host-key question was raised for a request whose client had gone');
+  assert.deepEqual(w.updated, [], 'a pin was written for a request whose client had gone');
+  assert.deepEqual(filesUnder(w.dir), [], 'a known_hosts file was written for a request whose client had gone');
+});
+
+test('a client gone while the host-key question is open: Trust and connect writes no pin, and nothing goes ahead (E4.S4)', async () => {
+  const request = new AbortController();
+  const w = world({ scanned: KEY, answer: 'Trust and connect', duringAsk: () => request.abort() });
+  (w.storage as { _put(n: TreeNode): void })._put({ id: 'e1', name: 'prod', type: 'entity', details: entity() });
+
+  const got = await w.mod.connectionOptions('acc', entity(), w.storage as never, w.dir, request.signal);
+
+  assert.equal(w.warnings.length, 1, 'the question was asked once, of a live request');
+  assert.equal(got, undefined, 'the connection went ahead for a request whose client had gone');
+  assert.deepEqual(w.updated, [], 'the pin was written onto the entity for a request whose client had gone');
+  assert.deepEqual(filesUnder(w.dir), [], 'a known_hosts file was written for a request whose client had gone');
+});
+
+test('a client gone while the host-key scan runs: the scan is cancelled, nobody is asked, nothing is written (E4.S4)', async () => {
+  // The plan round's second finding: a scan that stalls must not keep a gone request pending. The scan is
+  // handed the request's signal, so the client's departure kills it; what follows asks and writes nothing.
+  const request = new AbortController();
+  const w = world({ holdScan: true, answer: 'Trust and connect' });
+  (w.storage as { _put(n: TreeNode): void })._put({ id: 'e1', name: 'prod', type: 'entity', details: entity() });
+
+  const pending = w.mod.connectionOptions('acc', entity(), w.storage as never, w.dir, request.signal);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  request.abort();
+  const got = await pending;
+
+  assert.deepEqual(w.scanSignals, [request.signal], 'the scan was not handed the request it serves');
+  assert.equal(got, undefined, 'the connection went ahead for a request whose client had gone');
+  assert.deepEqual(w.warnings, [], 'a question was raised for a request whose client had gone');
+  assert.deepEqual(w.updated, []);
+  assert.deepEqual(filesUnder(w.dir), []);
+});
+
+test('the person’s own click, with no request behind it, is asked and trusted exactly as before (E4.S4)', async () => {
+  const w = world({ scanned: KEY, answer: 'Trust and connect' });
+  (w.storage as { _put(n: TreeNode): void })._put({ id: 'e1', name: 'prod', type: 'entity', details: entity() });
+
+  const got = await w.mod.connectionOptions('acc', entity(), w.storage as never, w.dir, undefined);
+
+  assert.equal(w.warnings.length, 1);
+  assert.equal(got?.pin, formatHostKey(KEY));
+  assert.equal(w.updated.length, 1);
 });

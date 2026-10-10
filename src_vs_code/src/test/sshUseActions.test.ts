@@ -4,8 +4,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
+import { memoryStorage, seedEntry } from './pinWorld';
 import { EntityMetadata } from '../types';
 import type { UseActionContext } from '../useActions';
+import type { SshUseDeps } from '../sshUseActions';
+import type { StorageManager } from '../storageManager';
 
 /**
  * What an agent may actually do with an SSH grant (audit A3).
@@ -32,6 +35,13 @@ type Actions = typeof import('../sshUseActions');
 
 interface World {
   mod: Actions;
+  /**
+   * The REAL `StorageManager` over an in-memory memento and keychain, seeded with the entry — so the deps
+   * handed to the actions are an `SshUseDeps` and not a cast (E4.S3's code round, finding 1). Narrowing
+   * `SshUseDeps.storage` instead was measured and refused: the exec and terminal paths hand the manager to
+   * the credential, PIN and rotation modules, each typed `StorageManager`.
+   */
+  storage: StorageManager;
   storageDir: string;
   /** Every key file this run materialised, in order. */
   materialised: string[];
@@ -63,10 +73,11 @@ const ENTITY = {
   isSshEnabled: true,
 } as unknown as EntityMetadata;
 
-function world(parts: Parts): World {
+async function world(parts: Parts): Promise<World> {
   const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-use-'));
   const w: World = {
     mod: undefined as never,
+    storage: undefined as never,
     storageDir,
     materialised: [],
     runs: [],
@@ -75,17 +86,18 @@ function world(parts: Parts): World {
     slotsHeld: 0,
     connected: 0,
   };
+  const stub = {
+    window: {
+      showWarningMessage: (m: string): Promise<undefined> => {
+        w.warnings.push(m);
+        return Promise.resolve(undefined);
+      },
+      showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined),
+    },
+  };
   w.mod = loadWithVscode<Actions>(
     '../sshUseActions',
-    {
-      window: {
-        showWarningMessage: (m: string): Promise<undefined> => {
-          w.warnings.push(m);
-          return Promise.resolve(undefined);
-        },
-        showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined),
-      },
-    },
+    stub,
     {
       './sshCredential': {
         resolveSshCredential: (): Promise<unknown> => Promise.resolve(parts.source),
@@ -130,13 +142,19 @@ function world(parts: Parts): World {
       },
     },
   );
+  // The entry is re-read on every call, never snapshotted at grant time — so a world whose entry is
+  // `undefined` (deleted since the grant was minted) seeds nothing.
+  w.storage = memoryStorage(stub);
+  const entity = 'entity' in parts ? parts.entity : ENTITY;
+  if (entity !== undefined) {
+    await seedEntry(w.storage, entity, {});
+  }
   return w;
 }
 
-function deps(w: World, parts: Parts): unknown {
-  const entity = 'entity' in parts ? parts.entity : ENTITY;
+function deps(w: World, parts: Parts): SshUseDeps {
   return {
-    storage: { getNode: (): unknown => (entity === undefined ? undefined : { details: entity }) },
+    storage: w.storage,
     storageDir: w.storageDir,
     signal: new AbortController().signal,
     acquireExecSlot: (): (() => void) | undefined => {
@@ -162,14 +180,14 @@ const KEY_SOURCE = { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE KEY
 
 /** Run the exec action once and hand back its result. */
 async function exec(w: World, parts: Parts, command = 'uptime'): Promise<{ status: number; body: Record<string, unknown> }> {
-  const action = w.mod.sshExecAction(deps(w, parts) as never);
+  const action = w.mod.sshExecAction(deps(w, parts));
   return (await action.run(CTX, { command })) as { status: number; body: Record<string, unknown> };
 }
 
 test('an entity deleted since the grant was minted is not_found', async () => {
   // The entity is re-read on every call, never snapshotted at grant time.
   const parts: Parts = { source: KEY_SOURCE, entity: undefined };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     const result = await exec(w, parts);
 
@@ -187,7 +205,7 @@ test('an entity whose HOST was cleared is refused BEFORE any key is written', as
     source: KEY_SOURCE,
     entity: { ...ENTITY, host: undefined } as unknown as EntityMetadata,
   };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     const result = await exec(w, parts);
 
@@ -200,7 +218,7 @@ test('an entity whose HOST was cleared is refused BEFORE any key is written', as
 
 test('a runaway agent is refused a slot rather than allowed to pile up SSH processes', async () => {
   const parts: Parts = { source: KEY_SOURCE, noSlot: true };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     const result = await exec(w, parts);
 
@@ -214,7 +232,7 @@ test('a runaway agent is refused a slot rather than allowed to pile up SSH proce
 test('an entity with no credential left is refused, and the slot is given back', async () => {
   // A slot leaked on a refusal would let a handful of dead grants exhaust the pool.
   const parts: Parts = { source: { kind: 'none' } };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     const result = await exec(w, parts);
 
@@ -227,7 +245,7 @@ test('an entity with no credential left is refused, and the slot is given back',
 
 test('a stored key is written, used, and DELETED before the call returns', async () => {
   const parts: Parts = { source: KEY_SOURCE };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     await exec(w, parts);
 
@@ -243,7 +261,7 @@ test('the key is deleted even when ssh itself FAILS', async () => {
   // The `finally` is what makes this true; a delete on the success path only would leave a
   // decrypted key behind on exactly the runs someone is investigating.
   const parts: Parts = { source: KEY_SOURCE, runFails: true };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     const result = await exec(w, parts);
 
@@ -259,7 +277,7 @@ test('two calls get two DIFFERENT key files — one name would break both', asyn
   // The recorded defect: a shared file name meant the first call to finish pulled the key out
   // from under every other still authenticating with it, human terminals included.
   const parts: Parts = { source: KEY_SOURCE };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     await exec(w, parts);
     await exec(w, parts);
@@ -273,7 +291,7 @@ test('two calls get two DIFFERENT key files — one name would break both', asyn
 
 test('a password goes into the spawned process ENVIRONMENT, never the argv', async () => {
   const parts: Parts = { source: { kind: 'password', password: 'hunter2' } };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     await exec(w, parts);
 
@@ -288,7 +306,7 @@ test('the spawned environment carries PATH — spawn REPLACES it rather than mer
   // Without this, `ssh` is unresolvable and known_hosts is not found, and the failure looks
   // like a broken credential rather than a missing variable.
   const parts: Parts = { source: { kind: 'password', password: 'hunter2' } };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     await exec(w, parts);
 
@@ -301,7 +319,7 @@ test('the spawned environment carries PATH — spawn REPLACES it rather than mer
 
 test('the secret never appears in what the action RETURNS', async () => {
   const parts: Parts = { source: { kind: 'password', password: 'hunter2' } };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     const result = await exec(w, parts);
 
@@ -315,7 +333,7 @@ test('a credential warning reaches the AUDIT as well as the screen', async () =>
   // The agent path used to drop it — the one case where an entity authenticates with
   // different key material than its configuration names and nobody is told.
   const parts: Parts = { source: { ...KEY_SOURCE, warning: 'the referenced key entity is gone' } };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     await exec(w, parts);
 
@@ -328,9 +346,9 @@ test('a credential warning reaches the AUDIT as well as the screen', async () =>
 
 test('a command the validator rejects never reaches run()', async () => {
   const parts: Parts = { source: KEY_SOURCE };
-  const w = world(parts);
+  const w = await world(parts);
   try {
-    const action = w.mod.sshExecAction(deps(w, parts) as never);
+    const action = w.mod.sshExecAction(deps(w, parts));
 
     assert.equal(action.validate({ command: '' }).ok, false, 'an empty command is not a command');
     assert.equal(action.validate({ command: 'uptime' }).ok, true);
@@ -341,12 +359,12 @@ test('a command the validator rejects never reaches run()', async () => {
 
 test('the outcome an audit line shows names the exit code, and says when it timed out', async () => {
   const parts: Parts = { source: KEY_SOURCE };
-  const w = world(parts);
+  const w = await world(parts);
   try {
-    const action = w.mod.sshExecAction(deps(w, parts) as never);
+    const action = w.mod.sshExecAction(deps(w, parts));
 
-    assert.match(action.describeOutcome({ status: 200, body: { exitCode: 7 } } as never), /exit 7/);
-    assert.match(action.describeOutcome({ status: 200, body: { timedOut: true } } as never), /timed out/);
+    assert.match(action.describeOutcome({ status: 200, body: { exitCode: 7 } }), /exit 7/);
+    assert.match(action.describeOutcome({ status: 200, body: { timedOut: true } }), /timed out/);
   } finally {
     cleanup(w);
   }
@@ -356,9 +374,9 @@ test('the terminal action goes through the human Connect path, verbatim', async 
   // Same terminal name, same askpass env, same key cleanup on close — one implementation, so
   // the agent's terminal cannot drift from the one a person opens.
   const parts: Parts = { source: KEY_SOURCE };
-  const w = world(parts);
+  const w = await world(parts);
   try {
-    const action = w.mod.sshTerminalAction(deps(w, parts) as never);
+    const action = w.mod.sshTerminalAction(deps(w, parts));
 
     const result = (await action.run(CTX, {})) as { status: number; body: { opened: boolean } };
 
@@ -371,9 +389,9 @@ test('the terminal action goes through the human Connect path, verbatim', async 
 
 test('the terminal action refuses a deleted entity rather than opening an empty session', async () => {
   const parts: Parts = { source: KEY_SOURCE, entity: undefined };
-  const w = world(parts);
+  const w = await world(parts);
   try {
-    const action = w.mod.sshTerminalAction(deps(w, parts) as never);
+    const action = w.mod.sshTerminalAction(deps(w, parts));
 
     const result = (await action.run(CTX, {})) as { status: number; body: Record<string, unknown> };
 
@@ -394,7 +412,7 @@ const FORWARDING = { ...ENTITY, agentForward: true } as unknown as EntityMetadat
 
 test('a forwarding connection hands the child the agent socket', async () => {
   const parts: Parts = { source: KEY_SOURCE, entity: FORWARDING };
-  const w = world(parts);
+  const w = await world(parts);
   w.agentSocket = '/run/creds/agent.sock';
   try {
     await exec(w, parts);
@@ -415,7 +433,7 @@ test('a connection that did not ask for the agent is left exactly as it was', as
   // Exporting SSH_AUTH_SOCK makes our agent the AUTHENTICATION agent for that connection —
   // a consent dialog for a key nobody chose. It travels with the checkbox, never alone.
   const parts: Parts = { source: KEY_SOURCE };
-  const w = world(parts);
+  const w = await world(parts);
   w.agentSocket = '/run/creds/agent.sock';
   try {
     await exec(w, parts);
@@ -429,7 +447,7 @@ test('a connection that did not ask for the agent is left exactly as it was', as
 
 test('forwarding asked for with no agent loaded is SAID, not passed over in silence', async () => {
   const parts: Parts = { source: KEY_SOURCE, entity: FORWARDING };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     await exec(w, parts);
 
@@ -448,9 +466,9 @@ test('the terminal action does NOT report success when the window refused the co
   // entity with no host — and is not, now that a WSL window can refuse. An agent told a terminal is
   // open then waits at one that is not there.
   const parts: Parts = { source: KEY_SOURCE, connectRefuses: true };
-  const w = world(parts);
+  const w = await world(parts);
   try {
-    const action = w.mod.sshTerminalAction(deps(w, parts) as never);
+    const action = w.mod.sshTerminalAction(deps(w, parts));
 
     const result = (await action.run(CTX, {})) as { status: number; body: { opened?: boolean } };
 
@@ -466,11 +484,11 @@ test('the terminal action refused because its client left is that request’s ab
   // `connectEntity` answers false for a request whose start gate fired; reported as `internal`, the
   // journal carried a failure nobody caused and a reply was written to a socket nobody reads.
   const parts: Parts = { source: KEY_SOURCE, connectRefuses: true };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     const request = new AbortController();
     request.abort();
-    const action = w.mod.sshTerminalAction(deps(w, parts) as never);
+    const action = w.mod.sshTerminalAction(deps(w, parts));
 
     await assert.rejects(action.run({ ...CTX, signal: request.signal }, {}), (error: Error) => error.name === 'AbortError');
   } finally {
