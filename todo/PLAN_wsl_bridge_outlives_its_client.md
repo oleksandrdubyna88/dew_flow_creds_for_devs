@@ -1,6 +1,6 @@
 # PLAN — every creds process ends when the client it serves is gone
 
-> Status: **in progress, 2026-10-10 — E1 (#201), E4.S1 (#205) and E2 implemented (§14; §5.7 *As built*); E4.S3 in progress; E3, E4.S2 and E5 not yet.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
+> Status: **in progress, 2026-10-10 — E1 (#201), E4.S1 (#205), E2 (#211) and E4.S3 implemented (§14; §5.7 *As built*); E3, E4.S2 and E5 not yet.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
 > round — §14); each epic is re-gated on its own branch. Scope: `src_mcp/src` (`Program.cs`, `WslPump.cs`, the
 > tool lambdas, `Windows.cs`, a new `ServerLifetime`), `src_broker_client/src` (`BrokerClient.cs`, `WslInterop.cs`, a
 > new shared `ChildLifetime`), `src_cli/src` (`AgentRelay.cs`, `RelayPipe.cs`), `src_vs_code/src` (the broker's
