@@ -6,6 +6,7 @@ import { askpassEnv } from './sshAskpass';
 import { buildSshCommand, describeSshTarget, openSshTerminal } from './terminalManager';
 import { sshClientPresent } from './sshProgram';
 import { offerToInstall } from './toolEnsure';
+import { requestGone } from './requestLife';
 import { composedShellPath } from './pinnedTerminal';
 import {
   forgetMaterializedKey,
@@ -211,7 +212,7 @@ export async function connectEntity(
     forgetOurPin(resolved.knownHostsFile, storageDir);
     return refuseAndOfferTheFix(['not-wsl'], entity, remote, undefined);
   }
-  if (requestGone(connect)) {
+  if (requestGone(connect.startGate)) {
     forgetOurPin(resolved.knownHostsFile, storageDir);
     return false;
   }
@@ -245,7 +246,7 @@ export async function connectEntity(
       forgetOurPin(resolved.knownHostsFile, storageDir);
       return refuseAndOfferTheFix(['relay-not-running'], entity, remote, retry);
     }
-    if (requestGone(connect)) {
+    if (requestGone(connect.startGate)) {
       forgetOurPin(resolved.knownHostsFile, storageDir);
       return false;
     }
@@ -333,11 +334,6 @@ export async function connectEntity(
     }
   }
   return terminal !== undefined;
-}
-
-/** Whether the agent request this connection serves has already ended — see `ConnectOptions.startGate`. */
-function requestGone(connect: ConnectOptions): boolean {
-  return connect.startGate?.aborted === true;
 }
 
 /**

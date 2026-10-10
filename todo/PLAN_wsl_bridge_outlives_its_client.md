@@ -340,6 +340,12 @@ below).
   instance (finding 2).
 - The flows are catalogued in [module_tests.md](../research/module_tests.md), *A gone request starts no VPN*, with the
   scenario-harness gap and its reason.
+- **Open tail, found by the own review and left for a later story:** (1) the SSH terminal's path awaits the credential
+  lookup (its PIN box) and the host-key read BEFORE its first gate check, so for a gone request it can still show the
+  host-key or bastion prompt, write a known_hosts pin (taken back by the later check) and, through
+  `refuseAndOfferTheFix`, run a remedy (relay setup, add a key to the agent) before the retry stops at the gate — E4.S1's
+  SSH gate, not this story's VPN one; (2) a dependency step already typed when the client left is the shell's, yet the
+  request is journalled `ABANDONED` "as the action was starting — it was not launched": true of the VPN, not of the step.
 
 ### 5.8 A stale WSL install says so — `src_vs_code/src`
 
@@ -865,3 +871,10 @@ in this plan's status line and §14; E2's record is kept above.
 | 2 | `notStarted()` assigns `error.name` after construction | **accepted** — `RequestEndedError`, its `name` part of the instance; a refactor with no behaviour to watch red — the existing `AbortError` assertions hold it |
 | 3 | the `extension.ts` line handing the gate to `runVpn` is held by no test | **accepted** — `vpnRun.agentVpnOpener`, tested; written against the new seam, so its teeth were proven by break-it (the gate dropped → *"the agent opener started a VPN for a request whose client had gone"*) |
 | 4 | a step that finishes after its request has gone still asks the person to *Continue* | **accepted** — `settle` reads the gate first; RED (*"the person was asked to continue a chain nobody waits for"*) → GREEN → RED again with the check removed |
+
+Own review (a separate reviewer reading the final code, the gate's other half): no high-confidence defect — a gate check
+found between every await and the next effect, the reorder costing the person's path nothing it relied on, the
+`ABANDONED`/refusal mapping consistent, complexity within 4. Taken: `sshConnect.ts` kept a private copy of
+`requestGone` — now the shared one. Recorded, not taken: the two open-tail items above. Answered: the stop test is
+caught by `runVpn`'s entry check, and `sendToVpnTerminal`'s own check is held by the OpenVPN Connect test (break-it
+#14); `configFor`'s last check is belt-and-braces now that `settle` reads the gate after every step.
