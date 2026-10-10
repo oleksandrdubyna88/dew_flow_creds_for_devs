@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/mcp-v0.9.1...mcp-v0.10.0) (2026-10-10)
+
+
+### Features
+
+* **mcp:** every creds process logs why it lived and why it ended (E1) ([#201](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/201)) ([9494a67](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/9494a67cad995d18c319b709f0aac960c3a2451e))
+
 ## [0.9.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/mcp-v0.9.0...mcp-v0.9.1) (2026-10-02)
 
 
