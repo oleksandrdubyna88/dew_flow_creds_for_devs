@@ -111,7 +111,7 @@ public sealed class UseToolsTests
     {
         // A tool call with nothing in it must not become a request. The broker would refuse it,
         // but only after a round trip that says nothing useful to the model.
-        var answer = await UseTools.InvokeAsync(BrokerContract.Current, Named("creds_exec"), Caller, "  ", "command", "ls");
+        var answer = await UseTools.InvokeAsync(BrokerContract.Current, Named("creds_exec"), Caller, "  ", "command", "ls", TestContext.Current.CancellationToken);
 
         answer.Should().Contain("No entry id was given");
         answer.Should().Contain("creds_list");

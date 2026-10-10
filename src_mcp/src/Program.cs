@@ -310,7 +310,7 @@ internal static class Program
     /// </remarks>
     private static McpServerTool ListTool(BrokerContract contract) =>
         McpServerTool.Create(
-            async () => Answer.From(await Tools.ListAsync(contract)),
+            async (CancellationToken cancellationToken = default) => Answer.From(await Tools.ListAsync(contract, cancellationToken)),
             new McpServerToolCreateOptions
             {
                 Name = Tools.ListName,
@@ -342,8 +342,8 @@ internal static class Program
     /// </summary>
     private static McpServerTool ConfigSnippetTool(BrokerContract contract) =>
         McpServerTool.Create(
-            async (string entry, string? language, string? variant) =>
-                Answer.From(await Tools.ConfigSnippetAsync(contract, entry, language, variant)),
+            async (string entry, string? language, string? variant, CancellationToken cancellationToken = default) =>
+                Answer.From(await Tools.ConfigSnippetAsync(contract, entry, language, variant, cancellationToken)),
             new McpServerToolCreateOptions
             {
                 Name = Tools.ConfigSnippetName,
@@ -365,7 +365,7 @@ internal static class Program
     /// </remarks>
     private static McpServerTool FolderListTool(BrokerContract contract) =>
         McpServerTool.Create(
-            async () => Answer.From(await FolderTools.ListAsync(contract)),
+            async (CancellationToken cancellationToken = default) => Answer.From(await FolderTools.ListAsync(contract, cancellationToken)),
             new McpServerToolCreateOptions
             {
                 Name = FolderTools.ListName,
@@ -389,10 +389,10 @@ internal static class Program
     private static IEnumerable<McpServerTool> KindTools(BrokerContract contract) =>
     [
         McpServerTool.Create(
-            async () => Answer.From(await Tools.KindsAsync(contract)),
+            async (CancellationToken cancellationToken = default) => Answer.From(await Tools.KindsAsync(contract, cancellationToken)),
             ReadOptions(Tools.KindsName, "List the kinds of entry", Tools.KindsDescription)),
         McpServerTool.Create(
-            async (string kind) => Answer.From(await Tools.KindHelpAsync(contract, kind)),
+            async (string kind, CancellationToken cancellationToken = default) => Answer.From(await Tools.KindHelpAsync(contract, kind, cancellationToken)),
             ReadOptions(Tools.KindHelpName, "What one kind of entry takes", Tools.KindHelpDescription)),
     ];
 
@@ -424,15 +424,16 @@ internal static class Program
     private static IEnumerable<McpServerTool> FolderTool(BrokerContract contract, CallerSource caller) =>
     [
         McpServerTool.Create(
-            async (string name, string parent, string? folderType = null) =>
-                Answer.From(await FolderTools.InvokeAsync(contract, "create", caller.Current, [("name", name), ("parent", parent), ("folderType", folderType)])),
+            async (string name, string parent, string? folderType = null, CancellationToken cancellationToken = default) =>
+                Answer.From(await FolderTools.InvokeAsync(contract, "create", caller.Current, [("name", name), ("parent", parent), ("folderType", folderType)], cancellationToken)),
             FolderOptions(FolderTools.CreateName, "Create a folder", FolderTools.CreateDescription)),
         McpServerTool.Create(
-            async (string folder, string? name = null, string? parent = null, string? folderType = null) =>
-                Answer.From(await FolderTools.InvokeAsync(contract, "edit", caller.Current, [("folder", folder), ("name", name), ("parent", parent), ("folderType", folderType)])),
+            async (string folder, string? name = null, string? parent = null, string? folderType = null, CancellationToken cancellationToken = default) =>
+                Answer.From(await FolderTools.InvokeAsync(contract, "edit", caller.Current, [("folder", folder), ("name", name), ("parent", parent), ("folderType", folderType)], cancellationToken)),
             FolderOptions(FolderTools.EditName, "Rename, move or retype a folder", FolderTools.EditDescription)),
         McpServerTool.Create(
-            async (string folder) => Answer.From(await FolderTools.InvokeAsync(contract, "delete", caller.Current, [("folder", folder)])),
+            async (string folder, CancellationToken cancellationToken = default) =>
+                Answer.From(await FolderTools.InvokeAsync(contract, "delete", caller.Current, [("folder", folder)], cancellationToken)),
             FolderOptions(FolderTools.DeleteName, "Move a folder to the Trash", FolderTools.DeleteDescription)),
     ];
 
@@ -512,10 +513,10 @@ internal static class Program
     private static Delegate ArgumentsFor(BrokerContract contract, UseTools.UseTool tool, CallerSource caller) =>
         tool.Action switch
         {
-            "exec" => async (string entry, string command) =>
-                Answer.From(await UseTools.InvokeAsync(contract, tool, caller.Current, entry, "command", command)),
-            "query" => async (string entry, string query) =>
-                Answer.From(await UseTools.InvokeAsync(contract, tool, caller.Current, entry, "query", query)),
+            "exec" => async (string entry, string command, CancellationToken cancellationToken = default) =>
+                Answer.From(await UseTools.InvokeAsync(contract, tool, caller.Current, entry, "command", command, cancellationToken)),
+            "query" => async (string entry, string query, CancellationToken cancellationToken = default) =>
+                Answer.From(await UseTools.InvokeAsync(contract, tool, caller.Current, entry, "query", query, cancellationToken)),
             // `delete` takes only the entry: there is no second argument, because there is no
             // second destination. That is the permission, not a default.
             // The generation options ride along, named one by one. A model cannot add a field to
@@ -531,7 +532,8 @@ internal static class Program
                     bool? symbols = null,
                     bool? avoidAmbiguous = null,
                     int? words = null,
-                    string? separator = null) =>
+                    string? separator = null,
+                    CancellationToken cancellationToken = default) =>
                 Answer.From(await UseTools.RotateAsync(
                     contract,
                     tool,
@@ -539,7 +541,8 @@ internal static class Program
                     entry,
                     statement,
                     secretKind,
-                    Draw(length, lower, upper, digits, symbols, avoidAmbiguous, words, separator))),
+                    Draw(length, lower, upper, digits, symbols, avoidAmbiguous, words, separator),
+                    cancellationToken)),
             // The one shape with no entry id: there is no entry yet. The parameter names are
             // what a model fills in, so they are the words the broker's body uses.
             // Defaults, not just nullable types: a parameter with no default is REQUIRED in the
@@ -566,7 +569,8 @@ internal static class Program
                     bool? symbols = null,
                     bool? avoidAmbiguous = null,
                     int? words = null,
-                    string? separator = null) =>
+                    string? separator = null,
+                    CancellationToken cancellationToken = default) =>
                 Answer.From(await UseTools.CreateAsync(
                     contract,
                     tool,
@@ -580,8 +584,10 @@ internal static class Program
                     user,
                     port,
                     Draw(length, lower, upper, digits, symbols, avoidAmbiguous, words, separator),
-                    fields)),
-            _ => async (string entry) => Answer.From(await UseTools.InvokeAsync(contract, tool, caller.Current, entry, null, null)),
+                    fields,
+                    cancellationToken)),
+            _ => async (string entry, CancellationToken cancellationToken = default) =>
+                Answer.From(await UseTools.InvokeAsync(contract, tool, caller.Current, entry, null, null, cancellationToken)),
         };
 
     /// <summary>

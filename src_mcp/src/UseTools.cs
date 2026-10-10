@@ -264,7 +264,8 @@ internal static class UseTools
         CallerRecord caller,
         string entryId,
         string? extraName,
-        string? extraValue)
+        string? extraValue,
+        CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(entryId))
         {
@@ -272,7 +273,7 @@ internal static class UseTools
         }
 
         var route = RouteFor(contract, tool);
-        var reply = await Windows.PostAsync(contract, route, Body(contract, caller, entryId, extraName, extraValue));
+        var reply = await Windows.PostAsync(contract, route, Body(contract, caller, entryId, extraName, extraValue), ct);
         if (reply is null)
         {
             return Failure(
@@ -306,7 +307,8 @@ internal static class UseTools
         string? user,
         int? port = null,
         IReadOnlyList<(string Key, string? Value)>? draw = null,
-        JsonObject? fields = null)
+        JsonObject? fields = null,
+        CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -319,7 +321,7 @@ internal static class UseTools
         // the update, and nothing is created.
         if (fields is not null)
         {
-            var probe = await Windows.ReadAllAsync(contract, contract.ReadRoute("mcpKinds", "/v1/mcp/kinds"));
+            var probe = await Windows.ReadAllAsync(contract, contract.ReadRoute("mcpKinds", "/v1/mcp/kinds"), ct);
             if (probe.Bodies.Count == 0)
             {
                 return Tools.NoAnswer(probe.RouteRefused);
@@ -329,7 +331,8 @@ internal static class UseTools
         var reply = await Windows.PostAsync(
             contract,
             RouteFor(contract, tool),
-            CreateBody(contract, caller, name, kind, secretKind, secret, folder, host, user, port, draw, fields));
+            CreateBody(contract, caller, name, kind, secretKind, secret, folder, host, user, port, draw, fields),
+            ct);
         if (reply is null)
         {
             return Failure(
@@ -390,7 +393,8 @@ internal static class UseTools
         string entryId,
         string statement,
         string? secretKind,
-        IReadOnlyList<(string Key, string? Value)>? draw = null)
+        IReadOnlyList<(string Key, string? Value)>? draw = null,
+        CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(entryId))
         {
@@ -400,7 +404,8 @@ internal static class UseTools
         var reply = await Windows.PostAsync(
             contract,
             RouteFor(contract, tool),
-            RotateBody(contract, caller, entryId, statement, secretKind, draw));
+            RotateBody(contract, caller, entryId, statement, secretKind, draw),
+            ct);
         if (reply is null)
         {
             return Failure(
