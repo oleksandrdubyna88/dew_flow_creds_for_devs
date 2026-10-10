@@ -731,6 +731,15 @@ writes the client config; the extension itself keeps its zero runtime dependenci
   Server…** asks where the agent runs and installs both halves: the Linux one into the
   distribution you pick, and a config block naming it, with the Windows binary's path in `env`
   — asked of the distribution through `wslpath` rather than composed here.
+- **Check the WSL MCP install** (Install… → the same submenu, Windows only) asks the install
+  this extension last set up in a running distribution for its `--version` — both halves, the
+  Linux binary and the Windows one it starts — and says when either is older than this window's
+  `creds-mcp`, with **Update** (the install again, its config block on your clipboard), **Later**
+  and **Not for this version**. It also runs after every install into WSL and, at most once a day
+  per distribution, when the window starts — only for distributions already running, never waking
+  one. It checks the paths of the block it copied, not your client's config, which it never reads:
+  a config written by hand is *not recorded*, and Update is the remedy. Needs `creds-mcp` 0.10.0 or
+  later on Windows, the first release that answers `--version`.
 
 ## Help — the yellow question mark
 
@@ -1188,7 +1197,7 @@ also on the right-click menu where it applies.
 - **CLI, bridge and WSL** — Enable CLI Access… · Install `creds` (terminal CLI)… ·
   Copy install command for another machine... · Install `creds` on the Host… · Open Remote Bridge… · Close
   Remote Bridge · Set Up the WSL Agent Relay
-- **Agents (MCP)** — Install the MCP Server… · MCP logs
+- **Agents (MCP)** — Install the MCP Server… · Check the WSL MCP install · MCP logs
 - **Recovery** — Set Up Recovery Code… · Unlock Vault (Recovery Code)… · Remove Recovery Code… ·
   Corporate Recovery… · Accept Recovery Share… · Recover a Colleague’s Vault… · Contribute to a
   Recovery… · Finish a Recovery…

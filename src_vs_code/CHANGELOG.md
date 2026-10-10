@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — a stale WSL MCP install says so
+
+- **Install… → *Check the WSL MCP install*** (Windows; also in the command palette) asks the MCP server this
+  extension last set up in a running WSL distribution for its version — the Linux half and the Windows half it
+  starts — and says when either is older than this window's `creds-mcp`, naming both versions and both paths,
+  with **Update** (the install again, its config block on your clipboard), **Later** and **Not for this
+  version**. It also runs after every install into WSL and, at most once a day per distribution, when the window
+  starts — only for distributions that are already running; it never starts one.
+- It checks the paths of the config block it copied, never your client's config, which it does not read. A
+  config written by hand is reported as *not recorded*, and Update — then paste and restart the client — is the
+  remedy. It needs `creds-mcp` 0.10.0 or later on Windows, the first release that answers `--version`.
+
 ### Fixed — an agent request whose client is gone can no longer be allowed
 
 - **A consent dialog answered after the agent had gone allows nothing and runs nothing.** When an agent's

@@ -1,6 +1,6 @@
 # PLAN — every creds process ends when the client it serves is gone
 
-> Status: **in progress, 2026-10-10 — E1 (#201), E4.S1 (#205), E2 (#211) and E4.S3 implemented (§14; §5.7 *As built*); E3, E4.S2 and E5 not yet.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
+> Status: **in progress, 2026-10-10 — E1 (#201), E4.S1 (#205), E2 (#211), E4.S3 (#212) and E4.S2 implemented (§14; §5.7 and §5.8 *As built*); E3 and E5 not yet.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
 > round — §14); each epic is re-gated on its own branch. Scope: `src_mcp/src` (`Program.cs`, `WslPump.cs`, the
 > tool lambdas, `Windows.cs`, a new `ServerLifetime`), `src_broker_client/src` (`BrokerClient.cs`, `WslInterop.cs`, a
 > new shared `ChildLifetime`), `src_cli/src` (`AgentRelay.cs`, `RelayPipe.cs`), `src_vs_code/src` (the broker's
@@ -397,6 +397,23 @@ below).
   2026-10-09: every action is a panel button, the palette duplicates); it is the same command id, so the button and the
   palette run one handler. The orchestration is a `vscode`-free module with injected `runningDistros`, `probe`, state
   and clock, so the stopped-distribution, throttle and dismissal rules are unit tests.
+
+**As built (E4.S2, where the code refined the block above):**
+
+- **Every message claims only the copied block** (plan round, finding 1): "the MCP server whose config this
+  extension last copied for <distro>", never "your client runs" — copying a block does not prove it was pasted.
+- **The explicit command also offers only RUNNING distributions** (`wsl -l --running -q`), not only activation: it
+  never starts a VM either; with none running it says so. With one running it asks that one; with several, a pick.
+- **The Update straight after an install is not offered**: an install whose verdict is already `older` (a Windows
+  half that does not start, say) is reported with **Later** / **Not for this version** only, because Update would
+  install the same release again.
+- **Registered from `agentCommands.ts`, beside *Install the MCP Server…***, not from `extension.ts` (whose size
+  ratchet forbids growth) — with plain values (`storageDir`, `state`), so registering needs nothing of the editor's
+  API, and an activation-check failure goes to the diagnostic log instead of an unhandled rejection.
+- **The bounded run was widened, not copied**: `runWslOutcome` and `runningDistros` share `runWslBounded`'s one
+  spawn, deadline and tree kill; the core now collects bytes, because `wsl -l` answers in UTF-16 and a
+  distribution's programs in UTF-8. `binaryInstaller` gained `recordedVersion` and `binaryIn` (the storage-only
+  half of `binaryPath`).
 
 ### 5.9 Native parent watch for the server — `src_mcp/src/ParentWatch.cs` (new)
 
@@ -913,3 +930,33 @@ found between every await and the next effect, the reorder costing the person's 
 `requestGone` — now the shared one. Recorded, not taken: the two open-tail items above. Answered: the stop test is
 caught by `runVpn`'s entry check, and `sendToVpnTerminal`'s own check is held by the OpenVPN Connect test (break-it
 #14); `configFor`'s last check is belt-and-braces now that `settle` reads the gate after every step.
+
+### Epic E4, story S2 — a stale WSL install says so (branch `feat/e4s2-stale-wsl-install-says-so`)
+
+**Question consultation before the plan round** (`85327e0e`, codex `gpt-6-astra`, one of one row answered): which
+executable the check may run when the extension cannot see the client's config. Its answer — record the copied
+block's two paths per distribution and replay them, report an unrecorded distribution as such, keep a timeout
+`unknown` rather than `older` — was verified against `wslMcpInstall.ts` and `wslProcess.ts` and is the design block
+of §5.8.
+
+**Plan round (2026-10-10, session `07bee33e`) — `proceed`**, gating 2 against threshold 6, **1 of 3 reviewers
+answered** (codex; gemini rate-limited, quota reset ~89 h; the local engine misconfigured — "model is required").
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | §5.7/§9 promise a gone request runs nothing, but the VPN start is not gated | **rejected** — outside E4.S2: §5.7's recorded open tail, closed by its own story on its own branch (PR #212, re-gated there) |
+| 1 | §5.8 treats copying a block as proof the client uses its paths | **accepted** — the check and every message are worded as verifying the block this extension last copied, never the client's config; a "pending until confirmed" state was not added, since the paste cannot be observed |
+
+The round's operator commands, applied: build the story as one unit without re-splitting; work autonomously
+(RED → GREEN → RED again, docs with the change, every suite before the PR, the PR process end to end); questions to
+the question consultant before the person.
+
+**Tests, red first.** Before the code existed, the new suites failed for the missing feature: the panel test with
+*"credSshManager.checkWslMcpInstall is not contributed"* and *"the check has no panel button — the palette would be
+its only way in"*, the verdict and orchestration suites with `staleVerdict` / `runWslOutcome` not defined. Green
+after: the 4 new and widened suites, 71 tests. Break-it, each fix removed from the compiled code and the suite run
+again: the running-distribution filter removed → *"a STOPPED distribution is never probed at activation"* red
+(*"a stopped distribution was asked, which starts its VM"*); the 24-hour clock removed → *"at most once a day"* and
+*"per distribution"* red; the Windows half left unjudged → four verdict tests red, *"an older WINDOWS half is older
+even when the Linux half is current"* first; a missing version read as current → four red; the panel button
+removed from the manifest → two red. Full extension suite: 5531 tests, 5527 pass, 0 fail, 4 skipped.

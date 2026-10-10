@@ -6,6 +6,8 @@ import {
   TRANSLATE_TIMEOUT_MS,
   WslSpawner,
   runWslBounded,
+  runWslOutcome,
+  runningDistros,
   translateWindowsPath,
   wslBinary,
 } from '../wslProcess';
@@ -175,4 +177,71 @@ test('with nothing to go on it is STILL absolute — there is no bare name to fa
   const answer = wslBinary({});
   assert.equal(answer, 'C:\\Windows\\System32\\wsl.exe');
   assert.equal(answer.includes('\\System32\\'), true, 'and it is a PATH, not a name');
+});
+
+// --- the same bounded run, telling a timeout from an exit (plan §5.8, E4.S2) ---------------------
+//
+// The stale-install check needs the difference `runWslBounded` folds away: a non-zero exit is a
+// binary older than `--version` (stale), a timeout is a busy distribution (unknown). Widened from the
+// one core, not a second spawner.
+
+test('an exit is reported with its code and what it printed, even a non-zero one', async () => {
+  const child = new FakeChild();
+  const { spawn } = spawning(child);
+  says(child, 'unknown argument\n', 2);
+
+  assert.deepEqual(await runWslOutcome(['-e', '/x', '--version'], 1_000, spawn), {
+    kind: 'exited',
+    code: 2,
+    stdout: 'unknown argument\n',
+  });
+});
+
+test('a hung child is reported as a TIMEOUT, not as an exit, and is killed', async () => {
+  const child = new FakeChild();
+  const { spawn } = spawning(child);
+
+  assert.deepEqual(await runWslOutcome(['-e', '/x', '--version'], 50, spawn), { kind: 'timeout' });
+  assert.ok(child.killed.length > 0, 'the deadline passed but the child was left running');
+});
+
+test('a child that never starts is an exit with no code, not a timeout', async () => {
+  const child = new FakeChild();
+  const { spawn } = spawning(child);
+  setImmediate(() => child.emit('error', new Error('no wsl.exe')));
+
+  assert.deepEqual(await runWslOutcome(['-l'], 1_000, spawn), { kind: 'exited', code: null, stdout: '' });
+});
+
+test('output that arrives as BYTES is decoded too — the core no longer relies on setEncoding', async () => {
+  const child = new FakeChild();
+  const { spawn } = spawning(child);
+  setImmediate(() => {
+    child.stdout.emit('data', Buffer.from('creds-mcp 0.12.0\n', 'utf8'));
+    child.emit('close', 0);
+  });
+
+  assert.deepEqual(await runWslOutcome(['-e', '/x'], 1_000, spawn), { kind: 'exited', code: 0, stdout: 'creds-mcp 0.12.0\n' });
+});
+
+test('the running distributions are read from UTF-16, the way wsl -l answers', async () => {
+  const child = new FakeChild();
+  const { spawn, seen } = spawning(child);
+  setImmediate(() => {
+    child.stdout.emit('data', Buffer.from('Ubuntu\r\ndocker-desktop\r\n', 'utf16le'));
+    child.emit('close', 0);
+  });
+
+  assert.deepEqual(await runningDistros(1_000, spawn), ['Ubuntu']);
+  assert.deepEqual(seen, [['-l', '--running', '-q']], 'asked for the RUNNING ones — listing all would not say which are up');
+});
+
+test('a listing that hangs or fails answers "none running", so nothing is then asked', async () => {
+  const hung = new FakeChild();
+  assert.deepEqual(await runningDistros(50, spawning(hung).spawn), []);
+  assert.ok(hung.killed.length > 0);
+
+  const failed = new FakeChild();
+  says(failed, '', 1);
+  assert.deepEqual(await runningDistros(1_000, spawning(failed).spawn), []);
 });
