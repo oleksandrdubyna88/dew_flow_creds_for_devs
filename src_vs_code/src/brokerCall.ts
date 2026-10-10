@@ -62,23 +62,9 @@ export interface CallSubject {
 }
 
 export async function performCall(deps: CallDeps, call: CallSubject): Promise<void> {
-  // Counted and clocked only once consent is in hand: a refused or still-pending call must not
-  // extend a token's idle life or spend one of its uses. The check and the count are ONE
-  // synchronous step, because two awaits sit between them and the broker shares a consent dialog
-  // between concurrent first calls on purpose — see `GrantRegistry.reserve`.
-  //
-  // A client already gone reserves nothing: checked in the same synchronous step as the reserve, so an
-  // abandoned call spends no use of its grant (`PLAN_wsl_bridge_outlives_its_client.md` §5.7).
-  if (call.signal.aborted) {
-    deps.abandon('before the call was counted');
-    return;
-  }
-  const limits = grantLimits();
-  const reserved = deps.grants.reserve(call.grant.secret, Date.now(), limits);
-  if (reserved.kind !== 'live') {
-    deps.refuse('unauthorized', reservationRefused(reserved, limits));
-    return;
-  }
+  // The use is counted at the action boundary (`answer`), not here: a one-use call waits in the lane
+  // between the two, and a call whose client left while it waited would have spent a use of its grant
+  // without running (the review gate's finding on E4.S1).
   await queuedIfOneUse(deps, call);
 }
 
@@ -139,8 +125,31 @@ function answer(deps: CallDeps, call: CallSubject): Promise<void> {
     deps.abandon('before the action started');
     return Promise.resolve();
   }
+  if (!reservedNow(deps, call)) {
+    return Promise.resolve();
+  }
   const started = startNow(call);
   return deliver(deps, call, started);
+}
+
+/**
+ * Count this use and clock it — or refuse, when the grant has run out.
+ *
+ * <p>Counted and clocked only once consent is in hand: a refused or still-pending call must not extend a
+ * token's idle life or spend one of its uses. The check and the count are ONE synchronous step, because
+ * the broker shares a consent dialog between concurrent first calls on purpose — see
+ * `GrantRegistry.reserve`. And it is made at the boundary, in the same step as the abort check before it
+ * and the start after it, so a call whose client left — while it was asked, or while it waited its turn in
+ * the one-use lane — spends nothing (`PLAN_wsl_bridge_outlives_its_client.md` §5.7).</p>
+ */
+function reservedNow(deps: CallDeps, call: CallSubject): boolean {
+  const limits = grantLimits();
+  const reserved = deps.grants.reserve(call.grant.secret, Date.now(), limits);
+  if (reserved.kind !== 'live') {
+    deps.refuse('unauthorized', reservationRefused(reserved, limits));
+    return false;
+  }
+  return true;
 }
 
 /** Start the action now — a synchronous throw is a failed start like any other, not an escape. */

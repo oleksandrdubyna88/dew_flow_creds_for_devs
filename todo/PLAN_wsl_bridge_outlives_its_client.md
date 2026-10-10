@@ -247,9 +247,10 @@ Shared because both the MCP wrapper and the relay need exactly this, and today e
   settles. A click on a prompt nobody waits for writes one `ignored` line and decides nothing.
 - Checks after every await on the path: consent, the consent memory write, the waiting-rotation release, the mask table
   read; the MCP create also after the folder PIN step, before `make` — and the PIN step itself takes the signal, so its
-  box closes when the client leaves instead of checking (and counting wrong) PINs for nobody (consultation, §14). Before `reserve`, so an abandoned call spends no
-  use of its grant; and at the boundary itself — `brokerCall.ts` checks and starts the action in one synchronous step
-  (one-use calls reach it after the lane's queue, the longest wait on the path).
+  box closes when the client leaves instead of checking (and counting wrong) PINs for nobody (consultation, §14). And at
+  the boundary itself — `brokerCall.ts` checks, counts the use (`GrantRegistry.reserve`) and starts the action in ONE
+  synchronous step. The count moved there from before the one-use lane's queue (code round 1, §14): a call whose client
+  left while it waited its turn used to have spent a use of its grant without running.
 - One audit line per abandoned request, outcome `ABANDONED`, its detail naming the stage it was dropped at. No answer is
   written: the socket is already gone.
 - `UseActionContext.signal` is required, so every action start states it. The four actions that spawn a process — ssh
@@ -597,6 +598,16 @@ consultation for epics 4–5 before the code round; name the risky pieces (E4.S1
 rotation's exemption should start at the statement launch, not at generation (fixed: `finishOnceStarted` + `startGate`);
 the folder PIN box outlived the request (fixed: the signal cancels its token). Its transport question was answered by
 measurement (`requestLife.test.ts`, port and pipe, four shapes) and a cross-process leg (level 8 of `creds-mcp-itest.cjs`).
+
+**E4.S1 code round 1 (2026-10-09, session `addfcdf4`) — `proceed`**, gating 3 against threshold 5, **4 of 8 reviewers
+answered** (codex's four roles; gemini's four rate-limited, quota reset ~95 h — the verdict is one vendor's).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | `sshUseActions.test.ts`: the touched `CTX` fixture still cast `as never` | **accepted** — typed as `UseActionContext` |
+| 1 | `brokerWorld.ts`: the `settle` stub read its arguments through a tuple cast | **accepted** — the real signature |
+| 2 | `creds-mcp-itest.cjs`: the new leg is over 50 lines | **accepted** — the window and the binary moved into two helpers |
+| 3 | a queued one-use call whose client left had already spent a use of a capped grant | **accepted** — rejected in the plan round as low-impact, raised a third time with a concrete consequence (a capped grant refusing a live call after fewer calls had run). The use is now counted at the action boundary; RED first: *"the second of two allowed calls was refused: … reached its limit of 2 calls"*, green after |
 
 **Risk consultation for E4.S1** (codex `gpt-6-astra`, `bb3ab088…`), named as risky because it is the consent path of a
 credential broker — each point verified, then acted on:

@@ -3976,8 +3976,8 @@ sequenceDiagram
     R-->>G: signal fires → this waiter detaches
     G-->>P: abandoned → one ABANDONED line, no answer
     Note over G: a later Allow: stillWanted() is false →<br/>one "ignored" line, grant untouched
-    P->>P: checks after every await, before reserve
-    P->>A: check + start in ONE synchronous step, ctx.signal
+    P->>P: checks after every await
+    P->>A: check + reserve + start in ONE synchronous step, ctx.signal
     C--xA: leaving after the start fires ctx.signal (child killed)
 ```
 
@@ -3996,9 +3996,10 @@ sequenceDiagram
   before the move to the Trash, after the create's folder-PIN step (which the signal also closes — a box left
   open would still count wrong PINs for nobody), and before a folder change.
 - **The path after consent**: nothing is remembered for an abandoned call, and `prepared()` checks after the
-  consent memory write, the waiting-rotation release and the mask read; `brokerCall.ts` checks before
-  `reserve` (no use spent) and at the action start, check and start in one synchronous step — a one-use call
-  arrives there after the lane's queue, the longest wait on the path.
+  consent memory write, the waiting-rotation release and the mask read; `brokerCall.ts` checks, counts the use
+  (`GrantRegistry.reserve`) and starts the action in ONE synchronous step at the boundary — a one-use call
+  arrives there after the lane's queue, the longest wait on the path, so a call abandoned while it waited spends
+  no use of its grant (the count used to come before the queue).
 - **The action itself**: `UseActionContext.signal` is required. `useActions.launchGuards(window, ctx)` gives the
   four spawning actions (ssh exec, stored script, stored terminal command, db query) a `startGate` and a LIST of kill
   signals — never an `AbortSignal.any` composite, which Node 20 keeps referenced from the window's long-lived signal,

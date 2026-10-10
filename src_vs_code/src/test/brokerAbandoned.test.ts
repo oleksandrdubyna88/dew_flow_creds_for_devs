@@ -387,3 +387,41 @@ test('an action that fails because its client left is that request’s abandonme
     w.server.dispose();
   }
 });
+
+test('a queued call whose client left spends no use of a capped grant', async () => {
+  // The review gate's finding on E4.S1, raised three times: the use was reserved BEFORE the one-use
+  // lane's queue, so a call abandoned while it waited never ran and still counted — and a grant capped
+  // at N calls then refused a live call after fewer than N had run.
+  const w = world({ oneUse: true, maxCalls: 2 });
+  w.result = { status: 502, body: { error: 'the far side refused' } };
+  let release = (): void => undefined;
+  w.hold = () =>
+    new Promise<void>((resolve) => {
+      release = resolve;
+    });
+  try {
+    const { port, secret } = await share(w);
+    const first = hanging(port, '/v1/use/exec', { command: 'first' }, secret);
+    await until(() => w.ran.length === 1, 'the first call inside the action');
+    const queued = hanging(port, '/v1/use/exec', { command: 'queued' }, secret);
+    await pause(CLOSE_SEEN_MS);
+
+    queued.hangUp();
+    await pause(CLOSE_SEEN_MS);
+    w.hold = undefined;
+    release();
+    assert.equal(await first.answered, 502);
+    await abandonedSeen(w);
+
+    const third = await call(port, '/v1/use/exec', { token: secret, body: { command: 'third' } });
+
+    assert.equal(third.status, 502, `the second of two allowed calls was refused: ${JSON.stringify(third.body)}`);
+    assert.deepEqual(
+      w.ran.map((r) => r.body.command),
+      ['first', 'third'],
+    );
+  } finally {
+    release();
+    w.server.dispose();
+  }
+});

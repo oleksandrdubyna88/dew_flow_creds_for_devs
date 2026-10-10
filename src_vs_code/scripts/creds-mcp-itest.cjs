@@ -302,43 +302,13 @@ async function goneMidConsentLeg() {
   const before = checksRun;
   const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mcp-gone-'));
   const ran = [];
-  const actions = new UseActionRegistry();
-  actions.register({
-    kind: 'db',
-    action: 'query',
-    mutatesSecrets: false,
-    verb: 'run a query on',
-    validate: () => ({ ok: true }),
-    summarize: (body) => String(body.query ?? ''),
-    describeOutcome: () => 'done',
-    run: (_ctx, body) => {
-      ran.push(String(body.query ?? ''));
-      return Promise.resolve({ status: 200, body: { exitCode: 0, rows: 1 } });
-    },
-  });
-  const server = new CredsAgentServer(actions, () => {}, {
-    storageDir,
-    listMcpEntries: () => Promise.resolve(ENTRIES),
-    resolveMcpUse: (id) =>
-      id === 'e-1' ? { kind: 'usable', target: { accountId: 'a-1', entityId: 'e-1', entityName: 'orders-db', kind: 'db' } } : undefined,
-  });
+  const server = goneLegWindow(storageDir, ran);
   const auditFrom = audit.length;
   consent.held = [];
   let child;
   try {
     await server.share('a-1', 'e-1', 'orders-db', 'db');
-    child = spawn(EXE, [], {
-      env: { ...process.env, CREDS_RELAYED_FROM_WSL: '1', CREDS_ENDPOINT_DIR: path.join(storageDir, 'endpoints') },
-    });
-    child.stdout.resume();
-    child.stderr.resume();
-    for (const message of [
-      ...HANDSHAKE,
-      { jsonrpc: '2.0', id: 95, method: 'tools/call', params: { name: 'creds_query', arguments: { entry: 'e-1', query: 'select gone' } } },
-    ]) {
-      child.stdin.write(`${JSON.stringify(message)}\n`);
-      await sleep(150);
-    }
+    child = await binaryAskingToQuery(path.join(storageDir, 'endpoints'));
     check('the modal is open while the binary waits on it', await eventually(() => consent.held.length === 1, 15_000), `held ${consent.held.length}`);
 
     const exited = new Promise((resolve) => child.once('exit', resolve));
@@ -362,6 +332,45 @@ async function goneMidConsentLeg() {
     checksRun - before === EXPECTED_GONE_CHECKS,
     `ran ${checksRun - before} of ${EXPECTED_GONE_CHECKS}`,
   );
+}
+
+/** The gone-client level's own window: one entry, a query action that records whether it ran. */
+function goneLegWindow(storageDir, ran) {
+  const actions = new UseActionRegistry();
+  actions.register({
+    kind: 'db',
+    action: 'query',
+    mutatesSecrets: false,
+    verb: 'run a query on',
+    validate: () => ({ ok: true }),
+    summarize: (body) => String(body.query ?? ''),
+    describeOutcome: () => 'done',
+    run: (_ctx, body) => {
+      ran.push(String(body.query ?? ''));
+      return Promise.resolve({ status: 200, body: { exitCode: 0, rows: 1 } });
+    },
+  });
+  return new CredsAgentServer(actions, () => {}, {
+    storageDir,
+    listMcpEntries: () => Promise.resolve(ENTRIES),
+    resolveMcpUse: (id) =>
+      id === 'e-1' ? { kind: 'usable', target: { accountId: 'a-1', entityId: 'e-1', entityName: 'orders-db', kind: 'db' } } : undefined,
+  });
+}
+
+/** The real binary, handshaken, with one `creds_query` sent and its stdin held open — mid-call. */
+async function binaryAskingToQuery(endpointDir) {
+  const child = spawn(EXE, [], { env: { ...process.env, CREDS_RELAYED_FROM_WSL: '1', CREDS_ENDPOINT_DIR: endpointDir } });
+  child.stdout.resume();
+  child.stderr.resume();
+  for (const message of [
+    ...HANDSHAKE,
+    { jsonrpc: '2.0', id: 95, method: 'tools/call', params: { name: 'creds_query', arguments: { entry: 'e-1', query: 'select gone' } } },
+  ]) {
+    child.stdin.write(`${JSON.stringify(message)}\n`);
+    await sleep(150);
+  }
+  return child;
 }
 
 /** How many checks {@link quietLeg} owns BEFORE its own contribution assertion, which does not count itself. */

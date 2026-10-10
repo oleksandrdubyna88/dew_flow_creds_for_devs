@@ -5,6 +5,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
 import { EntityMetadata } from '../types';
+import type { UseActionContext } from '../useActions';
 
 /**
  * What an agent may actually do with an SSH grant (audit A3).
@@ -154,7 +155,7 @@ function deps(w: World, parts: Parts): unknown {
   };
 }
 
-const CTX = { accountId: 'a1', entityId: 'e1', entityName: 'prod', signal: new AbortController().signal } as never;
+const CTX: UseActionContext = { accountId: 'a1', entityId: 'e1', entityName: 'prod', signal: new AbortController().signal };
 const cleanup = (w: World): void => fs.rmSync(w.storageDir, { recursive: true, force: true });
 
 const KEY_SOURCE = { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE KEY BODY' };

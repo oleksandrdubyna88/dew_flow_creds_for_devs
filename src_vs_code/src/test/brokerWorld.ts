@@ -451,14 +451,10 @@ function createFor(w: World, mode: 'open' | 'closed' | undefined, settled?: Crea
             summary: `${String(body.name)} (ssh) in "Servers"`,
             withSecret: typeof body.secret === 'string' && body.secret.length > 0,
           },
-    // The signal is read off the arguments rather than the type so this stub compiles before and after
-    // `settle` learns to take one: it is the request's life, handed to the folder PIN step (E4.S1).
-    settle: async (...args: unknown[]) => {
-      const [, deadline, signal] = args as [unknown, number, AbortSignal | undefined];
+    // `signal` is the request's life, handed to the folder PIN step (E4.S1).
+    settle: async (_decision, deadline, signal) => {
       w.settleDeadlines.push(deadline);
-      if (signal !== undefined) {
-        w.settleSignals.push(signal);
-      }
+      w.settleSignals.push(signal);
       await w.holdSettle?.();
       return settled ?? { ok: true };
     },
