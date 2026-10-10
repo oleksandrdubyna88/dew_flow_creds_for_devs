@@ -4656,7 +4656,16 @@ access* row of a config entry (`cliCommandText.ts`) shows `creds config -`, the 
 argument; the rows show each DISTINCT command once (`distinctCliCommands` — a config entry's names collapse to
 one row, a kind whose command carries the name keeps a row per name), and *Enable in
 CLI* says what a config's name is for through `cliAliasNote` (it lists the config in `creds ls`; it does not
-read it), so the box and the message no longer imply a name unlocks a config (the own review).
+read it), so the box and the message no longer imply a name unlocks a config (the own review); both branch on
+one verb decision, `cliVerbFor`. **Two limits the gate named and this change does not take** (both the shipped
+design of #202, not this change's): the PowerShell body under Windows PowerShell 5.1 writes the system code page
+— and 5.1 also DECODES a native command's output through it — so a config with non-ASCII text wants pwsh 7
+(said in the snippet), and a fix spans the CLI's own console encoding, to be measured on 5.1 before it is
+written; and the C++ body launches `creds` through `popen`, the one way standard C++ has, with no timeout — a
+bounded, cancellable child in portable C++ is platform code, not a paste-ready example. Where every snippet
+FINDS `creds` (a bare name on the PATH, which `CreateProcess` and `cmd` resolve through the current directory
+first on Windows) is [PLAN_creds_cli_reachable_from_every_caller.md](../todo/PLAN_creds_cli_reachable_from_every_caller.md)'s
+subject.
 
 **The Fields tab is a VIEW over the raw text.** Parse-edit-serialise cannot keep a document —
 `JSON.parse` then `JSON.stringify` loses the indentation somebody chose, the blank lines and the

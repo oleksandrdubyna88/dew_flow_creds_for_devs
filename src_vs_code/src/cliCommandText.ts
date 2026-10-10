@@ -21,6 +21,12 @@ import { canConnectSsh } from './entityKind';
  * never worked — so it shows the stdin form every snippet uses instead, and the alias is left out.</p>
  */
 export function cliCommandFor(details: EntityMetadata, alias: string): string {
+  const verb = cliVerbFor(details);
+  return verb === 'config' ? 'creds config -' : `creds ${verb} ${alias}`;
+}
+
+/** The CLI verb this entry runs under — ONE decision, read by the command and by the name's note alike. */
+function cliVerbFor(details: EntityMetadata): string {
   // First hit wins, in the order the CLI's own usage text lists the verbs.
   const rules: ReadonlyArray<[boolean, string]> = [
     // The tree's own Connect predicate: a host on a Terminal entry is not an ssh target (§4.5).
@@ -31,16 +37,15 @@ export function cliCommandFor(details: EntityMetadata, alias: string): string {
     [details.isVpn === true, 'vpn-up'],
     [details.isConfig === true, 'config'],
   ];
-  const verb = rules.find(([applies]) => applies)?.[1] ?? 'env';
-  return verb === 'config' ? 'creds config -' : `creds ${verb} ${alias}`;
+  return rules.find(([applies]) => applies)?.[1] ?? 'env';
 }
 
 /**
  * What a name does for this entry, said where *Enable in CLI* names one: for a config entry the name
  * is NOT in the command — the key on stdin is what reads it — so the sentence says what the name is for
  * (it lists the entry in `creds ls`) instead of implying it unlocks the config. Empty for every other kind,
- * whose command carries the name.
+ * whose command carries the name. Branches on the verb decision itself, not on the rendered text.
  */
 export function cliAliasNote(details: EntityMetadata): string {
-  return cliCommandFor(details, '-') === 'creds config -' ? ' — the key goes on stdin; the name only lists this config in creds ls' : '';
+  return cliVerbFor(details) === 'config' ? ' — the key goes on stdin; the name only lists this config in creds ls' : '';
 }
