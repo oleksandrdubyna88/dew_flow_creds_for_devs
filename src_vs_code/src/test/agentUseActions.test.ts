@@ -14,7 +14,7 @@ import {
  * option-injection guard, and the "an agent may only run what a human has vouched for" gate.
  */
 
-const ctx = { accountId: 'acct-1', entityId: 'e1', entityName: 'prod-db' };
+const ctx = { accountId: 'acct-1', entityId: 'e1', entityName: 'prod-db', signal: new AbortController().signal };
 
 function code(result: { body: unknown }): string {
   return (result.body as { error?: { code?: string } }).error?.code ?? '';

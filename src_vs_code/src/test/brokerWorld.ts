@@ -55,6 +55,21 @@ interface World {
    * broker queues one-use entries and only those, and that difference is the claim.</p>
    */
   hold?: () => Promise<void>;
+  /**
+   * The signal each action START was handed, in order — what a client hanging up mid-run must reach.
+   */
+  actionSignals: (AbortSignal | undefined)[];
+  /**
+   * Dialogs raised while `holdDialogs` is on, waiting for the test to answer them — oldest first.
+   *
+   * <p>Every other test answers a dialog the moment it is raised, so "the client left while the modal
+   * was open" could not be written at all: there was never a moment in which the modal was open.</p>
+   */
+  openDialogs: ((answer: string | undefined) => void)[];
+  /** The signal each create's `settle` was handed — the folder PIN step's own end. */
+  settleSignals: AbortSignal[];
+  /** Awaited inside `settle` when set, so a test can hang up while the PIN step is in progress. */
+  holdSettle?: () => Promise<void>;
   /** Set by the run() stub to whatever the action should answer. */
   /**
    * What the wrapped action answers — or, when it is an `Error`, what it THROWS.
@@ -140,6 +155,8 @@ function world(options: {
    */
   hooks?: Record<string, unknown>;
   supports?: string[];
+  /** Leave every dialog open until the test answers it through `w.openDialogs` (E4.S1). */
+  holdDialogs?: boolean;
 }): World {
   const w: World = {
     mod: undefined as never,
@@ -154,13 +171,20 @@ function world(options: {
     settleDeadlines: [],
     presence: 0,
     consents: [],
+    actionSignals: [],
+    openDialogs: [],
+    settleSignals: [],
     result: { status: 200, body: { exitCode: 0, stdout: 'ok\n', stderr: '' } },
   };
   w.mod = loadWithVscode<Broker>('../credsAgentServer', {
     window: {
       showWarningMessage: (m: string): Promise<string | undefined> => {
         w.dialogs.push(m);
-        return Promise.resolve(w.answers.shift());
+        return options.holdDialogs === true
+          ? new Promise((resolve) => {
+              w.openDialogs.push(resolve);
+            })
+          : Promise.resolve(w.answers.shift());
       },
       showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined),
       createOutputChannel: (): unknown => ({
@@ -184,8 +208,9 @@ function world(options: {
     validate: (body: Record<string, unknown>): unknown =>
       body.command === '' ? { ok: false, message: 'no command given' } : { ok: true },
     summarize: (body: Record<string, unknown>): string => String(body.command ?? ''),
-    run: async (ctx: { entityId: string }, body: Record<string, unknown>): Promise<unknown> => {
+    run: async (ctx: { entityId: string; signal?: AbortSignal }, body: Record<string, unknown>): Promise<unknown> => {
       w.ran.push({ action: name, entityId: ctx.entityId, body });
+      w.actionSignals.push(ctx.signal);
       w.rotate?.();
       await w.hold?.();
       if (w.result instanceof Error) {
@@ -428,9 +453,12 @@ function createFor(w: World, mode: 'open' | 'closed' | undefined, settled?: Crea
             summary: `${String(body.name)} (ssh) in "Servers"`,
             withSecret: typeof body.secret === 'string' && body.secret.length > 0,
           },
-    settle: (_decision, deadline) => {
+    // `signal` is the request's life, handed to the folder PIN step (E4.S1).
+    settle: async (_decision, deadline, signal) => {
       w.settleDeadlines.push(deadline);
-      return Promise.resolve(settled ?? { ok: true });
+      w.settleSignals.push(signal);
+      await w.holdSettle?.();
+      return settled ?? { ok: true };
     },
     make: (_decision, body) => {
       w.created.push(String(body.name));

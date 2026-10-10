@@ -1,5 +1,3 @@
-import { withTimeout } from './withTimeout';
-import { CONSENT_TIMEOUT_MS } from './agentConsent';
 import * as http from 'node:http';
 import * as vscode from 'vscode';
 import {
@@ -21,17 +19,18 @@ import { CallSubject, performCall } from './brokerCall';
 import { OneUseLane, burnAndMark } from './oneUseLane';
 import { ReadRouteSources, readRouteBody } from './brokerReadRoutes';
 import { describeError } from './describeError';
-import { BrokerDoor, mcpDoor } from './brokerMcpDoor';
+import { BrokerDoor, ConsentOutcome, DURING_CONSENT, mcpDoor } from './brokerMcpDoor';
+import { ConsentGate } from './brokerConsent';
+import { abandonedWhenClosed } from './requestLife';
 import { recordConsent } from './brokerConsentMemory';
 import { McpFolderHooks } from './brokerFolderDoor';
 import { answerMcpRoute } from './brokerMcpRoutes';
 import { aliasTarget, grantForToken, readNamedBody } from './brokerRequests';
-import { CALLER_DISCLAIMER, CallerLabel, callerForAudit, callerFrom, callerLine } from './brokerCaller';
-import { localRequestTimeLine } from './requestTime';
-import { describeLimits, grantLimits } from './grantLimits';
+import { CallerLabel, callerForAudit, callerFrom } from './brokerCaller';
+import { grantLimits } from './grantLimits';
 import { answerConfigRead } from './brokerConfigRoute';
 import { Grant, GrantRegistry } from './grantRegistry';
-import { UseActionRegistry } from './useActions';
+import { UseAction, UseActionRegistry } from './useActions';
 import { formatToken } from './grantToken';
 import { AuditDoor, AuditEntry, formatAuditLine } from './agentAuditLog';
 import { BrokerAuditWriter } from './brokerAuditWriter';
@@ -61,7 +60,6 @@ export class CredsAgentServer implements vscode.Disposable {
   private readonly grants = new GrantRegistry();
   /** The two ceilings a caller with NO token answers to — the modal budget, and the silent one (#95). */
   private readonly ceilings = new TokenlessCeilings();
-  private readonly consenting = new Map<string, Promise<boolean>>();
   /** One call at a time for an entry that may only be used once — see `oneUseLane.ts`. */
   private readonly oneUse = new OneUseLane();
   private readonly abort = new AbortController();
@@ -107,13 +105,17 @@ export class CredsAgentServer implements vscode.Disposable {
    */
   constructor(
     private readonly actions: UseActionRegistry,
-    private readonly onUserPresent: () => void,
+    onUserPresent: () => void,
     hooks?: BrokerHooks,
   ) {
     // Checked, not trusted: five of the seven callers are `.cjs`, where a misspelled key is silent
     // by construction — every hook is optional, so `resolveAlais` reads as "switched off".
     this.hooks = checkedHooks(hooks);
+    this.gate = new ConsentGate({ grants: this.grants, actions, onUserPresent, log: (entry) => this.log(entry) });
   }
+
+  /** The Allow/Deny modal, and what an answer does — `brokerConsent.ts`. */
+  private readonly gate: ConsentGate;
 
   private readonly hooks: BrokerHooks;
 
@@ -237,10 +239,11 @@ export class CredsAgentServer implements vscode.Disposable {
     req: http.IncomingMessage,
     res: http.ServerResponse,
     pathname: string,
+    signal: AbortSignal,
   ): Promise<boolean> {
     return answerMcpRoute(
       {
-        door: this.door,
+        door: this.doorFor(signal),
         readBody,
         resolveUse: this.hooks.resolveMcpUse,
         moveToTrash: this.hooks.moveToTrash,
@@ -260,8 +263,11 @@ export class CredsAgentServer implements vscode.Disposable {
 
   private folderHooks: McpFolderHooks | undefined;
 
-  /** The pieces the MCP door needs, and nothing else — see `brokerMcpDoor.ts`. */
-  private get door(): BrokerDoor {
+  /**
+   * The pieces the MCP door needs, and nothing else — see `brokerMcpDoor.ts`. Built per request, because
+   * it carries that request's life: `consent` and `perform` hand `signal` to the broker.
+   */
+  private doorFor(signal: AbortSignal): BrokerDoor {
     return mcpDoor({
       refuse: (res, code, message, grant, action, detail, caller) =>
         this.respondError(res, code, message, grant as Grant | undefined, action, detail, 'mcp', caller),
@@ -276,9 +282,12 @@ export class CredsAgentServer implements vscode.Disposable {
       describe: (grant) => GrantRegistry.describe(grant as Grant),
       note: (entry) => this.log(entry),
       perform: (res, grant, action, body, caller, rungs) =>
-        this.perform(res, grant as Grant, action, body, 'mcp', caller, rungs),
-      consent: (grant, action, verb, summary, caller) => this.consent(grant as Grant, action, verb, summary, caller),
+        this.perform(res, grant as Grant, action, body, { via: 'mcp', caller, signal }, rungs),
+      consent: (grant, action, verb, summary, caller) =>
+        this.gate.consent({ grant: grant as Grant, action, verb, summary, caller }, signal),
       respond: (res, status, body) => this.respond(res, status, body),
+      signal,
+      abandon: (grant, action, stage, caller) => this.abandoned(grant as Grant, action, stage, { via: 'mcp', caller }),
     });
   }
 
@@ -299,6 +308,7 @@ export class CredsAgentServer implements vscode.Disposable {
     req: http.IncomingMessage,
     res: http.ServerResponse,
     action: string,
+    signal: AbortSignal,
   ): Promise<void> {
     const read = await readNamedBody(readBody, req, 'alias', 'an "alias"');
     if (!read.ok) {
@@ -336,7 +346,7 @@ export class CredsAgentServer implements vscode.Disposable {
       caller,
     });
     try {
-      await this.perform(res, grant, action, body, 'alias', caller);
+      await this.perform(res, grant, action, body, { via: 'alias', caller, signal });
     } finally {
       // In a `finally`, because a prompt that timed out or threw has still been shown and the
       // slot must come back — otherwise one failed call closes this route for the session.
@@ -419,6 +429,8 @@ export class CredsAgentServer implements vscode.Disposable {
   // eslint-disable-next-line complexity
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    // First, before anything awaits: a listener attached later could miss the client leaving.
+    const signal = abandonedWhenClosed(res);
 
     // Health, aliases, the entries an agent may see and the folders opened to it — one kind of
     // route, described once in `brokerReadRoutes.ts`: none authenticates, none performs
@@ -429,12 +441,12 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
 
-    if (req.method === 'POST' && (await this.answerMcp(req, res, url.pathname))) {
+    if (req.method === 'POST' && (await this.answerMcp(req, res, url.pathname, signal))) {
       return;
     }
 
     if (req.method === 'POST' && parseAliasRoute(url.pathname) !== undefined) {
-      await this.handleAlias(req, res, parseAliasRoute(url.pathname) as string);
+      await this.handleAlias(req, res, parseAliasRoute(url.pathname) as string, signal);
       return;
     }
 
@@ -468,7 +480,7 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
 
-    await this.perform(res, grant, action, body, 'token', callerFrom(body));
+    await this.perform(res, grant, action, body, { via: 'token', caller: callerFrom(body), signal });
   }
 
   /**
@@ -479,48 +491,76 @@ export class CredsAgentServer implements vscode.Disposable {
    * point would be a way for consent, masking or the audit to apply to one caller and not the
    * other — and the one that gets forgotten is always the newer path.</p>
    */
-  // eslint-disable-next-line complexity
   private async perform(
     res: http.ServerResponse,
     grant: Grant,
     action: string,
     body: Record<string, unknown>,
-    via: AuditDoor,
-    // Who the body says is calling. REQUIRED — `undefined` must be written, never omitted — so
-    // every door that reaches this funnel says who is asking, or does not compile. It is a label
-    // for the modal and the audit line; nothing below decides anything with it.
-    caller: CallerLabel | undefined,
+    // Which door, who the body says is calling, and this request's life. `caller` is REQUIRED —
+    // `undefined` must be written, never omitted — so every door that reaches this funnel says who is
+    // asking, or does not compile. It is a label for the modal and the audit line; nothing below
+    // decides anything with it. `signal` fires when the client hangs up (`requestLife.ts`).
+    who: RequestWho,
     /**
      * The ladder this call's entry resolved to, from the MCP lookup — the fingerprint a remembered
      * consent is recorded under. Absent on every other door, which remembers nothing.
      */
     rungs?: string,
   ): Promise<void> {
-    const useAction = this.actions.resolve(grant.kind, action);
+    const useAction = this.usable(res, grant, action, body, who);
     if (useAction === undefined) {
-      this.respondError(res, 'not_supported', `"${grant.kind}" entities cannot ${action}.`, grant, action, undefined, via, caller);
       return;
     }
-    const validated = useAction.validate(body);
-    if (!validated.ok) {
-      this.respondError(res, 'invalid_request', validated.message, grant, action, undefined, via, caller);
-      return;
-    }
-
     const summary = useAction.summarize(body);
     // Read BEFORE the await. A grant a policy settled at the door is already `allowed`, and a call
     // that raised no modal must not slide this entry's quiet window forward — that is how "once
     // every twelve hours" quietly becomes "once, ever".
     const asked = this.grants.get(grant.secret)?.status !== 'allowed';
-    const consent = await this.consent(grant, action, useAction.verb, summary, caller);
+    const consent = await this.gate.consent({ grant, action, verb: useAction.verb, summary, caller: who.caller }, who.signal);
     if (consent !== 'allowed') {
-      const code: ErrorCode = consent === 'timeout' ? 'consent_timeout' : 'denied';
-      this.respondError(res, code, 'The human did not allow this grant.', grant, action, summary, via, caller);
+      this.notAllowed(res, consent, { grant, action, summary }, who);
       return;
     }
-    await this.remember(via, grant, asked, rungs);
-    // A waiting rotated value goes in FIRST, so the table below holds the value the action will use (`brokerHooks.ts`).
-    await Promise.resolve(this.hooks.releaseWaiting?.(grant.accountId, grant.entityId)).catch(() => undefined);
+    // Only an `allowed` from a request still there reaches this line — the gate checked after its own
+    // wait — so a consent nobody is waiting for is never remembered.
+    await this.remember(who.via, grant, asked, rungs);
+    await this.prepared(res, { grant, useAction, action, body, via: who.via, caller: who.caller, summary, signal: who.signal });
+  }
+
+  /** The capability check and the body's validation — both before anybody is asked anything. */
+  private usable(
+    res: http.ServerResponse,
+    grant: Grant,
+    action: string,
+    body: Record<string, unknown>,
+    who: RequestWho,
+  ): UseAction | undefined {
+    const useAction = this.actions.resolve(grant.kind, action);
+    if (useAction === undefined) {
+      this.respondError(res, 'not_supported', `"${grant.kind}" entities cannot ${action}.`, grant, action, undefined, who.via, who.caller);
+      return undefined;
+    }
+    const validated = useAction.validate(body);
+    if (!validated.ok) {
+      this.respondError(res, 'invalid_request', validated.message, grant, action, undefined, who.via, who.caller);
+      return undefined;
+    }
+    return useAction;
+  }
+
+  /**
+   * After consent: the waiting rotation released and the mask table read — each only for a client still
+   * there to be answered — and then the call. Every await on this path is followed by a check.
+   */
+  private async prepared(res: http.ServerResponse, call: Omit<CallSubject, 'table'>): Promise<void> {
+    const { grant, action, summary, via, caller } = call;
+    if (this.gone(call, 'after consent')) {
+      return;
+    }
+    await this.releaseWaiting(grant);
+    if (this.gone(call, 'before its values were read')) {
+      return;
+    }
     // Read BEFORE anything runs, and a read that will not answer refuses the call — see `tableOrFail`.
     const table = await tableOrFail(this.hooks.maskEntriesFor, grant, (why) =>
       this.respondError(res, 'internal', MASKING_UNAVAILABLE, grant, action, `${summary} · ${why}`, via, caller),
@@ -528,8 +568,56 @@ export class CredsAgentServer implements vscode.Disposable {
     if (table === undefined) {
       return;
     }
+    // The check after THIS await is `brokerCall.ts`'s, made in the same step that starts the action.
+    await this.runAndDeliver(res, { ...call, table });
+  }
 
-    await this.runAndDeliver(res, { grant, useAction, action, body, via, caller, summary, table });
+  /** A waiting rotated value goes in FIRST, so the mask table holds the value the action will use (`brokerHooks.ts`). */
+  private releaseWaiting(grant: Grant): Promise<void> {
+    return Promise.resolve(this.hooks.releaseWaiting?.(grant.accountId, grant.entityId)).then(
+      () => undefined,
+      () => undefined,
+    );
+  }
+
+  /** Whether this request's client has gone — and, when it has, its one line in the journal. */
+  private gone(call: { grant: Grant; action: string; via: AuditDoor; caller: CallerLabel | undefined; signal: AbortSignal }, stage: string): boolean {
+    if (!call.signal.aborted) {
+      return false;
+    }
+    this.abandoned(call.grant, call.action, stage, call);
+    return true;
+  }
+
+  /**
+   * One `ABANDONED` line: the client hung up before this request was answered, so nothing was decided,
+   * remembered or run for it — and nothing is written back, because nobody is there to read it.
+   */
+  private abandoned(grant: Grant, action: string, stage: string, who: { via: AuditDoor; caller: CallerLabel | undefined }): void {
+    this.log({
+      grant: GrantRegistry.describe(grant),
+      entityName: grant.entityName,
+      action,
+      outcome: 'ABANDONED',
+      detail: `the client left ${stage}`,
+      via: who.via,
+      caller: who.caller,
+    });
+  }
+
+  /** A consent that was not given: refused on the wire — or, when the client left, abandoned. */
+  private notAllowed(
+    res: http.ServerResponse,
+    consent: Exclude<ConsentOutcome, 'allowed'>,
+    where: { grant: Grant; action: string; summary: string },
+    who: RequestWho,
+  ): void {
+    if (consent === 'abandoned') {
+      this.abandoned(where.grant, where.action, DURING_CONSENT, who);
+      return;
+    }
+    const code: ErrorCode = consent === 'timeout' ? 'consent_timeout' : 'denied';
+    this.respondError(res, code, 'The human did not allow this grant.', where.grant, where.action, where.summary, who.via, who.caller);
   }
 
   /**
@@ -567,6 +655,7 @@ export class CredsAgentServer implements vscode.Disposable {
           this.respondError(res, 'internal', INTERNAL_FAILURE, grant, action, `${summary} - ${why}`, via, caller, ran),
         refresh: refreshFrom(this.hooks.maskEntriesFor, grant),
         burn: (status) => burnAndMark(this.oneUse, this.hooks.burnAfterUse, this.hooks.isOneUse, grant, status, this.note),
+        abandon: (stage) => this.abandoned(grant, action, stage, call),
       },
       call,
     );
@@ -579,121 +668,6 @@ export class CredsAgentServer implements vscode.Disposable {
     (res, status, body) => this.respond(res, status, body),
     (message) => this.note(message),
   );
-
-  /**
-   * The first-use gate. Concurrent first calls share one dialog — two modals
-   * for one token is a bug the human experiences as a stuck agent.
-   *
-   * <p>A dismissed dialog (Escape) is a one-off refusal that is NOT recorded:
-   * a mis-click must not lock an agent out for the window's life. Only an
-   * explicit Deny is sticky, and a timeout leaves the grant re-promptable —
-   * a missed notification is the common case, not a decision.</p>
-   */
-  // eslint-disable-next-line complexity
-  private async consent(
-    grant: Grant,
-    action: string,
-    verb: string,
-    summary: string,
-    caller: CallerLabel | undefined,
-  ): Promise<'allowed' | 'denied' | 'timeout'> {
-    const current = this.grants.get(grant.secret);
-    if (current?.status === 'allowed') {
-      return 'allowed';
-    }
-    if (current?.status === 'denied') {
-      return 'denied';
-    }
-
-    const pending = this.consenting.get(grant.secret) ?? this.ask(grant, action, verb, summary, caller);
-    this.consenting.set(grant.secret, pending);
-    let allowed: boolean;
-    try {
-      allowed = await pending;
-    } finally {
-      this.consenting.delete(grant.secret);
-    }
-    const settled = this.grants.get(grant.secret)?.status;
-    if (settled === 'allowed') {
-      return 'allowed';
-    }
-    if (settled === 'denied') {
-      return 'denied';
-    }
-    return allowed ? 'allowed' : 'timeout';
-  }
-
-  // eslint-disable-next-line max-lines-per-function
-  private async ask(
-    grant: Grant,
-    action: string,
-    verb: string,
-    summary: string,
-    caller: CallerLabel | undefined,
-  ): Promise<boolean> {
-    // Consent is per GRANT, so one Allow authorises every action of this kind — not only the
-    // one that triggered the dialog. The dialog has to say so in those actions' own words,
-    // or "open a terminal" is what the person reads while "run any command" is what they grant.
-    const everything = this.actions
-      .actionsFor(grant.kind)
-      .map((a) => a.verb)
-      .join(', or ');
-    const limits = grantLimits();
-    // WHO is asking comes from the body — "An agent" when it says nothing, never a product name
-    // by default — and is a label, not a check. The next sentence tells the person so, because a
-    // name mistaken for a verification is worse than no name.
-    const choice = await withTimeout(
-      Promise.resolve(
-        vscode.window.showWarningMessage(
-          `${callerLine(caller)} wants to ${verb} ` +
-            // WHEN (#131): fixed as the dialog is raised, so one left waiting keeps the time it was asked.
-            `"${grant.entityName}" using its stored credential.\n${localRequestTimeLine(new Date())}\n\n${summary}\n\n` +
-            `${CALLER_DISCLAIMER}\n\n` +
-            `Allowing covers every later call on this token, not just this one: with it the agent can ${everything} "${grant.entityName}" ` +
-            `${describeLimits(limits)}. ` +
-            'Each call is logged in the "CredsForDevs: Agent Access" output panel.',
-          { modal: true },
-          'Allow',
-          'Deny',
-        ),
-      ),
-      CONSENT_TIMEOUT_MS,
-      // The HTTP server keeps this process alive; the timer need not.
-      { unref: true },
-    );
-
-    if (choice === 'Allow') {
-      // The one moment a person is provably present. Agent traffic after this
-      // deliberately does NOT postpone auto-lock: a long unattended run is
-      // exactly what the idle window exists to catch.
-      this.onUserPresent();
-      this.grants.allow(grant.secret);
-      this.log({
-        grant: GrantRegistry.describe(grant),
-        entityName: grant.entityName,
-        action,
-        outcome: 'ALLOWED',
-        detail: 'first use consented',
-        caller,
-      });
-      return true;
-    }
-    if (choice === 'Deny') {
-      this.onUserPresent();
-      this.grants.deny(grant.secret);
-      this.log({
-        grant: GrantRegistry.describe(grant),
-        entityName: grant.entityName,
-        action,
-        outcome: 'DENIED',
-        detail: 'first use refused',
-        caller,
-      });
-      return false;
-    }
-    // Dismissed or timed out: refuse this call, leave the grant re-promptable.
-    return false;
-  }
 
   private respond(res: http.ServerResponse, status: number, body: unknown): void {
     const payload = JSON.stringify(body);
@@ -792,3 +766,9 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   });
 }
 
+/** Which door a request came in by, who its body says is calling, and its life (`requestLife.ts`). */
+interface RequestWho {
+  readonly via: AuditDoor;
+  readonly caller: CallerLabel | undefined;
+  readonly signal: AbortSignal;
+}

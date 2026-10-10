@@ -8,7 +8,7 @@ import {
   errorBody,
   statusForErrorCode,
 } from './brokerProtocol';
-import { UseAction, UseActionContext, UseActionResult } from './useActions';
+import { UseAction, UseActionContext, UseActionResult, launchGuards } from './useActions';
 import { EnvApplyResult } from './envApplyNotice';
 import { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
@@ -147,7 +147,7 @@ export function scriptRunAction(deps: AgentUseDeps): UseAction {
         const outcome = await runBounded(plan.command, [...plan.args, scriptPath], false, {
           env: { ...process.env, ...resolved.env },
           timeoutMs: clampExecTimeout(undefined),
-          signal: deps.signal,
+          ...launchGuards(deps.signal, ctx),
         });
         return { status: 200, body: outcome };
       } finally {
@@ -208,7 +208,7 @@ export function terminalRunAction(deps: AgentUseDeps & { onPath?: (exe: string) 
         const outcome = await runBounded(run.program, run.args, run.shell, {
           env: process.env,
           timeoutMs: clampExecTimeout(undefined),
-          signal: deps.signal,
+          ...launchGuards(deps.signal, ctx),
         });
         return { status: 200, body: outcome };
       } finally {
@@ -349,7 +349,7 @@ export function dbQueryAction(
         const outcome = await runBounded(launch.exe, launch.args, false, {
           env: { ...process.env, ...launch.env },
           timeoutMs: clampExecTimeout(undefined),
-          signal: deps.signal,
+          ...launchGuards(deps.signal, ctx),
         });
         return { status: 200, body: outcome };
       } finally {

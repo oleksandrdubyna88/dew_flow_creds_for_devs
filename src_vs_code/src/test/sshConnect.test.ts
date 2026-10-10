@@ -248,3 +248,49 @@ test('a credential whose PIN was declined opens no terminal and writes nothing',
   assert.deepEqual(w.materialised, []);
   assert.equal(w.sshTerminals.length, 0, 'a terminal opened with no credential after the person said no');
 });
+
+/**
+ * An agent's request that ends while its terminal is being prepared opens nothing
+ * (`PLAN_wsl_bridge_outlives_its_client.md` §5.7; the risk consultation on E4.S1). The broker checks the
+ * request at the action start, but the credential lookup, the host-key read and the relay probe all
+ * await between that check and the terminal — a client gone in there used to get its terminal anyway.
+ */
+test('a client that leaves during the credential lookup gets no terminal and leaves no key on disk', async () => {
+  const request = new AbortController();
+  const w = world({
+    source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' },
+    options: OPTIONS,
+    sshTerminal: {},
+    duringLookup: () => request.abort(),
+  });
+
+  const opened = await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage', startGate: request.signal });
+
+  assert.equal(opened, false);
+  assert.equal(w.sshTerminals.length, 0, 'a terminal opened for a request whose client had gone');
+  assert.deepEqual(w.materialised, [], 'and a decrypted key was written for it');
+});
+
+test('a password session for a client already gone creates no terminal and sends no line', async () => {
+  const request = new AbortController();
+  request.abort();
+  const w = world({ source: { kind: 'password', password: 'hunter2' }, options: OPTIONS });
+
+  const opened = await w.mod.connectEntity('a1', entity(), { storage, storageDir: '/storage', startGate: request.signal });
+
+  assert.equal(opened, false);
+  assert.equal(w.created.length, 0);
+});
+
+test('a live request is not refused — the gate only reads a fired signal', async () => {
+  const w = world({ source: { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' }, options: OPTIONS, sshTerminal: {} });
+
+  const opened = await w.mod.connectEntity('a1', entity(), {
+    storage,
+    storageDir: '/storage',
+    startGate: new AbortController().signal,
+  });
+
+  assert.equal(opened, true);
+  assert.equal(w.sshTerminals.length, 1);
+});

@@ -153,6 +153,11 @@ async function run(
   field: StatementField,
   deps: RotateDeps,
 ): Promise<UseActionResult> {
+  // A request whose client has gone draws nothing (`PLAN_wsl_bridge_outlives_its_client.md` §5.7). The
+  // broker refuses it before the start; this is the same answer for anything else that starts one.
+  if (ctx.signal.aborted) {
+    return refuse('Not started: the request it was for had already ended.');
+  }
   const ready = await prepare(ctx, statement, underlying.kind, body, deps);
   if (!ready.ok) {
     // A kind we do not make is refused with its own outcome, because the journal counts those:
@@ -160,7 +165,11 @@ async function run(
     return ready.noGenerator === true ? refuseNoGenerator(ready.error) : refuse(ready.error);
   }
   const values = newValues(ready.checked.slot, ready.secret, ready.stored);
-  return ranAndStored(ctx, ready, () => underlying.run(ctx, { [field]: substituteNewSecret(statement, ready.secret) }), deps).then(
+  // `finishOnceStarted`: the request's end may still stop the statement's LAUNCH — every await above sits
+  // between the broker's check and it — but never a statement already running, which may have changed
+  // the far side and whose new value is stored only once it succeeds. Killing it would lose that value.
+  const statementRun = { ...ctx, finishOnceStarted: true };
+  return ranAndStored(ctx, ready, () => underlying.run(statementRun, { [field]: substituteNewSecret(statement, ready.secret) }), deps).then(
     (answer) => maskedAnswer(answer, values),
     (error: unknown) => {
       throw maskedFailure(error, values);

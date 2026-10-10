@@ -167,11 +167,12 @@ test('the CLI row does not hand the alias door to a cadence that cannot reach it
   );
 
   // A prohibition needs a KNOWN instance beside it, or a renamed hook makes it pass by matching
-  // nothing. `preConsent` is wired in exactly one place — the `door` getter that builds `mcpDoor`.
+  // nothing. `preConsent` is wired in exactly one place — `doorFor`, which builds `mcpDoor` per request
+  // (a getter named `door` until E4.S1 gave each door its request's signal).
   // Watched: renaming that key to `preConsentX` left a bare `/preConsent/` GREEN on both halves,
   // which is this repository's recurring shape of dead structural test. The pattern is the whole
   // property now — the name, the colon, and nothing allowed between them.
-  assert.match(memberOf('get door()'), PRE_CONSENT, 'the scan no longer finds the sanctioned wiring: rename, or a real removal');
+  assert.match(memberOf('private doorFor('), PRE_CONSENT, 'the scan no longer finds the sanctioned wiring: rename, or a real removal');
 });
 
 /**

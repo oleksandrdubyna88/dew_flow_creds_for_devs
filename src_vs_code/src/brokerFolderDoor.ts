@@ -1,6 +1,6 @@
 import * as http from 'node:http';
 import { CallerLabel, callerFrom } from './brokerCaller';
-import { BrokerDoor, ConsentOutcome, Grantish, ReadBody } from './brokerMcpDoor';
+import { BrokerDoor, Grantish, ReadBody, clientGone, consentNotGiven } from './brokerMcpDoor';
 import { ErrorCode } from './brokerProtocol';
 import { McpUseTarget, readNamedBody } from './brokerRequests';
 import { FolderEdit, FolderView } from './mcpFolders';
@@ -173,7 +173,10 @@ async function confirmAndRun(
   const grant = minted(door, decision.target, `mcp-folder-${route.action}`, caller);
   const consent = await door.consent(grant, route.action, route.verb, decision.summary, caller);
   if (consent !== 'allowed') {
-    refuseConsent(door, res, consent, grant, route.action, decision.summary, caller);
+    consentNotGiven(door, res, consent, { grant, action: `folder-${route.action}`, summary: decision.summary, caller }, 'The human did not allow this.');
+    return;
+  }
+  if (clientGone(door, grant, `folder-${route.action}`, 'before the folder change', caller)) {
     return;
   }
   const result = await route.run(hooks, decision, body);
@@ -186,19 +189,6 @@ async function confirmAndRun(
     caller,
   });
   door.respond(res, 200, { folder: decision.target.entityName, ...route.answer(result) });
-}
-
-function refuseConsent(
-  door: BrokerDoor,
-  res: http.ServerResponse,
-  consent: ConsentOutcome,
-  grant: Grantish,
-  action: string,
-  summary: string,
-  caller: CallerLabel | undefined,
-): void {
-  const code: ErrorCode = consent === 'timeout' ? 'consent_timeout' : 'denied';
-  door.refuse(res, code, 'The human did not allow this.', grant, `folder-${action}`, summary, caller);
 }
 
 /** Mint, and write the line that says a call began — and who the body says began it. */

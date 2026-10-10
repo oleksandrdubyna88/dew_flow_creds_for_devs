@@ -39,7 +39,7 @@ const CONN = 'mysql://app:old-password-9f2c@db-01.example.internal:3306/orders';
 const NEW_SECRET = 'NEW-secret-4b7e-rotated';
 const STORE_IT = 'Store it (asks for the entry’s PIN)';
 const COPY_IT = 'Copy the new connection string';
-const CTX = { accountId: ACCOUNT, entityId: ENTRY, entityName: 'orders-db' };
+const CTX = { accountId: ACCOUNT, entityId: ENTRY, entityName: 'orders-db', signal: new AbortController().signal };
 const STATEMENT = `ALTER USER app IDENTIFIED BY '${NEW_SECRET_PLACEHOLDER}'`;
 
 const details = (burnPolicy?: EntityMetadata['burnPolicy']): EntityMetadata => ({ id: ENTRY, name: 'orders-db', kind: 'db', isSshEnabled: false, dbType: 'mysql', burnPolicy }) as EntityMetadata;

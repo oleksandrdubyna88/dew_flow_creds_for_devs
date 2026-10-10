@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { UseAction, UseActionRegistry } from '../useActions';
+import { UseAction, UseActionRegistry, launchGuards } from '../useActions';
 
 /**
  * The registry is the seam for entity kinds beyond SSH. Its one rule worth a
@@ -54,4 +54,55 @@ test('the consent wording comes from the action, so the broker needs no list of 
   registry.register(stub('db', 'query'));
 
   assert.equal(registry.resolve('db', 'query')?.verb, 'query on');
+});
+
+/**
+ * `launchGuards` — which end stops a launched child (`PLAN_wsl_bridge_outlives_its_client.md` §5.7).
+ *
+ * <p>An ordinary action is cancelled by either end: the window closing or the request's client hanging
+ * up. A rotation's statement is not — once it runs it may have changed the far side, and its new value is
+ * stored only after it succeeds — so the request's end may stop its LAUNCH but never the run.</p>
+ */
+const ctxFor = (signal: AbortSignal, finishOnceStarted?: boolean) => ({
+  accountId: 'a1',
+  entityId: 'e1',
+  entityName: 'prod',
+  signal,
+  ...(finishOnceStarted === undefined ? {} : { finishOnceStarted }),
+});
+
+/** Whether a launched child would be killed now — any of its kill signals has fired. */
+const kills = (guards: { signal: readonly AbortSignal[] }): boolean => guards.signal.some((signal) => signal.aborted);
+
+test('an ordinary action: the request hanging up both refuses the start and kills the run', () => {
+  const window = new AbortController();
+  const request = new AbortController();
+  const guards = launchGuards(window.signal, ctxFor(request.signal));
+
+  request.abort();
+
+  assert.equal(guards.startGate.aborted, true, 'the start was not refused for a gone request');
+  assert.equal(kills(guards), true, 'a running child would outlive its gone request');
+});
+
+test('the window closing stops an ordinary action too', () => {
+  const window = new AbortController();
+  const guards = launchGuards(window.signal, ctxFor(new AbortController().signal));
+
+  window.abort();
+
+  assert.equal(kills(guards), true, 'a child would outlive the window that started it');
+});
+
+test('work that must finish once started: the request ending refuses the start but never kills the run', () => {
+  const window = new AbortController();
+  const request = new AbortController();
+  const guards = launchGuards(window.signal, ctxFor(request.signal, true));
+
+  request.abort();
+
+  assert.equal(guards.startGate.aborted, true, 'a rotation launched for a request already gone');
+  assert.equal(kills(guards), false, 'a started rotation would be killed half-way, losing its new value');
+  window.abort();
+  assert.equal(kills(guards), true, 'only the window ending stops it');
 });

@@ -64,11 +64,14 @@ test('a second call while the dialog is open joins it — one dialog, one time, 
   }
 });
 
-/** Wraps the server's own `consent` — the one path every door takes before a dialog — with a counter. */
+/**
+ * Wraps the server's own consent gate — the one path every door takes before a dialog — with a counter.
+ * The gate is `brokerConsent.ts`'s `ConsentGate` since E4.S1, reached through the server's `gate`.
+ */
 function countConsentEntries(server: object): { count: number } {
   const counter = { count: 0 };
-  const target = server as unknown as { consent: (...args: unknown[]) => Promise<unknown> };
-  const original = target.consent.bind(server);
+  const target = (server as unknown as { gate: { consent: (...args: unknown[]) => Promise<unknown> } }).gate;
+  const original = target.consent.bind(target);
   target.consent = (...args: unknown[]) => {
     counter.count += 1;
     return original(...args);

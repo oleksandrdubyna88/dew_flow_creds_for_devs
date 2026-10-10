@@ -3945,7 +3945,7 @@ modal: the machine's local time with the offset in force at that instant. The ar
 (`requestTimeLine(epochMs, offsetMinutes)`) takes the offset as a number, so its tests do not depend
 on the zone of the machine running them; the sign flip of `getTimezoneOffset` is the one trap and has
 its own test. The text is built once and never re-rendered, so a dialog keeps the time it was
-raised, and a second call joining the open dialog through `consenting` changes nothing on it (only
+raised, and a second call joining the open dialog through `SharedPrompts` changes nothing on it (only
 the token route shares a grant across calls; the alias, MCP and folder doors mint one per call).
 After `CONSENT_TIMEOUT_MS` the broker has refused the call as `consent_timeout`, but VS Code cannot
 close a modal from code, so the time is the one sign on screen that the dialog is stale. The SSH
@@ -3954,6 +3954,69 @@ there it mattered more, because until the timeout below that prompt never expire
 (`clock`, default `new Date()`), so its test freezes it and asserts the exact line
 ([PLAN_ssh_sign_prompt_time.md](PLAN_ssh_sign_prompt_time.md)). Tests: `requestTime.test.ts`, `brokerConsentTime.test.ts` (the
 real broker). Design record: [PLAN_consent_shows_request_time.md](PLAN_consent_shows_request_time.md).
+
+**A request that is gone can authorise nothing (E4.S1 of
+[PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md) §2.3, §5.7).** Until
+2026-10-09 nothing in the broker observed a caller leaving: an MCP client closed while its modal was open
+left the modal behind, and a person who clicked **Allow** on it later allowed the grant and RAN the action
+for a request nobody was waiting for. Now:
+
+```mermaid
+sequenceDiagram
+    participant C as client (creds-mcp / CLI)
+    participant R as router (handle)
+    participant G as ConsentGate + SharedPrompts
+    participant P as perform → brokerCall
+    participant A as UseAction.run
+    C->>R: POST /v1/…/use
+    R->>R: signal = abandonedWhenClosed(res)
+    R->>G: consent(question, signal)
+    G-->>G: join the grant's prompt (modal stays on screen)
+    C--xR: connection closed, response unfinished
+    R-->>G: signal fires → this waiter detaches
+    G-->>P: abandoned → one ABANDONED line, no answer
+    Note over G: a later Allow: stillWanted() is false →<br/>one "ignored" line, grant untouched
+    P->>P: checks after every await
+    P->>A: check + reserve + start in ONE synchronous step, ctx.signal
+    C--xA: leaving after the start fires ctx.signal (child killed)
+```
+
+- **The signal** (`requestLife.ts`, no `vscode`): `res` `close` with `writableFinished` false. Made at the top
+  of `handle()` before anything awaits; a finished response — keep-alive reuse included — never fires it, and a
+  raw half-close does (Node does not keep half-open HTTP sockets). `requestLife.test.ts` measures all four
+  shapes over the port AND the socket/pipe listener.
+- **The modal is defused, not removed** (owner, 2026-10-09 — VS Code cannot close a modal from code).
+  `brokerConsent.ts` (`ConsentGate`, moved out of `credsAgentServer.ts` with its wording unchanged) asks
+  through `sharedPrompt.ts`: every waiter joins a grant's prompt with its own signal and detaches the moment
+  it fires; the answer is applied — `grants.allow`/`deny`, presence, the ALLOWED/DENIED line — only while a
+  live waiter is still attached. A token grant shared by two calls therefore still answers the one that
+  stayed. A prompt every waiter has left takes no new waiters: it still shows the request that left, so the
+  next request on the token raises its own prompt with its own details (code round 2). `ConsentOutcome` gained
+  `abandoned`.
+- **Every door**: the token and alias routes pass the signal to `perform`; the MCP and folder routes get it on
+  the per-request `BrokerDoor` (`doorFor(signal)` — `door.signal`, `door.abandon`), whose handlers check it
+  before the move to the Trash, after the create's folder-PIN step (which the signal also closes — a box left
+  open would still count wrong PINs for nobody), and before a folder change.
+- **The path after consent**: nothing is remembered for an abandoned call, and `prepared()` checks after the
+  consent memory write, the waiting-rotation release and the mask read; `brokerCall.ts` checks, counts the use
+  (`GrantRegistry.reserve`) and starts the action in ONE synchronous step at the boundary — a one-use call
+  arrives there after the lane's queue, the longest wait on the path, so a call abandoned while it waited spends
+  no use of its grant (the count used to come before the queue).
+- **The action itself**: `UseActionContext.signal` is required. `useActions.launchGuards(window, ctx)` gives the
+  four spawning actions (ssh exec, stored script, stored terminal command, db query) a `startGate` and a LIST of kill
+  signals — never an `AbortSignal.any` composite, which Node 20 keeps referenced from the window's long-lived signal,
+  one per call — and `runBounded` now refuses to spawn when any has already fired; it used to spawn first and
+  subscribe to the abort after. A rotation sets `finishOnceStarted`: the request's end may stop its statement's
+  launch but never a running statement, whose new value is stored only once it succeeds. The agent's SSH terminal
+  passes `startGate` into `connectEntity`, which checks it after its last await before any terminal opens (a
+  terminal already open stays: it is the person's). An action that throws after its client left is journalled as
+  `ABANDONED`, not `internal`. Not gated: a VPN start, whose OS administrator prompt a person answers (plan §5.7).
+- **Tests**: `brokerAbandoned.test.ts` (the real broker over real HTTP, every door; each test watched red on
+  the unfixed code), `sharedPrompt.test.ts`, `requestLife.test.ts`, the launch refusals in
+  `sshExecRunner.test.ts`, `useActions.test.ts`, `rotateAction.test.ts` and `agentCreatePin.test.ts`; and
+  level 8 of `creds-mcp-itest.cjs`, which kills the REAL binary mid-consent and then answers Allow. Not covered
+  until Epic E2: a client that only closes `creds-mcp`'s stdin — the binary does not yet cancel its in-flight
+  broker call on EOF, so the window cannot see that client leave.
 
 **Whose session registry, and the rule the code round added.** The session NAME comes from
 `~/.claude/sessions/<CLAUDE_PID>.json`, which is one product's file — and `CLAUDE_PID` is inherited

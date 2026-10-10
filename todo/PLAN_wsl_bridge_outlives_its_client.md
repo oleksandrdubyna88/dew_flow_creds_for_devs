@@ -1,7 +1,7 @@
 # PLAN — every creds process ends when the client it serves is gone
 
-> Status: **plan only, nothing implemented yet, 2026-10-09.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
-> round — §14); each epic is re-gated on its own branch. Scope: `src_mcp/src` (`Program.cs`, `WslPump.cs`, the
+> Status: **in progress, 2026-10-09 — E1 and E4.S1 implemented (§14; §5.7 *As built*); E2, E3, E4.S2 and E5 not yet.** Plan
+> gate passed (`proceed`, 1 of 2 reviewers, one round — §14); each epic is re-gated on its own branch. Scope: `src_mcp/src` (`Program.cs`, `WslPump.cs`, the
 > tool lambdas, `Windows.cs`, a new `ServerLifetime`), `src_broker_client/src` (`BrokerClient.cs`, `WslInterop.cs`, a
 > new shared `ChildLifetime`), `src_cli/src` (`AgentRelay.cs`, `RelayPipe.cs`), `src_vs_code/src` (the broker's
 > consent and perform path, the WSL MCP install check), a new shared logging project `src_service_defaults`, the
@@ -73,8 +73,8 @@ from `/proc` and a shim.
 2. In scope: the relay-pipe leak (C), parent watch, a stale WSL install check, logs on disk.
 3. A tool call whose client is gone is **cancelled and its consent modal removed** — see §3.3 for what the API allows.
 4. The orphans on the measured machine were cleaned up the same day, by PID, after proving each was an orphan.
-5. An upstream issue goes to `modelcontextprotocol/csharp-sdk` (draft in §5.10; posted only after the owner's OK on the
-   text).
+5. An upstream issue goes to `modelcontextprotocol/csharp-sdk` (draft in §5.10) — posted 2026-10-09 with the owner's OK
+   as [csharp-sdk#1914](https://github.com/modelcontextprotocol/csharp-sdk/issues/1914).
 6. The config key in argv (a side finding) gets its own plan: [PLAN_config_key_off_the_command_line.md](../research/PLAN_config_key_off_the_command_line.md).
 7. The owner's WSL MCP install is refreshed after the release ships.
 
@@ -95,14 +95,14 @@ Every point below was checked against the code before it was taken.
 - **Order:** a small logging foundation first, so every later fix is observable on the machine where it matters; each
   fix ships with its own reproducer rather than all proof waiting for the last epic.
 
-### 3.3 Open, for the owner
+### 3.3 Removing the modal — decided by the owner, 2026-10-09
 
-**Removing the modal.** A modal cannot be removed by code. Two shapes satisfy the owner's words differently:
-(a) *defused modal* — it stays until clicked or timed out, but a click on a dead request does nothing except record
-*abandoned* (E4 builds this regardless; it is the security fix); (b) *a QuickPick with `ignoreFocusOut`* — removable by
-`hide()` the moment the request closes (precedent: `dew_flow_connect_other_ais · src_vs_code/src/conversationPickerCommand.ts:207`),
-but non-modal: it does not block the editor, which is a weaker consent surface. The consultant could not decide this
-from the code. **E4 ships (a); (b) is built only on the owner's word**, as story E4.S3.
+A modal cannot be removed by code. Two shapes were offered: (a) *defused modal* — it stays until clicked or timed out,
+but a click on a dead request does nothing except record that it was ignored; (b) *a QuickPick with `ignoreFocusOut`* —
+removable by `hide()` the moment the request closes, but non-modal, so a weaker consent surface.
+
+**The owner chose (a), 2026-10-09: "a defused modal is enough."** The modal stays on screen after its request is gone
+and is harmless there. Story E4.S3 (the QuickPick) is **dropped** from §10 rather than deferred.
 
 ## 4. Found on the way
 
@@ -233,7 +233,45 @@ Shared because both the MCP wrapper and the relay need exactly this, and today e
 - The shared `consenting` map (`credsAgentServer.ts:64, 608-614`) keys a prompt by grant secret; the MCP door mints a
   grant per request (`:275`), but token doors share one — so an abandoned waiter **detaches** from a shared prompt and
   never decides it for another live request.
-- The modal itself: §3.3.
+- The modal itself: §3.3 — it stays, defused.
+
+**As built (E4.S1, refining the bullets above where the code asked for it):**
+
+- The signal is made once per request at the top of the router (`requestLife.ts`, no `vscode`): `res` `close` with the
+  response not finished aborts it. Every door gets it — the token and alias routes pass it to `perform`; the MCP and
+  folder routes get it on the per-request `BrokerDoor` (`door.signal`), whose `consent`/`perform` hand it to the
+  broker's `consent`/`ask`/`perform`.
+- `ConsentOutcome` gains `abandoned`. The shared prompt is its own unit (`sharedPrompt.ts`): a waiter joins with its
+  own signal and **detaches the moment that signal fires** — its request ends then, not when somebody clicks; the
+  person's answer is applied (`grants.allow`/`deny`, presence) only if a live waiter is still attached when the prompt
+  settles. A click on a prompt nobody waits for writes one `ignored` line and decides nothing.
+- Checks after every await on the path: consent, the consent memory write, the waiting-rotation release, the mask table
+  read; the MCP create also after the folder PIN step, before `make` — and the PIN step itself takes the signal, so its
+  box closes when the client leaves instead of checking (and counting wrong) PINs for nobody (consultation, §14). And at
+  the boundary itself — `brokerCall.ts` checks, counts the use (`GrantRegistry.reserve`) and starts the action in ONE
+  synchronous step. The count moved there from before the one-use lane's queue (code round 1, §14): a call whose client
+  left while it waited its turn used to have spent a use of its grant without running.
+- One audit line per abandoned request, outcome `ABANDONED`, its detail naming the stage it was dropped at. No answer is
+  written: the socket is already gone.
+- `UseActionContext.signal` is required, so every action start states it. The four actions that spawn a process — ssh
+  exec, a stored script, a stored terminal command, a database query — hand their launcher both the window's and the
+  request's signal as a LIST (`useActions.launchGuards`; never an `AbortSignal.any` composite, which Node 20 keeps
+  referenced from the window's long-lived signal, one per call — risk consultation, §14), and `runBounded` refuses to
+  SPAWN once any has fired — it used to spawn and only then subscribe to the abort (cadence consultation, §14).
+  Opening an SSH terminal is gated too: `ConnectOptions.startGate` is checked after the credential lookup, the host-key
+  read and the relay probe, before any terminal opens; a terminal already open belongs to the person and stays. An env
+  export has no await before its effect, so the broker's boundary check covers it. An action that throws after its
+  client left (refused at launch, or killed mid-run) is journalled as that request's `ABANDONED`, not as `internal`.
+- **Open tail, recorded:** a VPN start (`runVpn`) awaits before it opens its terminal and is not gated by the request.
+  Its start raises the operating system's administrator prompt, which a person answers, and the tunnel is
+  window-scoped by design; gating it means threading the signal through `runVpn`'s retries, left for a later story. **Deviation, the rotation:** it refuses an abandoned request before it draws a secret, but runs its
+  statement with the window's signal only — killing a statement that may already have changed the far side would lose
+  the new value, because the vault stores it only after the statement succeeds. Expressed as
+  `UseActionContext.finishOnceStarted`: the statement's launch is still refused for a gone request (a `startGate`),
+  only an already-running statement is left to finish.
+- Proven across the process boundary too: level 8 of `creds-mcp-itest.cjs` kills the real binary mid-consent and then
+  answers Allow. A client that only closes the binary's stdin is NOT seen until E2.S3 makes the binary cancel its
+  broker call on EOF.
 
 ### 5.8 A stale WSL install says so — `src_vs_code/src`
 
@@ -263,7 +301,9 @@ Shared because both the MCP wrapper and the relay need exactly this, and today e
 
 ### 5.10 Upstream
 
-Draft for `modelcontextprotocol/csharp-sdk`, posted only after the owner approves the text:
+**Posted 2026-10-09** with the owner's approval of the text:
+[modelcontextprotocol/csharp-sdk#1914](https://github.com/modelcontextprotocol/csharp-sdk/issues/1914). The text as
+drafted:
 
 > **Stdio server never exits after stdin EOF once a client has sent `subscriptions/listen` (2026-07-28).**
 > 2.2.0, `StdioServerTransport` + `McpServer.Create` + `await server.RunAsync()` without a token. Client: `server/discover`,
@@ -365,7 +405,8 @@ only with the owner's OK on the notes.
   → the action never starts; the client drops after the start → the action's signal fires.
 - **E4.S2** stale WSL install check (§5.8): pure `staleVerdict` tests; host wiring; the command; never on a stopped
   distribution.
-- **E4.S3** *only on the owner's word (§3.3)*: the consent surface as a QuickPick with `ignoreFocusOut`, hidden on abort.
+
+(E4.S3, the QuickPick consent surface, was dropped by the owner's decision in §3.3.)
 
 ### Epic E5 — proof on the real bridge, and the tail
 
@@ -380,7 +421,7 @@ only with the owner's OK on the notes.
 - **E5.S2** CI: a `windows-latest` leg in `ci-clients.yml` (not required until it has reported once —
   `branch-protection.json:19-31`); release smoke in `release.yml` (the published AOT binary exits on EOF with an open
   listen, and writes its log).
-- **E5.S3** the upstream issue (§5.10) after the owner's OK; `research/module_*.md` and `architecture.md` updated
+- **E5.S3** follow the upstream issue (§5.10, posted as csharp-sdk#1914); `research/module_*.md` and `architecture.md` updated
   (§13); the owner's WSL MCP refreshed to the released build (§3.1.7); the RESULTS record gets the after-numbers.
 
 ### Ordering constraints
@@ -425,7 +466,7 @@ Every bug test is shown red with the real symptom before the fix and green after
 - [ ] On the measured machine after a day of normal use: `creds-mcp.exe` count equals live MCP clients; `creds.exe
       relay-pipe` count equals live SSH-agent connections (recorded in the RESULTS record).
 - [ ] Defects A, B, C each have a test shown red with the real symptom and then green; the WSL itests of E5.S1 pass.
-- [ ] A late **Allow** for a gone request runs nothing (E4.S1), and the owner has decided §3.3.
+- [ ] A late **Allow** for a gone request runs nothing (E4.S1). (§3.3 decided by the owner 2026-10-09: defused modal.)
 - [ ] Every serving host writes `logs/{yyyy-MM-dd}/{app}-{HH-mm-ss}-{pid}.log` with its start and its exit reason;
       retention works; nothing secret is in a log file.
 - [ ] `creds-mcp --version` reports both halves under WSL; a stale WSL install is reported with an update offer.
@@ -540,3 +581,64 @@ two no-agent paths now run in-process, where the scanner can see them.
 | 1 | The message filter is added by mutating the options' collection | **accepted** — the filter is part of `McpServerOptions` as constructed |
 | 2 | The unwritable-log fallback prints the configured root and the error on stderr | **rejected** — stderr only, never the file; the server's moved, unchanged sentence; a directory the person configured is the one thing that makes it actionable, and a filesystem location is the class of value the plan already allows (the relay's socket path) |
 | 3 | The mcp release smoke has no time bound on macOS | **accepted** — `timeout`, else `gtimeout`, else perl's `alarm` before `exec` |
+
+**E4.S1 plan round (2026-10-09, session `addfcdf4`, branch `fix/e4-gone-request-authorises-nothing`) — `proceed`**,
+gating 2 against threshold 6, **1 of 2 reviewers answered** (codex; gemini rate-limited, quota reset ~108 h).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | §5.7: a disconnect during an asynchronous `reserve` would spend the grant | **rejected** — `GrantRegistry.reserve` is synchronous (`brokerCall.ts`); the abort check precedes it in the same step. The residue (a one-use call abandoned while queued after its reserve counts one use) matters only for a capped token grant on a one-use entry, and the action never starts |
+| 1 | §5.4: POSIX signal registration on Windows hosts | **rejected** — Epic E3's scope, re-gated on its own branch |
+
+The round's operator commands: build without re-splitting; work autonomously; consultants before the person; a cadence
+consultation for epics 4–5 before the code round; name the risky pieces (E4.S1, the security fix, was named).
+
+**Cadence consultation for epics 4–5** (codex `gpt-6-astra`, `ec851fc7…`) — three findings, each verified and acted on:
+`runBounded` spawned before checking an already-aborted signal (fixed: a refused launch, tested with a marker file); a
+rotation's exemption should start at the statement launch, not at generation (fixed: `finishOnceStarted` + `startGate`);
+the folder PIN box outlived the request (fixed: the signal cancels its token). Its transport question was answered by
+measurement (`requestLife.test.ts`, port and pipe, four shapes) and a cross-process leg (level 8 of `creds-mcp-itest.cjs`).
+
+**E4.S1 code round 1 (2026-10-09, session `addfcdf4`) — `proceed`**, gating 3 against threshold 5, **4 of 8 reviewers
+answered** (codex's four roles; gemini's four rate-limited, quota reset ~95 h — the verdict is one vendor's).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | `sshUseActions.test.ts`: the touched `CTX` fixture still cast `as never` | **accepted** — typed as `UseActionContext` |
+| 1 | `brokerWorld.ts`: the `settle` stub read its arguments through a tuple cast | **accepted** — the real signature |
+| 2 | `creds-mcp-itest.cjs`: the new leg is over 50 lines | **accepted** — the window and the binary moved into two helpers |
+| 3 | a queued one-use call whose client left had already spent a use of a capped grant | **accepted** — rejected in the plan round as low-impact, raised a third time with a concrete consequence (a capped grant refusing a live call after fewer calls had run). The use is now counted at the action boundary; RED first: *"the second of two allowed calls was refused: … reached its limit of 2 calls"*, green after |
+
+**E4.S1 code round 2 (2026-10-09, `again`) — `proceed`**, gating 3 against threshold 5, **4 of 8 reviewers answered**
+(gemini rate-limited again).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | `sharedPrompt.ts` mutates its waiter `Set` and prompt `Map` | **rejected** — `SharedPrompts` is a stateful registry, the very `Map` it replaced in `credsAgentServer.ts` (`consenting.set/delete`); this codebase's registries (`GrantRegistry`, `OneUseLane`) hold mutable state by design, and the immutability rule governs data, not a service's own state |
+| 1 | `research/architecture.md` does not mention the new cross-module flow | **accepted** — a paragraph on the gate being bound to a live request, with the cross-process half (E2.S3) named |
+| 2 | a later request could join an ORPHANED modal that still shows the request that left, and be allowed by a person reading another request's command | **accepted** — an orphaned prompt takes no new waiters; the next request raises its own. RED first (*"the later request joined a modal showing the request that had left"*), green after |
+
+**E4.S1 code round 3 (2026-10-09, `again`) — `proceed`**, gating 2 against threshold 5, **4 of 8 reviewers answered**
+(gemini rate-limited). Nothing accepted; the session is closed.
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | the immutability rule, re-raised for `sharedPrompt.ts` | **rejected** — no new argument; the rule names its subject (*immutable data*), and `stillWanted()` must see a waiter leave synchronously, which copy-on-write would break |
+| 1 | `ConsentOutcome` lives in `brokerMcpDoor.ts` | **rejected** — that is the `vscode`-free module holding the door contract; `brokerConsent.ts` imports `vscode` and takes the type only |
+| 2 | a client leaving while the consent memory is written leaves the grant allowed | **rejected** — the Allow was given to a live request (checked at the answer, no await before `remember`); only the MCP door remembers, and it mints a grant per call that is never handed out; the request's action still does not run |
+
+**Risk consultation for E4.S1** (codex `gpt-6-astra`, `bb3ab088…`), named as risky because it is the consent path of a
+credential broker — each point verified, then acted on:
+
+- the agent's SSH terminal dropped `ctx.signal`, and `connectEntity` awaits the credential lookup before opening it, so
+  a client gone in there still got an authenticated terminal — **fixed**: `ConnectOptions.startGate`, two tests, watched
+  red without the check;
+- the race between the modal resolving and `stillWanted()` holds — **pinned** by a same-tick unit test;
+- a token allowed by a live waiter stays allowed after another detached, as the modal promises — **pinned** by a later
+  call on the token that runs without a dialog;
+- `AbortSignal.any` per call keeps a reference on the window's signal in Node 20 — **fixed** by passing the signals as
+  a list (no composite).
+
+Own review (a subagent reading the diff in context, the gate's other half): no high-confidence defect; two of its low
+notes were taken — an action that throws after its client left is now journalled `ABANDONED` rather than `internal`
+(test watched red without it), and the folder routes got their own abandoned test.
