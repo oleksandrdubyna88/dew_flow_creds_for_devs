@@ -1006,3 +1006,9 @@ writes were raised a third time and rejected on the same reasons. Taken: **a fai
 longer read as "no distribution is running"**. `listRunning` keeps a failure apart from an empty answer, and the
 command says it could not list. RED (the host test showed *"No WSL distribution is running…"* for a failed listing)
 → GREEN → RED again with the check removed.
+
+**Final pre-merge round (`again`, 2026-10-10) — `proceed`**, gating 1 against threshold 5, **all 4 reviewers
+answered** (codex). Nothing taken. The help-language conflict was raised again and goes to the owner. The whole-map
+writes were raised a fourth time and rejected. The stamp before the probe is deliberate (a hung distribution is not
+asked again on every reload), and the cost is one day's reminder after a crash mid-probe. One prompt per stale
+distribution was rejected: the recorded set is one or two distributions, and each notice names its own.
