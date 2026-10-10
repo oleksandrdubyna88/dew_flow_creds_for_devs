@@ -18,6 +18,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   config written by hand is reported as *not recorded*, and Update — then paste and restart the client — is the
   remedy. It needs `creds-mcp` 0.10.0 or later on Windows, the first release that answers `--version`.
 
+### Fixed — the *Read this from code* snippets and the CLI row
+
+- **The PowerShell snippet keeps a config's lines.** Its file write used `Set-Content -NoNewline` on the lines
+  PowerShell had captured, which concatenates them with nothing in between: a multi-line config landed on disk
+  as one line with every newline gone — harmless for plain JSON, destructive for a config with `//` comments or
+  any format where a line break matters. The lines are written as lines now; a real `pwsh` runs the snippet in
+  the tests.
+- **The C++ snippet has a Windows branch.** It was POSIX only (`setenv`, `popen`) and left Windows to a comment;
+  `#ifdef _WIN32` now uses `_putenv_s`, `_popen` and `_pclose`, and takes the key back out of the environment
+  right after the launch exactly as the POSIX branch does. Where a compiler exists, the tests compile and run
+  the snippet against a fake `creds`.
+- **The *CLI access* row of a config entry shows `creds config -`.** It used to show `creds config <alias>`, a
+  line that never worked — `creds config` has no alias route: the key goes on stdin (`-`) or in
+  `CREDSFORDEVS_KEY`, and since cli 0.3.1 any argument is refused. The row, its copy button and the *Enable in
+  CLI* message now show the stdin form every snippet uses.
+
 ### Fixed — an agent request whose client is gone can no longer be allowed
 
 - **A consent dialog answered after the agent had gone allows nothing and runs nothing.** When an agent's

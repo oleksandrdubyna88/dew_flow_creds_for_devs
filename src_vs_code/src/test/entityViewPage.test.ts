@@ -272,12 +272,15 @@ test('an entry with CLI aliases shows the copyable command, verb by kind', async
 });
 
 test('the verb follows the kind: ssh, run, script, vpn-up, config, env', () => {
+  // A config entry has NO alias route: `creds config` takes its key on stdin (`-`) or from the
+  // environment, and refuses any argument (cli 0.3.1). The row shows the stdin form every
+  // snippet uses; `creds config <alias>` never worked and is now a refusal.
   const cases: ReadonlyArray<[Record<string, unknown>, string]> = [
     [{ isSshEnabled: true, host: 'h' }, 'creds ssh a'],
     [{ isTerminal: true }, 'creds run a'],
     [{ isScript: true }, 'creds script a'],
     [{ isVpn: true }, 'creds vpn-up a'],
-    [{ isConfig: true }, 'creds config a'],
+    [{ isConfig: true }, 'creds config -'],
     [{}, 'creds env a'],
   ];
   for (const [details, expected] of cases) {

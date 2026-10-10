@@ -14,6 +14,11 @@ import { canConnectSsh } from './entityKind';
  * for a tunnel. The owner's complaint was exact: *"я сделал enable in CLI — и что теперь? я
  * даже скопировать это не могу"* — the mint succeeded and nothing anywhere showed the
  * result.</p>
+ *
+ * <p><b>A config entry takes no name.</b> `creds config` has no alias route: its key arrives on
+ * stdin (`creds config -`) or in `CREDSFORDEVS_KEY`, and since cli 0.3.1 any argument is refused
+ * (`PLAN_config_key_off_the_command_line.md`). The row showed `creds config <alias>` — a line that
+ * never worked — so it shows the stdin form every snippet uses instead, and the alias is left out.</p>
  */
 export function cliCommandFor(details: EntityMetadata, alias: string): string {
   // First hit wins, in the order the CLI's own usage text lists the verbs.
@@ -27,5 +32,5 @@ export function cliCommandFor(details: EntityMetadata, alias: string): string {
     [details.isConfig === true, 'config'],
   ];
   const verb = rules.find(([applies]) => applies)?.[1] ?? 'env';
-  return `creds ${verb} ${alias}`;
+  return verb === 'config' ? 'creds config -' : `creds ${verb} ${alias}`;
 }

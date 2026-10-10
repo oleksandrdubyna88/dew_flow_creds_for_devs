@@ -462,13 +462,23 @@ CONFIG = JSON.parse(read_from_vault(vault_key)).freeze`,
 // which other processes on this machine can read. (The other snippets write it to stdin, but
 // popen can read OR write a child, not both, and standard C++ has no other way to start one.)
 // popen does go through a shell, so the command is a constant: nothing in it can be
-// reinterpreted. On Windows use _putenv_s, _popen and _pclose.
+// reinterpreted. The Windows CRT spells the same calls _putenv_s, _popen and _pclose — the
+// _WIN32 branches below; an empty _putenv_s removes the variable.
 std::string readFromVault(const std::string& key) {
     // setenv changes THIS program's environment, so the key is taken back out the moment the
     // child has it — otherwise every process started later would inherit it too.
     const char* before = std::getenv("CREDSFORDEVS_KEY");
     const bool hadBefore = before != nullptr;
     const std::string previous = hadBefore ? before : "";
+#ifdef _WIN32
+    _putenv_s("CREDSFORDEVS_KEY", key.c_str());
+    FILE* pipe = _popen("creds config", "r");
+    if (hadBefore) {
+        _putenv_s("CREDSFORDEVS_KEY", previous.c_str());
+    } else {
+        _putenv_s("CREDSFORDEVS_KEY", "");
+    }
+#else
     setenv("CREDSFORDEVS_KEY", key.c_str(), 1);
     FILE* pipe = popen("creds config", "r");
     if (hadBefore) {
@@ -476,6 +486,7 @@ std::string readFromVault(const std::string& key) {
     } else {
         unsetenv("CREDSFORDEVS_KEY");
     }
+#endif
     if (pipe == nullptr) throw std::runtime_error("could not run creds");
     std::array<char, 4096> buffer{};
     std::string out;
@@ -483,7 +494,12 @@ std::string readFromVault(const std::string& key) {
         out += buffer.data();
     }
     // Loudly. A silently empty configuration starts against the wrong database.
-    if (pclose(pipe) != 0) throw std::runtime_error("creds config failed");
+#ifdef _WIN32
+    const int exitCode = _pclose(pipe);
+#else
+    const int exitCode = pclose(pipe);
+#endif
+    if (exitCode != 0) throw std::runtime_error("creds config failed");
     return out;
 }
 
@@ -625,6 +641,8 @@ $config = $configText | ConvertFrom-Json
 $connection = $config.ConnectionStrings.Default
 
 # ...or straight to the file your program already reads. Written only after creds
-# succeeded, so a failed read never truncates a good file.
-Set-Content -Path '__FILE__' -Value $configText -NoNewline`,
+# succeeded, so a failed read never truncates a good file. $configText is one string per
+# LINE (PowerShell splits what a command prints), and Set-Content writes them as lines;
+# -NoNewline would glue them into one line with every newline gone.
+Set-Content -Path '__FILE__' -Value $configText`,
 };
