@@ -45,6 +45,31 @@ internal static class HostProcess
         return Process.Start(start) ?? throw new InvalidOperationException($"{assemblyName} did not start");
     }
 
+    /// <summary>
+    /// Kills the child's whole tree when disposed, unless it already exited — so a test that fails or times
+    /// out while waiting never leaves the binary it started running. Only the process this test started, by
+    /// its own handle; never anything found by name.
+    /// </summary>
+    internal static IDisposable KillOnDispose(Process process) => new Reaper(process);
+
+    private sealed class Reaper(Process process) : IDisposable
+    {
+        public void Dispose()
+        {
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch (InvalidOperationException)
+            {
+                // It exited between the check and the kill — the ordinary race, nothing to do.
+            }
+        }
+    }
+
     /// <summary>The one file a run of <paramref name="app"/> with this pid wrote under <paramref name="root"/>.</summary>
     internal static string LogFileOf(string root, string app, int pid) =>
         Directory.GetFiles(root, $"{app}-*-{pid}.log", SearchOption.AllDirectories).Single();

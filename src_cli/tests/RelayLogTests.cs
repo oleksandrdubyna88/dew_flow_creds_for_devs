@@ -43,6 +43,7 @@ public sealed partial class RelayLogTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         using var pipe = HostProcess.Start("creds", ["relay-pipe"], Env());
+        using var pipeReaper = HostProcess.KillOnDispose(pipe);
         pipe.StandardInput.Close();
         var stdout = await pipe.StandardOutput.ReadToEndAsync(ct);
         var stderr = await pipe.StandardError.ReadToEndAsync(ct);
@@ -89,6 +90,7 @@ public sealed partial class RelayLogTests : IDisposable
             export.Should().Be($"export SSH_AUTH_SOCK={socket}", "the first relay is serving before the second asks");
 
             using var second = HostProcess.Start("creds", ["relay"], Env((AgentRelay.SocketOverrideVariable, socket), (CredsLogging.LevelVariable, "fatal")));
+            using var secondReaper = HostProcess.KillOnDispose(second);
             var stderr = await second.StandardError.ReadToEndAsync(ct);
             await second.WaitForExitAsync(ct).WaitAsync(TimeSpan.FromSeconds(30), ct);
 

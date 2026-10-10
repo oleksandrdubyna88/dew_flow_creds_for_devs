@@ -52,6 +52,7 @@ public sealed class ServingLogTests : IDisposable
         };
 
         using var host = HostProcess.Start("creds-mcp", [CallerForwarding.Flag, record], env);
+        using var reaper = HostProcess.KillOnDispose(host);
         var stderr = host.StandardError.ReadToEndAsync(ct);
         foreach (var line in Session())
         {

@@ -521,3 +521,22 @@ taken in the final round below once a reviewer raised it independently.
 | 1 | The rule's two overrides are forced on every host | **rejected** — they ARE the rule's, for every host (`logging-serilog.md`, *Levels come from configuration*); a host adds its own after them |
 | 2 | The WSL start failure logs `e.Message`, which can carry the path `CREDS_MCP_WINDOWS_BINARY` named | **accepted** — the exception's type is logged instead (an environment value is never logged) |
 | 3 | relay-pipe logs a FAILED copy as an orderly close | **accepted** — `ExitReason.CopyFailed`; RED ("Expected RelayPipe.EndingOf(broken, broken) to be ExitReason.CopyFailed … but found ExitReason.RelayClosed") → GREEN → RED again with the check removed |
+
+**Pull request #201's automated reviewers.** CodeRabbit: a floor of Warning dropped the start and exit lines →
+the ceiling moved to Information (RED → GREEN; the first CI run of the busy-refusal test had failed on exactly that);
+the WSL itests' persistent `/tmp` build cache → answered: it predates this PR and E5.S1 replaces it. SonarCloud
+(gate failed on new-code coverage 79.6 % < 80, 21 issues): every issue fixed — exceptions passed to catch-block
+logs (except the creds-mcp.exe start failure, which logs the exception TYPE from its own method so an
+environment-named path stays out), nested ternaries, a parameter name, plan paths read as TODO markers,
+`LibraryImport` in the shared library (coai's `AllowUnsafeBlocks` precedent), a generated regex — and relay-pipe's
+two no-agent paths now run in-process, where the scanner can see them.
+
+**Checkpoint code round after the rebase onto #202 (`again`, 2026-10-10) — `proceed`**, gating 3 against threshold
+5, **4 of 8 reviewers answered** (codex; gemini rate-limited).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | The process-test helper has no path that kills the child on a timeout | **accepted** — `HostProcess.KillOnDispose`, used by every process test: the child's tree is killed, by its own handle, if the test leaves it running |
+| 1 | The message filter is added by mutating the options' collection | **accepted** — the filter is part of `McpServerOptions` as constructed |
+| 2 | The unwritable-log fallback prints the configured root and the error on stderr | **rejected** — stderr only, never the file; the server's moved, unchanged sentence; a directory the person configured is the one thing that makes it actionable, and a filesystem location is the class of value the plan already allows (the relay's socket path) |
+| 3 | The mcp release smoke has no time bound on macOS | **accepted** — `timeout`, else `gtimeout`, else perl's `alarm` before `exec` |

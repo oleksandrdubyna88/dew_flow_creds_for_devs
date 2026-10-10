@@ -573,8 +573,8 @@ jobs:
       # The published binary serves one handshake and writes its own log
       # (todo/PLAN_wsl_bridge_outlives_its_client.md, E1.S3). The 2025-06-18 handshake because the
       # server ends on end-of-stream with it today; ending with an open `subscriptions/listen` is
-      # epic E2's smoke. `timeout` bounds a regression that would otherwise hold the leg for its full
-      # half hour (macOS carries none by default, so it is optional there). The reply itself is not
+      # epic E2's smoke. A 60 s guard bounds a regression that would otherwise hold the leg for its full
+      # half hour. The reply itself is not
       # asserted: stdin closes right behind the request, and a server told "no more" may end before
       # it answers (nor is the `client:` line, for the same race) — the start and exit lines are.
       - name: Smoke · the published binary writes its log
@@ -582,9 +582,14 @@ jobs:
         shell: bash
         run: |
           dir="$(cd "$RUNNER_TEMP" && (pwd -W 2>/dev/null || pwd))/creds-mcp-logs"
-          limit="$(command -v timeout || command -v gtimeout || true)"
+          # A hard limit on every runner: coreutils `timeout` where it exists, perl's alarm (which survives the
+          # exec) on macOS, which ships neither `timeout` nor `gtimeout`.
+          if command -v timeout > /dev/null; then guard=(timeout 60)
+          elif command -v gtimeout > /dev/null; then guard=(gtimeout 60)
+          else guard=(perl -e 'alarm shift; exec @ARGV' 60)
+          fi
           printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"release-smoke","version":"1"}}}' \
-            | CREDS_LOG_DIR="$dir" ${limit:+$limit 60} ./out/creds-mcp${{ runner.os == 'Windows' && '.exe' || '' }} > /dev/null
+            | CREDS_LOG_DIR="$dir" "${guard[@]}" ./out/creds-mcp${{ runner.os == 'Windows' && '.exe' || '' }} > /dev/null
           log="$(find "$dir" -name 'creds-mcp-*.log' | head -1)"
           test -n "$log" || { echo "no log file under $dir"; exit 1; }
           cat "$log"

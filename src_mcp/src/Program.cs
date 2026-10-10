@@ -229,6 +229,12 @@ internal static class Program
                 Version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
             },
             ServerInstructions = Instructions,
+            // Method names and the client's name only — never a body (plan §5.1). Part of the options as
+            // constructed rather than added to them afterwards.
+            Filters = new McpServerFilters
+            {
+                Message = new McpMessageFilters { IncomingFilters = [new ClientNaming(log).Filter] },
+            },
         };
         // The tools capture the holder, not a value: ClientInfo is null until the handshake this
         // process is about to answer, so the client's name and the tab title are read per call
@@ -249,9 +255,6 @@ internal static class Program
         {
             options.ToolCollection.Add(UseTool(contract, tool, source));
         }
-
-        // Method names and the client's name only — never a body (plan §5.1).
-        options.Filters.Message.IncomingFilters.Add(new ClientNaming(log).Filter);
 
         await using var transport = new StdioServerTransport(ServerName);
         await using var server = McpServer.Create(transport, options);
