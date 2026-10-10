@@ -186,9 +186,9 @@ internal static class WslPump
             using var grace = new CancellationTokenSource(Grace);
             await child.WaitForExitAsync(grace.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException e)
         {
-            log.Warning("the Windows half did not exit within {GraceSeconds} s of closing its stdout; stopping it", Grace.TotalSeconds);
+            log.Warning(e, "the Windows half did not exit within {GraceSeconds} s of closing its stdout; stopping it", Grace.TotalSeconds);
             Stop(child);
             child.WaitForExit();
         }

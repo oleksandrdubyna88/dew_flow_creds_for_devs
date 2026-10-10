@@ -163,9 +163,9 @@ internal static class Program
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException)
         {
-            // The client went away mid-stream. Not a failure of ours, and not worth a stack
-            // trace in somebody's editor log.
-            log.Information("the MCP client closed the connection");
+            // The client went away mid-stream. Not a failure of ours — Information, not an error — but
+            // the exception goes to the file with it, so a disconnect that was not one can be read.
+            log.Information(e, "the MCP client closed the connection");
             return new HostEnding(0, ExitReason.ClientDisconnected);
         }
     }
@@ -194,20 +194,29 @@ internal static class Program
         }
         catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
-            // The exception's TYPE, not its message: the message can carry the path the override variable
-            // named, and an environment value is never logged (plan §5.1; code round 2, finding 2).
-            log.Error(
-                "this looks like WSL, but creds-mcp.exe could not be started ({Failure}). Set {Variable} to its "
-                    + "full path — \"Install the MCP Server…\" puts it in the extension's storage rather than on the PATH.",
-                e.GetType().Name,
-                WslInterop.McpBinaryOverrideVariable);
-            return new HostEnding(contract.Exit("toolMissing"), ExitReason.WindowsHalfMissing);
+            return WindowsHalfMissing(contract, log, e.GetType().Name);
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException)
         {
-            log.Information("the MCP client closed the connection");
+            log.Information(e, "the MCP client closed the connection");
             return new HostEnding(0, ExitReason.ClientDisconnected);
         }
+    }
+
+    /// <summary>
+    /// The one start failure a person can fix, said in words — naming the exception's TYPE and never the
+    /// exception: its message can carry the path the override variable named, and an environment value is
+    /// never logged (plan §5.1; E1 code round 2, finding 2). Its own method for that reason, so the rule
+    /// "a log in a catch carries the exception" (Sonar S6667) is kept everywhere it can be.
+    /// </summary>
+    private static HostEnding WindowsHalfMissing(BrokerContract contract, ILogger log, string failure)
+    {
+        log.Error(
+            "this looks like WSL, but creds-mcp.exe could not be started ({Failure}). Set {Variable} to its "
+                + "full path — \"Install the MCP Server…\" puts it in the extension's storage rather than on the PATH.",
+            failure,
+            WslInterop.McpBinaryOverrideVariable);
+        return new HostEnding(contract.Exit("toolMissing"), ExitReason.WindowsHalfMissing);
     }
 
     private static async Task RunAsync(BrokerContract contract, CallerSource source, ILogger log)

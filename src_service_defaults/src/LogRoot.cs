@@ -55,9 +55,12 @@ public static class LogRoot
 
     /// <summary>This process's platform.</summary>
     public static LogPlatform Here() =>
-        OperatingSystem.IsWindows() ? LogPlatform.Windows
-        : OperatingSystem.IsMacOS() ? LogPlatform.MacOS
-        : LogPlatform.Linux;
+        (OperatingSystem.IsWindows(), OperatingSystem.IsMacOS()) switch
+        {
+            (true, _) => LogPlatform.Windows,
+            (false, true) => LogPlatform.MacOS,
+            _ => LogPlatform.Linux,
+        };
 
     /// <summary>
     /// XDG says a relative <c>XDG_STATE_HOME</c> is invalid and must be ignored — taking it would put

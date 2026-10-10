@@ -10,7 +10,7 @@ namespace CredsMcp;
 /// </summary>
 /// <remarks>
 /// <para><b>Why a message filter.</b> The plan's start line wants "the client name after the handshake"
-/// (todo/PLAN_wsl_bridge_outlives_its_client.md, E1.S2), and which client a leaked process served is the
+/// (PLAN_wsl_bridge_outlives_its_client.md, E1.S2), and which client a leaked process served is the
 /// first question an orphan raises. The SDK's incoming message filter is the one seam every message
 /// passes through, and its <see cref="MessageContext.Server"/> is bound to the REQUEST — which matters
 /// because the two protocol revisions name the client in different places: the <c>initialize</c>

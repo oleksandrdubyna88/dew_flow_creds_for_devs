@@ -7,7 +7,7 @@ namespace CredsForDevs.ServiceDefaults.Tests;
 
 /// <summary>
 /// The factory the two AOT binaries log through: the path shape, UTC, the console stream, and the
-/// environment that configures it (todo/PLAN_wsl_bridge_outlives_its_client.md, E1.S1).
+/// environment that configures it (PLAN_wsl_bridge_outlives_its_client.md, E1.S1).
 /// </summary>
 public sealed class CredsLoggingTests : IDisposable
 {

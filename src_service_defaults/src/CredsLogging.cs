@@ -38,7 +38,7 @@ public sealed record LogSetup(
 /// <c>appsettings.json</c>; the rule's point is "a config edit and a restart, never an edited call site",
 /// and an environment variable in an MCP client's server block is exactly that.</para>
 /// <para>Moved together with the sinks out of the server (2026-10-09,
-/// <c>todo/PLAN_wsl_bridge_outlives_its_client.md</c> §5.1) — moved, not rewritten: the templates, the
+/// <c>PLAN_wsl_bridge_outlives_its_client.md</c> §5.1) — moved, not rewritten: the templates, the
 /// enrichers, the overrides and the unwritable-directory fallback are the server's, unchanged.</para>
 /// </remarks>
 public static class CredsLogging

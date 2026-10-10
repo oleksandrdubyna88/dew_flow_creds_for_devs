@@ -31,7 +31,7 @@ namespace CredsCli;
 /// visibly. The relay is opt-in and never starts itself.</para>
 /// <para><b>It logs to a file</b> (since 2026-10-09, <c>creds-relay</c>): its start, every connection it
 /// carried and how that connection ended, and why it stopped — the record that would have shown a relay
-/// holding 27 children for 0 connections (todo/PLAN_wsl_bridge_outlives_its_client.md §2.1 C). The console
+/// holding 27 children for 0 connections (PLAN_wsl_bridge_outlives_its_client.md §2.1 C). The console
 /// half goes to stderr; stdout keeps the one <c>export SSH_AUTH_SOCK=</c> line it always carried.</para>
 /// </remarks>
 internal static class AgentRelay
@@ -234,7 +234,7 @@ internal static class AgentRelay
         // one somebody finds, with the same sentence rather than a stack trace.
         catch (Exception e) when (IsListenFailure(e))
         {
-            log.Error("could not listen on {Socket}: {Reason}", path, e.Message);
+            log.Error(e, "could not listen on {Socket}", path);
             return new HostEnding(contract.Exit("brokerFailure"), ExitReason.ListenFailed);
         }
 
@@ -332,7 +332,7 @@ internal static class AgentRelay
     /// <remarks>
     /// One Information line per connection, when it ends: which side ended it, how long it lasted,
     /// the child's pid — and whether that child was still running when the relay let go of it, which
-    /// is defect C of todo/PLAN_wsl_bridge_outlives_its_client.md observed rather than inferred.
+    /// is defect C of PLAN_wsl_bridge_outlives_its_client.md observed rather than inferred.
     /// </remarks>
     private static async Task ServeAsync(Socket accepted, int number, ILogger log)
     {
@@ -357,7 +357,7 @@ internal static class AgentRelay
         {
             // One failed connection is ssh trying another authentication method next, not a reason
             // to take the relay down for every other terminal in this distribution.
-            log.Warning("connection {Connection} could not be served: {Reason}", number, e.Message);
+            log.Warning(e, "connection {Connection} could not be served", number);
         }
     }
 

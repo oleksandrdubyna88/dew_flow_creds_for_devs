@@ -19,7 +19,7 @@ namespace CredVaultServer;
 /// <para>
 /// <b>Since 2026-10-09 the sinks, the retention sweep, the enrichers and the level binding live in
 /// <c>src_service_defaults</c></b> (<see cref="CredsLogging"/>), moved there unchanged so the two Native
-/// AOT binaries write the same files the same way (<c>todo/PLAN_wsl_bridge_outlives_its_client.md</c>
+/// AOT binaries write the same files the same way (<c>PLAN_wsl_bridge_outlives_its_client.md</c>
 /// §5.1). What stays here is exactly the server's CONTRACT — the <c>appsettings.json</c> keys this file
 /// reads, which <c>ConfigKeys</c> lists and the backup archive carries — so the contract did not move
 /// and did not change.

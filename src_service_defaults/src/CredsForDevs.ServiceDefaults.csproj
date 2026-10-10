@@ -9,6 +9,11 @@
          run on THIS project while it is written rather than in whichever binary is published next.
          A library: it configures no host on its own; each host calls one of its two entry points. -->
     <IsAotCompatible>true</IsAotCompatible>
+    <!-- `[LibraryImport]` in ParentProcess, which the source generator requires. Here and not in a
+         product project on purpose — the coai precedent (CoaiMcp.ServiceDefaults): the generated
+         marshalling is AOT-friendly where the runtime-marshalled `[DllImport]` is not, and nothing else in
+         this library is unsafe. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

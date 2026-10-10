@@ -1,5 +1,7 @@
+using CredsBroker;
 using CredsCli;
 using CredsForDevs.ServiceDefaults;
+using CredsForDevs.ServiceDefaults.Tests.Support;
 using FluentAssertions;
 
 namespace CredsCli.Tests;
@@ -28,5 +30,46 @@ public sealed class RelayPipeEndingTests
 
         RelayPipe.EndingOf(broken, broken).Should().Be(ExitReason.CopyFailed);
         RelayPipe.EndingOf(broken, Task.CompletedTask).Should().Be(ExitReason.CopyFailed);
+    }
+
+    [Fact]
+    public async Task No_announced_agent_ends_the_run_with_its_reason_and_the_sentence()
+    {
+        // In-process, unlike RelayLogTests' process run, so the coverage of this path is visible.
+        var sink = new CollectingSink();
+        using var log = sink.Logger();
+        var none = Path.Combine(Path.GetTempPath(), "creds-no-endpoints-" + Guid.NewGuid().ToString("N"));
+
+        var code = await RelayPipe.RunAsync(BrokerContract.Current, none, log);
+
+        code.Should().Be(BrokerContract.Current.Exit("brokerUnreachable"));
+        sink.Messages.Should().Contain(m => m.Contains("no VS Code window is serving an SSH agent"));
+        sink.Messages.Should().Contain(m => m.Contains("\"noAgentAnnounced\""));
+    }
+
+    [Fact]
+    public async Task An_announced_agent_that_does_not_answer_is_its_own_ending()
+    {
+        var sink = new CollectingSink();
+        using var log = sink.Logger();
+        var dir = HostProcess.TempDirectory("creds-dead-agent");
+        try
+        {
+            // A window that announced an agent and died: the file outlives the socket.
+            var gone = Path.Combine(dir, "gone.sock");
+            File.WriteAllText(
+                Path.Combine(dir, "window-1.json"),
+                $$"""{"pid":1,"port":1,"startedAt":"2026-10-10T00:00:00Z","agentSocket":"{{gone.Replace("\\", "\\\\")}}"}""");
+
+            var code = await RelayPipe.RunAsync(BrokerContract.Current, dir, log);
+
+            code.Should().Be(BrokerContract.Current.Exit("brokerUnreachable"));
+            sink.Messages.Should().Contain(m => m.Contains("an SSH agent was announced but none answered"));
+            sink.Messages.Should().Contain(m => m.Contains("\"noAgentAnswered\""));
+        }
+        finally
+        {
+            HostProcess.Remove(dir);
+        }
     }
 }

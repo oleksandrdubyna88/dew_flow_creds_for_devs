@@ -18,7 +18,7 @@ namespace CredsForDevs.ServiceDefaults;
 /// </remarks>
 internal sealed class UtcTimestampEnricher : ILogEventEnricher
 {
-    public void Enrich(LogEvent logEvent, ILogEventPropertyFactory factory) =>
+    public void Enrich(LogEvent logEvent, ILogEventPropertyFactory propertyFactory) =>
         logEvent.AddPropertyIfAbsent(
-            factory.CreateProperty("UtcTimestamp", logEvent.Timestamp.UtcDateTime));
+            propertyFactory.CreateProperty("UtcTimestamp", logEvent.Timestamp.UtcDateTime));
 }

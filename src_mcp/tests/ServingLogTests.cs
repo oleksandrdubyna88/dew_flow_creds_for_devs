@@ -11,7 +11,7 @@ namespace CredsMcp.Tests;
 
 /// <summary>
 /// What a serving run of <c>creds-mcp</c> writes about itself — and what it must never write
-/// (todo/PLAN_wsl_bridge_outlives_its_client.md, E1.S2, §5.1 and §9).
+/// (PLAN_wsl_bridge_outlives_its_client.md, E1.S2, §5.1 and §9).
 /// </summary>
 /// <remarks>
 /// <para>The process test drives the BUILT binary through a whole session with a marker in every place a

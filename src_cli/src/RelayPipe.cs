@@ -27,7 +27,7 @@ namespace CredsCli;
 /// <para><b>It logs to a file</b> (since 2026-10-09, <c>creds-relay-pipe</c>), sparse at Information: its
 /// start, and its outcome — which side ended the connection, or why there was none. One file per run,
 /// which is one per agent connection; the growth this costs is budgeted in §8 of
-/// todo/PLAN_wsl_bridge_outlives_its_client.md. stdout and stdin carry the agent protocol, so the console
+/// PLAN_wsl_bridge_outlives_its_client.md. stdout and stdin carry the agent protocol, so the console
 /// half goes to stderr.</para>
 /// </remarks>
 internal static class RelayPipe
@@ -60,10 +60,16 @@ internal static class RelayPipe
     internal static async Task<int> RunAsync(BrokerContract contract)
     {
         using var log = CredsLogging.Create(AppName);
+        return await RunAsync(contract, Endpoints.DirectoryHere(), log).ConfigureAwait(false);
+    }
+
+    /// <summary>The run, with the announcement folder and the logger supplied — what the tests drive in-process.</summary>
+    internal static async Task<int> RunAsync(BrokerContract contract, string? endpointDirectory, ILogger log)
+    {
         var run = HostRun.Start(log, "relay-pipe", AgentRelay.Version);
         try
         {
-            return run.End(await ConnectAndPumpAsync(contract, log).ConfigureAwait(false));
+            return run.End(await ConnectAndPumpAsync(contract, endpointDirectory, log).ConfigureAwait(false));
         }
         catch (Exception e)
         {
@@ -72,9 +78,9 @@ internal static class RelayPipe
         }
     }
 
-    private static async Task<HostEnding> ConnectAndPumpAsync(BrokerContract contract, ILogger log)
+    private static async Task<HostEnding> ConnectAndPumpAsync(BrokerContract contract, string? endpointDirectory, ILogger log)
     {
-        var addresses = AgentAddresses(Endpoints.Read(Endpoints.DirectoryHere()));
+        var addresses = AgentAddresses(Endpoints.Read(endpointDirectory));
         if (addresses.Count == 0)
         {
             log.Warning(
@@ -158,7 +164,10 @@ internal static class RelayPipe
 
     /// <summary>Which ending the first copy to finish stands for — a FAILED copy is its own ending.</summary>
     internal static ExitReason EndingOf(Task first, Task toAgent) =>
-        first.IsFaulted ? ExitReason.CopyFailed
-        : first == toAgent ? ExitReason.RelayClosed
-        : ExitReason.AgentClosed;
+        (first.IsFaulted, first == toAgent) switch
+        {
+            (true, _) => ExitReason.CopyFailed,
+            (false, true) => ExitReason.RelayClosed,
+            _ => ExitReason.AgentClosed,
+        };
 }

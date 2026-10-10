@@ -9,14 +9,18 @@ namespace CredsCli.Tests;
 
 /// <summary>
 /// What the relay and its per-connection child write about themselves, through the BUILT binary
-/// (todo/PLAN_wsl_bridge_outlives_its_client.md, E1.S2).
+/// (PLAN_wsl_bridge_outlives_its_client.md, E1.S2).
 /// </summary>
-public sealed class RelayLogTests : IDisposable
+public sealed partial class RelayLogTests : IDisposable
 {
     private readonly string _root = HostProcess.TempDirectory("creds-relay-log");
     private readonly string _marker = "MARKER" + Guid.NewGuid().ToString("N");
 
     public void Dispose() => HostProcess.Remove(_root);
+
+    /// <summary><c>socketFromBusyLine</c> in wslRelay.ts, verbatim.</summary>
+    [GeneratedRegex(@"(\S+) is already served by a live relay")]
+    private static partial Regex BusyLine();
 
     private Dictionary<string, string> Env(params (string Name, string Value)[] extra)
     {
@@ -90,7 +94,7 @@ public sealed class RelayLogTests : IDisposable
 
             second.ExitCode.Should().Be(BrokerContract.Current.Exit("busy"));
             // wslRelay.ts socketFromBusyLine, verbatim.
-            var busy = stderr.Split('\n').Select(line => Regex.Match(line.Trim(), @"(\S+) is already served by a live relay"))
+            var busy = stderr.Split('\n').Select(line => BusyLine().Match(line.Trim()))
                 .FirstOrDefault(match => match.Success);
             busy.Should().NotBeNull("the refusal is on stderr at a floor of fatal: {0}", stderr);
             busy!.Groups[1].Value.Should().Be(socket, "the extension adopts exactly the socket named");

@@ -8,7 +8,7 @@ namespace CredsForDevs.ServiceDefaults;
 /// <para>Typed rather than a free string (code round, finding 1: no primitive obsession) — a reason is a
 /// closed set the hosts choose from, never something composed. It is written to the log as its camelCase
 /// word (<see cref="HostRun.Word"/>) and is NEVER a new contract exit name: the exit CODE stays the
-/// contract's (todo/PLAN_wsl_bridge_outlives_its_client.md §5.2.4). Later epics add their own endings —
+/// contract's (PLAN_wsl_bridge_outlives_its_client.md §5.2.4). Later epics add their own endings —
 /// a handled signal, a parent gone, a shutdown deadline — here.</para>
 /// </remarks>
 public enum ExitReason
