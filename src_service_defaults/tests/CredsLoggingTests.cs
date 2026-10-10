@@ -78,6 +78,23 @@ public sealed class CredsLoggingTests : IDisposable
     }
 
     [Fact]
+    public void A_console_line_names_its_writer_by_the_end_of_its_type_and_shows_an_exception()
+    {
+        var console = new StringWriter();
+        var setup = new LogSetup("a", string.Empty, DateTime.UtcNow, new LogLevels(LogEventLevel.Information), 14, console);
+
+        using (var log = CredsLogging.Build(setup))
+        {
+            log.ForContext("SourceContext", "CredsForDevs.ServiceDefaults.Tests.Writer").Error(new IOException("disk gone"), "write failed");
+        }
+
+        var text = console.ToString();
+        text.Should().Contain("Tests.Writer", "the last two segments identify the writer");
+        text.Should().NotContain("CredsForDevs.ServiceDefaults.Tests.Writer");
+        text.Should().Contain("disk gone", "the exception is rendered under its line");
+    }
+
+    [Fact]
     public void A_stdio_host_writes_its_console_lines_to_stderr()
     {
         CredsLogging.ConsoleFor(toStdErr: true).Should().BeSameAs(Console.Error);

@@ -120,6 +120,18 @@ internal sealed class CollectingSink : ILogEventSink
         }
     }
 
+    /// <summary>The exceptions the events carried, in order.</summary>
+    internal IReadOnlyList<Exception> Exceptions
+    {
+        get
+        {
+            lock (_events)
+            {
+                return [.. _events.Select(e => e.Exception).OfType<Exception>()];
+            }
+        }
+    }
+
     public void Emit(LogEvent logEvent)
     {
         lock (_events)
