@@ -133,3 +133,19 @@ test('a prompt that fails fails every waiter still attached, and is forgotten', 
   await tick();
   assert.equal(prompts.isOpen('grant'), false);
 });
+
+test('a request that leaves in the same tick as the answer arrives does not get that answer applied', async () => {
+  // The consultant's ordering (a): the modal resolves, and the request's signal fires before any
+  // continuation runs. `stillWanted` is read in that continuation, so it must already see the request gone.
+  const prompts = new SharedPrompts<string>();
+  const s = scripted();
+  const request = new AbortController();
+
+  const waiting = prompts.join('grant', request.signal, s.ask);
+  s.answer('Allow');
+  request.abort();
+
+  assert.equal(await waiting, ABANDONED);
+  await tick();
+  assert.deepEqual(s.wantedAtAnswer, [false], 'an Allow was applied for a request that left as it arrived');
+});

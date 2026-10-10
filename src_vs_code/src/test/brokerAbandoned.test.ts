@@ -71,6 +71,12 @@ const CLOSE_SEEN_MS = 100;
 
 const abandonedLines = (w: World): string[] => w.audit.filter((line) => /ABANDONED/.test(line));
 
+/** Wait for the broker to have SEEN the client leave: its one ABANDONED line is written then. */
+const abandonedSeen = (w: World): Promise<void> => until(() => abandonedLines(w).length > 0, 'the broker to see the client leave');
+
+/** Wait for a late answer to have been read and set aside — the gate writes one `ignored` line. */
+const ignoredSeen = (w: World): Promise<void> => until(() => w.audit.some((line) => / ignored /.test(line)), 'the late answer to be ignored');
+
 test('a client that leaves while the modal is open: a late Allow grants nothing and runs nothing', async () => {
   const w = world({ holdDialogs: true });
   try {
@@ -79,9 +85,9 @@ test('a client that leaves while the modal is open: a late Allow grants nothing 
     await until(() => w.openDialogs.length === 1, 'the consent modal');
 
     gone.hangUp();
-    await pause(CLOSE_SEEN_MS);
+    await abandonedSeen(w);
     w.openDialogs.shift()?.('Allow');
-    await pause(CLOSE_SEEN_MS);
+    await ignoredSeen(w);
 
     assert.deepEqual(w.ran, [], 'the action ran for a request nobody was waiting for');
     assert.ok(!w.audit.some((line) => /ALLOWED/.test(line)), `the late click allowed the grant: ${w.audit.join(' | ')}`);
@@ -107,9 +113,9 @@ test('the MCP door: a late Allow after the client left runs nothing and remember
     await until(() => w.openDialogs.length === 1, 'the consent modal');
 
     gone.hangUp();
-    await pause(CLOSE_SEEN_MS);
+    await abandonedSeen(w);
     w.openDialogs.shift()?.('Allow');
-    await pause(CLOSE_SEEN_MS);
+    await ignoredSeen(w);
 
     assert.deepEqual(w.ran, [], 'the action ran for a request nobody was waiting for');
     assert.deepEqual(w.consents, [], 'a consent nobody was waiting for was remembered for next time');
@@ -127,9 +133,9 @@ test('the alias door: a late Allow after the client left runs nothing', async ()
     await until(() => w.openDialogs.length === 1, 'the consent modal');
 
     gone.hangUp();
-    await pause(CLOSE_SEEN_MS);
+    await abandonedSeen(w);
     w.openDialogs.shift()?.('Allow');
-    await pause(CLOSE_SEEN_MS);
+    await ignoredSeen(w);
 
     assert.deepEqual(w.ran, []);
     assert.equal(abandonedLines(w).length, 1, w.audit.join(' | '));
@@ -149,7 +155,7 @@ test('one token, two waiters on one modal: the one that left does not decide it 
     assert.equal(w.dialogs.length, 1, 'two calls on one token share one modal');
 
     leaves.hangUp();
-    await pause(CLOSE_SEEN_MS);
+    await abandonedSeen(w);
     w.openDialogs.shift()?.('Allow');
 
     assert.equal(await stays.answered, 200, 'the live request still got its answer');
@@ -159,6 +165,12 @@ test('one token, two waiters on one modal: the one that left does not decide it 
       'only the live request ran',
     );
     assert.equal(abandonedLines(w).length, 1, w.audit.join(' | '));
+
+    // The Allow the live request received stands for the token, as the modal says it does: detaching
+    // the waiter that left stopped ITS execution and revoked nothing (the risk consultation, point b).
+    const later = await call(port, '/v1/use/exec', { token: secret, body: { command: 'hostname' } });
+    assert.equal(later.status, 200);
+    assert.equal(w.dialogs.length, 1, 'the next call on the allowed token was asked again');
   } finally {
     w.server.dispose();
   }
@@ -277,9 +289,9 @@ test('an MCP delete whose client left during the modal moves nothing to the Tras
     await until(() => w.openDialogs.length === 1, 'the delete prompt');
 
     gone.hangUp();
-    await pause(CLOSE_SEEN_MS);
+    await abandonedSeen(w);
     w.openDialogs.shift()?.('Allow');
-    await pause(CLOSE_SEEN_MS);
+    await ignoredSeen(w);
 
     assert.deepEqual(w.trashed, []);
     assert.equal(abandonedLines(w).length, 1, w.audit.join(' | '));
@@ -307,6 +319,71 @@ test('an MCP create whose client left during the folder PIN step makes nothing, 
     assert.equal(w.settleSignals[0].aborted, true);
     assert.equal(abandonedLines(w).length, 1, w.audit.join(' | '));
   } finally {
+    w.server.dispose();
+  }
+});
+
+test('a folder change whose client left during the modal changes nothing', async () => {
+  const w = world({ holdDialogs: true });
+  const made: string[] = [];
+  w.server.setFolderHooks({
+    list: () => [],
+    choose: () => ({
+      ok: true,
+      target: { accountId: 'a1', entityId: 'f1', entityName: 'Servers', kind: 'folder' },
+      summary: 'a folder "new-dir" in "Servers"',
+      edit: { name: 'new-dir' },
+    }),
+    create: (_decision, body) => {
+      made.push(String(body.name));
+      return Promise.resolve({ id: 'f2', name: String(body.name) });
+    },
+    edit: () => Promise.resolve(true),
+    remove: () => Promise.resolve(true),
+  });
+  try {
+    const { port } = await share(w);
+    const gone = hanging(port, '/v1/mcp/folder/create', { name: 'new-dir', parent: 'f1' });
+    await until(() => w.openDialogs.length === 1, 'the folder prompt');
+
+    gone.hangUp();
+    await abandonedSeen(w);
+    w.openDialogs.shift()?.('Allow');
+    await pause(CLOSE_SEEN_MS);
+
+    assert.deepEqual(made, [], 'a folder was made for a client that had gone');
+    assert.equal(abandonedLines(w).length, 1, w.audit.join(' | '));
+  } finally {
+    w.server.dispose();
+  }
+});
+
+test('an action that fails because its client left is that request’s abandonment, not an internal failure', async () => {
+  // What a child killed by the request's signal looks like to the broker: the action throws. Reported
+  // as `internal`, the journal would carry a failure nobody caused and a reply written to a dead socket.
+  const w = world({});
+  let release = (): void => undefined;
+  w.hold = () =>
+    new Promise<void>((resolve) => {
+      release = resolve;
+    });
+  const killed = new Error('the child was killed');
+  killed.name = 'AbortError';
+  w.result = killed;
+  try {
+    const { port, secret } = await share(w);
+    const gone = hanging(port, '/v1/use/exec', { command: 'sleep 600' }, secret);
+    await until(() => w.ran.length === 1, 'the action to start');
+
+    gone.hangUp();
+    await until(() => w.actionSignals[0]?.aborted === true, 'the action signal to fire');
+    release();
+    await abandonedSeen(w);
+
+    assert.equal(abandonedLines(w).length, 1, w.audit.join(' | '));
+    assert.ok(!w.audit.some((line) => / internal /.test(line)), `a cancelled action was journalled as an internal failure: ${w.audit.join(' | ')}`);
+  } finally {
+    release();
     w.server.dispose();
   }
 });

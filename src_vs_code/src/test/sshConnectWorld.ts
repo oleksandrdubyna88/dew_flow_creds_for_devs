@@ -70,6 +70,8 @@ export interface Parts {
   socketAlive?: boolean;
   /** Press the button every refusal offers, so the remedy-and-retry path runs. */
   chooseButton?: boolean;
+  /** Runs while the credential is being looked up — where an agent's client can leave (E4.S1). */
+  duringLookup?: () => void;
 }
 
 export function world(parts: Parts): World {
@@ -142,6 +144,7 @@ export function world(parts: Parts): World {
       './sshCredential': {
         resolveSshCredential: (_s: unknown, _a: unknown, _e: unknown, open: unknown): Promise<unknown> => {
           w.openers.push(open);
+          parts.duringLookup?.();
           return Promise.resolve(parts.source);
         },
       },

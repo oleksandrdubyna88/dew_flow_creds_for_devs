@@ -33,16 +33,19 @@ export interface UseActionContext {
 }
 
 /**
- * The two signals an action that launches a child process hands its launcher (`sshExecRunner.ts`).
+ * The signals an action that launches a child process hands its launcher (`sshExecRunner.ts`).
  *
- * <p>`startGate` fires when either the window or the request has gone — nothing is launched after it.
- * `signal` is what the launched child is killed by: the same, except for work that must finish once
- * started ({@link UseActionContext.finishOnceStarted}), which only the window's end stops. Shaped as
- * the launcher's own option names, so a call site spreads it and cannot cross the two.</p>
+ * <p>`signal` lists what the launched child is killed by — the window's end and the request's end —
+ * except for work that must finish once started ({@link UseActionContext.finishOnceStarted}), which only
+ * the window's end stops. `startGate` is the request: once it has fired nothing is launched, whichever
+ * kind of work it is (the launcher also refuses for a fired kill signal). Shaped as the launcher's own
+ * option names, so a call site spreads it and cannot cross them.</p>
+ *
+ * <p>A list, never an `AbortSignal.any` composite: on Node 20 a composite stays referenced from the
+ * window's long-lived signal after it is done, one per call, for the window's life.</p>
  */
-export function launchGuards(window: AbortSignal, ctx: UseActionContext): { signal: AbortSignal; startGate: AbortSignal } {
-  const startGate = AbortSignal.any([window, ctx.signal]);
-  return { startGate, signal: ctx.finishOnceStarted === true ? window : startGate };
+export function launchGuards(window: AbortSignal, ctx: UseActionContext): { signal: readonly AbortSignal[]; startGate: AbortSignal } {
+  return { startGate: ctx.signal, signal: ctx.finishOnceStarted === true ? [window] : [window, ctx.signal] };
 }
 
 /** A validated action outcome, shaped as the broker's HTTP response. */

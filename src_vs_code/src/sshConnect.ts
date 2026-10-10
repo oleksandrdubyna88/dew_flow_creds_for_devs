@@ -120,6 +120,14 @@ export interface ConnectOptions {
    * pointed out that the plan claimed "at most once" while nothing enforced it.</p>
    */
   readonly allowRetry?: boolean;
+  /**
+   * The agent request this connection is for, when an agent asked (`PLAN_wsl_bridge_outlives_its_client.md`
+   * §5.7). Fired means the client that asked has gone: nothing is opened for it. Checked after the last
+   * await before each terminal opens — the credential lookup, the host-key read and the relay probe all
+   * sit between the broker's own check and the terminal. A terminal already open stays open. Absent for
+   * the person's own Connect, which no request can outlive.
+   */
+  readonly startGate?: AbortSignal;
 }
 
 /** @returns whether a terminal was actually opened — a remote window can refuse. */
@@ -202,6 +210,10 @@ export async function connectEntity(
     forgetOurPin(resolved.knownHostsFile, storageDir);
     return refuseAndOfferTheFix(['not-wsl'], entity, remote, undefined);
   }
+  if (requestGone(connect)) {
+    forgetOurPin(resolved.knownHostsFile, storageDir);
+    return false;
+  }
 
   let keyPath: string | undefined;
   let materialized: string | undefined;
@@ -231,6 +243,10 @@ export async function connectEntity(
     if (!(await adoptedSocketStillThere(remote.relay, side))) {
       forgetOurPin(resolved.knownHostsFile, storageDir);
       return refuseAndOfferTheFix(['relay-not-running'], entity, remote, retry);
+    }
+    if (requestGone(connect)) {
+      forgetOurPin(resolved.knownHostsFile, storageDir);
+      return false;
     }
     return openSshTerminal({ ...entity, sshKeyPath: undefined }, options, platform, prefix) !== undefined;
   }
@@ -316,6 +332,11 @@ export async function connectEntity(
     }
   }
   return terminal !== undefined;
+}
+
+/** Whether the agent request this connection serves has already ended — see `ConnectOptions.startGate`. */
+function requestGone(connect: ConnectOptions): boolean {
+  return connect.startGate?.aborted === true;
 }
 
 /**

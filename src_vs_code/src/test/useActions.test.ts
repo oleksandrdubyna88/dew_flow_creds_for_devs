@@ -71,6 +71,9 @@ const ctxFor = (signal: AbortSignal, finishOnceStarted?: boolean) => ({
   ...(finishOnceStarted === undefined ? {} : { finishOnceStarted }),
 });
 
+/** Whether a launched child would be killed now — any of its kill signals has fired. */
+const kills = (guards: { signal: readonly AbortSignal[] }): boolean => guards.signal.some((signal) => signal.aborted);
+
 test('an ordinary action: the request hanging up both refuses the start and kills the run', () => {
   const window = new AbortController();
   const request = new AbortController();
@@ -79,7 +82,7 @@ test('an ordinary action: the request hanging up both refuses the start and kill
   request.abort();
 
   assert.equal(guards.startGate.aborted, true, 'the start was not refused for a gone request');
-  assert.equal(guards.signal.aborted, true, 'a running child would outlive its gone request');
+  assert.equal(kills(guards), true, 'a running child would outlive its gone request');
 });
 
 test('the window closing stops an ordinary action too', () => {
@@ -88,8 +91,7 @@ test('the window closing stops an ordinary action too', () => {
 
   window.abort();
 
-  assert.equal(guards.signal.aborted, true);
-  assert.equal(guards.startGate.aborted, true);
+  assert.equal(kills(guards), true, 'a child would outlive the window that started it');
 });
 
 test('work that must finish once started: the request ending refuses the start but never kills the run', () => {
@@ -100,7 +102,7 @@ test('work that must finish once started: the request ending refuses the start b
   request.abort();
 
   assert.equal(guards.startGate.aborted, true, 'a rotation launched for a request already gone');
-  assert.equal(guards.signal.aborted, false, 'a started rotation would be killed half-way, losing its new value');
+  assert.equal(kills(guards), false, 'a started rotation would be killed half-way, losing its new value');
   window.abort();
-  assert.equal(guards.signal.aborted, true, 'only the window ending stops it');
+  assert.equal(kills(guards), true, 'only the window ending stops it');
 });

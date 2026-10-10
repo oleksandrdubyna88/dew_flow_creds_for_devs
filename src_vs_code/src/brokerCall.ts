@@ -160,7 +160,7 @@ function deliver(deps: CallDeps, call: CallSubject, started: Promise<UseActionRe
       respond: deps.respond,
       log: deps.log,
       burn: deps.burn,
-      fail: deps.failed,
+      fail: (why, ran) => failedOrAbandoned(deps, call, why, ran),
       mutatesSecrets: useAction.mutatesSecrets,
       refresh: deps.refresh,
       table,
@@ -169,6 +169,19 @@ function deliver(deps: CallDeps, call: CallSubject, started: Promise<UseActionRe
     () => started,
     (result) => (result.status === 200 ? useAction.describeOutcome(result) : String(result.status)),
   );
+}
+
+/**
+ * An action that threw after its client left — refused at its launch, or killed mid-run by the request's
+ * signal — is that request's abandonment, not an internal failure: one `ABANDONED` line, and nothing
+ * written to a socket nobody reads. A failure while the client is still there is reported as before.
+ */
+function failedOrAbandoned(deps: CallDeps, call: CallSubject, why: string, ran: boolean): void {
+  if (call.signal.aborted) {
+    deps.abandon(ran ? 'while the action ran — it was cancelled' : 'as the action was starting — it was not launched');
+    return;
+  }
+  deps.failed(why, ran);
 }
 
 export { INTERNAL_FAILURE };

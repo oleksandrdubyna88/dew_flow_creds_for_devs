@@ -257,6 +257,8 @@ export function sshTerminalAction(deps: SshUseDeps): UseAction {
         agentServesKey: deps.servesKeyForEntity?.(entity) === true,
         refreshAgentServesKey: (): boolean => deps.servesKeyForEntity?.(entity) === true,
         remote: brokerWindow(deps),
+        // The request's end refuses the OPEN; a terminal already open belongs to the person and stays.
+        startGate: ctx.signal,
       });
       // It used to report `opened: true` whatever happened, which was harmless while the only
       // failure was an entity with no host — and is not, now that a remote window can REFUSE. An

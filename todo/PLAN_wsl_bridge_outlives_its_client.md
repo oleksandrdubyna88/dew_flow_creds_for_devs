@@ -253,10 +253,17 @@ Shared because both the MCP wrapper and the relay need exactly this, and today e
 - One audit line per abandoned request, outcome `ABANDONED`, its detail naming the stage it was dropped at. No answer is
   written: the socket is already gone.
 - `UseActionContext.signal` is required, so every action start states it. The four actions that spawn a process — ssh
-  exec, a stored script, a stored terminal command, a database query — run under `AbortSignal.any` of it and the window's
-  signal (`useActions.launchGuards`), and `runBounded` refuses to SPAWN once either has fired — it used to spawn and
-  only then subscribe to the abort (consultation, §14). Opening an SSH terminal, a VPN and an env export start nothing
-  that belongs to the request and are left as they are. **Deviation, the rotation:** it refuses an abandoned request before it draws a secret, but runs its
+  exec, a stored script, a stored terminal command, a database query — hand their launcher both the window's and the
+  request's signal as a LIST (`useActions.launchGuards`; never an `AbortSignal.any` composite, which Node 20 keeps
+  referenced from the window's long-lived signal, one per call — risk consultation, §14), and `runBounded` refuses to
+  SPAWN once any has fired — it used to spawn and only then subscribe to the abort (cadence consultation, §14).
+  Opening an SSH terminal is gated too: `ConnectOptions.startGate` is checked after the credential lookup, the host-key
+  read and the relay probe, before any terminal opens; a terminal already open belongs to the person and stays. An env
+  export has no await before its effect, so the broker's boundary check covers it. An action that throws after its
+  client left (refused at launch, or killed mid-run) is journalled as that request's `ABANDONED`, not as `internal`.
+- **Open tail, recorded:** a VPN start (`runVpn`) awaits before it opens its terminal and is not gated by the request.
+  Its start raises the operating system's administrator prompt, which a person answers, and the tunnel is
+  window-scoped by design; gating it means threading the signal through `runVpn`'s retries, left for a later story. **Deviation, the rotation:** it refuses an abandoned request before it draws a secret, but runs its
   statement with the window's signal only — killing a statement that may already have changed the far side would lose
   the new value, because the vault stores it only after the statement succeeds. Expressed as
   `UseActionContext.finishOnceStarted`: the statement's launch is still refused for a gone request (a `startGate`),
@@ -590,3 +597,19 @@ consultation for epics 4–5 before the code round; name the risky pieces (E4.S1
 rotation's exemption should start at the statement launch, not at generation (fixed: `finishOnceStarted` + `startGate`);
 the folder PIN box outlived the request (fixed: the signal cancels its token). Its transport question was answered by
 measurement (`requestLife.test.ts`, port and pipe, four shapes) and a cross-process leg (level 8 of `creds-mcp-itest.cjs`).
+
+**Risk consultation for E4.S1** (codex `gpt-6-astra`, `bb3ab088…`), named as risky because it is the consent path of a
+credential broker — each point verified, then acted on:
+
+- the agent's SSH terminal dropped `ctx.signal`, and `connectEntity` awaits the credential lookup before opening it, so
+  a client gone in there still got an authenticated terminal — **fixed**: `ConnectOptions.startGate`, two tests, watched
+  red without the check;
+- the race between the modal resolving and `stillWanted()` holds — **pinned** by a same-tick unit test;
+- a token allowed by a live waiter stays allowed after another detached, as the modal promises — **pinned** by a later
+  call on the token that runs without a dialog;
+- `AbortSignal.any` per call keeps a reference on the window's signal in Node 20 — **fixed** by passing the signals as
+  a list (no composite).
+
+Own review (a subagent reading the diff in context, the gate's other half): no high-confidence defect; two of its low
+notes were taken — an action that throws after its client left is now journalled `ABANDONED` rather than `internal`
+(test watched red without it), and the folder routes got their own abandoned test.

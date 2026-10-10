@@ -4000,10 +4000,14 @@ sequenceDiagram
   `reserve` (no use spent) and at the action start, check and start in one synchronous step — a one-use call
   arrives there after the lane's queue, the longest wait on the path.
 - **The action itself**: `UseActionContext.signal` is required. `useActions.launchGuards(window, ctx)` gives the
-  four spawning actions (ssh exec, stored script, stored terminal command, db query) a `startGate` and a kill
-  `signal`, and `runBounded` now refuses to spawn when either has already fired — it used to spawn first and
+  four spawning actions (ssh exec, stored script, stored terminal command, db query) a `startGate` and a LIST of kill
+  signals — never an `AbortSignal.any` composite, which Node 20 keeps referenced from the window's long-lived signal,
+  one per call — and `runBounded` now refuses to spawn when any has already fired; it used to spawn first and
   subscribe to the abort after. A rotation sets `finishOnceStarted`: the request's end may stop its statement's
-  launch but never a running statement, whose new value is stored only once it succeeds.
+  launch but never a running statement, whose new value is stored only once it succeeds. The agent's SSH terminal
+  passes `startGate` into `connectEntity`, which checks it after its last await before any terminal opens (a
+  terminal already open stays: it is the person's). An action that throws after its client left is journalled as
+  `ABANDONED`, not `internal`. Not gated: a VPN start, whose OS administrator prompt a person answers (plan §5.7).
 - **Tests**: `brokerAbandoned.test.ts` (the real broker over real HTTP, every door; each test watched red on
   the unfixed code), `sharedPrompt.test.ts`, `requestLife.test.ts`, the launch refusals in
   `sshExecRunner.test.ts`, `useActions.test.ts`, `rotateAction.test.ts` and `agentCreatePin.test.ts`; and

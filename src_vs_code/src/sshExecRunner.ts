@@ -31,13 +31,17 @@ export interface SshExecOptions {
   program?: string;
   timeoutMs: number;
   /**
-   * Kills the child when it fires — the window going away, or the request it serves ending — so no ssh
-   * outlives what it was for. Already fired: nothing is launched at all.
+   * Kills the child when it — or any of them — fires: the window going away, or the request it serves
+   * ending, so no ssh outlives what it was for. Already fired: nothing is launched at all.
+   *
+   * <p>A list rather than one `AbortSignal.any` of them: on Node 20 a composite stays referenced from
+   * its long-lived source (the window's signal) after it is done, so one composite per call is a slow
+   * growth for the window's life. Listeners on each signal are removed when the child settles.</p>
    */
-  signal?: AbortSignal;
+  signal?: AbortSignal | readonly AbortSignal[];
   /**
    * Refuses the LAUNCH once it has fired, without killing a child already running. For work that must
-   * finish once started (a rotation's statement, `useActions.launchSignals`), where `signal` is only the
+   * finish once started (a rotation's statement, `useActions.launchGuards`), where `signal` is only the
    * window's and the request's end may still stop the start but not the run.
    */
   startGate?: AbortSignal;
@@ -152,7 +156,10 @@ export function runBounded(
     const onAbort = (): void => {
       kill();
     };
-    options.signal?.addEventListener('abort', onAbort, { once: true });
+    const killers = killSignals(options);
+    for (const signal of killers) {
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
 
     const finish = (fn: () => void): void => {
       if (settled) {
@@ -160,7 +167,9 @@ export function runBounded(
       }
       settled = true;
       clearTimeout(timer);
-      options.signal?.removeEventListener('abort', onAbort);
+      for (const signal of killers) {
+        signal.removeEventListener('abort', onAbort);
+      }
       fn();
     };
 
@@ -196,7 +205,16 @@ export function runBounded(
 
 /** Whether whatever this child was for has already ended — the window, or the request it serves. */
 function alreadyGone(options: SshExecOptions): boolean {
-  return options.signal?.aborted === true || options.startGate?.aborted === true;
+  return killSignals(options).some((signal) => signal.aborted) || options.startGate?.aborted === true;
+}
+
+/** The kill signals, as a list whatever shape they were given in. */
+function killSignals(options: SshExecOptions): readonly AbortSignal[] {
+  const given = options.signal;
+  if (given === undefined) {
+    return [];
+  }
+  return given instanceof AbortSignal ? [given] : given;
 }
 
 /** The refusal to launch for a caller already gone; named `AbortError`, as an aborted spawn is. */
