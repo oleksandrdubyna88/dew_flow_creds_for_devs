@@ -89,3 +89,14 @@ test('the message names the same command as the CLI row, for every kind', async 
     assert.ok(message.endsWith(`: ${cliCommandFor(details, ALIAS)}`), `a ${kind} entry was told "${message}"`);
   }
 });
+
+test('a config entry is told what its name is FOR — the command carries the key on stdin, not the name', async () => {
+  // `creds config` has no alias route; a name only lists the config in `creds ls`. Said in the box and in the
+  // message, so nobody is told a name unlocks a config it cannot reach.
+  const config = stamped('config', { isConfig: true });
+  const message = await toldAfterNaming(config);
+
+  assert.match(lastPrompt, /^Then: creds config - — the key goes on stdin; the name only lists this config in creds ls\./, `the name box said: ${lastPrompt}`);
+  assert.match(message, /the key goes on stdin; the name only lists this config in creds ls as: creds config -$/, `a config entry was told "${message}"`);
+  assert.doesNotMatch(message, /creds config quota/);
+});

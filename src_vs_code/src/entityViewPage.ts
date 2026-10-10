@@ -396,11 +396,12 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     </div>`;
 
   // T23a: what the CLI can reach, said where agent access is already said — and the command
-  // to copy, because a capability nobody can see is a capability nobody uses.
+  // to copy, because a capability nobody can see is a capability nobody uses. A config entry's
+  // command carries no name (`creds config -`), so it is shown once however many names it has.
   const cliRow =
     (options.cliAliases ?? []).length === 0
       ? ''
-      : `<div class="row"><label>CLI access</label>${(options.cliAliases ?? [])
+      : `<div class="row"><label>CLI access</label>${(d.isConfig === true ? (options.cliAliases ?? []).slice(0, 1) : (options.cliAliases ?? []))
           .map(
             (alias, i) => `<div class="line"><input readonly value="${escapeHtml(cliCommandFor(d, alias))}">
         <button data-field="cli${i}" data-action="copy" class="icon" title="Copy the CLI command" aria-label="Copy the CLI command">${COPY_ICON}</button>

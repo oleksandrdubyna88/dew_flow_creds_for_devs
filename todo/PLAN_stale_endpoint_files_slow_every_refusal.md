@@ -64,9 +64,11 @@ is chosen by those numbers, not by the arithmetic in §1.
 
 1. **The extension sweeps at activation** — `readEndpoints` → `staleEndpoints(…, isAlive)` → `removeEndpoint` for each,
    never its own file; `isAlive` is `process.kill(pid, 0)` on the extension host, which shares the files' pid namespace
-   (the extension is `ui`-kind, so in a WSL window it still runs on Windows). The predicate already exists; this wires
-   it. Cost: one directory read per activation. Limit: a pid reused by an unrelated process keeps that one file alive
-   until the probe — today's behaviour, no worse.
+   (the extension is `ui`-kind, so in a WSL window it still runs on Windows). **`EPERM` means alive**, not dead: the
+   probe throws it for a live process of another user or session, and only `ESRCH` says the pid is gone — a sweep
+   that read every throw as "dead" would delete a live window's file (the own review); a test holds each answer. The
+   predicate already exists; this wires it. Cost: one directory read per activation. Limit: a pid reused by an
+   unrelated process keeps that one file alive until the probe — today's behaviour, no worse.
 2. **The clients skip a provably-dead window before dialling** — in the walks (or in `Endpoints.Read` behind a
    parameter), `Process.GetProcessById(pid)` on the side that owns the namespace (the Windows half under WSL); a pid
    that is gone costs no probe. Same limit as (1) for a reused pid; covers the window between a crash and the next
@@ -105,7 +107,7 @@ and the sweep deletes only files whose pid is provably gone (never its own, neve
 
 | Behaviour | RED first | Layer |
 |---|---|---|
-| a crashed window's file is removed at the next activation; a live window's and this window's own are kept | 2 | TS unit (`cliEndpoint.test.ts`, the activation seam) |
+| a crashed window's file is removed at the next activation; a live window's and this window's own are kept; a pid whose probe answers `EPERM` is alive and its file stays | 2 | TS unit (`cliEndpoint.test.ts`, the activation seam) |
 | a file whose pid is dead costs no probe | 3 | C# (`EndpointsTests.cs`, a walk over a stub window counting probes) |
 | 34 stale files cost at most one budget | 4 (conditional) | C# process test against a listening-but-silent port |
 | the refusal sentences are unchanged | — | existing CLI tests |

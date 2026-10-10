@@ -287,6 +287,9 @@ test('C++ has a Windows branch — _putenv_s, _popen, _pclose — that restores 
   const posixLaunched = at(posix, 'popen("creds config", "r")', 'POSIX does not launch through popen');
   assert.ok(posixSet < posixLaunched && posixLaunched < at(posix, 'unsetenv("CREDSFORDEVS_KEY")', 'POSIX does not remove the variable'));
   at(posix, 'pclose(pipe)', 'POSIX does not close its own pipe');
+  // A key that could not be set must not launch creds against whatever key was there before (code round).
+  assert.match(windows, /if \(_putenv_s\("CREDSFORDEVS_KEY", key\.c_str\(\)\) != 0\) throw/, 'Windows launches creds even when the key could not be set');
+  assert.match(posix, /if \(setenv\("CREDSFORDEVS_KEY", key\.c_str\(\), 1\) != 0\) throw/, 'POSIX launches creds even when the key could not be set');
   assert.equal(/\b_?setenv\(|\b_?putenv|\b_?p(?:open|close)\(/.test(outside), false, `a launch or an environment write sits outside both branches:\n${outside}`);
 });
 
@@ -294,9 +297,12 @@ test('C++ has a Windows branch — _putenv_s, _popen, _pclose — that restores 
 
 const THREE_LINE_DOCUMENT = ['{', '  "ConnectionStrings": {', '    "Default": "Server=db;Database=app"', '  }', '}'];
 
+/** Nothing spawned here may hold the suite: a probe, a shell, a compiler or the built program gets a minute. */
+const SPAWN_TIMEOUT_MS = 60_000;
+
 function has(command: string, args: string[]): boolean {
   try {
-    execFileSync(command, args, { stdio: 'ignore' });
+    execFileSync(command, args, { stdio: 'ignore', timeout: SPAWN_TIMEOUT_MS });
     return true;
   } catch {
     return false;
@@ -310,7 +316,8 @@ function has(command: string, args: string[]): boolean {
  */
 function fakeCreds(dir: string): void {
   if (process.platform === 'win32') {
-    const lines = ['@echo off', 'set "KEY=%CREDSFORDEVS_KEY%"', 'if "%~1"=="-" set /p KEY=', 'if "%KEY%"=="" exit /b 7', ...THREE_LINE_DOCUMENT.map((line) => `echo ${line}`)];
+    // `creds config -`: the verb is the first argument, the dash the second — exactly as the sh fake reads `$2`.
+    const lines = ['@echo off', 'set "KEY=%CREDSFORDEVS_KEY%"', 'if "%~2"=="-" set /p KEY=', 'if "%KEY%"=="" exit /b 7', ...THREE_LINE_DOCUMENT.map((line) => `echo ${line}`)];
     fs.writeFileSync(path.join(dir, 'creds.cmd'), lines.join('\r\n') + '\r\n');
     return;
   }
@@ -342,7 +349,7 @@ test(
       const script = path.join(dir, 'snippet.ps1');
       fs.writeFileSync(script, snippetFor('powershell', 'default', { ...CONTEXT, fileName: file }).code);
 
-      execFileSync('pwsh', ['-NoProfile', '-NonInteractive', '-File', script], { env: childEnv(dir), stdio: 'pipe' });
+      execFileSync('pwsh', ['-NoProfile', '-NonInteractive', '-File', script], { env: childEnv(dir), stdio: 'pipe', timeout: SPAWN_TIMEOUT_MS });
 
       const written = fs.readFileSync(file, 'utf8');
       assert.deepEqual(written.split(/\r?\n/).filter((line) => line !== ''), THREE_LINE_DOCUMENT, `the file on disk reads:\n${written}`);
@@ -374,9 +381,9 @@ test(
       const source = path.join(dir, 'snippet.cpp');
       const binary = path.join(dir, process.platform === 'win32' ? 'snippet.exe' : 'snippet');
       fs.writeFileSync(source, program);
-      execFileSync(compiler, ['-std=c++17', '-o', binary, source], { stdio: 'pipe' });
+      execFileSync(compiler, ['-std=c++17', '-o', binary, source], { stdio: 'pipe', timeout: SPAWN_TIMEOUT_MS });
 
-      const printed = execFileSync(binary, [], { env: childEnv(dir), encoding: 'utf8', stdio: 'pipe' });
+      const printed = execFileSync(binary, [], { env: childEnv(dir), encoding: 'utf8', stdio: 'pipe', timeout: SPAWN_TIMEOUT_MS });
 
       assert.deepEqual(printed.split(/\r?\n/).filter((line) => line !== ''), THREE_LINE_DOCUMENT, `the program printed:\n${printed}`);
     } finally {

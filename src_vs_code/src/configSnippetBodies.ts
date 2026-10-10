@@ -470,8 +470,10 @@ std::string readFromVault(const std::string& key) {
     const char* before = std::getenv("CREDSFORDEVS_KEY");
     const bool hadBefore = before != nullptr;
     const std::string previous = hadBefore ? before : "";
+    // A key that could not be set is a launch that must not happen: creds would read whatever key
+    // was there before — somebody else's config — and answer it.
 #ifdef _WIN32
-    _putenv_s("CREDSFORDEVS_KEY", key.c_str());
+    if (_putenv_s("CREDSFORDEVS_KEY", key.c_str()) != 0) throw std::runtime_error("could not hand creds its key");
     FILE* pipe = _popen("creds config", "r");
     if (hadBefore) {
         _putenv_s("CREDSFORDEVS_KEY", previous.c_str());
@@ -479,7 +481,7 @@ std::string readFromVault(const std::string& key) {
         _putenv_s("CREDSFORDEVS_KEY", "");
     }
 #else
-    setenv("CREDSFORDEVS_KEY", key.c_str(), 1);
+    if (setenv("CREDSFORDEVS_KEY", key.c_str(), 1) != 0) throw std::runtime_error("could not hand creds its key");
     FILE* pipe = popen("creds config", "r");
     if (hadBefore) {
         setenv("CREDSFORDEVS_KEY", previous.c_str(), 1);
@@ -643,6 +645,7 @@ $connection = $config.ConnectionStrings.Default
 # ...or straight to the file your program already reads. Written only after creds
 # succeeded, so a failed read never truncates a good file. $configText is one string per
 # LINE (PowerShell splits what a command prints), and Set-Content writes them as lines;
-# -NoNewline would glue them into one line with every newline gone.
-Set-Content -Path '__FILE__' -Value $configText`,
+# -NoNewline would glue them into one line with every newline gone. UTF-8, so a config
+# with non-ASCII text survives Windows PowerShell 5.1, whose default is the ANSI code page.
+Set-Content -Path '__FILE__' -Value $configText -Encoding utf8`,
 };

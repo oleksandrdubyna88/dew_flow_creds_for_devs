@@ -32,7 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The *CLI access* row of a config entry shows `creds config -`.** It used to show `creds config <alias>`, a
   line that never worked — `creds config` has no alias route: the key goes on stdin (`-`) or in
   `CREDSFORDEVS_KEY`, and since cli 0.3.1 any argument is refused. The row, its copy button and the *Enable in
-  CLI* message now show the stdin form every snippet uses.
+  CLI* message now show the stdin form every snippet uses; the row is shown once however many names the entry
+  has, and *Enable in CLI* says what a config's name is for — it lists the config in `creds ls`, it does not
+  read it.
 
 ### Fixed — an agent request whose client is gone can no longer be allowed
 

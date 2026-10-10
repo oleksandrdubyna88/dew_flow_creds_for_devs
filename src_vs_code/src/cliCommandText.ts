@@ -34,3 +34,13 @@ export function cliCommandFor(details: EntityMetadata, alias: string): string {
   const verb = rules.find(([applies]) => applies)?.[1] ?? 'env';
   return verb === 'config' ? 'creds config -' : `creds ${verb} ${alias}`;
 }
+
+/**
+ * What a name does for this entry, said where *Enable in CLI* names one: for a config entry the name
+ * is NOT in the command — the key on stdin is what reads it — so the sentence says what the name is for
+ * (it lists the entry in `creds ls`) instead of implying it unlocks the config. Empty for every other kind,
+ * whose command carries the name.
+ */
+export function cliAliasNote(details: EntityMetadata): string {
+  return cliCommandFor(details, '-') === 'creds config -' ? ' — the key goes on stdin; the name only lists this config in creds ls' : '';
+}

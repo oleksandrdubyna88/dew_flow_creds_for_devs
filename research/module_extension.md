@@ -4647,9 +4647,13 @@ carries an `#ifdef _WIN32` branch — `_putenv_s`, `_popen`, `_pclose`, the key 
 environment right after the launch exactly as the POSIX branch does; a structural test holds both
 branches, and a compile-and-run test builds whichever branch the host compiles (`g++`/`clang++`/`c++`,
 skipped without one — Ubuntu CI builds the POSIX branch; the Windows branch is verified by structure
-until a Windows host with a compiler runs the suite). The viewer's *CLI access* row of a config entry
-(`cliCommandText.ts`) shows `creds config -`, the stdin form, instead of `creds config <alias>` — a line
-that never worked, since `creds config` has no alias route and refuses any argument.
+until a Windows host with a compiler runs the suite). Both branches refuse to launch when the key could not
+be set — `creds` would otherwise read whatever key was there before (the code round). The viewer's *CLI
+access* row of a config entry (`cliCommandText.ts`) shows `creds config -`, the stdin form, instead of
+`creds config <alias>` — a line that never worked, since `creds config` has no alias route and refuses any
+argument; it is shown once however many names the entry has, and *Enable in CLI* says what a config's name is
+for through `cliAliasNote` (it lists the config in `creds ls`; it does not read it), so the box and the message
+no longer imply a name unlocks a config (the own review).
 
 **The Fields tab is a VIEW over the raw text.** Parse-edit-serialise cannot keep a document —
 `JSON.parse` then `JSON.stringify` loses the indentation somebody chose, the blank lines and the

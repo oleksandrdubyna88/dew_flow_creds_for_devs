@@ -271,6 +271,13 @@ test('an entry with CLI aliases shows the copyable command, verb by kind', async
   assert.equal(copied, 'creds db prod-db');
 });
 
+test('a config entry with two names shows its one command once — the command carries no name', () => {
+  const html = renderEntityViewHtml(options({ details: metadata({ isConfig: true } as never), cliAliases: ['app-config', 'cfg'] }));
+
+  assert.equal((html.match(/value="creds config -"/g) ?? []).length, 1, 'the same command was shown once per name');
+  assert.doesNotMatch(html, /creds config (app-config|cfg)/);
+});
+
 test('the verb follows the kind: ssh, run, script, vpn-up, config, env', () => {
   // A config entry has NO alias route: `creds config` takes its key on stdin (`-`) or from the
   // environment, and refuses any argument (cli 0.3.1). The row shows the stdin form every
