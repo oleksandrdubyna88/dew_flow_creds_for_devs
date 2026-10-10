@@ -42,6 +42,12 @@ internal static class Program
     /// <summary>The log file prefix of the Linux half of the WSL bridge — a pump, not a server.</summary>
     internal const string WslAppName = "creds-mcp-wsl";
 
+    /// <summary>
+    /// Set to <c>1</c> to serve without watching the parent — for a launcher that execs this binary and exits,
+    /// whose disappearance says nothing about the client (plan §5.9).
+    /// </summary>
+    internal const string NoParentWatchVariable = "CREDS_MCP_NO_PARENT_WATCH";
+
     /// <summary>The same source <c>ServerInfo.Version</c> answers the client from.</summary>
     internal static string Version => typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
@@ -58,10 +64,13 @@ internal static class Program
 
         /// <summary>Speak the protocol — here, or through the Windows half.</summary>
         Serve,
+
+        /// <summary>Print this build's version (and, inside WSL, the Windows half's) and leave.</summary>
+        Version,
     }
 
     /// <summary>
-    /// Which of the three this invocation is.
+    /// Which of the four this invocation is.
     /// </summary>
     /// <remarks>
     /// <para>Pure, and separate from <see cref="Main"/>, because one of its consequences is not
@@ -79,6 +88,7 @@ internal static class Program
         {
             [] => Startup.Serve,
             ["--help" or "-h" or "help", ..] => Startup.Help,
+            ["--version"] => Startup.Version,
             [CallerForwarding.Flag, _] => Startup.Serve,
             _ => Startup.Usage,
         };
@@ -99,8 +109,12 @@ internal static class Program
                 Console.Out.WriteLine(HelpText);
                 return 0;
 
+            case Startup.Version:
+                Console.Out.WriteLine(await VersionTextAsync(WslInterop.ShouldRelayHere(), WslInterop.CredsMcp));
+                return 0;
+
             case Startup.Usage:
-                Note($"unknown argument '{args[0]}' — this binary takes none by hand; an MCP client speaks to it over stdin.");
+                Note($"unknown argument '{args[0]}' — by hand this binary takes only --help and --version; an MCP client speaks to it over stdin.");
                 return contract.Exit("usage");
 
             default:
@@ -163,7 +177,8 @@ internal static class Program
             var source = new CallerSource(caller, ownSession ? CallerIdentity.TabTitleSource() : null);
             await using var transport = new StdioServerTransport(ServerName);
             using var signals = ShutdownSignals.Register();
-            var lifetime = new LifetimeSignals(transport.MessageReader.Completion, Task.Delay(Timeout.Infinite), signals.Received);
+            using var parent = WatchParent(log);
+            var lifetime = new LifetimeSignals(transport.MessageReader.Completion, parent.Gone, signals.Received);
             return await ServeOnAsync(transport, contract, source, log, lifetime, LifetimeTimings.Default, ForceExit(run, log));
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException)
@@ -223,6 +238,77 @@ internal static class Program
             WslInterop.McpBinaryOverrideVariable);
         return new HostEnding(contract.Exit("toolMissing"), ExitReason.WindowsHalfMissing);
     }
+
+    /// <summary>
+    /// The parent watch for a server answering here (plan §5.9) — or, with the reason in the log, none.
+    /// </summary>
+    private static ParentWatch WatchParent(ILogger log)
+    {
+        var off = ParentWatchOff(
+            Environment.GetEnvironmentVariable(WslInterop.RelayedVariable),
+            Environment.GetEnvironmentVariable(NoParentWatchVariable));
+        return off.Length > 0 ? ParentWatch.Off(off, log) : ParentWatch.Start(log);
+    }
+
+    /// <summary>
+    /// Why the parent is NOT watched, or empty when it is.
+    /// </summary>
+    /// <remarks>
+    /// <para>Started by the Linux half of the WSL bridge (<see cref="WslInterop.RelayedVariable"/> present, the same
+    /// test <see cref="WslInterop.ShouldRelayHere"/> makes): the Windows parent of an interop child is the
+    /// distribution's session-long <c>wsl.exe</c>, whose life says nothing about the client — end-of-stream, which
+    /// the bridge delivers (measured), is the signal there.</para>
+    /// <para>The kill switch is for a launcher that execs this binary and exits at once: its disappearance is
+    /// normal, and watching it would end every session it starts.</para>
+    /// </remarks>
+    internal static string ParentWatchOff(string? relayedFromWsl, string? killSwitch) =>
+        (relayedFromWsl, killSwitch) switch
+        {
+            (_, "1") => $"{NoParentWatchVariable}=1",
+            (not null, _) => "started by the Linux half of the WSL bridge, whose parent says nothing about the client",
+            _ => string.Empty,
+        };
+
+    /// <summary>
+    /// What <c>--version</c> prints: this build, and inside WSL the Windows half the bridge would start.
+    /// </summary>
+    /// <remarks>
+    /// <para>The first line is <c>creds-mcp &lt;version&gt;</c> from <see cref="Version"/> — the same source the
+    /// protocol's <c>ServerInfo.Version</c> answers from. It exists because nothing could tell which build a
+    /// client's config points at (plan §4): the extension's stale-install check (§5.8) reads it.</para>
+    /// <para>Inside WSL a second line asks the Windows half with the same bounded, hermetic probe the
+    /// <c>--caller</c> check uses, and names the executable it asked. A half older than this flag answers with a
+    /// usage error — a non-zero exit, read as <c>older than --version</c>; one that cannot be started is said so.</para>
+    /// </remarks>
+    internal static async Task<string> VersionTextAsync(bool insideWsl, WindowsBridge windowsHalf)
+    {
+        var mine = $"creds-mcp {Version}";
+        if (!insideWsl)
+        {
+            return mine;
+        }
+        var answer = await AskWindowsHalfAsync(windowsHalf);
+        return $"{mine}\nwindows half: {answer} ({windowsHalf.WindowsBinary()})";
+    }
+
+    /// <summary>The Windows half's own first line, or why there is none.</summary>
+    private static async Task<string> AskWindowsHalfAsync(WindowsBridge windowsHalf)
+    {
+        try
+        {
+            return WindowsHalfAnswer(await windowsHalf.CaptureAsync(["--version"], CallerForwarding.ProbeTimeout));
+        }
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            return "not started";
+        }
+    }
+
+    /// <summary>The probe's stdout as one line; no answer (a usage error, a timeout) is an older half.</summary>
+    internal static string WindowsHalfAnswer(string? stdout) =>
+        stdout?.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) is [var first, ..]
+            ? first
+            : "older than --version";
 
     /// <summary>
     /// Serve one session over <paramref name="transport"/> until the client, a signal or the parent ends it.
@@ -646,8 +732,9 @@ internal static class Program
         """
         creds-mcp — the MCP server for CredsForDevs.
 
-        It takes no arguments by hand and is not run by hand: an MCP client starts it and speaks
-        JSON-RPC to it over stdin and stdout. Everything it answers comes from a running VS Code
+        It is not run by hand: an MCP client starts it and speaks JSON-RPC to it over stdin and
+        stdout. By hand it answers only --help and --version (which, inside WSL, also asks the
+        Windows half for its version and names the executable it asked). Everything it answers comes from a running VS Code
         window with the CredsForDevs extension, over the loopback, and only for entries whose
         Agent access switches are on.
 
@@ -668,6 +755,10 @@ internal static class Program
         this process's environment. Under WSL the Linux half computes that record and passes it to
         creds-mcp.exe as `--caller <base64url json>`; the Windows half never recomputes it. It is a
         label the person sees, never a permission — the modal says so.
+
+        It ends when its client is gone: stdin closing (in-flight work gets a second to finish),
+        SIGINT/SIGTERM/SIGHUP/SIGQUIT, or the process that started it exiting. Set
+        CREDS_MCP_NO_PARENT_WATCH=1 when it is started by a launcher that execs it and exits.
 
         Tools: creds_list, creds_folders, creds_kinds and creds_kind_help, then creds_exec /
         creds_query / creds_run / creds_open_terminal / creds_vpn_up / creds_vpn_down /
