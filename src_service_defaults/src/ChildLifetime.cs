@@ -120,15 +120,15 @@ public sealed class ChildLifetime : IDisposable
     /// <summary>The seam for tests: track a fake. A child tracked after the stop began is stopped at once.</summary>
     internal void Track(IManagedChild child)
     {
-        bool stopping;
         lock (_gate)
         {
             _children.Add(child);
-            stopping = _stopping;
-        }
-        if (stopping)
-        {
-            _ = StopAsync(child);
+            // Started under the SAME lock (the lock is reentrant; the stop runs off it after its first yield), so the
+            // stop is in _stops before InFlightAsync can take an empty snapshot (checkpoint round, finding 1).
+            if (_stopping)
+            {
+                _ = StopAsync(child);
+            }
         }
     }
 

@@ -76,7 +76,8 @@ flowchart TB
 - **The parent watch is off** for the Windows half of the bridge (`CREDS_RELAYED_FROM_WSL` — its parent is the
   distribution's session-long `wsl.exe`), for a process started with ppid 1, and with `CREDS_MCP_NO_PARENT_WATCH=1`.
   The variable reaches the Windows half only because the bridge names it in `WSLENV` (E3: environment variables do
-  not cross interop on their own, and until then the Windows half watched that `wsl.exe` — seen in the end-to-end log).
+  not cross interop on their own, and until then the Windows half watched that `wsl.exe` — seen in the end-to-end log);
+  the person's own `WSLENV` is kept, any entry of theirs for that variable replaced by the bare name.
 - **The pump stops the Windows half (E3, defect B).** Until 2026-10-10 the Linux wrapper died from Claude Code's exit
   SIGINT by the default disposition, and its `ProcessExit` hook — the only thing that stopped the Windows half — never
   ran. Now its child is held by a shared `ChildLifetime` ([module_service_defaults.md](module_service_defaults.md)):

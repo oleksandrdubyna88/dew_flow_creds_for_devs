@@ -54,10 +54,31 @@ public sealed class ManagedProcess : IManagedChild
 {
     private readonly Process _process;
 
+    /// <exception cref="ArgumentException">The process was not started by this host — the one thing the lifetime may stop.</exception>
     public ManagedProcess(Process process)
     {
         _process = process;
         Id = process.Id;
+        if (!IsOwnChild(process))
+        {
+            throw new ArgumentException($"process {process.Id} is not a child this process started with a redirected stdin; the lifetime stops only what it started", nameof(process));
+        }
+    }
+
+    /// <summary>
+    /// Whether this host started the process with a stdin it can close. A <see cref="Process"/> obtained by pid has no
+    /// readable <c>StartInfo</c> — .NET throws — and one started without a redirected stdin has no end-of-stream to send.
+    /// </summary>
+    private static bool IsOwnChild(Process process)
+    {
+        try
+        {
+            return process.StartInfo.RedirectStandardInput;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     public int Id { get; }

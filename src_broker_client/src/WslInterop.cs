@@ -71,20 +71,18 @@ public static class WslInterop
     /// </remarks>
     public const string WslEnvVariable = "WSLENV";
 
-    /// <summary>The <c>WSLENV</c> a Windows child is started with: the person's list, plus <see cref="RelayedVariable"/> once.</summary>
+    /// <summary>
+    /// The <c>WSLENV</c> a Windows child is started with: the person's list without any entry of their own for
+    /// <see cref="RelayedVariable"/>, plus the bare name once — an entry carrying <c>/u</c> (Windows-to-WSL only) would
+    /// keep the marker on this side of the bridge.
+    /// </summary>
     public static string WslEnvFor(string? existing)
     {
-        var list = existing ?? string.Empty;
-        if (Names(list, RelayedVariable))
-        {
-            return list;
-        }
-        return list.Length == 0 ? RelayedVariable : $"{list}:{RelayedVariable}";
+        var kept = (existing ?? string.Empty)
+            .Split(':', StringSplitOptions.RemoveEmptyEntries)
+            .Where(entry => entry.Split('/')[0] != RelayedVariable);
+        return string.Join(':', [.. kept, RelayedVariable]);
     }
-
-    /// <summary>Whether a <c>WSLENV</c> list already names the variable, with or without its <c>/p</c>-style flags.</summary>
-    private static bool Names(string wslenv, string variable) =>
-        wslenv.Split(':', StringSplitOptions.RemoveEmptyEntries).Any(entry => entry.Split('/')[0] == variable);
 
     /// <summary>
     /// Whether this process should hand the call to the Windows binary.

@@ -406,6 +406,19 @@ public sealed class ChildLifetimeTests : IDisposable
     }
 
     [Fact]
+    public void A_process_this_host_did_not_start_cannot_be_tracked()
+    {
+        // The plan's rule, at the type's boundary (checkpoint round, finding 0): the lifetime closes a stdin and
+        // kills a tree, so what it is handed must be a child THIS process started — never a pid somebody looked up.
+        using var lifetime = Lifetime(Hour, Hour);
+        using var foreign = Process.GetProcessById(Environment.ProcessId);
+
+        var track = () => lifetime.Track(foreign);
+
+        track.Should().Throw<ArgumentException>().WithMessage("*not a child this process started*");
+    }
+
+    [Fact]
     public void Start_registers_with_the_OS_and_hooks_process_exit_without_ending_anything()
     {
         using var lifetime = ChildLifetime.Start(_log, ParentWatch.Off("a test", _log), ChildLifetime.DefaultGrace, _ => throw new InvalidOperationException("never"));
