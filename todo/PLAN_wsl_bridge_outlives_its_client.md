@@ -737,3 +737,11 @@ Linux/macOS a real SIGHUP is sent to the test process to prove the handler runs 
 existing contract of the shared `WindowsBridge.CaptureAsync` probe the `--caller` forwarding has used since
 2026-09-12, read at exactly one boundary and turned at once into one of three tested words; changing that shared
 API is outside E2.
+
+**Checkpoint code round after the rebase onto #205 (`again`, 2026-10-10) — `proceed`**, gating 1 against threshold
+5, **4 of 8 reviewers answered** (codex; gemini rate-limited). The rebase conflicted only in documentation (this
+plan's status line and §14, the `todo/README.md` row); E4.S1's record and behaviour are kept.
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | `src_mcp` has no `research/module_*.md` of its own (raised a second time, now as blocking) | **accepted** — reversing the code round's rejection: the knowledge-base rule asks for a module doc per module, and the server had only paragraphs in `architecture.md`. [module_mcp.md](../research/module_mcp.md) now holds its purpose, diagram, entities, entry points, lifetime, dependencies and tests, linked from `architecture.md`'s module map and `research/README.md` |
