@@ -976,3 +976,13 @@ removed from the manifest → two red. Full extension suite: 5531 tests, 5527 pa
 Own review (a separate reviewer, same time): no high-confidence defect; its minor note that `offerStale` is not
 awaited at two call sites, so a failing Update or dismissal would surface as an unhandled rejection, was taken — the
 choice is applied under a `try` that shows the error.
+
+**Final code round (`again`, 2026-10-10) — `proceed`**, gating 5 against threshold 5, **4 of 12 reviewers answered**
+(codex; gemini rate-limited, the local engine misconfigured). Nothing accepted.
+
+| # | Finding | Decision |
+|---|---|---|
+| 0–3 | The German, Spanish, Russian and Ukrainian help sentences break the English-only text rule | **rejected** — the built-in help is localized by design (the README's language switch; every article in five languages; the owner's decision of 2026-10-09); the rule governs chrome, and every label inside the sentences stays English |
+| 4 | No scenario test for the flow (re-raised) | **rejected** — no new argument; the only harness able to drive it deletes and rebuilds a tree inside the distribution, which this story may not do; the leg belongs to E5.S1's rewrite, and `module_tests.md` states the gap |
+| 5 | Whole-map writes across two windows (re-raised) | **rejected** — on the first round's reasons |
+| 6 | Activation probes serially without showing progress | **rejected** — a background reminder nobody waits on; each stale result is reported as its probe finishes |
