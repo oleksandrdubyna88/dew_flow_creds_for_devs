@@ -299,7 +299,8 @@ Shared because both the MCP wrapper and the relay need exactly this, and today e
   the original parent is already gone (PID reuse) → `parentGone` now. Then `WaitForExitAsync`. Access denied → log and
   run without the watch; EOF remains the primary signal.
 - **Linux/macOS:** the `getppid()` poll from §5.4.
-- Kill switch `CREDS_MCP_NO_PARENT_WATCH=1` for a launcher that execs and exits.
+- Kill switch `CREDS_MCP_NO_PARENT_WATCH=1` for a launcher that starts the server as a child and exits (corrected on
+  PR #211: a launcher that `exec`s is replaced by the server, so it has no separate death to watch).
 
 ### 5.10 Upstream
 

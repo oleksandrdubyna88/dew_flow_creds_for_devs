@@ -55,7 +55,7 @@ public sealed class ParentWatchProcessTests : IDisposable
         launcher.Kill(entireProcessTree: false);
 
         (await ExitsWithinAsync(server, TimeSpan.FromSeconds(5), ct)).Should().BeFalse(
-            "under the WSL relay the parent is the distribution's wsl.exe, and the kill switch is for launchers that exec and exit");
+            "under the WSL relay the parent is the distribution's wsl.exe, and the kill switch is for launchers that start it as a child and exit");
         HostProcess.Read(LogFile()).Should().Contain("parent watch off:", "the positive control: this run's file, and it says why");
     }
 

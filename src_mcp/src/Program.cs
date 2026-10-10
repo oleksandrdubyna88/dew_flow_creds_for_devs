@@ -43,7 +43,7 @@ internal static class Program
     internal const string WslAppName = "creds-mcp-wsl";
 
     /// <summary>
-    /// Set to <c>1</c> to serve without watching the parent — for a launcher that execs this binary and exits,
+    /// Set to <c>1</c> to serve without watching the parent — for a launcher that starts this binary as a child and exits,
     /// whose disappearance says nothing about the client (plan §5.9).
     /// </summary>
     internal const string NoParentWatchVariable = "CREDS_MCP_NO_PARENT_WATCH";
@@ -260,7 +260,8 @@ internal static class Program
     /// test <see cref="WslInterop.ShouldRelayHere"/> makes): the Windows parent of an interop child is the
     /// distribution's session-long <c>wsl.exe</c>, whose life says nothing about the client — end-of-stream, which
     /// the bridge delivers (measured), is the signal there.</para>
-    /// <para>The kill switch is for a launcher that execs this binary and exits at once: its disappearance is
+    /// <para>The kill switch is for a launcher that starts this binary as a child and then exits (one that execs it is
+    /// replaced by it, and there is nothing to lose): its disappearance is
     /// normal, and watching it would end every session it starts.</para>
     /// </remarks>
     internal static string ParentWatchOff(string? relayedFromWsl, string? killSwitch) =>
@@ -783,7 +784,7 @@ internal static class Program
 
         It ends when its client is gone: stdin closing (in-flight work gets a second to finish),
         SIGINT/SIGTERM/SIGHUP/SIGQUIT, or the process that started it exiting. Set
-        CREDS_MCP_NO_PARENT_WATCH=1 when it is started by a launcher that execs it and exits.
+        CREDS_MCP_NO_PARENT_WATCH=1 when a launcher starts it as a child and then exits.
 
         Tools: creds_list, creds_folders, creds_kinds and creds_kind_help, then creds_exec /
         creds_query / creds_run / creds_open_terminal / creds_vpn_up / creds_vpn_down /
