@@ -696,6 +696,64 @@ only with the owner's OK on the notes.
 - **E5.S3** follow the upstream issue (§5.10, posted as csharp-sdk#1914); `research/module_*.md` and `architecture.md` updated
   (§13); the owner's WSL MCP refreshed to the released build (§3.1.7); the RESULTS record gets the after-numbers.
 
+**E5 design, settled before its plan round** (2026-10-10, branch `test/e5-proof-on-the-real-bridge`). The epic proves
+the fixes of E2–E3 on the real bridge, adds the CI legs, and takes two queued test defects. It changes no product
+behaviour.
+
+- **The Windows watch — `wslStrays.watchWindowsPids(image, exePath)`.** A baseline of the Windows processes named
+  `image` whose `ExecutablePath` lies under `exePath` (the run directory), read through `Get-CimInstance
+  Win32_Process`; `survivors()` is the set difference; `goneWithin(5 s)` polls until it is empty or the bound passes;
+  `sweep()` reads each pid's `ExecutablePath` again in the same PowerShell call that stops it and stops only a match,
+  `Stop-Process -Id`, never by name. The directory and the pids reach PowerShell through its environment, never
+  through the command text. **The parent is never a criterion**: an interop child is started by the WSL service,
+  not by the test's `wsl.exe`.
+- **Run-unique directories on both sides.** Each run copies the Windows build output it starts
+  (`src_mcp/src/bin/Debug/net10.0`, `src_cli/src/bin/Debug/net10.0`) into `%TEMP%\creds-itest-<run>\`, and the Linux
+  build output into `/tmp/creds-itest-<run>/`. A process another user, another test or the person started from the
+  shared build output can never match either watch. The Windows copy is removed at the end (outside WSL, only a
+  directory under `os.tmpdir()` named for the run).
+- **No deletion inside the distribution** (a machine rule since an incident on 2026-10-07: an agent's cleanup through
+  `wsl.exe` removed parts of a home directory). The old harnesses ran `rm -rf` on their build tree, `rm -f` on their
+  sockets and scratch files, and `pkill -f` on the relay. Now: the Linux build goes into a directory named by a hash
+  of its inputs (`/tmp/creds-itest-build-<hash>`), so a stale build is never reused and nothing is removed — this
+  also ends the persistent build cache CodeRabbit named on #201; sockets and scratch files are run-unique; the relay
+  is stopped by its own pid; the WSL-side sweep sends `kill` only to pids whose command line contains the run
+  directory. What remains in `/tmp` is a few MB per run, for the person or the distribution's next boot to clear.
+- **A client shaped like Claude Code, inside the distribution — `scripts/wsl-mcp-client.cjs`**, run by the
+  distribution's own `node` (skipped loudly without one). It spawns the wrapper DIRECTLY (`child_process.spawn`, no
+  shell, no `&` job — a background job of a non-interactive shell starts with SIGINT ignored), speaks the captured
+  fixture (`server/discover`, `subscriptions/listen`, `server/discover`, `tools/list`), waits for the replies, prints
+  the wrapper's pid, and waits for one word on its own stdin: `SIGINT`, `SIGTERM`, `SIGHUP`, `SIGKILL` (sent by
+  itself, the wrapper's parent, as Claude Code does) or `eof` (it closes the wrapper's stdin). It reports how the
+  wrapper ended. The Windows side asserts, for each of the five endings: before the end, exactly one new
+  `creds-mcp.exe` from the run directory (the positive control — a watch that sees nothing passes every time);
+  after it, none within 5 s; the wrapper's exit (129/130/143 for a signal, 0 for end-of-stream, killed for SIGKILL).
+- **The relay — `wsl-agent-relay-itest.cjs`.** After the relay starts, the fd count of its process
+  (`/proc/<pid>/fd`, read-only) is the baseline; ten `ssh-add -l` follow; then 0 new `creds.exe` (relay-pipe) from
+  the run directory within 5 s, and the fd count back to the baseline. `manager.dispose()` → 0 survivors on both
+  sides.
+- **E5.S2 — CI and release.** `ci-clients.yml` gains `windows-latest` in its matrix, with bash as the shell and the
+  `.exe` suffix the release workflow already uses; `branch-protection.json` is NOT changed until the leg has reported
+  once (a required check that never reported blocks every pull request). The release smoke moves into a script,
+  `.github/scripts/mcp-listen-smoke.sh <binary>`, so it runs on this machine before a tag: the fixture is written,
+  stdin is held open until the `tools/list` reply arrives (so the listen is really open), then closed; the binary must
+  exit within 10 s with code 0, and its log must carry the start line, a real parent and
+  `exited: code 0, reason clientClosed` (E1's smoke, kept). It replaces E1's 2025-06-18 step rather than adding a
+  second.
+- **Queued: the clipboard test flake** (`src_vs_code/src/test/secretClipboard.test.ts`, *copying the same secret
+  again…*): it measures a 30 ms window with real timers, so a loaded machine that oversleeps a 20 ms `delay` sees the
+  second wipe fire early and fails about once in a full run. The timing tests move onto `node:test`'s mock timers
+  (`mock.timers`, `setTimeout` only) and advance the clock by exact amounts — no window is widened, no product code
+  changes. Shown failing under load before (CPU hogs and repeated runs) and stable after.
+- **Queued: five process tests that fail INSIDE a distribution** (`VersionTests`, `ServerEndsWithClientTests`,
+  `ServingLogTests`, `ToolCancellationTests`, `RelayLogTests`): there the built binary takes the WSL pump path
+  (`WslInterop.ShouldRelayHere` reads `WSL_DISTRO_NAME` and `/proc/version`), so the test talks to a relay instead of
+  the server it means. The shared starter `HostProcess.Start` makes the child hermetic: unless the test names
+  `WSL_DISTRO_NAME` itself (the pump tests do), the child gets no `WSL_DISTRO_NAME`, and on a runner whose
+  `/proc/version` names Microsoft it gets the relayed marker `CREDS_RELAYED_FROM_WSL=1` — the one signal the code
+  reads as "this IS the native half" (`/proc/version` cannot be changed for a child). Plain Linux and macOS CI get the
+  same environment as before. RED inside WSL first, green inside WSL, still green on Windows.
+
 ### Ordering constraints
 
 E1 → E2 → E3 → E4 → E5. E2 before E3 because E3's itest for SIGKILL relies on A being fixed. E4.S1 is independent of
