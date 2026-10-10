@@ -117,6 +117,31 @@ public sealed class AgentRelayConnectionTests : IDisposable
     }
 
     [Fact]
+    public async Task A_signal_ends_a_held_connection_as_interrupted_without_waiting_for_either_side()
+    {
+        // SonarCloud S8949 on the two copies, judged by behaviour: they are the data path, not the cleanup, so they
+        // take the lifetime's token — a relay ended by a signal must not wait for ssh or the Windows side to close a
+        // connection nobody will finish. Before: the carry waited on both streams for ever.
+        using var lifetime = Lifetime();
+        var client = new HeldStream(string.Empty);
+        var toChild = new ClosingStream();
+        var fromChild = new HeldStream(string.Empty);
+        var child = new FakeRelayPipe();
+        lifetime.Track(child);
+        var carry = AgentRelay.CarryConnectionAsync(client, toChild, fromChild, child, lifetime);
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+        carry.IsCompleted.Should().BeFalse("both sides are open and nothing has ended the relay");
+
+        _signal.SetResult(PosixSignal.SIGTERM);
+
+        var ending = await carry.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        ending.Should().Be(new AgentRelay.ConnectionEnding(AgentRelay.ConnectionEnd.Interrupted, []));
+        toChild.Closed.Should().BeTrue("the child's stdin is still closed by name");
+        child.Steps.Should().Equal(["stdin closed"], "and the child stopped through the one killer");
+        client.Dispose();
+    }
+
+    [Fact]
     public void The_ending_of_a_copy_that_completed_is_the_side_that_closed()
     {
         var toWindows = Task.CompletedTask;

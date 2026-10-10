@@ -148,7 +148,7 @@ public sealed class AgentRelayHostTests : IDisposable
         throw new TimeoutException("the relay never logged the child of the held connection");
     }
 
-    private IEnumerable<string> Lines(int relayPid) =>
+    private string[] Lines(int relayPid) =>
         Directory.GetFiles(_root, $"{AgentRelay.AppName}-*-{relayPid}.log", SearchOption.AllDirectories) is [var file]
             ? HostProcess.Read(file).Split('\n')
             : [];

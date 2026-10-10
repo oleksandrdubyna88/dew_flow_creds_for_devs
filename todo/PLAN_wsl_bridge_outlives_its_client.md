@@ -272,8 +272,9 @@ Shared because both the MCP wrapper and the relay need exactly this, and today e
   `EndingOr(ListenerClosed)`. `Console.CancelKeyPress` and `ExitReason.Interrupted` are gone: Ctrl-C is SIGINT, and
   the exit code is the shell's 130.
 - `CarryConnectionAsync(client, toChild, fromChild, child, lifetime)` returns a `ConnectionEnding` — `SshClosed`,
-  `WindowsSideClosed` or **`CopyFailed` with the exception** (the plan round's finding; `relay-pipe`'s own exit line
-  already said `copyFailed` since E1). The copy still reading from ssh after the Windows side closed is observed but
+  `WindowsSideClosed`, **`CopyFailed` with the exception** (the plan round's finding; `relay-pipe`'s own exit line
+  already said `copyFailed` since E1) or `Interrupted`: the copies take the lifetime's token, so a relay ended by a
+  signal does not wait for ssh or the Windows side to close a connection nobody will finish (SonarCloud on #214). The copy still reading from ssh after the Windows side closed is observed but
   **not awaited**: awaiting it would hold the connection until ssh gave up, since the socket is the caller's to close.
 - The relay logs each connection's child at its start (`connection N opened; relay-pipe pid P`), so a live child can
   be found by a test or a person without waiting for the connection to end.
@@ -1171,3 +1172,12 @@ trackable — **rejected**: §9's rule is "only what THIS PROCESS started", whic
 stdin proves; the lifetime cannot start processes (the binary and the interop launch are `WindowsBridge`'s, in a project
 `src_service_defaults` cannot reference), and `Track` is the owner's explicit act one line after `StartPiped` in both
 hosts.
+
+**Pull request #214's automated reviewers.** CodeRabbit: rate-limited (no review; skipped by the owner's standing
+decision). SonarCloud (gate failed on the reliability rating; new-code coverage 95.3 %): every issue judged by
+behaviour and fixed — the relay's two copies take the lifetime's token (the data path, not the cleanup: a signal now
+ends a held connection as `Interrupted`; RED *"The operation has timed out"* → GREEN → RED again with the token
+removed), the `ProcessExit` hook's wait names `CancellationToken.None` with its reason (that wait IS the cleanup the
+fired token must not cut short), the pump's three Information lines in one block became two (the session's ending and
+the child's exit code on one line), `PumpAsync` takes its token last, `Posix` uses `LibraryImport` and discards the
+kill's result on purpose, a test helper returns the concrete array.

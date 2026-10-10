@@ -15,10 +15,10 @@ namespace CredsForDevs.ServiceDefaults.Tests.Support;
 /// spawned would not ignore it — otherwise a pass says nothing about the handler.</para>
 /// <para>Only ever a pid the test obtained from a process it started itself; nothing here looks anything up by name.</para>
 /// </remarks>
-internal static class Posix
+internal static partial class Posix
 {
-    [DllImport("libc", EntryPoint = "kill", SetLastError = true)]
-    private static extern int Kill(int pid, int signal);
+    [LibraryImport("libc", EntryPoint = "kill", SetLastError = true)]
+    private static partial int Kill(int pid, int signal);
 
     /// <summary>SIGKILL, which <see cref="PosixSignal"/> deliberately has no name for: a process cannot handle it.</summary>
     private const int SigKill = 9;
@@ -27,7 +27,7 @@ internal static class Posix
     internal static bool Send(int pid, PosixSignal signal) => Kill(pid, ShutdownSignals.Number(signal)) == 0;
 
     /// <summary>End a process this test started, or a child one of its hosts left behind, without appeal.</summary>
-    internal static void KillHard(int pid) => Kill(pid, SigKill);
+    internal static void KillHard(int pid) => _ = Kill(pid, SigKill);
 
     /// <summary>Whether a process with this pid still exists (a zombie counts, until its parent reaps it).</summary>
     internal static bool Alive(int pid) => Kill(pid, 0) == 0;

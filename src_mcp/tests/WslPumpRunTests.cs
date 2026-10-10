@@ -62,7 +62,7 @@ public sealed class WslPumpRunTests : IDisposable
         var ending = await run.WaitAsync(Bound, ct);
         ending.Should().Be(new HostEnding(code, ExitReason.Signalled));
         await ChildGoneAsync(child, ct);
-        _sink.Messages.Should().Contain("the session ended: Interrupted");
+        _sink.Messages.Should().Contain(m => m.StartsWith("the session ended: Interrupted", StringComparison.Ordinal));
         _sink.Messages.Should().Contain(m => m.Contains($"child {child} did not exit within 0 s") && m.Contains("stopping its process tree"), "a signalled session gives no grace: the client kills this wrapper within about half a second");
     }
 
@@ -119,7 +119,7 @@ public sealed class WslPumpRunTests : IDisposable
         var ending = await run.WaitAsync(WslPump.HangUpBound + Bound, ct);
         ending.Reason.Should().Be(ExitReason.ClientClosed);
         await ChildGoneAsync(child, ct);
-        _sink.Messages.Should().Contain("the session ended: ClientClosed");
+        _sink.Messages.Should().Contain(m => m.StartsWith("the session ended: ClientClosed", StringComparison.Ordinal));
         _sink.Messages.Should().Contain(m => m.StartsWith("the client hung up; waiting up to ", StringComparison.Ordinal), "a wrapper seen waiting is a wrapper draining, and its log says so (code round 1, finding 1)");
     }
 

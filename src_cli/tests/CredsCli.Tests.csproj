@@ -5,6 +5,8 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <!-- Support/Posix.cs uses [LibraryImport] (the source generator needs this), as the shared library does. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>CredsCli.Tests</RootNamespace>
     <!-- The CLI forbids reflection-based JSON so AOT failures surface at compile time. The
          test project deserializes the same payloads through the same source-generated context,

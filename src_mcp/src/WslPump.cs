@@ -115,14 +115,13 @@ internal static class WslPump
             child.StandardInput.BaseStream,
             child.StandardOutput.BaseStream,
             toClient,
-            lifetime.Shutdown,
             HangUpBound,
-            log).ConfigureAwait(false);
-        log.Information("the session ended: {Ending:l}", ending.ToString());
+            log,
+            lifetime.Shutdown).ConfigureAwait(false);
 
         await SettleAsync(tracked, ending, lifetime).ConfigureAwait(false);
         var code = ExitCodeOf(tracked, log);
-        log.Information("the Windows half exited with code {ChildExitCode}", code);
+        log.Information("the session ended: {Ending:l}; the Windows half exited with code {ChildExitCode}", ending.ToString(), code);
         return lifetime.EndingOr(new HostEnding(code, ReasonOf(ending)));
     }
 
@@ -155,7 +154,7 @@ internal static class WslPump
 
     /// <summary>The pump as it was before E3: no shutdown token, the Windows half's bound after a hang-up, no log.</summary>
     internal static Task<Ending> PumpAsync(Stream fromClient, Stream toChild, Stream fromChild, Stream toClient) =>
-        PumpAsync(fromClient, toChild, fromChild, toClient, CancellationToken.None, HangUpBound, Serilog.Core.Logger.None);
+        PumpAsync(fromClient, toChild, fromChild, toClient, HangUpBound, Serilog.Core.Logger.None, CancellationToken.None);
 
     /// <summary>
     /// Carry both directions until the conversation ends, and decide which ending it was.
@@ -178,9 +177,9 @@ internal static class WslPump
         Stream toChild,
         Stream fromChild,
         Stream toClient,
-        CancellationToken shutdown,
         TimeSpan hangUpBound,
-        ILogger log)
+        ILogger log,
+        CancellationToken shutdown)
     {
         var upstream = CarryThenCloseAsync(fromClient, toChild);
         var downstream = CarryAsync(fromChild, toClient);

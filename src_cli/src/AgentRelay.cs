@@ -400,6 +400,9 @@ internal static class AgentRelay
 
         /// <summary>A copy FAILED rather than ended: a broken pipe, a reset.</summary>
         CopyFailed,
+
+        /// <summary>A signal ended the relay while the connection was still open on both sides.</summary>
+        Interrupted,
     }
 
     /// <summary>Which side ended a connection, and what failed if one did — never an orderly close for a fault.</summary>
@@ -422,8 +425,10 @@ internal static class AgentRelay
     /// </remarks>
     internal static async Task<ConnectionEnding> CarryConnectionAsync(Stream client, Stream toChild, Stream fromChild, IManagedChild child, ChildLifetime lifetime)
     {
-        var toWindows = client.CopyToAsync(toChild);
-        var fromWindows = fromChild.CopyToAsync(client);
+        // The copies take the lifetime's token: a relay ended by a signal does not wait for ssh or the Windows side
+        // to close a connection nobody will finish. The stop below runs whatever ended the copies.
+        var toWindows = client.CopyToAsync(toChild, lifetime.Shutdown);
+        var fromWindows = fromChild.CopyToAsync(client, lifetime.Shutdown);
         var first = await Task.WhenAny(toWindows, fromWindows).ConfigureAwait(false);
 
         await CloseAsync(toChild).ConfigureAwait(false);
@@ -436,12 +441,13 @@ internal static class AgentRelay
         return EndingOf(first, toWindows);
     }
 
-    /// <summary>The ending the first copy to finish stands for.</summary>
+    /// <summary>The ending the first copy to finish stands for — a cancelled copy is the relay being ended.</summary>
     internal static ConnectionEnding EndingOf(Task first, Task toWindows) =>
-        (first.IsFaulted, first == toWindows) switch
+        (first.IsCanceled, first.IsFaulted, first == toWindows) switch
         {
-            (true, _) => new ConnectionEnding(ConnectionEnd.CopyFailed, [.. first.Exception?.InnerExceptions ?? []]),
-            (false, true) => new ConnectionEnding(ConnectionEnd.SshClosed, []),
+            (true, _, _) => new ConnectionEnding(ConnectionEnd.Interrupted, []),
+            (_, true, _) => new ConnectionEnding(ConnectionEnd.CopyFailed, [.. first.Exception?.InnerExceptions ?? []]),
+            (_, _, true) => new ConnectionEnding(ConnectionEnd.SshClosed, []),
             _ => new ConnectionEnding(ConnectionEnd.WindowsSideClosed, []),
         };
 
@@ -481,6 +487,7 @@ internal static class AgentRelay
         {
             ConnectionEnd.SshClosed => "ssh closed",
             ConnectionEnd.WindowsSideClosed => "the Windows side closed",
+            ConnectionEnd.Interrupted => "the relay was ended",
             _ => "a copy failed",
         };
 

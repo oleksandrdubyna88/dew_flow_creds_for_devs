@@ -108,7 +108,7 @@ public sealed class WslPumpTests
         var toClient = new MemoryStream();
         var bound = TimeSpan.FromMilliseconds(300);
 
-        var pump = WslPump.PumpAsync(fromClient, toChild, fromChild, toClient, CancellationToken.None, bound, Serilog.Core.Logger.None);
+        var pump = WslPump.PumpAsync(fromClient, toChild, fromChild, toClient, bound, Serilog.Core.Logger.None, CancellationToken.None);
         var first = await Task.WhenAny(pump, Task.Delay(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
 
         first.Should().BeSameAs(pump, "a client that hung up must not wait on the child's stdout forever");
@@ -128,7 +128,7 @@ public sealed class WslPumpTests
         var toClient = new MemoryStream();
         using var shutdown = new CancellationTokenSource();
 
-        var pump = WslPump.PumpAsync(fromClient, toChild, fromChild, toClient, shutdown.Token, TimeSpan.FromHours(1), Serilog.Core.Logger.None);
+        var pump = WslPump.PumpAsync(fromClient, toChild, fromChild, toClient, TimeSpan.FromHours(1), Serilog.Core.Logger.None, shutdown.Token);
         await Task.Delay(50, TestContext.Current.CancellationToken);
         pump.IsCompleted.Should().BeFalse("both sides are open and nothing has ended the session");
 
@@ -148,7 +148,7 @@ public sealed class WslPumpTests
         var toClient = new MemoryStream();
         using var shutdown = new CancellationTokenSource();
 
-        var pump = WslPump.PumpAsync(fromClient, toChild, fromChild, toClient, shutdown.Token, TimeSpan.FromHours(1), Serilog.Core.Logger.None);
+        var pump = WslPump.PumpAsync(fromClient, toChild, fromChild, toClient, TimeSpan.FromHours(1), Serilog.Core.Logger.None, shutdown.Token);
         await Task.Delay(50, TestContext.Current.CancellationToken);
         await shutdown.CancelAsync();
 

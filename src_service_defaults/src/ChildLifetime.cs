@@ -327,7 +327,8 @@ public sealed class ChildLifetime : IDisposable
 
     private void HookProcessExit()
     {
-        EventHandler onExit = (_, _) => StopAllAsync().Wait(Grace + _backstopAfterGrace);
+        // CancellationToken.None on purpose: the shutdown token has fired by now, and this IS the cleanup it must not cut short.
+        EventHandler onExit = (_, _) => StopAllAsync().Wait(Grace + _backstopAfterGrace, CancellationToken.None);
         AppDomain.CurrentDomain.ProcessExit += onExit;
         _owned.Add(new Unhook(onExit));
     }
