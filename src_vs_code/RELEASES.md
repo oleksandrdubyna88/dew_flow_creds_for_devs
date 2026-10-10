@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.13.0...extension-v1.13.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **cli,extension:** a config key never travels on a command line ([#202](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/202)) ([9fcd211](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/9fcd21171a0cf4bd644286aeecfc12f897a47300))
+
 ## [1.13.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.12.1...extension-v1.13.0) (2026-10-03)
 
 
