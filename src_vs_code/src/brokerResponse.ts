@@ -2,6 +2,7 @@ import { AuditDoor } from './agentAuditLog';
 import type { CallerLabel } from './brokerCaller';
 import { statusForErrorCode, withheldBody } from './brokerProtocol';
 import { describeError } from './describeError';
+import { endedStage } from './requestLife';
 import { EMPTY_MASK_TABLE, MaskEntry, MaskTable, buildMaskTable, maskResponseBody } from './secretMasker';
 
 /**
@@ -143,8 +144,14 @@ export interface Delivery {
    *
    * <p>`actionRan` says the side effect may have happened anyway — true whenever the action could
    * write a secret, because "it threw" does not mean "it did nothing".</p>
+   *
+   * <p>`ended` is set when what the action threw was its request's END (`requestLife.endedStage`): the stage
+   * the action met it at, in the journal's words — *as the action was starting — it was not launched*,
+   * *after a dependency step had been typed*. The reader that journals an abandoned request needs this and
+   * not the reason: `actionRan` is a flag about secrets, and the reason is a sentence for a failure that
+   * had somebody to read it (E4.S4).</p>
    */
-  fail(reason: string, actionRan: boolean): void;
+  fail(reason: string, actionRan: boolean, ended?: string): void;
   /** Whether this call's action can write a stored secret — see `UseAction.mutatesSecrets`. */
   mutatesSecrets: boolean;
 }
@@ -211,7 +218,7 @@ async function failed(d: Delivery, error: unknown): Promise<void> {
   // THAT it failed, never HOW. The reason is not lost, it MOVES to the journal — which is local,
   // and is where a person looks when an agent reports a failure — through the SAME masker the
   // response body goes through, because a driver's message is exactly where a credential turns up.
-  d.fail(maskedReason(table, describeError(error)), d.mutatesSecrets);
+  d.fail(maskedReason(table, describeError(error)), d.mutatesSecrets, endedStage(error));
 }
 
 /**

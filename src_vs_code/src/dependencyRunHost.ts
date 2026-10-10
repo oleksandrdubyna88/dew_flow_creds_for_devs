@@ -5,7 +5,7 @@ import { ShellContext, entryShell } from './hostShell';
 import { pinnedShell, pinnedTerminal, shellContext } from './pinnedTerminal';
 import { EntityMetadata, TreeNode } from './types';
 import { isInTrash } from './trash';
-import { requestGone } from './requestLife';
+import { endedAfter, requestGone } from './requestLife';
 
 /**
  * Running an entry's executable dependencies before it is used (issue #103) — the `vscode` half.
@@ -70,20 +70,43 @@ export function liveDetails(source: NodeSource, accountId: string, id: string): 
  *
  * <p>`true` immediately when nothing is to be run — which is every entry that did not tick the
  * box, so a caller can call this unconditionally.</p>
+ *
+ * <p>An agent's request found gone BEFORE any step was typed answers `ready: false`, quietly. Found gone AFTER
+ * a step was handed to the shell, the chain THROWS the request's end naming that step
+ * (`requestLife.endedAfter`), so the request's journal says what the shell already has — a plain refusal
+ * could only be read as "nothing was launched", true of the VPN and false of the step (E4.S4). A chain that
+ * ran to the end says `typed` for the same reason: the caller's own later gates carry it. The person's own
+ * chain has no request behind it and never throws.</p>
  */
-export async function runDependenciesFirst(request: DependencyRunRequest): Promise<boolean> {
+export async function runDependenciesFirst(request: DependencyRunRequest): Promise<ChainEnd> {
   if (requestGone(request.startGate)) {
-    return false;
+    return NOTHING_RAN;
   }
   const ctx = shellContext();
   const plan = planDependencyRun(request.roots, request.nodeOf, (name, os) => refusalIn(ctx, name, os), request.exclude);
-  return plan.ok ? approveAndRun(request, plan.steps, plan.missing, chainIsPinned(ctx, plan.steps)) : refuse(plan.reason);
+  return plan.ok ? approveAndRun(request, plan.steps, plan.missing, chainIsPinned(ctx, plan.steps)) : refused(plan.reason);
 }
 
+/**
+ * How a chain ended. `ready` — every step ran well, or there was nothing to run: the caller may go on to its
+ * own action. `typed` — at least one step was handed to the shell, ready or not: it is the shell's and is not
+ * taken back, so a request found gone LATER, after a ready chain, is journalled with it rather than as "not
+ * launched" (E4.S4, code round 1).
+ */
+export interface ChainEnd {
+  readonly ready: boolean;
+  readonly typed: boolean;
+}
+
+/** No chain ran — a stop, or an entry with nothing to run first. */
+export const NO_CHAIN: ChainEnd = { ready: true, typed: false };
+
+const NOTHING_RAN: ChainEnd = { ready: false, typed: false };
+
 /** The modal, then — if the request it serves is still there — the steps. */
-async function approveAndRun(request: DependencyRunRequest, steps: readonly RunStep[], missing: readonly string[], pinned: boolean): Promise<boolean> {
+async function approveAndRun(request: DependencyRunRequest, steps: readonly RunStep[], missing: readonly string[], pinned: boolean): Promise<ChainEnd> {
   const approved = await approve(request, steps, missing, pinned);
-  return approved && !requestGone(request.startGate) && runSteps(request, steps, pinned);
+  return approved && !requestGone(request.startGate) ? runSteps(request, steps, pinned) : NOTHING_RAN;
 }
 
 function refusalIn(ctx: ShellContext, name: string, terminalOs: string | undefined): string | undefined {
@@ -136,18 +159,24 @@ async function trustAll(trust: TrustStore, steps: readonly RunStep[]): Promise<t
   return true;
 }
 
-async function runSteps(request: DependencyRunRequest, steps: readonly RunStep[], pinned: boolean): Promise<boolean> {
+async function runSteps(request: DependencyRunRequest, steps: readonly RunStep[], pinned: boolean): Promise<ChainEnd> {
   if (steps.length === 0) {
-    return true;
+    return NO_CHAIN;
   }
   const opened = chainTerminal(`CredsForDevs: before ${request.ownerName}`, pinned);
   if (!opened.ok) {
-    return refuse(opened.reason);
+    return refused(opened.reason);
   }
   const integration = await shellIntegrationOf(opened.terminal);
   return integration === 'closed'
-    ? refuse(`The ${opened.shellName} terminal closed before it was ready, so nothing ran. That shell may not be reachable from this window.`)
+    ? refused(`The ${opened.shellName} terminal closed before it was ready, so nothing ran. That shell may not be reachable from this window.`)
     : runAll(opened.terminal, integration, steps, request.startGate);
+}
+
+/** Said, and nothing ran. */
+function refused(message: string): ChainEnd {
+  refuse(message);
+  return NOTHING_RAN;
 }
 
 type ChainTerminal = { ok: true; terminal: vscode.Terminal; shellName: string } | { ok: false; reason: string };
@@ -193,13 +222,49 @@ function shellIntegrationOf(terminal: vscode.Terminal): Promise<Integration | 'c
 }
 
 /** Each step in order; the first that does not end well stops the rest. */
-async function runAll(terminal: vscode.Terminal, integration: Integration, steps: readonly RunStep[], startGate: AbortSignal | undefined): Promise<boolean> {
+async function runAll(terminal: vscode.Terminal, integration: Integration, steps: readonly RunStep[], startGate: AbortSignal | undefined): Promise<ChainEnd> {
+  let typed = false;
   for (const step of steps) {
-    if (!(await runStep(terminal, integration, step, startGate))) {
-      return false;
+    const end = await runStep(terminal, integration, step, startGate);
+    typed = typed || end.typed;
+    if (!end.next) {
+      return stopped(typed, startGate);
     }
+    // The step is the shell's now. A client gone while it ran — or while its Continue question sat open, which
+    // is an await the step's own check sits before — is told so, not "not launched".
+    typedAndStillWanted(startGate);
   }
-  return true;
+  return { ready: true, typed };
+}
+
+/**
+ * A chain that stopped — a refused step, a *Stop* on its question, a closed terminal. After a typed step, a
+ * client gone since is told so here too: a *Stop* clicked on a question the client left open answers
+ * `next: false` without passing the post-step check, and a plain refusal would read as "not launched"
+ * (code round 2). A live request's stop stays a plain refusal.
+ */
+function stopped(typed: boolean, startGate: AbortSignal | undefined): ChainEnd {
+  if (typed) {
+    typedAndStillWanted(startGate);
+  }
+  return { ready: false, typed };
+}
+
+/** One step's end: whether the chain goes on, and whether the step was handed to the shell at all. */
+interface StepEnd {
+  readonly next: boolean;
+  readonly typed: boolean;
+}
+
+/**
+ * After a step has been handed to the shell: a client gone since ends the chain by THROWING the request's
+ * end, naming the step (E4.S4). Answering `false` here would let the journal claim nothing was launched.
+ * The person's own chain has no gate and never throws.
+ */
+function typedAndStillWanted(startGate: AbortSignal | undefined): void {
+  if (requestGone(startGate)) {
+    throw endedAfter('a dependency step had been typed');
+  }
 }
 
 /**
@@ -208,29 +273,28 @@ async function runAll(terminal: vscode.Terminal, integration: Integration, steps
  * chain serves: a client gone during the step before — or while its Continue question sat open — gets
  * no further step, quietly (E4.S3).
  */
-async function runStep(terminal: vscode.Terminal, integration: Integration, step: RunStep, startGate: AbortSignal | undefined): Promise<boolean> {
+async function runStep(terminal: vscode.Terminal, integration: Integration, step: RunStep, startGate: AbortSignal | undefined): Promise<StepEnd> {
   if (requestGone(startGate)) {
-    return false;
+    return { next: false, typed: false };
   }
   if (terminal.exitStatus !== undefined) {
-    return refuse(`The terminal was closed before "${step.name}" could run — nothing after it ran.`);
+    return { next: refuse(`The terminal was closed before "${step.name}" could run — nothing after it ran.`), typed: false };
   }
   if (integration === 'absent') {
     terminal.sendText(step.line, true);
-    return askToContinue(`CredsForDevs cannot tell when "${step.name}" finishes in this terminal (it reports no shell integration). Continue once it has finished successfully.`);
+    return { next: await askToContinue(`CredsForDevs cannot tell when "${step.name}" finishes in this terminal (it reports no shell integration). Continue once it has finished successfully.`), typed: true };
   }
-  return settle(stepVerdict(step.name, await executed(terminal, integration, step.line)), startGate);
+  return { next: await settle(stepVerdict(step.name, await executed(terminal, integration, step.line)), startGate), typed: true };
 }
 
 /**
  * What a finished step means for the chain. The request is read FIRST: a client gone while the step ran
  * is not followed by a question — a person asked to continue a chain nobody waits for any more is asked
- * for nothing (E4.S3, checkpoint round). A step already run is the shell's.
+ * for nothing (E4.S3, checkpoint round). A step already run is the shell's, and the request's end says so
+ * (E4.S4).
  */
 function settle(verdict: StepVerdict, startGate: AbortSignal | undefined): boolean | Promise<boolean> {
-  if (requestGone(startGate)) {
-    return false;
-  }
+  typedAndStillWanted(startGate);
   if (verdict.kind === 'next') {
     return true;
   }

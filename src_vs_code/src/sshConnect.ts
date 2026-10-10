@@ -123,10 +123,10 @@ export interface ConnectOptions {
   readonly allowRetry?: boolean;
   /**
    * The agent request this connection is for, when an agent asked (`PLAN_wsl_bridge_outlives_its_client.md`
-   * §5.7). Fired means the client that asked has gone: nothing is opened for it. Checked after the last
-   * await before each terminal opens — the credential lookup, the host-key read and the relay probe all
-   * sit between the broker's own check and the terminal. A terminal already open stays open. Absent for
-   * the person's own Connect, which no request can outlive.
+   * §5.7). Fired means the client that asked has gone: nothing is opened for it, and nothing is ASKED for it
+   * either (E4.S4) — read at the entry, after the credential lookup, inside the host-key conversation and
+   * inside a refusal, as well as after the last await before each terminal opens. A terminal already open
+   * stays open. Absent for the person's own Connect, which no request can outlive.
    */
   readonly startGate?: AbortSignal;
 }
@@ -138,6 +138,11 @@ export async function connectEntity(
   entity: EntityMetadata,
   connect: ConnectOptions,
 ): Promise<boolean> {
+  // A request already gone is asked nothing — not even its credential's PIN (E4.S4). This is also what ends
+  // a remedy's retry: the second attempt enters here.
+  if (requestGone(connect.startGate)) {
+    return false;
+  }
   const { storage, storageDir } = connect;
   const agentServesKey = connect.agentServesKey === true;
   const remote = connect.remote ?? LOCAL_WINDOW;
@@ -166,6 +171,11 @@ export async function connectEntity(
   // Every value opened by its OWNER through that entry's door (entry-PIN plan, D6): a borrowed key
   // entity asks its own PIN. A stop has been said already, or the person declined.
   const source = await resolveSshCredential(storage, accountId, entity, clickOpener(storage, accountId, 'connect'));
+  // The lookup can wait on the entry's PIN box. A client gone while it was open is told nothing and asked
+  // nothing more — no warning, no refusal, no host-key question (E4.S4).
+  if (requestGone(connect.startGate)) {
+    return false;
+  }
   if (source.warning !== undefined) {
     void vscode.window.showWarningMessage(source.warning);
   }
@@ -178,13 +188,14 @@ export async function connectEntity(
   const windowsClient = remote.windowsClient ?? '';
   const route = remoteRoute(side, source.kind, agentServesKey, remote.relay, windowsClient.length > 0);
   if (route.kind === 'refuse') {
-    return refuseAndOfferTheFix(route.reasons, entity, remote, retry);
+    return refuseAndOfferTheFix(route.reasons, entity, remote, retry, connect.startGate);
   }
 
   // The connection-manager half (audit D7/B10): which bastion to go through, and whether this
   // host is the one it claims to be. Resolved BEFORE anything is written to disk or a terminal
-  // opened, so a refused host key costs nothing and leaves nothing behind.
-  const resolved = await connectionOptions(accountId, entity, storage, storageDir);
+  // opened, so a refused host key costs nothing and leaves nothing behind. The request travels with
+  // it: the host-key question is not raised, and no pin is written, for a client that has gone.
+  const resolved = await connectionOptions(accountId, entity, storage, storageDir, connect.startGate);
   if (resolved === undefined) {
     return false;
   }
@@ -198,7 +209,7 @@ export async function connectEntity(
   const translated =
     route.kind === 'windowsClient' ? resolved : await withTranslatedKnownHosts(resolved, side, storageDir);
   if (translated === undefined) {
-    return refuseAndOfferTheFix(['known-hosts-translation-failed'], entity, remote, retry);
+    return refuseAndOfferTheFix(['known-hosts-translation-failed'], entity, remote, retry, connect.startGate);
   }
   // The client is a separate fact from the shell: `platform` below still says which shell parses
   // this line, and it is still the distribution's.
@@ -210,7 +221,7 @@ export async function connectEntity(
     // Unreachable: `remoteRoute` refuses every side whose shell cannot be named. Kept as a refusal
     // rather than a cast, so a future route that forgets says so instead of composing for a guess.
     forgetOurPin(resolved.knownHostsFile, storageDir);
-    return refuseAndOfferTheFix(['not-wsl'], entity, remote, undefined);
+    return refuseAndOfferTheFix(['not-wsl'], entity, remote, undefined, connect.startGate);
   }
   if (requestGone(connect.startGate)) {
     forgetOurPin(resolved.knownHostsFile, storageDir);
@@ -235,7 +246,7 @@ export async function connectEntity(
     // deleting by that name would hand the guard a /mnt/c path that can never be under our own
     // directory and leave the real file behind. Found by writing the adopted-socket test.
       forgetOurPin(resolved.knownHostsFile, storageDir);
-      return refuseAndOfferTheFix(['relay-socket-unusable'], entity, remote, retry);
+      return refuseAndOfferTheFix(['relay-socket-unusable'], entity, remote, retry, connect.startGate);
     }
     // An ADOPTED relay is asked whether it is still there. It belongs to another window, and this
     // one cannot observe its exit — so `serving()` would go on advertising a socket that is gone,
@@ -244,7 +255,7 @@ export async function connectEntity(
     // prefix two lines up, for a state that arrives later. Raised by a review of the adoption fix.
     if (!(await adoptedSocketStillThere(remote.relay, side))) {
       forgetOurPin(resolved.knownHostsFile, storageDir);
-      return refuseAndOfferTheFix(['relay-not-running'], entity, remote, retry);
+      return refuseAndOfferTheFix(['relay-not-running'], entity, remote, retry, connect.startGate);
     }
     if (requestGone(connect.startGate)) {
       forgetOurPin(resolved.knownHostsFile, storageDir);
@@ -382,11 +393,28 @@ async function refuseAndOfferTheFix(
    * plan claimed "at most once" before a code round pointed out that nothing enforced it.</p>
    */
   retry: (() => Promise<boolean>) | undefined,
+  /**
+   * The agent request the refused connection was for — REQUIRED, `undefined` for the person's own click,
+   * so no call site can forget it (E4.S4). A request already gone is shown no modal at all; one gone while
+   * the modal sat open gets no remedy, no copied command and no retry when the person presses the button:
+   * a relay started or a key loaded for a request nobody waits for is work nobody asked for.
+   */
+  startGate: AbortSignal | undefined,
 ): Promise<boolean> {
-  const action = await askAndPick(refusalFor(reasons, refusalContext(remote)));
-  if (action === undefined) {
+  if (requestGone(startGate)) {
     return false;
   }
+  const action = await askAndPick(refusalFor(reasons, refusalContext(remote)));
+  return action === undefined || requestGone(startGate) ? false : actOnRefusal(action, entity, remote, retry);
+}
+
+/** The button the person pressed, for a request that is still there. */
+async function actOnRefusal(
+  action: RefusalAction,
+  entity: EntityMetadata,
+  remote: RemoteWindowDeps,
+  retry: (() => Promise<boolean>) | undefined,
+): Promise<boolean> {
   if (action === 'copyWindowsCommand') {
     await copyTheWindowsCommand(entity, remote.hostPlatform ?? process.platform);
     return false;

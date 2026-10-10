@@ -41,6 +41,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **An SSH terminal an agent asked for, and its offer to install `ssh`, follow the same rule**: a late
   **Install** installs nothing for an agent that has gone, and a terminal refused because the agent left is
   journalled `ABANDONED`, not as an internal failure.
+- **An agent's SSH terminal asks you nothing once the agent has gone.** Its credential lookup (the entry's PIN box),
+  the host-key question, a *"this window cannot connect"* refusal and its *Set Up the Relay* / *Add Key to Agent*
+  button all sit before the terminal opens. If the agent had left by then, answering any of them used to go on
+  anyway: *Trust and connect* wrote the host key onto the entry, the button ran its remedy and asked the PIN and the
+  host key a second time. Now an agent that has gone is asked nothing more, nothing is written, and a *Trust and
+  connect* or a button pressed after it left does nothing — the next live connection asks again. Your own
+  **Connect** is unchanged.
+- **The journal names a step that already ran.** When a VPN start was abandoned after one of its *run first* steps
+  had been typed into the terminal, the journal said *it was not launched* — true of the VPN, not of the step. It
+  now says *the client left after a dependency step had been typed*; that step is the shell's and is not taken back.
 
 ## [1.13.1] — 2026-10-10 — A config key never travels on a command line
 

@@ -4,6 +4,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { EntityMetadata } from '../types';
+import { endedStage } from '../requestLife';
 import { loadWithVscode } from './vscodeStub';
 import { STORED_CONFIG, World, filesUnder, hostOs, memoryTrust, ownerChain, startVpn, storageOf, until, world } from './vpnWorld';
 
@@ -56,6 +57,16 @@ function nothingStarted(w: World, dir: string, started: boolean): void {
   assert.equal(started, false, 'the caller must hear that nothing was started');
 }
 
+/**
+ * A chain that had typed a step when the client left ends by THROWING the request's end, naming the step
+ * (E4.S4): a `false` could only be journalled as "not launched", which is true of the VPN and false of
+ * the step — it is the shell's now.
+ */
+function endedAfterATypedStep(ended: Error | undefined): void {
+  assert.ok(ended !== undefined, 'the start answered as if nothing had been typed — the journal would say "not launched"');
+  assert.match(endedStage(ended) ?? `(not a request's end: ${ended.message})`, /after a dependency step had been typed/);
+}
+
 test('the built-in start: a client gone while its config is read gets no config file and no tunnel', async () => {
   const request = new AbortController();
   const config = heldRead();
@@ -97,12 +108,13 @@ test('the dependency chain: a client gone during the first step gets no second s
   const nodes = { a: first, b: second, ...wireguard({ dependsOn: ['a', 'b'], runDependencies: true }) };
   const w = world({}, { onExecute: (line) => (line === 'first-step' ? request.abort() : undefined) });
 
-  const { started, dir } = await startVpn(w, nodes, { startGate: request.signal, mocks: CLI });
+  const { started, dir, ended } = await startVpn(w, nodes, { startGate: request.signal, mocks: CLI });
   try {
     assert.deepEqual(w.terminals.flatMap((t) => t.executed), ['first-step'], 'a step ran after the client had gone');
     assert.deepEqual(filesUnder(dir), [], 'the stored VPN config was written for a request whose client had gone');
     assert.equal(w.terminals.find((t) => VPN_TERMINAL.test(t.name)), undefined, 'the tunnel was started');
     assert.equal(started, false);
+    endedAfterATypedStep(ended);
   } finally {
     cleanup(dir);
   }
@@ -257,11 +269,12 @@ test('the built-in start: a client gone during its last dependency step is not e
   });
   const w = world({}, { onExecute: () => request.abort() });
 
-  const { started, dir } = await startVpn(w, nodes, { startGate: request.signal, storage, mocks: CLI });
+  const { started, dir, ended } = await startVpn(w, nodes, { startGate: request.signal, storage, mocks: CLI });
   try {
     assert.equal(reads, 0, 'the stored config was read — and its PIN asked — for a request whose client had gone');
     assert.deepEqual(filesUnder(dir), []);
     assert.equal(started, false);
+    endedAfterATypedStep(ended);
   } finally {
     cleanup(dir);
   }
@@ -274,11 +287,12 @@ test('the custom launcher without {config}: a client gone during its last depend
   nodes.vpn = { ...nodes.vpn, runDependencies: undefined };
   const w = world({}, { onExecute: () => request.abort() });
 
-  const { started, dir } = await startVpn(w, nodes, { startGate: request.signal });
+  const { started, dir, ended } = await startVpn(w, nodes, { startGate: request.signal });
   try {
     assert.deepEqual(w.terminals.flatMap((t) => t.executed), ['install-openvpn']);
     assert.deepEqual(w.terminals.flatMap((t) => t.sent), [], 'the launcher was typed for a request whose client had gone');
     assert.equal(started, false);
+    endedAfterATypedStep(ended);
   } finally {
     cleanup(dir);
   }
@@ -335,10 +349,115 @@ test('a client gone while a dependency step runs is not asked whether to continu
   const nodes = { a: only, ...wireguard({ dependsOn: ['a'], runDependencies: true }) };
   const w = world({ 'only-step': 1 }, { onExecute: () => request.abort() });
 
-  const { started, dir } = await startVpn(w, nodes, { startGate: request.signal, mocks: CLI });
+  const { started, dir, ended } = await startVpn(w, nodes, { startGate: request.signal, mocks: CLI });
   try {
     assert.deepEqual(w.infos.filter((t) => /exited with code/.test(t)), [], 'the person was asked to continue a chain nobody waits for');
     assert.equal(started, false);
+    endedAfterATypedStep(ended);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('a client gone while a step’s Continue question is open: Continue runs nothing more, and the typed step is named (E4.S4)', async () => {
+  // The step exits non-zero, so the person is asked whether to continue. A client gone while that question
+  // sits open, and a Continue clicked after, must not go on to the config and the tunnel — and the journal
+  // must name the step the shell already ran, which the chain's check before the question cannot see.
+  const request = new AbortController();
+  const only: EntityMetadata = { id: 'a', name: 'only', isSshEnabled: false, isTerminal: true, command: 'only-step', terminalOs: hostOs };
+  const nodes = { a: only, ...wireguard({ dependsOn: ['a'], runDependencies: true }) };
+  const w = world({ 'only-step': 1 }, { holdDialogs: /exited with code/ });
+  const run = startVpn(w, nodes, { startGate: request.signal, mocks: CLI });
+  await until(() => w.held.length === 1, 'the Continue question');
+
+  request.abort();
+  w.held[0].answer('Continue');
+  const { started, dir, ended } = await run;
+  try {
+    assert.deepEqual(w.terminals.flatMap((t) => t.executed), ['only-step']);
+    assert.deepEqual(filesUnder(dir), [], 'the stored VPN config was written for a request whose client had gone');
+    assert.equal(w.terminals.find((t) => VPN_TERMINAL.test(t.name)), undefined, 'the tunnel was started');
+    assert.equal(started, false);
+    endedAfterATypedStep(ended);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('a client gone while a step’s Continue question is open: Stop runs nothing more, and the typed step is still named (code round 2)', async () => {
+  // The question was asked of a live request; the client left while it sat open; the person clicked Stop.
+  // The chain stops without passing its post-step check — and a plain refusal would read "not launched"
+  // about a step the shell already ran.
+  const request = new AbortController();
+  const only: EntityMetadata = { id: 'a', name: 'only', isSshEnabled: false, isTerminal: true, command: 'only-step', terminalOs: hostOs };
+  const nodes = { a: only, ...wireguard({ dependsOn: ['a'], runDependencies: true }) };
+  const w = world({ 'only-step': 1 }, { holdDialogs: /exited with code/ });
+  const run = startVpn(w, nodes, { startGate: request.signal, mocks: CLI });
+  await until(() => w.held.length === 1, 'the Continue question');
+
+  request.abort();
+  w.held[0].answer('Stop');
+  const { started, dir, ended } = await run;
+  try {
+    assert.deepEqual(w.terminals.flatMap((t) => t.executed), ['only-step']);
+    assert.deepEqual(filesUnder(dir), []);
+    assert.equal(started, false);
+    endedAfterATypedStep(ended);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('an unexpected failure inside a start is NOT read as a request’s end — the test world rethrows it (code round 2)', async () => {
+  // A vault that will not answer the config read is a failure, not an abandoned request: it must reach the
+  // test, never hide behind a passing "nothing started".
+  const w = world({});
+  const broken = storageOf(wireguard(), () => Promise.reject(new Error('the vault would not answer')));
+
+  await assert.rejects(startVpn(w, wireguard(), { startGate: new AbortController().signal, storage: broken, mocks: CLI }), /the vault would not answer/);
+});
+
+test('the built-in start: a client gone while the config is read AFTER a typed step is journalled with the step (code round 1)', async () => {
+  // The chain ran to its end while the client was there; the client left during the config read that
+  // follows. The later gate answers "nothing started" — and the journal would say "not launched" about a
+  // chain whose step the shell already ran. The chain's `typed` travels into the start's later gates.
+  const request = new AbortController();
+  const only: EntityMetadata = { id: 'a', name: 'only', isSshEnabled: false, isTerminal: true, command: 'only-step', terminalOs: hostOs };
+  const nodes = { a: only, ...wireguard({ dependsOn: ['a'], runDependencies: true }) };
+  const config = heldRead();
+  const w = world({});
+  const run = startVpn(w, nodes, { startGate: request.signal, storage: storageOf(nodes, config.read), mocks: CLI });
+  await until(config.started, 'the config read to begin');
+
+  request.abort();
+  config.release();
+  const { started, dir, ended } = await run;
+  try {
+    assert.deepEqual(w.terminals.flatMap((t) => t.executed), ['only-step'], 'the step ran while the client was there');
+    assert.deepEqual(filesUnder(dir), [], 'the stored VPN config was written for a request whose client had gone');
+    assert.equal(started, false);
+    endedAfterATypedStep(ended);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('the custom launcher: a client gone while its {config} is read AFTER a typed step is journalled with the step (code round 1)', async () => {
+  const request = new AbortController();
+  const nodes = ownerChain();
+  const config = heldRead();
+  const w = world({});
+  const run = startVpn(w, nodes, { startGate: request.signal, storage: storageOf(nodes, config.read) });
+  await until(config.started, 'the config read to begin');
+
+  request.abort();
+  config.release();
+  const { started, dir, ended } = await run;
+  try {
+    assert.deepEqual(w.terminals.flatMap((t) => t.executed), ['install-openvpn'], 'the step ran while the client was there');
+    assert.deepEqual(w.terminals.flatMap((t) => t.sent), [], 'the launcher was typed for a request whose client had gone');
+    assert.equal(started, false);
+    endedAfterATypedStep(ended);
   } finally {
     cleanup(dir);
   }

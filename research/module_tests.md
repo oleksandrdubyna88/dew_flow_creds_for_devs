@@ -982,6 +982,32 @@ window sees a client leave at all — is level 8 of `creds-mcp-itest.cjs` (E4.S1
 VS Code modal or terminal, and a real tunnel; a command already typed, and a tunnel already up, are not revoked by
 design (plan §5.7, open tail).
 
+## A gone request reaches no SSH prompt (2026-10-10, E4.S4)
+
+The flows story E4.S4 of [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md)
+gated: an agent's SSH terminal whose client leaves before the terminal opens — during the entry's PIN box, the
+host-key question, or a window's refusal — and the journal line of a VPN whose chain had already typed a step. Every
+case fires the request's signal at one await and then lets the path continue, the moment a person answers a dialog
+nobody waits for. Command: `npm test`, or `node --test out/test/<file>.js`.
+
+| Flow | Test | What it holds down |
+|---|---|---|
+| The entry | `sshConnect.test.ts` | a request already gone is asked nothing — no credential lookup, no PIN, no host-key question, no warning |
+| The credential lookup | `sshConnect.test.ts`, `brokerAbandoned.test.ts` | gone during the lookup: no host-key question, no credential warning — in the unit world, and the real `sshTerminalAction` behind the real broker over real HTTP with the lookup held open |
+| The host-key conversation | `connectionOptions.test.ts`, `sshConnect.test.ts` | the conversation is handed the request (the person's click hands none); already gone: no scan, no question, nothing written; gone while the question is open: *Trust and connect* writes no pin and no known_hosts file, the connection does not go ahead; gone during the scan: the scan was handed the signal and ends with it, nobody asked, nothing written; gone during a scan that still answers a key: no question (the own review); gone during the awaited pin write: the pin stands, no known_hosts file, nothing goes ahead (code round 3). The world holds the real `StorageManager` over memory and reads the pin back from the entry |
+| A window's refusal | `sshConnect.test.ts` | gone while the modal is open: the button runs no remedy, copies nothing, retries nothing (the PIN is not asked twice); already gone at a late refusal (after the path translation): no modal, the pin file taken back |
+| The journal | `brokerAbandoned.test.ts`, `vpnGoneRequest.test.ts`, `requestLife.test.ts` | the real `vpnAction` behind the real broker, its chain having typed a step when the client left: one `ABANDONED` line naming the step, never *not launched*; the chain's gone-after-typing cases (a step, the last step, a launcher's last step, a step's *Continue* question answered *Continue* or *Stop* after the client left, and — code round 1 — the config read AFTER a live step, built-in and custom launcher) throw the request's end with that stage; the end carries its stage, and a foreign `AbortError` with a `stage` is not read as one; the VPN test world hands back only a request's end and rethrows any other failure |
+| Unchanged | `connectionOptions.test.ts`, `sshConnect.test.ts`, `sshConnectRemote.test.ts` | the person's own Connect passes no gate and is asked and trusted as before; a live request still connects, with the remedy-and-retry path intact |
+
+**Not covered by a scenario harness, and why.** The plan round asked for a `*-itest.cjs` case that disconnects a real
+request while the SSH prompt is open. The real-broker case above is what can be built: the request is real HTTP and its
+close is the real `res` close, the broker is the real one, the action is the real one — only the prompt is stood in for
+by a held promise. A harness that drove a REAL host-key modal, scanned a REAL host or opened a REAL SSH session is
+exactly what a test may never do, and `agent-broker-itest.cjs` stubs `vscode` with modals that answer at once, so no
+moment exists in it in which a prompt is open. The cross-process half is level 8 of `creds-mcp-itest.cjs` (E4.S1).
+**What none of this proves:** a real VS Code modal; and the entry-PIN box itself stays on screen after the request
+leaves (it takes no token — plan §5.7, open tail), harmless because the gate is read after it answers.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.

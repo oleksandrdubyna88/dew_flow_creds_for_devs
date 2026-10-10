@@ -4,8 +4,11 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
+import { memoryStorage, seedEntry } from './pinWorld';
 import { EntityMetadata } from '../types';
 import type { UseActionContext } from '../useActions';
+import type { SshUseDeps } from '../sshUseActions';
+import type { StorageManager } from '../storageManager';
 
 /**
  * What an agent may actually do with an SSH grant (audit A3).
@@ -30,19 +33,30 @@ import type { UseActionContext } from '../useActions';
 
 type Actions = typeof import('../sshUseActions');
 
-interface World {
-  mod: Actions;
-  storageDir: string;
+/** What the run leaves behind, recorded by the stubs — built BEFORE the module loads, so the world needs no placeholder. */
+interface Log {
   /** Every key file this run materialised, in order. */
   materialised: string[];
   /** The argv, program and env `runSshExec` was called with. */
   runs: { argv: string[]; program?: string; env: NodeJS.ProcessEnv; timeoutMs: number }[];
-  /** What the agent manager would report, so a test can run with and without an agent. */
-  agentSocket?: string;
   notes: string[];
   warnings: string[];
-  slotsHeld: number;
-  connected: number;
+  /** Counters live in one object, so the stubs and the world share them by reference. */
+  tally: { slotsHeld: number; connected: number };
+}
+
+interface World extends Log {
+  mod: Actions;
+  /**
+   * The REAL `StorageManager` over an in-memory memento and keychain, seeded with the entry — so the deps
+   * handed to the actions are an `SshUseDeps` and not a cast (E4.S3's code round, finding 1). Narrowing
+   * `SshUseDeps.storage` instead was measured and refused: the exec and terminal paths hand the manager to
+   * the credential, PIN and rotation modules, each typed `StorageManager`.
+   */
+  storage: StorageManager;
+  storageDir: string;
+  /** What the agent manager would report, so a test can run with and without an agent. */
+  agentSocket?: string;
 }
 
 interface Parts {
@@ -63,89 +77,88 @@ const ENTITY = {
   isSshEnabled: true,
 } as unknown as EntityMetadata;
 
-function world(parts: Parts): World {
+async function world(parts: Parts): Promise<World> {
   const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-use-'));
-  const w: World = {
-    mod: undefined as never,
-    storageDir,
-    materialised: [],
-    runs: [],
-    notes: [],
-    warnings: [],
-    slotsHeld: 0,
-    connected: 0,
+  const log: Log = { materialised: [], runs: [], notes: [], warnings: [], tally: { slotsHeld: 0, connected: 0 } };
+  const stub = {
+    window: {
+      showWarningMessage: (m: string): Promise<undefined> => {
+        log.warnings.push(m);
+        return Promise.resolve(undefined);
+      },
+      showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined),
+    },
   };
-  w.mod = loadWithVscode<Actions>(
-    '../sshUseActions',
-    {
-      window: {
-        showWarningMessage: (m: string): Promise<undefined> => {
-          w.warnings.push(m);
-          return Promise.resolve(undefined);
-        },
-        showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined),
-      },
-    },
-    {
-      './sshCredential': {
-        resolveSshCredential: (): Promise<unknown> => Promise.resolve(parts.source),
-      },
-      './keyInstaller': {
-        // A REAL file, so the `finally` cleanup is observed by asking the filesystem rather
-        // than by counting calls to a stub.
-        materializePrivateKey: (dir: string, id: string, content: string): string => {
-          const keyPath = path.join(dir, `${id}.key`);
-          fs.writeFileSync(keyPath, content, { mode: 0o600 });
-          w.materialised.push(keyPath);
-          return keyPath;
-        },
-        writeAskpassScriptFile: (): string => path.join(storageDir, 'askpass.sh'),
-      },
-      './hostKeyTrust': { materializeKnownHosts: (): string | undefined => undefined },
-      './sshExecRunner': {
-        runSshExec: (
-          argv: string[],
-          o: { env: NodeJS.ProcessEnv; timeoutMs: number; program?: string },
-        ): Promise<unknown> => {
-          w.runs.push({ argv, program: o.program, env: o.env, timeoutMs: o.timeoutMs });
-          return parts.runFails === true
-            ? Promise.reject(new Error('ssh is not installed'))
-            : Promise.resolve({ exitCode: 0, stdout: 'ok\n', stderr: '', timedOut: false });
-        },
-      },
-      './sshConnect': {
-        // It answers whether a terminal actually opened, so the action can stop reporting success
-        // for a connection a remote window refused.
-        connectEntity: (): Promise<boolean> => {
-          w.connected += 1;
-          return Promise.resolve(parts.connectRefuses !== true);
-        },
-      },
-      './terminalManager': { describeSshTarget: (e: { host?: string }): string | undefined => e.host },
-      './sshAskpass': {
-        askpassEnv: (_s: string, password: string): Record<string, string> => ({
-          SSH_ASKPASS_REQUIRE: 'force',
-          CREDS_PASSWORD: password,
-        }),
-      },
-    },
-  );
-  return w;
+  const mod = loadWithVscode<Actions>('../sshUseActions', stub, mocks(parts, storageDir, log));
+  // The entry is re-read on every call, never snapshotted at grant time — so a world whose entry is
+  // `undefined` (deleted since the grant was minted) seeds nothing.
+  const storage = memoryStorage(stub);
+  const entity = 'entity' in parts ? parts.entity : ENTITY;
+  if (entity !== undefined) {
+    await seedEntry(storage, entity, {});
+  }
+  return { ...log, mod, storage, storageDir };
 }
 
-function deps(w: World, parts: Parts): unknown {
-  const entity = 'entity' in parts ? parts.entity : ENTITY;
+/** The I/O boundaries, substituted — each one records into `log` what it was asked to do. */
+function mocks(parts: Parts, storageDir: string, log: Log): Record<string, unknown> {
   return {
-    storage: { getNode: (): unknown => (entity === undefined ? undefined : { details: entity }) },
+    './sshCredential': {
+      resolveSshCredential: (): Promise<unknown> => Promise.resolve(parts.source),
+    },
+    './keyInstaller': {
+      // A REAL file, so the `finally` cleanup is observed by asking the filesystem rather
+      // than by counting calls to a stub.
+      materializePrivateKey: (dir: string, id: string, content: string): string => {
+        const keyPath = path.join(dir, `${id}.key`);
+        fs.writeFileSync(keyPath, content, { mode: 0o600 });
+        log.materialised.push(keyPath);
+        return keyPath;
+      },
+      writeAskpassScriptFile: (): string => path.join(storageDir, 'askpass.sh'),
+    },
+    './hostKeyTrust': { materializeKnownHosts: (): string | undefined => undefined },
+    './sshExecRunner': {
+      runSshExec: (
+        argv: string[],
+        o: { env: NodeJS.ProcessEnv; timeoutMs: number; program?: string },
+      ): Promise<unknown> => {
+        log.runs.push({ argv, program: o.program, env: o.env, timeoutMs: o.timeoutMs });
+        return parts.runFails === true
+          ? Promise.reject(new Error('ssh is not installed'))
+          : Promise.resolve({ exitCode: 0, stdout: 'ok\n', stderr: '', timedOut: false });
+      },
+    },
+    './sshConnect': {
+      // It answers whether a terminal actually opened, so the action can stop reporting success
+      // for a connection a remote window refused.
+      connectEntity: (): Promise<boolean> => {
+        log.tally.connected += 1;
+        return Promise.resolve(parts.connectRefuses !== true);
+      },
+    },
+    './terminalManager': { describeSshTarget: (e: { host?: string }): string | undefined => e.host },
+    './sshAskpass': {
+      askpassEnv: (_s: string, password: string): Record<string, string> => ({
+        SSH_ASKPASS_REQUIRE: 'force',
+        CREDS_PASSWORD: password,
+      }),
+    },
+  };
+}
+
+function deps(w: World, parts: Parts): SshUseDeps {
+  return {
+    storage: w.storage,
     storageDir: w.storageDir,
     signal: new AbortController().signal,
     acquireExecSlot: (): (() => void) | undefined => {
       if (parts.noSlot === true) {
         return undefined;
       }
-      w.slotsHeld += 1;
+      w.tally.slotsHeld += 1;
       return (): void => {
-        w.slotsHeld -= 1;
+        w.tally.slotsHeld -= 1;
       };
     },
     note: (m: string): void => {
@@ -162,14 +175,14 @@ const KEY_SOURCE = { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE KEY
 
 /** Run the exec action once and hand back its result. */
 async function exec(w: World, parts: Parts, command = 'uptime'): Promise<{ status: number; body: Record<string, unknown> }> {
-  const action = w.mod.sshExecAction(deps(w, parts) as never);
+  const action = w.mod.sshExecAction(deps(w, parts));
   return (await action.run(CTX, { command })) as { status: number; body: Record<string, unknown> };
 }
 
 test('an entity deleted since the grant was minted is not_found', async () => {
   // The entity is re-read on every call, never snapshotted at grant time.
   const parts: Parts = { source: KEY_SOURCE, entity: undefined };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     const result = await exec(w, parts);
 
@@ -187,7 +200,7 @@ test('an entity whose HOST was cleared is refused BEFORE any key is written', as
     source: KEY_SOURCE,
     entity: { ...ENTITY, host: undefined } as unknown as EntityMetadata,
   };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     const result = await exec(w, parts);
 
@@ -200,7 +213,7 @@ test('an entity whose HOST was cleared is refused BEFORE any key is written', as
 
 test('a runaway agent is refused a slot rather than allowed to pile up SSH processes', async () => {
   const parts: Parts = { source: KEY_SOURCE, noSlot: true };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     const result = await exec(w, parts);
 
@@ -214,12 +227,12 @@ test('a runaway agent is refused a slot rather than allowed to pile up SSH proce
 test('an entity with no credential left is refused, and the slot is given back', async () => {
   // A slot leaked on a refusal would let a handful of dead grants exhaust the pool.
   const parts: Parts = { source: { kind: 'none' } };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     const result = await exec(w, parts);
 
     assert.equal((result.body.error as { code: string }).code, 'no_credential');
-    assert.equal(w.slotsHeld, 0);
+    assert.equal(w.tally.slotsHeld, 0);
   } finally {
     cleanup(w);
   }
@@ -227,7 +240,7 @@ test('an entity with no credential left is refused, and the slot is given back',
 
 test('a stored key is written, used, and DELETED before the call returns', async () => {
   const parts: Parts = { source: KEY_SOURCE };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     await exec(w, parts);
 
@@ -243,13 +256,13 @@ test('the key is deleted even when ssh itself FAILS', async () => {
   // The `finally` is what makes this true; a delete on the success path only would leave a
   // decrypted key behind on exactly the runs someone is investigating.
   const parts: Parts = { source: KEY_SOURCE, runFails: true };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     const result = await exec(w, parts);
 
     assert.equal((result.body.error as { code: string }).code, 'internal');
     assert.equal(fs.existsSync(w.materialised[0]), false);
-    assert.equal(w.slotsHeld, 0, 'and the slot came back too');
+    assert.equal(w.tally.slotsHeld, 0, 'and the slot came back too');
   } finally {
     cleanup(w);
   }
@@ -259,7 +272,7 @@ test('two calls get two DIFFERENT key files — one name would break both', asyn
   // The recorded defect: a shared file name meant the first call to finish pulled the key out
   // from under every other still authenticating with it, human terminals included.
   const parts: Parts = { source: KEY_SOURCE };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     await exec(w, parts);
     await exec(w, parts);
@@ -273,7 +286,7 @@ test('two calls get two DIFFERENT key files — one name would break both', asyn
 
 test('a password goes into the spawned process ENVIRONMENT, never the argv', async () => {
   const parts: Parts = { source: { kind: 'password', password: 'hunter2' } };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     await exec(w, parts);
 
@@ -288,7 +301,7 @@ test('the spawned environment carries PATH — spawn REPLACES it rather than mer
   // Without this, `ssh` is unresolvable and known_hosts is not found, and the failure looks
   // like a broken credential rather than a missing variable.
   const parts: Parts = { source: { kind: 'password', password: 'hunter2' } };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     await exec(w, parts);
 
@@ -301,7 +314,7 @@ test('the spawned environment carries PATH — spawn REPLACES it rather than mer
 
 test('the secret never appears in what the action RETURNS', async () => {
   const parts: Parts = { source: { kind: 'password', password: 'hunter2' } };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     const result = await exec(w, parts);
 
@@ -315,7 +328,7 @@ test('a credential warning reaches the AUDIT as well as the screen', async () =>
   // The agent path used to drop it — the one case where an entity authenticates with
   // different key material than its configuration names and nobody is told.
   const parts: Parts = { source: { ...KEY_SOURCE, warning: 'the referenced key entity is gone' } };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     await exec(w, parts);
 
@@ -328,9 +341,9 @@ test('a credential warning reaches the AUDIT as well as the screen', async () =>
 
 test('a command the validator rejects never reaches run()', async () => {
   const parts: Parts = { source: KEY_SOURCE };
-  const w = world(parts);
+  const w = await world(parts);
   try {
-    const action = w.mod.sshExecAction(deps(w, parts) as never);
+    const action = w.mod.sshExecAction(deps(w, parts));
 
     assert.equal(action.validate({ command: '' }).ok, false, 'an empty command is not a command');
     assert.equal(action.validate({ command: 'uptime' }).ok, true);
@@ -341,12 +354,12 @@ test('a command the validator rejects never reaches run()', async () => {
 
 test('the outcome an audit line shows names the exit code, and says when it timed out', async () => {
   const parts: Parts = { source: KEY_SOURCE };
-  const w = world(parts);
+  const w = await world(parts);
   try {
-    const action = w.mod.sshExecAction(deps(w, parts) as never);
+    const action = w.mod.sshExecAction(deps(w, parts));
 
-    assert.match(action.describeOutcome({ status: 200, body: { exitCode: 7 } } as never), /exit 7/);
-    assert.match(action.describeOutcome({ status: 200, body: { timedOut: true } } as never), /timed out/);
+    assert.match(action.describeOutcome({ status: 200, body: { exitCode: 7 } }), /exit 7/);
+    assert.match(action.describeOutcome({ status: 200, body: { timedOut: true } }), /timed out/);
   } finally {
     cleanup(w);
   }
@@ -356,13 +369,13 @@ test('the terminal action goes through the human Connect path, verbatim', async 
   // Same terminal name, same askpass env, same key cleanup on close — one implementation, so
   // the agent's terminal cannot drift from the one a person opens.
   const parts: Parts = { source: KEY_SOURCE };
-  const w = world(parts);
+  const w = await world(parts);
   try {
-    const action = w.mod.sshTerminalAction(deps(w, parts) as never);
+    const action = w.mod.sshTerminalAction(deps(w, parts));
 
     const result = (await action.run(CTX, {})) as { status: number; body: { opened: boolean } };
 
-    assert.equal(w.connected, 1);
+    assert.equal(w.tally.connected, 1);
     assert.equal(result.body.opened, true);
   } finally {
     cleanup(w);
@@ -371,14 +384,14 @@ test('the terminal action goes through the human Connect path, verbatim', async 
 
 test('the terminal action refuses a deleted entity rather than opening an empty session', async () => {
   const parts: Parts = { source: KEY_SOURCE, entity: undefined };
-  const w = world(parts);
+  const w = await world(parts);
   try {
-    const action = w.mod.sshTerminalAction(deps(w, parts) as never);
+    const action = w.mod.sshTerminalAction(deps(w, parts));
 
     const result = (await action.run(CTX, {})) as { status: number; body: Record<string, unknown> };
 
     assert.equal((result.body.error as { code: string }).code, 'not_found');
-    assert.equal(w.connected, 0);
+    assert.equal(w.tally.connected, 0);
   } finally {
     cleanup(w);
   }
@@ -394,7 +407,7 @@ const FORWARDING = { ...ENTITY, agentForward: true } as unknown as EntityMetadat
 
 test('a forwarding connection hands the child the agent socket', async () => {
   const parts: Parts = { source: KEY_SOURCE, entity: FORWARDING };
-  const w = world(parts);
+  const w = await world(parts);
   w.agentSocket = '/run/creds/agent.sock';
   try {
     await exec(w, parts);
@@ -415,7 +428,7 @@ test('a connection that did not ask for the agent is left exactly as it was', as
   // Exporting SSH_AUTH_SOCK makes our agent the AUTHENTICATION agent for that connection —
   // a consent dialog for a key nobody chose. It travels with the checkbox, never alone.
   const parts: Parts = { source: KEY_SOURCE };
-  const w = world(parts);
+  const w = await world(parts);
   w.agentSocket = '/run/creds/agent.sock';
   try {
     await exec(w, parts);
@@ -429,7 +442,7 @@ test('a connection that did not ask for the agent is left exactly as it was', as
 
 test('forwarding asked for with no agent loaded is SAID, not passed over in silence', async () => {
   const parts: Parts = { source: KEY_SOURCE, entity: FORWARDING };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     await exec(w, parts);
 
@@ -448,13 +461,13 @@ test('the terminal action does NOT report success when the window refused the co
   // entity with no host — and is not, now that a WSL window can refuse. An agent told a terminal is
   // open then waits at one that is not there.
   const parts: Parts = { source: KEY_SOURCE, connectRefuses: true };
-  const w = world(parts);
+  const w = await world(parts);
   try {
-    const action = w.mod.sshTerminalAction(deps(w, parts) as never);
+    const action = w.mod.sshTerminalAction(deps(w, parts));
 
     const result = (await action.run(CTX, {})) as { status: number; body: { opened?: boolean } };
 
-    assert.equal(w.connected, 1, 'it still went through the one connect path');
+    assert.equal(w.tally.connected, 1, 'it still went through the one connect path');
     assert.notEqual(result.status, 200);
     assert.notEqual(result.body.opened, true);
   } finally {
@@ -466,11 +479,11 @@ test('the terminal action refused because its client left is that request’s ab
   // `connectEntity` answers false for a request whose start gate fired; reported as `internal`, the
   // journal carried a failure nobody caused and a reply was written to a socket nobody reads.
   const parts: Parts = { source: KEY_SOURCE, connectRefuses: true };
-  const w = world(parts);
+  const w = await world(parts);
   try {
     const request = new AbortController();
     request.abort();
-    const action = w.mod.sshTerminalAction(deps(w, parts) as never);
+    const action = w.mod.sshTerminalAction(deps(w, parts));
 
     await assert.rejects(action.run({ ...CTX, signal: request.signal }, {}), (error: Error) => error.name === 'AbortError');
   } finally {

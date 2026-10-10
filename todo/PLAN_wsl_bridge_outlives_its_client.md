@@ -1,6 +1,6 @@
 # PLAN — every creds process ends when the client it serves is gone
 
-> Status: **in progress, 2026-10-10 — E1 (#201), E4.S1 (#205), E2 (#211), E4.S3 (#212), E4.S2 (#213) and E3 implemented (§14; §5.4–§5.8 *As built*); E5 not yet.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
+> Status: **in progress, 2026-10-10 — E1 (#201), E4.S1 (#205), E2 (#211), E4.S3 (#212), E4.S2 (#213), E3 and E4.S4 implemented (§14; §5.4–§5.8 *As built*); E5 not yet.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
 > round — §14); each epic is re-gated on its own branch. Scope: `src_mcp/src` (`Program.cs`, `WslPump.cs`, the
 > tool lambdas, `Windows.cs`, a new `ServerLifetime`), `src_broker_client/src` (`BrokerClient.cs`, `WslInterop.cs`, a
 > new shared `ChildLifetime`), `src_cli/src` (`AgentRelay.cs`, `RelayPipe.cs`), `src_vs_code/src` (the broker's
@@ -401,12 +401,77 @@ below).
   instance (finding 2).
 - The flows are catalogued in [module_tests.md](../research/module_tests.md), *A gone request starts no VPN*, with the
   scenario-harness gap and its reason.
-- **Open tail, found by the own review and left for a later story:** (1) the SSH terminal's path awaits the credential
+- **Open tail, found by the own review — taken by E4.S4 below:** (1) the SSH terminal's path awaits the credential
   lookup (its PIN box) and the host-key read BEFORE its first gate check, so for a gone request it can still show the
   host-key or bastion prompt, write a known_hosts pin (taken back by the later check) and, through
   `refuseAndOfferTheFix`, run a remedy (relay setup, add a key to the agent) before the retry stops at the gate — E4.S1's
   SSH gate, not this story's VPN one; (2) a dependency step already typed when the client left is the shell's, yet the
   request is journalled `ABANDONED` "as the action was starting — it was not launched": true of the VPN, not of the step.
+
+**E4.S4 — a gone request reaches no SSH prompt** (E4.S3's open tail; design for its own plan round; an *as built*
+paragraph follows the code round). The promise, exactly: *once the client's departure has been observed, the agent's
+SSH terminal asks the person nothing more and runs nothing more — no host-key question, no refusal modal, no remedy,
+no pin written — up to the moment its terminal opens; and the request's journal line says what the shell already had
+when the client left, never "not launched" about a step that was.*
+
+- The gap (verified 2026-10-10 on `main`): `connectEntity` (`sshConnect.ts:136-337`) reads its `startGate` at `:215`
+  and `:249` — after the relay probe, immediately before a terminal opens — and nowhere earlier. Before that it awaits
+  the credential lookup (`resolveSshCredential`, `:168` — the entry's PIN box), the host-key conversation
+  (`connectionOptions`, `:187` → `settleHostKey`, `connectionOptions.ts:101-116` → `confirmHostKey`'s modal, then
+  `persistPin` `:75-87` writes the pin onto the entity and `materializeKnownHosts` writes the file) and the WSL path
+  translation (`:199`); and a window's refusal (`refuseAndOfferTheFix`, `:373-395`, five call sites) shows its modal,
+  runs its remedy — relay setup, *Add Key to Agent* — and retries (`runRemedyAndRetry`, `:412-421`) with no gate at
+  all. So: a request already gone when `connectEntity` is entered is still asked for its PIN; a client gone during the
+  PIN box still gets the host-key question raised for it, and a person who then clicks *Trust and connect* writes the
+  pin onto the entity (synced metadata — the later check takes back only the file); a client gone while a refusal's
+  modal is open still gets its remedy run when the person presses the button, and the retry asks the PIN and the host
+  key again. A terminal never opens for it — E4.S1 holds — but every prompt before the terminal does.
+- The gate is read, as the VPN reads it, at every await on the path and immediately before each effect: at
+  `connectEntity`'s entry (a request already gone is asked nothing — not even its PIN; this also ends the retry); after
+  the credential lookup, before the warning, the route and the host key; inside `connectionOptions`, before the
+  host-key scan and its question and again after the question, before `persistPin` and `materializeKnownHosts` — a
+  trust answer given to a dialog nobody waits for decides nothing, and the next live connect asks again; inside
+  `refuseAndOfferTheFix`, before its modal and again after it, before the remedy, the clipboard copy and the retry.
+  `connectionOptions` and `refuseAndOfferTheFix` take the gate as a REQUIRED `AbortSignal | undefined` argument (the
+  `runVpn` precedent: a caller cannot forget it), and the host-key scan is cancelled by the same signal. A fired gate
+  answers `false` quietly, nothing written, as every E4 gate does. The person's own Connect passes no gate and is
+  unchanged; a test pins it.
+- **The journal line tells the truth.** `brokerCall.failedOrAbandoned` (`brokerCall.ts:191-197`) journals an action that
+  threw after its client left as `ABANDONED` *as the action was starting — it was not launched*, chosen by a flag that
+  is really `Delivery.mutatesSecrets` (`brokerResponse.ts:205-215`) — true of a VPN whose chain had typed nothing, false
+  once a dependency step was handed to the shell. The error now carries the stage: `RequestEndedError.stage`
+  (`requestLife.ts`), with `notStarted()` keeping the *not launched* words and a new `endedAfter(what)` naming what the
+  shell already has. The dependency chain throws `endedAfter('a dependency step had been typed')` when its request is
+  found gone AFTER a step was typed — in `settle` (`dependencyRunHost.ts:230-238`, before any *Continue* question, as
+  finding 4 asked) and after each step's end in `runAll` (`:196-203`, which covers a *Continue* question answered after
+  the client left) — instead of answering `false`, which `vpnOutcome` could only report as *not launched*; before any
+  step was typed the chain answers `false` as it did, and the person's own chain (no gate) never throws.
+  `brokerResponse.failed` hands `requestLife.endedStage(error)` to `Delivery.fail`, and `failedOrAbandoned` journals it,
+  keeping its two old sentences for any other error. `runBounded`'s refused launch and the SSH terminal's `notOpened`
+  keep throwing `notStarted()` — nothing of theirs is launched, so those words stay true.
+- **Follow-up from E4.S3's code round, finding 1:** the `deps()` fixture of `sshUseActions.test.ts` (`:136-156`, cast
+  `as never` at seven call sites) is typed as `SshUseDeps`. Narrowing `SshUseDeps.storage` to a structural type was
+  measured and refused: the exec and terminal paths hand the manager to `resolveExecAuth` → `resolveSshCredential` →
+  `automaticOpenerFor` → `rotationQuarantine`, and to `connectEntity` → `clickOpener` → `pinPrompt.admitted` and
+  `rotationQuarantine.beforeTheDoor`, each typed `StorageManager` — a narrow type would have to be threaded through the
+  PIN and rotation modules, a cross-cutting retyping, not a follow-up. Instead the world holds the REAL `StorageManager`
+  over an in-memory memento and keychain, seeded with the account and the entry (the `agentCreatePin.test.ts` pattern),
+  so the fixture IS an `SshUseDeps` and the casts go.
+- **Open tail (not this story):** the entry-PIN box the credential lookup raises (`clickOpener`) takes no token and stays
+  on screen after the request leaves — the gate is checked after it answers, so nothing is opened for a gone request;
+  and the person's Connect path, which this gate never fires for, is unchanged by design.
+
+**As built (E4.S4, 2026-10-10):** as designed, with six refinements recorded in §14 — `endedStage` reads a
+`Symbol.for` BRAND on the error rather than its class (two module graphs can meet at the broker) and nothing else
+(a foreign `AbortError` is not a request's end); the host-key conversation reads the gate a third time, between
+the scan and the question (a killed scan can still answer a key), and a fourth after the awaited pin write,
+before the known_hosts file (the pin itself, given to a live request, stands — a write already started is
+finished); the chain answers a `ChainEnd` whose `typed` travels into the VPN's later gates through `afterTheChain`
+and into `stopped`, so a client gone during the config read AFTER a live step, or a *Stop* clicked after the
+client left, is journalled with the step; `refuseAndOfferTheFix` hands the pressed button to `actOnRefusal` (the
+complexity ceiling); and the typed fixtures are the real `StorageManager` over memory rather than a narrowed
+`SshUseDeps.storage`. The flows are catalogued in [module_tests.md](../research/module_tests.md), *A gone request
+reaches no SSH prompt*, with the scenario-harness gap and its reason.
 
 ### 5.8 A stale WSL install says so — `src_vs_code/src`
 
@@ -604,6 +669,17 @@ only with the owner's OK on the notes.
   watched red with its line removed. (The QuickPick consent surface that once held this number was dropped by the
   owner's decision in §3.3.)
 
+- **E4.S4 RED → green** a gone request reaches no SSH prompt (§5.7, *E4.S4*). TS tests under the `vscode` stub, each
+  firing the request's signal at one await and then letting it go: a request already gone at `connectEntity`'s entry is
+  asked nothing (no credential lookup, no PIN); a client gone during the credential lookup is shown no host-key question
+  and no refusal modal; a client gone while the host-key question is open — *Trust and connect* clicked after — writes no
+  pin and no known_hosts file, and the connection does not go ahead; a client gone while a refusal's modal is open runs no
+  remedy, copies nothing and retries nothing when the button is pressed; a request already gone at a late refusal (after
+  the path translation) is shown no modal. The journal: a VPN whose chain had typed a step when the client left is
+  journalled `ABANDONED` *after a dependency step had been typed*, through the real broker, never *not launched*; the
+  chain's gone-after-typing cases in `vpnGoneRequest.test.ts` assert that error instead of `false`. A live request and the
+  person's own Connect are unchanged. Each check is watched red with its line removed. Plus the typed `deps()` fixture.
+
 ### Epic E5 — proof on the real bridge, and the tail
 
 - **E5.S1** `wslStrays.cjs`: `watchWindowsPids(image, exePath)` — set difference of Windows PIDs filtered to the test's
@@ -643,6 +719,7 @@ the extension with `npm test`; the WSL itests with `npm run itest:all` on a Wind
 | consent outlives the request | E4.S1 | TS unit |
 | stale install verdict | E4.S2 | TS unit |
 | a gone request starts no VPN | E4.S3 | TS unit (`vscode` stub) + broker |
+| a gone request reaches no SSH prompt; the journal names a typed step | E4.S4 | TS unit (`vscode` stub) + broker |
 | logs leak nothing, stdout stays clean | E1.S2 | process |
 | the whole bridge, real Claude-shaped client | E5.S1 | node itest on WSL (manual) |
 
@@ -665,6 +742,8 @@ Every bug test is shown red with the real symptom before the fix and green after
 - [ ] Defects A, B, C each have a test shown red with the real symptom and then green; the WSL itests of E5.S1 pass.
 - [ ] A late **Allow** for a gone request runs nothing (E4.S1). (§3.3 decided by the owner 2026-10-09: defused modal.)
 - [ ] A gone request starts no VPN, its installers or its launcher, and writes no config (E4.S3).
+- [ ] A gone request is shown no SSH prompt — host key, refusal, remedy — and writes no pin; a request whose chain had
+      typed a step is journalled as exactly that (E4.S4).
 - [ ] Every serving host writes `logs/{yyyy-MM-dd}/{app}-{HH-mm-ss}-{pid}.log` with its start and its exit reason;
       retention works; nothing secret is in a log file.
 - [ ] `creds-mcp --version` reports both halves under WSL; a stale WSL install is reported with an update offer.
@@ -1193,3 +1272,104 @@ returned still granted the child 5 s / 2 s, which the client's SIGKILL would cut
 answered** (codex's four roles). One finding — the relay's connection handler "can pause before tracking its child" —
 **rejected** as in the earlier checkpoint round, with no new argument: the handler runs synchronously up to its first
 await, which is inside the carry after `StartPiped` and `Track`; a comment at the accept loop now states it.
+
+### Story E4.S4 — a gone request reaches no SSH prompt (branch `fix/e4s4-gone-request-reaches-no-ssh-prompt`)
+
+**E4.S4 plan round (2026-10-10, session `8fe0d83d`) — `proceed`**, gating 1 against threshold 6, **1 of 3 reviewers
+answered** (codex `gpt-6-luna`; gemini rate-limited, quota reset ~88 h; the local engine names no model — one vendor's
+verdict, not a panel's).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | §10–§11 omit a scenario test for the real SSH disconnect flow | **accepted** — a real-broker, real-HTTP case: the real `sshTerminalAction` behind the real broker, the client hangs up while the credential lookup is held open, the lookup is released, and no host-key question is raised (`brokerAbandoned.test.ts`). The `*-itest.cjs` leg is recorded in `module_tests.md` as NOT possible, for the VPN's reason: no test may open a real SSH session, scan a real host or drive a real modal |
+| 1 | §10–§11 do not verify cancellation while the host-key scan is running | **accepted** — `connectionOptions.test.ts`: the scan held open and the request aborted mid-scan; the scan was handed the request's signal and ends with it, nobody is asked, nothing is written |
+
+The round's operator commands, applied: build this story as one unit without re-splitting; work autonomously
+(RED → GREEN → RED again for every check, the docs with every change, every suite before the PR, the PR process
+end to end); consultants before the person.
+
+**What shipped, and where it differs from the design above:**
+
+- The gate is read at `connectEntity`'s entry; after the credential lookup, before the warning, the route and the
+  host key; in `connectionOptions` → `settleHostKey` before the scan and in `trusted()` after the question, the scan
+  cancelled by the same signal; in `refuseAndOfferTheFix` before its modal and after it, before `actOnRefusal` (the
+  remedy, the clipboard copy, the retry — split out to keep the complexity ceiling). `connectionOptions` and
+  `refuseAndOfferTheFix` take the gate as a REQUIRED `AbortSignal | undefined`; the five existing test calls pass
+  `undefined`, the person's click.
+- `RequestEndedError.stage`, `NOT_LAUNCHED` (one literal, shared with `brokerCall`'s fallback), `endedAfter(what)`
+  and `endedStage(error)`. **Deviation:** `endedStage` recognises the error by a `Symbol.for` BRAND it carries —
+  never by `instanceof`: the broker and the action that threw can come from two module graphs (the test harness
+  loads each under its own `vscode` stub; a bundler may split them), and the first version's `instanceof` would
+  have fallen back to *not launched* in exactly the test written to prove the opposite — and never by the error's
+  shape, which the first commit read and the own review refused: a foreign `AbortError` carrying a `stage` must
+  not put unmasked words into the journal. The chain throws from `settle` (before any *Continue* question), from
+  `runAll` after each step (a *Continue* answered after the client left) and from `stopped` when a chain that had
+  typed a step stops for a gone request (a *Stop* answered after the client left — code round 2); a chain that ran
+  to its end answers a `ChainEnd` whose `typed` reaches `afterTheChain` (code round 1);
+  `Delivery.fail(reason, actionRan, ended?)`; `failedOrAbandoned` journals `ended ?? (ran ? cancelled : NOT_LAUNCHED)`.
+- The typed `deps()`: the REAL `StorageManager` through `pinWorld.memoryStorage` + `seedEntry` (reused, not copied),
+  `world()` async, the seven `as never` casts gone; the two `describeOutcome` casts went with them (a
+  `UseActionResult` has `body: unknown`).
+- **Deviation, the test seam:** `vpnWorld.startVpn` catches the thrown end and hands it back as `ended`, so the
+  directory is still cleaned up; the four E4.S3 chain cases now assert that stage instead of a bare `false`, and one
+  new case holds a step's *Continue* question open across the client's departure.
+
+**Tests, red first** — every new check watched red with the real symptom, green with the fix, and red again with
+that one check reverted (9 of 9): the entry gate — *"the credential was looked up — its PIN asked — for a request
+whose client had gone"*; after the lookup — *"the host-key question was raised for a request whose client had
+gone"* (the unit case and the real-broker case); the refusal before its modal — *"a refusal was shown to a person
+who did not ask"*; after its modal — *"a remedy ran for a request whose client had gone"*; the host key before the
+scan and after the question — *"the connection went ahead for a request whose client had gone"* (three cases, the
+held scan among them); the chain after a typed step — *"the start answered as if nothing had been typed — the
+journal would say 'not launched'"* (five cases); the broker — *"the journal does not name the step the shell already
+has: … ABANDONED the client left as the action was starting — it was not launched"*.
+
+**E4.S4 code round 1 (2026-10-10, same session) — `proceed`**, gating 4 against threshold 5, **4 of 4 reviewers
+answered** (codex's four roles — one vendor's verdict).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | `sshUseActions.test.ts`: the new fixture field is initialised `undefined as never` | **accepted** — the world's log (arrays and a shared `tally` of counters) is built BEFORE the module loads, the stubs record into it, and the world is assembled last; no placeholder, no cast |
+| 1 | `brokerAbandoned.test.ts`: the SSH world's `actions` field is initialised `undefined as never` | **accepted** — the same shape: an `SshLog` the stubs share by reference, the module loaded into a `const`, the world assembled last |
+| 2 | `sshConnectWorld.ts`: the new stubs `push` into the world's observation arrays | **rejected** — the harness's append-only observation log (`w.warnings`, `w.openers`, `w.materialised` and nine others in the file record this way since it was written), read by the assertions after the run; the immutability rule names data that flows between units, as E4.S1's code round 2 held for a stateful registry |
+| 3 | a client gone AFTER the chain typed its last step — during the config read that follows — is still journalled *not launched*, because the chain's `true` loses the fact | **accepted** — a real gap: `runDependenciesFirst` answers a `ChainEnd` (`ready`, `typed`), and `vpnLauncherRun.afterTheChain` throws `endedAfter('a dependency step had been typed')` when nothing started, the chain had typed, and the request has gone since; both launchers sit on it, `runCommands` reads `.ready`. RED first (*"the start answered as if nothing had been typed — the journal would say 'not launched'"*, the built-in start and the custom launcher, each gone during its config read after a live step) → GREEN → RED again with `afterTheChain`'s throw removed |
+| 4 | the entry's PIN box stays open after the agent disconnects | **rejected** — the story's recorded open tail: `clickOpener`'s box takes no cancellation token, as the VPN's config door did not in E4.S3; closing it needs the door to take a token the way the folder PIN step does — its own story. The gate is read after the box answers, so nothing is opened or written for a gone request |
+
+**Own review (a separate reviewer reading the final code, the gate's other half)** — two findings the gate did
+not make, both verified and taken: (1) `connectionOptions.conversation` had no gate between the scan and the
+question — the request's end kills `ssh-keyscan`, but a key it had already printed still comes back, and a
+first-contact key is exactly what raises the modal; the request is read again after the scan (RED: *"the host-key
+question was raised for a request whose client had gone"*, the scan aborting the request and still answering a key
+→ GREEN → RED again with the check removed), and the two module docs that had claimed "nobody asked" for a
+gone-during-scan request now hold; (2) `endedStage` read the error by shape, so a foreign `AbortError` carrying a
+string `stage` could put unmasked words into the journal — the request's end is BRANDED (`Symbol.for`, shared by
+every copy of the module) and only the brand is read (RED: a forged `AbortError` with a `stage` was read as a
+request's end → GREEN → RED again with the brand check loosened). Nothing found on the other awaits of the SSH
+path, the person's Connect, the chain's callers (`runCommands` has no gate and never throws), file sizes or
+complexity.
+
+**E4.S4 code round 2 (`again`, 2026-10-10) — `proceed`**, gating 3 against threshold 5, **4 of 4 reviewers
+answered** (codex's four roles — one vendor's verdict).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | the *What shipped* bullet still said `endedStage` reads the error's SHAPE, while the code reads the brand | **accepted** — the sentence corrected above; the as-built paragraph in §5.7 already said brand |
+| 1 | `vpnWorld.startVpn` turned EVERY throw into `started: false` with an `ended`, so an unexpected storage or terminal error could hide behind a passing "nothing started" | **accepted** — only a branded request's end is handed back; anything else is rethrown. A test hands the start a vault that throws and expects the rejection |
+| 2 | a *Stop* (or a dismissal) on a *Continue* question the client left open answers `next: false` and `runAll` returned `{ ready: false, typed: true }` without the post-step check — the journal then said *not launched* about a step the shell ran | **accepted** — `stopped(typed, startGate)`: a chain that stops after a typed step reads the gate and throws the request's end. RED first (*"the start answered as if nothing had been typed — the journal would say 'not launched'"*, the question held open, the client gone, *Stop* clicked) → GREEN → RED again with the check removed. The own review of the delta found the same path independently (and a second one — a terminal closed at the next step after a typed one — which the same helper covers, though no client can leave between a settled step and the next step's entry without an await) |
+| 3 | the entry's PIN box stays open after the agent disconnects | **rejected** — round 1's finding 4, no new argument: the recorded open tail |
+
+Own review of the delta (a separate reviewer): finding 2 above, independently; the brand is an own enumerable
+instance field a second module graph reads, and a forged `AbortError` fails it; no other await in
+`connectionOptions` without a gate; `tally` survives the world's spread by reference; no new `as never` in the two
+fixtures; every touched function at complexity ≤ 4.
+
+**E4.S4 code round 3 (`again`, 2026-10-10) — `proceed`**, gating 2 against threshold 5, **4 of 4 reviewers
+answered** (codex's four roles — one vendor's verdict).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0–2 | the observation arrays of three test worlds are appended to (`sshConnectWorld`, `connectionOptions.test.ts`'s scan list, `brokerAbandoned.test.ts`'s `SshLog`) — round 1's finding 2 re-raised, now with "the rule names no exception" | **rejected** — the rule's own rationale is hidden side effects and safe concurrency, neither of which an append-only log read by its own test's assertions can have; every world in this suite records this way; E4.S1's round 2 held the same for a registry |
+| 3 | `connectionOptions.test.ts` casts its storage fake `as never` at every call | **accepted** — the world holds the REAL `StorageManager` over memory (`pinWorld.memoryStorage`, loaded before the module under test so the patched `sshExecRunner` is the one its graph captured); the pin is read back from the entry instead of counted in a fake; ten casts gone |
+| 4 | the gate is not read during the pin write: a client gone while `persistPin` awaits the vault still gets the pin saved and the known_hosts file written | **accepted for the file, not for the pin** — the request is read again after the awaited write, before `materializeKnownHosts`; the pin write itself began for a live request (the person's *Trust and connect*, checked synchronously before it) and a write already started is finished — E4.S1's rule for a consent remembered (its round 3, finding 2) and the rotation's for its statement. RED first (*"a known_hosts file was written for a request whose client had gone"*, the request aborted inside the vault write) → GREEN → RED again with the check removed; the same test pins that the pin stands |
+| 5 | a remedy already running when the client disconnects completes; only the retry is stopped | **rejected** — the remedy starts only for a live request (the gate is read synchronously after the modal, no await before `runRemedy`); a relay started or a key loaded into the agent is the window's own setup the person asked for by pressing the button, and outlives any request by design — what E4.S3 recorded for a typed command and a tunnel up; the retry enters `connectEntity`, which refuses at its entry. Threading the gate into every remedy implementation is the tunnel-lifecycle plan's class of change |
+| 6 | the entry's PIN box stays open after the agent disconnects | **rejected** — rounds 1 and 2, no new argument: the recorded open tail |

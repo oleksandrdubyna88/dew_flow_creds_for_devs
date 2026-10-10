@@ -4,7 +4,7 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
-import { abandonedWhenClosed } from '../requestLife';
+import { NOT_LAUNCHED, abandonedWhenClosed, endedAfter, endedStage, notStarted } from '../requestLife';
 
 /**
  * Whether `res` `close` with the response unfinished is a reliable "the client is gone"
@@ -158,4 +158,23 @@ test('a client that half-closes while waiting is treated as gone — Node ends a
   } finally {
     await s.close();
   }
+});
+
+/**
+ * The request's end, as the journal reads it (E4.S4): the stage travels ON the error, and only a request's
+ * own end — branded with a `Symbol.for` key every copy of the module shares — may put words into the
+ * journal that way. A foreign `AbortError` that happens to carry a `stage` is not one (own review).
+ */
+test('a request’s end carries its stage: "not launched" for a refused start, the typed step for a chain that typed', () => {
+  assert.equal(endedStage(notStarted()), NOT_LAUNCHED);
+  assert.match(endedStage(endedAfter('a dependency step had been typed')) ?? '', /^after a dependency step had been typed/);
+  assert.equal(notStarted().name, 'AbortError', 'as Node names a cancelled operation');
+});
+
+test('a foreign AbortError with a stage of its own is NOT read as a request’s end — its words never reach the journal', () => {
+  const forged = Object.assign(new Error('a library said so'), { name: 'AbortError', stage: 'after something it made up' });
+
+  assert.equal(endedStage(forged), undefined);
+  assert.equal(endedStage(new Error('plain')), undefined);
+  assert.equal(endedStage(undefined), undefined);
 });

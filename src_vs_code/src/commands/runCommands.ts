@@ -89,7 +89,7 @@ async function passGates(host: RunCommandsHost, entry: Entry, body: string, refu
   const trust = host.context.globalState;
   return (
     (await confirmTrusted(trust, entry.id, entry.name, body)) &&
-    runDependenciesFirst(dependencyRequest(host.storage, entry.accountId, [entry.details], entry.name, trust))
+    (await runDependenciesFirst(dependencyRequest(host.storage, entry.accountId, [entry.details], entry.name, trust))).ready
   );
 }
 
@@ -176,7 +176,7 @@ async function passScriptGates(host: RunCommandsHost, ready: ReadyScript): Promi
   return (
     (await confirmTrusted(trust, entry.id, entry.name, script)) &&
     (await printsConfirmed(host, ready)) &&
-    runDependenciesFirst(dependencyRequest(host.storage, entry.accountId, [entry.details], entry.name, trust))
+    (await runDependenciesFirst(dependencyRequest(host.storage, entry.accountId, [entry.details], entry.name, trust))).ready
   );
 }
 
