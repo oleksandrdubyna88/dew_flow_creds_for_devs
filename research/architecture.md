@@ -548,11 +548,12 @@ flowchart TB
     drain -->|run still going| cancel["cancel the run token<br/>listen + tool calls + broker HTTP"]
     drain -->|run finished| done["exit line · return"]
     cancel -->|stopped| done
-    cancel -->|5 s deadline, dedicated timer| forced["exit line · flush · Environment.Exit"]
+    cancel -->|5 s deadline, dedicated timer<br/>covers closing the transport too| forced["exit line · flush · Environment.Exit"]
 ```
 
-- **Exit codes:** 0 for end-of-stream and a lost parent, 128 + n for a handled signal; the reason
-  (`clientClosed`, `parentGone`, `signalled`) is the log's, never a new contract exit name.
+- **Exit codes:** 0 for end-of-stream and a lost parent, 128 + n for a handled signal — also when the signal
+  arrives during the drain; the reason (`clientClosed`, `parentGone`, `signalled`) is the log's, never a new
+  contract exit name, and the exit line is written once whichever path ends the run.
 - **Cancellation reaches the broker.** Every tool delegate takes the request's `CancellationToken`, and it
   flows through `Windows` into every `BrokerClient` call as a linked source bounded by the call's own
   ceiling — so the window sees the connection close the moment the session ends, not ten minutes later.

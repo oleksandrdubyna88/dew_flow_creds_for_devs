@@ -88,15 +88,39 @@ public sealed class ServerLifetimeTests
     }
 
     [Fact]
-    public async Task A_signal_during_the_drain_cuts_it_short()
+    public async Task A_signal_during_the_drain_cuts_it_short_and_its_code_is_the_exit_code()
     {
+        // Code round finding 2: whoever sent the signal reads 128 + n; a drain the signal cut short must not
+        // turn its SIGINT into a clean end-of-stream exit.
         var running = Run(UntilCancelled, new LifetimeTimings(Hour, Hour));
 
         _client.SetResult();
         await Task.Delay(50, TestContext.Current.CancellationToken);
         _signal.SetResult(PosixSignal.SIGINT);
 
-        (await running.WaitAsync(Bound, TestContext.Current.CancellationToken)).Should().Be(new HostEnding(0, ExitReason.ClientClosed), "the first reason is the one recorded");
+        (await running.WaitAsync(Bound, TestContext.Current.CancellationToken)).Should().Be(new HostEnding(130, ExitReason.Signalled));
+    }
+
+    [Fact]
+    public async Task A_parent_lost_during_the_drain_is_the_reason_recorded()
+    {
+        var running = Run(UntilCancelled, new LifetimeTimings(Hour, Hour));
+
+        _client.SetResult();
+        await Task.Delay(50, TestContext.Current.CancellationToken);
+        _parent.SetResult();
+
+        (await running.WaitAsync(Bound, TestContext.Current.CancellationToken)).Should().Be(new HostEnding(0, ExitReason.ParentGone));
+    }
+
+    [Fact]
+    public async Task A_drain_that_runs_out_keeps_end_of_stream_as_the_reason()
+    {
+        var running = Run(UntilCancelled, new LifetimeTimings(TimeSpan.FromMilliseconds(30), Hour));
+
+        _client.SetResult();
+
+        (await running.WaitAsync(Bound, TestContext.Current.CancellationToken)).Should().Be(new HostEnding(0, ExitReason.ClientClosed));
     }
 
     [Fact]

@@ -126,7 +126,9 @@ public sealed class ParentWatchTests
     [Fact]
     public async Task The_real_watch_on_this_test_process_sees_a_living_parent()
     {
-        // The platform path end to end: this runner's parent is alive for the whole test.
+        // The platform path end to end: this runner's parent is alive for the whole test. A runner that IS the
+        // entrypoint (ppid 0 or 1 — a container) has nothing to watch, which another test covers.
+        Assert.SkipWhen(ParentProcess.Id() <= 1, "this runner was started by init; there is no parent to watch");
         using var log = _sink.Logger();
         using var watch = ParentWatch.Start(log);
 

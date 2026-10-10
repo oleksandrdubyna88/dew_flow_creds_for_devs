@@ -56,7 +56,9 @@ internal static class ServerLifetime
         var ending = EndingOf(await Task.WhenAny(running, signals.ClientGone, signals.ParentGone, signals.Signal), signals);
         if (ending.Reason == ExitReason.ClientClosed)
         {
-            await DrainAsync(running, signals, timings.Drain, time);
+            // A signal or a lost parent that cuts the drain short is the reason recorded — whoever sent a
+            // SIGINT reads 130, not a clean end-of-stream (code round, finding 2).
+            ending = EndingOf(await DrainAsync(running, signals, timings.Drain, time), signals);
         }
         if (running.IsCompleted)
         {
@@ -81,13 +83,17 @@ internal static class ServerLifetime
             _ => new HostEnding(0, ExitReason.ClientClosed),
         };
 
-    /// <summary>Give in-flight work up to <paramref name="drain"/> — ended early by the run finishing, a signal or the parent.</summary>
-    private static async Task DrainAsync(Task running, LifetimeSignals signals, TimeSpan drain, TimeProvider time)
+    /// <summary>
+    /// Give in-flight work up to <paramref name="drain"/> — ended early by the run finishing, a signal or the parent.
+    /// </summary>
+    /// <returns>The task that ended the drain, for <see cref="EndingOf"/>.</returns>
+    private static async Task<Task> DrainAsync(Task running, LifetimeSignals signals, TimeSpan drain, TimeProvider time)
     {
         using var cut = new CancellationTokenSource();
         var window = Task.Delay(drain, time, cut.Token);
-        await Task.WhenAny(running, window, signals.ParentGone, signals.Signal);
+        var first = await Task.WhenAny(running, window, signals.ParentGone, signals.Signal);
         await cut.CancelAsync();
+        return first;
     }
 
     /// <summary>Wait for a cancelled run; its cancellation is the expected ending, not a failure.</summary>

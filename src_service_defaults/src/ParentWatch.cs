@@ -101,33 +101,43 @@ public sealed class ParentWatch : IDisposable
     {
         try
         {
-            var parent = open(ppid);
-            _held = parent;
-            if (parent.StartTime > selfStart)
-            {
-                Lost(ppid, "its pid now belongs to a process that started after this one");
-                return;
-            }
-            Watching = true;
-            _log.Information("watching the parent {ParentPid}", ppid);
-            _ = WaitAsync(ppid, parent);
+            Follow(ppid, selfStart, open(ppid));
         }
-        catch (Exception e) when (e is ArgumentException or InvalidOperationException)
+        catch (Exception e) when (IsAlreadyGone(e))
         {
             // No such process (ArgumentException), or it exited between the open and the read: gone already.
             Lost(ppid, "it had already exited");
         }
-        catch (Exception e) when (e is Win32Exception or UnauthorizedAccessException or NotSupportedException)
+        catch (Exception e) when (IsNotOpenable(e))
         {
             _log.Warning(e, "cannot watch the parent {ParentPid}; running without the watch", ppid);
         }
     }
 
+    /// <summary>Hold the opened parent; a holder of its pid younger than this process means the pid was reused.</summary>
+    private void Follow(int ppid, DateTime selfStart, IWatchedParent parent)
+    {
+        _held = parent;
+        if (parent.StartTime > selfStart)
+        {
+            Lost(ppid, "its pid now belongs to a process that started after this one");
+            return;
+        }
+        Watching = true;
+        _log.Information("watching the parent {ParentPid}", ppid);
+        _ = WaitAsync(ppid, parent);
+    }
+
+    private static bool IsAlreadyGone(Exception e) => e is ArgumentException or InvalidOperationException;
+
+    private static bool IsNotOpenable(Exception e) => e is Win32Exception or UnauthorizedAccessException or NotSupportedException;
+
     private async Task WaitAsync(int ppid, IWatchedParent parent)
     {
+        var ct = _stop.Token;
         try
         {
-            await parent.WaitForExitAsync(_stop.Token);
+            await parent.WaitForExitAsync(ct);
             Lost(ppid, "it exited");
         }
         catch (OperationCanceledException)
@@ -138,10 +148,12 @@ public sealed class ParentWatch : IDisposable
 
     private async Task PollAsync(int startPpid, Func<int> currentPpid, TimeSpan interval, TimeProvider time)
     {
+        // Read once: Dispose cancels and then disposes the source, and a token read after that would throw.
+        var ct = _stop.Token;
         using var timer = new PeriodicTimer(interval, time);
         try
         {
-            while (await timer.WaitForNextTickAsync(_stop.Token))
+            while (await timer.WaitForNextTickAsync(ct))
             {
                 if (currentPpid() != startPpid)
                 {

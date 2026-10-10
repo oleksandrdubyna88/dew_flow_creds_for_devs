@@ -67,7 +67,7 @@ flowchart TB
 | `LogPlatform` (enum) | Windows / MacOS / Linux — which folder convention the root follows |
 | `ExitReason` (enum) | The closed vocabulary of the exit line (`clientClosed`, `busy`, `noAgentAnnounced`, `signalled`, `parentGone`, …), written as its camelCase word; never a contract exit name |
 | `HostEnding` (record) | Exit code + `ExitReason` — the code stays the contract's |
-| `HostRun` | Writes the start line (mode, version, pid, parent pid) and the exit line (code, reason, uptime); `Crash` logs the exception first |
+| `HostRun` | Writes the start line (mode, version, pid, parent pid) and the exit line (code, reason, uptime) — ONCE per run, since a shutdown deadline and a normal return can both reach `End`; `Crash` logs the exception first |
 | `AnsiConsoleSink`, `DailyRunFileSink`, `LogRetention`, `UtcTimestampEnricher` | Moved unchanged from the server (see [module_server.md](module_server.md)) |
 | `ParentProcess` | The parent pid: `getppid()` or `NtQueryInformationProcess`; 0 when the platform will not say |
 | `ShutdownSignals` | SIGINT/SIGTERM/SIGHUP/SIGQUIT registered with `Cancel = true`; `Received` completes with the FIRST; `ExitCode` = 128 + the POSIX number (129, 130, 131, 143) |

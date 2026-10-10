@@ -688,3 +688,22 @@ call closes its connection, it does not wait for the process to die, but found 6
 (`creds_exec`'s delegate drops the token) red again. E2.S4: *"Expected exited to be True because creds-mcp must exit
 once its parent is gone, but it is still running, but found False"* → green; break-it (the watch always off) red
 again. Suites: mcp 126, service defaults 55, cli 133, broker 127, server 809.
+
+**Code round (2026-10-10, same session) — `proceed`**, gating 1 against threshold 5, **4 of 8 reviewers answered**
+(codex's four roles; all four gemini roles rate-limited — one vendor's verdict).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | The parent-watch process test launches through `cmd /c` / `sh -c` despite "exe + argv, never a shell string" | **rejected** — the intermediary IS the subject of E2.S4 as the plan states it; it is launched as exe + argv (`ProcessStartInfo.ArgumentList`), the `sh -c` script is a constant and the binary path travels as `$0`, never interpolated into a command string, and every wait is bounded with the child killed by its own handle on dispose |
+| 1 | No `research/module_mcp.md` describes the new serving lifetime | **rejected** — there is no `module_mcp.md`: the MCP server is documented in `architecture.md`, which gained *How long a `creds-mcp` lives* (diagram, exit codes, cancellation, parent watch, `--version`), and the shared primitives are in `module_service_defaults.md` |
+| 2 | A signal during the end-of-stream drain is reported as a client close, exit 0 | **accepted** — the task that ends the drain decides the ending: a signal gives 128 + n, a lost parent `parentGone`; RED (*"Expected … to be HostEnding … 130, Signalled"*, two tests) → GREEN → RED again with the reassignment removed |
+
+Own review (a separate reviewer, same time), all verified and taken: (1) the same drain finding; (2) the deadline
+did not cover closing the transport — `ServeOnAsync` now owns the transport and disposes it inside the run, under
+the deadline; RED (*a transport that hangs while closing — "System.TimeoutException: The operation has timed out"*,
+the forced exit never came) → GREEN → RED again with the disposal moved out — and `HostRun.End` writes one exit
+line per run, since the deadline and a normal return can meet (RED: *"to contain a single item, but found
+{"exited: code 143 …", "exited: code 0 …"}"* → GREEN → RED again); (3) the real-parent test skips a runner started
+by init (a container entrypoint) instead of failing there; (4) `ParentWatch` reads its cancellation token once,
+so a dispose between two ticks cannot raise `ObjectDisposedException` in a discarded task (a race, no
+deterministic test); (5) `ParentWatch.Attach` split under the complexity ceiling.

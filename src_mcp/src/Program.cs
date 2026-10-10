@@ -175,7 +175,8 @@ internal static class Program
             // record forwarded from the Linux half gets no provider, because here the environment
             // belongs to wsl.exe and would name somebody else's session (issue #136, D6).
             var source = new CallerSource(caller, ownSession ? CallerIdentity.TabTitleSource() : null);
-            await using var transport = new StdioServerTransport(ServerName);
+            // Not `await using`: ServeOnAsync owns it and closes it inside the shutdown deadline.
+            var transport = new StdioServerTransport(ServerName);
             using var signals = ShutdownSignals.Register();
             using var parent = WatchParent(log);
             var lifetime = new LifetimeSignals(transport.MessageReader.Completion, parent.Gone, signals.Received);
@@ -318,20 +319,31 @@ internal static class Program
     /// a pair of pipes in a test, not only as the built binary over the console (<c>ServeOnAsync</c> tests).</para>
     /// <para><b>Never <c>server.RunAsync()</c> without a token</b> (defect A): <see cref="ServerLifetime"/> holds
     /// it, and cancelling it is the only thing that ends an open <c>subscriptions/listen</c>.</para>
+    /// <para><b>The transport is OWNED from here on</b>: it is disposed inside the run, after the server, so the
+    /// shutdown deadline covers closing it as well (own review, finding 2). After a signal or a lost parent stdin
+    /// is still open, and closing it is the step most likely to hang.</para>
     /// </remarks>
-    internal static async Task<HostEnding> ServeOnAsync(
+    internal static Task<HostEnding> ServeOnAsync(
         TransportBase transport,
         BrokerContract contract,
         CallerSource source,
         ILogger log,
         LifetimeSignals signals,
         LifetimeTimings timings,
-        Action<HostEnding> forceExit)
+        Action<HostEnding> forceExit) =>
+        ServerLifetime.RunAsync(
+            ct => ServeUntilAsync(transport, Options(contract, source, log), source, ct), signals, timings, log, forceExit, TimeProvider.System);
+
+    /// <summary>The run itself: the server over the transport until <paramref name="ct"/>, then both closed.</summary>
+    private static async Task ServeUntilAsync(TransportBase transport, McpServerOptions options, CallerSource source, CancellationToken ct)
     {
-        await using var server = McpServer.Create(transport, Options(contract, source, log));
-        // The side that spoke to the client names the client.
-        source.Bind(server);
-        return await ServerLifetime.RunAsync(server.RunAsync, signals, timings, log, forceExit, TimeProvider.System);
+        await using (transport)
+        {
+            await using var server = McpServer.Create(transport, options);
+            // The side that spoke to the client names the client.
+            source.Bind(server);
+            await server.RunAsync(ct);
+        }
     }
 
     /// <summary>

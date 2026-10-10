@@ -28,7 +28,7 @@ public sealed class ServeOnTests
         var ct = TestContext.Current.CancellationToken;
         var toServer = new Pipe();
         var fromServer = new Pipe();
-        await using var transport = new StreamServerTransport(toServer.Reader.AsStream(), fromServer.Writer.AsStream(), "test");
+        var transport = new StreamServerTransport(toServer.Reader.AsStream(), fromServer.Writer.AsStream(), "test");
         var sink = new CollectingSink();
         var source = new CallerSource(new CallerRecord(string.Empty, string.Empty, string.Empty, string.Empty));
         var forced = false;
@@ -54,5 +54,38 @@ public sealed class ServeOnTests
         (await serving.WaitAsync(Bound, ct)).Should().Be(new HostEnding(0, ExitReason.ClientClosed));
         forced.Should().BeFalse("cancelling the run token is enough; the deadline is for a server that hangs");
         sink.Messages.Should().Contain("stopping the server: clientClosed", "the listen was still open after the drain");
+    }
+
+    [Fact]
+    public async Task A_transport_that_hangs_while_closing_is_still_ended_by_the_deadline()
+    {
+        // Own review, finding 2: the deadline must cover the transport's disposal too, not only the SDK's run —
+        // after a signal or a lost parent stdin is still open, and closing it is the step most likely to hang.
+        var ct = TestContext.Current.CancellationToken;
+        var toServer = new Pipe();
+        var fromServer = new Pipe();
+        var transport = new HangingDisposal(toServer.Reader.AsStream(), fromServer.Writer.AsStream());
+        var sink = new CollectingSink();
+        var source = new CallerSource(new CallerRecord(string.Empty, string.Empty, string.Empty, string.Empty));
+        var signal = new TaskCompletionSource<PosixSignal>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var forced = new TaskCompletionSource<HostEnding>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var signals = new LifetimeSignals(transport.MessageReader.Completion, Task.Delay(Timeout.Infinite, ct), signal.Task);
+
+        _ = Program.ServeOnAsync(
+            transport, BrokerContract.Current, source, sink.Logger(), signals,
+            new LifetimeTimings(TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(200)), ending => forced.TrySetResult(ending));
+        signal.SetResult(PosixSignal.SIGTERM);
+
+        (await forced.Task.WaitAsync(Bound, ct)).Should().Be(new HostEnding(143, ExitReason.Signalled));
+    }
+
+    /// <summary>A stdio-shaped transport whose closing never finishes.</summary>
+    private sealed class HangingDisposal(Stream input, Stream output) : StreamServerTransport(input, output, "hanging")
+    {
+        public override async ValueTask DisposeAsync()
+        {
+            await base.DisposeAsync();
+            await Task.Delay(Timeout.Infinite);
+        }
     }
 }
