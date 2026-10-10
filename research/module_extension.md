@@ -4090,8 +4090,10 @@ flowchart LR
   this also ends a remedy's retry); after the credential lookup, before the warning, the route and the host key;
   inside `connectionOptions` before the host-key scan (which the same signal cancels), again after the scan and
   before the question (a killed `ssh-keyscan` can still answer a key it had printed, and a first-contact key is
-  what raises the modal — the own review), and again after the question, before the pin is written — a trust
-  answer given to a dialog nobody waits for decides nothing, the next live connect asks again; inside
+  what raises the modal — the own review), again after the question, before the pin is written — a trust
+  answer given to a dialog nobody waits for decides nothing, the next live connect asks again — and once more
+  after the awaited pin write, before the known_hosts file (the pin itself, given to a live request, stands: a
+  write already started is finished, E4.S1's rule for a consent remembered — code round 3); inside
   `refuseAndOfferTheFix` before its modal and again after it, before the remedy, the clipboard copy and the retry.
   `connectionOptions` and `refuseAndOfferTheFix` take the gate as a REQUIRED `AbortSignal | undefined` (the `runVpn`
   precedent), `undefined` for the person's own Connect, which is unchanged.

@@ -461,13 +461,15 @@ when the client left, never "not launched" about a step that was.*
   on screen after the request leaves — the gate is checked after it answers, so nothing is opened for a gone request;
   and the person's Connect path, which this gate never fires for, is unchanged by design.
 
-**As built (E4.S4, 2026-10-10):** as designed, with five refinements recorded in §14 — `endedStage` reads a
+**As built (E4.S4, 2026-10-10):** as designed, with six refinements recorded in §14 — `endedStage` reads a
 `Symbol.for` BRAND on the error rather than its class (two module graphs can meet at the broker) and nothing else
 (a foreign `AbortError` is not a request's end); the host-key conversation reads the gate a third time, between
-the scan and the question (a killed scan can still answer a key); the chain answers a `ChainEnd` whose `typed`
-travels into the VPN's later gates through `afterTheChain`, so a client gone during the config read AFTER a
-live step is journalled with the step; `refuseAndOfferTheFix` hands the pressed button to `actOnRefusal` (the
-complexity ceiling); and the typed fixture is the real `StorageManager` over memory rather than a narrowed
+the scan and the question (a killed scan can still answer a key), and a fourth after the awaited pin write,
+before the known_hosts file (the pin itself, given to a live request, stands — a write already started is
+finished); the chain answers a `ChainEnd` whose `typed` travels into the VPN's later gates through `afterTheChain`
+and into `stopped`, so a client gone during the config read AFTER a live step, or a *Stop* clicked after the
+client left, is journalled with the step; `refuseAndOfferTheFix` hands the pressed button to `actOnRefusal` (the
+complexity ceiling); and the typed fixtures are the real `StorageManager` over memory rather than a narrowed
 `SshUseDeps.storage`. The flows are catalogued in [module_tests.md](../research/module_tests.md), *A gone request
 reaches no SSH prompt*, with the scenario-harness gap and its reason.
 
@@ -1360,3 +1362,14 @@ Own review of the delta (a separate reviewer): finding 2 above, independently; t
 instance field a second module graph reads, and a forged `AbortError` fails it; no other await in
 `connectionOptions` without a gate; `tally` survives the world's spread by reference; no new `as never` in the two
 fixtures; every touched function at complexity ≤ 4.
+
+**E4.S4 code round 3 (`again`, 2026-10-10) — `proceed`**, gating 2 against threshold 5, **4 of 4 reviewers
+answered** (codex's four roles — one vendor's verdict).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0–2 | the observation arrays of three test worlds are appended to (`sshConnectWorld`, `connectionOptions.test.ts`'s scan list, `brokerAbandoned.test.ts`'s `SshLog`) — round 1's finding 2 re-raised, now with "the rule names no exception" | **rejected** — the rule's own rationale is hidden side effects and safe concurrency, neither of which an append-only log read by its own test's assertions can have; every world in this suite records this way; E4.S1's round 2 held the same for a registry |
+| 3 | `connectionOptions.test.ts` casts its storage fake `as never` at every call | **accepted** — the world holds the REAL `StorageManager` over memory (`pinWorld.memoryStorage`, loaded before the module under test so the patched `sshExecRunner` is the one its graph captured); the pin is read back from the entry instead of counted in a fake; ten casts gone |
+| 4 | the gate is not read during the pin write: a client gone while `persistPin` awaits the vault still gets the pin saved and the known_hosts file written | **accepted for the file, not for the pin** — the request is read again after the awaited write, before `materializeKnownHosts`; the pin write itself began for a live request (the person's *Trust and connect*, checked synchronously before it) and a write already started is finished — E4.S1's rule for a consent remembered (its round 3, finding 2) and the rotation's for its statement. RED first (*"a known_hosts file was written for a request whose client had gone"*, the request aborted inside the vault write) → GREEN → RED again with the check removed; the same test pins that the pin stands |
+| 5 | a remedy already running when the client disconnects completes; only the retry is stopped | **rejected** — the remedy starts only for a live request (the gate is read synchronously after the modal, no await before `runRemedy`); a relay started or a key loaded into the agent is the window's own setup the person asked for by pressing the button, and outlives any request by design — what E4.S3 recorded for a typed command and a tunnel up; the retry enters `connectEntity`, which refuses at its entry. Threading the gate into every remedy implementation is the tunnel-lifecycle plan's class of change |
+| 6 | the entry's PIN box stays open after the agent disconnects | **rejected** — rounds 1 and 2, no new argument: the recorded open tail |

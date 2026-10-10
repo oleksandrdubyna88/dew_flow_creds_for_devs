@@ -55,7 +55,10 @@ export async function connectionOptions(
   }
 
   const pin = await settleHostKey(entity, storage, accountId, startGate);
-  if (pin === undefined) {
+  // The pin write is the person's answer to a request that was live when they gave it, and a write already
+  // started is finished (E4.S1's rule for a consent remembered, the rotation's for its statement). The file
+  // after it is not: a client gone during that write gets no known_hosts written for it (code round 3).
+  if (pin === undefined || requestGone(startGate)) {
     return undefined;
   }
   const settled = pin.entity;
