@@ -16,7 +16,10 @@ import { EntityMetadata } from '../types';
  * <p>Not named `*.test.ts`, so the runner never treats it as a suite with no tests in it.</p>
  */
 
-export const hostOs = process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux';
+const HOST_OS: Partial<Record<NodeJS.Platform, string>> = { win32: 'windows', darwin: 'macos' };
+
+/** This machine's `terminalOs` — the value an entry written for it carries. */
+export const hostOs = HOST_OS[process.platform] ?? 'linux';
 
 export interface FakeTerminal {
   name: string;
@@ -142,14 +145,20 @@ function isModal(options: unknown): boolean {
 }
 
 /** Poll until `ready`, failing with `what` rather than hanging the suite. */
-export async function until(ready: () => boolean, what: string, ms = 3000): Promise<void> {
+export function until(ready: () => boolean, what: string, ms = 3000): Promise<void> {
   const deadline = Date.now() + ms;
-  while (!ready()) {
-    if (Date.now() > deadline) {
-      assert.fail(`timed out waiting for ${what}`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
+  return new Promise((resolve, reject) => {
+    const poll = (): void => {
+      if (ready()) {
+        resolve();
+      } else if (Date.now() > deadline) {
+        reject(new assert.AssertionError({ message: `timed out waiting for ${what}` }));
+      } else {
+        setTimeout(poll, 5);
+      }
+    };
+    poll();
+  });
 }
 
 /** The owner's own chain (#103): a VPN started by "start openvpn", which depends on "install openvpn". */
@@ -189,7 +198,11 @@ export function storageOf(nodes: Record<string, EntityMetadata>, config: () => P
 
 export function memoryTrust() {
   let trusted: string[] = [];
-  return { get: () => trusted, update: (_k: string, v: string[]) => ((trusted = v), Promise.resolve()) };
+  const update = (_k: string, v: string[]): Promise<void> => {
+    trusted = v;
+    return Promise.resolve();
+  };
+  return { get: () => trusted, update };
 }
 
 export function terminalNamed(w: World, name: string): FakeTerminal {
@@ -202,7 +215,7 @@ export function terminalNamed(w: World, name: string): FakeTerminal {
 export function quotedPath(line: string): string {
   const match = /'(.*)'/.exec(line);
   assert.ok(match, line);
-  return match[1].replace(/''/g, "'");
+  return match[1].replaceAll("''", "'");
 }
 
 export type RunVpn = (
