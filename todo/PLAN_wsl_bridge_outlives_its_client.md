@@ -323,6 +323,13 @@ below).
   Both launchers build the chain request through one `vpnDependencies(ctx, roots)`, which carries the gate.
 - The exit: `vpnAction`'s `vpnOutcome` throws `notStarted()` when nothing started and the gate has fired; a start
   whose line was typed before the client left answers `opened` as always (pinned by a test).
+- **Deviation, the config is written LAST** (code round 1, finding 2): the built-in start used to write the config
+  before it looked for the launcher, so a request that left at OpenVPN Connect's import question — or at the install
+  offer of a launcher that was missing — left the plaintext config on disk for a start that never happened (and so
+  did a live start that was declined there). Now the launcher is found first, and only a line that will be sent
+  writes it: `startLine` for the CLI, after *Import profile* for OpenVPN Connect, never for a missing launcher; no
+  await lies between the write and the send. `vpnAction` takes only `VpnUseDeps` (the entity read and `open`),
+  so its tests hand it a typed fixture instead of a cast (finding 0).
 - **Deviation, a wider test seam:** the VPN world moved out of `dependencyChain.test.ts` into `test/vpnWorld.ts`
   (both suites use it; it gained held dialogs and an `onExecute` hook), `brokerWorld` gained `realAction` so the
   real `vpnAction` runs behind the real broker, and `sshConnectWorld` gained `sshMissing`.
@@ -818,3 +825,26 @@ names. **Pre-merge checkpoint round (`again`) — `proceed`**, gating 1 against 
 answered (codex; gemini rate-limited, the local engine misconfigured): the shell intermediary of the parent-watch
 test raised again — **rejected** again, on the code round's reason (the plan's own E2.S4 test, exe + argv, nothing
 interpolated).
+
+### Story E4.S3 — a gone request starts no VPN (branch `fix/e4s3-gone-request-starts-no-vpn`)
+
+**E4.S3 plan round (2026-10-10, session `a516fb69`, branch `fix/e4s3-gone-request-starts-no-vpn`) — `proceed`**,
+gating 2 against threshold 6, **1 of 2 reviewers answered** (codex; gemini rate-limited).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | §5.4/§5.6: the relay on Windows would depend on POSIX signal registration | **rejected** — `creds relay` refuses to run on Windows (`AgentRelay.RunAsync`, the `IsWindows` guard); it runs inside WSL. Epic E3's scope, re-gated on its own branch |
+| 1 | §8: retention has no test that old logs are pruned | **rejected** — inaccurate: E1 shipped `LoggingSinkTests.Retention_*` (old, current and non-date folders, the disabled sweep, the on-disk prune) |
+
+**E4.S3 code round 1 (2026-10-10, same session) — `proceed`**, gating 3 against threshold 5, **4 of 12 reviewers
+answered** (codex's four roles; gemini's four rate-limited, the local engine's four misconfigured — one vendor's verdict).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | `brokerAbandoned.test.ts`: the VPN fixture is cast `as never` | **accepted** — `vpnAction` now takes `VpnUseDeps` (what it reads, nothing more); the broker and unit fixtures are typed |
+| 1 | `sshUseActions.test.ts`: the new terminal test casts its fixture `as never` | **rejected** — it uses the file's one fixture helper `deps()`, cast at all ten call sites; typing it means narrowing `SshUseDeps.storage` from the `StorageManager` class across the exec and terminal paths, outside this story. Recorded as a follow-up |
+| 2 | a request abandoned at OpenVPN Connect's question or the install offer leaves its config on disk | **accepted** — the config is written last (*As built*, above). RED first: *"the VPN config was left on disk for an import the request never reached"*, *"the VPN config was written with no launcher to read it"*; green after; red again with the old `vpnRun.ts` restored |
+
+Break-it for the story: every gate check reverted one at a time — 17 of 17 went red with the real symptom (e.g.
+*"the stored VPN config was written for a request whose client had gone"*, *"a step ran after the client had gone"*,
+*"the installer ran for a request whose client had gone"*).

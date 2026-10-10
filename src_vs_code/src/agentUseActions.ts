@@ -38,6 +38,18 @@ import { automaticOpenerFor } from './automaticRead';
  * agent-supplied text ever reaches an interpreter or a shell.</p>
  */
 
+/** The one storage read an action needs to find the entity its grant names. */
+export type EntitySource = Pick<StorageManager, 'getNode'>;
+
+/**
+ * What the VPN action reads — the entity, and the window's own Start/Stop — and nothing else, so a test
+ * hands it exactly that rather than a cast (E4.S3, code round 1).
+ */
+export interface VpnUseDeps {
+  readonly storage: EntitySource;
+  open(accountId: string, entityId: string, action: 'start' | 'stop', startGate: AbortSignal): Promise<boolean>;
+}
+
 export interface AgentUseDeps {
   storage: StorageManager;
   storageDir: string;
@@ -64,7 +76,7 @@ function fail(code: ErrorCode, message: string): UseActionResult {
 }
 
 /** The live entity behind a grant, re-read on every call — never a snapshot. */
-function entityFor(deps: AgentUseDeps, ctx: UseActionContext): EntityMetadata | undefined {
+function entityFor(deps: { storage: EntitySource }, ctx: UseActionContext): EntityMetadata | undefined {
   return deps.storage.getNode(ctx.accountId, ctx.entityId)?.details;
 }
 
@@ -374,12 +386,7 @@ export function dbQueryAction(
  * the config read, a launcher's trust modal — before it types anything. A client that leaves in there gets
  * nothing started, and a start that did not happen for a gone request is that request's abandonment.</p>
  */
-export function vpnAction(
-  deps: AgentUseDeps & {
-    open: (accountId: string, entityId: string, action: 'start' | 'stop', startGate: AbortSignal) => Promise<boolean>;
-  },
-  action: 'up' | 'down',
-): UseAction {
+export function vpnAction(deps: VpnUseDeps, action: 'up' | 'down'): UseAction {
   const doneVerb = action === 'up' ? 'started' : 'stopped';
   return {
     kind: 'vpn',

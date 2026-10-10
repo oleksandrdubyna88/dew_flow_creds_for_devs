@@ -107,22 +107,12 @@ async function runBuiltIn(ctx: VpnRunContext, action: 'start' | 'stop'): Promise
   if (type === undefined) {
     return refuse(notStartable(ctx.details));
   }
-  // Stop does not need the config re-written; start does. Asking for the vault on a Stop
-  // would mean a locked vault could leave a tunnel up with no way to bring it down.
-  if (action === 'start' && !(await prepareStart(ctx, type))) {
+  // Before a start: the dependencies this VPN asks to run (an installer, in the owner's example) —
+  // BEFORE the launcher is looked for, so an install that just ran is found. A stop runs none.
+  if (action === 'start' && !(await runDependenciesFirst(vpnDependencies(ctx, [ctx.details])))) {
     return false;
   }
   return settle(ctx, await launchFor(ctx, type, action));
-}
-
-/**
- * Before a built-in start: the dependencies this VPN asks to run (an installer, in the owner's
- * example) — BEFORE the launcher is looked for, so an install that just ran is found — then the
- * config written where the tool will read it.
- */
-async function prepareStart(ctx: VpnRunContext, type: VpnType): Promise<boolean> {
-  const ready = await runDependenciesFirst(vpnDependencies(ctx, [ctx.details]));
-  return ready && (await writeVpnConfig(ctx, vpnConfigFileName(type, ctx.details.name))) !== undefined;
 }
 
 function startableType(details: EntityMetadata): VpnType | undefined {
@@ -145,28 +135,42 @@ function settle(ctx: VpnRunContext, launch: LaunchStep): boolean {
 }
 
 async function launchFor(ctx: VpnRunContext, type: VpnType, action: 'start' | 'stop'): Promise<LaunchStep> {
-  const configPath = materializedKeyPath(ctx.storageDir, vpnConfigFileName(type, ctx.details.name));
   // Find the binary BEFORE composing a command around it. `openvpn.exe` is not on
   // PATH on a default install, and "OpenVPN on this machine" is often OpenVPN Connect —
   // a GUI that neither takes --config nor belongs on a command line.
   const launcher = resolveVpnLauncher(type, process.platform, process.env, onPath, fs.existsSync);
   if (launcher.kind !== 'cli') {
-    return { kind: 'settled', started: await noCli(ctx, launcher, type, configPath, action) };
+    return { kind: 'settled', started: await noCli(ctx, launcher, type, action) };
   }
   return action === 'start'
-    ? vpnStartCommand(type, hostVpnPlatform(), configPath, launcher.exe)
-    : vpnStopCommand(type, hostVpnPlatform(), vpnTunnelName(ctx.details.name), configPath);
+    ? startLine(ctx, type, launcher.exe)
+    : vpnStopCommand(type, hostVpnPlatform(), vpnTunnelName(ctx.details.name), configPathOf(ctx, type));
 }
 
-async function noCli(
-  ctx: VpnRunContext,
-  launcher: ReturnType<typeof resolveVpnLauncher>,
-  type: VpnType,
-  configPath: string,
-  action: 'start' | 'stop',
-): Promise<boolean> {
+/**
+ * The built-in start's line, with its config written — LAST, once nothing can refuse the start any more.
+ *
+ * <p>The config is the secret itself, on disk outside the vault. Written before the launcher was known it
+ * was left behind for a launcher that was missing, an import nobody accepted, or a request that had gone
+ * (E4.S3, code round 1). Now only a line that will be sent writes it, and nothing awaits between the write
+ * and the send. A Stop never rewrites it: asking for the vault on a Stop would mean a locked vault could
+ * leave a tunnel up with no way to bring it down.</p>
+ */
+async function startLine(ctx: VpnRunContext, type: VpnType, exe: string): Promise<LaunchStep> {
+  const launch = vpnStartCommand(type, hostVpnPlatform(), configPathOf(ctx, type), exe);
+  return launch.kind !== 'run' || (await writeVpnConfig(ctx, vpnConfigFileName(type, ctx.details.name))) !== undefined ? launch : NOT_STARTED;
+}
+
+const NOT_STARTED: LaunchStep = { kind: 'settled', started: false };
+
+/** Where the built-in launcher's config is written — and read by the tool. */
+function configPathOf(ctx: VpnRunContext, type: VpnType): string {
+  return materializedKeyPath(ctx.storageDir, vpnConfigFileName(type, ctx.details.name));
+}
+
+async function noCli(ctx: VpnRunContext, launcher: ReturnType<typeof resolveVpnLauncher>, type: VpnType, action: 'start' | 'stop'): Promise<boolean> {
   if (launcher.kind === 'openvpn-connect') {
-    return openVpnConnect(ctx, launcher.exe, configPath, action);
+    return openVpnConnect(ctx, launcher.exe, type, action);
   }
   // T20: an offer instead of a dead end — the modal names what is missing and, on Yes, opens
   // a terminal running the platform's install recipe (visible, so sudo can ask). An agent's request
@@ -175,7 +179,7 @@ async function noCli(
   return false;
 }
 
-async function openVpnConnect(ctx: VpnRunContext, exe: string, configPath: string, action: 'start' | 'stop'): Promise<boolean> {
+async function openVpnConnect(ctx: VpnRunContext, exe: string, type: VpnType, action: 'start' | 'stop'): Promise<boolean> {
   if (action === 'stop') {
     return refuse('This machine uses OpenVPN Connect — disconnect from its own window.', 'info');
   }
@@ -186,7 +190,9 @@ async function openVpnConnect(ctx: VpnRunContext, exe: string, configPath: strin
     'This machine has OpenVPN Connect (the GUI), not the OpenVPN command line. Import this profile into it? If this VPN is already connected there, there is nothing to start.',
     'Import profile',
   );
-  if (open !== 'Import profile') {
+  // The profile is written only once the import is accepted — and `writeVpnConfig` reads the request last.
+  const configPath = open === 'Import profile' ? await writeVpnConfig(ctx, vpnConfigFileName(type, ctx.details.name)) : undefined;
+  if (configPath === undefined) {
     return false;
   }
   // `&` is PowerShell's call operator — correct only because the terminal is pinned to it — and

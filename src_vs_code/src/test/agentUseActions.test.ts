@@ -6,6 +6,7 @@ import {
   dbQueryAction,
   scriptRunAction,
   terminalRunAction,
+  VpnUseDeps,
   vpnAction,
 } from '../agentUseActions';
 
@@ -241,14 +242,15 @@ test('dbQueryAction refuses a DAMAGED connection string as damaged — the datab
 });
 
 /** The VPN action over an `open` that records the gate it was handed and answers `opens` (E4.S3). */
-function vpnDeps(opens: boolean, gates: (AbortSignal | undefined)[], during?: () => void) {
-  return fakeDeps({
-    open: (_accountId: string, _entityId: string, _action: string, startGate?: AbortSignal) => {
+function vpnDeps(opens: boolean, gates: (AbortSignal | undefined)[], during?: () => void): VpnUseDeps {
+  return {
+    storage: { getNode: () => ({ id: 'e1', name: 'prod-vpn', type: 'entity', details: { id: 'e1', name: 'prod-vpn', isSshEnabled: false, isVpn: true } }) },
+    open: (_accountId, _entityId, _action, startGate) => {
       gates.push(startGate);
       during?.();
       return Promise.resolve(opens);
     },
-  });
+  };
 }
 
 test('vpnAction hands open the request’s signal as its start gate (E4.S3)', async () => {

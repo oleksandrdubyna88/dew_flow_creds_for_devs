@@ -118,6 +118,7 @@ test('the install offer: a client gone while it is open installs nothing when In
   const { started, dir } = await run;
   try {
     assert.deepEqual(w.terminals.map((t) => t.name), [], 'an installer terminal opened for a request whose client had gone');
+    assert.deepEqual(filesUnder(dir), [], 'the VPN config was written for a start that had no launcher to read it');
     assert.equal(started, false);
   } finally {
     cleanup(dir);
@@ -176,6 +177,7 @@ test('OpenVPN Connect: a client gone while its import question is open imports n
   const { started, dir } = await run;
   try {
     assert.deepEqual(w.terminals.map((t) => `${t.name}: ${t.sent.join(' ; ')}`), [], 'a profile was imported for a request whose client had gone');
+    assert.deepEqual(filesUnder(dir), [], 'the VPN config was left on disk for an import the request never reached (code round 1)');
     assert.equal(started, false);
   } finally {
     cleanup(dir);
@@ -286,6 +288,37 @@ test('a start for a request already gone asks the person nothing', async () => {
   try {
     assert.deepEqual([...w.warnings, ...w.infos], [], 'a question was raised for a request whose client had already gone');
     nothingStarted(w, dir, started);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('OpenVPN Connect for a live request: the config is written once the import is accepted, and the line names it', async () => {
+  const w = world({});
+  const mocks = { './vpnExec': { resolveVpnLauncher: () => ({ kind: 'openvpn-connect', exe: 'C:\\OpenVPN Connect\\OpenVPNConnect.exe' }) } };
+
+  const { started, dir } = await startVpn(w, wireguard({ vpnType: 'openvpn' }), { startGate: new AbortController().signal, mocks });
+  try {
+    assert.equal(started, true, w.warnings.join('\n'));
+    assert.equal(filesUnder(dir).length, 1, 'the profile the import reads');
+    const line = w.terminals.find((t) => VPN_TERMINAL.test(t.name))?.sent[0] ?? '';
+    assert.match(line, /--import-profile=.*org_meter_stage\.ovpn/);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('a start with no launcher on this machine writes no config — nothing would read it', async () => {
+  const w = world({}, { modal: 'dismiss' });
+  const mocks = {
+    './vpnExec': { resolveVpnLauncher: () => ({ kind: 'missing', looked: [] }) },
+    './toolCheck': { installRecipe: () => ({ display: 'WireGuard', command: 'install-wireguard', note: '' }) },
+  };
+
+  const { started, dir } = await startVpn(w, wireguard(), { mocks });
+  try {
+    assert.deepEqual(filesUnder(dir), [], 'the VPN config was written with no launcher to read it');
+    assert.equal(started, false);
   } finally {
     cleanup(dir);
   }

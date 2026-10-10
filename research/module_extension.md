@@ -4048,6 +4048,9 @@ flowchart LR
   the config is materialised; in the custom launcher's `configFor`, immediately before its line; in
   `sendToVpnTerminal`, immediately before the built-in start/stop line or OpenVPN Connect's import line; in
   `offerToInstall` before the modal and before the recipe is sent. A fired gate answers `false` with no warning.
+- **The config is written last**: the built-in start finds its launcher first and writes the config only for a
+  line it will send (`startLine`; after *Import profile* for OpenVPN Connect; never for a missing launcher), with no
+  await between the write and the send — so neither a gone request nor a declined import leaves it on disk.
 - **The exit**: `vpnAction`'s `vpnOutcome` throws `notStarted()` (moved from `sshExecRunner.ts` to
   `requestLife.ts`, shared) when nothing started and the gate fired, so `brokerCall` journals the request's
   `ABANDONED` ("it was not launched") and answers nobody. A line already typed is the shell's: a sent command

@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict';
 import * as http from 'node:http';
 import { test } from 'node:test';
-import { vpnAction } from '../agentUseActions';
+import { VpnUseDeps, vpnAction } from '../agentUseActions';
 import { World, call, share, world } from './brokerWorld';
 
 /**
@@ -433,18 +433,16 @@ test('a VPN start whose client left while it was prepared is that request’s AB
   // no gate to hand on, and a VPN that did not start answered `no_credential` to a socket nobody read.
   let release = (): void => undefined;
   const gates: AbortSignal[] = [];
-  const realAction = vpnAction(
-    {
-      storage: { getNode: () => ({ details: { id: 'e1', name: 'prod', isVpn: true, vpnType: 'wireguard' } }) },
-      open: (_accountId: string, _entityId: string, _action: string, startGate: AbortSignal) => {
-        gates.push(startGate);
-        return new Promise<boolean>((resolve) => {
-          release = () => resolve(startGate?.aborted !== true);
-        });
-      },
-    } as never,
-    'up',
-  );
+  const deps: VpnUseDeps = {
+    storage: { getNode: () => ({ id: 'e1', name: 'prod', type: 'entity', details: { id: 'e1', name: 'prod', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' } }) },
+    open: (_accountId, _entityId, _action, startGate) => {
+      gates.push(startGate);
+      return new Promise<boolean>((resolve) => {
+        release = () => resolve(startGate?.aborted !== true);
+      });
+    },
+  };
+  const realAction = vpnAction(deps, 'up');
   const w = world({ realAction });
   try {
     const { port, secret } = await share(w);
