@@ -33,7 +33,19 @@ import type { StorageManager } from '../storageManager';
 
 type Actions = typeof import('../sshUseActions');
 
-interface World {
+/** What the run leaves behind, recorded by the stubs — built BEFORE the module loads, so the world needs no placeholder. */
+interface Log {
+  /** Every key file this run materialised, in order. */
+  materialised: string[];
+  /** The argv, program and env `runSshExec` was called with. */
+  runs: { argv: string[]; program?: string; env: NodeJS.ProcessEnv; timeoutMs: number }[];
+  notes: string[];
+  warnings: string[];
+  /** Counters live in one object, so the stubs and the world share them by reference. */
+  tally: { slotsHeld: number; connected: number };
+}
+
+interface World extends Log {
   mod: Actions;
   /**
    * The REAL `StorageManager` over an in-memory memento and keychain, seeded with the entry — so the deps
@@ -43,16 +55,8 @@ interface World {
    */
   storage: StorageManager;
   storageDir: string;
-  /** Every key file this run materialised, in order. */
-  materialised: string[];
-  /** The argv, program and env `runSshExec` was called with. */
-  runs: { argv: string[]; program?: string; env: NodeJS.ProcessEnv; timeoutMs: number }[];
   /** What the agent manager would report, so a test can run with and without an agent. */
   agentSocket?: string;
-  notes: string[];
-  warnings: string[];
-  slotsHeld: number;
-  connected: number;
 }
 
 interface Parts {
@@ -75,81 +79,72 @@ const ENTITY = {
 
 async function world(parts: Parts): Promise<World> {
   const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-use-'));
-  const w: World = {
-    mod: undefined as never,
-    storage: undefined as never,
-    storageDir,
-    materialised: [],
-    runs: [],
-    notes: [],
-    warnings: [],
-    slotsHeld: 0,
-    connected: 0,
-  };
+  const log: Log = { materialised: [], runs: [], notes: [], warnings: [], tally: { slotsHeld: 0, connected: 0 } };
   const stub = {
     window: {
       showWarningMessage: (m: string): Promise<undefined> => {
-        w.warnings.push(m);
+        log.warnings.push(m);
         return Promise.resolve(undefined);
       },
       showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined),
     },
   };
-  w.mod = loadWithVscode<Actions>(
-    '../sshUseActions',
-    stub,
-    {
-      './sshCredential': {
-        resolveSshCredential: (): Promise<unknown> => Promise.resolve(parts.source),
-      },
-      './keyInstaller': {
-        // A REAL file, so the `finally` cleanup is observed by asking the filesystem rather
-        // than by counting calls to a stub.
-        materializePrivateKey: (dir: string, id: string, content: string): string => {
-          const keyPath = path.join(dir, `${id}.key`);
-          fs.writeFileSync(keyPath, content, { mode: 0o600 });
-          w.materialised.push(keyPath);
-          return keyPath;
-        },
-        writeAskpassScriptFile: (): string => path.join(storageDir, 'askpass.sh'),
-      },
-      './hostKeyTrust': { materializeKnownHosts: (): string | undefined => undefined },
-      './sshExecRunner': {
-        runSshExec: (
-          argv: string[],
-          o: { env: NodeJS.ProcessEnv; timeoutMs: number; program?: string },
-        ): Promise<unknown> => {
-          w.runs.push({ argv, program: o.program, env: o.env, timeoutMs: o.timeoutMs });
-          return parts.runFails === true
-            ? Promise.reject(new Error('ssh is not installed'))
-            : Promise.resolve({ exitCode: 0, stdout: 'ok\n', stderr: '', timedOut: false });
-        },
-      },
-      './sshConnect': {
-        // It answers whether a terminal actually opened, so the action can stop reporting success
-        // for a connection a remote window refused.
-        connectEntity: (): Promise<boolean> => {
-          w.connected += 1;
-          return Promise.resolve(parts.connectRefuses !== true);
-        },
-      },
-      './terminalManager': { describeSshTarget: (e: { host?: string }): string | undefined => e.host },
-      './sshAskpass': {
-        askpassEnv: (_s: string, password: string): Record<string, string> => ({
-          SSH_ASKPASS_REQUIRE: 'force',
-          CREDS_PASSWORD: password,
-        }),
-      },
-    },
-  );
+  const mod = loadWithVscode<Actions>('../sshUseActions', stub, mocks(parts, storageDir, log));
   // The entry is re-read on every call, never snapshotted at grant time — so a world whose entry is
   // `undefined` (deleted since the grant was minted) seeds nothing.
-  w.storage = memoryStorage(stub);
+  const storage = memoryStorage(stub);
   const entity = 'entity' in parts ? parts.entity : ENTITY;
   if (entity !== undefined) {
-    await seedEntry(w.storage, entity, {});
+    await seedEntry(storage, entity, {});
   }
-  return w;
+  return { ...log, mod, storage, storageDir };
+}
+
+/** The I/O boundaries, substituted — each one records into `log` what it was asked to do. */
+function mocks(parts: Parts, storageDir: string, log: Log): Record<string, unknown> {
+  return {
+    './sshCredential': {
+      resolveSshCredential: (): Promise<unknown> => Promise.resolve(parts.source),
+    },
+    './keyInstaller': {
+      // A REAL file, so the `finally` cleanup is observed by asking the filesystem rather
+      // than by counting calls to a stub.
+      materializePrivateKey: (dir: string, id: string, content: string): string => {
+        const keyPath = path.join(dir, `${id}.key`);
+        fs.writeFileSync(keyPath, content, { mode: 0o600 });
+        log.materialised.push(keyPath);
+        return keyPath;
+      },
+      writeAskpassScriptFile: (): string => path.join(storageDir, 'askpass.sh'),
+    },
+    './hostKeyTrust': { materializeKnownHosts: (): string | undefined => undefined },
+    './sshExecRunner': {
+      runSshExec: (
+        argv: string[],
+        o: { env: NodeJS.ProcessEnv; timeoutMs: number; program?: string },
+      ): Promise<unknown> => {
+        log.runs.push({ argv, program: o.program, env: o.env, timeoutMs: o.timeoutMs });
+        return parts.runFails === true
+          ? Promise.reject(new Error('ssh is not installed'))
+          : Promise.resolve({ exitCode: 0, stdout: 'ok\n', stderr: '', timedOut: false });
+      },
+    },
+    './sshConnect': {
+      // It answers whether a terminal actually opened, so the action can stop reporting success
+      // for a connection a remote window refused.
+      connectEntity: (): Promise<boolean> => {
+        log.tally.connected += 1;
+        return Promise.resolve(parts.connectRefuses !== true);
+      },
+    },
+    './terminalManager': { describeSshTarget: (e: { host?: string }): string | undefined => e.host },
+    './sshAskpass': {
+      askpassEnv: (_s: string, password: string): Record<string, string> => ({
+        SSH_ASKPASS_REQUIRE: 'force',
+        CREDS_PASSWORD: password,
+      }),
+    },
+  };
 }
 
 function deps(w: World, parts: Parts): SshUseDeps {
@@ -161,9 +156,9 @@ function deps(w: World, parts: Parts): SshUseDeps {
       if (parts.noSlot === true) {
         return undefined;
       }
-      w.slotsHeld += 1;
+      w.tally.slotsHeld += 1;
       return (): void => {
-        w.slotsHeld -= 1;
+        w.tally.slotsHeld -= 1;
       };
     },
     note: (m: string): void => {
@@ -237,7 +232,7 @@ test('an entity with no credential left is refused, and the slot is given back',
     const result = await exec(w, parts);
 
     assert.equal((result.body.error as { code: string }).code, 'no_credential');
-    assert.equal(w.slotsHeld, 0);
+    assert.equal(w.tally.slotsHeld, 0);
   } finally {
     cleanup(w);
   }
@@ -267,7 +262,7 @@ test('the key is deleted even when ssh itself FAILS', async () => {
 
     assert.equal((result.body.error as { code: string }).code, 'internal');
     assert.equal(fs.existsSync(w.materialised[0]), false);
-    assert.equal(w.slotsHeld, 0, 'and the slot came back too');
+    assert.equal(w.tally.slotsHeld, 0, 'and the slot came back too');
   } finally {
     cleanup(w);
   }
@@ -380,7 +375,7 @@ test('the terminal action goes through the human Connect path, verbatim', async 
 
     const result = (await action.run(CTX, {})) as { status: number; body: { opened: boolean } };
 
-    assert.equal(w.connected, 1);
+    assert.equal(w.tally.connected, 1);
     assert.equal(result.body.opened, true);
   } finally {
     cleanup(w);
@@ -396,7 +391,7 @@ test('the terminal action refuses a deleted entity rather than opening an empty 
     const result = (await action.run(CTX, {})) as { status: number; body: Record<string, unknown> };
 
     assert.equal((result.body.error as { code: string }).code, 'not_found');
-    assert.equal(w.connected, 0);
+    assert.equal(w.tally.connected, 0);
   } finally {
     cleanup(w);
   }
@@ -472,7 +467,7 @@ test('the terminal action does NOT report success when the window refused the co
 
     const result = (await action.run(CTX, {})) as { status: number; body: { opened?: boolean } };
 
-    assert.equal(w.connected, 1, 'it still went through the one connect path');
+    assert.equal(w.tally.connected, 1, 'it still went through the one connect path');
     assert.notEqual(result.status, 200);
     assert.notEqual(result.body.opened, true);
   } finally {

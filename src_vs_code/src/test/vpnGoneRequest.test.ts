@@ -384,6 +384,52 @@ test('a client gone while a step’s Continue question is open: Continue runs no
   }
 });
 
+test('the built-in start: a client gone while the config is read AFTER a typed step is journalled with the step (code round 1)', async () => {
+  // The chain ran to its end while the client was there; the client left during the config read that
+  // follows. The later gate answers "nothing started" — and the journal would say "not launched" about a
+  // chain whose step the shell already ran. The chain's `typed` travels into the start's later gates.
+  const request = new AbortController();
+  const only: EntityMetadata = { id: 'a', name: 'only', isSshEnabled: false, isTerminal: true, command: 'only-step', terminalOs: hostOs };
+  const nodes = { a: only, ...wireguard({ dependsOn: ['a'], runDependencies: true }) };
+  const config = heldRead();
+  const w = world({});
+  const run = startVpn(w, nodes, { startGate: request.signal, storage: storageOf(nodes, config.read), mocks: CLI });
+  await until(config.started, 'the config read to begin');
+
+  request.abort();
+  config.release();
+  const { started, dir, ended } = await run;
+  try {
+    assert.deepEqual(w.terminals.flatMap((t) => t.executed), ['only-step'], 'the step ran while the client was there');
+    assert.deepEqual(filesUnder(dir), [], 'the stored VPN config was written for a request whose client had gone');
+    assert.equal(started, false);
+    endedAfterATypedStep(ended);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('the custom launcher: a client gone while its {config} is read AFTER a typed step is journalled with the step (code round 1)', async () => {
+  const request = new AbortController();
+  const nodes = ownerChain();
+  const config = heldRead();
+  const w = world({});
+  const run = startVpn(w, nodes, { startGate: request.signal, storage: storageOf(nodes, config.read) });
+  await until(config.started, 'the config read to begin');
+
+  request.abort();
+  config.release();
+  const { started, dir, ended } = await run;
+  try {
+    assert.deepEqual(w.terminals.flatMap((t) => t.executed), ['install-openvpn'], 'the step ran while the client was there');
+    assert.deepEqual(w.terminals.flatMap((t) => t.sent), [], 'the launcher was typed for a request whose client had gone');
+    assert.equal(started, false);
+    endedAfterATypedStep(ended);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('the agent VPN opener hands its gate to the start: a request already gone starts nothing (checkpoint round, finding 3)', async () => {
   const request = new AbortController();
   request.abort();

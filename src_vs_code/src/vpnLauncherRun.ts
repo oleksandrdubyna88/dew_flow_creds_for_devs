@@ -4,8 +4,8 @@ import { TrustStore } from './commandTrust';
 import { EntityMetadata } from './types';
 import { materializedKeyPath, materializeVpnConfig } from './keyInstaller';
 import { executableLine } from './dependencyRun';
-import { DependencyRunRequest, dependencyRequest, runDependenciesFirst } from './dependencyRunHost';
-import { requestGone } from './requestLife';
+import { ChainEnd, DependencyRunRequest, dependencyRequest, runDependenciesFirst } from './dependencyRunHost';
+import { endedAfter, requestGone } from './requestLife';
 import { ShellFamily, entryShell } from './hostShell';
 import { entryTerminal, shellContext } from './pinnedTerminal';
 import { confirmTrusted } from './trustPrompt';
@@ -76,8 +76,23 @@ async function dependenciesThenLaunch(ctx: VpnRunContext, launcher: EntityMetada
   // Both ask for themselves: the VPN's own dependencies when it ticked the box, and the launcher's
   // (the installer, in the owner's example) when IT did. The launcher is the main action, so it is
   // excluded from the chain even when the VPN also lists it as a dependency.
-  const ready = await runDependenciesFirst(vpnDependencies(ctx, [ctx.details, launcher], new Set([launcher.id])));
-  return ready && launch(ctx, launcher, line);
+  const chain = await runDependenciesFirst(vpnDependencies(ctx, [ctx.details, launcher], new Set([launcher.id])));
+  return chain.ready ? afterTheChain(ctx, chain, await launch(ctx, launcher, line)) : false;
+}
+
+/**
+ * What a start answers once its chain has run: `started` as it is — unless nothing started, the chain had
+ * typed a step, and the request has gone since. Then the request's end is thrown naming the step: the
+ * later gates (the config read and its PIN, the launcher's line) answer `false` for a gone request, and a
+ * `false` could only be journalled as "not launched", true of the VPN and false of the step the shell
+ * already ran (E4.S4, code round 1). A live request's refusal stays `false`; the person's own click has
+ * no gate and never throws.
+ */
+export function afterTheChain(ctx: VpnRunContext, chain: ChainEnd, started: boolean): boolean {
+  if (started || !chain.typed || !requestGone(ctx.startGate)) {
+    return started;
+  }
+  throw endedAfter('a dependency step had been typed');
 }
 
 async function launch(ctx: VpnRunContext, launcher: EntityMetadata, line: string): Promise<boolean> {

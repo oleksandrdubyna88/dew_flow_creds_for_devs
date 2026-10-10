@@ -14,9 +14,9 @@ import {
 } from './vpnCommand';
 import { materializedKeyPath } from './keyInstaller';
 import { TrustStore } from './commandTrust';
-import { liveDetails, runDependenciesFirst } from './dependencyRunHost';
+import { NO_CHAIN, liveDetails, runDependenciesFirst } from './dependencyRunHost';
 import { quoteFor } from './hostShell';
-import { VpnRunContext, runWithLauncher, vpnDependencies, writeVpnConfig } from './vpnLauncherRun';
+import { VpnRunContext, afterTheChain, runWithLauncher, vpnDependencies, writeVpnConfig } from './vpnLauncherRun';
 import { requestGone } from './requestLife';
 import type { VpnUseDeps } from './agentUseActions';
 import { resolveVpnLauncher } from './vpnExec';
@@ -124,10 +124,11 @@ async function runBuiltIn(ctx: VpnRunContext, action: 'start' | 'stop'): Promise
   }
   // Before a start: the dependencies this VPN asks to run (an installer, in the owner's example) —
   // BEFORE the launcher is looked for, so an install that just ran is found. A stop runs none.
-  if (action === 'start' && !(await runDependenciesFirst(vpnDependencies(ctx, [ctx.details])))) {
+  const chain = action === 'start' ? await runDependenciesFirst(vpnDependencies(ctx, [ctx.details])) : NO_CHAIN;
+  if (!chain.ready) {
     return false;
   }
-  return settle(ctx, await launchFor(ctx, type, action));
+  return afterTheChain(ctx, chain, settle(ctx, await launchFor(ctx, type, action)));
 }
 
 function startableType(details: EntityMetadata): VpnType | undefined {

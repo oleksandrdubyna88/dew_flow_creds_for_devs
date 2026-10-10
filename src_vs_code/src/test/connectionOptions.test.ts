@@ -39,6 +39,8 @@ interface WorldOptions {
   duringAsk?: () => void;
   /** The scan does not answer until its signal fires, and then fails as a killed `ssh-keyscan` does (E4.S4). */
   holdScan?: boolean;
+  /** Runs inside the scan, before it answers — where the client can leave while a key is already on its way. */
+  duringScan?: () => void;
 }
 
 /**
@@ -93,6 +95,7 @@ function world(options: WorldOptions = {}): World {
     if (options.holdScan === true) {
       return scanKilledWhen(o.signal);
     }
+    options.duringScan?.();
     return Promise.resolve({
       exitCode: 0,
       stdout:
@@ -255,6 +258,21 @@ test('a client gone while the host-key scan runs: the scan is cancelled, nobody 
   assert.deepEqual(w.scanSignals, [request.signal], 'the scan was not handed the request it serves');
   assert.equal(got, undefined, 'the connection went ahead for a request whose client had gone');
   assert.deepEqual(w.warnings, [], 'a question was raised for a request whose client had gone');
+  assert.deepEqual(w.updated, []);
+  assert.deepEqual(filesUnder(w.dir), []);
+});
+
+test('a client gone during the scan whose key still comes back is asked no question (own review)', async () => {
+  // The request's end kills `ssh-keyscan`, but a key it had already printed is still returned — and a
+  // first-contact key is exactly what raises the question. The request is read again after the scan.
+  const request = new AbortController();
+  const w = world({ scanned: KEY, answer: 'Trust and connect', duringScan: () => request.abort() });
+  (w.storage as { _put(n: TreeNode): void })._put({ id: 'e1', name: 'prod', type: 'entity', details: entity() });
+
+  const got = await w.mod.connectionOptions('acc', entity(), w.storage as never, w.dir, request.signal);
+
+  assert.deepEqual(w.warnings, [], 'the host-key question was raised for a request whose client had gone');
+  assert.equal(got, undefined);
   assert.deepEqual(w.updated, []);
   assert.deepEqual(filesUnder(w.dir), []);
 });

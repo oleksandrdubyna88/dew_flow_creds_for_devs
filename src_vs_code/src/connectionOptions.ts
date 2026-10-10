@@ -126,7 +126,13 @@ async function conversation(
   accountId: string,
   startGate: AbortSignal | undefined,
 ): Promise<{ entity: EntityMetadata; stored?: string } | undefined> {
-  const outcome = await confirmHostKey(entity, await scanHostKey(host, entity.port, startGate));
+  const scanned = await scanHostKey(host, entity.port, startGate);
+  // The request's end kills the scan, but a key it had already printed still comes back — so the request
+  // is read again here, before the question, or a gone request could still be shown it (own review).
+  if (requestGone(startGate)) {
+    return undefined;
+  }
+  const outcome = await confirmHostKey(entity, scanned);
   return trusted(outcome, startGate) ? acceptedPin(entity, outcome.pin, storage, accountId) : undefined;
 }
 

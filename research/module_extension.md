@@ -4088,22 +4088,28 @@ flowchart LR
 
 - **Where the gate is read**: `connectEntity`'s entry (a request already gone is asked nothing — not even its PIN;
   this also ends a remedy's retry); after the credential lookup, before the warning, the route and the host key;
-  inside `connectionOptions` before the host-key scan (which the same signal cancels) and again after the question,
-  before the pin is written — a trust answer given to a dialog nobody waits for decides nothing, the next live
-  connect asks again; inside `refuseAndOfferTheFix` before its modal and again after it, before the remedy, the
-  clipboard copy and the retry. `connectionOptions` and `refuseAndOfferTheFix` take the gate as a REQUIRED
-  `AbortSignal | undefined` (the `runVpn` precedent), `undefined` for the person's own Connect, which is unchanged.
+  inside `connectionOptions` before the host-key scan (which the same signal cancels), again after the scan and
+  before the question (a killed `ssh-keyscan` can still answer a key it had printed, and a first-contact key is
+  what raises the modal — the own review), and again after the question, before the pin is written — a trust
+  answer given to a dialog nobody waits for decides nothing, the next live connect asks again; inside
+  `refuseAndOfferTheFix` before its modal and again after it, before the remedy, the clipboard copy and the retry.
+  `connectionOptions` and `refuseAndOfferTheFix` take the gate as a REQUIRED `AbortSignal | undefined` (the `runVpn`
+  precedent), `undefined` for the person's own Connect, which is unchanged.
 - **The journal tells the truth about a typed step**: `brokerCall.failedOrAbandoned` used to write *as the action
   was starting — it was not launched* for every non-rotating action, chosen by `Delivery.mutatesSecrets` — true of a
   VPN whose chain had typed nothing, false once a *run first* step was handed to the shell. `RequestEndedError`
   carries a `stage` (`requestLife.ts`: `notStarted()` keeps `NOT_LAUNCHED`; `endedAfter(what)` names what the shell
-  has; `endedStage(error)` reads it by SHAPE — an `AbortError` with a string `stage` — never by `instanceof`, since the
-  broker and the action can come from two module graphs). The dependency chain throws
+  has; `endedStage(error)` reads it through a `Symbol.for` BRAND — never `instanceof`, since the broker and the action
+  can come from two module graphs, and never the error's shape, since a foreign `AbortError` with a `stage` of its
+  own must not put unmasked words into the journal). The dependency chain throws
   `endedAfter('a dependency step had been typed')` from `settle` (before any *Continue* question) and after each step
-  in `runAll` (a *Continue* answered after the client left); `brokerResponse.failed` hands the stage to
-  `Delivery.fail(reason, actionRan, ended?)`, and the journal line reads *the client left after a dependency step had
-  been typed — it is the shell's and is not taken back; nothing more was started*. Before any step was typed the chain
-  answers `false` as before, and the person's own chain (no gate) never throws.
+  in `runAll` (a *Continue* answered after the client left); a chain that ran to its end answers a `ChainEnd`
+  (`ready`, `typed`), and `vpnLauncherRun.afterTheChain` throws the same end when nothing started, the chain had
+  typed, and the request has gone since — a client gone during the config read AFTER a live step (code round 1).
+  `brokerResponse.failed` hands the stage to `Delivery.fail(reason, actionRan, ended?)`, and the journal line reads
+  *the client left after a dependency step had been typed — it is the shell's and is not taken back; nothing more was
+  started*. Before any step was typed the chain answers `ready: false` as before, the person's own chain (no gate)
+  never throws, and `runCommands` reads `.ready`.
 - **Tests**: `sshConnect.test.ts` (the entry, the lookup, the gate hand-off to the host-key conversation, a refusal's
   button after the client left, a late refusal shown no modal), `connectionOptions.test.ts` (already gone: no
   question; gone during the question: no pin, no file; gone during the scan: the scan is cancelled, nothing asked or

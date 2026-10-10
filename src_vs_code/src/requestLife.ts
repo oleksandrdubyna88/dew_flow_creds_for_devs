@@ -73,19 +73,29 @@ export function endedAfter(what: string): Error {
  * left* — or `undefined` for any error that is not a request's end, which the broker then describes by
  * what it knows (`brokerCall.failedOrAbandoned`).
  *
- * <p>Recognised by its SHAPE — an `AbortError` carrying a `stage` — never by `instanceof`: the broker and
- * the action that threw can come from two module graphs (the test harness loads each under its own
- * `vscode` stub, and a bundler may split them), and a class identity check would then quietly fall back to
- * "not launched", the very words this exists to correct.</p>
+ * <p>Recognised by its BRAND, never by `instanceof`: the broker and the action that threw can come from
+ * two module graphs (the test harness loads each under its own `vscode` stub, and a bundler may split
+ * them), and a class identity check would then quietly fall back to "not launched", the very words this
+ * exists to correct. The brand is a `Symbol.for` key, which every copy of this module shares — and which
+ * no foreign `AbortError` carries, so nothing but a request's own end can put words into the journal
+ * through this reading (own review, E4.S4).</p>
  */
 export function endedStage(error: unknown): string | undefined {
-  const stage = error instanceof Error && error.name === 'AbortError' ? (error as { stage?: unknown }).stage : undefined;
+  const stage = isRequestEnded(error) ? error.stage : undefined;
   return typeof stage === 'string' ? stage : undefined;
+}
+
+/** The brand a request's end carries across module graphs. */
+const REQUEST_ENDED = Symbol.for('creds-for-devs.requestEnded');
+
+function isRequestEnded(error: unknown): error is { readonly stage: unknown } {
+  return typeof error === 'object' && error !== null && (error as Record<symbol, unknown>)[REQUEST_ENDED] === true;
 }
 
 /** Named `AbortError` as part of the instance, as Node names a cancelled operation — never assigned after. */
 class RequestEndedError extends Error {
   override readonly name = 'AbortError';
+  readonly [REQUEST_ENDED] = true;
 
   constructor(
     /** The journal's detail: what the request's end found, in the words written after *the client left*. */

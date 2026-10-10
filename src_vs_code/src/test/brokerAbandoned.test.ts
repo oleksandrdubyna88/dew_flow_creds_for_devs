@@ -511,13 +511,18 @@ test('a VPN start whose chain had typed a step when the client left is journalle
  * in the window) — the plan round's first finding: the signal a real request's close fires must reach the
  * gate BEFORE the host-key question, not only the one before the terminal.
  */
-interface SshTerminalWorld {
-  actions: typeof import('../sshUseActions');
-  deps(): Promise<SshUseDeps>;
+/** What the stubbed SSH path records — one object the stubs and the test share by reference. */
+interface SshLog {
   lookups: number;
   hostKeyAsked: unknown[];
   terminals: number;
   releaseLookup: () => void;
+}
+
+interface SshTerminalWorld {
+  readonly actions: typeof import('../sshUseActions');
+  readonly log: SshLog;
+  deps(): Promise<SshUseDeps>;
 }
 
 function sshTerminalWorld(): SshTerminalWorld {
@@ -530,43 +535,25 @@ function sshTerminalWorld(): SshTerminalWorld {
       onDidCloseTerminal: (): { dispose(): void } => ({ dispose: (): void => undefined }),
     },
   };
-  const state: SshTerminalWorld = {
-    actions: undefined as never,
-    lookups: 0,
-    hostKeyAsked: [],
-    terminals: 0,
-    releaseLookup: (): void => undefined,
-    deps: async (): Promise<SshUseDeps> => {
-      const storage = memoryStorage(stub);
-      await seedEntry(storage, { id: 'e1', name: 'prod', isSshEnabled: true, kind: 'ssh', host: 'prod.example.com' }, {});
-      return {
-        storage,
-        storageDir: fs.mkdtempSync(path.join(os.tmpdir(), 'creds-abandoned-')),
-        signal: new AbortController().signal,
-        acquireExecSlot: () => (): void => undefined,
-        note: (): void => undefined,
-        agentSocket: (): undefined => undefined,
-      };
-    },
-  };
-  state.actions = loadWithVscode<typeof import('../sshUseActions')>('../sshUseActions', stub, {
+  const log: SshLog = { lookups: 0, hostKeyAsked: [], terminals: 0, releaseLookup: (): void => undefined };
+  const actions = loadWithVscode<typeof import('../sshUseActions')>('../sshUseActions', stub, {
     './sshCredential': {
       resolveSshCredential: (): Promise<unknown> =>
         new Promise((resolve) => {
-          state.lookups += 1;
-          state.releaseLookup = () => resolve({ kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' });
+          log.lookups += 1;
+          log.releaseLookup = () => resolve({ kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE' });
         }),
     },
     './connectionOptions': {
       connectionOptions: (_a: unknown, _e: unknown, _s: unknown, _d: unknown, startGate: unknown): Promise<unknown> => {
-        state.hostKeyAsked.push(startGate);
+        log.hostKeyAsked.push(startGate);
         return Promise.resolve({ knownHostsFile: undefined });
       },
     },
     './keyInstaller': { materializePrivateKey: (): string => '/k', forgetMaterializedKey: (): void => undefined, writeAskpassScriptFile: (): string => '/a' },
     './terminalManager': {
       openSshTerminal: (): unknown => {
-        state.terminals += 1;
+        log.terminals += 1;
         return { name: 'ssh', dispose: (): void => undefined };
       },
       buildSshCommand: (): string => 'ssh prod',
@@ -575,7 +562,19 @@ function sshTerminalWorld(): SshTerminalWorld {
     './sshProgram': { ...sshProgram, sshClientPresent: (): boolean => true },
     './pinnedTerminal': { composedShellPath: (): undefined => undefined },
   });
-  return state;
+  const deps = async (): Promise<SshUseDeps> => {
+    const storage = memoryStorage(stub);
+    await seedEntry(storage, { id: 'e1', name: 'prod', isSshEnabled: true, kind: 'ssh', host: 'prod.example.com' }, {});
+    return {
+      storage,
+      storageDir: fs.mkdtempSync(path.join(os.tmpdir(), 'creds-abandoned-')),
+      signal: new AbortController().signal,
+      acquireExecSlot: () => (): void => undefined,
+      note: (): void => undefined,
+      agentSocket: (): undefined => undefined,
+    };
+  };
+  return { actions, log, deps };
 }
 
 test('an SSH terminal whose client left during the credential lookup is asked no host-key question, through the real broker (E4.S4)', async () => {
@@ -585,19 +584,19 @@ test('an SSH terminal whose client left during the credential lookup is asked no
   try {
     const { port, secret } = await share(w);
     const gone = hanging(port, '/v1/use/exec', { command: 'terminal' }, secret);
-    await until(() => ssh.lookups === 1, 'the credential lookup to begin');
+    await until(() => ssh.log.lookups === 1, 'the credential lookup to begin');
 
     gone.hangUp();
     await pause(CLOSE_SEEN_MS);
-    ssh.releaseLookup();
+    ssh.log.releaseLookup();
     await until(() => w.audit.some((line) => /ABANDONED| opened | internal /.test(line)), 'the call to be journalled');
 
-    assert.deepEqual(ssh.hostKeyAsked, [], 'the host-key question was raised for a request whose client had gone');
-    assert.equal(ssh.terminals, 0, 'a terminal opened for a request whose client had gone');
+    assert.deepEqual(ssh.log.hostKeyAsked, [], 'the host-key question was raised for a request whose client had gone');
+    assert.equal(ssh.log.terminals, 0, 'a terminal opened for a request whose client had gone');
     assert.equal(abandonedLines(w).length, 1, w.audit.join(' | '));
     assert.match(abandonedLines(w)[0], /not launched/);
   } finally {
-    ssh.releaseLookup();
+    ssh.log.releaseLookup();
     w.server.dispose();
     fs.rmSync(deps.storageDir, { recursive: true, force: true });
   }
