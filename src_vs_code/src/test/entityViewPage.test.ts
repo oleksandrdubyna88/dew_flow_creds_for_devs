@@ -271,13 +271,34 @@ test('an entry with CLI aliases shows the copyable command, verb by kind', async
   assert.equal(copied, 'creds db prod-db');
 });
 
+test('a config entry with two names shows its one command once — the command carries no name', () => {
+  const html = renderEntityViewHtml(options({ details: metadata({ isConfig: true }), cliAliases: ['app-config', 'cfg'] }));
+
+  assert.equal((html.match(/value="creds config -"/g) ?? []).length, 1, 'the same command was shown once per name');
+  assert.doesNotMatch(html, /creds config (app-config|cfg)/);
+});
+
+test('rows collapse by the COMMAND, not by a flag: an ssh entry keeps a row per name', () => {
+  // The rows follow `cliCommandFor`'s own answer — each distinct command once — so a kind whose command
+  // carries the name keeps every name, and only a config entry (one command for every name) collapses.
+  const ssh = metadata({ kind: 'ssh', isSshEnabled: true, host: 'box.example.com' });
+  const html = renderEntityViewHtml(options({ details: ssh, cliAliases: ['box', 'box2'] }));
+
+  assert.match(html, /value="creds ssh box"/);
+  assert.match(html, /value="creds ssh box2"/);
+  assert.doesNotMatch(html, /creds config/);
+});
+
 test('the verb follows the kind: ssh, run, script, vpn-up, config, env', () => {
+  // A config entry has NO alias route: `creds config` takes its key on stdin (`-`) or from the
+  // environment, and refuses any argument (cli 0.3.1). The row shows the stdin form every
+  // snippet uses; `creds config <alias>` never worked and is now a refusal.
   const cases: ReadonlyArray<[Record<string, unknown>, string]> = [
     [{ isSshEnabled: true, host: 'h' }, 'creds ssh a'],
     [{ isTerminal: true }, 'creds run a'],
     [{ isScript: true }, 'creds script a'],
     [{ isVpn: true }, 'creds vpn-up a'],
-    [{ isConfig: true }, 'creds config a'],
+    [{ isConfig: true }, 'creds config -'],
     [{}, 'creds env a'],
   ];
   for (const [details, expected] of cases) {

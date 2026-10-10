@@ -4637,6 +4637,36 @@ the argument. `configSnippet.test.ts` pins the launch and the stdin write per la
 positive control proves its detector still catches every argument shape the snippets used to ship.
 Plan: [PLAN_config_key_off_the_command_line.md](PLAN_config_key_off_the_command_line.md).
 
+**Two snippets run in the tests, not only read (2026-10-10).** The PowerShell body wrote its file with
+`Set-Content -NoNewline` over the ARRAY of lines PowerShell makes of a native command's output — which
+concatenates them with nothing between, so a multi-line config lost every newline on disk (destructive for
+a config with `//` comments). It writes the lines as lines now, and `configSnippet.test.ts` runs the real
+body under a real `pwsh` against a fake `creds` first on PATH, asserting a three-line document round-trips
+(skipped where no `pwsh` exists; every GitHub-hosted runner has one). The C++ body, POSIX only until then,
+carries an `#ifdef _WIN32` branch — `_putenv_s`, `_popen`, `_pclose`, the key taken back out of the
+environment right after the launch exactly as the POSIX branch does; a structural test holds both
+branches, and a compile-and-run test builds whichever branch the host compiles (`g++`/`clang++`/`c++`,
+skipped without one — Ubuntu CI builds the POSIX branch; the Windows branch is verified by structure
+until a Windows host with a compiler runs the suite). Both branches refuse to launch when the key could not
+be set — `creds` would otherwise read whatever key was there before — and stop, closing the pipe, when the
+key could not be taken back out of the environment, which every later child would inherit (the code rounds).
+The viewer's *CLI
+access* row of a config entry (`cliCommandText.ts`) shows `creds config -`, the stdin form, instead of
+`creds config <alias>` — a line that never worked, since `creds config` has no alias route and refuses any
+argument; the rows show each DISTINCT command once (`distinctCliCommands` — a config entry's names collapse to
+one row, a kind whose command carries the name keeps a row per name), and *Enable in
+CLI* says what a config's name is for through `cliAliasNote` (it lists the config in `creds ls`; it does not
+read it), so the box and the message no longer imply a name unlocks a config (the own review); both branch on
+one verb decision, `cliVerbFor`. **Two limits the gate named and this change does not take** (both the shipped
+design of #202, not this change's): the PowerShell body under Windows PowerShell 5.1 writes the system code page
+— and 5.1 also DECODES a native command's output through it — so a config with non-ASCII text wants pwsh 7
+(said in the snippet), and a fix spans the CLI's own console encoding, to be measured on 5.1 before it is
+written; and the C++ body launches `creds` through `popen`, the one way standard C++ has, with no timeout — a
+bounded, cancellable child in portable C++ is platform code, not a paste-ready example. Where every snippet
+FINDS `creds` (a bare name on the PATH, which `CreateProcess` and `cmd` resolve through the current directory
+first on Windows) is [PLAN_creds_cli_reachable_from_every_caller.md](../todo/PLAN_creds_cli_reachable_from_every_caller.md)'s
+subject.
+
 **The Fields tab is a VIEW over the raw text.** Parse-edit-serialise cannot keep a document —
 `JSON.parse` then `JSON.stringify` loses the indentation somebody chose, the blank lines and the
 trailing newline; for `.env` it loses every comment. So a field records WHERE its value sits and an
