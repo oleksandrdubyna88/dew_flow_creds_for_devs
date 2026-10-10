@@ -119,7 +119,11 @@ test('the password env CARRIES the parent’s, because spawn replaces rather tha
   // looks like a network problem.
   const result = await withCredential({ kind: 'password', password: 'hunter2' })('/store');
 
-  assert.notEqual(ok(result).env.PATH, undefined, 'PATH must survive');
+  // The parent's own spelling of the name: Windows calls it `Path`, and only `process.env` itself is
+  // case-insensitive there — a spread copy keeps the spelling, which `spawn` then reads correctly.
+  const pathName = Object.keys(process.env).find((name) => name.toUpperCase() === 'PATH') ?? 'PATH';
+  assert.notEqual(process.env[pathName], undefined, 'the positive control: this process has a PATH');
+  assert.equal(ok(result).env[pathName], process.env[pathName], 'PATH must survive');
 });
 
 test('no credential at all is a REFUSAL that says so, never a silent "no key"', async () => {
