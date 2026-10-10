@@ -67,9 +67,11 @@ internal static class ServerLifetime
         }
 
         log.Information("stopping the server: {Reason:l}", HostRun.Word(ending.Reason));
-        await stop.CancelAsync();
+        // Armed BEFORE cancelling: a callback on the run token that never returns would otherwise hold the
+        // cancel itself, and the deadline would never exist (final code round, finding 0).
         using var deadline = time.CreateTimer(
             _ => DeadlinePassed(log, ending, timings.Deadline, forceExit), null, timings.Deadline, Timeout.InfiniteTimeSpan);
+        await stop.CancelAsync();
         await StoppedAsync(running);
         return ending;
     }

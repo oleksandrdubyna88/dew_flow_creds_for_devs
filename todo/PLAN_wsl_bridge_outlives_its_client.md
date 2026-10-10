@@ -707,3 +707,10 @@ line per run, since the deadline and a normal return can meet (RED: *"to contain
 by init (a container entrypoint) instead of failing there; (4) `ParentWatch` reads its cancellation token once,
 so a dispose between two ticks cannot raise `ObjectDisposedException` in a discarded task (a race, no
 deterministic test); (5) `ParentWatch.Attach` split under the complexity ceiling.
+
+**Final code round (`again`, 2026-10-10) — `proceed`**, gating 1 against threshold 5, **4 of 8 reviewers answered**
+(codex; gemini rate-limited).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | The deadline is armed only after `CancelAsync` returns, so a cancellation callback that blocks keeps it from ever existing | **accepted** — the timer is created before the cancel; RED (*a callback that never returns — "System.TimeoutException: The operation has timed out"*, no forced exit) → GREEN → RED again with the order reversed |

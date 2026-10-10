@@ -146,6 +146,32 @@ public sealed class ServerLifetimeTests
     }
 
     [Fact]
+    public async Task A_cancellation_callback_that_blocks_is_still_ended_by_the_deadline()
+    {
+        // Final code round, finding 0: the deadline must be armed BEFORE cancelling — a callback registered on
+        // the run token that never returns would otherwise hold the cancel, and the timer would never exist.
+        using var blocker = new ManualResetEventSlim(false);
+        try
+        {
+            _ = Run(
+                ct =>
+                {
+                    ct.Register(() => blocker.Wait());
+                    return Task.Delay(Timeout.Infinite, TestContext.Current.CancellationToken);
+                },
+                new LifetimeTimings(Hour, TimeSpan.FromMilliseconds(100)));
+
+            _signal.SetResult(PosixSignal.SIGTERM);
+
+            (await _forced.Task.WaitAsync(Bound, TestContext.Current.CancellationToken)).Should().Be(new HostEnding(143, ExitReason.Signalled));
+        }
+        finally
+        {
+            blocker.Set();
+        }
+    }
+
+    [Fact]
     public async Task A_failing_run_is_not_swallowed()
     {
         // A broken stream is the caller's to name (clientDisconnected); this class must not hide it.
