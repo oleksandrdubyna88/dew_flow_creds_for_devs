@@ -50,6 +50,7 @@ public sealed class RelayLogTests : IDisposable
         var file = HostProcess.Read(HostProcess.LogFileOf(_root, RelayPipe.AppName, pipe.Id));
         // Positive controls before the grep, or "no marker" could mean "no file".
         file.Should().Contain("started: relay-pipe");
+        file.Should().Contain($"parent {Environment.ProcessId}", "this test started it, so it IS the parent");
         file.Should().Contain("no VS Code window is serving an SSH agent");
         file.Should().Contain($"exited: code {pipe.ExitCode}, reason noAgentAnnounced");
         stderr.Should().Contain("no VS Code window is serving an SSH agent", "the person still reads the sentence on stderr");

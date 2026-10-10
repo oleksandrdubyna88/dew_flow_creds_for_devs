@@ -42,12 +42,16 @@ public static class LogRoot
     public static string For(LogPlatform platform, Func<string, string?> env, string home, string localAppData) =>
         env(CredsLogging.DirectoryVariable) is { Length: > 0 } chosen
             ? chosen
-            : platform switch
-            {
-                LogPlatform.Windows => Under(localAppData, ProductFolder, "logs"),
-                LogPlatform.MacOS => Under(home, "Library", "Logs", ProductFolder),
-                _ => Linux(env("XDG_STATE_HOME"), home),
-            };
+            : PlatformDefault(platform, env, home, localAppData);
+
+    /// <summary>The folder the platform's own convention names, without the override.</summary>
+    private static string PlatformDefault(LogPlatform platform, Func<string, string?> env, string home, string localAppData) =>
+        platform switch
+        {
+            LogPlatform.Windows => Under(localAppData, ProductFolder, "logs"),
+            LogPlatform.MacOS => Under(home, "Library", "Logs", ProductFolder),
+            _ => Linux(env("XDG_STATE_HOME"), home),
+        };
 
     /// <summary>This process's platform.</summary>
     public static LogPlatform Here() =>

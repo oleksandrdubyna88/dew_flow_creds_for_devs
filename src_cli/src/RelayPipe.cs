@@ -80,7 +80,7 @@ internal static class RelayPipe
             log.Warning(
                 "no VS Code window is serving an SSH agent. Load a key into the agent from the SSH keys view, "
                     + "then try again.");
-            return new HostEnding(contract.Exit("brokerUnreachable"), "noAgentAnnounced");
+            return new HostEnding(contract.Exit("brokerUnreachable"), ExitReason.NoAgentAnnounced);
         }
 
         foreach (var address in addresses)
@@ -99,7 +99,7 @@ internal static class RelayPipe
             "an SSH agent was announced but none answered — the window that wrote it is gone, or its key "
                 + "was unloaded ({Candidates} announced).",
             addresses.Count);
-        return new HostEnding(contract.Exit("brokerUnreachable"), "noAgentAnswered");
+        return new HostEnding(contract.Exit("brokerUnreachable"), ExitReason.NoAgentAnswered);
     }
 
     private static async Task<Stream?> TryConnectAsync(string address)
@@ -146,13 +146,13 @@ internal static class RelayPipe
     /// though stdin will never reach end-of-stream on its own, and a client that hangs up must not
     /// leave a copy waiting on a socket nobody will write to again.
     /// </remarks>
-    private static async Task<string> PumpAsync(Stream agent)
+    private static async Task<ExitReason> PumpAsync(Stream agent)
     {
         await using var stdin = Console.OpenStandardInput();
         await using var stdout = Console.OpenStandardOutput();
         var toAgent = stdin.CopyToAsync(agent);
         var fromAgent = agent.CopyToAsync(stdout);
         var first = await Task.WhenAny(toAgent, fromAgent).ConfigureAwait(false);
-        return first == toAgent ? "relayClosed" : "agentClosed";
+        return first == toAgent ? ExitReason.RelayClosed : ExitReason.AgentClosed;
     }
 }

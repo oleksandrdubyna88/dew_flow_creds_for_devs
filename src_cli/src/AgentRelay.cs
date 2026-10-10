@@ -202,13 +202,13 @@ internal static class AgentRelay
         var tooLong = await RefuseIfTooLongAsync(path, contract, log).ConfigureAwait(false);
         if (tooLong is { } refusal)
         {
-            return new HostEnding(refusal, "socketPathTooLong");
+            return new HostEnding(refusal, ExitReason.SocketPathTooLong);
         }
 
         var claimed = await ClaimAsync(path, contract, log).ConfigureAwait(false);
         if (claimed != 0)
         {
-            return new HostEnding(claimed, "busy");
+            return new HostEnding(claimed, ExitReason.Busy);
         }
 
         return await BindAndServeAsync(path, contract, log).ConfigureAwait(false);
@@ -232,11 +232,10 @@ internal static class AgentRelay
         // that refuses a VALUE rather than failing an operation, and its refusal was escaping into
         // an unhandled crash. The guard above catches the known case by name; this catches the next
         // one somebody finds, with the same sentence rather than a stack trace.
-        catch (Exception e)
-            when (e is SocketException or IOException or UnauthorizedAccessException or ArgumentException)
+        catch (Exception e) when (IsListenFailure(e))
         {
             log.Error("could not listen on {Socket}: {Reason}", path, e.Message);
-            return new HostEnding(contract.Exit("brokerFailure"), "listenFailed");
+            return new HostEnding(contract.Exit("brokerFailure"), ExitReason.ListenFailed);
         }
 
         using var stopping = new CancellationTokenSource();
@@ -252,8 +251,16 @@ internal static class AgentRelay
         Console.Out.WriteLine($"export SSH_AUTH_SOCK={path}");
         await AcceptLoopAsync(listener, log, stopping.Token).ConfigureAwait(false);
         Remove(path);
-        return new HostEnding(0, stopping.IsCancellationRequested ? "interrupted" : "listenerClosed");
+        return new HostEnding(0, StoppedBecause(stopping.IsCancellationRequested));
     }
+
+    /// <summary>What the bind or listen may refuse with — the endpoint's constructor refuses a VALUE.</summary>
+    private static bool IsListenFailure(Exception e) =>
+        e is SocketException or IOException or UnauthorizedAccessException or ArgumentException;
+
+    /// <summary>The cancel key, or the accept loop ending on its own.</summary>
+    private static ExitReason StoppedBecause(bool cancelled) =>
+        cancelled ? ExitReason.Interrupted : ExitReason.ListenerClosed;
 
     /// <summary>
     /// The exit code when this path cannot be a socket at all, or null when it can.
@@ -341,19 +348,25 @@ internal static class AgentRelay
             log.Information(
                 "connection {Connection} ended ({Ending}) after {Seconds:0.000} s; relay-pipe pid {ChildPid}, still running: {ChildAlive}",
                 number,
-                first == toWindows ? "ssh closed" : "the Windows side closed",
+                WhichSideClosed(first == toWindows),
                 System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalSeconds,
                 child.Id,
                 !child.HasExited);
         }
-        catch (Exception e) when (e is IOException or InvalidOperationException
-            or System.ComponentModel.Win32Exception or ObjectDisposedException)
+        catch (Exception e) when (IsServeFailure(e))
         {
             // One failed connection is ssh trying another authentication method next, not a reason
             // to take the relay down for every other terminal in this distribution.
             log.Warning("connection {Connection} could not be served: {Reason}", number, e.Message);
         }
     }
+
+    /// <summary>What ends ONE connection without taking the relay down.</summary>
+    private static bool IsServeFailure(Exception e) =>
+        e is IOException or InvalidOperationException or System.ComponentModel.Win32Exception or ObjectDisposedException;
+
+    /// <summary>The connection line's wording for which copy finished first.</summary>
+    private static string WhichSideClosed(bool sshFirst) => sshFirst ? "ssh closed" : "the Windows side closed";
 
     private static void Remove(string path)
     {

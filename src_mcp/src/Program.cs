@@ -159,14 +159,14 @@ internal static class Program
             // record forwarded from the Linux half gets no provider, because here the environment
             // belongs to wsl.exe and would name somebody else's session (issue #136, D6).
             await RunAsync(contract, new CallerSource(caller, ownSession ? CallerIdentity.TabTitleSource() : null), log);
-            return new HostEnding(0, "clientClosed");
+            return new HostEnding(0, ExitReason.ClientClosed);
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException)
         {
             // The client went away mid-stream. Not a failure of ours, and not worth a stack
             // trace in somebody's editor log.
             log.Information("the MCP client closed the connection");
-            return new HostEnding(0, "clientDisconnected");
+            return new HostEnding(0, ExitReason.ClientDisconnected);
         }
     }
 
@@ -199,12 +199,12 @@ internal static class Program
                     + "full path — \"Install the MCP Server…\" puts it in the extension's storage rather than on the PATH.",
                 e.Message,
                 WslInterop.McpBinaryOverrideVariable);
-            return new HostEnding(contract.Exit("toolMissing"), "windowsHalfMissing");
+            return new HostEnding(contract.Exit("toolMissing"), ExitReason.WindowsHalfMissing);
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException)
         {
             log.Information("the MCP client closed the connection");
-            return new HostEnding(0, "clientDisconnected");
+            return new HostEnding(0, ExitReason.ClientDisconnected);
         }
     }
 

@@ -301,8 +301,8 @@ single-file binary ships no `appsettings.json`; the deviation coai records for `
 One-shot verbs (`--help`, `ls`, `ssh`, `config`, a usage error) write no file and keep their plain
 `[creds-for-devs]` line on stderr. Every serving run writes a **start line** (mode, version, pid,
 parent pid) and an **exit line** (code, reason, uptime); the MCP server adds the client's name once
-the handshake names it and, at Debug, each incoming method NAME. **Never logged:** argument values,
-environment values, the forwarded caller record (only that one was present), protocol bodies, tool
+the handshake names it and, at Debug, each incoming method NAME. The relay's socket path is logged (it prints
+it on stdout anyway). **Never logged:** argument values, other environment values, the forwarded caller record (only that one was present), protocol bodies, tool
 arguments or results, stream bytes, tokens — a process test greps a marker out of every one of those
 places. Design record: [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md) §5.1.
 
@@ -429,7 +429,7 @@ Four things about it are decided ACROSS modules rather than inside one:
 | The deployment | [module_deployment.md](module_deployment.md) | Containers, TLS, updates, backups |
 | The CLI | [../src_cli/README.md](../src_cli/README.md) | `creds` — the terminal client of the broker. A .NET Native AOT binary holding no secret: it relays a request to the VS Code window named by a grant token and prints what comes back |
 | The broker client | `src_broker_client/` | Discovery, the health probe, the wire contract and the WSL bridge — shared by both binaries, so a fix to any of it is made once. The bridge is an instance per binary (`WslInterop.Creds`, `WslInterop.CredsMcp`), each with its own override variable, because one shared `creds.exe` would have sent an MCP handshake to the CLI |
-| The shared logging | `src_service_defaults/` | `CredsForDevs.ServiceDefaults` — the repository's one Serilog configuration, used by the server and both AOT binaries: the coloured console, the file per run, retention, the level binding, and `HostRun`'s start and exit lines. See *Logging* above |
+| The shared logging | [module_service_defaults.md](module_service_defaults.md) | `CredsForDevs.ServiceDefaults` — the repository's one Serilog configuration, used by the server and both AOT binaries: the coloured console, the file per run, retention, the level binding, and `HostRun`'s start and exit lines. See *Logging* above |
 | The MCP server | `src_mcp/` | `creds-mcp` — what an AI agent talks to. **Eighteen tools** over the same broker, across two objects: entries (list, use, rotate, create, delete, export-env, and `creds_config_snippet` — read-only public text, how code reads a config, from the viewer's own catalog) and folders (list, create, edit, delete, since 0.85.0) — plus, since 1.12.0 / relay 0.9.0, the kind catalogue `creds_kinds` / `creds_kind_help` (`GET /v1/mcp/kinds`, `/v1/mcp/kind-help`, read-only, answered from the window's one per-kind table `agentKindFields.ts`: a folder says what it `holds`, a kind which fields an agent may set, and `creds_create` refuses anything else). Every one is gated by a switch that is off by default — **two ladders, ten switches, inherited down the whole tree** — and by the same consent prompt. Holds no secret and can obtain none, and no request it can compose has a field the switches could arrive in. **Inside WSL it carries the session rather than serving it** — see below |
 
 ### Connecting over SSH from a remote window (2026-09-17)

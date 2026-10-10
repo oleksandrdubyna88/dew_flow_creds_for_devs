@@ -83,9 +83,9 @@ internal static class WslPump
         return new HostEnding(code, ReasonOf(ending));
     }
 
-    /// <summary>The log word for an ending.</summary>
-    internal static string ReasonOf(Ending ending) =>
-        ending == Ending.ClientClosed ? "clientClosed" : "windowsHalfClosed";
+    /// <summary>The exit reason an ending is logged as.</summary>
+    internal static ExitReason ReasonOf(Ending ending) =>
+        ending == Ending.ClientClosed ? ExitReason.ClientClosed : ExitReason.WindowsHalfClosed;
 
     /// <summary>
     /// Carry both directions until the conversation ends, and decide which ending it was.

@@ -3,12 +3,6 @@ using Serilog;
 
 namespace CredsForDevs.ServiceDefaults;
 
-/// <summary>How a host run ended: the exit code it returns and the reason, in words, it logs.</summary>
-/// <param name="Code">The process exit code — unchanged by logging; the contract's codes stay the contract's.</param>
-/// <param name="Reason">A short camelCase word for the log line — <c>clientClosed</c>, <c>busy</c>… — never a
-/// new contract exit name (todo/PLAN_wsl_bridge_outlives_its_client.md §5.2.4).</param>
-public sealed record HostEnding(int Code, string Reason);
-
 /// <summary>
 /// The two lines every serving host writes: why it started and why it ended.
 /// </summary>
@@ -49,8 +43,15 @@ public sealed class HostRun
     {
         _log.Information(
             "exited: code {ExitCode}, reason {Reason}, after {UptimeSeconds:0.000} s",
-            ending.Code, ending.Reason, Stopwatch.GetElapsedTime(_startedAt).TotalSeconds);
+            ending.Code, Word(ending.Reason), Stopwatch.GetElapsedTime(_startedAt).TotalSeconds);
         return ending.Code;
+    }
+
+    /// <summary>The reason as the log writes it: <c>clientClosed</c>, <c>noAgentAnnounced</c>.</summary>
+    public static string Word(ExitReason reason)
+    {
+        var name = reason.ToString();
+        return string.Concat(char.ToLowerInvariant(name[0]).ToString(), name[1..]);
     }
 
     /// <summary>Log an end nobody planned: the exception first, as the doctrine asks, then the uptime.</summary>

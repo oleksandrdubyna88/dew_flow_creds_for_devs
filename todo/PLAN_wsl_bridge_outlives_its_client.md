@@ -490,4 +490,22 @@ primitive moves into E2 and E3 reuses it. Also new in E1 and reusable there: `Pa
   release legs. The process-test helper lives there and is LINKED into the mcp and cli test projects.
 - §7.2: +1.20 MiB (`creds-mcp`) / +1.25 MiB (`creds`), about 1–9 ms on the first response — Serilog kept.
 - Release smoke: each published `creds-mcp` serves one handshake and each `creds` runs `relay-pipe` with nothing
-  behind it; both must leave their file with its start and exit lines.
+  behind it; both must leave their file with its start line, a real parent pid and its exit line.
+
+**Code round (2026-10-09, same session) — `proceed`**, gating 3 against threshold 5, **4 of 8 reviewers answered**
+(codex's four roles; all four gemini roles rate-limited — one vendor's verdict).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | The new module has no `research/module_*.md` | **accepted** — [module_service_defaults.md](../research/module_service_defaults.md), linked from `architecture.md` and `research/README.md` |
+| 1 | `HostEnding.Reason` is an untyped string | **accepted** — `ExitReason`, a closed enum written as its camelCase word; a test enumerates the type |
+| 2 | One host's retention prunes another app's logs in a shared root | **rejected** — day-folder pruning per root is the rule's shape and the moved `LogRetention`'s; one root has one window, so the shortest window set wins — now stated in the module doc |
+| 3 | A client can forge a log line through its name (CR/LF) | **accepted** — client name and method names go through `CallerIdentity.Clean`; RED ("Expected sink.Messages to contain only items matching (Not(message.Contains(…") → GREEN → RED again with the fix removed |
+| 4 | A negative `CREDS_LOG_RETENTION_DAYS` is accepted | **rejected** — inaccurate: `NumberStyles.None` refuses a sign, `-3` falls back to 14, pinned by a test |
+
+Own review (a separate reviewer, same time): the parent pid had no test that would notice a broken P/Invoke — the
+process tests now assert the host's parent IS the test process, and the release smokes grep a non-zero parent; two
+relay methods and `LogRoot.For` were over the complexity ceiling — helpers extracted; the socket path in the relay's
+lines is deliberately allowed (it is the relay's address, printed on stdout already) and the docs now say so. Not
+acted on: `RelayPipe.PumpAsync` reports `relayClosed`/`agentClosed` even when the first copy FAULTED rather than
+ended — unchanged behaviour, now merely visible in the log; left for E3, which rewrites that pump.

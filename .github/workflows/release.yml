@@ -393,6 +393,7 @@ jobs:
           test -n "$log" || { echo "no log file under $dir"; exit 1; }
           cat "$log"
           grep -q 'reason noAgentAnnounced' "$log"
+          grep -Eq 'parent [1-9][0-9]*' "$log"
 
       - name: Package
         shell: bash
@@ -588,6 +589,7 @@ jobs:
           test -n "$log" || { echo "no log file under $dir"; exit 1; }
           cat "$log"
           grep -q 'started: serve' "$log"
+          grep -Eq 'parent [1-9][0-9]*' "$log"
           grep -q 'exited: code 0, reason clientClosed' "$log"
 
       - name: Package

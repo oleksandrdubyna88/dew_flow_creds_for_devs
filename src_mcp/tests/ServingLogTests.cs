@@ -77,6 +77,7 @@ public sealed class ServingLogTests : IDisposable
         var file = HostProcess.Read(HostProcess.LogFileOf(_root, Program.AppName, host.Id));
         // The positive controls first: the file was written, and holds what it must.
         file.Should().Contain("started: serve, caller forwarded by the Linux half");
+        file.Should().Contain($"parent {Environment.ProcessId}", "this test started the host, so it IS the parent — the platform call is real");
         file.Should().Contain("client: e1-probe 1.0", "the client that shook hands is named once the handshake is answered");
         file.Should().Contain("received tools/call", "method names reach the file at Debug");
         file.Should().Contain("exited: code 0, reason clientClosed");
@@ -109,6 +110,22 @@ public sealed class ServingLogTests : IDisposable
     }
 
     [Fact]
+    public void A_client_cannot_forge_a_log_line_through_its_name_or_a_method_name()
+    {
+        // Both are the CLIENT's strings (code round finding 3): a line break in either would let a
+        // client write what reads as a separate event — an exit that never happened, say.
+        var sink = new CollectingSink();
+        using var log = sink.Logger();
+        var naming = new ClientNaming(log);
+
+        naming.Name(new Implementation { Name = "evil\n[19:00:00Z INF] creds-mcp: exited: code 0", Version = "1\r\n" });
+        naming.Received("tools/list\r\n[19:00:00Z INF] creds-mcp: forged");
+
+        sink.Messages.Should().HaveCount(2, "the positive control: both were logged")
+            .And.OnlyContain(message => !message.Contains('\n') && !message.Contains('\r'), "one event is one line");
+    }
+
+    [Fact]
     public void Only_requests_and_notifications_have_a_method_to_log()
     {
         ClientNaming.MethodOf(new JsonRpcRequest { Method = "tools/call" }).Should().Be("tools/call");
@@ -119,8 +136,8 @@ public sealed class ServingLogTests : IDisposable
     [Fact]
     public void The_pump_reports_which_side_ended_it_in_words()
     {
-        WslPump.ReasonOf(WslPump.Ending.ClientClosed).Should().Be("clientClosed");
-        WslPump.ReasonOf(WslPump.Ending.WindowsHalfClosed).Should().Be("windowsHalfClosed");
+        WslPump.ReasonOf(WslPump.Ending.ClientClosed).Should().Be(ExitReason.ClientClosed);
+        WslPump.ReasonOf(WslPump.Ending.WindowsHalfClosed).Should().Be(ExitReason.WindowsHalfClosed);
     }
 
     private static bool IsReply(string line) => IsJsonRpc(line) && JsonNode.Parse(line)!["id"] is not null;

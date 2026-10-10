@@ -1,3 +1,4 @@
+using CredsBroker;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Serilog;
@@ -20,6 +21,9 @@ namespace CredsMcp;
 /// epics 1–3).</para>
 /// <para><b>What it never logs</b>: a body. The method name is protocol vocabulary; parameters and
 /// results are the caller's data (plan §5.1).</para>
+/// <para><b>Both strings are the CLIENT's</b>, so both go through <see cref="CallerIdentity.Clean"/> — one
+/// line, no control characters, capped — the cleaning every other caller field already gets. A line
+/// break in either would let a client write what reads as a separate event (code round, finding 3).</para>
 /// </remarks>
 internal sealed class ClientNaming(ILogger log)
 {
@@ -41,16 +45,17 @@ internal sealed class ClientNaming(ILogger log)
         {
             return;
         }
-        var label = CallerSource.AgentLabel(client);
+        var label = CallerIdentity.Clean(CallerSource.AgentLabel(client));
         log.Information("client: {Client}", label.Length > 0 ? label : "(unnamed)");
     }
 
     /// <summary>One Debug line per incoming request or notification, by method name only.</summary>
     internal void Received(string method)
     {
-        if (method.Length > 0)
+        var clean = CallerIdentity.Clean(method);
+        if (clean.Length > 0)
         {
-            log.Debug("received {Method}", method);
+            log.Debug("received {Method}", clean);
         }
     }
 
