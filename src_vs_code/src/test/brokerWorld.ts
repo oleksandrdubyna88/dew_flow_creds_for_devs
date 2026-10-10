@@ -181,7 +181,9 @@ function world(options: {
       showWarningMessage: (m: string): Promise<string | undefined> => {
         w.dialogs.push(m);
         return options.holdDialogs === true
-          ? new Promise((resolve) => void w.openDialogs.push(resolve))
+          ? new Promise((resolve) => {
+              w.openDialogs.push(resolve);
+            })
           : Promise.resolve(w.answers.shift());
       },
       showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined),

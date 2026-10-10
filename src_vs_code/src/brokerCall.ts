@@ -152,14 +152,17 @@ function reservedNow(deps: CallDeps, call: CallSubject): boolean {
   return true;
 }
 
-/** Start the action now — a synchronous throw is a failed start like any other, not an escape. */
+/**
+ * Start the action now — a synchronous throw is a failed start like any other, not an escape.
+ *
+ * <p>The executor of `new Promise` runs synchronously, so the action starts on this line and not a
+ * microtask later; a throw inside it becomes the rejection `runAndDeliver` already handles.</p>
+ */
 function startNow(call: CallSubject): Promise<UseActionResult> {
   const { grant, useAction, body, signal } = call;
-  try {
-    return useAction.run({ accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName, signal }, body);
-  } catch (error) {
-    return Promise.reject(error instanceof Error ? error : new Error(String(error)));
-  }
+  return new Promise<UseActionResult>((resolve) => {
+    resolve(useAction.run({ accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName, signal }, body));
+  });
 }
 
 function deliver(deps: CallDeps, call: CallSubject, started: Promise<UseActionResult>): Promise<void> {

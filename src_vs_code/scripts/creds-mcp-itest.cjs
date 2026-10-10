@@ -276,12 +276,10 @@ const EXPECTED_GONE_CHECKS = 4;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Poll until `ready`, or give up after `ms` — answering whether it became true. */
-async function eventually(ready, ms) {
+function eventually(ready, ms) {
   const deadline = Date.now() + ms;
-  while (!ready() && Date.now() < deadline) {
-    await sleep(25);
-  }
-  return ready();
+  const poll = () => (ready() || Date.now() >= deadline ? Promise.resolve(ready()) : sleep(25).then(poll));
+  return poll();
 }
 
 /**
@@ -363,13 +361,18 @@ async function binaryAskingToQuery(endpointDir) {
   const child = spawn(EXE, [], { env: { ...process.env, CREDS_RELAYED_FROM_WSL: '1', CREDS_ENDPOINT_DIR: endpointDir } });
   child.stdout.resume();
   child.stderr.resume();
-  for (const message of [
+  // One message every 150 ms, in order — a chain rather than an await in a loop.
+  await [
     ...HANDSHAKE,
     { jsonrpc: '2.0', id: 95, method: 'tools/call', params: { name: 'creds_query', arguments: { entry: 'e-1', query: 'select gone' } } },
-  ]) {
-    child.stdin.write(`${JSON.stringify(message)}\n`);
-    await sleep(150);
-  }
+  ].reduce(
+    (sent, message) =>
+      sent.then(() => {
+        child.stdin.write(`${JSON.stringify(message)}\n`);
+        return sleep(150);
+      }),
+    Promise.resolve(),
+  );
   return child;
 }
 
