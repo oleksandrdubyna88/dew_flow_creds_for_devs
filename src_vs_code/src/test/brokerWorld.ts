@@ -157,6 +157,12 @@ function world(options: {
   supports?: string[];
   /** Leave every dialog open until the test answers it through `w.openDialogs` (E4.S1). */
   holdDialogs?: boolean;
+  /**
+   * A REAL action to serve on the `exec` route instead of the scripted stub — for a test about what that
+   * action itself does when its request goes (E4.S3, the VPN start). The broker does not care which
+   * action a route resolves to; the action's own `run` is the subject.
+   */
+  realAction?: unknown;
 }): World {
   const w: World = {
     mod: undefined as never,
@@ -199,7 +205,8 @@ function world(options: {
   });
 
   const supported = options.supports ?? ['exec'];
-  const action = (name: string): unknown => ({
+  const action = (name: string): unknown => options.realAction ?? scripted(name);
+  const scripted = (name: string): unknown => ({
     kind: 'ssh',
     action: name,
     mutatesSecrets: options.rotatesTo !== undefined,

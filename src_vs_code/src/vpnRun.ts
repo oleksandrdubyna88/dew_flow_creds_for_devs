@@ -14,9 +14,10 @@ import {
 } from './vpnCommand';
 import { materializedKeyPath } from './keyInstaller';
 import { TrustStore } from './commandTrust';
-import { dependencyRequest, liveDetails, runDependenciesFirst } from './dependencyRunHost';
+import { liveDetails, runDependenciesFirst } from './dependencyRunHost';
 import { quoteFor } from './hostShell';
-import { VpnRunContext, runWithLauncher, writeVpnConfig } from './vpnLauncherRun';
+import { VpnRunContext, runWithLauncher, vpnDependencies, writeVpnConfig } from './vpnLauncherRun';
+import { requestGone } from './requestLife';
 import { resolveVpnLauncher } from './vpnExec';
 import { onPath } from './installFlow';
 import { offerToInstall } from './toolEnsure';
@@ -39,6 +40,13 @@ import { clickedSecret, outsidePinNote } from './pinClick';
  *
  * <p><b>Returns whether anything was started.</b> The agent's `creds_vpn_up` reports this value;
  * it used to be told "opened" about a refusal the person saw as a warning.</p>
+ *
+ * <p><b>`startGate` is the agent request this start serves</b> (`PLAN_wsl_bridge_outlives_its_client.md`
+ * §5.7, E4.S3), absent for the person's own Start and Stop. A start waits — the dependency chain, the
+ * config read and its PIN, a launcher's trust modal, OpenVPN Connect's question, an install offer —
+ * before it types anything; once the client that asked has gone, nothing more is written or typed for it,
+ * and `false` is answered without a word to a person who did not ask. A line already typed is the
+ * shell's, and a tunnel already up stays up: this gates the start, it does not take one back.</p>
  */
 export async function runVpn(
   target: unknown,
@@ -47,16 +55,17 @@ export async function runVpn(
   storageDir: string,
   vaultKeys: VaultKeys,
   trust: TrustStore,
+  startGate: AbortSignal | undefined,
 ): Promise<boolean> {
   vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
   const entry = vpnEntry(target);
-  if (entry === undefined) {
+  if (entry === undefined || requestGone(startGate)) {
     return false;
   }
   // Refused BEFORE the config is written: in a Remote-SSH window the terminal is another
   // computer's, and a tunnel there is not the one the person asked for.
   const refusal = pinnedRefusal();
-  return refusal === undefined ? runVpnEntry({ ...entry, storage, storageDir, trust }, action) : refuse(refusal);
+  return refusal === undefined ? runVpnEntry({ ...entry, storage, storageDir, trust, startGate }, action) : refuse(refusal);
 }
 
 function vpnEntry(target: unknown): { accountId: string; details: EntityMetadata } | undefined {
@@ -103,7 +112,7 @@ async function runBuiltIn(ctx: VpnRunContext, action: 'start' | 'stop'): Promise
   if (action === 'start' && !(await prepareStart(ctx, type))) {
     return false;
   }
-  return settle(ctx.details.name, await launchFor(ctx, type, action));
+  return settle(ctx, await launchFor(ctx, type, action));
 }
 
 /**
@@ -112,7 +121,7 @@ async function runBuiltIn(ctx: VpnRunContext, action: 'start' | 'stop'): Promise
  * config written where the tool will read it.
  */
 async function prepareStart(ctx: VpnRunContext, type: VpnType): Promise<boolean> {
-  const ready = await runDependenciesFirst(dependencyRequest(ctx.storage, ctx.accountId, [ctx.details], ctx.details.name, ctx.trust));
+  const ready = await runDependenciesFirst(vpnDependencies(ctx, [ctx.details]));
   return ready && (await writeVpnConfig(ctx, vpnConfigFileName(type, ctx.details.name))) !== undefined;
 }
 
@@ -128,11 +137,11 @@ function notStartable(details: EntityMetadata): string {
 /** What to run — or `settled` when a branch already answered (an install offer, OpenVPN Connect). */
 type LaunchStep = VpnLaunch | { kind: 'settled'; started: boolean };
 
-function settle(entryName: string, launch: LaunchStep): boolean {
+function settle(ctx: VpnRunContext, launch: LaunchStep): boolean {
   if (launch.kind === 'unsupported') {
     return refuse(launch.reason, 'info');
   }
-  return launch.kind === 'run' ? sendToVpnTerminal(entryName, launch.command, launch.note) : launch.started;
+  return launch.kind === 'run' ? sendToVpnTerminal(ctx, launch.command, launch.note) : launch.started;
 }
 
 async function launchFor(ctx: VpnRunContext, type: VpnType, action: 'start' | 'stop'): Promise<LaunchStep> {
@@ -142,7 +151,7 @@ async function launchFor(ctx: VpnRunContext, type: VpnType, action: 'start' | 's
   // a GUI that neither takes --config nor belongs on a command line.
   const launcher = resolveVpnLauncher(type, process.platform, process.env, onPath, fs.existsSync);
   if (launcher.kind !== 'cli') {
-    return { kind: 'settled', started: await noCli(launcher, type, ctx.details.name, configPath, action) };
+    return { kind: 'settled', started: await noCli(ctx, launcher, type, configPath, action) };
   }
   return action === 'start'
     ? vpnStartCommand(type, hostVpnPlatform(), configPath, launcher.exe)
@@ -150,22 +159,23 @@ async function launchFor(ctx: VpnRunContext, type: VpnType, action: 'start' | 's
 }
 
 async function noCli(
+  ctx: VpnRunContext,
   launcher: ReturnType<typeof resolveVpnLauncher>,
   type: VpnType,
-  entryName: string,
   configPath: string,
   action: 'start' | 'stop',
 ): Promise<boolean> {
   if (launcher.kind === 'openvpn-connect') {
-    return openVpnConnect(launcher.exe, entryName, configPath, action);
+    return openVpnConnect(ctx, launcher.exe, configPath, action);
   }
   // T20: an offer instead of a dead end — the modal names what is missing and, on Yes, opens
-  // a terminal running the platform's install recipe (visible, so sudo can ask).
-  await offerToInstall(type === 'wireguard' ? 'wg-quick' : 'openvpn');
+  // a terminal running the platform's install recipe (visible, so sudo can ask). An agent's request
+  // travels with it, so a client gone while it is open gets no installer (E4.S3).
+  await offerToInstall(type === 'wireguard' ? 'wg-quick' : 'openvpn', ctx.startGate);
   return false;
 }
 
-async function openVpnConnect(exe: string, entryName: string, configPath: string, action: 'start' | 'stop'): Promise<boolean> {
+async function openVpnConnect(ctx: VpnRunContext, exe: string, configPath: string, action: 'start' | 'stop'): Promise<boolean> {
   if (action === 'stop') {
     return refuse('This machine uses OpenVPN Connect — disconnect from its own window.', 'info');
   }
@@ -182,15 +192,23 @@ async function openVpnConnect(exe: string, entryName: string, configPath: string
   // `&` is PowerShell's call operator — correct only because the terminal is pinned to it — and
   // both words are single-quoted, which PowerShell never expands (`$`, backtick).
   const line = `& ${quoteFor('powershell', exe)} ${quoteFor('powershell', `--import-profile=${configPath}`)}`;
-  return sendToVpnTerminal(entryName, line, '');
+  return sendToVpnTerminal(ctx, line, '');
 }
 
 function hostVpnPlatform(): VpnPlatform {
   return process.platform === 'win32' || process.platform === 'darwin' ? process.platform : 'linux';
 }
 
-function sendToVpnTerminal(entryName: string, line: string, note: string): boolean {
-  const sent = sendPinned(`CredsForDevs VPN: ${entryName}`, line);
+/**
+ * The one place the built-in launcher types a line — the tunnel's start or stop, OpenVPN Connect's import.
+ * The request it serves is read here, immediately before the line is sent: every await of the start lies
+ * behind this point, so a client gone during any of them gets nothing typed (E4.S3).
+ */
+function sendToVpnTerminal(ctx: VpnRunContext, line: string, note: string): boolean {
+  if (requestGone(ctx.startGate)) {
+    return false;
+  }
+  const sent = sendPinned(`CredsForDevs VPN: ${ctx.details.name}`, line);
   if (sent && note !== '') {
     void vscode.window.showInformationMessage(note);
   }

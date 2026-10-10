@@ -158,7 +158,8 @@ export async function connectEntity(
   // every click, and the failure it guards against (`ssh: command not found`) lands in a terminal
   // the person is already looking at.
   if (side.kind === 'local' && !sshClientPresent()) {
-    await offerToInstall('ssh');
+    // An agent's request travels with the offer: a client gone while it is open gets no installer (E4.S3).
+    await offerToInstall('ssh', connect.startGate);
     return false;
   }
   // Every value opened by its OWNER through that entry's door (entry-PIN plan, D6): a borrowed key

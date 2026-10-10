@@ -308,6 +308,27 @@ below).
   request leaves (the folder PIN step's box closes; this door takes no token yet) — the gate is checked after it
   answers, so nothing is written for a gone request.
 
+**As built (E4.S3, 2026-10-10, refining the bullets above where the code asked for it):**
+
+- One reading of a gate, `requestLife.requestGone(startGate)` — `false` for no gate, the person's own click — and one
+  exit, `requestLife.notStarted()`, MOVED from `sshExecRunner.ts` (where `runBounded` already threw it for a refused
+  launch) so the VPN action and the SSH terminal throw the same error the broker already journals as `ABANDONED`.
+- `runVpn` takes the gate as a REQUIRED last argument (`AbortSignal | undefined`), the `UseActionContext.signal`
+  precedent: the person's Start and Stop pass `undefined` in so many words, so a new caller cannot forget it.
+- Where it is read: `runVpn`'s entry (a request already gone is asked nothing — not even the launcher's trust
+  modal); the chain's entry, after its approval modal (`approveAndRun`) and before every step (`runStep`);
+  `storedConfig` (split out of `writeVpnConfig`) before the entry's door and again before materialising; the
+  custom launcher's `configFor`, the last await before its line; `sendToVpnTerminal`, the only place the built-in
+  launcher types (start, stop, OpenVPN Connect's import); `offerToInstall` before its modal and before the recipe.
+  Both launchers build the chain request through one `vpnDependencies(ctx, roots)`, which carries the gate.
+- The exit: `vpnAction`'s `vpnOutcome` throws `notStarted()` when nothing started and the gate has fired; a start
+  whose line was typed before the client left answers `opened` as always (pinned by a test).
+- **Deviation, a wider test seam:** the VPN world moved out of `dependencyChain.test.ts` into `test/vpnWorld.ts`
+  (both suites use it; it gained held dialogs and an `onExecute` hook), `brokerWorld` gained `realAction` so the
+  real `vpnAction` runs behind the real broker, and `sshConnectWorld` gained `sshMissing`.
+- **Not pinned by a test:** the one line in `extension.ts` that hands `open`'s gate to `runVpn` — thin DI wiring
+  in the activation function, which no unit test loads. The required parameter is what keeps it honest.
+
 ### 5.8 A stale WSL install says so — `src_vs_code/src`
 
 - The extension does not write a client's MCP config; it copies a block (`wslMcpInstall.ts:79`, `mcpClientConfig.ts`).

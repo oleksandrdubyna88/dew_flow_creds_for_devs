@@ -655,15 +655,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       applyEnvBindings(envCollection(), storage, accountId, details),
     onPath,
     // The grant carries the account, so the tree element runVpn expects can be rebuilt
-    // exactly — the same function the human Start button calls, so an agent-opened
-    // tunnel is indistinguishable in mechanism from a hand-opened one.
-    open: async (accountId: string, entityId: string, action: 'start' | 'stop'): Promise<boolean> => {
+    // exactly — the same function the human Start button calls, so an agent-opened tunnel is
+    // the hand-opened one's mechanism, plus the request's start gate (E4.S3).
+    open: async (accountId: string, entityId: string, action: 'start' | 'stop', startGate: AbortSignal): Promise<boolean> => {
       const node = storage.getNode(accountId, entityId);
       if (node === undefined) {
         return false;
       }
       // runVpn's own answer: a refusal the person saw must not reach the agent as "opened".
-      return runVpn({ kind: 'node', accountId, node }, action, storage, storageDir, vaultKeys, context.globalState);
+      return runVpn({ kind: 'node', accountId, node }, action, storage, storageDir, vaultKeys, context.globalState, startGate);
     },
   };
   useActions.register(scriptRunAction(agentDeps));

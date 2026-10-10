@@ -195,9 +195,10 @@ function registerFiles(host: EntityCommandsHost): void {
     }
   });
   // Start and Stop side by side (Stop used to live in extension.ts). `trust` is the per-line record
-  // a launcher's command and a dependency chain are confirmed against (issue #103).
-  register('credSshManager.startVpn', (target) => runVpn(target, 'start', storage, storageDir, vaultKeys, trust));
-  register('credSshManager.stopVpn', (target) => runVpn(target, 'stop', storage, storageDir, vaultKeys, trust));
+  // a launcher's command and a dependency chain are confirmed against (issue #103). No start gate: the
+  // person clicked, and no client's departure can cancel what they asked for (E4.S3).
+  register('credSshManager.startVpn', (target) => runVpn(target, 'start', storage, storageDir, vaultKeys, trust, undefined));
+  register('credSshManager.stopVpn', (target) => runVpn(target, 'stop', storage, storageDir, vaultKeys, trust, undefined));
 }
 
 /**

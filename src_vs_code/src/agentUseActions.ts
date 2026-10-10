@@ -13,6 +13,7 @@ import { EnvApplyResult } from './envApplyNotice';
 import { StorageManager } from './storageManager';
 import { EntityMetadata } from './types';
 import { runBounded } from './sshExecRunner';
+import { notStarted } from './requestLife';
 import { resolveScriptEnv } from './scriptRender';
 import { scriptRunPlan } from './scriptRun';
 import { buildCommandLine } from './commandLine';
@@ -367,10 +368,15 @@ export function dbQueryAction(
  * sudo prompt that requires, and faking that would mean a privileged helper service.
  * So this opens the same terminal the human Start button opens — the elevation prompt
  * stays theirs to answer — and the agent learns only that it was opened.</p>
+ *
+ * <p><b>The request travels with the start</b> (`PLAN_wsl_bridge_outlives_its_client.md` §5.7, E4.S3):
+ * `open` is handed the request's signal as its start gate, and the start waits — on the dependency chain,
+ * the config read, a launcher's trust modal — before it types anything. A client that leaves in there gets
+ * nothing started, and a start that did not happen for a gone request is that request's abandonment.</p>
  */
 export function vpnAction(
   deps: AgentUseDeps & {
-    open: (accountId: string, entityId: string, action: 'start' | 'stop') => Promise<boolean>;
+    open: (accountId: string, entityId: string, action: 'start' | 'stop', startGate: AbortSignal) => Promise<boolean>;
   },
   action: 'up' | 'down',
 ): UseAction {
@@ -391,10 +397,22 @@ export function vpnAction(
       if (entity === undefined) {
         return fail('not_found', `"${ctx.entityName}" no longer exists in the vault.`);
       }
-      const opened = await deps.open(ctx.accountId, ctx.entityId, action === 'up' ? 'start' : 'stop');
-      return opened
-        ? { status: 200, body: { opened: true } }
-        : fail('no_credential', `"${ctx.entityName}" could not be ${doneVerb} — see the notification.`);
+      const opened = await deps.open(ctx.accountId, ctx.entityId, action === 'up' ? 'start' : 'stop', ctx.signal);
+      return vpnOutcome(opened, ctx, doneVerb);
     },
   };
+}
+
+/**
+ * What a VPN start answers. Nothing started for a request whose client has gone is THROWN, not answered:
+ * the broker journals it as that request's `ABANDONED` and writes to no socket — the exit `runBounded`
+ * gives a refused launch. A start whose line was typed before the client left answers as it always did.
+ */
+function vpnOutcome(opened: boolean, ctx: UseActionContext, doneVerb: string): UseActionResult {
+  if (!opened && ctx.signal.aborted) {
+    throw notStarted();
+  }
+  return opened
+    ? { status: 200, body: { opened: true } }
+    : fail('no_credential', `"${ctx.entityName}" could not be ${doneVerb} — see the notification.`);
 }

@@ -32,3 +32,27 @@ export function abandonedWhenClosed(res: http.ServerResponse): AbortSignal {
   });
   return life.signal;
 }
+
+/**
+ * Whether the request a start serves has gone — `false` when no request stands behind it at all, which
+ * is the person's own click: nothing a client does can cancel what a person asked for in the window.
+ *
+ * <p>The one reading of a start gate (`ConnectOptions.startGate`, `VpnRunContext.startGate`,
+ * `DependencyRunRequest.startGate`, the install offer's): checked after each await on a start's path and
+ * immediately before each effect, so a client that leaves while a modal is open gets nothing started when
+ * the person later answers it (`PLAN_wsl_bridge_outlives_its_client.md` §5.7).</p>
+ */
+export function requestGone(startGate: AbortSignal | undefined): boolean {
+  return startGate?.aborted === true;
+}
+
+/**
+ * The error an action throws when it did not start because its request had gone — the shape `brokerCall`
+ * journals as that request's `ABANDONED` (it was not launched) instead of a refusal or an internal failure,
+ * answering nobody. An `AbortError`, as Node names a cancelled operation.
+ */
+export function notStarted(): Error {
+  const error = new Error('Not started: the request it was for had already ended.');
+  error.name = 'AbortError';
+  return error;
+}
