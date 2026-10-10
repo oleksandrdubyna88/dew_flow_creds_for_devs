@@ -704,9 +704,13 @@ behaviour.
   `image` whose `ExecutablePath` lies under `exePath` (the run directory), read through `Get-CimInstance
   Win32_Process`; `survivors()` is the set difference; `goneWithin(5 s)` polls until it is empty or the bound passes;
   `sweep()` reads each pid's `ExecutablePath` again in the same PowerShell call that stops it and stops only a match,
-  `Stop-Process -Id`, never by name. The directory and the pids reach PowerShell through its environment, never
-  through the command text. **The parent is never a criterion**: an interop child is started by the WSL service,
-  not by the test's `wsl.exe`.
+  never by name. **The check and the stop go through one held process handle** (plan round, finding 1): the handle
+  is opened first, the path is read through it, and the kill goes to it — Windows does not reuse a pid while a handle
+  to its process is open, so a pid that exited and was reused between a check and a stop cannot be hit. The
+  WSL-side sweep does the same with a pidfd (`os.pidfd_open` in the distribution's `python3`, the command line read
+  after the descriptor is open, the signal sent through it). The directory and the pids reach PowerShell and Python
+  through their environment, never through the command text. **The parent is never a criterion**: an interop child
+  is started by the WSL service, not by the test's `wsl.exe`.
 - **Run-unique directories on both sides.** Each run copies the Windows build output it starts
   (`src_mcp/src/bin/Debug/net10.0`, `src_cli/src/bin/Debug/net10.0`) into `%TEMP%\creds-itest-<run>\`, and the Linux
   build output into `/tmp/creds-itest-<run>/`. A process another user, another test or the person started from the
@@ -719,6 +723,12 @@ behaviour.
   also ends the persistent build cache CodeRabbit named on #201; sockets and scratch files are run-unique; the relay
   is stopped by its own pid; the WSL-side sweep sends `kill` only to pids whose command line contains the run
   directory. What remains in `/tmp` is a few MB per run, for the person or the distribution's next boot to clear.
+  **The budget, stated** (plan round, finding 2): a build directory is 3–6 MB of output (measured: 5.4 MB for
+  `creds-mcp`, 2.7 MB for `creds`), one new one per changed set of inputs — a handful per working day; a run
+  directory holds a copy of one build plus sockets and scratch files. Ubuntu's `tmpfiles.d/tmp.conf` (`D /tmp`)
+  empties `/tmp` at every boot of a systemd distribution; for one without that, each run ends by listing the
+  harness's own directories with their total size, so the person sees what to clear. Removal stays with the person
+  by the machine rule.
 - **A client shaped like Claude Code, inside the distribution — `scripts/wsl-mcp-client.cjs`**, run by the
   distribution's own `node` (skipped loudly without one). It spawns the wrapper DIRECTLY (`child_process.spawn`, no
   shell, no `&` job — a background job of a non-interactive shell starts with SIGINT ignored), speaks the captured
