@@ -54,6 +54,12 @@ public enum ExitReason
 
     /// <summary>A copy between the two sides failed rather than ended — a broken pipe, a reset.</summary>
     CopyFailed,
+
+    /// <summary>A handled termination signal (SIGINT, SIGTERM, SIGHUP, SIGQUIT) ended the run; the code is 128 + n.</summary>
+    Signalled,
+
+    /// <summary>The process that started this one is gone — it died, or was replaced under the same pid.</summary>
+    ParentGone,
 }
 
 /// <summary>How a host run ended: the exit code it returns and the reason it logs.</summary>

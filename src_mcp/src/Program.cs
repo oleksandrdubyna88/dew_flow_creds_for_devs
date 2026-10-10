@@ -1,8 +1,10 @@
 using System.Text.Json.Nodes;
 using CredsBroker;
 using CredsForDevs.ServiceDefaults;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Serilog;
+using Serilog.Core;
 
 namespace CredsMcp;
 
@@ -130,7 +132,7 @@ internal static class Program
             var caller = forwarded is null ? CallerIdentity.Current(agent: string.Empty) : CallerIdentity.Decode(forwarded);
             return run.End(relayed
                 ? await RelayAsync(contract, caller, log)
-                : await ServeHereAsync(contract, caller, forwarded is null, log));
+                : await ServeHereAsync(contract, caller, forwarded is null, log, run));
         }
         catch (Exception e)
         {
@@ -151,15 +153,18 @@ internal static class Program
             _ => "serve, caller forwarded by the Linux half",
         };
 
-    private static async Task<HostEnding> ServeHereAsync(BrokerContract contract, CallerRecord caller, bool ownSession, ILogger log)
+    private static async Task<HostEnding> ServeHereAsync(BrokerContract contract, CallerRecord caller, bool ownSession, Logger log, HostRun run)
     {
         try
         {
             // The tab title is read per call, and only from THIS process's own environment: a
             // record forwarded from the Linux half gets no provider, because here the environment
             // belongs to wsl.exe and would name somebody else's session (issue #136, D6).
-            await RunAsync(contract, new CallerSource(caller, ownSession ? CallerIdentity.TabTitleSource() : null), log);
-            return new HostEnding(0, ExitReason.ClientClosed);
+            var source = new CallerSource(caller, ownSession ? CallerIdentity.TabTitleSource() : null);
+            await using var transport = new StdioServerTransport(ServerName);
+            using var signals = ShutdownSignals.Register();
+            var lifetime = new LifetimeSignals(transport.MessageReader.Completion, Task.Delay(Timeout.Infinite), signals.Received);
+            return await ServeOnAsync(transport, contract, source, log, lifetime, LifetimeTimings.Default, ForceExit(run, log));
         }
         catch (Exception e) when (e is IOException or ObjectDisposedException)
         {
@@ -219,15 +224,49 @@ internal static class Program
         return new HostEnding(contract.Exit("toolMissing"), ExitReason.WindowsHalfMissing);
     }
 
-    private static async Task RunAsync(BrokerContract contract, CallerSource source, ILogger log)
+    /// <summary>
+    /// Serve one session over <paramref name="transport"/> until the client, a signal or the parent ends it.
+    /// </summary>
+    /// <remarks>
+    /// <para>The transport is a parameter so the whole server — tools, filter, lifetime — runs in-process over
+    /// a pair of pipes in a test, not only as the built binary over the console (<c>ServeOnAsync</c> tests).</para>
+    /// <para><b>Never <c>server.RunAsync()</c> without a token</b> (defect A): <see cref="ServerLifetime"/> holds
+    /// it, and cancelling it is the only thing that ends an open <c>subscriptions/listen</c>.</para>
+    /// </remarks>
+    internal static async Task<HostEnding> ServeOnAsync(
+        TransportBase transport,
+        BrokerContract contract,
+        CallerSource source,
+        ILogger log,
+        LifetimeSignals signals,
+        LifetimeTimings timings,
+        Action<HostEnding> forceExit)
     {
-        var options = new McpServerOptions
+        await using var server = McpServer.Create(transport, Options(contract, source, log));
+        // The side that spoke to the client names the client.
+        source.Bind(server);
+        return await ServerLifetime.RunAsync(server.RunAsync, signals, timings, log, forceExit, TimeProvider.System);
+    }
+
+    /// <summary>
+    /// The way out when the shutdown deadline passes: the exit line, a flushed log, then the process ends.
+    /// </summary>
+    /// <remarks>
+    /// A normal return is what writes the exit line and disposes the logger everywhere else; <see cref="Environment.Exit"/>
+    /// skips both, so this does them first — a file with no exit line reads as "killed hard", which this is not.
+    /// </remarks>
+    private static Action<HostEnding> ForceExit(HostRun run, Logger log) =>
+        ending =>
         {
-            ServerInfo = new ModelContextProtocol.Protocol.Implementation
-            {
-                Name = ServerName,
-                Version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0",
-            },
+            run.End(ending);
+            log.Dispose();
+            Environment.Exit(ending.Code);
+        };
+
+    private static McpServerOptions Options(BrokerContract contract, CallerSource source, ILogger log) =>
+        new()
+        {
+            ServerInfo = new ModelContextProtocol.Protocol.Implementation { Name = ServerName, Version = Version },
             ServerInstructions = Instructions,
             // Method names and the client's name only — never a body (plan §5.1). Part of the options as
             // constructed rather than added to them afterwards.
@@ -235,33 +274,30 @@ internal static class Program
             {
                 Message = new McpMessageFilters { IncomingFilters = [new ClientNaming(log).Filter] },
             },
+            ToolCollection = [.. ToolsFor(contract, source)],
         };
-        // The tools capture the holder, not a value: ClientInfo is null until the handshake this
-        // process is about to answer, so the client's name and the tab title are read per call
-        // (CallerSource explains why).
-        options.ToolCollection ??= [];
-        options.ToolCollection.Add(ListTool(contract));
-        options.ToolCollection.Add(ConfigSnippetTool(contract));
-        options.ToolCollection.Add(FolderListTool(contract));
-        foreach (var tool in KindTools(contract))
-        {
-            options.ToolCollection.Add(tool);
-        }
-        foreach (var tool in FolderTool(contract, source))
-        {
-            options.ToolCollection.Add(tool);
-        }
-        foreach (var tool in UseTools.All)
-        {
-            options.ToolCollection.Add(UseTool(contract, tool, source));
-        }
 
-        await using var transport = new StdioServerTransport(ServerName);
-        await using var server = McpServer.Create(transport, options);
-        // The side that spoke to the client names the client.
-        source.Bind(server);
-        await server.RunAsync();
-    }
+    /// <summary>
+    /// Every tool this server offers. The tools capture the holder, not a value: ClientInfo is null until the
+    /// handshake this process is about to answer, so the client's name and the tab title are read per call
+    /// (<see cref="CallerSource"/> explains why).
+    /// </summary>
+    /// <remarks>
+    /// Every delegate takes a <see cref="CancellationToken"/> as its LAST parameter: the SDK binds it to the
+    /// request — cancelled by the client's <c>notifications/cancelled</c> and by the run token
+    /// <see cref="ServerLifetime"/> cancels — and leaves it out of the schema a model sees (asserted by
+    /// <c>ToolCancellationTests</c>). It flows to the broker call, so a session that ends closes its connection
+    /// instead of holding it for the broker's ten-minute ceiling (plan §5.3).
+    /// </remarks>
+    internal static IEnumerable<McpServerTool> ToolsFor(BrokerContract contract, CallerSource source) =>
+    [
+        ListTool(contract),
+        ConfigSnippetTool(contract),
+        FolderListTool(contract),
+        .. KindTools(contract),
+        .. FolderTool(contract, source),
+        .. UseTools.All.Select(tool => UseTool(contract, tool, source)),
+    ];
 
     /// <summary>
     /// The one tool, with the hints an MCP client uses to decide how carefully to treat it.
