@@ -1164,3 +1164,10 @@ reviewers answered** (codex's four roles).
 | 0 | `Track(Process)` accepts a process this host did not start, which the lifetime would then close and kill | **accepted** — `ManagedProcess` refuses a `Process` not started by this host with a redirected stdin (one looked up by pid has no readable `StartInfo`; .NET throws), with an `ArgumentException` naming the rule; RED (*"Expected a <System.ArgumentException> to be thrown, but no exception was thrown"* for `Process.GetProcessById(Environment.ProcessId)`) → GREEN |
 | 1 | `Track` started a late child's stop after releasing the lock, a gap `InFlightAsync` could look through | **accepted** — the stop is started under the same (reentrant) lock, so it is registered before any empty snapshot; structural — the gap is between a lock release and the next statement and cannot be held open by a test; the late-stop test pins the behaviour |
 | 2 | A person's `CREDS_RELAYED_FROM_WSL/u` entry would keep the marker from crossing | **accepted** — `WslEnvFor` drops any entry of theirs for the variable, flags included, and appends the bare name once; RED (two theory rows) → GREEN |
+
+**Last checkpoint round before the pull request (`again`, 2026-10-10) — `proceed`**, gating 1 against threshold 5,
+**all 4 reviewers answered** (codex's four roles). One finding — only a process started *by the lifetime* should be
+trackable — **rejected**: §9's rule is "only what THIS PROCESS started", which readable `StartInfo` plus a redirected
+stdin proves; the lifetime cannot start processes (the binary and the interop launch are `WindowsBridge`'s, in a project
+`src_service_defaults` cannot reference), and `Track` is the owner's explicit act one line after `StartPiped` in both
+hosts.
