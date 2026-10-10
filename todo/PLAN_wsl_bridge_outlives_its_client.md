@@ -1,6 +1,6 @@
 # PLAN — every creds process ends when the client it serves is gone
 
-> Status: **in progress, 2026-10-10 — E1 (#201), E4.S1 (#205) and E2 implemented (§14; §5.7 *As built*); E3, E4.S2 and E5 not yet.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
+> Status: **in progress, 2026-10-10 — E1 (#201), E4.S1 (#205) and E2 implemented (§14; §5.7 *As built*); E4.S3 in progress; E3, E4.S2 and E5 not yet.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
 > round — §14); each epic is re-gated on its own branch. Scope: `src_mcp/src` (`Program.cs`, `WslPump.cs`, the
 > tool lambdas, `Windows.cs`, a new `ServerLifetime`), `src_broker_client/src` (`BrokerClient.cs`, `WslInterop.cs`, a
 > new shared `ChildLifetime`), `src_cli/src` (`AgentRelay.cs`, `RelayPipe.cs`), `src_vs_code/src` (the broker's
@@ -102,7 +102,8 @@ but a click on a dead request does nothing except record that it was ignored; (b
 removable by `hide()` the moment the request closes, but non-modal, so a weaker consent surface.
 
 **The owner chose (a), 2026-10-09: "a defused modal is enough."** The modal stays on screen after its request is gone
-and is harmless there. Story E4.S3 (the QuickPick) is **dropped** from §10 rather than deferred.
+and is harmless there. The QuickPick story is **dropped** from §10 rather than deferred; its number, E4.S3, was
+reused on 2026-10-10 for the VPN start the E4.S1 tail named (§5.7, §10).
 
 ## 4. Found on the way
 
@@ -262,9 +263,10 @@ Shared because both the MCP wrapper and the relay need exactly this, and today e
   read and the relay probe, before any terminal opens; a terminal already open belongs to the person and stays. An env
   export has no await before its effect, so the broker's boundary check covers it. An action that throws after its
   client left (refused at launch, or killed mid-run) is journalled as that request's `ABANDONED`, not as `internal`.
-- **Open tail, recorded:** a VPN start (`runVpn`) awaits before it opens its terminal and is not gated by the request.
-  Its start raises the operating system's administrator prompt, which a person answers, and the tunnel is
-  window-scoped by design; gating it means threading the signal through `runVpn`'s retries, left for a later story. **Deviation, the rotation:** it refuses an abandoned request before it draws a secret, but runs its
+- **Open tail, recorded — taken by E4.S3 below:** a VPN start (`runVpn`) awaits before it opens its terminal and is
+  not gated by the request. (This bullet first called the tunnel *window-scoped* and spoke of `runVpn`'s *retries*;
+  both were wrong. `runVpn` has no retry loop, and a WireGuard tunnel installed as a Windows service
+  (`/installtunnelservice`) outlives the VS Code window, as a `wg-quick up` stays up until it is stopped.) **Deviation, the rotation:** it refuses an abandoned request before it draws a secret, but runs its
   statement with the window's signal only — killing a statement that may already have changed the far side would lose
   the new value, because the vault stores it only after the statement succeeds. Expressed as
   `UseActionContext.finishOnceStarted`: the statement's launch is still refused for a gone request (a `startGate`),
@@ -272,6 +274,39 @@ Shared because both the MCP wrapper and the relay need exactly this, and today e
 - Proven across the process boundary too: level 8 of `creds-mcp-itest.cjs` kills the real binary mid-consent and then
   answers Allow. A client that only closes the binary's stdin is NOT seen until E2.S3 makes the binary cancel its
   broker call on EOF.
+
+**E4.S3 — a gone request starts no VPN** (design for its own plan round; an *as built* paragraph follows the code
+round). The promise, exactly: *once the client's departure has been observed, no new VPN start and no continuation of
+one already under way — up to the moment its command is handed to a terminal.* A command already typed into
+PowerShell or a sudo prompt, and a tunnel already up, are **not** revoked: their life is separate work (open tail
+below).
+
+- The gap (verified 2026-10-10): the VPN action's `open` (`agentUseActions.ts`, `vpnAction`) takes no signal, and the
+  extension's `open` (`extension.ts`, the agent deps) calls `runVpn` without one. `runVpn` awaits before anything is
+  sent — the dependency chain (its approval modal, its terminal's shell integration, every step, every *Continue*
+  question), the custom launcher's trust modal, the entry's door in `writeVpnConfig`, OpenVPN Connect's import
+  question, the install offer. A client gone during any of them still got: the stored config written into a private
+  file (`writeVpnConfig`), the dependency installers run (`runDependenciesFirst`), a custom launcher's line typed — with
+  no administrator prompt of its own (`runWithLauncher`) — an OpenVPN Connect profile import, or the tunnel itself
+  started.
+- The request's signal travels `vpnAction.run` → `open(accountId, entityId, action, startGate)` →
+  `runVpn(…, startGate)` → `VpnRunContext.startGate` — the shape of SSH's `ConnectOptions.startGate`. The dependency
+  chain takes it as `DependencyRunRequest.startGate`, the install offer as `offerToInstall(tool, startGate)`.
+- Checked after every await on that path and immediately before each effect: before the entry's door is asked and
+  again before the config is materialised; before the chain terminal opens and before each step is typed or executed;
+  before the install recipe is sent; before the launcher's line, the OpenVPN Connect import line and the built-in
+  start or stop line are sent. A fired gate returns `false` quietly — no warning for a person who did not ask.
+- The exit is E4.S1's: an action that did not start and whose request is gone throws the launcher's *not started*
+  error, which `brokerCall` journals as that request's `ABANDONED` (*as the action was starting — it was not
+  launched*), answering nobody. A start whose command was sent before the client left answers as it always did.
+- The person's own Start and Stop (`entityCommands.ts`) pass no gate — never fired — and do not change; a test pins it.
+- Found while tracing, the same class and the same fix: the SSH terminal's install offer (`sshConnect.ts`,
+  `offerToInstall('ssh')`) was not gated by its `startGate`; and an SSH terminal refused by its gate was journalled
+  as an `internal` failure instead of `ABANDONED`. Both are taken here.
+- **Open tail (not this story):** revoking a command already sent, or a tunnel already up, for a request that has gone
+  — a tunnel's life cycle is its own plan; and the entry-PIN box `writeVpnConfig` may raise stays on screen after the
+  request leaves (the folder PIN step's box closes; this door takes no token yet) — the gate is checked after it
+  answers, so nothing is written for a gone request.
 
 ### 5.8 A stale WSL install says so — `src_vs_code/src`
 
@@ -409,7 +444,13 @@ only with the owner's OK on the notes.
 - **E4.S2** stale WSL install check (§5.8): pure `staleVerdict` tests; host wiring; the command; never on a stopped
   distribution.
 
-(E4.S3, the QuickPick consent surface, was dropped by the owner's decision in §3.3.)
+- **E4.S3 RED → green** a gone request starts no VPN (§5.7, *E4.S3*). TS tests under the `vscode` stub, each holding
+  one await open, firing the request's signal, then releasing it: the built-in start (no config file, no line sent),
+  the dependency chain (at its approval modal, and between two steps), the install offer, the custom launcher (at its
+  trust modal: no `{config}` file, no line), OpenVPN Connect's import; the VPN action ends `ABANDONED` through the real
+  broker. A live request starts exactly as before, and the person's own click (no gate) is unchanged. Each check is
+  watched red with its line removed. (The QuickPick consent surface that once held this number was dropped by the
+  owner's decision in §3.3.)
 
 ### Epic E5 — proof on the real bridge, and the tail
 
@@ -449,6 +490,7 @@ the extension with `npm test`; the WSL itests with `npm run itest:all` on a Wind
 | C: relay never closes child stdin | E3.S3 | unit + process |
 | consent outlives the request | E4.S1 | TS unit |
 | stale install verdict | E4.S2 | TS unit |
+| a gone request starts no VPN | E4.S3 | TS unit (`vscode` stub) + broker |
 | logs leak nothing, stdout stays clean | E1.S2 | process |
 | the whole bridge, real Claude-shaped client | E5.S1 | node itest on WSL (manual) |
 
@@ -470,6 +512,7 @@ Every bug test is shown red with the real symptom before the fix and green after
       relay-pipe` count equals live SSH-agent connections (recorded in the RESULTS record).
 - [ ] Defects A, B, C each have a test shown red with the real symptom and then green; the WSL itests of E5.S1 pass.
 - [ ] A late **Allow** for a gone request runs nothing (E4.S1). (§3.3 decided by the owner 2026-10-09: defused modal.)
+- [ ] A gone request starts no VPN, its installers or its launcher, and writes no config (E4.S3).
 - [ ] Every serving host writes `logs/{yyyy-MM-dd}/{app}-{HH-mm-ss}-{pid}.log` with its start and its exit reason;
       retention works; nothing secret is in a log file.
 - [ ] `creds-mcp --version` reports both halves under WSL; a stale WSL install is reported with an update offer.
