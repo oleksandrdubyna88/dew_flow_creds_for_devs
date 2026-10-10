@@ -364,6 +364,40 @@ below).
 - What the person sees: the distribution, both versions, the Windows-half path the install uses, and **Update** (the
   existing `installIntoWsl`, then the config block with the new path on the clipboard), **Later**, **Not for this version**.
 
+**E4.S2 design, settled before its plan round** (question consultation `85327e0e`, codex — verified against the code):
+
+- **Which executable — the block's two values, remembered.** The extension cannot see the client's config, and does
+  not read it: a client's per-user file also holds other servers' env values and account data, and a credential manager
+  pulling that file across the WSL boundary to recover two strings it already wrote is poor data minimisation (the
+  consultant's word). So `installIntoWsl` records, per distribution, the two values the copied block names — the Linux
+  binary (`installedPathFrom`) and the translated Windows binary — in `globalState` the moment the block is on the
+  clipboard. The check replays exactly that pair: `wsl -d <distro> -e env CREDS_MCP_WINDOWS_BINARY=<windows> <linux>
+  --version` — `env` because the Windows half `--version` reports is resolved from that variable, and without it the
+  probe would ask a different half than the client launches. A Linux path that is not absolute or contains `=` (which
+  `env` would read as an assignment) is refused, never quoted.
+- **An install the extension did not make is "not recorded"**, not guessed at. The command says so for a running
+  distribution and offers **Update** — which, followed by the paste and the client restart the install message already
+  asks for, is the fix for the motivating case (a manual install from August). Asking the person to paste their
+  config's command was rejected as the default: it would still need the Windows path too, and still not prove the client
+  uses it.
+- **Expected** = the `creds-mcp` version the extension recorded installing on Windows (`binaryInstaller`'s record) — the
+  half the block points at. **Below the first release with `--version` (`mcp` 0.10.0)** the check cannot judge and says
+  nothing at activation (a current install of that version has no `--version` either — flagging it would loop Update).
+- **Verdict:** `current` when the Linux half answers a version ≥ expected and the Windows half answers one ≥ expected;
+  `older` when the Linux half has no `--version` (a non-zero exit — a build older than the flag, or a binary that is
+  gone), answers less, or the Windows half answers less, or answers one of E2's three words (`older than --version, or
+  no answer`, `answered without a version`, `not started`); **`unknown`** when the probe timed out — a hung distribution
+  is not evidence of an old binary (consultant), so it is reported by the command and silent at activation. The bounded
+  run is `runWslBounded`'s core widened to tell a timeout from an exit, not a second spawner.
+- **When:** after every install into WSL (shown only when not current); at activation for recorded, running
+  (`wsl -l --running -q`), due (24 h per distribution) installs, skipping a distribution whose **Not for this version**
+  names the current expected version; and the command **Check the WSL MCP install**, which ignores both throttle and
+  dismissal. Activation spawns nothing when no install is recorded.
+- **Where:** the panel button lives in the view's **Install…** submenu, beside *Install the MCP Server…* (owner's rule,
+  2026-10-09: every action is a panel button, the palette duplicates); it is the same command id, so the button and the
+  palette run one handler. The orchestration is a `vscode`-free module with injected `runningDistros`, `probe`, state
+  and clock, so the stopped-distribution, throttle and dismissal rules are unit tests.
+
 ### 5.9 Native parent watch for the server — `src_mcp/src/ParentWatch.cs` (new)
 
 - Only when the server is not relayed (`WslInterop.RelayedVariable` unset, `WslInterop.cs:59`): under the relay the
@@ -480,8 +514,9 @@ only with the owner's OK on the notes.
   during the modal, the test clicks **Allow** → no grant allowed, nothing run, `ABANDONED` logged; a token grant shared
   by two waiters — one abandons, the other still gets its answer; the client drops between consent and the action start
   → the action never starts; the client drops after the start → the action's signal fires.
-- **E4.S2** stale WSL install check (§5.8): pure `staleVerdict` tests; host wiring; the command; never on a stopped
-  distribution.
+- **E4.S2** stale WSL install check (§5.8): pure `staleVerdict` tests (every state, an old Windows half, no
+  `--version`, a timeout); host orchestration tests (a stopped distribution is never probed, once a day, *Not for this
+  version*); the panel button and the command are one id; the install records the block's two paths.
 
 - **E4.S3 RED → green** a gone request starts no VPN (§5.7, *E4.S3*). TS tests under the `vscode` stub, each holding
   one await open, firing the request's signal, then releasing it: the built-in start (no config file, no line sent),
