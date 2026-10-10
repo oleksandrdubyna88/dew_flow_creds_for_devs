@@ -506,6 +506,16 @@ primitive moves into E2 and E3 reuses it. Also new in E1 and reusable there: `Pa
 Own review (a separate reviewer, same time): the parent pid had no test that would notice a broken P/Invoke — the
 process tests now assert the host's parent IS the test process, and the release smokes grep a non-zero parent; two
 relay methods and `LogRoot.For` were over the complexity ceiling — helpers extracted; the socket path in the relay's
-lines is deliberately allowed (it is the relay's address, printed on stdout already) and the docs now say so. Not
-acted on: `RelayPipe.PumpAsync` reports `relayClosed`/`agentClosed` even when the first copy FAULTED rather than
-ended — unchanged behaviour, now merely visible in the log; left for E3, which rewrites that pump.
+lines is deliberately allowed (it is the relay's address, printed on stdout already) and the docs now say so. It also
+named `RelayPipe.PumpAsync` reporting an orderly close when the first copy FAULTED; deferred to E3 at first, and
+taken in the final round below once a reviewer raised it independently.
+
+**Final code round (`again`, 2026-10-10) — `proceed`**, gating 1 against threshold 5, **4 of 8 reviewers answered**
+(codex; gemini rate-limited).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | `LogLevels.Overrides` is a required positional list, not an init-only `[]` default | **accepted** — `Overrides { get; init; } = []` |
+| 1 | The rule's two overrides are forced on every host | **rejected** — they ARE the rule's, for every host (`logging-serilog.md`, *Levels come from configuration*); a host adds its own after them |
+| 2 | The WSL start failure logs `e.Message`, which can carry the path `CREDS_MCP_WINDOWS_BINARY` named | **accepted** — the exception's type is logged instead (an environment value is never logged) |
+| 3 | relay-pipe logs a FAILED copy as an orderly close | **accepted** — `ExitReason.CopyFailed`; RED ("Expected RelayPipe.EndingOf(broken, broken) to be ExitReason.CopyFailed … but found ExitReason.RelayClosed") → GREEN → RED again with the check removed |

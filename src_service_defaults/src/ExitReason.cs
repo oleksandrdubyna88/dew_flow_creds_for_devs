@@ -51,6 +51,9 @@ public enum ExitReason
 
     /// <summary>The SSH agent closed its side first.</summary>
     AgentClosed,
+
+    /// <summary>A copy between the two sides failed rather than ended — a broken pipe, a reset.</summary>
+    CopyFailed,
 }
 
 /// <summary>How a host run ended: the exit code it returns and the reason it logs.</summary>

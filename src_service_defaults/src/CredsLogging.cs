@@ -79,7 +79,7 @@ public static class CredsLogging
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)),
             startedUtc,
-            new LogLevels(FloorFrom(env(LevelVariable)), []),
+            new LogLevels(FloorFrom(env(LevelVariable))),
             RetentionFrom(env(RetentionVariable)),
             console ?? ConsoleFor(consoleToStdErr),
             Source: appName));

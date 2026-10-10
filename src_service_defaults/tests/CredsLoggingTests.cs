@@ -160,10 +160,10 @@ public sealed class CredsLoggingTests : IDisposable
     public void The_rule_overrides_apply_and_a_host_override_of_the_same_source_wins()
     {
         var console = new StringWriter();
-        var quiet = new LogSetup("a", string.Empty, DateTime.UtcNow, new LogLevels(LogEventLevel.Information, []), 14, console);
+        var quiet = new LogSetup("a", string.Empty, DateTime.UtcNow, new LogLevels(LogEventLevel.Information), 14, console);
         var loud = quiet with
         {
-            Levels = new LogLevels(LogEventLevel.Information, [new("Microsoft.AspNetCore", LogEventLevel.Information)]),
+            Levels = new LogLevels(LogEventLevel.Information) { Overrides = [new("Microsoft.AspNetCore", LogEventLevel.Information)] },
         };
 
         using (var log = CredsLogging.Build(quiet))

@@ -48,9 +48,10 @@ public static class CredVaultLogging
             // Levels come from configuration, never from call sites: changing verbosity is a config
             // edit and a restart, not an edited binary. The same `Serilog:MinimumLevel:*` keys, read
             // explicitly (see LogLevels for why not Serilog.Settings.Configuration).
-            new LogLevels(
-                LogLevels.Parse(builder.Configuration["Serilog:MinimumLevel:Default"], LogEventLevel.Information),
-                ConfiguredOverrides(builder.Configuration)),
+            new LogLevels(LogLevels.Parse(builder.Configuration["Serilog:MinimumLevel:Default"], LogEventLevel.Information))
+            {
+                Overrides = ConfiguredOverrides(builder.Configuration),
+            },
             builder.Configuration.GetValue("Logging:RetentionDays", LogRetention.DefaultRetainDays)));
         builder.Logging.ClearProviders();
         builder.Logging.AddSerilog(Log.Logger, dispose: true);

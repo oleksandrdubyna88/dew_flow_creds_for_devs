@@ -153,6 +153,12 @@ internal static class RelayPipe
         var toAgent = stdin.CopyToAsync(agent);
         var fromAgent = agent.CopyToAsync(stdout);
         var first = await Task.WhenAny(toAgent, fromAgent).ConfigureAwait(false);
-        return first == toAgent ? ExitReason.RelayClosed : ExitReason.AgentClosed;
+        return EndingOf(first, toAgent);
     }
+
+    /// <summary>Which ending the first copy to finish stands for — a FAILED copy is its own ending.</summary>
+    internal static ExitReason EndingOf(Task first, Task toAgent) =>
+        first.IsFaulted ? ExitReason.CopyFailed
+        : first == toAgent ? ExitReason.RelayClosed
+        : ExitReason.AgentClosed;
 }

@@ -17,9 +17,11 @@ namespace CredsForDevs.ServiceDefaults;
 /// list can still lower or raise them: a later override of the same source wins.</para>
 /// </remarks>
 /// <param name="Default">The floor.</param>
-/// <param name="Overrides">Per-source levels, applied in order.</param>
-public sealed record LogLevels(LogEventLevel Default, IReadOnlyList<KeyValuePair<string, LogEventLevel>> Overrides)
+public sealed record LogLevels(LogEventLevel Default)
 {
+    /// <summary>Per-source levels, applied in order after the rule's two defaults; none unless a host names some.</summary>
+    public IReadOnlyList<KeyValuePair<string, LogEventLevel>> Overrides { get; init; } = [];
+
     /// <summary>A level name, any case, or <paramref name="fallback"/> when it is not one.</summary>
     public static LogEventLevel Parse(string? value, LogEventLevel fallback) =>
         Enum.TryParse<LogEventLevel>(value, ignoreCase: true, out var level) ? level : fallback;

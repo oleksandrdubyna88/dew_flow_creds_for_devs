@@ -194,10 +194,12 @@ internal static class Program
         }
         catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidOperationException)
         {
+            // The exception's TYPE, not its message: the message can carry the path the override variable
+            // named, and an environment value is never logged (plan §5.1; code round 2, finding 2).
             log.Error(
-                "this looks like WSL, but creds-mcp.exe could not be started ({Reason}). Set {Variable} to its "
+                "this looks like WSL, but creds-mcp.exe could not be started ({Failure}). Set {Variable} to its "
                     + "full path — \"Install the MCP Server…\" puts it in the extension's storage rather than on the PATH.",
-                e.Message,
+                e.GetType().Name,
                 WslInterop.McpBinaryOverrideVariable);
             return new HostEnding(contract.Exit("toolMissing"), ExitReason.WindowsHalfMissing);
         }
