@@ -90,7 +90,7 @@ async function create(hooks: McpCreateHooks, body: Record<string, unknown>): Pro
   if (!chosen.ok) {
     return { ok: false, message: chosen.message, id: '' };
   }
-  const settled = await hooks.settle(chosen, Date.now() + 60_000);
+  const settled = await hooks.settle(chosen, Date.now() + 60_000, new AbortController().signal);
   assert.ok(settled.ok, 'precondition: this folder asks for no PIN');
   const made = await hooks.make(chosen, body, settled);
   return { ok: true, message: chosen.summary, id: made.id };

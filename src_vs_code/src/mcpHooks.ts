@@ -31,7 +31,7 @@ import * as vscode from 'vscode';
 export function mcpCreateHooks(storage: StorageManager, onMade: () => void): McpCreateHooks {
   return {
     choose: (body) => chooseCreateTarget(storage, body),
-    settle: (decision, deadline) => settleAgentCreate(storage, decision, deadline),
+    settle: (decision, deadline, signal) => settleAgentCreate(storage, decision, deadline, signal),
     make: (decision, body, settled) => makeAgentEntry(storage, onMade, decision, body, settled),
   };
 }

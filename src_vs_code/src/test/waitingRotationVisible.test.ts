@@ -174,7 +174,7 @@ test('a click on an unprotected entry with nothing waiting reads the clicked slo
 
 // ---- W3: what the person reads about a waiting value is true of THIS entry ----
 
-const CTX = { accountId: ACCOUNT, entityId: ENTRY, entityName: 'portal' };
+const CTX = { accountId: ACCOUNT, entityId: ENTRY, entityName: 'portal', signal: new AbortController().signal };
 
 /** The next `setPassword` of `storage` rejects with `reason`; every one after it works again. */
 function setPasswordFailsOnce(storage: StorageManager, reason: string): void {
@@ -249,7 +249,7 @@ const DB = 'db1';
 const OLD_CONN = 'mysql://app:old-password-9f2c@db-01.example.internal:3306/orders';
 const NEW_CONN = 'mysql://app:HELD-rotated-77ab@db-01.example.internal:3306/orders';
 const OTHER_CONN = 'mysql://app:CHANGED-elsewhere-5e0f@db-01.example.internal:3306/orders';
-const DB_CTX = { accountId: ACCOUNT, entityId: DB, entityName: 'orders-db' };
+const DB_CTX = { accountId: ACCOUNT, entityId: DB, entityName: 'orders-db', signal: new AbortController().signal };
 
 const dbDetails = (): EntityMetadata => entry({ id: DB, name: 'orders-db', kind: 'db', dbType: 'mysql' });
 

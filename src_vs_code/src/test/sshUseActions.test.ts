@@ -154,7 +154,7 @@ function deps(w: World, parts: Parts): unknown {
   };
 }
 
-const CTX = { accountId: 'a1', entityId: 'e1', entityName: 'prod' } as never;
+const CTX = { accountId: 'a1', entityId: 'e1', entityName: 'prod', signal: new AbortController().signal } as never;
 const cleanup = (w: World): void => fs.rmSync(w.storageDir, { recursive: true, force: true });
 
 const KEY_SOURCE = { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE KEY BODY' };

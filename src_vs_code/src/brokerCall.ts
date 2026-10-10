@@ -7,7 +7,7 @@ import { Grant, GrantLimits, GrantLookup, GrantRegistry } from './grantRegistry'
 import { grantLimits } from './grantLimits';
 import { OneUseLane, laneKeyFor } from './oneUseLane';
 import { MaskTable } from './secretMasker';
-import { UseAction } from './useActions';
+import { UseAction, UseActionResult } from './useActions';
 
 /**
  * One call, from the moment consent is in hand to the moment its answer is on the wire.
@@ -40,6 +40,11 @@ export interface CallDeps {
   failed(why: string, actionRan: boolean): void;
   refresh(): Promise<MaskTable | undefined>;
   burn(status: number): Promise<void>;
+  /**
+   * Record that this call was dropped because its client left — nothing reserved or run for it, and
+   * nothing answered, because nobody is there. `stage` says where.
+   */
+  abandon(stage: string): void;
 }
 
 export interface CallSubject {
@@ -52,6 +57,8 @@ export interface CallSubject {
   readonly caller: CallerLabel | undefined;
   readonly summary: string;
   readonly table: MaskTable;
+  /** The request's life: fires when its client hung up (`requestLife.ts`). Handed to the action it starts. */
+  readonly signal: AbortSignal;
 }
 
 export async function performCall(deps: CallDeps, call: CallSubject): Promise<void> {
@@ -59,6 +66,13 @@ export async function performCall(deps: CallDeps, call: CallSubject): Promise<vo
   // extend a token's idle life or spend one of its uses. The check and the count are ONE
   // synchronous step, because two awaits sit between them and the broker shares a consent dialog
   // between concurrent first calls on purpose — see `GrantRegistry.reserve`.
+  //
+  // A client already gone reserves nothing: checked in the same synchronous step as the reserve, so an
+  // abandoned call spends no use of its grant (`PLAN_wsl_bridge_outlives_its_client.md` §5.7).
+  if (call.signal.aborted) {
+    deps.abandon('before the call was counted');
+    return;
+  }
   const limits = grantLimits();
   const reserved = deps.grants.reserve(call.grant.secret, Date.now(), limits);
   if (reserved.kind !== 'live') {
@@ -108,7 +122,38 @@ function refuseSpent(deps: CallDeps, call: CallSubject): void {
   deps.refuse('not_found', `"${call.grant.entityName}" was one-use and has already been used.`);
 }
 
+/**
+ * The action boundary: whether the client is still there, and the start, in ONE synchronous step.
+ *
+ * <p>A check made before an await leaves a window between the check and the start, and a client that
+ * leaves inside it would get its action run anyway — the plan gate's finding on this story. So the
+ * check sits here, and the action is started on the very next line, before this function yields — the
+ * delivery only ever receives a promise of a run already under way. A one-use call arrives here
+ * after waiting its turn in the lane, which is the longest wait on the whole path.</p>
+ *
+ * <p>The action is handed the same signal, so a client that leaves AFTER the start cancels the work
+ * itself — the child process, the query — and not only the reply nobody would read.</p>
+ */
 function answer(deps: CallDeps, call: CallSubject): Promise<void> {
+  if (call.signal.aborted) {
+    deps.abandon('before the action started');
+    return Promise.resolve();
+  }
+  const started = startNow(call);
+  return deliver(deps, call, started);
+}
+
+/** Start the action now — a synchronous throw is a failed start like any other, not an escape. */
+function startNow(call: CallSubject): Promise<UseActionResult> {
+  const { grant, useAction, body, signal } = call;
+  try {
+    return useAction.run({ accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName, signal }, body);
+  } catch (error) {
+    return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+  }
+}
+
+function deliver(deps: CallDeps, call: CallSubject, started: Promise<UseActionResult>): Promise<void> {
   const { grant, useAction, action, via, summary, table, caller } = call;
   return runAndDeliver(
     {
@@ -121,7 +166,7 @@ function answer(deps: CallDeps, call: CallSubject): Promise<void> {
       table,
       where: { grant: GrantRegistry.describe(grant), entityName: grant.entityName, action, via, summary, caller },
     },
-    () => useAction.run({ accountId: grant.accountId, entityId: grant.entityId, entityName: grant.entityName }, call.body),
+    () => started,
     (result) => (result.status === 200 ? useAction.describeOutcome(result) : String(result.status)),
   );
 }

@@ -107,7 +107,7 @@ async function create(w: World, deadline: number = FAR()): Promise<CreateSettled
   const chosen = w.hooks.choose(BODY);
   assert.ok(chosen.ok, `precondition: the request fits the folder — ${chosen.ok ? '' : chosen.message}`);
   const accepted: CreateAccepted = chosen;
-  const settled = await w.hooks.settle(accepted, deadline);
+  const settled = await w.hooks.settle(accepted, deadline, new AbortController().signal);
   if (settled.ok) {
     await w.hooks.make(accepted, BODY, settled);
   }
@@ -258,6 +258,54 @@ test('a PIN box still open when the consent step’s time runs out is closed wit
   assert.equal(w.s.boxes, 1, 'and no second box followed the closed one');
   assert.ok(w.s.tokenSources.length === 1 && w.s.tokenSources[0].disposed, 'the token source was disposed');
   assert.deepEqual(made(w), []);
+});
+
+test('a PIN box still open when the agent’s client leaves is closed with it, and nothing is made', async () => {
+  // `PLAN_wsl_bridge_outlives_its_client.md` §5.7, the consultant's finding on E4.S1: a box left open
+  // for a request nobody waits for would still check what is typed into it against the folder's
+  // protected entries — and count wrong PINs toward their cooldown — for nobody.
+  const w = await world({ asks: true }, []);
+  let closed = false;
+  (w.stub.window as Record<string, unknown>).showInputBox = (_options: unknown, token?: StubCancellationToken): Promise<undefined> => {
+    w.s.boxes += 1;
+    w.s.boxTokens.push(token);
+    return new Promise((resolve) => void token?.onCancellationRequested(() => resolve(void (closed = true))));
+  };
+  const chosen = w.hooks.choose(BODY);
+  assert.ok(chosen.ok);
+  const request = new AbortController();
+
+  const settling = w.hooks.settle(chosen, FAR(), request.signal);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(w.s.boxes, 1, 'precondition: the PIN box is open');
+  request.abort();
+  // Bounded well inside the step's own deadline (`FAR`, a minute): the box must close because the client
+  // left, not because the step eventually ran out of time.
+  const settled = await Promise.race([settling, new Promise<'still open'>((resolve) => setTimeout(() => resolve('still open'), 2000).unref())]);
+  assert.notEqual(settled, 'still open', 'the PIN box stayed open after the request’s client had gone');
+  if (settled === 'still open') {
+    return;
+  }
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(closed, true, 'the PIN box stayed open for a request whose client had gone');
+  assert.equal(settled.ok, false, JSON.stringify(settled));
+  assert.equal(w.s.boxes, 1, 'and no second box followed the closed one');
+  assert.deepEqual(made(w), []);
+  assert.deepEqual(w.written, []);
+});
+
+test('a request already gone raises no PIN box at all', async () => {
+  const w = await world({ asks: true }, ['2468', '2468']);
+  const chosen = w.hooks.choose(BODY);
+  assert.ok(chosen.ok);
+  const gone = new AbortController();
+  gone.abort();
+
+  const settled = await w.hooks.settle(chosen, FAR(), gone.signal);
+
+  assert.equal(settled.ok, false);
+  assert.equal(w.s.boxes, 0, 'a PIN box was raised for a request already gone');
 });
 
 test('every PIN box an agent’s create raises carries the step’s token, and a PIN given in time cancels nothing', async () => {

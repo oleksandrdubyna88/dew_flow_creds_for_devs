@@ -50,7 +50,8 @@ fs.writeFileSync(
          const c = global.__CREDS_MCP_CONSENT__;
          c.asked += 1;
          c.messages.push(String(message));
-         return Promise.resolve(c.answers.shift());
+         // Held open until the leg answers it, when a leg asks for that — see goneMidConsentLeg.
+         return c.held ? new Promise((resolve) => c.held.push(resolve)) : Promise.resolve(c.answers.shift());
        },
        showInformationMessage: () => Promise.resolve(undefined),
        showErrorMessage: () => Promise.resolve(undefined),
@@ -268,6 +269,100 @@ const HANDSHAKE = [
   },
   { jsonrpc: '2.0', method: 'notifications/initialized' },
 ];
+
+/** How many checks {@link goneMidConsentLeg} owns before its own contribution assertion. */
+const EXPECTED_GONE_CHECKS = 4;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Poll until `ready`, or give up after `ms` — answering whether it became true. */
+async function eventually(ready, ms) {
+  const deadline = Date.now() + ms;
+  while (!ready() && Date.now() < deadline) {
+    await sleep(25);
+  }
+  return ready();
+}
+
+/**
+ * Level 8 — the client is gone while the consent modal is open (`PLAN_wsl_bridge_outlives_its_client.md`
+ * §2.3, §5.7, story E4.S1), through the REAL binary.
+ *
+ * <p>The unit tests hang up a Node HTTP client. This hangs up the one that matters: the binary, killed
+ * mid-call the way a client's process dies, whose broker connection then closes under the window. The
+ * modal is held open, answered Allow only after the death, and nothing may run.</p>
+ *
+ * <p>What it does NOT cover, said so the gap is not read as closed: a client that only closes the
+ * binary's STDIN. Until Epic E2 the binary does not cancel its in-flight broker call on EOF (defect A),
+ * so its connection stays open and the window cannot know. E2.S3 is the story that closes that.</p>
+ *
+ * <p>Its own window, for the reason `quietLeg` gives: the prompt budget the levels above have spent.</p>
+ */
+async function goneMidConsentLeg() {
+  const before = checksRun;
+  const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mcp-gone-'));
+  const ran = [];
+  const actions = new UseActionRegistry();
+  actions.register({
+    kind: 'db',
+    action: 'query',
+    mutatesSecrets: false,
+    verb: 'run a query on',
+    validate: () => ({ ok: true }),
+    summarize: (body) => String(body.query ?? ''),
+    describeOutcome: () => 'done',
+    run: (_ctx, body) => {
+      ran.push(String(body.query ?? ''));
+      return Promise.resolve({ status: 200, body: { exitCode: 0, rows: 1 } });
+    },
+  });
+  const server = new CredsAgentServer(actions, () => {}, {
+    storageDir,
+    listMcpEntries: () => Promise.resolve(ENTRIES),
+    resolveMcpUse: (id) =>
+      id === 'e-1' ? { kind: 'usable', target: { accountId: 'a-1', entityId: 'e-1', entityName: 'orders-db', kind: 'db' } } : undefined,
+  });
+  const auditFrom = audit.length;
+  consent.held = [];
+  let child;
+  try {
+    await server.share('a-1', 'e-1', 'orders-db', 'db');
+    child = spawn(EXE, [], {
+      env: { ...process.env, CREDS_RELAYED_FROM_WSL: '1', CREDS_ENDPOINT_DIR: path.join(storageDir, 'endpoints') },
+    });
+    child.stdout.resume();
+    child.stderr.resume();
+    for (const message of [
+      ...HANDSHAKE,
+      { jsonrpc: '2.0', id: 95, method: 'tools/call', params: { name: 'creds_query', arguments: { entry: 'e-1', query: 'select gone' } } },
+    ]) {
+      child.stdin.write(`${JSON.stringify(message)}\n`);
+      await sleep(150);
+    }
+    check('the modal is open while the binary waits on it', await eventually(() => consent.held.length === 1, 15_000), `held ${consent.held.length}`);
+
+    const exited = new Promise((resolve) => child.once('exit', resolve));
+    child.kill('SIGKILL');
+    await exited;
+    await sleep(500);
+    consent.held.shift()?.('Allow');
+    await sleep(500);
+
+    const lines = audit.slice(auditFrom);
+    check('a late Allow ran nothing for the client that died', ran.length === 0, JSON.stringify(ran));
+    check('the window recorded the call as abandoned', lines.some((line) => line.includes('ABANDONED')), lines.join(' | ').slice(0, 600));
+    check('and allowed nothing', !lines.some((line) => line.includes('ALLOWED')), lines.join(' | ').slice(0, 600));
+  } finally {
+    consent.held = undefined;
+    child?.kill();
+    server.dispose();
+  }
+  check(
+    'the gone-client level contributed every check it owns',
+    checksRun - before === EXPECTED_GONE_CHECKS,
+    `ran ${checksRun - before} of ${EXPECTED_GONE_CHECKS}`,
+  );
+}
 
 /** How many checks {@link quietLeg} owns BEFORE its own contribution assertion, which does not count itself. */
 const EXPECTED_QUIET_CHECKS = 10;
@@ -1376,6 +1471,7 @@ async function oldWindowLeg() {
   await quietLeg();
   await kindsLeg();
   await oldWindowLeg();
+  await goneMidConsentLeg();
 
   folderServer.dispose();
   server.dispose();

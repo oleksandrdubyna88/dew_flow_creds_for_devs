@@ -9,7 +9,7 @@ import {
   storedValueFor,
   substituteNewSecret,
 } from '../secretRotation';
-import type { UseAction, UseActionResult } from '../useActions';
+import type { UseAction, UseActionContext, UseActionResult } from '../useActions';
 import type { EntityMetadata } from '../types';
 import { stored } from '../storedSecret';
 
@@ -37,6 +37,8 @@ interface Log {
   recorded: number;
   stored: { slot: string; value: string }[];
   refreshed: number;
+  /** The context each statement run was handed. */
+  ctxs: UseActionContext[];
 }
 
 function world(
@@ -48,7 +50,7 @@ function world(
     kind?: string;
   } = {},
 ): { action: UseAction; log: Log; generated: string } {
-  const log: Log = { ran: [], recorded: 0, stored: [], refreshed: 0 };
+  const log: Log = { ran: [], recorded: 0, stored: [], refreshed: 0, ctxs: [] };
   const generated = 'NEW-secret-4b7e';
   const underlying: UseAction = {
     kind: overrides.kind ?? 'db',
@@ -58,7 +60,8 @@ function world(
     validate: () => ({ ok: true }),
     summarize: (body) => String((body as { query?: unknown }).query ?? ''),
     describeOutcome: () => 'ok',
-    run: (_ctx, body) => {
+    run: (ctx, body) => {
+      log.ctxs.push(ctx);
       log.ran.push(String((body as { query?: unknown }).query ?? ''));
       return Promise.resolve(overrides.result ?? { status: 200, body: { exitCode: 0, stdout: 'ALTER\n' } });
     },
@@ -87,7 +90,7 @@ function world(
   return { action: rotateAction(underlying, 'query', deps), log, generated };
 }
 
-const CTX = { accountId: 'a1', entityId: 'e1', entityName: 'orders-db' };
+const CTX = { accountId: 'a1', entityId: 'e1', entityName: 'orders-db', signal: new AbortController().signal };
 const STATEMENT = `ALTER USER app IDENTIFIED BY '${NEW_SECRET_PLACEHOLDER}'`;
 
 test('the agent never writes the secret — the window substitutes it', async () => {
@@ -332,4 +335,32 @@ test('an agent cannot rotate a value of an entry that CLAIMS a PIN, even when th
   assert.equal(log.ran.length, 0, 'the far side was reached');
   assert.equal(log.stored.length, 0, 'and a new value was stored into a protected entry');
   assert.match(JSON.stringify(result), /protected with its own PIN/);
+});
+
+/**
+ * A rotation and a client that leaves (`PLAN_wsl_bridge_outlives_its_client.md` §5.7, the recorded
+ * deviation): a request already gone draws nothing and runs nothing; a statement already running is
+ * left to finish, because it may have changed the far side and its value is stored only once it succeeds.
+ */
+test('a rotation for a request already gone generates nothing, runs nothing and stores nothing', async () => {
+  const { action, log } = world();
+  const gone = new AbortController();
+  gone.abort();
+
+  const result = await action.run({ ...CTX, signal: gone.signal }, { statement: STATEMENT });
+
+  assert.notEqual(result.status, 200);
+  assert.deepEqual(log.ran, [], 'the statement ran for a request nobody was waiting for');
+  assert.equal(log.recorded, 0);
+  assert.deepEqual(log.stored, []);
+});
+
+test('the statement runs as work that must finish once started — the request’s end cannot kill it half-way', async () => {
+  const { action, log } = world();
+
+  await action.run(CTX, { statement: STATEMENT });
+
+  assert.equal(log.ctxs.length, 1);
+  assert.equal(log.ctxs[0].finishOnceStarted, true, 'a disconnect mid-statement would kill the rotation and lose its new value');
+  assert.equal(log.ctxs[0].signal, CTX.signal, 'and it still carries the request, so a launch after the client left is refused');
 });

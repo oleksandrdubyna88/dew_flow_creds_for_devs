@@ -15,6 +15,34 @@ export interface UseActionContext {
   readonly accountId: string;
   readonly entityId: string;
   readonly entityName: string;
+  /**
+   * The life of the request this call serves: it fires when the client that asked hung up
+   * (`requestLife.ts`). REQUIRED, so every start says which request it is for — a start that could
+   * omit it is how an action came to run for a client that was gone (`PLAN_wsl_bridge_outlives_its_client.md`
+   * §2.3). An action that launches anything refuses to launch once it has fired, and cancels what it
+   * launched when it fires later — see {@link launchGuards}.
+   */
+  readonly signal: AbortSignal;
+  /**
+   * Set by a wrapper whose started work must run to its end even if the client leaves: a rotation,
+   * whose statement may already have changed the far side, and whose new value the vault stores only
+   * after that statement succeeds. Killing it half-way would lose the credential. The start is still
+   * refused once the request has gone; only an already-started run is left to finish.
+   */
+  readonly finishOnceStarted?: boolean;
+}
+
+/**
+ * The two signals an action that launches a child process hands its launcher (`sshExecRunner.ts`).
+ *
+ * <p>`startGate` fires when either the window or the request has gone — nothing is launched after it.
+ * `signal` is what the launched child is killed by: the same, except for work that must finish once
+ * started ({@link UseActionContext.finishOnceStarted}), which only the window's end stops. Shaped as
+ * the launcher's own option names, so a call site spreads it and cannot cross the two.</p>
+ */
+export function launchGuards(window: AbortSignal, ctx: UseActionContext): { signal: AbortSignal; startGate: AbortSignal } {
+  const startGate = AbortSignal.any([window, ctx.signal]);
+  return { startGate, signal: ctx.finishOnceStarted === true ? window : startGate };
 }
 
 /** A validated action outcome, shaped as the broker's HTTP response. */

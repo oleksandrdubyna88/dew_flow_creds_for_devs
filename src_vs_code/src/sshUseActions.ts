@@ -10,7 +10,7 @@ import {
   statusForErrorCode,
 } from './brokerProtocol';
 import { StorageManager } from './storageManager';
-import { UseAction, UseActionContext, UseActionResult } from './useActions';
+import { UseAction, UseActionContext, UseActionResult, launchGuards } from './useActions';
 import { SshExecAuth, buildSshExecArgv, validateRemoteCommand } from './sshExecCommand';
 import { resolveJumpChain } from './sshOptions';
 import { materializeKnownHosts } from './hostKeyTrust';
@@ -213,7 +213,7 @@ export function sshExecAction(deps: SshUseDeps): UseAction {
           program: launch.program,
           env: launch.env,
           timeoutMs: clampExecTimeout((body as { timeoutMs?: unknown }).timeoutMs),
-          signal: deps.signal,
+          ...launchGuards(deps.signal, ctx),
         });
         const response: ExecResponseBody = outcome;
         return { status: 200, body: response };

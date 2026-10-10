@@ -23,13 +23,15 @@ export async function settleAgentCreate(
   storage: StorageManager,
   decision: CreateAccepted,
   deadline: number,
+  /** The request's life: a client that leaves closes the PIN box with it (`brokerMcpDoor.McpCreateHooks.settle`). */
+  signal: AbortSignal,
   now: () => number = Date.now,
 ): Promise<CreateSettled> {
   const { accountId, entityId: folderId, entityName: folder } = decision.target;
   if (!(await asksForPinOnCreate(storage, accountId, folderId))) {
     return READY;
   }
-  const settled = await within(deadline - now(), (token) => pinForAgentEntry(storage, accountId, folderId, AGENT_PIN_TRIES, token));
+  const settled = await within(deadline - now(), signal, (token) => pinForAgentEntry(storage, accountId, folderId, AGENT_PIN_TRIES, token));
   return settled === undefined ? refused('consent_timeout', TIMED_OUT(folder)) : answerFor(settled, folder);
 }
 
@@ -39,14 +41,26 @@ export async function settleAgentCreate(
  * <p>Every box the question raises carries one token, cancelled when the step runs out: the agent is
  * answered then and nothing is written, so a box still on screen after it would only take a PIN nobody
  * uses (plan §11). VS Code closes a box whose token is cancelled, and one raised after it at once.</p>
+ *
+ * <p>The same token is cancelled when the request's client leaves (`signal`), for the same reason and
+ * one more: a box left open for a gone request would still check what is typed into it against the
+ * folder's protected entries, and count wrong PINs towards their cooldown, for nobody
+ * (`PLAN_wsl_bridge_outlives_its_client.md` §5.7).</p>
  */
-async function within(left: number, ask: (token: vscode.CancellationToken) => Promise<CreatePin>): Promise<CreatePin | undefined> {
-  if (left <= 0) {
+async function within(
+  left: number,
+  signal: AbortSignal,
+  ask: (token: vscode.CancellationToken) => Promise<CreatePin>,
+): Promise<CreatePin | undefined> {
+  if (left <= 0 || signal.aborted) {
     return undefined;
   }
   const source = new vscode.CancellationTokenSource();
+  const leave = (): void => source.cancel();
+  signal.addEventListener('abort', leave, { once: true });
   // A rejection would escape `withTimeout` unhandled; a read that fails is a PIN not given.
   const settled = await withTimeout(ask(source.token).catch((): CreatePin => ({ kind: 'cancelled' })), left);
+  signal.removeEventListener('abort', leave);
   if (settled === undefined) {
     source.cancel();
   }

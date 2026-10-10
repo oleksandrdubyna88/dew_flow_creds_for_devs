@@ -30,8 +30,17 @@ export interface SshExecOptions {
    */
   program?: string;
   timeoutMs: number;
-  /** Aborted when the window goes away, so no ssh outlives its broker. */
+  /**
+   * Kills the child when it fires — the window going away, or the request it serves ending — so no ssh
+   * outlives what it was for. Already fired: nothing is launched at all.
+   */
   signal?: AbortSignal;
+  /**
+   * Refuses the LAUNCH once it has fired, without killing a child already running. For work that must
+   * finish once started (a rotation's statement, `useActions.launchSignals`), where `signal` is only the
+   * window's and the request's end may still stop the start but not the run.
+   */
+  startGate?: AbortSignal;
   /**
    * Working directory for the child. Absent means this process's own, which is what every
    * ssh caller wants; the git transport needs its clone, and `git -C` would have to be
@@ -103,6 +112,12 @@ export function runBounded(
 ): Promise<SshExecOutcome> {
   // eslint-disable-next-line complexity, max-lines-per-function
   return new Promise((resolve, reject) => {
+    // Spawning and only then subscribing to the abort would launch a child for a caller already gone —
+    // and kill it a moment later, after it may have done its work (`PLAN_wsl_bridge_outlives_its_client.md` §5.7).
+    if (alreadyGone(options)) {
+      reject(notStarted());
+      return;
+    }
     const startedAt = Date.now();
     let child;
     try {
@@ -177,4 +192,16 @@ export function runBounded(
       ),
     );
   });
+}
+
+/** Whether whatever this child was for has already ended — the window, or the request it serves. */
+function alreadyGone(options: SshExecOptions): boolean {
+  return options.signal?.aborted === true || options.startGate?.aborted === true;
+}
+
+/** The refusal to launch for a caller already gone; named `AbortError`, as an aborted spawn is. */
+function notStarted(): Error {
+  const error = new Error('Not started: the request it was for had already ended.');
+  error.name = 'AbortError';
+  return error;
 }

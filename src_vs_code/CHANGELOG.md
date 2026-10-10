@@ -24,6 +24,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The code panel, the mint dialog and the config help topic say how the key reaches `creds`; the
   mint dialog no longer names `AddCredsForDevs()`, a package that was never built.
 
+### Fixed — an agent request whose client is gone can no longer be allowed
+
+- **A consent dialog answered after the agent had gone allows nothing and runs nothing.** When an agent's
+  request ended while its *Allow / Deny* dialog was open — the agent's session closed, its tool call
+  cancelled, its process killed — a later click on **Allow** used to allow the grant and run the action
+  anyway, for a request nobody was waiting for. Now the request is dropped the moment its connection closes:
+  the dialog stays on screen (VS Code cannot close it from code) but answering it decides nothing, and the
+  *Agent Access* journal says `ABANDONED` for the request and `ignored` for the late answer. Two calls on one
+  token that share a dialog are still answered for the one that stayed.
+- **Every later step checks too**: nothing is remembered, no use of the grant is spent, the action never
+  starts once the client has gone — and an action already running (an SSH command, a script, a query) is
+  cancelled with it. A rotation already running is left to finish, so its new password is never lost.
+- **The folder PIN box of an agent's create closes when the agent leaves**, instead of taking a PIN — and
+  counting wrong ones — for nobody.
+
+
 ## [1.13.0] — 2026-10-03 — A folder that asks for a PIN asks it on arrival, and a waiting rotated value is stored and said at every door
 
 ### Changed — a folder that asks for a PIN asks it too when something arrives in it

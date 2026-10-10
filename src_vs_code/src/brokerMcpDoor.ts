@@ -95,6 +95,19 @@ export interface BrokerDoor {
     caller: CallerLabel | undefined,
   ): Promise<ConsentOutcome>;
   respond(res: http.ServerResponse, status: number, body: unknown): void;
+  /**
+   * This request's life: it fires when the client hung up before it was answered (`requestLife.ts`).
+   *
+   * <p>On the door because the door is built per request — `consent` and `perform` above hand it to the
+   * broker, and the handlers below read it immediately before every side effect, so a request whose
+   * client is gone can authorise nothing (`PLAN_wsl_bridge_outlives_its_client.md` §5.7).</p>
+   */
+  readonly signal: AbortSignal;
+  /**
+   * Record that this request was dropped because its client left — one `ABANDONED` line, and no
+   * answer, because there is nobody to answer. `stage` says where on the path it was dropped.
+   */
+  abandon(grant: Grantish, action: string, stage: string, caller: CallerLabel | undefined): void;
 }
 
 /** Whatever the broker calls a grant. This module only ever passes it back. */
@@ -111,7 +124,53 @@ export function mcpDoor(parts: BrokerDoor): BrokerDoor {
   return parts;
 }
 
-export type ConsentOutcome = 'allowed' | 'denied' | 'timeout';
+/**
+ * How a consent step ended. `abandoned` is the request's own client leaving before it was answered —
+ * not a refusal by anybody, and never answered on the wire: there is nobody left to answer.
+ */
+export type ConsentOutcome = 'allowed' | 'denied' | 'timeout' | 'abandoned';
+
+/** Where on the path a request is dropped when its client leaves while it is being asked. */
+export const DURING_CONSENT = 'while consent was being asked';
+
+/**
+ * A consent that was not given: refused in the door's shape — or, when the client left, recorded as
+ * abandoned and answered to nobody.
+ */
+export function consentNotGiven(
+  door: BrokerDoor,
+  res: http.ServerResponse,
+  consent: Exclude<ConsentOutcome, 'allowed'>,
+  where: { grant: Grantish; action: string; summary: string; caller: CallerLabel | undefined },
+  message: string,
+): void {
+  if (consent === 'abandoned') {
+    door.abandon(where.grant, where.action, DURING_CONSENT, where.caller);
+    return;
+  }
+  const code: ErrorCode = consent === 'timeout' ? 'consent_timeout' : 'denied';
+  door.refuse(res, code, message, where.grant, where.action, where.summary, where.caller);
+}
+
+/**
+ * Whether this request's client has gone — recorded as abandoned when it has.
+ *
+ * <p>Called in the same synchronous step as the side effect it guards, with no await between the two:
+ * a check followed by an await would leave exactly the window this exists to close.</p>
+ */
+export function clientGone(
+  door: BrokerDoor,
+  grant: Grantish,
+  action: string,
+  stage: string,
+  caller: CallerLabel | undefined,
+): boolean {
+  if (!door.signal.aborted) {
+    return false;
+  }
+  door.abandon(grant, action, stage, caller);
+  return true;
+}
 
 /** Read the body of the request, in the shape both MCP routes share. */
 export type ReadBody = (req: http.IncomingMessage) => Promise<string>;
@@ -247,8 +306,10 @@ async function confirmAndDelete(
   const grant = minted(door, target, 'mcp-delete', caller);
   const consent = await door.consent(grant, 'delete', 'move to the Trash', target.entityName, caller);
   if (consent !== 'allowed') {
-    const code: ErrorCode = consent === 'timeout' ? 'consent_timeout' : 'denied';
-    door.refuse(res, code, 'The human did not allow this deletion.', grant, 'delete', target.entityName, caller);
+    consentNotGiven(door, res, consent, { grant, action: 'delete', summary: target.entityName, caller }, 'The human did not allow this deletion.');
+    return;
+  }
+  if (clientGone(door, grant, 'delete', 'before the move to the Trash', caller)) {
     return;
   }
   const moved = await remove(target.accountId, target.entityId);
@@ -362,7 +423,15 @@ export interface McpCreateHooks {
    * plan, D-B) — asked inside this consent step and answered by `deadline` (epoch ms), the step's own
    * timeout, so the agent's call never waits longer than the step promised.
    */
-  settle(decision: CreateAccepted, deadline: number): Promise<CreateSettled>;
+  settle(
+    decision: CreateAccepted,
+    deadline: number,
+    /**
+     * The request's life. A client that leaves while the PIN box is open closes the box with it — the
+     * box would otherwise go on taking a PIN, and counting wrong ones, for a request nobody waits for.
+     */
+    signal: AbortSignal,
+  ): Promise<CreateSettled>;
   /** Make it, sealed under `settled.sealWith` when there is one. Answers the new entry's id and name. */
   make(
     decision: CreateAccepted,
@@ -407,7 +476,27 @@ async function confirmAndCreate(
   // The consent step's deadline, taken before the modal: the PIN a folder asks for is part of the step.
   const deadline = Date.now() + CONSENT_TIMEOUT_MS;
   const consent = await door.consent(grant, 'create', 'create an entry in', decision.summary, caller);
-  const settled = consent === 'allowed' ? await create.settle(decision, deadline) : notAllowed(consent);
+  if (consent !== 'allowed') {
+    consentNotGiven(door, res, consent, { grant, action: 'create', summary: decision.summary, caller }, 'The human did not allow this.');
+    return;
+  }
+  const settled = await create.settle(decision, deadline, door.signal);
+  // Checked before the PIN step's own answer: a refusal written to a client that has gone is still a
+  // line, and the line this request is owed is that it was abandoned.
+  if (clientGone(door, grant, 'create', 'during the folder PIN step', caller)) {
+    return;
+  }
+  await madeIfSettled(door, res, { grant, decision, create, body, caller }, settled);
+}
+
+/** The settled create: refused in the door's shape, or made, journalled and answered. */
+async function madeIfSettled(
+  door: BrokerDoor,
+  res: http.ServerResponse,
+  call: { grant: Grantish; decision: CreateAccepted; create: McpCreateHooks; body: Record<string, unknown>; caller: CallerLabel | undefined },
+  settled: CreateSettled,
+): Promise<void> {
+  const { grant, decision, create, body, caller } = call;
   if (!settled.ok) {
     door.refuse(res, settled.code, settled.message, grant, 'create', decision.summary, caller);
     return;
@@ -424,9 +513,4 @@ async function confirmAndCreate(
     caller,
   });
   door.respond(res, 200, { created: true, id: made.id, name: made.name });
-}
-
-/** A consent that was not given, in the create's own refusal shape. */
-function notAllowed(consent: Exclude<ConsentOutcome, 'allowed'>): CreateSettled {
-  return { ok: false, code: consent === 'timeout' ? 'consent_timeout' : 'denied', message: 'The human did not allow this.' };
 }
