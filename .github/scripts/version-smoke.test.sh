@@ -43,6 +43,9 @@ chmod +x "$fake"
 # expect <name> <exit code the smoke must give> <text its output must hold> <kind> <expected version> [VAR=value ...]
 # The text is what makes a failing case honest: a smoke that refuses for the WRONG reason (no log, where the case
 # is about the guard) would still exit 1, and the exit code alone would call that a pass.
+# What a passing run says — one constant for every case that must pass.
+passes='version smoke passed'
+
 expect() {
   local name="$1" wanted="$2" says="$3" kind="$4" version="$5"
   shift 5
@@ -57,17 +60,17 @@ expect() {
   fi
 }
 
-expect 'mcp: the tag version passes'                             0 'passed' mcp 0.10.1 FAKE_VERSION=0.10.1
-expect 'mcp: the tag version with a CRLF (Windows) passes'       0 'passed' mcp 0.10.1 FAKE_VERSION=0.10.1 FAKE_CRLF=yes
-expect 'mcp: a second line (the WSL Windows half) is not judged' 0 'passed' mcp 0.10.1 FAKE_VERSION=0.10.1 'FAKE_SECOND_LINE=windows half: creds-mcp 0.9.0 (x)'
+expect 'mcp: the tag version passes'                             0 "$passes" mcp 0.10.1 FAKE_VERSION=0.10.1
+expect 'mcp: the tag version with a CRLF (Windows) passes'       0 "$passes" mcp 0.10.1 FAKE_VERSION=0.10.1 FAKE_CRLF=yes
+expect 'mcp: a second line (the WSL Windows half) is not judged' 0 "$passes" mcp 0.10.1 FAKE_VERSION=0.10.1 'FAKE_SECOND_LINE=windows half: creds-mcp 0.9.0 (x)'
 expect 'mcp: the SDK default 1.0.0 fails'                        1 "printed 'creds-mcp 1.0.0'" mcp 0.10.1 FAKE_VERSION=1.0.0
 expect 'mcp: a longer version (0.10.10 for 0.10.1) fails'        1 "printed 'creds-mcp 0.10.10'" mcp 0.10.1 FAKE_VERSION=0.10.10
 expect 'mcp: a dot is not a wildcard (0x10x1 for 0.10.1) fails'  1 "printed 'creds-mcp 0x10x1'" mcp 0.10.1 FAKE_VERSION=0x10x1
 expect 'mcp: trailing text on the line fails'                    1 "printed 'creds-mcp 0.10.1 (dev)'" mcp 0.10.1 'FAKE_VERSION=0.10.1 (dev)'
 expect 'mcp: a non-zero exit fails'                              1 '--version exited 3' mcp 0.10.1 FAKE_VERSION=0.10.1 FAKE_EXIT=3
 expect 'mcp: a binary that never ends fails at the guard'        1 'did not end within 3 s' mcp 0.10.1 FAKE_VERSION=0.10.1 FAKE_HANG=yes
-expect 'cli: the tag version in the log start line passes'       0 'passed' cli 0.4.1 FAKE_VERSION=0.4.1
-expect 'cli: the same with CRLF line ends passes'                0 'passed' cli 0.4.1 FAKE_VERSION=0.4.1 FAKE_CRLF=yes
+expect 'cli: the tag version in the log start line passes'       0 "$passes" cli 0.4.1 FAKE_VERSION=0.4.1
+expect 'cli: the same with CRLF line ends passes'                0 "$passes" cli 0.4.1 FAKE_VERSION=0.4.1 FAKE_CRLF=yes
 expect 'cli: the SDK default 1.0.0 fails'                        1 'does not name version 0.4.1' cli 0.4.1 FAKE_VERSION=1.0.0
 expect 'cli: a longer version (0.4.10 for 0.4.1) fails'          1 'does not name version 0.4.1' cli 0.4.1 FAKE_VERSION=0.4.10
 expect 'cli: no log at all fails'                                1 'wrote no log' cli 0.4.1 FAKE_VERSION=0.4.1 FAKE_LOG=no

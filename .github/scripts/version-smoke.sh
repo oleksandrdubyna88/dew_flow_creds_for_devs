@@ -41,7 +41,10 @@ else guard=(perl -e 'alarm shift; exec @ARGV' "$seconds")
 fi
 
 # 124 is coreutils' timeout; 142 is 128 + SIGALRM, perl's alarm; 137 is a KILL after it.
-ended_by_guard() { [[ "$1" -eq 124 || "$1" -eq 137 || "$1" -eq 142 ]]; }
+ended_by_guard() {
+  local exit_code="$1"
+  [[ "$exit_code" -eq 124 || "$exit_code" -eq 137 || "$exit_code" -eq 142 ]]
+}
 
 case "$kind" in
   mcp)
