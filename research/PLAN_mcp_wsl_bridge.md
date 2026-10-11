@@ -9,6 +9,11 @@
 >
 > Опора: `src_broker_client/src/WslInterop.cs` (`WindowsBridge`), `src_cli/src/AgentRelay.cs` и
 > `src_cli/src/RelayPipe.cs` — там этот мост уже работает для `creds`.
+>
+> Обещание этого плана — «ни одна половина не переживёт другую» — оказалось нарушенным (51 `creds-mcp.exe`
+> без клиента, [RESULTS_wsl_bridge_orphans.md](RESULTS_wsl_bridge_orphans.md)); выполнено в E2–E3 и доказано на
+> настоящем мосту в E5 (2026-10-11) плана
+> [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md).
 
 ## Симптом
 

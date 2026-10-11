@@ -16,8 +16,8 @@
 
 | Tier | Where | Count | What it proves |
 |---|---|---|---|
-| Unit, extension | `src_vs_code/src/test/*.test.ts`, node:test | 4,205 (4 skipped) | logic, in-process, `vscode` stubbed |
-| Unit, .NET | `src_minimalapi_server/tests`, `src_cli/tests`, `src_mcp/tests`, `src_broker_client/tests`, `src_service_defaults/tests` — xUnit | 1,318 (2026-10-10, after E3) | server 809, cli 142, mcp 154, broker 133, service defaults 80. The cli and mcp suites include PROCESS tests since E1 of PLAN_wsl_bridge_outlives_its_client: the built binary run with a marker in argv, environment and protocol bodies, its log file grepped for it after positive controls (`ServingLogTests`, `RelayLogTests`; helper `src_service_defaults/tests/Support/HostProcess.cs`, linked into both). E2 added the lifetime ones: the built `creds-mcp` given a captured Claude Code 2.1.289 session start (`src_mcp/tests/fixtures/`) must exit within 10 s of stdin EOF with a `subscriptions/listen` open (`ServerEndsWithClientTests`, positive control the 2025-06-18 handshake); a stub broker holding a POST must see the connection close before `drain + deadline` with no forced exit (`ToolCancellationTests`, `Support/StubBroker.cs`); the server started through `cmd /c` / `sh -c` must exit when that intermediary is killed, and must not when relayed or switched off (`ParentWatchProcessTests`). Each has an in-process twin (`ServeOnTests`, `ServerLifetimeTests`, `ParentWatchTests`) for the coverage tool. E3 added the child holders' tier: the built `creds-mcp` on the pump path against a script standing in for the Windows half — SIGINT, SIGTERM and SIGHUP each end it with 128 + n and the child dead, after a `SigIgn` check from `/proc` (`WslPumpHostTests`); the built `creds relay` serving twenty connections leaves no `relay-pipe` child alive, and SIGTERM or SIGHUP stops a held connection's stubborn child and removes the socket (`AgentRelayHostTests`); both Linux and macOS only, where those halves run. Their in-process twins: `WslPumpTests` and `WslPumpRunTests`, `AgentRelayConnectionTests` (`CarryConnectionAsync` over fakes and the whole relay over a real socket), `ChildLifetimeTests`; the shared helpers (`FakeChild`, `Posix`, `TestStreams`) sit beside `HostProcess` and are linked, not copied |
+| Unit, extension | `src_vs_code/src/test/*.test.ts`, node:test | 5,607 (5 skipped; 2026-10-11) | logic, in-process, `vscode` stubbed |
+| Unit, .NET | `src_minimalapi_server/tests`, `src_cli/tests`, `src_mcp/tests`, `src_broker_client/tests`, `src_service_defaults/tests` — xUnit | 1,324 (2026-10-11, after E5) | server 809, cli 142, mcp 160, broker 133, service defaults 80. The cli and mcp suites include PROCESS tests since E1 of PLAN_wsl_bridge_outlives_its_client: the built binary run with a marker in argv, environment and protocol bodies, its log file grepped for it after positive controls (`ServingLogTests`, `RelayLogTests`; helper `src_service_defaults/tests/Support/HostProcess.cs`, linked into both). E2 added the lifetime ones: the built `creds-mcp` given a captured Claude Code 2.1.289 session start (`src_mcp/tests/fixtures/`) must exit within 10 s of stdin EOF with a `subscriptions/listen` open (`ServerEndsWithClientTests`, positive control the 2025-06-18 handshake); a stub broker holding a POST must see the connection close before `drain + deadline` with no forced exit (`ToolCancellationTests`, `Support/StubBroker.cs`); the server started through `cmd /c` / `sh -c` must exit when that intermediary is killed, and must not when relayed or switched off (`ParentWatchProcessTests`). Each has an in-process twin (`ServeOnTests`, `ServerLifetimeTests`, `ParentWatchTests`) for the coverage tool. E3 added the child holders' tier: the built `creds-mcp` on the pump path against a script standing in for the Windows half — SIGINT, SIGTERM and SIGHUP each end it with 128 + n and the child dead, after a `SigIgn` check from `/proc` (`WslPumpHostTests`); the built `creds relay` serving twenty connections leaves no `relay-pipe` child alive, and SIGTERM or SIGHUP stops a held connection's stubborn child and removes the socket (`AgentRelayHostTests`); both Linux and macOS only, where those halves run. Their in-process twins: `WslPumpTests` and `WslPumpRunTests`, `AgentRelayConnectionTests` (`CarryConnectionAsync` over fakes and the whole relay over a real socket), `ChildLifetimeTests`; the shared helpers (`FakeChild`, `Posix`, `TestStreams`) sit beside `HostProcess` and are linked, not copied |
 | HTTP contract | `http/http-run.mjs` over `http/*.http` | 82 requests, 9 files | the real server over HTTP, with a coverage report that refuses an unlisted route |
 | Scenario | `src_vs_code/scripts/*-itest.cjs` | 9 harnesses | a real process, a real socket, a real binary |
 
@@ -37,17 +37,19 @@ is node throughout because what these need is process control, not a test runner
 | `src_vs_code/scripts/creds-mcp-itest.cjs` | `creds-mcp` over stdio, the full tool surface, both switch ladders and the quiet path (#95), and — since 2026-09-24 — the caller's TAB TITLE from the C# sender to the TypeScript modal (#136: a fixture home with a registry entry and a transcript; the modal must quote the title and — since 2026-09-24, the owner reversing D4 — the audit line must carry it the same way; skipped on Windows, where `HOME` does not decide the profile folder) | **yes, added 2026-09-06** | pass — **95** checks on Linux (WSL, 2026-09-24), 93 on Windows where the title check is skipped; **111** on Windows (2026-09-30), with the kind-catalogue legs; **116** on Windows (2026-10-09), with level 8 — the real binary killed while its consent modal is open, then Allow: nothing runs, one `ABANDONED` line (E4.S1 of `PLAN_wsl_bridge_outlives_its_client.md`) |
 | `src_vs_code/scripts/masked-run-itest.cjs` | a masked run through a real pty, asserting no whole secret appears | **yes, added 2026-09-06** | pass |
 | `src_minimalapi_server/scripts/backup-archive-itest.cjs` | the REAL server binary sealing, verifying and opening a backup archive | **yes, added 2026-09-07** — in `ci · server`, on the server's own path filter | pass |
-| `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | the same MCP surface, bridged from inside a WSL distribution | no — see below | pass |
+| `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | the same MCP surface, bridged from inside a WSL distribution; since 2026-10-11 (E5.S1 of `PLAN_wsl_bridge_outlives_its_client.md`) a Claude-Code-shaped client INSIDE the distribution (`wsl-mcp-client.cjs`, the wrapper's real parent) opens the captured session with its held `subscriptions/listen` and ends it five ways — SIGINT, SIGTERM, SIGHUP, a closed stdin, SIGKILL of the wrapper — and the Windows `creds-mcp.exe` of the run must be alive before each ending (the positive control) and gone within 5 s after it | no — see below | pass — **42** checks (2026-10-11, the final harness; 40 on its first version); 4 of them RED against the pre-E2/E3 build, 10 of 40 on the first version (see *The bridge, proved on the real machine*) |
 | `src_vs_code/scripts/ssh-agent-itest.cjs` | the SSH agent on a named pipe, and which ssh client can reach it; since 2026-09-24 the REAL `SshAgentManager` too, with a signing prompt nobody answers — the real `ssh-keygen -Y sign` must fail within the bound, not hang | **yes, added 2026-09-11** — the POSIX branch only, see below | pass |
-| `src_vs_code/scripts/wsl-agent-relay-itest.cjs` | `ssh-keygen -Y sign` inside Linux reaching an agent in a Windows process | no — see below | pass **after repair — see below** |
+| `src_vs_code/scripts/wsl-agent-relay-itest.cjs` | `ssh-keygen -Y sign` inside Linux reaching an agent in a Windows process; since 2026-10-11 (E5.S1) also that the relay's Windows children end with their connections — ten `ssh-add -l` leave 0 `creds.exe relay-pipe` of the run and the relay's fd count at its baseline; the relay is stopped by its own pid; the manager's `dispose()` takes down a relay holding a LIVE connection, its relay-pipe on Windows included | no — see below | pass **after repair — see below**; **40** checks (2026-10-11, the final harness; 36 on its first version), 9 of them RED against the pre-E3 build |
 | `src_vs_code/scripts/server-transport-itest.cjs` | `ServerTransport` against a RUNNING Cred Vault Server | no — see below | **not run** — needs a server on `127.0.0.1:5113` |
 
 **Why each of the remaining three is not in CI.** *"Not in CI" with a reason is a decision; "not in CI" alone is
 a harness rotting* — so each carries one.
 
 - **`creds-mcp-wsl-itest.cjs` and `wsl-agent-relay-itest.cjs`** need a WSL distribution with the .NET
-  SDK inside it. The extension job runs on `ubuntu-latest`, where WSL does not exist and the thing
-  under test — the Windows↔Linux bridge — has no meaning.
+  SDK, node and python3 inside it. The extension job runs on `ubuntu-latest`, where WSL does not exist
+  and the thing under test — the Windows↔Linux bridge — has no meaning; the `windows-latest` leg of
+  `ci-clients.yml` (E5.S2, 2026-10-11) runs the .NET process tests of the Windows half, not these — a
+  hosted Windows runner has no distribution either.
 - **`ssh-agent-itest.cjs`** was left out for a real reason, and the reason turned out to argue for
   reading its result narrowly rather than for running nothing. The argument was: on Ubuntu it
   exercises the POSIX branch, while its subject is the Windows named-pipe path and which of the
@@ -84,6 +86,29 @@ stray from somebody else's session is neither asserted on nor killed: this run d
 first check in the relay harness got stronger by the same change, since *"a real relay is running"*
 now means ours rather than any.
 
+**And since 2026-10-11 the question is asked by EXECUTABLE PATH, on both sides** (E5.S1 of
+[PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md)). Each run
+copies the binaries it starts into a directory named for the run — `%LOCALAPPDATA%\creds-itest\creds-itest-<run>\` on Windows (the person's own local application data, never the shared temp directory),
+`${XDG_CACHE_HOME:-~/.cache}/creds-itest/<run>/` inside the distribution (`scripts/wslRun.cjs`; the person's own
+cache directory rather than `/tmp`, where a predictable name could be pre-created by another local user and the
+harness would run their binary — SonarCloud S5443 on the first version) — and a watch is "processes of this
+image whose executable lies under this run's directory": `watchWindowsPids` through `Get-CimInstance
+Win32_Process`, `watchLinuxPids` through `/proc/<pid>/exe` (`scripts/wslProcs.py`). The Windows side is
+watched at all because that is the side the leak was on — every `creds-mcp.exe` and `creds.exe relay-pipe`
+the bridge starts is a Windows process, parented to the WSL service and never to the test's `wsl.exe`. A
+stop goes by pid through a HELD handle (a `Process` object on Windows, a pidfd inside the distribution),
+the path re-read through it immediately before the kill, so a pid reused between the check and the stop
+cannot be hit; the pids and the directory reach PowerShell and Python through their environment or argv,
+never through a command line. And **nothing is deleted inside the distribution** (a machine rule since an
+agent's `wsl.exe` cleanup removed parts of a home directory, 2026-10-07): the Linux build lands in a
+directory named by a hash of its inputs, so a stale build is never reused and never removed; sockets and
+scratch files are run-unique; each run ends by printing what the cache directory now holds — a few MB per run,
+for the person to clear when they like. **And every step inside the distribution is exe +
+argv** (`security.md`; E5's code round): `wsl.exe -e bash -l scripts/wslSteps.sh NAME=value... -- <verb> [args]`,
+one constant checked-in script whose exports are applied after the login profile and whose every value — a path, a
+socket, a file list — is an argv entry; nothing composes shell text from a value, and a harness that cannot run
+here throws `skip(...)` so the sweep and the finish still run before it exits 0.
+
 **`masked-run-itest.cjs` on Linux was verified, not assumed.** A reviewer called adding it to an
 `ubuntu-latest` runner blocking, on the grounds that a pty harness written and run only on Windows
 usually breaks on Linux. Fair, and checkable: it was run inside a real WSL Ubuntu with node 20 and
@@ -110,14 +135,15 @@ these cleans up after itself on a normal exit; what follows is what to remove af
 | `src_vs_code/scripts/creds-mcp-itest.cjs` | `dotnet build src_mcp/src/CredsMcp.csproj` | a `creds-mcp` child on stdio |
 | `src_vs_code/scripts/masked-run-itest.cjs` | nothing | nothing — the child dies with the pty |
 | `src_vs_code/scripts/ssh-agent-itest.cjs` | OpenSSH (`ssh-add`, `ssh-keygen`) — built-in on Windows, on PATH elsewhere; CI runs it on Ubuntu | a named pipe or socket freed when the process exits, and a `creds-agent-itest-*` temp dir (key, stub, manager dir) |
-| `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | WSL + the .NET SDK inside it | a build tree at `/tmp/creds-relay-itest-build` |
-| `src_vs_code/scripts/wsl-agent-relay-itest.cjs` | the same | a `creds relay` process inside the distribution and `/tmp/creds-itest.*` — `wsl -e pkill -f 'creds relay'` |
+| `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | WSL + the .NET SDK, node and python3 inside it | nothing it started — the sweep stops the run's own processes by pid on both sides; `${XDG_CACHE_HOME:-~/.cache}/creds-itest/` (a build per changed set of inputs, a directory per run) stays by design, a few MB each, until the person clears it |
+| `src_vs_code/scripts/wsl-agent-relay-itest.cjs` | the same, plus OpenSSH inside it | the same; a run's sockets and scratch files are under its own `…/creds-itest/<run>/` |
 | `src_vs_code/scripts/server-transport-itest.cjs` | a Cred Vault Server on `127.0.0.1:5113`, Local auth | nothing of its own |
 
 Every harness carries its own timeout on the child processes it spawns; none of them waits for ever,
 and each prints the command that would fix a missing prerequisite instead of hanging on it. Re-running
-after a kill is safe for all of them except the two WSL ones, where a leftover relay holds the socket
-the next run wants — that is the one case worth the `pkill` above.
+after a kill is safe for all of them — the two WSL ones included since 2026-10-11, because their sockets
+are run-unique: a harness killed outright (so its `finally` never ran) leaves THAT run's relay or wrapper
+alive inside the distribution, which the next run neither asserts on nor needs; stop it by its pid.
 
 ## Running them all at once
 
@@ -176,6 +202,51 @@ both.
 test, and for six of the nine, no CI. A harness that cannot start proves nothing, and it had been
 proving nothing silently. The repair is in `wsl-agent-relay-itest.cjs` with the reason written above
 each change.
+
+## The bridge, proved on the real machine (2026-10-11, E5 of `PLAN_wsl_bridge_outlives_its_client.md`)
+
+The defects of [RESULTS_wsl_bridge_orphans.md](RESULTS_wsl_bridge_orphans.md) — a server that never exits on
+end-of-stream once a `subscriptions/listen` is open, a wrapper that dies from a signal without stopping its Windows
+half, a relay that never closes its children's stdin — were each fixed under process tests on Linux CI (E2, E3).
+What those cannot say is whether a real Linux process reaching a real Windows process through WSL interop behaves
+the same, because the Windows half is in another process table. The two WSL harnesses now say it:
+
+- **`creds-mcp-wsl-itest.cjs`** — a client shaped like Claude Code runs INSIDE the distribution
+  (`scripts/wsl-mcp-client.cjs`, spawned by the distribution's node so it is the wrapper's real parent and no
+  shell sits between — a bash `&` job starts with SIGINT ignored), sends the captured 2.1.289 session with its held
+  listen, and ends it on one word from the Windows side: `SIGINT`, `SIGTERM`, `SIGHUP`, `SIGKILL` (sent by itself,
+  as Claude Code does) or `eof` (the wrapper's stdin closed). For each: the session answered, exactly one
+  `creds-mcp.exe` of the run alive on Windows (the positive control — a watch that sees nothing would pass every
+  time), the wrapper's exit as the plan states it (130 / 143 / 129 / 0 / killed), 0 Windows survivors within 5 s,
+  nothing of the run left inside WSL. The thirteen older checks (the vault read through the bridge, a create with
+  consent on Windows, `--help` answered without a Windows process) are kept in front of it.
+- **`wsl-agent-relay-itest.cjs`** — the relay is a child of the harness (its first stdout line names the socket;
+  its stderr's connection lines are the positive control that a relay-pipe was started for each connection); ten
+  `ssh-add -l` after a warm-up connection, then 0 `creds.exe relay-pipe` of the run on Windows within 5 s and the
+  relay's descriptor count (`wslProcs.py fds`) back at its baseline; the relay stopped by its own pid, gone with
+  its socket; then the manager's relay with a connection HELD open by `scripts/wslHoldSocket.py` — one relay-pipe of
+  the run alive on Windows — and `manager.dispose()` taking both down within 5 s, socket included.
+
+**Each check has teeth, shown rather than claimed.** Both harnesses were run unchanged from a scratch checkout of
+`9494a67c` (E1 merged, E2–E3 not): 4 of 42 and 9 of 40 checks RED on the final harness (10 of 40 and 8 of 36 on its
+first version, whose run also caught the old Windows half surviving a SIGHUP), with the defects' own words — *the wrapper
+ends with exit code 130 — {"code":null,"signal":"SIGINT"}*, *the wrapper did not end within 20000 ms of eof*, *0
+Windows survivors within 5 s — … did not take down: 15284*, *0 new creds.exe relay-pipe … did not take down:
+46832, 15120, …* (eleven), *descriptor count … back at its baseline (83) — now 103*, *it removed its socket on
+the way out — … still exists*; and the RED run's sweep stopped exactly the one survivor, by pid. The numbers are
+in the RESULTS record, *E5 — the harnesses on the real bridge*.
+
+**The release smoke moved into a script** — `.github/scripts/mcp-listen-smoke.sh <binary>` — so it runs here
+against a locally published binary before a tag as well as in `release.yml` on every runner that can execute what
+it built: the captured session, stdin held open until `tools/list` is answered, then closed; exit 0 within 10 s;
+the log's start line, parent and `exited: code 0, reason clientClosed`. GREEN on this branch's Debug build and its
+win-x64 AOT publish; RED on the pre-E2 binary (*exited with code 124 at 61s* — the guard). And `ci-clients.yml`
+gained a `windows-latest` leg (bash, the `.exe` suffix), so the Windows half's process tests run on a pull request
+for the first time; it becomes a required check only after it has reported once.
+
+**Still not proved by anything automated:** the one-day count on the owner's machine (the plan's first DoD line —
+`creds-mcp.exe` count equals live clients after a day of normal use), which needs the released build installed;
+and the stale-install leg of E4.S2 inside `creds-mcp-wsl-itest.cjs`.
 
 ## The corporate event log's reader (2026-09-07, epic 4 story 1)
 
@@ -812,7 +883,8 @@ CI is Linux. **A green CI run is therefore not evidence for the relay route.**
 It was RUN on 2026-09-17 on a Windows machine with WSL: twenty checks, all `ok`. Three of them are
 this change's, and they end with a CONTROL rather than a claim — the composed line is built by the
 real `envPrefix`, it is run in a shell that does not export `SSH_AUTH_SOCK`, it reaches the agent,
-and the same shell without it reaches nothing. That is what makes the first two a measurement.
+and the same shell without it reaches nothing. That is what makes the first two a measurement. (Run
+again on 2026-10-11 in its E5 shape — 36 checks, all `ok`, the three above among them.)
 
 **The last centimetre is still unobserved**: nobody has clicked *Connect* in a real VS Code window
 attached to WSL, so VS Code creating the terminal and posting the line into it has only ever been
@@ -1053,7 +1125,8 @@ Named rather than implied, because the rule asks for exactly this.
   machine with two running distributions — the argv crossed `wsl.exe` and both pre-0.10.0 binaries read as
   `older`. **The limit is exact**: a `current` verdict from a real 0.10.0 install has not been observed (no
   such release existed yet), and the real editor's dialogs and a real `wsl.exe` under them are unexercised. The automated leg belongs in
-  `creds-mcp-wsl-itest.cjs`, which E5.S1 rewrites with run-unique directories.
+  `creds-mcp-wsl-itest.cjs`, which E5.S1 rewrote with run-unique directories on 2026-10-11 — the stale-install leg
+  itself is still not in it (open tail).
 - **The Marketplace artefact.** `npm run package` runs in CI, and nothing installs the resulting
   `.vsix` into a real editor and opens it. The publish step is verified by reading the release run.
 - **The server and the extension end to end.** `server-transport-itest.cjs` would do it, and it is

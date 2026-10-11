@@ -62,8 +62,17 @@ function has(program: string, args: string[]): boolean {
   }
 }
 
+/**
+ * The line goes to bash on its STDIN, the way a terminal hands it a line — never as a `-c` argument.
+ *
+ * <p>On Windows an argument never reaches bash verbatim: the command line is one string the callee parses
+ * again, and the `bash` on the PATH is often the WSL launcher, which joins its arguments back into one shell
+ * line for the distribution — so `$HOME` and the backticks were EXPANDED and the test failed on every Windows
+ * machine with WSL, on `main` too. Stdin carries the bytes untouched on every host, so what is measured is
+ * bash's own reading of the quoting and nothing in between.</p>
+ */
 test('POSIX quoting survives a REAL bash unchanged', { skip: !has('bash', ['-c', 'true']) }, () => {
-  const echoed = execFileSync('bash', ['-c', `printf %s ${quoteFor('posix', NASTY)}`], { encoding: 'utf8' });
+  const echoed = execFileSync('bash', ['-s'], { input: `printf %s ${quoteFor('posix', NASTY)}\n`, encoding: 'utf8' });
   assert.equal(echoed, NASTY);
 });
 

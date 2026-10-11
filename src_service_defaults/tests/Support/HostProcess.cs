@@ -42,7 +42,56 @@ internal static class HostProcess
         {
             start.Environment[name] = value;
         }
+        Native(start.Environment, env, InsideWsl(ReadProcVersion()));
         return Process.Start(start) ?? throw new InvalidOperationException($"{assemblyName} did not start");
+    }
+
+    /// <summary>Set by WSL in every distribution — <c>WslInterop</c>'s first signal for the pump path.</summary>
+    internal const string DistroVariable = "WSL_DISTRO_NAME";
+
+    /// <summary><c>WslInterop.RelayedVariable</c>: the one signal the binaries read as "this IS the native half".</summary>
+    internal const string RelayedVariable = "CREDS_RELAYED_FROM_WSL";
+
+    /// <summary>
+    /// Makes the child take the NATIVE path on whatever machine runs the suite, unless the test asked for the pump.
+    /// </summary>
+    /// <remarks>
+    /// <para>Inside a WSL distribution the built <c>creds-mcp</c> and <c>creds</c> take the WSL pump path
+    /// (<c>WslInterop.ShouldRelayHere</c> reads <c>WSL_DISTRO_NAME</c> and <c>/proc/version</c>) and hand the
+    /// session to a Windows binary — so five process tests written for the server itself talked to a relay
+    /// there and failed (E5, PLAN_wsl_bridge_outlives_its_client.md), while passing on CI's plain Linux.</para>
+    /// <para>So the child gets no <c>WSL_DISTRO_NAME</c>, and on a machine whose <c>/proc/version</c> names
+    /// Microsoft — which a child's environment cannot change — the relayed marker. A test that names either
+    /// variable itself (the pump tests do) gets exactly what it asked for. Plain Linux, macOS and Windows get the
+    /// environment they always had.</para>
+    /// </remarks>
+    internal static void Native(IDictionary<string, string?> child, IReadOnlyDictionary<string, string> asked, bool insideWsl)
+    {
+        if (asked.ContainsKey(DistroVariable) || asked.ContainsKey(RelayedVariable))
+        {
+            return;
+        }
+        child.Remove(DistroVariable);
+        if (insideWsl)
+        {
+            child[RelayedVariable] = "1";
+        }
+    }
+
+    /// <summary>The product's second signal, read the same way: <c>/proc/version</c> naming Microsoft.</summary>
+    internal static bool InsideWsl(string? procVersion) =>
+        procVersion?.Contains("microsoft", StringComparison.OrdinalIgnoreCase) ?? false;
+
+    private static string? ReadProcVersion()
+    {
+        try
+        {
+            return File.Exists("/proc/version") ? File.ReadAllText("/proc/version") : null;
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     /// <summary>

@@ -552,6 +552,19 @@ the SSH-agent relay: `creds relay` stops every `relay-pipe` child it started whe
 `wsl.exe` delivers included) and removes its socket after them, and each connection's child is stopped — stdin
 closed by name, 2 s, the tree — the moment its connection ends, which is defect C fixed.
 
+**Proved on the real bridge (2026-10-11, E5).** Two harnesses drive this on a Windows machine with a distribution,
+with every binary copied into a run-unique directory and every watch asking by executable path on BOTH sides
+([module_tests.md](module_tests.md), *The bridge, proved on the real machine*): a Claude-Code-shaped client inside
+the distribution ends the session five ways — SIGINT, SIGTERM, SIGHUP, a closed stdin, SIGKILL of the wrapper —
+and the Windows `creds-mcp.exe` of the run, alive before each ending, is gone within 5 s after it (by the first poll,
+measured); ten relay connections leave 0 `relay-pipe` on Windows and the relay's descriptor count at its baseline,
+and the manager's `dispose()` takes down a relay holding a live connection, its Windows child included. Against the
+pre-E2/E3 build the same harnesses are RED with the defects' own symptoms — a wrapper dying by the signal's default
+disposition, an unbounded wait after a hang-up, a `creds-mcp.exe` that only the sweep removed
+([RESULTS](RESULTS_wsl_bridge_orphans.md), *E5 — the harnesses on the real bridge*). The release smoke of
+`creds-mcp` (`.github/scripts/mcp-listen-smoke.sh`) now ends the published binary the way Claude Code does — the
+listen held open, then end-of-stream — and `ci-clients.yml` runs the clients' process tests on Windows too.
+
 ### How long a `creds-mcp` lives (2026-10-10)
 
 *A creds process that serves a client ends within a bounded time of losing it, and says in its log which

@@ -1,6 +1,6 @@
 # PLAN — every creds process ends when the client it serves is gone
 
-> Status: **in progress, 2026-10-10 — E1 (#201), E4.S1 (#205), E2 (#211), E4.S3 (#212), E4.S2 (#213), E3 and E4.S4 implemented (§14; §5.4–§5.8 *As built*); E5 not yet.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
+> Status: **in progress, 2026-10-11 — E1 (#201), E4.S1 (#205), E2 (#211), E4.S3 (#212), E4.S2 (#213), E3 (#214), E4.S4 (#215) and E5.S1–S2 implemented (§14; §5.4–§5.8 and §10 *E5, as built*); open: E5.S3's one-day count on the owner's machine and the owner's WSL MCP refresh, both after the release — then the promotion.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
 > round — §14); each epic is re-gated on its own branch. Scope: `src_mcp/src` (`Program.cs`, `WslPump.cs`, the
 > tool lambdas, `Windows.cs`, a new `ServerLifetime`), `src_broker_client/src` (`BrokerClient.cs`, `WslInterop.cs`, a
 > new shared `ChildLifetime`), `src_cli/src` (`AgentRelay.cs`, `RelayPipe.cs`), `src_vs_code/src` (the broker's
@@ -686,8 +686,8 @@ only with the owner's OK on the notes.
   own binary path, polled up to 5 s, swept **by PID only**. Each itest run copies the binaries it starts into a
   **run-unique directory** (gate round 1, finding 1), so a process another user or test started from the shared build
   output can never match, and the sweep re-checks each PID's `ExecutablePath` against that directory immediately before
-  stopping it. `creds-mcp-wsl-itest.cjs`: a Claude-Code-2.1.295-shaped client
-  (`server/discover`, `subscriptions/listen`, `tools/list`) ended by SIGINT, SIGTERM, SIGHUP and by a stdin close —
+  stopping it. `creds-mcp-wsl-itest.cjs`: a Claude-Code-shaped client (the captured 2.1.289 session — the same
+  sequence 2.1.295 sends: `server/discover`, `subscriptions/listen`, `tools/list`) ended by SIGINT, SIGTERM, SIGHUP and by a stdin close —
   0 Windows survivors each; SIGKILL of the wrapper — 0 survivors (proves A alone suffices). `wsl-agent-relay-itest.cjs`:
   10 `ssh-add -l` → 0 new `relay-pipe`, relay fd count back to baseline; `manager.dispose()` → 0 survivors.
 - **E5.S2** CI: a `windows-latest` leg in `ci-clients.yml` (not required until it has reported once —
@@ -695,6 +695,160 @@ only with the owner's OK on the notes.
   listen, and writes its log).
 - **E5.S3** follow the upstream issue (§5.10, posted as csharp-sdk#1914); `research/module_*.md` and `architecture.md` updated
   (§13); the owner's WSL MCP refreshed to the released build (§3.1.7); the RESULTS record gets the after-numbers.
+
+**E5 design, settled before its plan round** (2026-10-10, branch `test/e5-proof-on-the-real-bridge`). The epic proves
+the fixes of E2–E3 on the real bridge, adds the CI legs, and takes two queued test defects. It changes no product
+behaviour.
+
+- **The Windows watch — `wslStrays.watchWindowsPids(image, exePath)`.** A baseline of the Windows processes named
+  `image` whose `ExecutablePath` lies under `exePath` (the run directory), read through `Get-CimInstance
+  Win32_Process`; `survivors()` is the set difference; `goneWithin(5 s)` polls until it is empty or the bound passes;
+  `sweep()` reads each pid's `ExecutablePath` again in the same PowerShell call that stops it and stops only a match,
+  never by name. **The check and the stop go through one held process handle** (plan round, finding 1): the handle
+  is opened first, the path is read through it, and the kill goes to it — Windows does not reuse a pid while a handle
+  to its process is open, so a pid that exited and was reused between a check and a stop cannot be hit. The
+  WSL-side sweep does the same with a pidfd (`os.pidfd_open` in the distribution's `python3`, the executable path
+  read after the descriptor is open, the signal sent through it). The directory and the pids reach PowerShell
+  through its environment and Python through argv, never through command text. **The parent is never a
+  criterion**: an interop child is started by the WSL service, not by the test's `wsl.exe`.
+- **Run-unique directories on both sides.** Each run copies the Windows build output it starts
+  (`src_mcp/src/bin/Debug/net10.0`, `src_cli/src/bin/Debug/net10.0`) into `%TEMP%\creds-itest-<run>\`, and the Linux
+  build output into `/tmp/creds-itest-<run>/`. A process another user, another test or the person started from the
+  shared build output can never match either watch. The Windows copy is removed at the end (outside WSL, only a
+  directory under `os.tmpdir()` named for the run).
+- **No deletion inside the distribution** (a machine rule since an incident on 2026-10-07: an agent's cleanup through
+  `wsl.exe` removed parts of a home directory). The old harnesses ran `rm -rf` on their build tree, `rm -f` on their
+  sockets and scratch files, and `pkill -f` on the relay. Now: the Linux build goes into a directory named by a hash
+  of its inputs (`/tmp/creds-itest-build-<kind>-<hash>`), so a stale build is never reused and nothing is removed —
+  this also ends the persistent build cache CodeRabbit named on #201; sockets and scratch files are run-unique; the
+  relay is stopped by its own pid; the WSL-side sweep signals only pids whose executable lies under the run
+  directory. What remains in `/tmp` is a few MB per run, for the person or the distribution's next boot to clear.
+  **The budget, stated** (plan round, finding 2): a build directory is 3–6 MB of output (measured: 5.4 MB for
+  `creds-mcp`, 2.7 MB for `creds`), one new one per changed set of inputs — a handful per working day; a run
+  directory holds a copy of one build plus sockets and scratch files. Ubuntu's `tmpfiles.d/tmp.conf` (`D /tmp`)
+  empties `/tmp` at every boot of a systemd distribution; for one without that, each run ends by listing the
+  harness's own directories with their total size, so the person sees what to clear. Removal stays with the person
+  by the machine rule.
+- **A client shaped like Claude Code, inside the distribution — `scripts/wsl-mcp-client.cjs`**, run by the
+  distribution's own `node` (skipped loudly without one). It spawns the wrapper DIRECTLY (`child_process.spawn`, no
+  shell, no `&` job — a background job of a non-interactive shell starts with SIGINT ignored), speaks the captured
+  fixture (`server/discover`, `subscriptions/listen`, `server/discover`, `tools/list`), waits for the replies, prints
+  the wrapper's pid, and waits for one word on its own stdin: `SIGINT`, `SIGTERM`, `SIGHUP`, `SIGKILL` (sent by
+  itself, the wrapper's parent, as Claude Code does) or `eof` (it closes the wrapper's stdin). It reports how the
+  wrapper ended. The Windows side asserts, for each of the five endings: before the end, exactly one new
+  `creds-mcp.exe` from the run directory (the positive control — a watch that sees nothing passes every time);
+  after it, none within 5 s; the wrapper's exit (129/130/143 for a signal, 0 for end-of-stream, killed for SIGKILL).
+- **The relay — `wsl-agent-relay-itest.cjs`.** After the relay starts, the fd count of its process
+  (`/proc/<pid>/fd`, read-only) is the baseline; ten `ssh-add -l` follow; then 0 new `creds.exe` (relay-pipe) from
+  the run directory within 5 s, and the fd count back to the baseline. `manager.dispose()` → 0 survivors on both
+  sides.
+- **E5.S2 — CI and release.** `ci-clients.yml` gains `windows-latest` in its matrix, with bash as the shell and the
+  `.exe` suffix the release workflow already uses; `branch-protection.json` is NOT changed until the leg has reported
+  once (a required check that never reported blocks every pull request). The release smoke moves into a script,
+  `.github/scripts/mcp-listen-smoke.sh <binary>`, so it runs on this machine before a tag: the fixture is written,
+  stdin is held open until the `tools/list` reply arrives (so the listen is really open), then closed; the binary must
+  exit within 10 s with code 0, and its log must carry the start line, a real parent and
+  `exited: code 0, reason clientClosed` (E1's smoke, kept). It replaces E1's 2025-06-18 step rather than adding a
+  second.
+- **Queued: the clipboard test flake** (`src_vs_code/src/test/secretClipboard.test.ts`, *copying the same secret
+  again…*): it measures a 30 ms window with real timers, so a loaded machine that oversleeps a 20 ms `delay` sees the
+  second wipe fire early and fails about once in a full run. The timing tests move onto `node:test`'s mock timers
+  (`mock.timers`, `setTimeout` only) and advance the clock by exact amounts — no window is widened, no product code
+  changes. Shown failing under load before (CPU hogs and repeated runs) and stable after.
+- **Queued: five process tests that fail INSIDE a distribution** (`VersionTests`, `ServerEndsWithClientTests`,
+  `ServingLogTests`, `ToolCancellationTests`, `RelayLogTests`): there the built binary takes the WSL pump path
+  (`WslInterop.ShouldRelayHere` reads `WSL_DISTRO_NAME` and `/proc/version`), so the test talks to a relay instead of
+  the server it means. The shared starter `HostProcess.Start` makes the child hermetic: unless the test names
+  `WSL_DISTRO_NAME` itself (the pump tests do), the child gets no `WSL_DISTRO_NAME`, and on a runner whose
+  `/proc/version` names Microsoft it gets the relayed marker `CREDS_RELAYED_FROM_WSL=1` — the one signal the code
+  reads as "this IS the native half" (`/proc/version` cannot be changed for a child). Plain Linux and macOS CI get the
+  same environment as before. RED inside WSL first, green inside WSL, still green on Windows.
+
+**E5, as built (2026-10-11)** — what shipped, and where it differs from the design above:
+
+- **The RED is the old build itself, not a scratch copy with the fix removed.** Both harnesses were run unchanged
+  from a scratch checkout of `9494a67c` (E1 merged, E2 and E3 not — defects A, B and C as they were), so every
+  check's RED carries the defect's own words rather than a hand-made one (§14; the RESULTS record, *E5 — the
+  harnesses on the real bridge*). The smoke script got the same treatment against that checkout's `creds-mcp.exe`.
+- **The relay's fd baseline is taken after the FIRST connection, not after the relay starts.** A .NET host opens
+  its child-reaping plumbing the first time it starts a process, and those descriptors are permanent; a baseline at
+  start would read a healthy relay as leaking by a constant. Measured: 83 after the first connection, 83 after ten
+  more on this branch; 83 → 103 on the pre-E3 build.
+- **`manager.dispose()` is proved over a LIVE connection.** The design's "dispose → 0 survivors" proves nothing
+  when no child is alive at the dispose, so a small `scripts/wslHoldSocket.py` holds a connection open on the
+  managed socket (the relay starts a relay-pipe for it and keeps it — the positive control sees exactly one
+  `creds.exe` of the run on Windows), and the dispose must take both halves down within 5 s. The manager is given
+  the run's Windows binary as the distribution sees it (`/mnt/...`, the extension's own `toWslPath`) — a
+  Windows-spelled path starts nothing inside Linux, which the first run of that check showed.
+- **`wslProcs.py` gained `fds <run-dir> <pid>`** (the descriptor count, refused for a pid not from the run
+  directory); the watch exposes `stop(pids)` so the relay is stopped by its own pid through the same held-handle
+  path the sweep uses. The relay is the harness's own child (its first stdout line names the socket, its stderr's
+  connection lines are the positive control), never a `nohup … &` job found by `pkill` afterwards.
+- **The smoke script reads the committed fixture** (`src_mcp/tests/fixtures/claude-code-2.1.289-handshake-2026-07-28.jsonl`)
+  rather than writing a session of its own. Its first version measured the 10 s bound in whole seconds
+  (`$SECONDS`), which lets a server ending up to ~11 s after end-of-stream pass (code round 1, finding 2 — shown
+  RED with a stand-in server ending 10.2 s after: 3 of 3 runs passed; GREEN after: 3 of 3 fail at 10.35–10.39 s);
+  the clock is perl's `Time::HiRes` now, the writer records whether the reply arrived BEFORE it closed stdin (a
+  late reply or none is a failure, not a pass), and only a `tools/list` RESULT counts. The script has its own test
+  against a stand-in server (`mcp-listen-smoke.test.sh`: ends at once → pass; ends 10.5 s after → fail; never
+  answers → fail), and `ci-clients.yml` runs that test AND the script against the `creds-mcp` the job builds, on
+  all three operating systems — so its Linux and macOS branches run on every pull request, not first on a tag.
+  The Windows leg sets `defaults.run.shell: bash` so one `run:` line serves three operating systems;
+  `branch-protection.json` is untouched, as designed.
+- **Exe + argv, never a shell string** (code round 1, findings 0 and 1 — `security.md`'s rule): every step inside the
+  distribution is `wsl.exe -e bash -l scripts/wslSteps.sh NAME=value... -- <verb> [args]`, one constant checked-in
+  script whose exports are applied after the login profile (so a profile that sets `SSH_AUTH_SOCK` — the
+  extension's own rc snippet — cannot override a run's socket) and whose every value is an argv entry; the
+  `bash -lc` launcher and the `export NAME='value'` lines are gone, and `wsl-mcp-client.cjs` inherits the exports
+  instead of taking `--env` pairs. The one composed shell line left is the relay harness's SUBJECT — the product's
+  own `envPrefix` output, handed to `bash -c` as one argv entry. The build runs with `--disable-build-servers` and
+  takes `Directory.Build.rsp` and `global.json` among its inputs, so no compiler server or MSBuild node — processes
+  no watch can see — outlives a run (own review).
+- **The own review's other findings, taken:** the harnesses' temporary directories (the window's storage, the
+  announcements) live under the Windows run directory, so `finishRun` is the only removal and it runs after a
+  failure too; `skip()` throws and `runAndSweep` sweeps, finishes and exits 0 — no early `process.exit` leaves a
+  run directory behind; the wait for the stopped relay's `wsl.exe` is bounded (10 s, a failed check); the Linux
+  side is swept first (a relay still alive could start one more Windows child after a Windows sweep) and a sweep
+  failure is its own line, never counted as swept; the MCP harness takes a per-ending baseline and requires exactly
+  one NEW `creds-mcp.exe`, and checks 0 survivors after the vault-read and create steps too; the relay harness
+  proves the Windows watch can see a relay-pipe of the run (a held connection) BEFORE asserting 0 after the ten, and
+  baselines its "ended" count; `wslProcs.py` accepts only a run directory's exact shape (never the shared build
+  directory); the client reports a wrapper it could not start as an event. Not taken: `HostProcess.Reaper`'s
+  `Kill(entireProcessTree)` — older test-support code acting on the test's own child tree, outside E5.
+- **The Linux directories are under the person's cache directory, not `/tmp` as designed** —
+  `${XDG_CACHE_HOME:-~/.cache}/creds-itest/<run>/` and `…/creds-itest/build-<kind>-<hash>/`. SonarCloud (S5443,
+  critical) named what the design had missed: a predictable name in a world-writable directory can be
+  pre-created by another local user, and a harness that then finds "its" build there runs THEIR binary. A
+  user-owned directory removes the class; the budget statement stands (each run prints the directory's size);
+  only the "next boot empties `/tmp`" convenience is lost — the person clears it when they like. The rest of
+  that gate: `wsl.exe` by the product's own `wslBinary()` and PowerShell by its fixed path, never through PATH
+  (S4036); the holder takes its socket from `CREDS_ITEST_SOCKET`, exported by `wslSteps.sh`, and accepts only a
+  socket inside a run directory (S8703); `wslProcs.py` accepts only a run directory's shape under that cache; the
+  client's event lookup no longer hands its predicate straight to `find` (S7727, the one bug); `[[` in every bash
+  script, `node:` prefixes, `String.raw` where a template can end without a backslash. And the harnesses' own
+  `dotnet build` inside the distribution runs as `nice -n 19 dotnet build -m:4 --disable-build-servers`
+  (common/local-cpu-budget.md, #219's open tail — these harnesses only ever run on a developer's machine).
+- **The checkpoint round's three** (§14): the build inputs are every root MSBuild file that exists
+  (`Directory.Build.targets` included, against the day it appears); a stop that is refused is a failure the sweep
+  prints, on both sides, where a pid that is simply gone is not; the build verb returns its whole output so a
+  failed build is diagnosed from its first error.
+- **The last round's three, and CodeRabbit's four** (§14): the build inputs are EVERY file of a project below
+  `src/` (a resource or a settings file as much as a source), not only `.cs`/`.csproj`; the run's Linux copy of a
+  build is hard links (`cp -rl`), so the run's executable paths are its own — what the watches match — while ten
+  runs of one build cost one copy; the smoke counts only the one line carrying id 1 that holds a `result` with its
+  `tools` and no `error` member (RED: the self-test's fourth case, an error reply whose message mentions tools,
+  passed the first version — *expected the smoke to exit 1, it exited 0*; GREEN after); the Windows run
+  directories live under `%LOCALAPPDATA%\creds-itest\`, not `%TEMP%` as designed — the same reasoning as the
+  Linux side's cache directory (SonarCloud S5443 flags `os.tmpdir()` as it flags `/tmp`); the MCP harness kills a
+  client `wsl.exe` that has not left within 5 s of its stdin closing; the relay harness stops with one error when
+  no relay of the run is alive instead of a cascade of checks against an undefined pid; the client's end timer
+  says nothing once the wrapper has exited.
+- **E5.S3's tail is open by design, not forgotten:** the upstream issue csharp-sdk#1914 was still open with no
+  comments on 2026-10-11; the owner's WSL MCP refresh (§3.1.7) and the one-day count (§13's first line) need the
+  released build, so they follow the release; the promotion follows them.
+- The two queued test defects (the clipboard window on a mocked clock; the five process tests hermetic inside a
+  distribution) and the two host-dependent extension tests (`hostShell`'s real-bash quoting, `sshExecAuth`'s
+  PATH/Path) shipped in this branch's first commits, each RED first.
 
 ### Ordering constraints
 
@@ -721,7 +875,9 @@ the extension with `npm test`; the WSL itests with `npm run itest:all` on a Wind
 | a gone request starts no VPN | E4.S3 | TS unit (`vscode` stub) + broker |
 | a gone request reaches no SSH prompt; the journal names a typed step | E4.S4 | TS unit (`vscode` stub) + broker |
 | logs leak nothing, stdout stays clean | E1.S2 | process |
-| the whole bridge, real Claude-shaped client | E5.S1 | node itest on WSL (manual) |
+| the whole bridge, real Claude-shaped client — five endings, 0 Windows survivors each | E5.S1 | node itest on WSL (manual; RED against `9494a67c`) |
+| C on the real bridge — ten connections, the fd baseline, a `dispose()` over a live connection | E5.S1 | node itest on WSL (manual; RED against `9494a67c`) |
+| A on the published binary — the listen held open, then end-of-stream | E5.S2 | `.github/scripts/mcp-listen-smoke.sh` in `release.yml` and by hand (RED against the pre-E2 binary) |
 
 Every bug test is shown red with the real symptom before the fix and green after; both observations go in the PR.
 
@@ -739,19 +895,21 @@ Every bug test is shown red with the real symptom before the fix and green after
 
 - [ ] On the measured machine after a day of normal use: `creds-mcp.exe` count equals live MCP clients; `creds.exe
       relay-pipe` count equals live SSH-agent connections (recorded in the RESULTS record).
-- [ ] Defects A, B, C each have a test shown red with the real symptom and then green; the WSL itests of E5.S1 pass.
-- [ ] A late **Allow** for a gone request runs nothing (E4.S1). (§3.3 decided by the owner 2026-10-09: defused modal.)
-- [ ] A gone request starts no VPN, its installers or its launcher, and writes no config (E4.S3).
-- [ ] A gone request is shown no SSH prompt — host key, refusal, remedy — and writes no pin; a request whose chain had
+- [x] Defects A, B, C each have a test shown red with the real symptom and then green; the WSL itests of E5.S1 pass
+      (2026-10-11: 42 and 40 checks GREEN on the real bridge; 4 and 9 RED against `9494a67c` — §14, the RESULTS record).
+- [x] A late **Allow** for a gone request runs nothing (E4.S1). (§3.3 decided by the owner 2026-10-09: defused modal.)
+- [x] A gone request starts no VPN, its installers or its launcher, and writes no config (E4.S3).
+- [x] A gone request is shown no SSH prompt — host key, refusal, remedy — and writes no pin; a request whose chain had
       typed a step is journalled as exactly that (E4.S4).
-- [ ] Every serving host writes `logs/{yyyy-MM-dd}/{app}-{HH-mm-ss}-{pid}.log` with its start and its exit reason;
-      retention works; nothing secret is in a log file.
-- [ ] `creds-mcp --version` reports both halves under WSL; a stale WSL install is reported with an update offer.
-- [ ] Each epic passed its plan and code rounds; its PR's automated comments were read and answered; releases cut only
-      with the owner's OK on the notes.
+- [x] Every serving host writes `logs/{yyyy-MM-dd}/{app}-{HH-mm-ss}-{pid}.log` with its start and its exit reason;
+      retention works; nothing secret is in a log file (E1; the release smoke of both binaries checks the file).
+- [x] `creds-mcp --version` reports both halves under WSL; a stale WSL install is reported with an update offer (E2, E4.S2).
+- [ ] Each epic passed its plan and code rounds; its PR's automated comments were read and answered (E1–E5: §14);
+      releases cut only with the owner's OK on the notes — **open: the releases of E2–E5's binaries and the extension**.
 - [ ] `research/module_extension.md`, `module_tests.md`, `architecture.md` (the WSL bridge diagram and process lifetime),
       `PLAN_mcp_wsl_bridge.md` (its promise now kept — a pointer here) updated; `todo/README.md` and `research/README.md`
-      match; `node .claude/rules/shared/tools/plan-lifecycle.mjs` passes; the plan is promoted when E5 lands.
+      match; `node .claude/rules/shared/tools/plan-lifecycle.mjs` passes (all done 2026-10-11) — **open: the plan is
+      promoted** once the first line above is measured on the owner's machine with the released build.
 
 ## 14. Review record
 
@@ -1373,3 +1531,113 @@ answered** (codex's four roles — one vendor's verdict).
 | 4 | the gate is not read during the pin write: a client gone while `persistPin` awaits the vault still gets the pin saved and the known_hosts file written | **accepted for the file, not for the pin** — the request is read again after the awaited write, before `materializeKnownHosts`; the pin write itself began for a live request (the person's *Trust and connect*, checked synchronously before it) and a write already started is finished — E4.S1's rule for a consent remembered (its round 3, finding 2) and the rotation's for its statement. RED first (*"a known_hosts file was written for a request whose client had gone"*, the request aborted inside the vault write) → GREEN → RED again with the check removed; the same test pins that the pin stands |
 | 5 | a remedy already running when the client disconnects completes; only the retry is stopped | **rejected** — the remedy starts only for a live request (the gate is read synchronously after the modal, no await before `runRemedy`); a relay started or a key loaded into the agent is the window's own setup the person asked for by pressing the button, and outlives any request by design — what E4.S3 recorded for a typed command and a tunnel up; the retry enters `connectEntity`, which refuses at its entry. Threading the gate into every remedy implementation is the tunnel-lifecycle plan's class of change |
 | 6 | the entry's PIN box stays open after the agent disconnects | **rejected** — rounds 1 and 2, no new argument: the recorded open tail |
+
+### Epic E5 — proof on the real bridge, and the tail (branch `test/e5-proof-on-the-real-bridge`)
+
+**Plan round (2026-10-10, session `d9a2dcbf`) — `proceed`**, gating 2, **1 of 1 reviewers answered** (codex
+`gpt-6-luna`, three findings — one vendor's verdict, not a panel's). Findings 1 and 2 — the check and the stop must
+go through one held process handle; the `/tmp` budget must be stated — were **accepted** and are built into the
+design block above (*E5 design, settled before its plan round*). The session that resolved the round ended at its
+model limit before writing this table, so finding 0's text and decision are on the gate's own log, not here;
+nothing in the design block depends on it.
+
+**What shipped, and where it differs from the design:** §10, *E5, as built (2026-10-11)* — the RED is the old
+build itself, the relay's fd baseline after the first connection, `dispose()` proved over a live connection, the
+Windows binary handed to the manager as a WSL path, `wslProcs.py fds` and `wslHoldSocket.py`, the smoke script
+reading the committed fixture.
+
+**Tests, red first — the harnesses run unchanged from a scratch checkout of `9494a67c` (E1 merged; A, B and C
+as they were), then on this branch:**
+
+- `creds-mcp-wsl-itest.cjs`, 10 of 40 RED on the harness's first version (4 of 42 on the final one, whose run saw
+  the old Windows half leave after every ending): *"SIGINT: the wrapper ends with exit code 130 —
+  {"event":"ended","code":null,"signal":"SIGINT","ms":11}"* (and SIGTERM, SIGHUP likewise — the default
+  disposition, defect B); *"eof: the wrapper ends with exit code 0 — the wrapper did not end within 20000 ms of
+  eof"* (the unbounded wait, B); *"SIGHUP: 0 Windows survivors within 5 s — Windows creds-mcp.exe this run started
+  and did not take down: 15284"* (defect A; the same pid failed the eof and SIGKILL endings' positive control and
+  the run's last check, and the run ended *swept 1 process(es) this run left behind: 15284* — the sweep by pid
+  working). → **40 of 40 GREEN** on this branch, **42 of 42** on the final harness: 130 / 143 / 129 / 0 / killed, the Windows half gone by the first
+  poll after every ending, nothing of the run left inside WSL.
+- `wsl-agent-relay-itest.cjs`, 8 of 36 RED on the first version (9 of 40 on the final one — twelve children, the
+  held connection's among them, and the old relay's own *still running: true*): *"0 new creds.exe relay-pipe of this run on Windows within 5 s —
+  … did not take down: 46832, 15120, 47984, 41992, 45948, 44488, 42004, 38768, 42596, 48168, 41708"* (defect C,
+  eleven children); *"the relay's descriptor count is back at its baseline (83) — now 103"*; *"it removed its
+  socket on the way out — …/relay.sock still exists"* (no handler on the old relay). → **36 of 36 GREEN**, **40 of 40** on the final harness: 0
+  children, 83 → 83, the socket gone, the manager's dispose taking a live connection's relay-pipe down with it.
+- `.github/scripts/mcp-listen-smoke.sh` against the pre-E2 `creds-mcp.exe`: *"tools/list answered; stdin closed
+  at 2s, the server exited with code 124 at 61s — expected exit code 0 after the client's end-of-stream"* (the
+  guard ended it, defect A). → GREEN on this branch's Debug build and its win-x64 Native AOT publish.
+- The branch's first commits, each RED first (recorded in their messages): the clipboard window tests on a mocked
+  clock; the five process tests hermetic inside a distribution (RED inside WSL, GREEN, RED again); the
+  `hostShell` real-bash quoting and `sshExecAuth` PATH/Path tests holding on this Windows shell.
+
+Suites on Windows in Release, as CI's new leg runs them: cli 142 (4 skipped), mcp 160 (4 skipped), broker 133,
+service defaults 80 (1 skipped) — 0 failed; the extension `npm test` 5,607 (5 skipped, 0 failed), `typecheck` and
+`lint` clean; `plan-lifecycle.mjs` clean. Measurements: the RESULTS record, *E5 — the harnesses on the real bridge*.
+
+**Code round 1 (2026-10-11, session `d9a2dcbf`, after the rebase onto #217) — `proceed`**, gating 2 against
+threshold 5, **4 of 4 reviewers answered** (codex's four roles — one vendor's verdict).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | `wslRun.wsl()` launches `bash -lc` shell strings, against `security.md`'s exe + argv rule | **accepted** — one constant checked-in script, `wslSteps.sh`, every value an argv entry (§10 *E5, as built*); the `bash -lc` launcher is gone |
+| 1 | temp paths interpolated into a `bash -lc` line through single quotes — a path with a quote runs as shell | **accepted** — the same fix: no value becomes shell text. Shown: `CREDS_ITEST_PROBE=it's a 'quoted' path` arrives as `[it's a 'quoted' path]` through `wslSteps.sh`, where the old `export X='…'` line answers *bash: -c: line 1: unexpected EOF while looking for matching `''* |
+| 2 | the smoke's 10 s bound in whole seconds lets a 10.5 s exit pass | **accepted** — RED (*a stand-in server ending 10.2 s after end-of-stream: 3 of 3 runs "the server exited with code 0 at 10s", exit 0*) → perl `Time::HiRes` → GREEN (*"the server took more than 10 s (10.388 s) to exit after end-of-stream"*, 3 of 3) — and a self-test that pins it on every pull request |
+
+Operator commands applied: autonomous (RED → GREEN for each finding, the docs with every change, every suite
+before the PR, the PR end to end); consultants before the person (no question needed one).
+
+**Own review (a separate reviewer reading the full files, the gate's other half)** — 17 findings, none against the
+by-pid, shared-build or no-secrets rules. Taken (§10 *E5, as built*, the last two bullets): the temp directories
+under the run directory; `skip()` throwing; the bounded wait; the smoke's verdict-before-close, RESULT-only match
+and per-grep messages; the smoke run on every CI leg against the built binary; the baselined `ended` count; the
+build inputs and `--disable-build-servers`; the run-directory shape; Linux swept first; per-ending baselines and
+the held-connection control before the ten; the client's start error; `pollUntil`/`skip` shared; the plan's five
+wording slips (the command line → the executable path; environment → argv for Python; `build-<kind>-<hash>`;
+2.1.289's session; `run-itests.mjs`'s needs); the `HostProcessNativeTests` remark (only the marker is pinned; the
+marker also switches the parent watch off inside a distribution). Superseded by the argv change: the `plainPath`
+finding. Not taken: `HostProcess.Reaper` (older test support, its own child tree, outside E5).
+
+**Pull request #218's automated reviewers.** CodeRabbit: rate-limited (no review; skipped by the owner's standing
+decision). SonarCloud on the first push — gate failed, Security D and Reliability C — every issue judged by
+behaviour: S5443 ×2 (the `/tmp` prefix in `wslRun.cjs` and `wslProcs.py`) was a real weakness and is fixed as
+one — the person's cache directory (§10 *as built*); S8703 (the holder's socket straight from argv) — the
+variable, exported by `wslSteps.sh`, and only a socket inside a run directory; S4036 ×4 (`wsl.exe` through PATH)
+— the product's own `wslBinary()`, and PowerShell by its fixed path; S7727 (`find(wanted)`, the one bug) — a
+predicate of its own; the smells taken (`[[` in every bash script, `node:` prefixes, `String.raw` where a template
+can end without a backslash, `replaceAll`, the nested template). Left as written, each with its reason in the
+code: the `await` inside the polling loops (S9382 — polling is sequential by design) and the relay harness's
+pipe-name concatenation (S7780 — a raw template cannot end in a backslash, the comment there). The CI legs: the
+new `windows-latest` leg green on its first report (so it may become a required check in a later change), the
+smoke's self-test and the built-binary smoke green on all three operating systems.
+
+**Checkpoint round (`again`, 2026-10-11, after the rebase onto #219) — `proceed`**, gating 3 against threshold 5,
+**4 of 4 reviewers answered** (codex's four roles).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | `wsl-mcp-client.cjs`'s reply tracker mutates its `Set` (`waiting.delete`) | **rejected** — the immutability rule names immutable DATA and keeps stateful holders mutable, as this gate held in E3's final round (finding 0), E4.S1's rounds 2–3 and E4.S4's finding 2; `waiting` is one function's live bookkeeping, handed to nothing |
+| 1 | `module_tests.md`'s catalogue rows still said 40 and 36 checks against the record's 42 and 40 | **accepted** — the rows carry the final harness's counts with the first version's beside them |
+| 2 | the Linux build's hash omits a `Directory.Build.targets` that may appear later, so a stale build could be reused | **accepted** — `ROOT_BUILD_FILES` names every root file MSBuild reads, `Directory.Build.targets` included, and the inputs are the ones that exist: the day one appears it enters the hash |
+| 3 | the Windows stop swallowed a refused kill and could report a clean sweep over a live process | **accepted** — RED (*a stop of pid 4, System: "stop answered [] — no error raised"*) → the stop script says each refusal on stderr and exits 1, `stop()` throws, the sweep prints it → GREEN (*"not every creds.exe could be stopped: pid 4 could not be stopped: You cannot call a method on a null-valued expression"* — System has no readable main module); a pid that is simply gone still answers `[]` without an error, by design; the Linux `stop` reports a refused pidfd or signal the same way |
+| 4 | the build's `tail -5` hid a failed build's first errors | **accepted** — the verb returns the whole output, both streams; the harness prints it only when no executable came out |
+
+Operator commands applied, as in round 1: autonomous (RED → GREEN for finding 3; the docs with every change —
+this table, §10, `module_tests.md`; every suite run; the PR end to end); consultants before the person (no
+question needed one).
+
+**Last checkpoint round (`again`, 2026-10-11) — `proceed`**, gating 0 against threshold 5, **4 of 4 reviewers
+answered** (codex's four roles). The reply tracker's `Set` was raised a third time with no new argument and
+discounted by the gate itself (rejected again, same reasoning). Three minor findings, all **accepted**: (1) the
+build inputs should be every project file below `src/`, not only `.cs`/`.csproj` — a resource MSBuild consumes
+would otherwise be neither copied nor hashed; (2) the smoke could read an error reply that mentions `"tools"` as
+the result — the one line carrying id 1 must hold `"result":` with `"tools":[` and no `"error":` (RED: the
+self-test's new fourth case *expected the smoke to exit 1, it exited 0* → GREEN); (3) each run copied a 5 MB
+build into its own directory — hard links now.
+
+**CodeRabbit on #218** (it reviewed after all, once its limit reset) — five threads: the same error-reply case as
+(2); a client `wsl.exe` that hung before reading its stdin would outlive the ending it belonged to — killed after
+5 s now; `relayPid` undefined when no relay is found led to a cascade — one thrown error now; the client's
+`END_BOUND` timer could say *failed* after the wrapper's exit — it checks `exited` first; and the RESULTS record
+had still carried the first version's counts — resolved by the record itself. Each thread answered and resolved
+after its fix landed.
