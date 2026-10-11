@@ -180,6 +180,10 @@ function answersSignalZero(pid: number, signal: (pid: number, signal: number) =>
  * delete its own file, and 35 of them had piled up on the reporting machine. The extension owns this
  * folder, so the extension is the one that tidies it; no client deletes a file.</p>
  *
+ * <p>A file is removed only while it still holds the announcement that was judged stale (code round,
+ * 2026-10-11): between the read and the removal the OS can hand the dead pid to a NEW window that writes
+ * `window-<pid>.json` again, and removing by pid alone would delete that live window's file.</p>
+ *
  * <p>Never throws: a folder that cannot be read is no folder to tidy. Returns the pids removed.</p>
  */
 export function sweepStaleEndpoints(
@@ -187,12 +191,23 @@ export function sweepStaleEndpoints(
   ownPid: number,
   isAlive: (pid: number) => boolean = (pid) => pidIsAlive(pid),
 ): number[] {
-  const gone = staleEndpoints(
+  const stale = staleEndpoints(
     readEndpoints(storageDir).filter((e) => e.pid !== ownPid),
     isAlive,
-  ).map((e) => e.pid);
-  for (const pid of gone) {
-    removeEndpoint(storageDir, pid);
+  ).filter((e) => stillAnnounced(storageDir, e));
+  for (const endpoint of stale) {
+    removeEndpoint(storageDir, endpoint.pid);
   }
-  return gone;
+  return stale.map((e) => e.pid);
+}
+
+/** Whether `window-<pid>.json` still holds exactly this announcement — not a newer window's under the same pid. */
+function stillAnnounced(storageDir: string, judged: CliEndpoint): boolean {
+  const [current] = parseEndpoint(endpointPath(storageDir, judged.pid));
+  return (
+    current !== undefined &&
+    current.port === judged.port &&
+    current.startedAt === judged.startedAt &&
+    current.socket === judged.socket
+  );
 }

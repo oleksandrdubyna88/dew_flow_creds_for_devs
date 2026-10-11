@@ -230,3 +230,18 @@ test('a sweep with the real probe removes an exited process\'s file and keeps th
 
   assert.deepEqual(pidsIn(dir), [process.pid]);
 });
+
+test('a window that took a swept pid and announced meanwhile keeps its file', () => {
+  // Code round, 2026-10-11: between reading a stale file and removing it, the OS can hand its pid to a NEW window
+  // that writes `window-<pid>.json` again. Removal by pid alone would delete that live window's announcement.
+  const dir = announced(300);
+  const replacement: CliEndpoint = { ...ENDPOINT, pid: 300, port: 60000, startedAt: '2026-10-11T12:00:00.000Z' };
+
+  const removed = sweepStaleEndpoints(dir, 1, () => {
+    writeEndpoint(dir, replacement); // the new window announces while the sweep decides
+    return false;
+  });
+
+  assert.deepEqual(readEndpoints(dir), [replacement], 'the replacement announcement is still there');
+  assert.deepEqual(removed, [], 'and the sweep says it removed nothing');
+});

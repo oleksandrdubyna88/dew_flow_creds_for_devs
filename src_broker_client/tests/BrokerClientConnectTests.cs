@@ -30,12 +30,16 @@ public class BrokerClientConnectTests
     [Fact]
     public async Task A_closed_loopback_port_is_refused_at_once_not_after_the_syn_retries()
     {
-        var ports = ClosedLoopbackPorts(ClosedPorts);
+        var ports = ClosedLoopbackPorts(ClosedPorts + 1);
         using var client = BrokerClient.Create(BrokerContract.Current, socketPath: null);
+
+        // One untimed probe first: the first call also pays the JIT and the handler's start-up, which is not what this
+        // measures and could cross the ceiling on a busy runner (own review, 2026-10-11).
+        (await client.IsOurBrokerAsync(ports[0], TestContext.Current.CancellationToken)).Should().BeFalse();
 
         var slowest = TimeSpan.Zero;
         var total = Stopwatch.StartNew();
-        foreach (var port in ports)
+        foreach (var port in ports.Skip(1))
         {
             var one = Stopwatch.StartNew();
             var ours = await client.IsOurBrokerAsync(port, TestContext.Current.CancellationToken);
@@ -51,6 +55,14 @@ public class BrokerClientConnectTests
             "a closed window's port must cost a refusal, not the SYN retries — {0} closed ports took {1:N0} ms in total",
             ClosedPorts,
             total.Elapsed.TotalMilliseconds);
+    }
+
+    [Fact]
+    public void A_broker_client_is_only_built_by_Create_so_every_one_connects_the_same_way()
+    {
+        // Code round, 2026-10-11: a public constructor taking any HttpClient let a caller build a client whose probes
+        // skip LoopbackConnect — and pay the two seconds per closed window again.
+        typeof(BrokerClient).GetConstructors().Should().BeEmpty("BrokerClient.Create owns the handler, and with it the connect");
     }
 
     [Fact]

@@ -4451,16 +4451,20 @@ refuse — on Windows and through WSL alike — because a .NET connect to a clos
 SYN retransmissions, about 2 s per file (Node's libuv opts out and is refused in a millisecond). Three changes, each
 leaving the probe as the deciding check:
 
-- **The extension sweeps at activation** — `sweepStaleEndpoints(storageDir, process.pid)` in `activate`, beside
-  `purgeMaterializedKeys`. It removes only files whose pid is provably gone: `pidIsAlive` reads `process.kill(pid, 0)`,
-  and only `ESRCH` is death — `EPERM` (a live process of another session, or a reused pid held by a protected one,
-  which the measurement found) and every other error keep the file. Never its own file; never throws. Until the next
-  activation of any window, a file per crash still accumulates — harmless, because of the next two.
+- **The extension sweeps at activation** — `sweepStaleEndpoints(storageDir, process.pid)`, called from the
+  `CredsAgentServer` constructor, which `activate` runs once (the class that writes and removes the window's own
+  announcement; `extension.ts` itself is held by a size ratchet). It removes only files whose pid is provably gone:
+  `pidIsAlive` reads `process.kill(pid, 0)`, and only `ESRCH` is death — `EPERM` (a live process of another session, or
+  a reused pid held by a protected one, which the measurement found) and every other error keep the file. A file is
+  removed only while it still holds the announcement judged stale, so a new window that took the dead pid and announced
+  in between keeps its file. Never its own file; never throws. Until the next activation of any window, a file per
+  crash still accumulates — harmless, because of the next two.
 - **The clients skip a provably-dead pid** — `Endpoints.Live` / `Endpoints.ReadLive` in `src_broker_client`: the
   CLI's three walks and the MCP server's two dial nothing whose pid is gone (`Process.GetProcessById` throws). A client
   never deletes a file: the folder is the extension's.
 - **A refused loopback connect is refused at once** — `LoopbackConnect.ConnectAsync`, the `ConnectCallback` every
-  port-transport `BrokerClient` uses, sets `SIO_TCP_INITIAL_RTO` with no SYN retransmissions on a Windows loopback
+  port-transport `BrokerClient` uses (its constructor is private, so `BrokerClient.Create` is the only way to build one),
+  sets `SIO_TCP_INITIAL_RTO` with no SYN retransmissions on a Windows loopback
   connect, as libuv does. A reused pid whose port is closed now costs milliseconds too.
 
 When `credSshManager.wslAgentRelay` is on, the same callback also raises **`WslRelayManager`**

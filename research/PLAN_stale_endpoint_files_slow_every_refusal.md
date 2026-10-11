@@ -238,3 +238,17 @@ the last row — the installed AOT Linux half with the new Windows half — show
 the slowest at 2.015 s before `LoopbackConnect`, and pass after; the walk tests (`StaleWindowsTests`,
 `StaleWindowsProcessTests`) saw six announcements of exited processes cost six connections before `Endpoints.Live`, and
 zero after — on the built `creds` for the config read, an alias call and `creds ls`, with exit codes and sentences unchanged.
+
+## 11. Review record
+
+- **Plan round** (1 reviewer, `proceed`, 2 findings, both accepted): the real-machine timing became a merge gate run
+  BEFORE merge (§6.5, §10), and §5 now says the growth bound holds only until the next activation.
+- **Code round** (4 of 4 reviewers, `proceed`, 3 minor findings, all accepted and each fixed red-first):
+  `module_extension.md` named `activate` as the sweep's caller when it is the broker constructor; `BrokerClient` had a
+  public constructor taking any `HttpClient`, which would skip `LoopbackConnect` — it is private now, and a test holds
+  that `Create` is the only way in; and the sweep removed `window-<pid>.json` by pid alone, so a new window that took the
+  dead pid and announced between the read and the removal would have lost its file — it now removes a file only while
+  it still holds the announcement judged stale (`stillAnnounced`), and a test makes the new window announce inside the
+  sweep's own liveness check.
+- **Own review** (one reviewer): no finding at high confidence; its low-confidence note — the first timed probe also
+  paid the JIT and handler start-up — is taken: the timing test probes one closed port untimed first.
