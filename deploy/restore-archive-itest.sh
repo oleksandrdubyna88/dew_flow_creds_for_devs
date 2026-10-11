@@ -19,6 +19,18 @@
 # rather than "the script printed something reassuring".
 set -uo pipefail
 
+# A local run goes below interactive work (.claude/rules/shared/common/local-cpu-budget.md): the script
+# re-runs itself once under `nice -n 19`, and everything it starts inherits that. CI is exempt, read the
+# way the shared tool's isCi() reads it: CI unset, empty, "false" or "0" means a local run.
+# Git Bash (MSYS/Cygwin) maps nice 19 to the Windows Idle class, which the rule forbids; nice 10 maps to
+# BelowNormal there (measured 2026-10-11, os.getPriority read 19 and 10).
+ci_flag="$(printf '%s' "${CI:-}" | tr '[:upper:]' '[:lower:]')"
+case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) nice_level=10 ;; *) nice_level=19 ;; esac
+if [[ ( -z "$ci_flag" || "$ci_flag" == false || "$ci_flag" == 0 ) && -z "${LOW_PRIORITY_NICED:-}" ]] \
+  && command -v nice >/dev/null 2>&1; then
+  LOW_PRIORITY_NICED=1 exec nice -n "$nice_level" bash "$0" "$@"
+fi
+
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SCRIPT="${HERE}/restore-archive.sh"
 FAILS=0

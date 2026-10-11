@@ -293,10 +293,12 @@ They version separately, on separate tags, and each half has its own CI workflow
 ```bash
 git submodule update --init .claude/rules/shared   # shared conventions
 
-dotnet build dew_flow_creds_for_devs.slnx
-./src_minimalapi_server/tests/bin/Debug/net10.0/CredVaultServer.Tests.exe
+# local runs: at most 8 workers, at lowered CPU priority (.claude/rules/shared/common/local-cpu-budget.md)
+LP=.claude/rules/shared/tools/low-priority.mjs
+node $LP dotnet build dew_flow_creds_for_devs.slnx -m:4 --disable-build-servers
+node $LP ./src_minimalapi_server/tests/bin/Debug/net10.0/CredVaultServer.Tests.exe   # Linux/macOS: no .exe
 
-cd src_vs_code && npm ci && npm run typecheck && npm test
+cd src_vs_code && npm ci && npm run typecheck && npm test   # npm test lowers itself
 ```
 
 ## Reporting a vulnerability

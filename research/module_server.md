@@ -1903,8 +1903,9 @@ endpoint suites run in-process through `WebApplicationFactory` — no free port,
 `dotnet run`; the store suites drive a store directly on a throwaway data directory.
 
 ```bash
-dotnet build dew_flow_creds_for_devs.slnx
-./src_minimalapi_server/tests/bin/Debug/net10.0/CredVaultServer.Tests.exe
+LP=.claude/rules/shared/tools/low-priority.mjs   # local runs: 8 workers, lowered — module_tests.md
+node $LP dotnet build dew_flow_creds_for_devs.slnx -m:4 --disable-build-servers
+node $LP ./src_minimalapi_server/tests/bin/Debug/net10.0/CredVaultServer.Tests.exe
 ```
 
 Never `dotnet test` — there is no VSTest host here and it aborts.

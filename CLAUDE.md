@@ -36,13 +36,19 @@ and the relevant `research/module_*.md`.
 ## Commands
 
 ```bash
+# Local builds and test runs follow .claude/rules/shared/common/local-cpu-budget.md: at most 8
+# workers, below interactive work. LP is the shared tool that lowers itself and everything it runs.
+LP=.claude/rules/shared/tools/low-priority.mjs
+
 # --- server (.NET) ---
-dotnet build dew_flow_creds_for_devs.slnx -c Debug
+node $LP dotnet build dew_flow_creds_for_devs.slnx -c Debug -m:4 --disable-build-servers
 
 # Run tests — ALWAYS via the test project's executable, NEVER `dotnet test`
-# (xUnit v3 / Microsoft Testing Platform: there is no VSTest testhost, so `dotnet test` aborts)
-./src_minimalapi_server/tests/bin/Debug/net10.0/CredVaultServer.Tests.exe
-./src_minimalapi_server/tests/bin/Debug/net10.0/CredVaultServer.Tests.exe --filter-class "*SharingTests"
+# (xUnit v3 / Microsoft Testing Platform: there is no VSTest testhost, so `dotnet test` aborts).
+# One executable at a time: the root xunit.runner.json gives each 8 threads, and the cap is per RUN.
+# --disable-build-servers keeps the compiler inside the lowered tree. Linux/macOS: drop the .exe.
+node $LP ./src_minimalapi_server/tests/bin/Debug/net10.0/CredVaultServer.Tests.exe
+node $LP ./src_minimalapi_server/tests/bin/Debug/net10.0/CredVaultServer.Tests.exe --filter-class "*SharingTests"
 
 # Run the server standalone (the Local scheme needs no cloud IdP)
 Vault__DataDir=/tmp/cv Vault__AllowedDomains=example.com \
@@ -54,7 +60,7 @@ Vault__DataDir=/tmp/cv Vault__AllowedDomains=example.com \
 cd src_vs_code
 npm ci
 npm run typecheck
-npm test                    # node:test over out/test/*.test.js
+npm test                    # node:test over out/test/*.test.js — 8 workers, lowered by scripts/lower-priority.mjs
 npm run package             # builds the .vsix
 npm run icon                # regenerates media/icon.png from the same glyph as icon.svg
 
@@ -180,8 +186,9 @@ people's credentials, so a defect here is not a defect in a toy.
 
 ## Definition of Done
 
-- [ ] `dotnet build dew_flow_creds_for_devs.slnx` — 0 warnings (warnings are errors here).
-- [ ] The server test executable runs green, and `npm test` in `src_vs_code` runs green.
+- [ ] `dotnet build dew_flow_creds_for_devs.slnx -m:4 --disable-build-servers` — 0 warnings (warnings are errors here).
+- [ ] The server test executable runs green, and `npm test` in `src_vs_code` runs green — locally both
+      at lowered priority, the executables one after another (`common/local-cpu-budget.md`).
 - [ ] New behaviour has tests; a fix has a test **watched failing first**, and the summary reports
       both the failure message and the pass.
 - [ ] A change to the HTTP contract updated both sides and `research/module_server.md`.

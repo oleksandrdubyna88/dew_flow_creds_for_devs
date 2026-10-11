@@ -467,7 +467,7 @@ was run as Debug and as the shipping Release build — 766 of 766 in each.
 
 `oneUseAndCap.test.ts` (new), `grantTtl.test.ts`, `serverTransport.test.ts`. Harness:
 `src/test/brokerWorld.ts` — the real broker over real HTTP. Command: `npm test`, or
-`node --test out/test/oneUseAndCap.test.js`.
+`node --import ./scripts/lower-priority.mjs --test out/test/oneUseAndCap.test.js`.
 
 | Flow | Status | What it holds down |
 |---|---|---|
@@ -495,7 +495,8 @@ lane was never marked spent and a queued second call ran the action again. Every
 stub answers from `w.burned` now, which is what made the defect visible.
 ## What the unit suite is asserted ON (2026-09-11, audit finding #8)
 
-`npm test` is `node --test out/test/*.test.js`, and CI runs it in exactly one configuration:
+`npm test` is `node --import ./scripts/lower-priority.mjs --test --test-concurrency=8 out/test/*.test.js`
+(since 2026-10-11 — see *Local runs* below), and CI runs it in exactly one configuration:
 **`ubuntu-latest`, Node 22** (`.github/workflows/ci-extension.yml`). There is no OS matrix and no
 Node matrix. That is a choice, not an oversight — but it has to be written down, because two tests
 were passing there **for the wrong reason**.
@@ -540,7 +541,7 @@ did none of it. It is catalogued here because `scenario-tests.md` asks for every
 Covered by `src_vs_code/src/test/folderFormPanel.test.ts` — the real `folderFormPanel` loaded
 through the `vscode` stub (`src/test/vscodeStub.ts`: `loadWithVscode`, with `configStub` recording
 every setting write and `settingsVscode` serving them back), with a fake panel standing in for the
-editor's webview. Command: `npm test`, or `node --test out/test/folderFormPanel.test.js`.
+editor's webview. Command: `npm test`, or `node --import ./scripts/lower-priority.mjs --test out/test/folderFormPanel.test.js`.
 
 | Flow | Status | What it holds down |
 |---|---|---|
@@ -823,7 +824,7 @@ The flows [PLAN_entry_pin_keeps_its_promise.md](PLAN_entry_pin_keeps_its_promise
 repaired, each driven through the product's own entry points over the REAL `StorageManager` with real
 `lockSecret` wraps (the shared world is `src/test/pinWorld.ts`; `vscodeStub.loadEachWithVscode` loads
 several modules into ONE graph so a PIN the first door granted is the grant every later surface sees).
-Command: `npm test`, or `node --test out/test/<file>.js`.
+Command: `npm test`, or `node --import ./scripts/lower-priority.mjs --test out/test/<file>.js`.
 
 | Flow | Test | What it holds down |
 |---|---|---|
@@ -935,8 +936,9 @@ The flows [PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_
 added. The TypeScript half over the REAL `StorageManager` and the real hooks the broker calls; the C#
 half through the relay's test executable; one live check — `creds-mcp-itest.cjs` — puts the real
 binary against the real window code for the catalogue and the owner's case. Command: `npm test`, or
-`node --test out/test/<file>.js`; `./src_mcp/tests/bin/Debug/net10.0/CredsMcp.Tests.exe`;
-`npm run itest:mcp`.
+`node --import ./scripts/lower-priority.mjs --test out/test/<file>.js` and `npm run itest:mcp` from
+`src_vs_code`; `node .claude/rules/shared/tools/low-priority.mjs ./src_mcp/tests/bin/Debug/net10.0/CredsMcp.Tests.exe`
+from the repository root.
 
 | Flow | Test | What it holds down |
 |---|---|---|
@@ -962,7 +964,7 @@ ran out is not observed by any test.
 The flows story E4.S3 of [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md)
 gated: an agent's `creds_vpn_up` / `creds_vpn_down` whose client leaves while the start waits. Every case holds ONE
 await open, fires the request's signal, then lets it go — the moment a person answers a modal nobody waits for.
-Command: `npm test`, or `node --test out/test/<file>.js`.
+Command: `npm test`, or `node --import ./scripts/lower-priority.mjs --test out/test/<file>.js`.
 
 | Flow | Test | What it holds down |
 |---|---|---|
@@ -988,7 +990,7 @@ The flows story E4.S4 of [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_w
 gated: an agent's SSH terminal whose client leaves before the terminal opens — during the entry's PIN box, the
 host-key question, or a window's refusal — and the journal line of a VPN whose chain had already typed a step. Every
 case fires the request's signal at one await and then lets the path continue, the moment a person answers a dialog
-nobody waits for. Command: `npm test`, or `node --test out/test/<file>.js`.
+nobody waits for. Command: `npm test`, or `node --import ./scripts/lower-priority.mjs --test out/test/<file>.js`.
 
 | Flow | Test | What it holds down |
 |---|---|---|
@@ -1071,23 +1073,81 @@ Named rather than implied, because the rule asks for exactly this.
 
 ## How to run everything
 
-```bash
-# .NET — 447 tests when this was written; the vault server alone is 530 as of 2026-09-07
-dotnet build dew_flow_creds_for_devs.slnx
-./src_minimalapi_server/tests/bin/Debug/net10.0/CredVaultServer.Tests.exe
-./src_cli/tests/bin/Debug/net10.0/CredsCli.Tests.exe
-./src_mcp/tests/bin/Debug/net10.0/CredsMcp.Tests.exe
-./src_broker_client/tests/bin/Debug/net10.0/BrokerClient.Tests.exe
+Locally, every line below runs at most 8 workers at lowered CPU priority — see *Local runs* just after.
 
-# the extension's unit suite — 3,302
+```bash
+LP=.claude/rules/shared/tools/low-priority.mjs
+
+# .NET — 1,318 tests on 2026-10-11. The solution carries three of the five test projects, so the
+# other two are built by name. The executables run ONE AFTER ANOTHER: each gets 8 threads.
+node $LP dotnet build dew_flow_creds_for_devs.slnx -m:4 --disable-build-servers
+node $LP dotnet build src_cli/tests/CredsCli.Tests.csproj -m:4 --disable-build-servers
+node $LP dotnet build src_broker_client/tests/BrokerClient.Tests.csproj -m:4 --disable-build-servers
+node $LP ./src_minimalapi_server/tests/bin/Debug/net10.0/CredVaultServer.Tests.exe
+node $LP ./src_cli/tests/bin/Debug/net10.0/CredsCli.Tests.exe
+node $LP ./src_mcp/tests/bin/Debug/net10.0/CredsMcp.Tests.exe
+node $LP ./src_broker_client/tests/bin/Debug/net10.0/CredsBroker.Tests.exe
+node $LP ./src_service_defaults/tests/bin/Debug/net10.0/CredsForDevs.ServiceDefaults.Tests.exe
+
+# the extension's unit suite — 5,612 on 2026-10-11; the script lowers itself and caps its pool at 8
 cd src_vs_code && npm test
 
-# every scenario harness except the one needing a live server
-for t in agent git cli mcp ssh-agent masked-run mcp-wsl wsl-relay; do npm run itest:$t; done
+# every scenario harness except the one needing a live server — each script lowers itself
+npm run itest:all
 
-# the HTTP contract suite (see http/README.md for the environment it needs)
-cd http && npm ci && node http-run.mjs
+# the HTTP contract suite (see http/README.md for the environment it needs, and its lowered form)
+node $LP node .claude/rules/shared/tools/http-run.mjs --require-env VAULT_LOCAL_SIGNING_KEY --env local --target http://127.0.0.1:5099
 ```
+
+## Local runs: at most 8 workers, at lowered CPU priority (2026-10-11)
+
+The shared rule [local-cpu-budget.md](../.claude/rules/shared/common/local-cpu-budget.md) — measured on a
+24-thread workstation where one plain `node --test` started 23 test-file processes at normal priority and
+every other session lagged. How this repository follows it, entry point by entry point
+([PLAN_local_cpu_budget_adoption.md](PLAN_local_cpu_budget_adoption.md)):
+
+| Entry point | Workers | Lowered by |
+|---|---|---|
+| `npm test` | `--test-concurrency=8` (node's default was 23 here) | `node --import ./scripts/lower-priority.mjs` |
+| `npm run itest:*`, `itest:all` | one process, harnesses one after another | the same preload; every binary a harness starts inherits it |
+| the five xUnit executables | 8 threads — ONE root `xunit.runner.json`, copied into each test project's output by `Directory.Build.props` | `node $LP <exe>`, one executable at a time |
+| `dotnet build` / `publish` named anywhere in these docs, prerequisites included | `-m:4` (`csharp/dotnet-build.md`) | `node $LP dotnet build … -m:4 --disable-build-servers` — see below |
+| `deploy/restore-archive-itest.sh` | one bash process | re-runs itself once under `nice` (19; 10 under Git Bash, where 19 is the Windows Idle class the rule forbids) |
+| the `.http` suite | httpyac, one request at a time | `node $LP node …/http-run.mjs` |
+| a one-file run | one worker | `node --import ./scripts/lower-priority.mjs --test out/test/<file>.js` |
+
+- **The preload** `src_vs_code/scripts/lower-priority.mjs` is a verbatim copy of the conventions template
+  with only its `MOUNT` line changed to `../../.claude/rules/shared/`. It calls the shared tool's
+  `lowerOwnPriority()`. Where the mount is absent — CI, which checks no submodule out for the extension
+  job, or a clone without `git submodule update --init` — it lowers nothing, and outside CI it says so
+  once. **No CI job changed.**
+- **The xUnit runner reads the file — proved, not assumed.** A file on disk is not enough: a
+  `xunit.runner.json` beside the `.csproj` but not copied to the output leaves the runner at its default.
+  Each executable's `Starting:` line under `--xunit-diagnostics on`: before, `parallel mode = collections
+  [24 threads]`; after, `[8 threads]` for all five; with the root file set to 5 and one project rebuilt,
+  `[5 threads]` — the runner follows the root file. `--max-threads N` on the command line overrides it.
+- **A lowered build disables the build servers.** Without `--disable-build-servers` a lowered `dotnet
+  build` hands its compiling to a compiler server (`VBCSCompiler`) that an earlier, normal-priority build
+  started — observed 2026-10-11: one was running at `Normal` while the lowered builds above ran. With the
+  flag, the compiler runs inside the lowered tree. The shared rule names this for `nice`; it holds for
+  Windows too. `dotnet run` takes the same flag.
+- **Measured 2026-10-11, lowered, one after another:** ServiceDefaults 80 (6 s), CredsBroker 133 (3 s),
+  CredsCli 142 (101 s), CredsMcp 154 (27 s), CredVaultServer 809 (89 s) — 0 failed; `npm test` 5,612 tests,
+  0 failed, 379 s on a machine other sessions were also loading.
+- **The pin:** `src/test/localCpuBudget.test.ts` asserts the `test` script's cap and preload, the preload
+  on every `itest:*` script, the preload's one `MOUNT` line and where it resolves, the preload against the
+  template (skipped, saying so, where the mount is absent), and the root `xunit.runner.json` with the
+  `Directory.Build.props` item that copies it to every test output. A pin bump that changes the template
+  turns it red until the copy follows.
+- **Not lowered, on purpose:** `compile`, `typecheck`, `lint`, `bundle` and the generators are one process
+  each and start no pool; the rule's own form `npm run compile && node --import … --test` leaves the
+  compile unlowered. `deploy/acme-test/run.sh` does its work in containers the Docker daemon starts, which
+  neither `nice` nor the tool reaches.
+- **CI parallelism:** `--test-concurrency=8` and `maxParallelThreads: 8` are exact values, not
+  `min(8, default)`, so on a 4-vCPU hosted runner they raise node from 3 to 8 and xUnit from 4 to 8.
+- **Open tail:** the two WSL harnesses build inside the distribution with a bare `dotnet build`; a
+  Windows-side BelowNormal does not reach the WSL VM. Owed there: `nice -n 19 dotnet build -m:4
+  --disable-build-servers`, once the branch rewriting those harnesses lands.
 
 The WSL harnesses skip loudly rather than silently when the distribution, the .NET SDK inside it, or
 the Windows binary is missing — each prints the command that would fix it. That is the convention

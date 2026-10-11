@@ -1,8 +1,11 @@
 // Performance bench for the sidebar tree and the storage layer — the numbers behind the
 // audit's §C items (todo/PLAN_audit_roadmap_2026_08_25.md, C1–C4).
 //
-//   npm run compile && node scripts/tree-perf-bench.cjs
-//   BENCH_OUT=/path/to/another/out node scripts/tree-perf-bench.cjs   # e.g. HEAD compiled elsewhere
+//   npm run compile && node --import ./scripts/lower-priority.mjs scripts/tree-perf-bench.cjs
+//   BENCH_OUT=/path/to/another/out node --import ./scripts/lower-priority.mjs scripts/tree-perf-bench.cjs
+//
+// Lowered, per the shared rule local-cpu-budget.md: the bench's result is the COUNTS, which priority
+// does not move; its milliseconds are the illustration, and they are slower on a busy machine.
 //
 // Runs the REAL compiled StorageManager and CredTreeDataProvider over a fake memento and a
 // fake SecretStorage that COUNT their calls, with `vscode` stubbed the way the itests do.
