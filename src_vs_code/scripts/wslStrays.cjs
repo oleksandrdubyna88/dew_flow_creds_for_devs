@@ -25,11 +25,17 @@
  * one more Windows child after a Windows sweep (own review of E5).</p>
  */
 
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 const { asLinux, run, wslExec } = require('./wslRun.cjs');
 
 const WSL_PROCS = asLinux(path.join(__dirname, 'wslProcs.py'));
 const POLL_MS = 250;
+
+/** PowerShell by its fixed path — 7 where it is installed, Windows PowerShell 5.1 otherwise — never through PATH. */
+const PWSH = path.join(process.env.ProgramFiles ?? String.raw`C:\Program Files`, 'PowerShell', '7', 'pwsh.exe');
+const WINDOWS_POWERSHELL = path.join(process.env.SystemRoot ?? String.raw`C:\Windows`, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+const powershell = () => (fs.existsSync(PWSH) ? PWSH : WINDOWS_POWERSHELL);
 
 const pidsIn = (stdout) => stdout.split(/\s+/).filter((pid) => /^\d+$/.test(pid));
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -45,33 +51,26 @@ async function pollUntil(read, done, ms) {
   return value;
 }
 
-let shell;
-/** PowerShell 7 first, Windows PowerShell 5.1 only where pwsh is absent. */
-async function powershell() {
-  if (shell === undefined) {
-    const probe = await run('pwsh', ['-NoProfile', '-Command', 'exit 0'], { timeout: 20_000 });
-    shell = probe.code === 0 ? 'pwsh' : 'powershell.exe';
-  }
-  return shell;
-}
-
 /** Run a CONSTANT script; every value it reads arrives through its environment, never through its text. */
-async function ps(script, env) {
-  return run(await powershell(), ['-NoProfile', '-NonInteractive', '-Command', script], {
+function ps(script, env) {
+  return run(powershell(), ['-NoProfile', '-NonInteractive', '-Command', script], {
     env: { ...process.env, ...env },
     timeout: 60_000,
   });
 }
 
+/** The run directory with exactly one trailing separator, whatever the environment handed over. */
+const DIR_LINE = String.raw`$dir = $env:CREDS_ITEST_DIR.TrimEnd('\') + '\'`;
+
 const LIST_WINDOWS = [
-  "$dir = $env:CREDS_ITEST_DIR.TrimEnd('\\') + '\\'",
+  DIR_LINE,
   'Get-CimInstance Win32_Process -Filter ("Name = \'" + $env:CREDS_ITEST_IMAGE + "\'") |',
   '  Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($dir, [StringComparison]::OrdinalIgnoreCase) } |',
   '  ForEach-Object { $_.ProcessId }',
 ].join('\n');
 
 const STOP_WINDOWS = [
-  "$dir = $env:CREDS_ITEST_DIR.TrimEnd('\\') + '\\'",
+  DIR_LINE,
   "foreach ($id in $env:CREDS_ITEST_PIDS.Split(',')) {",
   '  try { $p = [System.Diagnostics.Process]::GetProcessById([int]$id) } catch { continue }',
   '  try {',
@@ -202,8 +201,10 @@ function runAndSweep({ main, strays, failures, finish, label }) {
       await sweepAll(strays());
       await finish().catch((error) => console.log(`      finishing the run failed: ${error}`));
       const count = failures() + (threw ? 1 : 0);
-      const verdict = count === 0 ? (skipped ? `${label}: skipped` : `all ${label} checks passed`) : `${count} check(s) failed`;
-      console.log(`\n${verdict}`);
+      const passed = skipped ? `${label}: skipped` : `all ${label} checks passed`;
+      const verdict = count === 0 ? passed : `${count} check(s) failed`;
+      console.log('');
+      console.log(verdict);
       process.exit(count === 0 ? 0 : 1);
     });
 }

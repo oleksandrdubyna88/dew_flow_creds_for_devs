@@ -18,9 +18,9 @@
 //
 // PLAN_wsl_bridge_outlives_its_client.md, E5.S1. Runs under the distribution's own node; nothing here deletes.
 
-const { spawn } = require('child_process');
-const fs = require('fs');
-const readline = require('readline');
+const { spawn } = require('node:child_process');
+const fs = require('node:fs');
+const readline = require('node:readline');
 
 const READY_BOUND_MS = 60_000;
 const END_BOUND_MS = 20_000;

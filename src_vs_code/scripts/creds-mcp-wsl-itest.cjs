@@ -22,12 +22,12 @@
 //
 // Skipped LOUDLY, never silently: no Windows, no WSL, no Windows binary, no .NET SDK, node or python3
 // inside the distribution, or a Linux build that would not build — each prints the command that fixes it.
-const path = require('path');
-const os = require('os');
-const fs = require('fs');
-const { spawn } = require('child_process');
-const Module = require('module');
-const readline = require('readline');
+const path = require('node:path');
+const os = require('node:os');
+const fs = require('node:fs');
+const { spawn } = require('node:child_process');
+const Module = require('node:module');
+const readline = require('node:readline');
 
 // ---- vscode stub -----------------------------------------------------------
 // The same shape creds-mcp-itest.cjs uses: the broker under test is the real one, and it imports
@@ -59,7 +59,7 @@ Module._resolveFilename = (request, ...rest) =>
 
 const OUT = path.join(__dirname, '..', 'out');
 const { runAndSweep, started, watchLinuxPids, watchWindowsPids } = require('./wslStrays.cjs');
-const { REPO, run, stepArgv, wslStep, asLinux, skip, windowsBuild, runDirectories, copyWindowsBinary, linuxBinary, finishRun } = require('./wslRun.cjs');
+const { REPO, WSL_EXE, run, stepArgv, wslStep, asLinux, skip, windowsBuild, runDirectories, copyWindowsBinary, linuxBinary, finishRun } = require('./wslRun.cjs');
 
 /** Every watch this run started; the sweep at the bottom walks them. */
 const watches = [];
@@ -110,7 +110,7 @@ function bridgeEnv(endpointDir, windowsBinary = windowsMcp) {
  */
 function speak(env, requests, settleMs = 4000) {
   return new Promise((resolve) => {
-    const child = spawn('wsl.exe', stepArgv(env, 'exec', [linuxMcp]));
+    const child = spawn(WSL_EXE, stepArgv(env, 'exec', [linuxMcp]));
     let out = '';
     let err = '';
     child.stdout.on('data', (d) => {
@@ -193,7 +193,7 @@ async function preconditions() {
   if (process.platform !== 'win32') {
     skip('this bridge only exists on Windows — elsewhere creds-mcp reaches the window directly');
   }
-  if ((await run('wsl.exe', ['-l', '-q'])).code !== 0) {
+  if ((await run(WSL_EXE, ['-l', '-q'])).code !== 0) {
     skip('no WSL on this machine');
   }
   if (!fs.existsSync(path.join(windowsBuild('src_mcp'), 'creds-mcp.exe'))) {
@@ -207,7 +207,7 @@ async function preconditions() {
 
 /** This run's copies: the Windows binary into the Windows run directory, the Linux build into the Linux one. */
 async function prepareBinaries() {
-  dirs = runDirectories();
+  dirs = await runDirectories();
   windowsMcp = copyWindowsBinary(dirs, { kind: 'mcp', project: 'src_mcp', exe: 'creds-mcp.exe' });
   linuxMcp = await linuxBinary(dirs, {
     kind: 'mcp',
@@ -339,7 +339,7 @@ async function createsThroughTheWindow(env, created) {
 async function staysOnThisSide(endpointDir) {
   // Pointed at a binary that does not exist: if help were relayed, this would fail instead of
   // printing. It is the cheap proof of a decision that is otherwise invisible.
-  const nowhere = bridgeEnv(endpointDir, 'C:\\nowhere\\creds-mcp.exe');
+  const nowhere = bridgeEnv(endpointDir, String.raw`C:\nowhere\creds-mcp.exe`);
   const help = await wslStep(nowhere, 'exec', [linuxMcp, '--help']);
   check('--help is answered inside WSL without launching a Windows process', help.stdout.includes('creds_list'), help.stdout.slice(0, 160));
 
@@ -371,7 +371,7 @@ function events(child) {
   });
   return {
     next(wanted, ms) {
-      const already = seen.find(wanted);
+      const already = seen.find((event) => wanted(event));
       if (already !== undefined) {
         return Promise.resolve(already);
       }
@@ -403,7 +403,7 @@ const exitWords = (exit) => (exit.signal === null ? `with exit code ${exit.code}
 async function endedBy({ word, exit }, endpointDir, windowsHalves, linuxSide) {
   // The positive control is about THIS session's process: a baseline right before it starts, exactly one new pid after.
   const already = new Set(await windowsHalves.survivors());
-  const client = spawn('wsl.exe', stepArgv(bridgeEnv(endpointDir), 'exec', ['node', asLinux(CLIENT), asLinux(FIXTURE), '--', linuxMcp]));
+  const client = spawn(WSL_EXE, stepArgv(bridgeEnv(endpointDir), 'exec', ['node', asLinux(CLIENT), asLinux(FIXTURE), '--', linuxMcp]));
   let stderr = '';
   client.stderr.on('data', (d) => {
     stderr += d;

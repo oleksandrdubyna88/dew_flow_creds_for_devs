@@ -12,11 +12,11 @@
 # sweep stops by pid whatever is still there. Nothing here deletes anything.
 set -euo pipefail
 
-while [ $# -gt 0 ] && [ "$1" != '--' ]; do
+while [[ $# -gt 0 && "$1" != '--' ]]; do
   export "$1"
   shift
 done
-if [ $# -gt 0 ]; then
+if [[ $# -gt 0 ]]; then
   shift
 fi
 verb="${1:?usage: wslSteps.sh [NAME=value]... -- <verb> [args]...}"
@@ -33,12 +33,16 @@ case "$verb" in
       command -v "$tool" > /dev/null || echo "missing $tool"
     done
     ;;
+  # cache-root: where this harness family keeps its builds and runs — the person's own cache directory, never /tmp.
+  cache-root) printf '%s' "${XDG_CACHE_HOME:-$HOME/.cache}/creds-itest" ;;
   # exists <path>: `yes` when an executable is there.
-  exists) test -x "$1" && echo yes ;;
+  exists) [[ -x "$1" ]] && echo yes ;;
   # build <build-dir> <repo> <project> <file>...: the inputs copied under <build-dir>, the project built there.
   # No AOT: the distribution has the SDK but not necessarily a native linker, and the code under test is
   # identical either way — only the packaging differs. No build servers: a compiler server or an MSBuild node
-  # left running would be a process of this run that no watch can see (its executable is the SDK's).
+  # left running would be a process of this run that no watch can see (its executable is the SDK's). Lowered
+  # (`nice -n 19`, at most 4 MSBuild nodes — common/local-cpu-budget.md): these harnesses only ever run on a
+  # developer's machine, where a build must not starve the editor; a hosted runner has no distribution.
   build)
     build="$1"
     repo="$2"
@@ -49,12 +53,12 @@ case "$verb" in
       cp "$repo/$file" "$build/$file"
     done
     cd "$build/$project/src"
-    dotnet build -c Debug -p:PublishAot=false --disable-build-servers 2>&1 | tail -5
+    nice -n 19 dotnet build -c Debug -p:PublishAot=false -m:4 --disable-build-servers 2>&1 | tail -5
     ;;
   # copy-build <output> <target>: a build output into this run's own directory.
   copy-build) mkdir -p "$2" && cp -r "$1/." "$2/" ;;
-  # disk-usage: what this harness family keeps in /tmp — listed, never removed.
-  disk-usage) du -sch /tmp/creds-itest-* 2> /dev/null | tail -1 ;;
+  # disk-usage <root>: what this harness family keeps there — listed, never removed.
+  disk-usage) du -sh "$1" 2> /dev/null | tail -1 ;;
   # sign <pub> <payload>: the agent's public key, a payload, a signature made through the relay.
   sign) ssh-add -L > "$1" && echo payload > "$2" && ssh-keygen -Y sign -f "$1" -n file "$2" 2>&1 | tail -1 ;;
   # verify <pub> <payload> <allowed>: the signature checked the way `git commit -S`'s verifier does.

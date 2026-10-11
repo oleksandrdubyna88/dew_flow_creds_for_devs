@@ -26,15 +26,15 @@
 //
 // Skipped loudly, never silently: no Windows, no WSL, no Windows binary, no .NET SDK or python3
 // inside the distribution, or a Linux build that would not build — each prints what fixes it.
-const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
-const readline = require('readline');
-const { spawn } = require('child_process');
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
+const readline = require('node:readline');
+const { spawn } = require('node:child_process');
 
 const OUT = path.join(__dirname, '..', 'out');
 const { pollUntil, runAndSweep, started, watchLinuxPids, watchWindowsPids } = require('./wslStrays.cjs');
-const { run, stepArgv, wslStep, wslExec, asLinux, skip, windowsBuild, runDirectories, copyWindowsBinary, linuxBinary, finishRun } = require('./wslRun.cjs');
+const { WSL_EXE, run, stepArgv, wslStep, wslExec, asLinux, skip, windowsBuild, runDirectories, copyWindowsBinary, linuxBinary, finishRun } = require('./wslRun.cjs');
 
 const HOLD = asLinux(path.join(__dirname, 'wslHoldSocket.py'));
 /** Every watch this run started; the sweep at the bottom walks them. */
@@ -98,7 +98,7 @@ async function preconditions() {
   if (process.platform !== 'win32') {
     skip('this bridge only exists on Windows — elsewhere ssh reaches the agent directly');
   }
-  if ((await run('wsl.exe', ['-l', '-q'])).code !== 0) {
+  if ((await run(WSL_EXE, ['-l', '-q'])).code !== 0) {
     skip('no WSL on this machine');
   }
   if (!fs.existsSync(path.join(windowsBuild('src_cli'), 'creds.exe'))) {
@@ -112,7 +112,7 @@ async function preconditions() {
 
 /** This run's copies: the Windows CLI into the Windows run directory, the Linux build into the Linux one. */
 async function prepareBinaries() {
-  dirs = runDirectories();
+  dirs = await runDirectories();
   windowsCli = copyWindowsBinary(dirs, { kind: 'cli', project: 'src_cli', exe: 'creds.exe' });
   linuxCli = await linuxBinary(dirs, {
     kind: 'cli',
@@ -163,7 +163,7 @@ function announce(endpointDir, agentSocket) {
  * control that a relay-pipe was really started for each connection), and it is stopped by its own pid.
  */
 function startRelay(env) {
-  const child = spawn('wsl.exe', stepArgv(env, 'exec', [linuxCli, 'relay']), { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(WSL_EXE, stepArgv(env, 'exec', [linuxCli, 'relay']), { stdio: ['ignore', 'pipe', 'pipe'] });
   const stderr = [];
   readline.createInterface({ input: child.stderr }).on('line', (line) => stderr.push(line));
   const firstLine = new Promise((resolve) => {
@@ -192,7 +192,9 @@ const backTo = (read, wanted, ms) => pollUntil(read, (value) => value === wanted
  * `release()` closes the holder's stdin, which is how it leaves (nothing signals it).
  */
 function holdConnection(socket) {
-  const holder = spawn('wsl.exe', ['-e', 'python3', HOLD, socket], { stdio: ['pipe', 'pipe', 'inherit'] });
+  // The socket reaches the holder through its environment, exported by wslSteps.sh; the holder accepts only a
+  // socket inside a run directory of these harnesses.
+  const holder = spawn(WSL_EXE, stepArgv({ CREDS_ITEST_SOCKET: socket }, 'exec', ['python3', HOLD]), { stdio: ['pipe', 'pipe', 'inherit'] });
   const held = new Promise((resolve) => {
     readline.createInterface({ input: holder.stdout }).once('line', resolve);
     holder.on('exit', () => resolve(''));

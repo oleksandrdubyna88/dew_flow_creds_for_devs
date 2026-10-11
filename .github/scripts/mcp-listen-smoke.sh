@@ -37,8 +37,8 @@ mkdir -p "$dir"
 out="$dir/stdout.jsonl"
 stamp="$dir/stdin-closed"
 
-test -x "$binary" || { echo "not an executable: $binary"; exit 1; }
-test -f "$fixture" || { echo "no fixture at $fixture"; exit 1; }
+[[ -x "$binary" ]] || { echo "not an executable: $binary"; exit 1; }
+[[ -f "$fixture" ]] || { echo "no fixture at $fixture"; exit 1; }
 
 now() { perl -MTime::HiRes=time -e 'printf "%.3f\n", time'; }
 # One grep, one line: the id and the tools together — never two greps in a pipe, where a `-q` that closes early
@@ -70,18 +70,18 @@ code=0
 exited="$(now)"
 
 read -r verdict closed < "$stamp" || { echo "the client left no record of its end-of-stream"; exit 1; }
-if [ "$verdict" != answered ]; then
+if [[ "$verdict" != answered ]]; then
   echo "the tools/list reply did not arrive within 10 s of the session — stdin was closed without it; stdout was:"
   cat "$out"
   exit 1
 fi
 elapsed="$(perl -e 'printf "%.3f", $ARGV[1] - $ARGV[0]' "$closed" "$exited")"
 echo "tools/list answered while stdin was open; the server exited with code $code ${elapsed} s after the client's end-of-stream"
-test "$code" -eq 0 || { echo "expected exit code 0 after the client's end-of-stream"; exit 1; }
+[[ "$code" -eq 0 ]] || { echo "expected exit code 0 after the client's end-of-stream"; exit 1; }
 perl -e 'exit(($ARGV[0] <= 10) ? 0 : 1)' "$elapsed" || { echo "the server took more than 10 s (${elapsed} s) to exit after end-of-stream"; exit 1; }
 
 log="$(find "$dir" -name 'creds-mcp-*.log' | head -1)"
-test -n "$log" || { echo "no log file under $dir"; exit 1; }
+[[ -n "$log" ]] || { echo "no log file under $dir"; exit 1; }
 cat "$log"
 grep -q 'started: serve' "$log" || { echo "the log has no start line"; exit 1; }
 grep -Eq 'parent [1-9][0-9]*' "$log" || { echo "the log names no parent pid"; exit 1; }

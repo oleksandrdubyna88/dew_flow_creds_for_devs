@@ -25,7 +25,7 @@ cat > "$fake" <<'EOF'
 n=0
 while IFS= read -r line; do
   n=$((n + 1))
-  if [ "$n" -eq 4 ] && [ "${FAKE_ANSWERS:-yes}" = yes ]; then
+  if [[ "$n" -eq 4 && "${FAKE_ANSWERS:-yes}" == yes ]]; then
     echo '{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}'
   fi
 done
@@ -39,7 +39,7 @@ chmod +x "$fake"
 expect() {
   local code=0
   FAKE_DELAY="$2" FAKE_ANSWERS="$3" bash "$smoke" "$fake" "$work" > "$work/run.log" 2>&1 || code=$?
-  if [ "$code" -eq "$4" ]; then
+  if [[ "$code" -eq "$4" ]]; then
     echo "ok   $1 (the smoke exited $code)"
   else
     echo "FAIL $1 — expected the smoke to exit $4, it exited $code; its output:"
@@ -53,7 +53,7 @@ expect 'a server that ends 10.5 s after end-of-stream fails the 10 s bound' 10.5
 expect 'a server that never answers tools/list fails' 0 no 1
 
 rm -rf "$work"
-if [ "$failures" -eq 0 ]; then
+if [[ "$failures" -eq 0 ]]; then
   echo "all smoke self-test checks passed"
 else
   echo "$failures smoke self-test check(s) failed"
