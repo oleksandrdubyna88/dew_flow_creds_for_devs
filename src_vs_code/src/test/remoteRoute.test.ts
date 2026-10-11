@@ -100,10 +100,10 @@ test('a stored key with the agent serving it and the relay up goes through the s
 });
 
 test('the socket is carried verbatim — it is read from the relay, never recomposed', () => {
-  const odd: RelayReadiness = { enabled: true, running: true, socket: '/tmp/creds-agent-jinx.sock' };
+  const odd: RelayReadiness = { enabled: true, running: true, socket: '/tmp/creds-agent-dev.sock' };
   assert.deepEqual(remoteRoute(WSL, 'storedKey', true, odd), {
     kind: 'agent',
-    socketPath: '/tmp/creds-agent-jinx.sock',
+    socketPath: '/tmp/creds-agent-dev.sock',
   });
 });
 
