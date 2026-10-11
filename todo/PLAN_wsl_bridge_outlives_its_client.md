@@ -828,6 +828,10 @@ behaviour.
   script, `node:` prefixes, `String.raw` where a template can end without a backslash. And the harnesses' own
   `dotnet build` inside the distribution runs as `nice -n 19 dotnet build -m:4 --disable-build-servers`
   (common/local-cpu-budget.md, #219's open tail — these harnesses only ever run on a developer's machine).
+- **The checkpoint round's three** (§14): the build inputs are every root MSBuild file that exists
+  (`Directory.Build.targets` included, against the day it appears); a stop that is refused is a failure the sweep
+  prints, on both sides, where a pid that is simply gone is not; the build verb returns its whole output so a
+  failed build is diagnosed from its first error.
 - **E5.S3's tail is open by design, not forgotten:** the upstream issue csharp-sdk#1914 was still open with no
   comments on 2026-10-11; the owner's WSL MCP refresh (§3.1.7) and the one-day count (§13's first line) need the
   released build, so they follow the release; the promotion follows them.
@@ -1595,3 +1599,18 @@ code: the `await` inside the polling loops (S9382 — polling is sequential by d
 pipe-name concatenation (S7780 — a raw template cannot end in a backslash, the comment there). The CI legs: the
 new `windows-latest` leg green on its first report (so it may become a required check in a later change), the
 smoke's self-test and the built-binary smoke green on all three operating systems.
+
+**Checkpoint round (`again`, 2026-10-11, after the rebase onto #219) — `proceed`**, gating 3 against threshold 5,
+**4 of 4 reviewers answered** (codex's four roles).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | `wsl-mcp-client.cjs`'s reply tracker mutates its `Set` (`waiting.delete`) | **rejected** — the immutability rule names immutable DATA and keeps stateful holders mutable, as this gate held in E3's final round (finding 0), E4.S1's rounds 2–3 and E4.S4's finding 2; `waiting` is one function's live bookkeeping, handed to nothing |
+| 1 | `module_tests.md`'s catalogue rows still said 40 and 36 checks against the record's 42 and 40 | **accepted** — the rows carry the final harness's counts with the first version's beside them |
+| 2 | the Linux build's hash omits a `Directory.Build.targets` that may appear later, so a stale build could be reused | **accepted** — `ROOT_BUILD_FILES` names every root file MSBuild reads, `Directory.Build.targets` included, and the inputs are the ones that exist: the day one appears it enters the hash |
+| 3 | the Windows stop swallowed a refused kill and could report a clean sweep over a live process | **accepted** — RED (*a stop of pid 4, System: "stop answered [] — no error raised"*) → the stop script says each refusal on stderr and exits 1, `stop()` throws, the sweep prints it → GREEN (*"not every creds.exe could be stopped: pid 4 could not be stopped: You cannot call a method on a null-valued expression"* — System has no readable main module); a pid that is simply gone still answers `[]` without an error, by design; the Linux `stop` reports a refused pidfd or signal the same way |
+| 4 | the build's `tail -5` hid a failed build's first errors | **accepted** — the verb returns the whole output, both streams; the harness prints it only when no executable came out |
+
+Operator commands applied, as in round 1: autonomous (RED → GREEN for finding 3; the docs with every change —
+this table, §10, `module_tests.md`; every suite run; the PR end to end); consultants before the person (no
+question needed one).

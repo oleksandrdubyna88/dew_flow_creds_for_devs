@@ -69,17 +69,23 @@ const LIST_WINDOWS = [
   '  ForEach-Object { $_.ProcessId }',
 ].join('\n');
 
+// A pid that is already gone is not a failure (the process left on its own); anything else that stops the stop —
+// a path that could not be read, a kill refused, a process still there after the kill — is said on stderr and
+// makes the script exit 1, so the sweep reports it instead of a clean run (checkpoint round, finding 3).
 const STOP_WINDOWS = [
   DIR_LINE,
+  '$failed = 0',
   "foreach ($id in $env:CREDS_ITEST_PIDS.Split(',')) {",
   '  try { $p = [System.Diagnostics.Process]::GetProcessById([int]$id) } catch { continue }',
   '  try {',
   '    $null = $p.Handle',
   '    if ($p.MainModule.FileName.StartsWith($dir, [StringComparison]::OrdinalIgnoreCase)) {',
-  '      $p.Kill(); $null = $p.WaitForExit(5000); "$id"',
+  '      $p.Kill()',
+  '      if ($p.WaitForExit(5000)) { "$id" } else { $failed += 1; [Console]::Error.WriteLine("pid $id is still running 5 s after the kill") }',
   '    }',
-  '  } catch { } finally { $p.Dispose() }',
+  '  } catch { $failed += 1; [Console]::Error.WriteLine("pid $id could not be stopped: $($_.Exception.Message)") } finally { $p.Dispose() }',
   '}',
+  'exit $(if ($failed -gt 0) { 1 } else { 0 })',
 ].join('\n');
 
 /** The Windows pids of `image` whose executable lies under `exePath`. */
@@ -131,8 +137,13 @@ function watch(list, stop, what) {
  * 5 s"; `sweep()` stops each survivor by pid through a held handle after re-reading its path.</p>
  */
 function watchWindowsPids(image, exePath, what = image) {
-  const stop = async (pids) =>
-    pidsIn((await ps(STOP_WINDOWS, { CREDS_ITEST_DIR: exePath, CREDS_ITEST_PIDS: pids.join(',') })).stdout);
+  const stop = async (pids) => {
+    const stopped = await ps(STOP_WINDOWS, { CREDS_ITEST_DIR: exePath, CREDS_ITEST_PIDS: pids.join(',') });
+    if (stopped.code !== 0) {
+      throw new Error(`not every ${what} could be stopped: ${stopped.stderr.trim()}`);
+    }
+    return pidsIn(stopped.stdout);
+  };
   return watch(() => windowsPids(image, exePath), stop, what);
 }
 
@@ -144,7 +155,13 @@ function watchWindowsPids(image, exePath, what = image) {
  */
 function watchLinuxPids(linuxDir, what) {
   const list = async () => new Set(pidsIn((await wslExec(['python3', WSL_PROCS, 'list', linuxDir])).stdout));
-  const stop = async (pids) => pidsIn((await wslExec(['python3', WSL_PROCS, 'stop', linuxDir, ...pids])).stdout);
+  const stop = async (pids) => {
+    const stopped = await wslExec(['python3', WSL_PROCS, 'stop', linuxDir, ...pids]);
+    if (stopped.code !== 0) {
+      throw new Error(`not every ${what} could be stopped: ${stopped.stderr.trim()}`);
+    }
+    return pidsIn(stopped.stdout);
+  };
   const fdCount = async (pid) => Number.parseInt((await wslExec(['python3', WSL_PROCS, 'fds', linuxDir, String(pid)])).stdout, 10);
   return { ...watch(list, stop, what), fdCount };
 }

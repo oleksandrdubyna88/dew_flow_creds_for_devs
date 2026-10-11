@@ -42,7 +42,9 @@ case "$verb" in
   # identical either way — only the packaging differs. No build servers: a compiler server or an MSBuild node
   # left running would be a process of this run that no watch can see (its executable is the SDK's). Lowered
   # (`nice -n 19`, at most 4 MSBuild nodes — common/local-cpu-budget.md): these harnesses only ever run on a
-  # developer's machine, where a build must not starve the editor; a hosted runner has no distribution.
+  # developer's machine, where a build must not starve the editor; a hosted runner has no distribution. The
+  # whole output goes back, both streams: the harness prints it only when no executable came out, and a build
+  # that failed is diagnosed from its first error, not its last five lines (checkpoint round, finding 4).
   build)
     build="$1"
     repo="$2"
@@ -53,7 +55,7 @@ case "$verb" in
       cp "$repo/$file" "$build/$file"
     done
     cd "$build/$project/src"
-    nice -n 19 dotnet build -c Debug -p:PublishAot=false -m:4 --disable-build-servers 2>&1 | tail -5
+    nice -n 19 dotnet build -c Debug -p:PublishAot=false -m:4 --disable-build-servers 2>&1
     ;;
   # copy-build <output> <target>: a build output into this run's own directory.
   copy-build) mkdir -p "$2" && cp -r "$1/." "$2/" ;;

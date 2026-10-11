@@ -53,10 +53,16 @@ def listed(directory):
 
 
 def stop(directory, pids):
+    """A pid already gone is not a failure; a refusal is said on stderr and the verb exits 1, so the sweep reports it."""
+    failed = 0
     for pid in pids:
         try:
             handle = os.pidfd_open(pid)
-        except (ProcessLookupError, PermissionError):
+        except ProcessLookupError:
+            continue
+        except PermissionError as error:
+            failed += 1
+            print(f"pid {pid} could not be opened: {error}", file=sys.stderr)
             continue
         try:
             if executable(pid).startswith(directory):
@@ -64,8 +70,13 @@ def stop(directory, pids):
                 print(pid)
         except ProcessLookupError:
             pass
+        except PermissionError as error:
+            failed += 1
+            print(f"pid {pid} could not be signalled: {error}", file=sys.stderr)
         finally:
             os.close(handle)
+    if failed:
+        sys.exit(1)
 
 
 def fds(directory, pid):

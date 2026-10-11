@@ -115,19 +115,27 @@ const isSource = (relative) =>
   (relative.endsWith('.cs') || relative.endsWith('.csproj')) && !/^(bin|obj)[\\/]/.test(relative);
 
 /**
- * The repo-relative inputs of one Linux build: the projects' sources (recursively, so a future subfolder changes
- * the hash rather than being silently left out) plus the shared build files — `Directory.Build.rsp` among them,
- * which is what switches MSBuild node reuse off, and `global.json`, which pins the SDK (own review of E5).
+ * The root files MSBuild reads for any project here — every one that exists. `Directory.Build.targets` is not in
+ * the repository today; it is in this list so that the day it appears it enters the hash and no stale build is
+ * reused (checkpoint round, finding 2). `Directory.Build.rsp` is what switches MSBuild node reuse off,
+ * `global.json` pins the SDK (own review of E5).
+ */
+const ROOT_BUILD_FILES = [
+  'Directory.Build.props',
+  'Directory.Build.targets',
+  'Directory.Build.rsp',
+  'Directory.Packages.props',
+  'global.json',
+  'nuget.config',
+  'contract/broker-v1.json',
+];
+
+/**
+ * The repo-relative inputs of one Linux build: the root build files that exist plus the projects' sources
+ * (recursively, so a future subfolder changes the hash rather than being silently left out).
  */
 function buildInputs(projects) {
-  const files = [
-    'Directory.Build.props',
-    'Directory.Build.rsp',
-    'Directory.Packages.props',
-    'global.json',
-    'nuget.config',
-    'contract/broker-v1.json',
-  ];
+  const files = ROOT_BUILD_FILES.filter((file) => fs.existsSync(path.join(REPO, file)));
   for (const project of projects) {
     const dir = path.join(REPO, project, 'src');
     for (const name of fs.readdirSync(dir, { recursive: true }).map(String).sort()) {
