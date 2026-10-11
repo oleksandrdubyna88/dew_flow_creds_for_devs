@@ -347,7 +347,7 @@ holding a fake `.claude/sessions/<pid>.json` and a transcript with a custom titl
 RECORDS the modal's text. Asserted: the modal contains `session "<title>" (98bf9f23)`, and the audit
 line for the same call does NOT contain the title. **Windows skips T-I1 with its reason printed**:
 `Environment.GetFolderPath(UserProfile)` there comes from the profile registry, not from an
-environment variable (measured 2026-09-24: `USERPROFILE=C:\fakehome` still answers `C:\Users\strug`),
+environment variable (measured 2026-09-24: `USERPROFILE=C:\fakehome` still answers `C:\Users\<you>`),
 so the fixture cannot be substituted without a production knob; CI runs this harness on Linux, where
 `HOME` governs. `research/module_tests.md` names the new check.
 

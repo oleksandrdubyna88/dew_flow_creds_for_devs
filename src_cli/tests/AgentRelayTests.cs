@@ -23,15 +23,15 @@ public class AgentRelayTests
     public void TheRuntimeDirectoryIsPreferredWhenTheDistributionProvidesOne()
     {
         // Per-user, already 0700, and cleaned up on logout — everything /tmp is not.
-        AgentRelay.DefaultSocketPath("/run/user/1000", "jinx")
+        AgentRelay.DefaultSocketPath("/run/user/1000", "dev")
             .Should().Be(Path.Combine("/run/user/1000", "creds-agent.sock"));
     }
 
     [Fact]
     public void WithoutOneTheUserIsInTheNameSoTwoAccountsCannotCollide()
     {
-        AgentRelay.DefaultSocketPath(null, "jinx").Should().Be("/tmp/creds-agent-jinx.sock");
-        AgentRelay.DefaultSocketPath("   ", "jinx").Should().Be("/tmp/creds-agent-jinx.sock");
+        AgentRelay.DefaultSocketPath(null, "dev").Should().Be("/tmp/creds-agent-dev.sock");
+        AgentRelay.DefaultSocketPath("   ", "dev").Should().Be("/tmp/creds-agent-dev.sock");
     }
 
     [Theory]

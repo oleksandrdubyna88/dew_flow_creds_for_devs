@@ -57,7 +57,7 @@ Continue/Stop question, so a miss degrades rather than breaks).
 Issue #103, reported from a local Windows window whose **default terminal profile is WSL bash**:
 
 ```text
-jinx@jinx:~/git/scoreMeter$ Start-Process -Verb RunAs -FilePath 'C:\Program Files\OpenVPN\bin\openvpn.exe' -ArgumentList '--config "c:\Users\…\keys\36848\org_meter_stage.ovpn"'
+you@host:~/git/project$ Start-Process -Verb RunAs -FilePath 'C:\Program Files\OpenVPN\bin\openvpn.exe' -ArgumentList '--config "c:\Users\…\keys\36848\<profile>.ovpn"'
 Start-Process: command not found
 ```
 

@@ -96,7 +96,7 @@ Read out of this very process's environment: `CLAUDE_CODE_SESSION_ID=98bf9f23-81
 `CLAUDECODE=1`, plus `CLAUDE_CODE_EXECPATH`.
 
 **M2 — a per-pid session registry exists at `~/.claude/sessions/<CLAUDE_PID>.json`.**
-`C:\Users\strug\.claude\sessions\29960.json` holds, in one object:
+`C:\Users\<you>\.claude\sessions\29960.json` holds, in one object:
 `{"pid":29960,"sessionId":"98bf9f23-…","cwd":"d:\\rsd\\ClaudeRag","name":"clauderag-d6",
 "nameSource":"derived","kind":"interactive","entrypoint":"claude-vscode","version":"2.1.268", …}`.
 **A `.key` file sits beside it** — `29960.4c14…beca.key`, 108 bytes; eighteen files in that
@@ -109,7 +109,7 @@ directory** (§5.1).
 creds-mcp.exe (3940) → claude.exe (43532) → Code.exe (47052) → Code.exe (34564)
 ```
 
-and `~/.claude/sessions/43532.json` exists, naming that session `strug-3c`. **There is no terminal
+and `~/.claude/sessions/43532.json` exists, naming that session `<you>-3c`. **There is no terminal
 anywhere in that chain**, so pid→terminal-name resolution is not a route on Windows for a Claude
 Code VS Code-extension session.
 

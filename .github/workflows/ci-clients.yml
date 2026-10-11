@@ -73,6 +73,10 @@ jobs:
       # is itself checked by every pull request, not first discovered broken on a tag.
       - name: Self-test the release smoke script
         run: .github/scripts/mcp-listen-smoke.test.sh
+      # The same for the version smoke (research/PLAN_release_binaries_carry_their_version.md): stand-in binaries
+      # that say the wrong version, a longer one, CRLF, nothing at all, or never end.
+      - name: Self-test the version smoke script
+        run: .github/scripts/version-smoke.test.sh
       # The three test projects are built by name: the solution file does not carry all of them, and
       # a project the solution never built is a runner executable that does not exist — which is how
       # this job's first run failed on `No such file or directory`.
@@ -102,3 +106,15 @@ jobs:
         run: ./src_broker_client/tests/bin/Release/net10.0/CredsBroker.Tests${{ runner.os == 'Windows' && '.exe' || '' }}
       - name: Test the shared logging
         run: ./src_service_defaults/tests/bin/Release/net10.0/CredsForDevs.ServiceDefaults.Tests${{ runner.os == 'Windows' && '.exe' || '' }}
+      # The stamp, end to end, on every pull request and all three operating systems: both binaries built once
+      # more with -p:Version — the property release.yml passes — into their OWN folder, and the version each one
+      # reports must be exactly that. Until 2026-10-11 the release passed no version and every binary said 1.0.0;
+      # a stamp that stopped reaching the binary now fails here, not first on a tag. LAST in the job, so the
+      # unstamped builds the tests above ran against are never rebuilt under them.
+      - name: Smoke the version stamp on both binaries
+        run: |
+          dotnet build src_mcp/src/CredsMcp.csproj -c Release -p:Version=0.0.1 -o stamped/mcp
+          dotnet build src_cli/src/CredsCli.csproj -c Release -p:Version=0.0.1 -o stamped/cli
+          .github/scripts/version-smoke.sh mcp ./stamped/mcp/creds-mcp${{ runner.os == 'Windows' && '.exe' || '' }} 0.0.1
+          .github/scripts/version-smoke.sh cli ./stamped/cli/creds${{ runner.os == 'Windows' && '.exe' || '' }} 0.0.1
+          SMOKE_VERSION=0.0.1 .github/scripts/mcp-listen-smoke.sh ./stamped/mcp/creds-mcp${{ runner.os == 'Windows' && '.exe' || '' }}

@@ -44,6 +44,10 @@ internal static class AgentRelay
     internal const string AppName = "creds-relay";
 
     /// <summary>This binary's version, for the start line.</summary>
+    /// <remarks>The assembly version, which <c>release.yml</c> stamps from the <c>cli-v*</c> tag with
+    /// <c>-p:Version</c>; <c>.github/scripts/version-smoke.sh</c> fails the release when the <c>relay-pipe</c> log's
+    /// start line does not name exactly that tag. A build without the stamp says the SDK default <c>1.0.0</c> —
+    /// every release up to 0.4.0 did (research/PLAN_release_binaries_carry_their_version.md).</remarks>
     internal static string Version => typeof(AgentRelay).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
     /// <summary>

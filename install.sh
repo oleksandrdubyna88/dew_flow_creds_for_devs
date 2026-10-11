@@ -123,7 +123,7 @@ elif have sudo && sudo -n true 2>/dev/null; then
   sudo -n install -m 0755 "$work/$name/creds" "$PREFIX/creds"
 else
   die "$PREFIX is not writable, and sudo is unavailable or would need a password with no terminal to ask at.
-  Re-run as root, or set CREDS_PREFIX to a directory you own (e.g. CREDS_PREFIX=/c/Users/strug/.local/bin)."
+  Re-run as root, or set CREDS_PREFIX to a directory you own (e.g. CREDS_PREFIX=\"\$HOME/.local/bin\")."
 fi
 
 echo "creds-install: installed $PREFIX/creds"

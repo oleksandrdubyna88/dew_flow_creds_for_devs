@@ -19,7 +19,7 @@ namespace CredsBroker.Tests;
 /// </remarks>
 public sealed class CallerIdentityTests
 {
-    private const string Home = "/home/strug";
+    private const string Home = "/home/dev";
     private const string Session = "98bf9f23-81ff-4bba-beaf-1fd8269ddc97";
 
     private static Func<string, string?> Env(params (string Name, string? Value)[] pairs) =>
@@ -80,7 +80,7 @@ public sealed class CallerIdentityTests
         // The first draft said "every field", which would have turned a person's own `creds` call
         // in a plain terminal into "An agent". Their terminal reads "creds CLI · in ClaudeRag".
         var reader = new RecordingReader(GoodFile);
-        var record = CallerIdentity.Build("creds CLI", Env(("CLAUDE_PID", "29960")), reader.Read, Home, "/home/strug/ClaudeRag");
+        var record = CallerIdentity.Build("creds CLI", Env(("CLAUDE_PID", "29960")), reader.Read, Home, "/home/dev/ClaudeRag");
 
         record.Agent.Should().Be("creds CLI");
         record.Session.Should().BeEmpty();
@@ -193,17 +193,17 @@ public sealed class CallerIdentityTests
     public void Unknown_properties_in_the_file_are_ignored_the_way_the_entry_shape_ignores_them()
     {
         var record = CallerIdentity.Build("", Env(("CLAUDE_CODE_SESSION_ID", Session), ("CLAUDE_PID", "29960")),
-            _ => """{"name":"strug-3c","cwd":"/home/strug/work/dew_flow_creds_for_devs/","messagingSocketPath":"/tmp/x.sock","extra":{"a":1}}""",
+            _ => """{"name":"dev-3c","cwd":"/home/dev/work/dew_flow_creds_for_devs/","messagingSocketPath":"/tmp/x.sock","extra":{"a":1}}""",
             Home, "/x");
 
-        record.SessionName.Should().Be("strug-3c");
+        record.SessionName.Should().Be("dev-3c");
         record.Cwd.Should().Be("dew_flow_creds_for_devs", "a trailing separator does not make the basename empty");
     }
 
     [Theory]
     [InlineData(@"d:\rsd\ClaudeRag", "ClaudeRag")]
-    [InlineData("/home/strug/ClaudeRag", "ClaudeRag")]
-    [InlineData("/home/strug/ClaudeRag/", "ClaudeRag")]
+    [InlineData("/home/dev/ClaudeRag", "ClaudeRag")]
+    [InlineData("/home/dev/ClaudeRag/", "ClaudeRag")]
     [InlineData(@"C:\", "C:")]
     [InlineData("/", "")]
     [InlineData("", "")]
@@ -386,7 +386,7 @@ public sealed class CallerIdentityTests
             Env(("CODEX_SESSION_ID", "codex-1"), ("CLAUDE_PID", "29960")),
             reader.Read,
             Home,
-            "/home/strug/other-repo");
+            "/home/dev/other-repo");
 
         reader.Asked.Should().BeEmpty("the registry is Claude Code's, and this is not its session");
         record.SessionName.Should().BeEmpty();
