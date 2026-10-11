@@ -244,6 +244,22 @@ win-x64 AOT publish; RED on the pre-E2 binary (*exited with code 124 at 61s* —
 gained a `windows-latest` leg (bash, the `.exe` suffix), so the Windows half's process tests run on a pull request
 for the first time; it becomes a required check only after it has reported once.
 
+**The release binaries report their tag's version, and a smoke holds them to it (2026-10-11,
+[PLAN_release_binaries_carry_their_version.md](../todo/PLAN_release_binaries_carry_their_version.md)).** Until then
+`release.yml` published `creds` and `creds-mcp` without `-p:Version`, so every release said `1.0.0` — in
+`creds-mcp --version`, in both binaries' log start lines and in the MCP `ServerInfo.Version` — and the extension's
+*Check the WSL MCP install* could not tell an old install from a new one. Both publish steps now take the tag's
+version (`0.0.0` on a `workflow_dispatch` trial), and `.github/scripts/version-smoke.sh <mcp|cli> <binary> <X.Y.Z>`
+checks it exactly: the first line of `creds-mcp --version`, and — `creds` has no `--version` verb — the start line
+of the log `creds relay-pipe` writes with no agent announced. Literal comparisons (`0.10.10` never matches
+`0.10.1`), CRLF stripped, a 60 s guard on every run. `mcp-listen-smoke.sh` asserts the serve log's start line too
+when `SMOKE_VERSION` is set. Both run in the release legs; `ci-clients.yml` runs the new self-test
+(`version-smoke.test.sh`, seventeen cases, each asserting the REASON a refusal gives) and builds both binaries once
+more with `-p:Version=0.0.1` on all three operating systems. RED against a local win-x64 publish made the way the
+release made it — *--version printed 'creds-mcp 1.0.0', expected exactly 'creds-mcp 0.10.1'*, *the log's start
+line does not name version 0.4.1* (`started: relay-pipe, version 1.0.0, …`), *the log's start line does not name
+version 0.10.1* — GREEN with the stamp, RED again on a fresh publish without it.
+
 **Still not proved by anything automated:** the one-day count on the owner's machine (the plan's first DoD line —
 `creds-mcp.exe` count equals live clients after a day of normal use), which needs the released build installed;
 and the stale-install leg of E4.S2 inside `creds-mcp-wsl-itest.cjs`.
