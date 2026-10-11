@@ -252,3 +252,10 @@ zero after — on the built `creds` for the config read, an alias call and `cred
   sweep's own liveness check.
 - **Own review** (one reviewer): no finding at high confidence; its low-confidence note — the first timed probe also
   paid the JIT and handler start-up — is taken: the timing test probes one closed port untimed first.
+- **Final code round** (`again`, 4 of 4 reviewers, `proceed`, 2 minor findings, both rejected with reasons):
+  (a) a replacement written between `stillAnnounced` and the unlink — not reachable: the two calls run back to back in
+  one synchronous turn, a window announces only seconds after its process starts, and a process that already existed
+  at the liveness check would have kept the file; closing those microseconds would need a lock or a per-generation
+  file name, a change to the `window-<pid>.json` contract the C# readers and the itests share. CodeRabbit raised the
+  same point on the pull request and got the same answer. (b) "skip the timing test where the option is unsupported" —
+  rejected: on such a Windows the product really is slow, and a skipped guard would turn that symptom green.
