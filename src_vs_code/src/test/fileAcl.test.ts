@@ -15,7 +15,7 @@ import { restrictToOwnerArgv } from '../fileAcl';
 
 // eslint-disable-next-line complexity
 test('windows gets an icacls argv that breaks inheritance and grants only the owner', () => {
-  const argv = restrictToOwnerArgv('C:\keys\id.key', 'win32', 'HOST\dev');
+  const argv = restrictToOwnerArgv('C:\keys\id.key', 'win32', 'HOST\\dev');
 
   assert.equal(argv?.[0], 'icacls');
   assert.equal(argv?.includes('C:\keys\id.key'), true);
@@ -23,7 +23,7 @@ test('windows gets an icacls argv that breaks inheritance and grants only the ow
   // the grant adds nothing.
   assert.equal(argv?.includes('/inheritance:r'), true);
   assert.equal(argv?.some((a) => a.startsWith('/grant:r') || a === '/grant:r'), true);
-  assert.equal(argv?.some((a) => a.includes('HOST\dev')), true);
+  assert.equal(argv?.some((a) => a.includes('HOST\\dev')), true);
 });
 
 test('the owner is taken from the environment, never guessed', () => {
