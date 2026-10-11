@@ -1210,7 +1210,8 @@ every other session lagged. How this repository follows it, entry point by entry
   0 failed, 379 s on a machine other sessions were also loading.
 - **The pin:** `src/test/localCpuBudget.test.ts` asserts that the `test` script preloads the lowering module
   and starts `scripts/run-tests.mjs` with no exact `--test-concurrency`; the runner's cap (1, 1, 3, 8, 8 for
-  1, 2, 4, 9 and 24 threads) and its exit codes (the child's own, 128 + the signal number, 1 when the spawn
+  1, 2, 4, 9 and 24 threads), its `CAP` equal to the pin's `MAX_WORKERS` (the same bound the xUnit case uses,
+  so one budget governs both), and its exit codes (the child's own, 128 + the signal number, 1 when the spawn
   failed); the preload on every `itest:*` script, the preload's one `MOUNT` line and where it resolves, the
   preload against the template (skipped, saying so, where the mount is absent), and the root
   `xunit.runner.json` with the `Directory.Build.props` item that copies it to every test output, skipped

@@ -42,6 +42,7 @@ const lastCommand = (script: string): string => script.split('&&').at(-1)?.trim(
 
 /** The runner script `npm test` starts, loaded as the ES module it is. */
 interface Runner {
+  CAP: number;
   testConcurrency(threads?: number): number;
   testArgs(extra?: string[], threads?: number): string[];
   runTests(
@@ -63,7 +64,10 @@ test('npm test runs the suite through the runner script, after the lowering prel
 });
 
 test('the runner caps node --test at min(8, CPUs - 1) — node\'s own default, never a raise', async () => {
-  const { testConcurrency, testArgs } = await runner();
+  const { CAP, testConcurrency, testArgs } = await runner();
+  // One budget for both runners: the xUnit case below bounds maxParallelThreads by the same MAX_WORKERS, so
+  // lowering the family cap means changing MAX_WORKERS, and that turns both cases red until both limits follow.
+  assert.equal(CAP, MAX_WORKERS, `the runner's CAP (${CAP}) and this pin's MAX_WORKERS (${MAX_WORKERS}) must be the same budget`);
   // 4 threads is a hosted CI runner: node's own default there is 3, and an exact 8 would raise it.
   assert.deepEqual([1, 2, 4, 9, 24].map(threads => testConcurrency(threads)), [1, 1, 3, 8, 8]);
   assert.ok(isCap(testConcurrency()), `on this machine the runner asks for ${testConcurrency()} workers`);

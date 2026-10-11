@@ -159,6 +159,21 @@ first version above gave both 8. Two changes:
 Already right, not changed: `deploy/restore-archive-itest.sh` uses `nice 10` under Git Bash, and every
 documented lowered build carries `--disable-build-servers`.
 
-`localCpuBudget.test.ts` was watched RED first (4 failures: the exact 8 in the script, no runner for the two
-runner cases, no CI condition), then GREEN (7 passed with the mount). Break-it on the product code: `threads`
-for `threads - 1` in the runner turned the cap case red; the `Condition` removed turned the xUnit case red.
+`localCpuBudget.test.ts` was watched RED first, 4 failures, each naming the real symptom:
+
+- the script: `the test script must preload the lowering module and start scripts/run-tests.mjs: node --import
+  ./scripts/lower-priority.mjs --test --test-concurrency=8 "out/test/*.test.js"`;
+- the two runner cases: `ERR_MODULE_NOT_FOUND: Cannot find module '…\src_vs_code\scripts\run-tests.mjs'`;
+- the xUnit case: `the copy of xunit.runner.json must be skipped when CI=true, so CI keeps its own thread count`.
+
+Then GREEN: 7 passed with the mount. Break-it on the product code, each restored afterwards:
+
+- `threads` for `threads - 1` in the runner turned the cap case red.
+- The `Condition` removed turned the xUnit case red.
+- The runner's `CAP` set to 6 turned the cap case red. The pin ties the runner's `CAP` and the xUnit
+  `maxParallelThreads` bound to one `MAX_WORKERS`, so lowering the budget needs both limits to follow (a code-round
+  finding).
+
+A timeout on the runner's `spawnSync` was proposed in the code round and not taken. The previous script had none
+either, CI jobs have their own timeouts, and a fixed limit on a suite that takes 380-400 s on a loaded machine would
+fail healthy runs.
