@@ -249,10 +249,10 @@ test('their sockets are kept apart — one path per distribution', () => {
   manager.start('creds', ['Ubuntu', 'Ubuntu-26.04']);
 
   started[0].say('export SSH_AUTH_SOCK=/run/user/1000/creds-agent.sock');
-  started[1].say('export SSH_AUTH_SOCK=/tmp/creds-agent-jinx.sock');
+  started[1].say('export SSH_AUTH_SOCK=/tmp/creds-agent-dev.sock');
 
   assert.equal(manager.socketPathFor('Ubuntu'), '/run/user/1000/creds-agent.sock');
-  assert.equal(manager.socketPathFor('Ubuntu-26.04'), '/tmp/creds-agent-jinx.sock');
+  assert.equal(manager.socketPathFor('Ubuntu-26.04'), '/tmp/creds-agent-dev.sock');
   manager.dispose();
 });
 

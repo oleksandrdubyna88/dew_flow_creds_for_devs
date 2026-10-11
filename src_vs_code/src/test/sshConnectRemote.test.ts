@@ -24,7 +24,7 @@ import {
 //
 // Reported with a screenshot: Connect SSH works from a VS Code window on Windows and, from one
 // attached to WSL, posts
-//   ssh -i "c:\Users\strug\...\keys\23284\<guid>.key" ubuntu@10.120.39.139
+//   ssh -i "c:\Users\<you>\...\keys\23284\<guid>.key" ubuntu@10.120.39.139
 // into a bash shell, which answers "Identity file ... not accessible: No such file or directory".
 // Measured on that machine: translating the path is not a fix either — /mnt/c is DrvFs without
 // `metadata`, every file on it is 0777, `chmod 600` there is a silent no-op, and `ssh-keygen -y -f`
