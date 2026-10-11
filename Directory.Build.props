@@ -10,4 +10,11 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
+  <!-- Local test runs take at most 8 workers (.claude/rules/shared/common/local-cpu-budget.md).
+       ONE root xunit.runner.json, linked into every test project, so the five cannot drift apart.
+       The condition is read after every property, so IsTestProject set in a .csproj is seen. -->
+  <ItemGroup Condition="'$(IsTestProject)' == 'true'">
+    <None Include="$(MSBuildThisFileDirectory)xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

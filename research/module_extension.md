@@ -5068,11 +5068,11 @@ cd src_vs_code
 npm ci
 npm run typecheck          # tsc --noEmit
 npm run lint               # the four boundary rules (eslint.config.mjs); CI-enforced
-npm test                   # tsc && node --test "out/test/*.test.js"
+npm test                   # tsc && node --import ./scripts/lower-priority.mjs --test --test-concurrency=8 "out/test/*.test.js"
 npm run bundle             # tsc + esbuild out/{extension,agentCli}.js -> dist/ (what ships; F5 needs it)
 npm run package            # vsce package (runs vscode:prepublish = bundle)
 npm run icon               # regenerate media/icon.png
-node scripts/tree-perf-bench.cjs   # tree/storage/sync perf counters; BENCH_OUT=<dir> for another build
+node --import ./scripts/lower-priority.mjs scripts/tree-perf-bench.cjs   # tree/storage/sync perf counters, lowered; BENCH_OUT=<dir> for another build
 ```
 
 **726 tests** (2026-08-25), all `node:test`, ~13 s. Linting (audit A2): `eslint.config.mjs`

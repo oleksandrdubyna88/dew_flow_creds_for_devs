@@ -62,6 +62,9 @@ running with an empty key produces a wall of 401s that reads exactly like an aut
 ```bash
 npm install --save-dev httpyac@6.16.7            # once per machine
 
+# a local run goes below interactive work (.claude/rules/shared/common/local-cpu-budget.md)
+LP=.claude/rules/shared/tools/low-priority.mjs
+
 export VAULT_LOCAL_SIGNING_KEY="$(openssl rand -base64 48)"
 Auth__Local__SigningKey="$VAULT_LOCAL_SIGNING_KEY" \
 Vault__AllowedDomains=example.com \
@@ -69,9 +72,9 @@ Vault__CorpRecovery__OfficerEmails=officer@example.com,officer2@example.com,offi
 Vault__LoginKey__Kek="$(openssl rand -base64 32)" \
 Vault__DataDir=/tmp/vault-suite \
 Vault__PublishInstanceFile=false \
-  dotnet run --project src_minimalapi_server/src --urls http://127.0.0.1:5099 &
+  node $LP dotnet run --project src_minimalapi_server/src --urls http://127.0.0.1:5099 &
 
-node .claude/rules/shared/tools/http-run.mjs \
+node $LP node .claude/rules/shared/tools/http-run.mjs \
   --require-env VAULT_LOCAL_SIGNING_KEY --env local --target http://127.0.0.1:5099
 ```
 
