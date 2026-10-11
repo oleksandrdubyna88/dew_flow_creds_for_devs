@@ -54,7 +54,7 @@
     "watch": "tsc -w -p ./",
     "typecheck": "tsc -p ./ --noEmit",
     "lint": "eslint src",
-    "test": "npm run compile && node --import ./scripts/lower-priority.mjs --test --test-concurrency=8 \"out/test/*.test.js\"",
+    "test": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/run-tests.mjs \"out/test/*.test.js\"",
     "itest:server": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/server-transport-itest.cjs",
     "itest:agent": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/agent-broker-itest.cjs",
     "itest:ssh-agent": "npm run compile && node --import ./scripts/lower-priority.mjs scripts/ssh-agent-itest.cjs",

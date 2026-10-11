@@ -12,9 +12,11 @@
 
   <!-- Local test runs take at most 8 workers (.claude/rules/shared/common/local-cpu-budget.md).
        ONE root xunit.runner.json, linked into every test project, so the five cannot drift apart.
-       The condition is read after every property, so IsTestProject set in a .csproj is seen. -->
+       The condition is read after every property, so IsTestProject set in a .csproj is seen.
+       Not copied when CI=true: maxParallelThreads is EXACT, so 8 would raise a 4-vCPU runner above xUnit's
+       own default (one thread per CPU), and CI keeps its own count. -->
   <ItemGroup Condition="'$(IsTestProject)' == 'true'">
-    <None Include="$(MSBuildThisFileDirectory)xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(MSBuildThisFileDirectory)xunit.runner.json" Link="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" Condition="'$(CI)' != 'true'" />
   </ItemGroup>
 
 </Project>
