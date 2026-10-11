@@ -140,3 +140,59 @@ export function staleEndpoints(
 ): CliEndpoint[] {
   return endpoints.filter((e) => !isAlive(e.pid));
 }
+
+/**
+ * Whether a process with this pid still exists, asked the only way Node can: `process.kill(pid, 0)`.
+ *
+ * <p>Only `ESRCH` says gone. `EPERM` is a LIVE process this user may not signal — another session's,
+ * or a protected one (measured: one of 35 announced pids on the reporting machine, a reused pid) — and
+ * every other error is read as alive too, because a sweep that guessed "dead" would delete a live
+ * window's file. A pid that is not a positive integer is never proved gone.</p>
+ */
+export function pidIsAlive(
+  pid: number,
+  signal: (pid: number, signal: number) => unknown = (p, s) => process.kill(p, s),
+): boolean {
+  return !isProcessPid(pid) || answersSignalZero(pid, signal);
+}
+
+/** A pid a window could have: a positive integer. 0 and a negative pid name process GROUPS on POSIX. */
+function isProcessPid(pid: number): boolean {
+  return Number.isInteger(pid) && pid > 0;
+}
+
+/** Signal 0 checks existence and delivers nothing; only `ESRCH` means no such process. */
+function answersSignalZero(pid: number, signal: (pid: number, signal: number) => unknown): boolean {
+  try {
+    signal(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code !== 'ESRCH';
+  }
+}
+
+/**
+ * Remove the announcements of windows whose process is gone — never this window's own.
+ *
+ * <p>Called once at activation, by the `CredsAgentServer` constructor — the class that writes and removes
+ * this window's own announcement, built once in `activate`. It is the sweep `staleEndpoints` was written
+ * for and nothing ever ran (PLAN_stale_endpoint_files_slow_every_refusal.md): a window that crashed cannot
+ * delete its own file, and 35 of them had piled up on the reporting machine. The extension owns this
+ * folder, so the extension is the one that tidies it; no client deletes a file.</p>
+ *
+ * <p>Never throws: a folder that cannot be read is no folder to tidy. Returns the pids removed.</p>
+ */
+export function sweepStaleEndpoints(
+  storageDir: string,
+  ownPid: number,
+  isAlive: (pid: number) => boolean = (pid) => pidIsAlive(pid),
+): number[] {
+  const gone = staleEndpoints(
+    readEndpoints(storageDir).filter((e) => e.pid !== ownPid),
+    isAlive,
+  ).map((e) => e.pid);
+  for (const pid of gone) {
+    removeEndpoint(storageDir, pid);
+  }
+  return gone;
+}

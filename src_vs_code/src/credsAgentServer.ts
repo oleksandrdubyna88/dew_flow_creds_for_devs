@@ -36,7 +36,7 @@ import { AuditDoor, AuditEntry, formatAuditLine } from './agentAuditLog';
 import { BrokerAuditWriter } from './brokerAuditWriter';
 import { startLoopbackServer } from './loopbackServer';
 import { ExtraListener, socketPathFor, startExtraListener } from './brokerListeners';
-import { removeEndpoint, writeEndpoint } from './cliEndpoint';
+import { removeEndpoint, sweepStaleEndpoints, writeEndpoint } from './cliEndpoint';
 import { type Slot, TokenlessCeilings } from './aliasThrottle';
 import { startOnce } from './idempotentStart';
 import { refreshFrom, tableOrFail } from './brokerResponse';
@@ -112,6 +112,11 @@ export class CredsAgentServer implements vscode.Disposable {
     // by construction — every hook is optional, so `resolveAlais` reads as "switched off".
     this.hooks = checkedHooks(hooks);
     this.gate = new ConsentGate({ grants: this.grants, actions, onUserPresent, log: (entry) => this.log(entry) });
+    // Built once, in `activate`: the moment to retire the announcements of windows that crashed — only those whose
+    // process is provably gone, never this window's own or a live one (PLAN_stale_endpoint_files_slow_every_refusal.md).
+    if (this.hooks.storageDir !== undefined) {
+      sweepStaleEndpoints(this.hooks.storageDir, process.pid);
+    }
   }
 
   /** The Allow/Deny modal, and what an answer does — `brokerConsent.ts`. */

@@ -34,6 +34,9 @@
     <Compile Include="..\..\src_service_defaults\tests\Support\FakeChild.cs" Link="Support\FakeChild.cs" />
     <Compile Include="..\..\src_service_defaults\tests\Support\Posix.cs" Link="Support\Posix.cs" />
     <Compile Include="..\..\src_service_defaults\tests\Support\TestStreams.cs" Link="Support\TestStreams.cs" />
+    <!-- A crashed window's announcement and a port that counts connections - the same definition the CLI and the
+         broker-client tests use (PLAN_stale_endpoint_files_slow_every_refusal.md). -->
+    <Compile Include="..\..\src_service_defaults\tests\Support\StaleWindows.cs" Link="Support\StaleWindows.cs" />
   </ItemGroup>
 
   <ItemGroup>

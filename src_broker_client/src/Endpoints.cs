@@ -91,6 +91,57 @@ public static class Endpoints
         return found;
     }
 
+    /// <summary>The announcements a walk should probe: <see cref="Read"/>, minus the windows whose process is provably gone.</summary>
+    public static IReadOnlyList<Endpoint> ReadLive(string? directory) => Live(Read(directory));
+
+    /// <summary>
+    /// These announcements, minus the windows whose process is provably gone — in the same order. Never touches a file.
+    /// </summary>
+    /// <remarks>
+    /// <para>Measured on the reporting machine (todo/PLAN_stale_endpoint_files_slow_every_refusal.md §3): 33 of 35
+    /// announcements named a pid that no longer existed, and every walk dialled each one. A pid that is gone cannot be a
+    /// live window, so it costs no probe here. Every other announcement is left for the health probe to decide, exactly
+    /// as before — a REUSED pid (one of the 35 was) is still probed, and the probe still refuses a port that is not ours.</para>
+    /// <para>The pid namespace is the right one: the extension host that wrote the file and the walk that reads it run on
+    /// the same machine (under WSL the walk runs in the Windows binary). An announcement with no pid of its own — the
+    /// Remote-SSH socket the CLI builds, pid 0 — is never filtered.</para>
+    /// <para>Deleting the file is not this method's business: the folder is the extension's, and it sweeps it itself.</para>
+    /// </remarks>
+    public static IReadOnlyList<Endpoint> Live(IReadOnlyList<Endpoint> endpoints) =>
+        [.. endpoints.Where(endpoint => !PidIsGone(endpoint.Pid))];
+
+    /// <summary>
+    /// True only when no process with this pid exists any more. Anything short of that proof — running, access denied,
+    /// an unexpected error, no pid at all — is NOT gone.
+    /// </summary>
+    /// <remarks>
+    /// <c>Process.GetProcessById</c> throws <see cref="ArgumentException"/> for a pid that is not running; a process that
+    /// still has a handle open somewhere but has exited answers <c>HasExited</c>. A process this user may not open (the
+    /// System process, another session's window) throws something else, and stays — reading "cannot open" as "gone"
+    /// would skip a live window.
+    /// </remarks>
+    public static bool PidIsGone(int pid)
+    {
+        if (pid <= 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var process = System.Diagnostics.Process.GetProcessById(pid);
+            return process.HasExited;
+        }
+        catch (ArgumentException)
+        {
+            return true;
+        }
+        catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or NotSupportedException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     private static string[] SafeFiles(string directory)
     {
         try

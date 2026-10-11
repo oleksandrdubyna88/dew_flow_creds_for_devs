@@ -41,9 +41,19 @@ internal static class Windows
     /// Bodies rather than parsed objects: the caller knows what shape it asked for, and this
     /// stays the one place that knows how to find a window.
     /// </remarks>
-    internal static async Task<WindowRead> ReadAllAsync(BrokerContract contract, string route, CancellationToken ct = default)
+    internal static Task<WindowRead> ReadAllAsync(BrokerContract contract, string route, CancellationToken ct = default) =>
+        ReadAllInAsync(contract, Endpoints.DirectoryHere(), route, ct);
+
+    /// <summary>
+    /// <see cref="ReadAllAsync"/> over an announcement folder the caller names — the seam a test points at a folder of its own.
+    /// </summary>
+    /// <remarks>
+    /// Reads through <see cref="Endpoints.ReadLive"/>: a window whose process is provably gone is not dialled at all
+    /// (PLAN_stale_endpoint_files_slow_every_refusal.md §4.3). The probe still decides about every other one.
+    /// </remarks>
+    internal static async Task<WindowRead> ReadAllInAsync(BrokerContract contract, string? directory, string route, CancellationToken ct)
     {
-        var endpoints = Endpoints.Read(Endpoints.DirectoryHere());
+        var endpoints = Endpoints.ReadLive(directory);
         if (endpoints.Count == 0)
         {
             return new WindowRead([], 0);
@@ -107,9 +117,13 @@ internal static class Windows
     /// other refusal is a real answer from the window that owns the entry, and asking the next
     /// window after one would raise a second consent modal for a call already decided.</para>
     /// </remarks>
-    internal static async Task<BrokerReply?> PostAsync(BrokerContract contract, string route, string json, CancellationToken ct = default)
+    internal static Task<BrokerReply?> PostAsync(BrokerContract contract, string route, string json, CancellationToken ct = default) =>
+        PostInAsync(contract, Endpoints.DirectoryHere(), route, json, ct);
+
+    /// <summary><see cref="PostAsync"/> over a named announcement folder, through <see cref="Endpoints.ReadLive"/> like the read.</summary>
+    internal static async Task<BrokerReply?> PostInAsync(BrokerContract contract, string? directory, string route, string json, CancellationToken ct)
     {
-        var endpoints = Endpoints.Read(Endpoints.DirectoryHere());
+        var endpoints = Endpoints.ReadLive(directory);
         if (endpoints.Count == 0)
         {
             return null;

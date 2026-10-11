@@ -61,6 +61,12 @@ public sealed class BrokerClient(BrokerContract contract, HttpClient http) : IDi
                 return new System.Net.Sockets.NetworkStream(socket, ownsSocket: true);
             };
         }
+        else
+        {
+            // The loopback port: refused at once when nobody listens, instead of after Windows' SYN retries —
+            // the ~2 s per closed window that made a walk over stale announcements take a minute (LoopbackConnect).
+            handler.ConnectCallback = LoopbackConnect.ConnectAsync;
+        }
 
         return new BrokerClient(contract, new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan });
     }

@@ -197,7 +197,8 @@ internal static class Program
         var aliasRoute = "/v1/alias/" + wireVerb;
         var body = AliasBody(alias, wireVerb, payload, caller);
 
-        foreach (var endpoint in endpoints)
+        // A window whose process is provably gone is not dialled at all; the probe decides about the rest.
+        foreach (var endpoint in Endpoints.Live(endpoints))
         {
             if (!await client.IsOurBrokerAsync(endpoint.Port))
             {
@@ -314,7 +315,8 @@ internal static class Program
         using var client = BrokerClient.Create(contract);
         var route = contract.ConfigReadRoutePath();
 
-        foreach (var endpoint in endpoints)
+        // A window whose process is provably gone is not dialled at all; the probe decides about the rest.
+        foreach (var endpoint in Endpoints.Live(endpoints))
         {
             if (!await client.IsOurBrokerAsync(endpoint.Port))
             {
@@ -358,7 +360,8 @@ internal static class Program
         var seen = new SortedDictionary<string, string>(StringComparer.Ordinal);
         var reached = 0;
 
-        foreach (var endpoint in endpoints)
+        // A window whose process is provably gone is not dialled at all; the probe decides about the rest.
+        foreach (var endpoint in Endpoints.Live(endpoints))
         {
             if (!await client.IsOurBrokerAsync(endpoint.Port))
             {

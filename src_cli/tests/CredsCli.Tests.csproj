@@ -33,6 +33,7 @@
     <Compile Include="..\..\src_service_defaults\tests\Support\FakeChild.cs" Link="Support\FakeChild.cs" />
     <Compile Include="..\..\src_service_defaults\tests\Support\Posix.cs" Link="Support\Posix.cs" />
     <Compile Include="..\..\src_service_defaults\tests\Support\TestStreams.cs" Link="Support\TestStreams.cs" />
+    <Compile Include="..\..\src_service_defaults\tests\Support\StaleWindows.cs" Link="Support\StaleWindows.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -4444,6 +4444,25 @@ enumerate anyway — which is what makes it safe to write. A crashed window cann
 note, so staleness is normal and nothing trusts the file: the unauthenticated health probe
 decides, because the OS reissues freed port numbers.
 
+**Stale announcements cost nothing any more** (2026-10-11,
+[PLAN_stale_endpoint_files_slow_every_refusal.md](PLAN_stale_endpoint_files_slow_every_refusal.md)). Measured on
+the machine that reported it: 35 files, 34 of closed windows, and `creds config -` with an unknown key took 68 s to
+refuse — on Windows and through WSL alike — because a .NET connect to a closed loopback port on Windows waits out the
+SYN retransmissions, about 2 s per file (Node's libuv opts out and is refused in a millisecond). Three changes, each
+leaving the probe as the deciding check:
+
+- **The extension sweeps at activation** — `sweepStaleEndpoints(storageDir, process.pid)` in `activate`, beside
+  `purgeMaterializedKeys`. It removes only files whose pid is provably gone: `pidIsAlive` reads `process.kill(pid, 0)`,
+  and only `ESRCH` is death — `EPERM` (a live process of another session, or a reused pid held by a protected one,
+  which the measurement found) and every other error keep the file. Never its own file; never throws. Until the next
+  activation of any window, a file per crash still accumulates — harmless, because of the next two.
+- **The clients skip a provably-dead pid** — `Endpoints.Live` / `Endpoints.ReadLive` in `src_broker_client`: the
+  CLI's three walks and the MCP server's two dial nothing whose pid is gone (`Process.GetProcessById` throws). A client
+  never deletes a file: the folder is the extension's.
+- **A refused loopback connect is refused at once** — `LoopbackConnect.ConnectAsync`, the `ConnectCallback` every
+  port-transport `BrokerClient` uses, sets `SIO_TCP_INITIAL_RTO` with no SYN retransmissions on a Windows loopback
+  connect, as libuv does. A reused pid whose port is closed now costs milliseconds too.
+
 When `credSshManager.wslAgentRelay` is on, the same callback also raises **`WslRelayManager`**
 (`wslRelayManager.ts`) — `creds relay` inside the distribution, started with the agent and killed
 with it. The socket path is read from the relay's own first line rather than re-derived here, and
