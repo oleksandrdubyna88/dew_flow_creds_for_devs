@@ -13,6 +13,13 @@ name: ci · clients
 # character over that platform's 104-byte `sun_path`, and the release had already shipped the other
 # three products by then.
 #
+# **And on Windows, since 2026-10-11 (E5.S2 of todo/PLAN_wsl_bridge_outlives_its_client.md).** The
+# Windows half of the WSL bridge — the `creds-mcp.exe` and `creds.exe relay-pipe` that leaked — was
+# exercised by no pull request either: the process tests that prove the server ends with its client
+# (`ServerEndsWithClientTests`, `ParentWatchProcessTests` through `cmd /c`) ran on Windows only by
+# hand. Not a required check until it has reported once (`branch-protection.json`): a required check
+# that never reported blocks every pull request.
+#
 # The server, the vault and anything with a database stay on Linux alone — they are deployed to
 # Linux containers and a macOS run would assert nothing anybody ships.
 #
@@ -44,7 +51,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        # bash on every leg, so one `run:` line serves three operating systems; the executables are the
+        # same four, with the `.exe` the release workflow already spells.
+        shell: bash
     steps:
       # This job builds and RUNS code from a pull request, so the checkout must not leave the
       # token behind in the local git config where that code could reach it. `contents: read` bounds
@@ -73,10 +85,10 @@ jobs:
       # `dotnet test` has no VSTest host here — it would abort with a tooling error, not a test result.
       # The executable is named by <AssemblyName>, which for the broker client is CredsBroker.Tests.
       - name: Test the CLI
-        run: ./src_cli/tests/bin/Release/net10.0/CredsCli.Tests
+        run: ./src_cli/tests/bin/Release/net10.0/CredsCli.Tests${{ runner.os == 'Windows' && '.exe' || '' }}
       - name: Test the MCP server
-        run: ./src_mcp/tests/bin/Release/net10.0/CredsMcp.Tests
+        run: ./src_mcp/tests/bin/Release/net10.0/CredsMcp.Tests${{ runner.os == 'Windows' && '.exe' || '' }}
       - name: Test the broker client
-        run: ./src_broker_client/tests/bin/Release/net10.0/CredsBroker.Tests
+        run: ./src_broker_client/tests/bin/Release/net10.0/CredsBroker.Tests${{ runner.os == 'Windows' && '.exe' || '' }}
       - name: Test the shared logging
-        run: ./src_service_defaults/tests/bin/Release/net10.0/CredsForDevs.ServiceDefaults.Tests
+        run: ./src_service_defaults/tests/bin/Release/net10.0/CredsForDevs.ServiceDefaults.Tests${{ runner.os == 'Windows' && '.exe' || '' }}
