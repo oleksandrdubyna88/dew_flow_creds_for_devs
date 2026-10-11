@@ -5068,7 +5068,7 @@ cd src_vs_code
 npm ci
 npm run typecheck          # tsc --noEmit
 npm run lint               # the four boundary rules (eslint.config.mjs); CI-enforced
-npm test                   # tsc && node --import ./scripts/lower-priority.mjs --test --test-concurrency=8 "out/test/*.test.js"
+npm test                   # tsc && node --import ./scripts/lower-priority.mjs scripts/run-tests.mjs "out/test/*.test.js" (node --test, min(8, CPUs - 1) workers)
 npm run bundle             # tsc + esbuild out/{extension,agentCli}.js -> dist/ (what ships; F5 needs it)
 npm run package            # vsce package (runs vscode:prepublish = bundle)
 npm run icon               # regenerate media/icon.png

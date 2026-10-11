@@ -6,10 +6,10 @@
 > doc that shows a local build or test command. Deviations: see *Changes after the plan round* — the docs
 > scope widened to every README and module doc, `--disable-build-servers` on every documented build (a
 > warm normal-priority compiler server did the compiling otherwise), `nice 10` under Git Bash (19 is the
-> Windows Idle class there), and the pin requires an integer from 1 to 8. Open tail: the two WSL
-> harnesses' inner `dotnet build` (owed `nice -n 19 … -m:4 --disable-build-servers` once the branch
-> rewriting them lands), and feedback to the conventions repository that an exact 8 RAISES parallelism on
-> a runner with fewer than 9 cores.
+> Windows Idle class there), and the pin requires an integer from 1 to 8. The exact 8 that RAISED a small CI
+> runner was fixed the same day: see *Follow-up 2026-10-11: the caps never raise* (the conventions rule
+> was corrected in its #60). Open tail: the two WSL harnesses' inner `dotnet build` (owed
+> `nice -n 19 … -m:4 --disable-build-servers` once the branch rewriting them lands).
 >
 > Related docs: the shared rule [local-cpu-budget.md](../.claude/rules/shared/common/local-cpu-budget.md),
 > its rollout plan `todo/PLAN_local_cpu_budget.md` in the conventions repository (the creds_for_devs row),
@@ -140,3 +140,25 @@ The question consultant answered `none_available` (no row switched on). Decided 
 - [ ] No workflow changed; CI green, the SonarCloud gate included.
 - [ ] `module_tests.md`, `CLAUDE.md`, `README.md`, `http/README.md` state the lowered commands.
 - [ ] `plan-lifecycle.mjs` and `pin-check.mjs` clean; this plan promoted with its deviations.
+
+## Follow-up 2026-10-11: the caps never raise
+
+The conventions rule was corrected (dew_flow_conventions #60, `release` 03428e2; the pin bump here is #222):
+every worker-count switch is EXACT, so a bare 8 RAISES a runner whose own default is lower. `npm test` runs in
+CI (`ci-extension.yml`, `release.yml`) on 4-vCPU runners, where node's default is 3 and xUnit's is 4; the
+first version above gave both 8. Two changes:
+
+- `npm test` → `npm run compile && node --import ./scripts/lower-priority.mjs scripts/run-tests.mjs "out/test/*.test.js"`.
+  The new runner starts `node --test --test-concurrency=min(8, CPUs - 1)`, node's own default wherever that is
+  at most 8, and leaves with the child's code, 128 + the signal number, or 1 when the spawn failed. The preload
+  lowers the runner; the `node --test` child inherits the priority. The runner needs no mount, so CI runs it
+  (the preload lowers nothing there). Its shape follows the conventions repository's own `tools/run-tests.mjs`.
+- `Directory.Build.props`: the copy of the root `xunit.runner.json` carries `Condition="'$(CI)' != 'true'"`, so
+  a CI build does not copy it and xUnit keeps its own default there. Locally nothing changed.
+
+Already right, not changed: `deploy/restore-archive-itest.sh` uses `nice 10` under Git Bash, and every
+documented lowered build carries `--disable-build-servers`.
+
+`localCpuBudget.test.ts` was watched RED first (4 failures: the exact 8 in the script, no runner for the two
+runner cases, no CI condition), then GREEN (7 passed with the mount). Break-it on the product code: `threads`
+for `threads - 1` in the runner turned the cap case red; the `Condition` removed turned the xUnit case red.

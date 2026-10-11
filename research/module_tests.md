@@ -566,8 +566,9 @@ lane was never marked spent and a queued second call ran the action again. Every
 stub answers from `w.burned` now, which is what made the defect visible.
 ## What the unit suite is asserted ON (2026-09-11, audit finding #8)
 
-`npm test` is `node --import ./scripts/lower-priority.mjs --test --test-concurrency=8 out/test/*.test.js`
-(since 2026-10-11 — see *Local runs* below), and CI runs it in exactly one configuration:
+`npm test` is `node --import ./scripts/lower-priority.mjs scripts/run-tests.mjs out/test/*.test.js`, which starts
+`node --test --test-concurrency=min(8, CPUs - 1)` (since 2026-10-11 — see *Local runs* below), and CI runs it in
+exactly one configuration:
 **`ubuntu-latest`, Node 22** (`.github/workflows/ci-extension.yml`). There is no OS matrix and no
 Node matrix. That is a choice, not an oversight — but it has to be written down, because two tests
 were passing there **for the wrong reason**.
@@ -1181,9 +1182,9 @@ every other session lagged. How this repository follows it, entry point by entry
 
 | Entry point | Workers | Lowered by |
 |---|---|---|
-| `npm test` | `--test-concurrency=8` (node's default was 23 here) | `node --import ./scripts/lower-priority.mjs` |
+| `npm test` | `scripts/run-tests.mjs` starts `node --test --test-concurrency=min(8, CPUs - 1)`: node's own default capped at 8 (23 here before, 8 now; 3 on a 4-vCPU runner, as before) | `node --import ./scripts/lower-priority.mjs`; the `node --test` child inherits it |
 | `npm run itest:*`, `itest:all` | one process, harnesses one after another | the same preload; every binary a harness starts inherits it |
-| the five xUnit executables | 8 threads — ONE root `xunit.runner.json`, copied into each test project's output by `Directory.Build.props` | `node $LP <exe>`, one executable at a time |
+| the five xUnit executables | 8 threads — ONE root `xunit.runner.json`, copied into each test project's output by `Directory.Build.props`, except when `CI=true` | `node $LP <exe>`, one executable at a time |
 | `dotnet build` / `publish` named anywhere in these docs, prerequisites included | `-m:4` (`csharp/dotnet-build.md`) | `node $LP dotnet build … -m:4 --disable-build-servers` — see below |
 | `deploy/restore-archive-itest.sh` | one bash process | re-runs itself once under `nice` (19; 10 under Git Bash, where 19 is the Windows Idle class the rule forbids) |
 | the `.http` suite | httpyac, one request at a time | `node $LP node …/http-run.mjs` |
@@ -1207,17 +1208,21 @@ every other session lagged. How this repository follows it, entry point by entry
 - **Measured 2026-10-11, lowered, one after another:** ServiceDefaults 80 (6 s), CredsBroker 133 (3 s),
   CredsCli 142 (101 s), CredsMcp 154 (27 s), CredVaultServer 809 (89 s) — 0 failed; `npm test` 5,612 tests,
   0 failed, 379 s on a machine other sessions were also loading.
-- **The pin:** `src/test/localCpuBudget.test.ts` asserts the `test` script's cap and preload, the preload
-  on every `itest:*` script, the preload's one `MOUNT` line and where it resolves, the preload against the
-  template (skipped, saying so, where the mount is absent), and the root `xunit.runner.json` with the
-  `Directory.Build.props` item that copies it to every test output. A pin bump that changes the template
-  turns it red until the copy follows.
+- **The pin:** `src/test/localCpuBudget.test.ts` asserts that the `test` script preloads the lowering module
+  and starts `scripts/run-tests.mjs` with no exact `--test-concurrency`; the runner's cap (1, 1, 3, 8, 8 for
+  1, 2, 4, 9 and 24 threads) and its exit codes (the child's own, 128 + the signal number, 1 when the spawn
+  failed); the preload on every `itest:*` script, the preload's one `MOUNT` line and where it resolves, the
+  preload against the template (skipped, saying so, where the mount is absent), and the root
+  `xunit.runner.json` with the `Directory.Build.props` item that copies it to every test output, skipped
+  when `CI=true`. A pin bump that changes the template turns it red until the copy follows.
 - **Not lowered, on purpose:** `compile`, `typecheck`, `lint`, `bundle` and the generators are one process
   each and start no pool; the rule's own form `npm run compile && node --import … --test` leaves the
   compile unlowered. `deploy/acme-test/run.sh` does its work in containers the Docker daemon starts, which
   neither `nice` nor the tool reaches.
-- **CI parallelism:** `--test-concurrency=8` and `maxParallelThreads: 8` are exact values, not
-  `min(8, default)`, so on a 4-vCPU hosted runner they raise node from 3 to 8 and xUnit from 4 to 8.
+- **CI parallelism is never raised.** `--test-concurrency` and `maxParallelThreads` are exact values, and the
+  first version (a bare 8 for both) raised a 4-vCPU hosted runner from 3 to 8 node workers and from 4 to 8
+  xUnit threads. Since the follow-up of 2026-10-11 the runner computes `min(8, CPUs - 1)`, node's own default
+  wherever that is at most 8, and the xUnit copy is skipped when `CI=true`, so CI keeps xUnit's default.
 - **Open tail:** the two WSL harnesses build inside the distribution with a bare `dotnet build`; a
   Windows-side BelowNormal does not reach the WSL VM. Owed there: `nice -n 19 dotnet build -m:4
   --disable-build-servers`, once the branch rewriting those harnesses lands.
