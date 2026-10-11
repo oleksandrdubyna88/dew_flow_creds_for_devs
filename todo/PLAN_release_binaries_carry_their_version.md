@@ -74,7 +74,10 @@ the TAG's version as its record; it packs no binary and has no version of its ow
    bounded by a 60 s guard (`timeout`, `gtimeout` or perl's alarm, as the listen smoke does):
    `relay-pipe` with nothing announced ends at once today (measured: exit 90 with the log written), and
    the guard keeps a regression from holding a release leg for its half hour (plan round 1, finding 0).
-   Runs in both release legs after the publish, on the legs that can execute what they built. The
+   Runs in both release legs after the publish, on every leg whose runner has the binary's
+   architecture — all but the cross-built `osx-x64`; the arm64 legs build on arm64 runners, so the
+   older smokes' `!endsWith(rid, 'arm64')` skip would have left three assets per product unchecked
+   (cadence consultation, point 1). The
    `Version` step and both publish steps are `shell: bash` (the Windows legs default to `pwsh`).
 3. **`mcp-listen-smoke.sh`**: when `SMOKE_VERSION` is set, the serve log's start line must say
    `started: serve, version $SMOKE_VERSION,` — release.yml sets it, so the log line is asserted too.

@@ -40,11 +40,12 @@ EOF
 chmod +x "$fake"
 
 # expect <name> <delay> <answers> <exit code the smoke must give> [SMOKE_VERSION the smoke asks for] [version the stand-in logs]
+#        [text the output must hold — so a refusal for a DIFFERENT reason does not count as this case passing]
 expect() {
-  local name="$1" delay="$2" answers="$3" wanted="$4" asked="${5:-}" logged="${6:-0}"
+  local name="$1" delay="$2" answers="$3" wanted="$4" asked="${5:-}" logged="${6:-0}" says="${7:-}"
   local code=0
   SMOKE_VERSION="$asked" FAKE_VERSION="$logged" FAKE_DELAY="$delay" FAKE_ANSWERS="$answers" bash "$smoke" "$fake" "$work" > "$work/run.log" 2>&1 || code=$?
-  if [[ "$code" -eq "$wanted" ]]; then
+  if [[ "$code" -eq "$wanted" ]] && { [[ -z "$says" ]] || grep -qF -- "$says" "$work/run.log"; }; then
     echo "ok   $name (the smoke exited $code)"
   else
     echo "FAIL $name — expected the smoke to exit $wanted, it exited $code; its output:"
@@ -57,9 +58,9 @@ expect 'a server that answers and ends at once after end-of-stream passes' 0 yes
 expect 'a server that ends 10.5 s after end-of-stream fails the 10 s bound' 10.5 yes 1
 expect 'a server that never answers tools/list fails' 0 no 1
 expect 'a server that answers tools/list with an ERROR that merely mentions tools fails' 0 error 1
-expect 'a server whose log names the asked version passes' 0 yes 0 0.10.1 0.10.1
-expect 'a server whose log says 1.0.0 (the unstamped build) fails the asked 0.10.1' 0 yes 1 0.10.1 1.0.0
-expect 'a server whose log says 0.10.10 fails the asked 0.10.1' 0 yes 1 0.10.1 0.10.10
+expect 'a server whose log names the asked version passes' 0 yes 0 0.10.1 0.10.1 'listen smoke passed'
+expect 'a server whose log says 1.0.0 (the unstamped build) fails the asked 0.10.1' 0 yes 1 0.10.1 1.0.0 'does not name version 0.10.1'
+expect 'a server whose log says 0.10.10 fails the asked 0.10.1' 0 yes 1 0.10.1 0.10.10 'does not name version 0.10.1'
 
 rm -rf "$work"
 if [[ "$failures" -eq 0 ]]; then

@@ -393,8 +393,12 @@ jobs:
 
       # The version the binary reports is exactly the tag's. `creds` has no --version verb; it says its
       # version in a serving verb's log start line, which is what this reads.
+      #
+      # On EVERY leg whose runner has the binary's architecture — the three arm64 legs build on arm64
+      # runners (the Test step above already runs .NET executables there), so they are not skipped like
+      # the older smokes skip them. Only osx-x64 is cross-built; every leg stamps the same way.
       - name: Smoke · the published binary reports the tag's version
-        if: ${{ !endsWith(matrix.rid, 'arm64') }}
+        if: ${{ matrix.rid != 'osx-x64' }}
         shell: bash
         run: .github/scripts/version-smoke.sh cli ./out/creds${{ runner.os == 'Windows' && '.exe' || '' }} "$VERSION"
 
@@ -619,9 +623,10 @@ jobs:
           SMOKE_VERSION: ${{ env.VERSION }}
         run: .github/scripts/mcp-listen-smoke.sh ./out/creds-mcp${{ runner.os == 'Windows' && '.exe' || '' }}
 
-      # `--version` prints exactly `creds-mcp <the tag's version>` — the line the extension compares.
+      # `--version` prints exactly `creds-mcp <the tag's version>` — the line the extension compares. On
+      # every leg but the cross-built osx-x64, as in `cli-binaries`.
       - name: Smoke · the published binary reports the tag's version
-        if: ${{ !endsWith(matrix.rid, 'arm64') }}
+        if: ${{ matrix.rid != 'osx-x64' }}
         shell: bash
         run: .github/scripts/version-smoke.sh mcp ./out/creds-mcp${{ runner.os == 'Windows' && '.exe' || '' }} "$VERSION"
 
