@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.0] — 2026-10-11 — A request whose client is gone authorises nothing, and a stale WSL MCP install says so
+
 ### Added — a stale WSL MCP install says so
 
 - **Install… → *Check the WSL MCP install*** (Windows; also in the command palette) asks the MCP server this
