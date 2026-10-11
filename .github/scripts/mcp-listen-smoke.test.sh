@@ -37,12 +37,13 @@ chmod +x "$fake"
 
 # expect <name> <delay> <answers> <exit code the smoke must give>
 expect() {
+  local name="$1" delay="$2" answers="$3" wanted="$4"
   local code=0
-  FAKE_DELAY="$2" FAKE_ANSWERS="$3" bash "$smoke" "$fake" "$work" > "$work/run.log" 2>&1 || code=$?
-  if [[ "$code" -eq "$4" ]]; then
-    echo "ok   $1 (the smoke exited $code)"
+  FAKE_DELAY="$delay" FAKE_ANSWERS="$answers" bash "$smoke" "$fake" "$work" > "$work/run.log" 2>&1 || code=$?
+  if [[ "$code" -eq "$wanted" ]]; then
+    echo "ok   $name (the smoke exited $code)"
   else
-    echo "FAIL $1 — expected the smoke to exit $4, it exited $code; its output:"
+    echo "FAIL $name — expected the smoke to exit $wanted, it exited $code; its output:"
     sed 's/^/     /' "$work/run.log"
     failures=$((failures + 1))
   fi

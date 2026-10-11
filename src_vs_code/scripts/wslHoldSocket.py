@@ -16,7 +16,7 @@ import re
 import socket
 import sys
 
-SOCKET = re.compile(r"(/[^/]+)+/creds-itest/[0-9a-z]+-[0-9]+/[A-Za-z0-9_.-]+\.sock")
+SOCKET = re.compile(r"(/[^/]+)+/creds-itest/[0-9a-z]+-\d+/[A-Za-z0-9_.-]+\.sock")
 
 
 def main():

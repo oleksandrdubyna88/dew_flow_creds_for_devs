@@ -89,7 +89,9 @@ now means ours rather than any.
 **And since 2026-10-11 the question is asked by EXECUTABLE PATH, on both sides** (E5.S1 of
 [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md)). Each run
 copies the binaries it starts into a directory named for the run — `%TEMP%\creds-itest-<run>\` on Windows,
-`/tmp/creds-itest-<run>/` inside the distribution (`scripts/wslRun.cjs`) — and a watch is "processes of this
+`${XDG_CACHE_HOME:-~/.cache}/creds-itest/<run>/` inside the distribution (`scripts/wslRun.cjs`; the person's own
+cache directory rather than `/tmp`, where a predictable name could be pre-created by another local user and the
+harness would run their binary — SonarCloud S5443 on the first version) — and a watch is "processes of this
 image whose executable lies under this run's directory": `watchWindowsPids` through `Get-CimInstance
 Win32_Process`, `watchLinuxPids` through `/proc/<pid>/exe` (`scripts/wslProcs.py`). The Windows side is
 watched at all because that is the side the leak was on — every `creds-mcp.exe` and `creds.exe relay-pipe`
@@ -100,8 +102,8 @@ cannot be hit; the pids and the directory reach PowerShell and Python through th
 never through a command line. And **nothing is deleted inside the distribution** (a machine rule since an
 agent's `wsl.exe` cleanup removed parts of a home directory, 2026-10-07): the Linux build lands in a
 directory named by a hash of its inputs, so a stale build is never reused and never removed; sockets and
-scratch files are run-unique; each run ends by printing what `/tmp/creds-itest-*` now holds — a few MB per
-run, for the person or the distribution's next boot to clear. **And every step inside the distribution is exe +
+scratch files are run-unique; each run ends by printing what the cache directory now holds — a few MB per run,
+for the person to clear when they like. **And every step inside the distribution is exe +
 argv** (`security.md`; E5's code round): `wsl.exe -e bash -l scripts/wslSteps.sh NAME=value... -- <verb> [args]`,
 one constant checked-in script whose exports are applied after the login profile and whose every value — a path, a
 socket, a file list — is an argv entry; nothing composes shell text from a value, and a harness that cannot run
@@ -133,8 +135,8 @@ these cleans up after itself on a normal exit; what follows is what to remove af
 | `src_vs_code/scripts/creds-mcp-itest.cjs` | `dotnet build src_mcp/src/CredsMcp.csproj` | a `creds-mcp` child on stdio |
 | `src_vs_code/scripts/masked-run-itest.cjs` | nothing | nothing — the child dies with the pty |
 | `src_vs_code/scripts/ssh-agent-itest.cjs` | OpenSSH (`ssh-add`, `ssh-keygen`) — built-in on Windows, on PATH elsewhere; CI runs it on Ubuntu | a named pipe or socket freed when the process exits, and a `creds-agent-itest-*` temp dir (key, stub, manager dir) |
-| `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | WSL + the .NET SDK, node and python3 inside it | nothing it started — the sweep stops the run's own processes by pid on both sides; `/tmp/creds-itest-*` (a build per changed set of inputs, a directory per run) stays by design, a few MB each, until the person or the next boot clears it |
-| `src_vs_code/scripts/wsl-agent-relay-itest.cjs` | the same, plus OpenSSH inside it | the same; a run's sockets and scratch files are under its own `/tmp/creds-itest-<run>/` |
+| `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | WSL + the .NET SDK, node and python3 inside it | nothing it started — the sweep stops the run's own processes by pid on both sides; `${XDG_CACHE_HOME:-~/.cache}/creds-itest/` (a build per changed set of inputs, a directory per run) stays by design, a few MB each, until the person clears it |
+| `src_vs_code/scripts/wsl-agent-relay-itest.cjs` | the same, plus OpenSSH inside it | the same; a run's sockets and scratch files are under its own `…/creds-itest/<run>/` |
 | `src_vs_code/scripts/server-transport-itest.cjs` | a Cred Vault Server on `127.0.0.1:5113`, Local auth | nothing of its own |
 
 Every harness carries its own timeout on the child processes it spawns; none of them waits for ever,
@@ -226,7 +228,8 @@ the same, because the Windows half is in another process table. The two WSL harn
   the run alive on Windows — and `manager.dispose()` taking both down within 5 s, socket included.
 
 **Each check has teeth, shown rather than claimed.** Both harnesses were run unchanged from a scratch checkout of
-`9494a67c` (E1 merged, E2–E3 not): 10 of 40 and 8 of 36 checks RED, with the defects' own words — *the wrapper
+`9494a67c` (E1 merged, E2–E3 not): 4 of 42 and 9 of 40 checks RED on the final harness (10 of 40 and 8 of 36 on its
+first version, whose run also caught the old Windows half surviving a SIGHUP), with the defects' own words — *the wrapper
 ends with exit code 130 — {"code":null,"signal":"SIGINT"}*, *the wrapper did not end within 20000 ms of eof*, *0
 Windows survivors within 5 s — … did not take down: 15284*, *0 new creds.exe relay-pipe … did not take down:
 46832, 15120, …* (eleven), *descriptor count … back at its baseline (83) — now 103*, *it removed its socket on

@@ -23,7 +23,7 @@ import sys
 # `<cache>/creds-itest/<time36>-<pid>` — a RUN directory and nothing else: not a parent, not the shared build
 # directory (`<cache>/creds-itest/build-<kind>-<hash>`, from which nothing is ever started), not a prefix that
 # could match more (own review of E5). The cache is the person's own (`wslRun.cjs`), never /tmp.
-RUN_DIR = re.compile(r"(/[^/]+)+/creds-itest/[0-9a-z]+-[0-9]+/?")
+RUN_DIR = re.compile(r"(/[^/]+)+/creds-itest/[0-9a-z]+-\d+/?")
 
 
 def refuse(reason):
