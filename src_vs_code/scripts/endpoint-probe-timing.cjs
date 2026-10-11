@@ -20,8 +20,9 @@
  * <p>It prints pids, ports and timings — nothing secret, and no path: the directory is named only by
  * its file count. It writes nothing and deletes nothing; the files belong to the extension.</p>
  *
- * Usage: node endpoint-probe-timing.cjs [<endpoints directory>]
- *   default: CREDS_ENDPOINT_DIR, else the stable VS Code globalStorage path for this OS.
+ * Usage: node endpoint-probe-timing.cjs
+ *   reads CREDS_ENDPOINT_DIR — the same override `creds` and `creds-mcp` honour — else the stable VS Code
+ *   globalStorage path for this OS. No path is taken from the command line.
  */
 
 const fs = require('node:fs');
@@ -33,7 +34,10 @@ const path = require('node:path');
 const BOUND_MS = 2000;
 const HOST = '127.0.0.1';
 
-function defaultDir() {
+/** What `process.kill(pid, 0)` throwing means: EPERM is a live process this user may not signal. */
+const PID_ERRORS = { EPERM: 'alive(EPERM)', ESRCH: 'gone' };
+
+function endpointDir() {
   if (process.env.CREDS_ENDPOINT_DIR) {
     return process.env.CREDS_ENDPOINT_DIR;
   }
@@ -50,7 +54,7 @@ function pidState(pid) {
     process.kill(pid, 0);
     return 'alive';
   } catch (e) {
-    return e.code === 'EPERM' ? 'alive(EPERM)' : e.code === 'ESRCH' ? 'gone' : `err:${e.code}`;
+    return PID_ERRORS[e.code] ?? `err:${e.code}`;
   }
 }
 
@@ -105,7 +109,7 @@ function readOne(file) {
 }
 
 async function main() {
-  const dir = process.argv[2] ?? defaultDir();
+  const dir = endpointDir();
   const listStart = process.hrtime.bigint();
   let names;
   try {

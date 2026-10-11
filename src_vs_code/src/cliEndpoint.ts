@@ -205,8 +205,7 @@ export function sweepStaleEndpoints(
 function stillAnnounced(storageDir: string, judged: CliEndpoint): boolean {
   const [current] = parseEndpoint(endpointPath(storageDir, judged.pid));
   return (
-    current !== undefined &&
-    current.port === judged.port &&
+    current?.port === judged.port &&
     current.startedAt === judged.startedAt &&
     current.socket === judged.socket
   );
