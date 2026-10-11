@@ -41,9 +41,15 @@ stamp="$dir/stdin-closed"
 [[ -f "$fixture" ]] || { echo "no fixture at $fixture"; exit 1; }
 
 now() { perl -MTime::HiRes=time -e 'printf "%.3f\n", time'; }
-# One grep, one line: the id and the tools together — never two greps in a pipe, where a `-q` that closes early
-# would end the first with SIGPIPE and `pipefail` would read a real answer as none.
-answered() { grep -Eq '"id":1[,}].*"tools"|"tools".*"id":1[,}]' "$out" 2> /dev/null; }
+# The tools/list RESULT and nothing else: the one line carrying id 1 must hold a `result` member with its `tools`
+# and no `error` member — an error reply whose message merely mentions tools does not count (CodeRabbit and the
+# gate on #218; the self-test's fourth case). One `grep -m1`, never two greps in a pipe, where a `-q` that closes
+# early would end the first with SIGPIPE and `pipefail` would read a real answer as none.
+answered() {
+  local line
+  line="$(grep -m1 -E '"id":1[,}]' "$out" 2> /dev/null || true)"
+  [[ -n "$line" && "$line" == *'"result":'* && "$line" == *'"tools":['* && "$line" != *'"error":'* ]]
+}
 
 # A hard limit on the whole run, whatever the platform offers.
 if command -v timeout > /dev/null; then guard=(timeout 60)

@@ -8,7 +8,8 @@
  * and they sweep what did. Both questions are only safe if "what this run started" can be told apart from
  * everything else on the machine — another developer's real `creds-mcp.exe`, a second harness, an earlier run.
  * So each run copies the binaries it will start into a directory named for the run, on Windows
- * (`%TEMP%\creds-itest-<run>`) and inside the distribution (`${XDG_CACHE_HOME:-~/.cache}/creds-itest/<run>`), and
+ * (`%LOCALAPPDATA%\creds-itest\creds-itest-<run>`) and inside the distribution
+ * (`${XDG_CACHE_HOME:-~/.cache}/creds-itest/<run>`, hard links of the cached build, so ten runs cost one copy), and
  * every watch filters by executable path under it (PLAN_wsl_bridge_outlives_its_client.md, E5.S1; plan gate round
  * 1, finding 1). The Linux side is the person's OWN cache directory, not `/tmp`: a predictable name in a
  * world-writable directory could be pre-created by another local user, and a harness that then finds "its" build
@@ -38,6 +39,18 @@ const { execFile } = require('node:child_process');
 const REPO = path.join(__dirname, '..', '..');
 const OUT = path.join(__dirname, '..', 'out');
 const WINDOWS_PREFIX = 'creds-itest-';
+
+/**
+ * Where the Windows run directories live: the person's own local application data, never the shared temp
+ * directory — the same reasoning as the Linux side's cache directory (SonarCloud S5443), and where the extension
+ * itself keeps its binaries.
+ */
+function windowsRoot() {
+  const local = process.env.LOCALAPPDATA ?? path.join(os.homedir(), 'AppData', 'Local');
+  const root = path.join(local, 'creds-itest');
+  fs.mkdirSync(root, { recursive: true });
+  return fs.realpathSync.native(root);
+}
 
 /** `wsl.exe` by its fixed path, resolved the way the product resolves it (`wslProcess.wslBinary`). */
 const WSL_EXE = require(path.join(OUT, 'wslProcess.js')).wslBinary();
@@ -95,7 +108,7 @@ function linuxRoot() {
 
 /** This run's directories, created now on the Windows side; the Linux one is made by the first copy into it. */
 async function runDirectories() {
-  const windows = path.join(fs.realpathSync.native(os.tmpdir()), `${WINDOWS_PREFIX}${RUN_ID}`);
+  const windows = path.join(windowsRoot(), `${WINDOWS_PREFIX}${RUN_ID}`);
   fs.mkdirSync(windows, { recursive: true });
   return { windows, linux: `${await linuxRoot()}/${RUN_ID}`, logs: path.join(windows, 'logs') };
 }
@@ -110,9 +123,9 @@ function copyWindowsBinary(dirs, { kind, project, exe }) {
   return path.join(target, exe);
 }
 
-/** A source file of a project, wherever it sits below `src/` — never a build output. */
-const isSource = (relative) =>
-  (relative.endsWith('.cs') || relative.endsWith('.csproj')) && !/^(bin|obj)[\\/]/.test(relative);
+/** A file of a project, wherever it sits below `src/` — never a build output, never a directory entry. */
+const isProjectFile = (dir, relative) =>
+  !/^(bin|obj)([\\/]|$)/.test(relative) && fs.statSync(path.join(dir, relative)).isFile();
 
 /**
  * The root files MSBuild reads for any project here — every one that exists. `Directory.Build.targets` is not in
@@ -131,15 +144,17 @@ const ROOT_BUILD_FILES = [
 ];
 
 /**
- * The repo-relative inputs of one Linux build: the root build files that exist plus the projects' sources
- * (recursively, so a future subfolder changes the hash rather than being silently left out).
+ * The repo-relative inputs of one Linux build: the root build files that exist plus EVERY file of the projects
+ * (recursively, whatever its kind — a resource or a settings file MSBuild consumes counts as much as a source;
+ * last checkpoint round, finding 1 — so a future subfolder or kind changes the hash rather than being silently
+ * left out).
  */
 function buildInputs(projects) {
   const files = ROOT_BUILD_FILES.filter((file) => fs.existsSync(path.join(REPO, file)));
   for (const project of projects) {
     const dir = path.join(REPO, project, 'src');
     for (const name of fs.readdirSync(dir, { recursive: true }).map(String).sort()) {
-      if (isSource(name)) {
+      if (isProjectFile(dir, name)) {
         files.push(`${project}/src/${name.replaceAll('\\', '/')}`);
       }
     }
@@ -189,7 +204,7 @@ async function linuxBinary(dirs, { kind, project, projects, exe }) {
  * nothing is removed; what this harness family keeps in the cache directory is listed instead, with its size.
  */
 async function finishRun(dirs) {
-  const root = fs.realpathSync.native(os.tmpdir());
+  const root = windowsRoot();
   if (path.dirname(dirs.windows) === root && path.basename(dirs.windows) === `${WINDOWS_PREFIX}${RUN_ID}`) {
     try {
       fs.rmSync(dirs.windows, { recursive: true, force: true });

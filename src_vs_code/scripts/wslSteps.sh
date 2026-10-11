@@ -57,8 +57,10 @@ case "$verb" in
     cd "$build/$project/src"
     nice -n 19 dotnet build -c Debug -p:PublishAot=false -m:4 --disable-build-servers 2>&1
     ;;
-  # copy-build <output> <target>: a build output into this run's own directory.
-  copy-build) mkdir -p "$2" && cp -r "$1/." "$2/" ;;
+  # copy-build <output> <target>: a build output into this run's own directory — as hard links, so the run's
+  # executable paths are its own (what the watches match) while ten runs of one build cost one copy (last
+  # checkpoint round, finding 3); `/proc/<pid>/exe` names the path a process was started by.
+  copy-build) mkdir -p "$2" && cp -rl "$1/." "$2/" ;;
   # disk-usage <root>: what this harness family keeps there — listed, never removed.
   disk-usage) du -sh "$1" 2> /dev/null | tail -1 ;;
   # sign <pub> <payload>: the agent's public key, a payload, a signature made through the relay.

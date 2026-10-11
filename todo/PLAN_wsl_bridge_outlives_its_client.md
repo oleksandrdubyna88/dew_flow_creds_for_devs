@@ -832,6 +832,17 @@ behaviour.
   (`Directory.Build.targets` included, against the day it appears); a stop that is refused is a failure the sweep
   prints, on both sides, where a pid that is simply gone is not; the build verb returns its whole output so a
   failed build is diagnosed from its first error.
+- **The last round's three, and CodeRabbit's four** (§14): the build inputs are EVERY file of a project below
+  `src/` (a resource or a settings file as much as a source), not only `.cs`/`.csproj`; the run's Linux copy of a
+  build is hard links (`cp -rl`), so the run's executable paths are its own — what the watches match — while ten
+  runs of one build cost one copy; the smoke counts only the one line carrying id 1 that holds a `result` with its
+  `tools` and no `error` member (RED: the self-test's fourth case, an error reply whose message mentions tools,
+  passed the first version — *expected the smoke to exit 1, it exited 0*; GREEN after); the Windows run
+  directories live under `%LOCALAPPDATA%\creds-itest\`, not `%TEMP%` as designed — the same reasoning as the
+  Linux side's cache directory (SonarCloud S5443 flags `os.tmpdir()` as it flags `/tmp`); the MCP harness kills a
+  client `wsl.exe` that has not left within 5 s of its stdin closing; the relay harness stops with one error when
+  no relay of the run is alive instead of a cascade of checks against an undefined pid; the client's end timer
+  says nothing once the wrapper has exited.
 - **E5.S3's tail is open by design, not forgotten:** the upstream issue csharp-sdk#1914 was still open with no
   comments on 2026-10-11; the owner's WSL MCP refresh (§3.1.7) and the one-day count (§13's first line) need the
   released build, so they follow the release; the promotion follows them.
@@ -1614,3 +1625,19 @@ smoke's self-test and the built-binary smoke green on all three operating system
 Operator commands applied, as in round 1: autonomous (RED → GREEN for finding 3; the docs with every change —
 this table, §10, `module_tests.md`; every suite run; the PR end to end); consultants before the person (no
 question needed one).
+
+**Last checkpoint round (`again`, 2026-10-11) — `proceed`**, gating 0 against threshold 5, **4 of 4 reviewers
+answered** (codex's four roles). The reply tracker's `Set` was raised a third time with no new argument and
+discounted by the gate itself (rejected again, same reasoning). Three minor findings, all **accepted**: (1) the
+build inputs should be every project file below `src/`, not only `.cs`/`.csproj` — a resource MSBuild consumes
+would otherwise be neither copied nor hashed; (2) the smoke could read an error reply that mentions `"tools"` as
+the result — the one line carrying id 1 must hold `"result":` with `"tools":[` and no `"error":` (RED: the
+self-test's new fourth case *expected the smoke to exit 1, it exited 0* → GREEN); (3) each run copied a 5 MB
+build into its own directory — hard links now.
+
+**CodeRabbit on #218** (it reviewed after all, once its limit reset) — five threads: the same error-reply case as
+(2); a client `wsl.exe` that hung before reading its stdin would outlive the ending it belonged to — killed after
+5 s now; `relayPid` undefined when no relay is found led to a cascade — one thrown error now; the client's
+`END_BOUND` timer could say *failed* after the wrapper's exit — it checks `exited` first; and the RESULTS record
+had still carried the first version's counts — resolved by the record itself. Each thread answered and resolved
+after its fix landed.

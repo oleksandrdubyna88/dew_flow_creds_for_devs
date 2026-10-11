@@ -107,6 +107,9 @@ function main() {
     endedAt = Date.now();
     end(child, word.trim());
     setTimeout(() => {
+      if (exited) {
+        return; // the wrapper left; its `exit` is on its way out of this process (CodeRabbit on #218)
+      }
       say({ event: 'failed', reason: `the wrapper did not end within ${END_BOUND_MS} ms of ${word.trim()}` });
       child.kill('SIGKILL');
     }, END_BOUND_MS).unref();

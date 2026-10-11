@@ -428,6 +428,11 @@ async function main() {
   const relays = await linuxSide.seenWithin(1, GONE_WITHIN_MS);
   check('exactly one process of this run is alive inside WSL — the relay', relays.length === 1, `saw ${JSON.stringify(relays)}`);
   const relayPid = relays[0];
+  if (relayPid === undefined) {
+    // One loud stop rather than a cascade of checks against a pid that is not there (CodeRabbit on #218);
+    // `runAndSweep` still sweeps.
+    throw new Error(`no relay of this run is alive inside WSL — nothing below can run; its stderr: ${JSON.stringify(relay.stderr.slice(-5))}`);
+  }
 
   const mode = await wslStep({}, 'exec', ['stat', '-c', '%a', relaySocket()]);
   check('the relay opened a socket only its owner can reach', mode.stdout.trim() === '600', mode.stdout.trim());

@@ -88,7 +88,7 @@ now means ours rather than any.
 
 **And since 2026-10-11 the question is asked by EXECUTABLE PATH, on both sides** (E5.S1 of
 [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md)). Each run
-copies the binaries it starts into a directory named for the run — `%TEMP%\creds-itest-<run>\` on Windows,
+copies the binaries it starts into a directory named for the run — `%LOCALAPPDATA%\creds-itest\creds-itest-<run>\` on Windows (the person's own local application data, never the shared temp directory),
 `${XDG_CACHE_HOME:-~/.cache}/creds-itest/<run>/` inside the distribution (`scripts/wslRun.cjs`; the person's own
 cache directory rather than `/tmp`, where a predictable name could be pre-created by another local user and the
 harness would run their binary — SonarCloud S5443 on the first version) — and a watch is "processes of this

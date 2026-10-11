@@ -27,6 +27,8 @@ while IFS= read -r line; do
   n=$((n + 1))
   if [[ "$n" -eq 4 && "${FAKE_ANSWERS:-yes}" == yes ]]; then
     echo '{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}'
+  elif [[ "$n" -eq 4 && "${FAKE_ANSWERS:-yes}" == error ]]; then
+    echo '{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"\"tools\" unavailable","data":{"tools":[]}}}'
   fi
 done
 sleep "${FAKE_DELAY:-0}"
@@ -52,6 +54,7 @@ expect() {
 expect 'a server that answers and ends at once after end-of-stream passes' 0 yes 0
 expect 'a server that ends 10.5 s after end-of-stream fails the 10 s bound' 10.5 yes 1
 expect 'a server that never answers tools/list fails' 0 no 1
+expect 'a server that answers tools/list with an ERROR that merely mentions tools fails' 0 error 1
 
 rm -rf "$work"
 if [[ "$failures" -eq 0 ]]; then

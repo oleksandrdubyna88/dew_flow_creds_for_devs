@@ -430,7 +430,24 @@ async function endedBy({ word, exit }, endpointDir, windowsHalves, linuxSide) {
     const linuxLeft = await linuxSide.goneWithin(GONE_WITHIN_MS);
     check(`${word}: and nothing of this run is left inside WSL`, linuxLeft.length === 0, linuxSide.describe(linuxLeft));
   } finally {
+    // Closing its stdin is how the client leaves (it kills the wrapper first). A client that does not leave within
+    // 5 s — a wsl.exe that hung before it ever read stdin — is killed, so the next ending starts beside no
+    // stale session (CodeRabbit on #218); the wrapper, if any, is the Linux sweep's by its path.
     client.stdin.end();
+    await new Promise((resolve) => {
+      if (client.exitCode !== null || client.signalCode !== null) {
+        resolve();
+        return;
+      }
+      const bound = setTimeout(() => {
+        client.kill();
+        resolve();
+      }, 5_000);
+      client.once('exit', () => {
+        clearTimeout(bound);
+        resolve();
+      });
+    });
   }
 }
 
