@@ -1104,7 +1104,7 @@ node $LP node .claude/rules/shared/tools/http-run.mjs --require-env VAULT_LOCAL_
 The shared rule [local-cpu-budget.md](../.claude/rules/shared/common/local-cpu-budget.md) — measured on a
 24-thread workstation where one plain `node --test` started 23 test-file processes at normal priority and
 every other session lagged. How this repository follows it, entry point by entry point
-([PLAN_local_cpu_budget_adoption.md](../todo/PLAN_local_cpu_budget_adoption.md)):
+([PLAN_local_cpu_budget_adoption.md](PLAN_local_cpu_budget_adoption.md)):
 
 | Entry point | Workers | Lowered by |
 |---|---|---|

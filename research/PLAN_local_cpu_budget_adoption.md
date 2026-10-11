@@ -1,13 +1,19 @@
 # PLAN — local test runs here take at most 8 workers, at lowered CPU priority
 
-> Status: **plan only, nothing implemented yet (2026-10-11).** Scope: `src_vs_code/package.json`
-> scripts, a new `src_vs_code/scripts/lower-priority.mjs`, one root `xunit.runner.json` linked into the
-> five xUnit v3 test projects from `Directory.Build.props`, `deploy/restore-archive-itest.sh`, one new
-> node test, and the docs that state the local commands.
+> Status: **IMPLEMENTED, 2026-10-11.** Scope: `src_vs_code/package.json` scripts, a new
+> `src_vs_code/scripts/lower-priority.mjs`, one root `xunit.runner.json` copied into the five xUnit v3 test
+> projects' output by `Directory.Build.props`, `deploy/restore-archive-itest.sh`, one new node test, and every
+> doc that shows a local build or test command. Deviations: see *Changes after the plan round* — the docs
+> scope widened to every README and module doc, `--disable-build-servers` on every documented build (a
+> warm normal-priority compiler server did the compiling otherwise), `nice 10` under Git Bash (19 is the
+> Windows Idle class there), and the pin requires an integer from 1 to 8. Open tail: the two WSL
+> harnesses' inner `dotnet build` (owed `nice -n 19 … -m:4 --disable-build-servers` once the branch
+> rewriting them lands), and feedback to the conventions repository that an exact 8 RAISES parallelism on
+> a runner with fewer than 9 cores.
 >
 > Related docs: the shared rule [local-cpu-budget.md](../.claude/rules/shared/common/local-cpu-budget.md),
 > its rollout plan `todo/PLAN_local_cpu_budget.md` in the conventions repository (the creds_for_devs row),
-> [module_tests.md](../research/module_tests.md).
+> [module_tests.md](module_tests.md).
 
 ## The symptom
 
