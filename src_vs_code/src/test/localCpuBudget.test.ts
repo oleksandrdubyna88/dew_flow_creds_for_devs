@@ -34,6 +34,9 @@ const scripts = (): Record<string, string> =>
   (JSON.parse(fs.readFileSync(path.join(extensionRoot, 'package.json'), 'utf8')) as { scripts: Record<string, string> })
     .scripts;
 
+/** A worker count that really caps: a whole number from 1 to 8 (0 and negatives mean "no cap" to the runners). */
+const isCap = (value: unknown): boolean => Number.isInteger(value) && Number(value) >= 1 && Number(value) <= MAX_WORKERS;
+
 /** The part of a script after its last `&&` — the command that actually runs the tests. */
 const lastCommand = (script: string): string => script.split('&&').at(-1)?.trim() ?? '';
 
@@ -41,7 +44,7 @@ test('npm test runs node --test with at most 8 workers, after the lowering prelo
   const run = lastCommand(scripts().test);
   const concurrency = /--test-concurrency=(\d+)/.exec(run);
   assert.ok(concurrency, `the test script sets no --test-concurrency, so node sizes its pool from the machine: ${run}`);
-  assert.ok(Number(concurrency[1]) <= MAX_WORKERS, `--test-concurrency=${concurrency[1]} is above the cap of ${MAX_WORKERS}`);
+  assert.ok(isCap(Number(concurrency[1])), `--test-concurrency=${concurrency[1]} is not an integer from 1 to ${MAX_WORKERS}`);
   assert.ok(run.startsWith(`node ${PRELOAD} --test `), `the test script does not preload the lowering module before --test: ${run}`);
 });
 
@@ -72,8 +75,8 @@ test('the preload is the conventions template with only the MOUNT line changed',
 
 test('the xUnit runners get at most 8 threads from one root xunit.runner.json', () => {
   const config = JSON.parse(fs.readFileSync(path.join(repoRoot, 'xunit.runner.json'), 'utf8')) as { maxParallelThreads?: unknown };
-  assert.equal(typeof config.maxParallelThreads, 'number', 'xunit.runner.json sets no numeric maxParallelThreads');
-  assert.ok(Number(config.maxParallelThreads) <= MAX_WORKERS, `maxParallelThreads ${String(config.maxParallelThreads)} is above ${MAX_WORKERS}`);
+  // 0 means "one per CPU" and -1 "unlimited" to xUnit, so "at most 8" is an integer from 1 to 8.
+  assert.ok(isCap(config.maxParallelThreads), `maxParallelThreads ${String(config.maxParallelThreads)} is not an integer from 1 to ${MAX_WORKERS}`);
   const props = fs.readFileSync(path.join(repoRoot, 'Directory.Build.props'), 'utf8');
   assert.match(
     props,

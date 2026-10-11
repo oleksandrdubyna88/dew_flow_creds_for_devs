@@ -72,7 +72,7 @@ Vault__CorpRecovery__OfficerEmails=officer@example.com,officer2@example.com,offi
 Vault__LoginKey__Kek="$(openssl rand -base64 32)" \
 Vault__DataDir=/tmp/vault-suite \
 Vault__PublishInstanceFile=false \
-  node $LP dotnet run --project src_minimalapi_server/src --urls http://127.0.0.1:5099 &
+  node $LP dotnet run --disable-build-servers --project src_minimalapi_server/src --urls http://127.0.0.1:5099 &
 
 node $LP node .claude/rules/shared/tools/http-run.mjs \
   --require-env VAULT_LOCAL_SIGNING_KEY --env local --target http://127.0.0.1:5099

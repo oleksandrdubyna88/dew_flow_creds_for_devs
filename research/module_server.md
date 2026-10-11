@@ -1904,7 +1904,7 @@ endpoint suites run in-process through `WebApplicationFactory` — no free port,
 
 ```bash
 LP=.claude/rules/shared/tools/low-priority.mjs   # local runs: 8 workers, lowered — module_tests.md
-node $LP dotnet build dew_flow_creds_for_devs.slnx -m:4
+node $LP dotnet build dew_flow_creds_for_devs.slnx -m:4 --disable-build-servers
 node $LP ./src_minimalapi_server/tests/bin/Debug/net10.0/CredVaultServer.Tests.exe
 ```
 

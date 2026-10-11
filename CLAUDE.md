@@ -41,11 +41,12 @@ and the relevant `research/module_*.md`.
 LP=.claude/rules/shared/tools/low-priority.mjs
 
 # --- server (.NET) ---
-node $LP dotnet build dew_flow_creds_for_devs.slnx -c Debug -m:4
+node $LP dotnet build dew_flow_creds_for_devs.slnx -c Debug -m:4 --disable-build-servers
 
 # Run tests — ALWAYS via the test project's executable, NEVER `dotnet test`
 # (xUnit v3 / Microsoft Testing Platform: there is no VSTest testhost, so `dotnet test` aborts).
 # One executable at a time: the root xunit.runner.json gives each 8 threads, and the cap is per RUN.
+# --disable-build-servers keeps the compiler inside the lowered tree. Linux/macOS: drop the .exe.
 node $LP ./src_minimalapi_server/tests/bin/Debug/net10.0/CredVaultServer.Tests.exe
 node $LP ./src_minimalapi_server/tests/bin/Debug/net10.0/CredVaultServer.Tests.exe --filter-class "*SharingTests"
 
@@ -185,7 +186,7 @@ people's credentials, so a defect here is not a defect in a toy.
 
 ## Definition of Done
 
-- [ ] `dotnet build dew_flow_creds_for_devs.slnx -m:4` — 0 warnings (warnings are errors here).
+- [ ] `dotnet build dew_flow_creds_for_devs.slnx -m:4 --disable-build-servers` — 0 warnings (warnings are errors here).
 - [ ] The server test executable runs green, and `npm test` in `src_vs_code` runs green — locally both
       at lowered priority, the executables one after another (`common/local-cpu-budget.md`).
 - [ ] New behaviour has tests; a fix has a test **watched failing first**, and the summary reports

@@ -76,6 +76,16 @@ The question consultant answered `none_available` (no row switched on). Decided 
   the runner at its default. The pin test therefore asserts the copying item, and the proof reads the
   runner's effective value, not the file.
 
+- **The cadence consultation (before the code round)** found three things; verified each:
+  - a lowered `dotnet build` hands compiling to a warm `VBCSCompiler` — observed one at `Normal` while the
+    lowered builds ran. Every documented build (and the `.http` suite's `dotnet run`) now carries
+    `--disable-build-servers`; a lowered build with it is green (7 s for one test project);
+  - the pin accepted `0` and `-1`, which xUnit reads as "one per CPU" and "unlimited". The pin now
+    requires an integer from 1 to 8, for `--test-concurrency` too; watched red for `0`, `-1`, `8.5`,
+    `"8"` and `--test-concurrency=0`, green for `8`;
+  - it proposed running the template comparison in `docs.yml`, which checks the submodule out. Not done:
+    this change must not touch CI (the coordinator's constraint); local runs with the mount catch drift.
+
 ## Build order
 
 1. This plan → coai plan round → `proceed`.

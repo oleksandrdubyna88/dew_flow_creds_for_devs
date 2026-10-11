@@ -60,10 +60,10 @@ stays legible. The band is in the contract file; nothing here defines its own.
 ```bash
 # from the repository root; local runs follow .claude/rules/shared/common/local-cpu-budget.md
 LP=.claude/rules/shared/tools/low-priority.mjs
-node $LP dotnet build   src_cli/src/CredsCli.csproj -m:4
-node $LP dotnet build   src_cli/tests/CredsCli.Tests.csproj -m:4
+node $LP dotnet build   src_cli/src/CredsCli.csproj -m:4 --disable-build-servers
+node $LP dotnet build   src_cli/tests/CredsCli.Tests.csproj -m:4 --disable-build-servers
 node $LP ./src_cli/tests/bin/Debug/net10.0/CredsCli.Tests.exe      # run the executable, never `dotnet test`
-node $LP dotnet publish src_cli/src/CredsCli.csproj -c Release -r linux-x64 -o out -m:4
+node $LP dotnet publish src_cli/src/CredsCli.csproj -c Release -r linux-x64 -o out -m:4 --disable-build-servers
 ```
 
 Publishing needs the host linker — `clang` and `zlib1g-dev` on Linux, the MSVC build tools on

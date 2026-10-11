@@ -936,8 +936,9 @@ The flows [PLAN_agent_creates_what_the_folder_holds.md](PLAN_agent_creates_what_
 added. The TypeScript half over the REAL `StorageManager` and the real hooks the broker calls; the C#
 half through the relay's test executable; one live check — `creds-mcp-itest.cjs` — puts the real
 binary against the real window code for the catalogue and the owner's case. Command: `npm test`, or
-`node --import ./scripts/lower-priority.mjs --test out/test/<file>.js`; `node .claude/rules/shared/tools/low-priority.mjs ./src_mcp/tests/bin/Debug/net10.0/CredsMcp.Tests.exe`;
-`npm run itest:mcp`.
+`node --import ./scripts/lower-priority.mjs --test out/test/<file>.js` and `npm run itest:mcp` from
+`src_vs_code`; `node .claude/rules/shared/tools/low-priority.mjs ./src_mcp/tests/bin/Debug/net10.0/CredsMcp.Tests.exe`
+from the repository root.
 
 | Flow | Test | What it holds down |
 |---|---|---|
@@ -1079,9 +1080,9 @@ LP=.claude/rules/shared/tools/low-priority.mjs
 
 # .NET — 1,318 tests on 2026-10-11. The solution carries three of the five test projects, so the
 # other two are built by name. The executables run ONE AFTER ANOTHER: each gets 8 threads.
-node $LP dotnet build dew_flow_creds_for_devs.slnx -m:4
-node $LP dotnet build src_cli/tests/CredsCli.Tests.csproj -m:4
-node $LP dotnet build src_broker_client/tests/BrokerClient.Tests.csproj -m:4
+node $LP dotnet build dew_flow_creds_for_devs.slnx -m:4 --disable-build-servers
+node $LP dotnet build src_cli/tests/CredsCli.Tests.csproj -m:4 --disable-build-servers
+node $LP dotnet build src_broker_client/tests/BrokerClient.Tests.csproj -m:4 --disable-build-servers
 node $LP ./src_minimalapi_server/tests/bin/Debug/net10.0/CredVaultServer.Tests.exe
 node $LP ./src_cli/tests/bin/Debug/net10.0/CredsCli.Tests.exe
 node $LP ./src_mcp/tests/bin/Debug/net10.0/CredsMcp.Tests.exe
@@ -1110,7 +1111,7 @@ every other session lagged. How this repository follows it, entry point by entry
 | `npm test` | `--test-concurrency=8` (node's default was 23 here) | `node --import ./scripts/lower-priority.mjs` |
 | `npm run itest:*`, `itest:all` | one process, harnesses one after another | the same preload; every binary a harness starts inherits it |
 | the five xUnit executables | 8 threads — ONE root `xunit.runner.json`, copied into each test project's output by `Directory.Build.props` | `node $LP <exe>`, one executable at a time |
-| `dotnet build` / `publish` named anywhere in these docs, prerequisites included | `-m:4` (`csharp/dotnet-build.md`) | `node $LP dotnet build … -m:4` |
+| `dotnet build` / `publish` named anywhere in these docs, prerequisites included | `-m:4` (`csharp/dotnet-build.md`) | `node $LP dotnet build … -m:4 --disable-build-servers` — see below |
 | `deploy/restore-archive-itest.sh` | one bash process | re-runs itself once under `nice` (19; 10 under Git Bash, where 19 is the Windows Idle class the rule forbids) |
 | the `.http` suite | httpyac, one request at a time | `node $LP node …/http-run.mjs` |
 | a one-file run | one worker | `node --import ./scripts/lower-priority.mjs --test out/test/<file>.js` |
@@ -1125,6 +1126,11 @@ every other session lagged. How this repository follows it, entry point by entry
   Each executable's `Starting:` line under `--xunit-diagnostics on`: before, `parallel mode = collections
   [24 threads]`; after, `[8 threads]` for all five; with the root file set to 5 and one project rebuilt,
   `[5 threads]` — the runner follows the root file. `--max-threads N` on the command line overrides it.
+- **A lowered build disables the build servers.** Without `--disable-build-servers` a lowered `dotnet
+  build` hands its compiling to a compiler server (`VBCSCompiler`) that an earlier, normal-priority build
+  started — observed 2026-10-11: one was running at `Normal` while the lowered builds above ran. With the
+  flag, the compiler runs inside the lowered tree. The shared rule names this for `nice`; it holds for
+  Windows too. `dotnet run` takes the same flag.
 - **Measured 2026-10-11, lowered, one after another:** ServiceDefaults 80 (6 s), CredsBroker 133 (3 s),
   CredsCli 142 (101 s), CredsMcp 154 (27 s), CredVaultServer 809 (89 s) — 0 failed; `npm test` 5,612 tests,
   0 failed, 379 s on a machine other sessions were also loading.
