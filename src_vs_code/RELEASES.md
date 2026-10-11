@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.14.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.13.1...extension-v1.14.0) (2026-10-11)
+
+
+### Features
+
+* **extension:** a stale WSL MCP install says so (E4.S2) ([#213](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/213)) ([99c9277](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/99c9277d6dccb4526cb481af8e258d5c7c05648b))
+
+
+### Bug Fixes
+
+* **extension:** a gone request reaches no SSH prompt, and the journal names a typed step (E4.S4) ([#215](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/215)) ([f37be17](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/f37be178480422b59b04edc9131101cddf276bfc))
+* **extension:** a request whose client is gone can authorise nothing (E4.S1) ([#205](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/205)) ([85adeac](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/85adeacbf3038c2acbba70468813568fbfd65029))
+* **extension:** a request whose client is gone starts no VPN (E4.S3) ([#212](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/212)) ([d0103c9](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/d0103c929cd9a15b7f4bffd4d2fbafa7393f3238))
+* **extension:** the config snippets' tail — creds config -, lines kept by PowerShell, a Windows C++ branch, the stale-endpoints plan ([#216](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/216)) ([4749a1c](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/4749a1c255fa3e4fdc69ef6d043a65df8c71b3e2))
+
 ## [1.13.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.13.0...extension-v1.13.1) (2026-10-10)
 
 
