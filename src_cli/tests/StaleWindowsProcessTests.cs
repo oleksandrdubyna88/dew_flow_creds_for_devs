@@ -6,7 +6,7 @@ namespace CredsCli.Tests;
 
 /// <summary>
 /// The BUILT <c>creds</c>, walking a folder of windows that crashed: it says no without dialling any of them
-/// (todo/PLAN_stale_endpoint_files_slow_every_refusal.md).
+/// (research/PLAN_stale_endpoint_files_slow_every_refusal.md).
 /// </summary>
 /// <remarks>
 /// <para>The symptom this exists for, measured on the reporting machine: 35 announcements, 34 of them of closed windows,

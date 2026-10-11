@@ -11,7 +11,7 @@ namespace CredsForDevs.ServiceDefaults.Tests.Support;
 /// </summary>
 /// <remarks>
 /// <para>Linked into the broker-client, CLI and MCP test projects rather than copied — the three walks are tested with
-/// one definition of "a dead window" (todo/PLAN_stale_endpoint_files_slow_every_refusal.md §6).</para>
+/// one definition of "a dead window" (research/PLAN_stale_endpoint_files_slow_every_refusal.md §6).</para>
 /// <para>A dead pid is the pid of a process THIS test started and waited for — never a guessed number, which could be
 /// a live process on the machine running the suite. Nothing here reads, moves or deletes a real endpoint folder.</para>
 /// </remarks>

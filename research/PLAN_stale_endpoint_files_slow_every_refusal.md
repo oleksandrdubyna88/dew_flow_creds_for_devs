@@ -1,15 +1,25 @@
 # PLAN — stale endpoint files slow every refusal
 
-> Status: **measured 2026-10-11, the fix chosen by the numbers, implementation in progress.** Scope:
-> `src_broker_client/src/BrokerClient.cs` (the connect every probe makes), a new `src_broker_client/src/LoopbackConnect.cs`,
-> `src_broker_client/src/Endpoints.cs` (a pid that is provably gone), `src_cli/src/Program.cs` and `src_mcp/src/Windows.cs`
-> (the five walks read through it), `src_vs_code/src/cliEndpoint.ts` and `src_vs_code/src/credsAgentServer.ts` (the sweep that
-> was designed and never wired), their tests, and the measuring script `src_vs_code/scripts/endpoint-probe-timing.cjs`.
+> Status: **IMPLEMENTED, 2026-10-11.** Measured first (§3): the 2 s per stale file was a .NET connect to a closed
+> loopback port on Windows waiting out the SYN retransmissions — not WSL, not a listening port, not the reads. Shipped:
+> `LoopbackConnect` (refused at once, as libuv does — a design item the first draft did not have), `Endpoints.Live` /
+> `ReadLive` (a provably-gone pid is never dialled) and the extension's sweep at activation. **Deviations:** the sweep is
+> called from the `CredsAgentServer` constructor, not from a line in `extension.ts` (a size ratchet refuses that file's
+> growth, and the announcement's owner is the better home); the CLI keeps `Read` for its *no window* check and walks
+> `Live` of it, so no sentence or exit code changed; the parallel walk and a client deleting files were not built (§4.4,
+> §4.5). Result on the reporting machine (§10): a fake-key refusal over the real 35 files, 68.42 s → 0.04–0.19 s on
+> Windows and 69.53 s → 0.35–0.40 s through WSL. **Open tail:** the same timing with the RELEASED binaries once the cli,
+> mcp and extension patch releases are cut and installed (the owner installs them).
 >
-> Related docs: [module_extension.md](../research/module_extension.md) (*An announcement per window*),
-> [module_mcp.md](../research/module_mcp.md) (`Windows`), [PLAN_headless_cli.md](../research/PLAN_headless_cli.md)
-> (where the endpoint file was designed), [PLAN_config_key_off_the_command_line.md](../research/PLAN_config_key_off_the_command_line.md)
-> (the `creds config` walk this was found under), [PLAN_wsl_bridge_outlives_its_client.md](PLAN_wsl_bridge_outlives_its_client.md)
+> Scope: `src_broker_client/src/BrokerClient.cs` (the connect every probe makes), `src_broker_client/src/LoopbackConnect.cs`,
+> `src_broker_client/src/Endpoints.cs` (a pid that is provably gone), `src_cli/src/Program.cs` and `src_mcp/src/Windows.cs`
+> (the five walks read through it), `src_vs_code/src/cliEndpoint.ts` and `src_vs_code/src/credsAgentServer.ts` (the sweep
+> that was designed and never wired), their tests, and the measuring script `src_vs_code/scripts/endpoint-probe-timing.cjs`.
+>
+> Related docs: [module_extension.md](module_extension.md) (*An announcement per window*),
+> [module_mcp.md](module_mcp.md) (`Windows`), [PLAN_headless_cli.md](PLAN_headless_cli.md)
+> (where the endpoint file was designed), [PLAN_config_key_off_the_command_line.md](PLAN_config_key_off_the_command_line.md)
+> (the `creds config` walk this was found under), [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md)
 > (why windows leave files behind: a window that crashes or is killed runs no dispose).
 
 ## 1. The symptom (the owner's machine, 2026-10-10 and 2026-10-11)
@@ -200,12 +210,31 @@ under `.claude/rules/shared/tools/low-priority.mjs`, builds with `-m:4 --disable
 ## 9. Definition of Done
 
 - [x] §3 measured on the reporting machine and recorded in this plan; the fix chosen by those numbers.
-- [ ] A refusal for an unknown key, with the real 35 files in the directory, takes under 3 s on that machine — on
+- [x] A refusal for an unknown key, with the real 35 files in the directory, takes under 3 s on that machine — on
       Windows and through WSL — with binaries built from the candidate commit BEFORE merge, and again from the merged
-      commit.
-- [ ] No client deletes an endpoint file; the extension's sweep never deletes a live window's file or its own.
-- [ ] Each change shown RED with the real symptom, GREEN, and RED again with the fix removed.
-- [ ] `module_extension.md`, `module_mcp.md`, `architecture.md` updated; the extension CHANGELOG has the sweep;
+      commit (§10; the merged-commit repeat is the open tail).
+- [x] No client deletes an endpoint file; the extension's sweep never deletes a live window's file or its own.
+- [x] Each change shown RED with the real symptom, GREEN, and RED again with the fix removed.
+- [x] `module_extension.md`, `module_mcp.md`, `architecture.md` updated; the extension CHANGELOG has the sweep;
       `todo/README.md` and `research/README.md` match; `node .claude/rules/shared/tools/plan-lifecycle.mjs` clean; the
       gate's plan and code rounds recorded.
 - [ ] Released: the cli, mcp and extension patch releases that carry it, each asset's `.sha256` checked.
+
+## 10. Results — the fix on the reporting machine (2026-10-11, before merge)
+
+The merge gate of §6.5, with binaries built from the candidate commit `0a3830f4` into a run-unique folder (the installed
+binaries untouched), a FAKE key, and the owner's real endpoint folder: 35 files before, 35 after every run.
+
+| What | Before (§3) | After |
+|---|---|---|
+| Windows: built `creds.exe config -` (Native AOT), three runs | 68.42 s | **0.190 s, 0.043 s, 0.048 s** — exit 92, the same sentence |
+| WSL: built Linux `creds config -` → built `creds.exe` (`CREDS_WINDOWS_BINARY`), three runs | 69.53 s | **0.396 s, 0.349 s, 0.391 s** — exit 92, the same sentence |
+| WSL: the installed Linux `creds` 0.4.0 → built `creds.exe` | — | **0.220 s** |
+
+The Linux half was built framework-dependent rather than Native AOT (the distribution has no `clang`); it only relays, and
+the last row — the installed AOT Linux half with the new Windows half — shows the whole cost was the Windows half's.
+
+**Each change on its own**, from the tests: `BrokerClientConnectTests` saw five closed loopback ports take 10,048 ms with
+the slowest at 2.015 s before `LoopbackConnect`, and pass after; the walk tests (`StaleWindowsTests`,
+`StaleWindowsProcessTests`) saw six announcements of exited processes cost six connections before `Endpoints.Live`, and
+zero after — on the built `creds` for the config read, an alias call and `creds ls`, with exit codes and sentences unchanged.

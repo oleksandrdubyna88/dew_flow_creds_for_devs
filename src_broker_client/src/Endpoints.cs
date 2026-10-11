@@ -98,7 +98,7 @@ public static class Endpoints
     /// These announcements, minus the windows whose process is provably gone — in the same order. Never touches a file.
     /// </summary>
     /// <remarks>
-    /// <para>Measured on the reporting machine (todo/PLAN_stale_endpoint_files_slow_every_refusal.md §3): 33 of 35
+    /// <para>Measured on the reporting machine (research/PLAN_stale_endpoint_files_slow_every_refusal.md §3): 33 of 35
     /// announcements named a pid that no longer existed, and every walk dialled each one. A pid that is gone cannot be a
     /// live window, so it costs no probe here. Every other announcement is left for the health probe to decide, exactly
     /// as before — a REUSED pid (one of the 35 was) is still probed, and the probe still refuses a port that is not ours.</para>

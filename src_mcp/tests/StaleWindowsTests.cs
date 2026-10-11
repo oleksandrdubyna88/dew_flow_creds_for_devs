@@ -8,7 +8,7 @@ namespace CredsMcp.Tests;
 
 /// <summary>
 /// A window that is provably gone costs the MCP server's walks nothing — not a probe, not a connect
-/// (todo/PLAN_stale_endpoint_files_slow_every_refusal.md §4.3).
+/// (research/PLAN_stale_endpoint_files_slow_every_refusal.md §4.3).
 /// </summary>
 /// <remarks>
 /// <para>Measured on the reporting machine: 33 of 35 announcements named a pid that no longer existed, every walk dialled

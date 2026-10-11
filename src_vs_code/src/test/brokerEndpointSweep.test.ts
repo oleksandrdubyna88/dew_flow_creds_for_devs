@@ -9,7 +9,7 @@ import { world } from './brokerWorld';
 
 /**
  * The window retires the announcements of windows that crashed — when it is built, which in VS Code is once,
- * in `activate` (todo/PLAN_stale_endpoint_files_slow_every_refusal.md §4.2).
+ * in `activate` (research/PLAN_stale_endpoint_files_slow_every_refusal.md §4.2).
  *
  * <p>The sweep's predicate had a unit test for weeks and no caller; 35 files piled up on the reporting machine,
  * and every CLI and MCP walk dialled each one. So this drives the REAL broker constructor rather than the

@@ -7,7 +7,7 @@ namespace CredsBroker;
 /// The connect every port-transport call makes — refused at once on Windows when nobody listens.
 /// </summary>
 /// <remarks>
-/// <para><b>Why this exists — measured, not assumed</b> (todo/PLAN_stale_endpoint_files_slow_every_refusal.md §3). On
+/// <para><b>Why this exists — measured, not assumed</b> (research/PLAN_stale_endpoint_files_slow_every_refusal.md §3). On
 /// Windows a TCP connect that meets an RST is retried: the stack retransmits the SYN, and only then fails. To a loopback
 /// port nobody listens on that costs about <b>2 s</b> from .NET (2041–2163 ms measured), against 0–3 ms from Node on the
 /// same ports. A window that crashed leaves an announcement naming exactly such a port, and every walk probed each one:

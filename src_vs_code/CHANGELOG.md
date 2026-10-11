@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a crashed window no longer slows every refusal
+
+- **A window that starts tidies the announcements of windows that crashed.** Every window writes a small
+  `endpoints/window-<pid>.json` so `creds` and `creds-mcp` can find it, and removes it when it closes normally — but
+  a window that crashed or was killed left its file behind, and nothing ever removed one: 35 had piled up on the
+  machine that reported this. A window now removes, when it starts, the files whose process is provably gone — never
+  its own, and never one whose process still exists (a process it may not signal counts as alive).
+- **The other half is in the terminal binaries** (`creds` and `creds-mcp`, released with this): they no longer dial
+  a window whose process is gone, and a closed port is refused at once instead of after Windows' two-second retry.
+  Measured with a key no window holds and the 35 files: `creds config -` answered in 68 s before, under half a second
+  after — on Windows and through WSL alike, where a tool reading its keys under a timeout had stopped getting any.
+
 ## [1.14.0] — 2026-10-11 — A request whose client is gone authorises nothing, and a stale WSL MCP install says so
 
 ### Added — a stale WSL MCP install says so

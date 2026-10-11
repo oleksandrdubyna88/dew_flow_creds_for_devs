@@ -10,7 +10,7 @@ namespace CredsBroker.Tests;
 /// What one announcement of a CLOSED window costs the health probe.
 /// </summary>
 /// <remarks>
-/// <para>Measured on the reporting machine (todo/PLAN_stale_endpoint_files_slow_every_refusal.md §3): a .NET connect to
+/// <para>Measured on the reporting machine (research/PLAN_stale_endpoint_files_slow_every_refusal.md §3): a .NET connect to
 /// a loopback port nobody listens on took about <b>2 s</b> on Windows — the stack meets the RST and retransmits the SYN
 /// before it gives up — while Node, on the same ports, was refused in a millisecond. With 35 announcements of closed
 /// windows, <c>creds config -</c> needed 68 s to refuse an unknown key, and a consumer with a timeout got no key at all.</para>

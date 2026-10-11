@@ -4,7 +4,7 @@
 /**
  * Where the time of an endpoint walk goes — one line per announcement file.
  *
- * <p>Written for todo/PLAN_stale_endpoint_files_slow_every_refusal.md §3. A refusal for an unknown
+ * <p>Written for research/PLAN_stale_endpoint_files_slow_every_refusal.md §3. A refusal for an unknown
  * config key walked every `window-*.json` and took about 2 s per file; this script splits that cost
  * into the parts a walk pays for each file, so the fix is chosen by measurement rather than by
  * arithmetic:</p>
