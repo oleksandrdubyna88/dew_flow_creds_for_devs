@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/mcp-v0.9.1...mcp-v0.10.0) (2026-10-11)
+
+
+### Features
+
+* **mcp:** every creds process logs why it lived and why it ended (E1) ([#201](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/201)) ([9494a67](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/9494a67cad995d18c319b709f0aac960c3a2451e))
+
+
+### Bug Fixes
+
+* **mcp,cli:** the bridge and the relay stop what they started (E3) ([#214](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/214)) ([c7f55af](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/c7f55af5e229657692e678f3a6f1f0217d2d6694))
+* **mcp:** the server ends when its client is gone (E2) ([#211](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/211)) ([93e40d0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/93e40d0c358b3349cc155b5c8c4739ef7fbdd355))
+
 ## [0.9.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/mcp-v0.9.0...mcp-v0.9.1) (2026-10-02)
 
 
