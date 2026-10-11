@@ -36,7 +36,7 @@ Reported 2026-09-17 by the owner, with a screenshot. *Connect SSH* on the same e
 | window | result |
 |---|---|
 | VS Code on Windows | connects |
-| VS Code attached to WSL | `Warning: Identity file c:\Users\strug\AppData\Roaming\Code\User\globalStorage\remsoftdev.creds-for-devs\keys\23284\<guid>.key not accessible: No such file or directory.` |
+| VS Code attached to WSL | `Warning: Identity file c:\Users\<you>\AppData\Roaming\Code\User\globalStorage\remsoftdev.creds-for-devs\keys\23284\<guid>.key not accessible: No such file or directory.` |
 
 ## The cause, and it is one sentence
 
@@ -80,7 +80,7 @@ where the agent serves the key and **no `-i` is emitted at all** — is the shap
 
 Everything below was observed on the owner's machine, not reasoned. It killed the obvious fix.
 
-1. **Translation works.** `wslpath -a 'C:\…\probe.key'` → `/mnt/c/Users/strug/…/probe.key`.
+1. **Translation works.** `wslpath -a 'C:\…\probe.key'` → `/mnt/c/Users/<you>/…/probe.key`.
 2. **And it is useless on its own.** That file lists as `-rwxrwxrwx` inside WSL: `/mnt/c` is
    `9p` / DrvFs mounted **without `metadata`** (`mount` output:
    `type 9p (rw,noatime,aname=drvfs;path=C:\;uid=1000;gid=1000;…)`), so every file on it is 0777.
@@ -100,7 +100,7 @@ Everything below was observed on the owner's machine, not reasoned. It killed th
    between the window's distro and `wslRelayDistros` / `WslRelayManager`'s keys must therefore be
    **case-insensitive**, or the relay socket is looked up under a name that is never found.
 6. **The relay half is present but idle here**: `creds` is installed inside the distribution
-   (`/home/jinx/.local/bin/creds`), `credSshManager.wslAgentRelay` is `false`, and no
+   (`/home/<you>/.local/bin/creds`), `credSshManager.wslAgentRelay` is `false`, and no
    `creds-agent.sock` exists. So the honest message has a real remedy to offer, and this is the
    common state rather than an edge case.
 

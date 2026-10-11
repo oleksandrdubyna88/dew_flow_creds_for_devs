@@ -366,8 +366,23 @@ jobs:
           ./src_service_defaults/tests/bin/Release/net10.0/CredsForDevs.ServiceDefaults.Tests${{ runner.os == 'Windows' && '.exe' || '' }}
         shell: bash
 
+      # The version is the TAG's, stamped as the server's is (`server-binaries` above). Until 2026-10-11
+      # this publish passed no -p:Version, so every `creds` release logged `version 1.0.0`, the SDK
+      # default (research/PLAN_release_binaries_carry_their_version.md). A workflow_dispatch trial has no
+      # tag — GITHUB_REF_NAME is a branch, and `-p:Version=main` fails the build — so it says 0.0.0.
+      # bash for both steps: the Windows legs default to pwsh, where ${VAR#prefix} does not exist.
+      - name: Version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/cli-v* ]]; then
+            echo "VERSION=${GITHUB_REF_NAME#cli-v}" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=0.0.0" >> "$GITHUB_ENV"
+          fi
+
       - name: Publish
-        run: dotnet publish src_cli/src/CredsCli.csproj -c Release -r ${{ matrix.rid }} -o out
+        shell: bash
+        run: dotnet publish src_cli/src/CredsCli.csproj -c Release -r ${{ matrix.rid }} -o out -p:Version="$VERSION"
 
       # A binary that cannot answer --help did not really build; AOT failures often surface
       # only at first run. Skipped when cross-architecture, where the runner cannot execute it.
@@ -375,6 +390,17 @@ jobs:
         if: ${{ !endsWith(matrix.rid, 'arm64') }}
         shell: bash
         run: ./out/creds${{ runner.os == 'Windows' && '.exe' || '' }} --help | grep -q 'creds ssh'
+
+      # The version the binary reports is exactly the tag's. `creds` has no --version verb; it says its
+      # version in a serving verb's log start line, which is what this reads.
+      #
+      # On EVERY leg whose runner has the binary's architecture — the three arm64 legs build on arm64
+      # runners (the Test step above already runs .NET executables there), so they are not skipped like
+      # the older smokes skip them. Only osx-x64 is cross-built; every leg stamps the same way.
+      - name: Smoke · the published binary reports the tag's version
+        if: ${{ matrix.rid != 'osx-x64' }}
+        shell: bash
+        run: .github/scripts/version-smoke.sh cli ./out/creds${{ runner.os == 'Windows' && '.exe' || '' }} "$VERSION"
 
       # The published binary writes its own log (todo/PLAN_wsl_bridge_outlives_its_client.md, E1.S3).
       # `relay-pipe` is the serving verb a runner can drive with nothing behind it: no window announces
@@ -559,8 +585,21 @@ jobs:
           ./src_service_defaults/tests/bin/Release/net10.0/CredsForDevs.ServiceDefaults.Tests${{ runner.os == 'Windows' && '.exe' || '' }}
         shell: bash
 
+      # The tag's version, stamped — see the same two steps in `cli-binaries`. Every `creds-mcp` release
+      # up to 0.10.0 answered `--version` with `creds-mcp 1.0.0`, and the extension's *Check the WSL MCP
+      # install* compares exactly that answer with the release it installed.
+      - name: Version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/mcp-v* ]]; then
+            echo "VERSION=${GITHUB_REF_NAME#mcp-v}" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=0.0.0" >> "$GITHUB_ENV"
+          fi
+
       - name: Publish
-        run: dotnet publish src_mcp/src/CredsMcp.csproj -c Release -r ${{ matrix.rid }} -o out
+        shell: bash
+        run: dotnet publish src_mcp/src/CredsMcp.csproj -c Release -r ${{ matrix.rid }} -o out -p:Version="$VERSION"
 
       # A binary that cannot answer --help did not really build; AOT failures often surface only
       # at first run, and this one carries a package the others do not. Skipped when
@@ -576,10 +615,20 @@ jobs:
       # smoke, with E2's ending — the listen that once kept the server alive for ever, defect A). The
       # check is a script so it runs on a developer's machine against a locally published binary before
       # a tag; its 60 s guard bounds a regression that would otherwise hold the leg for its full half hour.
+      # SMOKE_VERSION makes it also assert that the log's start line names the tag's version.
       - name: Smoke · the published binary ends with its client and writes its log
         if: ${{ !endsWith(matrix.rid, 'arm64') }}
         shell: bash
+        env:
+          SMOKE_VERSION: ${{ env.VERSION }}
         run: .github/scripts/mcp-listen-smoke.sh ./out/creds-mcp${{ runner.os == 'Windows' && '.exe' || '' }}
+
+      # `--version` prints exactly `creds-mcp <the tag's version>` — the line the extension compares. On
+      # every leg but the cross-built osx-x64, as in `cli-binaries`.
+      - name: Smoke · the published binary reports the tag's version
+        if: ${{ matrix.rid != 'osx-x64' }}
+        shell: bash
+        run: .github/scripts/version-smoke.sh mcp ./out/creds-mcp${{ runner.os == 'Windows' && '.exe' || '' }} "$VERSION"
 
       - name: Package
         shell: bash

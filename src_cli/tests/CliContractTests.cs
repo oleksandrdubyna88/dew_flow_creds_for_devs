@@ -99,8 +99,10 @@ public sealed class CliContractTests
     [Fact]
     public void The_cli_names_itself_creds_CLI_and_never_a_product_it_is_not()
     {
-        // Not `creds CLI <version>`: the binary is not version-stamped at publish, so a version
-        // here would read `1.0.0` on every release, which is worse than none (plan §5.4).
+        // Not `creds CLI <version>`. The label was chosen when the binary was not version-stamped at
+        // publish and would have read `1.0.0` on every release (plan §5.4). Releases are stamped since
+        // PLAN_release_binaries_carry_their_version.md; adding the version to this label is a separate
+        // change to the consent sentence, and nobody has asked for it.
         Program.CliAgent.Should().Be("creds CLI");
     }
 
