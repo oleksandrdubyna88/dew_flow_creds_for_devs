@@ -52,7 +52,7 @@ internal static class Program
     /// <remarks>The assembly version, which <c>release.yml</c> stamps from the <c>mcp-v*</c> tag with
     /// <c>-p:Version</c>; <c>.github/scripts/version-smoke.sh</c> fails the release when <c>--version</c> does not
     /// print exactly that tag. A build without the stamp says the SDK default <c>1.0.0</c> — every release up to
-    /// 0.10.0 did (todo/PLAN_release_binaries_carry_their_version.md).</remarks>
+    /// 0.10.0 did (research/PLAN_release_binaries_carry_their_version.md).</remarks>
     internal static string Version => typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
     private static void Note(string message) => Console.Error.WriteLine($"[creds-for-devs] {message}");

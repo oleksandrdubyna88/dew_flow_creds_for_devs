@@ -73,7 +73,7 @@ jobs:
       # is itself checked by every pull request, not first discovered broken on a tag.
       - name: Self-test the release smoke script
         run: .github/scripts/mcp-listen-smoke.test.sh
-      # The same for the version smoke (todo/PLAN_release_binaries_carry_their_version.md): stand-in binaries
+      # The same for the version smoke (research/PLAN_release_binaries_carry_their_version.md): stand-in binaries
       # that say the wrong version, a longer one, CRLF, nothing at all, or never end.
       - name: Self-test the version smoke script
         run: .github/scripts/version-smoke.test.sh

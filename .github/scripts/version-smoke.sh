@@ -7,7 +7,7 @@
 # Why it exists: until 2026-10-11 `release.yml` published both binaries without `-p:Version`, so every release
 # of `creds-mcp` answered `--version` with `creds-mcp 1.0.0` and every `creds` log said `version 1.0.0` — the SDK
 # default — while the extension's WSL install check compares exactly that answer with the release it installed
-# (todo/PLAN_release_binaries_carry_their_version.md). Nothing failed; every check that ran was green.
+# (research/PLAN_release_binaries_carry_their_version.md). Nothing failed; every check that ran was green.
 #
 # What it asserts:
 #   mcp — the FIRST line of `--version` equals `creds-mcp <X.Y.Z>`. Inside WSL a second line names the Windows

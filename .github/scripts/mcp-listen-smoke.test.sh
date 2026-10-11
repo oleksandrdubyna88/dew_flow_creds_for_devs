@@ -11,7 +11,7 @@
 #   - one that never answers tools/list                                   → the smoke must FAIL (the listen was
 #     never open when the client left, so a pass would say nothing about defect A).
 # And, with SMOKE_VERSION asked: a log naming that version must PASS; one naming `1.0.0` or a longer `0.10.10`
-# must FAIL (todo/PLAN_release_binaries_carry_their_version.md).
+# must FAIL (research/PLAN_release_binaries_carry_their_version.md).
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,6 +36,9 @@ done
 sleep "${FAKE_DELAY:-0}"
 mkdir -p "$CREDS_LOG_DIR"
 printf '%s\n' "started: serve, version ${FAKE_VERSION:-0}, pid 1, parent 2" 'exited: code 0, reason clientClosed, after 1 s' > "$CREDS_LOG_DIR/creds-mcp-fake.log"
+# A later line that merely QUOTES a start line — the smoke must judge the first one, not any line.
+[[ -n "${FAKE_LATER_LINE:-}" ]] && printf '%s\n' "$FAKE_LATER_LINE" >> "$CREDS_LOG_DIR/creds-mcp-fake.log"
+exit 0
 EOF
 chmod +x "$fake"
 
@@ -61,6 +64,10 @@ expect 'a server that answers tools/list with an ERROR that merely mentions tool
 expect 'a server whose log names the asked version passes' 0 yes 0 0.10.1 0.10.1 'listen smoke passed'
 expect 'a server whose log says 1.0.0 (the unstamped build) fails the asked 0.10.1' 0 yes 1 0.10.1 1.0.0 'does not name version 0.10.1'
 expect 'a server whose log says 0.10.10 fails the asked 0.10.1' 0 yes 1 0.10.1 0.10.10 'does not name version 0.10.1'
+# The start line is judged, not any line: 1.0.0 at the start and the asked version only on a later line fails
+# (code round 1, findings 1 and 2).
+FAKE_LATER_LINE='note: started: serve, version 0.10.1, pid 3, parent 4' \
+  expect 'a server whose START line says 1.0.0 fails even when a later line names 0.10.1' 0 yes 1 0.10.1 1.0.0 'does not name version 0.10.1'
 
 rm -rf "$work"
 if [[ "$failures" -eq 0 ]]; then

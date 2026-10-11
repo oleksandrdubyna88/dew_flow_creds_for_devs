@@ -368,7 +368,7 @@ jobs:
 
       # The version is the TAG's, stamped as the server's is (`server-binaries` above). Until 2026-10-11
       # this publish passed no -p:Version, so every `creds` release logged `version 1.0.0`, the SDK
-      # default (todo/PLAN_release_binaries_carry_their_version.md). A workflow_dispatch trial has no
+      # default (research/PLAN_release_binaries_carry_their_version.md). A workflow_dispatch trial has no
       # tag — GITHUB_REF_NAME is a branch, and `-p:Version=main` fails the build — so it says 0.0.0.
       # bash for both steps: the Windows legs default to pwsh, where ${VAR#prefix} does not exist.
       - name: Version

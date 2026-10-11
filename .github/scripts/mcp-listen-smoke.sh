@@ -94,9 +94,14 @@ grep -q 'started: serve' "$log" || { echo "the log has no start line"; exit 1; }
 grep -Eq 'parent [1-9][0-9]*' "$log" || { echo "the log names no parent pid"; exit 1; }
 grep -q 'exited: code 0, reason clientClosed' "$log" || { echo "the log has no 'exited: code 0, reason clientClosed' line"; exit 1; }
 # With SMOKE_VERSION set (release.yml sets it to the tag's version), the start line must name exactly that version
-# — `grep -F` and the trailing comma, so neither a `.` nor a longer `0.10.10` can match `0.10.1`
-# (todo/PLAN_release_binaries_carry_their_version.md: every release said 1.0.0 until this was checked).
+# (research/PLAN_release_binaries_carry_their_version.md: every release said 1.0.0 until this was checked). The FIRST
+# start line is judged, never any line that happens to hold the text (code round 1); a literal comparison with the
+# trailing comma, so neither a `.` nor a longer `0.10.10` can match `0.10.1`.
 if [[ -n "${SMOKE_VERSION:-}" ]]; then
-  grep -qF "started: serve, version $SMOKE_VERSION, " "$log" || { echo "the log's start line does not name version $SMOKE_VERSION"; exit 1; }
+  start="$(grep -m1 -F 'started: serve, ' "$log" | tr -d '\r' || true)"
+  if [[ "$start" != *"started: serve, version $SMOKE_VERSION, "* ]]; then
+    echo "the log's start line does not name version $SMOKE_VERSION: $start"
+    exit 1
+  fi
 fi
 echo "listen smoke passed: $binary"

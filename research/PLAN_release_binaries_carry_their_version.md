@@ -1,12 +1,24 @@
 # PLAN — the `creds` and `creds-mcp` release binaries carry the version of their tag
 
-> Status: **plan only, nothing implemented yet (2026-10-11).** Scope: `.github/workflows/release.yml`,
+> Status: **IMPLEMENTED, 2026-10-11.** Scope: `.github/workflows/release.yml`,
 > `.github/workflows/ci-clients.yml`, `.github/scripts/` (one new smoke and its self-test, one optional
 > check added to the listen smoke), `install.sh`, two doc comments in `src_mcp` / `src_cli`, and a
 > sweep of real user names and home paths out of tracked files.
 >
-> Related docs: [architecture.md](../research/architecture.md),
-> [PLAN_caller_identity_in_consent.md](../research/PLAN_caller_identity_in_consent.md) (its finding M7
+> **Deviations.** (1) The version smokes run on every release leg but the cross-built `osx-x64`, not
+> only on the non-arm64 legs as the older smokes do: the arm64 legs build on arm64 runners (cadence
+> consultation). (2) The listen smoke judges the FIRST `started: serve` line, not any line holding the
+> text (code round 1, two reviewers) — watched RED with a later line quoting the right version, GREEN
+> after, RED again with the old check. (3) Every self-test case that expects a refusal also checks the
+> REASON it gives, so a refusal for a different cause does not count. (4) The CLI test comment at
+> `CliContractTests.cs` was reworded rather than the label changed.
+>
+> **Open tail, at the time of promotion:** the two releases (§4) follow the merge of this change and are
+> verified on the downloaded `win-x64` assets; the four extension test files with a user name (§3.7)
+> ship in their own `test(extension)` pull request, which release-please does not release.
+>
+> Related docs: [architecture.md](architecture.md),
+> [PLAN_caller_identity_in_consent.md](PLAN_caller_identity_in_consent.md) (its finding M7
 > named this defect and called the stamp "a small, separable change").
 
 ## 1. Symptom (measured 2026-10-11)

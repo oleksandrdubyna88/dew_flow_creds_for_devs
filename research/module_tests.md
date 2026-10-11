@@ -245,7 +245,7 @@ gained a `windows-latest` leg (bash, the `.exe` suffix), so the Windows half's p
 for the first time; it becomes a required check only after it has reported once.
 
 **The release binaries report their tag's version, and a smoke holds them to it (2026-10-11,
-[PLAN_release_binaries_carry_their_version.md](../todo/PLAN_release_binaries_carry_their_version.md)).** Until then
+[PLAN_release_binaries_carry_their_version.md](PLAN_release_binaries_carry_their_version.md)).** Until then
 `release.yml` published `creds` and `creds-mcp` without `-p:Version`, so every release said `1.0.0` — in
 `creds-mcp --version`, in both binaries' log start lines and in the MCP `ServerInfo.Version` — and the extension's
 *Check the WSL MCP install* could not tell an old install from a new one. Both publish steps now take the tag's
