@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/cli-v0.4.0...cli-v0.4.1) (2026-10-11)
+
+
+### Bug Fixes
+
+* **release:** creds and creds-mcp binaries carry their tag's version ([#223](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/223)) ([5bddf61](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/5bddf615ad5e8795f3331233f9e4afe953b9a0e0))
+
 ## [0.4.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/cli-v0.3.1...cli-v0.4.0) (2026-10-11)
 
 
