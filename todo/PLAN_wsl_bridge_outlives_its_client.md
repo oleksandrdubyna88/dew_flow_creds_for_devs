@@ -1,6 +1,6 @@
 # PLAN — every creds process ends when the client it serves is gone
 
-> Status: **in progress, 2026-10-10 — E1 (#201), E4.S1 (#205), E2 (#211), E4.S3 (#212), E4.S2 (#213), E3 and E4.S4 implemented (§14; §5.4–§5.8 *As built*); E5 not yet.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
+> Status: **in progress, 2026-10-11 — E1 (#201), E4.S1 (#205), E2 (#211), E4.S3 (#212), E4.S2 (#213), E3 (#214), E4.S4 (#215) and E5.S1–S2 implemented (§14; §5.4–§5.8 and §10 *E5, as built*); open: E5.S3's one-day count on the owner's machine and the owner's WSL MCP refresh, both after the release — then the promotion.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
 > round — §14); each epic is re-gated on its own branch. Scope: `src_mcp/src` (`Program.cs`, `WslPump.cs`, the
 > tool lambdas, `Windows.cs`, a new `ServerLifetime`), `src_broker_client/src` (`BrokerClient.cs`, `WslInterop.cs`, a
 > new shared `ChildLifetime`), `src_cli/src` (`AgentRelay.cs`, `RelayPipe.cs`), `src_vs_code/src` (the broker's
@@ -764,6 +764,38 @@ behaviour.
   reads as "this IS the native half" (`/proc/version` cannot be changed for a child). Plain Linux and macOS CI get the
   same environment as before. RED inside WSL first, green inside WSL, still green on Windows.
 
+**E5, as built (2026-10-11)** — what shipped, and where it differs from the design above:
+
+- **The RED is the old build itself, not a scratch copy with the fix removed.** Both harnesses were run unchanged
+  from a scratch checkout of `9494a67c` (E1 merged, E2 and E3 not — defects A, B and C as they were), so every
+  check's RED carries the defect's own words rather than a hand-made one (§14; the RESULTS record, *E5 — the
+  harnesses on the real bridge*). The smoke script got the same treatment against that checkout's `creds-mcp.exe`.
+- **The relay's fd baseline is taken after the FIRST connection, not after the relay starts.** A .NET host opens
+  its child-reaping plumbing the first time it starts a process, and those descriptors are permanent; a baseline at
+  start would read a healthy relay as leaking by a constant. Measured: 83 after the first connection, 83 after ten
+  more on this branch; 83 → 103 on the pre-E3 build.
+- **`manager.dispose()` is proved over a LIVE connection.** The design's "dispose → 0 survivors" proves nothing
+  when no child is alive at the dispose, so a small `scripts/wslHoldSocket.py` holds a connection open on the
+  managed socket (the relay starts a relay-pipe for it and keeps it — the positive control sees exactly one
+  `creds.exe` of the run on Windows), and the dispose must take both halves down within 5 s. The manager is given
+  the run's Windows binary as the distribution sees it (`/mnt/...`, the extension's own `toWslPath`) — a
+  Windows-spelled path starts nothing inside Linux, which the first run of that check showed.
+- **`wslProcs.py` gained `fds <run-dir> <pid>`** (the descriptor count, refused for a pid not from the run
+  directory); the watch exposes `stop(pids)` so the relay is stopped by its own pid through the same held-handle
+  path the sweep uses. The relay is the harness's own child (its first stdout line names the socket, its stderr's
+  connection lines are the positive control), never a `nohup … &` job found by `pkill` afterwards.
+- **The smoke script reads the committed fixture** (`src_mcp/tests/fixtures/claude-code-2.1.289-handshake-2026-07-28.jsonl`)
+  rather than writing a session of its own, and measures the 10 s bound in whole seconds (`$SECONDS` of the writer
+  subshell against the parent's) — conservative when it says "within 10 s". The `ci-clients.yml` Windows leg sets
+  `defaults.run.shell: bash` so one `run:` line serves three operating systems; `branch-protection.json` is
+  untouched, as designed.
+- **E5.S3's tail is open by design, not forgotten:** the upstream issue csharp-sdk#1914 was still open with no
+  comments on 2026-10-11; the owner's WSL MCP refresh (§3.1.7) and the one-day count (§13's first line) need the
+  released build, so they follow the release; the promotion follows them.
+- The two queued test defects (the clipboard window on a mocked clock; the five process tests hermetic inside a
+  distribution) and the two host-dependent extension tests (`hostShell`'s real-bash quoting, `sshExecAuth`'s
+  PATH/Path) shipped in this branch's first commits, each RED first.
+
 ### Ordering constraints
 
 E1 → E2 → E3 → E4 → E5. E2 before E3 because E3's itest for SIGKILL relies on A being fixed. E4.S1 is independent of
@@ -789,7 +821,9 @@ the extension with `npm test`; the WSL itests with `npm run itest:all` on a Wind
 | a gone request starts no VPN | E4.S3 | TS unit (`vscode` stub) + broker |
 | a gone request reaches no SSH prompt; the journal names a typed step | E4.S4 | TS unit (`vscode` stub) + broker |
 | logs leak nothing, stdout stays clean | E1.S2 | process |
-| the whole bridge, real Claude-shaped client | E5.S1 | node itest on WSL (manual) |
+| the whole bridge, real Claude-shaped client — five endings, 0 Windows survivors each | E5.S1 | node itest on WSL (manual; RED against `9494a67c`) |
+| C on the real bridge — ten connections, the fd baseline, a `dispose()` over a live connection | E5.S1 | node itest on WSL (manual; RED against `9494a67c`) |
+| A on the published binary — the listen held open, then end-of-stream | E5.S2 | `.github/scripts/mcp-listen-smoke.sh` in `release.yml` and by hand (RED against the pre-E2 binary) |
 
 Every bug test is shown red with the real symptom before the fix and green after; both observations go in the PR.
 
@@ -807,19 +841,21 @@ Every bug test is shown red with the real symptom before the fix and green after
 
 - [ ] On the measured machine after a day of normal use: `creds-mcp.exe` count equals live MCP clients; `creds.exe
       relay-pipe` count equals live SSH-agent connections (recorded in the RESULTS record).
-- [ ] Defects A, B, C each have a test shown red with the real symptom and then green; the WSL itests of E5.S1 pass.
-- [ ] A late **Allow** for a gone request runs nothing (E4.S1). (§3.3 decided by the owner 2026-10-09: defused modal.)
-- [ ] A gone request starts no VPN, its installers or its launcher, and writes no config (E4.S3).
-- [ ] A gone request is shown no SSH prompt — host key, refusal, remedy — and writes no pin; a request whose chain had
+- [x] Defects A, B, C each have a test shown red with the real symptom and then green; the WSL itests of E5.S1 pass
+      (2026-10-11: 40 and 36 checks GREEN on the real bridge; 10 and 8 RED against `9494a67c` — §14, the RESULTS record).
+- [x] A late **Allow** for a gone request runs nothing (E4.S1). (§3.3 decided by the owner 2026-10-09: defused modal.)
+- [x] A gone request starts no VPN, its installers or its launcher, and writes no config (E4.S3).
+- [x] A gone request is shown no SSH prompt — host key, refusal, remedy — and writes no pin; a request whose chain had
       typed a step is journalled as exactly that (E4.S4).
-- [ ] Every serving host writes `logs/{yyyy-MM-dd}/{app}-{HH-mm-ss}-{pid}.log` with its start and its exit reason;
-      retention works; nothing secret is in a log file.
-- [ ] `creds-mcp --version` reports both halves under WSL; a stale WSL install is reported with an update offer.
-- [ ] Each epic passed its plan and code rounds; its PR's automated comments were read and answered; releases cut only
-      with the owner's OK on the notes.
+- [x] Every serving host writes `logs/{yyyy-MM-dd}/{app}-{HH-mm-ss}-{pid}.log` with its start and its exit reason;
+      retention works; nothing secret is in a log file (E1; the release smoke of both binaries checks the file).
+- [x] `creds-mcp --version` reports both halves under WSL; a stale WSL install is reported with an update offer (E2, E4.S2).
+- [ ] Each epic passed its plan and code rounds; its PR's automated comments were read and answered (E1–E5: §14);
+      releases cut only with the owner's OK on the notes — **open: the releases of E2–E5's binaries and the extension**.
 - [ ] `research/module_extension.md`, `module_tests.md`, `architecture.md` (the WSL bridge diagram and process lifetime),
       `PLAN_mcp_wsl_bridge.md` (its promise now kept — a pointer here) updated; `todo/README.md` and `research/README.md`
-      match; `node .claude/rules/shared/tools/plan-lifecycle.mjs` passes; the plan is promoted when E5 lands.
+      match; `node .claude/rules/shared/tools/plan-lifecycle.mjs` passes (all done 2026-10-11) — **open: the plan is
+      promoted** once the first line above is measured on the owner's machine with the released build.
 
 ## 14. Review record
 
@@ -1441,3 +1477,44 @@ answered** (codex's four roles — one vendor's verdict).
 | 4 | the gate is not read during the pin write: a client gone while `persistPin` awaits the vault still gets the pin saved and the known_hosts file written | **accepted for the file, not for the pin** — the request is read again after the awaited write, before `materializeKnownHosts`; the pin write itself began for a live request (the person's *Trust and connect*, checked synchronously before it) and a write already started is finished — E4.S1's rule for a consent remembered (its round 3, finding 2) and the rotation's for its statement. RED first (*"a known_hosts file was written for a request whose client had gone"*, the request aborted inside the vault write) → GREEN → RED again with the check removed; the same test pins that the pin stands |
 | 5 | a remedy already running when the client disconnects completes; only the retry is stopped | **rejected** — the remedy starts only for a live request (the gate is read synchronously after the modal, no await before `runRemedy`); a relay started or a key loaded into the agent is the window's own setup the person asked for by pressing the button, and outlives any request by design — what E4.S3 recorded for a typed command and a tunnel up; the retry enters `connectEntity`, which refuses at its entry. Threading the gate into every remedy implementation is the tunnel-lifecycle plan's class of change |
 | 6 | the entry's PIN box stays open after the agent disconnects | **rejected** — rounds 1 and 2, no new argument: the recorded open tail |
+
+### Epic E5 — proof on the real bridge, and the tail (branch `test/e5-proof-on-the-real-bridge`)
+
+**Plan round (2026-10-10, session `d9a2dcbf`) — `proceed`**, gating 2, **1 of 1 reviewers answered** (codex
+`gpt-6-luna`, three findings — one vendor's verdict, not a panel's). Findings 1 and 2 — the check and the stop must
+go through one held process handle; the `/tmp` budget must be stated — were **accepted** and are built into the
+design block above (*E5 design, settled before its plan round*). The session that resolved the round ended at its
+model limit before writing this table, so finding 0's text and decision are on the gate's own log, not here;
+nothing in the design block depends on it.
+
+**What shipped, and where it differs from the design:** §10, *E5, as built (2026-10-11)* — the RED is the old
+build itself, the relay's fd baseline after the first connection, `dispose()` proved over a live connection, the
+Windows binary handed to the manager as a WSL path, `wslProcs.py fds` and `wslHoldSocket.py`, the smoke script
+reading the committed fixture.
+
+**Tests, red first — the harnesses run unchanged from a scratch checkout of `9494a67c` (E1 merged; A, B and C
+as they were), then on this branch:**
+
+- `creds-mcp-wsl-itest.cjs`, 10 of 40 RED: *"SIGINT: the wrapper ends with exit code 130 —
+  {"event":"ended","code":null,"signal":"SIGINT","ms":11}"* (and SIGTERM, SIGHUP likewise — the default
+  disposition, defect B); *"eof: the wrapper ends with exit code 0 — the wrapper did not end within 20000 ms of
+  eof"* (the unbounded wait, B); *"SIGHUP: 0 Windows survivors within 5 s — Windows creds-mcp.exe this run started
+  and did not take down: 15284"* (defect A; the same pid failed the eof and SIGKILL endings' positive control and
+  the run's last check, and the run ended *swept 1 process(es) this run left behind: 15284* — the sweep by pid
+  working). → **40 of 40 GREEN** on this branch: 130 / 143 / 129 / 0 / killed, the Windows half gone by the first
+  poll after every ending, nothing of the run left inside WSL.
+- `wsl-agent-relay-itest.cjs`, 8 of 36 RED: *"0 new creds.exe relay-pipe of this run on Windows within 5 s —
+  … did not take down: 46832, 15120, 47984, 41992, 45948, 44488, 42004, 38768, 42596, 48168, 41708"* (defect C,
+  eleven children); *"the relay's descriptor count is back at its baseline (83) — now 103"*; *"it removed its
+  socket on the way out — …/relay.sock still exists"* (no handler on the old relay). → **36 of 36 GREEN**: 0
+  children, 83 → 83, the socket gone, the manager's dispose taking a live connection's relay-pipe down with it.
+- `.github/scripts/mcp-listen-smoke.sh` against the pre-E2 `creds-mcp.exe`: *"tools/list answered; stdin closed
+  at 2s, the server exited with code 124 at 61s — expected exit code 0 after the client's end-of-stream"* (the
+  guard ended it, defect A). → GREEN on this branch's Debug build and its win-x64 Native AOT publish.
+- The branch's first commits, each RED first (recorded in their messages): the clipboard window tests on a mocked
+  clock; the five process tests hermetic inside a distribution (RED inside WSL, GREEN, RED again); the
+  `hostShell` real-bash quoting and `sshExecAuth` PATH/Path tests holding on this Windows shell.
+
+Suites on Windows in Release, as CI's new leg runs them: cli 142 (4 skipped), mcp 160 (4 skipped), broker 133,
+service defaults 80 (1 skipped) — 0 failed; the extension `npm test` 5,607 (5 skipped, 0 failed), `typecheck` and
+`lint` clean; `plan-lifecycle.mjs` clean. Measurements: the RESULTS record, *E5 — the harnesses on the real bridge*.

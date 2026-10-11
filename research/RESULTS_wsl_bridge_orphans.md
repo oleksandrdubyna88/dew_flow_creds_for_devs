@@ -276,3 +276,69 @@ connections through the built `creds relay` against an echo child left **0** `re
 twenty left them all alive with the fix removed), and SIGTERM and SIGHUP — the latter what a killed `wsl.exe`
 delivers — stopped a held connection's stubborn child and removed the socket (`AgentRelayHostTests`). The
 hand-run `wsl-agent-relay-itest.cjs` against this build, on the real bridge, is recorded in the plan's §14.
+
+## E5 — the harnesses on the real bridge, 2026-10-11
+
+The same Windows 11 machine and Ubuntu WSL2 distribution (node 20, python 3.12 and the .NET SDK inside it). Both
+harnesses in their E5 shape (`creds-mcp-wsl-itest.cjs`, `wsl-agent-relay-itest.cjs`; the plan's E5.S1): every
+binary a run starts is a copy in a directory named for the run, on both sides, and every count is a set difference
+of the processes whose **executable path** lies under that directory — `Get-CimInstance Win32_Process` on Windows,
+`/proc/<pid>/exe` inside the distribution — polled every 250 ms for up to 5 s. A Windows watch costs ~0.7–0.9 s per
+poll (a PowerShell process per question), so "gone N ms after" below means *gone by the first poll*. The Linux
+halves were Debug builds made inside the distribution (no AOT; the code is the same, only the packaging differs —
+the AOT wrapper was measured in E3 above). Each harness was then run unchanged against a scratch checkout of
+`9494a67c` — E1 merged, E2 and E3 not: the Windows half still in defect A, the wrapper in defect B, the relay in
+defect C — so that every check has a RED on record, with the defect's own words.
+
+### The MCP bridge — a Claude-Code-shaped client ends the session five ways
+
+The client (`wsl-mcp-client.cjs`, the distribution's own node, the wrapper's real parent — never a bash `&` job)
+sends the captured 2.1.289 session (`server/discover`, `subscriptions/listen`, `server/discover`, `tools/list`),
+waits for the three replies while the listen stays open, then ends the session. Before each ending exactly one
+`creds-mcp.exe` of the run was alive on Windows (the positive control held 5 of 5 times in the GREEN run).
+
+| Ending | This branch: the wrapper's exit | the wrapper ended, after the word | the Windows half gone | Pre-E2/E3 pair: what the harness saw |
+|---|---|---|---|---|
+| SIGINT | **130** | 82 ms | by the first poll (868 ms) | `{"code":null,"signal":"SIGINT"}` — died by the default disposition, no handler (B) |
+| SIGTERM | **143** | 86 ms | by the first poll (767 ms) | `{"code":null,"signal":"SIGTERM"}` — the same |
+| SIGHUP | **129** | 73 ms | by the first poll (833 ms) | `{"code":null,"signal":"SIGHUP"}` — and **a `creds-mcp.exe` survived** (A): still there at the 5 s bound, at the next two endings, and at the end of the run |
+| stdin closed (`eof`) | **0** | 1,179 ms | by the first poll (890 ms) | *the wrapper did not end within 20000 ms of eof* — the unbounded wait after a hang-up (B); the positive control saw two processes, the survivor among them |
+| SIGKILL of the wrapper | killed, as sent | 9 ms | by the first poll (707 ms) | the new Windows half left, the SIGHUP survivor did not |
+
+**40 of 40 checks GREEN on this branch; 10 of 40 RED against the old pair** — and the run's last line, *swept 1
+process(es) this run left behind: 15284*, is the sweep working as designed: the survivor stopped by pid through a
+held handle after its path was re-read, nothing else touched. Two things stated rather than smoothed over: with the
+old pair, the Windows half DID leave after SIGINT, SIGTERM and SIGKILL of the old wrapper (as on 2026-10-10 — the
+`/init` proxy evidently dies with it and delivers end-of-stream, which that build's 2.2.0 SDK honours when it feels
+like it), and survived SIGHUP once in one run; the 2026-10-09 leak was never reliably reproducible from a single
+signal, which is why the harness asserts the behaviour the fix guarantees rather than a particular leak. And the
+`eof` ending on this branch takes ~1.2 s where the signals take under 100 ms: that is the pump's drain (the Windows
+half's own `drain + deadline` after end-of-stream, then its exit code read by the wrapper) — the ending where
+nobody is killed.
+
+### The relay — ten connections, a stop by pid, and a `dispose()` over a live connection
+
+| What | This branch | Pre-E3 `creds` |
+|---|---|---|
+| 10 × `ssh-add -l` through the relay | 10 of 10 list the key; the relay's own lines: 10 opened, 10 `still running: false` | 10 of 10 list the key |
+| `creds.exe relay-pipe` of the run on Windows, 5 s after the tenth | **0** | **11** (the first connection's and all ten — pids on record), still there 5 s later; gone only when the old relay was stopped and its pipes closed under them |
+| the relay's descriptor count (`/proc/<pid>/fd`), baseline after the first connection → after the ten | **83 → 83** | 83 → **103** (defect C's 115 pipe fds, in miniature) |
+| the relay stopped by its own pid (SIGTERM through a pidfd, the path re-read first) | gone within 5 s, **socket removed** | gone within 5 s, **socket left** — no handler, `ProcessExit` skipped |
+| the manager's relay, a connection HELD open (`wslHoldSocket.py`) | exactly one `creds.exe relay-pipe` of the run alive on Windows (the positive control) | none seen — the old relay's child had already ended its connection |
+| `manager.dispose()` (a killed `wsl.exe`, SIGHUP to the relay) | **0** relay-pipe on Windows and **0** relay inside WSL by the first poll (866 ms); managed socket removed | 0 and 0 — but the managed socket left |
+
+**36 of 36 checks GREEN on this branch; 8 of 36 RED against the pre-E3 build.** The fd baseline is taken after the
+FIRST connection rather than at start, on purpose: a .NET host opens its child-reaping plumbing the first time it
+starts a process, and those descriptors are permanent — a baseline at start would read a healthy relay as leaking
+by a constant.
+
+### The release smoke, on a published binary
+
+`.github/scripts/mcp-listen-smoke.sh` (E5.S2) runs the published `creds-mcp` the way Claude Code leaves it: the
+captured session written, stdin held open until the `tools/list` reply has arrived, then closed; exit code 0 within
+10 s of that; the log's start line, a real parent and `exited: code 0, reason clientClosed`. On this branch's
+binaries it passes — the Debug build (*tools/list answered; stdin closed at 1s, the server exited with code 0 at
+3s*) and the win-x64 Native AOT publish, 15,760,384 B (*stdin closed at 0s, the server exited with code 0 at 2s*;
+its log: `exited: code 0, reason clientClosed, after 1.085 s`). Against the pre-E2 `creds-mcp.exe` it is RED with defect A's own
+shape: *tools/list answered; stdin closed at 2s, the server exited with code 124 at 61s — expected exit code 0
+after the client's end-of-stream* — the 60 s guard is what ended it.
