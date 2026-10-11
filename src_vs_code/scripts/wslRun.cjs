@@ -1,7 +1,8 @@
 'use strict';
 
 /**
- * Where a WSL itest run keeps the binaries it starts — on both sides of the bridge, and never shared.
+ * Where a WSL itest run keeps the binaries it starts — on both sides of the bridge, and never shared — and how
+ * it runs anything inside the distribution.
  *
  * <p><b>Why a run directory.</b> The two WSL harnesses assert that nothing they started outlives its client,
  * and they sweep what did. Both questions are only safe if "what this run started" can be told apart from
@@ -16,6 +17,13 @@
  * `/tmp` is listed at the end of every run for the person to clear (the distribution's next boot empties `/tmp`
  * on a systemd distribution). The Windows run directory is removed at the end, from Windows, by its exact
  * name.</p>
+ *
+ * <p><b>Exe + argv, never a shell string</b> (security.md; E5 code round, findings 0 and 1). Every step inside
+ * the distribution is `wsl.exe -e bash -l wslSteps.sh NAME=value... -- verb args...`: the script is constant and
+ * checked in, the exports and every path travel as argv entries, and the one place a composed shell line runs
+ * is the relay harness's check of the line the product itself composes. Every call is bounded by a timeout; a
+ * `wsl.exe` ended by it delivers SIGHUP to what it started, and the harness's sweep stops by pid whatever is
+ * still there (`wslStrays.cjs`).</p>
  */
 
 const crypto = require('crypto');
@@ -31,31 +39,40 @@ const WINDOWS_PREFIX = 'creds-itest-';
 /** A name for this run: time and pid, so two harnesses started in the same second still differ. */
 const RUN_ID = `${Date.now().toString(36)}-${process.pid}`;
 
-function run(exe, args, options = {}) {
-  return new Promise((resolve) => {
-    execFile(exe, args, { timeout: 300_000, maxBuffer: 16 * 1024 * 1024, ...options }, (error, stdout, stderr) => {
-      resolve({ code: error ? (error.code ?? 1) : 0, stdout: String(stdout), stderr: String(stderr) });
-    });
-  });
-}
-
-/** One command inside the default distribution, as a login shell so PATH is a person's PATH. */
-const wsl = (script) => run('wsl.exe', ['-e', 'bash', '-lc', script]);
-
-/** A program inside the distribution with these exact arguments — no shell anywhere between. */
-const wslExec = (args, options = {}) => run('wsl.exe', ['-e', ...args], options);
-
 /** A Windows path as the distribution sees it. */
 const asLinux = (winPath) =>
   winPath.replace(/^([A-Za-z]):/, (_, drive) => `/mnt/${drive.toLowerCase()}`).replace(/\\/g, '/');
 
-/** A path that may be written into a `bash -lc` line: no quote, no `$`, no backtick, no space. */
-function plainPath(value) {
-  if (!/^[A-Za-z0-9/_.:-]+$/.test(value)) {
-    throw new Error(`refusing to put ${JSON.stringify(value)} into a shell line`);
-  }
-  return value;
+/** The constant script every step inside the distribution goes through. */
+const STEPS = asLinux(path.join(__dirname, 'wslSteps.sh'));
+
+/**
+ * One process to its end: exit code, stdout, stderr — never a throw. `input`, when given, is written to its
+ * stdin and the stream closed; the timeout (5 min by default) ends the process.
+ */
+function run(exe, args, options = {}) {
+  const { input, ...rest } = options;
+  return new Promise((resolve) => {
+    const child = execFile(exe, args, { timeout: 300_000, maxBuffer: 16 * 1024 * 1024, ...rest }, (error, stdout, stderr) => {
+      resolve({ code: error ? (error.code ?? 1) : 0, stdout: String(stdout), stderr: String(stderr) });
+    });
+    if (input !== undefined) {
+      child.stdin.end(input);
+    }
+  });
 }
+
+/** `NAME=value` entries, one per variable. */
+const pairs = (env) => Object.entries(env).map(([name, value]) => `${name}=${value}`);
+
+/** The argv (after `wsl.exe`) of one step: the exports, then the verb and its arguments. */
+const stepArgv = (env, verb, args = []) => ['-e', 'bash', '-l', STEPS, ...pairs(env), '--', verb, ...args];
+
+/** One step inside the default distribution, to its end. */
+const wslStep = (env, verb, args = [], options = {}) => run('wsl.exe', stepArgv(env, verb, args), options);
+
+/** A program inside the distribution with these exact arguments — no shell anywhere between. */
+const wslExec = (args, options = {}) => run('wsl.exe', ['-e', ...args], options);
 
 /** This run's directories, created now. */
 function runDirectories() {
@@ -74,18 +91,38 @@ function copyWindowsBinary(dirs, { kind, project, exe }) {
   return path.join(target, exe);
 }
 
-/** The repo-relative inputs of one Linux build: the projects' sources plus the shared build files. */
+/** A source file of a project, wherever it sits below `src/` — never a build output. */
+const isSource = (relative) =>
+  (relative.endsWith('.cs') || relative.endsWith('.csproj')) && !/^(bin|obj)[\\/]/.test(relative);
+
+/**
+ * The repo-relative inputs of one Linux build: the projects' sources (recursively, so a future subfolder changes
+ * the hash rather than being silently left out) plus the shared build files — `Directory.Build.rsp` among them,
+ * which is what switches MSBuild node reuse off, and `global.json`, which pins the SDK (own review of E5).
+ */
 function buildInputs(projects) {
-  const files = ['Directory.Build.props', 'Directory.Packages.props', 'nuget.config', 'contract/broker-v1.json'];
+  const files = [
+    'Directory.Build.props',
+    'Directory.Build.rsp',
+    'Directory.Packages.props',
+    'global.json',
+    'nuget.config',
+    'contract/broker-v1.json',
+  ];
   for (const project of projects) {
     const dir = path.join(REPO, project, 'src');
-    for (const name of fs.readdirSync(dir).sort()) {
-      if (name.endsWith('.cs') || name.endsWith('.csproj')) {
-        files.push(plainPath(`${project}/src/${name}`));
+    for (const name of fs.readdirSync(dir, { recursive: true }).map(String).sort()) {
+      if (isSource(name)) {
+        files.push(`${project}/src/${name.replace(/\\/g, '/')}`);
       }
     }
   }
   return files;
+}
+
+/** Stop a run before it starts anything, loudly: `runAndSweep` prints the reason and the fix and exits 0. */
+function skip(reason, fix) {
+  throw Object.assign(new Error(reason), { skip: true, fix });
 }
 
 /** The build directory for exactly these inputs: a hash of their names and bytes. */
@@ -97,32 +134,26 @@ function buildDirectory(kind, files) {
   return `${LINUX_PREFIX}build-${kind}-${hash.digest('hex').slice(0, 12)}`;
 }
 
+const isBuilt = async (executable) => (await wslStep({}, 'exists', [executable])).stdout.includes('yes');
+
 /**
  * Build `project` for Linux inside the distribution, once per set of inputs, then copy its output into this
  * run's Linux directory. Answers the copied executable, or undefined when the build failed (its tail printed).
  */
 async function linuxBinary(dirs, { kind, project, projects, exe }) {
   const files = buildInputs(projects);
-  const build = plainPath(buildDirectory(kind, files));
+  const build = buildDirectory(kind, files);
   const output = `${build}/${project}/src/bin/Debug/net10.0`;
-  const repo = plainPath(asLinux(REPO));
-  const built = await wsl(`test -x ${output}/${exe} && echo yes`);
-  if (!built.stdout.includes('yes')) {
+  if (!(await isBuilt(`${output}/${exe}`))) {
     console.log(`      building the Linux ${exe} inside WSL into ${build} (once per change, a minute or so)…`);
-    const dirsToMake = [...new Set(files.map((f) => `${build}/${path.posix.dirname(f)}`))].join(' ');
-    const copies = files.map((f) => `cp ${repo}/${f} ${build}/${f}`).join(' && ');
-    // No AOT: the distribution has the SDK but not necessarily a native linker, and the code under test is
-    // identical either way — only the packaging differs.
-    const result = await wsl(
-      `mkdir -p ${dirsToMake} && ${copies} && cd ${build}/${project}/src && dotnet build -c Debug -p:PublishAot=false 2>&1 | tail -5`,
-    );
-    if (!(await wsl(`test -x ${output}/${exe} && echo yes`)).stdout.includes('yes')) {
+    const result = await wslStep({}, 'build', [build, asLinux(REPO), project, ...files]);
+    if (!(await isBuilt(`${output}/${exe}`))) {
       console.log(result.stdout.trim());
       return undefined;
     }
   }
-  const target = `${plainPath(dirs.linux)}/${kind}`;
-  await wsl(`mkdir -p ${target} && cp -r ${output}/. ${target}/`);
+  const target = `${dirs.linux}/${kind}`;
+  await wslStep({}, 'copy-build', [output, target]);
   return `${target}/${exe}`;
 }
 
@@ -139,7 +170,7 @@ async function finishRun(dirs) {
       console.log(`      left ${dirs.windows}: ${error.message}`);
     }
   }
-  const kept = await wsl(`du -sch ${LINUX_PREFIX}* 2>/dev/null | tail -1`);
+  const kept = await wslStep({}, 'disk-usage');
   console.log(`      inside WSL, ${LINUX_PREFIX}* now holds ${kept.stdout.trim().split(/\s+/)[0] || 'nothing'} — never removed by a harness; clear it by hand, or let the next boot empty /tmp`);
 }
 
@@ -147,10 +178,11 @@ module.exports = {
   RUN_ID,
   REPO,
   run,
-  wsl,
+  stepArgv,
+  wslStep,
   wslExec,
   asLinux,
-  plainPath,
+  skip,
   windowsBuild,
   runDirectories,
   copyWindowsBinary,

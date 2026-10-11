@@ -101,7 +101,11 @@ never through a command line. And **nothing is deleted inside the distribution**
 agent's `wsl.exe` cleanup removed parts of a home directory, 2026-10-07): the Linux build lands in a
 directory named by a hash of its inputs, so a stale build is never reused and never removed; sockets and
 scratch files are run-unique; each run ends by printing what `/tmp/creds-itest-*` now holds — a few MB per
-run, for the person or the distribution's next boot to clear.
+run, for the person or the distribution's next boot to clear. **And every step inside the distribution is exe +
+argv** (`security.md`; E5's code round): `wsl.exe -e bash -l scripts/wslSteps.sh NAME=value... -- <verb> [args]`,
+one constant checked-in script whose exports are applied after the login profile and whose every value — a path, a
+socket, a file list — is an argv entry; nothing composes shell text from a value, and a harness that cannot run
+here throws `skip(...)` so the sweep and the finish still run before it exits 0.
 
 **`masked-run-itest.cjs` on Linux was verified, not assumed.** A reviewer called adding it to an
 `ubuntu-latest` runner blocking, on the grounds that a pty harness written and run only on Windows

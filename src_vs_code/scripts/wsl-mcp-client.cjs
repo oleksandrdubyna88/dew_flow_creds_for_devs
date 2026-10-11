@@ -2,14 +2,16 @@
 
 // A client shaped like Claude Code, run INSIDE the distribution by `creds-mcp-wsl-itest.cjs`:
 //
-//   node wsl-mcp-client.cjs <fixture.jsonl> [--env NAME=value]... -- <wrapper> [args...]
+//   node wsl-mcp-client.cjs <fixture.jsonl> -- <wrapper> [args...]
 //
 // It spawns the Linux `creds-mcp` wrapper DIRECTLY — no shell, no `&` job: a background job of a non-interactive
 // shell starts with SIGINT ignored, which would make a SIGINT test pass or fail for the wrong reason (plan §7.1).
-// It writes the captured Claude Code session (server/discover, subscriptions/listen, server/discover, tools/list),
-// waits until every request but the held listen is answered, and says so on stdout. Then it waits for ONE word on
-// its own stdin — SIGINT, SIGTERM, SIGHUP or SIGKILL, which it sends itself as the wrapper's parent (as Claude Code
-// does), or `eof`, which closes the wrapper's stdin — and reports how the wrapper ended.
+// The bridge's variables (the endpoint directory, the log directory, WSLENV, the Windows binary) are inherited:
+// `wslSteps.sh` exported them before it exec'd this process. It writes the captured Claude Code session
+// (server/discover, subscriptions/listen, server/discover, tools/list), waits until every request but the held
+// listen is answered, and says so on stdout. Then it waits for ONE word on its own stdin — SIGINT, SIGTERM,
+// SIGHUP or SIGKILL, which it sends itself as the wrapper's parent (as Claude Code does), or `eof`, which closes
+// the wrapper's stdin — and reports how the wrapper ended.
 //
 // Every line it prints is one JSON event: {event: "ready", pid}, {event: "ended", code, signal, ms},
 // {event: "failed", reason}. The wrapper's stderr is passed through on this process's stderr.
@@ -26,21 +28,13 @@ const WORDS = new Set(['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGKILL', 'eof']);
 
 const say = (event) => process.stdout.write(`${JSON.stringify(event)}\n`);
 
-/** `<fixture> [--env N=v]... -- <wrapper> [args...]` */
+/** `<fixture> -- <wrapper> [args...]` */
 function parse(argv) {
   const split = argv.indexOf('--');
-  if (split < 1 || split === argv.length - 1) {
-    throw new Error('usage: wsl-mcp-client.cjs <fixture.jsonl> [--env NAME=value]... -- <wrapper> [args...]');
+  if (split !== 1 || split === argv.length - 1) {
+    throw new Error('usage: wsl-mcp-client.cjs <fixture.jsonl> -- <wrapper> [args...]');
   }
-  const env = {};
-  for (let i = 1; i < split; i += 2) {
-    const [name, ...value] = (argv[i + 1] ?? '').split('=');
-    if (argv[i] !== '--env' || name === '') {
-      throw new Error(`not an --env NAME=value pair: ${argv[i]} ${argv[i + 1]}`);
-    }
-    env[name] = value.join('=');
-  }
-  return { fixture: argv[0], env, wrapper: argv[split + 1], args: argv.slice(split + 2) };
+  return { fixture: argv[0], wrapper: argv[split + 1], args: argv.slice(split + 2) };
 }
 
 /** The ids the server answers: every request of the session except the listen, which it holds open. */
@@ -73,9 +67,9 @@ function end(child, word) {
 }
 
 function main() {
-  const { fixture, env, wrapper, args } = parse(process.argv.slice(2));
+  const { fixture, wrapper, args } = parse(process.argv.slice(2));
   const lines = fs.readFileSync(fixture, 'utf8').split('\n').filter((line) => line.trim() !== '');
-  const child = spawn(wrapper, args, { env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'inherit'] });
+  const child = spawn(wrapper, args, { stdio: ['pipe', 'pipe', 'inherit'] });
   const waiting = new Set(expectedIds(lines));
   let endedAt;
   let exited = false;
@@ -90,6 +84,11 @@ function main() {
     clearTimeout(notReady);
     say({ event: 'ended', code, signal, ms: endedAt === undefined ? null : Date.now() - endedAt });
     process.exit(0);
+  });
+  // A wrapper that could not be started is an event, not a stack trace the Windows side waits 90 s to miss.
+  child.on('error', (error) => {
+    say({ event: 'failed', reason: `could not start ${wrapper}: ${error.message}` });
+    process.exit(2);
   });
   child.stdin.on('error', () => undefined); // a wrapper that is gone closes its stdin under us
   watchReplies(child, waiting, () => {

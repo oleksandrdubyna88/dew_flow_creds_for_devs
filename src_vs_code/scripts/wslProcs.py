@@ -16,10 +16,14 @@ it, and the signal is sent through it — so a pid that exited and was reused in
 process's pidfd answers "gone" instead. Nothing here deletes anything.
 """
 import os
+import re
 import signal
 import sys
 
-PREFIX = "/tmp/creds-itest-"
+# `/tmp/creds-itest-<time36>-<pid>` — a RUN directory and nothing else: not a parent, not the shared build
+# directory (`/tmp/creds-itest-build-<kind>-<hash>`, from which nothing is ever started), not a prefix that
+# could match more (own review of E5).
+RUN_DIR = re.compile(r"/tmp/creds-itest-[0-9a-z]+-[0-9]+/?")
 
 
 def refuse(reason):
@@ -28,8 +32,8 @@ def refuse(reason):
 
 
 def run_dir(arg):
-    """Only a run directory of these harnesses: never a parent, never a prefix that could match more."""
-    if not arg.startswith(PREFIX) or len(arg) <= len(PREFIX) or "/" in arg[len(PREFIX):].rstrip("/") or ".." in arg:
+    """Only a run directory of these harnesses, in the shape `wslRun.cjs` names them."""
+    if RUN_DIR.fullmatch(arg) is None:
         refuse(f"not an itest run directory: {arg!r}")
     return arg.rstrip("/") + "/"
 

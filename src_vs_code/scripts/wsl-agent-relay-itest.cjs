@@ -28,14 +28,13 @@
 // inside the distribution, or a Linux build that would not build — each prints what fixes it.
 const crypto = require('crypto');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const readline = require('readline');
 const { spawn } = require('child_process');
 
 const OUT = path.join(__dirname, '..', 'out');
-const { runAndSweep, started, watchLinuxPids, watchWindowsPids } = require('./wslStrays.cjs');
-const { run, wsl, wslExec, asLinux, windowsBuild, runDirectories, copyWindowsBinary, linuxBinary, finishRun } = require('./wslRun.cjs');
+const { pollUntil, runAndSweep, started, watchLinuxPids, watchWindowsPids } = require('./wslStrays.cjs');
+const { run, stepArgv, wslStep, wslExec, asLinux, skip, windowsBuild, runDirectories, copyWindowsBinary, linuxBinary, finishRun } = require('./wslRun.cjs');
 
 const HOLD = asLinux(path.join(__dirname, 'wslHoldSocket.py'));
 /** Every watch this run started; the sweep at the bottom walks them. */
@@ -62,16 +61,6 @@ function check(name, ok, detail) {
   }
 }
 
-function skip(reason, fix) {
-  console.log(`SKIP — ${reason}`);
-  if (fix !== undefined) {
-    console.log(`      ${fix}`);
-  }
-  process.exit(0);
-}
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 /** This run's socket for the relay it starts itself, and for the one the manager starts. */
 const relaySocket = () => `${dirs.linux}/relay.sock`;
 const managedSocket = () => `${dirs.linux}/managed.sock`;
@@ -79,7 +68,8 @@ const managedSocket = () => `${dirs.linux}/managed.sock`;
 const scratch = (name) => `${dirs.linux}/${name}`;
 
 /**
- * The environment every WSL step needs, as `export` lines.
+ * The environment every WSL step needs, as name → value — exported by `wslSteps.sh` after the login profile,
+ * never written into a shell line.
  *
  * <p>`WSLENV` is not decoration. Environment variables do NOT cross from WSL into a Windows child
  * — measured 2026-08-26, including from .NET's own `ProcessStartInfo.Environment` — so without
@@ -88,15 +78,20 @@ const scratch = (name) => `${dirs.linux}/${name}`;
  * way, so neither half writes into the person's real log folder.</p>
  */
 function wslEnv(endpointDir, socket = relaySocket()) {
-  return [
-    `export CREDS_ENDPOINT_DIR='${asLinux(endpointDir)}'`,
-    `export CREDS_LOG_DIR='${asLinux(dirs.logs)}'`,
-    'export WSLENV=CREDS_ENDPOINT_DIR/p:CREDS_LOG_DIR/p',
-    `export CREDS_WINDOWS_BINARY='${asLinux(windowsCli)}'`,
-    `export CREDS_RELAY_SOCKET='${socket}'`,
-    `export SSH_AUTH_SOCK='${socket}'`,
-  ].join('; ');
+  return {
+    CREDS_ENDPOINT_DIR: asLinux(endpointDir),
+    CREDS_LOG_DIR: asLinux(dirs.logs),
+    WSLENV: 'CREDS_ENDPOINT_DIR/p:CREDS_LOG_DIR/p',
+    CREDS_WINDOWS_BINARY: asLinux(windowsCli),
+    CREDS_RELAY_SOCKET: socket,
+    SSH_AUTH_SOCK: socket,
+  };
 }
+
+/** `ssh-add -l` through the relay, in a login shell with exactly these exports. */
+const sshAddList = (env) => wslStep(env, 'exec', ['ssh-add', '-l']);
+/** Its last line, both streams — what a person reads when the agent is gone. */
+const sshAddLastLine = (env) => wslStep(env, 'last-line', ['ssh-add', '-l']);
 
 /** Everything this harness needs before it may start anything; skips loudly when one is missing. */
 async function preconditions() {
@@ -109,7 +104,7 @@ async function preconditions() {
   if (!fs.existsSync(path.join(windowsBuild('src_cli'), 'creds.exe'))) {
     skip('the Windows CLI is not built', 'run: dotnet build src_cli/src/CredsCli.csproj');
   }
-  const tools = await wsl('for t in dotnet python3 ssh-add ssh-keygen; do command -v $t >/dev/null || echo missing $t; done');
+  const tools = await wslStep({}, 'tools', ['dotnet', 'python3', 'ssh-add', 'ssh-keygen']);
   if (tools.stdout.includes('missing')) {
     skip(`inside WSL: ${tools.stdout.trim()}`, 'install it in the distribution, then re-run');
   }
@@ -168,7 +163,7 @@ function announce(endpointDir, agentSocket) {
  * control that a relay-pipe was really started for each connection), and it is stopped by its own pid.
  */
 function startRelay(env) {
-  const child = spawn('wsl.exe', ['-e', 'bash', '-lc', `${env}; exec ${linuxCli} relay`], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn('wsl.exe', stepArgv(env, 'exec', [linuxCli, 'relay']), { stdio: ['ignore', 'pipe', 'pipe'] });
   const stderr = [];
   readline.createInterface({ input: child.stderr }).on('line', (line) => stderr.push(line));
   const firstLine = new Promise((resolve) => {
@@ -189,37 +184,58 @@ function connectionLines(stderr) {
 }
 
 /** Poll `read()` until it answers `wanted` or `ms` has passed; answers the last value read. */
-async function backTo(read, wanted, ms) {
-  const deadline = Date.now() + ms;
-  let value = await read();
-  while (value !== wanted && Date.now() < deadline) {
-    await sleep(250);
-    value = await read();
+const backTo = (read, wanted, ms) => pollUntil(read, (value) => value === wanted, ms);
+
+/**
+ * A connection held open on `socket` by `wslHoldSocket.py` inside the distribution — a client that says nothing,
+ * for which the relay starts a `relay-pipe` on Windows and keeps it. `held` answers `held` once connected;
+ * `release()` closes the holder's stdin, which is how it leaves (nothing signals it).
+ */
+function holdConnection(socket) {
+  const holder = spawn('wsl.exe', ['-e', 'python3', HOLD, socket], { stdio: ['pipe', 'pipe', 'inherit'] });
+  const held = new Promise((resolve) => {
+    readline.createInterface({ input: holder.stdout }).once('line', resolve);
+    holder.on('exit', () => resolve(''));
+    setTimeout(() => resolve(''), 10_000).unref();
+  });
+  return { held, release: () => holder.stdin.end() };
+}
+
+/** The Windows watch can see a relay-pipe of THIS run — without this, "0 relay-pipe" would pass with a blind watch. */
+async function theWatchSeesARelayPipe(socket, windowsHalves) {
+  const holder = holdConnection(socket);
+  try {
+    check('a connection is held open on the relay', (await holder.held) === 'held');
+    const serving = await windowsHalves.seenWithin(1, 10_000);
+    check('a creds.exe relay-pipe of this run serves it on Windows (the positive control)', serving.length === 1, `saw ${JSON.stringify(serving)}`);
+  } finally {
+    holder.release();
   }
-  return value;
+  const gone = await windowsHalves.goneWithin(GONE_WITHIN_MS);
+  check('and it is gone within 5 s of the connection\'s end', gone.length === 0, windowsHalves.describe(gone));
 }
 
 /** Ten connections through the relay; afterwards nothing of theirs may be left on either side. */
 async function tenConnections(env, fingerprint, relay, relayPid, windowsHalves, linuxSide) {
   const baseline = await linuxSide.fdCount(relayPid);
   check('the relay\'s descriptor count can be read for the baseline', Number.isInteger(baseline), String(baseline));
-  const before = connectionLines(relay.stderr).opened;
+  const before = connectionLines(relay.stderr);
 
   let listed = 0;
   for (let i = 0; i < CONNECTIONS; i += 1) {
-    const one = await wsl(`${env}; ssh-add -l`);
+    const one = await sshAddList(env);
     listed += one.stdout.includes(fingerprint) ? 1 : 0;
   }
   check(`${CONNECTIONS} ssh-add -l in a row each list the key`, listed === CONNECTIONS, `${listed} of ${CONNECTIONS}`);
 
-  const opened = await backTo(() => Promise.resolve(connectionLines(relay.stderr).opened - before), CONNECTIONS, GONE_WITHIN_MS);
-  check(`the relay started a relay-pipe for each of them (the positive control)`, opened === CONNECTIONS, `${opened} connection lines`);
+  const opened = await backTo(() => Promise.resolve(connectionLines(relay.stderr).opened - before.opened), CONNECTIONS, GONE_WITHIN_MS);
+  check(`the relay started a relay-pipe for each of them (its own connection lines)`, opened === CONNECTIONS, `${opened} connection lines`);
   const left = await windowsHalves.goneWithin(GONE_WITHIN_MS);
   check(`0 new creds.exe relay-pipe of this run on Windows within 5 s`, left.length === 0, windowsHalves.describe(left));
   const after = await backTo(() => linuxSide.fdCount(relayPid), baseline, GONE_WITHIN_MS);
   check(`the relay's descriptor count is back at its baseline (${baseline})`, after === baseline, `now ${after}`);
-  const ended = connectionLines(relay.stderr).ended;
-  check(`and the relay's own lines say each child had exited`, ended >= CONNECTIONS, `${ended} ended lines; last: ${JSON.stringify(relay.stderr.slice(-2))}`);
+  const ended = await backTo(() => Promise.resolve(connectionLines(relay.stderr).ended - before.ended), CONNECTIONS, GONE_WITHIN_MS);
+  check(`and the relay's own lines say each of the ${CONNECTIONS} children had exited`, ended === CONNECTIONS, `${ended} ended lines; last: ${JSON.stringify(relay.stderr.slice(-2))}`);
 }
 
 /** Through the real `envPrefix`, in a shell that does NOT export SSH_AUTH_SOCK — with its control. */
@@ -236,17 +252,16 @@ async function throughThePrefix(endpointDir, fingerprint) {
     prefix.startsWith("env SSH_AUTH_SOCK='") && prefix.endsWith("' "),
     prefix,
   );
-  const bare = wslEnv(endpointDir)
-    .split('; ')
-    .filter((line) => !line.startsWith('export SSH_AUTH_SOCK='))
-    .join('; ');
-  const throughPrefix = await wsl(`${bare}; ${prefix}ssh-add -l`);
+  const bare = Object.fromEntries(Object.entries(wslEnv(endpointDir)).filter(([name]) => name !== 'SSH_AUTH_SOCK'));
+  // The one composed shell line in these harnesses, and it is the SUBJECT: the product's own `envPrefix` output,
+  // run by a real shell exactly as a terminal would run it — handed to `bash -c` as one argv entry.
+  const throughPrefix = await wslStep(bare, 'exec', ['bash', '-c', `${prefix}ssh-add -l`]);
   check(
     'that composed line reaches the agent in a REAL WSL shell',
     throughPrefix.stdout.includes(fingerprint),
     `${throughPrefix.stdout.trim()}${throughPrefix.stderr.trim()}`,
   );
-  const withoutPrefix = await wsl(`${bare}; ssh-add -l`);
+  const withoutPrefix = await sshAddList(bare);
   check(
     'and the same shell WITHOUT it reaches nothing — so the prefix is what did the work',
     !withoutPrefix.stdout.includes(fingerprint),
@@ -262,7 +277,7 @@ async function agentReloaded(env, endpointDir, parsed, server) {
   // name whose server is gone, which on Windows is indistinguishable from one that never was.
   // Nothing below restarts the relay.
   server.dispose();
-  const whileDown = await wsl(`${env}; ssh-add -l 2>&1 | tail -1`);
+  const whileDown = await sshAddLastLine(env);
   check(
     'with the agent unloaded the relay reports it rather than hanging',
     !whileDown.stdout.includes(parsed.key.fingerprint),
@@ -271,7 +286,7 @@ async function agentReloaded(env, endpointDir, parsed, server) {
   const restarted = startAgent(parsed, `${PIPE_ADDRESS}-again`, () => undefined);
   await restarted.listen();
   announce(endpointDir, `${PIPE_ADDRESS}-again`);
-  const afterRestart = await wsl(`${env}; ssh-add -l 2>&1 | tail -1`);
+  const afterRestart = await sshAddLastLine(env);
   check(
     'a key loaded again is found by the SAME relay, at a new address',
     afterRestart.stdout.includes(parsed.key.fingerprint),
@@ -288,8 +303,20 @@ async function relayStoppedByPid(env, fingerprint, relay, relayPid, linuxSide) {
   check('and it is gone within 5 s', left.length === 0, linuxSide.describe(left));
   const socketLeft = (await wslExec(['test', '-e', relaySocket()])).code === 0;
   check('it removed its socket on the way out', !socketLeft, `${relaySocket()} still exists`);
-  await new Promise((resolve) => (relay.child.exitCode === null ? relay.child.once('exit', resolve) : resolve()));
-  const afterStop = await wsl(`${env}; ssh-add -l 2>&1 | tail -1`);
+  // Bounded: a stop that did not take must become a failed check, never a harness that hangs before its sweep.
+  const exited = await new Promise((resolve) => {
+    if (relay.child.exitCode !== null || relay.child.signalCode !== null) {
+      resolve(true);
+      return;
+    }
+    const bound = setTimeout(() => resolve(false), 10_000);
+    relay.child.once('exit', () => {
+      clearTimeout(bound);
+      resolve(true);
+    });
+  });
+  check('and its wsl.exe on this side has exited', exited, 'still running 10 s after the stop');
+  const afterStop = await sshAddLastLine(env);
   check('with the relay gone the socket answers nothing', !afterStop.stdout.includes(fingerprint), afterStop.stdout.trim());
 }
 
@@ -334,14 +361,9 @@ async function theManager(endpointDir, parsed, windowsHalves, linuxSide) {
   check('a relay of this run is running in the distribution — exactly one', alive.length === 1, `saw ${JSON.stringify(alive)}`);
 
   // A connected client that says nothing: the relay starts a relay-pipe on Windows for it and keeps it.
-  const holder = spawn('wsl.exe', ['-e', 'python3', HOLD, managedSocket()], { stdio: ['pipe', 'pipe', 'inherit'] });
+  const holder = holdConnection(managedSocket());
   try {
-    const held = await new Promise((resolve) => {
-      readline.createInterface({ input: holder.stdout }).once('line', resolve);
-      holder.on('exit', () => resolve(''));
-      setTimeout(() => resolve(''), 10_000).unref();
-    });
-    check('a connection is held open on the managed socket', held === 'held');
+    check('a connection is held open on the managed socket', (await holder.held) === 'held');
     const serving = await windowsHalves.seenWithin(1, 10_000);
     check('a creds.exe relay-pipe of this run serves it on Windows (the positive control)', serving.length === 1, `saw ${JSON.stringify(serving)}`);
 
@@ -355,7 +377,7 @@ async function theManager(endpointDir, parsed, windowsHalves, linuxSide) {
     const socketLeft = (await wslExec(['test', '-e', managedSocket()])).code === 0;
     check('the managed relay removed its socket on the way out', !socketLeft, `${managedSocket()} still exists`);
   } finally {
-    holder.stdin.end();
+    holder.release();
     agent.dispose();
   }
 
@@ -366,9 +388,10 @@ async function theManager(endpointDir, parsed, windowsHalves, linuxSide) {
 async function main() {
   await preconditions();
   await prepareBinaries();
-  const windowsHalves = await started(watchWindowsPids('creds.exe', path.dirname(windowsCli), 'Windows creds.exe relay-pipe'));
+  // Linux side first: the sweep walks them in this order, and a relay still alive could start one more Windows child.
   const linuxSide = await started(watchLinuxPids(dirs.linux, 'relay processes inside WSL'));
-  watches.push(windowsHalves, linuxSide);
+  const windowsHalves = await started(watchWindowsPids('creds.exe', path.dirname(windowsCli), 'Windows creds.exe relay-pipe'));
+  watches.push(linuxSide, windowsHalves);
 
   // ---- the agent, real, with a key generated here ----------------------------
   const { parseSshPrivateKey } = require(path.join(OUT, 'sshKeyParse.js'));
@@ -379,7 +402,7 @@ async function main() {
   const parsed = parseSshPrivateKey(pem, 'wsl relay itest');
   check('the generated key parses', parsed.ok === true, parsed.ok ? '' : parsed.reason);
   if (!parsed.ok) {
-    process.exit(1);
+    throw new Error('nothing below can run without a key');
   }
   const fingerprint = parsed.key.fingerprint;
 
@@ -391,9 +414,9 @@ async function main() {
   check('the agent is listening on a named pipe', server.listening === true);
 
   // ---- the announcement the relay discovers it through ------------------------
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-relay-itest-'));
-  const endpointDir = path.join(dir, 'endpoints');
-  fs.mkdirSync(endpointDir);
+  // Under the run directory, so `finishRun` — which also runs after a failure — is the only removal there is.
+  const endpointDir = path.join(dirs.windows, 'announcements', 'endpoints');
+  fs.mkdirSync(endpointDir, { recursive: true });
   announce(endpointDir, PIPE_ADDRESS);
 
   const env = wslEnv(endpointDir);
@@ -404,11 +427,11 @@ async function main() {
   check('exactly one process of this run is alive inside WSL — the relay', relays.length === 1, `saw ${JSON.stringify(relays)}`);
   const relayPid = relays[0];
 
-  const mode = await wsl(`stat -c '%a' ${relaySocket()} 2>/dev/null`);
+  const mode = await wslStep({}, 'exec', ['stat', '-c', '%a', relaySocket()]);
   check('the relay opened a socket only its owner can reach', mode.stdout.trim() === '600', mode.stdout.trim());
 
   // ---- what the whole thing is for -------------------------------------------
-  const listed = await wsl(`${env}; ssh-add -l`);
+  const listed = await sshAddList(env);
   check(
     'ssh-add INSIDE WSL lists a key that lives in a Windows process',
     listed.stdout.includes(fingerprint),
@@ -416,16 +439,16 @@ async function main() {
   );
   check('listing raised no dialog', asked === 0, `asked ${asked}`);
   // That first connection warmed the relay up — the descriptors a .NET host opens the first time it starts a
-  // child (its SIGCHLD plumbing) are permanent — so the baseline is taken after it, and the ten follow.
+  // child (its SIGCHLD plumbing) are permanent — so the baseline is taken after it, and the ten follow; between
+  // them, the proof that the Windows watch can see a relay-pipe of this run at all.
   const warm = await windowsHalves.goneWithin(GONE_WITHIN_MS);
   check('the first connection\'s relay-pipe is gone before the ten begin', warm.length === 0, windowsHalves.describe(warm));
+  await theWatchSeesARelayPipe(relaySocket(), windowsHalves);
   await tenConnections(env, fingerprint, relay, relayPid, windowsHalves, linuxSide);
 
   const pub = scratch('itest.pub');
   const payload = scratch('itest.txt');
-  const signed = await wsl(
-    `${env}; ssh-add -L > ${pub} && echo payload > ${payload} && ssh-keygen -Y sign -f ${pub} -n file ${payload} 2>&1 | tail -1`,
-  );
+  const signed = await wslStep(env, 'sign', [pub, payload]);
   check(
     'ssh-keygen -Y sign produced a signature through the relay',
     signed.stdout.includes('Write signature'),
@@ -433,11 +456,7 @@ async function main() {
   );
   check('signing asked the human exactly once', asked === 1, `asked ${asked}`);
 
-  const allowed = scratch('itest.allowed');
-  const verified = await wsl(
-    `${env}; printf '%s %s\\n' itest "$(cut -d' ' -f1,2 ${pub})" > ${allowed} && ` +
-      `ssh-keygen -Y verify -f ${allowed} -I itest -n file -s ${payload}.sig < ${payload} 2>&1 | tail -1`,
-  );
+  const verified = await wslStep(env, 'verify', [pub, payload, scratch('itest.allowed')]);
   await throughThePrefix(endpointDir, fingerprint);
   check(
     'ssh-keygen -Y verify accepts it — the mechanism git commit -S uses',
@@ -452,14 +471,13 @@ async function main() {
   // ---- the lifecycle rules ----------------------------------------------------
   // The refusal line, found by its words rather than by being LAST: since the relay logs through the
   // shared logger (2026-10-09) its exit line follows the refusal on stderr.
-  const second = await wsl(`${env}; ${linuxCli} relay 2>&1 | grep 'already served' | tail -1`);
-  check('a second relay refuses a socket someone is already serving', second.stdout.includes('already served by a live relay'), second.stdout.trim());
+  const second = await wslStep(env, 'exec', [linuxCli, 'relay']);
+  const secondSaid = `${second.stdout}${second.stderr}`;
+  check('a second relay refuses a socket someone is already serving', secondSaid.includes('already served by a live relay'), secondSaid.trim().slice(-300));
   await relayStoppedByPid(env, fingerprint, relay, relayPid, linuxSide);
 
   // ---- the extension's half: it raises and lowers the relay for you ------------
   await theManager(endpointDir, parsed, windowsHalves, linuxSide);
-
-  fs.rmSync(dir, { recursive: true, force: true });
 }
 
 // The sweep runs whatever happened — a run that failed partway must not hand its processes to the

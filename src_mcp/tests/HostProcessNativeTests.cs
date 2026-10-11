@@ -10,9 +10,14 @@ namespace CredsMcp.Tests;
 /// pump path and hand the session to a Windows binary.
 /// </summary>
 /// <remarks>
-/// Here, in a project that references <see cref="WslInterop"/>, so the starter's two names and its reading of
-/// <c>/proc/version</c> are pinned against the product's own — a renamed marker would make the starter set a variable
-/// nothing reads, and the five tests it exists for would fail inside WSL again with nothing on CI to notice.
+/// <para>Here, in a project that references <see cref="WslInterop"/>, so the marker the starter sets is pinned against
+/// the name the product reads, and its reading of <c>/proc/version</c> against the product's — a renamed marker would
+/// make the starter set a variable nothing reads, and the five tests it exists for would fail inside WSL again with
+/// nothing on CI to notice. The distribution name the starter drops (<c>WSL_DISTRO_NAME</c>) is WSL's own, not the
+/// product's, and is not pinned.</para>
+/// <para>One effect of the marker, worth knowing when reading those tests' logs inside a distribution: the server
+/// reads it as "started by the Linux half of the bridge" and switches its parent watch off — which plain Linux CI,
+/// where the marker is never set, does not see.</para>
 /// </remarks>
 public sealed class HostProcessNativeTests
 {

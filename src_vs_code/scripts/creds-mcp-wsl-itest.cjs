@@ -59,7 +59,7 @@ Module._resolveFilename = (request, ...rest) =>
 
 const OUT = path.join(__dirname, '..', 'out');
 const { runAndSweep, started, watchLinuxPids, watchWindowsPids } = require('./wslStrays.cjs');
-const { REPO, run, wsl, asLinux, windowsBuild, runDirectories, copyWindowsBinary, linuxBinary, finishRun } = require('./wslRun.cjs');
+const { REPO, run, stepArgv, wslStep, asLinux, skip, windowsBuild, runDirectories, copyWindowsBinary, linuxBinary, finishRun } = require('./wslRun.cjs');
 
 /** Every watch this run started; the sweep at the bottom walks them. */
 const watches = [];
@@ -81,16 +81,9 @@ function check(name, ok, detail) {
   }
 }
 
-function skip(reason, fix) {
-  console.log(`SKIP — ${reason}`);
-  if (fix !== undefined) {
-    console.log(`      ${fix}`);
-  }
-  process.exit(0);
-}
-
 /**
- * The variables every step inside the distribution needs, as name → value.
+ * The variables every step inside the distribution needs, as name → value — exported by `wslSteps.sh` after
+ * the login profile, never written into a shell line.
  *
  * <p>`WSLENV` is the load-bearing entry. Environment variables do NOT cross from WSL into a
  * Windows child — measured 2026-08-26, including from .NET's own `ProcessStartInfo.Environment` —
@@ -108,13 +101,6 @@ function bridgeEnv(endpointDir, windowsBinary = windowsMcp) {
   };
 }
 
-/** The same variables as `export` lines, for the steps that run in a bash line. */
-function wslEnv(endpointDir, windowsBinary = windowsMcp) {
-  return Object.entries(bridgeEnv(endpointDir, windowsBinary))
-    .map(([name, value]) => `export ${name}='${value}'`)
-    .join('; ');
-}
-
 /**
  * Drive the Linux binary the way an MCP client does: write requests, hold stdin open, collect.
  *
@@ -124,7 +110,7 @@ function wslEnv(endpointDir, windowsBinary = windowsMcp) {
  */
 function speak(env, requests, settleMs = 4000) {
   return new Promise((resolve) => {
-    const child = spawn('wsl.exe', ['-e', 'bash', '-lc', `${env}; exec ${linuxMcp}`]);
+    const child = spawn('wsl.exe', stepArgv(env, 'exec', [linuxMcp]));
     let out = '';
     let err = '';
     child.stdout.on('data', (d) => {
@@ -213,7 +199,7 @@ async function preconditions() {
   if (!fs.existsSync(path.join(windowsBuild('src_mcp'), 'creds-mcp.exe'))) {
     skip('the Windows MCP server is not built', 'run: dotnet build src_mcp/src/CredsMcp.csproj');
   }
-  const tools = await wsl('for t in dotnet node python3; do command -v $t >/dev/null || echo missing $t; done');
+  const tools = await wslStep({}, 'tools', ['dotnet', 'node', 'python3']);
   if (tools.stdout.includes('missing')) {
     skip(`inside WSL: ${tools.stdout.trim()}`, 'install it in the distribution, then re-run');
   }
@@ -240,7 +226,10 @@ async function startWindow() {
   const { CredsAgentServer } = require(path.join(OUT, 'credsAgentServer.js'));
   const { UseActionRegistry } = require(path.join(OUT, 'useActions.js'));
 
-  const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mcp-wsl-itest-'));
+  // Under the run directory, so the one removal at the end — `finishRun`, which also runs after a failure — is
+  // the only removal there is (own review of E5).
+  const storageDir = path.join(dirs.windows, 'window');
+  fs.mkdirSync(storageDir, { recursive: true });
   const created = [];
   const actions = new UseActionRegistry();
   actions.register({
@@ -286,7 +275,15 @@ async function startWindow() {
   await server.share('a-1', 'e-wsl-1', 'orders-db', 'db');
   const endpointDir = path.join(storageDir, 'endpoints');
   check('the window announced itself on Windows', fs.existsSync(endpointDir) && fs.readdirSync(endpointDir).length > 0);
-  return { server, storageDir, endpointDir, created };
+  return { server, endpointDir, created };
+}
+
+/** After the steps that end a session by killing its `wsl.exe` (SIGHUP to the wrapper): nothing of the run is left. */
+async function nothingLeftAfter(what, windowsHalves, linuxSide) {
+  const left = await windowsHalves.goneWithin(GONE_WITHIN_MS);
+  check(`after ${what}, 0 Windows creds-mcp.exe of this run within 5 s`, left.length === 0, windowsHalves.describe(left));
+  const linuxLeft = await linuxSide.goneWithin(GONE_WITHIN_MS);
+  check(`and nothing of this run inside WSL`, linuxLeft.length === 0, linuxSide.describe(linuxLeft));
 }
 
 async function readsTheVault(env) {
@@ -342,17 +339,17 @@ async function createsThroughTheWindow(env, created) {
 async function staysOnThisSide(endpointDir) {
   // Pointed at a binary that does not exist: if help were relayed, this would fail instead of
   // printing. It is the cheap proof of a decision that is otherwise invisible.
-  const nowhere = wslEnv(endpointDir, 'C:\\nowhere\\creds-mcp.exe');
-  const help = await wsl(`${nowhere}; ${linuxMcp} --help`);
+  const nowhere = bridgeEnv(endpointDir, 'C:\\nowhere\\creds-mcp.exe');
+  const help = await wslStep(nowhere, 'exec', [linuxMcp, '--help']);
   check('--help is answered inside WSL without launching a Windows process', help.stdout.includes('creds_list'), help.stdout.slice(0, 160));
 
-  const missing = await wsl(`${nowhere}; echo '{}' | ${linuxMcp}; echo "exit=$?"`);
+  const missing = await wslStep(nowhere, 'exec', [linuxMcp], { input: '{}\n' });
   check(
     'a Windows binary that is not there names the variable that fixes it',
     missing.stdout.includes('CREDS_MCP_WINDOWS_BINARY') || missing.stderr.includes('CREDS_MCP_WINDOWS_BINARY'),
     `${missing.stdout.trim()} ${missing.stderr.trim()}`.slice(0, 240),
   );
-  check('and exits with the code reserved for a missing tool, not a crash', missing.stdout.includes('exit=99'), missing.stdout.trim().slice(-40));
+  check('and exits with the code reserved for a missing tool, not a crash', missing.code === 99, `exit ${missing.code}`);
 }
 
 /** The client's JSON events, one per line; `next(wanted, ms)` answers the first that matches, or a timeout. */
@@ -404,8 +401,9 @@ const exitWords = (exit) => (exit.signal === null ? `with exit code ${exit.code}
  * control — a watch that sees nothing passes every time) and gone within 5 s after it.
  */
 async function endedBy({ word, exit }, endpointDir, windowsHalves, linuxSide) {
-  const env = Object.entries(bridgeEnv(endpointDir)).flatMap(([name, value]) => ['--env', `${name}=${value}`]);
-  const client = spawn('wsl.exe', ['-e', 'node', asLinux(CLIENT), asLinux(FIXTURE), ...env, '--', linuxMcp]);
+  // The positive control is about THIS session's process: a baseline right before it starts, exactly one new pid after.
+  const already = new Set(await windowsHalves.survivors());
+  const client = spawn('wsl.exe', stepArgv(bridgeEnv(endpointDir), 'exec', ['node', asLinux(CLIENT), asLinux(FIXTURE), '--', linuxMcp]));
   let stderr = '';
   client.stderr.on('data', (d) => {
     stderr += d;
@@ -414,8 +412,9 @@ async function endedBy({ word, exit }, endpointDir, windowsHalves, linuxSide) {
   try {
     const ready = await said.next(isAny('ready', 'failed', 'ended'), 90_000);
     check(`${word}: the captured Claude Code session is answered, its listen held open`, ready.event === 'ready', `${JSON.stringify(ready)} ${stderr.trim().slice(-400)}`);
-    const alive = await windowsHalves.seenWithin(1, 10_000);
-    check(`${word}: a Windows creds-mcp.exe of this run serves it (the positive control)`, alive.length === 1, `saw ${JSON.stringify(alive)}`);
+    const alive = await windowsHalves.seenWithin(already.size + 1, 10_000);
+    const fresh = alive.filter((pid) => !already.has(pid));
+    check(`${word}: exactly one new Windows creds-mcp.exe of this run serves it (the positive control)`, fresh.length === 1, `new ${JSON.stringify(fresh)}, already there ${JSON.stringify([...already])}`);
 
     client.stdin.write(`${word}\n`);
     const ended = await said.next(isAny('ended', 'failed'), 30_000);
@@ -438,14 +437,16 @@ async function endedBy({ word, exit }, endpointDir, windowsHalves, linuxSide) {
 async function main() {
   await preconditions();
   await prepareBinaries();
-  const windowsHalves = await started(watchWindowsPids('creds-mcp.exe', path.dirname(windowsMcp), 'Windows creds-mcp.exe'));
+  // Linux side first: the sweep walks them in this order, and a wrapper still alive could start one more Windows half.
   const linuxSide = await started(watchLinuxPids(dirs.linux, 'creds-mcp processes inside WSL'));
-  watches.push(windowsHalves, linuxSide);
+  const windowsHalves = await started(watchWindowsPids('creds-mcp.exe', path.dirname(windowsMcp), 'Windows creds-mcp.exe'));
+  watches.push(linuxSide, windowsHalves);
 
-  const { server, storageDir, endpointDir, created } = await startWindow();
-  const env = wslEnv(endpointDir);
+  const { server, endpointDir, created } = await startWindow();
+  const env = bridgeEnv(endpointDir);
   await readsTheVault(env);
   await createsThroughTheWindow(env, created);
+  await nothingLeftAfter('the vault read and the create (their wsl.exe killed, SIGHUP to the wrapper)', windowsHalves, linuxSide);
   await staysOnThisSide(endpointDir);
 
   // ---- no half outlives its client: five endings of a Claude-shaped session ------------
@@ -458,7 +459,6 @@ async function main() {
   check('no half of the bridge outlives the client', leftovers.length === 0, `left: ${leftovers.join(', ')}`);
 
   server.dispose();
-  fs.rmSync(storageDir, { recursive: true, force: true });
 }
 
 // The sweep runs whatever happened — a run that failed partway must not hand its processes to the

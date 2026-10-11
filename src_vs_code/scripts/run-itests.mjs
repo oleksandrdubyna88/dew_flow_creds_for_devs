@@ -53,8 +53,8 @@ const HARNESSES = [
     windows: false,
   },
   { name: 'ssh-agent', script: 'ssh-agent-itest.cjs', needs: 'OpenSSH; its subject is the Windows named-pipe path', windows: true },
-  { name: 'mcp-wsl', script: 'creds-mcp-wsl-itest.cjs', needs: 'a WSL distribution with the .NET SDK inside it', windows: true },
-  { name: 'wsl-relay', script: 'wsl-agent-relay-itest.cjs', needs: 'a WSL distribution with the .NET SDK inside it', windows: true },
+  { name: 'mcp-wsl', script: 'creds-mcp-wsl-itest.cjs', needs: 'a WSL distribution with the .NET SDK, node and python3 inside it', windows: true },
+  { name: 'wsl-relay', script: 'wsl-agent-relay-itest.cjs', needs: 'a WSL distribution with the .NET SDK, python3 and OpenSSH inside it', windows: true },
   {
     name: 'server',
     script: 'server-transport-itest.cjs',

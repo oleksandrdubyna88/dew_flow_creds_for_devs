@@ -686,8 +686,8 @@ only with the owner's OK on the notes.
   own binary path, polled up to 5 s, swept **by PID only**. Each itest run copies the binaries it starts into a
   **run-unique directory** (gate round 1, finding 1), so a process another user or test started from the shared build
   output can never match, and the sweep re-checks each PID's `ExecutablePath` against that directory immediately before
-  stopping it. `creds-mcp-wsl-itest.cjs`: a Claude-Code-2.1.295-shaped client
-  (`server/discover`, `subscriptions/listen`, `tools/list`) ended by SIGINT, SIGTERM, SIGHUP and by a stdin close —
+  stopping it. `creds-mcp-wsl-itest.cjs`: a Claude-Code-shaped client (the captured 2.1.289 session — the same
+  sequence 2.1.295 sends: `server/discover`, `subscriptions/listen`, `tools/list`) ended by SIGINT, SIGTERM, SIGHUP and by a stdin close —
   0 Windows survivors each; SIGKILL of the wrapper — 0 survivors (proves A alone suffices). `wsl-agent-relay-itest.cjs`:
   10 `ssh-add -l` → 0 new `relay-pipe`, relay fd count back to baseline; `manager.dispose()` → 0 survivors.
 - **E5.S2** CI: a `windows-latest` leg in `ci-clients.yml` (not required until it has reported once —
@@ -707,10 +707,10 @@ behaviour.
   never by name. **The check and the stop go through one held process handle** (plan round, finding 1): the handle
   is opened first, the path is read through it, and the kill goes to it — Windows does not reuse a pid while a handle
   to its process is open, so a pid that exited and was reused between a check and a stop cannot be hit. The
-  WSL-side sweep does the same with a pidfd (`os.pidfd_open` in the distribution's `python3`, the command line read
-  after the descriptor is open, the signal sent through it). The directory and the pids reach PowerShell and Python
-  through their environment, never through the command text. **The parent is never a criterion**: an interop child
-  is started by the WSL service, not by the test's `wsl.exe`.
+  WSL-side sweep does the same with a pidfd (`os.pidfd_open` in the distribution's `python3`, the executable path
+  read after the descriptor is open, the signal sent through it). The directory and the pids reach PowerShell
+  through its environment and Python through argv, never through command text. **The parent is never a
+  criterion**: an interop child is started by the WSL service, not by the test's `wsl.exe`.
 - **Run-unique directories on both sides.** Each run copies the Windows build output it starts
   (`src_mcp/src/bin/Debug/net10.0`, `src_cli/src/bin/Debug/net10.0`) into `%TEMP%\creds-itest-<run>\`, and the Linux
   build output into `/tmp/creds-itest-<run>/`. A process another user, another test or the person started from the
@@ -719,9 +719,9 @@ behaviour.
 - **No deletion inside the distribution** (a machine rule since an incident on 2026-10-07: an agent's cleanup through
   `wsl.exe` removed parts of a home directory). The old harnesses ran `rm -rf` on their build tree, `rm -f` on their
   sockets and scratch files, and `pkill -f` on the relay. Now: the Linux build goes into a directory named by a hash
-  of its inputs (`/tmp/creds-itest-build-<hash>`), so a stale build is never reused and nothing is removed — this
-  also ends the persistent build cache CodeRabbit named on #201; sockets and scratch files are run-unique; the relay
-  is stopped by its own pid; the WSL-side sweep sends `kill` only to pids whose command line contains the run
+  of its inputs (`/tmp/creds-itest-build-<kind>-<hash>`), so a stale build is never reused and nothing is removed —
+  this also ends the persistent build cache CodeRabbit named on #201; sockets and scratch files are run-unique; the
+  relay is stopped by its own pid; the WSL-side sweep signals only pids whose executable lies under the run
   directory. What remains in `/tmp` is a few MB per run, for the person or the distribution's next boot to clear.
   **The budget, stated** (plan round, finding 2): a build directory is 3–6 MB of output (measured: 5.4 MB for
   `creds-mcp`, 2.7 MB for `creds`), one new one per changed set of inputs — a handful per working day; a run
@@ -785,10 +785,36 @@ behaviour.
   path the sweep uses. The relay is the harness's own child (its first stdout line names the socket, its stderr's
   connection lines are the positive control), never a `nohup … &` job found by `pkill` afterwards.
 - **The smoke script reads the committed fixture** (`src_mcp/tests/fixtures/claude-code-2.1.289-handshake-2026-07-28.jsonl`)
-  rather than writing a session of its own, and measures the 10 s bound in whole seconds (`$SECONDS` of the writer
-  subshell against the parent's) — conservative when it says "within 10 s". The `ci-clients.yml` Windows leg sets
-  `defaults.run.shell: bash` so one `run:` line serves three operating systems; `branch-protection.json` is
-  untouched, as designed.
+  rather than writing a session of its own. Its first version measured the 10 s bound in whole seconds
+  (`$SECONDS`), which lets a server ending up to ~11 s after end-of-stream pass (code round 1, finding 2 — shown
+  RED with a stand-in server ending 10.2 s after: 3 of 3 runs passed; GREEN after: 3 of 3 fail at 10.35–10.39 s);
+  the clock is perl's `Time::HiRes` now, the writer records whether the reply arrived BEFORE it closed stdin (a
+  late reply or none is a failure, not a pass), and only a `tools/list` RESULT counts. The script has its own test
+  against a stand-in server (`mcp-listen-smoke.test.sh`: ends at once → pass; ends 10.5 s after → fail; never
+  answers → fail), and `ci-clients.yml` runs that test AND the script against the `creds-mcp` the job builds, on
+  all three operating systems — so its Linux and macOS branches run on every pull request, not first on a tag.
+  The Windows leg sets `defaults.run.shell: bash` so one `run:` line serves three operating systems;
+  `branch-protection.json` is untouched, as designed.
+- **Exe + argv, never a shell string** (code round 1, findings 0 and 1 — `security.md`'s rule): every step inside the
+  distribution is `wsl.exe -e bash -l scripts/wslSteps.sh NAME=value... -- <verb> [args]`, one constant checked-in
+  script whose exports are applied after the login profile (so a profile that sets `SSH_AUTH_SOCK` — the
+  extension's own rc snippet — cannot override a run's socket) and whose every value is an argv entry; the
+  `bash -lc` launcher and the `export NAME='value'` lines are gone, and `wsl-mcp-client.cjs` inherits the exports
+  instead of taking `--env` pairs. The one composed shell line left is the relay harness's SUBJECT — the product's
+  own `envPrefix` output, handed to `bash -c` as one argv entry. The build runs with `--disable-build-servers` and
+  takes `Directory.Build.rsp` and `global.json` among its inputs, so no compiler server or MSBuild node — processes
+  no watch can see — outlives a run (own review).
+- **The own review's other findings, taken:** the harnesses' temporary directories (the window's storage, the
+  announcements) live under the Windows run directory, so `finishRun` is the only removal and it runs after a
+  failure too; `skip()` throws and `runAndSweep` sweeps, finishes and exits 0 — no early `process.exit` leaves a
+  run directory behind; the wait for the stopped relay's `wsl.exe` is bounded (10 s, a failed check); the Linux
+  side is swept first (a relay still alive could start one more Windows child after a Windows sweep) and a sweep
+  failure is its own line, never counted as swept; the MCP harness takes a per-ending baseline and requires exactly
+  one NEW `creds-mcp.exe`, and checks 0 survivors after the vault-read and create steps too; the relay harness
+  proves the Windows watch can see a relay-pipe of the run (a held connection) BEFORE asserting 0 after the ten, and
+  baselines its "ended" count; `wslProcs.py` accepts only a run directory's exact shape (never the shared build
+  directory); the client reports a wrapper it could not start as an event. Not taken: `HostProcess.Reaper`'s
+  `Kill(entireProcessTree)` — older test-support code acting on the test's own child tree, outside E5.
 - **E5.S3's tail is open by design, not forgotten:** the upstream issue csharp-sdk#1914 was still open with no
   comments on 2026-10-11; the owner's WSL MCP refresh (§3.1.7) and the one-day count (§13's first line) need the
   released build, so they follow the release; the promotion follows them.
@@ -1518,3 +1544,26 @@ as they were), then on this branch:**
 Suites on Windows in Release, as CI's new leg runs them: cli 142 (4 skipped), mcp 160 (4 skipped), broker 133,
 service defaults 80 (1 skipped) — 0 failed; the extension `npm test` 5,607 (5 skipped, 0 failed), `typecheck` and
 `lint` clean; `plan-lifecycle.mjs` clean. Measurements: the RESULTS record, *E5 — the harnesses on the real bridge*.
+
+**Code round 1 (2026-10-11, session `d9a2dcbf`, after the rebase onto #217) — `proceed`**, gating 2 against
+threshold 5, **4 of 4 reviewers answered** (codex's four roles — one vendor's verdict).
+
+| # | Finding | Decision |
+|---|---|---|
+| 0 | `wslRun.wsl()` launches `bash -lc` shell strings, against `security.md`'s exe + argv rule | **accepted** — one constant checked-in script, `wslSteps.sh`, every value an argv entry (§10 *E5, as built*); the `bash -lc` launcher is gone |
+| 1 | temp paths interpolated into a `bash -lc` line through single quotes — a path with a quote runs as shell | **accepted** — the same fix: no value becomes shell text. Shown: `CREDS_ITEST_PROBE=it's a 'quoted' path` arrives as `[it's a 'quoted' path]` through `wslSteps.sh`, where the old `export X='…'` line answers *bash: -c: line 1: unexpected EOF while looking for matching `''* |
+| 2 | the smoke's 10 s bound in whole seconds lets a 10.5 s exit pass | **accepted** — RED (*a stand-in server ending 10.2 s after end-of-stream: 3 of 3 runs "the server exited with code 0 at 10s", exit 0*) → perl `Time::HiRes` → GREEN (*"the server took more than 10 s (10.388 s) to exit after end-of-stream"*, 3 of 3) — and a self-test that pins it on every pull request |
+
+Operator commands applied: autonomous (RED → GREEN for each finding, the docs with every change, every suite
+before the PR, the PR end to end); consultants before the person (no question needed one).
+
+**Own review (a separate reviewer reading the full files, the gate's other half)** — 17 findings, none against the
+by-pid, shared-build or no-secrets rules. Taken (§10 *E5, as built*, the last two bullets): the temp directories
+under the run directory; `skip()` throwing; the bounded wait; the smoke's verdict-before-close, RESULT-only match
+and per-grep messages; the smoke run on every CI leg against the built binary; the baselined `ended` count; the
+build inputs and `--disable-build-servers`; the run-directory shape; Linux swept first; per-ending baselines and
+the held-connection control before the ten; the client's start error; `pollUntil`/`skip` shared; the plan's five
+wording slips (the command line → the executable path; environment → argv for Python; `build-<kind>-<hash>`;
+2.1.289's session; `run-itests.mjs`'s needs); the `HostProcessNativeTests` remark (only the marker is pinned; the
+marker also switches the parent watch off inside a distribution). Superseded by the argv change: the `plainPath`
+finding. Not taken: `HostProcess.Reaper` (older test support, its own child tree, outside E5).

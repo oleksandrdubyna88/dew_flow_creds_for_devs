@@ -21,7 +21,8 @@
  * <p><b>A sweep stops by pid through a held handle, never by name.</b> On Windows the process is opened, its path
  * read through that handle and the kill sent to it — Windows does not reuse a pid while a handle to it is open.
  * Inside the distribution `wslProcs.py` does the same with a pidfd. Both re-check the path immediately before
- * the stop (E5 plan gate, finding 1).</p>
+ * the stop (E5 plan gate, finding 1). The Linux side is swept FIRST: a relay or wrapper still alive could start
+ * one more Windows child after a Windows sweep (own review of E5).</p>
  */
 
 const path = require('path');
@@ -31,6 +32,18 @@ const WSL_PROCS = asLinux(path.join(__dirname, 'wslProcs.py'));
 const POLL_MS = 250;
 
 const pidsIn = (stdout) => stdout.split(/\s+/).filter((pid) => /^\d+$/.test(pid));
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Poll `read()` every 250 ms until `done(value)` holds or `ms` has passed; answers the last value read. */
+async function pollUntil(read, done, ms) {
+  const deadline = Date.now() + ms;
+  let value = await read();
+  while (!done(value) && Date.now() < deadline) {
+    await sleep(POLL_MS);
+    value = await read();
+  }
+  return value;
+}
 
 let shell;
 /** PowerShell 7 first, Windows PowerShell 5.1 only where pwsh is absent. */
@@ -87,6 +100,7 @@ function watch(list, stop, what) {
   let before = new Set();
   const survivors = async () => [...(await list())].filter((pid) => !before.has(pid));
   return {
+    what,
     /** Take the baseline. In a run directory nothing should match yet; anything that does is not asserted on. */
     async start() {
       before = await list();
@@ -95,25 +109,9 @@ function watch(list, stop, what) {
     /** The pids that appeared during this run and are still alive. */
     survivors,
     /** Poll until no survivor is left or `ms` has passed; answers whoever is still there. */
-    async goneWithin(ms) {
-      const deadline = Date.now() + ms;
-      let left = await survivors();
-      while (left.length > 0 && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, POLL_MS));
-        left = await survivors();
-      }
-      return left;
-    },
-    /** Poll until `count` survivors are alive or `ms` has passed — the positive control before an ending. */
-    async seenWithin(count, ms) {
-      const deadline = Date.now() + ms;
-      let alive = await survivors();
-      while (alive.length < count && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, POLL_MS));
-        alive = await survivors();
-      }
-      return alive;
-    },
+    goneWithin: (ms) => pollUntil(survivors, (left) => left.length === 0, ms),
+    /** Poll until at least `count` survivors are alive or `ms` has passed — the positive control before an ending. */
+    seenWithin: (count, ms) => pollUntil(survivors, (alive) => alive.length >= count, ms),
     /** Stop these pids of this run — by pid, the path re-read through the held handle first; answers the stopped. */
     stop,
     /** Stop whatever this run started and left behind — called from a `finally`, so no run hands its processes on. */
@@ -158,34 +156,56 @@ async function started(watchToStart) {
   return watchToStart;
 }
 
+async function sweepAll(strays) {
+  for (const strayWatch of strays) {
+    try {
+      const swept = await strayWatch.sweep();
+      if (swept.length > 0) {
+        console.log(`swept ${swept.length} process(es) this run left behind: ${swept.join(', ')}`);
+      }
+    } catch (error) {
+      console.log(`      the sweep of ${strayWatch.what} failed: ${error}`);
+    }
+  }
+}
+
 /**
  * Run a harness, sweep whatever it left behind on either side, finish the run, and exit with its verdict.
  *
+ * <p>A harness that cannot run here throws `skip(...)` from `wslRun.cjs`: the reason is printed as a SKIP, the
+ * sweep and the finish still run (a run directory may already exist), and the exit code is 0 — a skip is not a
+ * failure, and it is never silent.</p>
+ *
  * @param main the harness; it may throw, and a throw counts as one more failure
- * @param strays a getter answering every watch started so far (the watches start partway through `main`)
+ * @param strays a getter answering every watch started so far, Linux side first (the watches start partway through `main`)
  * @param failures a getter for the harness's own count
  * @param finish what ends the run once the sweep is done (removing the Windows run directory)
  * @param label what to call this run in the closing line
  */
 function runAndSweep({ main, strays, failures, finish, label }) {
   let threw = false;
+  let skipped = false;
   void main()
     .catch((error) => {
-      console.error(error);
+      if (error?.skip === true) {
+        skipped = true;
+        console.log(`SKIP — ${error.message}`);
+        if (error.fix !== undefined) {
+          console.log(`      ${error.fix}`);
+        }
+        return;
+      }
+      console.log(`FAIL the ${label} harness threw: ${error?.stack ?? error}`);
       threw = true;
     })
     .finally(async () => {
-      for (const strayWatch of strays()) {
-        const swept = await strayWatch.sweep().catch((error) => [String(error)]);
-        if (swept.length > 0) {
-          console.log(`swept ${swept.length} process(es) this run left behind: ${swept.join(', ')}`);
-        }
-      }
+      await sweepAll(strays());
       await finish().catch((error) => console.log(`      finishing the run failed: ${error}`));
       const count = failures() + (threw ? 1 : 0);
-      console.log(`\n${count === 0 ? `all ${label} checks passed` : `${count} check(s) failed`}`);
+      const verdict = count === 0 ? (skipped ? `${label}: skipped` : `all ${label} checks passed`) : `${count} check(s) failed`;
+      console.log(`\n${verdict}`);
       process.exit(count === 0 ? 0 : 1);
     });
 }
 
-module.exports = { watchWindowsPids, watchLinuxPids, windowsPids, started, runAndSweep };
+module.exports = { pollUntil, watchWindowsPids, watchLinuxPids, windowsPids, started, runAndSweep };

@@ -68,6 +68,11 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.x
+      # The release smoke of `creds-mcp` is a script (E5.S2); this is the script's own test, against a stand-in
+      # server, on the same three operating systems the release runs it on — so the check that guards a release
+      # is itself checked by every pull request, not first discovered broken on a tag.
+      - name: Self-test the release smoke script
+        run: .github/scripts/mcp-listen-smoke.test.sh
       # The three test projects are built by name: the solution file does not carry all of them, and
       # a project the solution never built is a runner executable that does not exist — which is how
       # this job's first run failed on `No such file or directory`.
@@ -81,6 +86,11 @@ jobs:
           dotnet build src_mcp/tests/CredsMcp.Tests.csproj -c Release
           dotnet build src_broker_client/tests/BrokerClient.Tests.csproj -c Release
           dotnet build src_service_defaults/tests/CredsForDevs.ServiceDefaults.Tests.csproj -c Release
+      # The release smoke, on the `creds-mcp` this job just built (a dependency of its test project), on all three
+      # operating systems — so the script's Linux and macOS branches run on every pull request rather than for
+      # the first time on a tag, mid-matrix (own review of E5).
+      - name: Smoke the built creds-mcp with the release script
+        run: .github/scripts/mcp-listen-smoke.sh ./src_mcp/src/bin/Release/net10.0/creds-mcp${{ runner.os == 'Windows' && '.exe' || '' }}
       # xUnit v3 on Microsoft Testing Platform: each test project is its own runner executable, and
       # `dotnet test` has no VSTest host here — it would abort with a tooling error, not a test result.
       # The executable is named by <AssemblyName>, which for the broker client is CredsBroker.Tests.
