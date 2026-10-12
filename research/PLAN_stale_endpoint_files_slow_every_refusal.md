@@ -8,8 +8,10 @@
 > growth, and the announcement's owner is the better home); the CLI keeps `Read` for its *no window* check and walks
 > `Live` of it, so no sentence or exit code changed; the parallel walk and a client deleting files were not built (§4.4,
 > §4.5). Result on the reporting machine (§10): a fake-key refusal over the real 35 files, 68.42 s → 0.04–0.19 s on
-> Windows and 69.53 s → 0.35–0.40 s through WSL. **Open tail:** the same timing with the RELEASED binaries once the cli,
-> mcp and extension patch releases are cut and installed (the owner installs them).
+> Windows and 69.53 s → 0.35–0.40 s through WSL. **Released 2026-10-12** (§12): cli 0.4.2, mcp 0.10.2, extension 1.14.1;
+> with the RELEASED cli 0.4.2 the same refusal takes 0.05–0.07 s on Windows and 0.21–0.24 s through WSL. The released
+> cli 0.4.2 and mcp 0.10.2 were installed on the reporting machine the same day (Windows and WSL, the old files kept
+> beside them), and a WSL tool reading its keys through `creds config -` read them again.
 >
 > Scope: `src_broker_client/src/BrokerClient.cs` (the connect every probe makes), `src_broker_client/src/LoopbackConnect.cs`,
 > `src_broker_client/src/Endpoints.cs` (a pid that is provably gone), `src_cli/src/Program.cs` and `src_mcp/src/Windows.cs`
@@ -212,13 +214,13 @@ under `.claude/rules/shared/tools/low-priority.mjs`, builds with `-m:4 --disable
 - [x] §3 measured on the reporting machine and recorded in this plan; the fix chosen by those numbers.
 - [x] A refusal for an unknown key, with the real 35 files in the directory, takes under 3 s on that machine — on
       Windows and through WSL — with binaries built from the candidate commit BEFORE merge (§10).
-- [ ] The same timing repeated with binaries built from the merged commit (the open tail).
+- [x] The same timing repeated with binaries built from the merged commit, and with the released cli 0.4.2 (§12).
 - [x] No client deletes an endpoint file; the extension's sweep never deletes a live window's file or its own.
 - [x] Each change shown RED with the real symptom, GREEN, and RED again with the fix removed.
 - [x] `module_extension.md`, `module_mcp.md`, `architecture.md` updated; the extension CHANGELOG has the sweep;
       `todo/README.md` and `research/README.md` match; `node .claude/rules/shared/tools/plan-lifecycle.mjs` clean; the
       gate's plan and code rounds recorded.
-- [ ] Released: the cli, mcp and extension patch releases that carry it, each asset's `.sha256` checked.
+- [x] Released: the cli, mcp and extension patch releases that carry it, each asset's `.sha256` checked (§12).
 
 ## 10. Results — the fix on the reporting machine (2026-10-11, before merge)
 
@@ -259,3 +261,23 @@ zero after — on the built `creds` for the config read, an alias call and `cred
   file name, a change to the `window-<pid>.json` contract the C# readers and the itests share. CodeRabbit raised the
   same point on the pull request and got the same answer. (b) "skip the timing test where the option is unsupported" —
   rejected: on such a Windows the product really is slow, and a skipped guard would turn that symptom green.
+
+## 12. Release record (2026-10-12)
+
+The fix merged as #229 (`ccc817ce`) and shipped in three patch releases, cut one at a time:
+
+| Release | Release PR | Checked |
+|---|---|---|
+| `cli-v0.4.2` | #230 | `creds-0.4.2-win-x64.zip` and `-linux-x64.tar.gz` match their `.sha256` (win-x64: `dda31b40…511c25d`) |
+| `mcp-v0.10.2` | #231 | `creds-mcp-0.10.2-win-x64.zip` matches its `.sha256` (`86fd9e70…bb0a37`); `creds-mcp.exe --version` prints `creds-mcp 0.10.2` |
+| `extension-v1.14.1` | #228, after the CHANGELOG heading PR #233 | the release page shows the *1.14.1* section; the `.vsix` says 1.14.1 (sha256 `f06ea135…25a5f1`; this release type ships no `.sha256` file) |
+
+**The same fake-key refusal, real endpoint folder (37 files by then, untouched by every run):**
+
+| Binaries | Windows | WSL |
+|---|---|---|
+| built from the merged commit `ccc817ce` | 0.563 / 0.116 / 0.144 s | 1.06 / 1.15 / 1.39 s (a busier machine; the Linux half JIT-built) |
+| the RELEASED cli 0.4.2 (downloaded, checksum-verified, run from a run-unique folder) | 0.066 / 0.051 / 0.045 s | 0.229 / 0.209 / 0.243 s |
+
+All exit 92 with the unchanged sentence. The coordinating session measured the released cli 0.4.2 on its own as well: about
+0.2 s on Windows and 0.28 s through WSL. Before the fix: 68.42 s and 69.53 s.
