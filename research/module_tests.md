@@ -1158,11 +1158,16 @@ short name can be brute-forced; the list keeps names from coming back, it does n
 name: `--hash "<name>"` prints the digest.
 
 Files of any size are read; a file with a NUL byte is binary and is skipped, and the summary counts those. A read
-error other than a gitlink or a deleted file stops the scan. At most 50 findings per line and rule are kept. Its
-own fixtures are assembled at run time, so the script needs no exemption.
+error other than a gitlink or a deleted file stops the scan, naming the error code and the path (masked if it holds
+a name), never the system's message. At most 50 findings per line and rule are kept, and at most 500 are printed;
+the summary counts all of them. Its own fixtures are assembled at run time, so the script needs no exemption.
 
-`--selftest` runs 42 checks first: 40 line cases, the no-leak check on the real formatter (a planted path, an
-address and two home paths holding a planted name), and that every digest is 64 hex characters.
+`--selftest` runs 44 checks first:
+- 40 line cases;
+- the no-leak check on the real formatter (a planted path, an address and two home paths holding a planted name);
+- a read error on a planted path;
+- the report cap, including that a path stays masked when its own finding is not among the kept ones;
+- that every digest is 64 hex characters.
 Not covered: a fragment of a real secret, a name inside a longer identifier, a name of three or more words, a
 non-ASCII name, and the deploy workflow's own name (functional: its GitHub environment holds the secrets).
 
@@ -1172,9 +1177,12 @@ watched RED, GREEN, RED:
 - a reserved domain matched as a prefix;
 - one 8 MiB line grew the heap by 427 MB (18 MB after);
 - a path, address or home path holding a name was printed;
-- the Git Bash, Cygwin and `\wsl$` home shapes were missed;
+- the Git Bash, Cygwin and `\\wsl$` home shapes were missed;
 - a line repeating a name kept 699,050 findings and 119 MB (50 findings and 17 MB after);
-- a line planted in the script itself passed while it was exempt.
+- a line planted in the script itself passed while it was exempt;
+- a read error printed the raw path;
+- the report kept every finding;
+- masking a path depended on its own finding being kept.
 
 ## What none of them covers
 

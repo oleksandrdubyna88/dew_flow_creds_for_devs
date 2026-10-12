@@ -161,9 +161,15 @@ function nameHits(text, digests, limit = MAX_PER_LINE) {
   return hits;
 }
 
+function holdsName(text, digests) {
+  return nameHits(text, digests, 1).length > 0;
+}
+
+const MASKED_PATH = '(a tracked path holding a private name';
+
 /** What a finding prints as its match: the text itself, unless that text holds a listed name. */
 function shown(text, digests) {
-  return nameHits(text, digests, 1).length ? '(a match holding a private name)' : text;
+  return holdsName(text, digests) ? '(a match holding a private name)' : text;
 }
 
 function* capped(iterable, limit = MAX_PER_LINE) {
@@ -192,15 +198,18 @@ export function pathFindings(file, digests = PRIVATE_NAME_DIGESTS) {
 }
 
 /** The output lines for a list of findings. Every one of them reaches a PUBLIC CI log. */
-export function formatFindings(findings) {
+export function formatFindings(findings, digests = PRIVATE_NAME_DIGESTS) {
   // A path that itself holds a private name is never printed — not for its own finding, and not for
   // the findings on its lines. It is numbered instead; `git ls-files` plus `--hash` finds it locally.
+  // Decided from the path itself, never from whether its own finding was kept.
   const masked = new Map();
-  for (const f of findings) {
-    if (f.line === 0 && f.rule === 'name' && !masked.has(f.file)) masked.set(f.file, masked.size + 1);
-  }
+  const shownPath = (file) => {
+    if (!holdsName(file, digests)) return file;
+    if (!masked.has(file)) masked.set(file, masked.size + 1);
+    return `${MASKED_PATH}, #${masked.get(file)})`;
+  };
   return findings.map((f) => {
-    const file = masked.has(f.file) ? `(a tracked path holding a private name, #${masked.get(f.file)})` : f.file;
+    const file = shownPath(f.file);
     const where = f.line ? `${file}:${f.line}` : `${file} (path)`;
     return `${where}  ${f.rule}  ${f.match}`;
   });
@@ -212,32 +221,47 @@ function trackedFiles() {
 }
 
 /** The file's bytes; null for the two expected non-files, and any other error is raised. */
-function readTracked(file) {
+export function readTracked(file, digests = PRIVATE_NAME_DIGESTS, read = readFileSync) {
   try {
-    return readFileSync(file);
+    return read(file);
   } catch (e) {
     // EISDIR: a gitlink (the shared-rules submodule). ENOENT: deleted in the working tree.
     if (e.code === 'EISDIR' || e.code === 'ENOENT') return null;
-    throw new Error(`public hygiene: cannot read tracked file ${file}: ${e.code ?? e.message}`);
+    // The code only: a system message can carry the path, and the path may hold a name.
+    const where = holdsName(file, digests) ? `${MASKED_PATH})` : file;
+    throw new Error(`public hygiene: cannot read tracked file ${where}: ${e.code ?? 'unknown error'}`);
   }
 }
 
+/** Collects findings: counts every one, keeps the first `keep` for printing. */
+export function createReport(keep = Infinity) {
+  const report = { findings: [], total: 0, byRule: {}, binary: 0 };
+  report.add = (f) => {
+    report.total++;
+    report.byRule[f.rule] = (report.byRule[f.rule] ?? 0) + 1;
+    if (report.findings.length < keep) report.findings.push(f);
+  };
+  return report;
+}
+
+// What is printed is the start of the list; the summary counts all of it.
+const MAX_PRINTED = 500;
+
 function scanTree() {
-  const findings = [];
-  let binary = 0;
+  const report = createReport(MAX_PRINTED);
   for (const file of trackedFiles()) {
-    findings.push(...pathFindings(file));
+    for (const f of pathFindings(file)) report.add(f);
     const buf = readTracked(file);
     if (buf === null) continue;
     if (buf.includes(0)) {
-      binary++; // images, archives, UTF-16: not text this check can read
+      report.binary++; // images, archives, UTF-16: not text this check can read
       continue;
     }
     buf.toString('utf8').split('\n').forEach((text, i) => {
-      for (const f of scanLine(text)) findings.push({ file, line: i + 1, ...f });
+      for (const f of scanLine(text)) report.add({ file, line: i + 1, ...f });
     });
   }
-  return { findings, binary };
+  return report;
 }
 
 // ---- selftest -------------------------------------------------------------------------------------
@@ -314,9 +338,37 @@ function checkNoLeak(digests, check) {
     ...findingsOn('docs/plain.md', 8, `ask ${mail('zebraquokka', 'acme-widgets.co')}`),
     ...findingsOn('docs/plain.md', 9, win('C:', 'Users', 'zebraquokka', 'x')),
     ...findingsOn('docs/plain.md', 10, nix('', 'home', 'zebra-quokka', '.ssh')),
-  ]).join('\n');
+  ], digests).join('\n');
   const findings = output.split('\n').length;
   check(findings === 9 && !/zebra|quokka/i.test(output), `${findings} printed findings, none of them carrying the planted name:\n${output}`);
+}
+
+// A read error stops the scan, and its message reaches the same public log.
+function checkReadErrorMasked(digests, check) {
+  const failing = () => {
+    const e = new Error('i/o');
+    e.code = 'EIO';
+    throw e;
+  };
+  let message = '';
+  try {
+    readTracked('docs/Zebra-Quokka/notes.md', digests, failing);
+  } catch (e) {
+    message = e.message;
+  }
+  check(message.includes('EIO') && !/zebra|quokka/i.test(message), `a read error names the code, not the planted path: ${message}`);
+}
+
+// The report keeps a bounded number of findings and counts all of them — and masking a path must
+// not depend on its own finding being among the kept ones.
+function checkReportCap(digests, check) {
+  const planted = 'docs/Zebra-Quokka/notes.md';
+  const report = createReport(3);
+  for (let line = 1; line <= 10; line++) report.add({ file: planted, line, rule: 'e-mail', match: '(an address)' });
+  for (const f of pathFindings(planted, digests)) report.add(f);
+  const output = formatFindings(report.findings, digests).join('\n');
+  const ok = report.findings.length === 3 && report.total === 11 && !/zebra|quokka/i.test(output);
+  check(ok, `keeps ${report.findings.length} of ${report.total} findings, and prints no planted name:\n${output}`);
 }
 
 // A typo in a digest is a name that silently never matches.
@@ -336,6 +388,8 @@ function selftest() {
   };
   runLineCases(digests, check);
   checkNoLeak(digests, check);
+  checkReadErrorMasked(digests, check);
+  checkReportCap(digests, check);
   checkDigestShape(check);
   console.log(failed === 0 ? `selftest: ${total} cases, all ok` : `selftest: ${failed} of ${total} cases FAILED`);
   return failed === 0 ? 0 : 1;
@@ -349,17 +403,17 @@ function main(argv) {
     console.log(digest(argv[1] ?? ''));
     return 0;
   }
-  const { findings, binary } = scanTree();
-  for (const line of formatFindings(findings)) console.log(line);
-  const skipped = `${binary} binary file(s) not read`;
-  if (findings.length === 0) {
+  const report = scanTree();
+  for (const line of formatFindings(report.findings)) console.log(line);
+  const skipped = `${report.binary} binary file(s) not read`;
+  if (report.total === 0) {
     console.log(`public hygiene: clean (${skipped})`);
     return 0;
   }
-  const byRule = {};
-  for (const f of findings) byRule[f.rule] = (byRule[f.rule] ?? 0) + 1;
-  const counts = Object.entries(byRule).map(([r, n]) => `${r} ${n}`).join(', ');
-  console.log(`public hygiene: ${findings.length} finding(s) — ${counts} (${skipped})`);
+  const hidden = report.total - report.findings.length;
+  if (hidden > 0) console.log(`… and ${hidden} more finding(s), not printed`);
+  const counts = Object.entries(report.byRule).map(([r, n]) => `${r} ${n}`).join(', ');
+  console.log(`public hygiene: ${report.total} finding(s) — ${counts} (${skipped})`);
   console.log('Use a placeholder: name@example.com, 192.0.2.x / 203.0.113.x, C:\\Users\\<you>, a neutral project name.');
   return 1;
 }
