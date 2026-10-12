@@ -197,7 +197,8 @@ jobs:
               sleep 0.5
             done
             if kill -0 "$SERVER_PID" 2> /dev/null; then
-              echo "pid $SERVER_PID did not stop within 15 s of TERM"
+              echo "pid $SERVER_PID did not stop within 15 s of TERM; sending KILL"
+              kill -KILL "$SERVER_PID" 2> /dev/null || true
             else
               echo "pid $SERVER_PID stopped"
             fi

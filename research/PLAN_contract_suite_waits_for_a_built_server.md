@@ -12,6 +12,13 @@
 > (3) The local self-test could not prove its TIMING bounds: the workstation sat at 100 % CPU from another
 > workload, and at the mandatory lowered priority case a took 317 s (its sentence and exit code were right).
 > GREEN is the ubuntu CI run of the pull request.
+> (4) Code round 1 (three accepted, one rejected) added three cases, each watched RED in CI before its fix:
+> g — TERM to the script while it waits must stop its server (it exited 143 at once and left it running); h —
+> no probe may run past the deadline (6.0 s for a 2 s deadline); i — the start line names the program, never its
+> arguments. Rejected: killing the whole process tree, because this task's rule is that the script signals only
+> the pid it started; the command being the server itself is the contract instead.
+> (5) Measured on the PR's first contract run: the build step took 27 s, the start step 2.3 s (the script saw
+> the 2xx after 2 s), and the stop step's TERM ended the apphost cleanly.
 >
 > Related docs: [module_tests.md](module_tests.md), [http/README.md](../http/README.md).
 

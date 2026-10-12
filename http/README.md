@@ -98,6 +98,12 @@ for a server that was merely still compiling. `.github/scripts/start-server-and-
 server through, so the suite now runs against a server or not at all. It starts the APPHOST rather than
 `dotnet run`, because the pid it records — and the only one it ever signals — must be the server itself.
 
+Three local notes. The apphost finds the runtime the way any .NET apphost does, so with .NET installed outside the
+standard location (say `~/.dotnet`) set `DOTNET_ROOT` first — otherwise the script fails at once and its log says
+*You must install .NET*. Under Git Bash `bash` must be Git's own (Git's `usr\bin` before `System32` on PATH), not
+WSL's `bash.exe`. And on Windows `kill <pid>` ends the server without a graceful shutdown (MSYS turns it into
+`TerminateProcess`), which is harmless for this throwaway data directory.
+
 The verdict is the **exit code**, not the log tail: `0` pass · `1` contract regression · `3`
 environment · `4` configuration · `5` no valid report. Exit `3` means the API was never exercised —
 report it as *"the suite could not run"*, not as a finding about the server.
