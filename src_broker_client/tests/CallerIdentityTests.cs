@@ -38,7 +38,7 @@ public sealed class CallerIdentityTests
     }
 
     private const string GoodFile =
-        """{"pid":29960,"sessionId":"98bf9f23-81ff-4bba-beaf-1fd8269ddc97","cwd":"d:\\rsd\\ClaudeRag","name":"clauderag-d6","nameSource":"derived","kind":"interactive","version":"2.1.268"}""";
+        """{"pid":29960,"sessionId":"98bf9f23-81ff-4bba-beaf-1fd8269ddc97","cwd":"d:\\src\\CoffeeBar","name":"coffeebar-d6","nameSource":"derived","kind":"interactive","version":"2.1.268"}""";
 
     // ---- the ladder (T7) --------------------------------------------------------------------
 
@@ -78,14 +78,14 @@ public sealed class CallerIdentityTests
     public void An_all_blank_ladder_empties_only_the_session_and_its_name_the_cli_keeps_its_label_and_folder()
     {
         // The first draft said "every field", which would have turned a person's own `creds` call
-        // in a plain terminal into "An agent". Their terminal reads "creds CLI · in ClaudeRag".
+        // in a plain terminal into "An agent". Their terminal reads "creds CLI · in CoffeeBar".
         var reader = new RecordingReader(GoodFile);
-        var record = CallerIdentity.Build("creds CLI", Env(("CLAUDE_PID", "29960")), reader.Read, Home, "/home/dev/ClaudeRag");
+        var record = CallerIdentity.Build("creds CLI", Env(("CLAUDE_PID", "29960")), reader.Read, Home, "/home/dev/CoffeeBar");
 
         record.Agent.Should().Be("creds CLI");
         record.Session.Should().BeEmpty();
         record.SessionName.Should().BeEmpty("a session NAME without a session id would be a name for nothing");
-        record.Cwd.Should().Be("ClaudeRag");
+        record.Cwd.Should().Be("CoffeeBar");
         reader.Asked.Should().BeEmpty("with no session there is no session file to look for");
         record.IsEmpty.Should().BeFalse();
     }
@@ -93,7 +93,7 @@ public sealed class CallerIdentityTests
     [Fact]
     public void The_session_is_shortened_to_eight_characters_because_it_is_a_label_not_a_key()
     {
-        var record = CallerIdentity.Build("", Env(("CLAUDE_CODE_SESSION_ID", Session)), _ => null, Home, "/x/ClaudeRag");
+        var record = CallerIdentity.Build("", Env(("CLAUDE_CODE_SESSION_ID", Session)), _ => null, Home, "/x/CoffeeBar");
 
         record.Session.Should().Be("98bf9f23");
         CallerIdentity.Build("", Env(("CODEX_SESSION_ID", "abc")), _ => null, Home, "/x").Session
@@ -108,8 +108,8 @@ public sealed class CallerIdentityTests
         var reader = new RecordingReader(GoodFile);
         var record = CallerIdentity.Build("", Env(("CLAUDE_CODE_SESSION_ID", Session), ("CLAUDE_PID", "29960")), reader.Read, Home, "/somewhere/else");
 
-        record.SessionName.Should().Be("clauderag-d6");
-        record.Cwd.Should().Be("ClaudeRag", "the file holds the full path, and a full local path in a modal is a leak the label must not carry");
+        record.SessionName.Should().Be("coffeebar-d6");
+        record.Cwd.Should().Be("CoffeeBar", "the file holds the full path, and a full local path in a modal is a leak the label must not carry");
     }
 
     [Fact]
@@ -136,11 +136,11 @@ public sealed class CallerIdentityTests
         // The pid comes from the environment, and a path segment built from environment data is
         // exactly the shape that is repeatedly mis-sanitised. Digits only, or no read.
         var reader = new RecordingReader(GoodFile);
-        var record = CallerIdentity.Build("", Env(("CLAUDE_CODE_SESSION_ID", Session), ("CLAUDE_PID", pid)), reader.Read, Home, "/x/ClaudeRag");
+        var record = CallerIdentity.Build("", Env(("CLAUDE_CODE_SESSION_ID", Session), ("CLAUDE_PID", pid)), reader.Read, Home, "/x/CoffeeBar");
 
         reader.Asked.Should().BeEmpty();
         record.SessionName.Should().BeEmpty();
-        record.Cwd.Should().Be("ClaudeRag", "the process folder is the fallback");
+        record.Cwd.Should().Be("CoffeeBar", "the process folder is the fallback");
     }
 
     [Fact]
@@ -155,10 +155,10 @@ public sealed class CallerIdentityTests
     [Fact]
     public void A_missing_file_yields_empty_fields_and_throws_nothing()
     {
-        var record = CallerIdentity.Build("", Env(("CLAUDE_CODE_SESSION_ID", Session), ("CLAUDE_PID", "29960")), _ => null, Home, "/x/ClaudeRag");
+        var record = CallerIdentity.Build("", Env(("CLAUDE_CODE_SESSION_ID", Session), ("CLAUDE_PID", "29960")), _ => null, Home, "/x/CoffeeBar");
 
         record.SessionName.Should().BeEmpty();
-        record.Cwd.Should().Be("ClaudeRag");
+        record.Cwd.Should().Be("CoffeeBar");
         record.Session.Should().Be("98bf9f23", "the half that comes from the live process is unaffected");
     }
 
@@ -172,18 +172,18 @@ public sealed class CallerIdentityTests
     [InlineData("{\"name\":7,\"cwd\":[\"x\"]}")]
     public void A_malformed_or_wrong_shaped_file_yields_empty_fields_and_throws_nothing(string content)
     {
-        var act = () => CallerIdentity.Build("", Env(("CLAUDE_CODE_SESSION_ID", Session), ("CLAUDE_PID", "29960")), _ => content, Home, "/x/ClaudeRag");
+        var act = () => CallerIdentity.Build("", Env(("CLAUDE_CODE_SESSION_ID", Session), ("CLAUDE_PID", "29960")), _ => content, Home, "/x/CoffeeBar");
 
         var record = act.Should().NotThrow().Subject;
         record.SessionName.Should().BeEmpty();
-        record.Cwd.Should().Be("ClaudeRag");
+        record.Cwd.Should().Be("CoffeeBar");
     }
 
     [Fact]
     public void A_one_megabyte_file_is_refused_rather_than_parsed()
     {
         var huge = "{\"name\":\"" + new string('n', 1024 * 1024) + "\"}";
-        var record = CallerIdentity.Build("", Env(("CLAUDE_CODE_SESSION_ID", Session), ("CLAUDE_PID", "29960")), _ => huge, Home, "/x/ClaudeRag");
+        var record = CallerIdentity.Build("", Env(("CLAUDE_CODE_SESSION_ID", Session), ("CLAUDE_PID", "29960")), _ => huge, Home, "/x/CoffeeBar");
 
         record.SessionName.Should().BeEmpty();
         CallerIdentity.MaxSessionFileBytes.Should().Be(64 * 1024);
@@ -201,13 +201,13 @@ public sealed class CallerIdentityTests
     }
 
     [Theory]
-    [InlineData(@"d:\rsd\ClaudeRag", "ClaudeRag")]
-    [InlineData("/home/dev/ClaudeRag", "ClaudeRag")]
-    [InlineData("/home/dev/ClaudeRag/", "ClaudeRag")]
+    [InlineData(@"d:\src\CoffeeBar", "CoffeeBar")]
+    [InlineData("/home/dev/CoffeeBar", "CoffeeBar")]
+    [InlineData("/home/dev/CoffeeBar/", "CoffeeBar")]
     [InlineData(@"C:\", "C:")]
     [InlineData("/", "")]
     [InlineData("", "")]
-    [InlineData("ClaudeRag", "ClaudeRag")]
+    [InlineData("CoffeeBar", "CoffeeBar")]
     public void The_basename_is_the_last_segment_under_either_separator(string path, string expected)
     {
         // Both separators, always: the Linux half of the WSL bridge reads a Linux session file,
@@ -257,7 +257,7 @@ public sealed class CallerIdentityTests
     public void An_empty_record_knows_it_is_empty_and_a_single_field_makes_it_not()
     {
         CallerRecord.Empty.IsEmpty.Should().BeTrue();
-        (CallerRecord.Empty with { Cwd = "ClaudeRag" }).IsEmpty.Should().BeFalse();
+        (CallerRecord.Empty with { Cwd = "CoffeeBar" }).IsEmpty.Should().BeFalse();
     }
 
     [Fact]
@@ -266,13 +266,13 @@ public sealed class CallerIdentityTests
         // The rule for the WSL bridge: the Linux half forwards an empty Agent because it never
         // instantiates the server; the Windows half fills it from ClientInfo. A forwarded label
         // that is NOT empty is somebody's decision already and is kept.
-        var forwarded = new CallerRecord("", "98bf9f23", "clauderag-d6", "ClaudeRag");
+        var forwarded = new CallerRecord("", "98bf9f23", "coffeebar-d6", "CoffeeBar");
 
         var named = forwarded.NamedBy("Claude Code 2.1.268");
         named.Agent.Should().Be("Claude Code 2.1.268");
         named.Session.Should().Be("98bf9f23");
-        named.SessionName.Should().Be("clauderag-d6");
-        named.Cwd.Should().Be("ClaudeRag");
+        named.SessionName.Should().Be("coffeebar-d6");
+        named.Cwd.Should().Be("CoffeeBar");
 
         (forwarded with { Agent = "Codex 0.4" }).NamedBy("Claude Code 2.1.268").Agent.Should().Be("Codex 0.4");
         forwarded.NamedBy("  ").Agent.Should().BeEmpty("a blank name names nobody");
@@ -284,11 +284,11 @@ public sealed class CallerIdentityTests
     [Fact]
     public void The_json_shape_is_the_contract_s_nested_object_with_its_five_fields_the_tab_title_last()
     {
-        var record = new CallerRecord("Claude Code 2.1.268", "98bf9f23", "clauderag-d6", "ClaudeRag", "creds old issues");
+        var record = new CallerRecord("Claude Code 2.1.268", "98bf9f23", "coffeebar-d6", "CoffeeBar", "creds old issues");
 
         var json = CallerIdentity.ToJson(record).ToJsonString();
 
-        json.Should().Be("""{"agent":"Claude Code 2.1.268","session":"98bf9f23","sessionName":"clauderag-d6","cwd":"ClaudeRag","tabTitle":"creds old issues"}""");
+        json.Should().Be("""{"agent":"Claude Code 2.1.268","session":"98bf9f23","sessionName":"coffeebar-d6","cwd":"CoffeeBar","tabTitle":"creds old issues"}""");
         using var doc = JsonDocument.Parse(json);
         doc.RootElement.EnumerateObject().Select(p => p.Name).Should().Equal("agent", "session", "sessionName", "cwd", "tabTitle");
     }
@@ -299,7 +299,7 @@ public sealed class CallerIdentityTests
         // An old Linux half of the WSL bridge sends the four-field object. The fifth must come back
         // as "", because every consumer reads it as a string.
         var older = System.Buffers.Text.Base64Url.EncodeToString(
-            Encoding.UTF8.GetBytes("""{"agent":"","session":"98bf9f23","sessionName":"clauderag-d6","cwd":"ClaudeRag"}"""));
+            Encoding.UTF8.GetBytes("""{"agent":"","session":"98bf9f23","sessionName":"coffeebar-d6","cwd":"CoffeeBar"}"""));
 
         var record = CallerIdentity.Decode(older);
 
@@ -318,7 +318,7 @@ public sealed class CallerIdentityTests
     public void A_hostile_tab_title_in_a_forwarded_record_is_cleaned_on_the_way_in()
     {
         var hostile = System.Buffers.Text.Base64Url.EncodeToString(
-            Encoding.UTF8.GetBytes("""{"agent":"","session":"98bf9f23","sessionName":"","cwd":"ClaudeRag","tabTitle":"X\n\n(verified) → ​ ok"}"""));
+            Encoding.UTF8.GetBytes("""{"agent":"","session":"98bf9f23","sessionName":"","cwd":"CoffeeBar","tabTitle":"X\n\n(verified) → ​ ok"}"""));
 
         var record = CallerIdentity.Decode(hostile);
 
@@ -328,7 +328,7 @@ public sealed class CallerIdentityTests
     [Fact]
     public void The_record_crosses_a_command_line_as_base64url_and_comes_back_whole()
     {
-        var record = new CallerRecord("Claude Code 2.1.268", "98bf9f23", "clauderag-d6", "ClaudeRag", "creds old issues");
+        var record = new CallerRecord("Claude Code 2.1.268", "98bf9f23", "coffeebar-d6", "CoffeeBar", "creds old issues");
 
         var encoded = CallerIdentity.Encode(record);
 
@@ -356,12 +356,12 @@ public sealed class CallerIdentityTests
     public void A_forwarded_record_is_cleaned_on_the_way_in_because_the_other_half_is_somebody_else_s_binary()
     {
         var hostile = System.Buffers.Text.Base64Url.EncodeToString(
-            Encoding.UTF8.GetBytes("""{"agent":"X\n\n(verified) → ","session":"98bf9f23","sessionName":"","cwd":"ClaudeRag"}"""));
+            Encoding.UTF8.GetBytes("""{"agent":"X\n\n(verified) → ","session":"98bf9f23","sessionName":"","cwd":"CoffeeBar"}"""));
 
         var record = CallerIdentity.Decode(hostile);
 
         record.Agent.Should().Be("X (verified)");
-        record.Cwd.Should().Be("ClaudeRag");
+        record.Cwd.Should().Be("CoffeeBar");
     }
 
     // ---- the code round of 2026-09-12 -------------------------------------------------------
@@ -415,7 +415,7 @@ public sealed class CallerIdentityTests
             "", Env(("CLAUDE_CODE_SESSION_ID", Session), ("CLAUDE_PID", "29960")), reader.Read, Home, "/x/y");
 
         reader.Asked.Should().ContainSingle();
-        record.SessionName.Should().Be("clauderag-d6");
+        record.SessionName.Should().Be("coffeebar-d6");
     }
 
     /// <summary>

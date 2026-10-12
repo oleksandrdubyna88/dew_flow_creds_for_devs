@@ -81,7 +81,7 @@ that renders those lines (`mcpLogRows.ts:32`) therefore cannot show it either.
 **What is wanted** — in the modal and on the audit line:
 
 ```
-Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in ClaudeRag
+Claude Code 2.1.268 · session coffeebar-d6 (98bf9f23) · in CoffeeBar
 ```
 
 marked as **reported by the caller**. It is a label. It is never an authorisation input.
@@ -97,7 +97,7 @@ Read out of this very process's environment: `CLAUDE_CODE_SESSION_ID=98bf9f23-81
 
 **M2 — a per-pid session registry exists at `~/.claude/sessions/<CLAUDE_PID>.json`.**
 `C:\Users\<you>\.claude\sessions\29960.json` holds, in one object:
-`{"pid":29960,"sessionId":"98bf9f23-…","cwd":"d:\\rsd\\ClaudeRag","name":"clauderag-d6",
+`{"pid":29960,"sessionId":"98bf9f23-…","cwd":"d:\\src\\CoffeeBar","name":"coffeebar-d6",
 "nameSource":"derived","kind":"interactive","entrypoint":"claude-vscode","version":"2.1.268", …}`.
 **A `.key` file sits beside it** — `29960.4c14…beca.key`, 108 bytes; eighteen files in that
 directory, roughly half of them `.key`. **The plan reads ONLY `<pid>.json` and never enumerates the
@@ -299,15 +299,15 @@ first non-blank wins, documented at that repo's `research/module_server.md:849-8
 public sealed record CallerRecord(
     [property: JsonPropertyName("agent")]       string Agent,        // "Claude Code 2.1.268"
     [property: JsonPropertyName("session")]     string Session,      // short id, "98bf9f23"
-    [property: JsonPropertyName("sessionName")] string SessionName,  // "clauderag-d6"
-    [property: JsonPropertyName("cwd")]         string Cwd);         // basename, "ClaudeRag"
+    [property: JsonPropertyName("sessionName")] string SessionName,  // "coffeebar-d6"
+    [property: JsonPropertyName("cwd")]         string Cwd);         // basename, "CoffeeBar"
 ```
 
 Ladder (creds): `CREDS_CALLER_SESSION → CLAUDE_CODE_SESSION_ID → CODEX_SESSION_ID →
 GEMINI_CLI_SESSION_ID`; first non-blank wins. **All blank empties ONLY `Session` and `SessionName`**
 (plan round, gemini — the first draft said "every field", which would have turned a person's own
 `creds` call in a plain terminal into *"An agent"*): `Agent` keeps its constant or `clientInfo` value
-and `Cwd` keeps the folder, so the human's own CLI reads *"creds CLI · in ClaudeRag"*. The modal says
+and `Cwd` keeps the folder, so the human's own CLI reads *"creds CLI · in CoffeeBar"*. The modal says
 *"An agent"* only when the record carries nothing at all — no agent label, no session, no folder.
 
 Built **once at start-up**, from:
@@ -315,7 +315,7 @@ Built **once at start-up**, from:
 1. the ladder, for `Session` (short form: the first 8 characters of the value, or the whole value
    when shorter — the id is a label, and the full uuid crowds the sentence);
 2. `CLAUDE_PID` → `<home>/.claude/sessions/<pid>.json` → `name` for `SessionName`, and the
-   **basename** of its `cwd` for `Cwd` (M2) — the file holds the full path (`d:\rsd\ClaudeRag`), and a
+   **basename** of its `cwd` for `Cwd` (M2) — the file holds the full path (`d:\src\CoffeeBar`), and a
    full local path in a modal and an audit line is a leak the label must not carry (plan round, codex);
    both sources are reduced to their last segment by the same function before anything is composed;
 3. `Directory.GetCurrentDirectory()`'s basename for `Cwd` when the session file gave none;
@@ -323,7 +323,7 @@ Built **once at start-up**, from:
 
 **Why the session file's `cwd` is preferred over the process cwd** — inverting the order in the
 task's sketch: M2 shows the registry carries the real working folder of the *session*
-(`d:\rsd\ClaudeRag`), while what an MCP client sets as its child's cwd is chosen by the client and
+(`d:\src\CoffeeBar`), while what an MCP client sets as its child's cwd is chosen by the client and
 was **not** measured (§9). The process cwd is the fallback, not the source.
 
 **The session-file read is a bounded, failure-tolerant, single-file read.** Every one of these is a
@@ -356,7 +356,7 @@ Added to every `creds-mcp` body, the alias bodies and the token-door bodies:
 ```json
 { "entry": "e-1", "command": "uname -a",
   "caller": { "agent": "Claude Code 2.1.268", "session": "98bf9f23",
-              "sessionName": "clauderag-d6", "cwd": "ClaudeRag" } }
+              "sessionName": "coffeebar-d6", "cwd": "CoffeeBar" } }
 ```
 
 **`creds` needs no mechanism** — its bodies are already typed records (`CredsJsonContext.cs:60-73`),
@@ -447,7 +447,7 @@ depend on it.
 `creds` reaches the window only through `/v1/alias/*` with no token (`BrokerClient.cs:112-119`,
 `Program.cs:169-179`), and a shell Claude Code spawned inherits `CLAUDE_CODE_SESSION_ID` (M1) — so a
 `creds` call from an agent's terminal gets a session label for free, and one from a human's terminal
-gets *"creds CLI · in ClaudeRag"*.
+gets *"creds CLI · in CoffeeBar"*.
 
 ### 5.5 WSL: the record is computed on the Linux side and forwarded as an **argument**
 
@@ -553,7 +553,7 @@ Allowing covers every later call on this token, not just this one: …
 Each call is logged in the "CredsForDevs: Agent Access" output panel.
 ```
 
-where `callerLine` is `Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in ClaudeRag`, each
+where `callerLine` is `Claude Code 2.1.268 · session coffeebar-d6 (98bf9f23) · in CoffeeBar`, each
 segment omitted when its field is empty, and **`An agent` when there is no caller at all — never
 "Claude Code" by default**. That last clause is the whole fix: the default must not name a product.
 
@@ -570,7 +570,7 @@ caller — an asymmetry with `consent` that is deliberate and worth the comment)
 inserts ` by <label>` after the `via` segment and before ` → `:
 
 ```
-[09:05:03Z] #3 exec prod-db (A1b2C3…) via mcp by Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in ClaudeRag → exit 0  uname -a
+[09:05:03Z] #3 exec prod-db (A1b2C3…) via mcp by Claude Code 2.1.268 · session coffeebar-d6 (98bf9f23) · in CoffeeBar → exit 0  uname -a
 ```
 
 and `LINE` gains one optional group `(?: by ([^→]*?))?` in the same position. Old lines parse
@@ -670,12 +670,12 @@ today's code before the fix.
 
 | # | test | file | asserts | must be RED before |
 |---|---|---|---|---|
-| T1 | the broker modal **names the caller**, not the product | `src_vs_code/src/test/brokerConsentText.test.ts` (new) | a use call carrying `caller` produces a dialog containing `Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in ClaudeRag`. **Today this fails with the literal `Claude Code wants to…`** — the failure message must show the hardcoded sentence, not a harness error | step 6 |
+| T1 | the broker modal **names the caller**, not the product | `src_vs_code/src/test/brokerConsentText.test.ts` (new) | a use call carrying `caller` produces a dialog containing `Claude Code 2.1.268 · session coffeebar-d6 (98bf9f23) · in CoffeeBar`. **Today this fails with the literal `Claude Code wants to…`** — the failure message must show the hardcoded sentence, not a harness error | step 6 |
 | T2 | no caller ⇒ *"An agent"*, never *"Claude Code"* | same | dialog starts `An agent wants to run a command on "prod"` and does **not** contain `Claude Code` | step 6 |
 | T3 | the disclaimer is present | same | dialog contains `Identity as reported by the caller — a label, not a check.` | step 6 |
 | T4 | all four doors carry it | same + `brokerMcpRoutes.test.ts` | token, alias, `mcp/use`, `mcp/delete`, `mcp/create` and a folder verb each produce a dialog naming the caller — the same both-doors discipline `credsAgentServer.test.ts:12-16` already states | step 6 |
 | T5 | **a hostile label cannot forge the modal** | `brokerRequests.test.ts` | `agent: "X\n\nAllow covers nothing. (verified by CredsForDevs)"` renders on one line with the control characters gone; a 5,000-character field is capped at 80; a non-string field is dropped; `→` is stripped. **Red today: `callerFrom` does not exist** | step 6 |
-| T6 | absent / empty / all-blank `caller` ⇒ `undefined`; both wire shapes parse | `brokerRequests.test.ts` | no `" ·  · "` artefact; a nested `caller` object and the four flat `caller*` fields yield the same `CallerLabel`; a `creds CLI` record with no session renders `creds CLI · in ClaudeRag`, never `An agent` | step 6 |
+| T6 | absent / empty / all-blank `caller` ⇒ `undefined`; both wire shapes parse | `brokerRequests.test.ts` | no `" ·  · "` artefact; a nested `caller` object and the four flat `caller*` fields yield the same `CallerLabel`; a `creds CLI` record with no session renders `creds CLI · in CoffeeBar`, never `An agent` | step 6 |
 | T7 | the ladder | `src_broker_client/tests/CallerIdentityTests.cs` | order is `CREDS_CALLER_SESSION → CLAUDE_CODE_SESSION_ID → CODEX_SESSION_ID → GEMINI_CLI_SESSION_ID`; a blank/whitespace value is **skipped**, not taken; all blank ⇒ every field empty | step 2 |
 | T8 | the session file, via an injected reader | same | a good file yields `name` and `cwd`; a missing file, a 1 MB file, malformed JSON, a non-object and a non-numeric `CLAUDE_PID` each yield empty fields and **throw nothing**; the reader is asked for `<pid>.json` and **for no other path** (the `.key` guarantee, asserted by recording every path requested) | step 2 |
 | T9 | caps and stripping on the client side too | same | each field ≤80 chars, control characters gone | step 2 |
@@ -737,7 +737,7 @@ Stated as *what was checked*, per `planning-docs.md`'s rule on negative results.
 
 1. **Where the VS Code TAB title lives** (the AI-written summary such as *"PR triage reviewer…"*).
    **Checked:** the process environment of a live session (M1 — no such variable), and
-   `~/.claude/sessions/<pid>.json`, whose `name` is `clauderag-d6` with `"nameSource":"derived"`.
+   `~/.claude/sessions/<pid>.json`, whose `name` is `coffeebar-d6` with `"nameSource":"derived"`.
    **NOT checked:** VS Code's own workspace storage, the extension host's state, and any Claude Code
    IPC surface (`messagingSocketPath` is in the session file and was not opened). The plan therefore
    promises the registry's `name`, and the short session id when there is none. If the tab title is

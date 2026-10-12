@@ -51,6 +51,15 @@ jobs:
       - name: Branch protection selftest
         run: node .github/scripts/branch-protection.mjs --selftest
 
+      # This repository is public: no real person's e-mail, no home path, no private network
+      # address, no private project name in any tracked file. Allowlists and digests only — the
+      # check never spells out what it forbids. Selftest first, so a broken rule is not read as
+      # a clean tree.
+      - name: Public hygiene selftest
+        run: node .github/scripts/public-hygiene.mjs --selftest
+      - name: Public hygiene
+        run: node .github/scripts/public-hygiene.mjs
+
       # Every submodule pin must equal its remote's tip — "a rule change and the pin
       # bumps are one task" is a check, not a habit.
       - name: Pin check

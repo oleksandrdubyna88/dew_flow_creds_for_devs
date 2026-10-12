@@ -20,7 +20,7 @@ interface Logged {
   message: string;
 }
 
-const ACCOUNT = { accountId: 'a1', email: 'mark@remsoft.dev', provider: 'microsoft' };
+const ACCOUNT = { accountId: 'a1', email: 'colleague@example.com', provider: 'microsoft' };
 
 /** A real sealed export — `encryptJson`, so the blob fingerprint is a real one. */
 const SEALED = encryptJson(

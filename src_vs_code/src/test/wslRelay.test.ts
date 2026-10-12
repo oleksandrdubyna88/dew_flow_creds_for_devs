@@ -324,7 +324,7 @@ test('a path that cannot be quoted is dropped rather than escaped', () => {
 test('a Windows path becomes the one WSL can open', () => {
   const win = ['C:', 'Users', 'me', 'AppData', 'bin', 'creds.exe'].join(String.fromCharCode(92));
   assert.equal(toWslPath(win), '/mnt/c/Users/me/AppData/bin/creds.exe');
-  assert.equal(toWslPath('D:/rsd/x.exe'), '/mnt/d/rsd/x.exe');
+  assert.equal(toWslPath('D:/src/x.exe'), '/mnt/d/src/x.exe');
 });
 
 test('anything without a drive letter is handed back untouched', () => {

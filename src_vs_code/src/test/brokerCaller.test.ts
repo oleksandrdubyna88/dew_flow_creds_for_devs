@@ -22,7 +22,7 @@ import {
  * and the tests say so by asserting only what is RENDERED.</p>
  */
 
-const REPORTED = { agent: 'Claude Code 2.1.268', session: '98bf9f23', sessionName: 'clauderag-d6', cwd: 'ClaudeRag', tabTitle: '' };
+const REPORTED = { agent: 'Claude Code 2.1.268', session: '98bf9f23', sessionName: 'coffeebar-d6', cwd: 'CoffeeBar', tabTitle: '' };
 
 // Built by code point rather than written as escapes, so the fixture is readable in a diff and
 // cannot be normalised away by an editor: a bell (Cc), a zero-width space (Cf) and an escape (Cc).
@@ -34,7 +34,7 @@ test('a well-formed record renders as agent · session name (id) · in folder', 
   const label = callerFrom({ entry: 'e1', command: 'uptime', caller: REPORTED });
 
   assert.deepEqual(label, REPORTED);
-  assert.equal(callerLine(label), 'Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in ClaudeRag');
+  assert.equal(callerLine(label), 'Claude Code 2.1.268 · session coffeebar-d6 (98bf9f23) · in CoffeeBar');
 });
 
 test('a hostile label cannot forge the modal — a newline in it does not start a new paragraph', () => {
@@ -103,11 +103,11 @@ test('the composed label is capped too, so four full fields cannot make a 64 KB 
 test('a field that is not a string is dropped, not stringified', () => {
   // `parseJsonObject` yields `unknown`; an object or an array must never reach a template literal.
   const label = callerFrom({
-    caller: { agent: ['Claude', 'Code'], session: 42, sessionName: { name: 'x' }, cwd: 'ClaudeRag' },
+    caller: { agent: ['Claude', 'Code'], session: 42, sessionName: { name: 'x' }, cwd: 'CoffeeBar' },
   });
 
-  assert.deepEqual(label, { agent: '', session: '', sessionName: '', cwd: 'ClaudeRag', tabTitle: '' });
-  assert.equal(callerLine(label), 'in ClaudeRag');
+  assert.deepEqual(label, { agent: '', session: '', sessionName: '', cwd: 'CoffeeBar', tabTitle: '' });
+  assert.equal(callerLine(label), 'in CoffeeBar');
 });
 
 test('absent, empty, non-object and all-blank callers are all undefined — never " ·  · "', () => {
@@ -145,24 +145,24 @@ test('the nested object wins when both shapes are present, so a flat field canno
 });
 
 test('a record with no session — the CLI in a person\'s own terminal — reads as itself, not as an agent', () => {
-  const label = callerFrom({ alias: 'prod', caller: { agent: 'creds CLI', session: '', sessionName: '', cwd: 'ClaudeRag' } });
+  const label = callerFrom({ alias: 'prod', caller: { agent: 'creds CLI', session: '', sessionName: '', cwd: 'CoffeeBar' } });
 
-  assert.equal(callerLine(label), 'creds CLI · in ClaudeRag');
+  assert.equal(callerLine(label), 'creds CLI · in CoffeeBar');
 });
 
 test('each segment is omitted when its field is empty, and the separators go with it', () => {
   assert.equal(callerLine({ agent: 'Codex', session: '9f2c41ab', sessionName: '', cwd: '', tabTitle: '' }), 'Codex · session 9f2c41ab');
-  assert.equal(callerLine({ agent: '', session: '', sessionName: 'clauderag-d6', cwd: '', tabTitle: '' }), 'session clauderag-d6');
+  assert.equal(callerLine({ agent: '', session: '', sessionName: 'coffeebar-d6', cwd: '', tabTitle: '' }), 'session coffeebar-d6');
   assert.equal(callerLine({ agent: 'Gemini CLI', session: '', sessionName: '', cwd: '', tabTitle: '' }), 'Gemini CLI');
-  const onlyFolder = callerLine({ agent: '', session: '', sessionName: '', cwd: 'ClaudeRag', tabTitle: '' });
-  assert.equal(onlyFolder, 'in ClaudeRag');
+  const onlyFolder = callerLine({ agent: '', session: '', sessionName: '', cwd: 'CoffeeBar', tabTitle: '' });
+  assert.equal(onlyFolder, 'in CoffeeBar');
   assert.equal(onlyFolder.includes(' ·  · '), false, onlyFolder);
 });
 
 test('whitespace runs collapse to one space and the ends are trimmed', () => {
-  const label = callerFrom({ caller: { ...REPORTED, cwd: '  Claude   Rag  ' } });
+  const label = callerFrom({ caller: { ...REPORTED, cwd: '  Coffee   Bar  ' } });
 
-  assert.equal(label?.cwd, 'Claude Rag');
+  assert.equal(label?.cwd, 'Coffee Bar');
 });
 
 test('the audit form is the same label, or nothing — never "An agent"', () => {
@@ -221,11 +221,11 @@ test('a record that knows only the tab title is still a caller, not "An agent"',
 });
 
 test('the tab title names the session in the modal, quoted, in place of the derived registry name', () => {
-  // The derived name (clauderag-d6) and the id are on no tab; the title IS the tab. Two names for
+  // The derived name (coffeebar-d6) and the id are on no tab; the title IS the tab. Two names for
   // one session in a security dialog would read as two sessions, so the title replaces the name.
-  assert.equal(callerLine(TITLED), 'Claude Code 2.1.268 · session "creds old issues" (98bf9f23) · in ClaudeRag');
-  assert.equal(callerLine({ ...TITLED, session: '' }), 'Claude Code 2.1.268 · session "creds old issues" · in ClaudeRag');
-  assert.equal(callerLine(REPORTED), 'Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in ClaudeRag', 'no title: unchanged');
+  assert.equal(callerLine(TITLED), 'Claude Code 2.1.268 · session "creds old issues" (98bf9f23) · in CoffeeBar');
+  assert.equal(callerLine({ ...TITLED, session: '' }), 'Claude Code 2.1.268 · session "creds old issues" · in CoffeeBar');
+  assert.equal(callerLine(REPORTED), 'Claude Code 2.1.268 · session coffeebar-d6 (98bf9f23) · in CoffeeBar', 'no title: unchanged');
 });
 
 test('the title is shown in full up to the field cap, so the tab text — however the tab cuts it — is a prefix of it', () => {
@@ -242,7 +242,7 @@ test('the audit line names the session by its tab title, exactly as the modal do
   // read later is the line they allowed.
   const audit = callerForAudit(TITLED) ?? '';
 
-  assert.equal(audit, 'Claude Code 2.1.268 · session "creds old issues" (98bf9f23) · in ClaudeRag');
+  assert.equal(audit, 'Claude Code 2.1.268 · session "creds old issues" (98bf9f23) · in CoffeeBar');
   assert.equal(audit, callerLine(TITLED), 'the audit label IS the modal label');
   assert.equal(
     callerForAudit({ agent: '', session: '', sessionName: '', cwd: '', tabTitle: 'only a title' }),
@@ -269,7 +269,7 @@ test('a title cannot forge a second session in the label — its quotes and the 
   // forged id (code round, 2026-09-24). Inside the quotes the title stays visibly one value.
   const line = callerLine({ ...TITLED, tabTitle: 'prod" (deadbeef) · session "Claude Code' });
 
-  assert.equal(line, `Claude Code 2.1.268 · session "prod' (deadbeef) - session 'Claude Code" (98bf9f23) · in ClaudeRag`);
+  assert.equal(line, `Claude Code 2.1.268 · session "prod' (deadbeef) - session 'Claude Code" (98bf9f23) · in CoffeeBar`);
   assert.equal(line.split('"').length - 1, 2, 'exactly one pair of quotes: the one around the title');
   assert.equal(line.split(' · ').length, 3, 'agent · session · folder, and no fourth segment');
 });

@@ -47,10 +47,10 @@
 
 ## 1. The symptom
 
-Since 2026-09-12 the consent modal opens with *`Claude Code 2.1.281 · session clauderag-d4 (52d1b29a)
-· in ClaudeRag` wants to run a command on "prod"…*. Nothing in that sentence is what the person SEES.
+Since 2026-09-12 the consent modal opens with *`Claude Code 2.1.281 · session coffeebar-d4 (52d1b29a)
+· in CoffeeBar` wants to run a command on "prod"…*. Nothing in that sentence is what the person SEES.
 A VS Code window with nine Claude Code tabs shows nine titles — *"creds old issues"*, *"Fix the
-consent modal to…"* — and not one of them reads `clauderag-d4` or `52d1b29a`: the registry's `name` is
+consent modal to…"* — and not one of them reads `coffeebar-d4` or `52d1b29a`: the registry's `name` is
 `"nameSource":"derived"`, and the id is on no tab at all. So the modal names the session in a
 vocabulary the person cannot match against the screen, and Allow covers every later call on the
 grant. That is the whole of #61's request ("в табах вс код есть айди и можно брать название. его
@@ -61,7 +61,7 @@ A second, smaller symptom (#136 item 2): Codex and Gemini sessions get no name a
 short id and a folder.
 
 **Goal.** When the caller is a Claude Code session, the modal names it by the text on its tab:
-*`Claude Code 2.1.281 · session "creds old issues" (52d1b29a) · in ClaudeRag`*. The title is read
+*`Claude Code 2.1.281 · session "creds old issues" (52d1b29a) · in CoffeeBar`*. The title is read
 fresh on every call, because a tab is renamed while its MCP server keeps running. Codex and Gemini
 are measured, not assumed, and the result is written down whichever way it falls.
 
@@ -90,8 +90,8 @@ Read in the shipped extension `anthropic.claude-code` 2.1.281 on a live tab:
   writers disagree the LAST line wins, which is what the tab does too.
 
 Re-verified here on this machine (2026-09-24), reading only title lines and the one `<pid>.json`:
-`~/.claude/sessions/26116.json` holds `sessionId` `52d1b29a-…` and `cwd` `d:\rsd\ClaudeRag`; the
-project folder is `d--rsd-ClaudeRag` (the rule above, character for character); its transcript's last
+`~/.claude/sessions/26116.json` holds `sessionId` `52d1b29a-…` and `cwd` `d:\src\CoffeeBar`; the
+project folder is `d--src-CoffeeBar` (the rule above, character for character); its transcript's last
 64 KB carries `{"type":"custom-title","customTitle":"creds old issues",…}`, and
 `52d1b29a-…/custom-title.json` is 34 bytes. Over the tails of the 40 most recent transcripts, **every**
 line containing `"type":"custom-title"` or `"type":"ai-title"` STARTS with `{"type":"…-title"` — which
@@ -321,7 +321,7 @@ real file of the user's.
 | T-S6 | **no line of the conversation reaches the result** — a user line whose text contains `{"type":"custom-title","customTitle":"PWNED"}` escaped, and an assistant line with a nested `{"type":"custom-title",…}` object, both yield `""` | `SessionTitleTests` |
 | T-S7 | a title with `\n`, a zero-width space, `→` and 200 characters comes out one line, cleaned, 80 code points | `SessionTitleTests` |
 | T-S8 | malformed JSON on a title line, a non-string title, a blank title, an oversized `custom-title.json` — each yields `""` and throws nothing | `SessionTitleTests` |
-| T-S9 | the project folder: `d:\rsd\ClaudeRag` → `d--rsd-ClaudeRag`; `/home/u/a.b_c` → `-home-u-a-b-c`; a 201-character result → no path | `SessionTitleTests` |
+| T-S9 | the project folder: `d:\src\CoffeeBar` → `d--src-CoffeeBar`; `/home/u/a.b_c` → `-home-u-a-b-c`; a 201-character result → no path | `SessionTitleTests` |
 | T-S10 | a session id that is not 1–64 of `[A-Za-z0-9-]` (`../x`, `a/b`, empty, 65 chars) opens nothing | `SessionTitleTests` |
 | T-G1 | the ladder is `CREDS → CLAUDE → CODEX`; `CREDS_CALLER_SESSION` still answers first; `GEMINI_CLI_SESSION_ID` no longer answers | `CallerIdentityTests` (updated) |
 | T-G2 | **a rung that is not Claude Code's opens no transcript** — Codex rung, override rung: the recording sources were never called | `SessionTitleTests` |

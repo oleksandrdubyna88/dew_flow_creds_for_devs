@@ -645,7 +645,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
    *
    * <p><b>It follows a reference.</b> The button hands over the row that was clicked, which is an
    * SSH CONNECTION — and a connection usually points at the key it uses rather than carrying one.
-   * Loading the connection's own id then failed with <i>"project-tools" has no private key stored
+   * Loading the connection's own id then failed with <i>"proxy-toolbox" has no private key stored
    * in the vault</i>, which is true of the connection, false of the question, and doubly confusing
    * because the key was right there. It resolves `sshKeyEntityId` the same way `sshCredential.ts`
    * does, and the agent gets the KEY.</p>

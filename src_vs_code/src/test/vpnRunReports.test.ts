@@ -63,7 +63,7 @@ function vpnNode(vpnType: string): unknown {
   return {
     kind: 'node',
     accountId: 'a1',
-    node: { id: 'v1', name: 'org meter stage', details: { id: 'v1', name: 'org meter stage', isVpn: true, vpnType } },
+    node: { id: 'v1', name: 'ops relay stage', details: { id: 'v1', name: 'ops relay stage', isVpn: true, vpnType } },
   };
 }
 

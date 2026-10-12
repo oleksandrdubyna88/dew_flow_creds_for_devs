@@ -5,13 +5,13 @@ import { loadWithVscode } from './vscodeStub';
 /**
  * *Add Key to Agent*, reached from the refusal a WSL window now shows.
  *
- * <p>Reported by a person clicking that button, 2026-09-17, with the entry `project-tools` whose
+ * <p>Reported by a person clicking that button, 2026-09-17, with the entry `proxy-toolbox` whose
  * <b>Key source</b> is <i>entity: server key 2</i> — a connection that POINTS AT a key rather than
  * carrying one. Two things went wrong, and the screenshots showed both:</p>
  *
  * <ul>
- *   <li>the agent was handed the CONNECTION, so it looked for a key on `project-tools`, found none,
- *       and said <i>"project-tools" has no private key stored in the vault</i> — true of the
+ *   <li>the agent was handed the CONNECTION, so it looked for a key on `proxy-toolbox`, found none,
+ *       and said <i>"proxy-toolbox" has no private key stored in the vault</i> — true of the
  *       connection, false of the question, and confusing because the key was right there;</li>
  *   <li>the remedy reported success regardless, so the connect retried, refused for the same
  *       reason, and put a second identical dialog on screen the instant the first was dismissed.</li>
@@ -39,8 +39,8 @@ interface World {
 
 const CONNECTION = {
   id: 'c1',
-  name: 'project-tools',
-  details: { id: 'c1', name: 'project-tools', host: '10.120.39.139', sshKeyEntityId: 'k2' },
+  name: 'proxy-toolbox',
+  details: { id: 'c1', name: 'proxy-toolbox', host: '203.0.113.10', sshKeyEntityId: 'k2' },
 };
 const KEY = { id: 'k2', name: 'server key 2', details: { id: 'k2', name: 'server key 2' } };
 
@@ -113,7 +113,7 @@ const clickOn = (w: World): Promise<unknown> =>
   Promise.resolve(w.handler({ kind: 'node', accountId: 'a1', node: CONNECTION }));
 
 test('a connection row loads the KEY it points at, not the connection itself', async () => {
-  // The report. Handed the connection, the agent looked for a key on `project-tools`, found none,
+  // The report. Handed the connection, the agent looked for a key on `proxy-toolbox`, found none,
   // and said so — about an entry that never had one, while `server key 2` sat beside it.
   const w = world();
 

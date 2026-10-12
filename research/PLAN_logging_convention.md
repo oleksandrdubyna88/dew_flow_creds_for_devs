@@ -52,7 +52,7 @@ Two details it already encodes and a fresh implementation would get wrong:
 
 - render through Serilog's `MessageTemplateTextFormatter` with `{Message:lj}`, **never**
   `LogEvent.RenderMessage()` — the latter quotes every string property, so a connection failure
-  reads ``database '"qln"'``;
+  reads ``database '"app"'``;
 - colour the level strongly and little else. A line where everything is coloured is a line where
   nothing stands out.
 

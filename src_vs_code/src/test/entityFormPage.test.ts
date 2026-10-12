@@ -242,15 +242,15 @@ test('the form says WHICH entity it is editing, not just that it is editing one'
       entityId: 'e9',
       initial: {
         id: 'e9',
-        name: 'project-tools',
+        name: 'proxy-toolbox',
         isSshEnabled: true,
-        host: '10.120.39.139',
+        host: '203.0.113.10',
         user: 'ubuntu',
       },
     }),
   );
 
-  assert.match(html, /<h2>Edit: project-tools/);
+  assert.match(html, /<h2>Edit: proxy-toolbox/);
   // The kind, because two entries can share a name and differ in what they are.
   assert.match(html, /class="kindChip">ssh</);
   // A new entity has nothing to NAME yet, but it always has a kind — and when the folder fixes the

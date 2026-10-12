@@ -261,7 +261,7 @@ its address on its first line of stdout, so until it has said, there is nothing 
 `ssh user@host` with no `-i`, with the relay socket set for that one command:
 
 ```
-env SSH_AUTH_SOCK=/run/user/1000/creds-agent.sock ssh ubuntu@10.120.39.139
+env SSH_AUTH_SOCK=/run/user/1000/creds-agent.sock ssh ubuntu@203.0.113.10
 ```
 
 **`env VAR=… cmd`, not a bare `VAR=… cmd` assignment prefix** — both reviewers raised this

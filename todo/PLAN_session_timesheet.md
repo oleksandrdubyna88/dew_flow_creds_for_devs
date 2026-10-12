@@ -2,8 +2,8 @@
 
 > Status: **plan only, nothing implemented yet.** Scope: a new product in this monorepo
 > (recommended `src_timesheet/` — a private VS Code extension; no server changes, nothing added to
-> the published CredsForDevs extension — see Open question 1). Consumer: the future **rsdPayroll**
-> system (spec: ClaudeRag repo, `TZ_payroll_en.md` §10.1 — cross-repository citation as a path, per
+> the published CredsForDevs extension — see Open question 1). Consumer: the future **payroll system**
+> system (spec: a private repository, `TZ_payroll_en.md` §10.1 — cross-repository citation as a path, per
 > [../research/architecture.md](../research/architecture.md)).
 >
 > Related: [../research/PLAN_ai_context_masking.md](../research/PLAN_ai_context_masking.md)
@@ -14,8 +14,8 @@
 ## Symptom / goal
 
 Daily time reporting is the most hated ritual in the company and the least accurate: hours and
-descriptions are reconstructed from memory at the end of the day, per project. The rsdPayroll spec
-(ClaudeRag repo, `TZ_payroll_en.md` §10.1) requires exactly that entry — hours + a description per
+descriptions are reconstructed from memory at the end of the day, per project. The payroll spec
+(a private repository, `TZ_payroll_en.md` §10.1) requires exactly that entry — hours + a description per
 project per day — so the pain is about to become mandatory.
 
 Meanwhile Claude Code already writes a complete, timestamped record of most engineering work to
@@ -75,7 +75,7 @@ own `cwd` per record; attribution follows the record's `cwd`.
 
 Per (day, project): sort event timestamps, merge gaps below a threshold (default 15 min,
 configurable), an isolated event counts as a minimum grain (default 5 min), total rounded to
-0.25 h. Day bucketing uses the **configured company timezone** (rsdPayroll assumption 8); all
+0.25 h. Day bucketing uses the **configured company timezone** (payroll-spec assumption 8); all
 arithmetic and storage stay UTC per the family rule
 ([../.claude/rules/shared/common/utc-timestamps.md](../.claude/rules/shared/common/utc-timestamps.md)).
 
@@ -199,7 +199,7 @@ when a second consumer appeared: extract a shared TS module rather than copy, in
 ## Open questions (owner decisions)
 
 1. **Placement.** Recommended: a separate private extension `src_timesheet/` in this monorepo —
-   it is the seed of the rsdPayroll developer surface and keeps the Marketplace-published
+   it is the seed of the payroll system's developer surface and keeps the Marketplace-published
    CredsForDevs free of unrelated scope. Alternative: inside CredsForDevs behind an experimental
    flag, which buys vault-aware masking for free and costs product focus. The plan is written for
    the first; the pipeline modules are identical either way.

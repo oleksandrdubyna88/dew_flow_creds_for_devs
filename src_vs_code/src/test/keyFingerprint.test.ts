@@ -12,7 +12,7 @@ import { blobFingerprint, derivedKeyFingerprint } from '../keyFingerprint';
  * life, and none of the properties under test needs a second one.</p>
  */
 
-const KEY_ID = 'mark@remsoft.dev';
+const KEY_ID = 'colleague@example.com';
 const PIN = 'able-acid-army-atom-avid-away';
 
 /** One seal, shared by every case below. */
@@ -27,7 +27,7 @@ const sent: { blob: SealedBlob; fingerprint: string } = (() => {
 test('a seal reports a fingerprint of the key it derived — eight hex characters, and not the secret', () => {
   assert.match(sent.fingerprint, /^[0-9a-f]{8}$/);
   assert.ok(!sent.fingerprint.includes('able'));
-  assert.ok(!sent.fingerprint.includes('mark'));
+  assert.ok(!sent.fingerprint.includes('colleague'));
 });
 
 test('the recipient who types the SAME pin under the SAME key id reports the SAME fingerprint', () => {
@@ -62,7 +62,7 @@ test('the same pin under a DIFFERENT key id reports a different fingerprint — 
   let received = '';
 
   const failure = (): unknown =>
-    openBlob(sent.blob, `mark.podlyash@remsoft.dev${PIN}`, undefined, undefined, (f) => {
+    openBlob(sent.blob, `colleague.surname@example.com${PIN}`, undefined, undefined, (f) => {
       received = f;
     });
 

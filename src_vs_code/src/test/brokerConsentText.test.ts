@@ -18,8 +18,8 @@ import type { World } from './brokerWorld';
  * in the same dialog, that the name is the caller's own claim.</p>
  */
 
-const CALLER = { agent: 'Claude Code 2.1.268', session: '98bf9f23', sessionName: 'clauderag-d6', cwd: 'ClaudeRag' };
-const LABEL = 'Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in ClaudeRag';
+const CALLER = { agent: 'Claude Code 2.1.268', session: '98bf9f23', sessionName: 'coffeebar-d6', cwd: 'CoffeeBar' };
+const LABEL = 'Claude Code 2.1.268 · session coffeebar-d6 (98bf9f23) · in CoffeeBar';
 const DISCLAIMER = 'Identity as reported by the caller — a label, not a check.';
 
 test('the modal names WHO is asking — the caller the body reports, never a product by default', async () => {
@@ -141,17 +141,17 @@ for (const door of DOORS) {
 }
 
 test('a caller that reports nothing but its own name — the CLI in a plain terminal — is named as itself', async () => {
-  // "creds CLI · in ClaudeRag", never "An agent": the record is not empty, it merely has no
+  // "creds CLI · in CoffeeBar", never "An agent": the record is not empty, it merely has no
   // session, and a person's own terminal must not read as an unknown agent.
   const w = world({ alias: { accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh' } });
   try {
     const { port } = await share(w);
 
     await call(port, '/v1/alias/exec', {
-      body: { alias: 'prod', command: 'uptime', caller: { agent: 'creds CLI', session: '', sessionName: '', cwd: 'ClaudeRag' } },
+      body: { alias: 'prod', command: 'uptime', caller: { agent: 'creds CLI', session: '', sessionName: '', cwd: 'CoffeeBar' } },
     });
 
-    assert.ok(w.dialogs[0].startsWith('creds CLI · in ClaudeRag wants to run a command on "prod"'), w.dialogs[0]);
+    assert.ok(w.dialogs[0].startsWith('creds CLI · in CoffeeBar wants to run a command on "prod"'), w.dialogs[0]);
   } finally {
     w.server.dispose();
   }
@@ -169,11 +169,11 @@ test('a Claude Code caller is named by its TAB TITLE in the modal — and on the
     await call(port, '/v1/use/exec', { token: secret, body: { command: 'uptime', caller: { ...CALLER, tabTitle: 'creds old issues' } } });
 
     assert.ok(
-      w.dialogs[0].startsWith('Claude Code 2.1.268 · session "creds old issues" (98bf9f23) · in ClaudeRag wants to run a command on "prod"'),
+      w.dialogs[0].startsWith('Claude Code 2.1.268 · session "creds old issues" (98bf9f23) · in CoffeeBar wants to run a command on "prod"'),
       w.dialogs[0],
     );
     assert.ok(
-      w.audit.some((line) => line.includes(' by Claude Code 2.1.268 · session "creds old issues" (98bf9f23) · in ClaudeRag → ')),
+      w.audit.some((line) => line.includes(' by Claude Code 2.1.268 · session "creds old issues" (98bf9f23) · in CoffeeBar → ')),
       `the audit line carries the modal's label, title included:\n${w.audit.join('\n')}`,
     );
   } finally {

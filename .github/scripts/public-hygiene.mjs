@@ -135,9 +135,13 @@ export function scanLine(line, digests = PRIVATE_NAME_DIGESTS) {
   return out;
 }
 
+// This file is the one exemption: its selftest fixtures are made-up violations by design, and it
+// holds no real name — only digests.
+const SELF = '.github/scripts/public-hygiene.mjs';
+
 function trackedFiles() {
   const out = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-  return out.split('\0').filter(Boolean);
+  return out.split('\0').filter((f) => f && f !== SELF);
 }
 
 function scanTree() {

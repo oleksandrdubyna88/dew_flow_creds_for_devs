@@ -57,7 +57,7 @@ visible without opening anything, and the entity being depended *on* grows a sub
 everything that needs it.
 
 The colour belongs to the **target**, never to the edge. Pointing a second entity at `vpn / org
-meter` gets `org meter`'s existing colour with no choice to make, and changing that colour once
+meter` gets `ops relay`'s existing colour with no choice to make, and changing that colour once
 changes it everywhere — because there is only ever one place it is stored.
 
 ## What the spike already settled

@@ -50,7 +50,7 @@ public sealed class StartupTests
     {
         // The Linux half of the WSL bridge computed it; this half must not recompute it (its own
         // environment belongs to wsl.exe, and a pid in it would name somebody else's session).
-        var record = new CallerRecord(string.Empty, "98bf9f23", "clauderag-d6", "ClaudeRag");
+        var record = new CallerRecord(string.Empty, "98bf9f23", "coffeebar-d6", "CoffeeBar");
         var encoded = CallerIdentity.Encode(record);
 
         Program.Classify([CallerForwarding.Flag, encoded]).Should().Be(Program.Startup.Serve);

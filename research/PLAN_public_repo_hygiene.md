@@ -1,11 +1,24 @@
 # PLAN — the public repository carries no real people, private projects or private hosts
 
-> Status: **plan only, 2026-10-12.** Scope: literals in tests, fixtures, comments and docs across
+> Status: **IMPLEMENTED, 2026-10-12.** Scope: literals in tests, fixtures, comments and docs across
 > `src_vs_code`, `src_broker_client/tests`, `src_cli`, `src_mcp/tests`, `src_minimalapi_server`,
 > `research/`, `todo/`, `README.md`, `src_vs_code/CHANGELOG.md`; one new CI guard
 > (`.github/scripts/public-hygiene.mjs` + a step in `docs.yml`). No product behaviour changes.
 >
-> Related: [PLAN_release_binaries_carry_their_version.md](../research/PLAN_release_binaries_carry_their_version.md)
+> **Deviations.** (1) The plan review's two accepted findings tightened the guard: at a public mail
+> service the WHOLE address must be a known generic one (not only the domain), and private IPs are an
+> exact list of twelve addresses, not `/24` ranges. (2) The guard exempts its own file (its selftest
+> fixtures are made-up violations). (3) One more private name turned up while sweeping — a planned
+> system's name in `todo/PLAN_session_timesheet.md` and `todo/README.md` — and joined the digest list.
+> (4) Replacements keep each name's LENGTH as well as its first letter, so no width, sort or truncation
+> assertion moves. **Open tail, for the owner:** rotate the DB password whose fragment is in history;
+> decide on the deploy workflow's name (`.github/workflows/*-server-deploy.yml:1,3,31,41`,
+> `CLAUDE.md:114,125`, `POST_DEPLOY.md:9`, `.github/workflows/ci-server.yml:163`,
+> `research/PLAN_server_section_for_admins.md:710`, `research/PLAN_tails.md:281`) — renaming its
+> GitHub environment would orphan the deploy secrets, so it is not a hygiene edit.
+>
+> Related: [module_tests.md](module_tests.md) (the guard, as built);
+> [PLAN_release_binaries_carry_their_version.md](PLAN_release_binaries_carry_their_version.md)
 > (the earlier sweep that removed real user names and home paths, and found what this plan fixes).
 
 ## Symptom
@@ -64,17 +77,19 @@ reproducible with `node .github/scripts/public-hygiene.mjs` on the parent commit
 
 `.github/scripts/public-hygiene.mjs` scans every tracked file (and every tracked path) and fails on:
 
-1. `e-mail` — a domain outside an allowlist of placeholder (RFC 2606/6761, `.internal`), fictional and
-   public-service domains already used by fixtures;
-2. `private-ip` — an RFC 1918 address outside `10.0.0.0/24`, `172.16.0.0/24`, `192.168.0.0/23`, and
-   `10.255.255.1` (the conventional black hole the broker itest uses);
+1. `e-mail` — a domain outside an allowlist of placeholder (RFC 2606/6761, `.internal`) and fictional
+   domains already used by fixtures; at a public mail service, any address but a short list of
+   generic whole addresses (as built, after the plan review);
+2. `private-ip` — an RFC 1918 address that is not one of twelve exact neutral fixture addresses,
+   `10.255.255.1` (the conventional black hole the broker itest uses) among them (as built — the plan
+   said `/24` ranges);
 3. `home-path` — `C:\Users\<x>`, `/mnt/<d>/Users/<x>`, `/home/<x>`, `/Users/<x>` with `<x>` not a
    placeholder;
 4. `name` — a word, or two words joined by one `-`, `_`, `.`, space or slash, whose SHA-256 is in a
    digest list. The list never spells a name; a short name's digest can be brute-forced, which the
    script says — the goal is that names do not come back, not that they become secret.
 
-`--selftest` runs 22 fixture cases (each rule fires; each placeholder passes; a planted digest of a
+`--selftest` runs 27 fixture cases (each rule fires; each placeholder passes; a planted digest of a
 made-up word is caught in three spellings and not in near misses). `docs.yml` runs both.
 Not covered by design: secret fragments (no pattern separates one from a fixture) and the deploy
 workflow name (left for the owner).
@@ -89,7 +104,7 @@ workflow name (left for the owner).
 
 ## Test plan
 
-- `node .github/scripts/public-hygiene.mjs --selftest` → 22 ok; the tree scan RED (243) before, GREEN
+- `node .github/scripts/public-hygiene.mjs --selftest` → 27 ok; the tree scan RED (243) before, GREEN
   after, RED with one planted sample.
 - xUnit v3 executables one after another, at lowered priority: CredsBroker.Tests, CredsCli.Tests,
   CredsMcp.Tests, CredVaultServer.Tests (touched: `CallerIdentityTests`, `SessionTitleTests`,
@@ -101,9 +116,11 @@ workflow name (left for the owner).
 
 ## Definition of Done
 
-- [ ] The guard reports `clean` on the branch, and is a step of `docs.yml`.
-- [ ] RED (before) / GREEN (after) / RED (planted) recorded in the PR.
-- [ ] All suites green; no assertion weakened.
-- [ ] No private name in a commit message, PR text, comment, test name or this plan.
-- [ ] PR typed `chore:` (no release proposed), merged green, Sonar gate passed.
-- [ ] This plan promoted to `research/` with `IMPLEMENTED <date>` and a `research/README.md` row.
+- [x] The guard reports `clean` on the branch, and is a step of `docs.yml`.
+- [x] RED (243 before) / GREEN (after) / RED (one planted line: one finding per rule) / GREEN.
+- [x] All suites green; no assertion weakened. CredsBroker 142, CredsCli 145 (4 skipped), CredsMcp 164
+      (4 skipped), ServiceDefaults 82 (1 skipped), CredVaultServer 820; extension 5624 (5 skipped, 0
+      failed); typecheck and lint clean.
+- [x] No private name in a commit message, PR text, comment, test name or this plan.
+- [ ] PR typed `chore:` (no release proposed), merged green, Sonar gate passed — the PR's own record.
+- [x] This plan promoted to `research/` with `IMPLEMENTED <date>` and a `research/README.md` row.

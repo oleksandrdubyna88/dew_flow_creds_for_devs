@@ -130,7 +130,7 @@ function renderForm(
     jumpCandidates: [{ id: 'bastion', name: 'bastion' }],
     // One folder with one entry, so the Depends-on picker renders with something to offer —
     // the escaping and the script-parses checks below cover it like every other field.
-    dependencyFolders: [{ id: 'f1', name: 'vpn', entities: [{ id: 'v1', name: 'org meter' }] }],
+    dependencyFolders: [{ id: 'f1', name: 'vpn', entities: [{ id: 'v1', name: 'ops relay' }] }],
     dependencyColors: {},
     ...extra,
   });

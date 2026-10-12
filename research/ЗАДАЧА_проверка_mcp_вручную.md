@@ -19,7 +19,7 @@ CredsForDevs, версия 0.78.1. Окно перезагрузить (`Develop
 **2. Бинарь.** Уже собран:
 
 ```
-D:\rsd\dew_flow_creds_for_devs\src_mcp\src\bin\Debug\net10.0\creds-mcp.exe
+D:\src\dew_flow_creds_for_devs\src_mcp\src\bin\Debug\net10.0\creds-mcp.exe
 ```
 
 Если нет — `dotnet build src_mcp/src/CredsMcp.csproj`.
@@ -27,7 +27,7 @@ D:\rsd\dew_flow_creds_for_devs\src_mcp\src\bin\Debug\net10.0\creds-mcp.exe
 **3. Подключить его к Claude Code.** В `~/.claude.json` (или `.mcp.json` в проекте):
 
 ```json
-{ "mcpServers": { "creds": { "command": "D:\\rsd\\dew_flow_creds_for_devs\\src_mcp\\src\\bin\\Debug\\net10.0\\creds-mcp.exe" } } }
+{ "mcpServers": { "creds": { "command": "D:\\src\\dew_flow_creds_for_devs\\src_mcp\\src\\bin\\Debug\\net10.0\\creds-mcp.exe" } } }
 ```
 
 Перезапустить Claude Code. `/mcp` должен показать `creds` и восемь инструментов.
@@ -217,7 +217,7 @@ Windows. Как подключено:
 # Linux-бинарь (framework-dependent, dotnet 10 в дистрибутиве уже есть)
 dotnet publish -c Release -r linux-x64 --self-contained false -p:PublishAot=false   -o ~/.local/share/creds-mcp                      # из чистой копии исходников в /tmp
 
-claude mcp add -s user creds   -e CREDS_MCP_WINDOWS_BINARY=/mnt/d/rsd/dew_flow_creds_for_devs/src_mcp/src/bin/Debug/net10.0/creds-mcp.exe   -- ~/.local/share/creds-mcp/creds-mcp
+claude mcp add -s user creds   -e CREDS_MCP_WINDOWS_BINARY=/mnt/d/src/dew_flow_creds_for_devs/src_mcp/src/bin/Debug/net10.0/creds-mcp.exe   -- ~/.local/share/creds-mcp/creds-mcp
 ```
 
 | Проверено | Результат |

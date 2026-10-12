@@ -30,7 +30,7 @@ const CLI = { './vpnExec': { resolveVpnLauncher: () => ({ kind: 'cli', exe: 'wg-
 const VPN_TERMINAL = /^CredsForDevs VPN: /;
 
 function wireguard(extra: Partial<EntityMetadata> = {}): Record<string, EntityMetadata> {
-  return { vpn: { id: 'vpn', name: 'org meter stage', isSshEnabled: false, isVpn: true, vpnType: 'wireguard', ...extra } };
+  return { vpn: { id: 'vpn', name: 'ops relay stage', isSshEnabled: false, isVpn: true, vpnType: 'wireguard', ...extra } };
 }
 
 /** A read the test releases by hand — the stored config, in flight. */
@@ -321,7 +321,7 @@ test('OpenVPN Connect for a live request: the config is written once the import 
     assert.equal(started, true, w.warnings.join('\n'));
     assert.equal(filesUnder(dir).length, 1, 'the profile the import reads');
     const line = w.terminals.find((t) => VPN_TERMINAL.test(t.name))?.sent[0] ?? '';
-    assert.match(line, /--import-profile=.*org_meter_stage\.ovpn/);
+    assert.match(line, /--import-profile=.*ops_relay_stage\.ovpn/);
   } finally {
     cleanup(dir);
   }

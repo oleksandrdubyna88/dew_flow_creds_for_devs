@@ -528,7 +528,7 @@ about and every reader of the lock believes"*. The second assertion exists separ
 drift in place.
 
 **The same drift is present in the family's other two extensions** — `connect_other_ais/src_vs_code`
-(0.31.17 against a lock saying 0.30.0) and `rag_qln/tools/vscode-extension` (0.19.0 against 0.9.0).
+(0.31.17 against a lock saying 0.30.0) and a private sibling's `tools/vscode-extension` (0.19.0 against 0.9.0).
 Neither is fixed here; this is a note so the next person does not rediscover it.
 
 ## Account deletion, and what the gate has to make indivisible (2026-09-11, audit finding #4)
@@ -1137,6 +1137,27 @@ when, a stop was requested.
 failed in its dispose) and locally, 3 of 3 runs, rounds 15, 4 and 11, with the same message; green 5 of 5 after,
 and red again with the old helper. **Limit:** an `InvalidOperationException` raised before any stop is kept loud by
 the `when` filter, which is read, not tested.
+
+## The public-hygiene guard (2026-10-12, [PLAN_public_repo_hygiene.md](PLAN_public_repo_hygiene.md))
+
+This repository is public, so `docs.yml` runs `.github/scripts/public-hygiene.mjs` over every tracked file and
+path (the script exempts only itself). It fails on four things, each an allowlist or a digest so that the check
+never spells out what it forbids:
+
+| rule | fails on | passes |
+|---|---|---|
+| `e-mail` | an address outside the placeholder domains (RFC 2606 / 6761, `.internal`) and the fictional ones fixtures use; at a public mail service, any address but the few generic ones (`me@gmail.com`, `git@github.com`) | `name@example.com` |
+| `private-ip` | an RFC 1918 address that is not one of twelve exact neutral fixture addresses | `10.0.0.5`, RFC 5737 `203.0.113.x` |
+| `home-path` | `C:\Users\<x>`, `/mnt/<d>/Users/<x>`, `/home/<x>`, `/Users/<x>` with a real-looking `<x>` | `<you>`, `…`, `me`, `dev` |
+| `name` | a word, or two words joined by one `-` `_` `.` space or slash, whose SHA-256 is in the digest list | — |
+
+It prints the file and line and, for `name`, never the word. A digest of a short name can be brute-forced; the
+list keeps names from coming back, it does not make them secret. Adding a name: `--hash "<name>"` prints the
+digest. `--selftest` runs 27 fixture cases first. Not covered: a fragment of a real secret, and the deploy
+workflow's own name (functional — its GitHub environment holds the secrets).
+
+**Watched:** RED on `origin/main` `a9428905` with 243 findings (name 224, e-mail 13, private-ip 6), GREEN after the
+sweep, RED again with one planted line (one finding per rule), GREEN once it was removed.
 
 ## What none of them covers
 

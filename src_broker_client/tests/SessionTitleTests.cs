@@ -266,7 +266,7 @@ public sealed class SessionTitleTests : IDisposable
     // ---- the path (T-S9, T-S10) -------------------------------------------------------------
 
     [Theory]
-    [InlineData(@"d:\rsd\ClaudeRag", "d--rsd-ClaudeRag")]
+    [InlineData(@"d:\src\CoffeeBar", "d--src-CoffeeBar")]
     [InlineData("/home/u/a.b_c", "-home-u-a-b-c")]
     [InlineData("/home/u/Café", "-home-u-Caf-")]
     public void The_project_folder_is_the_cwd_with_everything_outside_ascii_letters_and_digits_as_a_dash(string cwd, string expected)

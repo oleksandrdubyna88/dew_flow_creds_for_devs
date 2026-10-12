@@ -26,7 +26,7 @@ function graph(...nodes: EntityMetadata[]): (id: string) => EntityMetadata | und
 
 const vpn = (extra: Partial<EntityMetadata> = {}): EntityMetadata => ({
   id: 'vpn',
-  name: 'org meter stage',
+  name: 'ops relay stage',
   isSshEnabled: false,
   isVpn: true,
   vpnType: 'openvpn',
@@ -152,11 +152,11 @@ test('a step written for another OS refuses the chain before anything runs', () 
 });
 
 test('the pre-run sentence lists every step in order with its line', () => {
-  const text = describeRunPlan('org meter stage', [
+  const text = describeRunPlan('ops relay stage', [
     { id: 'i', name: 'install openvpn', line: 'winget install OpenVPN' },
     { id: 's', name: 'start openvpn', line: 'openvpn' },
   ], [], 'pwsh.exe');
-  assert.match(text, /Before "org meter stage", these run in pwsh\.exe, in order/);
+  assert.match(text, /Before "ops relay stage", these run in pwsh\.exe, in order/);
   assert.match(text, /1\. install openvpn: winget install OpenVPN\n2\. start openvpn: openvpn/);
   assert.match(text, /can arrive by sync or an accepted share/, 'the same warning the single-line modal gives');
   assert.doesNotMatch(text, /no longer exist/);

@@ -21,14 +21,14 @@ test('the owner\'s chain: the installer runs and is AWAITED, then the launcher i
   const { started, dir } = await startVpn(w, ownerChain());
   try {
     assert.equal(started, true, w.warnings.join('\n'));
-    const chain = terminalNamed(w, 'CredsForDevs: before org meter stage');
+    const chain = terminalNamed(w, 'CredsForDevs: before ops relay stage');
     assert.deepEqual(chain.executed, ['install-openvpn'], 'the installer ran; the launcher did NOT run twice');
     const launcher = terminalNamed(w, 'CredsForDevs: start openvpn');
     assert.equal(launcher.sent.length, 1);
-    assert.match(launcher.sent[0], /^openvpn --config '.*org_meter_stage\.ovpn'$/);
+    assert.match(launcher.sent[0], /^openvpn --config '.*ops_relay_stage\.ovpn'$/);
     assert.equal(fs.readFileSync(quotedPath(launcher.sent[0]), 'utf8'), 'client\nremote vpn.example 1194\n', 'the config the line names was written');
     // Both lines were confirmed once — the chain in one modal, the launcher's template in its own.
-    assert.ok(w.warnings.some((t) => /Before "org meter stage", these run in .*, in order/.test(t)), w.warnings.join('\n'));
+    assert.ok(w.warnings.some((t) => /Before "ops relay stage", these run in .*, in order/.test(t)), w.warnings.join('\n'));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -91,7 +91,7 @@ test('a launcher in the Trash is not run — the built-in launcher is used, with
     });
     const target = { kind: 'node', accountId: 'a1', node: { id: 'vpn', name: nodes.vpn.name, details: nodes.vpn } };
     await runVpn(target, 'start', storage, dir, { noteUserActivity: () => undefined }, memoryTrust());
-    assert.ok(w.warnings.some((t) => /The launcher of "org meter stage" no longer exists/.test(t)), w.warnings.join('\n'));
+    assert.ok(w.warnings.some((t) => /The launcher of "ops relay stage" no longer exists/.test(t)), w.warnings.join('\n'));
     assert.equal(w.terminals.find((t) => t.name === 'CredsForDevs: start openvpn'), undefined, 'the trashed launcher never ran');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -145,7 +145,7 @@ test('the chain terminal closed between two steps: the second is refused, never 
   // disposed terminal never ends — the run must stop with a sentence instead.
   const first: EntityMetadata = { id: 'a', name: 'first', isSshEnabled: false, isTerminal: true, command: 'first-step', terminalOs: hostOs };
   const second: EntityMetadata = { id: 'b', name: 'second', isSshEnabled: false, isTerminal: true, command: 'second-step', terminalOs: hostOs };
-  const vpn: EntityMetadata = { id: 'vpn', name: 'org meter stage', isSshEnabled: false, isVpn: true, vpnType: 'openvpn', dependsOn: ['a', 'b'], runDependencies: true };
+  const vpn: EntityMetadata = { id: 'vpn', name: 'ops relay stage', isSshEnabled: false, isVpn: true, vpnType: 'openvpn', dependsOn: ['a', 'b'], runDependencies: true };
   const nodes = { a: first, b: second, vpn };
   const w = world({}, { closeAfterFirst: true });
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-chain-'));
@@ -157,7 +157,7 @@ test('the chain terminal closed between two steps: the second is refused, never 
     const started = await runVpn(target, 'start', storageOf(nodes), dir, { noteUserActivity: () => undefined }, memoryTrust());
 
     assert.equal(started, false);
-    assert.deepEqual(terminalNamed(w, 'CredsForDevs: before org meter stage').executed, ['first-step']);
+    assert.deepEqual(terminalNamed(w, 'CredsForDevs: before ops relay stage').executed, ['first-step']);
     assert.ok(w.warnings.some((t) => /closed before "second" could run/.test(t)), w.warnings.join('\n'));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

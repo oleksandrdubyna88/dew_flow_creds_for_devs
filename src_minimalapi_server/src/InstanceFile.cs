@@ -21,7 +21,7 @@ public sealed record PublishedInstance(
 /// show a locally running server the same way it shows the other hosts in the family.
 ///
 /// <para>
-/// The convention is `dew_flow_rag_qln · src/ServiceDefaults/DaemonEndpointFile.cs`, and it is
+/// The convention is a sibling daemon's `src/ServiceDefaults/DaemonEndpointFile.cs`, and it is
 /// deliberately copied rather than reinvented: same directory, same JSON shape, same
 /// best-effort semantics. The one difference is the FILENAME. That daemon owns
 /// <c>dew-flow/daemon.json</c>; a second product writing there would overwrite it and the

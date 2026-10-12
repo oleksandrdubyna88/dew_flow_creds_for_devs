@@ -272,7 +272,7 @@ test('the page says how many it left out, rather than looking complete', () => {
  * and the outcome; a line from before it existed must still read, and read as having no caller
  * rather than as an unparseable row.</p>
  */
-const CALLER = 'Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in ClaudeRag';
+const CALLER = 'Claude Code 2.1.268 · session coffeebar-d6 (98bf9f23) · in CoffeeBar';
 
 test('a line carrying the caller round-trips, parentheses in the label included', () => {
   // The `(.*?) \(([^)]*)\)` pair earlier in the pattern backtracks past the label's own
@@ -305,10 +305,10 @@ test('a line written before the caller existed still parses, and reads as having
 });
 
 test('the word "by" inside an entity name does not move the caller boundary', () => {
-  const entry = parseAuditLine(line({ entityName: 'db by me', caller: 'creds CLI · in ClaudeRag' }));
+  const entry = parseAuditLine(line({ entityName: 'db by me', caller: 'creds CLI · in CoffeeBar' }));
 
   assert.equal(entry?.entityName, 'db by me');
-  assert.equal(entry?.caller, 'creds CLI · in ClaudeRag');
+  assert.equal(entry?.caller, 'creds CLI · in CoffeeBar');
 });
 
 test('a row read into the journal carries the caller, so the view can show it', () => {

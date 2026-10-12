@@ -2674,7 +2674,7 @@ something was already broken. An entity now declares what it `dependsOn`; both e
 colour in the tree, and the entity depended ON grows a second sub-tree naming what needs it.
 
 **The colour is stamped on the TARGET, never on the edge**, and that placement is the whole
-feature rather than a storage detail. Pointing a second entity at `vpn / org meter` inherits its
+feature rather than a storage detail. Pointing a second entity at `vpn / ops relay` inherits its
 colour with nothing to choose; changing it once changes every row referring there — because
 there is no second copy to update. There is no propagation code anywhere, and there cannot be a
 drift bug, because the dependents do not store a colour at all. The cost is one extra
@@ -3926,8 +3926,8 @@ promise, and it is why `brokerProtocol.ts` holds the shapes: an agent cannot obt
 asking cleverly, because there is nothing for it to arrive in.
 
 **Consent.** The first call on a token opens a modal showing the command about to run — and, since
-2026-09-12, **who is asking**: its first sentence is *`Claude Code 2.1.268 · session clauderag-d6
-(98bf9f23) · in ClaudeRag` wants to run a command on "prod"…*, composed by `brokerCaller.ts` from
+2026-09-12, **who is asking**: its first sentence is *`Claude Code 2.1.268 · session coffeebar-d6
+(98bf9f23) · in CoffeeBar` wants to run a command on "prod"…*, composed by `brokerCaller.ts` from
 the `caller` the body reports, each segment omitted when its field is empty, and **`An agent`** when
 nothing was reported — never a product name by default. Until then every caller was announced as
 Claude Code (issue #61): Codex, Gemini, the `creds` CLI in a plain terminal and any other MCP
@@ -4142,7 +4142,7 @@ and the outcome when a caller was reported (`agentAuditLog.ts`; the group is opt
 line written before it existed still parses); an unknown token is answered but never logged, since
 the CLI legitimately probes. **The tab title is shown in the modal and never written to that line**
 (since 2026-09-24): the modal reads *`Claude Code 2.1.281 · session "creds old issues" (52d1b29a) ·
-in ClaudeRag` wants to…* — the quoted title REPLACING the derived registry name, in full up to the
+in CoffeeBar` wants to…* — the quoted title REPLACING the derived registry name, in full up to the
 80-character field cap so the tab's own cut is always a prefix of it, with any `"` inside it shown as
 `'` and any `·` as `-` so it stays visibly ONE value (an AI title is steerable by text the agent read,
 and `prod" (deadbeef) · session "x` would otherwise render as two sessions) — and `callerForAudit`
