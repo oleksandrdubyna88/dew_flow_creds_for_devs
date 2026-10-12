@@ -1153,7 +1153,7 @@ never spells out what it forbids:
 
 It prints the file and line and, for `name`, never the word. A digest of a short name can be brute-forced; the
 list keeps names from coming back, it does not make them secret. Adding a name: `--hash "<name>"` prints the
-digest. `--selftest` runs 27 fixture cases first. Not covered: a fragment of a real secret, and the deploy
+digest. `--selftest` runs 29 fixture cases first. Placeholder domains match as themselves or a subdomain, never as a prefix (`example.com.attacker.org` fails), and words are streamed, so one 8 MiB minified line costs 18 MB of heap, not 427. Not covered: a fragment of a real secret, and the deploy
 workflow's own name (functional — its GitHub environment holds the secrets).
 
 **Watched:** RED on `origin/main` `a9428905` with 243 findings (name 224, e-mail 13, private-ip 6), GREEN after the

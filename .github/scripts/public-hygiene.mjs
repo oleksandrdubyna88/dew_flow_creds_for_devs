@@ -27,6 +27,8 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const PLACEHOLDER_DOMAINS = [
   // RFC 2606 / RFC 6761 — reserved for documentation, and the one right answer for a new fixture.
@@ -48,8 +50,9 @@ const PUBLIC_SERVICE_ADDRESSES = new Map([
   ['gitlab.com', ['git']],
 ]);
 
-// `alice@corp.comadmin` — teamSearch.ts shows what concatenating two fields would match.
-const PLACEHOLDER_DOMAIN_LITERALS = ['corp.comadmin', 'corp.comgoogle'];
+// Not domains at all, but text the e-mail pattern reads as one: `alice@corp.comadmin` (teamSearch.ts
+// shows what concatenating two fields would match) and `vault_me@corp.com.enc` (a vault file name).
+const PLACEHOLDER_DOMAIN_LITERALS = ['corp.comadmin', 'corp.comgoogle', 'corp.com.enc'];
 
 const PLACEHOLDER_USERS = [
   'you', '<you>', 'me', 'dev', 'ada', 'a', 'u', 'o', 'someone', 'user', 'alice', 'bob', '...', '…',
@@ -78,6 +81,7 @@ export function digest(name) {
   let d = digestCache.get(key);
   if (d === undefined) {
     d = createHash('sha256').update(key).digest('hex');
+    if (digestCache.size >= 200_000) digestCache.clear(); // a bound, not an eviction policy
     digestCache.set(key, d);
   }
   return d;
@@ -88,7 +92,9 @@ function addressAllowed(local, domain) {
   const service = PUBLIC_SERVICE_ADDRESSES.get(d);
   if (service) return service.includes(local.toLowerCase());
   if (PLACEHOLDER_DOMAIN_LITERALS.includes(d)) return true;
-  return PLACEHOLDER_DOMAINS.some((a) => d === a || d.endsWith(`.${a}`) || d.startsWith(`${a}.`));
+  // The domain itself or a subdomain of it — never a domain that merely STARTS with a placeholder:
+  // `example.com.attacker.org` is a real domain someone else can own.
+  return PLACEHOLDER_DOMAINS.some((a) => d === a || d.endsWith(`.${a}`));
 }
 
 // Exact addresses, not ranges: `10.0.0.42` could be a real host as easily as `10.120.x.x`.
@@ -111,16 +117,20 @@ function userAllowed(user) {
 
 function nameHits(text, digests) {
   const lower = text.toLowerCase();
-  const words = [...lower.matchAll(WORD)];
   const hits = [];
-  for (let i = 0; i < words.length; i++) {
-    const w = words[i];
-    if (digests.has(digest(w[0]))) hits.push(w[0]);
-    const next = words[i + 1];
-    if (next && next.index === w.index + w[0].length + 1 && /[-_. /\\]/.test(lower[w.index + w[0].length])) {
-      const pair = w[0] + next[0];
-      if (digests.has(digest(pair))) hits.push(`${w[0]}${lower[w.index + w[0].length]}${next[0]}`);
+  // Streamed, holding only the previous word: one minified 8 MiB line is millions of matches, and
+  // materialising them all at once cost 427 MB of heap (measured).
+  let prev = null;
+  let prevEnd = -2;
+  for (const m of lower.matchAll(WORD)) {
+    const word = m[0];
+    if (digests.has(digest(word))) hits.push(word);
+    const joiner = lower[prevEnd];
+    if (prev !== null && m.index === prevEnd + 1 && /[-_. /\\]/.test(joiner) && digests.has(digest(prev + word))) {
+      hits.push(`${prev}${joiner}${word}`);
     }
+    prev = word;
+    prevEnd = m.index + word.length;
   }
   return hits;
 }
@@ -176,6 +186,8 @@ function selftest() {
     ['me@gmail.com, user1@outlook.com, ssh://git@gitlab.com/me/vault', []],
     ['jane.doe@gmail.com', ['e-mail']],
     ['jane@github.com', ['e-mail']],
+    ['person@example.com.attacker.org', ['e-mail']],
+    ['ops@corp.company-real.org', ['e-mail']],
     ['react@18.3.1 and actions/checkout@v4', []],
     ['ssh ubuntu@10.44.3.2', ['private-ip']],
     ['host 172.20.1.9', ['private-ip']],
@@ -229,4 +241,7 @@ function main(argv) {
   return 1;
 }
 
-process.exitCode = main(process.argv.slice(2));
+// Run only as a script, so a measurement can import scanLine without scanning the tree.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  process.exitCode = main(process.argv.slice(2));
+}
