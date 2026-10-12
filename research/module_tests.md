@@ -1237,7 +1237,7 @@ server's first log line. On this PR's first run the build step took 27 s and the
 
 Runs in the contract job before the build, and the pinned shellcheck of *compose · scripts* reads both scripts.
 **Watched RED** with the old inline loop as the implementation (`START_SERVER_SCRIPT`): all six cases failed, and
-case a — the defect — exited **0**. GREEN on ubuntu in the PR's contract job. Cases g, h and i came from the
+case a — the defect — exited **0**. And RED again with the fix removed (a copy whose deadline branch exits 0): case a exited 0. GREEN on ubuntu in the PR's contract job. Cases g, h and i came from the
 code round and were watched RED in CI first: i printed the stand-in's arguments, g exited 143 at once and left its
 server running, h took 6.0 s for a 2 s deadline. **Limit:** the script signals only the pid it started, so its command must be
 the server itself; a launcher such as `dotnet run` would leave the app behind on a KILL, which is why CI starts

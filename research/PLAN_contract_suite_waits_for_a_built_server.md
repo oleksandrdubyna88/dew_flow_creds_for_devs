@@ -153,12 +153,15 @@ one node file with a mode argument, on a loopback port node found free (`listen(
 
 | case | stand-in | expected |
 |---|---|---|
-| a | never listens | exit 1 within deadline (3 s) + 5 s probe + 5 s stop + 2 s slack = 15 s, `did not answer 2xx … within 3 s`, the stand-in's log line, the stand-in no longer running |
+| a | never listens | exit 1 within deadline (3 s) + 5 s stop + 2 s slack = 10 s (15 s before code round 1 clamped the probe), `did not answer 2xx … within 3 s`, the stand-in's log line, the stand-in no longer running |
 | b | prints a `FTL … exited: code 78, reason startupRefused` line and exits 78 at once | exit 1 in < 5 s although the deadline is 30 s, `exited with code 78`, the Fatal line in the output |
 | c | starts listening (200) after 2 s | exit 0, `pid=` in `$GITHUB_OUTPUT`, that pid alive; the test then stops that pid |
 | d | answers 500 from the start | exit 1, and not before the 4 s deadline (it kept waiting), `last answer: 500` |
 | f | something already answers 2xx on the URL | exit 1 at once, `already answers`, nothing started |
 | e | no `--` | exit 2, usage line |
+| g | TERM to the script while it waits (added in code round 1) | exit non-zero within 10 s, `interrupted`, the stand-in it started no longer running |
+| h | accepts the connection and never answers, deadline 2 s (code round 1) | exit 1 within 4.5 s — no probe runs past the deadline |
+| i | the start line on c's run (code round 1) | exactly `started pid N: node` — the program, never its arguments |
 
 Local: Git Bash on Windows (`node $LP bash .github/scripts/start-server-and-wait.test.sh`) — no WSL
 runs, so nothing is deleted inside WSL. CI: ubuntu, in the `contract` job. Plus the real thing: the PR's own
@@ -171,11 +174,12 @@ shellcheck present; `node .github/scripts/public-hygiene.mjs` clean.
 
 ## 6. Definition of Done
 
-- [ ] `start-server-and-wait.sh` + self-test; cases a–f pass locally and in CI.
-- [ ] RED (old loop passes case a) → GREEN → RED with the fix removed, each observed.
-- [ ] `contract` job: build step, start step through the script with a 60 s deadline, suite gated on it,
+- [x] `start-server-and-wait.sh` + self-test; cases a–i pass in CI (ubuntu). Locally only their sentences and
+      exit codes were observable — see deviation (3).
+- [x] RED (old loop passes case a) → GREEN → RED with the fix removed, each observed; g–i RED in CI first.
+- [x] `contract` job: build step, start step through the script with a 60 s deadline, suite gated on it,
       stop step that signals only the recorded pid and prints the log.
-- [ ] shellcheck (pinned) and actionlint (with shellcheck) clean; public-hygiene clean.
-- [ ] `http/README.md`, `research/module_tests.md` updated; plan promoted with `IMPLEMENTED <date>`,
+- [x] shellcheck (pinned) and actionlint (with shellcheck) clean; public-hygiene clean.
+- [x] `http/README.md`, `research/module_tests.md` updated; plan promoted with `IMPLEMENTED <date>`,
       `research/README.md` row, `plan-lifecycle.mjs` clean.
-- [ ] The PR's contract job passes through the new script; build and start step times recorded.
+- [x] The PR's contract job passes through the new script; build and start step times recorded.
