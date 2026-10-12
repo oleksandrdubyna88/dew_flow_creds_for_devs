@@ -87,7 +87,10 @@ interrupted() {
   exit 143
 }
 
-describe() { [[ "$1" == 000 || -z "$1" ]] && echo "no connection" || echo "$1"; }
+describe() {
+  local status="$1"
+  if [[ "$status" == 000 || -z "$status" ]]; then echo "no connection"; else echo "$status"; fi
+}
 
 show_log() {
   echo "--- the server's log ($log) ---"

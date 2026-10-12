@@ -63,9 +63,18 @@ free_port() {
   node -e "const s=require('node:net').createServer().listen(0,'127.0.0.1',()=>{console.log(s.address().port);s.close();});"
 }
 now_ms() { date +%s%3N; }
-alive() { [[ -n "$1" ]] && kill -0 "$1" 2> /dev/null; }
-says() { grep -qF -- "$1" "$work/run.log"; }
-want() { [[ -z "${START_SERVER_CASES:-}" || " $START_SERVER_CASES " == *" $1 "* ]]; }
+alive() {
+  local candidate="$1"
+  [[ -n "$candidate" ]] && kill -0 "$candidate" 2> /dev/null
+}
+says() {
+  local text="$1"
+  grep -qF -- "$text" "$work/run.log"
+}
+want() {
+  local name="$1"
+  [[ -z "${START_SERVER_CASES:-}" || " $START_SERVER_CASES " == *" $name "* ]]
+}
 started_pid() { sed -n 's/^started pid \([0-9]*\):.*/\1/p' "$work/run.log"; }
 
 # launch <deadline> <mode>: the script under test against a stand-in on a fresh port.
