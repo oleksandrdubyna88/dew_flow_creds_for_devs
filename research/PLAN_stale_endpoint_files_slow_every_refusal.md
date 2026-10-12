@@ -211,8 +211,8 @@ under `.claude/rules/shared/tools/low-priority.mjs`, builds with `-m:4 --disable
 
 - [x] §3 measured on the reporting machine and recorded in this plan; the fix chosen by those numbers.
 - [x] A refusal for an unknown key, with the real 35 files in the directory, takes under 3 s on that machine — on
-      Windows and through WSL — with binaries built from the candidate commit BEFORE merge, and again from the merged
-      commit (§10; the merged-commit repeat is the open tail).
+      Windows and through WSL — with binaries built from the candidate commit BEFORE merge (§10).
+- [ ] The same timing repeated with binaries built from the merged commit (the open tail).
 - [x] No client deletes an endpoint file; the extension's sweep never deletes a live window's file or its own.
 - [x] Each change shown RED with the real symptom, GREEN, and RED again with the fix removed.
 - [x] `module_extension.md`, `module_mcp.md`, `architecture.md` updated; the extension CHANGELOG has the sweep;
