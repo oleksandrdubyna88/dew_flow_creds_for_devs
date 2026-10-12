@@ -1773,6 +1773,35 @@ The server refuses to start rather than run in a state that looks like a network
    probe even runs: the store's durability is atomic rename, which those do not promise. Pure — the
    mount table is text, so the decision is a unit test. `Vault:AllowNetworkDataDir=true` overrides,
    in writing.
+5. **`Auth:Local:SigningKey` shorter than 32 bytes** → HMAC-SHA256 would register, report healthy, and
+   401 every request with nothing in the log to connect the two.
+
+**All five live in `StartupGuards.cs` and are caught in ONE place** (since 2026-10-12,
+[PLAN_server_startup_refusal_is_logged.md](PLAN_server_startup_refusal_is_logged.md)). `Program.cs`
+calls `StartupGuards.Check` before the store is constructed and before a host is built, inside a
+top-level `try`; the `catch` logs the refusal through `HostRun.Refused` (`src_service_defaults`),
+flushes the file, and **returns exit code 78** (`EX_CONFIG`). The run's file then says, at Fatal and
+with the exception:
+
+```
+[… FTL] CredVaultServer: exited: code 78, reason startupRefused: No authentication scheme configured — …
+```
+
+Before that, a refusal was an exception thrown from top-level code and never caught: the published
+0.11.0 image in its production shape exited **139** (Native AOT) and the file held only the `runtime:`
+line — or nothing, for a data-dir refusal, which comes before that line. **78 is a refusal; 139 / 134 /
+`0xE0434352` is a crash.** A container restart policy will retry a refusal like any exit; it will
+refuse again until the configuration changes.
+
+**The order is chosen**: the three pure configuration checks (auth, domains, key) first, then the
+network-filesystem check, then the writable probe — the only one that writes — so a configuration that
+is refused anyway leaves no directory behind. The messages did not change when the guards moved.
+
+**What is NOT caught there** (the plan's open tail): an exception that is not a guard's — a malformed
+number in a `config.GetValue<long>` read, a data-dir path the writable probe rejects with an
+`ArgumentException`, a fault in `Build()`. Those are still unhandled before `app.Run()`; catching them
+at the top level needs the whole top-level body inside one `try`. A fault inside `app.Run()` (a port
+already bound) is logged at Fatal by the `catch` around it and stays a crash.
 The corporate-recovery roster is deliberately **not** on that list. It used to be, and that was
 the wrong lever: corporate recovery is one optional feature among many, and a typo in its roster
 stopped ordinary vault sync for everybody — an outage caused by the safety check, on a server
@@ -1941,7 +1970,9 @@ Never `dotnet test` — there is no VSTest host here and it aborts.
 | `RateLimitTests` | One caller cannot lock out another; a caller who overruns is still throttled |
 | `ForwardedHttpsTests` | A missing header is refused; health stays exempt |
 | `InboxScaleTests` | A large inbox lists completely; a corrupted item is skipped |
-| `StartupGuardTests` | The four fail-fast startup guards each refuse to boot with the wrong config |
+| `StartupGuardTests` | The fail-fast startup guards each refuse to boot with the wrong config — read from the run's own log file at Fatal, since a refusal returns an exit code rather than throwing out of `Program` |
+| `StartupGuardsTests` | The five refusals as one unit: each message byte for byte, the writable refusal keeping its inner `IOException`, and the order — configuration before the disk, so a refused configuration creates no directory |
+| `StartupRefusalProcessTests` | The BUILT server binary with no auth scheme, and with a UNC data dir: exit code **78** and the `exited: code 78, reason startupRefused` line at Fatal in the run's file. Watched RED on the old code (exit `0xE0434352`, a file with only the `runtime:` line / an empty file) |
 | `ConcurrencyTests` | `If-Match`/`If-None-Match` optimistic-concurrency semantics on `PUT /api/vault` |
 | `InstanceFileTests` | The instance-file publish/withdraw lifecycle |
 | `ClientConfigTests`, `HealthProbeUrlTests` | (nested in `HealthTests.cs`) the advertised scope, and the probe URL |

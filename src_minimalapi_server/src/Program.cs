@@ -3,6 +3,7 @@ using System.Net;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using CredVaultServer;
+using CredsForDevs.ServiceDefaults;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -90,36 +91,37 @@ var allowNetworkDataDir = config.GetValue(DataDirCheck.OverrideKey, false);
 // Process-lifetime counters for the officers' metrics page (item 5).
 var metrics = new ServerMetrics(DateTimeOffset.UtcNow);
 
-// Writable is not enough: the store's durability is atomic rename, which a network filesystem
-// does not promise (item 2). Refused here, before a single blob depends on it.
-var networkRefusal = DataDirCheck.Judge(
-    dataDir,
-    allowNetworkDataDir,
-    () => File.Exists("/proc/mounts") ? File.ReadAllText("/proc/mounts") : null);
-if (networkRefusal is not null)
-{
-    throw new InvalidOperationException(networkRefusal);
-}
+// ---------- authentication: the schemes' configuration ----------
+var msTenant = config["Auth:Microsoft:Tenant"];
+var msAudiences = SplitCsv(config["Auth:Microsoft:Audiences"]);
+// The scope a client must ASK Entra for, which is not the same string as the
+// audience this server accepts: the audience is the app registration, the scope
+// names a permission inside it. It cannot be derived — the scope name is whatever
+// the operator called it — so it is configured, once, here rather than by hand in
+// every developer's settings.json.
+var msClientScope = (config["Auth:Microsoft:ClientScope"] ?? string.Empty).Trim();
+var googleEnabled = config.GetValue("Auth:Google:Enabled", false);
+var googleAudiences = SplitCsv(config["Auth:Google:Audiences"]);
+var localKey = config["Auth:Local:SigningKey"];
+var localEnabled = !string.IsNullOrWhiteSpace(localKey);
 
-// Probe BEFORE constructing the store. VaultStore's constructor creates its two
-// subdirectories, so an unwritable DataDir used to surface as a raw
-// UnauthorizedAccessException from a stack frame that says nothing about what to do —
-// and the single most common cause is the ordinary one: a bind-mounted host directory
-// owned by root while the container runs unprivileged.
+// ---------- fail fast on misconfiguration ----------
+// The five refusals (StartupGuards), BEFORE the store is constructed and before a host is built — and
+// caught HERE, at the top level: a refusal is logged at Fatal with its reason, the file is flushed, and
+// the process exits with a defined code. Uncaught, it was an unhandled exception: exit 139 under Native
+// AOT and a per-run file that did not say why (research/PLAN_server_startup_refusal_is_logged.md, and
+// .claude/rules/shared/common/logging-serilog.md, "Failures during startup must still be logged").
 try
 {
-    Directory.CreateDirectory(dataDir);
-    var probe = Path.Combine(dataDir, ".startup-probe");
-    File.WriteAllText(probe, "ok");
-    File.Delete(probe);
+    StartupGuards.Check(
+        new StartupSettings(dataDir, allowNetworkDataDir, msTenant, googleEnabled, localKey, allowedDomains.Count > 0, allowAnyDomain),
+        () => File.Exists("/proc/mounts") ? File.ReadAllText("/proc/mounts") : null);
 }
-catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+catch (InvalidOperationException refusal)
 {
-    throw new InvalidOperationException(
-        $"DataDir '{dataDir}' is not writable by uid {Environment.UserName}: {ex.Message}. "
-        + "In Docker this is almost always a host directory owned by root: run "
-        + $"`chown -R 10001:10001 <host path>`, or let the stack's `init` service do it.",
-        ex);
+    var refusedCode = HostRun.Refused(Log.ForContext(Serilog.Core.Constants.SourceContextPropertyName, "CredVaultServer"), refusal);
+    await Log.CloseAndFlushAsync();
+    return refusedCode;
 }
 
 // One JSON contract, generated at compile time — the AOT requirement that also makes
@@ -288,19 +290,7 @@ builder.Services.AddRateLimiter(options =>
 });
 
 // ---------- authentication: Microsoft Entra + (optional) Google ----------
-var msTenant = config["Auth:Microsoft:Tenant"];
-var msAudiences = SplitCsv(config["Auth:Microsoft:Audiences"]);
-// The scope a client must ASK Entra for, which is not the same string as the
-// audience this server accepts: the audience is the app registration, the scope
-// names a permission inside it. It cannot be derived — the scope name is whatever
-// the operator called it — so it is configured, once, here rather than by hand in
-// every developer's settings.json.
-var msClientScope = (config["Auth:Microsoft:ClientScope"] ?? string.Empty).Trim();
-var googleEnabled = config.GetValue("Auth:Google:Enabled", false);
-var googleAudiences = SplitCsv(config["Auth:Google:Audiences"]);
-var localKey = config["Auth:Local:SigningKey"];
-var localEnabled = !string.IsNullOrWhiteSpace(localKey);
-
+// (The schemes' configuration is read above, beside the startup guards that judge it.)
 // Concrete schemes only; RequireCaller/AuthenticateAny try each explicitly.
 var authBuilder = builder.Services.AddAuthentication();
 
@@ -444,34 +434,6 @@ app.Use(async (ctx, next) =>
     await next();
 });
 
-// ---------- fail fast on misconfiguration ----------
-if (string.IsNullOrWhiteSpace(msTenant) && !googleEnabled && !localEnabled)
-{
-    throw new InvalidOperationException(
-        "No authentication scheme configured — set Auth:Microsoft:Tenant, Auth:Google:Enabled, "
-        + "or Auth:Local:SigningKey. Refusing to start a server that would 401 every request.");
-}
-if (allowedDomains.Count == 0 && !allowAnyDomain)
-{
-    throw new InvalidOperationException(
-        "Vault:AllowedDomains is empty. Set it to your company domain(s), or set "
-        + "Vault:AllowAnyDomain=true to explicitly run without a domain boundary.");
-}
-if (localEnabled)
-{
-    // HMAC-SHA256 needs a 256-bit key. A shorter one is the nastiest kind of
-    // misconfiguration: the scheme registers without complaint, the host starts,
-    // /api/health reports OK — and every single request is rejected with 401 with
-    // nothing in the log to connect the two. Same reasoning as the guard above.
-    var keyBytes = System.Text.Encoding.UTF8.GetByteCount(localKey!);
-    if (keyBytes < 32)
-    {
-        throw new InvalidOperationException(
-            $"Auth:Local:SigningKey is {keyBytes} bytes; HMAC-SHA256 requires at least 32. "
-            + "A shorter key would start a server that answers 401 to everything. "
-            + "Generate one with: openssl rand -base64 48");
-    }
-}
 if (orgRecovery.Enabled)
 {
     // Said at startup, at Warning, because it is the one setting that changes what happens to

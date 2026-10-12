@@ -44,7 +44,7 @@ flowchart TB
         retention["LogRetention<br/>day folders older than N"]
         console["AnsiConsoleSink"]
         file["DailyRunFileSink"]
-        run["HostRun · HostEnding · ExitReason<br/>Start · End · ForcedExit"]
+        run["HostRun · HostEnding · ExitReason<br/>Start · End · ForcedExit · Refused"]
         ppid["ParentProcess.Id"]
         watch["ParentWatch<br/>handle + start time · getppid poll"]
         signals["ShutdownSignals<br/>INT · TERM · HUP · QUIT"]
@@ -59,6 +59,7 @@ flowchart TB
     build --> retention
     build --> console
     build --> file
+    server -->|"Refused: a startup guard said no"| run
     mcp --> run
     relay --> run
     run --> ppid
@@ -79,9 +80,9 @@ flowchart TB
 | `LogSetup` (record) | Everything one logger is built from: app name, root (empty = console only), start time, levels, retention days, console writer, default source |
 | `LogLevels` (record) | The floor and per-source overrides, bound EXPLICITLY — `Serilog.Settings.Configuration` scans assemblies, which AOT cannot |
 | `LogPlatform` (enum) | Windows / MacOS / Linux — which folder convention the root follows |
-| `ExitReason` (enum) | The closed vocabulary of the exit line (`clientClosed`, `busy`, `noAgentAnnounced`, `signalled`, `parentGone`, …), written as its camelCase word; never a contract exit name |
+| `ExitReason` (enum) | The closed vocabulary of the exit line (`clientClosed`, `busy`, `noAgentAnnounced`, `signalled`, `parentGone`, `startupRefused`, …), written as its camelCase word; never a contract exit name |
 | `HostEnding` (record) | Exit code + `ExitReason` — the code stays the contract's |
-| `HostRun` | Writes the start line (mode, version, pid, parent pid) and the exit line (code, reason, uptime) — ONCE per run, since a shutdown deadline and a normal return can both reach `End`; `Crash` logs the exception first; `ForcedExit(log)` is the way out when a deadline passes — the exit line, the logger disposed, `Environment.Exit` — shared by the server's `ServerLifetime` and the child holders' backstop so the two cannot drift |
+| `HostRun` | Writes the start line (mode, version, pid, parent pid) and the exit line (code, reason, uptime) — ONCE per run, since a shutdown deadline and a normal return can both reach `End`; `Crash` logs the exception first; `ForcedExit(log)` is the way out when a deadline passes — the exit line, the logger disposed, `Environment.Exit` — shared by the server's `ServerLifetime` and the child holders' backstop so the two cannot drift; the static `Refused(log, exception)` is a refused START (since 2026-10-12): one Fatal line `exited: code 78, reason startupRefused: <message>` with the exception, returning `RefusedExitCode` = **78** (`EX_CONFIG`), which no crash produces — the vault server's startup guards use it ([module_server.md](module_server.md) §Startup guards) |
 | `AnsiConsoleSink`, `DailyRunFileSink`, `LogRetention`, `UtcTimestampEnricher` | Moved unchanged from the server (see [module_server.md](module_server.md)) |
 | `ParentProcess` | The parent pid: `getppid()` or `NtQueryInformationProcess`; 0 when the platform will not say |
 | `ShutdownSignals` | SIGINT/SIGTERM/SIGHUP/SIGQUIT registered with `Cancel = true`; `Received` completes with the FIRST; `ExitCode` = 128 + the POSIX number (129, 130, 131, 143) |
@@ -98,7 +99,8 @@ flowchart TB
 - **`CredsLogging.Create(appName, consoleToStdErr: true)`** — the AOT hosts' factory. `CREDS_LOG_DIR`,
   `CREDS_LOG_LEVEL` (verbose/debug for more; Information is the default AND the ceiling, because the start and
   exit lines are Information and the sentences a person or the extension reads are Warning or above), `CREDS_LOG_RETENTION_DAYS` (default 14, 0 disables).
-- **`HostRun.Start` / `End` / `Crash`** — the two lines every serving run writes.
+- **`HostRun.Start` / `End` / `Crash`** — the two lines every serving run writes. **`HostRun.Refused`** — the one
+  line a run that refuses to begin writes; the caller flushes and returns its code.
 - **`ShutdownSignals.Register()`** and **`ParentWatch.Start(log)` / `ParentWatch.Off(reason, log)`** — the lifetime
   primitives; `creds-mcp` passes their tasks to `ServerLifetime` with the transport's end-of-stream.
 - **`ChildLifetime.Start(log, parent, grace, forceExit)`** — for a host that holds children: the pump (parent watch by
@@ -140,6 +142,7 @@ flowchart TB
 `src_service_defaults/tests` (xUnit v3, MTP executable `CredsForDevs.ServiceDefaults.Tests`): the path shape, UTC
 lines, the stderr choice, the floor and its ceiling, retention parsing and pruning, the unwritable fallback, the
 override order, the root ladder per platform, the exit-reason words (enumerated from the type), the start/exit lines,
+the refused-start line (one Fatal event, the exception carried, 78 pinned as a literal),
 a real parent pid; `ShutdownSignalsTests` (first signal wins, the POSIX numbers, registration with the OS) and
 `ParentWatchTests` (pid reuse → gone at once, a missing parent → gone, access denied → not watched, exit → gone,
 ppid change → gone, ppid 1 → off, the real opener on a real process, the real watch of the runner's own parent);

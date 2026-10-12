@@ -7,21 +7,72 @@ namespace CredVaultServer.Tests;
 /// fault. Each guard here exists because the alternative is a server that comes up,
 /// reports healthy, and answers every request with a status nobody can explain.
 /// </summary>
+/// <remarks>
+/// <para>Since 2026-10-12 a refusal is no longer an exception escaping <c>Program</c>: it is logged at
+/// Fatal, the file is flushed, and the entry point RETURNS the refusal code
+/// (research/PLAN_server_startup_refusal_is_logged.md). <c>WebApplicationFactory</c> has no exit code to
+/// show, so these read what an operator reads — the run's log file — and the exit code itself is
+/// <see cref="StartupRefusalProcessTests"/>' job.</para>
+/// <para><c>Log.Logger</c> is static and a refusal closes it; the next test's host builds a new one.
+/// Safe because every server test runs in the one non-parallel <see cref="ServerCollection"/>.</para>
+/// </remarks>
 [Collection(ServerCollection.Name)]
 public sealed class StartupGuardTests
 {
-    private static Exception? StartupFailure(Dictionary<string, string?> overrides)
+    /// <summary>The Fatal lines this start wrote to its own log file, or null when it wrote none.</summary>
+    private static string? StartupFailure(Dictionary<string, string?> overrides)
     {
-        using var server = new VaultServer(overrides);
+        var logs = Path.Combine(Path.GetTempPath(), "cred-vault-tests", "logs-" + Guid.NewGuid().ToString("N"));
+        overrides["Logging__Directory"] = logs;
         try
         {
-            // The host is built lazily; this is what actually runs Program.cs.
-            using var client = server.CreateClient();
-            return null;
+            using (var server = new VaultServer(overrides))
+            {
+                try
+                {
+                    // The host is built lazily; this is what actually runs Program.cs.
+                    using var client = server.CreateClient();
+                }
+                catch (InvalidOperationException)
+                {
+                    // A refused start returns before Build(), which the factory reports as "the entry point
+                    // exited without ever building an IHost". The reason is in the file, read below.
+                }
+            }
+            return FatalLines(logs);
         }
-        catch (Exception ex)
+        finally
         {
-            return ex;
+            DeleteQuietly(logs);
+        }
+    }
+
+    private static string? FatalLines(string logs)
+    {
+        var fatal = Directory.GetFiles(logs, "*.log", SearchOption.AllDirectories)
+            .SelectMany(file => Read(file).Split('\n'))
+            .Where(line => line.Contains("FTL]", StringComparison.Ordinal))
+            .ToList();
+        return fatal.Count == 0 ? null : string.Join('\n', fatal);
+    }
+
+    /// <summary>Read a log file even while a writer may still hold it.</summary>
+    private static string Read(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+
+    private static void DeleteQuietly(string path)
+    {
+        try
+        {
+            Directory.Delete(path, recursive: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // Left for the temp sweep; a test must not fail on its own cleanup.
         }
     }
 
@@ -37,7 +88,7 @@ public sealed class StartupGuardTests
         });
 
         failure.Should().NotBeNull("a key that makes every request 401 must stop the server, not be accepted");
-        (failure!.ToString()).Should().Contain("32", "the message has to say what the requirement is");
+        failure.Should().Contain("HMAC-SHA256 requires at least 32", "the message has to say what the requirement is");
     }
 
     [Fact]
@@ -62,7 +113,7 @@ public sealed class StartupGuardTests
         });
 
         failure.Should().NotBeNull();
-        failure!.ToString().Should().Contain("authentication scheme");
+        failure.Should().Contain("No authentication scheme configured");
     }
 
     [Fact]
@@ -75,7 +126,21 @@ public sealed class StartupGuardTests
         });
 
         failure.Should().NotBeNull();
-        failure!.ToString().Should().Contain("AllowedDomains");
+        failure.Should().Contain("Vault:AllowedDomains is empty");
+    }
+
+    [Fact]
+    public void ADataDirOnANetworkShareIsRefused()
+    {
+        // Moved from DataDirCheckTests (OpsTests.cs): the refusal that comes before the first log line, so the
+        // one whose file used to be empty.
+        var failure = StartupFailure(new Dictionary<string, string?>
+        {
+            ["Vault__DataDir"] = @"\\nas\vault\data",
+        });
+
+        failure.Should().NotBeNull();
+        failure.Should().Contain("atomic rename");
     }
 
     [Fact]

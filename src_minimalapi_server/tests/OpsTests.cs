@@ -78,17 +78,10 @@ public sealed class DataDirCheckTests
         DataDirCheck.Judge("/mnt/vault/data", allowNetwork: true, () => Mounts).Should().BeNull();
     }
 
-    [Fact]
-    public void TheServerRefusesToStartOnANetworkDataDir_UnlessTold()
-    {
-        var unc = @"\\nas\vault\data";
-        var refused = () =>
-        {
-            using var server = new VaultServer(new Dictionary<string, string?> { ["Vault__DataDir"] = unc });
-            server.CreateClient();
-        };
-        refused.Should().Throw<Exception>().WithMessage("*atomic rename*");
-    }
+    // The whole-server half of this check — a UNC data dir stops the real Program, and says so in the run's
+    // log — moved to StartupGuardTests on 2026-10-12, when a refusal stopped being an exception the factory
+    // could catch (research/PLAN_server_startup_refusal_is_logged.md). It also joins the server collection
+    // there, which it never did here although it set the same process-wide variables.
 }
 
 public sealed class ByteBudgetTests

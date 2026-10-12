@@ -183,6 +183,18 @@ internal sealed class CollectingSink : ILogEventSink
         }
     }
 
+    /// <summary>The level of every event, in order.</summary>
+    internal IReadOnlyList<LogEventLevel> Levels
+    {
+        get
+        {
+            lock (_events)
+            {
+                return [.. _events.Select(e => e.Level)];
+            }
+        }
+    }
+
     /// <summary>The exceptions the events carried, in order.</summary>
     internal IReadOnlyList<Exception> Exceptions
     {
