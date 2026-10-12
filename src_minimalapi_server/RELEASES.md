@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/server-v0.11.0...server-v0.11.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* **server:** a refused start is logged at Fatal and exits 78 ([#232](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/232)) ([ac454eb](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/ac454eb3bd7269d50a1d009b18c9d94c106cf4fb))
+
 ## [0.11.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/server-v0.10.1...server-v0.11.0) (2026-10-11)
 
 
