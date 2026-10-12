@@ -16,7 +16,7 @@ namespace CredsMcp.Tests;
 /// </remarks>
 public sealed class FolderToolsTests
 {
-    private static readonly CallerRecord Caller = new("Claude Code 2.1.268", "98bf9f23", "clauderag-d6", "ClaudeRag");
+    private static readonly CallerRecord Caller = new("Claude Code 2.1.268", "98bf9f23", "coffeebar-d6", "CoffeeBar");
 
     private static string[] Keys(string json)
     {
@@ -33,7 +33,7 @@ public sealed class FolderToolsTests
         using var doc = JsonDocument.Parse(body);
         doc.RootElement.GetProperty("name").GetString().Should().Be("staging");
         doc.RootElement.GetProperty("caller").EnumerateObject().Select(p => p.Name).Should().Equal(BrokerContract.Current.Caller!.Fields, "the field list is the contract's, never retyped here");
-        doc.RootElement.GetProperty("caller").GetProperty("sessionName").GetString().Should().Be("clauderag-d6");
+        doc.RootElement.GetProperty("caller").GetProperty("sessionName").GetString().Should().Be("coffeebar-d6");
     }
 
     [Fact]

@@ -6,7 +6,7 @@ namespace CredVaultServer.Tests;
 /// <summary>
 /// The editor panel finds a locally running server by reading the file this writes. The
 /// shape matters as much as the content: it is the same one
-/// `dew_flow_rag_qln · src/ServiceDefaults/DaemonEndpointFile.cs` publishes, and a reader
+/// a sibling daemon's `src/ServiceDefaults/DaemonEndpointFile.cs` publishes, and a reader
 /// written for that one has to be able to read this.
 /// </summary>
 [Collection(ServerCollection.Name)]

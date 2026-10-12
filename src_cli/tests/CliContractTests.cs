@@ -88,7 +88,7 @@ public sealed class CliContractTests
 
     // ---- T11: every body this binary posts carries the caller, and still only its named fields ----
 
-    private static readonly CallerRecord Caller = new("creds CLI", "98bf9f23", "clauderag-d6", "ClaudeRag");
+    private static readonly CallerRecord Caller = new("creds CLI", "98bf9f23", "coffeebar-d6", "CoffeeBar");
 
     private static string[] Keys(string json)
     {
@@ -130,7 +130,7 @@ public sealed class CliContractTests
         var caller = doc.RootElement.GetProperty(BrokerContract.Current.CallerField());
         caller.EnumerateObject().Select(p => p.Name).Should().Equal(BrokerContract.Current.Caller!.Fields);
         caller.GetProperty("agent").GetString().Should().Be("creds CLI");
-        caller.GetProperty("cwd").GetString().Should().Be("ClaudeRag");
+        caller.GetProperty("cwd").GetString().Should().Be("CoffeeBar");
     }
 
     [Fact]

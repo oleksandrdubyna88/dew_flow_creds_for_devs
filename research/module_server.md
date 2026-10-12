@@ -2005,7 +2005,7 @@ On startup the host writes `<LocalAppData>/dew-flow/services/cred-vault-server.j
 pid, start time, and the addresses it serves — and deletes it on a graceful stop. The DewFlow VS Code
 panel reads that directory and lists a locally running server under **Services**.
 
-The convention is copied from `dew_flow_rag_qln · src/ServiceDefaults/DaemonEndpointFile.cs` rather
+The convention is copied from a sibling daemon's `src/ServiceDefaults/DaemonEndpointFile.cs` rather
 than reinvented: same directory, same JSON shape, same best-effort semantics. The one deliberate
 difference is the **filename** — that daemon owns `dew-flow/daemon.json`, and a second product
 writing there would overwrite it, so everything else publishes under `services/`.

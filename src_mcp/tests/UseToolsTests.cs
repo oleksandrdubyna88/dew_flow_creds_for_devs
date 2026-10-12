@@ -117,7 +117,7 @@ public sealed class UseToolsTests
         answer.Should().Contain("creds_list");
     }
 
-    private static readonly CallerRecord Caller = new("Claude Code 2.1.268", "98bf9f23", "clauderag-d6", "ClaudeRag");
+    private static readonly CallerRecord Caller = new("Claude Code 2.1.268", "98bf9f23", "coffeebar-d6", "CoffeeBar");
 
     private static string[] Keys(string json)
     {
@@ -191,7 +191,7 @@ public sealed class UseToolsTests
 /// <summary>The kind's own fields ride in the create body as the OBJECT they are, under `fields`.</summary>
 public sealed class CreateFieldsTests
 {
-    private static readonly CallerRecord Caller = new("Claude Code 2.1.268", "98bf9f23", "clauderag-d6", "ClaudeRag");
+    private static readonly CallerRecord Caller = new("Claude Code 2.1.268", "98bf9f23", "coffeebar-d6", "CoffeeBar");
 
     [Fact]
     public void The_fields_object_travels_as_an_object_not_a_string_and_only_when_given()

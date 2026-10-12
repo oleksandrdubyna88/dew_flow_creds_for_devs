@@ -177,7 +177,7 @@ export function ownerChain(): Record<string, EntityMetadata> {
   };
   const vpn: EntityMetadata = {
     id: 'vpn',
-    name: 'org meter stage',
+    name: 'ops relay stage',
     isSshEnabled: false,
     isVpn: true,
     vpnType: 'openvpn',

@@ -15,27 +15,27 @@ import { BackupBundle } from '../types';
 
 const vpn = (extra: Partial<EntityMetadata> = {}): EntityMetadata => ({
   id: 'v1',
-  name: 'Org Meter Stage',
+  name: 'Ops Relay Stage',
   isSshEnabled: false,
   isVpn: true,
   ...extra,
 });
 
 test('{config} becomes the path, quoted for the shell that reads it — every occurrence', () => {
-  const path = "C:\\Users\\o'brien\\keys\\42\\org_meter_stage.ovpn";
+  const path = "C:\\Users\\o'brien\\keys\\42\\ops_relay_stage.ovpn";
 
   assert.equal(
     substituteConfig('openvpn --config {config} --log {config}.log', path, 'powershell'),
-    "openvpn --config 'C:\\Users\\o''brien\\keys\\42\\org_meter_stage.ovpn' --log 'C:\\Users\\o''brien\\keys\\42\\org_meter_stage.ovpn'.log",
+    "openvpn --config 'C:\\Users\\o''brien\\keys\\42\\ops_relay_stage.ovpn' --log 'C:\\Users\\o''brien\\keys\\42\\ops_relay_stage.ovpn'.log",
   );
   assert.equal(substituteConfig('sudo openvpn --config {config}', '/k/a b.ovpn', 'posix'), "sudo openvpn --config '/k/a b.ovpn'");
   assert.equal(usesConfig('rasdial "Work VPN"'), false, 'a launcher that knows its own profile needs no file');
 });
 
 test('the config keeps the uploaded extension when it is a plain one, else the tool default', () => {
-  assert.equal(launcherConfigFileName(vpn({ vpnType: 'ikev2', vpnConfigFileName: 'Work.PBK' })), 'org_meter_stage.pbk');
-  assert.equal(launcherConfigFileName(vpn({ vpnType: 'openvpn' })), 'org_meter_stage.ovpn');
-  assert.equal(launcherConfigFileName(vpn({ vpnType: 'l2tp', vpnConfigFileName: 'x.tar.gz;rm -rf' })), 'org_meter_stage.conf');
+  assert.equal(launcherConfigFileName(vpn({ vpnType: 'ikev2', vpnConfigFileName: 'Work.PBK' })), 'ops_relay_stage.pbk');
+  assert.equal(launcherConfigFileName(vpn({ vpnType: 'openvpn' })), 'ops_relay_stage.ovpn');
+  assert.equal(launcherConfigFileName(vpn({ vpnType: 'l2tp', vpnConfigFileName: 'x.tar.gz;rm -rf' })), 'ops_relay_stage.conf');
 });
 
 test('a launcher makes ANY type startable — that is what naming one is for', () => {

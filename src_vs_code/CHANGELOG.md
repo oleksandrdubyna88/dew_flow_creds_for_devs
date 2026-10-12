@@ -541,9 +541,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added — the consent dialog names a Claude Code session by the title on its tab (#136)
 
 - **The dialog now says which TAB is asking.** It used to name a Claude Code session by the name its
-  registry derives (`clauderag-d6`) and the first eight characters of its id — neither of which is on
+  registry derives (`coffeebar-d6`) and the first eight characters of its id — neither of which is on
   any tab, so with several sessions open the sentence could not be matched to the screen (#61). It now
-  reads *Claude Code 2.1.281 · session "creds old issues" (52d1b29a) · in ClaudeRag wants to…*: the
+  reads *Claude Code 2.1.281 · session "creds old issues" (52d1b29a) · in CoffeeBar wants to…*: the
   text on the tab, quoted, in place of the derived name, and in full up to 80 characters so whatever
   the tab cuts off is still a prefix of it. The title is read fresh on every call, so a tab renamed
   while its session runs is named by its new title.
@@ -1114,8 +1114,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The consent modal names WHO is asking.** It used to open with *Claude Code wants to…* for every
   caller — Codex, Gemini, the `creds` CLI in a plain terminal, any other MCP client — and could not
   say which of several side-by-side Claude Code sessions had raised it, while Allow covers every later
-  call on the grant (#61). The first sentence now reads *Claude Code 2.1.268 · session clauderag-d6
-  (98bf9f23) · in ClaudeRag wants to run a command on "prod"…*, from a `caller` object the client
+  call on the grant (#61). The first sentence now reads *Claude Code 2.1.268 · session coffeebar-d6
+  (98bf9f23) · in CoffeeBar wants to run a command on "prod"…*, from a `caller` object the client
   puts in its request body: the product and version (from the MCP client's own handshake, or
   `creds CLI`), the first eight characters of the agent's session id, the session's name from Claude
   Code's registry, and the name of the folder it works in. A client that reports nothing is

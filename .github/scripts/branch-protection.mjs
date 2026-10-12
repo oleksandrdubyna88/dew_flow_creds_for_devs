@@ -6,7 +6,7 @@
  * no file GitHub reads for it: it is settings, changed through the API or the web page, by whoever
  * happened to be looking. So nobody reviews a change to it, nothing goes red when it drifts, and
  * "why can this merge?" has no answer in the tree. Measured 2026-09-18 across this family:
- * `dew_flow_rag_qln` had <b>no branch protection at all</b>, and `dew_flow_creds_for_devs` required
+ * one sibling repository had <b>no branch protection at all</b>, and `dew_flow_creds_for_devs` required
  * 3 of the 11 checks that run on every pull request. Neither was a decision anybody took; they were
  * the absence of one.</p>
  *
@@ -233,7 +233,7 @@ export function differences(want, have) {
  * <p>Done in JavaScript rather than by shelling out to `which`, because `which` would be the same
  * problem one level down.</p>
  */
-function resolved(name) {
+export function resolved(name) {
   // ONLY what `execFileSync` can start directly, which is narrower than PATHEXT. Node refuses
   // `.cmd` and `.bat` without `shell: true` — the 2024 argument-injection fix — and `.ps1`/`.vbs`
   // are not executables at all. The first version walked PATHEXT and would have returned such a

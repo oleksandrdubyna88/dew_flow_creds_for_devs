@@ -114,16 +114,16 @@ function build(nodes: TreeNode[]): Provider {
   return new ProviderCtor(storage, { fsPath: '/ext' });
 }
 
-const VPN = entity('v1', 'org meter', 'f-vpn', { depColor: 'depColor7' });
+const VPN = entity('v1', 'ops relay', 'f-vpn', { depColor: 'depColor7' });
 const SSH = entity('s1', 'access-server', 'f-ssh', { dependsOn: ['v1'] });
-const OTHER = entity('s2', 'project-tools', 'f-ssh');
+const OTHER = entity('s2', 'proxy-toolbox', 'f-ssh');
 const NODES = [folder('f-vpn', 'vpn'), folder('f-ssh', 'ssh connections'), VPN, SSH, OTHER];
 
 test('an entity with BOTH kept versions and dependents shows both, not one instead of the other', () => {
   const tree = build(NODES);
   tree.historyById.set(entityKey('a1', 'v1'), [
-    { at: 1, name: 'org meter' },
-    { at: 2, name: 'org meter' },
+    { at: 1, name: 'ops relay' },
+    { at: 2, name: 'ops relay' },
   ] as RevisionHead[]);
 
   const children = tree.getChildren({ kind: 'node', accountId: 'a1', node: VPN });
@@ -158,7 +158,7 @@ test('the sub-tree groups dependents by folder and lists ONLY them', () => {
   assert.deepEqual(
     rows.map((r) => (r as Extract<TreeElement, { kind: 'dependentEntity' }>).node.name),
     ['access-server'],
-    'project-tools lives in the same folder and depends on nothing — it must not be here',
+    'proxy-toolbox lives in the same folder and depends on nothing — it must not be here',
   );
 });
 

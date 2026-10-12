@@ -131,7 +131,7 @@ test('a relationship whose colour has not been stamped still marks the row', () 
   // The half-written state after a crash between the two saves: the dependency exists, the
   // target has no colour yet. The badge must still appear, or the relationship looks lost.
   const provider = new DepDecorationProvider(
-    sourceFor({ e1: { badge: '●', tooltip: 'Depends on org meter' } }),
+    sourceFor({ e1: { badge: '●', tooltip: 'Depends on ops relay' } }),
   );
   const decoration = provider.provideFileDecoration(depUri('a1', 'e1'));
 

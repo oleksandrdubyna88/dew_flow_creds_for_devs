@@ -47,7 +47,7 @@ function entity(
 
 test('two entities depending on one target are both listed under it', () => {
   const nodes = [
-    entity('vpn1', 'org meter', null, { depColor: 'depColor7' }),
+    entity('vpn1', 'ops relay', null, { depColor: 'depColor7' }),
     entity('ssh1', 'access-server', null, { dependsOn: ['vpn1'] }),
     entity('pw1', 'db password', null, { dependsOn: ['vpn1'] }),
     entity('loose', 'unrelated', null),
@@ -94,7 +94,7 @@ test('a colour key this build does not know reads as absent, and does not reject
 
 test('a dependent borrows its target colour', () => {
   const nodes = [
-    entity('vpn1', 'org meter', null, { depColor: 'depColor7' }),
+    entity('vpn1', 'ops relay', null, { depColor: 'depColor7' }),
     entity('ssh1', 'access-server', null, { dependsOn: ['vpn1'] }),
   ];
   assert.equal(resolveTintColorKey(nodes[1], buildDependencyIndex(nodes)), 'depColor7');
@@ -103,7 +103,7 @@ test('a dependent borrows its target colour', () => {
 test('being a target wins over borrowing, and borrowing never runs the chain', () => {
   // `ssh1` is both: it depends on the VPN and the password depends on IT.
   const nodes = [
-    entity('vpn1', 'org meter', null, { depColor: 'depColor7' }),
+    entity('vpn1', 'ops relay', null, { depColor: 'depColor7' }),
     entity('ssh1', 'access-server', null, { dependsOn: ['vpn1'], depColor: 'depColor2' }),
     entity('pw1', 'db password', null, { dependsOn: ['ssh1'] }),
   ];
@@ -119,7 +119,7 @@ test('being a target wins over borrowing, and borrowing never runs the chain', (
 
 test('a dangling target is skipped when borrowing a colour, never thrown on', () => {
   const nodes = [
-    entity('vpn1', 'org meter', null, { depColor: 'depColor5' }),
+    entity('vpn1', 'ops relay', null, { depColor: 'depColor5' }),
     entity('ssh1', 'access-server', null, { dependsOn: ['deleted-long-ago', 'vpn1'] }),
   ];
   assert.equal(resolveTintColorKey(nodes[1], buildDependencyIndex(nodes)), 'depColor5');
@@ -143,10 +143,10 @@ test('a mutual pair resolves rather than looping', () => {
 test('a folder in the sub-tree lists ONLY the dependents, never its other contents', () => {
   const nodes = [
     folder('f-ssh', 'ssh connections'),
-    entity('vpn1', 'org meter', null),
+    entity('vpn1', 'ops relay', null),
     entity('ssh1', 'access-server', 'f-ssh', { dependsOn: ['vpn1'] }),
-    entity('ssh2', 'project-tools', 'f-ssh'),
-    entity('ssh3', 'alert-center', 'f-ssh'),
+    entity('ssh2', 'proxy-toolbox', 'f-ssh'),
+    entity('ssh3', 'alerts-board', 'f-ssh'),
   ];
   const groups = dependentFoldersOf(nodes, buildDependencyIndex(nodes), 'vpn1');
 
@@ -163,7 +163,7 @@ test('the account root comes first, and named folders follow in name order', () 
   const nodes = [
     folder('f-z', 'z folder'),
     folder('f-a', 'a folder'),
-    entity('vpn1', 'org meter', null),
+    entity('vpn1', 'ops relay', null),
     entity('e1', 'in z', 'f-z', { dependsOn: ['vpn1'] }),
     entity('e2', 'in a', 'f-a', { dependsOn: ['vpn1'] }),
     entity('e3', 'at root', null, { dependsOn: ['vpn1'] }),
@@ -181,7 +181,7 @@ test('a dependent whose folder is gone is grouped at the root, not dropped', () 
   // `parentId` is data, exactly as `dependsOn` is — it arrives by sync and by import. Losing
   // the row would hide the very entry somebody opened the sub-tree to find.
   const nodes = [
-    entity('vpn1', 'org meter', null),
+    entity('vpn1', 'ops relay', null),
     entity('e1', 'orphan', 'folder-that-vanished', { dependsOn: ['vpn1'] }),
   ];
   const groups = dependentFoldersOf(nodes, buildDependencyIndex(nodes), 'vpn1');
@@ -219,8 +219,8 @@ test('the form is offered every entity except the one being edited, grouped by f
     folder('f-vpn', 'vpn'),
     folder('f-ssh', 'ssh connections'),
     folder('f-empty', 'scripts'),
-    entity('v1', 'org meter', 'f-vpn'),
-    entity('v2', 'org meter stage', 'f-vpn'),
+    entity('v1', 'ops relay', 'f-vpn'),
+    entity('v2', 'ops relay stage', 'f-vpn'),
     entity('s1', 'access-server', 'f-ssh'),
     entity('root1', 'loose entry', null),
   ];
@@ -235,7 +235,7 @@ test('the form is offered every entity except the one being edited, grouped by f
   );
   assert.deepEqual(
     groups.find((g) => g.id === 'f-vpn')?.entities.map((e) => e.name),
-    ['org meter', 'org meter stage'],
+    ['ops relay', 'ops relay stage'],
   );
   assert.deepEqual(
     groups.find((g) => g.id === '')?.entities.map((e) => e.name),
@@ -245,7 +245,7 @@ test('the form is offered every entity except the one being edited, grouped by f
 
 test('the colour map covers live targets only, so a stale preference never pre-selects', () => {
   const nodes = [
-    entity('v1', 'org meter', null, { depColor: 'depColor7' }),
+    entity('v1', 'ops relay', null, { depColor: 'depColor7' }),
     entity('v2', 'nobody needs me', null, { depColor: 'depColor3' }),
     entity('s1', 'access-server', null, { dependsOn: ['v1'] }),
   ];
@@ -255,7 +255,7 @@ test('the colour map covers live targets only, so a stale preference never pre-s
 test('a stored id whose target is gone opens as a MISSING row, never as a dropped one', () => {
   // Dropping it would be invisible and permanent: the next Save on any unrelated field would
   // write a `dependsOn` without it, deleting a relationship whose target may be one sync away.
-  const folders = [{ id: 'f1', name: 'vpn', entities: [{ id: 'v1', name: 'org meter' }] }];
+  const folders = [{ id: 'f1', name: 'vpn', entities: [{ id: 'v1', name: 'ops relay' }] }];
   const rows = initialDependencyRows(['v1', 'deleted'], folders, { v1: 'depColor7' });
 
   assert.deepEqual(rows, [
@@ -266,7 +266,7 @@ test('a stored id whose target is gone opens as a MISSING row, never as a droppe
 
 test('the badge counts what needs this entry, and names what this entry needs', () => {
   const nodes = [
-    entity('v1', 'org meter', null, { depColor: 'depColor7' }),
+    entity('v1', 'ops relay', null, { depColor: 'depColor7' }),
     entity('s1', 'access-server', null, { dependsOn: ['v1'] }),
     entity('p1', 'db password', null, { dependsOn: ['v1'] }),
   ];
@@ -278,7 +278,7 @@ test('the badge counts what needs this entry, and names what this entry needs', 
   });
   assert.deepEqual(describeRelation(nodes[1], index), {
     badge: '●',
-    tooltip: 'Depends on org meter',
+    tooltip: 'Depends on ops relay',
   });
 });
 

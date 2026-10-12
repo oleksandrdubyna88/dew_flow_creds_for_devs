@@ -107,12 +107,12 @@ test('the caller sits between the door and the outcome, as "by <label>"', () => 
     detail: 'uname -a',
     seq: 3,
     via: 'mcp',
-    caller: 'Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in ClaudeRag',
+    caller: 'Claude Code 2.1.268 · session coffeebar-d6 (98bf9f23) · in CoffeeBar',
   });
 
   assert.equal(
     line,
-    '[09:05:03Z] #3 exec prod-db (A1b2C3…) via mcp by Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in ClaudeRag → exit 0  uname -a',
+    '[09:05:03Z] #3 exec prod-db (A1b2C3…) via mcp by Claude Code 2.1.268 · session coffeebar-d6 (98bf9f23) · in CoffeeBar → exit 0  uname -a',
   );
 });
 

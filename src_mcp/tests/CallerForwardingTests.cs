@@ -22,7 +22,7 @@ namespace CredsMcp.Tests;
 /// </remarks>
 public sealed class CallerForwardingTests
 {
-    private static readonly CallerRecord Forwarded = new(string.Empty, "98bf9f23", "clauderag-d6", "ClaudeRag");
+    private static readonly CallerRecord Forwarded = new(string.Empty, "98bf9f23", "coffeebar-d6", "CoffeeBar");
 
     private static readonly TimeSpan Quick = TimeSpan.FromMilliseconds(200);
 
@@ -124,8 +124,8 @@ public sealed class CallerForwardingTests
 
         record.Agent.Should().Be("Claude Code 2.1.268");
         record.Session.Should().Be("98bf9f23");
-        record.SessionName.Should().Be("clauderag-d6");
-        record.Cwd.Should().Be("ClaudeRag");
+        record.SessionName.Should().Be("coffeebar-d6");
+        record.Cwd.Should().Be("CoffeeBar");
     }
 
     [Fact]

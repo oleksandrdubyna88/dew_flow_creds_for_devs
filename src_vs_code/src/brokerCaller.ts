@@ -25,7 +25,7 @@ export interface CallerLabel {
   agent: string;
   /** The short session id — the first eight characters of the caller's own id. */
   session: string;
-  /** The session's name, when the agent's registry has one (`clauderag-d6`). */
+  /** The session's name, when the agent's registry has one (`coffeebar-d6`). */
   sessionName: string;
   /** The BASENAME of the working folder — never a full path, which is a leak in a modal. */
   cwd: string;
@@ -126,8 +126,8 @@ function capPoints(text: string, max: number): string {
 }
 
 /**
- * The head of the consent sentence — `Claude Code 2.1.268 · session clauderag-d6 (98bf9f23) · in
- * ClaudeRag` — each segment omitted when its field is empty, and `An agent` when there is no
+ * The head of the consent sentence — `Claude Code 2.1.268 · session coffeebar-d6 (98bf9f23) · in
+ * CoffeeBar` — each segment omitted when its field is empty, and `An agent` when there is no
  * caller at all.
  *
  * <p>Pure, and here rather than in the broker, so the sentence is a unit test without the stub
@@ -146,7 +146,7 @@ export function callerLine(caller: CallerLabel | undefined): string {
  * whichever half exists — the id alone is never parenthesised.
  *
  * <p>The title REPLACES the derived registry name rather than joining it: the name
- * (`clauderag-d6`) is on no screen the person is looking at, and two names for one session in a
+ * (`coffeebar-d6`) is on no screen the person is looking at, and two names for one session in a
  * security dialog read as two sessions. It is quoted because it is free text and may contain ` · `.
  * It is shown whole, up to the field cap, not cut to the tab's 24 characters and `…` — whatever
  * the tab cuts, its text is then a PREFIX of this one (issue #136, D3).</p>

@@ -1298,7 +1298,7 @@ menus match.
 > a test pins that `nodeHaystack` never sees the marks. Entity descriptions untouched.
 > Right-alignment stays impossible (inline description, no API) and is recorded as such.
 
-**The ask.** The grey descriptions (`db`, `sshkey`, `ubuntu@10.73.48.167`) should stick to the
+**The ask.** The grey descriptions (`db`, `sshkey`, `ubuntu@203.0.113.12`) should stick to the
 ROW'S RIGHT EDGE when they fit (truncate as today when not), and FOLDER descriptions should be
 underlined; entity descriptions stay as they are.
 

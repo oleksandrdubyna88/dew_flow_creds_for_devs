@@ -31,8 +31,8 @@ export interface AuditEntry {
    */
   via?: AuditDoor;
   /**
-   * Who called, as the caller REPORTED it — `Claude Code 2.1.268 · session clauderag-d6 (98bf9f23)
-   * · in ClaudeRag`. A label the body carried, never an authorisation input; `brokerCaller.ts`
+   * Who called, as the caller REPORTED it — `Claude Code 2.1.268 · session coffeebar-d6 (98bf9f23)
+   * · in CoffeeBar`. A label the body carried, never an authorisation input; `brokerCaller.ts`
    * strips and caps it before it gets here.
    *
    * <p>Optional, not required, and the asymmetry with `consent` — where the caller is a required
@@ -126,7 +126,7 @@ export function parseAuditLine(line: string): AuditEntry | undefined {
   };
 }
 
-// `[12:00:00Z] #3 query orders-db (tok…f2) via mcp by Claude Code 2.1.268 · session x (98bf9f23) · in ClaudeRag → exit 0  SELECT 1`
+// `[12:00:00Z] #3 query orders-db (tok…f2) via mcp by Claude Code 2.1.268 · session x (98bf9f23) · in CoffeeBar → exit 0  SELECT 1`
 //
 // The caller group is optional, so every line written before it existed still parses (C3). Its
 // own parentheses are safe: the `(.*?) \(([^)]*)\)` pair before it backtracks, which the
