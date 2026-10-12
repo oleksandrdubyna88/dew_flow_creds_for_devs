@@ -216,6 +216,18 @@ after the fix; red again with only the `Program.cs` catch removed.
   `/logs` volume. It runs on every push to `main`, not on pull requests — the workflow never builds a
   pull request's image.
 
+**Exceptions, not an `Outcome`, reconciled with the C# doctrine §5** ("expected failures are values";
+raised by a code-gate reviewer in both rounds, rejected with this reason). The owner's task prescribed the
+shape — catch at the top level, log Fatal *with the exception*, flush, return a code. Two of the five refusals
+wrap an infrastructure exception (`IOException` / `UnauthorizedAccessException` from the writable probe), which
+§5 says still throws; values for three guards and exceptions for two would be two refusal paths for one
+event. A refusal is terminal and happens once per process, and the catch is exactly §5's "catch with the
+exception as the first log argument" at the one layer that genuinely ends the process.
+
+- The `docker.yml` refused-start step runs the container DETACHED and waits for it with a 120 s bound
+  (code-gate round 2, accepted): a regression that made the refused configuration start serving would
+  otherwise hang the job instead of failing it.
+
 **The other hosts** — `creds-mcp`, `creds relay`, `creds relay-pipe`: no change, as §3.3 says. Their
 refusals are returned contract codes; an unexpected fault is logged at Fatal through `HostRun.Crash` and
 flushed by the `using var` logger in an `async` method before the rethrow.

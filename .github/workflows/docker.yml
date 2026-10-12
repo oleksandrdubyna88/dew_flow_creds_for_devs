@@ -100,12 +100,15 @@ jobs:
         run: |
           docker volume create cv-refused-data
           docker volume create cv-refused-logs
-          code=0
-          docker run --name cv-refused --read-only --tmpfs /tmp --cap-drop ALL \
+          # Detached and waited for with a bound: a regression that made this configuration START would
+          # otherwise keep `docker run` in the foreground forever and hang the job instead of failing it.
+          docker run -d --name cv-refused --read-only --tmpfs /tmp --cap-drop ALL \
             --security-opt no-new-privileges \
             -v cv-refused-data:/data -v cv-refused-logs:/logs \
             -e Vault__AllowedDomains=example.com \
-            cred-vault-server:ci || code=$?
+            cred-vault-server:ci
+          code=$(timeout 120 docker wait cv-refused) \
+            || { echo "a refused start was still running after 120 s"; docker logs cv-refused; docker rm -f cv-refused; exit 1; }
           [ "$code" = "78" ] || { echo "a refused start exited $code, expected 78"; docker logs cv-refused; exit 1; }
           docker cp cv-refused:/logs ./refused-logs
           grep -rF "FTL]" ./refused-logs | grep -F "exited: code 78, reason startupRefused: No authentication scheme configured" \
