@@ -1195,6 +1195,21 @@ watched RED, GREEN, RED:
 - any user folder beginning with `$` or `%` passed;
 - a name split by a line wrap passed. The sweep had missed exactly one such name, in `research/PLAN_depends_on.md`.
 
+## The key fingerprint is of the scrypt key, not of the secret (2026-10-12)
+
+`keyFingerprint.ts` promises that the eight hex characters a share failure is diagnosed with name the key scrypt
+DERIVED, never the typed PIN — a short hash of the PIN would be an offline guessing oracle that skips the KDF
+([PLAN_share_failure_diagnostics.md](PLAN_share_failure_diagnostics.md)). Until this date the test of that promise
+checked `!includes('able')` and `!includes('colleague')` after an 8-hex match, which hold for every possible value.
+
+| test | what it proves |
+|---|---|
+| `keyFingerprint.test.ts` → *a seal reports a fingerprint of the key it derived* | the reported value EQUALS the fingerprint of a key the test derives on its own (scrypt over the blob's salt and cost), and differs from our own context hash and a bare SHA-256 of each raw input |
+
+**Watched RED** with two defects planted in `sealBlob`: a fingerprint of the typed string, and a fast hash of it
+under another context string (the case the plan round named — inequality checks alone miss it). The three old
+checks passed on the first one. Cost: one extra scrypt, the file runs in about 2.4 s.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.
