@@ -1,4 +1,5 @@
 import * as assert from 'node:assert/strict';
+import * as crypto from 'node:crypto';
 import { test } from 'node:test';
 import { BackupError, SealedBlob, openBlob, sealBlob } from '../cryptoUtils';
 import { blobFingerprint, derivedKeyFingerprint } from '../keyFingerprint';
@@ -26,8 +27,29 @@ const sent: { blob: SealedBlob; fingerprint: string } = (() => {
 
 test('a seal reports a fingerprint of the key it derived — eight hex characters, and not the secret', () => {
   assert.match(sent.fingerprint, /^[0-9a-f]{8}$/);
-  assert.ok(!sent.fingerprint.includes('able'));
-  assert.ok(!sent.fingerprint.includes('colleague'));
+  // POSITIVE (plan round): the value IS the fingerprint of the scrypt key, derived here on its own from the
+  // blob's salt and cost — so any fast hash of the typed input, under any context string, fails. One extra
+  // derivation (about a second) is the price; the "not equal" checks below only name the likeliest mistakes.
+  const independentKey = crypto.scryptSync(KEY_ID + PIN, Buffer.from(sent.blob.salt, 'base64'), 32, {
+    N: sent.blob.kdfN,
+    r: sent.blob.kdfR,
+    p: sent.blob.kdfP,
+    maxmem: 512 * 1024 * 1024,
+  });
+  assert.equal(sent.fingerprint, derivedKeyFingerprint(independentKey), 'the reported fingerprint is not of the key scrypt derived');
+  // The property that matters (keyFingerprint.ts): a short hash of what the person TYPED would be an offline
+  // guessing oracle. So the reported value must be none of the cheap hashes of the raw inputs — neither ours
+  // (the same context string) nor a bare SHA-256. Only a hash of the scrypt OUTPUT satisfies this. (The old
+  // checks — "does not contain 'able' / 'colleague'" — held for ANY hex string, so they could never fail.)
+  for (const raw of [PIN, KEY_ID + PIN, KEY_ID]) {
+    const material = Buffer.from(raw, 'utf8');
+    assert.notEqual(sent.fingerprint, derivedKeyFingerprint(material), `the fingerprint is a hash of the raw input "${raw}", not of the derived key`);
+    assert.notEqual(
+      sent.fingerprint,
+      crypto.createHash('sha256').update(material).digest('hex').slice(0, 8),
+      `the fingerprint is a bare SHA-256 of the raw input "${raw}"`,
+    );
+  }
 });
 
 test('the recipient who types the SAME pin under the SAME key id reports the SAME fingerprint', () => {
