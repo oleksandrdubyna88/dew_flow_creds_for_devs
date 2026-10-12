@@ -81,6 +81,38 @@ public sealed class HostRun
             Environment.Exit(ending.Code);
         };
 
+    /// <summary>
+    /// The exit code of a refused start: <c>EX_CONFIG</c> from <c>sysexits.h</c>, the conventional
+    /// "configuration error". No runtime crash produces it (139 is SIGSEGV, 134 SIGABRT, 128 + n a signal,
+    /// <c>0xE0434352</c> the CLR on Windows), so an operator — or a script — can tell a refusal from a crash
+    /// by the number alone.
+    /// </summary>
+    public const int RefusedExitCode = 78;
+
+    /// <summary>
+    /// Log a refused start — ONE line at Fatal, carrying the exception, in the exit line's own shape so a
+    /// search for <c>exited:</c> finds it — and hand back <see cref="RefusedExitCode"/> for <c>Main</c> to
+    /// return. The caller flushes the logger: this logs, it does not own the sinks.
+    /// </summary>
+    /// <remarks>
+    /// <para>Static because a refusal comes before there is a run to time: the host is refusing to begin
+    /// one. Measured on the vault server's 0.11.0 image (research/PLAN_server_startup_refusal_is_logged.md):
+    /// a refusal thrown from top-level code was an unhandled exception — exit 139 under Native AOT, and a
+    /// per-run file that did not say why, or was empty.</para>
+    /// <para>The reason is the exception's own message, which a startup guard writes for the operator; the
+    /// same rule as every other line here (§5.1) applies to the guard that writes it.</para>
+    /// </remarks>
+    /// <param name="log">The host's logger.</param>
+    /// <param name="refusal">What the guard threw: its message is the reason.</param>
+    public static int Refused(ILogger log, Exception refusal)
+    {
+        log.Fatal(
+            refusal,
+            "exited: code {ExitCode}, reason {Reason}: {Refusal}",
+            RefusedExitCode, Word(ExitReason.StartupRefused), refusal.Message);
+        return RefusedExitCode;
+    }
+
     /// <summary>Log an end nobody planned: the exception first, as the doctrine asks, then the uptime.</summary>
     public void Crash(Exception exception) =>
         _log.Fatal(

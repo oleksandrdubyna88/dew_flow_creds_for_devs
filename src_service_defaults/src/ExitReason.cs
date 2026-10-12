@@ -57,6 +57,13 @@ public enum ExitReason
 
     /// <summary>The process that started this one is gone — it died, or was replaced under the same pid.</summary>
     ParentGone,
+
+    /// <summary>
+    /// A startup check refused this configuration or this environment — a decision, not a crash. The code is
+    /// <see cref="HostRun.RefusedExitCode"/>, and the Fatal line that carries it also carries the reason
+    /// (<see cref="HostRun.Refused"/>).
+    /// </summary>
+    StartupRefused,
 }
 
 /// <summary>How a host run ended: the exit code it returns and the reason it logs.</summary>

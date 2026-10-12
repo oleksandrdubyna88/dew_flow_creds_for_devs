@@ -27,4 +27,10 @@
     <ProjectReference Include="..\src\CredVaultServer.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Starts the BUILT server binary and finds the log file its run wrote — the helper
+         src_service_defaults owns, linked rather than copied, the way CredsMcp.Tests links it. -->
+    <Compile Include="..\..\src_service_defaults\tests\Support\HostProcess.cs" Link="Support\HostProcess.cs" />
+  </ItemGroup>
+
 </Project>

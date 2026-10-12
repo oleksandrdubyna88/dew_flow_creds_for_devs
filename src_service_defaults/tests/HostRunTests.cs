@@ -65,6 +65,37 @@ public sealed class HostRunTests
     }
 
     [Fact]
+    public void A_refused_start_is_one_fatal_line_with_its_reason_and_returns_the_refusal_code()
+    {
+        var sink = new CollectingSink();
+        using var log = sink.Logger();
+        var refusal = new InvalidOperationException("No authentication scheme configured", new IOException("inner"));
+
+        var code = HostRun.Refused(log, refusal);
+
+        // The literal, not the constant: 78 is a contract an operator's script tests, so changing it must
+        // break this line rather than follow it.
+        code.Should().Be(78);
+        HostRun.RefusedExitCode.Should().Be(78);
+        sink.Levels.Should().Equal([Serilog.Events.LogEventLevel.Fatal], "a refusal is one line, at the top level");
+        sink.Messages.Should().ContainSingle().Which.Should()
+            .Contain("exited: code 78, reason \"startupRefused\"", "the exit line's own shape, so a search for exited: finds it")
+            .And.Contain("No authentication scheme configured", "the reason is the line's point");
+        sink.Exceptions.Should().ContainSingle().Which.Should().BeSameAs(refusal, "the exception travels with the line, inner one included");
+    }
+
+    [Fact]
+    public void A_refusal_with_an_empty_message_still_logs_its_line()
+    {
+        var sink = new CollectingSink();
+        using var log = sink.Logger();
+
+        HostRun.Refused(log, new InvalidOperationException(string.Empty)).Should().Be(78);
+
+        sink.Messages.Should().ContainSingle().Which.Should().Contain("reason \"startupRefused\"");
+    }
+
+    [Fact]
     public void The_parent_pid_is_known_on_every_platform_this_runs_on()
     {
         // The test runner always has a parent; 0 would mean the platform call silently failed.

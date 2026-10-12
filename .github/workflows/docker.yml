@@ -91,6 +91,31 @@ jobs:
           [ "$code" = "401" ] || { echo "unauthenticated vault access returned $code, expected 401"; exit 1; }
           docker rm -f cv
 
+      # A start the server REFUSES must say why in its per-run log file and exit 78 (EX_CONFIG) — not die
+      # with the runtime's crash code. Measured on 0.11.0 before the fix: exit 139 under Native AOT and a
+      # file without the reason (research/PLAN_server_startup_refusal_is_logged.md). The JIT build's
+      # process test cannot see the AOT binary, so this is the recurring check that the published shape
+      # still does it: read-only root, tmpfs /tmp, no capabilities, no-new-privileges, Docker VOLUMES.
+      - name: Smoke-test a refused start
+        run: |
+          docker volume create cv-refused-data
+          docker volume create cv-refused-logs
+          # Detached and waited for with a bound: a regression that made this configuration START would
+          # otherwise keep `docker run` in the foreground forever and hang the job instead of failing it.
+          docker run -d --name cv-refused --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges \
+            -v cv-refused-data:/data -v cv-refused-logs:/logs \
+            -e Vault__AllowedDomains=example.com \
+            cred-vault-server:ci
+          code=$(timeout 120 docker wait cv-refused) \
+            || { echo "a refused start was still running after 120 s"; docker logs cv-refused; docker rm -f cv-refused; exit 1; }
+          [ "$code" = "78" ] || { echo "a refused start exited $code, expected 78"; docker logs cv-refused; exit 1; }
+          docker cp cv-refused:/logs ./refused-logs
+          grep -rF "FTL]" ./refused-logs | grep -F "exited: code 78, reason startupRefused: No authentication scheme configured" \
+            || { echo "the refusal is not in the run's log file:"; find ./refused-logs -type f -exec cat {} +; exit 1; }
+          docker rm cv-refused
+          docker volume rm cv-refused-data cv-refused-logs
+
       # ---------------------------------------------------------------------
       # Publish, but only for main. A pull request must never be able to move a
       # tag an operator might be pulling.

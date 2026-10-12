@@ -1099,6 +1099,27 @@ moment exists in it in which a prompt is open. The cross-process half is level 8
 **What none of this proves:** a real VS Code modal; and the entry-PIN box itself stays on screen after the request
 leaves (it takes no token — plan §5.7, open tail), harmless because the gate is read after it answers.
 
+## A refused server start (2026-10-12, [PLAN_server_startup_refusal_is_logged.md](PLAN_server_startup_refusal_is_logged.md))
+
+**The flow:** a configuration or an environment the server refuses (no auth scheme, no domain boundary, a
+short HMAC key, a data dir on a network share, a data dir it cannot write) → one Fatal line in the run's
+own file — `exited: code 78, reason startupRefused: <the guard's message>` with the exception — and exit
+code **78**. The operator who reads the file after a deploy is who it is for.
+
+| layer | test | runs where | what it proves |
+|---|---|---|---|
+| the BUILT JIT binary | `StartupRefusalProcessTests` | every server CI leg (Linux, Windows, macOS) | exit 78 and the Fatal line, for a refusal after the first log line (no auth) and one before it (a UNC data dir — the case whose file used to be EMPTY) |
+| the AOT image, production shape | `docker.yml` → *Smoke-test a refused start* | every push to `main` (the image workflow does not run for pull requests) | the same with no auth scheme: read-only root, tmpfs `/tmp`, `cap-drop ALL`, `no-new-privileges`, Docker volumes |
+| `Program` in-process | `StartupGuardTests` | every server CI leg | each of the five guards stops the real `Program` and its message reaches the file at Fatal; the accepted cases must really start |
+| the guards alone | `StartupGuardsTests` | every server CI leg | each message byte for byte, the inner exception, the order (configuration before the disk) |
+
+**Watched RED** on the old code: the process tests failed with *exit `-532462766` (`0xE0434352`)* and a file
+holding only the `runtime:` line, or nothing; the published 0.11.0 image exited **139** with the same file.
+
+**Limits.** The AOT check runs only after a merge, so a pull request that broke it would be found on `main`,
+not on the pull request. Nothing covers an exception that is not a guard's (a malformed number in the
+configuration, a fault in `Build()`): those are still unhandled, and the plan names them as its open tail.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.
