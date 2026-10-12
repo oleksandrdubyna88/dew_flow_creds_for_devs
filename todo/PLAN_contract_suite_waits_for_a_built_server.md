@@ -61,45 +61,62 @@ its own `*.test.sh`). It:
 - starts `<command…>` in the background with stdin from `/dev/null` and stdout+stderr into a log file
   (`$START_SERVER_LOG`, else `${RUNNER_TEMP:-${TMPDIR:-/tmp}}/start-server-<pid>.log`), and records the pid
   of the process it started;
+- **refuses to start anything** when `<health-url>` already answers: a server left from an earlier run
+  would answer the probe while the new one dies on `EADDRINUSE`, and the suite would run against the wrong
+  build;
 - polls `<health-url>` with `curl` (connect timeout 2 s, max 5 s per probe, every
-  `${START_SERVER_POLL_SECONDS:-1}` s) until it answers **2xx** or `<timeout-s>` has passed;
+  `${START_SERVER_POLL_SECONDS:-1}` s) until it answers **2xx** or `<timeout-s>` has passed — on a
+  millisecond clock (`date +%s%3N`), not bash's whole-second `SECONDS` (the sibling smoke's lesson); curl's
+  `000` is reported as "no connection", never as a status;
+- treats a 2xx as success only while ITS process is still alive;
 - if the process **exits** first: fails at once with `the server exited with code N before it answered
-  <url>` and the last 40 lines of its log;
+  <url>` and its whole log (a small file; a Fatal line plus a stack trace can outgrow a 40-line tail). The
+  exit code is `wait`'s, read as `wait "$pid" || code=$?` so `set -e` cannot end the script first, and
+  `kill -0` is only the trigger (it succeeds on a zombie);
 - on the deadline: stops ONLY the pid it started (TERM, then KILL after 5 s) and fails with one sentence —
   `the server did not answer 2xx on <url> within N s (last answer: <code | no connection>)` — plus the log
-  tail;
+  whole log;
 - on success: leaves the server running, prints its pid and log path, and writes `pid=` / `log=` to
   `$GITHUB_OUTPUT` when that is set, for the later stop step;
 - exit codes: 0 up · 1 not up (exited or timed out) · 2 usage.
 
-It never kills anything by name; the only pid it signals is `$!`.
+It never kills anything by name; the only pid it signals is `$!`. So **the command must BE the server**,
+not a launcher: `dotnet run` would make `$!` the SDK host, and a KILL (or any signal under Git Bash, where
+it becomes `TerminateProcess`) leaves the app holding the port. The script says so in its header.
 
 ### 3.2 `ci-server.yml`, job `contract`
 
-1. **Self-test the start script** (`.github/scripts/start-server-and-wait.test.sh`) — before anything is
-   built, as `ci-clients.yml:74-75` runs the listen-smoke self-test.
+1. **Self-test the start script** (`.github/scripts/start-server-and-wait.test.sh`) — after `setup-node`
+   (`ci-server.yml:106`, the pinned node 22) and before the server is built, as `ci-clients.yml:74-75` runs
+   the listen-smoke self-test.
 2. **Build the server** — `dotnet build src_minimalapi_server/src/CredVaultServer.csproj -c Release`, the
    flags the other CI builds use (`ci-server.yml:58`, `ci-clients.yml:89-92`; CI owns its runner, so no
    `-m`, and `Directory.Build.rsp` keeps `-nr:false`). Its time is now its own step's time, bounded only by
    the job's `timeout-minutes: 30`.
-3. **Start the server** (`id: server`) — the same environment as today, through the script:
-   `start-server-and-wait.sh http://127.0.0.1:5099/api/health 60 -- dotnet run --project
-   src_minimalapi_server/src -c Release --no-build`. 60 s for a start that takes < 1 s after its first line
-   and finished the build+start within 54.4 s on 19 of 20 measured runs: the deadline is a ceiling on a
-   broken start, not a guess at a build.
+3. **Start the server** (`id: server`) — the same environment as today, through the script, running the
+   BUILT apphost directly: `start-server-and-wait.sh http://127.0.0.1:5099/api/health 60 --
+   ./src_minimalapi_server/src/bin/Release/net10.0/CredVaultServer` (a JIT apphost — `PublishAot` only
+   matters to `publish`). That is `dotnet run --no-build` without the wrapper: no build, and `$!` is the
+   server itself (plan round 1). 60 s is a CEILING on a broken start, not a measurement: the old figures
+   above are build+start, and the server's own start is < 1 s after its first line. The real start-step
+   time of the PR's run is recorded at promotion.
 4. **Run the suite** — `http-run.mjs`, then `backup-targets-live.cjs`, unchanged. It runs only when the
    start step succeeded (the default `success()`), so "no server" can no longer become 370 contract failures.
-5. **Stop the server and show its log** (`if: always()`, when `steps.server.outputs.pid` is set) — TERM to
-   that pid only, wait up to 15 s, then print the log. Its output used to be interleaved in the job log;
+5. **Stop the server and show its log** (`if: always() && steps.server.outputs.pid != ''`) — TERM to that
+   pid only, poll `kill -0` up to 15 s (it is not this shell's child, so no `wait`), say "the server had
+   already exited before the stop step" when it had (the only sign of a crash mid-suite), then print the log. Its output used to be interleaved in the job log;
    now it is in a file, and this step puts it back where a reader of a failed run looks.
 
-The push path filter gains `.github/scripts/start-server-and-wait*.sh`. The deployment job's pinned
+The existing env-only step `Start the server the suite expects` (`ci-server.yml:123`) is renamed
+*Mint the server's per-run secrets* so two steps do not claim the same thing. The push path filter gains `.github/scripts/start-server-and-wait*.sh`. The deployment job's pinned
 shellcheck (`ci-server.yml:188-207`) gains the two new scripts, so they are linted by the same
 `koalaman/shellcheck:v0.11.0` as the operator scripts — the actionlint job lints `run:` blocks only.
 
 ### 3.3 Docs
 
-`http/README.md` §Running it: build first, start through the script, and `kill <pid>` at the end.
+`http/README.md` §Running it: build first, start the built server through the script, and `kill <pid>` at
+the end; the recipe also gains the `Vault__CorpRecovery__Threshold=2` CI sets and loses the `dotnet run`
+wrapper in front of the pid.
 `research/module_tests.md`: a section for the start script and its self-test, and the contract-suite line
 names the build/start split. `research/README.md` gains the promoted plan's row.
 
@@ -114,15 +131,17 @@ names the build/start split. `research/README.md` gains the promoted plan's row.
 
 ## 5. Test plan
 
-`start-server-and-wait.test.sh` (bash, node and curl only; its scratch folder is `mktemp -d` and removed by
-the test itself). The stand-ins are one node file with a mode argument, on a free random loopback port:
+`start-server-and-wait.test.sh` (bash, node and curl only; its scratch folder is `mktemp -d`, and a `trap`
+removes it and stops every pid the test recorded — never by name — however the test ends). The stand-ins are
+one node file with a mode argument, on a loopback port node found free (`listen(0)`):
 
 | case | stand-in | expected |
 |---|---|---|
-| a | never listens | exit 1 within deadline (3 s) + 6 s, `did not answer 2xx … within 3 s`, the stand-in's log line, the stand-in no longer running |
+| a | never listens | exit 1 within deadline (3 s) + 5 s probe + 5 s stop + 2 s slack = 15 s, `did not answer 2xx … within 3 s`, the stand-in's log line, the stand-in no longer running |
 | b | prints a `FTL … exited: code 78, reason startupRefused` line and exits 78 at once | exit 1 in < 5 s although the deadline is 30 s, `exited with code 78`, the Fatal line in the output |
 | c | starts listening (200) after 2 s | exit 0, `pid=` in `$GITHUB_OUTPUT`, that pid alive; the test then stops that pid |
-| d | answers 500 from the start | exit 1, but only after the 4 s deadline (it kept waiting), `last answer: 500` |
+| d | answers 500 from the start | exit 1, and not before the 4 s deadline (it kept waiting), `last answer: 500` |
+| f | something already answers 2xx on the URL | exit 1 at once, `already answers`, nothing started |
 | e | no `--` | exit 2, usage line |
 
 Local: Git Bash on Windows (`node $LP bash .github/scripts/start-server-and-wait.test.sh`) — no WSL
@@ -136,7 +155,7 @@ shellcheck present; `node .github/scripts/public-hygiene.mjs` clean.
 
 ## 6. Definition of Done
 
-- [ ] `start-server-and-wait.sh` + self-test; cases a–e pass locally and in CI.
+- [ ] `start-server-and-wait.sh` + self-test; cases a–f pass locally and in CI.
 - [ ] RED (old loop passes case a) → GREEN → RED with the fix removed, each observed.
 - [ ] `contract` job: build step, start step through the script with a 60 s deadline, suite gated on it,
       stop step that signals only the recorded pid and prints the log.
