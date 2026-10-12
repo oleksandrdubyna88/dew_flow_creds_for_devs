@@ -1148,7 +1148,7 @@ spells out what it forbids:
 |---|---|---|
 | `e-mail` | an address outside the reserved domains (RFC 2606 / 6761, `.internal`, any subdomain); at a fictional domain the fixtures use (registrable, so matched exactly), any local part but the generic ones they use (`first.last` at one of them fails); at a public mail service, any address but a few generic whole ones (`me@gmail.com`, `git@github.com`) | `name@example.com` |
 | `private-ip` | an RFC 1918 address that is not one of twelve exact neutral fixture addresses | `10.0.0.5`, RFC 5737 `203.0.113.x` |
-| `home-path` | a real-looking user in `C:\Users\<x>`, `/c/Users/<x>` (Git Bash), `/cygdrive/c/Users/<x>`, `/mnt/<d>/Users/<x>`, `\wsl$\<distro>\home\<x>`, `/home/<x>`, `/Users/<x>`; a quote inside the user folder does not end it | `<you>`, `…`, `me`, `dev`, `runner` |
+| `home-path` | a real-looking user in `C:\Users\<x>`, `/c/Users/<x>` (Git Bash), `/cygdrive/c/Users/<x>`, `/mnt/<d>/Users/<x>`, `\wsl$\<distro>\home\<x>`, `/home/<x>`, `/Users/<x>`; a quote inside the user folder does not end it | `<you>`, `…`, `me`, `dev`, `runner`, and only the named variables `$USER`, `${USER}`, `$USERNAME`, `%USERNAME%`, `$env:` (a `$` or `%` can begin a real folder) |
 | `name` | a word, or two words joined by one `-` `_` `.` space, slash or a line break, whose SHA-256 is in the digest list | — |
 
 The output reaches a public CI log, so it never prints what it found: a finding is `file:line:col` and a neutral
@@ -1160,12 +1160,13 @@ not make them secret. Adding a name: `--hash "<name>"` prints the digest.
 Files of any size are read. A file with a NUL byte is binary and is skipped, and the summary counts those. A read
 error other than a gitlink or a deleted file stops the scan, naming the error code and the path (masked when it has
 a finding of its own), never the system's message. Every match on a line is checked; at most 50 per line and rule
-are kept, and at most 500 are printed, while the summary counts all of them. Its own fixtures are assembled at run
+are kept and counted (a line repeating one match a million times reports 50), and at most 500 are printed, while
+the summary counts every kept one. Its own fixtures are assembled at run
 time, so the script needs no exemption. It starts `git` by the path `resolved()` finds (exported from
 `branch-protection.mjs`, the one implementation), not by name (Sonar S4036).
 
-`--selftest` runs 48 checks first:
-- 42 line cases;
+`--selftest` runs 50 checks first:
+- 44 line cases;
 - the no-leak check on the real formatter (a planted path, an address and two home paths holding a planted name);
 - a read error on a planted path;
 - the report cap, including that a path stays masked when its own finding is not among the kept ones;
@@ -1191,6 +1192,7 @@ watched RED, GREEN, RED:
 - any local part passed at a fictional domain;
 - the per-line cap ran before the allow check, so a forbidden address after 50 allowed ones passed;
 - a forbidden value was printed back;
+- any user folder beginning with `$` or `%` passed;
 - a name split by a line wrap passed. The sweep had missed exactly one such name, in `research/PLAN_depends_on.md`.
 
 ## What none of them covers

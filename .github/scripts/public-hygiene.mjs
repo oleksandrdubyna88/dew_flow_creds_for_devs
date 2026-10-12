@@ -76,6 +76,9 @@ const PUBLIC_SERVICE_ADDRESSES = new Map([
 const PLACEHOLDER_USERS = new Set([
   'you', '<you>', 'me', 'dev', 'ada', 'a', 'u', 'o', 'someone', 'user', 'alice', 'bob', 'runner', '...', '…',
   "o'brien", "o''brien", // the quote-escaping fixtures in vpnLauncher.test.ts
+  // The variables a doc writes for "your user" — named, because `$` or `%` can begin a real folder.
+  // (The folder pattern stops at `}`, so `${USER}` arrives as `${user`.)
+  '$user', '${user', '$username', '${username', '%username%', '$env',
 ]);
 
 // Exact addresses, not ranges: a neighbour of an allowed address could be a real host as easily as
@@ -147,7 +150,7 @@ function ipAllowed(ip) {
 
 function userAllowed(user) {
   const u = user.replace(/'+$/, '').toLowerCase();
-  return PLACEHOLDER_USERS.has(u) || u.startsWith('<') || u.startsWith('$') || u.startsWith('%');
+  return PLACEHOLDER_USERS.has(u) || u.startsWith('<'); // `<you>`, `<user>`: no real folder name
 }
 
 /** Words and joined pairs whose digest is listed, at most `limit` of them. */
@@ -348,6 +351,8 @@ function lineCases(secretWord) {
     ['a zebra. Quokka', []],
     ['zebras and quokkas', []],
     [mail('first.last', 'corp.com'), ['e-mail']],
+    [`${win('C:', 'Users', '$alice', 'x')} and ${nix('', 'home', '%jdoe', 'p')}`, ['home-path', 'home-path']],
+    [`${nix('', 'home', '$USER', 'x')}, ${nix('', 'home', '${USER}')}, ${win('C:', 'Users', '%USERNAME%', 'x')}`, []],
     [`${Array(60).fill(mail('alice', 'example.com')).join(' ')} ${mail('jane.doe', 'acme-widgets.co')}`, ['e-mail']],
   ];
 }

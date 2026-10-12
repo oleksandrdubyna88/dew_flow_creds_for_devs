@@ -25,7 +25,10 @@
 >   - from CodeRabbit's review: a finding prints `file:line:col`, never the forbidden value; a fictional
 >     domain accepts only the generic local parts fixtures use; the per-line cap no longer runs before
 >     the allow check; and a two-word name split by a line wrap is found. That last gap had hidden
->     one leftover of the sweep, in `research/PLAN_depends_on.md:59-60`, now replaced.
+>     one leftover of the sweep, in `research/PLAN_depends_on.md:59-60`, now replaced;
+>   - from SonarCloud: `git` is started by the path the shared `resolved()` finds (S4036);
+>   - from the last code round: a user folder starting with `$` or `%` passes only as a named
+>     variable (`$USER`, `%USERNAME%`, …).
 > (5) Replacements keep each name's LENGTH as well as its first letter, so no width, sort or truncation
 > assertion moves. **Open tail, for the owner:** rotate the DB password whose fragment is in history;
 > decide on the deploy workflow's name (`.github/workflows/*-server-deploy.yml:1,3,31,41`,
@@ -105,7 +108,7 @@ reproducible with `node .github/scripts/public-hygiene.mjs` on the parent commit
    digest list. The list never spells a name; a short name's digest can be brute-forced, which the
    script says — the goal is that names do not come back, not that they become secret.
 
-`--selftest` runs 48 checks (each rule fires; each placeholder passes; a planted digest of a
+`--selftest` runs 50 checks (each rule fires; each placeholder passes; a planted digest of a
 made-up word is caught in three spellings and not in near misses). `docs.yml` runs both.
 Not covered by design: secret fragments (no pattern separates one from a fixture) and the deploy
 workflow name (left for the owner).
@@ -120,7 +123,7 @@ workflow name (left for the owner).
 
 ## Test plan
 
-- `node .github/scripts/public-hygiene.mjs --selftest` → 48 ok; the tree scan RED (243) before, GREEN
+- `node .github/scripts/public-hygiene.mjs --selftest` → 50 ok; the tree scan RED (243) before, GREEN
   after, RED with one planted sample.
 - xUnit v3 executables one after another, at lowered priority: CredsBroker.Tests, CredsCli.Tests,
   CredsMcp.Tests, CredVaultServer.Tests (touched: `CallerIdentityTests`, `SessionTitleTests`,
