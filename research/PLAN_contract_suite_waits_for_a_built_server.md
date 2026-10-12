@@ -1,10 +1,19 @@
 # PLAN — the contract suite waits for a BUILT server, and says so when there is none
 
-> Status: **plan only, 2026-10-12.** Scope: `.github/workflows/ci-server.yml` (job `contract`), one new
+> Status: **IMPLEMENTED, 2026-10-12.** Scope: `.github/workflows/ci-server.yml` (job `contract`), one new
 > script `.github/scripts/start-server-and-wait.sh` and its self-test `start-server-and-wait.test.sh`,
 > `http/README.md`, `research/module_tests.md`. No product code changes.
 >
-> Related docs: [module_tests.md](../research/module_tests.md), [http/README.md](../http/README.md).
+> **Deviations.** (1) Plan round 1 (accepted): CI starts the BUILT apphost
+> (`bin/Release/net10.0/CredVaultServer`, from the project directory, its content root) instead of
+> `dotnet run --no-build`, so the pid the script records and signals is the server itself, not the SDK host.
+> (2) The own plan review added case f (a URL that already answers refuses to start), a millisecond clock,
+> `000` read as "no connection", the whole log instead of a 40-line tail, and the test's `trap`.
+> (3) The local self-test could not prove its TIMING bounds: the workstation sat at 100 % CPU from another
+> workload, and at the mandatory lowered priority case a took 317 s (its sentence and exit code were right).
+> GREEN is the ubuntu CI run of the pull request.
+>
+> Related docs: [module_tests.md](module_tests.md), [http/README.md](../http/README.md).
 
 ## 1. Symptom (measured 2026-10-12)
 
