@@ -48,6 +48,8 @@ const PUBLIC_SERVICE_ADDRESSES = new Map([
   ['outlook.com', ['me', 'user1', 'user2']],
   ['github.com', ['git']],
   ['gitlab.com', ['git']],
+  ['bitbucket.org', ['git']],
+  ['ssh.dev.azure.com', ['git']],
 ]);
 
 // Not domains at all, but text the e-mail pattern reads as one: `alice@corp.comadmin` (teamSearch.ts
@@ -55,7 +57,7 @@ const PUBLIC_SERVICE_ADDRESSES = new Map([
 const PLACEHOLDER_DOMAIN_LITERALS = ['corp.comadmin', 'corp.comgoogle', 'corp.com.enc'];
 
 const PLACEHOLDER_USERS = [
-  'you', '<you>', 'me', 'dev', 'ada', 'a', 'u', 'o', 'someone', 'user', 'alice', 'bob', '...', '…',
+  'you', '<you>', 'me', 'dev', 'ada', 'a', 'u', 'o', 'someone', 'user', 'alice', 'bob', 'runner', '...', '…',
 ];
 
 const PRIVATE_NAME_DIGESTS = new Set([
@@ -138,7 +140,8 @@ function nameHits(text, digests) {
 /** Every finding in one line of text: [{ rule, match }]. */
 export function scanLine(line, digests = PRIVATE_NAME_DIGESTS) {
   const out = [];
-  for (const m of line.matchAll(EMAIL)) if (!addressAllowed(m[1], m[2])) out.push({ rule: 'e-mail', match: m[0] });
+  // No `@`, no address: and the e-mail pattern backtracks on a long line that holds none.
+  if (line.includes('@')) for (const m of line.matchAll(EMAIL)) if (!addressAllowed(m[1], m[2])) out.push({ rule: 'e-mail', match: m[0] });
   for (const m of line.matchAll(RFC1918)) if (!ipAllowed(m[1])) out.push({ rule: 'private-ip', match: m[1] });
   for (const m of line.matchAll(HOME)) if (!userAllowed(m[1])) out.push({ rule: 'home-path', match: m[0] });
   for (const n of nameHits(line, digests)) out.push({ rule: 'name', match: '(a private name; see the digest list)', word: n });
@@ -154,10 +157,30 @@ function trackedFiles() {
   return out.split('\0').filter((f) => f && f !== SELF);
 }
 
+/** Findings on a tracked file's PATH itself (line 0). */
+export function pathFindings(file, digests = PRIVATE_NAME_DIGESTS) {
+  return scanLine(file, digests).map((f) => ({ file, line: 0, ...f }));
+}
+
+/** The output lines for a list of findings. Every one of them reaches a PUBLIC CI log. */
+export function formatFindings(findings) {
+  // A path that itself holds a private name is never printed — not for its own finding, and not for
+  // the findings on its lines. It is numbered instead; `git ls-files` plus `--hash` finds it locally.
+  const masked = new Map();
+  for (const f of findings) {
+    if (f.line === 0 && f.rule === 'name' && !masked.has(f.file)) masked.set(f.file, masked.size + 1);
+  }
+  return findings.map((f) => {
+    const file = masked.has(f.file) ? `(a tracked path holding a private name, #${masked.get(f.file)})` : f.file;
+    const where = f.line ? `${file}:${f.line}` : `${file} (path)`;
+    return `${where}  ${f.rule}  ${f.match}`;
+  });
+}
+
 function scanTree() {
   const findings = [];
   for (const file of trackedFiles()) {
-    for (const f of scanLine(file)) findings.push({ file, line: 0, ...f });
+    findings.push(...pathFindings(file));
     let buf;
     try {
       buf = readFileSync(file);
@@ -186,6 +209,7 @@ function selftest() {
     ['me@gmail.com, user1@outlook.com, ssh://git@gitlab.com/me/vault', []],
     ['jane.doe@gmail.com', ['e-mail']],
     ['jane@github.com', ['e-mail']],
+    ['git@bitbucket.org:me/v.git, git@ssh.dev.azure.com:v3/o/p/r, /home/runner/work', []],
     ['person@example.com.attacker.org', ['e-mail']],
     ['ops@corp.company-real.org', ['e-mail']],
     ['react@18.3.1 and actions/checkout@v4', []],
@@ -205,17 +229,38 @@ function selftest() {
     [`the ${secretWord} project`, ['name']],
     ['the Zebra-Quokka project', ['name']],
     ['zebra_quokka.ovpn', ['name']],
+    ['the zebra quokka project', ['name']],
+    ['docs/zebra/quokka.md', ['name']],
     ['a zebra. Quokka', []],
     ['zebras and quokkas', []],
   ];
   let failed = 0;
+  const check = (ok, label) => {
+    if (!ok) failed++;
+    console.log(`${ok ? 'ok  ' : 'FAIL'} ${label}`);
+  };
   for (const [line, expected] of cases) {
     const got = scanLine(line, digests).map((f) => f.rule);
     const ok = JSON.stringify(got) === JSON.stringify(expected);
-    if (!ok) failed++;
-    console.log(`${ok ? 'ok  ' : 'FAIL'} ${JSON.stringify(line)} -> [${got.join(', ')}]${ok ? '' : ` expected [${expected.join(', ')}]`}`);
+    check(ok, `${JSON.stringify(line)} -> [${got.join(', ')}]${ok ? '' : ` expected [${expected.join(', ')}]`}`);
   }
-  console.log(failed === 0 ? `selftest: ${cases.length} cases, all ok` : `selftest: ${failed} of ${cases.length} cases FAILED`);
+
+  // The output reaches a PUBLIC CI log, so it must never carry the name it found — not as the
+  // match, and not inside the path of the file that holds it.
+  const planted = 'docs/Zebra-Quokka/notes.md';
+  const output = formatFindings([
+    ...pathFindings(planted, digests),
+    { file: planted, line: 3, ...scanLine('mail jane@acme-widgets.co', digests)[0] },
+    { file: 'docs/plain.md', line: 7, ...scanLine('the zebra quokka project', digests)[0] },
+  ]).join('\n');
+  check(!/zebra|quokka/i.test(output), `the printed findings never contain the planted name:\n${output}`);
+
+  // A typo in a digest is a name that silently never matches.
+  const bad = [...PRIVATE_NAME_DIGESTS].filter((d) => !/^[0-9a-f]{64}$/.test(d));
+  check(PRIVATE_NAME_DIGESTS.size > 0 && bad.length === 0, `the digest list is non-empty and every entry is 64 hex characters (${bad.length} malformed)`);
+
+  const total = cases.length + 2;
+  console.log(failed === 0 ? `selftest: ${total} cases, all ok` : `selftest: ${failed} of ${total} cases FAILED`);
   return failed === 0 ? 0 : 1;
 }
 
@@ -226,10 +271,7 @@ function main(argv) {
     return 0;
   }
   const findings = scanTree();
-  for (const f of findings) {
-    const where = f.line ? `${f.file}:${f.line}` : `${f.file} (path)`;
-    console.log(`${where}  ${f.rule}  ${f.match}`);
-  }
+  for (const line of formatFindings(findings)) console.log(line);
   const byRule = {};
   for (const f of findings) byRule[f.rule] = (byRule[f.rule] ?? 0) + 1;
   if (findings.length === 0) {

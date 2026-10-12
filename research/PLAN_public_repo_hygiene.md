@@ -12,7 +12,10 @@
 > system's name in `todo/PLAN_session_timesheet.md` and `todo/README.md` — and joined the digest list.
 > (4) The code review added two guard fixes, each watched RED then GREEN: a placeholder domain no
 > longer matches as a PREFIX (`example.com.attacker.org` passed), and words are streamed (one 8 MiB
-> line grew the heap by 427 MB; 18 MB after). (5) Replacements keep each name's LENGTH as well as its first letter, so no width, sort or truncation
+> line grew the heap by 427 MB; 18 MB after). (5) The separate (non-coai) reviewer found that a
+> file whose PATH holds a private name was printed, path and all, in the public CI log; such a path is
+> now numbered, never printed (selftest watched RED, GREEN, RED). Space and slash separators and the
+> digest list's shape are now checked too. (6) Replacements keep each name's LENGTH as well as its first letter, so no width, sort or truncation
 > assertion moves. **Open tail, for the owner:** rotate the DB password whose fragment is in history;
 > decide on the deploy workflow's name (`.github/workflows/*-server-deploy.yml:1,3,31,41`,
 > `CLAUDE.md:114,125`, `POST_DEPLOY.md:9`, `.github/workflows/ci-server.yml:163`,
@@ -91,7 +94,7 @@ reproducible with `node .github/scripts/public-hygiene.mjs` on the parent commit
    digest list. The list never spells a name; a short name's digest can be brute-forced, which the
    script says — the goal is that names do not come back, not that they become secret.
 
-`--selftest` runs 29 fixture cases (each rule fires; each placeholder passes; a planted digest of a
+`--selftest` runs 34 checks (each rule fires; each placeholder passes; a planted digest of a
 made-up word is caught in three spellings and not in near misses). `docs.yml` runs both.
 Not covered by design: secret fragments (no pattern separates one from a fixture) and the deploy
 workflow name (left for the owner).
@@ -106,7 +109,7 @@ workflow name (left for the owner).
 
 ## Test plan
 
-- `node .github/scripts/public-hygiene.mjs --selftest` → 29 ok; the tree scan RED (243) before, GREEN
+- `node .github/scripts/public-hygiene.mjs --selftest` → 34 ok; the tree scan RED (243) before, GREEN
   after, RED with one planted sample.
 - xUnit v3 executables one after another, at lowered priority: CredsBroker.Tests, CredsCli.Tests,
   CredsMcp.Tests, CredVaultServer.Tests (touched: `CallerIdentityTests`, `SessionTitleTests`,

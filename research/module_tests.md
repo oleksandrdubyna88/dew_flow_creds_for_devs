@@ -1151,9 +1151,9 @@ never spells out what it forbids:
 | `home-path` | `C:\Users\<x>`, `/mnt/<d>/Users/<x>`, `/home/<x>`, `/Users/<x>` with a real-looking `<x>` | `<you>`, `…`, `me`, `dev` |
 | `name` | a word, or two words joined by one `-` `_` `.` space or slash, whose SHA-256 is in the digest list | — |
 
-It prints the file and line and, for `name`, never the word. A digest of a short name can be brute-forced; the
+It prints the file and line, and never the name it found: a `name` match prints as a neutral sentence, and a file whose own PATH holds a name prints as `(a tracked path holding a private name, #n)` on every line it reports — a selftest runs the real formatter on a planted path and fails if the word appears. A digest of a short name can be brute-forced; the
 list keeps names from coming back, it does not make them secret. Adding a name: `--hash "<name>"` prints the
-digest. `--selftest` runs 29 fixture cases first. Placeholder domains match as themselves or a subdomain, never as a prefix (`example.com.attacker.org` fails), and words are streamed, so one 8 MiB minified line costs 18 MB of heap, not 427. Not covered: a fragment of a real secret, and the deploy
+digest. `--selftest` runs 34 checks first (32 line cases, the no-leak formatter check, and that every digest is 64 hex characters). Placeholder domains match as themselves or a subdomain, never as a prefix (`example.com.attacker.org` fails), and words are streamed, so one 8 MiB minified line costs 18 MB of heap, not 427. Not covered: a fragment of a real secret, and the deploy
 workflow's own name (functional — its GitHub environment holds the secrets).
 
 **Watched:** RED on `origin/main` `a9428905` with 243 findings (name 224, e-mail 13, private-ip 6), GREEN after the
