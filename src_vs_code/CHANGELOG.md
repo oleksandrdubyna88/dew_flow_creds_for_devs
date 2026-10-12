@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.1] — 2026-10-12 — A crashed window no longer slows every refusal
+
 ### Fixed — a crashed window no longer slows every refusal
 
 - **A window that starts tidies the announcements of windows that crashed.** Every window writes a small
