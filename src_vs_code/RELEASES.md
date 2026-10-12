@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.14.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.14.0...extension-v1.14.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* crashed windows no longer slow every refusal ([#229](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/229)) ([ccc817c](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/ccc817ceb306aad1cd702b172baaaab3bcf87159))
+* **tests:** the local CPU budget never raises a small CI runner ([#225](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/225)) ([d3c35a3](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/d3c35a3acf6af4843971786b9598aa26fbd824d2))
+
 ## [1.14.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.13.1...extension-v1.14.0) (2026-10-11)
 
 
