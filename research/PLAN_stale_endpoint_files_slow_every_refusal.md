@@ -9,8 +9,9 @@
 > `Live` of it, so no sentence or exit code changed; the parallel walk and a client deleting files were not built (§4.4,
 > §4.5). Result on the reporting machine (§10): a fake-key refusal over the real 35 files, 68.42 s → 0.04–0.19 s on
 > Windows and 69.53 s → 0.35–0.40 s through WSL. **Released 2026-10-12** (§12): cli 0.4.2, mcp 0.10.2, extension 1.14.1;
-> with the RELEASED cli 0.4.2 the same refusal takes 0.05–0.07 s on Windows and 0.21–0.24 s through WSL. Installing the
-> released binaries on the owner's machine is the owner's step.
+> with the RELEASED cli 0.4.2 the same refusal takes 0.05–0.07 s on Windows and 0.21–0.24 s through WSL. The released
+> cli 0.4.2 and mcp 0.10.2 were installed on the reporting machine the same day (Windows and WSL, the old files kept
+> beside them), and a WSL tool reading its keys through `creds config -` read them again.
 >
 > Scope: `src_broker_client/src/BrokerClient.cs` (the connect every probe makes), `src_broker_client/src/LoopbackConnect.cs`,
 > `src_broker_client/src/Endpoints.cs` (a pid that is provably gone), `src_cli/src/Program.cs` and `src_mcp/src/Windows.cs`
