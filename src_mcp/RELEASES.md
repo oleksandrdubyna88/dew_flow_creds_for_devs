@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.2](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/mcp-v0.10.1...mcp-v0.10.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* crashed windows no longer slow every refusal ([#229](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/229)) ([ccc817c](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/ccc817ceb306aad1cd702b172baaaab3bcf87159))
+
 ## [0.10.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/mcp-v0.10.0...mcp-v0.10.1) (2026-10-11)
 
 
