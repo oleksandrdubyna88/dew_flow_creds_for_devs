@@ -56,8 +56,8 @@ account. Both ends of a dependency wear the same colour in the tree, so the rela
 visible without opening anything, and the entity being depended *on* grows a sub-tree naming
 everything that needs it.
 
-The colour belongs to the **target**, never to the edge. Pointing a second entity at `vpn / org
-meter` gets `ops relay`'s existing colour with no choice to make, and changing that colour once
+The colour belongs to the **target**, never to the edge. Pointing a second entity at `vpn / ops
+relay` gets `ops relay`'s existing colour with no choice to make, and changing that colour once
 changes it everywhere — because there is only ever one place it is stored.
 
 ## What the spike already settled

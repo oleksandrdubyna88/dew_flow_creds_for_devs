@@ -1146,28 +1146,33 @@ spells out what it forbids:
 
 | rule | fails on | passes |
 |---|---|---|
-| `e-mail` | an address outside the reserved domains (RFC 2606 / 6761, `.internal`, any subdomain) and the fictional ones fixtures use (exactly, since they are registrable); at a public mail service, any address but a few generic whole ones (`me@gmail.com`, `git@github.com`) | `name@example.com` |
+| `e-mail` | an address outside the reserved domains (RFC 2606 / 6761, `.internal`, any subdomain); at a fictional domain the fixtures use (registrable, so matched exactly), any local part but the generic ones they use (`first.last` at one of them fails); at a public mail service, any address but a few generic whole ones (`me@gmail.com`, `git@github.com`) | `name@example.com` |
 | `private-ip` | an RFC 1918 address that is not one of twelve exact neutral fixture addresses | `10.0.0.5`, RFC 5737 `203.0.113.x` |
 | `home-path` | a real-looking user in `C:\Users\<x>`, `/c/Users/<x>` (Git Bash), `/cygdrive/c/Users/<x>`, `/mnt/<d>/Users/<x>`, `\wsl$\<distro>\home\<x>`, `/home/<x>`, `/Users/<x>`; a quote inside the user folder does not end it | `<you>`, `…`, `me`, `dev`, `runner` |
-| `name` | a word, or two words joined by one `-` `_` `.` space or slash, whose SHA-256 is in the digest list | — |
+| `name` | a word, or two words joined by one `-` `_` `.` space, slash or a line break, whose SHA-256 is in the digest list | — |
 
-The output reaches a public CI log, so it never prints a name the list matched: a `name` match is a neutral
-sentence; an address or home path that holds one prints as `(a match holding a private name)`; and a file whose
-own path holds one prints as `(a tracked path holding a private name, #n)` on every line it reports. A digest of a
-short name can be brute-forced; the list keeps names from coming back, it does not make them secret. Adding a
-name: `--hash "<name>"` prints the digest.
+The output reaches a public CI log, so it never prints what it found: a finding is `file:line:col` and a neutral
+sentence per rule, never the address, host, user or name. A file with a finding in its own path prints as
+`(a tracked path with a finding in its own name, #n)` on every line it reports. Running the script locally points
+at the exact spot. A digest of a short name can be brute-forced; the list keeps names from coming back, it does
+not make them secret. Adding a name: `--hash "<name>"` prints the digest.
 
-Files of any size are read; a file with a NUL byte is binary and is skipped, and the summary counts those. A read
-error other than a gitlink or a deleted file stops the scan, naming the error code and the path (masked if it holds
-a name), never the system's message. At most 50 findings per line and rule are kept, and at most 500 are printed;
-the summary counts all of them. Its own fixtures are assembled at run time, so the script needs no exemption.
+Files of any size are read. A file with a NUL byte is binary and is skipped, and the summary counts those. A read
+error other than a gitlink or a deleted file stops the scan, naming the error code and the path (masked when it has
+a finding of its own), never the system's message. Every match on a line is checked; at most 50 per line and rule
+are kept, and at most 500 are printed, while the summary counts all of them. Its own fixtures are assembled at run
+time, so the script needs no exemption. It starts `git` by the path `resolved()` finds (exported from
+`branch-protection.mjs`, the one implementation), not by name (Sonar S4036).
 
-`--selftest` runs 44 checks first:
-- 40 line cases;
+`--selftest` runs 48 checks first:
+- 42 line cases;
 - the no-leak check on the real formatter (a planted path, an address and two home paths holding a planted name);
 - a read error on a planted path;
 - the report cap, including that a path stays masked when its own finding is not among the kept ones;
+- that the output never repeats a forbidden address, host or user, even in a path;
+- a name split across a line break;
 - that every digest is 64 hex characters.
+
 Not covered: a fragment of a real secret, a name inside a longer identifier, a name of three or more words, a
 non-ASCII name, and the deploy workflow's own name (functional: its GitHub environment holds the secrets).
 
@@ -1177,12 +1182,16 @@ watched RED, GREEN, RED:
 - a reserved domain matched as a prefix;
 - one 8 MiB line grew the heap by 427 MB (18 MB after);
 - a path, address or home path holding a name was printed;
-- the Git Bash, Cygwin and `\\wsl$` home shapes were missed;
+- the Git Bash, Cygwin and `\wsl$` home shapes were missed;
 - a line repeating a name kept 699,050 findings and 119 MB (50 findings and 17 MB after);
 - a line planted in the script itself passed while it was exempt;
 - a read error printed the raw path;
 - the report kept every finding;
-- masking a path depended on its own finding being kept.
+- masking a path depended on its own finding being kept;
+- any local part passed at a fictional domain;
+- the per-line cap ran before the allow check, so a forbidden address after 50 allowed ones passed;
+- a forbidden value was printed back;
+- a name split by a line wrap passed. The sweep had missed exactly one such name, in `research/PLAN_depends_on.md`.
 
 ## What none of them covers
 

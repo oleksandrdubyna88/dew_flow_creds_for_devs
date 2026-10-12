@@ -8,18 +8,19 @@
 //
 // Every rule is an ALLOWLIST or a DIGEST, never a list of the forbidden strings: a check that spelled
 // out what must not be published would itself publish it. The output reaches a PUBLIC CI log, so it
-// never prints a name the digest list matched — not as a match, not inside an address or a home
-// path, and not as the path of the file that holds it.
+// never prints what it found: a finding is `file:line:col` and a neutral sentence, and a path with a
+// finding in its own name is numbered instead of printed.
 //
-//   e-mail      the domain must be reserved (RFC 2606 / RFC 6761, `.internal`; any subdomain) or one
-//               of the fictional domains the fixtures already use (exactly); at a public mail service
-//               the WHOLE address must be a known generic one. A colleague's work address fails.
+//   e-mail      the domain must be reserved (RFC 2606 / RFC 6761, `.internal`; any subdomain), or one
+//               of the fictional domains the fixtures already use (exactly) with a generic local
+//               part; at a public mail service the WHOLE address must be a known generic one. A
+//               colleague's work address fails, and so does `first.last` at a fictional domain.
 //   private-ip  an RFC 1918 address must be one of the exact neutral addresses fixtures use.
 //   home-path   the user folder of C:\Users\<x>, /c/Users/<x>, /cygdrive/c/Users/<x>,
 //               /mnt/<d>/Users/<x>, \\wsl$\<distro>\home\<x>, /home/<x>, /Users/<x> must be a
 //               placeholder (`<you>`, `…`, `me`, `dev`, …).
-//   name        no word, and no two words joined by one `-`, `_`, `.`, space or slash, may hash to a
-//               digest in PRIVATE_NAME_DIGESTS (SHA-256 of the lower-cased letters and digits).
+//   name        no word, and no two words joined by one `-`, `_`, `.`, space, slash or a line break,
+//               may hash to a digest in PRIVATE_NAME_DIGESTS (SHA-256 of lower-cased letters/digits).
 //               A digest of a short name can be brute-forced: this keeps the list from READING as a
 //               list of names, it does not make the names secret. The names were already public in
 //               history; the point is that they do not come back.
@@ -31,6 +32,7 @@
 // from fragments at run time.
 
 import { execFileSync } from 'node:child_process';
+import { resolved } from './branch-protection.mjs';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -50,6 +52,15 @@ const FICTIONAL_DOMAINS = new Set([
   'corp.comadmin', 'corp.comgoogle', 'corp.com.enc',
 ]);
 
+// …and, being registrable, they hold real mailboxes too: only these generic local parts pass there.
+// `first.last` at one of them fails. A new fixture uses a reserved domain and needs no entry here.
+const FICTIONAL_LOCAL_PARTS = new Set([
+  'a', 'admin', 'alice', 'anna', 'b', 'bad', 'bob', 'boris', 'c', 'carol', 'ceo', 'clara', 'colleague',
+  'confused', 'cto', 'dave', 'departed', 'dev', 'devops', 'evil', 'first', 'git', 'good', 'her',
+  'hostile', 'hunter2', 'impostor', 'lead', 'me', 'ops', 'other', 'owner', 'peer', 'replay',
+  's3cr%40t', 'someone', 'someone-else', 'vasya', 'vault_me', 'work', 'you',
+]);
+
 // Public services hold real people's mailboxes, so an address there passes only with a local part
 // that names nobody — a first and last name at one of them fails.
 const PUBLIC_SERVICE_ADDRESSES = new Map([
@@ -62,10 +73,10 @@ const PUBLIC_SERVICE_ADDRESSES = new Map([
   ['ssh.dev.azure.com', ['git']],
 ]);
 
-const PLACEHOLDER_USERS = [
+const PLACEHOLDER_USERS = new Set([
   'you', '<you>', 'me', 'dev', 'ada', 'a', 'u', 'o', 'someone', 'user', 'alice', 'bob', 'runner', '...', '…',
   "o'brien", "o''brien", // the quote-escaping fixtures in vpnLauncher.test.ts
-];
+]);
 
 // Exact addresses, not ranges: a neighbour of an allowed address could be a real host as easily as
 // any other. A new fixture uses RFC 5737 (192.0.2.x, 198.51.100.x, 203.0.113.x), which this rule
@@ -96,9 +107,9 @@ const RFC1918 = /(?<![\d.])(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[0
 const SEP = String.raw`(?:\\\\|\\|/)`;
 const HOME_ROOTS = [
   String.raw`\b[A-Za-z]:${SEP}Users`, // C:\Users, also JSON-escaped
-  String.raw`/mnt/[a-z]/Users`, // WSL
+  '/mnt/[a-z]/Users', // WSL
   String.raw`(?<![\w.])/[a-z]/Users`, // Git Bash, MSYS
-  String.raw`/cygdrive/[a-z]/Users`, // Cygwin
+  '/cygdrive/[a-z]/Users', // Cygwin
   String.raw`(?:\\{2,4}|//)wsl(?:\$|\.localhost)${SEP}[^\\/\s"'\x60]+${SEP}home`, // \\wsl$\<distro>\home
   String.raw`(?<![\w.])/home`,
   String.raw`(?<![\w.~])/Users`,
@@ -124,7 +135,7 @@ function addressAllowed(local, domain) {
   const d = domain.toLowerCase();
   const service = PUBLIC_SERVICE_ADDRESSES.get(d);
   if (service) return service.includes(local.toLowerCase());
-  if (FICTIONAL_DOMAINS.has(d)) return true;
+  if (FICTIONAL_DOMAINS.has(d)) return FICTIONAL_LOCAL_PARTS.has(local.toLowerCase());
   // The domain itself or a subdomain of it — never a domain that merely STARTS with a reserved one:
   // `example.com.attacker.org` is a real domain someone else can own.
   return RESERVED_DOMAINS.some((a) => d === a || d.endsWith(`.${a}`));
@@ -136,7 +147,7 @@ function ipAllowed(ip) {
 
 function userAllowed(user) {
   const u = user.replace(/'+$/, '').toLowerCase();
-  return PLACEHOLDER_USERS.includes(u) || u.startsWith('<') || u.startsWith('$') || u.startsWith('%');
+  return PLACEHOLDER_USERS.has(u) || u.startsWith('<') || u.startsWith('$') || u.startsWith('%');
 }
 
 /** Words and joined pairs whose digest is listed, at most `limit` of them. */
@@ -165,31 +176,52 @@ function holdsName(text, digests) {
   return nameHits(text, digests, 1).length > 0;
 }
 
-const MASKED_PATH = '(a tracked path holding a private name';
+// What a finding prints instead of its match. The output is a public CI log: printing the forbidden
+// value would publish it again, and the run's log outlives the fix. `file:line:col` finds it.
+const SAYS = {
+  'e-mail': '(an address outside the allowlist)',
+  'private-ip': '(a private address outside the allowlist)',
+  'home-path': '(a home path with a real-looking user)',
+  name: '(a private name; see the digest list)',
+};
 
-/** What a finding prints as its match: the text itself, unless that text holds a listed name. */
-function shown(text, digests) {
-  return holdsName(text, digests) ? '(a match holding a private name)' : text;
-}
+const MASKED_PATH = '(a tracked path with a finding in its own name';
 
-function* capped(iterable, limit = MAX_PER_LINE) {
-  let n = 0;
-  for (const item of iterable) {
-    if (n++ >= limit) return;
-    yield item;
-  }
-}
-
-/** Every finding in one line of text: [{ rule, match }]. */
+/** Every finding in one line of text: [{ rule, col, match }]. All matches are CHECKED; at most
+ *  MAX_PER_LINE per rule are kept. */
 export function scanLine(line, digests = PRIVATE_NAME_DIGESTS) {
   const out = [];
+  const kept = {};
+  const add = (rule, index) => {
+    kept[rule] = (kept[rule] ?? 0) + 1;
+    if (kept[rule] <= MAX_PER_LINE) out.push({ rule, col: index + 1, match: SAYS[rule] });
+  };
   // No `@`, no address: and the e-mail pattern backtracks on a long line that holds none.
   const emails = line.includes('@') ? line.matchAll(EMAIL) : [];
-  for (const m of capped(emails)) if (!addressAllowed(m[1], m[2])) out.push({ rule: 'e-mail', match: shown(m[0], digests) });
-  for (const m of capped(line.matchAll(RFC1918))) if (!ipAllowed(m[1])) out.push({ rule: 'private-ip', match: m[1] });
-  for (const m of capped(line.matchAll(HOME))) if (!userAllowed(m[1])) out.push({ rule: 'home-path', match: shown(m[0], digests) });
-  for (const n of nameHits(line, digests)) out.push({ rule: 'name', match: '(a private name; see the digest list)', word: n });
+  for (const m of emails) if (!addressAllowed(m[1], m[2])) add('e-mail', m.index);
+  for (const m of line.matchAll(RFC1918)) if (!ipAllowed(m[1])) add('private-ip', m.index);
+  for (const m of line.matchAll(HOME)) if (!userAllowed(m[1])) add('home-path', m.index);
+  for (const n of nameHits(line, digests)) out.push({ rule: 'name', col: 0, match: SAYS.name, word: n });
   return out;
+}
+
+const LAST_WORD = /([a-z0-9]+)[^a-z0-9]*$/;
+const FIRST_WORD = /^[^a-z0-9]*?([a-z0-9]+)/;
+
+/** A two-word name a line wrap split: the last word of one line and the first of the next. */
+function splitName(previous, line, digests) {
+  const last = LAST_WORD.exec(previous.toLowerCase());
+  const first = FIRST_WORD.exec(line.toLowerCase());
+  return Boolean(last && first && digests.has(digest(last[1] + first[1])));
+}
+
+/** Every finding in a whole text, each with its 1-based line: [{ line, rule, col, match }]. */
+export function* scanText(text, digests = PRIVATE_NAME_DIGESTS) {
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    for (const f of scanLine(lines[i], digests)) yield { line: i + 1, ...f };
+    if (i > 0 && splitName(lines[i - 1], lines[i], digests)) yield { line: i + 1, rule: 'name', col: 1, match: SAYS.name };
+  }
 }
 
 /** Findings on a tracked file's PATH itself (line 0). */
@@ -199,24 +231,26 @@ export function pathFindings(file, digests = PRIVATE_NAME_DIGESTS) {
 
 /** The output lines for a list of findings. Every one of them reaches a PUBLIC CI log. */
 export function formatFindings(findings, digests = PRIVATE_NAME_DIGESTS) {
-  // A path that itself holds a private name is never printed — not for its own finding, and not for
-  // the findings on its lines. It is numbered instead; `git ls-files` plus `--hash` finds it locally.
-  // Decided from the path itself, never from whether its own finding was kept.
+  // A path with a finding in its own name is never printed — not for its own finding, and not for
+  // the findings on its lines. It is numbered instead; `git ls-files` and this script, run locally,
+  // find it. Decided from the path itself, never from whether its own finding was kept.
   const masked = new Map();
   const shownPath = (file) => {
-    if (!holdsName(file, digests)) return file;
+    if (scanLine(file, digests).length === 0) return file;
     if (!masked.has(file)) masked.set(file, masked.size + 1);
     return `${MASKED_PATH}, #${masked.get(file)})`;
   };
   return findings.map((f) => {
     const file = shownPath(f.file);
-    const where = f.line ? `${file}:${f.line}` : `${file} (path)`;
+    const at = f.col ? `:${f.col}` : '';
+    const where = f.line ? `${file}:${f.line}${at}` : `${file} (path)`;
     return `${where}  ${f.rule}  ${f.match}`;
   });
 }
 
 function trackedFiles() {
-  const out = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  // Resolved to a path first rather than handed to the spawner by name: see `resolved()` (S4036).
+  const out = execFileSync(resolved('git'), ['ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
   return out.split('\0').filter(Boolean);
 }
 
@@ -228,7 +262,7 @@ export function readTracked(file, digests = PRIVATE_NAME_DIGESTS, read = readFil
     // EISDIR: a gitlink (the shared-rules submodule). ENOENT: deleted in the working tree.
     if (e.code === 'EISDIR' || e.code === 'ENOENT') return null;
     // The code only: a system message can carry the path, and the path may hold a name.
-    const where = holdsName(file, digests) ? `${MASKED_PATH})` : file;
+    const where = scanLine(file, digests).length ? `${MASKED_PATH})` : file;
     throw new Error(`public hygiene: cannot read tracked file ${where}: ${e.code ?? 'unknown error'}`);
   }
 }
@@ -257,9 +291,7 @@ function scanTree() {
       report.binary++; // images, archives, UTF-16: not text this check can read
       continue;
     }
-    buf.toString('utf8').split('\n').forEach((text, i) => {
-      for (const f of scanLine(text)) report.add({ file, line: i + 1, ...f });
-    });
+    for (const f of scanText(buf.toString('utf8'))) report.add({ file, ...f });
   }
   return report;
 }
@@ -315,6 +347,8 @@ function lineCases(secretWord) {
     ['docs/zebra/quokka.md', ['name']],
     ['a zebra. Quokka', []],
     ['zebras and quokkas', []],
+    [mail('first.last', 'corp.com'), ['e-mail']],
+    [`${Array(60).fill(mail('alice', 'example.com')).join(' ')} ${mail('jane.doe', 'acme-widgets.co')}`, ['e-mail']],
   ];
 }
 
@@ -322,7 +356,8 @@ function runLineCases(digests, check) {
   for (const [line, expected] of lineCases('zebraquokka')) {
     const got = scanLine(line, digests).map((f) => f.rule);
     const ok = JSON.stringify(got) === JSON.stringify(expected);
-    check(ok, `${JSON.stringify(line)} -> [${got.join(', ')}]${ok ? '' : ` expected [${expected.join(', ')}]`}`);
+    const wanted = ok ? '' : ` expected [${expected.join(', ')}]`;
+    check(ok, `${JSON.stringify(line)} -> [${got.join(', ')}]${wanted}`);
   }
 }
 
@@ -372,6 +407,26 @@ function checkReportCap(digests, check) {
 }
 
 // A typo in a digest is a name that silently never matches.
+// The forbidden VALUE is what the log must not repeat either: a real address, host or user printed
+// in a public CI log is published again, and outlives the fix in the run's history.
+function checkNoEcho(digests, check) {
+  const values = ['jane.doe', ip(10, 44, 3, 2), 'jdoe'];
+  const bad = `${mail('jane.doe', 'acme-widgets.co')} on ${ip(10, 44, 3, 2)} in ${win('C:', 'Users', 'jdoe', 'x')}`;
+  const pathWithAddress = `docs/${mail('jane.doe', 'acme-widgets.co')}.md`;
+  const output = formatFindings([
+    ...[...scanText(`ok\n${bad}`, digests)].map((f) => ({ file: 'docs/plain.md', ...f })),
+    ...pathFindings(pathWithAddress, digests),
+  ], digests).join('\n');
+  const leaked = values.filter((v) => output.includes(v));
+  check(output.split('\n').length === 4 && leaked.length === 0, `findings print where, not what (leaked: ${leaked.join(', ') || 'none'}):\n${output}`);
+}
+
+// A two-word name broken by a line wrap is still the name.
+function checkSplitName(digests, check) {
+  const found = [...scanText('pointing at `vpn / zebra\nquokka` gets its colour', digests)];
+  check(found.length === 1 && found[0].rule === 'name' && found[0].line === 2, `a name split across a line break is found on its second line: ${JSON.stringify(found)}`);
+}
+
 function checkDigestShape(check) {
   const bad = [...PRIVATE_NAME_DIGESTS].filter((d) => !/^[0-9a-f]{64}$/.test(d));
   check(PRIVATE_NAME_DIGESTS.size > 0 && bad.length === 0, `the digest list is non-empty and every entry is 64 hex characters (${bad.length} malformed)`);
@@ -390,6 +445,8 @@ function selftest() {
   checkNoLeak(digests, check);
   checkReadErrorMasked(digests, check);
   checkReportCap(digests, check);
+  checkNoEcho(digests, check);
+  checkSplitName(digests, check);
   checkDigestShape(check);
   console.log(failed === 0 ? `selftest: ${total} cases, all ok` : `selftest: ${failed} of ${total} cases FAILED`);
   return failed === 0 ? 0 : 1;
@@ -414,7 +471,7 @@ function main(argv) {
   if (hidden > 0) console.log(`… and ${hidden} more finding(s), not printed`);
   const counts = Object.entries(report.byRule).map(([r, n]) => `${r} ${n}`).join(', ');
   console.log(`public hygiene: ${report.total} finding(s) — ${counts} (${skipped})`);
-  console.log('Use a placeholder: name@example.com, 192.0.2.x / 203.0.113.x, C:\\Users\\<you>, a neutral project name.');
+  console.log(String.raw`Use a placeholder: name@example.com, 192.0.2.x / 203.0.113.x, C:\Users\<you>, a neutral project name.`);
   return 1;
 }
 
