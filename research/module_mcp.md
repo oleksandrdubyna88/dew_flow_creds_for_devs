@@ -36,8 +36,8 @@ flowchart TB
     serve --> on["ServeOnAsync<br/>McpServer.Create(options) · owns the transport"]
     on --> life["ServerLifetime<br/>drain · cancel · deadline"]
     on --> tools["ToolsFor<br/>Tools · UseTools · FolderTools<br/>each delegate takes a CancellationToken"]
-    tools --> windows["Windows<br/>ReadFromAsync · PostToAsync"]
-    windows --> broker["BrokerClient<br/>health probe · linked token + ceiling"]
+    tools --> windows["Windows<br/>Endpoints.ReadLive (dead pids skipped)<br/>ReadFromAsync · PostToAsync"]
+    windows --> broker["BrokerClient<br/>health probe · linked token + ceiling<br/>LoopbackConnect (refused at once)"]
     broker -- "loopback / socket" --> window["VS Code window<br/>broker + consent"]
     on --> naming["ClientNaming filter<br/>client name, method names"]
     serve --> log["CredsLogging · HostRun<br/>(src_service_defaults)"]
@@ -52,7 +52,7 @@ flowchart TB
 | `LifetimeSignals` (record) | The three endings as tasks: `ClientGone` (`transport.MessageReader.Completion`), `ParentGone`, `Signal` |
 | `LifetimeTimings` (record) | `Drain` 1 s, `Deadline` 5 s |
 | `Tools`, `UseTools`, `FolderTools` | The tool catalogue: descriptions, the body each verb composes field by field, refusals passed on in the window's words. `UseTools.Rotation` (record) is a rotation's request |
-| `Windows` | Finding live windows (announcement files + health probe) and the read/post walks over them, newest first |
+| `Windows` | Finding live windows (announcement files + health probe) and the read/post walks over them, newest first. Since 2026-10-11 both walks read through `Endpoints.ReadLive`, so an announcement whose pid is gone is never dialled; `ReadAllInAsync` / `PostInAsync` take the folder, the seam the tests point at a folder of their own |
 | `CallerSource`, `CallerForwarding` | Who is asking: the record computed from this process's environment (or forwarded from the Linux half), the client's name from the handshake, the tab title per call |
 | `ClientNaming` | An incoming message filter: names the client once, logs method names at Debug — never a body |
 | `WslPump` | The Linux half of the bridge: starts the Windows half and tracks it in a `ChildLifetime`, pumps both directions, settles who ended first — three endings since E3: `ClientClosed`, `WindowsHalfClosed`, `Interrupted` (a signal or the parent's death returned the pump at once) — and stops the child through the lifetime's one killer. `HangUpBound` (the Windows half's drain + deadline, 6 s) is how long it waits for the child's stdout after the client hung up; `GraceFor` is how long the child may take to leave on its own by what ended the session |
@@ -73,6 +73,12 @@ flowchart TB
   leaves it out of the schema). It flows through `Windows` into every `BrokerClient` call as a linked source bounded
   by the call's own ceiling, so a session that ends closes its connection at once — which is what the extension's
   abandon path (E4.S1, `requestLife.ts`) observes as a gone request.
+- **A crashed window costs nothing** (2026-10-11,
+  [PLAN_stale_endpoint_files_slow_every_refusal.md](PLAN_stale_endpoint_files_slow_every_refusal.md)). The walks skip
+  an announcement whose pid is gone, and the probe's connect is refused at once on Windows (`LoopbackConnect`) instead
+  of after the SYN retransmissions, about 2 s per closed window before. Measured on the reporting machine: 35
+  announcements, 34 of closed windows, turned a refusal into 68 s. The diagnostic `Announced()` still counts every
+  file, so "no window answered" and "no window is running" stay two different sentences.
 - **The parent watch is off** for the Windows half of the bridge (`CREDS_RELAYED_FROM_WSL` — its parent is the
   distribution's session-long `wsl.exe`), for a process started with ppid 1, and with `CREDS_MCP_NO_PARENT_WATCH=1`.
   The variable reaches the Windows half only because the bridge names it in `WSLENV` (E3: environment variables do

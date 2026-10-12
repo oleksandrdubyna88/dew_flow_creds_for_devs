@@ -1,5 +1,6 @@
 using System.Text.Json;
 using CredsBroker;
+using CredsForDevs.ServiceDefaults.Tests.Support;
 using FluentAssertions;
 
 namespace CredsBroker.Tests;
@@ -107,4 +108,63 @@ public class EndpointsTests
         Endpoints.DirectoryFor("   ", appData: null, home: null, isWindows: false).Should().BeNull();
     }
 
+    // --- a window that is provably gone costs no probe (PLAN_stale_endpoint_files_slow_every_refusal.md §4.3) -----
+
+    [Fact]
+    public void A_window_whose_process_has_exited_is_not_handed_to_a_walk()
+    {
+        // The measured case: 33 of 35 announcements named a pid that no longer existed, and each cost a probe.
+        var dir = Temp();
+        var dead = StaleWindows.ExitedPids(3);
+        foreach (var pid in dead)
+        {
+            Write(dir, pid, port: 50000 + (pid % 10000), startedAt: "2026-10-11T10:00:00.000Z");
+        }
+        Write(dir, Environment.ProcessId, port: 1234, startedAt: "2026-10-11T09:00:00.000Z");
+
+        Endpoints.ReadLive(dir).Select(e => e.Pid).Should().Equal(
+            [Environment.ProcessId],
+            "an announcement whose pid is gone ({0}) cannot be a live window, so a walk must not dial it",
+            string.Join(", ", dead));
+    }
+
+    [Fact]
+    public void Reading_the_live_windows_never_changes_the_folder()
+    {
+        // The files are the extension's. A client that proved a window dead says nothing about it on disk.
+        var dir = Temp();
+        foreach (var pid in StaleWindows.ExitedPids(2))
+        {
+            Write(dir, pid, port: 40000 + (pid % 10000), startedAt: "2026-10-11T10:00:00.000Z");
+        }
+        var before = StaleWindows.Snapshot(dir);
+
+        _ = Endpoints.ReadLive(dir);
+
+        StaleWindows.Snapshot(dir).Should().Equal(before);
+    }
+
+    [Fact]
+    public void Only_a_pid_that_is_gone_counts_as_gone()
+    {
+        Endpoints.PidIsGone(Environment.ProcessId).Should().BeFalse("this process is running");
+        Endpoints.PidIsGone(StaleWindows.ExitedPids(1)[0]).Should().BeTrue("that process was started and has exited");
+
+        // A process this user may not open is still a process: on Windows the System process, elsewhere init. The
+        // probe decides about it, as it always did — a pid check that read "cannot open" as "gone" would skip a live
+        // window of another session.
+        Endpoints.PidIsGone(OperatingSystem.IsWindows() ? 4 : 1).Should().BeFalse();
+    }
+
+    [Fact]
+    public void The_plain_read_still_returns_every_announcement()
+    {
+        // RelayPipe reads agent addresses through Read, and the MCP's diagnostic counts what was announced — neither
+        // is a probe walk, and neither may lose a file to the pid check.
+        var dir = Temp();
+        var dead = StaleWindows.ExitedPids(1)[0];
+        Write(dir, dead, port: 4242, startedAt: "2026-10-11T10:00:00.000Z");
+
+        Endpoints.Read(dir).Select(e => e.Pid).Should().Equal(dead);
+    }
 }

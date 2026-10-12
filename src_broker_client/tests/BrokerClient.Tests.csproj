@@ -24,6 +24,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- A crashed window's announcement and a port that counts connections, linked from src_service_defaults the way
+         the CLI and MCP test projects link it, so the three walks share one definition. -->
+    <Compile Include="..\..\src_service_defaults\tests\Support\StaleWindows.cs" Link="Support\StaleWindows.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\src\BrokerClient.csproj" />
   </ItemGroup>
 

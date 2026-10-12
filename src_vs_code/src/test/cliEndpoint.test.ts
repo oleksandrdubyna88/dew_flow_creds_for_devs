@@ -7,9 +7,11 @@ import {
   CliEndpoint,
   endpointPath,
   isCliEndpoint,
+  pidIsAlive,
   readEndpoints,
   removeEndpoint,
   staleEndpoints,
+  sweepStaleEndpoints,
   writeEndpoint,
 } from '../cliEndpoint';
 
@@ -150,4 +152,96 @@ test('an announcement without an agent is still valid — that is the usual stat
 
 test('an agent address of the wrong type is refused rather than passed on', () => {
   assert.equal(isCliEndpoint({ pid: 1, port: 2, startedAt: 'x', agentSocket: 42 }), false);
+});
+
+// --- the sweep at activation (PLAN_stale_endpoint_files_slow_every_refusal.md §4.2) -----------------
+
+/** The sweep's own folder: one file per pid, as windows write them. */
+function announced(...pids: number[]): string {
+  const dir = store();
+  for (const pid of pids) {
+    writeEndpoint(dir, { ...ENDPOINT, pid });
+  }
+  return dir;
+}
+
+function pidsIn(dir: string): number[] {
+  return readEndpoints(dir)
+    .map((e) => e.pid)
+    .sort((a, b) => a - b);
+}
+
+test('a crashed window is swept at the next activation; this window and a live one are kept', () => {
+  // The measured case: 33 of 35 files named a pid that was gone, and nothing ever removed one.
+  const own = 100;
+  const live = 200;
+  const crashed = [300, 400];
+  const dir = announced(own, live, ...crashed);
+
+  const removed = sweepStaleEndpoints(dir, own, (pid) => pid === live);
+
+  assert.deepEqual(removed.sort((a, b) => a - b), crashed, 'the crashed windows are the ones removed');
+  assert.deepEqual(pidsIn(dir), [own, live], 'the sweep never removes its own file or a live window\'s');
+});
+
+test('the sweep never removes its own file, even if its own pid were asked about and read as dead', () => {
+  const dir = announced(100);
+
+  assert.deepEqual(sweepStaleEndpoints(dir, 100, () => false), []);
+  assert.deepEqual(pidsIn(dir), [100]);
+});
+
+test('a folder that cannot be read is not an error and removes nothing', () => {
+  assert.deepEqual(sweepStaleEndpoints(path.join(store(), 'missing'), 1, () => false), []);
+  assert.doesNotThrow(() => sweepStaleEndpoints('\0not-a-path', 1, () => false));
+});
+
+test('only ESRCH says a pid is gone — EPERM is a live process this user may not signal', () => {
+  const throwing = (code: string) => () => {
+    throw Object.assign(new Error(code), { code });
+  };
+
+  assert.equal(pidIsAlive(42, () => true), true, 'a signal that succeeds is a live process');
+  assert.equal(pidIsAlive(42, throwing('ESRCH')), false, 'no such process');
+  assert.equal(pidIsAlive(42, throwing('EPERM')), true, 'measured: a reused pid held by a protected process');
+  assert.equal(pidIsAlive(42, throwing('EINVAL')), true, 'anything unexpected is not proof of death');
+  assert.equal(pidIsAlive(0, throwing('ESRCH')), true, 'pid 0 is not a window; it is never proved gone');
+  assert.equal(pidIsAlive(-1, throwing('ESRCH')), true, 'a negative pid is a process group on POSIX, never a window');
+});
+
+test('the real pid probe: this process is alive, and an exited child is gone', async () => {
+  const { spawn } = await import('node:child_process');
+  const child = spawn(process.execPath, ['-e', '0'], { stdio: 'ignore' });
+  const pid = child.pid ?? 0;
+  await new Promise<void>((resolve) => child.once('exit', () => resolve()));
+
+  assert.equal(pidIsAlive(process.pid), true);
+  assert.equal(pidIsAlive(pid), false, `pid ${pid} exited and must read as gone`);
+});
+
+test('a sweep with the real probe removes an exited process\'s file and keeps this one\'s', async () => {
+  const { spawn } = await import('node:child_process');
+  const child = spawn(process.execPath, ['-e', '0'], { stdio: 'ignore' });
+  const dead = child.pid ?? 0;
+  await new Promise<void>((resolve) => child.once('exit', () => resolve()));
+  const dir = announced(process.pid, dead);
+
+  sweepStaleEndpoints(dir, process.pid);
+
+  assert.deepEqual(pidsIn(dir), [process.pid]);
+});
+
+test('a window that took a swept pid and announced meanwhile keeps its file', () => {
+  // Code round, 2026-10-11: between reading a stale file and removing it, the OS can hand its pid to a NEW window
+  // that writes `window-<pid>.json` again. Removal by pid alone would delete that live window's announcement.
+  const dir = announced(300);
+  const replacement: CliEndpoint = { ...ENDPOINT, pid: 300, port: 60000, startedAt: '2026-10-11T12:00:00.000Z' };
+
+  const removed = sweepStaleEndpoints(dir, 1, () => {
+    writeEndpoint(dir, replacement); // the new window announces while the sweep decides
+    return false;
+  });
+
+  assert.deepEqual(readEndpoints(dir), [replacement], 'the replacement announcement is still there');
+  assert.deepEqual(removed, [], 'and the sweep says it removed nothing');
 });

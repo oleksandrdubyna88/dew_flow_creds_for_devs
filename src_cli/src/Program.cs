@@ -197,14 +197,15 @@ internal static class Program
         var aliasRoute = "/v1/alias/" + wireVerb;
         var body = AliasBody(alias, wireVerb, payload, caller);
 
-        foreach (var endpoint in endpoints)
+        // A window whose process is provably gone is not dialled at all; the probe decides about the rest.
+        foreach (var port in Endpoints.Live(endpoints).Select(endpoint => endpoint.Port))
         {
-            if (!await client.IsOurBrokerAsync(endpoint.Port))
+            if (!await client.IsOurBrokerAsync(port))
             {
                 continue; // a note left by a window that has since closed
             }
 
-            var reply = await client.PostAliasAsync(endpoint.Port, aliasRoute, body);
+            var reply = await client.PostAliasAsync(port, aliasRoute, body);
             if (reply.Status == 404)
             {
                 continue; // this window does not serve that name; try the next
@@ -314,14 +315,15 @@ internal static class Program
         using var client = BrokerClient.Create(contract);
         var route = contract.ConfigReadRoutePath();
 
-        foreach (var endpoint in endpoints)
+        // A window whose process is provably gone is not dialled at all; the probe decides about the rest.
+        foreach (var port in Endpoints.Live(endpoints).Select(endpoint => endpoint.Port))
         {
-            if (!await client.IsOurBrokerAsync(endpoint.Port))
+            if (!await client.IsOurBrokerAsync(port))
             {
                 continue; // a note left by a window that has since closed
             }
 
-            var reply = await client.PostBearerAsync(endpoint.Port, route, key);
+            var reply = await client.PostBearerAsync(port, route, key);
             if (reply.Status == 401)
             {
                 continue; // this window does not hold that key; try the next
@@ -358,14 +360,15 @@ internal static class Program
         var seen = new SortedDictionary<string, string>(StringComparer.Ordinal);
         var reached = 0;
 
-        foreach (var endpoint in endpoints)
+        // A window whose process is provably gone is not dialled at all; the probe decides about the rest.
+        foreach (var port in Endpoints.Live(endpoints).Select(endpoint => endpoint.Port))
         {
-            if (!await client.IsOurBrokerAsync(endpoint.Port))
+            if (!await client.IsOurBrokerAsync(port))
             {
                 continue;
             }
             reached += 1;
-            var reply = await client.GetAsync(endpoint.Port, contract.ReadRoute("aliases", "/v1/aliases"));
+            var reply = await client.GetAsync(port, contract.ReadRoute("aliases", "/v1/aliases"));
             if (reply.Status != 200)
             {
                 continue;

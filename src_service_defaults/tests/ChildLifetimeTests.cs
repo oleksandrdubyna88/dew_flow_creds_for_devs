@@ -16,6 +16,14 @@ public sealed class ChildLifetimeTests : IDisposable
     private static readonly TimeSpan Hour = TimeSpan.FromHours(1);
     private static readonly TimeSpan Short = TimeSpan.FromMilliseconds(150);
 
+    /// <summary>
+    /// How early a timer-queue delay may end as a <see cref="Stopwatch"/> sees it. The delay is timed on the runtime's
+    /// coarse tick, the stopwatch on the high-resolution counter, so a 150 ms grace was measured at 149.6–149.9 ms on CI
+    /// (ubuntu twice, windows once on main, 2026-10-11). One Windows default timer tick is the honest margin; the
+    /// assertion still tells "waited out the grace" from "killed at once".
+    /// </summary>
+    private static readonly TimeSpan TimerSlack = TimeSpan.FromMilliseconds(16);
+
     private readonly TaskCompletionSource<PosixSignal> _signal = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource _parent = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource<HostEnding> _exited = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -146,7 +154,7 @@ public sealed class ChildLifetimeTests : IDisposable
         await lifetime.StopAllAsync().WaitAsync(Bound, TestContext.Current.CancellationToken);
 
         child.Steps.Should().Equal(["stdin closed", "tree killed"], "the gentle step first, the tree only when it did not take");
-        clock.Elapsed.Should().BeGreaterThanOrEqualTo(Short, "the grace was waited out before the kill");
+        clock.Elapsed.Should().BeGreaterThanOrEqualTo(Short - TimerSlack, "the grace was waited out before the kill");
         _sink.Messages.Should().Contain(m => m.Contains("did not exit within") && m.Contains("stopping its process tree"));
     }
 

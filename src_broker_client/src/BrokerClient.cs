@@ -21,8 +21,24 @@ public sealed record BrokerReply(int Status, string Body);
 /// another machine, and the socket transport the broker also listens on is reached by the WSL
 /// bridge rather than by this path.</para>
 /// </remarks>
-public sealed class BrokerClient(BrokerContract contract, HttpClient http) : IDisposable
+public sealed class BrokerClient : IDisposable
 {
+    private readonly BrokerContract contract;
+    private readonly HttpClient http;
+
+    /// <summary>
+    /// Private: <see cref="Create(BrokerContract, string?)"/> owns the handler, and with it how every probe connects.
+    /// </summary>
+    /// <remarks>
+    /// It was a public primary constructor taking any <see cref="HttpClient"/>, which let a caller build a client whose
+    /// probes skip <see cref="LoopbackConnect"/> and pay ~2 s per closed window again (code round, 2026-10-11).
+    /// </remarks>
+    private BrokerClient(BrokerContract contract, HttpClient http)
+    {
+        this.contract = contract;
+        this.http = http;
+    }
+
     private static readonly TimeSpan HealthTimeout = TimeSpan.FromSeconds(2);
 
     /// <summary>Comfortably past the broker's own ceiling, so its clean answer arrives first.</summary>
@@ -60,6 +76,12 @@ public sealed class BrokerClient(BrokerContract contract, HttpClient http) : IDi
                 await socket.ConnectAsync(new System.Net.Sockets.UnixDomainSocketEndPoint(socketPath), token);
                 return new System.Net.Sockets.NetworkStream(socket, ownsSocket: true);
             };
+        }
+        else
+        {
+            // The loopback port: refused at once when nobody listens, instead of after Windows' SYN retries —
+            // the ~2 s per closed window that made a walk over stale announcements take a minute (LoopbackConnect).
+            handler.ConnectCallback = LoopbackConnect.ConnectAsync;
         }
 
         return new BrokerClient(contract, new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan });

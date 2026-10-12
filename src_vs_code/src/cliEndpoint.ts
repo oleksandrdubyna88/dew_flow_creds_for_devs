@@ -140,3 +140,73 @@ export function staleEndpoints(
 ): CliEndpoint[] {
   return endpoints.filter((e) => !isAlive(e.pid));
 }
+
+/**
+ * Whether a process with this pid still exists, asked the only way Node can: `process.kill(pid, 0)`.
+ *
+ * <p>Only `ESRCH` says gone. `EPERM` is a LIVE process this user may not signal — another session's,
+ * or a protected one (measured: one of 35 announced pids on the reporting machine, a reused pid) — and
+ * every other error is read as alive too, because a sweep that guessed "dead" would delete a live
+ * window's file. A pid that is not a positive integer is never proved gone.</p>
+ */
+export function pidIsAlive(
+  pid: number,
+  signal: (pid: number, signal: number) => unknown = (p, s) => process.kill(p, s),
+): boolean {
+  return !isProcessPid(pid) || answersSignalZero(pid, signal);
+}
+
+/** A pid a window could have: a positive integer. 0 and a negative pid name process GROUPS on POSIX. */
+function isProcessPid(pid: number): boolean {
+  return Number.isInteger(pid) && pid > 0;
+}
+
+/** Signal 0 checks existence and delivers nothing; only `ESRCH` means no such process. */
+function answersSignalZero(pid: number, signal: (pid: number, signal: number) => unknown): boolean {
+  try {
+    signal(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code !== 'ESRCH';
+  }
+}
+
+/**
+ * Remove the announcements of windows whose process is gone — never this window's own.
+ *
+ * <p>Called once at activation, by the `CredsAgentServer` constructor — the class that writes and removes
+ * this window's own announcement, built once in `activate`. It is the sweep `staleEndpoints` was written
+ * for and nothing ever ran (PLAN_stale_endpoint_files_slow_every_refusal.md): a window that crashed cannot
+ * delete its own file, and 35 of them had piled up on the reporting machine. The extension owns this
+ * folder, so the extension is the one that tidies it; no client deletes a file.</p>
+ *
+ * <p>A file is removed only while it still holds the announcement that was judged stale (code round,
+ * 2026-10-11): between the read and the removal the OS can hand the dead pid to a NEW window that writes
+ * `window-<pid>.json` again, and removing by pid alone would delete that live window's file.</p>
+ *
+ * <p>Never throws: a folder that cannot be read is no folder to tidy. Returns the pids removed.</p>
+ */
+export function sweepStaleEndpoints(
+  storageDir: string,
+  ownPid: number,
+  isAlive: (pid: number) => boolean = (pid) => pidIsAlive(pid),
+): number[] {
+  const stale = staleEndpoints(
+    readEndpoints(storageDir).filter((e) => e.pid !== ownPid),
+    isAlive,
+  ).filter((e) => stillAnnounced(storageDir, e));
+  for (const endpoint of stale) {
+    removeEndpoint(storageDir, endpoint.pid);
+  }
+  return stale.map((e) => e.pid);
+}
+
+/** Whether `window-<pid>.json` still holds exactly this announcement — not a newer window's under the same pid. */
+function stillAnnounced(storageDir: string, judged: CliEndpoint): boolean {
+  const [current] = parseEndpoint(endpointPath(storageDir, judged.pid));
+  return (
+    current?.port === judged.port &&
+    current.startedAt === judged.startedAt &&
+    current.socket === judged.socket
+  );
+}
