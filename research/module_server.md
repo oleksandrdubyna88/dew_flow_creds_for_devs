@@ -1970,7 +1970,7 @@ Never `dotnet test` — there is no VSTest host here and it aborts.
 | `RateLimitTests` | One caller cannot lock out another; a caller who overruns is still throttled |
 | `ForwardedHttpsTests` | A missing header is refused; health stays exempt |
 | `InboxScaleTests` | A large inbox lists completely; a corrupted item is skipped |
-| `StartupGuardTests` | The fail-fast startup guards each refuse to boot with the wrong config — read from the run's own log file at Fatal, since a refusal returns an exit code rather than throwing out of `Program` |
+| `StartupGuardTests` | All five fail-fast startup guards (no auth scheme, empty domain list, short key, network data dir, unwritable data dir) each refuse to boot with the wrong config — read from the run's own log file at Fatal, since a refusal returns an exit code rather than throwing out of `Program` |
 | `StartupGuardsTests` | The five refusals as one unit: each message byte for byte, the writable refusal keeping its inner `IOException`, and the order — configuration before the disk, so a refused configuration creates no directory |
 | `StartupRefusalProcessTests` | The BUILT server binary with no auth scheme, and with a UNC data dir: exit code **78** and the `exited: code 78, reason startupRefused` line at Fatal in the run's file. Watched RED on the old code (exit `0xE0434352`, a file with only the `runtime:` line / an empty file) |
 | `ConcurrencyTests` | `If-Match`/`If-None-Match` optimistic-concurrency semantics on `PUT /api/vault` |

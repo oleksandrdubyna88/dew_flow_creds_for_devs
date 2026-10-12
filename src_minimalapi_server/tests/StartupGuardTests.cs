@@ -158,6 +158,30 @@ public sealed class StartupGuardTests
     }
 
     [Fact]
+    public void AnUnwritableDataDirIsRefused()
+    {
+        // A FILE where the data directory should be: the writable probe fails on every platform, and the
+        // refusal carries its cause into the same Fatal line.
+        var blocker = Path.Combine(Path.GetTempPath(), "cred-vault-tests", "not-a-directory-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.GetDirectoryName(blocker)!);
+        File.WriteAllText(blocker, "x");
+        try
+        {
+            var failure = StartupFailure(new Dictionary<string, string?>
+            {
+                ["Vault__DataDir"] = blocker,
+            });
+
+            failure.Should().NotBeNull();
+            failure.Should().Contain($"DataDir '{blocker}' is not writable");
+        }
+        finally
+        {
+            File.Delete(blocker);
+        }
+    }
+
+    [Fact]
     public void AnEmptyDomainAllowListIsFineWhenItIsAskedForExplicitly()
     {
         var failure = StartupFailure(new Dictionary<string, string?>

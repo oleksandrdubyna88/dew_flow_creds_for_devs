@@ -1110,7 +1110,7 @@ code **78**. The operator who reads the file after a deploy is who it is for.
 |---|---|---|---|
 | the BUILT JIT binary | `StartupRefusalProcessTests` | every server CI leg (Linux, Windows, macOS) | exit 78 and the Fatal line, for a refusal after the first log line (no auth) and one before it (a UNC data dir — the case whose file used to be EMPTY) |
 | the AOT image, production shape | `docker.yml` → *Smoke-test a refused start* | every push to `main` (the image workflow does not run for pull requests) | the same with no auth scheme: read-only root, tmpfs `/tmp`, `cap-drop ALL`, `no-new-privileges`, Docker volumes |
-| `Program` in-process | `StartupGuardTests` | every server CI leg | each guard stops the real `Program` and its message reaches the file at Fatal |
+| `Program` in-process | `StartupGuardTests` | every server CI leg | each of the five guards stops the real `Program` and its message reaches the file at Fatal; the accepted cases must really start |
 | the guards alone | `StartupGuardsTests` | every server CI leg | each message byte for byte, the inner exception, the order (configuration before the disk) |
 
 **Watched RED** on the old code: the process tests failed with *exit `-532462766` (`0xE0434352`)* and a file
