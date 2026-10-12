@@ -87,6 +87,11 @@ internal sealed class CountingListener : IAsyncDisposable
         {
             // Stopped.
         }
+        catch (InvalidOperationException) when (_stop.IsCancellationRequested)
+        {
+            // Stopped between two accepts: the next accept met a listener DisposeAsync had already stopped, and a stopped
+            // TcpListener says "Not listening" rather than any of the above (measured on a macOS CI leg, #234).
+        }
     }
 
     private static async Task AnswerAsync(TcpClient peer)
