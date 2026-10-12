@@ -34,7 +34,9 @@ public sealed class StartupRefusalProcessTests : IDisposable
 
     public void Dispose() => HostProcess.Remove(_root);
 
-    /// <summary>A configuration that would start: every refusal a test wants is one override on top.</summary>
+    /// <summary>A configuration that would start, with one refusal on top: a NEW dictionary each time.</summary>
+    private Dictionary<string, string> StartableExcept(string key, string value) => new(Startable()) { [key] = value };
+
     private Dictionary<string, string> Startable() => new()
     {
         ["Vault__DataDir"] = Path.Combine(_root, "data"),
@@ -62,18 +64,20 @@ public sealed class StartupRefusalProcessTests : IDisposable
         exited.Should().BeTrue("a refused configuration must end the process, not leave it serving");
         await Task.WhenAll(stdout, stderr);
 
+        // A run that wrote no file at all is reported as an empty log, beside its exit code, rather than as a
+        // lookup failure that would hide both.
         var logs = Path.Combine(_root, "logs");
-        var file = HostProcess.Read(HostProcess.LogFileOf(logs, AppName, host.Id));
+        var files = Directory.Exists(logs)
+            ? Directory.GetFiles(logs, $"{AppName}-*-{host.Id}.log", SearchOption.AllDirectories)
+            : [];
+        var file = files.Length == 1 ? HostProcess.Read(files[0]) : string.Empty;
         return (host.ExitCode, file);
     }
 
     [Fact]
     public async Task No_authentication_scheme_is_logged_at_fatal_and_exits_with_the_refusal_code()
     {
-        var env = Startable();
-        env["Auth__Local__SigningKey"] = "";
-
-        var (exitCode, log) = await RunAsync(env);
+        var (exitCode, log) = await RunAsync(StartableExcept("Auth__Local__SigningKey", ""));
 
         // Both symptoms in one report: the code AND the file, so a RED run shows the whole defect.
         using var scope = new AssertionScope();
@@ -88,10 +92,7 @@ public sealed class StartupRefusalProcessTests : IDisposable
     {
         // A UNC path is refused by DataDirCheck before any disk is touched, on every platform — the
         // refusal that used to leave the run's file EMPTY, because it comes before the first log line.
-        var env = Startable();
-        env["Vault__DataDir"] = "//nas.invalid/vault";
-
-        var (exitCode, log) = await RunAsync(env);
+        var (exitCode, log) = await RunAsync(StartableExcept("Vault__DataDir", "//nas.invalid/vault"));
 
         using var scope = new AssertionScope();
         exitCode.Should().Be(Refused);

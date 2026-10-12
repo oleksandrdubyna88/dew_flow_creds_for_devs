@@ -19,27 +19,37 @@ namespace CredVaultServer.Tests;
 [Collection(ServerCollection.Name)]
 public sealed class StartupGuardTests
 {
-    /// <summary>The Fatal lines this start wrote to its own log file, or null when it wrote none.</summary>
-    private static string? StartupFailure(Dictionary<string, string?> overrides)
+    /// <summary>
+    /// The Fatal lines this start wrote to its own log file, or null when it wrote none — and then the host
+    /// really started: a start that failed WITHOUT a Fatal line rethrows, so an accepted case cannot pass on a
+    /// host that broke for some other reason.
+    /// </summary>
+    private static string? StartupFailure(IReadOnlyDictionary<string, string?> overrides)
     {
         var logs = Path.Combine(Path.GetTempPath(), "cred-vault-tests", "logs-" + Guid.NewGuid().ToString("N"));
-        overrides["Logging__Directory"] = logs;
         try
         {
-            using (var server = new VaultServer(overrides))
+            InvalidOperationException? notStarted = null;
+            using (var server = new VaultServer(new Dictionary<string, string?>(overrides) { ["Logging__Directory"] = logs }))
             {
                 try
                 {
                     // The host is built lazily; this is what actually runs Program.cs.
                     using var client = server.CreateClient();
                 }
-                catch (InvalidOperationException)
+                catch (InvalidOperationException e)
                 {
                     // A refused start returns before Build(), which the factory reports as "the entry point
                     // exited without ever building an IHost". The reason is in the file, read below.
+                    notStarted = e;
                 }
             }
-            return FatalLines(logs);
+            var fatal = FatalLines(logs);
+            if (fatal is null && notStarted is not null)
+            {
+                throw new InvalidOperationException("the host did not start, and its log says nothing at Fatal", notStarted);
+            }
+            return fatal;
         }
         finally
         {
@@ -49,6 +59,10 @@ public sealed class StartupGuardTests
 
     private static string? FatalLines(string logs)
     {
+        if (!Directory.Exists(logs))
+        {
+            return null;
+        }
         var fatal = Directory.GetFiles(logs, "*.log", SearchOption.AllDirectories)
             .SelectMany(file => Read(file).Split('\n'))
             .Where(line => line.Contains("FTL]", StringComparison.Ordinal))
