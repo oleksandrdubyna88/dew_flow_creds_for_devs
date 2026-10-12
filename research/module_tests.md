@@ -1120,6 +1120,24 @@ holding only the `runtime:` line, or nothing; the published 0.11.0 image exited 
 not on the pull request. Nothing covers an exception that is not a guard's (a malformed number in the
 configuration, a fault in `Build()`): those are still unhandled, and the plan names them as its open tail.
 
+## The probe-counting port stops cleanly (2026-10-12)
+
+`CountingListener` (`src_service_defaults/tests/Support/StaleWindows.cs`, linked into the mcp, cli and broker test
+projects) is the loopback port the stale-window tests point dead announcements at: it counts every connection and
+answers a 404, so "skipped" is an observed zero rather than a timing. Its accept loop must end without throwing when
+`DisposeAsync` stops it — including right after it has counted a connection, when the next accept meets a stopped
+`TcpListener` and gets `InvalidOperationException("Not listening…")`. That exception is now a stop when, and only
+when, a stop was requested.
+
+| test | what it proves |
+|---|---|
+| `CountingListenerTests` (mcp) | 300 rounds of connect → a bounded wait until counted → dispose at once: a requested stop never throws |
+
+**Watched RED** on a macOS CI leg (#234: the positive control `A_live_pid_on_a_port_that_is_not_ours_is_still_probed`
+failed in its dispose) and locally, 3 of 3 runs, rounds 15, 4 and 11, with the same message; green 5 of 5 after,
+and red again with the old helper. **Limit:** an `InvalidOperationException` raised before any stop is kept loud by
+the `when` filter, which is read, not tested.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.
