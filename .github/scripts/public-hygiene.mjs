@@ -7,13 +7,16 @@
 //   node .github/scripts/public-hygiene.mjs --hash "x"   print the digest of a name to add below
 //
 // Every rule is an ALLOWLIST or a DIGEST, never a list of the forbidden strings: a check that spelled
-// out what must not be published would itself publish it.
+// out what must not be published would itself publish it. The output reaches a PUBLIC CI log, so it
+// never prints a name the digest list matched — not as a match, not inside an address or a home
+// path, and not as the path of the file that holds it.
 //
-//   e-mail      the domain must be a placeholder (RFC 2606 / RFC 6761, `.internal`) or one of the
-//               fictional domains the fixtures already use; at a public mail service (gmail.com, …)
+//   e-mail      the domain must be reserved (RFC 2606 / RFC 6761, `.internal`; any subdomain) or one
+//               of the fictional domains the fixtures already use (exactly); at a public mail service
 //               the WHOLE address must be a known generic one. A colleague's work address fails.
 //   private-ip  an RFC 1918 address must be one of the exact neutral addresses fixtures use.
-//   home-path   the user folder of C:\Users\<x>, /mnt/<d>/Users/<x>, /home/<x>, /Users/<x> must be a
+//   home-path   the user folder of C:\Users\<x>, /c/Users/<x>, /cygdrive/c/Users/<x>,
+//               /mnt/<d>/Users/<x>, \\wsl$\<distro>\home\<x>, /home/<x>, /Users/<x> must be a
 //               placeholder (`<you>`, `…`, `me`, `dev`, …).
 //   name        no word, and no two words joined by one `-`, `_`, `.`, space or slash, may hash to a
 //               digest in PRIVATE_NAME_DIGESTS (SHA-256 of the lower-cased letters and digits).
@@ -21,8 +24,11 @@
 //               list of names, it does not make the names secret. The names were already public in
 //               history; the point is that they do not come back.
 //
-// Not covered, on purpose: a fragment of a real secret (no pattern tells one from a fixture), and
-// the deploy workflow's own name, which is functional (its GitHub environment holds the secrets).
+// Not covered, on purpose: a fragment of a real secret (no pattern tells one from a fixture); a name
+// inside a longer identifier, a name of three or more words, a non-ASCII name; binary files (any NUL
+// byte — counted in the output); and the deploy workflow's own name, which is functional (its GitHub
+// environment holds the secrets). This file is scanned like any other, so its own fixtures are built
+// from fragments at run time.
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -30,18 +36,22 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const PLACEHOLDER_DOMAINS = [
-  // RFC 2606 / RFC 6761 — reserved for documentation, and the one right answer for a new fixture.
-  'example.com', 'example.org', 'example.net', 'example', 'test', 'invalid', 'localhost',
-  // ICANN's private-use TLD (2024): it never resolves on the public internet.
-  'internal',
-  // Fictional domains the existing fixtures use. No address at them names a real person.
+// RFC 2606 / RFC 6761 and ICANN's private-use `.internal` (2024): nobody can own a name under them,
+// so the domain and every subdomain pass. The one right answer for a new fixture.
+const RESERVED_DOMAINS = ['example.com', 'example.org', 'example.net', 'example', 'test', 'invalid', 'localhost', 'internal'];
+
+// Fictional domains the existing fixtures use. They are registrable, so they pass EXACTLY — a
+// subdomain of one is someone's real host — and only the hosts the fixtures name are listed.
+const FICTIONAL_DOMAINS = new Set([
   'corp', 'corp.com', 'corp.dev', 'corp.io', 'company.com', 'x.com', 'x.dev', 'x.io', 'b.com',
-  'home.io', 'personal.io', 'db.host',
-];
+  'home.io', 'personal.io', 'db.host', 'db.corp', 'db.corp.com',
+  // Not domains at all, but text the pattern reads as one: two fields concatenated (teamSearch.ts
+  // shows what that would match) and a vault file name.
+  'corp.comadmin', 'corp.comgoogle', 'corp.com.enc',
+]);
 
 // Public services hold real people's mailboxes, so an address there passes only with a local part
-// that names nobody. `jane.doe@gmail.com` fails.
+// that names nobody — a first and last name at one of them fails.
 const PUBLIC_SERVICE_ADDRESSES = new Map([
   ['gmail.com', ['me', 'user', 'user1', 'user2', 'friend', 'personal']],
   ['g-mail.com', ['user.two+dev']],
@@ -52,13 +62,19 @@ const PUBLIC_SERVICE_ADDRESSES = new Map([
   ['ssh.dev.azure.com', ['git']],
 ]);
 
-// Not domains at all, but text the e-mail pattern reads as one: `alice@corp.comadmin` (teamSearch.ts
-// shows what concatenating two fields would match) and `vault_me@corp.com.enc` (a vault file name).
-const PLACEHOLDER_DOMAIN_LITERALS = ['corp.comadmin', 'corp.comgoogle', 'corp.com.enc'];
-
 const PLACEHOLDER_USERS = [
   'you', '<you>', 'me', 'dev', 'ada', 'a', 'u', 'o', 'someone', 'user', 'alice', 'bob', 'runner', '...', '…',
+  "o'brien", "o''brien", // the quote-escaping fixtures in vpnLauncher.test.ts
 ];
+
+// Exact addresses, not ranges: a neighbour of an allowed address could be a real host as easily as
+// any other. A new fixture uses RFC 5737 (192.0.2.x, 198.51.100.x, 203.0.113.x), which this rule
+// never sees; one that must be private-range adds its address here.
+const NEUTRAL_PRIVATE_IPS = new Set([
+  '10.0.0.0', '10.0.0.1', '10.0.0.4', '10.0.0.5', '10.0.0.7', '10.0.0.12', '10.0.0.21', '10.0.0.22',
+  '10.255.255.1', // the conventional black hole: a connection that never completes
+  '172.16.0.0', '192.168.0.0', '192.168.1.10',
+]);
 
 const PRIVATE_NAME_DIGESTS = new Set([
   'bb2db1046f5e37f5d88bf0e9752fa3c301afd7c51bd82b96af20f9a572760117',
@@ -71,9 +87,24 @@ const PRIVATE_NAME_DIGESTS = new Set([
   'a7ba0b236260c1bbfe9cdfa62462fb1019f3efe8542cf0ea537f193835d86765',
 ]);
 
+// At most this many findings per line and per rule: a generated line repeating one match a million
+// times must not hold a million objects. The first ones are enough to find and fix it.
+const MAX_PER_LINE = 50;
+
 const EMAIL = /([A-Za-z0-9._%+-]+)@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,})\b/g;
 const RFC1918 = /(?<![\d.])(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})(?![\d.]*\d)/g;
-const HOME = /(?:\b[A-Za-z]:(?:\\\\|\\|\/)Users|\/mnt\/[a-z]\/Users|(?<![\w.])\/home|(?<![\w.~])\/Users)(?:\\\\|\\|\/)([^\\/\s"'`)\]}<>,;:=*]+|<[^>\s]*>)/g;
+const SEP = String.raw`(?:\\\\|\\|/)`;
+const HOME_ROOTS = [
+  String.raw`\b[A-Za-z]:${SEP}Users`, // C:\Users, also JSON-escaped
+  String.raw`/mnt/[a-z]/Users`, // WSL
+  String.raw`(?<![\w.])/[a-z]/Users`, // Git Bash, MSYS
+  String.raw`/cygdrive/[a-z]/Users`, // Cygwin
+  String.raw`(?:\\{2,4}|//)wsl(?:\$|\.localhost)${SEP}[^\\/\s"'\x60]+${SEP}home`, // \\wsl$\<distro>\home
+  String.raw`(?<![\w.])/home`,
+  String.raw`(?<![\w.~])/Users`,
+];
+// The user folder may hold a quote (o'brien); a quote that ENDS it closes a string literal instead.
+const HOME = new RegExp(String.raw`(?:${HOME_ROOTS.join('|')})${SEP}([^\\/\s"\x60)\]}<>,;:=*]+|<[^>\s]*>)`, 'g');
 const WORD = /[a-z0-9]+/g;
 
 const digestCache = new Map();
@@ -93,31 +124,23 @@ function addressAllowed(local, domain) {
   const d = domain.toLowerCase();
   const service = PUBLIC_SERVICE_ADDRESSES.get(d);
   if (service) return service.includes(local.toLowerCase());
-  if (PLACEHOLDER_DOMAIN_LITERALS.includes(d)) return true;
-  // The domain itself or a subdomain of it — never a domain that merely STARTS with a placeholder:
+  if (FICTIONAL_DOMAINS.has(d)) return true;
+  // The domain itself or a subdomain of it — never a domain that merely STARTS with a reserved one:
   // `example.com.attacker.org` is a real domain someone else can own.
-  return PLACEHOLDER_DOMAINS.some((a) => d === a || d.endsWith(`.${a}`));
+  return RESERVED_DOMAINS.some((a) => d === a || d.endsWith(`.${a}`));
 }
-
-// Exact addresses, not ranges: `10.0.0.42` could be a real host as easily as `10.120.x.x`.
-// A new fixture uses RFC 5737 (192.0.2.x, 198.51.100.x, 203.0.113.x), which this rule never sees;
-// one that must be private-range adds its address here.
-const NEUTRAL_PRIVATE_IPS = new Set([
-  '10.0.0.0', '10.0.0.1', '10.0.0.4', '10.0.0.5', '10.0.0.7', '10.0.0.12', '10.0.0.21', '10.0.0.22',
-  '10.255.255.1', // the conventional black hole: a connection that never completes
-  '172.16.0.0', '192.168.0.0', '192.168.1.10',
-]);
 
 function ipAllowed(ip) {
   return NEUTRAL_PRIVATE_IPS.has(ip);
 }
 
 function userAllowed(user) {
-  const u = user.toLowerCase();
+  const u = user.replace(/'+$/, '').toLowerCase();
   return PLACEHOLDER_USERS.includes(u) || u.startsWith('<') || u.startsWith('$') || u.startsWith('%');
 }
 
-function nameHits(text, digests) {
+/** Words and joined pairs whose digest is listed, at most `limit` of them. */
+function nameHits(text, digests, limit = MAX_PER_LINE) {
   const lower = text.toLowerCase();
   const hits = [];
   // Streamed, holding only the previous word: one minified 8 MiB line is millions of matches, and
@@ -125,6 +148,7 @@ function nameHits(text, digests) {
   let prev = null;
   let prevEnd = -2;
   for (const m of lower.matchAll(WORD)) {
+    if (hits.length >= limit) break;
     const word = m[0];
     if (digests.has(digest(word))) hits.push(word);
     const joiner = lower[prevEnd];
@@ -137,24 +161,29 @@ function nameHits(text, digests) {
   return hits;
 }
 
+/** What a finding prints as its match: the text itself, unless that text holds a listed name. */
+function shown(text, digests) {
+  return nameHits(text, digests, 1).length ? '(a match holding a private name)' : text;
+}
+
+function* capped(iterable, limit = MAX_PER_LINE) {
+  let n = 0;
+  for (const item of iterable) {
+    if (n++ >= limit) return;
+    yield item;
+  }
+}
+
 /** Every finding in one line of text: [{ rule, match }]. */
 export function scanLine(line, digests = PRIVATE_NAME_DIGESTS) {
   const out = [];
   // No `@`, no address: and the e-mail pattern backtracks on a long line that holds none.
-  if (line.includes('@')) for (const m of line.matchAll(EMAIL)) if (!addressAllowed(m[1], m[2])) out.push({ rule: 'e-mail', match: m[0] });
-  for (const m of line.matchAll(RFC1918)) if (!ipAllowed(m[1])) out.push({ rule: 'private-ip', match: m[1] });
-  for (const m of line.matchAll(HOME)) if (!userAllowed(m[1])) out.push({ rule: 'home-path', match: m[0] });
+  const emails = line.includes('@') ? line.matchAll(EMAIL) : [];
+  for (const m of capped(emails)) if (!addressAllowed(m[1], m[2])) out.push({ rule: 'e-mail', match: shown(m[0], digests) });
+  for (const m of capped(line.matchAll(RFC1918))) if (!ipAllowed(m[1])) out.push({ rule: 'private-ip', match: m[1] });
+  for (const m of capped(line.matchAll(HOME))) if (!userAllowed(m[1])) out.push({ rule: 'home-path', match: shown(m[0], digests) });
   for (const n of nameHits(line, digests)) out.push({ rule: 'name', match: '(a private name; see the digest list)', word: n });
   return out;
-}
-
-// This file is the one exemption: its selftest fixtures are made-up violations by design, and it
-// holds no real name — only digests.
-const SELF = '.github/scripts/public-hygiene.mjs';
-
-function trackedFiles() {
-  const out = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-  return out.split('\0').filter((f) => f && f !== SELF);
 }
 
 /** Findings on a tracked file's PATH itself (line 0). */
@@ -177,55 +206,84 @@ export function formatFindings(findings) {
   });
 }
 
+function trackedFiles() {
+  const out = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  return out.split('\0').filter(Boolean);
+}
+
+/** The file's bytes; null for the two expected non-files, and any other error is raised. */
+function readTracked(file) {
+  try {
+    return readFileSync(file);
+  } catch (e) {
+    // EISDIR: a gitlink (the shared-rules submodule). ENOENT: deleted in the working tree.
+    if (e.code === 'EISDIR' || e.code === 'ENOENT') return null;
+    throw new Error(`public hygiene: cannot read tracked file ${file}: ${e.code ?? e.message}`);
+  }
+}
+
 function scanTree() {
   const findings = [];
+  let binary = 0;
   for (const file of trackedFiles()) {
     findings.push(...pathFindings(file));
-    let buf;
-    try {
-      buf = readFileSync(file);
-    } catch {
-      continue; // a gitlink (the shared-rules submodule) or a file deleted in the working tree
+    const buf = readTracked(file);
+    if (buf === null) continue;
+    if (buf.includes(0)) {
+      binary++; // images, archives, UTF-16: not text this check can read
+      continue;
     }
-    if (buf.length > 8 * 1024 * 1024 || buf.includes(0)) continue;
-    const lines = buf.toString('utf8').split('\n');
-    lines.forEach((text, i) => {
+    buf.toString('utf8').split('\n').forEach((text, i) => {
       for (const f of scanLine(text)) findings.push({ file, line: i + 1, ...f });
     });
   }
-  return findings;
+  return { findings, binary };
 }
 
-function selftest() {
-  const secretWord = 'zebraquokka';
-  const digests = new Set([digest(secretWord)]);
-  const cases = [
+// ---- selftest -------------------------------------------------------------------------------------
+// This file is scanned too, so no fixture below spells a whole violation: each is assembled here.
+
+const mail = (local, domain) => `${local}${'@'}${domain}`;
+const ip = (...octets) => octets.join('.');
+const win = (...parts) => parts.join('\\');
+const nix = (...parts) => parts.join('/');
+
+function lineCases(secretWord) {
+  return [
     // [line, expected rules]
-    ['mail jane.doe@acme-widgets.co about it', ['e-mail']],
-    ['from: someone@unknown-org.net', ['e-mail']],
-    ['alice@example.com, bob@corp.com, git@github.com:me/vault.git', []],
-    ['ops@bastion.example.internal and a@b.test', []],
-    ['vault_me@corp.com.enc', []],
-    ['me@gmail.com, user1@outlook.com, ssh://git@gitlab.com/me/vault', []],
-    ['jane.doe@gmail.com', ['e-mail']],
-    ['jane@github.com', ['e-mail']],
-    ['git@bitbucket.org:me/v.git, git@ssh.dev.azure.com:v3/o/p/r, /home/runner/work', []],
-    ['person@example.com.attacker.org', ['e-mail']],
-    ['ops@corp.company-real.org', ['e-mail']],
-    ['react@18.3.1 and actions/checkout@v4', []],
-    ['ssh ubuntu@10.44.3.2', ['private-ip']],
-    ['host 172.20.1.9', ['private-ip']],
-    ['192.168.7.20 is home', ['private-ip']],
-    ['10.0.0.5, 192.168.1.10, 10.255.255.1, 172.16.0.0/12', []],
-    ['10.0.0.42 sits in a neutral-looking range', ['private-ip']],
-    ['203.0.113.10 and 192.0.2.1 are documentation addresses', []],
-    ['version 110.20.30.40 and 8.8.8.8', []],
-    ['C:\\Users\\jdoe\\AppData', ['home-path']],
-    ['/mnt/c/Users/jdoe/x and /home/jdoe/.ssh', ['home-path', 'home-path']],
-    ['/Users/jdoe/Library', ['home-path']],
-    ['C:\\Users\\<you>\\AppData, /home/dev/x, /mnt/c/Users/me, c:\\Users\\…\\keys', []],
-    ['C:\\\\Users\\\\jdoe\\\\x', ['home-path']],
-    ['/mnt/c/Users/…<rest> and HOME=/home/a=b', []],
+    [`write to ${mail('jane.doe', 'acme-widgets.co')} about it`, ['e-mail']],
+    [`from: ${mail('someone', 'unknown-org.net')}`, ['e-mail']],
+    [`${mail('alice', 'example.com')}, ${mail('bob', 'corp.com')}, ${mail('git', 'github.com')}:me/vault.git`, []],
+    [`${mail('ops', 'bastion.example.internal')} and ${mail('a', 'b.test')}`, []],
+    [`vault_${mail('me', 'corp.com.enc')}`, []],
+    [`${mail('me', 'gmail.com')}, ${mail('user1', 'outlook.com')}, ssh://${mail('git', 'gitlab.com')}/me/vault`, []],
+    [mail('jane.doe', 'gmail.com'), ['e-mail']],
+    [mail('jane', 'github.com'), ['e-mail']],
+    [mail('person', 'example.com.attacker.org'), ['e-mail']],
+    [mail('ops', 'corp.company-real.org'), ['e-mail']],
+    [mail('ops', 'vpn.corp.com.attacker.org'), ['e-mail']],
+    [mail('ops', 'mail.x.com'), ['e-mail']],
+    [`${mail('git', 'bitbucket.org')}:me/v.git, ${mail('git', 'ssh.dev.azure.com')}:v3/o/p/r, ${nix('', 'home', 'runner', 'work')}`, []],
+    [`react${'@'}18.3.1 and actions/checkout${'@'}v4`, []],
+    [`ssh ubuntu${'@'}${ip(10, 44, 3, 2)}`, ['private-ip']],
+    [`host ${ip(172, 20, 1, 9)}`, ['private-ip']],
+    [`${ip(192, 168, 7, 20)} is home`, ['private-ip']],
+    [`${ip(10, 0, 0, 5)}, ${ip(192, 168, 1, 10)}, ${ip(10, 255, 255, 1)}, ${ip(172, 16, 0, 0)}/12`, []],
+    [`${ip(10, 0, 0, 42)} sits next to an allowed one`, ['private-ip']],
+    [`${ip(203, 0, 113, 10)} and ${ip(192, 0, 2, 1)} are documentation addresses`, []],
+    [`version ${ip(110, 20, 30, 40)} and ${ip(8, 8, 8, 8)}`, []],
+    [win('C:', 'Users', 'jdoe', 'AppData'), ['home-path']],
+    [`${nix('', 'mnt', 'c', 'Users', 'jdoe', 'x')} and ${nix('', 'home', 'jdoe', '.ssh')}`, ['home-path', 'home-path']],
+    [nix('', 'Users', 'jdoe', 'Library'), ['home-path']],
+    [nix('', 'c', 'Users', 'jdoe', 'bin'), ['home-path']],
+    [nix('', 'cygdrive', 'c', 'Users', 'jdoe'), ['home-path']],
+    [win('', '', 'wsl$', 'Ubuntu', 'home', 'jdoe', 'x'), ['home-path']],
+    [nix('', '', 'wsl.localhost', 'Ubuntu', 'home', 'jdoe'), ['home-path']],
+    [`'${win('C:', 'Users', "o'neil", 'x')}'`, ['home-path']],
+    [`${win('C:', 'Users', '<you>', 'AppData')}, ${nix('', 'home', 'dev', 'x')}, ${nix('', 'mnt', 'c', 'Users', 'me')}, ${win('c:', 'Users', '…', 'keys')}`, []],
+    [`'${nix('', 'home', 'dev')}', '${win('C:', 'Users', "o'brien", 'k')}', ${nix('', 'c', 'Users', 'me')}`, []],
+    [win('C:', '', 'Users', '', 'jdoe', '', 'x'), ['home-path']],
+    [`${nix('', 'mnt', 'c', 'Users', '…<rest>')} and HOME=${nix('', 'home', 'a=b')}`, []],
     [`the ${secretWord} project`, ['name']],
     ['the Zebra-Quokka project', ['name']],
     ['zebra_quokka.ovpn', ['name']],
@@ -234,35 +292,56 @@ function selftest() {
     ['a zebra. Quokka', []],
     ['zebras and quokkas', []],
   ];
-  let failed = 0;
-  const check = (ok, label) => {
-    if (!ok) failed++;
-    console.log(`${ok ? 'ok  ' : 'FAIL'} ${label}`);
-  };
-  for (const [line, expected] of cases) {
+}
+
+function runLineCases(digests, check) {
+  for (const [line, expected] of lineCases('zebraquokka')) {
     const got = scanLine(line, digests).map((f) => f.rule);
     const ok = JSON.stringify(got) === JSON.stringify(expected);
     check(ok, `${JSON.stringify(line)} -> [${got.join(', ')}]${ok ? '' : ` expected [${expected.join(', ')}]`}`);
   }
+}
 
-  // The output reaches a PUBLIC CI log, so it must never carry the name it found — not as the
-  // match, and not inside the path of the file that holds it.
+// The output reaches a PUBLIC CI log, so it must never carry the name it found — not as the match,
+// not inside an address or a home path, and not inside the path of the file that holds it.
+function checkNoLeak(digests, check) {
   const planted = 'docs/Zebra-Quokka/notes.md';
+  const findingsOn = (file, line, text) => scanLine(text, digests).map((f) => ({ file, line, ...f }));
   const output = formatFindings([
     ...pathFindings(planted, digests),
-    { file: planted, line: 3, ...scanLine('mail jane@acme-widgets.co', digests)[0] },
-    { file: 'docs/plain.md', line: 7, ...scanLine('the zebra quokka project', digests)[0] },
+    ...findingsOn(planted, 3, `write to ${mail('jane', 'acme-widgets.co')}`),
+    ...findingsOn('docs/plain.md', 7, 'the zebra quokka project'),
+    ...findingsOn('docs/plain.md', 8, `ask ${mail('zebraquokka', 'acme-widgets.co')}`),
+    ...findingsOn('docs/plain.md', 9, win('C:', 'Users', 'zebraquokka', 'x')),
+    ...findingsOn('docs/plain.md', 10, nix('', 'home', 'zebra-quokka', '.ssh')),
   ]).join('\n');
-  check(!/zebra|quokka/i.test(output), `the printed findings never contain the planted name:\n${output}`);
+  const findings = output.split('\n').length;
+  check(findings === 9 && !/zebra|quokka/i.test(output), `${findings} printed findings, none of them carrying the planted name:\n${output}`);
+}
 
-  // A typo in a digest is a name that silently never matches.
+// A typo in a digest is a name that silently never matches.
+function checkDigestShape(check) {
   const bad = [...PRIVATE_NAME_DIGESTS].filter((d) => !/^[0-9a-f]{64}$/.test(d));
   check(PRIVATE_NAME_DIGESTS.size > 0 && bad.length === 0, `the digest list is non-empty and every entry is 64 hex characters (${bad.length} malformed)`);
+}
 
-  const total = cases.length + 2;
+function selftest() {
+  const digests = new Set([digest('zebraquokka')]);
+  let failed = 0;
+  let total = 0;
+  const check = (ok, label) => {
+    total++;
+    if (!ok) failed++;
+    console.log(`${ok ? 'ok  ' : 'FAIL'} ${label}`);
+  };
+  runLineCases(digests, check);
+  checkNoLeak(digests, check);
+  checkDigestShape(check);
   console.log(failed === 0 ? `selftest: ${total} cases, all ok` : `selftest: ${failed} of ${total} cases FAILED`);
   return failed === 0 ? 0 : 1;
 }
+
+// ---- entry ----------------------------------------------------------------------------------------
 
 function main(argv) {
   if (argv[0] === '--selftest') return selftest();
@@ -270,15 +349,17 @@ function main(argv) {
     console.log(digest(argv[1] ?? ''));
     return 0;
   }
-  const findings = scanTree();
+  const { findings, binary } = scanTree();
   for (const line of formatFindings(findings)) console.log(line);
-  const byRule = {};
-  for (const f of findings) byRule[f.rule] = (byRule[f.rule] ?? 0) + 1;
+  const skipped = `${binary} binary file(s) not read`;
   if (findings.length === 0) {
-    console.log('public hygiene: clean');
+    console.log(`public hygiene: clean (${skipped})`);
     return 0;
   }
-  console.log(`public hygiene: ${findings.length} finding(s) — ${Object.entries(byRule).map(([r, n]) => `${r} ${n}`).join(', ')}`);
+  const byRule = {};
+  for (const f of findings) byRule[f.rule] = (byRule[f.rule] ?? 0) + 1;
+  const counts = Object.entries(byRule).map(([r, n]) => `${r} ${n}`).join(', ');
+  console.log(`public hygiene: ${findings.length} finding(s) — ${counts} (${skipped})`);
   console.log('Use a placeholder: name@example.com, 192.0.2.x / 203.0.113.x, C:\\Users\\<you>, a neutral project name.');
   return 1;
 }

@@ -7,15 +7,21 @@
 >
 > **Deviations.** (1) The plan review's two accepted findings tightened the guard: at a public mail
 > service the WHOLE address must be a known generic one (not only the domain), and private IPs are an
-> exact list of twelve addresses, not `/24` ranges. (2) The guard exempts its own file (its selftest
-> fixtures are made-up violations). (3) One more private name turned up while sweeping — a planned
-> system's name in `todo/PLAN_session_timesheet.md` and `todo/README.md` — and joined the digest list.
-> (4) The code review added two guard fixes, each watched RED then GREEN: a placeholder domain no
-> longer matches as a PREFIX (`example.com.attacker.org` passed), and words are streamed (one 8 MiB
-> line grew the heap by 427 MB; 18 MB after). (5) The separate (non-coai) reviewer found that a
-> file whose PATH holds a private name was printed, path and all, in the public CI log; such a path is
-> now numbered, never printed (selftest watched RED, GREEN, RED). Space and slash separators and the
-> digest list's shape are now checked too. (6) Replacements keep each name's LENGTH as well as its first letter, so no width, sort or truncation
+> exact list of twelve addresses, not `/24` ranges. (2) The guard first exempted its own file; a later
+> code round made it scan itself, with its fixtures assembled at run time. (3) One more private name
+> turned up while sweeping — a planned system's name in `todo/PLAN_session_timesheet.md` and
+> `todo/README.md` — and joined the digest list. (4) The code rounds and the separate reviewers
+> hardened the guard, each fix watched RED, GREEN, RED:
+>   - a reserved domain no longer matches as a PREFIX, and the registrable fictional domains match only
+>     exactly;
+>   - words are streamed (427 MB heap for one 8 MiB line; 18 MB after);
+>   - a name inside a printed address, home path or file PATH is masked, because the output is a
+>     public CI log;
+>   - the Git Bash, Cygwin and `\\wsl$` home shapes are covered, and a quote no longer ends the user
+>     folder;
+>   - at most 50 findings per line and rule (699,050 findings and 119 MB before);
+>   - any file size is read, binary files are counted, and an unexpected read error stops the scan.
+> (5) Replacements keep each name's LENGTH as well as its first letter, so no width, sort or truncation
 > assertion moves. **Open tail, for the owner:** rotate the DB password whose fragment is in history;
 > decide on the deploy workflow's name (`.github/workflows/*-server-deploy.yml:1,3,31,41`,
 > `CLAUDE.md:114,125`, `POST_DEPLOY.md:9`, `.github/workflows/ci-server.yml:163`,
@@ -89,12 +95,12 @@ reproducible with `node .github/scripts/public-hygiene.mjs` on the parent commit
    `10.255.255.1` (the conventional black hole the broker itest uses) among them (as built — the plan
    said `/24` ranges);
 3. `home-path` — `C:\Users\<x>`, `/mnt/<d>/Users/<x>`, `/home/<x>`, `/Users/<x>` with `<x>` not a
-   placeholder;
+   placeholder (as built, also the Git Bash, Cygwin and `\\wsl$` shapes);
 4. `name` — a word, or two words joined by one `-`, `_`, `.`, space or slash, whose SHA-256 is in a
    digest list. The list never spells a name; a short name's digest can be brute-forced, which the
    script says — the goal is that names do not come back, not that they become secret.
 
-`--selftest` runs 34 checks (each rule fires; each placeholder passes; a planted digest of a
+`--selftest` runs 42 checks (each rule fires; each placeholder passes; a planted digest of a
 made-up word is caught in three spellings and not in near misses). `docs.yml` runs both.
 Not covered by design: secret fragments (no pattern separates one from a fixture) and the deploy
 workflow name (left for the owner).
@@ -109,7 +115,7 @@ workflow name (left for the owner).
 
 ## Test plan
 
-- `node .github/scripts/public-hygiene.mjs --selftest` → 34 ok; the tree scan RED (243) before, GREEN
+- `node .github/scripts/public-hygiene.mjs --selftest` → 42 ok; the tree scan RED (243) before, GREEN
   after, RED with one planted sample.
 - xUnit v3 executables one after another, at lowered priority: CredsBroker.Tests, CredsCli.Tests,
   CredsMcp.Tests, CredVaultServer.Tests (touched: `CallerIdentityTests`, `SessionTitleTests`,
