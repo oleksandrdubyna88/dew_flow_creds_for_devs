@@ -1210,6 +1210,39 @@ checked `!includes('able')` and `!includes('colleague')` after an 8-hex match, w
 under another context string (the case the plan round named — inequality checks alone miss it). The three old
 checks passed on the first one. Cost: one extra scrypt, the file runs in about 2.4 s.
 
+## The contract suite waits for a built server (2026-10-12, [PLAN_contract_suite_waits_for_a_built_server.md](PLAN_contract_suite_waits_for_a_built_server.md))
+
+**The flow** (`ci-server.yml`, job *http · contract suite*): self-test the start script → **build** the server
+(`dotnet build … -c Release`, its own step) → **start** the built apphost through
+`.github/scripts/start-server-and-wait.sh http://127.0.0.1:5099/api/health 60 -- ./bin/Release/net10.0/CredVaultServer`
+→ the `.http` suite and the live client check, only when the start step succeeded → *Stop the server and show its
+log* (`if: always()`), which signals only the pid the start step recorded and prints the server's log file.
+
+Why: the job used to `dotnet run` — build and start — inside a 60 s wait that never failed. On #240 (run
+38270198889) a cold build took 67.3 s, and the suite reported 370 `ECONNREFUSED` failures for a server that was
+still compiling. Over that day's 20 runs build + start took 11–67 s; the start alone is under 0.4 s after the
+server's first log line. On this PR's first run the build step took 27 s and the start step 2.3 s.
+
+| case (`start-server-and-wait.test.sh`, stand-ins in node) | what it proves |
+|---|---|
+| a. never listens, deadline 3 s | exit 1 within 10 s, `did not answer 2xx on <url> within 3 s (last answer: no connection)`, the log, the pid stopped |
+| b. a Fatal line and exit 78, deadline 30 s | exit 1 in under 5 s, `exited with code 78`, the Fatal line — the refused-start shape of #232 |
+| c. listens (200) after 2 s | exit 0, `pid=` and `log=` in `$GITHUB_OUTPUT`, that pid alive |
+| d. answers 500 | exit 1 no earlier than the 4 s deadline, `last answer: 500` — a 5xx is waited past, never taken as up |
+| e. no `--` | exit 2, usage |
+| f. the URL already answers 2xx | exit 1 at once, nothing started — a leftover server is never mistaken for the new build |
+| g. TERM to the script while it waits | exit non-zero, `interrupted`, and the server it started is gone — a cancelled step leaves nothing behind |
+| h. accepts the connection, never answers, deadline 2 s | exit 1 within 4.5 s — no probe runs past the deadline |
+| i. the start line (on c's run) | names the program only, never its arguments, which may carry a secret |
+
+Runs in the contract job before the build, and the pinned shellcheck of *compose · scripts* reads both scripts.
+**Watched RED** with the old inline loop as the implementation (`START_SERVER_SCRIPT`): all six cases failed, and
+case a — the defect — exited **0**. And RED again with the fix removed (a copy whose deadline branch exits 0): case a exited 0. GREEN on ubuntu in the PR's contract job. Cases g, h and i came from the
+code round and were watched RED in CI first: i printed the stand-in's arguments, g exited 143 at once and left its
+server running, h took 6.0 s for a 2 s deadline. **Limit:** the script signals only the pid it started, so its command must be
+the server itself; a launcher such as `dotnet run` would leave the app behind on a KILL, which is why CI starts
+the apphost.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.

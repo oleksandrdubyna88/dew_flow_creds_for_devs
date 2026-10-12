@@ -23,6 +23,9 @@ on:
       - 'nuget.config'
       - 'dew_flow_creds_for_devs.slnx'
       - '.github/workflows/ci-server.yml'
+      # The contract job starts the server through this script and runs its self-test.
+      - '.github/scripts/start-server-and-wait.sh'
+      - '.github/scripts/start-server-and-wait.test.sh'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -117,10 +120,23 @@ jobs:
           npm ci --ignore-scripts
           npm run compile
 
+      # The step that decides whether the suite may run at all is checked first, against stand-ins: one
+      # that never listens, one that exits 78, one that listens late, one that answers 500, a usage error,
+      # and a URL something else already answers (research/PLAN_contract_suite_waits_for_a_built_server.md).
+      - name: Self-test the start script
+        run: .github/scripts/start-server-and-wait.test.sh
+
+      # Built in its OWN step, never inside the health wait. Until 2026-10-12 `dotnet run` compiled the
+      # server inside a 60 s wait that did not fail: a cold build took 67.3 s on #240 (run 38270198889)
+      # and the suite reported 370 ECONNREFUSED contract failures. Over that day's 20 runs, build + start
+      # took 11-67 s, and the start alone under 0.4 s after the server's first log line.
+      - name: Build the server
+        run: dotnet build src_minimalapi_server/src/CredVaultServer.csproj -c Release
+
       # The environment contract, in one place: http/README.md explains why each value is needed.
       # The signing key is minted per run and never leaves this job — whoever holds one can mint a
       # token for any email on the server it configures.
-      - name: Start the server the suite expects
+      - name: Mint the server's per-run secrets
         run: |
           echo "VAULT_LOCAL_SIGNING_KEY=$(openssl rand -base64 48)" >> "$GITHUB_ENV"
           # The login-key KEK: base64 of exactly 32 bytes, thrown away with the runner.
@@ -132,7 +148,18 @@ jobs:
           mkdir -p "$RUNNER_TEMP/vault-data"
           echo "VAULT_DATA_DIR=$RUNNER_TEMP/vault-data" >> "$GITHUB_ENV"
 
-      - name: Run it
+      # The BUILT apphost, run directly: `dotnet run --no-build` without its wrapper, so the pid the script
+      # records is the server itself (plan round 1 — a signal to the SDK host can leave the app holding
+      # the port). From the project directory, the content root `dotnet run` gave it (appsettings.json is
+      # there). 60 s is a CEILING on a broken start, not a guess at a build. The script fails at once, with
+      # the exit code and the log, when the server exits (a refused start exits 78); with one sentence and
+      # the log at the deadline; and it refuses when something already answers the URL. Every step below
+      # runs only after it succeeded, so "no server" can no longer read as 370 contract failures.
+      - name: Start the server and wait for it
+        id: server
+        working-directory: src_minimalapi_server/src
+        env:
+          START_SERVER_LOG: ${{ runner.temp }}/vault-server.log
         run: |
           Auth__Local__SigningKey="$VAULT_LOCAL_SIGNING_KEY" \
           Vault__AllowedDomains=example.com \
@@ -142,17 +169,43 @@ jobs:
           Vault__DataDir="$VAULT_DATA_DIR" \
           Vault__PublishInstanceFile=false \
           ASPNETCORE_URLS=http://127.0.0.1:5099 \
-            dotnet run --project src_minimalapi_server/src -c Release &
-          for _ in $(seq 1 30); do
-            curl -fsS -o /dev/null http://127.0.0.1:5099/api/health && break
-            sleep 2
-          done
+            ../../.github/scripts/start-server-and-wait.sh http://127.0.0.1:5099/api/health 60 -- \
+            ./bin/Release/net10.0/CredVaultServer
+
+      - name: Run it
+        run: |
           node .claude/rules/shared/tools/http-run.mjs \
             --require-env VAULT_LOCAL_SIGNING_KEY --env local --target http://127.0.0.1:5099
           # The REAL TypeScript client against the REAL server, over the wire — the check two green
           # suites agreeing with contract/backup-targets-v1.json is not. Same exit-code contract:
           # 1 is a regression, 3 and 4 mean the contract was NOT exercised.
           node src_vs_code/scripts/backup-targets-live.cjs
+
+      # Stops ONLY the pid the start step recorded, never anything by name, and puts the server's own log
+      # back in the job log: it goes to a file now, so a failed run is read here. A server already gone
+      # when this runs crashed during the suite, and the step says so.
+      - name: Stop the server and show its log
+        if: always() && steps.server.outputs.pid != ''
+        env:
+          SERVER_PID: ${{ steps.server.outputs.pid }}
+          SERVER_LOG: ${{ steps.server.outputs.log }}
+        run: |
+          if kill -0 "$SERVER_PID" 2> /dev/null; then
+            kill -TERM "$SERVER_PID"
+            for _ in $(seq 1 30); do
+              kill -0 "$SERVER_PID" 2> /dev/null || break
+              sleep 0.5
+            done
+            if kill -0 "$SERVER_PID" 2> /dev/null; then
+              echo "pid $SERVER_PID did not stop within 15 s of TERM; sending KILL"
+              kill -KILL "$SERVER_PID" 2> /dev/null || true
+            else
+              echo "pid $SERVER_PID stopped"
+            fi
+          else
+            echo "the server (pid $SERVER_PID) had already exited before the stop step"
+          fi
+          cat "$SERVER_LOG"
 
       # Exit 1 while a route has no request. Every route has one today, so this starts armed
       # rather than as a warning — the state a repository earns by finishing its backfill.
@@ -205,6 +258,8 @@ jobs:
             deploy/restore-archive-itest.sh
           # The container entrypoints are POSIX sh, not bash.
           $SHELLCHECK --shell=sh deploy/nginx/entrypoint.sh deploy/certbot/entrypoint.sh
+          # The contract job's start script and its self-test: the actionlint job reads run: blocks only.
+          $SHELLCHECK .github/scripts/start-server-and-wait.sh .github/scripts/start-server-and-wait.test.sh
 
       - name: Drive restore-archive.sh as a program
         run: |

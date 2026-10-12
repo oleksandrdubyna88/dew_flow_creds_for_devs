@@ -65,18 +65,44 @@ npm install --save-dev httpyac@6.16.7            # once per machine
 # a local run goes below interactive work (.claude/rules/shared/common/local-cpu-budget.md)
 LP=.claude/rules/shared/tools/low-priority.mjs
 
+# BUILD first, on its own — never inside the wait for the server (see below)
+node $LP dotnet build src_minimalapi_server/src/CredVaultServer.csproj -c Release -m:4 --disable-build-servers
+
+# START the built server from its project directory (its content root) and wait until /api/health answers 2xx.
+# The script exits 0 only then, and prints the server's pid and log file; it fails with the exit code and the
+# log when the server exits, and with one sentence when the deadline passes.
 export VAULT_LOCAL_SIGNING_KEY="$(openssl rand -base64 48)"
-Auth__Local__SigningKey="$VAULT_LOCAL_SIGNING_KEY" \
-Vault__AllowedDomains=example.com \
-Vault__CorpRecovery__OfficerEmails=officer@example.com,officer2@example.com,officer3@example.com \
-Vault__LoginKey__Kek="$(openssl rand -base64 32)" \
-Vault__DataDir=/tmp/vault-suite \
-Vault__PublishInstanceFile=false \
-  node $LP dotnet run --disable-build-servers --project src_minimalapi_server/src --urls http://127.0.0.1:5099 &
+(cd src_minimalapi_server/src &&
+  Auth__Local__SigningKey="$VAULT_LOCAL_SIGNING_KEY" \
+  Vault__AllowedDomains=example.com \
+  Vault__CorpRecovery__OfficerEmails=officer@example.com,officer2@example.com,officer3@example.com \
+  Vault__CorpRecovery__Threshold=2 \
+  Vault__LoginKey__Kek="$(openssl rand -base64 32)" \
+  Vault__DataDir=/tmp/vault-suite \
+  Vault__PublishInstanceFile=false \
+  ASPNETCORE_URLS=http://127.0.0.1:5099 \
+    node ../../$LP bash ../../.github/scripts/start-server-and-wait.sh http://127.0.0.1:5099/api/health 60 -- \
+    ./bin/Release/net10.0/CredVaultServer)
 
 node $LP node .claude/rules/shared/tools/http-run.mjs \
   --require-env VAULT_LOCAL_SIGNING_KEY --env local --target http://127.0.0.1:5099
+
+kill <the pid the start script printed>   # it IS the server: the script started the apphost itself
 ```
+
+**Why the server is built first and started through a script** (2026-10-12,
+[PLAN_contract_suite_waits_for_a_built_server.md](../research/PLAN_contract_suite_waits_for_a_built_server.md)):
+CI used to `dotnet run` — build AND start — inside a 60 s health wait that never failed. On #240 a cold build
+took 67.3 s, the wait gave up quietly, and the suite reported **370 failed checks, every one `ECONNREFUSED`**,
+for a server that was merely still compiling. `.github/scripts/start-server-and-wait.sh` lets only an answering
+server through, so the suite now runs against a server or not at all. It starts the APPHOST rather than
+`dotnet run`, because the pid it records — and the only one it ever signals — must be the server itself.
+
+Three local notes. The apphost finds the runtime the way any .NET apphost does, so with .NET installed outside the
+standard location (say `~/.dotnet`) set `DOTNET_ROOT` first — otherwise the script fails at once and its log says
+*You must install .NET*. Under Git Bash `bash` must be Git's own (Git's `usr\bin` before `System32` on PATH), not
+WSL's `bash.exe`. And on Windows `kill <pid>` ends the server without a graceful shutdown (MSYS turns it into
+`TerminateProcess`), which is harmless for this throwaway data directory.
 
 The verdict is the **exit code**, not the log tail: `0` pass · `1` contract regression · `3`
 environment · `4` configuration · `5` no valid report. Exit `3` means the API was never exercised —
