@@ -98,6 +98,20 @@ flowchart TB
   not end answers with exit code 1 and a Warning rather than the exception `Process.ExitCode` throws. Exit code: the child's, or 128 + n after a signal, with the
   reason (`signalled`, `parentGone`) in the exit line; a backstop exits the process through the same forced exit as
   the server's deadline if the wrapper has not ended `grace + 2 s` after the shutdown began.
+- **The Windows half dies with the wrapper even when the wrapper runs no code (E6, defect D).** The `ChildLifetime`
+  above needs the wrapper to run to stop the child. Defect D is the case it misses: a process-tree terminator SIGSTOPs
+  the `/init` interop proxy (only SIGSTOP stops it — it ignores SIGTSTP/SIGTTIN/SIGTTOU and blocks SIGINT) and then
+  SIGKILLs the wrapper, so nothing of ours runs, and a stopped proxy forwards no end-of-stream — its Windows half, which
+  exits on end-of-stream since defect A, leaks. So the Windows half is launched through `setpriv --pdeathsig KILL --`
+  (`WindowsBridge.StartPiped`, [module_service_defaults.md](module_service_defaults.md)): the proxy carries
+  `PR_SET_PDEATHSIG(SIGKILL)`, so the kernel ends it the instant the wrapper dies — SIGKILL ends even a stopped
+  process — with no cooperation from the wrapper or the proxy. When no compatible `setpriv` is found in the trusted
+  system directories the guard is off and the pump logs one WARNING at startup naming the real reason — setpriv not
+  found in the trusted system directories, or present but lacking `--pdeathsig` (util-linux < 2.33 / busybox), or the
+  `CREDS_NO_PDEATH_GUARD=1` off switch. The guarded child is
+  forked on one dedicated long-lived thread, because `PR_SET_PDEATHSIG` fires when the forking thread exits and .NET
+  forks on a pool worker that retires — a thread-scope backstop measured in RESULTS. Measured in
+  research/RESULTS_wsl_bridge_orphans.md, *Defect D*.
 - **Logs.** A serving run writes `creds-mcp` (or `creds-mcp-wsl`) files through
   [module_service_defaults.md](module_service_defaults.md): start, client name, method names at Debug, why it
   stopped, the exit line once. Never argv values, environment values, the caller record, bodies or tool data.

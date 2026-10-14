@@ -24,7 +24,9 @@ const readline = require('node:readline');
 
 const READY_BOUND_MS = 60_000;
 const END_BOUND_MS = 20_000;
-const WORDS = new Set(['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGKILL', 'eof']);
+// `stopped` reproduces defect D: SIGSTOP the wrapper's interop proxy (as a process-tree terminator does), then
+// SIGKILL the wrapper, so the proxy is left stopped and orphaned — the state a stopped proxy leaks from.
+const WORDS = new Set(['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGKILL', 'eof', 'stopped']);
 
 const say = (event) => process.stdout.write(`${JSON.stringify(event)}\n`);
 
@@ -58,12 +60,84 @@ function watchReplies(child, waiting, onReady) {
   });
 }
 
+/**
+ * The `/init` interop proxy under the wrapper. Found by scanning /proc for a process whose PARENT PROCESS is the
+ * wrapper — never the wrapper's main-thread `children` file, which misses a child forked on another thread, and .NET
+ * forks the Windows half on a dedicated thread (so the main-thread file is empty). Never a lookup by name.
+ */
+function proxyOf(wrapperPid) {
+  let entries;
+  try {
+    entries = fs.readdirSync('/proc');
+  } catch {
+    return undefined; // a locked-down /proc; the caller reports no proxy found
+  }
+  for (const entry of entries) {
+    if (!/^\d+$/.test(entry) || Number(entry) === wrapperPid) {
+      continue;
+    }
+    try {
+      const ppid = fs.readFileSync(`/proc/${entry}/status`, 'utf8').match(/^PPid:\s*(\d+)/m);
+      if (ppid && Number(ppid[1]) === wrapperPid) {
+        return Number(entry);
+      }
+    } catch {
+      /* the process may have gone between readdir and read */
+    }
+  }
+  return undefined;
+}
+
+/** Whether a process is in state T (stopped) — `/proc/<pid>/stat`, the char after the final `) `. */
+function isStopped(pid) {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+    return stat.slice(stat.lastIndexOf(')') + 2, stat.lastIndexOf(')') + 3) === 'T';
+  } catch {
+    return false;
+  }
+}
+
+/** A synchronous sleep (no event loop here — we are between a kill and a kill). */
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
 function end(child, word) {
   if (word === 'eof') {
     child.stdin.end();
-  } else {
-    child.kill(word);
+    return;
   }
+  if (word === 'stopped') {
+    // Defect D: stop the proxy (only SIGSTOP actually stops an interop proxy — measured), then SIGKILL the wrapper so
+    // nothing of ours runs any cleanup. With the fix the proxy carries PR_SET_PDEATHSIG(KILL) and the kernel ends it
+    // with the wrapper anyway; without it the proxy sits stopped and its Windows half leaks. If no proxy is found, or
+    // the stop does not take, the ending would degrade to a plain SIGKILL and prove nothing — so say so, loudly.
+    const proxy = proxyOf(child.pid);
+    if (proxy === undefined) {
+      say({ event: 'failed', reason: 'defect-D ending: no interop proxy found under the wrapper to SIGSTOP' });
+      child.kill('SIGKILL');
+      return;
+    }
+    try {
+      process.kill(proxy, 'SIGSTOP');
+    } catch {
+      /* the proxy may already be gone */
+    }
+    // kill(SIGSTOP) returns before the target has actually run do_signal_stop, so poll for the T state (up to 1 s)
+    // rather than read it a microsecond too early and emit stopped:false on a good run.
+    let stopped = false;
+    for (let waited = 0; waited < 1000 && !stopped; waited += 20) {
+      stopped = isStopped(proxy);
+      if (!stopped) {
+        sleepSync(20);
+      }
+    }
+    say({ event: 'stopped-proxy', proxy, stopped });
+    child.kill('SIGKILL');
+    return;
+  }
+  child.kill(word);
 }
 
 function main() {

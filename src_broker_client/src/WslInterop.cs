@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 
@@ -132,6 +133,221 @@ public static class WslInterop
         }
     }
 
+    /// <summary>The operator's escape hatch — set to <c>1</c> and the Windows half is launched directly (defect D guard off).</summary>
+    /// <remarks>
+    /// Product-neutral because the guard is shared: <see cref="WindowsBridge.StartPiped"/> serves BOTH the MCP pump
+    /// and the relay's <c>relay-pipe</c> children, so an MCP-named switch would read as if it touched only MCP
+    /// (code round, finding 3). For the rare machine where <c>setpriv</c> wrapping is unwelcome; never needed in
+    /// normal use.
+    /// </remarks>
+    public const string NoParentDeathGuardVariable = "CREDS_NO_PDEATH_GUARD";
+
+    /// <summary>Why the parent-death guard stands where it does — a value the startup log reports as a fact.</summary>
+    public enum ParentDeathGuard
+    {
+        /// <summary><c>setpriv</c> is present; a piped launch of a resolvable binary will be guarded.</summary>
+        Available,
+
+        /// <summary>Not Linux — this host never relays a Windows half, so the guard does not apply.</summary>
+        NotApplicable,
+
+        /// <summary>The operator set <see cref="NoParentDeathGuardVariable"/> to <c>1</c>.</summary>
+        SwitchedOff,
+
+        /// <summary><c>setpriv</c> (util-linux) was not found in the trusted system directories.</summary>
+        NoSetpriv,
+
+        /// <summary><c>setpriv</c> is present but does not understand <c>--pdeathsig</c> (util-linux &lt; 2.33, or busybox).</summary>
+        SetprivLacksPdeathsig,
+    }
+
+    /// <summary>The trusted system directories <c>setpriv</c> is looked for in — never an arbitrary PATH entry.</summary>
+    /// <remarks>
+    /// A credential broker must not execute a <c>setpriv</c> an attacker dropped earlier on the PATH (code round,
+    /// finding 12): <c>setpriv</c> is a util-linux system binary, and these are the only places it legitimately
+    /// lives. A <c>setpriv</c> in a non-standard prefix leaves the guard off — safe, the launch falls back — never an
+    /// untrusted exec.
+    /// </remarks>
+    private static readonly string[] TrustedBinDirs = ["/usr/bin", "/bin", "/usr/sbin", "/sbin", "/usr/local/bin"];
+
+    /// <summary>The guard's path and the reason it stands where it does — resolved ONCE for this process.</summary>
+    /// <remarks>
+    /// The Windows half of the bridge is launched through <c>setpriv --pdeathsig KILL --</c> so its interop proxy
+    /// carries <c>PR_SET_PDEATHSIG(SIGKILL)</c>: when this Linux wrapper dies for any reason — a SIGKILL that runs no
+    /// cleanup included — the kernel sends the proxy SIGKILL, and SIGKILL ends even a SIGSTOPped process, so a proxy a
+    /// process-tree terminator left stopped-and-orphaned cannot sit forever failing to forward end-of-stream (defect D
+    /// of PLAN_wsl_bridge_outlives_its_client.md, §5.11; measured in research/RESULTS_wsl_bridge_orphans.md). Resolved
+    /// once because it runs a probe process; a fresh wrapper process re-resolves, so a corrected environment recovers
+    /// on the next session.
+    /// </remarks>
+    internal readonly record struct GuardResolution(string? Setpriv, ParentDeathGuard Status);
+
+    private static readonly Lazy<GuardResolution> Resolution = new(ResolveGuard);
+
+    /// <summary><c>setpriv</c>'s path when the guard is armable, else <c>null</c>.</summary>
+    internal static readonly Lazy<string?> ParentDeathArmer = new(() => Resolution.Value.Setpriv);
+
+    private static GuardResolution ResolveGuard()
+    {
+        var isLinux = OperatingSystem.IsLinux();
+        var killSwitch = Environment.GetEnvironmentVariable(NoParentDeathGuardVariable);
+        var candidate = ResolveSetpriv(isLinux, killSwitch, File.Exists);
+        var baseStatus = GuardStatus(isLinux, killSwitch, candidate);
+        return Classify(baseStatus, candidate, candidate is not null && SupportsPdeathsig(candidate));
+    }
+
+    /// <summary>Pure: fold the base status and the probe result into the final resolution, so the probe-failed reason is a unit test.</summary>
+    internal static GuardResolution Classify(ParentDeathGuard baseStatus, string? candidate, bool probeSupported) =>
+        baseStatus != ParentDeathGuard.Available ? new GuardResolution(null, baseStatus)
+        : probeSupported ? new GuardResolution(candidate, ParentDeathGuard.Available)
+        : new GuardResolution(null, ParentDeathGuard.SetprivLacksPdeathsig);
+
+    private const int ProbeTimeoutMs = 3000;
+
+    /// <summary>The absolute <c>true</c> the probe runs through <c>setpriv</c> — from a trusted dir, never a bare name <c>execvp</c> could resolve to a planted binary on PATH (code round, security).</summary>
+    private static readonly string TrustedTrue = FirstExisting(TrustedBinDirs, "true", File.Exists) ?? "/bin/true";
+
+    /// <summary>
+    /// Whether this <paramref name="setpriv"/> actually understands <c>--pdeathsig</c>, probed ONCE.
+    /// </summary>
+    /// <remarks>
+    /// util-linux added <c>--pdeathsig</c> in 2.33 (2018), and a busybox applet lacks it. Existence is not enough: an
+    /// armed launch on a <c>setpriv</c> that does not know the option would fail at once with "unrecognized option"
+    /// and the Windows half would NEVER run — for the pump and every relay connection — a full outage where the design
+    /// promises a graceful fallback (own review). So the capability is confirmed by running
+    /// <c>setpriv --pdeathsig KILL -- &lt;trusted true&gt;</c> once; a non-zero exit or any launch failure leaves the
+    /// guard unavailable, and the launch falls back to a direct exec.
+    /// </remarks>
+    private static bool SupportsPdeathsig(string setpriv)
+    {
+        try
+        {
+            var start = new ProcessStartInfo(setpriv)
+            {
+                ArgumentList = { "--pdeathsig", "KILL", "--", TrustedTrue },
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            using var probe = Process.Start(start);
+            if (probe is null)
+            {
+                return false;
+            }
+            if (!probe.WaitForExit(ProbeTimeoutMs))
+            {
+                probe.Kill(entireProcessTree: true);
+                probe.WaitForExit(ProbeTimeoutMs);
+                return false;
+            }
+            return probe.ExitCode == 0;
+        }
+        catch (Exception)
+        {
+            // A best-effort capability probe: any failure (a launch error, a tree-kill that could not reach every
+            // descendant, anything not foreseen) means the guard is simply unavailable, never a thrown startup.
+            return false;
+        }
+    }
+
+    /// <summary>Whether <c>setpriv</c> is available to arm the guard (the capability; a given launch also needs its binary to resolve).</summary>
+    public static bool ParentDeathArmed => ParentDeathArmer.Value is not null;
+
+    /// <summary>Why the guard stands where it does — for the one startup log line (code round, findings 1/5/10/13). Includes the probe-failed reason.</summary>
+    public static ParentDeathGuard GuardStatus() => Resolution.Value.Status;
+
+    /// <summary>Pure: the status from the three facts BEFORE the probe, so a configured off-switch is never reported as a missing tool.</summary>
+    internal static ParentDeathGuard GuardStatus(bool isLinux, string? killSwitch, string? resolved)
+    {
+        if (!isLinux)
+        {
+            return ParentDeathGuard.NotApplicable;
+        }
+        if (killSwitch == "1")
+        {
+            return ParentDeathGuard.SwitchedOff;
+        }
+        return resolved is null ? ParentDeathGuard.NoSetpriv : ParentDeathGuard.Available;
+    }
+
+    /// <summary>Pure: <c>setpriv</c>'s candidate path from the three facts, so the kill switch and the trusted-dir order are unit tests.</summary>
+    internal static string? ResolveSetpriv(bool isLinux, string? killSwitch, Func<string, bool> exists) =>
+        !isLinux || killSwitch == "1" ? null : FirstExisting(TrustedBinDirs, "setpriv", exists);
+
+    /// <summary>The first directory on <paramref name="pathVar"/> that holds <paramref name="name"/>, or <c>null</c> — the one PATH scan.</summary>
+    internal static string? FindOnPath(string name, string? pathVar, Func<string, bool> exists) =>
+        FirstExisting((pathVar ?? string.Empty).Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries), name, exists);
+
+    /// <summary>The first of <paramref name="directories"/> that holds <paramref name="name"/>, or <c>null</c>.</summary>
+    private static string? FirstExisting(IEnumerable<string> directories, string name, Func<string, bool> exists)
+    {
+        foreach (var directory in directories)
+        {
+            var candidate = Path.Combine(directory, name);
+            if (exists(candidate))
+            {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+}
+
+/// <summary>
+/// The one long-lived thread every parent-death-guarded child is forked on.
+/// </summary>
+/// <remarks>
+/// <para><b>Why a dedicated thread.</b> <c>setpriv --pdeathsig KILL</c> arms <c>PR_SET_PDEATHSIG(SIGKILL)</c> on the
+/// proxy, and the kernel sends that signal when the proxy's PARENT THREAD — the one that forked it — terminates, not
+/// only when the whole process does (measured: a <c>.NET</c>-forked guarded child dies the moment its forking thread
+/// exits, research/RESULTS_wsl_bridge_orphans.md, *Defect D*). <c>Process.Start</c> forks on the calling thread, and
+/// the pump and the relay reach it on a thread-pool worker that retires after a few idle seconds — which would have
+/// the kernel SIGKILL the Windows half under a LIVE client, a regression worse than the leak. So every guarded fork
+/// runs on this one thread, which lives for the whole process; the signal then fires only at process exit, which is
+/// exactly when the proxy should go. A BACKGROUND thread, so it never holds the process open.</para>
+/// </remarks>
+internal static class GuardedLauncher
+{
+    private sealed record Request(ProcessStartInfo Start, TaskCompletionSource<Process> Done);
+
+    private static readonly Lazy<BlockingCollection<Request>> Queue = new(CreateQueue);
+
+    /// <summary>Fork <paramref name="start"/> on the dedicated thread and return its process, or rethrow its launch failure.</summary>
+    internal static Process Launch(ProcessStartInfo start)
+    {
+        var done = new TaskCompletionSource<Process>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Queue.Value.Add(new Request(start, done));
+        return done.Task.GetAwaiter().GetResult();
+    }
+
+    private static BlockingCollection<Request> CreateQueue()
+    {
+        var queue = new BlockingCollection<Request>();
+        new Thread(() => Consume(queue)) { IsBackground = true, Name = "creds-pdeath-launcher" }.Start();
+        return queue;
+    }
+
+    private static void Consume(BlockingCollection<Request> queue)
+    {
+        foreach (var request in queue.GetConsumingEnumerable())
+        {
+            Fulfil(request);
+        }
+    }
+
+    private static void Fulfil(Request request)
+    {
+        try
+        {
+            request.Done.SetResult(Process.Start(request.Start)
+                ?? throw new InvalidOperationException($"could not start {request.Start.FileName}"));
+        }
+        catch (Exception e)
+        {
+            request.Done.SetException(e);
+        }
+    }
 }
 
 /// <summary>
@@ -154,11 +370,23 @@ public sealed record WindowsBridge(string DefaultBinary, string OverrideVariable
             ? custom
             : DefaultBinary;
 
-    /// <summary>The launch both forms share: the binary, the arguments, and the loop guard.</summary>
-    private ProcessStartInfo StartInfo(IReadOnlyList<string> args)
+    /// <summary>The launch the one-shot forms share (never guarded): the binary, the arguments, and the loop guard.</summary>
+    private ProcessStartInfo StartInfo(IReadOnlyList<string> args) => StartInfo(args, setpriv: null);
+
+    /// <summary>
+    /// The launch, wrapped in <paramref name="setpriv"/> (the parent-death guard, defect D) when it is non-null.
+    /// </summary>
+    /// <param name="setpriv">
+    /// The resolved <c>setpriv</c> path for the long-lived PIPED launch, or <c>null</c>. Only the pump and the relay's
+    /// <c>relay-pipe</c> children (<see cref="StartPiped"/>) pass it; the one-shot launches (<see cref="Relay"/>,
+    /// <see cref="RelayWithInput"/>, <see cref="CaptureAsync"/>) exit within their own call and cannot be left
+    /// orphaned, so they never arm it.
+    /// </param>
+    private ProcessStartInfo StartInfo(IReadOnlyList<string> args, string? setpriv)
     {
-        var start = new ProcessStartInfo(WindowsBinary()) { UseShellExecute = false };
-        foreach (var arg in args)
+        var (fileName, launch) = WithParentDeath(setpriv, WindowsBinary(), args);
+        var start = new ProcessStartInfo(fileName) { UseShellExecute = false };
+        foreach (var arg in launch)
         {
             start.ArgumentList.Add(arg);
         }
@@ -167,6 +395,24 @@ public sealed record WindowsBridge(string DefaultBinary, string OverrideVariable
         start.Environment[WslInterop.WslEnvVariable] = WslInterop.WslEnvFor(Environment.GetEnvironmentVariable(WslInterop.WslEnvVariable));
         return start;
     }
+
+    /// <summary>
+    /// The <c>(fileName, arguments)</c> to spawn <paramref name="binary"/>: wrapped in
+    /// <c>setpriv --pdeathsig KILL --</c> when <paramref name="setpriv"/> is a path, unchanged when it is
+    /// <c>null</c>.
+    /// </summary>
+    /// <remarks>
+    /// Pure, so the shaping is a unit test rather than a process launch. When wrapped, the kernel sends the launched
+    /// interop proxy SIGKILL the instant this wrapper dies, which ends even a proxy a terminator left SIGSTOPped —
+    /// defect D (§5.11). <c>setpriv</c> replaces itself in place (<c>execvp</c>), so the tracked pid is the proxy and
+    /// <c>PR_SET_PDEATHSIG</c> survives the single <c>execve</c> into <c>/init</c> (measured: it is preserved across the
+    /// interop dispatch, and <c>/init</c> does not reparent the proxy — research/RESULTS_wsl_bridge_orphans.md).
+    /// </remarks>
+    internal static (string FileName, IReadOnlyList<string> Arguments) WithParentDeath(
+        string? setpriv, string binary, IReadOnlyList<string> args) =>
+        setpriv is null
+            ? (binary, args)
+            : (setpriv, ["--pdeathsig", "KILL", "--", binary, .. args]);
 
     /// <summary>
     /// Run the Windows binary with these arguments and return its exit code.
@@ -238,12 +484,52 @@ public sealed record WindowsBridge(string DefaultBinary, string OverrideVariable
     /// </remarks>
     public Process StartPiped(IReadOnlyList<string> args)
     {
-        var start = StartInfo(args);
+        // The one long-lived launch: the pump's session and the relay's per-connection child. Arm the parent-death
+        // guard so a proxy a process-tree terminator leaves SIGSTOPped and orphaned still dies with this wrapper
+        // (defect D of PLAN_wsl_bridge_outlives_its_client.md, §5.11) — but ONLY when the Windows binary resolves,
+        // so a missing one still reaches Process.Start un-wrapped and throws the Win32Exception that produces the
+        // "set CREDS_MCP_WINDOWS_BINARY" diagnosis rather than a silent setpriv exec failure.
+        var setpriv = WillArmParentDeath() ? WslInterop.ParentDeathArmer.Value : null;
+        var start = StartInfo(args, setpriv);
         start.RedirectStandardInput = true;
         start.RedirectStandardOutput = true;
-        return Process.Start(start)
-            ?? throw new InvalidOperationException($"could not start {WindowsBinary()}");
+        // A guarded child is forked on the dedicated long-lived thread, so PR_SET_PDEATHSIG tracks a thread that
+        // lives for the process and not a thread-pool worker that retires mid-session (code round, defect D).
+        return setpriv is not null
+            ? GuardedLauncher.Launch(start)
+            : Process.Start(start) ?? throw new InvalidOperationException($"could not start {WindowsBinary()}");
     }
+
+    /// <summary>Whether a piped launch of this binary arms the parent-death guard — <c>setpriv</c> present AND the binary resolves.</summary>
+    public bool WillArmParentDeath() => WslInterop.ParentDeathArmer.Value is not null && WindowsBinaryResolves();
+
+    /// <summary>
+    /// Whether <see cref="WindowsBinary"/> resolves the way a direct launch would — an existing file for a path, or a
+    /// name found on the PATH (which under WSL interop includes the translated Windows directories).
+    /// </summary>
+    /// <remarks>
+    /// The parent-death guard prepends <c>setpriv</c>, whose own <c>execvp</c> of a missing target fails at run time
+    /// rather than throwing at launch — which would swallow the missing-Windows-half diagnosis
+    /// (<see cref="StartPiped"/>). So the guard is armed only when the binary is seen to resolve; a binary that does
+    /// not falls through to the un-wrapped launch, whose throw <c>Program</c> turns into the fix-naming message.
+    /// Evaluated per launch and NOT cached: the long-lived relay then sees an override path, or a binary on PATH,
+    /// created or removed after it started (code round, cache-staleness). The pump launches once per session, and the
+    /// shipped relay config is an absolute override path (one <see cref="File.Exists"/>), so the cost is negligible.
+    /// <b>Deliberate gaps</b> (code round): this does not reproduce .NET's resolution of a bare name against the
+    /// executable's own directory or the current directory, nor the execute bit; a bare name containing a backslash
+    /// is treated as a path (legal in a Linux filename); and a literal Windows drive path (<c>C:\…</c>) resolves
+    /// false — but .NET's own <c>Process.Start</c> cannot launch that on Linux either, so the un-armed launch throws
+    /// the diagnosis, which is correct. Each unguarded case is SAFE (unguarded, not broken); the shipped layout is an
+    /// absolute <c>/mnt</c> override path, for which <see cref="File.Exists"/> is exact.
+    /// </remarks>
+    private bool WindowsBinaryResolves() =>
+        BinaryResolves(WindowsBinary(), Environment.GetEnvironmentVariable("PATH"), File.Exists);
+
+    /// <summary>Pure: whether <paramref name="binary"/> resolves as a path or a name on <paramref name="pathVar"/>.</summary>
+    internal static bool BinaryResolves(string binary, string? pathVar, Func<string, bool> exists) =>
+        binary.AsSpan().IndexOfAny('/', '\\') >= 0
+            ? exists(binary)
+            : WslInterop.FindOnPath(binary, pathVar, exists) is not null;
 
     /// <summary>
     /// Run the Windows binary hermetically — every stream redirected, a bounded wait — and answer

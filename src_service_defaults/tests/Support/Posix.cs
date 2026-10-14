@@ -23,11 +23,17 @@ internal static partial class Posix
     /// <summary>SIGKILL, which <see cref="PosixSignal"/> deliberately has no name for: a process cannot handle it.</summary>
     private const int SigKill = 9;
 
+    /// <summary>SIGSTOP (19): the job-control stop a process-tree terminator leaves on an interop proxy (defect D).</summary>
+    private const int SigStop = 19;
+
     /// <summary>Send <paramref name="signal"/> to <paramref name="pid"/>; true when the kernel took it.</summary>
     internal static bool Send(int pid, PosixSignal signal) => Kill(pid, ShutdownSignals.Number(signal)) == 0;
 
-    /// <summary>End a process this test started, or a child one of its hosts left behind, without appeal.</summary>
+    /// <summary>End a process this test started, or a child one of its hosts left behind, without appeal (SIGKILL ends even a stopped process).</summary>
     internal static void KillHard(int pid) => _ = Kill(pid, SigKill);
+
+    /// <summary>Stop a process this test started — the SIGSTOP a process-tree terminator leaves on an interop proxy (defect D).</summary>
+    internal static bool Stop(int pid) => Kill(pid, SigStop) == 0;
 
     /// <summary>Whether a process with this pid still exists (a zombie counts, until its parent reaps it).</summary>
     internal static bool Alive(int pid) => Kill(pid, 0) == 0;

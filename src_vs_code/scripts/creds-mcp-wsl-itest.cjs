@@ -12,9 +12,10 @@
 //
 // And since E5 (PLAN_wsl_bridge_outlives_its_client.md): that NO Windows half outlives its client. A
 // client shaped like Claude Code (`wsl-mcp-client.cjs`, inside the distribution, the wrapper's real
-// parent) opens the captured session with its held `subscriptions/listen`, and ends it five ways —
-// SIGINT, SIGTERM, SIGHUP, a closed stdin, and SIGKILL of the wrapper. After each, the Windows
-// `creds-mcp.exe` this run started must be gone within 5 s.
+// parent) opens the captured session with its held `subscriptions/listen`, and ends it six ways —
+// SIGINT, SIGTERM, SIGHUP, a closed stdin, SIGKILL of the wrapper, and (E6/defect D) the interop proxy
+// SIGSTOPped and then the wrapper SIGKILLed. After each, the Windows `creds-mcp.exe` this run started
+// must be gone within 5 s.
 //
 // Every binary it starts is a COPY in this run's own directory (`wslRun.cjs`), and every watch asks by
 // executable path under it, on both sides (`wslStrays.cjs`) — so nothing anybody else runs can be
@@ -392,6 +393,9 @@ const ENDINGS = [
   { word: 'SIGHUP', exit: { code: 129, signal: null } },
   { word: 'eof', exit: { code: 0, signal: null } },
   { word: 'SIGKILL', exit: { code: null, signal: 'SIGKILL' } },
+  // Defect D (E6.S2): the proxy SIGSTOPped, then the wrapper SIGKILLed. With the parent-death guard the kernel ends
+  // the stopped proxy with the wrapper; against the current release the proxy sits stopped and the Windows half leaks.
+  { word: 'stopped', exit: { code: null, signal: 'SIGKILL' } },
 ];
 
 const exitWords = (exit) => (exit.signal === null ? `with exit code ${exit.code}` : `killed by ${exit.signal}`);
@@ -417,6 +421,12 @@ async function endedBy({ word, exit }, endpointDir, windowsHalves, linuxSide) {
     check(`${word}: exactly one new Windows creds-mcp.exe of this run serves it (the positive control)`, fresh.length === 1, `new ${JSON.stringify(fresh)}, already there ${JSON.stringify([...already])}`);
 
     client.stdin.write(`${word}\n`);
+    if (word === 'stopped') {
+      // Prove the ending reached the defect-D state — the proxy was found and actually SIGSTOPped — else it degrades
+      // to a plain SIGKILL (which does not leak even unfixed) and the check below would prove nothing.
+      const sp = await said.next(isAny('stopped-proxy', 'failed', 'ended'), 10_000);
+      check(`${word}: the interop proxy was found and SIGSTOPped (the defect-D state)`, sp.event === 'stopped-proxy' && Number.isInteger(sp.proxy) && sp.stopped === true, JSON.stringify(sp));
+    }
     const ended = await said.next(isAny('ended', 'failed'), 30_000);
     check(
       `${word}: the wrapper ends ${exitWords(exit)}`,

@@ -88,6 +88,33 @@ public sealed class WslPumpHostTests : IDisposable
         HostProcess.Read(LogFile(host.Id)).Should().Contain("reason clientClosed");
     }
 
+    [Fact]
+    public async Task A_child_left_STOPPED_and_orphaned_still_dies_with_the_wrapper()
+    {
+        // Defect D (§5.11): a process-tree terminator SIGSTOPs the interop proxy and then SIGKILLs this wrapper, so the
+        // wrapper's ChildLifetime never runs; a stopped proxy forwards no end-of-stream and its Windows half leaks.
+        // The fix launches the child through `setpriv --pdeathsig KILL`, so the kernel SIGKILLs it the instant the
+        // wrapper dies — and SIGKILL ends even a STOPPED process. Here the child is the stubborn stand-in (never
+        // leaves on its own), SIGSTOPped, then the wrapper is SIGKILLed: the child must be gone.
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "the pump is the Linux half of the bridge; ShouldRelay is false on Windows by design");
+        Assert.SkipUnless(WslInterop.ParentDeathArmed, "setpriv is not on PATH here, so the parent-death guard cannot be armed; install util-linux's setpriv to run this");
+        var ct = TestContext.Current.CancellationToken;
+        using var host = HostProcess.Start("creds-mcp", [], Env(FakeChild.Stubborn(_root)));
+        using var reaper = HostProcess.KillOnDispose(host);
+        _ = host.StandardError.ReadToEndAsync(ct);
+        _ = host.StandardOutput.ReadToEndAsync(ct);
+        var child = await ChildPidAsync(host.Id, ct);
+        using var childReaper = Posix.ReapOnDispose(child);
+
+        // The terminator's two strokes: STOP the child (as it does to keep a tree from forking), then the wrapper is
+        // SIGKILLed before the follow-up SIGKILL reaches the now-reparented child.
+        Posix.Stop(child).Should().BeTrue("the child must accept the SIGSTOP that reproduces defect D");
+        Posix.KillHard(host.Id);
+
+        (await Posix.GoneWithinAsync(child, Bound, ct))
+            .Should().BeTrue("the stopped, orphaned child (pid {0}) must die with the wrapper via setpriv --pdeathsig KILL, but it is still running", child);
+    }
+
     /// <summary>The child's pid, from the pump's own "started the Windows half" line.</summary>
     private async Task<int> ChildPidAsync(int hostPid, CancellationToken ct)
     {

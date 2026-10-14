@@ -212,6 +212,7 @@ internal static class Program
         try
         {
             using var lifetime = ChildLifetime.Start(log, WatchParent(log), ChildLifetime.DefaultGrace, run.ForcedExit(log));
+            LogParentDeathGuard(log);
             // Once per session, never per call: ask the Windows half whether it knows `--caller`,
             // and hand it the record only if it does. An old half handed the flag would die with a
             // usage error before the handshake — a dead server, not a degraded one.
@@ -232,6 +233,47 @@ internal static class Program
             return new HostEnding(0, ExitReason.ClientDisconnected);
         }
     }
+
+    /// <summary>
+    /// Say, once per session, whether the parent-death guard is armed (defect D of
+    /// PLAN_wsl_bridge_outlives_its_client.md, §5.11). When it is not — <c>setpriv</c> missing from the trusted
+    /// system directories, present but lacking <c>--pdeathsig</c>, switched off, or the binary unresolved — a Windows
+    /// half a process-tree terminator leaves SIGSTOPped and orphaned could outlive this session, exactly as it did
+    /// before the fix; the WARNING makes that stale state observable in the log instead of silent.
+    /// </summary>
+    private static void LogParentDeathGuard(ILogger log)
+    {
+        // The ACTUAL arming decision for this binary (setpriv present AND the binary resolves), with the real reason
+        // it is off named as a fact — a configured switch is not a missing tool (code round, findings 1/5/10/13).
+        var (warn, message) = GuardLogLine(WslInterop.CredsMcp.WillArmParentDeath(), WslInterop.GuardStatus());
+        if (warn)
+        {
+            log.Warning("{Guard:l}", message);
+        }
+        else
+        {
+            log.Debug("{Guard:l}", message);
+        }
+    }
+
+    /// <summary>Pure: whether the guard line is a WARNING, and its text — so the real off-reason is a unit decision, and the complexity stays ≤ 4.</summary>
+    internal static (bool Warn, string Message) GuardLogLine(bool willArm, WslInterop.ParentDeathGuard status) =>
+        willArm
+            ? (false, "the Windows half is launched through setpriv --pdeathsig KILL: it dies with this wrapper")
+            : status switch
+            {
+                WslInterop.ParentDeathGuard.SwitchedOff =>
+                    (false, $"parent-death guard off by {WslInterop.NoParentDeathGuardVariable}=1: the Windows half is launched directly"),
+                WslInterop.ParentDeathGuard.NoSetpriv =>
+                    (true, "parent-death guard off: setpriv (util-linux) was not found in the trusted system directories, so a Windows half "
+                        + "left stopped and orphaned could outlive this session (defect D). Install setpriv to arm it."),
+                WslInterop.ParentDeathGuard.SetprivLacksPdeathsig =>
+                    (true, "parent-death guard off: setpriv is present but does not support --pdeathsig (util-linux < 2.33, or busybox), so a "
+                        + "Windows half left stopped and orphaned could outlive this session (defect D). Upgrade util-linux to arm it."),
+                _ =>
+                    (false, "parent-death guard not armed: the Windows binary did not resolve, so it is launched directly "
+                        + "(a genuinely missing one is reported with the exit-99 diagnosis as it starts)"),
+            };
 
     /// <summary>
     /// The one start failure a person can fix, said in words — naming the exception's TYPE and never the

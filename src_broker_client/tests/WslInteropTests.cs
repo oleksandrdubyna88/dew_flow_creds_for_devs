@@ -199,4 +199,117 @@ public class WslInteropTests
         // (checkpoint round, finding 2).
         WslInterop.WslEnvFor(existing).Should().Be(expected);
     }
+
+    [Fact]
+    public void A_piped_launch_is_wrapped_in_setpriv_pdeathsig_when_setpriv_is_present()
+    {
+        // Defect D: the interop proxy must carry PR_SET_PDEATHSIG(SIGKILL) so the kernel ends it — even when it has
+        // been SIGSTOPped — the instant this wrapper dies. `setpriv --pdeathsig KILL --` arms it, and the binary and
+        // its own arguments follow the `--`.
+        var (fileName, arguments) =
+            WindowsBridge.WithParentDeath("/usr/bin/setpriv", "creds-mcp.exe", ["--caller", "abc"]);
+
+        fileName.Should().Be("/usr/bin/setpriv");
+        arguments.Should().Equal("--pdeathsig", "KILL", "--", "creds-mcp.exe", "--caller", "abc");
+    }
+
+    [Fact]
+    public void Without_setpriv_the_launch_is_the_binary_unchanged()
+    {
+        // The graceful fallback: a distro without setpriv launches the Windows half directly, exactly as before the
+        // fix — no worse, never a crash. The guard is simply off there.
+        var (fileName, arguments) = WindowsBridge.WithParentDeath(null, "creds-mcp.exe", ["--caller", "abc"]);
+
+        fileName.Should().Be("creds-mcp.exe");
+        arguments.Should().Equal("--caller", "abc");
+    }
+
+    [Fact]
+    public void A_piped_launch_with_no_arguments_wraps_only_the_binary()
+    {
+        var (fileName, arguments) = WindowsBridge.WithParentDeath("/bin/setpriv", "creds.exe", []);
+
+        fileName.Should().Be("/bin/setpriv");
+        arguments.Should().Equal("--pdeathsig", "KILL", "--", "creds.exe");
+    }
+
+    [Theory]
+    [InlineData(false, null, false)]   // not Linux: never armed
+    [InlineData(true, "1", false)]     // the operator's kill switch
+    [InlineData(true, null, true)]     // Linux, switch off, setpriv present in a trusted dir
+    public void The_setpriv_resolver_honours_the_platform_and_the_kill_switch(bool isLinux, string? killSwitch, bool expectResolved)
+    {
+        // The pure resolver, so the kill switch and the trusted-dir order are tested rather than asserted: every
+        // trusted directory "has" setpriv here, so a resolve succeeds unless the platform or the switch forbids it.
+        var resolved = WslInterop.ResolveSetpriv(isLinux, killSwitch, _ => true);
+
+        (resolved is not null).Should().Be(expectResolved);
+        if (expectResolved)
+        {
+            resolved.Should().Be(Path.Combine("/usr/bin", "setpriv"), "the first trusted directory wins");
+        }
+    }
+
+    [Fact]
+    public void The_kill_switch_variable_is_product_neutral_because_the_guard_is_shared()
+    {
+        // It gates StartPiped, which serves both the MCP pump and the relay's relay-pipe children (code round, finding 3).
+        WslInterop.NoParentDeathGuardVariable.Should().Be("CREDS_NO_PDEATH_GUARD");
+    }
+
+    [Theory]
+    [InlineData(WslInterop.ParentDeathGuard.NotApplicable, false, null)]
+    [InlineData(WslInterop.ParentDeathGuard.SwitchedOff, true, "1")]
+    [InlineData(WslInterop.ParentDeathGuard.NoSetpriv, true, null)]
+    public void The_guard_status_names_the_real_reason(WslInterop.ParentDeathGuard expected, bool isLinux, string? killSwitch)
+    {
+        // A configured off-switch and a missing tool are different facts (code round, findings 1/5). `resolved` is
+        // null in every row here; the status still tells them apart.
+        WslInterop.GuardStatus(isLinux, killSwitch, resolved: null).Should().Be(expected);
+    }
+
+    [Fact]
+    public void The_guard_status_is_available_when_setpriv_resolved()
+    {
+        WslInterop.GuardStatus(isLinux: true, killSwitch: null, resolved: "/usr/bin/setpriv")
+            .Should().Be(WslInterop.ParentDeathGuard.Available);
+    }
+
+    [Fact]
+    public void Classify_names_setpriv_present_but_lacking_pdeathsig_distinctly_from_missing()
+    {
+        // A setpriv that exists but fails the --pdeathsig probe (util-linux < 2.33, busybox) must NOT be reported as
+        // "not found" (code round 3): it is its own reason, and it disarms the guard (no path) so the launch falls back.
+        var lacking = WslInterop.Classify(WslInterop.ParentDeathGuard.Available, "/usr/bin/setpriv", probeSupported: false);
+        lacking.Status.Should().Be(WslInterop.ParentDeathGuard.SetprivLacksPdeathsig);
+        lacking.Setpriv.Should().BeNull("a setpriv that cannot arm the guard is not handed to the launch");
+
+        var ok = WslInterop.Classify(WslInterop.ParentDeathGuard.Available, "/usr/bin/setpriv", probeSupported: true);
+        ok.Status.Should().Be(WslInterop.ParentDeathGuard.Available);
+        ok.Setpriv.Should().Be("/usr/bin/setpriv");
+
+        // A base status that was never Available (missing, switched off, not Linux) passes straight through, probe or not.
+        WslInterop.Classify(WslInterop.ParentDeathGuard.NoSetpriv, candidate: null, probeSupported: true)
+            .Status.Should().Be(WslInterop.ParentDeathGuard.NoSetpriv);
+    }
+
+    [Theory]
+    [InlineData("/mnt/c/creds/creds-mcp.exe", true)]     // an existing override path → resolves, guard arms
+    [InlineData(@"C:\nowhere\creds-mcp.exe", false)]     // a path that does not exist → does not resolve, the direct launch keeps the diagnosis
+    public void A_binary_given_as_a_path_resolves_only_when_the_file_exists(string binary, bool exists)
+    {
+        WindowsBridge.BinaryResolves(binary, pathVar: null, _ => exists).Should().Be(exists);
+    }
+
+    [Fact]
+    public void A_bare_binary_name_resolves_against_the_interop_augmented_path()
+    {
+        // The owner's creds-mcp.exe is found via the PATH WSL augments with the translated Windows directories; the
+        // first directory that holds it resolves.
+        var path = string.Join(Path.PathSeparator, "/usr/bin", "/mnt/c/Windows/System32", "/mnt/c/creds");
+        WindowsBridge.BinaryResolves("creds-mcp.exe", path, candidate => candidate == Path.Combine("/mnt/c/creds", "creds-mcp.exe"))
+            .Should().BeTrue();
+        WindowsBridge.BinaryResolves("creds-mcp.exe", path, _ => false)
+            .Should().BeFalse("a bare name nowhere on PATH does not resolve, so the direct launch throws the diagnosis");
+    }
 }
