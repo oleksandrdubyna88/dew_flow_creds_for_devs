@@ -1,6 +1,6 @@
 # PLAN — every creds process ends when the client it serves is gone
 
-> Status: **in progress, 2026-10-11 — E1 (#201), E4.S1 (#205), E2 (#211), E4.S3 (#212), E4.S2 (#213), E3 (#214), E4.S4 (#215) and E5.S1–S2 implemented (§14; §5.4–§5.8 and §10 *E5, as built*); open: E5.S3's one-day count on the owner's machine and the owner's WSL MCP refresh, both after the release — then the promotion.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
+> Status: **in progress, 2026-10-14 — E1 (#201), E4.S1 (#205), E2 (#211), E4.S3 (#212), E4.S2 (#213), E3 (#214), E4.S4 (#215) and E5.S1–S2 implemented (§14; §5.4–§5.8 and §10 *E5, as built*); the owner's WSL MCP refreshed and the binaries swapped (creds-mcp 0.10.2, cli 0.4.2). The one-day count then fell from 39–51 orphans (≈20 sessions) to 3/day — a NEW, narrower leak, DEFECT D (§5.11, epic E6): a WSL interop proxy left STOPPED by SIGSTOP and then orphaned never forwards end-of-stream, so its Windows half leaks. Measured 2026-10-14 (RESULTS, *Defect D*). E6 (the `setpriv --pdeathsig KILL` fix) is open; the plan STAYS in todo/ until E6 ships and the one-day count is met.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
 > round — §14); each epic is re-gated on its own branch. Scope: `src_mcp/src` (`Program.cs`, `WslPump.cs`, the
 > tool lambdas, `Windows.cs`, a new `ServerLifetime`), `src_broker_client/src` (`BrokerClient.cs`, `WslInterop.cs`, a
 > new shared `ChildLifetime`), `src_cli/src` (`AgentRelay.cs`, `RelayPipe.cs`), `src_vs_code/src` (the broker's
@@ -568,6 +568,74 @@ drafted:
 
 The local fix stays either way: it is harmless once upstream fixes it, and clients older than any fix exist.
 
+### 5.11 A stopped interop proxy still dies with its wrapper — `src_broker_client/src/WslInterop.cs` — defect D
+
+**The symptom (owner, 2026-10-14; RESULTS, *Defect D*).** After A/B/C shipped, the one-day count fell from 39–51
+orphans to 3/day. Each of the three was a WSL interop proxy `/init …/creds-mcp.exe … --caller` in state **T
+(stopped)**, reparented to the interop subreaper, with no Linux wrapper left and `fd0` a pipe whose write end was
+closed. `kill -CONT` made each read the waiting end-of-stream, exit, and take its Windows half with it. Nothing was
+killed.
+
+**The cause, measured (RESULTS, *Defect D*).** The interop proxy honours **only SIGSTOP** among the stop signals
+(it ignores SIGTSTP/SIGTTIN/SIGTTOU and blocks SIGINT; it has no controlling terminal), and a proxy that is
+SIGSTOPped and *then* orphaned stays `T` forever — the kernel's orphaned-process-group SIGHUP+SIGCONT is not
+delivered in this configuration. A stopped proxy forwards nothing, so the end-of-stream the wrapper's death puts on
+its stdin never reaches the Windows half, which since defect A exits only on end-of-stream. The SIGSTOP is a
+process-tree terminator's "SIGSTOP the node then SIGKILL it" idiom (or WSL `/init`'s own interop teardown) racing
+with the wrapper's death so the follow-up SIGKILL misses the reparented proxy; a cgroup freeze is ruled out (the
+owner's `kill -CONT` revived it). The exact external trigger is a race this project does not own; the fix targets
+the *state* it leaves — proxy SIGSTOPped, wrapper gone — not the trigger.
+
+**Why E1–E5 do not cover it.** B/C/E3 stop the child when the wrapper runs its shutdown; E2 makes the Windows half
+exit on end-of-stream. Defect D is the case where the wrapper runs **no** shutdown code (it is SIGKILLed) *and* the
+proxy is externally SIGSTOPped so it never delivers that end-of-stream. The wrapper-side candidates cannot act (the
+wrapper is dead), and `setsid` does not help (the real stop is SIGSTOP, which a private session does not shield a
+pid from; SIGTSTP, which it would shield, does not stop the proxy anyway — RESULTS).
+
+**The fix — a parent-death signal set at launch, on a thread that lives for the process.** Launch the Windows half
+through `setpriv --pdeathsig KILL --`, so the proxy carries `PR_SET_PDEATHSIG(SIGKILL)`. When the wrapper dies for
+any reason — SIGKILL included, **no wrapper code required** — the kernel sends the proxy SIGKILL, and SIGKILL ends a
+stopped process. Ending the proxy ends the Windows half (E3's measured fact). Measured: pdeathsig fires on a
+SIGSTOPped orphaned proxy within 0.5 s; it survives the interop `execve`; JSON-RPC bytes cross `setpriv` untouched;
+`setpriv` (util-linux) is present in both installed distros.
+
+- **The thread-scope backstop (measured, the code round's MAJOR finding).** `PR_SET_PDEATHSIG` fires when the
+  proxy's PARENT THREAD exits, and through `.NET`'s `Process.Start` — which forks on the calling thread — the
+  guarded child **dies the instant its forking thread exits** (measured 2026-10-14; RESULTS, *Defect D*). The pump
+  and the relay reach `Process.Start` on a thread-pool worker that retires after a few idle seconds, so a naive fix
+  would SIGKILL the Windows half under a live client — worse than the leak. So every guarded child is forked on one
+  dedicated, long-lived background thread (`GuardedLauncher`): the signal then tracks a thread that lives for the
+  whole process and fires only at process exit. Proven by `ParentDeathLauncherTests` (skipped where the kernel is
+  process-scoped).
+- **Where.** Only `WindowsBridge.StartPiped` (`src_broker_client/src/WslInterop.cs`) arms the guard — the one
+  LONG-LIVED piped launch, used by the MCP pump (defect D) **and** the relay's `relay-pipe` children (defect C's
+  cousins, the same leak class), per reuse. The one-shot launches (`Relay`, `RelayWithInput`, `CaptureAsync`) exit
+  within their own call and cannot be left orphaned, so they are not armed (and the `A_relay_with_input` contract is
+  untouched). A pure helper `WindowsBridge.WithParentDeath(setpriv, binary, args)` shapes the argv:
+  `setpriv --pdeathsig KILL -- <binary> <args…>` when armed, `<binary> <args…>` otherwise.
+- **Armed only when the binary resolves.** A missing Windows half must still throw the `WindowsHalfMissing`
+  diagnosis (exit 99) at launch, which `setpriv` would swallow (its own `execvp` fails at run time). So the guard is
+  armed only when `WindowsBinary()` resolves (an existing path, or a name on the interop-augmented PATH — cached per
+  binary); a binary that does not resolve falls through to the un-wrapped launch and throws as before.
+- **setpriv resolution is from trusted system dirs only** (`/usr/bin`, `/bin`, `/usr/sbin`, `/sbin`,
+  `/usr/local/bin`), never an arbitrary PATH entry a credential broker could be tricked into executing. Resolved
+  once (cached), and **probed once for `--pdeathsig` support** (`setpriv --pdeathsig KILL -- true`): the option is
+  util-linux ≥ 2.33 and absent from busybox, and an armed launch on a setpriv that does not know it would fail at
+  once and take the whole bridge down — so a setpriv that does not pass the probe reads as unavailable and the launch
+  falls back (code round 2, own review). The Windows-binary resolve runs per launch and is NOT cached (code round 3),
+  so the long-lived relay sees an override path — or a binary on PATH — created or removed after it started; the
+  shipped config is an absolute override path (one `File.Exists`) and the pump launches once per session, so the cost
+  is negligible. Only the setpriv capability resolution is cached (once per process).
+- **Graceful fallback + observability.** `setpriv` absent → launch directly as today; the pump logs ONE WARNING
+  naming the real reason (a missing tool vs the `CREDS_NO_PDEATH_GUARD=1` kill switch vs an unresolved binary),
+  reflecting the actual per-launch arming decision, not just the capability.
+- **Never on Windows.** The whole of `WslInterop` runs only on the Linux half (`ShouldRelayHere`); the guard is a
+  no-op on Windows (`setpriv` absent, `IsLinux()` false), so the native server is untouched.
+- **The mcp release.** The behaviour change is in `src_broker_client` (shared, releases nothing on its own); the
+  mcp patch is cut because E6 also touches `src_mcp` (the pump's host tests, the launcher regression test, the
+  startup log and a doc line on `WslPump`). The relay benefits without a `src_cli` code change, so no cli release
+  is opened.
+
 ## 6. Boundaries with other plans
 
 | Plan | Touches | Who builds what |
@@ -850,9 +918,33 @@ behaviour.
   distribution) and the two host-dependent extension tests (`hostShell`'s real-bash quoting, `sshExecAuth`'s
   PATH/Path) shipped in this branch's first commits, each RED first.
 
+### Epic E6 — a stopped interop proxy still dies with its wrapper (defect D)
+
+Found by E5.S3's one-day count on the owner's machine (2026-10-14): 3 orphans/day, each a SIGSTOPped, orphaned
+interop proxy whose Windows half leaks (§5.11; RESULTS, *Defect D*). One branch, its own plan and code round, its
+own pull request, its own mcp patch release.
+
+- **E6.S1 RED → green** the parent-death guard in `WindowsBridge` (§5.11). Unit tests in `src_broker_client/tests`:
+  the pure `WithParentDeath(setpriv, binary, args)` argv shaping; the pure `ResolveSetpriv`/`GuardStatus` (kill
+  switch, trusted-dir order, the real off-reason); the pure `BinaryResolves` (an existing path vs a bare name on the
+  interop PATH vs a non-existent path). A `src_mcp` host test on Linux (the pump's "Windows half" is the stand-in
+  script `FakeChild`, so no WSL and `setpriv` is on the runner): the pump launches the stubborn child, the child is
+  **SIGSTOPped**, the pump (host) is **SIGKILLed**, and the child must be gone within the bound — RED without the
+  guard (the child survives stopped+orphaned), GREEN with it, RED again with it removed. **And the thread-scope
+  backstop** (`ParentDeathLauncherTests`): a guarded child forked through `StartPiped` on a thread that then exits
+  must OUTLIVE that thread's exit (it would be SIGKILLed if the fork were on the retiring caller thread rather than
+  the dedicated launcher) — self-calibrating, skipped where the kernel is process-scoped.
+- **E6.S2** the real bridge. `creds-mcp-wsl-itest.cjs` gains a sixth ending, **`stopped`**: before the end, exactly
+  one Windows `creds-mcp.exe` of the run serves the session (the positive control); the client SIGSTOPs the real
+  interop proxy and then SIGKILLs the wrapper; the Windows half must be gone within 5 s. RED against the current
+  release (the proxy stays `T`, the Windows half survives), GREEN on this branch. Run by hand on a Windows+WSL
+  machine before the PR, as E5 orders; recorded in §14 and the RESULTS record.
+
 ### Ordering constraints
 
-E1 → E2 → E3 → E4 → E5. E2 before E3 because E3's itest for SIGKILL relies on A being fixed. E4.S1 is independent of
+E1 → E2 → E3 → E4 → E5 → E6. E6 follows E5 because its real-bridge itest extends E5.S1's harness and its positive
+control depends on A/B/C already holding (a session that leaks for an *earlier* reason would mask D). E2 before E3
+because E3's itest for SIGKILL relies on A being fixed. E4.S1 is independent of
 E2/E3 and may ship earlier if a release window needs it. E5.S1's itests run by hand before each of E2–E4's PRs, not only
 at the end.
 
@@ -878,6 +970,8 @@ the extension with `npm test`; the WSL itests with `npm run itest:all` on a Wind
 | the whole bridge, real Claude-shaped client — five endings, 0 Windows survivors each | E5.S1 | node itest on WSL (manual; RED against `9494a67c`) |
 | C on the real bridge — ten connections, the fd baseline, a `dispose()` over a live connection | E5.S1 | node itest on WSL (manual; RED against `9494a67c`) |
 | A on the published binary — the listen held open, then end-of-stream | E5.S2 | `.github/scripts/mcp-listen-smoke.sh` in `release.yml` and by hand (RED against the pre-E2 binary) |
+| D: a SIGSTOPped, orphaned proxy never forwards end-of-stream | E6.S1 | unit (`WindowsBridge.WithParentDeath`) + process (the pump's stubborn child SIGSTOPped, the pump SIGKILLed) on Linux |
+| D on the real bridge — the interop proxy SIGSTOPped, the wrapper SIGKILLed, 0 Windows survivors | E6.S2 | node itest on WSL (manual; RED against the current release) |
 
 Every bug test is shown red with the real symptom before the fix and green after; both observations go in the PR.
 
@@ -894,7 +988,10 @@ Every bug test is shown red with the real symptom before the fix and green after
 ## 13. Definition of Done
 
 - [ ] On the measured machine after a day of normal use: `creds-mcp.exe` count equals live MCP clients; `creds.exe
-      relay-pipe` count equals live SSH-agent connections (recorded in the RESULTS record).
+      relay-pipe` count equals live SSH-agent connections (recorded in the RESULTS record). **Open: defect D's
+      one-day count after E6 ships** — 0 stopped/orphaned interop proxies left behind.
+- [ ] Defect D has a test shown red with the real symptom and then green (E6.S1 unit + process; E6.S2 the real
+      bridge), and the `setpriv --pdeathsig KILL` guard degrades gracefully when `setpriv` is absent.
 - [x] Defects A, B, C each have a test shown red with the real symptom and then green; the WSL itests of E5.S1 pass
       (2026-10-11: 42 and 40 checks GREEN on the real bridge; 4 and 9 RED against `9494a67c` — §14, the RESULTS record).
 - [x] A late **Allow** for a gone request runs nothing (E4.S1). (§3.3 decided by the owner 2026-10-09: defused modal.)

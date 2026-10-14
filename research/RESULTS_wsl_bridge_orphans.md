@@ -351,3 +351,124 @@ server exited with code 124 59.660 s after the client's end-of-stream — expect
 end-of-stream* — the 60 s guard is what ended it. The script's own test (a stand-in server ending at once, ending
 10.5 s after end-of-stream, never answering) and the script itself against the built `creds-mcp` run on every
 pull request on all three operating systems (`ci-clients.yml`).
+
+## Defect D — a STOPPED interop proxy never forwards end-of-stream (measured 2026-10-14)
+
+> After A, B and C shipped (creds-mcp 0.10.2, cli 0.4.2), the one-day count on the owner's machine fell from
+> 39–51 orphans (≈20 sessions) to **3 per day**. Those three are a new, narrower defect. The numbers below were
+> measured on a second Windows 11 machine with Ubuntu WSL2 (kernel 6.18, systemd), `python3`/`gcc`/`setpriv`
+> inside the distribution; every process a probe signalled was one it had started itself, by pid, and the
+> throwaway probes used `C:\Windows\System32\sort.exe` as a stand-in Windows half (it reads stdin to EOF, then
+> exits — the same end-of-stream sensor `creds-mcp.exe` is since defect A). `strace` is not installed and was
+> not added; `/proc/<pid>/status` and `/proc/<pid>/stat` carried the evidence.
+
+### The symptom (owner, 2026-10-14)
+
+16 `creds-mcp.exe` on Windows: 6 under a live `claude.exe`, 10 under the long-lived `wsl.exe`; inside WSL only 7
+Linux wrappers, each with a live Claude Code parent. The **3 extra** Windows halves each belonged to an interop
+proxy `/init …/creds-mcp.exe … --caller <record>` in state **T (stopped)**, reparented to `/init` (the interop
+subreaper), with **no Linux wrapper left**; `fd0` was a pipe whose write end nobody held; `SigIgn = 0x1000`
+(SIGPIPE only), `SigCgt = 0`, nothing pending. `kill -CONT` on one made it run, read the end-of-stream waiting on
+that pipe, and exit — and its Windows half exited on its own within seconds. Nothing was killed.
+
+### What stops the proxy — only SIGSTOP, and it is not a tty signal
+
+The WSL interop proxy is not an ordinary process. Probed by sending each stop signal directly to a proxy a
+throwaway wrapper had started (`d_sig.py`):
+
+| Signal | Effect on the proxy |
+|---|---|
+| **SIGSTOP** (19) | **stops it → `T`**; `SIGCONT` resumes it, it reads EOF and exits |
+| SIGTSTP (20) | **no effect** — stays `S` |
+| SIGTTIN (21) | **no effect** — stays `S` |
+| SIGTTOU (22) | **no effect** — stays `S` |
+
+The proxy also **blocks SIGINT** (`SigBlk` carries SIGINT and SIGWINCH) and catches nothing — `/init` forwards
+Ctrl-C to the Windows side itself rather than letting the Linux half die on it. So of the four job-control stops,
+**only SIGSTOP** — which cannot be caught, blocked or ignored — actually stops the proxy. The proxy has **no
+controlling terminal** (`tty_nr = 0`, `tpgid = -1`), so SIGTTIN/SIGTTOU/SIGTSTP from a terminal cannot arise in
+the first place. The owner's `kill -CONT` revive is itself the proof the stop was a **SIGSTOP-family** stop and
+**not a cgroup freeze**: a frozen cgroup is not resumed by SIGCONT, a SIGSTOP-stopped task is.
+
+### Why a stopped proxy leaks — the kernel does not wake it
+
+Reproduced exactly (`d_controller.py stop-proxy-then-orphan`): SIGSTOP the proxy → `T`; SIGKILL its wrapper → the
+proxy is reparented to the subreaper and **stays `T` indefinitely**. POSIX sends SIGHUP+SIGCONT to a process group
+only when the group *becomes* orphaned while holding a stopped member; on this WSL kernel, in this configuration
+(the proxy reparented to the interop subreaper), that wake-up is **not delivered** — the proxy sits stopped
+forever. A stopped proxy forwards nothing, so the end-of-stream on its `fd0` (the wrapper's closed pipe) never
+reaches the Windows half, which since defect A exits only on end-of-stream — so it leaks. `SIGCONT` → it reads the
+EOF → exits → the Windows half exits. This is the owner's revive, reproduced.
+
+Contrast, the non-leaking paths (also measured): a **plain orphan** (SIGKILL the wrapper, proxy never stopped)
+leaves the proxy in `S`; it reads EOF and exits on its own (≈ the wrapper's pipe close) — matches E5's SIGKILL
+row, 0 survivors. A **SIGTERM to the wrapper's group** kills the proxy at once (SIGTERM is not blocked). So the
+leak needs the proxy **specifically SIGSTOPped** *and then* orphaned.
+
+### Who sends the SIGSTOP, and when
+
+SIGSTOP to a process with no controlling terminal is not a job-control artefact; something sends it. It is **not**
+the Claude Code SIGINT→SIGTERM→SIGKILL ladder (none of those stops the proxy — SIGINT is blocked, SIGTERM kills,
+SIGKILL kills), and it is **not** a cgroup freeze (ruled out by the SIGCONT revive). A grep of the WSL
+`vscode-server`, the Claude Code extension and the agent host found **no userspace SIGSTOP sender** (the only
+`SIGSTOP` strings are `human-signals`/`execa` description tables, not sends; `js-debug`'s `terminateProcess.sh`
+takes its signal from argv). The classic source of a bare SIGSTOP is a **process-tree terminator using the
+"SIGSTOP the node, then SIGKILL it" idiom** (stop a process so it cannot fork more children while the walk
+descends), racing with the wrapper's own death so the follow-up SIGKILL misses the proxy once it has been
+reparented off the wrapper's subtree. The remaining in-environment candidate that a grep cannot see is WSL's own
+`/init` interop teardown as the hosting `wsl.exe` session is torn down. **The exact external trigger is a race in
+code this project does not own, and the fix must not depend on identifying it** — what is proven, and sufficient,
+is the *state* it leaves: proxy SIGSTOPped, wrapper gone.
+
+### The fix, measured — a parent-death signal on the proxy (`setpriv --pdeathsig KILL`)
+
+Because the wrapper is already dead in the leak, no wrapper-side exit code can run. The robust, cheap fix is to
+launch the Windows half through `setpriv --pdeathsig KILL --`, so the proxy carries `PR_SET_PDEATHSIG(SIGKILL)`:
+when its parent (the wrapper) dies for **any** reason, the kernel sends it SIGKILL, and **SIGKILL ends a stopped
+process** — no wrapper code, no cooperation from the proxy. Measured (`d_pdeath.py`):
+
+| Launch | After SIGSTOP(proxy) + SIGKILL(wrapper) |
+|---|---|
+| plain (today) | proxy **survives** stopped+orphaned — the leak |
+| `setpriv --pdeathsig KILL -- <exe>` | proxy **gone within 0.5 s** — pdeathsig fired despite the stop |
+
+Properties checked before and while building it:
+
+- **It survives the interop execve.** The proxy launched through `setpriv` still shows `comm = <exe>` and still
+  dies by pdeathsig — `PR_SET_PDEATHSIG` is preserved across the single `execve` into `/init` (same credentials).
+- **`PR_SET_PDEATHSIG` is THREAD-scoped through `.NET`'s launch — the footgun is REAL here, and it dictates the
+  shape of the fix.** A raw C probe forking the child from a worker thread and letting that thread exit kept the
+  child alive (process-scoped); but the way the code actually launches — `.NET`'s `Process.Start`, which forks on
+  the CALLING thread, with `setpriv` arming the signal — the child is **SIGKILLed the instant its forking thread
+  exits** (measured: `aliveAfterForkingThreadExit=False` on kernel 6.18). The pump and the relay reach
+  `Process.Start` on a thread-pool worker, and the portable thread pool retires an idle worker after a few seconds
+  — so a naive fix would have the kernel kill the Windows half under a LIVE client, a regression worse than the
+  leak. **The fix therefore forks every guarded child on one dedicated, long-lived thread** (`GuardedLauncher`):
+  with it, the child **survives** the churn of the calling thread (measured: `aliveWhileLauncherThreadLives=True`
+  through the same `.NET` path), and the signal fires only when that thread dies — which is process exit, exactly
+  when the proxy should go. A `src_mcp` regression test (`ParentDeathLauncherTests`) proves both halves: it is
+  skipped where the kernel is process-scoped, and otherwise shows the guarded child outliving the exit of the
+  thread that called `StartPiped`.
+- **stdio crosses `setpriv` untouched** (JSON-RPC bytes round-tripped through `setpriv -- sort.exe`, exit 0) and
+  `setpriv` (util-linux) is present in both installed distros (2.39.3 and 2.41.3), resolved only from trusted
+  system directories (never an attacker-writable PATH entry). When it is absent the launch falls back to today's
+  direct exec and the pump logs one WARNING; `CREDS_NO_PDEATH_GUARD=1` is the operator's off switch. The guard is
+  armed only when the Windows binary resolves, so a missing one still throws the `WindowsHalfMissing` diagnosis
+  (exit 99) rather than a silent `setpriv` exec failure.
+
+### Why not the lighter wrapper-side candidates (measured)
+
+- **`setsid` / a private process group for the proxy.** The stop that actually works is SIGSTOP, and SIGTSTP — the
+  job-control stop a session would shield against — does not stop the proxy at all; a SIGSTOP sent to a pid by a
+  tree walk is unaffected by the proxy's session. So isolating the proxy's session does not address the real stop.
+- **A wrapper exit path (SIGCONT the child, close stdin, bounded wait, SIGKILL).** In the leak the wrapper is
+  already gone (SIGKILLed by the terminator/race), so none of its exit code runs; SIGKILL of the wrapper alone
+  does not leak (the proxy exits on EOF), and the one case that does — the proxy left SIGSTOPped — is exactly the
+  case the dead wrapper cannot act on. A parent-death signal set **at launch** is the only wrapper-side mechanism
+  that still works when the wrapper never runs another instruction.
+- **A heartbeat / liveness lease to the Windows half.** Robust but heavier (a new out-of-band channel or a renewed
+  token file, a poll, a new failure mode) and unnecessary: pdeathsig already ends the proxy, and ending the proxy
+  ends the Windows half (E3's measured fact). Kept in reserve only if a target distribution lacks `setpriv`.
+
+The fix is planned in [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md),
+§5.11 (Defect D); its RED/GREEN on the real bridge is recorded there once the itest runs.

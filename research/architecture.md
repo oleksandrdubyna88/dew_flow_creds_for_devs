@@ -552,6 +552,19 @@ the SSH-agent relay: `creds relay` stops every `relay-pipe` child it started whe
 `wsl.exe` delivers included) and removes its socket after them, and each connection's child is stopped — stdin
 closed by name, 2 s, the tree — the moment its connection ends, which is defect C fixed.
 
+**The guard that needs no wrapper code (2026-10-14, E6 — defect D).** The `ChildLifetime` above needs the Linux
+wrapper to run to stop its child. Defect D is the case it cannot reach: a process-tree terminator SIGSTOPs the
+`/init` interop proxy (only SIGSTOP stops it) and then SIGKILLs the wrapper, so no cleanup runs, and a stopped proxy
+forwards no end-of-stream — its Windows half, which exits on end-of-stream since defect A, leaks. So the Windows half
+is launched through `setpriv --pdeathsig KILL --` in the shared `WindowsBridge.StartPiped` (`src_broker_client`): the
+proxy carries `PR_SET_PDEATHSIG(SIGKILL)` and the kernel ends it the instant the wrapper process dies, even while it
+is stopped. This is cross-cutting — the one shared launch covers **both** the MCP pump and the relay's `relay-pipe`
+children. Because the signal fires on the death of the thread that forked the child (and .NET forks on a pool worker
+that retires mid-session), every guarded fork runs on one dedicated long-lived thread. `setpriv` is resolved only
+from trusted system directories and probed once for `--pdeathsig` support; where it is absent the launch falls back
+unchanged and the pump logs one WARNING (`CREDS_NO_PDEATH_GUARD=1` is the off switch). See
+[module_mcp.md](module_mcp.md) and [RESULTS](RESULTS_wsl_bridge_orphans.md), *Defect D*.
+
 **Proved on the real bridge (2026-10-11, E5).** Two harnesses drive this on a Windows machine with a distribution,
 with every binary copied into a run-unique directory and every watch asking by executable path on BOTH sides
 ([module_tests.md](module_tests.md), *The bridge, proved on the real machine*): a Claude-Code-shaped client inside

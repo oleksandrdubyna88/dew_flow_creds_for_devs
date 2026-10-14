@@ -33,6 +33,11 @@ namespace CredsMcp;
 /// stayed, and the Windows half sat in defect A for as long as the WSL session lived. Now the Windows child is held
 /// by a <see cref="ChildLifetime"/>: a signal, or the parent's death, returns the pump at once, closes the child's
 /// stdin, gives it the grace, and kills its tree — killing the proxy is what ends the Windows half (measured).</para>
+/// <para><b>And it dies with the wrapper even when the wrapper runs no code (defect D, §5.11).</b> If a process-tree
+/// terminator SIGSTOPs the interop proxy and then SIGKILLs this wrapper, the <see cref="ChildLifetime"/> never runs,
+/// the stopped proxy forwards no end-of-stream, and the Windows half leaks. So the proxy is launched through
+/// <c>setpriv --pdeathsig KILL</c> (<see cref="WindowsBridge.StartPiped"/>): the kernel SIGKILLs it the instant this
+/// wrapper dies — SIGKILL ends even a stopped process — with no cooperation from the wrapper or the proxy.</para>
 /// </remarks>
 internal static class WslPump
 {
