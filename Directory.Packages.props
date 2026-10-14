@@ -34,7 +34,7 @@
     <!-- xUnit v3 on the native Microsoft Testing Platform: the test project builds into a
          self-contained runner executable. There is no VSTest testhost here, so `dotnet test`
          aborts — run the executable (.claude/rules/shared/common/testing.md). -->
-    <PackageVersion Include="xunit.v3" Version="4.0.1" />
+    <PackageVersion Include="xunit.v3" Version="4.0.2" />
 
     <!-- Hosts the API in-process (TestServer) so the suite needs no free port and no
          background `dotnet run`. -->
