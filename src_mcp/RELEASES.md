@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.3](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/mcp-v0.10.2...mcp-v0.10.3) (2026-10-14)
+
+
+### Bug Fixes
+
+* launch the Windows half through `setpriv --pdeathsig KILL --` (shared WindowsBridge.StartPiped) so the proxy carries PR_SET_PDEATHSIG(SIGKILL) and the kernel ends it the instant the wrapper process dies, even while stopped. Guarded forks run on one dedicated long-lived thread (pdeathsig is thread-scoped through .NET's fork — a retiring pool worker would otherwise kill the proxy mid-session); setpriv is resolved from trusted dirs and probed once for --pdeathsig support; the guard arms only when the binary resolves, preserving the exit-99 missing-binary diagnosis; CREDS_NO_PDEATH_GUARD=1 is the off switch. Covers the MCP pump and the relay's relay-pipe children. ([5530e8b](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/5530e8b966586682ad004bb9ab17ddf31d1affa6))
+* **mcp:** a stopped WSL interop proxy dies with its wrapper (defect D) ([5530e8b](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/5530e8b966586682ad004bb9ab17ddf31d1affa6))
+
 ## [0.10.2](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/mcp-v0.10.1...mcp-v0.10.2) (2026-10-12)
 
 
