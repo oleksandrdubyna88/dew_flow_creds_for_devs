@@ -1,21 +1,58 @@
 # PLAN — every creds process ends when the client it serves is gone
 
-> Status: **in progress, 2026-10-14 — E1 (#201), E4.S1 (#205), E2 (#211), E4.S3 (#212), E4.S2 (#213), E3 (#214), E4.S4 (#215) and E5.S1–S2 implemented (§14; §5.4–§5.8 and §10 *E5, as built*); the owner's WSL MCP refreshed and the binaries swapped (creds-mcp 0.10.2, cli 0.4.2). The one-day count then fell from 39–51 orphans (≈20 sessions) to 3/day — a NEW, narrower leak, DEFECT D (§5.11, epic E6): a WSL interop proxy left STOPPED by SIGSTOP and then orphaned never forwards end-of-stream, so its Windows half leaks. Measured 2026-10-14 (RESULTS, *Defect D*). E6 (the `setpriv --pdeathsig KILL` fix) is open; the plan STAYS in todo/ until E6 ships and the one-day count is met.** Plan gate passed (`proceed`, 1 of 2 reviewers, one
+> Status: **IMPLEMENTED, 2026-10-16.**
+>
+> **What shipped.** Defects A, B and C by epics E1–E5, and defect D by epic E6 (§5.11), which the one-day count after
+> E1–E5 found. E1 logs on disk (#201); E2 the server ends with its client (#211); E3 the bridge and the relay stop what
+> they started (#214); E4 a request that is gone can authorise nothing — S1 consent (#205), S2 a stale WSL install says
+> so (#213), S3 no VPN (#212), S4 no SSH prompt (#215); E5 proof on the real bridge, the Windows CI leg and the release
+> smoke (#218); E6 the `setpriv --pdeathsig KILL` guard (#246). Released in creds-mcp 0.10.0–0.10.3, cli 0.4.0–0.4.2,
+> extension 1.14.0–1.14.1 and server 0.11.0–0.11.1 (some of these patch releases also carry other changes).
+>
+> **Measured result (2026-10-16, RESULTS, *The one-day count after E6*).** On the owner's machine, with creds-mcp 0.10.3
+> installed since 2026-10-14 and no restart since: **0 orphans, 0 stopped proxies**. The 7 Windows `creds-mcp.exe` are
+> 3 children of live `claude.exe` and 4 children of the WSL session's `wsl.exe`; the 4 WSL wrappers, 4 proxies (all in
+> state S, none in T) and 4 Windows halves match one to one. Before the work: 39–51 orphans with about 20 sessions
+> (2026-10-09); after A/B/C: 3 per day, all defect D (2026-10-14). This is one day on one machine — evidence, not
+> proof. An earlier count on 2026-10-15 (0 orphans) covered only 4 hours after a reboot and is not the evidence.
+>
+> **Deviations from the plan.** (1) The plan was written for A, B and C; E6 was added on 2026-10-14 after the first
+> one-day count, and §1–§4 still describe the A/B/C world. (2) §3.3: a modal cannot be removed by code, so the owner
+> chose the *defused modal* (a click on a gone request does nothing); the QuickPick story was dropped and its number
+> E4.S3 was reused for the VPN start. (3) E4 ended with four stories (S1–S4): S3 (the VPN start) and S4 (the SSH prompts
+> and the journal wording) came from the open tails of the stories before them. (4) E5 as built (§10): the Linux run directories are under the person's
+> cache directory, not `/tmp` (SonarCloud S5443); every step in the distribution is exe + argv through one script, not a
+> `bash -lc` string; the relay's fd baseline is taken after the first connection; `dispose()` is proved over a live
+> connection. (5) E6: the guard is **not** a wrapper-side fix — the wrapper is dead in the leak — and `PR_SET_PDEATHSIG`
+> is thread-scoped through .NET's fork, so every guarded child is forked on one long-lived thread (found in the code
+> round, not in the first design); the guard covers the relay's `relay-pipe` children too, so no cli release was cut.
+>
+> **Open tail.** (a) The full real-bridge itest `npm run itest:mcp-wsl` with the new `stopped` ending (E6.S2) was not run
+> end to end; the mechanism was measured directly (RESULTS, *Defect D*) and the host test
+> `WslPumpHostTests.A_child_left_STOPPED_and_orphaned_still_dies_with_the_wrapper` covers the code path. (b) The
+> sub-millisecond window between the fork and `setpriv`'s `prctl`, in which a death of the wrapper is not yet guarded,
+> is not closed. (c) Logging the guard status on the relay side is deferred to the cli's next change. (d) Release PR #247
+> (extension 1.14.2, itest scripts only) is open and waits for the next real extension release. (e)
+> `mcp-listen-smoke.sh` and `version-smoke.sh` are not shellchecked in CI. (f) The `creds.exe relay-pipe` count was not
+> part of the 2026-10-16 count (§13). (g) A repeat count after a normal working week would turn one day of evidence
+> into a longer one.
+>
+> Plan gate passed (`proceed`, 1 of 2 reviewers, one
 > round — §14); each epic is re-gated on its own branch. Scope: `src_mcp/src` (`Program.cs`, `WslPump.cs`, the
 > tool lambdas, `Windows.cs`, a new `ServerLifetime`), `src_broker_client/src` (`BrokerClient.cs`, `WslInterop.cs`, a
 > new shared `ChildLifetime`), `src_cli/src` (`AgentRelay.cs`, `RelayPipe.cs`), `src_vs_code/src` (the broker's
 > consent and perform path, the WSL MCP install check), a new shared logging project `src_service_defaults`, the
 > server's logging (moved, not rewritten), the node itests and `wslStrays.cjs`, CI and the release smoke.
 >
-> **Evidence:** [RESULTS_wsl_bridge_orphans.md](../research/RESULTS_wsl_bridge_orphans.md) — every claim in §1–§2 is
+> **Evidence:** [RESULTS_wsl_bridge_orphans.md](RESULTS_wsl_bridge_orphans.md) — every claim in §1–§2 is
 > measured there.
 >
-> Related docs: [PLAN_mcp_wsl_bridge.md](../research/PLAN_mcp_wsl_bridge.md) (which promised "neither half may outlive
-> the other"), [PLAN_wsl_agent_relay.md](../research/PLAN_wsl_agent_relay.md), [PLAN_mcp_server.md](../research/PLAN_mcp_server.md),
-> [PLAN_logging_convention.md](../research/PLAN_logging_convention.md), [module_extension.md](../research/module_extension.md),
-> [module_tests.md](../research/module_tests.md); boundaries in §6 with
-> [PLAN_creds_cli_reachable_from_every_caller.md](PLAN_creds_cli_reachable_from_every_caller.md) and
-> [PLAN_consent_names_codex_and_wsl_sessions.md](PLAN_consent_names_codex_and_wsl_sessions.md).
+> Related docs: [PLAN_mcp_wsl_bridge.md](PLAN_mcp_wsl_bridge.md) (which promised "neither half may outlive
+> the other"), [PLAN_wsl_agent_relay.md](PLAN_wsl_agent_relay.md), [PLAN_mcp_server.md](PLAN_mcp_server.md),
+> [PLAN_logging_convention.md](PLAN_logging_convention.md), [module_extension.md](module_extension.md),
+> [module_tests.md](module_tests.md); boundaries in §6 with
+> [PLAN_creds_cli_reachable_from_every_caller.md](../todo/PLAN_creds_cli_reachable_from_every_caller.md) and
+> [PLAN_consent_names_codex_and_wsl_sessions.md](../todo/PLAN_consent_names_codex_and_wsl_sessions.md).
 
 ## 1. The symptom (owner, 2026-10-09)
 
@@ -75,7 +112,7 @@ from `/proc` and a shim.
 4. The orphans on the measured machine were cleaned up the same day, by PID, after proving each was an orphan.
 5. An upstream issue goes to `modelcontextprotocol/csharp-sdk` (draft in §5.10) — posted 2026-10-09 with the owner's OK
    as [csharp-sdk#1914](https://github.com/modelcontextprotocol/csharp-sdk/issues/1914).
-6. The config key in argv (a side finding) gets its own plan: [PLAN_config_key_off_the_command_line.md](../research/PLAN_config_key_off_the_command_line.md).
+6. The config key in argv (a side finding) gets its own plan: [PLAN_config_key_off_the_command_line.md](PLAN_config_key_off_the_command_line.md).
 7. The owner's WSL MCP install is refreshed after the release ships.
 
 ### 3.2 The question consultant (consultation `33635809`, one of two rows answered — the other was rate-limited)
@@ -399,7 +436,7 @@ below).
 - A chain step that finishes after its request has gone ends the chain with no *Continue* question (`settle` reads the
   gate first — checkpoint round, finding 4). `notStarted()` builds a `RequestEndedError` whose `name` is part of the
   instance (finding 2).
-- The flows are catalogued in [module_tests.md](../research/module_tests.md), *A gone request starts no VPN*, with the
+- The flows are catalogued in [module_tests.md](module_tests.md), *A gone request starts no VPN*, with the
   scenario-harness gap and its reason.
 - **Open tail, found by the own review — taken by E4.S4 below:** (1) the SSH terminal's path awaits the credential
   lookup (its PIN box) and the host-key read BEFORE its first gate check, so for a gone request it can still show the
@@ -470,7 +507,7 @@ finished); the chain answers a `ChainEnd` whose `typed` travels into the VPN's l
 and into `stopped`, so a client gone during the config read AFTER a live step, or a *Stop* clicked after the
 client left, is journalled with the step; `refuseAndOfferTheFix` hands the pressed button to `actOnRefusal` (the
 complexity ceiling); and the typed fixtures are the real `StorageManager` over memory rather than a narrowed
-`SshUseDeps.storage`. The flows are catalogued in [module_tests.md](../research/module_tests.md), *A gone request
+`SshUseDeps.storage`. The flows are catalogued in [module_tests.md](module_tests.md), *A gone request
 reaches no SSH prompt*, with the scenario-harness gap and its reason.
 
 ### 5.8 A stale WSL install says so — `src_vs_code/src`
@@ -640,8 +677,8 @@ SIGSTOPped orphaned proxy within 0.5 s; it survives the interop `execve`; JSON-R
 
 | Plan | Touches | Who builds what |
 |---|---|---|
-| [PLAN_creds_cli_reachable_from_every_caller.md](PLAN_creds_cli_reachable_from_every_caller.md) | `WslInterop.cs` (a resolution rung), the WSL install | That plan owns where `creds`/`creds-mcp` are installed and found; this one owns how long they live and `--version`. §5.8 reuses its install, never re-implements it. |
-| [PLAN_consent_names_codex_and_wsl_sessions.md](PLAN_consent_names_codex_and_wsl_sessions.md) | the consent modal's text, caller identity over the bridge | That plan owns what the modal SAYS; this one owns whether a closed request can still be answered. |
+| [PLAN_creds_cli_reachable_from_every_caller.md](../todo/PLAN_creds_cli_reachable_from_every_caller.md) | `WslInterop.cs` (a resolution rung), the WSL install | That plan owns where `creds`/`creds-mcp` are installed and found; this one owns how long they live and `--version`. §5.8 reuses its install, never re-implements it. |
+| [PLAN_consent_names_codex_and_wsl_sessions.md](../todo/PLAN_consent_names_codex_and_wsl_sessions.md) | the consent modal's text, caller identity over the bridge | That plan owns what the modal SAYS; this one owns whether a closed request can still be answered. |
 
 Both are named back from those plans in the same change that lands this one.
 
@@ -987,11 +1024,20 @@ Every bug test is shown red with the real symptom before the fix and green after
 
 ## 13. Definition of Done
 
-- [ ] On the measured machine after a day of normal use: `creds-mcp.exe` count equals live MCP clients; `creds.exe
-      relay-pipe` count equals live SSH-agent connections (recorded in the RESULTS record). **Open: defect D's
-      one-day count after E6 ships** — 0 stopped/orphaned interop proxies left behind.
-- [ ] Defect D has a test shown red with the real symptom and then green (E6.S1 unit + process; E6.S2 the real
-      bridge), and the `setpriv --pdeathsig KILL` guard degrades gracefully when `setpriv` is absent.
+- [x] On the measured machine after a day of normal use: `creds-mcp.exe` count equals live MCP clients, with 0
+      stopped/orphaned interop proxies left behind (2026-10-16, one day after creds-mcp 0.10.3, no restart: 7 Windows
+      halves = 3 + 4 live parents, 4 wrappers = 4 proxies = 4 Windows halves, 0 orphans, 0 in state T — RESULTS, *The
+      one-day count after E6*).
+- [ ] `creds.exe relay-pipe` count equals live SSH-agent connections after a day of normal use. **Open tail (f):** the
+      2026-10-16 count did not include `relay-pipe`; E5's harness proves ten connections leave 0 children, and the
+      E6 guard covers the relay's children, but no one-day count of them is recorded.
+- [x] Defect D has a test shown red with the real symptom and then green (E6.S1: the pure launch-shaping tests, the
+      pump host test with the child SIGSTOPped and the wrapper SIGKILLed — RED, GREEN, RED again with the guard
+      removed — and the thread-scope backstop), and the `setpriv --pdeathsig KILL` guard degrades gracefully when
+      `setpriv` is absent (`WslInteropTests`, `ParentDeathArmingTests`).
+- [ ] Defect D on the real bridge: the `stopped` ending of `npm run itest:mcp-wsl` (E6.S2), RED against the pre-E6
+      release and GREEN on this build. **Open tail (a):** not run end to end; the mechanism was measured and the host
+      test covers the code path.
 - [x] Defects A, B, C each have a test shown red with the real symptom and then green; the WSL itests of E5.S1 pass
       (2026-10-11: 42 and 40 checks GREEN on the real bridge; 4 and 9 RED against `9494a67c` — §14, the RESULTS record).
 - [x] A late **Allow** for a gone request runs nothing (E4.S1). (§3.3 decided by the owner 2026-10-09: defused modal.)
@@ -1001,12 +1047,14 @@ Every bug test is shown red with the real symptom before the fix and green after
 - [x] Every serving host writes `logs/{yyyy-MM-dd}/{app}-{HH-mm-ss}-{pid}.log` with its start and its exit reason;
       retention works; nothing secret is in a log file (E1; the release smoke of both binaries checks the file).
 - [x] `creds-mcp --version` reports both halves under WSL; a stale WSL install is reported with an update offer (E2, E4.S2).
-- [ ] Each epic passed its plan and code rounds; its PR's automated comments were read and answered (E1–E5: §14);
-      releases cut only with the owner's OK on the notes — **open: the releases of E2–E5's binaries and the extension**.
-- [ ] `research/module_extension.md`, `module_tests.md`, `architecture.md` (the WSL bridge diagram and process lifetime),
+- [x] Each epic passed its plan and code rounds; its PR's automated comments were read and answered (E1–E5, E6: §14);
+      releases cut only with the owner's OK on the notes — creds-mcp 0.10.0–0.10.3, cli 0.4.0–0.4.2, extension
+      1.14.0–1.14.1, server 0.11.0–0.11.1 are released. **Open tail (d):** release PR #247 (extension 1.14.2, itest
+      scripts only) waits for the next real extension release.
+- [x] `research/module_extension.md`, `module_tests.md`, `architecture.md` (the WSL bridge diagram and process lifetime),
       `PLAN_mcp_wsl_bridge.md` (its promise now kept — a pointer here) updated; `todo/README.md` and `research/README.md`
-      match; `node .claude/rules/shared/tools/plan-lifecycle.mjs` passes (all done 2026-10-11) — **open: the plan is
-      promoted** once the first line above is measured on the owner's machine with the released build.
+      match; `node .claude/rules/shared/tools/plan-lifecycle.mjs` passes (2026-10-11, and again at the promotion on
+      2026-10-16, when the plan moved to `research/`).
 
 ## 14. Review record
 
@@ -1072,7 +1120,7 @@ primitive moves into E2 and E3 reuses it. Also new in E1 and reusable there: `Pa
 
 | # | Finding | Decision |
 |---|---|---|
-| 0 | The new module has no `research/module_*.md` | **accepted** — [module_service_defaults.md](../research/module_service_defaults.md), linked from `architecture.md` and `research/README.md` |
+| 0 | The new module has no `research/module_*.md` | **accepted** — [module_service_defaults.md](module_service_defaults.md), linked from `architecture.md` and `research/README.md` |
 | 1 | `HostEnding.Reason` is an untyped string | **accepted** — `ExitReason`, a closed enum written as its camelCase word; a test enumerates the type |
 | 2 | One host's retention prunes another app's logs in a shared root | **rejected** — day-folder pruning per root is the rule's shape and the moved `LogRetention`'s; one root has one window, so the shortest window set wins — now stated in the module doc |
 | 3 | A client can forge a log line through its name (CR/LF) | **accepted** — client name and method names go through `CallerIdentity.Clean`; RED ("Expected sink.Messages to contain only items matching (Not(message.Contains(…") → GREEN → RED again with the fix removed |
@@ -1195,7 +1243,7 @@ end to end); questions to the question consultant before the person.
   transparent shim between `claude -p` (Claude Code **2.1.289**, native Windows) and `creds-mcp` recorded the four
   client lines verbatim on 2026-10-10: `server/discover` (a version probe), `subscriptions/listen`,
   `server/discover`, `tools/list` — the 2.1.295 sequence plus the probe
-  ([RESULTS](../research/RESULTS_wsl_bridge_orphans.md), *The fixture*).
+  ([RESULTS](RESULTS_wsl_bridge_orphans.md), *The fixture*).
 - **`ShutdownSignals` and `ParentWatch` live in `src_service_defaults`**, not in `src_mcp` and not in E3's
   `ChildLifetime`: the server needs them now, the pump and the relay need them in E3, and one copy is the reuse
   rule (cadence consultation, point 5). E3's `ChildLifetime` composes them rather than re-implementing either.
@@ -1274,7 +1322,7 @@ plan's status line and §14, the `todo/README.md` row); E4.S1's record and behav
 
 | # | Finding | Decision |
 |---|---|---|
-| 0 | `src_mcp` has no `research/module_*.md` of its own (raised a second time, now as blocking) | **accepted** — reversing the code round's rejection: the knowledge-base rule asks for a module doc per module, and the server had only paragraphs in `architecture.md`. [module_mcp.md](../research/module_mcp.md) now holds its purpose, diagram, entities, entry points, lifetime, dependencies and tests, linked from `architecture.md`'s module map and `research/README.md` |
+| 0 | `src_mcp` has no `research/module_*.md` of its own (raised a second time, now as blocking) | **accepted** — reversing the code round's rejection: the knowledge-base rule asks for a module doc per module, and the server had only paragraphs in `architecture.md`. [module_mcp.md](module_mcp.md) now holds its purpose, diagram, entities, entry points, lifetime, dependencies and tests, linked from `architecture.md`'s module map and `research/README.md` |
 
 **PR #211's automated reviewers.** CodeRabbit (it reviewed this time) raised two README sentences, both accurate and
 fixed: the kill switch is for a launcher that starts `creds-mcp` as a child and exits (an `exec`ing one is replaced
@@ -1314,7 +1362,7 @@ in this plan's status line and §14; E2's record is kept above.
 | # | Finding | Decision |
 |---|---|---|
 | 0 | `sshUseActions.test.ts`: the fixture cast `as never` (raised again) | **rejected** — no new argument: the file's one `deps()` helper, cast at all ten call sites; a follow-up |
-| 1 | the VPN flow has no scenario test and no `module_tests.md` entry | **accepted as the rule allows** — catalogued in [module_tests.md](../research/module_tests.md) with every covering test, and the scenario-harness leg recorded as NOT covered with its reason: the only harness that could reach it stubs `vscode` with terminals that record nothing, and no test may start a real tunnel or installer |
+| 1 | the VPN flow has no scenario test and no `module_tests.md` entry | **accepted as the rule allows** — catalogued in [module_tests.md](module_tests.md) with every covering test, and the scenario-harness leg recorded as NOT covered with its reason: the only harness that could reach it stubs `vscode` with terminals that record nothing, and no test may start a real tunnel or installer |
 | 2 | `notStarted()` assigns `error.name` after construction | **accepted** — `RequestEndedError`, its `name` part of the instance; a refactor with no behaviour to watch red — the existing `AbortError` assertions hold it |
 | 3 | the `extension.ts` line handing the gate to `runVpn` is held by no test | **accepted** — `vpnRun.agentVpnOpener`, tested; written against the new seam, so its teeth were proven by break-it (the gate dropped → *"the agent opener started a VPN for a request whose client had gone"*) |
 | 4 | a step that finishes after its request has gone still asks the person to *Continue* | **accepted** — `settle` reads the gate first; RED (*"the person was asked to continue a chain nobody waits for"*) → GREEN → RED again with the check removed |
@@ -1738,3 +1786,13 @@ build into its own directory — hard links now.
 `END_BOUND` timer could say *failed* after the wrapper's exit — it checks `exited` first; and the RESULTS record
 had still carried the first version's counts — resolved by the record itself. Each thread answered and resolved
 after its fix landed.
+
+### Epic E6 — a stopped interop proxy still dies with its wrapper (defect D)
+
+Pull request #246, merged 2026-10-14, released as creds-mcp 0.10.3 (#248). The commit message records four multi-vendor
+gate rounds (all `proceed`) and four independent reviews; the round tables themselves are on the gate's log, not
+copied here. Its code round's one MAJOR finding is in §5.11: `PR_SET_PDEATHSIG` is scoped to the forking THREAD, so a
+guarded child forked on a retiring pool worker would be killed under a live client — the dedicated launcher thread and
+`ParentDeathLauncherTests` are the answer. SonarCloud's gate passed on the pull request; CodeRabbit reviewed it.
+**What was NOT done:** E6.S2's manual run of the real-bridge itest with its `stopped` ending, before the PR, as E5 orders —
+see the open tail in the status block and §13.

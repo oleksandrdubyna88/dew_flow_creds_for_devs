@@ -87,7 +87,7 @@ an `ABANDONED` line wherever it is on the path. The modal it raised stays on scr
 one) but answering it decides nothing; nothing is remembered, no use is counted, nothing starts, and a
 child already started is cancelled. The cross-process half is the client's: a process that is still
 alive keeps its connection open, which is why `creds-mcp` cancelling its broker call when its own client
-goes is part of the same plan (E2.S3). Record: [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md) §5.7.
+goes is part of the same plan (E2.S3). Record: [PLAN_wsl_bridge_outlives_its_client.md](PLAN_wsl_bridge_outlives_its_client.md) §5.7.
 
 What the server contributes is the thing a shared folder cannot: **authenticated identity**. It
 knows who is calling, because the caller presents a token their identity provider signed, and it
@@ -313,7 +313,7 @@ parent pid) and an **exit line** (code, reason, uptime); the MCP server adds the
 the handshake names it and, at Debug, each incoming method NAME. The relay's socket path is logged (it prints
 it on stdout anyway). **Never logged:** argument values, other environment values, the forwarded caller record (only that one was present), protocol bodies, tool
 arguments or results, stream bytes, tokens — a process test greps a marker out of every one of those
-places. Design record: [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md) §5.1.
+places. Design record: [PLAN_wsl_bridge_outlives_its_client.md](PLAN_wsl_bridge_outlives_its_client.md) §5.1.
 
 Container logs are separately capped by Docker's json-file driver at 10 MB × 5 per service, so a
 log loop cannot fill the disk that holds the vaults.
@@ -563,7 +563,9 @@ children. Because the signal fires on the death of the thread that forked the ch
 that retires mid-session), every guarded fork runs on one dedicated long-lived thread. `setpriv` is resolved only
 from trusted system directories and probed once for `--pdeathsig` support; where it is absent the launch falls back
 unchanged and the pump logs one WARNING (`CREDS_NO_PDEATH_GUARD=1` is the off switch). See
-[module_mcp.md](module_mcp.md) and [RESULTS](RESULTS_wsl_bridge_orphans.md), *Defect D*.
+[module_mcp.md](module_mcp.md) and [RESULTS](RESULTS_wsl_bridge_orphans.md), *Defect D*. Measured on 2026-10-16, one
+day after the guard shipped and with no restart: 0 orphans, 0 stopped proxies ([RESULTS](RESULTS_wsl_bridge_orphans.md),
+*The one-day count after E6*) — one day on one machine, not a proof.
 
 **Proved on the real bridge (2026-10-11, E5).** Two harnesses drive this on a Windows machine with a distribution,
 with every binary copied into a run-unique directory and every watch asking by executable path on BOTH sides
@@ -581,7 +583,7 @@ listen held open, then end-of-stream — and `ci-clients.yml` runs the clients' 
 ### How long a `creds-mcp` lives (2026-10-10)
 
 *A creds process that serves a client ends within a bounded time of losing it, and says in its log which
-signal it was* — [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md).
+signal it was* — [PLAN_wsl_bridge_outlives_its_client.md](PLAN_wsl_bridge_outlives_its_client.md).
 For the server answering here (natively, or as the Windows half of the bridge) that is `ServerLifetime`
 (`src_mcp/src`), which holds the token of the SDK's `RunAsync`. The SDK does not end on its own once a
 client opened `subscriptions/listen` — every Claude Code session does — so without that token a closed

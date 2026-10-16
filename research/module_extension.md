@@ -3956,7 +3956,7 @@ there it mattered more, because until the timeout below that prompt never expire
 real broker). Design record: [PLAN_consent_shows_request_time.md](PLAN_consent_shows_request_time.md).
 
 **A request that is gone can authorise nothing (E4.S1 of
-[PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md) §2.3, §5.7).** Until
+[PLAN_wsl_bridge_outlives_its_client.md](PLAN_wsl_bridge_outlives_its_client.md) §2.3, §5.7).** Until
 2026-10-09 nothing in the broker observed a caller leaving: an MCP client closed while its modal was open
 left the modal behind, and a person who clicked **Allow** on it later allowed the grant and RAN the action
 for a request nobody was waiting for. Now:
@@ -5628,7 +5628,7 @@ it) rather than composed as `/mnt/c/...`, which is the default automount root an
 the Windows one is, since the extension installs it off the PATH on purpose.
 
 **A stale WSL install says so (2026-10-10, E4.S2 of
-[PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md) §5.8).** The
+[PLAN_wsl_bridge_outlives_its_client.md](PLAN_wsl_bridge_outlives_its_client.md) §5.8).** The
 owner's WSL client config pointed at a manual install from August while the extension shipped newer
 builds, so no fix — and no `--caller` forwarding — reached any WSL session, and nothing said so.
 `creds-mcp --version` (E2) now prints `creds-mcp <v>` and, inside WSL, `windows half: <v | one of three

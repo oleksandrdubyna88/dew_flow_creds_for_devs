@@ -21,7 +21,7 @@
 > Related docs: [module_extension.md](module_extension.md) (*An announcement per window*),
 > [module_mcp.md](module_mcp.md) (`Windows`), [PLAN_headless_cli.md](PLAN_headless_cli.md)
 > (where the endpoint file was designed), [PLAN_config_key_off_the_command_line.md](PLAN_config_key_off_the_command_line.md)
-> (the `creds config` walk this was found under), [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md)
+> (the `creds config` walk this was found under), [PLAN_wsl_bridge_outlives_its_client.md](PLAN_wsl_bridge_outlives_its_client.md)
 > (why windows leave files behind: a window that crashes or is killed runs no dispose).
 
 ## 1. The symptom (the owner's machine, 2026-10-10 and 2026-10-11)

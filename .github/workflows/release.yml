@@ -402,7 +402,7 @@ jobs:
         shell: bash
         run: .github/scripts/version-smoke.sh cli ./out/creds${{ runner.os == 'Windows' && '.exe' || '' }} "$VERSION"
 
-      # The published binary writes its own log (todo/PLAN_wsl_bridge_outlives_its_client.md, E1.S3).
+      # The published binary writes its own log (research/PLAN_wsl_bridge_outlives_its_client.md, E1.S3).
       # `relay-pipe` is the serving verb a runner can drive with nothing behind it: no window announces
       # an agent here, so it ends at once with brokerUnreachable — and must say so in a file. The root
       # comes from `pwd -W` on Windows so .NET and `find` read the same path.
@@ -611,7 +611,7 @@ jobs:
 
       # The published binary serves a real Claude Code session start — `server/discover`,
       # `subscriptions/listen` held open, `tools/list` answered — and ends within 10 s of the client's
-      # end-of-stream, writing its own log (todo/PLAN_wsl_bridge_outlives_its_client.md: E1.S3's log
+      # end-of-stream, writing its own log (research/PLAN_wsl_bridge_outlives_its_client.md: E1.S3's log
       # smoke, with E2's ending — the listen that once kept the server alive for ever, defect A). The
       # check is a script so it runs on a developer's machine against a locally published binary before
       # a tag; its 60 s guard bounds a regression that would otherwise hold the leg for its full half hour.

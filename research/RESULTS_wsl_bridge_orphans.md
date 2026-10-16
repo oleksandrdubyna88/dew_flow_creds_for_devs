@@ -7,8 +7,9 @@
 > survivors were counted by **set difference of `creds-mcp.exe` PIDs**, because interop children are
 > parented to the distribution's long-lived `wsl.exe`, never to the `wsl.exe` that ran the probe.
 >
-> The fix is planned in [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md);
-> what E3 measured on the same machine on 2026-10-10 is the last section, *The fix, measured*.
+> The fix was built as [PLAN_wsl_bridge_outlives_its_client.md](PLAN_wsl_bridge_outlives_its_client.md) (implemented
+> 2026-10-16). What E3 measured on the same machine on 2026-10-10 is the section *The fix, measured*; the last
+> section, *The one-day count after E6*, is the count on 2026-10-16 that closed the plan.
 
 ## The symptom
 
@@ -470,5 +471,38 @@ Properties checked before and while building it:
   token file, a poll, a new failure mode) and unnecessary: pdeathsig already ends the proxy, and ending the proxy
   ends the Windows half (E3's measured fact). Kept in reserve only if a target distribution lacks `setpriv`.
 
-The fix is planned in [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md),
-§5.11 (Defect D); its RED/GREEN on the real bridge is recorded there once the itest runs.
+The fix was built as [PLAN_wsl_bridge_outlives_its_client.md](PLAN_wsl_bridge_outlives_its_client.md) §5.11 (Defect D,
+epic E6, creds-mcp 0.10.3). The mechanism is measured above and the host test covers the code path; the full
+real-bridge itest with its sixth ending, `stopped`, was NOT run end to end (the plan's open tail).
+
+## The one-day count after E6 — measured 2026-10-16
+
+> Measured 2026-10-16 08:27 UTC on the owner's machine (Windows 11 with an Ubuntu WSL2 distribution), by reading the
+> process tables of both sides. This is the count the plan's Definition of Done asked for. No process was signalled.
+
+**State of the machine.** creds-mcp 0.10.3 (defect D fixed: the Windows half is launched through
+`setpriv --pdeathsig KILL --`) was installed on 2026-10-14 14:05 UTC, on Windows and in WSL. Nothing was restarted
+since: Windows booted 2026-10-15 07:40 UTC (24.8 h before the count) and WSL had been up 1 day 51 min. Every running
+`creds-mcp.exe` had started after 08:14 on the count day — not one process was left over from the previous 24 hours.
+
+| Side | What was counted | Result |
+|---|---|---|
+| Windows | `creds-mcp.exe` processes | 7 — 3 are children of the 3 live `claude.exe`, 4 are children of the WSL session's `wsl.exe`, **0 have a gone parent** |
+| WSL | Linux wrappers (`~/.local/bin/creds-mcp`) | 4 — each with a live Claude Code parent |
+| WSL | interop proxies (`/init … creds-mcp.exe`) | 4 — all in state S, each a child of its wrapper, **0 in state T** |
+| both | Windows halves against proxies | the 4 Windows halves matched the 4 proxies one to one, by the `--caller` session id |
+
+**Result: 0 orphans, 0 stopped proxies.**
+
+| Date | State of the build | Orphan `creds-mcp.exe` on the machine |
+|---|---|---|
+| 2026-10-09 | before the work (about 20 sessions) | 39–51 |
+| 2026-10-14 | after A, B and C (creds-mcp 0.10.2) | 3 per day, all from defect D |
+| 2026-10-16 | after E6 (creds-mcp 0.10.3), one day without a restart | **0** |
+
+**What this does and does not show.** An earlier count on 2026-10-15 also found 0 orphans, but it covered only
+4 hours after a reboot, so it could not show a leak that needs a day of sessions to appear; it is not the evidence.
+This count is one day on one machine. The leak of defect D was 3 per day, so a day without it is evidence, not a
+proof — the count should be repeated after a normal working week. The count says nothing about the sub-millisecond
+window between the fork and `setpriv`'s `prctl` (the plan's open tail), and it did not run the real-bridge
+`stopped` ending of the itest.
