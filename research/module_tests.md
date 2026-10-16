@@ -87,7 +87,7 @@ first check in the relay harness got stronger by the same change, since *"a real
 now means ours rather than any.
 
 **And since 2026-10-11 the question is asked by EXECUTABLE PATH, on both sides** (E5.S1 of
-[PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md)). Each run
+[PLAN_wsl_bridge_outlives_its_client.md](PLAN_wsl_bridge_outlives_its_client.md)). Each run
 copies the binaries it starts into a directory named for the run — `%LOCALAPPDATA%\creds-itest\creds-itest-<run>\` on Windows (the person's own local application data, never the shared temp directory),
 `${XDG_CACHE_HOME:-~/.cache}/creds-itest/<run>/` inside the distribution (`scripts/wslRun.cjs`; the person's own
 cache directory rather than `/tmp`, where a predictable name could be pre-created by another local user and the
@@ -1050,7 +1050,7 @@ ran out is not observed by any test.
 
 ## A gone request starts no VPN (2026-10-10, E4.S3)
 
-The flows story E4.S3 of [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md)
+The flows story E4.S3 of [PLAN_wsl_bridge_outlives_its_client.md](PLAN_wsl_bridge_outlives_its_client.md)
 gated: an agent's `creds_vpn_up` / `creds_vpn_down` whose client leaves while the start waits. Every case holds ONE
 await open, fires the request's signal, then lets it go — the moment a person answers a modal nobody waits for.
 Command: `npm test`, or `node --import ./scripts/lower-priority.mjs --test out/test/<file>.js`.
@@ -1075,7 +1075,7 @@ design (plan §5.7, open tail).
 
 ## A gone request reaches no SSH prompt (2026-10-10, E4.S4)
 
-The flows story E4.S4 of [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md)
+The flows story E4.S4 of [PLAN_wsl_bridge_outlives_its_client.md](PLAN_wsl_bridge_outlives_its_client.md)
 gated: an agent's SSH terminal whose client leaves before the terminal opens — during the entry's PIN box, the
 host-key question, or a window's refusal — and the journal line of a VPN whose chain had already typed a step. Every
 case fires the request's signal at one await and then lets the path continue, the moment a person answers a dialog
@@ -1275,7 +1275,7 @@ Named rather than implied, because the rule asks for exactly this.
   not reach the browser as stored. The judge keeps the query as stored; the editor's last step is
   unverified.
 - **The stale WSL MCP install check (2026-10-10, E4.S2 of
-  [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md) §5.8).** No
+  [PLAN_wsl_bridge_outlives_its_client.md](PLAN_wsl_bridge_outlives_its_client.md) §5.8).** No
   harness clicks *Install… → Check the WSL MCP install* or answers its dialog. What stands in: the verdict
   over E2's real `--version` format, the probe's argv and its refusals (`wslMcpStale.test.ts`); when it runs
   — never a stopped distribution, once a day, the dismissal, nothing spawned with nothing recorded, an

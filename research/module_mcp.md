@@ -5,7 +5,7 @@
 > and its switches were designed in [PLAN_mcp_server.md](PLAN_mcp_server.md), the WSL bridge in
 > [PLAN_mcp_wsl_bridge.md](PLAN_mcp_wsl_bridge.md), the caller record in
 > [PLAN_caller_identity_in_consent.md](PLAN_caller_identity_in_consent.md), its lifetime in
-> [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md) (E1 logs, E2 the server's
+> [PLAN_wsl_bridge_outlives_its_client.md](PLAN_wsl_bridge_outlives_its_client.md) (E1 logs, E2 the server's
 > lifetime, E3 the pump's). Written 2026-10-10 (E2 code round): before it, this binary was described only inside
 > `architecture.md`.
 
@@ -111,7 +111,10 @@ flowchart TB
   `CREDS_NO_PDEATH_GUARD=1` off switch. The guarded child is
   forked on one dedicated long-lived thread, because `PR_SET_PDEATHSIG` fires when the forking thread exits and .NET
   forks on a pool worker that retires — a thread-scope backstop measured in RESULTS. Measured in
-  research/RESULTS_wsl_bridge_orphans.md, *Defect D*.
+  research/RESULTS_wsl_bridge_orphans.md, *Defect D*. **Result on the real machine (2026-10-16):** one day after
+  creds-mcp 0.10.3 was installed, with no restart, there were 0 orphans and 0 stopped proxies (RESULTS, *The one-day
+  count after E6*) — one day on one machine. The real-bridge itest's `stopped` ending was not run end to end (the
+  plan's open tail), and a sub-millisecond window between the fork and `setpriv`'s `prctl` is not guarded.
 - **Logs.** A serving run writes `creds-mcp` (or `creds-mcp-wsl`) files through
   [module_service_defaults.md](module_service_defaults.md): start, client name, method names at Debug, why it
   stopped, the exit line once. Never argv values, environment values, the caller record, bodies or tool data.

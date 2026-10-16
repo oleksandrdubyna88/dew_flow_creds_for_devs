@@ -1,7 +1,7 @@
 # Module — `src_service_defaults` (the shared logging)
 
 > `CredsForDevs.ServiceDefaults`, a .NET 10 class library, `IsAotCompatible`. Created 2026-10-09 by epic E1 of
-> [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md). Entry point from the
+> [PLAN_wsl_bridge_outlives_its_client.md](PLAN_wsl_bridge_outlives_its_client.md). Entry point from the
 > system view: [architecture.md](architecture.md) §Logging.
 
 ## Purpose

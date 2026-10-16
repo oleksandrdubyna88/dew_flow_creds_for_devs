@@ -18,7 +18,7 @@
          stable too, last released 2025-04-28 — over the policy's twelve months, and taken anyway on
          the record: it was already in the server's graph through Serilog.AspNetCore (the sink
          DailyRunFileSink has always written through), it is the family's file sink, and the owner
-         approved the plan that names it (todo/PLAN_wsl_bridge_outlives_its_client.md §5.1).
+         approved the plan that names it (research/PLAN_wsl_bridge_outlives_its_client.md §5.1).
          Apache-2.0. -->
     <PackageVersion Include="Serilog" Version="4.4.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />

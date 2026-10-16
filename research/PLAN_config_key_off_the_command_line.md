@@ -12,7 +12,7 @@
 > order between the two is § 7.
 >
 > Found by [RESULTS_wsl_bridge_orphans.md](RESULTS_wsl_bridge_orphans.md) (§ Side findings) while tracing
-> leaked processes; split out of [PLAN_wsl_bridge_outlives_its_client.md](../todo/PLAN_wsl_bridge_outlives_its_client.md) by the
+> leaked processes; split out of [PLAN_wsl_bridge_outlives_its_client.md](PLAN_wsl_bridge_outlives_its_client.md) by the
 > owner's decision of 2026-10-09.
 >
 > Related docs: [PLAN_config_entities.md](PLAN_config_entities.md), [module_extension.md](module_extension.md).

@@ -13,7 +13,7 @@ name: ci · clients
 # character over that platform's 104-byte `sun_path`, and the release had already shipped the other
 # three products by then.
 #
-# **And on Windows, since 2026-10-11 (E5.S2 of todo/PLAN_wsl_bridge_outlives_its_client.md).** The
+# **And on Windows, since 2026-10-11 (E5.S2 of research/PLAN_wsl_bridge_outlives_its_client.md).** The
 # Windows half of the WSL bridge — the `creds-mcp.exe` and `creds.exe relay-pipe` that leaked — was
 # exercised by no pull request either: the process tests that prove the server ends with its client
 # (`ServerEndsWithClientTests`, `ParentWatchProcessTests` through `cmd /c`) ran on Windows only by
