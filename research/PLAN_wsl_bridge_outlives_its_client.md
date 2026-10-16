@@ -2,6 +2,9 @@
 
 > Status: **IMPLEMENTED, 2026-10-16.**
 >
+> **Not finished:** E6.S2 (the real-bridge itest with the `stopped` ending) was not run end to end, and the relay-pipe
+> one-day count was not taken — see *Open tail* and §13. The guarantee of defect D holds only where the guard is armed.
+>
 > **What shipped.** Defects A, B and C by epics E1–E5, and defect D by epic E6 (§5.11), which the one-day count after
 > E1–E5 found. E1 logs on disk (#201); E2 the server ends with its client (#211); E3 the bridge and the relay stop what
 > they started (#214); E4 a request that is gone can authorise nothing — S1 consent (#205), S2 a stale WSL install says
@@ -30,6 +33,8 @@
 > **Open tail.** (a) The full real-bridge itest `npm run itest:mcp-wsl` with the new `stopped` ending (E6.S2) was not run
 > end to end; the mechanism was measured directly (RESULTS, *Defect D*) and the host test
 > `WslPumpHostTests.A_child_left_STOPPED_and_orphaned_still_dies_with_the_wrapper` covers the code path. (b) The
+> guard of defect D is armed only where a compatible `setpriv` is found in the trusted system directories and
+> `CREDS_NO_PDEATH_GUARD=1` is not set; otherwise the launch is unguarded and the pump logs one WARNING. Also, the
 > sub-millisecond window between the fork and `setpriv`'s `prctl`, in which a death of the wrapper is not yet guarded,
 > is not closed. (c) Logging the guard status on the relay side is deferred to the cli's next change. (d) Release PR #247
 > (extension 1.14.2, itest scripts only) is open and waits for the next real extension release. (e)
