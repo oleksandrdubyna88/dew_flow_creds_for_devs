@@ -114,7 +114,8 @@ no `pretest`; ESLint over `src` with complexity 4, 50 lines per function, no `co
   (`broker-<pid>.sock`), `sshAgentServer.test.ts:59`, `:231` (`agent.sock`); `requestLife.test.ts:33` binds
   `creds-life-<pid>-<n>.sock` directly in the temp root. macOS allows 104 bytes; the longer leaf
   (`testsToDelete-creds-sock-abc123`, 31 characters, against 17 today) leaves ≈ 99. The extension suite runs on
-  Ubuntu only in CI (`ci-extension.yml:28`), so macOS is a by-hand check.
+  Ubuntu only in CI (`ci-extension.yml:27`), so macOS is a by-hand check — and a required one (S2 sc. 11): the
+  folders move under the short socket root (D4), as the C# socket tests already do.
 - No `git init` in a unit-test folder (the three `.git` are empty directories: `gitTransport.test.ts:78`, `:149`,
   `gitTransportSerial.test.ts:50`). One folder is made at import time: `pinClickPaths.test.ts:15`.
 
@@ -243,7 +244,8 @@ spelling). Per-pid FILES in the temp root (`hostKeyPin.test.ts:74`, `sshExecRunn
 
 **D3 — The owner, and where it lives** (rule §3). `<host>@<os>:<pid>[:<start>]`, `<host>` the DNS host name
 sanitised `[@:\s]+` → `-` (Node `os.hostname()`; C# `Dns.GetHostName()`, never `Environment.MachineName` — E3; bash
-`hostname`, the janitor's own source, `tools/janitor.sh:33`). Start: Node writes it on Linux only (`/proc`, no
+`hostname`, the janitor's own source, `tools/janitor.sh:33`), and every reader compares it case-insensitively
+(the E1 contract). Start: Node writes it on Linux only (`/proc`, no
 spawn), C# everywhere (`Process.StartTime`, E3), bash never. **bash on Windows writes the WINDOWS pid** —
 `/proc/$$/winpid` (a `read` builtin, no spawn), because the Node sweep (`process.kill(pid, 0)`), the C# sweep
 (`Process.GetProcessById`) and the janitor (`tasklist`, `janitor.sh:43`) all judge Windows pids; an MSYS `$$` there
@@ -258,10 +260,20 @@ new-form old folders go, a vanished target is someone else's success, never an e
 - `npm test` → `scripts/run-tests.mjs` (before `node --test`); `npm run itest:all` → `scripts/run-itests.mjs` (before
   the first harness). A single `itest:*` alias does not sweep: the next `npm test`, `itest:all` or xUnit run does.
 - every xUnit executable → `LeftoversSweepFixture` (E3 S3's assembly fixture), linked into all five.
+- **Two roots on POSIX.** Unix sockets live under the short socket root (`/tmp` on Linux and macOS, the temp root on
+  Windows — Node `shortSocketRoot()`, C# `Owned.ShortSocketRoot`; macOS's `TMPDIR` is too long for a 103-byte socket
+  path). Every sweep and every end-of-run audit reads BOTH roots when they differ, so a killed run's socket folder is
+  collected like any other.
 - containers/volumes/compose: there is no creds-wide container sweep. CI: the hosted runner's VM is the collector
   (`docker.yml:30`), and the always-run remover covers every path but a killed runner — **deviation, recorded:** no
   start-of-job container sweep in `docker.yml`; the day the workflow moves to a non-ephemeral runner, that step is
-  added in the same change. acme: see D6.
+  added in the same change. acme: see D6 (the janitor's `--token creds` mode).
+
+**Where the collection guarantee holds.** "A killed run's leftovers are collected by the next run" holds for the
+three runners that sweep: `npm test`, `npm run itest:all` and the five xUnit executables. A direct `node --test
+out/test/<file>.test.js` (or one `itest:*` alias, or `node scripts/<harness>.cjs`) still makes and removes its own
+scratch through the helper on every unwinding path, but it does not sweep old leftovers — the next runner run, or
+the janitor, does. The runners' headers and `module_tests.md` say so in one sentence each.
 - The old names (`creds-*`, `cred-vault-*`, `cvbk-*`, `arrival-lease-*`, `wsl-mcp-check-*`, the stub file names,
   `tmp.*` from bare `mktemp`) are NOT swept — `creds-` is not a registered token and other software uses such
   names. S2/S3/S4 each LIST them before and after on the machine they ran on and report; removed only on the owner's
@@ -281,14 +293,15 @@ verdict: its own exit is always 0, and `Publish`'s implicit `success()` reads th
 **D6 — acme-test is a probe, so its containers are leftovers too** (rule §1's first sentence; the parent named only
 `state/`). The compose project becomes `teststodelete-creds-acme-<id>`; every service and the network carry the
 owner label; `state/` moves out of the checkout into an owned temp folder `testsToDelete-creds-acme-<id>` (same id),
-removed at the end through a container (root and uid-10001 files, Facts) and then by `owned_remove`. The trap is
-registered BEFORE `compose up`. The start-of-run sweep needs three-valued liveness in bash: **it delegates to the
-mounted janitor** if E1 ships the per-token mode asked for in *Notes for the parent* N4
-(`JANITOR_MIN_AGE_MINUTES=10 bash .claude/rules/shared/tools/janitor.sh --token creds`, exit 0 and 3 both fine, any
-other code one reported line); **if E1 ships without it**, `run.sh` does not sweep: when a
-`teststodelete-creds-acme-*` project already holds a container it stops before `up`, names the project and prints
-the janitor's `--dry-run` command — non-destructive — and the deviation is recorded. Never a copy of the janitor's
-liveness code (reuse-first: copy-for-now is the defect).
+removed at the end through a container (root and uid-10001 files, Facts) and then by `owned_remove`. The owner is
+exported and `trap cleanup EXIT` (plus `INT` and `TERM`) is registered at the VERY TOP of `run.sh`, right after
+sourcing `owned.sh` — before the sweep, before any `docker compose` call and before `owned_dir` — and `cleanup`
+tolerates what is not made yet (an unset `STATE`/`PROJECT` is skipped). The start-of-run sweep needs three-valued
+liveness in bash, and **it delegates to the mounted janitor's per-token mode**, which the E1 release ships:
+`JANITOR_MIN_AGE_MINUTES=10 bash .claude/rules/shared/tools/janitor.sh --token creds` — it sweeps only
+`testsToDelete-creds-…` (and the lowercase compose spelling) on this machine, folders and containers alike, with
+the contract's 10 minutes; exit 0 and 3 both fine, any other code one reported line that never stops the run. Never a
+copy of the janitor's liveness code (reuse-first: copy-for-now is the defect).
 
 **D7 — One guard for the whole repository, in Node, run by `docs.yml`** (rule §7). `.github/scripts/leftovers-check.mjs`
 (Node built-ins only), in the shape of `public-hygiene.mjs` (`--selftest` over in-memory fixtures, then the real
@@ -314,7 +327,7 @@ hosted job. acme: one stack of four containers, one network, one state folder of
 | S1 — the pin on the E1 release | Opus (this section) · main session · Opus | E1 S5 released | first; every other merge waits for it (`plan lifecycle · submodule pin` is required) |
 | S2 — the Node helper, its sweep, and every Node site | Opus · Sonnet · Opus | S1 | after S1 |
 | S3 — E3's C# shape, linked into five projects, and every C# site | Opus · Sonnet · Opus | S1, **E3 S2–S4 merged in `dew_flow_mcp`** | after E3; in parallel with S2/S4 |
-| S4 — the CI smoke carve-out, acme-test, the shell helper and scripts | Opus · Sonnet · Opus | S1; D6's sweep on E1's answer to N4 | in parallel with S2 |
+| S4 — the CI smoke carve-out, acme-test, the shell helper and scripts | Opus · Sonnet · Opus | S1 (the release carries `janitor.sh --token`, D6) | in parallel with S2 |
 | S5 — the repository-wide guard, its CI step, the docs | Opus · Sonnet · Opus | S1 (mounted `## Tokens`), the three helpers' constants | written beside S2–S4, merged LAST (red until all three land) |
 
 S2–S4 may be coded before E1 is released against the contract text E1's branch fixes; they merge only after S1.
@@ -326,7 +339,7 @@ never resolved in code.
 | Item | Built by | The other's part |
 |---|---|---|
 | The contract text, the `## Tokens` row `creds`, `tools/janitor.sh` | E1 | E2 reads them through the mount; never edits them |
-| `tools/janitor.sh --token <t>` (N4) | E1, if accepted | E2 S4 calls it from `run.sh`; otherwise S4's fallback |
+| `tools/janitor.sh --token <t>` (N4, settled: in the E1 release) | E1 | E2 S4 calls it from `run.sh` (D6) |
 | The Node reference (`owned.mjs`, `leftovers-sweep.mjs`, `leftovers-check.mjs`, `unmatchable-pid.mjs`) | E1 | E2 S2/S5 mirror shape and order in CommonJS, not the code |
 | The C# shape (API, claim-first, `Dns.GetHostName`, assembly-fixture sweep, end-of-run audit) | E3 S2–S4 | E2 S3 copies it by shape into one linked folder; a difference E2 needs goes back to E3 as a note |
 | The C# guard | E3 (C#, its own repository) | not copied: E2's guard is S5's Node guard (D7) |
@@ -346,13 +359,15 @@ Disjoint otherwise: E2 changes nothing in `dew_flow_conventions` or `dew_flow_mc
   confirm the `## Tokens` header `| token | family | repository |` with a row whose first cell is `` `creds` ``, §1's
   63-character limit, §3's owner form and sibling `.owner`, §4's 10 minutes, §5's carve-out wording (a later step
   with `if: always()`, `continue-on-error: true`, after every reader, exact `docker rm -f -v` / `docker volume rm`),
-  §7's exemption grammar — and whether `janitor.sh` has `--token` (N4; it decides S4's D6 branch). A difference from
+  §7's exemption grammar — and that `janitor.sh` has `--token <t>` (sweeps only `testsToDelete-<t>-…`, combinable
+  with `--dry-run`; S4's D6 calls it). A difference from
   what this document cites stops the epic and goes to the parent. One commit: `chore(rules): pin shared conventions to
   release <short sha> — test leftovers: owner, start-of-run sweep, carve-out, guard grammar, tokens table`.
 - **Scenarios.** 1. `node .claude/rules/shared/tools/pin-check.mjs` → 0 (RED first: after the release, on `e29883f`,
   it names the pin as behind). 2. `plan-lifecycle.mjs`, `gate-snippet-check.mjs`, `build-flags-check.mjs`,
   `post-deploy-check.mjs` → 0. 3. `git -C .claude/rules/shared grep -n "^| \`creds\` |" common/test-leftovers.md`
-  → one line.
+  → one line. 4. `JANITOR_MIN_AGE_MINUTES=10 bash .claude/rules/shared/tools/janitor.sh --token creds --dry-run` →
+  exit 0 or 3, and every path it lists starts `testsToDelete-creds-` or `teststodelete-creds-`.
 - **Commands.** The four node checks; `node .github/scripts/public-hygiene.mjs`.
 - **DoD.** Pin equals the release tip; every required check green; this document's status line still says *plan
   only*.
@@ -374,7 +389,9 @@ Disjoint otherwise: E2 changes nothing in `dew_flow_conventions` or `dew_flow_mc
 minus the worktree half (no test here makes a worktree), with `REPO_TOKEN = 'creds'`,
 `OWNED_PATTERN = /^teststodelete[-_]creds[-_]/i`, `MAX_NAME 63`, `ID_LENGTH 6`, `START_TOLERANCE_S 2`, and the same
 functions: `tempRoot()` (the ONE `os.tmpdir()`, under `// testsToDelete-exempt: raw-temp — the helper is the one place
-a test learns the temp root`), `ownedPrefix`, `ownedName`, `cleanupScope()` (`after(fn)` + `close()`, never rejects),
+a test learns the temp root`), `shortSocketRoot()` (`'/tmp'` on Linux and macOS, `tempRoot()` on Windows — the one
+hard-coded `/tmp`, under `// testsToDelete-exempt: raw-temp — a Unix socket path must stay under 103 bytes on macOS,
+whose TMPDIR is too long`; the same root as S3's `Owned.ShortSocketRoot`), `ownedPrefix`, `ownedName`, `cleanupScope()` (`after(fn)` + `close()`, never rejects),
 `startFromProcStat`, `processProbe`, `thisOwner`, `formatOwner`, `parseOwner`, `writeOwner` (`flag: 'wx'`),
 `readOwner(dir)` (folder only), `ownerState(owner, probe)`, `removeLink`, `removeQuietly(dir, { rm, warn } = {})`
 (five tries 100 ms apart, folder first, claim last, ONE `owned: could not remove … — left for the start-of-run sweep`
@@ -383,21 +400,34 @@ a failed claim removes and throws). Two additions: `ownedFile(scope, what, name)
 name)` for the per-pid files and the stubs; and `writeStub(scope, what, text)` for the harnesses' fake `vscode`
 (returns the stub's path inside an owned folder). `leftovers-sweep.cjs` is `leftovers-sweep.mjs` (`:21-198`) minus the
 worktree pass: folders (a `.git` FILE ⇒ `other clone`), the decision table (`:49-57`), orphan claims (`:156-169`),
-`ENOENT` on removal counted as removed. `unmatchable-pid.cjs` is `unmatchable-pid.mjs` verbatim in CommonJS. Each
+`ENOENT` on removal counted as removed, and one call sweeps `tempRoot()` AND `shortSocketRoot()` when they differ
+(D4). `unmatchable-pid.cjs` is `unmatchable-pid.mjs` verbatim in CommonJS. Each
 `.d.cts` declares exactly the exports (S2 sc. 9 pins it); the scope type is `{ after(fn: () => unknown): void }`, which
 node:test's `TestContext` satisfies.
 
 **The change — the runners.** `run-tests.mjs` gains `runWithSweep` in the shape of `dew_flow_conventions ·
 tools/run-tests.mjs:62-80` (sweep, one report line only when it found something, never changes the exit code) and an
-**end-of-run audit**: after `node --test` exits, every depth-1 folder of the temp root matching `OWNED_PATTERN`
-whose claim names THIS host, whose owner is `gone` (each test file is its own, now dead, process), and whose mtime is
-≥ the run's start, plus every orphan claim of that kind, is listed, removed with `removeQuietly`, and — when the list
-is not empty and the suite itself passed — turns the exit code to 1 with `run-tests: this run left <n> folder(s) — a
-test made scratch outside a scope: <paths>`. Its one known blind spot, written into the runner's header: a SECOND
-`npm test` on the same machine whose test file crashed during this run's window is counted here too — the message
-names the folder, so the mistake is visible, never silent. (E3's audit compares one exact owner; node:test's per-file
-processes give this runner no pid list to compare with.) `run-itests.mjs` gains the sweep only (no audit: a harness's children
-may still be ending). Both import `./lib/leftovers-sweep.cjs`.
+**end-of-run audit**, guarded by a **run marker**:
+
+- At its start, after the sweep and before `node --test`, the runner makes its run marker — `ownedDir(scope,
+  'run')`, a folder `testsToDelete-creds-run-<id>` claimed by the runner's own process, which lives for the whole
+  run — and removes it in a `finally` on every path (a passing suite, a failing one, a throwing audit).
+- After `node --test` exits, every depth-1 folder of both roots (D4) matching `OWNED_PATTERN` whose claim names THIS
+  host, whose owner is `gone` (each test file is its own, now dead, process), and whose mtime is ≥ the run's start,
+  plus every orphan claim of that kind, is listed and removed with `removeQuietly`. Run markers are never in the list.
+- The verdict then depends on whether another run is live: it reads every OTHER `testsToDelete-creds-run-*` marker
+  of this host. **No other live run marker** → when the list is not empty and the suite itself passed, the exit code
+  turns to 1 with `run-tests: this run left <n> folder(s) — a test made scratch outside a scope: <paths>`. **Another
+  live run marker** (a second `npm test` on the same host, whose crashed test file may have made a folder) → the
+  same folders are printed as a WARNING naming the concurrent run (`run-tests: <n> folder(s) left during this run;
+  another run was live (<marker path>, <owner>), so they are not counted against this one: <paths>`), and the exit
+  code is the suite's. A marker whose owner is `gone` or `unknown` is not a live run.
+- (E3's audit compares one exact owner; node:test's per-file processes give this runner no pid list to compare with,
+  hence the marker.)
+
+`run-itests.mjs` gains the sweep only (no audit: a harness's children may still be ending). Both import
+`./lib/leftovers-sweep.cjs`. Each runner's header carries the scope sentence of D4: the sweep runs only through
+these runners; a direct `node --test <file>` removes its own scratch but does not sweep.
 
 **The change — the sites.** The pattern, chosen per file:
 
@@ -413,6 +443,10 @@ may still be ending). Both import `./lib/leftovers-sweep.cjs`.
   removed (the scope removes);
 - per-pid files and sockets move inside an owned folder (D2): `hostKeyPin.test.ts:74`, `sshExecRunner.test.ts:79`
   (the child writes `<dir>/marker`), `requestLife.test.ts:33` (`<dir>/life-<n>.sock`; Windows pipes unchanged);
+- every folder that holds a Unix socket (`brokerListeners.test.ts`, `brokerOriginDoor.test.ts:187`,
+  `sshAgentServer.test.ts:59`, `:231`, `requestLife.test.ts:33`) is made under the short socket root:
+  `ownedDir(t, '<what>', { parent: shortSocketRoot() })` (`<what>` below) — the same root S3's C# socket tests use, so
+  `/tmp/testsToDelete-creds-sock-abc123/broker-<pid>.sock` stays far under macOS's 103 bytes;
 - the three nothing-created sites take `tempRoot()` (`materializedKeys.test.ts:54`, `:93`; `pinClickPaths.test.ts:357`);
 - harnesses: a module-level `cleanupScope()` closed in a `finally` around `main()` AND in the `.catch` before
   `process.exit`, so the early exits (`ssh-agent-itest.cjs:63`, the SKIP at `creds-cli-itest.cjs:109-113`) remove too;
@@ -454,11 +488,20 @@ may still be ending). Both import `./lib/leftovers-sweep.cjs`.
    `other clone`; `testsToDelete-mcp-x-abc123`, `creds-sock-abc123` → untouched and unreported;
    `TESTSTODELETE-CREDS-x-abc123`, `teststodelete_creds_x_abc123` with a dead claim → removed; an old orphan
    `testsToDelete-creds-y-abc123.owner` → removed; a target that vanished between listing and removal → counted
-   removed, no error.
+   removed, no error; given a private PAIR of roots (the temp root and a stand-in for the short socket root), a
+   dead-claimed `testsToDelete-creds-sock-abc123` in the SECOND root → removed.
 8. **The runner sweeps, audits, and never lets either change a passing verdict wrongly** (`leftoversRunner.test.ts`,
    seams for `spawn`, `sweep`, `tmp`): a sweep that throws → one line, the suite's code; a suite that passed and left
    a `gone`-owned folder created after the start → exit 1 naming it, and the folder removed; a `live`-owned one or one
-   older than the start → not counted; a suite that failed → its own code, unchanged.
+   older than the start → not counted; a suite that failed → its own code, unchanged; the runner's own run marker
+   exists while the spawn seam runs and is gone afterwards, also when the suite failed and when the audit threw.
+8a. **A concurrent run on the same host turns the audit's failure into a warning, never a wrong red** (same file,
+   same seams; RED first — written before the run marker exists and observed failing with exit 1): a private root
+   holding a `gone`-owned folder created after the start AND a second `testsToDelete-creds-run-*` marker claimed by
+   a LIVE process (this test's own pid) → exit = the suite's 0, exactly one warning line naming the folder and that
+   marker, the folder removed. The same root with the second marker claimed by `unmatchablePid()` (premise asserted)
+   → exit 1 naming the folder: a dead run's marker is no concurrent run. Run markers themselves are never listed as
+   leftovers.
 9. **The types say what the module exports** — `Object.keys(require('../../scripts/lib/owned.cjs'))` equals the
    export list the test reads out of `owned.d.cts` (both directions), and the same for the sweep.
 10. **Nothing leaks after a full run** (by hand, recorded in the PR): before the migration, one `npm test` on Linux
@@ -466,17 +509,22 @@ may still be ending). Both import `./lib/leftovers-sweep.cjs`.
     `arrival-lease-*`, `wsl-mcp-check-*`, `creds-life-*.sock`) — the RED count, expected ≈ 60 / 56; after: zero new
     old-form entries and zero `testsToDelete-creds-*`. The same for `npm run itest:all` (RED: the eight leaking
     folders + seven stubs + `backup-archive`'s three), and `node scripts/tree-perf-bench.cjs` once.
-11. **The socket paths still fit** (by hand on macOS if a machine is available, else stated as not run): the
-    `brokerListeners`, `brokerOriginDoor`, `sshAgentServer` and `requestLife` files pass and the longest socket path
-    they print is under 104 bytes.
+11. **The socket paths fit on macOS — required before S2 is done.** The extension suite has no macOS CI leg
+    (`ci-extension.yml:27`, `runs-on: ubuntu-latest`), so this is a by-hand run on a macOS machine, recorded in the
+    PR (macOS version, Node version, the four files' result, the longest socket path printed and its byte length):
+    the `brokerListeners`, `brokerOriginDoor`, `sshAgentServer` and `requestLife` files pass, every socket sits under
+    `shortSocketRoot()`, and the longest socket path is under 103 bytes. If a macOS leg is added to
+    `ci-extension.yml` before S2 merges, that leg's green run replaces the by-hand record. Without either, S2 is
+    not done.
 
 - **Commands.** `cd src_vs_code && npm run typecheck && npm run lint && npm test`;
   `node --import ./scripts/lower-priority.mjs --test out/test/leftoversOwned.test.js` (one file);
   `npm run itest:all`; `node ../src_minimalapi_server/scripts/backup-archive-itest.cjs` with the server built.
-- **DoD.** Scenarios 1–9 RED then GREEN on Windows and on the CI runner (6 per OS); 10 recorded with both counts; 11
-  run or stated not run; `npm test` and every CI harness step green; no `os.tmpdir()` left outside `owned.cjs` (S5
+- **DoD.** Scenarios 1–9 (8a included) RED then GREEN on Windows and on the CI runner (6 per OS); 10 recorded with
+  both counts; 11 recorded on macOS (or a green macOS CI leg); `npm test` and every CI harness step green; no `os.tmpdir()` left outside `owned.cjs` (S5
   proves it); `module_tests.md:130-146` says what each harness leaves after a kill now ("nothing the next sweep does
-  not collect") and names the helper, the sweep and the audit.
+  not collect") and names the helper, the sweep, the run marker and the audit, and the scope sentence of D4 (a direct
+  `node --test <file>` does not sweep).
 
 ## S3 — E3's C# shape, linked into five projects, and every C# site
 
@@ -505,10 +553,14 @@ additions this repository needs:
   becomes `OwnedDir.Create(what)`'s path (claim first, E3), `Remove` becomes `Removal.Quietly(path, Owned.DefaultWarn)`
   — so the 14 callers keep their shape and only their argument changes (`"creds-mcp-pump"` → `"mcp-pump"`), and a
   refused removal stops being silent (one warning line, the folder left prefixed and claimed).
-- `BackupArchiveCommandTests.cs:143`'s kit moves to `Path.Combine(AppContext.BaseDirectory, "aot-kit")` — the build
-  output, as `dew_flow_mcp`'s `SpoolFixtureTests` keeps its hand-checked file — so it keeps its purpose (a fixed path a
-  person can find, overwritten every run), stops putting a key into the shared temp root, and two executables no
-  longer race on it (each has its own `bin`). The comment's two command lines (`:139-140`) are updated.
+- `BackupArchiveCommandTests.cs:143`'s kit becomes a **per-run, owned** folder: `_owned.Dir("aot-kit")`
+  (`testsToDelete-creds-aot-kit-<id>`, claimed by the run, removed with the class's scope on every path like every
+  other folder). The test prints the kit's path and the two command lines (`:139-140`, rewritten to name
+  `<printed kit>/archive.cvbk` and `<printed kit>/key.b64`) to its output, so a person sees where this run's kit is.
+  Two executables running at once each get their own folder, and no fixed directory — in the temp root or under
+  `AppContext.BaseDirectory` — is shared between runs. A person who wants the kit to outlive the run for a native
+  binary check sets `CREDS_AOT_KIT_DIR` to a folder of their own (never set in CI); the test then writes the kit
+  there instead, and that folder is the person's, not a test leftover.
 
 **The change — the sites** (E3 S4's migration pattern: a class that makes folders becomes `IDisposable` with
 `private readonly OwnedScope _owned = new();` and `public void Dispose() => _owned.Dispose();` — xUnit v3 disposes it
@@ -542,7 +594,9 @@ the PR which ones were carried and any that were not (with why). Then, for this 
 2. **What leaked stops leaking** — RED on `main`, recorded before the migration: one run of `CredVaultServer.Tests`
    and `CredsBroker.Tests` leaves N new folders under `cred-vault-backup-run`, `-backup-store`, `-backup`,
    `-backup-cli`, `-key-file`, `cred-vault-tests` and `creds-endpoints-*` (expected ≈ 190; the exact N in the PR), the
-   six parents themselves, and `cred-vault-aot-kit`. GREEN: none of them new, the kit under `bin/…/aot-kit`. And
+   six parents themselves, and `cred-vault-aot-kit`. GREEN: none of them new; the kit test prints a
+   `testsToDelete-creds-aot-kit-<id>` path that is gone after the run, and two executables started at once print two
+   different kit paths and both pass. And
    the widened `HostProcess.Remove`: a test holding a file under a `HostProcess.TempDirectory` folder open with
    `FileShare.None` (Windows) or a read-only parent (POSIX, premise asserted) → `Remove` returns, the warn seam got ONE
    line, the folder still matches `Owned.Pattern` and keeps its claim — RED on `main`: the same set-up leaves an
@@ -642,21 +696,28 @@ go. After *Smoke-test a refused start*:
           docker volume ls --filter label=testsToDelete.owner --format '{{.Name}}' || true
 ```
 
-`Log in` and `Publish` are untouched. The owner pid: if the first run prints a process that is not the runner's
-worker, use `$$` of the naming step and say so in the PR — on a hosted runner nothing reads it, and its only reader
-elsewhere (the janitor, one hour) cannot select it inside the 30-minute job (`docker.yml:31`).
+`Log in` and `Publish` are untouched. The owner pid is the runner's worker, `$PPID` of the step's shell — the E1
+contract's rule for a CI job (N11, settled); the `ps` line records which process that was in the first run's log.
 
 **The change — acme-test** (D6). `docker-compose.acme-test.yml`: drop `name:` (`:19`); an `x-owned: &owned` block
 `labels: { testsToDelete.owner: "${TESTS_TO_DELETE_OWNER:?}" }` merged into each service (`<<: *owned`) and set on
-`networks.edge.labels`; every `./state/…` source (`:47-48`, `:68-69`, `:97-98`) → `${ACME_STATE:?}/…`. `run.sh`:
-source `../../.github/scripts/lib/owned.sh`; the start-of-run sweep of D6 first (janitor `--token` branch or the
-non-destructive fallback); then `STATE="$(owned_dir acme)"`, `id` = its six-character suffix lowercased,
-`PROJECT="teststodelete-creds-acme-$id"`, `COMPOSE=(docker compose -p "$PROJECT" -f docker-compose.acme-test.yml)`;
-`trap cleanup EXIT` registered NOW, before `owned_claim` and before any `up`, where `cleanup` = `compose down -v
---remove-orphans || true`, then `docker run --rm -v "$STATE":/s alpine sh -c 'rm -rf /s/certs /s/data /s/logs' ||
-true`, then `owned_remove "$STATE"`; export `ACME_STATE="$STATE"` and `TESTS_TO_DELETE_OWNER="$(owned_owner)"`; the
-fixed-name `cleanup` at `:53` and the `rm -rf state` at `:54` go (`mkdir -p` the four subfolders under `$STATE`);
-`:56`'s chown mounts `$STATE`. Every `state/…` path in the checks (`:83`, `:86`) reads `$STATE/…`. On Git Bash the
+`networks.edge.labels`; every `./state/…` source (`:47-48`, `:68-69`, `:97-98`) → `${ACME_STATE:?}/…`. `run.sh`, in
+this order:
+
+1. **The very top**, right after `set -euo pipefail` and sourcing `../../.github/scripts/lib/owned.sh` — before any
+   sweep, any `docker compose` call and any `owned_dir`: `export TESTS_TO_DELETE_OWNER="$(owned_owner)"`; `STATE=""`,
+   `PROJECT=""`; `trap cleanup EXIT` and `trap 'exit 130' INT` / `trap 'exit 143' TERM` (so an interrupt runs the EXIT
+   trap once). `cleanup` skips each step whose input is not made yet: when `PROJECT` is set, `docker compose -p
+   "$PROJECT" -f docker-compose.acme-test.yml down -v --remove-orphans || true`; when `STATE` is set, `docker run --rm
+   -v "$STATE":/s alpine sh -c 'rm -rf /s/certs /s/data /s/logs' || true`, then `owned_remove "$STATE"`.
+2. The start-of-run sweep of D6: `JANITOR_MIN_AGE_MINUTES=10 bash ../../.claude/rules/shared/tools/janitor.sh --token
+   creds` (exit 0 and 3 fine; any other code one line, the run goes on).
+3. `STATE="$(owned_dir acme)"` and `owned_claim "$STATE" || exit 1`; `id` = its six-character suffix lowercased;
+   `PROJECT="teststodelete-creds-acme-$id"`, `COMPOSE=(docker compose -p "$PROJECT" -f docker-compose.acme-test.yml)`;
+   `export ACME_STATE="$STATE"`.
+
+The fixed-name `cleanup` at `:53` and the `rm -rf state` at `:54` go (`mkdir -p` the four subfolders under
+`$STATE`); `:56`'s chown mounts `$STATE`. Every `state/…` path in the checks (`:83`, `:86`) reads `$STATE/…`. On Git Bash the
 `-v "$STATE":/s` form is whatever today's `"$(pwd)/state":/s` proves to work — verified by scenario 6, not assumed.
 
 **Scenarios** (RED first where a leak exists today):
@@ -688,14 +749,20 @@ fixed-name `cleanup` at `:53` and the `rm -rf state` at `:54` go (`mkdir -p` the
    label=testsToDelete.owner` shows no acme container, `docker network ls` no acme network.
 6. **acme survives its own kill and is collected** — `./run.sh` killed with `kill -9` (Windows: `taskkill /F /PID
    <winpid>`) mid-issuance: the project, the network and the state folder remain, labelled/claimed with that pid; the
-   next `./run.sh` (D6 branch) either removes them before starting (janitor `--token`, the project gone and the run
-   green) or stops before `up` naming the project and the janitor command (fallback). A second `./run.sh` started
-   while the first is LIVE: the first one's stack is untouched (the old `:53` tore it down).
+   next `./run.sh`, more than 10 minutes later, removes them before starting through `janitor.sh --token creds` (the
+   project, its network and the state folder gone, the run green). A second `./run.sh` started while the first is
+   LIVE: the first one's stack is untouched (the old `:53` tore it down) — the janitor reads the live owner and keeps
+   it.
+7. **An interrupt at any point still cleans up** (RED first on `main`: Ctrl-C during the first `compose up` leaves
+   `deploy/acme-test/state/` in the checkout — `cleanup` at `:49` never touches it): SIGINT to `run.sh` (a) during the janitor call, before
+   `owned_dir` → exit non-zero, nothing made, no error from `cleanup`; (b) during `compose up` → the project, its
+   network and the state folder are gone when the script returns; (c) SIGTERM, same as (b).
 
 - **Commands.** `.github/scripts/lib/owned.test.sh`; the three `.test.sh`; `bash deploy/restore-archive-itest.sh`;
   `docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 <every changed .sh>`; `actionlint`; the
-  dispatches of sc. 1–2; `cd deploy/acme-test && ./run.sh`.
-- **DoD.** Sc. 1 observed RED then GREEN with run URLs; sc. 2 green; sc. 3–4 RED then GREEN; 5–6 recorded on at least
+  dispatches of sc. 1–2; `cd deploy/acme-test && ./run.sh`; `JANITOR_MIN_AGE_MINUTES=10 bash
+  .claude/rules/shared/tools/janitor.sh --token creds --dry-run`.
+- **DoD.** Sc. 1 observed RED then GREEN with run URLs; sc. 2 green; sc. 3–4 RED then GREEN; 5–7 recorded on at least
   one machine, the other OS stated as not run; `architecture.md:363` says the smoke's containers are named, labelled
   and removed by one always-run step that never decides the verdict.
 
@@ -805,6 +872,31 @@ fixed-name `cleanup` at `:53` and the `rm -rf state` at `:54` go (`mkdir -p` the
 - [ ] `research/module_tests.md`, `research/architecture.md` and `CLAUDE.md` describe the helpers, the sweeps, the
       guard and the janitor.
 
+## Plan-gate round 1 (2026-10-17)
+
+The coai plan gate's first round over this document; judged by Opus. Accepted (applied above):
+
+1. Node socket tests use the same short socket root as S3's C# socket tests; every sweep and audit reads it; a
+   macOS socket-path check is required before S2 is done — D4, S2 (helper, sites, sc. 7, sc. 11, DoD).
+2. The AOT kit is a per-run, owned folder whose path the test prints — no fixed directory shared by concurrent
+   runs — S3 (helper bullet, sc. 2).
+3. The collection guarantee holds for `npm test`, `npm run itest:all` and the xUnit executables; a direct `node
+   --test <file>` removes its own scratch but does not sweep — D4, S2 runners and DoD.
+4. acme `run.sh` exports the owner and registers `trap cleanup EXIT` (plus `INT`/`TERM`) at the very top, before any
+   sweep, compose call or `owned_dir` — D6, S4 (run.sh order, sc. 7).
+5. `janitor.sh --token` is in the E1 release: the acme start-of-run sweep calls `janitor.sh --token creds` with
+   10 minutes; the "if E1 says no" fallback and N4's request are gone — D6, Order, Boundary, S1, S4 sc. 6, N4.
+6. The end-of-run audit is guarded by a run marker: it fails only when no other live run marker of this host exists,
+   otherwise it warns naming the concurrent run — S2 runners, sc. 8, sc. 8a (RED first).
+
+Rejected:
+
+- `owned_claim` in a subshell could mask a pre-existing claim — the folder is the random one `owned_dir` has just
+  created, so its claim cannot pre-exist, and the subshell's exit status reaches the caller.
+
+Also reflected from the E1 contract, settled: the owner host compared case-insensitively (D3); a CI job's owner pid
+is the runner worker `$PPID` (D5, N11).
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
@@ -815,13 +907,13 @@ stories.
 | N1 | ~110 temp sites, ~35 files without cleanup, 68 files | 111 mentions in 70 files, but 3 are `research/*.md` and 8 are product (`install.sh`, `deploy/restore*.sh`, `installCommand.ts`). Test-side: Node unit 46 sites in 30 files (20 leak, 2 fragile, in 14 files), harnesses 15 folders (8 leak, 3 fragile) + 9 stubs (7 never removed), shell 7 (1 leaks nine per run, 4 fragile or off-CI leaks), C# 54 sites in five projects (11 leak, 3 fragile, in 13 files; ≈ 190 folders per run). About 40 files hold a leak or a fragile site, not ~35; and the C# side is five projects, not "the server tests" | the facts tables; S5 sc. 1 is the exact RED |
 | N2 | "the 7 fixed-name stub files the `*-itest.cjs` scripts write" | six are itests; the seventh is `tree-perf-bench.cjs:25`; an eighth, per-pid, is removed on success only (`masked-run-itest.cjs:19`, `:149`) | S2: every stub inside an owned folder |
 | N3 | acme: `state/` cleaned at the start of the next run | right, and on a Linux host the start's `rm -rf state` cannot delete root- and uid-10001-owned files (reasoned, S4 sc. 5 measures). The entry misses that acme's COMPOSE PROJECT (four containers, one network, fixed name `cred-vault-acme-test`) is a container leftover too, and that its start-of-run `compose down -v` by fixed name (`run.sh:53`) tears down a concurrent run's stack — the owner-less reclaim rule §4 forbids. Bind mounts are also `:68-69`, `:97-98` | D6, S4 |
-| N4 | (nothing) | a consumer whose SHELL starts containers needs rule §4's sweep with three-valued liveness in bash; the shipped janitor has it but no per-token mode, and cannot be sourced. **Request to E1, before its release:** `janitor.sh --token <t>` (capture only `^teststodelete[-_]<t>[-_]`), with `JANITOR_MIN_AGE_MINUTES` already there | D6's first branch; the fallback otherwise — never a copy |
+| N4 | (nothing) | a consumer whose SHELL starts containers needs rule §4's sweep with three-valued liveness in bash; the shipped janitor has it but no per-token mode, and cannot be sourced. ~~Request to E1~~ **Settled, 2026-10-17:** the E1 release ships `janitor.sh --token <t>` (sweeps only `testsToDelete-<t>-…`, combinable with `--dry-run`), with `JANITOR_MIN_AGE_MINUTES` already there | D6 calls it; the fallback branch is gone — never a copy |
 | N5 | a failure test: stub image, job FAILED, `Publish` SKIPPED | `docker.yml` never runs on a pull request (`:14-18`, `:38-42`), and on a dispatch from a branch `Publish` is skipped by its OWN `if:` (`:137`), which proves nothing about `success()` | S4 sc. 1: a throwaway branch makes `Publish` reachable with `push: false`, then a sabotaged smoke shows it skipped by the failure |
 | N6 | the guard scans workflows and `deploy/**/*.sh` beside the test trees | also needed: `.github/scripts/**` (four CI/test scripts with temp sites), `src_vs_code/scripts/`, `src_minimalapi_server/scripts/`. The mounted `tools/leftovers-check.mjs` cannot be reused (it imports `yaml`, `:34`; its discovery is E1's layout). Its `raw-temp` class misses the shell spelling `${TMPDIR:-/tmp}`, so `mcp-listen-smoke.sh:35` and `version-smoke.sh:30` would pass unseen | D7, S5 (shell `TMPDIR`/`TEMP`/`TMP` added) |
 | N7 | a Node helper (`src_vs_code`) and a C# helper | the server's harness runs in `ci-server.yml:81` with no compile, and the shell scripts run on three OSes without Node or .NET as a prerequisite: the Node helper must be dependency-free CommonJS, and there is a THIRD, shell helper | D1 |
 | N8 | helper, guard, proof | no owner claim and no start-of-run sweep (rule §2–§4), which every repository that creates a kind must wire; and bash on Windows must write the WINDOWS pid (`/proc/$$/winpid`) or every Node, C# and janitor reader misjudges it | D3, D4 |
 | N9 | "a C# helper (the server tests)" | five xUnit projects make temp paths, not one; four run on three OSes. One helper, linked by the existing `Support/` precedent | D1, S3 |
 | N10 | (nothing) | the WSL harnesses' Linux run folders are never deleted, by a machine rule after the 2026-10-07 incident (`wslRun.cjs:18-22`) | out of scope, recorded; no deletion inside WSL is added |
-| N11 | (for the contract) | rule §3's `<pid>` is undefined for a CI job, where every step is its own shell; E2 uses the runner's worker (`$PPID`), observed once. One sentence in §5 would settle it for every consumer | D5 |
+| N11 | (for the contract) | rule §3's `<pid>` is undefined for a CI job, where every step is its own shell; E2 uses the runner's worker (`$PPID`), observed once. **Settled, 2026-10-17:** the E1 contract names the runner worker (`$PPID`) as a CI job's owner pid | D5 |
 | N13 | (for E3, whose shape S3 copies) | two things E3's C# shape lacks and creds needs: a socket root other than the temp root (macOS's `TMPDIR` is too long for a 103-byte socket path, so creds binds under `/tmp`), which the sweep must then also scan; and an existing per-repository mini-helper to WIDEN rather than replace (`HostProcess.TempDirectory`/`Remove`, 14 callers) | S3 adds `Owned.ShortSocketRoot` and the second sweep root; sent to E3 as a note so its "what the other epics take" table can carry it |
 | N12 | (for the contract) | rule §7's `docker-name` class names `--name`, volume/network create and `WithName`, not `docker compose -p` — a compose project's containers carry the project's name | S5 adds it here; the contract may want it |
