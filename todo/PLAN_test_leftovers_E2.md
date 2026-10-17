@@ -486,8 +486,11 @@ these runners; a direct `node --test <file>` removes its own scratch but does no
    `live`; `other@<os>:1` → `foreign host`; `hands off` → `unreadable`; a dead claim (`unmatchablePid()`, premise
    asserted) → removed with its claim; unmarked and old → removed; young → untouched and unreported; a `.git` FILE →
    `other clone`; `testsToDelete-mcp-x-abc123`, `creds-sock-abc123` → untouched and unreported;
-   `TESTSTODELETE-CREDS-x-abc123`, `teststodelete_creds_x_abc123` with a dead claim → removed; an old orphan
-   `testsToDelete-creds-y-abc123.owner` → removed; a target that vanished between listing and removal → counted
+   `TESTSTODELETE-CREDS-x-abc123`, `teststodelete_creds_x_abc123` with a dead claim → removed; **orphan claims are
+   judged by owner, never by age alone** (rule §2; `leftovers-sweep.mjs:156-169`) — four equally old folderless
+   claims `testsToDelete-creds-o1-abc123.owner` … `-o4-…`, claimed by this process, by a dead pid, by `other@<os>:1`
+   and holding `hands off` → only the dead one is removed; the other three stay, preserved as `live`,
+   `foreign host`, `unreadable`; a target that vanished between listing and removal → counted
    removed, no error; given a private PAIR of roots (the temp root and a stand-in for the short socket root), a
    dead-claimed `testsToDelete-creds-sock-abc123` in the SECOND root → removed.
 8. **The runner sweeps, audits, and never lets either change a passing verdict wrongly** (`leftoversRunner.test.ts`,
