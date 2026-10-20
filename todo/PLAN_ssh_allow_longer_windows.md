@@ -114,7 +114,7 @@ The invariants below are the plan's contract. Every one has a test in §11.
 | **I1 Material** | A signature is produced only with the `AgentKey` object that is served for that key at the moment of signing. An unloaded, replaced (`serve()` over a loaded id — even with identical public bytes) or disposed key object refuses to sign, whoever holds it |
 | **I2 Generation** | An answer opens a window only for the key generation it was asked about. A key re-loaded under the same entity id is a new generation and inherits nothing |
 | **I3 Fence** | Every revocation moves a fence, and an answer given across a fence opens no window. The fences are **per key** (unload, re-load, *Ask for Every Use Again*) and **one lock epoch** (any lock) — a revocation on key A never touches an answer for key B. What crosses a fence, checked in this order: unload/re-load (`stale-key`) → **refuse**; the row button (`fenced-key`) → this ONE signature is allowed (the person's own explicit answer to it), no window, *"Ask for Every Use Again was used while you were choosing — this signature was allowed once; no window was opened."*; a lock (`fenced-lock`) → the same, saying the vault locked (the per-use prompt works while locked, O3) |
-| **I4 Origin** | A window exists only because a person picked a timed answer in this window's process. It is memory-only, per key, per scope, with `grantedAt ≤ now < until` and `until − grantedAt ≤ 12 h`. A clock moved backwards covers nothing granted "in the future" |
+| **I4 Origin** | A window exists only because a person picked a timed answer in this window's process. It is memory-only, per key, per scope, with `grantedAt ≤ now < until` and `until − grantedAt ≤ 12 h`. A clock moved backwards covers nothing granted "in the future". **Two clocks, and both must permit:** the wall clock (`grantedAt ≤ now < until`) AND a monotonic clock (`0 ≤ nowMono − grantedAtMono < until − grantedAt`, from an injected source, `performance.now()` in production), so a wall clock set back after the grant cannot stretch a window. Where the monotonic clock pauses in sleep, the wall clock still ends the window |
 | **I5 Scope** | A 10-minute window covers every purpose (today's meaning, kept). A longer window covers only a request the classifier fully parses as an SSH login for **this** key (§6.1, C3) |
 | **I6 Lock** | Any `VaultKeys.lock()` ends every window before it returns. No long window is granted while locked or while auto-lock is off. Setting auto-lock to 0 ends every `login` window at once (the row says so), and the gate checks again at use as a backstop — one function, `scopesFor`, answers both. Unlock re-arms nothing |
 | **I7 Presence** | Silent signatures never count as presence and never postpone the auto-lock (already true; kept as a test) |
@@ -134,7 +134,7 @@ and the tree repaints only on a real change.
 export type WindowScope = 'all' | 'login';                 // 10-minute window | a longer, login-only window
 export interface KeyRef { readonly entityId: string; readonly generation: number }
 export interface AskTicket extends KeyRef { readonly keyFence: number; readonly lockEpoch: number } // when a turn starts
-export interface OpenWindow { readonly generation: number; readonly grantedAt: number; readonly until: number }
+export interface OpenWindow { readonly generation: number; readonly grantedAt: number; readonly grantedAtMono: number; readonly until: number }
 export interface AllowWindows {
   readonly lockEpoch: number;                               // moved by any lock (I3)
   readonly keyFences: ReadonlyMap<string, number>;          // moved per key by unload, re-load, the row button (I3)
@@ -148,25 +148,27 @@ export const MAX_WINDOW_MS: Readonly<Record<WindowScope, number>> =
                                                             // decisions; a test pins them equal so changing one is a
                                                             // conscious change to both
 export type GrantOutcome = 'opened' | 'kept-later' | 'stale-key' | 'fenced-key' | 'fenced-lock';
-export function grantWindow(book, ticket, scope, currentGeneration: number | undefined, grantedAt, until):
+export function grantWindow(book, ticket, scope, currentGeneration: number | undefined, grantedAt, grantedAtMono, until):
   { book: AllowWindows; outcome: GrantOutcome };            // checked in I3's order: stale-key (generation moved) →
                                                             // fenced-key → fenced-lock · until clamped to grantedAt +
                                                             // MAX_WINDOW_MS[scope] · later deadline kept within scope
 export function scopesFor(purposeIsLogin: boolean, autoLockMinutes: number): readonly WindowScope[];
                                                             // ['all','login'] | ['all'] — the ONE answer to "which windows
                                                             // may cover this request", used by the gate AND the row (I6)
-export function windowCovers(book, key: KeyRef, scopes: readonly WindowScope[], now): OpenWindow | undefined;
-export function windowsFor(book, key: KeyRef, scopes: readonly WindowScope[], now): Readonly<Partial<Record<WindowScope, OpenWindow>>>;
+export function windowCovers(book, key: KeyRef, scopes: readonly WindowScope[], now, nowMono): OpenWindow | undefined;
+                                                            // both clocks must permit (I4)
+export function windowsFor(book, key: KeyRef, scopes: readonly WindowScope[], now, nowMono): Readonly<Partial<Record<WindowScope, OpenWindow>>>;
 export function endWindows(book, entityId): AllowWindows;  // the row button: that key's fence + 1
 export function endLoginWindows(book): AllowWindows;        // auto-lock set to 0: every `login` window ends
 export function endAllWindows(book): AllowWindows;          // any lock: lockEpoch + 1, empty
 export function forgetKey(book, entityId): AllowWindows;    // unload / re-load: that key's fence + 1
-export function withoutExpired(book, now): AllowWindows;
+export function withoutExpired(book, now, nowMono): AllowWindows;
 export function nextExpiry(book, now): number | undefined;
 ```
 
 `windowCovers` uses the existing `withinAllowWindow` (`agentConsent.ts:80-82`) plus `grantedAt <= now` (I4) — the same
-guard `mcpConsentPolicy.ts:140` already has. `withinAllowWindow`'s signature does not change, so `mcpConsentPolicy.ts:123`
+guard `mcpConsentPolicy.ts:140` already has — and, as a second and independent check, the monotonic elapsed time
+`nowMono − grantedAtMono` against the window's length `until − grantedAt` (I4; coai gate finding G0 on the E1 stories). `withinAllowWindow`'s signature does not change, so `mcpConsentPolicy.ts:123`
 is untouched. `allowWindows.ts` imports `withinAllowWindow` from `agentConsent.ts`, and `agentConsent.ts` needs only the
 TYPE `WindowScope` back — an `import type`, so there is no runtime cycle.
 
@@ -204,8 +206,14 @@ export function longerOffer(purposeIsLogin: boolean, locked: boolean, autoLockMi
 | Allow once (or an unrecognised label) | yes | yes | — |
 | Allow for 10 minutes | yes | yes | `all`, click + 10 min |
 | Allow longer… → pick N h | yes | yes | `login`, pick + N h |
+| Allow longer… → pick N h, but `longerOffer` says no at the pick | yes | yes | — (allowed once, told) |
 | Allow longer… → Escape on the list | no | **yes** (a person clicked *Allow longer…* and then refused; same as Deny) | — |
 | Allow longer… → the bound runs out on the list | no | no | — |
+
+**Eligibility is checked twice.** `longerOffer` (login purpose, unlocked, auto-lock on) is asked when the list is
+offered AND again when the pick is applied: the vault can lock, or auto-lock can be set to 0, while the list is open.
+If the pick is no longer eligible, this signature is allowed once and no window opens, with one information message
+in the shape of the fence messages (I3): *"{why} — this signature was allowed once; no window was opened."*
 
 `consentFromChoice` has one caller (`sshAgentManager.ts:277`) and is replaced by `answerFromModal` + `decideSigning`.
 `ALLOW_LONGER` reaching the old fallback would have meant "allow once" — the table maps it explicitly, so a label
@@ -301,7 +309,8 @@ waited longer than {bound}, or its program had gone. Nothing was signed."* Today
   `confirm` (read generation at arrival — the server's hand-off to `confirm` is synchronous, `sshAgentServer.ts:133-145`,
   so it is the generation of the object the server holds; check the book with `scopesFor(...)` — covered → allow,
   no queue) → `turns.take` (`full` / `gone` / `timed-out` → refuse, one log line each, a burst of `full` coalesced to
-  one line) → `coveredOrAsk` (re-check; else ask) → `settle` (decision, presence, `openWindow`, the log line of I10) →
+  one line) → `coveredOrAsk` (re-check; else ask) → `settle` (decision, presence, `longerOffer` re-checked for a `login` pick — not eligible → once, no window, told — then
+  `openWindow`, the log line of I10) →
   `openWindow` (`grantWindow`, outcomes in I3's order: `stale-key` → refuse; `fenced-key` / `fenced-lock` → allow this
   signature once, open nothing, one information message naming which fence).
 - In E1 the only fences that exist are unload and re-load, so the only crossing outcome E1 can produce is
@@ -733,6 +742,10 @@ disagreed on where one-prompt-per-key goes; the decision and its reason are unde
   `durationText.ts`, §7 in full. Invariants I5 (the `login` scope becomes reachable), I6 (no long window while locked or
   with auto-lock off; auto-lock → 0 ends login windows; `scopesFor` shared by gate and row), I8 at the manager with two
   lengths (new behaviour, not a RED), I10 for login windows. Defect D5 (final wording); D3's two-length behaviour. Decisions O1, O2, O5, O6, O9, O10, O11, O12.
+  Eligibility at the pick (§6.2): `longerOffer` is checked when the list opens and again when the pick is applied. Test
+  (manager): *a pick that is no longer eligible allows once and opens no window* — open the list with auto-lock on →
+  set `autoLockMinutes` to 0 → pick 12 hours → this signature is allowed, no window opens, the message says why;
+  restore auto-lock → the next login prompts.
 - **Depends on.** E2 (the row, the button, the lock, the turns). Nothing is offered before all three exist.
 - **Done when.** M2 and M3 measured; `npm run itest:ssh-agent` green with the S10.1 scenario; every text in D5's row is
   true in all five languages; §15 fully ticked. **Release:** `extension-v1.16.0` (`feat:` → minor). The CLI sentence
