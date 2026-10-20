@@ -8,7 +8,7 @@ import { loadWithVscode } from './vscodeStub';
 /**
  * The SSH agent manager's test world: the real `SshAgentManager` over a stub socket server and a `vscode`
  * whose every sink is a spy, shared by the suites that exercise the gate (`sshAgentManager.test.ts` and
- * `sshAgentManagerLog.test.ts`; the window book's suite will join them with E1.3).
+ * `sshAgentManagerLog.test.ts`; `sshAgentManagerWindows.test.ts` joined them with E1.3).
  *
  * <p>It also holds the key-material guard: a suite registers its logs (`watchLogs`) and the keys it feeds in
  * (`watchSecret`), and ends with `assertNoKeyMaterialLogged()`.</p>
@@ -147,6 +147,8 @@ export function manager(
     nodes?: TreeNode[];
     clock?: () => Date;
     consentTimeoutMs?: number;
+    /** The window book's second clock; the real one is `performance.now()`, which a test cannot move. */
+    monotonic?: () => number;
   },
 ): {
   instance: InstanceType<Manager['SshAgentManager']>;
@@ -184,6 +186,7 @@ export function manager(
       undefined,
       options.clock,
       options.consentTimeoutMs,
+      options.monotonic,
     ),
   };
 }

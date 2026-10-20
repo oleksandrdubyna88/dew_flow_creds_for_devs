@@ -27,6 +27,11 @@
  * a folder from twelve hours to every-time has to take effect at once, and flipping it back must
  * not retroactively authorise anything. One comparison is shared — `withinAllowWindow` below — and
  * the two shapes stay apart until there is a third instance to learn from.</p>
+ *
+ * <p>#197 (a window per generation of a key, longer windows for logins) was considered and is NOT that third
+ * instance: it widens the SAME instance — still a deadline fixed at the click, per key, in memory, in one
+ * window — and its rules live in `allowWindows.ts`. The MCP stamp keeps every property that made it different
+ * (persisted, read fresh, a START, fenced by a timestamp because another window can write the store).</p>
  */
 
 /** The labels the dialog offers. Exported so the dialog and this decision cannot drift apart. */

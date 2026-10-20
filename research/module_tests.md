@@ -1288,6 +1288,43 @@ where `5` (`FAILURE`) was expected; the three manager tests got a signature `Buf
 **Break-it**, one fix at a time: without the server's post-`await` check only the two server tests go red; without
 `revoke()` in `serve()`, in `unload()` or in `dispose()`, exactly the matching manager test goes red.
 
+## A window belongs to one generation of one key (2026-10-20, #197 E1.3)
+
+The window book ([module_extension.md](module_extension.md), *The SSH agent*) is pure, so its rules are tests with no
+editor; the manager's half — that the right question is asked at the right moment — is a second suite on the shared world.
+
+| suite | what it proves |
+|---|---|
+| `allowWindows.test.ts` (21 tests, pure) | a window never covers the next generation of its key · a revocation fences an answer even with no window open, and never an answer for another key · `stale-key` wins over the other two fences · a fence never moved reads 0 · no grant reaches past its scope's ceiling (`login` pinned equal to `ASK_WINDOW_MS`, which the TEST imports) · a shorter grant never shortens a longer one · the two clocks — (11 min, 1 min) and (1 min, 11 min) refuse, the boundary is strict on both, a wall clock set back above `grantedAt` refuses · a login window never covers a Git signature · a book that did not change is the same object, and a grant never touches the book it was given · lock, login-end and sweep behave as the book says |
+| `sshAgentManagerWindows.test.ts` (8 tests, on `sshAgentWorld.ts`) | re-adding a loaded key starts with no window · an answer after *Remove from SSH Agent* refuses and names it · *Allow for 10 minutes* on a prompt whose key was unloaded (or re-loaded) opens no window for the key loaded next · every silent signature logs its window and its end · the gate reads the injected monotonic clock · a request for a key that is not loaded is refused with no dialog |
+
+`manager()` in the world gained `monotonic?: () => number` (the manager's last constructor parameter, optional with no default —
+a defaulted fourth parameter takes the constructor to complexity 5 and `npm run lint` says so). A test's monotonic origin is
+never 0: a book that stored `grantedAtMono` as 0, or never stored it, computes the wrong elapsed time.
+
+**Watched RED** on the code before the book (unfixed manager, the new suite only): re-adding a loaded key `1 !== 2`
+(*the re-loaded key asked again*); *Allow for 10 minutes* after an unload: the answer returned `true !== false` and the key
+loaded next did not ask, `1 !== 2`; across a re-load the same two; the silent signature logged
+*allowed (within the 10-minute window) for an SSH login as "me" (ssh-connection)* where `allowed without asking` was expected;
+an unloaded key opened a dialog and was allowed, `true !== false`. The monotonic-clock test cannot be red as an assertion: the
+parameter does not exist on the old manager, so it fails to compile (`Expected 4-7 arguments, but got 8`). The pure suite
+**cannot be red** — the module is new — so it was broken instead.
+
+**Break-it**, one mutation at a time (each compiled, the suites run, the file restored): in the book — mono boundary `<=`
+(*the boundary expires on both clocks*); wall boundary `>=` in `withinAllowWindow`; the mono half of `covers` dropped (four tests);
+fence compared with `<` (*a revocation fences an answer even when no window was open*); `?? 0` removed (*a fresh key's first grant
+opens*, `undefined !== 0`); the `ReadonlyMap` mutated through a cast (seven tests); `kept-later` building a new book;
+`grantedAtMono` stored as 0; `withoutExpired` leaving an empty key entry, dropping a key's other scope, or ignoring the mono clock;
+`scopesFor` with `!== 0`; `endLoginWindows` moving the key fence; the generation ignored in `covers` and in the crossing; the lock
+fence checked before `stale-key`; no ceiling; a shorter grant overwriting a longer; `forgetKey` leaving the entry; `nextExpiry`
+taking the latest. In the manager — the generation read after the `await` (the two re-load tests), or off the `AgentKey` argument
+(every dialog test: all refused as *not loaded*); the monotonic clock injected but not used; the stale answer not refused; no new
+generation (re-load test); the not-loaded refusal removed. **Two mutations survive, and that is stated:** `forgetKey` in `unload()` and
+the reset in `dispose()` change nothing a test can see in E1 — an unloaded key is refused as *not loaded* and a re-load forgets again — they
+keep the book from holding windows of dead keys, which E2's row and expiry timer will read. And `forgetKey` in `serve()` alone is
+redundant with the generation check in `covers`: removing it, or the new generation, alone leaves the re-add test green;
+removing **both** turns it red (`1 !== 2`) — the defect needed both rules to be missing.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.
