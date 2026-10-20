@@ -6,6 +6,9 @@
 > Related docs: [PLAN_consent_shows_request_time.md](PLAN_consent_shows_request_time.md) §Open tail;
 > [module_extension.md](module_extension.md) §Consent, *When it was asked*.
 
+> **Pointer, 2026-10-20 (#197 E1.4).** This record says the prompt is raised before every signature. A signature inside an open 10-minute window is not asked about at all; the time line below is on the prompt that is raised. The texts were corrected in E1.4; the plan is
+> [PLAN_ssh_allow_longer_windows.md](../todo/PLAN_ssh_allow_longer_windows.md).
+
 ## What shipped differently — read this first
 
 1. **The manager takes a clock** (`clock: () => Date`, a trailing optional constructor argument,

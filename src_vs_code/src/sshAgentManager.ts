@@ -16,13 +16,7 @@ import { AgentKey, SshAgentServer, agentSocketPath } from './sshAgentServer';
 import { ParsedSshKey, parseSshPrivateKey } from './sshKeyParse';
 import { SecretOpener } from './secretOpener';
 import { automaticOpenerFor } from './automaticRead';
-import {
-  ALLOW_ONCE,
-  ALLOW_WINDOW,
-  CONSENT_TIMEOUT_MS,
-  DENY,
-  consentFromChoice,
-} from './agentConsent';
+import { CONSENT_TIMEOUT_MS, SIGNING_BUTTONS, consentFromChoice } from './agentConsent';
 import {
   ALL_ONLY,
   AllowWindows,
@@ -322,7 +316,7 @@ export class SshAgentManager implements vscode.Disposable {
   }
 
   /**
-   * The dialog in front of every signature.
+   * The dialog in front of a signature no open window covers.
    *
    * <p>It names the key, its fingerprint and what is being signed, because "a key is being
    * used" is not a decision anybody can make. A dismissed dialog refuses this one signature
@@ -442,9 +436,7 @@ export class SshAgentManager implements vscode.Disposable {
         'ten minutes — long enough for a push that signs and authenticates in one go. ' +
         `Unanswered, it is refused after ${bound}.`,
       { modal: true },
-      ALLOW_ONCE,
-      ALLOW_WINDOW,
-      DENY,
+      ...SIGNING_BUTTONS,
     );
     // A modal that REJECTS (the window closing under it) is a dismissal — and `withTimeout` must be
     // handed a promise that does not reject.

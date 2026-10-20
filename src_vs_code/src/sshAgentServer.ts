@@ -17,7 +17,7 @@ import {
 
 /**
  * The agent itself: a local socket that answers the SSH agent protocol, serving keys held in
- * the vault and asking a human before every signature.
+ * the vault and asking before every signature — a person, or a window they opened.
  *
  * <p>`vscode`-free on purpose — the socket, the framing and the decision to refuse are testable
  * without an editor, and the only thing the editor contributes is the dialog, which arrives as

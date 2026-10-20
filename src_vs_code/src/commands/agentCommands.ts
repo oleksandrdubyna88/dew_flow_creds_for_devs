@@ -676,7 +676,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
     mutated();
     void vscode.window.showInformationMessage(
       `"${keyNode.name}" (${result.fingerprint}) is served by the agent. New terminals get ` +
-        'SSH_AUTH_SOCK automatically; every use of the key asks first.' +
+        'SSH_AUTH_SOCK automatically; a signature asks first, once or for 10 minutes.' +
         (process.platform === 'win32'
           ? ' On Windows the built-in OpenSSH client reaches it; the ssh that ships with Git for Windows cannot.'
           : ''),

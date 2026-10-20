@@ -63,6 +63,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (both end every window and fence an answer given meanwhile). They are written and tested but nothing calls them: a
   lock does not end a window today.
 
+### Changed — the help and the menus say what the signing prompt really offers
+
+- **Nothing says "every use asks" any more.** The prompt offers *Allow once*, *Allow for 10 minutes* (every use of that
+  key for ten minutes — long enough for a push that signs and authenticates in one go) and *Deny*; the help, the menu and
+  the READMEs said a dialog opens for every single signature, which has been false since the ten-minute window shipped.
+- **The help names all three answers, in all five languages.** The article is now *The SSH agent that asks: once, or for
+  10 minutes* (it was *…asks every time*), and it says what a login prompt shows: the login and, for a current OpenSSH
+  server, the server's host key on a line of its own. The WSL relay article says that while a 10-minute window is open any
+  process in WSL signs with that key without asking.
+- **The command is *Add to SSH Agent (asks before signing)***, not *(confirm every use)*. The same fix is in the setting
+  *wslAgentRelay*, the key-served notices, the *Agent doors* row for WSL, the walkthrough and both READMEs.
+- **Not changed, because it is still true:** the CLI door row says it asks every time — a CLI call gets a fresh grant for each
+  call. The `creds` command-line text for `relay` ships with the next `cli-v` release.
+- **A guard.** A test reads the signing prompt's buttons from the code and fails when a help article does not name one of
+  them; a second one fails when any of the replaced sentences is still in any help language, the README, the manifest or the
+  code that shows the prompt.
+
 ## [1.14.1] — 2026-10-12 — A crashed window no longer slows every refusal
 
 ### Fixed — a crashed window no longer slows every refusal

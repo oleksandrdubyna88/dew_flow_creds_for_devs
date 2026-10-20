@@ -107,7 +107,7 @@
         "credSshManager.wslAgentRelay": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Run `creds relay` inside WSL while a key is loaded into the SSH agent, so `ssh` and `git` in a WSL shell can use it. **This widens the agent's reach**: the named pipe is reachable by one Windows user, the relay's unix socket by every process in that distribution running as you. Every signature still asks on Windows. Run `CredsForDevs: Set Up the WSL Agent Relay` — it turns this on and offers to add the one `export SSH_AUTH_SOCK=...` line your shell needs."
+          "markdownDescription": "Run `creds relay` inside WSL while a key is loaded into the SSH agent, so `ssh` and `git` in a WSL shell can use it. **This widens the agent's reach**: the named pipe is reachable by one Windows user, the relay's unix socket by every process in that distribution running as you. A signature still asks on Windows first; while a 10-minute window is open, any process in that distribution signs with the key without asking. Run `CredsForDevs: Set Up the WSL Agent Relay` — it turns this on and offers to add the one `export SSH_AUTH_SOCK=...` line your shell needs."
         },
         "credSshManager.wslRelayCommand": {
           "type": "string",
@@ -753,7 +753,7 @@
       },
       {
         "command": "credSshManager.addKeyToAgent",
-        "title": "Add to SSH Agent (confirm every use)",
+        "title": "Add to SSH Agent (asks before signing)",
         "category": "CredsForDevs"
       },
       {

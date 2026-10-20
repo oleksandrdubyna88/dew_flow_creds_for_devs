@@ -2,7 +2,7 @@ import { requestTimeLine } from '../requestTime';
 import * as assert from 'node:assert/strict';
 import * as path from 'node:path';
 import { test } from 'node:test';
-import { ALLOW_ONCE, ALLOW_WINDOW, CONSENT_TIMEOUT_MS, DENY } from '../agentConsent';
+import { ALLOW_ONCE, ALLOW_WINDOW, CONSENT_TIMEOUT_MS, DENY, SIGNING_BUTTONS } from '../agentConsent';
 import { EntityMetadata, TreeNode } from '../types';
 import { describeServerLine, describeSignRequest, encodeString } from '../sshAgentProtocol';
 import {
@@ -134,6 +134,18 @@ test('every signature asks, and the dialog names the key, the fingerprint and th
   assert.match(w.dialogs[0], /"prod"/);
   assert.match(w.dialogs[0], /SHA256:abc/);
   assert.match(w.dialogs[0], /never leaves this window/);
+});
+
+test('the dialog offers exactly the signing buttons, Allow once first', async () => {
+  // The help test loops over SIGNING_BUTTONS; this is what makes that list the prompt and not a copy of it.
+  const w = world({ answers: [ALLOW_ONCE] });
+  const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() } });
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+
+  await (w.server() as FakeServer).confirm({ entityId: KEY_ID, name: 'prod', fingerprint: 'f' }, { kind: 'auth' });
+
+  assert.deepEqual(w.buttons, [[...SIGNING_BUTTONS]]);
+  assert.equal(w.buttons[0][0], ALLOW_ONCE);
 });
 
 test('the host key of a login is a line of the prompt of its own, and the user name cannot write one', async () => {

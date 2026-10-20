@@ -1325,6 +1325,24 @@ keep the book from holding windows of dead keys, which E2's row and expiry timer
 redundant with the generation check in `covers`: removing it, or the new generation, alone leaves the re-add test green;
 removing **both** turns it red (`1 !== 2`) — the defect needed both rules to be missing.
 
+## What every text says the signing prompt does (2026-10-20, #197 E1.4)
+
+A sentence is not something a compiler or a behaviour test reads, and the signing prompt's texts had drifted from the prompt
+for as long as the ten-minute window existed. `sshAgentHelp.test.ts` (5 tests) holds them to it; `repoFiles.ts` is the one
+place a test derives the repository root and reads a repository file (moved out of `readmeClaims.test.ts`, which imports it).
+
+| test | what it proves |
+|---|---|
+| *the help names every answer the signing prompt offers, in every language* | loops `SIGNING_BUTTONS` (exported by `agentConsent.ts`, spread by the dialog — never a copy) × `HELP_LANGUAGES` over the `ssh-agent` article; goes red by itself when *Allow longer…* joins the list |
+| *no shipped text says every signature asks* | a pattern over the English `ssh-agent` and `wsl-relay` articles, `package.json`, both READMEs and the walkthrough |
+| *the scan matches every old English sentence* | the companion a pattern test needs: each old sentence, quoted verbatim, must match — it caught `SSH agent, confirming every use` the first time |
+| *no replaced sentence survives, in any language of the help* | each of the five `help*.ts` against its OWN old wording (a pattern in English cannot see *jedes Mal*) |
+| *no replaced sentence survives in the code that shows or documents the prompt* | `extension.ts`, `agentDoors.ts`, `commands/agentCommands.ts` and the comments that said the same |
+| `sshAgentManager.test.ts` → *the dialog offers exactly the signing buttons, Allow once first* | the dialog's buttons equal `SIGNING_BUTTONS` |
+
+**Deliberately not scanned:** `agentDoors.ts` line 87, the CLI door, which really asks every time (`handleAlias` mints a fresh
+grant per call; `agentDoors.test.ts` pins the sentence), and `src_cli` (its text ships with the next `cli-v`).
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.

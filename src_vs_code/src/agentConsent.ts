@@ -39,6 +39,13 @@ export const ALLOW_ONCE = 'Allow once';
 export const ALLOW_WINDOW = 'Allow for 10 minutes';
 export const DENY = 'Deny';
 
+/**
+ * Every answer the signing prompt offers, in the order the buttons stand. The dialog spreads this list and
+ * the help test loops over it, so a button added here that no help article names turns that test red by
+ * itself. #197 E3 inserts `ALLOW_LONGER` here.
+ */
+export const SIGNING_BUTTONS = [ALLOW_ONCE, ALLOW_WINDOW, DENY] as const;
+
 /** How long `ALLOW_WINDOW` covers. */
 export const ALLOW_WINDOW_MS = 10 * 60_000;
 

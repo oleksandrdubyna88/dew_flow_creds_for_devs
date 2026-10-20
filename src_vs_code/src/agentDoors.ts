@@ -100,7 +100,7 @@ const DOORS: ReadonlyArray<{ live: (d: AgentDoors) => boolean; row: (d: AgentDoo
     live: (d) => d.wslRelay,
     row: () => ({
       label: 'WSL agent relay on',
-      detail: 'ssh and git inside WSL can use this key, with a dialog per signature.',
+      detail: 'ssh and git inside WSL can use this key, asking on Windows first (once, or for 10 minutes).',
       command: 'credSshManager.setUpWslRelay',
     }),
   },
