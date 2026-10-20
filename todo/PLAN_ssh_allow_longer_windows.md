@@ -731,6 +731,13 @@ disagreed on where one-prompt-per-key goes; the decision and its reason are unde
   queue, a client that pipelines `REQUEST_IDENTITIES` behind a held `SIGN_REQUEST` would read the wrong reply — the
   queue answers each socket in request order. Test: *a pipelined identities request behind a held sign request is
   answered in order*. (OpenSSH does not pipeline; other clients may.)
+- **What E1.3's security judgement left for E2** (Fable, 2026-10-20). (1) `openWindow` already returns `true` for
+  `fenced-key` / `fenced-lock` ("allow this one signature, no window"), unreachable in E1. Once the lock is wired, a
+  *10 minutes* answer given after the vault locked signs ONCE — decide it on purpose (it matches I3 and O3: the
+  per-use prompt works while locked) and pin it with a test. (2) `keyFences.has(id)` is not "a window is open"; a fence
+  entry is kept per entity id ever loaded and bounded by that count. (3) The row and the expiry timer read the book
+  only through `windowsFor` / `withoutExpired` / `nextExpiry` (both clocks since the E1.3 review) — never the raw
+  `open` map, which keeps expired windows until a sweep.
 - **Depends on.** E1 (the book with its fences, `generation`, revoke-on-replace).
 - **Done when.** S5's evidence goes through the real seam: a real `VaultKeys` and a real manager joined by
   `connectAgentToLock`, locked once by `lock()` and once by `evictAndLock`, never a direct `endAllWindows` call. The
