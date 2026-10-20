@@ -692,6 +692,7 @@ disagreed on where one-prompt-per-key goes; the decision and its reason are unde
   The strict userauth parser (§6.3) is an authorisation boundary too, but its contract is written down (OpenSSH
   `PROTOCOL` §3.1) and its tests are fixtures; it is **not** a cornerstone story — it gets Fable's security judgement at
   review, which the role table puts outside the quota.
+- **Stories.** [PLAN_ssh_allow_longer_windows_E1.md](PLAN_ssh_allow_longer_windows_E1.md) — E1.1–E1.4.
 
 ### E2 — a window is visible, ends on any lock or from the row, and one prompt per key (feature release)
 
@@ -747,4 +748,4 @@ between the asynchronous prompt and the signing material (`sshAgentServer.ts` po
 the `revoked` closure, `consentTurns.ts` late continuations, the fence crossings). Opus marks one concrete story per area
 when E1's and E2's stories documents are written, and fills the ledger's story slots in the same commit.
 
-Cornerstones: 0 of 2 —
+Cornerstones: 1 of 2 — E1.3 a window belongs to one generation of one key (the window book, `allowWindows.ts`)
