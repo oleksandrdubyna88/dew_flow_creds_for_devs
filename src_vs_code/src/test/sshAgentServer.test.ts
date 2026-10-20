@@ -59,7 +59,7 @@ async function harness(
   keys: AgentKey[],
   confirm: (key: AgentKey, purpose: SignPurpose) => Promise<boolean> = () => Promise.resolve(true),
 ): Promise<Harness> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-agent-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'testsToDelete-agent-'));
   const socketPath =
     process.platform === 'win32'
       ? `\\\\.\\pipe\\creds-agent-test-${process.pid}-${Math.floor(process.hrtime()[1])}`
@@ -230,6 +230,89 @@ test('a login that names key A, sent as a sign request for key B, is not a login
   }
 });
 
+/** A confirm the test answers by hand: `asked` settles when the prompt is open, `answer` is the human's click. */
+function heldPrompt(): {
+  confirm: (key: AgentKey, purpose: SignPurpose) => Promise<boolean>;
+  asked: Promise<void>;
+  answer: (allow: boolean) => void;
+} {
+  let answer: (allow: boolean) => void = () => undefined;
+  let opened: () => void = () => undefined;
+  const asked = new Promise<void>((resolve) => {
+    opened = resolve;
+  });
+  const click = new Promise<boolean>((resolve) => {
+    answer = resolve;
+  });
+  return {
+    asked,
+    answer: (allow) => answer(allow),
+    confirm: () => {
+      opened();
+      return click;
+    },
+  };
+}
+
+/** The same key as `served`, signing through it — and counting, so a test can say it never signed. */
+function countingCopy(served: AgentKey): { key: AgentKey; signed: () => number } {
+  let signed = 0;
+  return {
+    signed: () => signed,
+    key: {
+      ...served,
+      sign: (data, flags) => {
+        signed += 1;
+        return served.sign(data, flags);
+      },
+    },
+  };
+}
+
+test('a key removed while its prompt is open does not sign, whatever the answer', async () => {
+  // The prompt can stay open for minutes (a modal cannot be closed), and the person can remove the key
+  // from the agent meanwhile. "Allow" on a prompt about a key that is gone must not sign with it.
+  const a = newKey('prod key');
+  const held = countingCopy(a.key);
+  const keys: AgentKey[] = [held.key];
+  const prompt = heldPrompt();
+  const h = await harness(keys, prompt.confirm);
+  try {
+    const reply = h.request(signRequestFor(a.key.identity.publicBlob, Buffer.from('data')));
+    await prompt.asked;
+    keys.length = 0; // Remove from SSH Agent, while the prompt is still on screen
+    prompt.answer(true);
+
+    assert.equal(new ByteReader(await reply).readByte(), SSH_AGENT_FAILURE);
+    assert.equal(held.signed(), 0, 'the removed key never signed');
+    assert.match(h.logs.join('\n'), /REFUSED a signature with "prod key" — the key was removed while its prompt was open/);
+  } finally {
+    h.dispose();
+  }
+});
+
+test('a key re-loaded while its prompt is open signs with neither the old nor the new material', async () => {
+  // Same public bytes, a new object: the answer was given about the old one. Identity is the check —
+  // bytes would pass a replacement that was loaded from a different (or revoked) source.
+  const a = newKey('prod key');
+  const old = countingCopy(a.key);
+  const reloaded = countingCopy(a.key);
+  const keys: AgentKey[] = [old.key];
+  const prompt = heldPrompt();
+  const h = await harness(keys, prompt.confirm);
+  try {
+    const reply = h.request(signRequestFor(a.key.identity.publicBlob, Buffer.from('data')));
+    await prompt.asked;
+    keys.splice(0, 1, reloaded.key); // the key was loaded again under the same entity
+    prompt.answer(true);
+
+    assert.equal(new ByteReader(await reply).readByte(), SSH_AGENT_FAILURE);
+    assert.equal(old.signed() + reloaded.signed(), 0, 'neither object signed');
+  } finally {
+    h.dispose();
+  }
+});
+
 test('a key the agent does not hold is refused without asking anybody', async () => {
   const held = newKey('held');
   const other = newKey('not held');
@@ -276,7 +359,7 @@ test('a malformed sign request is refused rather than throwing out of the agent'
 test('the keys are re-read per request, so unloading one takes effect at once', async () => {
   const a = newKey('prod key');
   const keys: AgentKey[] = [a.key];
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-agent-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'testsToDelete-agent-'));
   const socketPath =
     process.platform === 'win32'
       ? `\\\\.\\pipe\\creds-agent-live-${process.pid}`

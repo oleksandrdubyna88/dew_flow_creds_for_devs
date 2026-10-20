@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   be the key being signed with, and nothing may follow the last field. A request that only *starts* like a login, names
   another key, or is the "would this key be accepted" probe (no signature flag) is described as unrecognised, which is
   the honest sentence for something this build cannot name.
+- **A key removed while its prompt was open no longer signs.** The signing prompt can stay on screen for minutes (VS Code
+  cannot close a modal), and *Allow* on it used to sign with the key even after the person had removed it from the agent
+  or loaded it again. The agent now checks, after the answer, that the key it was asked about is still the one it serves
+  — by object, so a key re-loaded with identical bytes is refused too — and a key object that was removed, replaced or
+  disposed refuses to sign whoever holds it. The refusal is written in the agent's log.
 
 ## [1.14.1] — 2026-10-12 — A crashed window no longer slows every refusal
 

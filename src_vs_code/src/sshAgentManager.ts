@@ -68,6 +68,13 @@ function parsedKey(content: string | undefined, name: string): { ok: true; key: 
 interface LoadedKey extends AgentKey {
   accountId: string;
   publicLine: string;
+  /**
+   * End this object's right to sign, for good (#197, I1). Called when the key is unloaded, replaced by a
+   * later `load` of the same entity, or the manager is disposed — so a holder that kept the object (a
+   * prompt that was open meanwhile) cannot sign with it, whatever it was answered. By object, never by
+   * public bytes: a replacement with identical bytes is a different object and revokes the old one.
+   */
+  revoke(): void;
 }
 
 export class SshAgentManager implements vscode.Disposable {
@@ -147,6 +154,8 @@ export class SshAgentManager implements vscode.Disposable {
   }
 
   private serve(accountId: string, details: EntityMetadata, key: ParsedSshKey): void {
+    // A key loaded again under the same id replaces the old object, which must stop signing at once.
+    this.keys.get(details.id)?.revoke();
     this.keys.set(details.id, {
       accountId,
       entityId: details.id,
@@ -154,8 +163,30 @@ export class SshAgentManager implements vscode.Disposable {
       fingerprint: key.fingerprint,
       publicLine: key.publicLine,
       identity: { publicBlob: key.publicBlob, comment: details.name },
-      sign: (data, flags) => signForAgent(key, data, flags),
+      ...this.signing(key, details.name),
     });
+  }
+
+  /**
+   * The signing half of one served key: `sign` until `revoke`, and a logged refusal after it. The revoked
+   * handle lets go of the parsed key too, so an object kept past its life holds no material to misuse.
+   * The server's own "could not sign (unsupported request)" cannot say this — `signForAgent` also returns
+   * `undefined` for a key or a flag it cannot sign.
+   */
+  private signing(key: ParsedSshKey, name: string): Pick<LoadedKey, 'sign' | 'revoke'> {
+    let material: ParsedSshKey | undefined = key;
+    return {
+      sign: (data, flags) => {
+        if (material === undefined) {
+          this.log(`refused to sign with "${name}": the key was removed or replaced`);
+          return undefined;
+        }
+        return signForAgent(material, data, flags);
+      },
+      revoke: () => {
+        material = undefined;
+      },
+    };
   }
 
   /** Stop serving one key. Its material goes with it. */
@@ -164,6 +195,7 @@ export class SshAgentManager implements vscode.Disposable {
     if (key === undefined) {
       return false;
     }
+    key.revoke();
     this.keys.delete(entityId);
     this.allowedUntil.delete(entityId);
     this.log(`unloaded "${key.name}"`);
@@ -349,7 +381,15 @@ export class SshAgentManager implements vscode.Disposable {
     return this.keys.has(details.sshKeyEntityId ?? details.id);
   }
 
+  /** Every served key object stops signing — before the map forgets them. */
+  private revokeAll(): void {
+    for (const key of this.keys.values()) {
+      key.revoke();
+    }
+  }
+
   dispose(): void {
+    this.revokeAll();
     this.keys.clear();
     this.allowedUntil.clear();
     this.server?.dispose();

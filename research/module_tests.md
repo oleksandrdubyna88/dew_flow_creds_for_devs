@@ -1243,6 +1243,28 @@ server running, h took 6.0 s for a 2 s deadline. **Limit:** the script signals o
 the server itself; a launcher such as `dotnet run` would leave the app behind on a KILL, which is why CI starts
 the apphost.
 
+## A removed or replaced key never signs (2026-10-20, #197 E1.2)
+
+The agent's prompt can stay open for minutes, and the person can remove or re-load the key meanwhile; an *Allow* given
+afterwards must sign nothing ([PLAN_ssh_allow_longer_windows_E1.md](../todo/PLAN_ssh_allow_longer_windows_E1.md) §4).
+
+| test | what it proves |
+|---|---|
+| `sshAgentServer.test.ts` → *a key removed while its prompt is open does not sign, whatever the answer* | over a REAL socket, the prompt held open by the test; the key leaves the served list, the answer is *Allow* → reply `FAILURE`, the key's `sign` never called, the refusal logged |
+| `sshAgentServer.test.ts` → *a key re-loaded while its prompt is open signs with neither the old nor the new material* | the same key re-added as a new object (identical public bytes) → `FAILURE`, neither object signed |
+| `sshAgentManager.test.ts` → *a replaced key object refuses to sign, even with identical public bytes* · *an unloaded key object refuses to sign* · *a disposed manager's key objects refuse to sign* | through the CAPTURED `LoadedKey.sign` (the manager tests run a stub server, so the server's check cannot be what they see); the replacement itself signs, which is what proves the fixture is a real key |
+
+**The shared world.** `src/test/sshAgentWorld.ts` (precedent `pinWorld.ts`) holds what `sshAgentManager.test.ts` used to
+carry: the stub socket server, the `vscode` spy (dialogs, the BUTTONS each one offered, the output channel, the
+environment collection), `realPrivateKey`, `manager`, `keyEntity`, `unanswered`, and the temp storage directory —
+now named `testsToDelete-agent-…` (the server suite's two temp folders too) and swept at exit. The suite went from 585
+to 386 lines with no assertion changed.
+
+**Watched RED** on unfixed code, each for its real reason: the two server tests read reply type `14` (`SIGN_RESPONSE`)
+where `5` (`FAILURE`) was expected; the three manager tests got a signature `Buffer` where `undefined` was expected.
+**Break-it**, one fix at a time: without the server's post-`await` check only the two server tests go red; without
+`revoke()` in `serve()`, in `unload()` or in `dispose()`, exactly the matching manager test goes red.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.

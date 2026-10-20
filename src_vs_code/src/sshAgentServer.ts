@@ -142,10 +142,21 @@ export class SshAgentServer {
   }
 
   private async confirmAndSign(key: AgentKey, request: SignRequest): Promise<Buffer> {
-    if (await this.options.confirm(key, describeSignRequest(request.data, request.publicBlob), request.data)) {
-      return this.signed(key, request.data, request.flags);
+    const allowed = await this.options.confirm(key, describeSignRequest(request.data, request.publicBlob), request.data);
+    if (!allowed) {
+      return this.refused(`REFUSED a signature with "${key.name}"`);
     }
-    this.options.log(`REFUSED a signature with "${key.name}"`);
+    // The prompt can stay open for minutes, and the key may have been removed or replaced meanwhile. An
+    // "Allow" is an answer about the object that was asked about: object identity, not the public bytes,
+    // so a key re-loaded with identical bytes is refused too (#197, I1/I2).
+    if (!this.options.keys().includes(key)) {
+      return this.refused(`REFUSED a signature with "${key.name}" — the key was removed while its prompt was open`);
+    }
+    return this.signed(key, request.data, request.flags);
+  }
+
+  private refused(line: string): Buffer {
+    this.options.log(line);
     return encodeFailure();
   }
 
