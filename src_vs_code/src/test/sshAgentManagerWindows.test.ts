@@ -45,7 +45,6 @@ test('re-adding a key that is already loaded starts it with no window', async ()
   await gate.confirm(key, login);
 
   assert.equal(w.dialogs.length, 2, 'the re-loaded key asked again');
-  assertNoKeyMaterialLogged();
 });
 
 test('an answer given after Remove from SSH Agent refuses, and says so', async () => {
@@ -137,6 +136,63 @@ test('the gate reads the injected monotonic clock', async () => {
   assert.equal(w.dialogs.length, 2, 'the monotonic clock ended the window although the wall clock had not');
 });
 
+test('the monotonic clock is read at the click, not when the request arrived', async () => {
+  // The prompt is held ten hours into the machine's uptime; five minutes pass before the click. The window
+  // runs from the CLICK, so a request twelve minutes after ARRIVAL (seven after the click) is covered.
+  // A grant stamped with mono 0, or with the arrival reading, would end it early on the monotonic clock.
+  const time = steppedClock();
+  const start = 10 * 60 * MIN;
+  let mono = start;
+  const modal = unanswered();
+  const w = world({ answers: [modal.answer, ALLOW_ONCE] });
+  const { gate } = await loaded(w, { clock: time.clock, monotonic: () => mono, consentTimeoutMs: 60 * MIN });
+
+  const pending = gate.confirm(key, login);
+  time.set(W + 5 * MIN);
+  mono = start + 5 * MIN;
+  modal.clickLate(ALLOW_WINDOW);
+  assert.equal(await pending, true, 'the answer allows');
+  time.set(W + 12 * MIN);
+  mono = start + 12 * MIN;
+
+  assert.equal(await gate.confirm(key, login), true);
+  assert.equal(w.dialogs.length, 1, 'the second request was covered by the window, without a dialog');
+});
+
+test('the window runs ten minutes from ONE reading of the clock at the click', async () => {
+  // A wall clock that advances six minutes per read: arrival reads W+6, the click W+12, the next arrival W+18.
+  // The window is (granted W+12, until W+22). Two reads at the click would split grantedAt from until.
+  let reads = 0;
+  const w = world({ answers: [ALLOW_WINDOW, ALLOW_ONCE] });
+  const { gate } = await loaded(w, { clock: () => new Date(W + 6 * MIN * ++reads), monotonic: () => 50_000 });
+
+  assert.equal(await gate.confirm(key, login), true);
+  assert.equal(await gate.confirm(key, login), true);
+
+  assert.equal(w.dialogs.length, 1, 'the second request arrived inside the window');
+  const line = w.logs.find((l) => l.includes('allowed without asking'));
+  assert.ok(line !== undefined, `no "allowed without asking" line in:\n${w.logs.join('\n')}`);
+  const until = localWallTime(new Date(W + 22 * MIN));
+  const granted = localWallTime(new Date(W + 12 * MIN));
+  assert.ok(line.includes(`until ${until} (granted ${granted})`), line);
+});
+
+test('a key loaded again gets its own window — the old generation window does not shadow it', async () => {
+  // Pins the PAIR: the manager forgets the old window on a re-load, and the book would not let a generation-1
+  // window block a generation-2 grant even if it did not.
+  // A stopped clock: both generations are granted the very same `until`, which is what an old window used to win.
+  const time = steppedClock();
+  const w = world({ answers: [ALLOW_WINDOW, ALLOW_WINDOW, ALLOW_ONCE] });
+  const { instance, gate } = await loaded(w, { clock: time.clock });
+  assert.equal(await gate.confirm(key, login), true, 'generation 1 opens its window');
+
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+  assert.equal(await gate.confirm(key, login), true, 'generation 2 prompts and opens its own window');
+  assert.equal(await gate.confirm(key, login), true, 'generation 2 is covered by it');
+
+  assert.equal(w.dialogs.length, 2, 'one prompt per generation, none for the covered request');
+});
+
 test('a request for a key that is not loaded is refused without a dialog', async () => {
   const w = world({ answers: [ALLOW_ONCE] });
   const { gate } = await loaded(w);
@@ -146,4 +202,6 @@ test('a request for a key that is not loaded is refused without a dialog', async
   assert.equal(allowed, false);
   assert.equal(w.dialogs.length, 0, 'nothing to ask about');
   assert.ok(w.logs.some((line) => /not loaded/.test(line)), `no "not loaded" line in:\n${w.logs.join('\n')}`);
+  // The LAST test of the file: node:test runs a file in order, so every log of the suite has been written.
+  assertNoKeyMaterialLogged();
 });

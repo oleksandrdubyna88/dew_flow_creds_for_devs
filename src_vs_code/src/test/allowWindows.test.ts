@@ -245,9 +245,9 @@ test('an expired window leaves the book, nextExpiry names the nearest end, and b
   assert.equal(swept.open.has('key-2'), false);
   assert.equal(swept.open.has('key-1'), true);
 
-  assert.equal(nextExpiry(book, W), W + 5 * MIN);
-  assert.equal(nextExpiry(book, W + 6 * MIN), W + 10 * MIN);
-  assert.equal(nextExpiry(NO_WINDOWS, W), undefined);
+  assert.equal(nextExpiry(book, W, M), W + 5 * MIN);
+  assert.equal(nextExpiry(book, W + 6 * MIN, M + 6 * MIN), W + 10 * MIN);
+  assert.equal(nextExpiry(NO_WINDOWS, W, M), undefined);
 
   const monoSwept = withoutExpired(book, W + MIN, M + 11 * MIN);
   assert.equal(monoSwept.open.has('key-1'), false, 'the monotonic clock ends it although the wall clock has not');
@@ -261,4 +261,55 @@ test('sweeping a key drops only the scope that ended, and a key left with nothin
   assert.equal(swept.open.get('key-1')?.all, undefined);
   assert.ok(swept.open.get('key-1')?.login !== undefined, 'the login window outlives the 10-minute one');
   assert.equal(withoutExpired(swept, W + 2 * H, M + 2 * H).open.has('key-1'), false);
+});
+
+test('a dead window never blocks a grant: after a wall clock set back, the same scope opens again', () => {
+  // Granted (W, M) for ten minutes. The wall clock is then reset to 30 minutes BEFORE the grant while two
+  // real minutes pass. The old window is dead on the wall clock (not yet granted) — and the new grant's own
+  // `until` is earlier than the old one's, which used to read as "keep the later one".
+  const book = tenMinutes();
+  const setBack = W - 30 * MIN;
+
+  const again = grantWindow(book, askTicket(book, A), 'all', 1, setBack, M + 2 * MIN, setBack + 10 * MIN);
+
+  assert.equal(again.outcome, 'opened');
+  assert.equal(covered(again.book, W - 29 * MIN, M + 3 * MIN), true, 'the new window covers a request one minute later');
+});
+
+test('a window of generation 1 never blocks a grant for generation 2', () => {
+  const book = tenMinutes(); // generation 1, left in the book (no forgetKey)
+  const next: KeyRef = { entityId: 'key-1', generation: 2 };
+
+  const result = grantWindow(book, askTicket(book, next), 'all', 2, W, M, W + 10 * MIN);
+
+  assert.equal(result.outcome, 'opened');
+  assert.ok(windowCovers(result.book, next, ALL_ONLY, W + MIN, M + MIN) !== undefined, 'generation 2 is covered');
+});
+
+test('a live window of the same generation that ends later still wins over a shorter grant', () => {
+  // The other side of the pin: "kept-later" stays for a window that is alive on both clocks.
+  const book = tenMinutes();
+
+  const shorter = grantWindow(book, askTicket(book, A), 'all', 1, W + MIN, M + MIN, W + 5 * MIN);
+
+  assert.equal(shorter.outcome, 'kept-later');
+  assert.equal(shorter.book, book);
+});
+
+test('nextExpiry is the earlier end of the two clocks, and a window the monotonic clock ended is no expiry', () => {
+  const book = tenMinutes();
+
+  // One minute on the wall, nine on the monotonic clock: the monotonic clock ends it one minute from now.
+  assert.equal(nextExpiry(book, W + MIN, M + 9 * MIN), W + 2 * MIN, 'the monotonic end, not the wall until');
+  assert.equal(nextExpiry(book, W + MIN, M + MIN), W + 10 * MIN, 'honest clocks: the wall until');
+  assert.equal(nextExpiry(book, W + MIN, M + 11 * MIN), undefined, 'already ended on the monotonic clock');
+});
+
+test('a window the monotonic clock already ended never blocks a grant either', () => {
+  // The wall clock still says "alive" (nine minutes in), the monotonic clock says eleven have passed.
+  const book = tenMinutes();
+
+  const again = grantWindow(book, askTicket(book, A), 'all', 1, W + 9 * MIN, M + 11 * MIN, W + 9 * MIN + 30_000);
+
+  assert.equal(again.outcome, 'opened');
 });

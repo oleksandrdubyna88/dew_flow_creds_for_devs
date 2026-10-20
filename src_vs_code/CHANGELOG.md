@@ -46,22 +46,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — a window belongs to one generation of one key
 
 - **Re-loading a key starts it with no window.** "Allow for 10 minutes" is remembered for the key the person answered
-  about. A key that was loaded again under the same entry (the vault synced, the entry was edited, Add to SSH Agent was
-  used a second time) used to keep the old window and sign without asking. Every load is now a new generation of the
-  key, and a window covers only the generation it was granted to.
+  about. A key that was loaded again under the same entry (Add to SSH Agent used a second time, or used after the saved
+  flag changed — for example after a sync or Restore Version; a sync alone does not load a key again) used to keep the
+  old window and sign without asking. Every load is now a new generation of the key, and a window covers only the generation it was
+  granted to.
 - **An answer given across an unload or a re-load opens no window.** The signing prompt can stay on screen for minutes
   (VS Code cannot close a modal). If the key was removed, or loaded again, while it was open, *Allow for 10 minutes* on it
   used to start a window that then covered the key loaded next. The answer is now refused and no window opens; the
   agent's log says *answered after the key was removed or re-added — no window was opened*.
-- **A request for a key that is not loaded is refused without a prompt.**
+- **A request for a key that is not loaded is refused without a prompt.** This is a defensive check, not a fix: the
+  socket offers only loaded keys, so a client cannot reach it today.
 - **Every silent signature names its window in the agent's log**: *allowed without asking: 10-minute window of "name"
   until <time> (granted <time>) for <what>*.
 - **A window needs two clocks to agree.** It ends when the wall clock says so, and also when a monotonic clock — one
   that a clock setting cannot move — says the ten minutes are over. Setting the system clock back after the click no
   longer stretches a window.
 - **Not part of this release yet:** the book also has rules for a vault lock and for an "Ask for Every Use Again" button
-  (both end every window and fence an answer given meanwhile). They are written and tested but nothing calls them: a
-  lock does not end a window today.
+  (a lock ends every window, the row button ends the windows of one key; both fence an answer given
+  meanwhile). They are written and tested but nothing calls them: a lock does not end a window today.
 
 ### Changed — the help and the menus say what the signing prompt really offers
 

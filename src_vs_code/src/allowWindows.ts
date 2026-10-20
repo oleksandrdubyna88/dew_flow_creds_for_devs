@@ -60,6 +60,10 @@ export interface AllowWindows {
   readonly open: ReadonlyMap<string, ScopeWindows>;
 }
 
+/**
+ * The book with nothing open. Frozen at the TOP LEVEL only — its two Maps are not frozen, and nothing casts
+ * them to mutate: every function here returns a new book instead.
+ */
 export const NO_WINDOWS: AllowWindows = Object.freeze({
   lockEpoch: 0,
   keyFences: new Map<string, number>(),
@@ -111,7 +115,16 @@ function withScope(open: ReadonlyMap<string, ScopeWindows>, entityId: string, sc
   return new Map(open).set(entityId, { ...open.get(entityId), [scope]: window });
 }
 
-/** Clamp to the scope's ceiling, keep a later deadline already open, else record the window. */
+/**
+ * Is the window already in the book one that must be kept? Only when it is this ticket's generation, still
+ * alive at the click on BOTH clocks, and ends no earlier than the new one. A dead window (a wall clock set
+ * back) or an older generation's never blocks a grant; "later" is only ever compared between live windows.
+ */
+function liveAndLater(existing: OpenWindow | undefined, ticket: AskTicket, until: number, at: { grantedAt: number; grantedAtMono: number }): boolean {
+  return existing !== undefined && existing.until >= until && covers(existing, ticket, at.grantedAt, at.grantedAtMono);
+}
+
+/** Clamp to the scope's ceiling, keep a live later window of the same generation, else record the window. */
 function placed(
   book: AllowWindows,
   ticket: AskTicket,
@@ -119,8 +132,7 @@ function placed(
   at: { grantedAt: number; grantedAtMono: number; until: number },
 ): { book: AllowWindows; outcome: GrantOutcome } {
   const until = Math.min(at.until, at.grantedAt + MAX_WINDOW_MS[scope]);
-  const existing = book.open.get(ticket.entityId)?.[scope];
-  if (existing !== undefined && existing.until >= until) {
+  if (liveAndLater(book.open.get(ticket.entityId)?.[scope], ticket, until, at)) {
     return { book, outcome: 'kept-later' };
   }
   const window = { generation: ticket.generation, grantedAt: at.grantedAt, grantedAtMono: at.grantedAtMono, until };
@@ -242,8 +254,14 @@ export function withoutExpired(book: AllowWindows, now: number, nowMono: number)
   return pruned(book, (_scope, window) => wallPermits(window, now) && monoPermits(window, nowMono));
 }
 
-/** The nearest end among the open windows that have not ended yet, for the timer that repaints the row. */
-export function nextExpiry(book: AllowWindows, now: number): number | undefined {
-  const ends = [...book.open.values()].flatMap((windows) => entriesOf(windows).map(([, window]) => window.until)).filter((until) => until > now);
+/** Where a window ends, as a wall-clock time: the earlier of its wall deadline and where the monotonic clock puts it. */
+function endOf(window: OpenWindow, now: number, nowMono: number): number {
+  const monoEnd = now + (window.grantedAtMono + (window.until - window.grantedAt) - nowMono);
+  return Math.min(window.until, monoEnd);
+}
+
+/** The nearest end, on either clock, among the open windows that have not ended yet, for the timer that repaints the row. */
+export function nextExpiry(book: AllowWindows, now: number, nowMono: number): number | undefined {
+  const ends = [...book.open.values()].flatMap((windows) => entriesOf(windows).map(([, window]) => endOf(window, now, nowMono))).filter((end) => end > now);
   return ends.length === 0 ? undefined : Math.min(...ends);
 }

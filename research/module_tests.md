@@ -1295,8 +1295,8 @@ editor; the manager's half — that the right question is asked at the right mom
 
 | suite | what it proves |
 |---|---|
-| `allowWindows.test.ts` (21 tests, pure) | a window never covers the next generation of its key · a revocation fences an answer even with no window open, and never an answer for another key · `stale-key` wins over the other two fences · a fence never moved reads 0 · no grant reaches past its scope's ceiling (`login` pinned equal to `ASK_WINDOW_MS`, which the TEST imports) · a shorter grant never shortens a longer one · the two clocks — (11 min, 1 min) and (1 min, 11 min) refuse, the boundary is strict on both, a wall clock set back above `grantedAt` refuses · a login window never covers a Git signature · a book that did not change is the same object, and a grant never touches the book it was given · lock, login-end and sweep behave as the book says |
-| `sshAgentManagerWindows.test.ts` (8 tests, on `sshAgentWorld.ts`) | re-adding a loaded key starts with no window · an answer after *Remove from SSH Agent* refuses and names it · *Allow for 10 minutes* on a prompt whose key was unloaded (or re-loaded) opens no window for the key loaded next · every silent signature logs its window and its end · the gate reads the injected monotonic clock · a request for a key that is not loaded is refused with no dialog |
+| `allowWindows.test.ts` (26 tests, pure) | a window never covers the next generation of its key · a revocation fences an answer even with no window open, and never an answer for another key · `stale-key` wins over the other two fences · a fence never moved reads 0 · no grant reaches past its scope's ceiling (`login` pinned equal to `ASK_WINDOW_MS`, which the TEST imports) · a shorter grant never shortens a longer one · the two clocks — (11 min, 1 min) and (1 min, 11 min) refuse, the boundary is strict on both, a wall clock set back above `grantedAt` refuses · a login window never covers a Git signature · a book that did not change is the same object, and a grant never touches the book it was given · lock, login-end and sweep behave as the book says · **review round:** a dead window (wall clock set back, or ended on the monotonic clock) never blocks a grant · a window of generation 1 never blocks a grant for generation 2 · a live same-generation window that ends later still wins (*kept-later*) · `nextExpiry` is the earlier end of the two clocks |
+| `sshAgentManagerWindows.test.ts` (11 tests, on `sshAgentWorld.ts`) | re-adding a loaded key starts with no window · an answer after *Remove from SSH Agent* refuses and names it · *Allow for 10 minutes* on a prompt whose key was unloaded (or re-loaded) opens no window for the key loaded next · every silent signature logs its window and its end · the gate reads the injected monotonic clock · a request for a key that is not loaded is refused with no dialog · **review round:** the monotonic clock is read at the click (origin 10 h, prompt held 5 min, second request 12 min after arrival is covered) · the window runs ten minutes from ONE wall-clock reading at the click (clock +6 min per read) · a key loaded again gets its own window, the old generation's does not shadow it (stopped clock). `assertNoKeyMaterialLogged()` now runs in the LAST test of the file |
 
 `manager()` in the world gained `monotonic?: () => number` (the manager's last constructor parameter, optional with no default —
 a defaulted fourth parameter takes the constructor to complexity 5 and `npm run lint` says so). A test's monotonic origin is
@@ -1324,6 +1324,19 @@ the reset in `dispose()` change nothing a test can see in E1 — an unloaded key
 keep the book from holding windows of dead keys, which E2's row and expiry timer will read. And `forgetKey` in `serve()` alone is
 redundant with the generation check in `covers`: removing it, or the new generation, alone leaves the re-add test green;
 removing **both** turns it red (`1 !== 2`) — the defect needed both rules to be missing.
+
+**The E1.3 review round (Opus + Fable, 2026-10-20).** *Watched RED on the book as it was* (HEAD 3387fdcb, pure suite): *a dead window never
+blocks a grant* — `'opened'` expected, `'kept-later'` actual (the old rule compared only `until`); *a window of generation 1 never blocks a grant for
+generation 2* — the same pair; *nextExpiry is the earlier end of the two clocks* — expected `W + 2 min`, actual `W + 10 min` (the wall `until`). The
+manager tests added here pin behaviour that was already correct, so they cannot be red on the code: they were broken instead.
+**Break-it, every mutant:** in the book — `placed` back to the old rule (`existing.until >= until` only): both new grant tests red · liveness on the wall clock only: red
+only on *a window the monotonic clock already ended never blocks a grant either* (the reason that fifth test exists) · the "later" comparison dropped: *a shorter grant never
+shortens a longer one* and *ending the login windows moves no fence* red · the generation dropped from the liveness check: *generation 1 never blocks generation 2* red ·
+`nextExpiry` ending at the wall `until`: its test red. In the manager — `grantedAtMono = 0` and the arrival reading used in `settle`: both turn *the monotonic clock is read
+at the click* red · two wall-clock reads at the click, in either order: *the window runs ten minutes from ONE reading* red (one by the window ending early, the other by the log line's
+end) · for *a key loaded again gets its own window*: `forgetKey` removed from `serve()` **stays green** now (the book's same-generation rule covers it — the two rules are redundant, the test
+pins the pair); `forgetKey` removed AND the old `placed` rule restored: red (3 dialogs, not 2); generation never moving AND `forgetKey` removed: red (four tests); generation never moving
+alone: only *an answer given across a re-load refuses* red; `forgetKey` removed AND `covers` not checking the generation: red (two tests).
 
 ## What every text says the signing prompt does (2026-10-20, #197 E1.4)
 
