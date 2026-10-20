@@ -14,11 +14,18 @@ import {
   encodeIdentitiesAnswer,
   encodeSignResponse,
   encodeString,
+  keyFingerprintOf,
   keyTypeOf,
   describeUnknownShape,
 } from '../sshAgentProtocol';
+import { HOSTBOUND_METHOD, userauth } from './sshUserauth';
 
 const blob = (type: string, body = 'body') => Buffer.concat([encodeString(type), encodeString(body)]);
+
+/** The key the agent is asked to sign with, the key a login names, and a server's host key. */
+const SIGNING_KEY = blob('ssh-ed25519', 'the key the agent signs with');
+const OTHER_KEY = blob('ssh-ed25519', 'a different key');
+const HOST_KEY = blob('ssh-ed25519', 'the server host key');
 
 test('a frame split across chunks is assembled; several in one chunk all arrive', () => {
   const reader = new FrameReader();
@@ -87,49 +94,93 @@ test('a truncated or wrong-typed sign request is refused, never half-read', () =
 
 // ---- what is being signed: the sentence the human's decision rests on -------
 
-test('an SSH userauth blob is recognised, with the user and the service', () => {
-  const data = Buffer.concat([
-    encodeString(Buffer.alloc(32, 7)), // session id
-    Buffer.from([50]), // SSH_MSG_USERAUTH_REQUEST
-    encodeString('deploy'),
-    encodeString('ssh-connection'),
-    encodeString('publickey'),
-  ]);
+test('a complete publickey userauth is recognised, with the user and the service', () => {
+  // The positive companion of the refusals below: a file of "unrecognised" cases passes
+  // vacuously when the fixture itself is what the parser rejects (testing.md).
+  const data = userauth({ blob: SIGNING_KEY, user: 'deploy' });
 
-  const purpose = describeSignRequest(data);
+  const purpose = describeSignRequest(data, SIGNING_KEY);
+  // `hostKey` is omitted, not `undefined`: `deepEqual` tells the two apart, and so does a reader.
   assert.deepEqual(purpose, { kind: 'ssh-login', user: 'deploy', service: 'ssh-connection' });
   assert.match(describePurpose(purpose), /SSH login as "deploy"/);
+});
+
+test('a host-bound OpenSSH login is described as a login to that host key', () => {
+  // OpenSSH 8.9+ asks for `publickey-hostbound-v00@openssh.com` and appends the server host key
+  // (PROTOCOL §3.1). It used to land in "a signature whose purpose this build does not recognise".
+  const data = userauth({ blob: SIGNING_KEY, method: HOSTBOUND_METHOD, hostKey: HOST_KEY });
+
+  const purpose = describeSignRequest(data, SIGNING_KEY);
+  const fingerprint = keyFingerprintOf(HOST_KEY);
+  assert.deepEqual(purpose, {
+    kind: 'ssh-login',
+    user: 'git',
+    service: 'ssh-connection',
+    hostKey: fingerprint,
+  });
+  assert.ok(
+    describePurpose(purpose).includes(`to the server with host key ${fingerprint}`),
+    describePurpose(purpose),
+  );
+});
+
+test('a userauth with bytes after its last field is unrecognised', () => {
+  // The prefix a parser stops reading at is where a different request can hide.
+  const tail = Buffer.from('more');
+  assert.deepEqual(describeSignRequest(userauth({ blob: SIGNING_KEY, trailing: tail }), SIGNING_KEY), {
+    kind: 'unknown',
+  });
+  const hostBound = userauth({ blob: SIGNING_KEY, method: HOSTBOUND_METHOD, hostKey: HOST_KEY, trailing: tail });
+  assert.deepEqual(describeSignRequest(hostBound, SIGNING_KEY), { kind: 'unknown' });
+});
+
+test('a userauth for a different public key is unrecognised', () => {
+  // A login that names key A is not a login by key B — it is whatever else key B was asked to sign.
+  const data = userauth({ blob: OTHER_KEY });
+  assert.deepEqual(describeSignRequest(data, SIGNING_KEY), { kind: 'unknown' });
+});
+
+test('a userauth without the signature flag is unrecognised', () => {
+  // `has_signature = FALSE` is the probe a client sends to ask whether a key would be accepted;
+  // it is not the signed request, and a signature over it is not a login.
+  const data = userauth({ blob: SIGNING_KEY, hasSignature: false });
+  assert.deepEqual(describeSignRequest(data, SIGNING_KEY), { kind: 'unknown' });
+});
+
+test('a userauth cut short after the method is unrecognised', () => {
+  // The old fixture, moved: this is all the earlier prefix parse needed to call it a login.
+  const data = userauth({ blob: SIGNING_KEY, upTo: 'method' });
+  assert.deepEqual(describeSignRequest(data, SIGNING_KEY), { kind: 'unknown' });
+});
+
+test('a host-bound userauth without its host key is unrecognised', () => {
+  const data = userauth({ blob: SIGNING_KEY, method: HOSTBOUND_METHOD });
+  assert.deepEqual(describeSignRequest(data, SIGNING_KEY), { kind: 'unknown' });
 });
 
 test('a git commit signature is recognised by its SSHSIG namespace', () => {
   const data = Buffer.concat([Buffer.from('SSHSIG'), encodeString('git'), encodeString('')]);
 
-  const purpose = describeSignRequest(data);
+  const purpose = describeSignRequest(data, SIGNING_KEY);
   assert.deepEqual(purpose, { kind: 'sshsig', namespace: 'git' });
   assert.match(describePurpose(purpose), /Git signature/);
 });
 
 test('another SSHSIG namespace is named rather than mislabelled as git', () => {
   const data = Buffer.concat([Buffer.from('SSHSIG'), encodeString('file')]);
-  assert.match(describePurpose(describeSignRequest(data)), /"file" namespace/);
+  assert.match(describePurpose(describeSignRequest(data, SIGNING_KEY)), /"file" namespace/);
 });
 
 test('an unrecognised blob says so instead of guessing', () => {
   // A wrong description is worse than a vague one — it is what the decision rests on.
-  const purpose = describeSignRequest(Buffer.from('some other protocol entirely'));
+  const purpose = describeSignRequest(Buffer.from('some other protocol entirely'), SIGNING_KEY);
   assert.deepEqual(purpose, { kind: 'unknown' });
   assert.match(describePurpose(purpose), /does not recognise/);
 });
 
 test('a userauth blob for a method other than publickey is not reported as a login', () => {
-  const data = Buffer.concat([
-    encodeString(Buffer.alloc(32, 7)),
-    Buffer.from([50]),
-    encodeString('u'),
-    encodeString('ssh-connection'),
-    encodeString('password'),
-  ]);
-  assert.deepEqual(describeSignRequest(data), { kind: 'unknown' });
+  const data = userauth({ blob: SIGNING_KEY, user: 'u', method: 'password' });
+  assert.deepEqual(describeSignRequest(data, SIGNING_KEY), { kind: 'unknown' });
 });
 
 // --- what an unrecognised request leaves behind (0.77.0) ------------------------------------

@@ -142,7 +142,7 @@ export class SshAgentServer {
   }
 
   private async confirmAndSign(key: AgentKey, request: SignRequest): Promise<Buffer> {
-    if (await this.options.confirm(key, describeSignRequest(request.data), request.data)) {
+    if (await this.options.confirm(key, describeSignRequest(request.data, request.publicBlob), request.data)) {
       return this.signed(key, request.data, request.flags);
     }
     this.options.log(`REFUSED a signature with "${key.name}"`);

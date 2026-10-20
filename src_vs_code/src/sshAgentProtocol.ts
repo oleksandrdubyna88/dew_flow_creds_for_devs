@@ -19,6 +19,7 @@
  *       learn to click through.</li>
  * </ul>
  */
+import * as crypto from 'node:crypto';
 
 // Message numbers we implement. The rest are answered with FAILURE.
 export const SSH_AGENT_FAILURE = 5;
@@ -172,6 +173,12 @@ export function decodeSignRequest(payload: Buffer): SignRequest | undefined {
   return { publicBlob: publicBlob as Buffer, data: data as Buffer, flags: flags as number };
 }
 
+/** `SHA256:base64(sha256(blob))`, without padding — exactly what `ssh-keygen -lf` shows. */
+export function keyFingerprintOf(publicBlob: Buffer): string {
+  const digest = crypto.createHash('sha256').update(publicBlob).digest('base64').replace(/=+$/, '');
+  return `SHA256:${digest}`;
+}
+
 /** The key type name at the head of a public blob (`ssh-ed25519`, `ssh-rsa`, …). */
 export function keyTypeOf(publicBlob: Buffer): string | undefined {
   return new ByteReader(publicBlob).readString()?.toString('utf8');
@@ -181,17 +188,30 @@ export function keyTypeOf(publicBlob: Buffer): string | undefined {
  * What is about to be signed, in words a person can act on.
  *
  * <p>Two shapes reach an agent in practice. A **userauth request** (RFC 4252 §7) is an SSH
- * login: session id, the byte 50, the user name, the service, the literal `publickey`. An
+ * login: session id, the byte 50, the user name, the service, the method, `has_signature = TRUE`,
+ * the algorithm and the public key blob. OpenSSH 8.9+ asks for the method
+ * `publickey-hostbound-v00@openssh.com` and appends the server's host key blob (OpenSSH
+ * `PROTOCOL` §3.1), which is what lets `hostKey` name the server the login is for. An
  * **SSHSIG** blob (used by `git`, `ssh-keygen -Y`) starts with the magic `SSHSIG` and carries a
  * namespace — `git` for a commit or tag signature, `file` for `ssh-keygen -Y sign`.</p>
+ *
+ * <p>A login is recognised only when it is COMPLETE: every field present, the key it names equal
+ * to the key it is being signed with, and nothing after the last field. A prefix that merely
+ * starts like one is what a window of silent signatures must never be granted on.</p>
  *
  * <p>Anything else is reported as unrecognised rather than guessed at. A wrong description
  * would be worse than a vague one: it is the sentence the human's decision rests on.</p>
  */
 export type SignPurpose =
-  | { kind: 'ssh-login'; user: string; service: string }
+  | { kind: 'ssh-login'; user: string; service: string; hostKey?: string }
   | { kind: 'sshsig'; namespace: string }
   | { kind: 'unknown' };
+
+type SshLogin = Extract<SignPurpose, { kind: 'ssh-login' }>;
+
+/** The two public-key methods a client may sign (OpenSSH `PROTOCOL` §3.1; RFC 4252 §7 for the first). */
+const PUBLICKEY_METHOD = 'publickey';
+const HOSTBOUND_METHOD = 'publickey-hostbound-v00@openssh.com';
 
 /** An `SSHSIG` blob: `SSHSIG || namespace || reserved || hash_algorithm || H(message)`. */
 function describeSshsig(data: Buffer): SignPurpose {
@@ -204,28 +224,77 @@ function startsUserauth(sessionId: Buffer | undefined, messageType: number | und
   return sessionId !== undefined && sessionId.length >= 16 && messageType === 50;
 }
 
-function isPublicKeyLogin(user: string | undefined, service: string | undefined, method: string | undefined): boolean {
-  return user !== undefined && service !== undefined && method === 'publickey';
+interface UserauthHead {
+  user: string;
+  service: string;
+  method: string;
 }
 
-/** An RFC 4252 §7 userauth request: `session-id || 50 || user || service || "publickey" || …`. */
-function describeUserauth(data: Buffer): SignPurpose {
-  const reader = new ByteReader(data);
+/** `session-id || 50 || user || service || method`. */
+function readUserauthHead(reader: ByteReader): UserauthHead | undefined {
   if (!startsUserauth(reader.readString(), reader.readByte())) {
-    return { kind: 'unknown' };
+    return undefined;
   }
   const fields = [reader.readString(), reader.readString(), reader.readString()].map((part) =>
     part?.toString('utf8'),
   );
-  return isPublicKeyLogin(fields[0], fields[1], fields[2])
-    ? { kind: 'ssh-login', user: fields[0] as string, service: fields[1] as string }
-    : { kind: 'unknown' };
+  if (fields.some((field) => field === undefined)) {
+    return undefined;
+  }
+  return { user: fields[0] as string, service: fields[1] as string, method: fields[2] as string };
 }
 
-export function describeSignRequest(data: Buffer): SignPurpose {
+/** `has_signature = TRUE || algorithm || public key blob`, the blob being the one signing now. */
+function namesThisKey(reader: ByteReader, signingKeyBlob: Buffer): boolean {
+  const hasSignature = reader.readByte();
+  const algorithm = reader.readString();
+  const keyBlob = reader.readString();
+  return hasSignature === 1 && algorithm !== undefined && keyBlob !== undefined && keyBlob.equals(signingKeyBlob);
+}
+
+/** What follows the key blob, per method: nothing, or the server host key. `undefined` = not a login. */
+type TailReader = (reader: ByteReader) => { hostKey?: string } | undefined;
+
+const readNoTail: TailReader = (reader) => (reader.done ? {} : undefined);
+
+const readHostKeyTail: TailReader = (reader) => {
+  const hostKey = reader.readString();
+  return hostKey !== undefined && hostKey.length > 0 && reader.done
+    ? { hostKey: keyFingerprintOf(hostKey) }
+    : undefined;
+};
+
+const TAILS: ReadonlyMap<string, TailReader> = new Map([
+  [PUBLICKEY_METHOD, readNoTail],
+  [HOSTBOUND_METHOD, readHostKeyTail],
+]);
+
+/** The rest of the request after its head; `undefined` when it is not exactly a login for this key. */
+function readKeyTail(
+  reader: ByteReader,
+  method: string,
+  signingKeyBlob: Buffer,
+): { hostKey?: string } | undefined {
+  return namesThisKey(reader, signingKeyBlob) ? TAILS.get(method)?.(reader) : undefined;
+}
+
+/**
+ * An RFC 4252 §7 userauth request, whole: `session-id || 50 || user || service || method ||
+ * has_signature || algorithm || key [|| host key]` and nothing after it.
+ */
+function describeUserauth(data: Buffer, signingKeyBlob: Buffer): SignPurpose {
+  const reader = new ByteReader(data);
+  const head = readUserauthHead(reader);
+  const tail = head === undefined ? undefined : readKeyTail(reader, head.method, signingKeyBlob);
+  return head === undefined || tail === undefined
+    ? { kind: 'unknown' }
+    : { kind: 'ssh-login', user: head.user, service: head.service, ...tail };
+}
+
+export function describeSignRequest(data: Buffer, signingKeyBlob: Buffer): SignPurpose {
   return data.subarray(0, 6).toString('latin1') === 'SSHSIG'
     ? describeSshsig(data)
-    : describeUserauth(data);
+    : describeUserauth(data, signingKeyBlob);
 }
 
 /**
@@ -247,11 +316,17 @@ export function describeUnknownShape(data: Buffer): string {
   return `${data.length} bytes, starts ${head}`;
 }
 
+/** A login, and the server it is for when the client said so (the host-bound method). */
+function describeLogin(login: SshLogin): string {
+  const sentence = `an SSH login as "${login.user}" (${login.service})`;
+  return login.hostKey === undefined ? sentence : `${sentence} to the server with host key ${login.hostKey}`;
+}
+
 /** One sentence for the confirmation dialog. */
 export function describePurpose(purpose: SignPurpose): string {
   switch (purpose.kind) {
     case 'ssh-login':
-      return `an SSH login as "${purpose.user}" (${purpose.service})`;
+      return describeLogin(purpose);
     case 'sshsig':
       return purpose.namespace === 'git'
         ? 'a Git signature (commit or tag)'

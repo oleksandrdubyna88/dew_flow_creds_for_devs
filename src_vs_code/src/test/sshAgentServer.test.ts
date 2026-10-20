@@ -13,12 +13,15 @@ import {
   SSH_AGENT_FAILURE,
   SSH_AGENT_IDENTITIES_ANSWER,
   SSH_AGENT_SIGN_RESPONSE,
+  SignPurpose,
   encodeFrame,
   encodeString,
+  keyFingerprintOf,
 } from '../sshAgentProtocol';
 import { AgentKey, SshAgentServer, agentSocketPath } from '../sshAgentServer';
 import { parseSshPrivateKey } from '../sshKeyParse';
 import { signForAgent } from '../sshAgentSign';
+import { HOSTBOUND_METHOD, userauth } from './sshUserauth';
 
 /**
  * The agent over a REAL socket, driven with hand-built frames — the closest a unit test gets to
@@ -54,7 +57,7 @@ interface Harness {
 
 async function harness(
   keys: AgentKey[],
-  confirm: (key: AgentKey) => Promise<boolean> = () => Promise.resolve(true),
+  confirm: (key: AgentKey, purpose: SignPurpose) => Promise<boolean> = () => Promise.resolve(true),
 ): Promise<Harness> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-agent-'));
   const socketPath =
@@ -65,7 +68,7 @@ async function harness(
   const server = new SshAgentServer({
     socketPath,
     keys: () => keys,
-    confirm: (key) => confirm(key),
+    confirm: (key, purpose) => confirm(key, purpose),
     log: (message) => logs.push(message),
   });
   await server.listen();
@@ -177,6 +180,51 @@ test('EVERY signature is confirmed — a second request asks again', async () =>
     await h.request(signRequestFor(a.key.identity.publicBlob, Buffer.from('one')));
     await h.request(signRequestFor(a.key.identity.publicBlob, Buffer.from('two')));
     assert.equal(asked, 2);
+  } finally {
+    h.dispose();
+  }
+});
+
+test('the server checks the purpose against the key it was asked for: a host-bound login of the served key', async () => {
+  // What the dialog says is decided here, from the bytes AND the key the request names — the
+  // request below is what a current OpenSSH client sends, and it used to read as "unrecognised".
+  const a = newKey('prod key');
+  const hostKey = Buffer.concat([encodeString('ssh-ed25519'), encodeString('the server host key')]);
+  let seen: SignPurpose | undefined;
+  const h = await harness([a.key], (_key, purpose) => {
+    seen = purpose;
+    return Promise.resolve(true);
+  });
+  try {
+    const data = userauth({ blob: a.key.identity.publicBlob, method: HOSTBOUND_METHOD, hostKey });
+    await h.request(signRequestFor(a.key.identity.publicBlob, data));
+
+    assert.deepEqual(seen, {
+      kind: 'ssh-login',
+      user: 'git',
+      service: 'ssh-connection',
+      hostKey: keyFingerprintOf(hostKey),
+    });
+  } finally {
+    h.dispose();
+  }
+});
+
+test('a login that names key A, sent as a sign request for key B, is not a login', async () => {
+  // Both keys are really held. The bytes say "log in with A"; the request asks B to sign them.
+  // Reading that as a login would put a login's name on a signature nobody logged in with.
+  const a = newKey('key A');
+  const b = newKey('key B');
+  let seen: SignPurpose | undefined;
+  const h = await harness([a.key, b.key], (_key, purpose) => {
+    seen = purpose;
+    return Promise.resolve(true);
+  });
+  try {
+    const data = userauth({ blob: a.key.identity.publicBlob });
+    await h.request(signRequestFor(b.key.identity.publicBlob, data));
+
+    assert.deepEqual(seen, { kind: 'unknown' });
   } finally {
     h.dispose();
   }

@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a login to a current OpenSSH server is named, with the server's host key
+
+- **The signing prompt names a login to an OpenSSH 8.9+ server.** Since 8.9 the client asks the agent to sign the
+  host-bound form of the login request (`publickey-hostbound-v00@openssh.com`), and this agent knew only the plain
+  one, so every such login asked *"…to sign a signature whose purpose this build does not recognise?"*. The prompt
+  now reads *an SSH login as "git" (ssh-connection) to the server with host key SHA256:…* — the host key is what the
+  client signed over, so the person can see which server the login is for.
+- **Only a complete login request is called a login.** The request is read whole: every field, the key it names must
+  be the key being signed with, and nothing may follow the last field. A request that only *starts* like a login, names
+  another key, or is the "would this key be accepted" probe (no signature flag) is described as unrecognised, which is
+  the honest sentence for something this build cannot name.
+
 ## [1.14.1] — 2026-10-12 — A crashed window no longer slows every refusal
 
 ### Fixed — a crashed window no longer slows every refusal

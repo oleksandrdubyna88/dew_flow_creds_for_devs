@@ -12,18 +12,31 @@
 // ssh-add that ships with Git for Windows cannot connect to a named pipe (measured
 // 2026-08-25: "Bad file descriptor"), which is the reason the extension says so in its
 // signing config.
+//
+// Section 5 (POSIX only) goes one step further: a real `ssh` LOGS IN to a real `sshd` through
+// the real manager, and the dialog must name the login with the server's host key — the
+// host-bound request a current OpenSSH sends, which the classifier once called "unrecognised"
+// (#197, E1.1). `sshd -d` serves exactly one connection without forking, so nothing it starts
+// can outlive a kill of its own pid.
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFile } = require('child_process');
+const net = require('net');
+const { execFile, spawn } = require('child_process');
 
 const OUT = path.join(__dirname, '..', 'out');
 const { SshAgentServer, agentSocketPath } = require(path.join(OUT, 'sshAgentServer.js'));
 const { parseSshPrivateKey } = require(path.join(OUT, 'sshKeyParse.js'));
 const { signForAgent } = require(path.join(OUT, 'sshAgentSign.js'));
+const { ALLOW_ONCE } = require(path.join(OUT, 'agentConsent.js'));
 
 const isWindows = process.platform === 'win32';
+const SSHD = '/usr/sbin/sshd';
+// A modal nobody answers. The stub (written once, below) reads its answer from a global at CALL
+// time, so one module serves both sections that need a `vscode`: it can be a promise that never
+// settles (section 4) or a click on "Allow once" (section 5).
+const NEVER_ANSWER = Symbol.for('ssh-agent-itest.never-answer');
 const OPENSSH_DIR = 'C:/Windows/System32/OpenSSH';
 const tools = {
   sshAdd: isWindows ? path.join(OPENSSH_DIR, 'ssh-add.exe') : 'ssh-add',
@@ -47,7 +60,9 @@ function run(exe, args, options = {}) {
 }
 
 async function main() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-agent-itest-'));
+  // Short on purpose: the manager's socket is <dir>/<m|l>/keys/<pid>/agent.sock, and a unix socket
+  // path may not pass ~104 bytes (macOS). `testsToDelete-` is the sweep's prefix for leftovers.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'testsToDelete-ait-'));
   const socketPath = isWindows
     ? `\\\\.\\pipe\\creds-for-devs-agent-itest-${process.pid}`
     : path.join(dir, 'agent.sock');
@@ -165,8 +180,13 @@ async function main() {
     `exit ${refused.code}`,
   );
 
-  // ---- 4. an unanswered prompt refuses, through the REAL manager (2026-09-24) ---------------
-  await unansweredPromptRefuses(pem, publicPath, dir);
+  // ---- 4 and 5 need a `vscode`: one stub for both, because the manager module is cached --------
+  await withVscodeStub(dir, async () => {
+    // ---- 4. an unanswered prompt refuses, through the REAL manager (2026-09-24) -------------
+    await unansweredPromptRefuses(pem, publicPath, dir);
+    // ---- 5. a real ssh logs in to a real sshd through the agent (#197, E1.1) -----------------
+    await liveHostBoundLogin(pem, publicPath, dir);
+  });
 
   // --- what makes `-A` more than a flag (2026-08-26) --------------------------------------
   //
@@ -226,22 +246,41 @@ async function main() {
  * asks the real client to sign: it must fail promptly, not hang until run()'s 15 s kill.
  */
 async function unansweredPromptRefuses(pem, publicPath, dir) {
+  global.__AGENT_ANSWER__ = NEVER_ANSWER;
+  await driveUnansweredPrompt(pem, publicPath, dir);
+}
+
+/**
+ * Resolves `vscode` to a stub for the duration of `body`, restored whatever happens so a later
+ * section never resolves it to this stub.
+ *
+ * <p>`require(sshAgentManager.js)` is cached after its first load, and the module stays bound to
+ * the `vscode` it first resolved — so the stub is written ONCE and every section that builds a
+ * manager shares it. Its `showWarningMessage` records each dialog and reads its answer from
+ * `global.__AGENT_ANSWER__` when it is called, not when it is written.</p>
+ */
+async function withVscodeStub(dir, body) {
   const Module = require('module');
   const stubPath = path.join(dir, 'vscode-stub.cjs');
   fs.writeFileSync(
     stubPath,
-    `module.exports = { window: {
-       showWarningMessage: () => new Promise(() => {}),
+    `const NEVER = Symbol.for(${JSON.stringify(NEVER_ANSWER.description)});
+     module.exports = { window: {
+       showWarningMessage: (message, options, ...buttons) => {
+         global.__AGENT_DIALOGS__.push({ message, buttons });
+         const answer = global.__AGENT_ANSWER__;
+         return answer === NEVER ? new Promise(() => {}) : Promise.resolve(answer);
+       },
        createOutputChannel: () => ({ appendLine: (l) => global.__AGENT_LOG__.push(l), dispose() {} }),
      } };`,
   );
   global.__AGENT_LOG__ = [];
+  global.__AGENT_DIALOGS__ = [];
   const original = Module._resolveFilename;
   Module._resolveFilename = (request, ...rest) => (request === 'vscode' ? stubPath : original.call(Module, request, ...rest));
   try {
-    await driveUnansweredPrompt(pem, publicPath, dir);
+    await body();
   } finally {
-    // Restored whatever happens, so a later section never resolves `vscode` to this stub.
     Module._resolveFilename = original;
   }
 }
@@ -251,7 +290,7 @@ async function driveUnansweredPrompt(pem, publicPath, dir) {
   const published = {};
   const manager = new SshAgentManager(
     { getPrivateKey: () => Promise.resolve(pem) },
-    path.join(dir, 'manager'),
+    path.join(dir, 'm'),
     { replace: (name, value) => { published[name] = value; }, delete: () => undefined, set description(_v) {} },
     () => undefined,
     undefined,
@@ -278,6 +317,206 @@ async function driveUnansweredPrompt(pem, publicPath, dir) {
     global.__AGENT_LOG__.join(' | '),
   );
   manager.dispose();
+}
+
+/** Spawns a child and collects its output — unlike `run`, the caller holds the pid and can end it. */
+function launch(exe, args, options = {}) {
+  const child = spawn(exe, args, { stdio: ['ignore', 'pipe', 'pipe'], ...options });
+  const result = { child, stdout: '', stderr: '', exited: false };
+  child.stdout.on('data', (chunk) => {
+    result.stdout += chunk;
+  });
+  child.stderr.on('data', (chunk) => {
+    result.stderr += chunk;
+  });
+  result.done = new Promise((resolve) => {
+    child.once('exit', (code) => {
+      result.exited = true;
+      resolve(code);
+    });
+    child.once('error', (error) => {
+      result.stderr += String(error);
+      result.exited = true;
+      resolve(-1);
+    });
+  });
+  return result;
+}
+
+/** Resolves when the child has exited or `ms` have passed — whichever is first. */
+function settledWithin(result, ms) {
+  return Promise.race([result.done, new Promise((resolve) => setTimeout(resolve, ms, undefined))]);
+}
+
+/** A free loopback port: bind 0, read it, let go. Racy by nature — the caller retries once. */
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const probe = net.createServer();
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const { port } = probe.address();
+      probe.close(() => resolve(port));
+    });
+  });
+}
+
+/**
+ * Starts `sshd -d` on a fresh port and waits for its "Server listening" line.
+ *
+ * <p>Not a TCP probe: under `-d` a probe would spend the ONE connection sshd serves. Returns
+ * `{ sshd, port, knownHosts }`, or `{ sshd, failure }` naming what sshd said — never a skip,
+ * because a masked failure here is exactly how a live section turns into a green that proves
+ * nothing.</p>
+ */
+async function startSshd(sshdDir, hostKeyPath, authorizedKeys) {
+  const port = await freePort();
+  const knownHosts = path.join(sshdDir, 'known_hosts');
+  const hostPublic = fs.readFileSync(`${hostKeyPath}.pub`, 'utf8').trim().split(/\s+/).slice(0, 2).join(' ');
+  fs.writeFileSync(knownHosts, `[127.0.0.1]:${port} ${hostPublic}\n`);
+  const config = path.join(sshdDir, 'sshd_config');
+  // Absolute paths only: sshd refuses to start from a relative one.
+  fs.writeFileSync(
+    config,
+    [
+      `ListenAddress 127.0.0.1:${port}`,
+      `HostKey ${hostKeyPath}`,
+      `AuthorizedKeysFile ${authorizedKeys}`,
+      `PidFile ${path.join(sshdDir, 'sshd.pid')}`,
+      'UsePAM no',
+      'StrictModes no',
+      'PasswordAuthentication no',
+      'KbdInteractiveAuthentication no',
+      '',
+    ].join('\n'),
+  );
+  const sshd = launch(SSHD, ['-d', '-e', '-f', config]);
+  const listening = new RegExp(`Server listening on 127\\.0\\.0\\.1 port ${port}`);
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    if (listening.test(sshd.stderr)) {
+      return { sshd, port, knownHosts };
+    }
+    if (sshd.exited) {
+      return { sshd, failure: `sshd exited before it listened: ${sshd.stderr.trim()}` };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return { sshd, failure: `no "Server listening" line within 10 s: ${sshd.stderr.trim()}` };
+}
+
+/** Ends a child by ITS pid if it is still running, and waits (bounded) for its exit. */
+async function endChild(result) {
+  if (!result.exited) {
+    result.child.kill();
+  }
+  await settledWithin(result, 5_000);
+}
+
+/**
+ * A real `ssh` logs in to a real, user-mode `sshd` through the real manager, and the dialog the
+ * person would see must name a LOGIN, with the SERVER'S HOST KEY (#197, E1.1).
+ *
+ * <p>OpenSSH 8.9+ signs `publickey-hostbound-v00@openssh.com` — the userauth request plus the
+ * server host key. Before this section the classifier read only `publickey`, so every login to a
+ * current server asked "…to sign a signature whose purpose this build does not recognise?". The
+ * unit tests build that request by hand from the specification; only a real client proves the
+ * hand-built bytes are the ones OpenSSH sends.</p>
+ *
+ * <p>POSIX only: `sshd` runs as the current user on a loopback port, with a throwaway host key.
+ * A login from Windows is M1 in the plan — it needs a real Windows client and a real server.</p>
+ */
+async function liveHostBoundLogin(pem, publicPath, dir) {
+  if (isWindows) {
+    console.log('skip  live OpenSSH login — POSIX only; M1 covers Windows');
+    return;
+  }
+  if (!fs.existsSync(SSHD)) {
+    if (process.env.CI === 'true') {
+      check('a live OpenSSH login ran', false, `${SSHD} is missing — a skipped live login on the runner proves nothing`);
+    } else {
+      console.log('skip  live OpenSSH login — sshd not installed');
+    }
+    return;
+  }
+  const sshdDir = fs.mkdtempSync(path.join(os.tmpdir(), 'testsToDelete-sshd-'));
+  let sshd;
+  let client;
+  let manager;
+  try {
+    const hostKeyPath = path.join(sshdDir, 'host_key');
+    const keygen = await run(tools.sshKeygen, ['-q', '-t', 'ed25519', '-N', '', '-f', hostKeyPath]);
+    check('a throwaway sshd host key was generated', keygen.code === 0, keygen.stderr.trim());
+    const fingerprintLine = await run(tools.sshKeygen, ['-l', '-E', 'sha256', '-f', `${hostKeyPath}.pub`]);
+    const hostFingerprint = /SHA256:\S+/.exec(fingerprintLine.stdout)?.[0];
+    check('ssh-keygen -l printed the host key fingerprint', hostFingerprint !== undefined, fingerprintLine.stdout.trim());
+    const authorizedKeys = path.join(sshdDir, 'authorized_keys');
+    fs.writeFileSync(authorizedKeys, `${fs.readFileSync(publicPath, 'utf8').trim()}\n`);
+
+    let started = await startSshd(sshdDir, hostKeyPath, authorizedKeys);
+    if (started.failure !== undefined && /Address already in use/i.test(started.sshd.stderr)) {
+      // The free-port race: someone took the port between the probe and sshd's bind. Once, fresh port.
+      await endChild(started.sshd);
+      started = await startSshd(sshdDir, hostKeyPath, authorizedKeys);
+    }
+    sshd = started.sshd;
+    check('sshd -d is listening on loopback', started.failure === undefined, started.failure);
+    if (started.failure !== undefined) {
+      return;
+    }
+
+    const published = {};
+    const { SshAgentManager } = require(path.join(OUT, 'sshAgentManager.js'));
+    manager = new SshAgentManager(
+      { getPrivateKey: () => Promise.resolve(pem) },
+      path.join(dir, 'l'),
+      { replace: (name, value) => { published[name] = value; }, delete: () => undefined, set description(_v) {} },
+      () => undefined,
+    );
+    const loaded = await manager.load('a1', { id: 'e-live', name: 'itest key', isSshEnabled: false, isSshKey: true });
+    check('the real manager loads and serves the key for the live login', loaded.ok === true, loaded.reason);
+    const socket = published.SSH_AUTH_SOCK;
+    // sun_path is ~104 bytes on macOS; a longer path would fail to bind with an error about nothing.
+    check('the agent socket path fits a unix socket', typeof socket === 'string' && socket.length < 104, String(socket));
+
+    const version = await run('ssh', ['-V']);
+    console.log(`info  ssh -V: ${(version.stderr || version.stdout).trim()}`);
+
+    global.__AGENT_DIALOGS__.length = 0;
+    global.__AGENT_ANSWER__ = ALLOW_ONCE;
+    client = launch('ssh', [
+      '-F', '/dev/null',
+      '-o', `IdentityAgent=${socket}`,
+      '-o', 'IdentitiesOnly=yes',
+      '-o', `IdentityFile=${publicPath}`,
+      '-o', 'BatchMode=yes',
+      '-o', `UserKnownHostsFile=${started.knownHosts}`,
+      '-o', 'StrictHostKeyChecking=yes',
+      '-p', String(started.port),
+      `${os.userInfo().username}@127.0.0.1`,
+      'true',
+    ]);
+    const code = await Promise.race([client.done, new Promise((resolve) => setTimeout(resolve, 20_000, 'timeout'))]);
+    check('the real ssh logged in to sshd through the agent', code === 0, `exit ${code}: ${client.stderr.trim()}`);
+    check('the login raised exactly one dialog', global.__AGENT_DIALOGS__.length === 1, `${global.__AGENT_DIALOGS__.length} dialogs`);
+    const message = global.__AGENT_DIALOGS__[0]?.message ?? '';
+    check('the dialog names an SSH login', /an SSH login as "/.test(message), JSON.stringify(message));
+    check(
+      "the dialog names the server's host key",
+      hostFingerprint !== undefined && message.includes(`host key ${hostFingerprint}`),
+      JSON.stringify(message),
+    );
+  } finally {
+    // Order matters: the client first (its own pid), then sshd by ITS pid, then wait for its exit —
+    // only then is the folder removed, because sshd holds files in it until it is gone.
+    if (client !== undefined) {
+      await endChild(client);
+    }
+    if (sshd !== undefined) {
+      await endChild(sshd);
+    }
+    manager?.dispose();
+    fs.rmSync(sshdDir, { recursive: true, force: true });
+  }
 }
 
 main().catch((error) => {

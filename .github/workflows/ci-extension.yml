@@ -126,7 +126,21 @@ jobs:
       # reason `module_tests.md` gave for leaving it out entirely, and it is a good reason for
       # reading the result narrowly rather than for running nothing. What this protects is the
       # agent PROTOCOL — parse, load, list, sign — which no other job exercises against a real
-      # client. Catalogued in research/module_tests.md.
+      # client. It also runs a LIVE login: a real `ssh` against a user-mode `sshd -d` on loopback,
+      # through the real manager, and the dialog must name the login with the server's host key
+      # (#197, E1.1). Catalogued in research/module_tests.md.
+      #
+      # That section needs `sshd`. On CI the section FAILS without it — a skipped live login on the
+      # runner proves nothing — so it is installed here when the image lacks it. The cost is one apt
+      # run (tens of seconds) the first time a runner image does not carry it; the system `ssh`
+      # service the package may start on port 22 is not used, the test starts its own `sshd -d` on a
+      # free loopback port. `/run/sshd` is belt and braces: a non-root sshd does not need its
+      # privilege-separation directory, but a missing one is a known sshd abort.
+      - name: Install sshd for the live OpenSSH login
+        run: |
+          test -x /usr/sbin/sshd || (sudo apt-get update && sudo apt-get install -y --no-install-recommends openssh-server)
+          sudo mkdir -p /run/sshd
+
       - name: Integration test (SSH agent against a real ssh-add)
         run: npm run itest:ssh-agent
 
