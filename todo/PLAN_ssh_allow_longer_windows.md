@@ -65,15 +65,15 @@ offered.
 
 **Found, and deliberately not in this plan** — each becomes its own GitHub issue (§13):
 
-- **D4** — deleting or editing a key entry does not unload it from the agent; the old bytes stay served until *Remove*
+- **D4** ([#257](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/257)) — deleting or editing a key entry does not unload it from the agent; the old bytes stay served until *Remove*
   or a window reload. Touches the tree, edit and sync paths (owner, 2026-10-20: separate issue).
-- **Corporate deactivation does not close open forms.** `evictAndLock` calls `lock()` directly and skips `lockNow`'s
+- **Corporate deactivation does not close open forms** ([#258](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/258)). `evictAndLock` calls `lock()` directly and skips `lockNow`'s
   `formPanels.closeAll()`; `research/module_extension.md` claims that "a third lock path cannot forget a step". This
   plan's hook lives in `VaultKeys.lock()` precisely so the SSH half cannot have the same gap.
-- **The *Forward the SSH agent (-A)* checkbox has no warning** although `PLAN_wsl_agent_relay.md:95` says the hop
+- **The *Forward the SSH agent (-A)* checkbox has no warning** ([#259](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/259)) although `PLAN_wsl_agent_relay.md:95` says the hop
   "keeps D1's existing warning" (`entityFormPage.ts:346`, `entityViewPage.ts:499`). With a window open, every process
   on the remote host signs silently.
-- **A prompt budget** against a process that floods the agent with requests to train the person to click (the broker
+- **A prompt budget** ([#260](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/260)) against a process that floods the agent with requests to train the person to click (the broker
   has one, `aliasThrottle.ts`: five prompts per sliding minute). E2's one-prompt-per-key with at most three waiting
   requests removes the pile-up and bounds the queue; the SEQUENTIAL fatigue (prompt after prompt, each answered) is the
   follow-up.
@@ -570,10 +570,10 @@ record.
 | Long windows for Git signatures or unrecognised requests | a silent Git signature is permanent impersonation | O9 |
 | A per-entry opt-in | owner chose every key; the scope rule (O9) bounds the risk instead | O2 |
 | Refusing all signatures while locked | changes current behaviour; owner kept the per-use prompt | O3 |
-| D4 (delete/edit does not unload) | touches tree, edit and sync paths | new issue |
-| Corporate deactivation closing forms | a separate gap in `evictAndLock` | new issue |
-| A warning on the `-A` checkbox | separate surface; the prompt names forwarded hosts meanwhile | new issue |
-| A prompt budget against sequential floods | the queue is capped here (three waiting); a per-minute budget for prompts that are each answered is its own design | new issue |
+| D4 (delete/edit does not unload) | touches tree, edit and sync paths | #257 |
+| Corporate deactivation closing forms | a separate gap in `evictAndLock` | #258 |
+| A warning on the `-A` checkbox | separate surface; the prompt names forwarded hosts meanwhile | #259 |
+| A prompt budget against sequential floods | the queue is capped here (three waiting); a per-minute budget for prompts that are each answered is its own design | #260 |
 | Unifying with the MCP stamp | not the third instance (§6.1) | — |
 | Remembering the last chosen length | would make yesterday's exception today's Enter key | O5 |
 | Inspecting the packaged VSIX for a marker | `vsce package` always runs `vscode:prepublish` = `npm run bundle` from source, and the release builds from a clean CI checkout (`release.yml:783`); a stale artefact cannot reach users on that road | gate finding rejected (§16) |
@@ -602,7 +602,7 @@ record.
 - [ ] Every invariant I1–I10 has its test (§11), named after the guarantee.
 - [ ] Every text in D5's row tells the truth in all five help languages; `helpCoverage` green.
 - [ ] Docs per §12; Mermaid diagrams render.
-- [ ] The four follow-up issues of §13 are filed and linked here.
+- [x] The four follow-up issues of §13 are filed and linked here (#257, #258, #259, #260 — 2026-10-20, owner-approved).
 - [ ] Temp folders created by the touched tests carry `testsToDelete-`.
 - [ ] coai gate: `review_plan` reached `proceed` before code; `review_code` ran on the finished branch; every finding
       resolved; verdicts and reviewer counts reported.
@@ -671,8 +671,7 @@ disagreed on where one-prompt-per-key goes; the decision and its reason are unde
   replacing `allowedUntil`, the `confirm` split and the I10 log line. Invariants I1, I2, I3 (unload / re-load / dispose
   — in E1 the only crossing outcome is `stale-key` → refuse), I4, I5 (the `all` rule, and the pure rule that a `login`
   window never covers SSHSIG or unknown), I8 (the book's rule), I10. Defects D1, D2, D6. Decisions O7, O8, O9 (as a
-  rule in the book). Also the four follow-up issues of §13 are filed and linked in §3 — **with the owner's approval
-  first**, because filing an issue in this public repository publishes it.
+  rule in the book). The four follow-up issues of §13 are already filed (#257–#260, owner-approved 2026-10-20).
 - **Depends on.** The plan gate (`review_plan` → `proceed`). Nothing else.
 - **Done when.** Every story's RED is quoted beside its GREEN; the suite, typecheck, lint and ratchet are green; the
   live OpenSSH section of `itest:ssh-agent` runs (not skips) in CI; M1 is measured from Windows (a real host-bound login
