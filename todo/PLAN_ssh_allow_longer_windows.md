@@ -234,9 +234,11 @@ for this key*, not "starts like one":
 - The existing positive fixture stops after the method field (`test/sshAgentProtocol.test.ts:89-99`); under the strict
   rule it is a malformed request, so it is rewritten as a complete userauth, and a copy of the old short form becomes
   the *"a userauth cut short is unrecognised"* case.
-- For host-bound, the purpose carries the server host key's `SHA256:` fingerprint, and the prompt names it: *an SSH
-  login as "git" (ssh-connection) to the server with host key SHA256:…*. That is more than the prompt could ever say,
-  and it is what the person needs to decide.
+- For host-bound, the purpose carries the server host key's `SHA256:` fingerprint, and the prompt names it on its own
+  line: *This login is for the server whose host key is ED25519 SHA256:…*. The agent does not verify it — sshd does:
+  it compares the host key in the packet with its own and signs over its own (`auth2-pubkey.c`,
+  `"packet contained wrong host key"`), so a signature over host key H is accepted only by the server holding H. That
+  is more than the prompt could ever say, and it is what the person needs to decide.
 
 `SignPurpose`'s `ssh-login` variant gains `hostKey?: string`; `describePurpose` (`:250-262`) gains one branch.
 
@@ -516,7 +518,7 @@ Story names are the guarantee. "RED today" is the observed failure on `origin/ma
      window still prompts*;
   2. **a live OpenSSH login** (POSIX): a user-mode `sshd` on `127.0.0.1` and a free port, with a fresh host key and an
      `authorized_keys` holding the agent key, in a `testsToDelete-sshd-<id>` folder; `ssh -o IdentityAgent=<agent socket>`
-     through the REAL manager; the prompt the stub receives names *an SSH login … to the server with host key* equal to
+     through the REAL manager; the prompt the stub receives names *an SSH login* and *the server whose host key is* the fingerprint equal to
      that fresh host key's fingerprint. This is the CI evidence for D6 that a hand-built fixture cannot give — the bytes
      come from the real OpenSSH client. Where `sshd` is missing the section says so and skips **locally**; in CI
      (`CI=true`) a missing `sshd` fails the job, because a check that skips on the runner proves nothing. The sshd
@@ -720,6 +722,15 @@ disagreed on where one-prompt-per-key goes; the decision and its reason are unde
   behaviour change, so it belongs in a minor release, not a patch. (3) Its abort fencing (§6.4) and the lock's epoch
   fencing are the two halves of one boundary — the row button must *beat an open prompt* (S8) — and E3's list step is
   what exercises the fencing in anger. Building the two fences together, in E2, keeps the boundary in one review.
+- **What E1.2's security judgement left for E2** (Fable, 2026-10-20). (1) The membership check stays after EVERY
+  await, the queue wait included: when a waiting request's turn starts it checks that its key object is still served
+  and refuses WITHOUT prompting if not — a prompt for a dead object whose *Allow for 10 minutes* writes a window is
+  the D2 window half again. (2) One method per meaning: the row button and the lock end WINDOWS and never revoke a
+  key (it stays loaded, O3); only `serve`/`unload`/`dispose` revoke. (3) Frames on one socket are answered in
+  completion order today (`void this.handle` per frame, `sshAgentServer.ts:112-114`); once requests can wait in a
+  queue, a client that pipelines `REQUEST_IDENTITIES` behind a held `SIGN_REQUEST` would read the wrong reply — the
+  queue answers each socket in request order. Test: *a pipelined identities request behind a held sign request is
+  answered in order*. (OpenSSH does not pipeline; other clients may.)
 - **Depends on.** E1 (the book with its fences, `generation`, revoke-on-replace).
 - **Done when.** S5's evidence goes through the real seam: a real `VaultKeys` and a real manager joined by
   `connectAgentToLock`, locked once by `lock()` and once by `evictAndLock`, never a direct `endAllWindows` call. The
