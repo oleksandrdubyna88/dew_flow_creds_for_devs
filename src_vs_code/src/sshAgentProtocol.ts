@@ -389,6 +389,15 @@ export function describeUnknownShape(data: Buffer): string {
   return `${data.length} bytes, starts ${head}`;
 }
 
+/**
+ * Text with no way to start a line of its own: control and format characters (newlines, RTL and
+ * zero-width marks — `\p{C}`) and the Unicode line and paragraph separators become `?`. The core of
+ * `displayUser`, and what the agent's log applies to every line, so a name cannot forge one.
+ */
+export function withoutControlChars(text: string): string {
+  return text.replace(/[\p{C}\p{Zl}\p{Zp}]/gu, '?');
+}
+
 /** The longest user name a prompt shows, ellipsis included. */
 const MAX_USER_DISPLAY = 64;
 
@@ -399,7 +408,7 @@ const MAX_USER_DISPLAY = 64;
  * characters with `…`. The user is the requester's text: nothing of it may start a line.
  */
 function displayUser(user: string): string {
-  const safe = user.replace(/[\p{C}\p{Zl}\p{Zp}]/gu, '?').replace(/[\\"]/g, '\\$&');
+  const safe = withoutControlChars(user).replace(/[\\"]/g, '\\$&');
   const characters = [...safe];
   return characters.length <= MAX_USER_DISPLAY ? safe : `${characters.slice(0, MAX_USER_DISPLAY - 1).join('')}…`;
 }

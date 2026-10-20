@@ -7,6 +7,7 @@ import {
   describePurposeForLog,
   describeServerLine,
   describeUnknownShape,
+  withoutControlChars,
 } from './sshAgentProtocol';
 import { localRequestTimeLine } from './requestTime';
 import { withTimeout } from './withTimeout';
@@ -34,8 +35,10 @@ import { EntityMetadata, TreeNode } from './types';
  *
  * <p>Key material lives in this object's memory for as long as a key is loaded, and NOWHERE
  * else — the point of the feature is that no file with mode 0600 exists to be read, copied or
- * left behind by a crash. `dispose()` drops it with the window, which is also the whole
- * revocation story, exactly as it is for the agent broker's grants.</p>
+ * left behind by a crash. `dispose()` drops it with the window, as it does for the agent
+ * broker's grants. Revocation is also `revoke()` on the key object, called by `unload()`, by a
+ * later `load` of the same entity and by `dispose()`, so a holder that kept the object cannot
+ * sign with it (#197).</p>
  *
  * <p><b>The confirmation is per use and cannot be made sticky by accident.</b> "Allow for 10
  * minutes" exists because `git push` signs and authenticates in one breath and two modals per
@@ -89,6 +92,8 @@ export class SshAgentManager implements vscode.Disposable {
   /** entityId -> the moment a blanket allow expires. In memory only, by design. */
   private readonly allowedUntil = new Map<string, number>();
   private output: vscode.OutputChannel | undefined;
+  /** Set by `dispose()` for good: the log is closed with the window. */
+  private disposed = false;
 
   constructor(
     private readonly storage: StorageManager,
@@ -178,6 +183,12 @@ export class SshAgentManager implements vscode.Disposable {
    * handle lets go of the parsed key too, so an object kept past its life holds no material to misuse.
    * The server's own "could not sign (unsupported request)" cannot say this — `signForAgent` also returns
    * `undefined` for a key or a flag it cannot sign.
+   *
+   * <p><b>What this does NOT do — a memory limit, stated.</b> After unload, replace or dispose the key
+   * object cannot sign and drops its reference to the parsed key. But the parsed key (a Node `KeyObject`)
+   * and the PEM text read from SecretStorage stay in the heap until the garbage collector runs: a
+   * `KeyObject` cannot be zeroed and a JS string cannot be overwritten. That is weaker than
+   * `vaultKeys.lock()`, which wipes a Buffer the extension owns, and it is so by construction.</p>
    */
   private signing(key: ParsedSshKey, name: string): Pick<LoadedKey, 'sign' | 'revoke'> {
     let material: ParsedSshKey | undefined = key;
@@ -366,9 +377,18 @@ export class SshAgentManager implements vscode.Disposable {
     return { choice: undefined };
   }
 
+  /**
+   * One call is one line: a key's name is free text (an import, a share sets it), so line breaks and
+   * control characters in the message become `?` here, for every line that carries a name. After
+   * `dispose()` this writes nothing and does not make a channel again — a late answer or timeout of a
+   * prompt that outlived the window must not reach a channel that is gone.
+   */
   private log(message: string): void {
+    if (this.disposed) {
+      return;
+    }
     this.output ??= vscode.window.createOutputChannel('CredsForDevs: SSH Agent');
-    this.output.appendLine(`${new Date().toISOString()} ${message}`);
+    this.output.appendLine(`${new Date().toISOString()} ${withoutControlChars(message)}`);
   }
 
   /** Whether this entity's key would be served by the agent rather than written to disk. */
@@ -401,7 +421,9 @@ export class SshAgentManager implements vscode.Disposable {
     this.allowedUntil.clear();
     this.server?.dispose();
     this.server = undefined;
+    this.disposed = true;
     this.output?.dispose();
+    this.output = undefined;
     removeSocketFile(this.storageDir);
   }
 }

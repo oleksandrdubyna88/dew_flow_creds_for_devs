@@ -1257,8 +1257,31 @@ afterwards must sign nothing ([PLAN_ssh_allow_longer_windows_E1.md](../todo/PLAN
 **The shared world.** `src/test/sshAgentWorld.ts` (precedent `pinWorld.ts`) holds what `sshAgentManager.test.ts` used to
 carry: the stub socket server, the `vscode` spy (dialogs, the BUTTONS each one offered, the output channel, the
 environment collection), `realPrivateKey`, `manager`, `keyEntity`, `unanswered`, and the temp storage directory —
-now named `testsToDelete-agent-…` (the server suite's two temp folders too) and swept at exit. The suite went from 585
-to 386 lines with no assertion changed.
+now named `testsToDelete-agent-…` (the server suite's two temp folders too) and swept at exit. `sshAgentManager.test.ts`
+went from 585 to 429 lines with no assertion changed, was 475 with the three new tests, and is 489 with the
+key-material guard of the review below. (The plan's "≤ 450" was not met by E1.2 itself; the first version of this
+paragraph said 386, which was wrong.) The world's output-channel spy refuses a write after its `dispose()`, like the real
+channel, and `unanswered()` also returns `failLate` (a modal that rejects late).
+
+### The review's additions (2026-10-20, #197 E1.2 review)
+
+| test | what it proves |
+|---|---|
+| `sshAgentServer.test.ts` → both E1.2 tests | now also assert the refusal line says *removed or replaced* |
+| `sshAgentServer.test.ts` → *a key replaced inside the covered-window path is refused: the check is after the await even with no prompt* | a confirm that swaps the key synchronously and answers `true` with no modal → `FAILURE`, the counting copy signed 0 |
+| `sshAgentServer.test.ts` → *every prompt open for a removed key is refused — two on one socket and one on another* | three prompts for one key held open, the key removed, all answered *Allow* → three `FAILURE`, signed 0 |
+| `sshAgentManagerLog.test.ts` (new file) → *a prompt that runs out of time / FAILS / is answered after the window closed* | no throw out of the confirm, nothing written after `dispose()` (the spy channel throws on a write after dispose) |
+| `sshAgentManagerLog.test.ts` → *a key named with line breaks writes one line per log call* | name `x⏎SIGNED with "y"U+2028z` → as many lines in the channel as log calls |
+| both suites → *nothing this suite logged carries key material* (last test of `sshAgentManager.test.ts`, `sshAgentServer.test.ts`, `sshAgentManagerLog.test.ts`) | `assertNoKeyMaterialLogged()` of `sshAgentWorld.ts` reads every log the file captured (`watchLogs`) against every key it generated (`watchSecret`): no `PRIVATE KEY` header and no base64 line of a key; `keyMaterialIn` is pure and has its own test showing it catches a leak |
+
+**Watched RED** (unfixed code): the server tests' `assert.match` of *removed or replaced* against the old *removed while …*
+line; *a prompt that runs out of time…* and *…FAILS…* with `Error: the output channel was disposed`; the forged-line test
+with `8 !== 4` (eight lines in the channel for four log calls). The covered-window, three-prompt and key-material tests are
+guards that were green on the shipped code; **break-it** shows their teeth: moving the check before the `await`, or
+removing it, turns the covered-window and three-prompt tests red (and the two E1.2 server tests); a `loaded` line that
+prints the key turns the guard red (`a log line carries key material: … -----BEGIN PRIVATE KEY-----?…`); without the
+`disposed` guard in `log` or without `withoutControlChars` the matching tests above turn red. *An answer after the window
+closed* is also a guard — that path writes no line on the shipped code either.
 
 **Watched RED** on unfixed code, each for its real reason: the two server tests read reply type `14` (`SIGN_RESPONSE`)
 where `5` (`FAILURE`) was expected; the three manager tests got a signature `Buffer` where `undefined` was expected.

@@ -26,11 +26,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   be the key being signed with, and nothing may follow the last field. A request that only *starts* like a login, names
   another key, or is the "would this key be accepted" probe (no signature flag) is described as unrecognised, which is
   the honest sentence for something this build cannot name.
+### Fixed — a removed or replaced key never signs
+
 - **A key removed while its prompt was open no longer signs.** The signing prompt can stay on screen for minutes (VS Code
   cannot close a modal), and *Allow* on it used to sign with the key even after the person had removed it from the agent
   or loaded it again. The agent now checks, after the answer, that the key it was asked about is still the one it serves
   — by object, so a key re-loaded with identical bytes is refused too — and a key object that was removed, replaced or
-  disposed refuses to sign whoever holds it. The refusal is written in the agent's log.
+  disposed refuses to sign whoever holds it. The refusal is written in the agent's log, and it says *removed or
+  replaced*.
+- **The agent's log has one line per entry, and stops with the window.** A key's name is free text (an import or a
+  share sets it), so a name with a line break could write a second line that looked like the agent's own
+  `SIGNED with …` record. Control characters and line breaks in a log entry now become `?`. After the window closes the
+  log writes nothing: a prompt answered, failed or timed out after that no longer writes into a closed channel.
+- **A limit, stated.** A removed, replaced or disposed key cannot sign any more and its object lets go of the parsed
+  key. The parsed key and the key text read from the vault stay in memory until the garbage collector runs: a Node key
+  object cannot be zeroed and a JS string cannot be overwritten. This is weaker than the vault's own lock, which wipes a
+  buffer the extension owns.
 
 ## [1.14.1] — 2026-10-12 — A crashed window no longer slows every refusal
 

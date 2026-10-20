@@ -150,7 +150,7 @@ export class SshAgentServer {
     // "Allow" is an answer about the object that was asked about: object identity, not the public bytes,
     // so a key re-loaded with identical bytes is refused too (#197, I1/I2).
     if (!this.options.keys().includes(key)) {
-      return this.refused(`REFUSED a signature with "${key.name}" — the key was removed while its prompt was open`);
+      return this.refused(`REFUSED a signature with "${key.name}" — the key was removed or replaced while its prompt was open`);
     }
     return this.signed(key, request.data, request.flags);
   }

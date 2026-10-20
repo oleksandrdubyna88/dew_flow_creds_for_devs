@@ -7,8 +7,11 @@ import { loadWithVscode } from './vscodeStub';
 
 /**
  * The SSH agent manager's test world: the real `SshAgentManager` over a stub socket server and a `vscode`
- * whose every sink is a spy, shared by the suites that exercise the gate (`sshAgentManager.test.ts`,
- * and the window book's suite after it).
+ * whose every sink is a spy, shared by the suites that exercise the gate (`sshAgentManager.test.ts` and
+ * `sshAgentManagerLog.test.ts`; the window book's suite will join them with E1.3).
+ *
+ * <p>It also holds the key-material guard: a suite registers its logs (`watchLogs`) and the keys it feeds in
+ * (`watchSecret`), and ends with `assertNoKeyMaterialLogged()`.</p>
  *
  * <p>The socket server is substituted, which is what makes the `confirm` callback reachable through its
  * real wiring rather than by reaching into a private method: the manager hands the server that callback,
@@ -66,7 +69,7 @@ export function world(options: {
     env: {},
     envDescription: '',
     presence: 0,
-    logs: [],
+    logs: watchLogs([]),
     disposals: 0,
   };
 
@@ -108,12 +111,22 @@ export function world(options: {
           w.buttons.push(buttons);
           return Promise.resolve(w.answers.shift());
         },
-        createOutputChannel: (): unknown => ({
-          appendLine: (line: string): void => {
-            w.logs.push(line);
-          },
-          dispose: (): void => undefined,
-        }),
+        createOutputChannel: (): unknown => {
+          // A disposed channel refuses a write — a log line after the window's end must not reach it,
+          // and a test about that has to be able to see the throw.
+          let closed = false;
+          return {
+            appendLine: (line: string): void => {
+              if (closed) {
+                throw new Error('the output channel was disposed');
+              }
+              w.logs.push(line);
+            },
+            dispose: (): void => {
+              closed = true;
+            },
+          };
+        },
       },
     },
     {
@@ -141,6 +154,7 @@ export function manager(
   dir: string;
 } {
   const dir = storageDir();
+  Object.values(options.keys ?? {}).forEach((pem) => pem !== undefined && watchSecret(pem));
   const storage = {
     getPrivateKey: (_a: string, id: string): Promise<string | undefined> =>
       Promise.resolve((options.keys ?? {})[id]),
@@ -207,11 +221,64 @@ export const keyEntity = (id: string, name: string): EntityMetadata =>
 
 export const KEY_ID = 'key-1';
 
-/** A modal nobody answers, and a way to answer it LATE — after the bound has already refused. */
-export function unanswered(): { answer: Promise<string>; clickLate: (choice: string) => void } {
+/**
+ * A modal nobody answers, and a way to answer it LATE — after the bound has already refused — or to have it
+ * fail late (the window closing under it).
+ */
+export function unanswered(): {
+  answer: Promise<string>;
+  clickLate: (choice: string) => void;
+  failLate: (error: Error) => void;
+} {
   let clickLate: (choice: string) => void = () => undefined;
-  const answer = new Promise<string>((resolve) => {
+  let failLate: (error: Error) => void = () => undefined;
+  const answer = new Promise<string>((resolve, reject) => {
     clickLate = resolve;
+    failLate = reject;
   });
-  return { answer, clickLate };
+  return { answer, clickLate, failLate };
+}
+
+/** Every log a suite captured and every secret it fed in — what the key-material guard below reads. */
+const capturedLogs: string[][] = [];
+const secretsFedIn: string[] = [];
+
+/** Put a log into the guard's reach; returns it, so a harness can register where it creates one. */
+export function watchLogs(logs: string[]): string[] {
+  capturedLogs.push(logs);
+  return logs;
+}
+
+/** Put a private key's text into the guard's reach; returns it, so a fixture can register where it makes one. */
+export function watchSecret(pem: string): string {
+  secretsFedIn.push(pem);
+  return pem;
+}
+
+/**
+ * The base64 lines of a PEM. One line at a time, not the joined body: the agent's log turns a line break
+ * into `?`, so a printed key reads as its lines glued by `?`, never as the joined body.
+ */
+function pemBodyLines(pem: string): string[] {
+  return pem
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !line.startsWith('-----'));
+}
+
+/**
+ * The lines that carry key material: a PEM header, or the base64 body of a key a test fed in. Pure, so
+ * the guard itself can be shown to catch a leak.
+ */
+export function keyMaterialIn(logs: readonly string[], secrets: readonly string[]): string[] {
+  const bodyLines = secrets.flatMap(pemBodyLines);
+  return logs.filter((line) => line.includes('PRIVATE KEY') || bodyLines.some((body) => line.includes(body)));
+}
+
+/** The suite-wide guard: nothing the suite logged contains key material (#197). */
+export function assertNoKeyMaterialLogged(): void {
+  const leaked = keyMaterialIn(capturedLogs.flat(), secretsFedIn);
+  if (leaked.length > 0) {
+    throw new Error(`a log line carries key material: ${leaked[0]}`);
+  }
 }

@@ -5,7 +5,16 @@ import { test } from 'node:test';
 import { ALLOW_ONCE, ALLOW_WINDOW, CONSENT_TIMEOUT_MS, DENY } from '../agentConsent';
 import { EntityMetadata, TreeNode } from '../types';
 import { describeServerLine, describeSignRequest, encodeString } from '../sshAgentProtocol';
-import { FakeServer, KEY_ID, keyEntity, manager, realPrivateKey, unanswered, world } from './sshAgentWorld';
+import {
+  FakeServer,
+  KEY_ID,
+  assertNoKeyMaterialLogged,
+  keyEntity,
+  manager,
+  realPrivateKey,
+  unanswered,
+  world,
+} from './sshAgentWorld';
 import { HOSTBOUND_METHOD, userauth } from './sshUserauth';
 
 /**
@@ -472,4 +481,9 @@ test("a disposed manager's key objects refuse to sign", async () => {
   instance.dispose();
 
   assert.equal(served.sign(SIGNED_BYTES, 0), undefined, 'the object outlived its manager');
+});
+
+test('nothing this suite logged carries key material', () => {
+  // The last test of the file: every captured log, against every key the file loaded.
+  assertNoKeyMaterialLogged();
 });
