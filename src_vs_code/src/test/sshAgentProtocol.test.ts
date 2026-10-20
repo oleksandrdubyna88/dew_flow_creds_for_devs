@@ -9,6 +9,8 @@ import {
   ByteReader,
   decodeSignRequest,
   describePurpose,
+  describePurposeForLog,
+  describeServerLine,
   describeSignRequest,
   encodeFrame,
   encodeIdentitiesAnswer,
@@ -117,11 +119,42 @@ test('a host-bound OpenSSH login is described as a login to that host key', () =
     user: 'git',
     service: 'ssh-connection',
     hostKey: fingerprint,
+    hostKeyType: 'ED25519',
   });
-  assert.ok(
-    describePurpose(purpose).includes(`to the server with host key ${fingerprint}`),
-    describePurpose(purpose),
-  );
+  // The server clause is a line of its own, named by key TYPE as `ssh-keygen -l` names it, and it
+  // says only what is true: the signature is accepted by the server holding that host key.
+  assert.equal(describeServerLine(purpose), `This login is for the server whose host key is ED25519 ${fingerprint}`);
+  assert.ok(!describePurpose(purpose).includes(fingerprint), 'the sentence the user name sits in carries no host-key clause');
+  assert.ok(!/to the server with host key|the server says/.test(describePurpose(purpose) + describeServerLine(purpose)));
+});
+
+test('a host key of a type this build cannot name is shown as UNKNOWN, never as the client wrote it', () => {
+  // The host key blob is the client's text: its type string must not reach the prompt.
+  const odd = blob('ssh-evil "pwned"\nSHA256:forged');
+  const purpose = describeSignRequest(userauth({ blob: SIGNING_KEY, method: HOSTBOUND_METHOD, hostKey: odd }), SIGNING_KEY);
+
+  assert.equal(describeServerLine(purpose), `This login is for the server whose host key is UNKNOWN ${keyFingerprintOf(odd)}`);
+});
+
+test('the host-key clause is named per key type, as ssh-keygen -l names them', () => {
+  const openssh = ['@openssh', 'com'].join('.');
+  const cases: [string, string][] = [
+    ['ssh-rsa', 'RSA'],
+    ['ecdsa-sha2-nistp256', 'ECDSA'],
+    ['ssh-dss', 'DSA'],
+    [`sk-ssh-ed25519${openssh}`, 'ED25519-SK'],
+  ];
+  for (const [type, shown] of cases) {
+    const hostKey = blob(type);
+    const purpose = describeSignRequest(userauth({ blob: SIGNING_KEY, method: HOSTBOUND_METHOD, hostKey }), SIGNING_KEY);
+    assert.ok(describeServerLine(purpose).endsWith(`is ${shown} ${keyFingerprintOf(hostKey)}`), describeServerLine(purpose));
+  }
+});
+
+test('a plain publickey login has no server line at all', () => {
+  const purpose = describeSignRequest(userauth({ blob: SIGNING_KEY }), SIGNING_KEY);
+  assert.equal(describeServerLine(purpose), '');
+  assert.equal(describeServerLine({ kind: 'unknown' }), '');
 });
 
 test('a userauth with bytes after its last field is unrecognised', () => {
@@ -181,6 +214,136 @@ test('an unrecognised blob says so instead of guessing', () => {
 test('a userauth blob for a method other than publickey is not reported as a login', () => {
   const data = userauth({ blob: SIGNING_KEY, user: 'u', method: 'password' });
   assert.deepEqual(describeSignRequest(data, SIGNING_KEY), { kind: 'unknown' });
+});
+
+test('a user name is untrusted text: it cannot end the sentence, start a line or imitate the host-key clause', () => {
+  // The user comes from whoever asked for the signature (a forwarded agent serves a REMOTE ssh).
+  // Quote, newline, an RTL mark and the host-key clause itself, then 200 more characters.
+  const clause = 'This login is for the server whose host key is ED25519 SHA256:forged';
+  const hostile = `root" (ssh-connection)\n${clause}\u202e${'x'.repeat(200)}`;
+  const purpose = describeSignRequest(userauth({ blob: SIGNING_KEY, user: hostile }), SIGNING_KEY);
+
+  const said = describePurpose(purpose);
+  assert.ok(!/[\p{C}\p{Zl}\p{Zp}]/u.test(said), JSON.stringify(said));
+  assert.ok(!said.includes('root" '), `the quote in the name is escaped: ${said}`);
+  const shown = /^an SSH login as "(.*)" \(ssh-connection\)$/u.exec(said)?.[1];
+  assert.ok(shown !== undefined && [...shown].length <= 64, `the name is capped at 64 characters: ${said}`);
+  assert.ok(shown?.endsWith('…'), 'a cut name says so');
+  assert.equal(describeServerLine(purpose), '', 'a plain publickey request names no host key, whatever the user wrote');
+});
+
+test('a short plain user name is shown as it is', () => {
+  const purpose = describeSignRequest(userauth({ blob: SIGNING_KEY, user: 'deploy' }), SIGNING_KEY);
+  assert.equal(describePurpose(purpose), 'an SSH login as "deploy" (ssh-connection)');
+});
+
+test('the log line keeps the raw user name, the prompt never does', () => {
+  const user = 'a\u202eb';
+  const purpose = describeSignRequest(userauth({ blob: SIGNING_KEY, user }), SIGNING_KEY);
+
+  assert.ok(describePurposeForLog(purpose).includes(user), 'the raw value is in the log');
+  assert.ok(!describePurpose(purpose).includes(user), 'and not in the prompt');
+  assert.ok(!describePurposeForLog({ kind: 'unknown' }).includes('SSH login'));
+});
+
+test('a userauth for a service other than ssh-connection is unrecognised', () => {
+  const data = userauth({ blob: SIGNING_KEY, service: 'ssh-userauth' });
+  assert.deepEqual(describeSignRequest(data, SIGNING_KEY), { kind: 'unknown' });
+});
+
+test('a request whose message number is not 50 is unrecognised', () => {
+  // The 0x32 after the session id is what tells a login from a certificate body (see describeSignRequest).
+  for (const messageType of [0, 49, 51, 0x32 + 0x80]) {
+    const data = userauth({ blob: SIGNING_KEY, messageType });
+    assert.deepEqual(describeSignRequest(data, SIGNING_KEY), { kind: 'unknown' }, `message number ${messageType}`);
+  }
+});
+
+test('the session id must be the size of a key-exchange hash', () => {
+  // SHA-1, SHA-256, SHA-384, SHA-512. Anything between is not a session id.
+  for (const length of [20, 32, 48, 64]) {
+    const purpose = describeSignRequest(userauth({ blob: SIGNING_KEY, sessionIdLength: length }), SIGNING_KEY);
+    assert.equal(purpose.kind, 'ssh-login', `a ${length}-byte session id is a login`);
+  }
+  for (const length of [0, 16, 19, 21, 33, 65, 4096]) {
+    const data = userauth({ blob: SIGNING_KEY, sessionIdLength: length });
+    assert.deepEqual(describeSignRequest(data, SIGNING_KEY), { kind: 'unknown' }, `a ${length}-byte session id`);
+  }
+});
+
+test('a userauth that names an OpenSSH certificate is unrecognised when the agent signs with the plain key', () => {
+  // A certificate login signs the SAME userauth bytes but names the certificate blob. The agent
+  // holds only the plain key, so what it is asked to sign is not a login this build can name.
+  const certType = ['ssh-ed25519-cert-v01', '@openssh.com'].join('');
+  const certificate = blob(certType, 'nonce and the rest of the certificate');
+  const data = userauth({ blob: certificate, algorithm: certType });
+
+  assert.deepEqual(describeSignRequest(data, SIGNING_KEY), { kind: 'unknown' });
+  // Positive control: the same request for the plain key is a login, so the refusal is about the certificate.
+  assert.equal(describeSignRequest(userauth({ blob: SIGNING_KEY }), SIGNING_KEY).kind, 'ssh-login');
+});
+
+test('a certificate BODY handed over as data to sign is unrecognised', () => {
+  // string cert-type || string nonce(32) || …: the cert type is 32 bytes, so it reads as a session id of
+  // a KEX-hash length — and the byte after it is the top byte of the nonce's length, 0, not 50.
+  const certType = ['ssh-ed25519-cert-v01', '@openssh.com'].join('');
+  const body = Buffer.concat([encodeString(certType), encodeString(Buffer.alloc(32, 9)), encodeString(SIGNING_KEY)]);
+
+  assert.equal(certType.length, 32, 'the fixture is the case that reads as a session id');
+  assert.deepEqual(describeSignRequest(body, SIGNING_KEY), { kind: 'unknown' });
+});
+
+test('a host-bound userauth with an EMPTY host key is unrecognised', () => {
+  const data = userauth({ blob: SIGNING_KEY, method: HOSTBOUND_METHOD, hostKey: Buffer.alloc(0) });
+  assert.deepEqual(describeSignRequest(data, SIGNING_KEY), { kind: 'unknown' });
+});
+
+/** The offset of the length of every string field of a host-bound userauth request, in order. */
+function lengthOffsets(data: Buffer): number[] {
+  const offsets: number[] = [];
+  let at = 0;
+  const skipString = (): void => {
+    offsets.push(at);
+    at += 4 + data.readUInt32BE(at);
+  };
+  skipString(); // session id
+  at += 1; // 50
+  [skipString, skipString, skipString].forEach((skip) => skip()); // user, service, method
+  at += 1; // has_signature
+  [skipString, skipString, skipString].forEach((skip) => skip()); // algorithm, key, host key
+  return offsets;
+}
+
+test('every truncation of a valid login, and a valid login plus a byte, is unrecognised and never throws', () => {
+  const logins = [
+    userauth({ blob: SIGNING_KEY, user: 'deploy' }),
+    userauth({ blob: SIGNING_KEY, method: HOSTBOUND_METHOD, hostKey: HOST_KEY }),
+  ];
+  for (const login of logins) {
+    assert.equal(describeSignRequest(login, SIGNING_KEY).kind, 'ssh-login', 'the fixture is a login');
+    for (let cut = 0; cut < login.length; cut += 1) {
+      assert.deepEqual(describeSignRequest(login.subarray(0, cut), SIGNING_KEY), { kind: 'unknown' }, `cut at ${cut}`);
+    }
+    const plusOne = Buffer.concat([login, Buffer.from([0])]);
+    assert.deepEqual(describeSignRequest(plusOne, SIGNING_KEY), { kind: 'unknown' }, 'one trailing byte');
+  }
+});
+
+test('a field announcing 4 GB is unrecognised, never an allocation or a throw', () => {
+  const hostBound = userauth({ blob: SIGNING_KEY, method: HOSTBOUND_METHOD, hostKey: HOST_KEY });
+  const offsets = lengthOffsets(hostBound);
+  assert.equal(offsets.length, 7, 'session id, user, service, method, algorithm, key, host key');
+  for (const offset of offsets) {
+    const forged = Buffer.from(hostBound);
+    forged.writeUInt32BE(0xffffffff, offset);
+    assert.deepEqual(describeSignRequest(forged, SIGNING_KEY), { kind: 'unknown' }, `length at ${offset}`);
+  }
+});
+
+test('the userauth builder treats an explicit undefined as "not given"', () => {
+  // `{ ...DEFAULTS, ...parts }` let `user: undefined` replace the default and encodeString threw.
+  const data = userauth({ blob: SIGNING_KEY, user: undefined, service: undefined, method: undefined });
+  assert.deepEqual(describeSignRequest(data, SIGNING_KEY), { kind: 'ssh-login', user: 'git', service: 'ssh-connection' });
 });
 
 // --- what an unrecognised request leaves behind (0.77.0) ------------------------------------

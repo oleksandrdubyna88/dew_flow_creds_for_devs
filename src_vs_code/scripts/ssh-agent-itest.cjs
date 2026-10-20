@@ -16,8 +16,9 @@
 // Section 5 (POSIX only) goes one step further: a real `ssh` LOGS IN to a real `sshd` through
 // the real manager, and the dialog must name the login with the server's host key — the
 // host-bound request a current OpenSSH sends, which the classifier once called "unrecognised"
-// (#197, E1.1). `sshd -d` serves exactly one connection without forking, so nothing it starts
-// can outlive a kill of its own pid.
+// (#197, E1.1). Under `-d` sshd neither daemonises nor forks per connection, but its privilege
+// separation and the session still fork children, and those exit when the connection closes —
+// which is why the section ends the ssh client first, and only then sshd.
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
@@ -404,12 +405,25 @@ async function startSshd(sshdDir, hostKeyPath, authorizedKeys) {
   return { sshd, failure: `no "Server listening" line within 10 s: ${sshd.stderr.trim()}` };
 }
 
-/** Ends a child by ITS pid if it is still running, and waits (bounded) for its exit. */
+/**
+ * Ends a child by ITS pid if it is still running, and waits (bounded) for its exit. A child that
+ * ignores the polite signal is killed outright and waited for once more — the folder it holds
+ * files in cannot be removed while it lives.
+ */
 async function endChild(result) {
   if (!result.exited) {
     result.child.kill();
   }
   await settledWithin(result, 5_000);
+  if (!result.exited) {
+    result.child.kill('SIGKILL');
+    await settledWithin(result, 5_000);
+  }
+}
+
+/** The last `count` lines of a child's output — what it said just before the failure. */
+function lastLines(text, count) {
+  return text.trim().split(/\r?\n/).slice(-count).join('\n');
 }
 
 /**
@@ -424,6 +438,10 @@ async function endChild(result) {
  *
  * <p>POSIX only: `sshd` runs as the current user on a loopback port, with a throwaway host key.
  * A login from Windows is M1 in the plan — it needs a real Windows client and a real server.</p>
+ *
+ * <p>Teardown: `sshd -d` does not daemonise and does not fork per connection, but privilege
+ * separation and the session still fork children that exit when the connection closes. So the ssh
+ * client is ended first, then sshd by its own pid; the folder goes last, because they hold files in it.</p>
  */
 async function liveHostBoundLogin(pem, publicPath, dir) {
   if (isWindows) {
@@ -474,9 +492,16 @@ async function liveHostBoundLogin(pem, publicPath, dir) {
     );
     const loaded = await manager.load('a1', { id: 'e-live', name: 'itest key', isSshEnabled: false, isSshKey: true });
     check('the real manager loads and serves the key for the live login', loaded.ok === true, loaded.reason);
+    if (loaded.ok !== true) {
+      return;
+    }
     const socket = published.SSH_AUTH_SOCK;
     // sun_path is ~104 bytes on macOS; a longer path would fail to bind with an error about nothing.
-    check('the agent socket path fits a unix socket', typeof socket === 'string' && socket.length < 104, String(socket));
+    const fits = typeof socket === 'string' && socket.length < 104;
+    check('the agent socket path fits a unix socket', fits, String(socket));
+    if (!fits) {
+      return;
+    }
 
     const version = await run('ssh', ['-V']);
     console.log(`info  ssh -V: ${(version.stderr || version.stdout).trim()}`);
@@ -496,18 +521,24 @@ async function liveHostBoundLogin(pem, publicPath, dir) {
       'true',
     ]);
     const code = await Promise.race([client.done, new Promise((resolve) => setTimeout(resolve, 20_000, 'timeout'))]);
-    check('the real ssh logged in to sshd through the agent', code === 0, `exit ${code}: ${client.stderr.trim()}`);
+    check(
+      'the real ssh logged in to sshd through the agent',
+      code === 0,
+      `exit ${code}: ${client.stderr.trim()}\n--- sshd -d, last 20 lines ---\n${lastLines(sshd.stderr, 20)}`,
+    );
     check('the login raised exactly one dialog', global.__AGENT_DIALOGS__.length === 1, `${global.__AGENT_DIALOGS__.length} dialogs`);
     const message = global.__AGENT_DIALOGS__[0]?.message ?? '';
     check('the dialog names an SSH login', /an SSH login as "/.test(message), JSON.stringify(message));
     check(
-      "the dialog names the server's host key",
-      hostFingerprint !== undefined && message.includes(`host key ${hostFingerprint}`),
+      "the dialog names the server's host key on a line of its own",
+      hostFingerprint !== undefined &&
+        message.split('\n').includes(`This login is for the server whose host key is ED25519 ${hostFingerprint}`),
       JSON.stringify(message),
     );
   } finally {
-    // Order matters: the client first (its own pid), then sshd by ITS pid, then wait for its exit —
-    // only then is the folder removed, because sshd holds files in it until it is gone.
+    // Order matters: the client first (its own pid) — sshd's forked children exit when the connection
+    // closes — then sshd by ITS pid, then wait for its exit; only then is the folder removed, because
+    // sshd holds files in it until it is gone.
     if (client !== undefined) {
       await endChild(client);
     }
@@ -515,7 +546,11 @@ async function liveHostBoundLogin(pem, publicPath, dir) {
       await endChild(sshd);
     }
     manager?.dispose();
-    fs.rmSync(sshdDir, { recursive: true, force: true });
+    try {
+      fs.rmSync(sshdDir, { recursive: true, force: true });
+    } catch {
+      // a file the OS still holds; a cleanup failure must never replace the real error above
+    }
   }
 }
 

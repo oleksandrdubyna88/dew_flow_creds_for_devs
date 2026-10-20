@@ -136,9 +136,14 @@ jobs:
       # service the package may start on port 22 is not used, the test starts its own `sshd -d` on a
       # free loopback port. `/run/sshd` is belt and braces: a non-root sshd does not need its
       # privilege-separation directory, but a missing one is a known sshd abort.
+      #
+      # The test's sshd MUST stay non-root. With `UsePAM no`, a root sshd refuses a locked account such
+      # as the runner's `runner`, and a non-root one cannot read /etc/shadow, so it sees the unlocked
+      # placeholder "x" and accepts the login. If it ever has to run as root, the remedy is
+      # `sudo usermod -p '*' runner` first.
       - name: Install sshd for the live OpenSSH login
         run: |
-          test -x /usr/sbin/sshd || (sudo apt-get update && sudo apt-get install -y --no-install-recommends openssh-server)
+          test -x /usr/sbin/sshd || (sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssh-server)
           sudo mkdir -p /run/sshd
 
       - name: Integration test (SSH agent against a real ssh-add)

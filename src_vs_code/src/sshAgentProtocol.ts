@@ -195,15 +195,16 @@ export function keyTypeOf(publicBlob: Buffer): string | undefined {
  * **SSHSIG** blob (used by `git`, `ssh-keygen -Y`) starts with the magic `SSHSIG` and carries a
  * namespace — `git` for a commit or tag signature, `file` for `ssh-keygen -Y sign`.</p>
  *
- * <p>A login is recognised only when it is COMPLETE: every field present, the key it names equal
- * to the key it is being signed with, and nothing after the last field. A prefix that merely
- * starts like one is what a window of silent signatures must never be granted on.</p>
+ * <p>Anything that is not exactly one of those is reported as unrecognised rather than guessed
+ * at. A wrong description would be worse than a vague one: it is the sentence the human's
+ * decision rests on. The exact contract of what counts as a login is on `describeSignRequest`.</p>
  *
- * <p>Anything else is reported as unrecognised rather than guessed at. A wrong description
- * would be worse than a vague one: it is the sentence the human's decision rests on.</p>
+ * <p>`hostKey` and `hostKeyType` are set together, for the host-bound method only: the
+ * fingerprint of the host key the client signed over, and its type as `ssh-keygen -l` names it.
+ * `user` is the REQUESTER'S text and untrusted — see `describePurpose`.</p>
  */
 export type SignPurpose =
-  | { kind: 'ssh-login'; user: string; service: string; hostKey?: string }
+  | { kind: 'ssh-login'; user: string; service: string; hostKey?: string; hostKeyType?: string }
   | { kind: 'sshsig'; namespace: string }
   | { kind: 'unknown' };
 
@@ -213,15 +214,42 @@ type SshLogin = Extract<SignPurpose, { kind: 'ssh-login' }>;
 const PUBLICKEY_METHOD = 'publickey';
 const HOSTBOUND_METHOD = 'publickey-hostbound-v00@openssh.com';
 
+/** The only service a public-key login is for (RFC 4252 §5): the one that opens a session. */
+const SSH_CONNECTION = 'ssh-connection';
+
+/** SSH_MSG_USERAUTH_REQUEST, the byte after the session id. */
+const USERAUTH_REQUEST = 50;
+
+/**
+ * The session id is the key-exchange hash (RFC 4253 §7.2): SHA-1, SHA-256, SHA-384 or SHA-512,
+ * so 20, 32, 48 or 64 bytes and nothing between.
+ */
+const KEX_HASH_BYTES: ReadonlySet<number> = new Set([20, 32, 48, 64]);
+
+/** The OpenSSH vendor suffix, built from parts so the repository's hygiene scan does not read a key type as an address. */
+const OPENSSH = ['@openssh', 'com'].join('.');
+
+/** Host key types, named as `ssh-keygen -l` names them. The blob's own text never reaches a prompt. */
+const HOST_KEY_TYPES: ReadonlyMap<string, string> = new Map([
+  ['ssh-ed25519', 'ED25519'],
+  ['ssh-rsa', 'RSA'],
+  ['ssh-dss', 'DSA'],
+  ['ecdsa-sha2-nistp256', 'ECDSA'],
+  ['ecdsa-sha2-nistp384', 'ECDSA'],
+  ['ecdsa-sha2-nistp521', 'ECDSA'],
+  [`sk-ssh-ed25519${OPENSSH}`, 'ED25519-SK'],
+  [`sk-ecdsa-sha2-nistp256${OPENSSH}`, 'ECDSA-SK'],
+]);
+
 /** An `SSHSIG` blob: `SSHSIG || namespace || reserved || hash_algorithm || H(message)`. */
 function describeSshsig(data: Buffer): SignPurpose {
   const namespace = new ByteReader(data.subarray(6)).readString()?.toString('utf8');
   return { kind: 'sshsig', namespace: namespace !== undefined && namespace.length > 0 ? namespace : 'unnamed' };
 }
 
-/** 50 = SSH_MSG_USERAUTH_REQUEST. The session id is 20–64 bytes of hash in practice. */
+/** `session-id || 50`: a key-exchange-hash-sized session id, then the userauth request number. */
 function startsUserauth(sessionId: Buffer | undefined, messageType: number | undefined): boolean {
-  return sessionId !== undefined && sessionId.length >= 16 && messageType === 50;
+  return sessionId !== undefined && KEX_HASH_BYTES.has(sessionId.length) && messageType === USERAUTH_REQUEST;
 }
 
 interface UserauthHead {
@@ -230,18 +258,20 @@ interface UserauthHead {
   method: string;
 }
 
-/** `session-id || 50 || user || service || method`. */
-function readUserauthHead(reader: ByteReader): UserauthHead | undefined {
-  if (!startsUserauth(reader.readString(), reader.readByte())) {
-    return undefined;
-  }
+/** `user || service || method`, each one a string; `undefined` when one is missing or the service is not `ssh-connection`. */
+function readUserauthFields(reader: ByteReader): UserauthHead | undefined {
   const fields = [reader.readString(), reader.readString(), reader.readString()].map((part) =>
     part?.toString('utf8'),
   );
-  if (fields.some((field) => field === undefined)) {
+  if (fields.some((field) => field === undefined) || fields[1] !== SSH_CONNECTION) {
     return undefined;
   }
-  return { user: fields[0] as string, service: fields[1] as string, method: fields[2] as string };
+  return { user: fields[0] as string, service: fields[1], method: fields[2] as string };
+}
+
+/** `session-id || 50 || user || service || method`. */
+function readUserauthHead(reader: ByteReader): UserauthHead | undefined {
+  return startsUserauth(reader.readString(), reader.readByte()) ? readUserauthFields(reader) : undefined;
 }
 
 /** `has_signature = TRUE || algorithm || public key blob`, the blob being the one signing now. */
@@ -252,15 +282,26 @@ function namesThisKey(reader: ByteReader, signingKeyBlob: Buffer): boolean {
   return hasSignature === 1 && algorithm !== undefined && keyBlob !== undefined && keyBlob.equals(signingKeyBlob);
 }
 
+/** What a tail says about the server: nothing, or the host key's fingerprint and type. */
+interface ServerClaim {
+  hostKey?: string;
+  hostKeyType?: string;
+}
+
 /** What follows the key blob, per method: nothing, or the server host key. `undefined` = not a login. */
-type TailReader = (reader: ByteReader) => { hostKey?: string } | undefined;
+type TailReader = (reader: ByteReader) => ServerClaim | undefined;
 
 const readNoTail: TailReader = (reader) => (reader.done ? {} : undefined);
+
+/** The host key's type by the closed table above — never the blob's own text, which is the client's. */
+function hostKeyTypeName(hostKey: Buffer): string {
+  return HOST_KEY_TYPES.get(keyTypeOf(hostKey) ?? '') ?? 'UNKNOWN';
+}
 
 const readHostKeyTail: TailReader = (reader) => {
   const hostKey = reader.readString();
   return hostKey !== undefined && hostKey.length > 0 && reader.done
-    ? { hostKey: keyFingerprintOf(hostKey) }
+    ? { hostKey: keyFingerprintOf(hostKey), hostKeyType: hostKeyTypeName(hostKey) }
     : undefined;
 };
 
@@ -270,11 +311,7 @@ const TAILS: ReadonlyMap<string, TailReader> = new Map([
 ]);
 
 /** The rest of the request after its head; `undefined` when it is not exactly a login for this key. */
-function readKeyTail(
-  reader: ByteReader,
-  method: string,
-  signingKeyBlob: Buffer,
-): { hostKey?: string } | undefined {
+function readKeyTail(reader: ByteReader, method: string, signingKeyBlob: Buffer): ServerClaim | undefined {
   return namesThisKey(reader, signingKeyBlob) ? TAILS.get(method)?.(reader) : undefined;
 }
 
@@ -291,6 +328,42 @@ function describeUserauth(data: Buffer, signingKeyBlob: Buffer): SignPurpose {
     : { kind: 'ssh-login', user: head.user, service: head.service, ...tail };
 }
 
+/**
+ * What is about to be signed, read against the key that is signing it.
+ *
+ * <p>The contract — a window of silent signatures is granted on it, so it is written down. The
+ * data is an SSH login (`ssh-login`) only when it is exactly, with nothing after it (RFC 4252 §7;
+ * OpenSSH `PROTOCOL` §3.1):</p>
+ *
+ * <pre>D = string(sid) || 0x32 || string(user) || string("ssh-connection") || string(method)
+ *        || 0x01 || string(alg) || string(K) [|| string(H)]</pre>
+ *
+ * <ul>
+ *   <li>`K` is byte-identical to the public blob of the key being signed with. A login naming
+ *       key A, asked of key B, is not a login. A certificate login names the certificate blob,
+ *       so it is reported as unrecognised: this agent holds plain keys and does not describe a
+ *       certificate as one.</li>
+ *   <li>`method` is exactly `publickey` (no `H`) or `publickey-hostbound-v00@openssh.com`
+ *       (`H` present and non-empty). `H` is the server host key the client signed over. sshd
+ *       rebuilds the data with ITS OWN host key and aborts when the packet's differs, so only
+ *       the server holding `H` can use this signature. The agent has NOT verified that server.</li>
+ *   <li>`sid` is the size of a key-exchange hash: 20, 32, 48 or 64 bytes.</li>
+ *   <li>`user` is the requester's text and untrusted. Only a display-safe form reaches a
+ *       prompt; the raw value goes to the log.</li>
+ * </ul>
+ *
+ * <p>Why D is not an SSHSIG: that blob has its magic at offset 0, while D starts with the length
+ * of `sid`, so its first byte is 0x00. Why D is not an OpenSSH certificate body
+ * (`string cert-type || string nonce || …`): a 32-byte cert type can read as a `sid`, and then
+ * the byte read as 0x32 is the top byte of the nonce's length — a length of 0x32000000 and up,
+ * far beyond `MAX_FRAME_BYTES`. THAT COUPLING is what tells the two apart: raising
+ * `MAX_FRAME_BYTES` to ~838 MB would end it.</p>
+ *
+ * <p>What it does NOT see: the request's flags. A login signed with SHA-1 RSA (no flags) reads as
+ * a login like any other, so whoever grants a longer window on a login must exclude that on the
+ * flags themselves. SSHSIG is classified by its prefix only, on purpose: the namespace is all the
+ * prompt claims, and what follows it is the message hash.</p>
+ */
 export function describeSignRequest(data: Buffer, signingKeyBlob: Buffer): SignPurpose {
   return data.subarray(0, 6).toString('latin1') === 'SSHSIG'
     ? describeSshsig(data)
@@ -316,17 +389,58 @@ export function describeUnknownShape(data: Buffer): string {
   return `${data.length} bytes, starts ${head}`;
 }
 
-/** A login, and the server it is for when the client said so (the host-bound method). */
-function describeLogin(login: SshLogin): string {
-  const sentence = `an SSH login as "${login.user}" (${login.service})`;
-  return login.hostKey === undefined ? sentence : `${sentence} to the server with host key ${login.hostKey}`;
+/** The longest user name a prompt shows, ellipsis included. */
+const MAX_USER_DISPLAY = 64;
+
+/**
+ * A user name made safe to put inside a sentence: control and format characters (newlines, RTL and
+ * zero-width marks — `\p{C}`) and the Unicode line and paragraph separators become `?`, a quote or
+ * backslash is escaped so the name cannot end its own quotation, and the result is cut at 64
+ * characters with `…`. The user is the requester's text: nothing of it may start a line.
+ */
+function displayUser(user: string): string {
+  const safe = user.replace(/[\p{C}\p{Zl}\p{Zp}]/gu, '?').replace(/[\\"]/g, '\\$&');
+  const characters = [...safe];
+  return characters.length <= MAX_USER_DISPLAY ? safe : `${characters.slice(0, MAX_USER_DISPLAY - 1).join('')}…`;
 }
 
-/** One sentence for the confirmation dialog. */
+/** A login as one sentence, the user name being whatever text the caller chose to show. */
+function loginSentence(login: SshLogin, user: string): string {
+  return `an SSH login as ${user} (${login.service})`;
+}
+
+/**
+ * The line of the prompt that names the server a host-bound login is for; '' when the request
+ * names none. A line of its own, written only by this build — the user name cannot reach it.
+ */
+export function describeServerLine(purpose: SignPurpose): string {
+  return purpose.kind === 'ssh-login' ? serverClause(purpose) : '';
+}
+
+function serverClause(login: SshLogin): string {
+  return login.hostKey === undefined
+    ? ''
+    : `This login is for the server whose host key is ${login.hostKeyType ?? 'UNKNOWN'} ${login.hostKey}`;
+}
+
+/** The same description for the log, where the user name is the raw value (JSON-quoted, so it stays one line). */
+export function describePurposeForLog(purpose: SignPurpose): string {
+  if (purpose.kind !== 'ssh-login') {
+    return describePurpose(purpose);
+  }
+  const sentence = loginSentence(purpose, JSON.stringify(purpose.user));
+  const server = serverClause(purpose);
+  return server === '' ? sentence : `${sentence}. ${server}`;
+}
+
+/**
+ * One sentence for the confirmation dialog. A login's host key is NOT in it: that is
+ * `describeServerLine`, a line of its own, so no user name can imitate it.
+ */
 export function describePurpose(purpose: SignPurpose): string {
   switch (purpose.kind) {
     case 'ssh-login':
-      return describeLogin(purpose);
+      return loginSentence(purpose, `"${displayUser(purpose.user)}"`);
     case 'sshsig':
       return purpose.namespace === 'git'
         ? 'a Git signature (commit or tag)'

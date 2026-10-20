@@ -204,6 +204,7 @@ test('the server checks the purpose against the key it was asked for: a host-bou
       user: 'git',
       service: 'ssh-connection',
       hostKey: keyFingerprintOf(hostKey),
+      hostKeyType: 'ED25519',
     });
   } finally {
     h.dispose();

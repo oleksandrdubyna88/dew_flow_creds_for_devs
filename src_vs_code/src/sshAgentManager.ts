@@ -1,7 +1,13 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { SignPurpose, describePurpose, describeUnknownShape } from './sshAgentProtocol';
+import {
+  SignPurpose,
+  describePurpose,
+  describePurposeForLog,
+  describeServerLine,
+  describeUnknownShape,
+} from './sshAgentProtocol';
 import { localRequestTimeLine } from './requestTime';
 import { withTimeout } from './withTimeout';
 import { describeError } from './describeError';
@@ -300,7 +306,7 @@ export class SshAgentManager implements vscode.Disposable {
     // documents — the time on the prompt and the start of the window are two facts on purpose.
     this.noteUnknown(purpose, data);
     if (withinAllowWindow(this.allowedUntil.get(key.entityId), asked.getTime())) {
-      this.log(`allowed (within the 10-minute window) for ${describePurpose(purpose)}`);
+      this.log(`allowed (within the 10-minute window) for ${describePurposeForLog(purpose)}`);
       return true;
     }
     const choice = await this.askToSign(key, purpose, asked);
@@ -332,6 +338,7 @@ export class SshAgentManager implements vscode.Disposable {
     const modal = vscode.window.showWarningMessage(
       `Use the SSH key "${key.name}" to sign ${describePurpose(purpose)}?\n${localRequestTimeLine(asked)}\n\n` +
         `${key.fingerprint}\n\n` +
+        serverParagraph(purpose) +
         'The key itself never leaves this window. Allow once, or allow every use of this key for ' +
         'ten minutes — long enough for a push that signs and authenticates in one go. ' +
         `Unanswered, it is refused after ${bound}.`,
@@ -348,7 +355,7 @@ export class SshAgentManager implements vscode.Disposable {
     );
     const answered = await withTimeout(settled, this.consentTimeoutMs);
     if (answered === undefined) {
-      this.log(`no answer in ${bound} — refused ${describePurpose(purpose)}`);
+      this.log(`no answer in ${bound} — refused ${describePurposeForLog(purpose)}`);
     }
     return answered?.choice;
   }
@@ -397,6 +404,12 @@ export class SshAgentManager implements vscode.Disposable {
     this.output?.dispose();
     removeSocketFile(this.storageDir);
   }
+}
+
+/** The server line of a login prompt as a paragraph of its own — nothing for a request that names no server. */
+function serverParagraph(purpose: SignPurpose): string {
+  const line = describeServerLine(purpose);
+  return line === '' ? '' : `${line}\n\n`;
 }
 
 /** "5 minutes", "1 minute" — or seconds under a minute, so a short bound never reads "0 minutes". */

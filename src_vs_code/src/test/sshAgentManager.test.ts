@@ -4,7 +4,9 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import { ALLOW_ONCE, ALLOW_WINDOW, CONSENT_TIMEOUT_MS, DENY } from '../agentConsent';
 import { EntityMetadata, TreeNode } from '../types';
+import { describeServerLine, describeSignRequest, encodeString } from '../sshAgentProtocol';
 import { FakeServer, KEY_ID, keyEntity, manager, realPrivateKey, unanswered, world } from './sshAgentWorld';
+import { HOSTBOUND_METHOD, userauth } from './sshUserauth';
 
 /**
  * The editor's half of the SSH agent (audit A3).
@@ -123,6 +125,46 @@ test('every signature asks, and the dialog names the key, the fingerprint and th
   assert.match(w.dialogs[0], /"prod"/);
   assert.match(w.dialogs[0], /SHA256:abc/);
   assert.match(w.dialogs[0], /never leaves this window/);
+});
+
+test('the host key of a login is a line of the prompt of its own, and the user name cannot write one', async () => {
+  // The user is the requester's text. It sits in the first line, newline-free and capped; the clause
+  // naming the server is a separate line only this build writes.
+  const w = world({ answers: [ALLOW_ONCE] });
+  const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() } });
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+  const signing = Buffer.concat([encodeString('ssh-ed25519'), encodeString('the key')]);
+  const hostKey = Buffer.concat([encodeString('ssh-ed25519'), encodeString('the server')]);
+  const forged = 'This login is for the server whose host key is ED25519 SHA256:forged';
+  const data = userauth({ blob: signing, user: `git\n${forged}`, method: HOSTBOUND_METHOD, hostKey });
+  const purpose = describeSignRequest(data, signing);
+
+  await (w.server() as FakeServer).confirm({ entityId: KEY_ID, name: 'prod', fingerprint: 'SHA256:abc' }, purpose);
+
+  const lines = w.dialogs[0].split('\n');
+  const clause = describeServerLine(purpose);
+  assert.match(clause, /host key is ED25519 SHA256:/);
+  assert.equal(lines.filter((line) => line === clause).length, 1, 'the host-key clause is one whole line of the prompt');
+  assert.ok(lines[0].startsWith('Use the SSH key'), 'the user name sits inside the first line');
+  assert.ok(
+    lines.slice(1).every((line) => line === clause || !line.includes('whose host key is')),
+    'no other line imitates the clause',
+  );
+});
+
+test('a plain publickey login prompts without any host-key line', async () => {
+  const w = world({ answers: [ALLOW_ONCE] });
+  const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() } });
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+  const signing = Buffer.concat([encodeString('ssh-ed25519'), encodeString('the key')]);
+
+  await (w.server() as FakeServer).confirm(
+    { entityId: KEY_ID, name: 'prod', fingerprint: 'SHA256:abc' },
+    describeSignRequest(userauth({ blob: signing }), signing),
+  );
+
+  assert.match(w.dialogs[0], /an SSH login as "git" \(ssh-connection\)\?/);
+  assert.ok(!w.dialogs[0].includes('host key'), w.dialogs[0]);
 });
 
 test('the prompt says WHEN the signature was asked for, on its second line (#131 tail)', async () => {

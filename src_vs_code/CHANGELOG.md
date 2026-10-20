@@ -11,8 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The signing prompt names a login to an OpenSSH 8.9+ server.** Since 8.9 the client asks the agent to sign the
   host-bound form of the login request (`publickey-hostbound-v00@openssh.com`), and this agent knew only the plain
   one, so every such login asked *"…to sign a signature whose purpose this build does not recognise?"*. The prompt
-  now reads *an SSH login as "git" (ssh-connection) to the server with host key SHA256:…* — the host key is what the
-  client signed over, so the person can see which server the login is for.
+  now reads *an SSH login as "git" (ssh-connection)?* and, on a line of its own, *This login is for the server whose
+  host key is ED25519 SHA256:…*. The host key is what the client signed over, and OpenSSH's sshd checks it against its
+  own host key — so only the server that holds that key accepts this signature. The agent does not check the server
+  itself; the line tells the person which server the login is for.
+- **The user name in the prompt is shown as text, never trusted.** It comes from whoever asked for the signature (a
+  forwarded agent serves a remote `ssh`). Control and format characters (newlines, right-to-left and zero-width
+  marks) become `?`, a quote is escaped, and the name is cut at 64 characters with `…`; the raw name is only in the
+  agent's log. The host-key line is written by this build alone, so a user name cannot imitate it. Only the service
+  `ssh-connection` is a login, and the session id must be the size of a key-exchange hash (20, 32, 48 or 64 bytes).
+- **A certificate login is reported as unrecognised.** A login with an OpenSSH certificate names the certificate, and
+  this agent signs with plain keys; the request is not described as a login of the plain key.
 - **Only a complete login request is called a login.** The request is read whole: every field, the key it names must
   be the key being signed with, and nothing may follow the last field. A request that only *starts* like a login, names
   another key, or is the "would this key be accepted" probe (no signature flag) is described as unrecognised, which is

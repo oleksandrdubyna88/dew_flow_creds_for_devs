@@ -24,6 +24,10 @@ export interface UserauthParts {
   service?: string;
   /** The signature algorithm; defaults to the blob's own type. (RSA says `rsa-sha2-256` here.) */
   algorithm?: string;
+  /** The session id's length in bytes (default 32, a SHA-256 exchange hash). */
+  sessionIdLength?: number;
+  /** The message number after the session id; 50 (SSH_MSG_USERAUTH_REQUEST) unless a test says otherwise. */
+  messageType?: number;
   /** Bytes after the last field — a request with a tail is not the request OpenSSH sends. */
   trailing?: Buffer;
   /** Stop after the method field: the short form an earlier, prefix-only parser accepted. */
@@ -38,8 +42,8 @@ const DEFAULTS = { user: 'git', service: 'ssh-connection', method: PUBLICKEY_MET
 /** `session-id || 50 || user || service || method` — all the earlier prefix parse ever read. */
 function head(p: Resolved): Buffer {
   return Buffer.concat([
-    encodeString(Buffer.alloc(32, 7)), // session id
-    Buffer.from([50]), // SSH_MSG_USERAUTH_REQUEST
+    encodeString(Buffer.alloc(p.sessionIdLength ?? 32, 7)), // session id
+    Buffer.from([p.messageType ?? 50]), // SSH_MSG_USERAUTH_REQUEST
     encodeString(p.user),
     encodeString(p.service),
     encodeString(p.method),
@@ -52,8 +56,13 @@ function afterTheKey(p: Resolved): Buffer[] {
   return [hostKey, p.trailing].filter((part): part is Buffer => part !== undefined);
 }
 
+/** The parts that were actually given: an explicit `undefined` means "not given", never "empty". */
+function given(parts: UserauthParts): UserauthParts {
+  return Object.fromEntries(Object.entries(parts).filter(([, value]) => value !== undefined)) as UserauthParts;
+}
+
 export function userauth(parts: UserauthParts): Buffer {
-  const p: Resolved = { ...DEFAULTS, algorithm: keyTypeOf(parts.blob) ?? '', ...parts };
+  const p: Resolved = { ...DEFAULTS, algorithm: keyTypeOf(parts.blob) ?? '', ...given(parts) };
   if (p.upTo === 'method') {
     return head(p);
   }
