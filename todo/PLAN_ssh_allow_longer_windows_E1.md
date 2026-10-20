@@ -254,6 +254,211 @@ windows". `module_tests.md`: both suites.
 **Done when.** The 4 REDs quoted with their GREENs; every function in `allowWindows.ts` and the manager ≤ 4
 complexity, ≤ 50 lines; Opus review and Fable's security judgement both passed.
 
+#### E1.3 spec (Fable)
+
+Anchors are `sshAgentManager.ts` on `7e9d82af` (E1.2's `revoke` lines shift them; re-anchor by the quoted text).
+Where this spec and the frame above differ, this spec wins (the list closes §3 here).
+
+##### 1. The module contract — `src/allowWindows.ts` (pure, no `vscode`)
+
+```ts
+import { ALLOW_WINDOW_MS, withinAllowWindow } from './agentConsent';   // one way in E1; E3 adds `import type { WindowScope }` back
+export type WindowScope = 'all' | 'login';
+export interface KeyRef { readonly entityId: string; readonly generation: number }
+export interface AskTicket extends KeyRef { readonly keyFence: number; readonly lockEpoch: number }
+export interface OpenWindow { readonly generation: number; readonly grantedAt: number; readonly grantedAtMono: number; readonly until: number }
+export type ScopeWindows = Readonly<Partial<Record<WindowScope, OpenWindow>>>;
+export interface AllowWindows { readonly lockEpoch: number; readonly keyFences: ReadonlyMap<string, number>; readonly open: ReadonlyMap<string, ScopeWindows> }
+export const NO_WINDOWS: AllowWindows;                               // lockEpoch 0, two empty maps, frozen
+export const MAX_WINDOW_MS: Readonly<Record<WindowScope, number>>;   // { all: ALLOW_WINDOW_MS, login: 12 * 3_600_000 }
+export const ALL_ONLY: readonly WindowScope[];                       // ['all'] — the only scopes E1's gate asks
+export type GrantOutcome = 'opened' | 'kept-later' | 'stale-key' | 'fenced-key' | 'fenced-lock';
+export function askTicket(book: AllowWindows, key: KeyRef): AskTicket;
+export function grantWindow(book: AllowWindows, ticket: AskTicket, scope: WindowScope, currentGeneration: number | undefined,
+  grantedAt: number, grantedAtMono: number, until: number): { book: AllowWindows; outcome: GrantOutcome };
+export function scopesFor(purposeIsLogin: boolean, autoLockMinutes: number): readonly WindowScope[];
+export function windowCovers(book: AllowWindows, key: KeyRef, scopes: readonly WindowScope[], now: number, nowMono: number): OpenWindow | undefined;
+export function windowsFor(book: AllowWindows, key: KeyRef, scopes: readonly WindowScope[], now: number, nowMono: number): ScopeWindows;
+export function endWindows(book: AllowWindows, entityId: string): AllowWindows;     // the row button (E2)
+export function endLoginWindows(book: AllowWindows): AllowWindows;                   // auto-lock set to 0 (E3)
+export function endAllWindows(book: AllowWindows): AllowWindows;                     // any lock (E2)
+export function forgetKey(book: AllowWindows, entityId: string): AllowWindows;      // unload, re-load (E1)
+export function withoutExpired(book: AllowWindows, now: number, nowMono: number): AllowWindows;
+export function nextExpiry(book: AllowWindows, now: number): number | undefined;
+```
+
+The rules:
+
+- A fence never moved reads **0**: one private `fenceOf(book, id)` (`?? 0`) — used by `askTicket` AND the crossing
+  check, never two spellings of the default. `askTicket` = `{ ...key, keyFence: fenceOf(…), lockEpoch: book.lockEpoch }`.
+- `grantWindow` = private `crossing(book, ticket, currentGeneration)` in I3's order — `currentGeneration !==
+  ticket.generation` → `stale-key`; `fenceOf(book, id) !== ticket.keyFence` → `fenced-key`; `book.lockEpoch !==
+  ticket.lockEpoch` → `fenced-lock`; a crossing returns the SAME book — then private `placed`: `until' = min(until,
+  grantedAt + MAX_WINDOW_MS[scope])`; an existing window of this scope with `until >= until'` → `kept-later`, same
+  book; else `opened`: new book, new `open` map, this key's other scope kept, entry `{ generation:
+  ticket.generation, grantedAt, grantedAtMono, until: until' }`. An `until` at or before `grantedAt` is placed as
+  handed; it covers nothing.
+- ONE private `covers(w, key, now, nowMono)` (two helpers, wall and mono, for complexity): `w.generation ===
+  key.generation`, `withinAllowWindow(w.until, now)`, `w.grantedAt <= now`, and `0 <= nowMono − w.grantedAtMono <
+  w.until − w.grantedAt`. `windowCovers` = the first scope in `scopes` order that covers; `windowsFor` = every one.
+- `scopesFor` = `purposeIsLogin && autoLockMinutes > 0 ? ['all', 'login'] : ALL_ONLY`.
+- `forgetKey` and `endWindows` = one private `fenced(book, id)`: fence + 1, the key's `open` entry deleted; always a
+  new book, even with nothing open (I3). Two names, one operation, so the caller's intent reads.
+- `endAllWindows`: `lockEpoch + 1`, `open` empty, fences kept; always new. `endLoginWindows`: every `login` entry
+  dropped, no fence moved. `withoutExpired`: keeps the windows that pass the wall and mono halves of `covers`. Those
+  two drop a key whose entry is empty and return the same object when nothing was dropped.
+- `nextExpiry`: the smallest `until > now` over every open window, else `undefined`.
+
+**Wired in E1:** `NO_WINDOWS`, `askTicket`, `grantWindow` (scope `all`), `windowCovers` with `ALL_ONLY`, `forgetKey`.
+**Defined and tested in E1, unwired until later:** `endWindows`, `windowsFor` (E2's row and button), `endAllWindows`
+(E2's lock — `lockEpoch` moves only there), `withoutExpired` / `nextExpiry` (E2's timer), `endLoginWindows`,
+`scopesFor` at the gate, `MAX_WINDOW_MS.login` (E3). No E1 path produces `fenced-key` or `fenced-lock`.
+
+##### 2. The scenarios
+
+Constants in both files: `MIN = 60_000`, `H = 3_600_000`, `W = Date.UTC(2026, 8, 24, 10, 0, 0)` (wall, "10:00"),
+`M = 50_000` (monotonic — NOT 0, trap 8), `A = { entityId: 'key-1', generation: 1 }`, `B` the same for `key-2`.
+Helper `grant(book, key, scope, grantedAt, mono, until)` = `askTicket` + `grantWindow` with `currentGeneration =
+key.generation`. A probe is `(wall, mono)`; unless said, the window is `A`, scope `all`, granted `(W, M)` until `W + 10·MIN`.
+
+**`src/test/allowWindows.test.ts`** (pure; none can be RED on `main` — the module is new):
+
+1. *a window granted to one generation of a key never covers the next* — `windowCovers` for `{ key-1, generation: 2 }`
+   at `(W + MIN, M + MIN)` → `undefined`; generation 1 at the same probe → the window; after `forgetKey(book,
+   'key-1')` both are `undefined` and `open.has('key-1')` is false.
+2. *a revocation fences an answer even when no window was open* — `t = askTicket(NO_WINDOWS, A)`; `b1 =
+   endWindows(NO_WINDOWS, 'key-1')`; `grantWindow(b1, t, 'all', 1, W, M, W + 10·MIN)` → `fenced-key`, `book === b1`.
+   The same with `endAllWindows` → `fenced-lock`.
+3. *a revocation on one key never fences an answer for another* — `t` for `A`; `endWindows` then `forgetKey` on
+   `key-2`; grant with `t` → `opened`.
+4. *unload/re-load wins over every other fence* — `t` for `A`; `b1 = forgetKey(endAllWindows(NO_WINDOWS), 'key-1')`;
+   `grantWindow(b1, t, 'all', 2, …)` → `stale-key` (not `fenced-lock`); `currentGeneration` `undefined` → `stale-key`.
+5. *a fresh key's first grant opens* — `askTicket(NO_WINDOWS, A)` then grant → `opened` (pins the `?? 0`).
+6. *no grant reaches past its scope's ceiling, whatever it is handed* — `all` handed `W + H` → stored `until === W +
+   ALLOW_WINDOW_MS`, probe `(W + 11·MIN, M + 11·MIN)` undefined; `login` handed `W + 13·H` → `W + 12·H`;
+   `MAX_WINDOW_MS.login === ASK_WINDOW_MS` (the TEST imports `mcpConsentPolicy.ts`; the module never does) and
+   `MAX_WINDOW_MS.all === ALLOW_WINDOW_MS`.
+7. *a shorter grant never shortens a longer one of the same scope* — then at `(W + MIN, M + MIN)` a grant until
+   `W + 5·MIN` → `kept-later`, same object, probe `(W + 9·MIN, M + 9·MIN)` covered; the reverse order → `opened`,
+   the same probe covered.
+8. *scopes are independent* — a `login` until `W + H` beside the `all`: `windowsFor(…, ['all', 'login'], W + MIN,
+   M + MIN)` holds both.
+9. *a window granted in the future covers nothing* — `(W − MIN, M + MIN)` undefined (wall below `grantedAt`);
+   `(W + MIN, M − 1)` undefined (mono below `grantedAtMono`).
+10. *a clock moved forward ends a window early, never extends it* — `(W + 25·MIN, M + MIN)` undefined.
+11. *two clocks, (11 min, 1 min) refuses* — `(W + 11·MIN, M + MIN)` undefined.
+12. *two clocks, (1 min, 11 min) refuses* — `(W + MIN, M + 11·MIN)` undefined.
+13. *the boundary expires on both clocks* — `(W + MIN, M + MIN)` covered (the control); `(W + 10·MIN − 1, M + 10·MIN
+    − 1)` covered; `(W + 10·MIN, M + MIN)` undefined; `(W + MIN, M + 10·MIN)` undefined.
+14. *a wall clock set back that stays above `grantedAt` refuses* — `(W + 9·MIN, M + 17·MIN)` undefined; the control
+    `(W + 9·MIN, M + 9·MIN)` covered, so the case hinges on the second clock.
+15. *a login window never covers a Git signature or an unrecognised request* — `login` until `W + H` only;
+    `windowCovers(book, A, scopesFor(false, 60), W + 30·MIN, M + 30·MIN)` undefined; with `scopesFor(true, 60)` → it.
+16. *a 10-minute window still covers every purpose* — covered under `scopesFor(false, 60)`, `(true, 60)` and
+    `(true, 0)`; and `scopesFor(true, 60)` → `['all', 'login']`, `(false, 60)`, `(true, 0)`, `(true, −1)` → `['all']`.
+17. *a book that did not change is the same object, and a grant never changes the book it was given* —
+    `assert.equal(result, book)` for `kept-later`, each crossing, `endLoginWindows` with no `login` window,
+    `withoutExpired` with nothing expired; hold `before`, grant, `before.open.size === 0`.
+18. *a lock ends every window and keeps the fences* — `endAllWindows`: `open.size 0`, `lockEpoch + 1`, `keyFences` unchanged.
+19. *ending the login windows moves no fence* — `t` for `A`; `b1 = endLoginWindows(A's login + all)`; `all`
+    survives, `login` gone; `grantWindow(b1, t, 'all', 1, …)` → `opened`.
+20. *an expired window leaves the book, `nextExpiry` names the nearest end, and both clocks count* — `B` until
+    `W + 5·MIN` beside `A`; `withoutExpired(book, W + 6·MIN, M + 6·MIN)` → `B` gone, `A` kept, `open.has('key-2')`
+    false; `nextExpiry(book, W) === W + 5·MIN`, after → `W + 10·MIN`, on `NO_WINDOWS` → undefined;
+    `withoutExpired(book, W + MIN, M + 11·MIN)` → `A` gone.
+
+**`src/test/sshAgentManagerWindows.test.ts`** (on `test/sshAgentWorld.ts` from E1.2; `manager()` gains
+`monotonic?: () => number`, the fifth constructor argument). `key` is the plain `{ entityId: KEY_ID, name: 'prod',
+fingerprint: 'SHA256:abc' }` the old file uses.
+
+- M1 *re-adding a key that is already loaded starts it with no window* (D1) — answers `[ALLOW_WINDOW, ALLOW_ONCE]`;
+  load; confirm; `load` again (no unload); confirm → `dialogs.length === 2`. **RED on `main`:** `1 !== 2`.
+- M2 *an answer given after Remove from SSH Agent refuses, and opens no window for the key loaded next* (D2) —
+  `modal = unanswered()`, answers `[modal.answer, ALLOW_ONCE]`, `consentTimeoutMs: 1000`; load; `pending =
+  confirm(key)`; `unload(KEY_ID)`; `modal.clickLate(ALLOW_WINDOW)`; `await pending === false` and a log line
+  `/REFUSED .* removed or re-added/`; `load` again; confirm → `dialogs.length === 2`. **RED:** `true !== false`
+  (`consentFromChoice` is applied whatever happened), then `1 !== 2`.
+- M3 *an answer given across a re-load refuses and opens no window* (I2) — M2 with `load` in place of `unload`.
+  **RED:** `true !== false`.
+- M4 *every silent signature names the window that allowed it, and until when* (I10) — stopped clock `W`, answers
+  `[ALLOW_WINDOW]`; confirm; clock to `W + MIN`; confirm (silent); one log line starts with `allowed without asking:
+  10-minute window of "prod" until ${localWallTime(new Date(W + ALLOW_WINDOW_MS))} (granted ${localWallTime(new
+  Date(W))}) for ` — both stamps read through the function, never typed. **RED:** no line matches `/allowed without
+  asking/`; `main` writes `allowed (within the 10-minute window) for …`.
+- M5 *the gate reads the injected monotonic clock* (new; the parameter does not exist on `main`) — wall `W` then
+  `W + MIN`, monotonic `M` then `M + 11·MIN`, answers `[ALLOW_WINDOW, ALLOW_ONCE]`; confirm; confirm →
+  `dialogs.length === 2` ("the wall clock alone would have covered it").
+- M6 *a request for a key that is not loaded is refused without a dialog* (new) — `entityId: 'ghost'` → `false`,
+  `dialogs.length === 0`, a log line `/not loaded/`.
+
+##### 3. The brief — `sshAgentManager.ts`
+
+1. `:5` add `localWallTime` to the `requestTime` import. `:12-19` drop `withinAllowWindow` (unused → `noUnusedLocals`);
+   add `ALL_ONLY, AllowWindows, AskTicket, NO_WINDOWS, askTicket, forgetKey, grantWindow, windowCovers` from `./allowWindows`.
+2. `:68-71` `LoadedKey` gains `generation: number` (beside E1.2's `revoke`). `:76-77` the `allowedUntil` map becomes
+   `private windows: AllowWindows = NO_WINDOWS;` (not `readonly`: replaced, never mutated), `private generations = 0;`
+   and `private readonly monotonic: () => number;`.
+3. `:80-99` the constructor gains a FIFTH parameter after `consentTimeoutMs`: `monotonic?: () => number` — **optional,
+   NO default value**. ESLint counts a defaulted parameter (`AssignmentPattern`) as a branch; the constructor is at 4
+   today (three defaults) and `= () => performance.now()` makes it 5 — measured with `eslint --stdin`, 2026-10-20.
+   The body, today `{}`, becomes `{ this.monotonic = monotonicSource(monotonic); }` with a module-level `function
+   monotonicSource(source: (() => number) | undefined): () => number { return source ?? (() => performance.now()); }`.
+   Its comment: `performance.now()` is libuv's `uv_hrtime`, on Windows `QueryPerformanceCounter`, documented as
+   counting through standby (learn.microsoft.com, *Acquiring high-resolution time stamps*); where it pauses, the wall
+   clock still ends the window. `performance` is a global under `@types/node` 20. `extension.ts:568` does not change.
+4. `:149-159` `serve()`: first line `this.windows = forgetKey(this.windows, details.id);` (after E1.2's `revoke()`),
+   and `generation: ++this.generations` in the literal — every serve, first load included, one path, no branch.
+   `:168` → `this.windows = forgetKey(this.windows, entityId);`. `:354` → `this.windows = NO_WINDOWS;`.
+5. `:263-285` `confirm` becomes four methods, plus a private `generationOf(entityId): number | undefined` returning
+   `this.keys.get(entityId)?.generation` (the `?.` is a branch; keep it out of `confirm`).
+   - `confirm(key, purpose, data)`: `asked = this.clock()`, `generation = this.generationOf(key.entityId)`, `nowMono =
+     this.monotonic()` — all three BEFORE the first `await`, which is what "arrival" means (`sshAgentServer.ts:133-145`
+     hands off synchronously; the tests pass plain objects, so `key.generation` is never read); `noteUnknown`;
+     `generation === undefined` → log `REFUSED a signature with "<name>": the key is not loaded`, return `false`;
+     `arrived = { entityId, generation }`; `covered = windowCovers(this.windows, arrived, ALL_ONLY, asked.getTime(),
+     nowMono)`; covered → `logCovered(key, purpose, covered)`, return `true`; `ticket = askTicket(this.windows,
+     arrived)`; `choice = await this.askToSign(key, purpose, asked)`; return `this.settle(key, ticket, choice)`. Complexity 3.
+   - `settle(key, ticket, choice): boolean`: `grantedAt = this.clock().getTime()`, `grantedAtMono = this.monotonic()`
+     (read once each, side by side); `decision = consentFromChoice(choice, grantedAt)`; presence as today;
+     `allowedUntil === undefined` → return `decision.allow`; else return `this.openWindow(key, ticket, { grantedAt,
+     grantedAtMono, until: decision.allowedUntil })`. No generation check here. Complexity 3.
+   - `openWindow(key, ticket, at): boolean`: `grantWindow(this.windows, ticket, 'all', this.generationOf(key.entityId),
+     at.grantedAt, at.grantedAtMono, at.until)`; `this.windows = book`; `stale-key` → log `REFUSED a signature with
+     "<name>": answered after the key was removed or re-added — no window was opened`, return `false`; anything else →
+     `true` (`opened`, `kept-later`, the two E1-unreachable fences). **The one place the generation is checked.** Complexity 2.
+   - `logCovered(key, purpose, w)`: the I10 line, `allowed without asking: 10-minute window of "${key.name}" until
+     ${localWallTime(new Date(w.until))} (granted ${localWallTime(new Date(w.grantedAt))}) for ${describePurpose(purpose)}`.
+6. `agentConsent.ts:22-29`: the one sentence of frame step 6. Nothing else in that file.
+7. **Not to change:** `askToSign` and its text (E1.4 edits the buttons), `consentFromChoice` (E3), no `ConsentTurns`
+   or queue, no lock wiring or `onDidLock`, no hooks, no expiry timer, no row text, `withinAllowWindow`'s signature,
+   `mcpConsentPolicy.ts`.
+
+**Where this spec differs from the frame above:** the frame's step 2 defaulted parameter (lint, step 3 here);
+`generationOf` instead of an inline `?.`; M5 and M6 added; 20 pure tests holding 26 guarantees, not 17.
+
+##### 4. The traps, each with the test that pins it
+
+1. **`>=` at the boundary.** `withinAllowWindow` is strict (`until > now`, `agentConsent.test.ts:54`); the mono half
+   is strict too (`elapsed < length`). Pinned by 13.
+2. **The clock read twice** (the gate for the check and again for the log; `settle` for `consentFromChoice` and again
+   for `grantedAt`) can straddle a boundary. A stopped test clock cannot see it; the Opus review checks it.
+3. **The fence compared with `<` or `>`.** Use `!==`: with a missed `?? 0`, `undefined < 1` is `false` and the fence
+   is silently passed; `!==` fails safe. Pinned by 2 and 5.
+4. **Mutating a `ReadonlyMap` through a cast** (`(book.open as Map).set(…)`), or `kept-later` building a new book
+   anyway (E2 repaints on reference change). Pinned by 17.
+5. **The monotonic clock injected but not used** — in the gate, or in `withoutExpired`. Pinned by M5 and 20.
+6. **A fourth defaulted constructor parameter.** Complexity 5; `npm run lint` is the pin (brief step 3).
+7. **The generation read after the first `await`** (inside `settle`): a re-load during the prompt is then read as the
+   current generation and `stale-key` never fires. Pinned by M3. Reading `key.generation` from the `AgentKey`
+   argument is the same trap: the manager tests pass plain objects, every M-test refuses as "not loaded".
+8. **`grantedAtMono` never stored, or stored as `0`.** `M = 50_000` makes the arithmetic wrong in both cases; 13's
+   control and M5 catch it. Never start a test's monotonic clock at 0.
+9. **`forgetKey` only in `unload`, not in `serve`.** Pinned by M1. **The generation checked on one side only** —
+   `covers` (1) and `crossing` (4) both check it; both stay.
+10. **`endLoginWindows` moving the key fence** (a pending 10-minute answer must still open) — pinned by 19;
+    **`scopesFor` with `!== 0`** (a negative setting must read as "off") — pinned by 16; **`withoutExpired` leaving an
+    empty key entry, or dropping a key's other scope** — pinned by 20 and 1.
+
 ## 6. E1.4 — every text of this release says what the prompt really does
 
 **Order matters for an honest RED.** First the refactor: `export const SIGNING_BUTTONS = [ALLOW_ONCE, ALLOW_WINDOW,
