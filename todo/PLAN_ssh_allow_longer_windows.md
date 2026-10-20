@@ -435,7 +435,7 @@ All four are IMPLEMENTED records in `research/`; each gets a dated pointer line,
 | The MCP 12-hour policy | `PLAN_agent_consent_policy.md` (D1: not the SSH dialog) | unchanged; this plan shares only `withinAllowWindow` and pins the 12-hour ceiling equal by test |
 | "The worst a process inside WSL can do is *ask*" | `PLAN_wsl_agent_relay.md:91` | false once a window is open; rewritten by this plan (§12) |
 
-Disjoint: nothing in `todo/` touches the SSH agent today (checked: `todo/README.md` table, 2026-10-20).
+Disjoint: no other plan in `todo/` touches the SSH agent today (checked: `todo/README.md` table, 2026-10-20).
 
 ## 10. Build order — every story RED first
 
