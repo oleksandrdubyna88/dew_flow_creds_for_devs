@@ -746,6 +746,16 @@ disagreed on where one-prompt-per-key goes; the decision and its reason are unde
   (manager): *a pick that is no longer eligible allows once and opens no window* — open the list with auto-lock on →
   set `autoLockMinutes` to 0 → pick 12 hours → this signature is allowed, no window opens, the message says why;
   restore auto-lock → the next login prompts.
+  **SHA-1 RSA is never covered by a long window** (Fable's security judgement of E1.1, 2026-10-20). The classifier
+  never sees the request's `flags`, and with no `SSH_AGENT_RSA_SHA2_*` flag an RSA key signs with SHA-1
+  (`sshAgentSign.ts:43-45`). A SHA-1 chosen-prefix collision is practical, and a login-shaped message has free bytes to
+  carry one, so a `login` window covers an RSA request only when it carries a SHA-2 flag; flags 0 on an RSA key asks.
+  `scopesFor` takes the flags (or the caller excludes it — one place). Test (manager): *an RSA login with flags 0 is
+  not covered by a login window*. Dropping SHA-1 signing entirely is the stronger fix and an owner decision (the
+  comment at `sshAgentSign.ts:43-44` chose compatibility) — asked, not assumed.
+  **Certificate logins** (an OpenSSH `…-cert-v01` certificate blob in the userauth, the plain key in the agent) are classified
+  unknown since E1.1 — the safe direction, pinned by a test — so they never get a long window. Accepting them
+  (compare only the certificate's embedded key fields to the signing key, exact end) is a follow-up story, not E3.
 - **Depends on.** E2 (the row, the button, the lock, the turns). Nothing is offered before all three exist.
 - **Done when.** M2 and M3 measured; `npm run itest:ssh-agent` green with the S10.1 scenario; every text in D5's row is
   true in all five languages; §15 fully ticked. **Release:** `extension-v1.16.0` (`feat:` → minor). The CLI sentence
