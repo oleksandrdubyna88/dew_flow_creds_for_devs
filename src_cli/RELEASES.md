@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/cli-v0.4.2...cli-v0.4.3) (2026-10-21)
+
+
+### Bug Fixes
+
+* **extension:** an SSH allow window never outlives what it was given for ([#197](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/197) E1) ([#262](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/262)) ([77afb10](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/77afb10f9d71eea5a0db1c5e2251d5e3af3b22c2))
+
 ## [0.4.2](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/cli-v0.4.1...cli-v0.4.2) (2026-10-12)
 
 
