@@ -152,8 +152,9 @@ serving is refused rather than hijacked.
 **It widens the reach of the agent, and that is the point to weigh.** A named pipe is reachable
 by one Windows user; a unix socket is reachable by every process in that distribution running as
 you. The mitigation is not the socket mode — it is that a signature still has to be allowed on
-Windows, so the worst a process in WSL can do is ask, visibly. The relay is opt-in and never
-starts itself.
+Windows: outside a window opened there, the worst a process in WSL can do is ask, visibly; while
+such a window is open, it signs with that key without asking, exactly as a Windows process does.
+The relay is opt-in and never starts itself.
 
 **The relay logs to a file** (since 2026-10-09): `creds-relay-{HH-mm-ss}-{pid}.log` under a folder per
 UTC day in `$XDG_STATE_HOME/creds-for-devs/logs` (or `~/.local/state/creds-for-devs/logs`) — its
