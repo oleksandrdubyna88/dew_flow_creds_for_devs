@@ -26,6 +26,7 @@ import {
   NO_WINDOWS,
   OpenWindow,
   askTicket,
+  endAllWindows,
   forgetKey,
   grantWindow,
   windowCovers,
@@ -250,6 +251,16 @@ export class SshAgentManager implements vscode.Disposable {
       this.stop();
     }
     return true;
+  }
+
+  /**
+   * Any lock of the vault: every window ends, and an answer given across the lock opens none (`fenced-lock`).
+   * One method per meaning (E1.2's judgement): this never calls `revoke` and never touches `keys` — the keys stay
+   * loaded and the next signature asks again; only `serve`, `unload` and `dispose` end a key's right to sign.
+   */
+  endAllWindows(reason: string): void {
+    this.windows = endAllWindows(this.windows);
+    this.log(`every signing window ended: ${reason}`);
   }
 
   /** Whether this node is a key entity that asks to be served and is not loaded yet. */

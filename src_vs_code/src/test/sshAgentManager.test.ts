@@ -8,10 +8,12 @@ import { describeServerLine, describeSignRequest, encodeString } from '../sshAge
 import {
   FakeServer,
   KEY_ID,
+  SIGNED_BYTES,
   keyMaterialLogged,
   keyEntity,
   manager,
   realPrivateKey,
+  servedKey,
   unanswered,
   world,
 } from './sshAgentWorld';
@@ -522,14 +524,6 @@ test('disposing drops every key — that is the whole revocation story', async (
   assert.equal(instance.isLoaded(KEY_ID), false);
   assert.equal(w.disposals, 1, 'and the socket is gone with it');
 });
-
-/** The key object the (stub) server holds for the first served key — the thing a late caller would sign with. */
-function servedKey(w: { server(): FakeServer | undefined }): { sign(data: Buffer, flags: number): Buffer | undefined } {
-  const keys = (w.server() as FakeServer).keys() as { sign(data: Buffer, flags: number): Buffer | undefined }[];
-  return keys[0];
-}
-
-const SIGNED_BYTES = Buffer.from('bytes a client wants signed');
 
 test('a replaced key object refuses to sign, even with identical public bytes', async () => {
   // I1: a signature is made only by the object that is served NOW. Replacing it revokes the old one by

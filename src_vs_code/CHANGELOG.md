@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — a lock ends every window
+
+- **Locking the vaults ends every SSH signing window.** By hand (*Lock Vaults*), by the idle timer or by a corporate
+  deactivation: whichever road reaches the lock, a window opened with *Allow for 10 minutes* ends with it. The key stays
+  loaded and the next signature asks again. A prompt that is still on screen when the vault locks may still be answered —
+  *Allow once* signs that one signature, and *Allow for 10 minutes* answered after the lock signs once and opens no window.
+
 ## [1.14.2] — 2026-10-21 — The signing prompt names a current OpenSSH login, and a removed key never signs
 
 ### Fixed — a login to a current OpenSSH server is named, with the server's host key

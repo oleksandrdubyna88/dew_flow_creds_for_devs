@@ -19,6 +19,10 @@
 // (#197, E1.1). Under `-d` sshd neither daemonises nor forks per connection, but its privilege
 // separation and the session still fork children, and those exit when the connection closes —
 // which is why the section ends the ssh client first, and only then sshd.
+//
+// Section 6 (every platform, no sshd) is the lock: a REAL `VaultKeys`, joined to a real manager by
+// `connectAgentToLock`, ends a ten-minute window the moment it locks — and the key, still loaded,
+// signs again for a real `ssh-keygen -Y sign` after one more answer (#197, E2.1).
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
@@ -30,13 +34,14 @@ const OUT = path.join(__dirname, '..', 'out');
 const { SshAgentServer, agentSocketPath } = require(path.join(OUT, 'sshAgentServer.js'));
 const { parseSshPrivateKey } = require(path.join(OUT, 'sshKeyParse.js'));
 const { signForAgent } = require(path.join(OUT, 'sshAgentSign.js'));
-const { ALLOW_ONCE } = require(path.join(OUT, 'agentConsent.js'));
+const { ALLOW_ONCE, ALLOW_WINDOW } = require(path.join(OUT, 'agentConsent.js'));
 
 const isWindows = process.platform === 'win32';
 const SSHD = '/usr/sbin/sshd';
 // A modal nobody answers. The stub (written once, below) reads its answer from a global at CALL
 // time, so one module serves both sections that need a `vscode`: it can be a promise that never
-// settles (section 4) or a click on "Allow once" (section 5).
+// settles (section 4), a click on "Allow once" (section 5) or, as an ARRAY, a sequence of clicks answered in
+// order (section 6).
 const NEVER_ANSWER = Symbol.for('ssh-agent-itest.never-answer');
 const OPENSSH_DIR = 'C:/Windows/System32/OpenSSH';
 const tools = {
@@ -187,6 +192,8 @@ async function main() {
     await unansweredPromptRefuses(pem, publicPath, dir);
     // ---- 5. a real ssh logs in to a real sshd through the agent (#197, E1.1) -----------------
     await liveHostBoundLogin(pem, publicPath, dir);
+    // ---- 6. a real vault lock ends a real ten-minute window (#197, E2.1) ----------------------
+    await lockEndsTheWindow(pem, publicPath, dir);
   });
 
   // --- what makes `-A` more than a flag (2026-08-26) --------------------------------------
@@ -266,17 +273,31 @@ async function withVscodeStub(dir, body) {
   fs.writeFileSync(
     stubPath,
     `const NEVER = Symbol.for(${JSON.stringify(NEVER_ANSWER.description)});
-     module.exports = { window: {
+     class EventEmitter {
+       constructor() {
+         this.listeners = [];
+         this.event = (listener) => {
+           this.listeners.push(listener);
+           return { dispose: () => { const at = this.listeners.indexOf(listener); if (at >= 0) this.listeners.splice(at, 1); } };
+         };
+       }
+       fire(value) { for (const listener of [...this.listeners]) listener(value); }
+       dispose() { this.listeners.length = 0; }
+     }
+     module.exports = { EventEmitter, window: {
        showWarningMessage: (message, options, ...buttons) => {
          global.__AGENT_DIALOGS__.push({ message, buttons });
          const answer = global.__AGENT_ANSWER__;
+         if (Array.isArray(answer)) return Promise.resolve(answer.shift());
          return answer === NEVER ? new Promise(() => {}) : Promise.resolve(answer);
        },
+       showInformationMessage: (message) => { global.__AGENT_INFOS__.push(message); return Promise.resolve(undefined); },
        createOutputChannel: () => ({ appendLine: (l) => global.__AGENT_LOG__.push(l), dispose() {} }),
      } };`,
   );
   global.__AGENT_LOG__ = [];
   global.__AGENT_DIALOGS__ = [];
+  global.__AGENT_INFOS__ = [];
   const original = Module._resolveFilename;
   Module._resolveFilename = (request, ...rest) => (request === 'vscode' ? stubPath : original.call(Module, request, ...rest));
   try {
@@ -318,6 +339,86 @@ async function driveUnansweredPrompt(pem, publicPath, dir) {
     global.__AGENT_LOG__.join(' | '),
   );
   manager.dispose();
+}
+
+/** A `vscode.SecretStorage` held in a Map — all a real `VaultKeys` needs to be built (it is never mocked). */
+function mapSecretStorage() {
+  const stored = new Map();
+  return {
+    get: (key) => Promise.resolve(stored.get(key)),
+    store: (key, value) => Promise.resolve(void stored.set(key, value)),
+    delete: (key) => Promise.resolve(void stored.delete(key)),
+    keys: () => Promise.resolve([...stored.keys()]),
+    onDidChange: () => ({ dispose() {} }),
+  };
+}
+
+/**
+ * Every lock ends every window — proven end to end (#197, E2.1). A REAL `VaultKeys`, a real manager, and
+ * the production `connectAgentToLock` between them; three real `ssh-keygen -Y sign`. The first is answered
+ * "Allow for 10 minutes" (one dialog); the second rides the window (no new dialog); then `vaultKeys.lock()`,
+ * and the third ASKS again — and, answered once, it SIGNS: exit 0 proves the lock ended the window and did
+ * not revoke or unload the key. No `sshd` is needed, so this runs wherever `ssh-keygen` does.
+ */
+async function lockEndsTheWindow(pem, publicPath, dir) {
+  const { VaultKeys } = require(path.join(OUT, 'vaultKeys.js'));
+  const { connectAgentToLock } = require(path.join(OUT, 'sshAgentWiring.js'));
+  const { SshAgentManager } = require(path.join(OUT, 'sshAgentManager.js'));
+  const published = {};
+  const manager = new SshAgentManager(
+    { getPrivateKey: () => Promise.resolve(pem) },
+    path.join(dir, 'w'),
+    { replace: (name, value) => { published[name] = value; }, delete: () => undefined, set description(_v) {} },
+    () => undefined,
+  );
+  const vaultKeys = new VaultKeys(mapSecretStorage());
+  const link = connectAgentToLock(vaultKeys, manager);
+  try {
+    const loaded = await manager.load('a1', { id: 'e-lock', name: 'itest key', isSshEnabled: false, isSshKey: true });
+    check('the real manager loads and serves the key for the lock section', loaded.ok === true, loaded.reason);
+    const socket = published.SSH_AUTH_SOCK;
+    const fits = typeof socket === 'string' && (isWindows || socket.length < 104);
+    check('the lock section agent socket path fits a unix socket', fits, String(socket));
+    if (loaded.ok !== true || !fits) {
+      return;
+    }
+    await signThreeTimes(vaultKeys, manager, publicPath, dir, socket);
+  } finally {
+    link.dispose();
+    manager.dispose();
+  }
+}
+
+/** The body of section 6: sign, sign (window), lock, sign (asks again, still signs). */
+async function signThreeTimes(vaultKeys, manager, publicPath, dir, socket) {
+  global.__AGENT_DIALOGS__.length = 0;
+  global.__AGENT_ANSWER__ = [ALLOW_WINDOW, ALLOW_ONCE];
+  const sign = (name) => {
+    const messagePath = path.join(dir, name);
+    fs.writeFileSync(messagePath, `signed under the lock section: ${name}
+`);
+    return run(tools.sshKeygen, ['-Y', 'sign', '-f', publicPath, '-n', 'git', messagePath], {
+      env: { ...process.env, SSH_AUTH_SOCK: socket },
+    });
+  };
+  const first = await sign('lock-1.txt');
+  check('the first signature, answered "Allow for 10 minutes", signs', first.code === 0, `exit ${first.code}: ${first.stderr.trim()}`);
+  check('and raised one dialog', global.__AGENT_DIALOGS__.length === 1, `${global.__AGENT_DIALOGS__.length} dialogs`);
+  const second = await sign('lock-2.txt');
+  check('the second signature rides the window and signs', second.code === 0, `exit ${second.code}: ${second.stderr.trim()}`);
+  check('without a new dialog', global.__AGENT_DIALOGS__.length === 1, `${global.__AGENT_DIALOGS__.length} dialogs`);
+
+  vaultKeys.lock();
+
+  const third = await sign('lock-3.txt');
+  check('a lock ends the window: the third signature asks again', global.__AGENT_DIALOGS__.length === 2, `${global.__AGENT_DIALOGS__.length} dialogs`);
+  check(
+    'the agent log says why every window ended',
+    global.__AGENT_LOG__.some((line) => /every signing window ended: the vaults were locked/.test(line)),
+    global.__AGENT_LOG__.join(' | '),
+  );
+  check('and the key was not revoked: the third signature, answered once, signs (exit 0)', third.code === 0, `exit ${third.code}: ${third.stderr.trim()}`);
+  check('the key is still loaded after the lock', manager.isLoaded('e-lock') === true);
 }
 
 /** Spawns a child and collects its output — unlike `run`, the caller holds the pid and can end it. */

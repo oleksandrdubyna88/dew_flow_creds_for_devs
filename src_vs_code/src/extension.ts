@@ -85,7 +85,7 @@ import { registerPinCommands } from './pinCommands';
 import { syncReminderDue } from './syncReminder';
 import { RefSource } from './secretRef';
 import { MIN_MASKABLE_LENGTH } from './outputMask';
-import { SshAgentManager } from './sshAgentManager';
+import { wireSshAgent } from './sshAgentWiring';
 import { folderPath } from './quickOpen';
 import { LockStatusBar } from './statusBar';
 import { asElement } from './commandTargets';
@@ -563,27 +563,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // audited — the reasons are in `brokerProtocol.isConfigReadRoute`.
     configRoute: configRouteSources(storage),
   });
-  // The SSH agent: keys served from memory, asked before signing, SSH_AUTH_SOCK injected into
-  // new terminals. Nothing starts until a key is actually loaded.
-  const sshAgent = new SshAgentManager(
-    storage,
-    storageDir,
-    envCollection(),
-    () => vaultKeys.noteUserActivity(),
-    // Published in the endpoint file so a relay inside WSL can find this agent without a pid,
-    // and — when the setting is on — used to raise and lower the relay with the agent itself.
-    (socketPath) => {
-      agentServer.setAgentAddress(socketPath);
-      followAgentWithRelay(socketPath);
-    },
-  );
-  context.subscriptions.push(sshAgent);
-  void sshAgent.loadMarked().then((count) => {
-    if (count > 0) {
-      void vscode.window.showInformationMessage(
-        `${count} SSH key(s) are served by the CredsForDevs agent. A signature asks first; the answer covers it once, or every use for 10 minutes; see "CredsForDevs: SSH Agent" for the record.`,
-      );
-    }
+  // The SSH agent (`sshAgentWiring.ts`). Its address is published in the endpoint file so a relay inside WSL
+  // can find it without a pid, and — when the setting is on — raises and lowers the relay with the agent.
+  const sshAgent = wireSshAgent({
+    context, storage, storageDir, envCollection: envCollection(), vaultKeys,
+    onAddress: (socketPath) => { agentServer.setAgentAddress(socketPath); followAgentWithRelay(socketPath); },
   });
 
   // The relay that carries this agent into WSL, where a Linux kernel cannot open a named pipe.

@@ -178,6 +178,9 @@ const HELP_FILES: Readonly<Record<HelpLanguage, string>> = {
 const REPLACED_IN_CODE: ReadonlyArray<{ file: string; old: string }> = [
   { file: 'extension.ts', old: 'Every use asks first; see "CredsForDevs: SSH Agent" for the record.' }, // :584
   { file: 'extension.ts', old: 'keys served from memory, every use confirmed' }, // :566
+  // The block moved to sshAgentWiring.ts (E2.1): the same old strings must not come back in its new home.
+  { file: 'sshAgentWiring.ts', old: 'Every use asks first; see "CredsForDevs: SSH Agent" for the record.' },
+  { file: 'sshAgentWiring.ts', old: 'keys served from memory, every use confirmed' },
   { file: 'agentDoors.ts', old: 'ssh and git inside WSL can use this key, with a dialog per signature.' }, // :103
   { file: 'commands/agentCommands.ts', old: 'every use of the key asks first.' }, // :679
   { file: 'sshProgram.ts', old: 'serving keys from memory with a dialog per signature' }, // :10
