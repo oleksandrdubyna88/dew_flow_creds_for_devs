@@ -55,7 +55,8 @@ turn handler — one story, one spec. E2.1 and E2.2 come first, so E2.3 crosses 
   checks `!turn.aborted` and, if live, applies the answer (decision, presence, `openWindow`) before it returns; the slot
   frees only when that continuation settles. So the next turn's re-check always sees the window — by construction,
   not by counting promise hops. No macrotask (a timer, a socket `close`) can run between the check and the apply.
-- **The time left.** *"Unanswered, it is refused after {left}."*, `{left}` = `durationText(leftMs)` from the turn — the
+- **The time left.** *"Unanswered, it is refused after {left}."*, `{left}` = `timeLeftText(leftMs)` from the turn —
+  rounded DOWN, in seconds below two minutes (E2.3 review, T19: a 30-second wait no longer reads *1 minute*); the
   full bound for a request that did not wait, so today's assertions (*5 minutes*, *1 second*) stay true.
 - **The floor** (R5). A request that WAITED and has less than `promptFloor(bound) = min(MIN_PROMPT_MS, bound / 20)` left
   at its turn start is refused there without a prompt (`MIN_PROMPT_MS = 15_000`; 15 s in production, where the bound
@@ -666,3 +667,11 @@ loop's "dispatch at once", the post-await `keys().includes(key)` check, the `no 
   `treeDataProvider.ts:651-658`); `module_extension.md:4844` in the docs; the `onAddress` hazard named (`wslRelay`,
   `extension.ts:592`); the row button is an inline icon action as well as a menu item; every new suite ends with the
   key-material guard (C12).
+- **Built, and where it differs from the text above** (the reviews of E2.3 — Opus and Fable — and of the whole epic):
+  the prompt's time left is `timeLeftText` (rounded down, seconds below two minutes), not `durationText`, so T8 now
+  reads *after 60 seconds*; `ConsentTurns.take` gained a `before(waited)` hook asked BEFORE the floor, so a waiter a
+  window already covers is answered by it instead of refused `too-late` (C17, T18), and `waited` is told, not inferred
+  from the clock (T17); `queued` logs one line for a request that joins behind an open prompt (coai code gate); the
+  server caps a connection at 32 pipelined replies and pauses a client that stops reading (S4, S5); `KeyedQueue`
+  starts an idle key's first job synchronously and is re-entrant (K6, K7); the late-click gap R4 has a behavioural
+  test after all. The tests and their REDs: `research/module_tests.md`.
