@@ -56,17 +56,22 @@ export function crossedLine(outcome: GrantOutcome, answer: string, ms?: number):
 
 /** A reason *Allow longer…* cannot be honoured, as the person is told — `why` has no trailing period. */
 export function pickRefusedNotice(why: string): string {
-  return `${why} — this signature was allowed once; no window was opened.`;
+  return `${why}. This signature was allowed once; no window was opened.`;
+}
+
+/** A reason as it reads in the MIDDLE of a log sentence (`… but longer windows need …`): the reasons are written to stand alone, capitalised. */
+function midSentence(why: string): string {
+  return why.charAt(0).toLowerCase() + why.slice(1);
 }
 
 /** The log line when *Allow longer…* came back but could no longer be honoured, so no list was opened (the middle check). */
 export function noListLine(key: Pick<AgentKey, 'name'>, why: string): string {
-  return `"${key.name}": answered "${ALLOW_LONGER}" but ${why} — allowed once, no list was opened`;
+  return `"${key.name}": answered "${ALLOW_LONGER}" but ${midSentence(why)} — allowed once, no list was opened`;
 }
 
 /** The log line when a length was picked but could no longer be honoured at the pick. */
 export function pickRefusedLine(key: Pick<AgentKey, 'name'>, ms: number, why: string): string {
-  return `"${key.name}": picked ${durationText(ms)} but ${why} — allowed once, no window was opened`;
+  return `"${key.name}": picked ${durationText(ms)} but ${midSentence(why)} — allowed once, no window was opened`;
 }
 
 /** What the person is told when idle auto-lock is turned off and login windows were open. */

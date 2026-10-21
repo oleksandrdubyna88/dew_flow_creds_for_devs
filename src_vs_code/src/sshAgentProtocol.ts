@@ -394,10 +394,26 @@ function describeUserauth(data: Buffer, signingKeyBlob: Buffer): SignPurpose {
  * far beyond `MAX_FRAME_BYTES`. THAT COUPLING is what tells the two apart: raising
  * `MAX_FRAME_BYTES` to ~838 MB would end it.</p>
  *
- * <p>What it does NOT see: the request's flags. A login signed with SHA-1 RSA (no flags) reads as
- * a login like any other, so whoever grants a longer window on a login must exclude that on the
- * flags themselves. SSHSIG is classified by its prefix only, on purpose: the namespace is all the
- * prompt claims, and what follows it is the message hash.</p>
+ * <p>What it does NOT see: the request's flags. The classifier reads the DATA, and `alg` there is what the
+ * client announced; the signature the agent will actually WRITE is decided by the flags alone
+ * (`rsaVariant`), and the two can disagree. So whether a long window may cover a login is not asked here but
+ * of `signsWithSha1(keyType, flags)` (`sshAgentSign.ts`), turned into a claim by `longWindowClaim`
+ * (`agentConsent.ts`). For an `ssh-rsa` key:</p>
+ *
+ * <ul>
+ *   <li>`alg` `ssh-rsa` with flags 0 or 1 (neither SHA-2 flag): `sha1-login`. No long window and no
+ *       <em>Allow longer…</em>; a 10-minute window still covers it (the owner's decision of 2026-10-21).</li>
+ *   <li>`alg` `rsa-sha2-256` / `rsa-sha2-512` with flags 2, 4 or 6 (any value carrying a SHA-2 flag):
+ *       `login`.</li>
+ *   <li>`alg` `rsa-sha2-*` with flags 0: `sha1-login`. The client SAID SHA-2 but asked for no SHA-2 signature,
+ *       so the signer would write SHA-1; the flags win and it fails closed.</li>
+ *   <li>`alg` `ssh-rsa` with flags 2 or 4: `login`. The signature IS SHA-2, so the owner's rule holds; OpenSSH
+ *       never sends this pair, and the flags are what decide it.</li>
+ * </ul>
+ *
+ * <p>An Ed25519 or ECDSA key is never SHA-1 whatever the flags say; a key type the signer does not know, or one
+ * that could not be read, is treated as SHA-1 (fail closed). SSHSIG is classified by its prefix only, on
+ * purpose: the namespace is all the prompt claims, and what follows it is the message hash.</p>
  */
 export function describeSignRequest(data: Buffer, signingKeyBlob: Buffer): SignPurpose {
   return data.subarray(0, 6).toString('latin1') === 'SSHSIG'

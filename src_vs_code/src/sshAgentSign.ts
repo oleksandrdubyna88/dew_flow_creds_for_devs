@@ -47,13 +47,28 @@ export function rsaVariant(flags: number): { algorithm: string; digest: string }
 
 /**
  * Whether signing for a key of this type with these flags would produce a SHA-1 signature — asked of the signer's
- * own rule (`rsaVariant`), so the answer cannot drift from what `signForAgent` really writes. Only an `ssh-rsa`
- * key can: Ed25519 and ECDSA hash with their own algorithm whatever the flags say. A request a key would sign with
- * SHA-1 is never covered by a long window (#197 E3; the owner's decision of 2026-10-21).
+ * own rule (`rsaVariant`), so the answer cannot drift from what `signForAgent` really writes. The answer is decided
+ * from a CLOSED set of key types: Ed25519 and the three ECDSA curves hash with their own algorithm whatever the flags
+ * say (never SHA-1); `ssh-rsa` asks `rsaVariant`; anything else — an unreadable type (`undefined`), an unknown one —
+ * is treated as SHA-1, because a long window must be granted on evidence, never on the absence of it (fail closed).
+ * A request a key would sign with SHA-1 is never covered by a long window (#197 E3; the owner's decision of
+ * 2026-10-21; E3.2 review M1).
  */
 export function signsWithSha1(keyType: string | undefined, flags: number): boolean {
-  return keyType === 'ssh-rsa' && rsaVariant(flags).digest === 'sha1';
+  const decide = keyType === undefined ? undefined : SHA1_BY_KEY_TYPE.get(keyType);
+  return decide === undefined ? true : decide(flags);
 }
+
+const NEVER_SHA1 = (): boolean => false;
+
+/** Which key types are known not to sign with SHA-1 (always), and which ask the signer's own rule (RSA). */
+const SHA1_BY_KEY_TYPE: ReadonlyMap<string, (flags: number) => boolean> = new Map<string, (flags: number) => boolean>([
+  ['ssh-ed25519', NEVER_SHA1],
+  ['ecdsa-sha2-nistp256', NEVER_SHA1],
+  ['ecdsa-sha2-nistp384', NEVER_SHA1],
+  ['ecdsa-sha2-nistp521', NEVER_SHA1],
+  ['ssh-rsa', (flags) => rsaVariant(flags).digest === 'sha1'],
+]);
 
 const ECDSA_DIGESTS: Record<string, string> = {
   'ecdsa-sha2-nistp256': 'sha256',

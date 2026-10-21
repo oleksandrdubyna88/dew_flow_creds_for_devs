@@ -124,7 +124,12 @@ test('the crossing line for the 10-minute answer is today\'s line, word for word
 test('the notices read as the plan says', () => {
   assert.equal(
     pickRefusedNotice('Longer windows need the vault unlocked \u2014 a lock ends them'),
-    'Longer windows need the vault unlocked \u2014 a lock ends them \u2014 this signature was allowed once; no window was opened.',
+    'Longer windows need the vault unlocked \u2014 a lock ends them. This signature was allowed once; no window was opened.',
+  );
+  assert.equal(
+    pickRefusedNotice('Longer windows cover SSH logins only'),
+    'Longer windows cover SSH logins only. This signature was allowed once; no window was opened.',
+    'a reason with no dash of its own reads as two plain sentences',
   );
   assert.equal(
     loginWindowsEndedNotice(1),
@@ -139,10 +144,10 @@ test('the notices read as the plan says', () => {
 test('the two log lines of the answer table name the key, the answer and the reason', () => {
   assert.equal(
     noListLine(KEY, 'Longer windows need idle auto-lock: credSshManager.autoLockMinutes is off'),
-    '"prod": answered "Allow longer\u2026" but Longer windows need idle auto-lock: credSshManager.autoLockMinutes is off \u2014 allowed once, no list was opened',
+    '"prod": answered "Allow longer\u2026" but longer windows need idle auto-lock: credSshManager.autoLockMinutes is off \u2014 allowed once, no list was opened',
   );
   assert.equal(
     pickRefusedLine(KEY, 12 * 60 * MINUTE, 'Longer windows need the vault unlocked \u2014 a lock ends them'),
-    '"prod": picked 12 hours but Longer windows need the vault unlocked \u2014 a lock ends them \u2014 allowed once, no window was opened',
+    '"prod": picked 12 hours but longer windows need the vault unlocked \u2014 a lock ends them \u2014 allowed once, no window was opened',
   );
 });

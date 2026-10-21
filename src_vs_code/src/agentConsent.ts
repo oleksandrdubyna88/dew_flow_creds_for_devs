@@ -130,8 +130,9 @@ export interface SigningDecision {
   window?: { scope: WindowScope; until: number };
 }
 
-const UNANSWERED: SigningAnswer = { kind: 'unanswered' };
-const ONCE: SigningAnswer = { kind: 'once' };
+// Shared by every prompt, so frozen: a caller that wrote to one would change the answer of every later prompt.
+const UNANSWERED: SigningAnswer = Object.freeze({ kind: 'unanswered' as const });
+const ONCE: SigningAnswer = Object.freeze({ kind: 'once' as const });
 
 /**
  * What each button means. A closed `Map` of small functions (complexity), looked up by the dialog's own return
@@ -217,6 +218,13 @@ interface OfferFacts {
   autoLockMinutes: number;
 }
 
+/**
+ * The claims that are a login at all. The first reason refuses everything NOT in this closed set rather than
+ * comparing against `'not-login'`, so a claim nobody foresaw (a widened union, a cast) is refused, not offered
+ * (E3.2 review M2). `longWindowClaim` is the same shape: only an `ssh-login` purpose ever leaves `'not-login'`.
+ */
+const LOGIN_CLAIMS: ReadonlySet<LongWindowClaim> = new Set<LongWindowClaim>(['login', 'sha1-login']);
+
 /** Idle auto-lock is on only for a positive number: `0`, a negative one and `NaN` all read as off. */
 function autoLockIsOn(minutes: number): boolean {
   return minutes > 0;
@@ -227,7 +235,7 @@ function autoLockIsOn(minutes: number): boolean {
  * trailing period: the modal appends one, the notices append their dash clause.
  */
 const NO_OFFER: readonly { why: string; applies: (facts: OfferFacts) => boolean }[] = [
-  { why: 'Longer windows cover SSH logins only', applies: (facts) => facts.claim === 'not-login' },
+  { why: 'Longer windows cover SSH logins only', applies: (facts) => !LOGIN_CLAIMS.has(facts.claim) },
   {
     why: 'Longer windows need a SHA-2 signature: this RSA login asked for SHA-1',
     applies: (facts) => facts.claim === 'sha1-login',

@@ -276,7 +276,7 @@ test('SHA-1 is decided by what the signer really writes, for every flag combinat
   assert.equal(signsWithSha1('ssh-rsa', 1), true, 'flag 1 is neither SHA-2 flag, so the signer still writes SHA-1');
 });
 
-test('Ed25519 and ECDSA never sign with SHA-1, whatever the flags say, and an absent type is not SHA-1 RSA', () => {
+test('Ed25519 and ECDSA never sign with SHA-1, whatever the flags say', () => {
   for (const [type, options, algorithm] of [
     ['ed25519', {}, 'ssh-ed25519'],
     ['ec', { namedCurve: 'prime256v1' }, 'ecdsa-sha2-nistp256'],
@@ -288,5 +288,14 @@ test('Ed25519 and ECDSA never sign with SHA-1, whatever the flags say, and an ab
       assert.equal(signsWithSha1(algorithm, flags), false, `${algorithm} with flags ${flags}`);
     }
   }
-  assert.equal(signsWithSha1(undefined, 0), false);
+  assert.equal(signsWithSha1('ecdsa-sha2-nistp384', 0), false);
+  assert.equal(signsWithSha1('ecdsa-sha2-nistp521', 0), false);
+});
+
+test('a key type that cannot be read, or is not one the signer knows, is treated as SHA-1 — it fails closed', () => {
+  for (let flags = 0; flags <= 7; flags += 1) {
+    assert.equal(signsWithSha1(undefined, flags), true, `an unreadable type with flags ${flags}`);
+    assert.equal(signsWithSha1('ssh-dss', flags), true, `an unknown type with flags ${flags}`);
+    assert.equal(signsWithSha1('', flags), true, `an empty type with flags ${flags}`);
+  }
 });

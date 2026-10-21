@@ -8,6 +8,7 @@ import {
   DENY,
   LONGER_WINDOWS_MS,
   SIGNING_BUTTONS,
+  LongWindowClaim,
   SigningAnswer,
   answerFromModal,
   answerFromPick,
@@ -175,6 +176,24 @@ test('the longer answer is offered only for a login: never for SHA-1, locked, or
   assert.deepEqual(longerOffer('login', false, 0), off);
   assert.deepEqual(longerOffer('login', false, -5), off, 'a negative value is off too');
   assert.deepEqual(longerOffer('login', false, Number.NaN), off, 'a value that is not a number is not "on"');
+});
+
+test('a claim that is neither login nor sha1-login is never offered a long window, and gets the "logins only" reason', () => {
+  for (const claim of ['forwarded-login', '', 'LOGIN', 'sshsig'] as unknown as LongWindowClaim[]) {
+    assert.deepEqual(
+      longerOffer(claim, false, 60),
+      { offer: false, why: 'Longer windows cover SSH logins only' },
+      `claim "${claim}"`,
+    );
+  }
+  assert.equal((longerOffer('forwarded-login' as unknown as LongWindowClaim, true, 0) as { why: string }).why, 'Longer windows cover SSH logins only');
+});
+
+test('the answers shared by every prompt are frozen, so no caller can turn "once" into something else', () => {
+  assert.equal(Object.isFrozen(answerFromModal(ALLOW_ONCE)), true, 'allow once');
+  assert.equal(Object.isFrozen(answerFromModal(undefined)), true, 'unanswered');
+  assert.equal(Object.isFrozen(answerFromModal('Allow, I suppose')), true, 'an unrecognised label allows once');
+  assert.equal(Object.isFrozen(answerFromPick(2 * H)), true, 'a length never offered allows once');
 });
 
 test('when several reasons apply, the first in the order is the one said: logins only, SHA-1, locked, auto-lock', () => {
