@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { SshAgentManager } from './sshAgentManager';
 import type { StorageManager } from './storageManager';
+import type { CredTreeDataProvider } from './treeDataProvider';
+import { signWindowLabel } from './treeRowText';
 import type { VaultKeys } from './vaultKeys';
 
 /**
@@ -20,6 +22,8 @@ export interface SshAgentWiringDeps {
   readonly storageDir: string;
   readonly envCollection: vscode.GlobalEnvironmentVariableCollection;
   readonly vaultKeys: Pick<VaultKeys, 'noteUserActivity' | 'onDidLock'>;
+  /** The tree: told to repaint when a window opens or ends, and given the text a key's row shows (E2.2). */
+  readonly provider: Pick<CredTreeDataProvider, 'refresh' | 'signWindowLabel'>;
   /**
    * Called on both edges of the agent's life with its address, or `undefined` once it stops.
    *
@@ -45,13 +49,29 @@ export function connectAgentToLock(
 }
 
 /**
+ * The key's row and the agent's windows (#197, E2.2): the row shows an open window as `signs without asking until
+ * 12:10`, and is told to repaint whenever the book of windows changes — a grant, an expiry, a lock, *Ask for Every
+ * Use Again*, an unload. Two assignments, both under test through `wireSshAgent`: a deleted one is a tree that
+ * keeps claiming a window after it ended, or never claims one at all.
+ */
+export function connectAgentToTree(
+  provider: Pick<CredTreeDataProvider, 'refresh' | 'signWindowLabel'>,
+  sshAgent: Pick<SshAgentManager, 'windowsFor' | 'onWindowsChanged'>,
+): void {
+  sshAgent.onWindowsChanged = () => provider.refresh();
+  provider.signWindowLabel = (accountId, nodeId) =>
+    signWindowLabel(sshAgent.windowsFor(accountId, nodeId), Date.now(), -new Date().getTimezoneOffset());
+}
+
+/**
  * The SSH agent: keys served from memory, asked before signing, `SSH_AUTH_SOCK` injected into new
  * terminals. Nothing starts until a key is actually loaded.
  */
 export function wireSshAgent(deps: SshAgentWiringDeps): SshAgentManager {
-  const { context, storage, storageDir, envCollection, vaultKeys, onAddress } = deps;
+  const { context, storage, storageDir, envCollection, vaultKeys, provider, onAddress } = deps;
   const sshAgent = new SshAgentManager(storage, storageDir, envCollection, () => vaultKeys.noteUserActivity(), onAddress);
   context.subscriptions.push(sshAgent, connectAgentToLock(vaultKeys, sshAgent));
+  connectAgentToTree(provider, sshAgent);
   void sshAgent.loadMarked().then(tellKeysServed);
   return sshAgent;
 }

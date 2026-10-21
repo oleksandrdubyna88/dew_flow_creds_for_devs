@@ -706,6 +706,26 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
   });
 
   /**
+   * *Ask for Every Use Again* (#197, E2.2): this key's SSH window ends; the key stays loaded and the next signature
+   * asks — it never revokes (only *Remove from SSH Agent* does). The SAME row as add and remove (`keyRowFor`): the
+   * windows belong to the KEY a connection points at. No `mutated()`: the row repaints through `onWindowsChanged`.
+   */
+  register('credSshManager.askEveryUseAgain', (target) => {
+    vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
+    const element = asElement(target);
+    if (element?.kind !== 'node' || !element.node.details) {
+      return;
+    }
+    const keyNode = keyRowFor(element.accountId, element.node);
+    if (keyNode?.details === undefined) {
+      void vscode.window.showWarningMessage(`"${element.node.name}" points at a key entry that is no longer in the vault.`);
+      return;
+    }
+    const had = sshAgent.endWindows(keyNode.details.id);
+    void vscode.window.showInformationMessage(askedAgainMessage(keyNode.name, had));
+  });
+
+  /**
    * The `git config` lines that make Git sign commits with this key.
    *
    * <p>Reads the public half out of the stored key rather than requiring the key to be loaded
@@ -742,6 +762,13 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
   registerWslMcpCheck(register, { storageDir, state }, (message) => log.warn('wsl-mcp', message));
 
   register('credSshManager.installCli', () => offerInstall(CREDS_CLI));
+}
+
+/** What *Ask for Every Use Again* tells the person: which of the two things is true of this key. */
+function askedAgainMessage(name: string, hadWindow: boolean): string {
+  return hadWindow
+    ? `"${name}" asks for every use again — the key stays loaded.`
+    : `"${name}" had no open window — every use already asks.`;
 }
 
 /**

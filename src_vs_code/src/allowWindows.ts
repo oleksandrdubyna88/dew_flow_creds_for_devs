@@ -17,10 +17,9 @@ import { ALLOW_WINDOW_MS, withinAllowWindow } from './agentConsent';
  * {@link AskTicket} taken when the request arrived says which, and `grantWindow` checks it.</p>
  *
  * <p><b>Fences.</b> Every revocation moves a fence, and an answer that was given across one opens no window.
- * Per key (unload, re-load, and later the row button) and one for the whole vault (any lock). What crossed is
+ * Per key (unload, re-load and the row button) and one for the whole vault (any lock). What crossed is
  * reported in this order: `stale-key` (the key was unloaded or re-loaded), `fenced-key`, `fenced-lock`.
- * In E1 only `forgetKey` and the grant exist on the wire; the lock and row-button fences are DEFINED here and
- * tested, but nothing calls them until the next epic.</p>
+ * On the wire since E2: the lock (`endAllWindows`, E2.1) and the row button (`endWindows`, E2.2).</p>
  *
  * <p><b>Two clocks, both must permit.</b> The wall clock says `grantedAt <= now < until`; a monotonic clock
  * says `0 <= nowMono - grantedAtMono < until - grantedAt`. A wall clock set back after the grant therefore

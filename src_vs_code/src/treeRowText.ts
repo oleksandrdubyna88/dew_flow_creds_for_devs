@@ -1,5 +1,7 @@
 import { DEFAULT_SSH_PORT } from './sshCommand';
-import { hasLifetime } from './entityExpiry';
+import { describeRemaining, hasLifetime } from './entityExpiry';
+import { clockUntil } from './requestTime';
+import type { ScopeWindows, WindowScope } from './allowWindows';
 import { normalizeTags } from './sshOptions';
 import { EntityMetadata, TreeNode } from './types';
 import { canConnectSsh } from './entityKind';
@@ -17,6 +19,10 @@ import { canStartVpn } from './vpnLauncher';
  * <p>What it renders is the same text the tree filter matches on (`treeSearch.nodeHaystack`),
  * and that is not a coincidence — it is the rule: <b>if the row does not say it out loud, typing
  * it will not find it</b>. Nothing secret belongs in either.</p>
+ *
+ * <p>One exception, on purpose: the SSH key's open-window label ({@link signWindowLabel}) is LIVE state — whether
+ * the agent signs without asking right now — not a property of the record. It is drawn on the row and is NOT
+ * part of the filter text: a search for "without asking" must not find a row for a minute and then lose it.</p>
  */
 
 /** `#prod #eu-west` — normalized, so a tag arriving by sync cannot render as anything else. */
@@ -47,6 +53,40 @@ export function baseTarget(node: TreeNode): string {
 /** The whole description: the target, then the tags, separated so neither reads as the other. */
 export function describeTarget(node: TreeNode): string {
   return [baseTarget(node), tagLabel(node)].filter((part) => part.length > 0).join('  ');
+}
+
+/** The phrase before the time, per scope: what the open window lets through without asking. */
+const WINDOW_PHRASE: Readonly<Record<WindowScope, string>> = {
+  all: 'signs without asking until',
+  login: 'logins without asking until',
+};
+
+/**
+ * What an open signing window says on its key's row: `signs without asking until 12:10`, and for a login window
+ * `logins without asking until 18:40` — both, in that order, when both are open; nothing when none is (#197, E2.2).
+ *
+ * <p>Pure: `windows` is what `SshAgentManager.windowsFor` answered NOW (so it already holds only the windows the
+ * gate would honour), and the zone is a number. The time is the window's end, which is stable until it passes —
+ * the manager's expiry timer, not a clock in the tree, is what repaints the row when it does.</p>
+ */
+export function signWindowLabel(windows: ScopeWindows, now: number, offsetMinutes: number): string {
+  return (['all', 'login'] as const)
+    .flatMap((scope) => {
+      const window = windows[scope];
+      return window === undefined ? [] : [`${WINDOW_PHRASE[scope]} ${clockUntil(window.until, now, offsetMinutes)}`];
+    })
+    .join('  ·  ');
+}
+
+/**
+ * The whole grey description of an entity row: what it points at, then — for a short-lived entry — how long it
+ * has, then a rotated value that is waiting, then an open SSH window.
+ *
+ * <p>Deliberately in the description rather than as a second icon tint: the tint already means "has previous
+ * versions", and one channel carrying two meanings tells you neither. Same separator the account row uses.</p>
+ */
+export function entityDescription(node: TreeNode, now: number, waitingDescription: string, signWindow: string): string {
+  return [describeTarget(node), describeRemaining(node, now), waitingDescription, signWindow].filter(Boolean).join('  ·  ');
 }
 
 /** A folder row's context value: `folder`, or `folder:trashed` inside the Trash (Restore leads). */
@@ -115,6 +155,18 @@ function secretTokens(hasPassword: boolean, hasUrl: boolean): string {
   return (hasPassword ? ':pwd' : '') + (hasUrl ? ':url' : '');
 }
 
+/**
+ * An SSH key row's tokens: `:key`, then `:agenton` or `:agentoff`, then `:signwindow` while a window is open.
+ *
+ * <p>Two tokens for the agent rather than one, so Add and Remove are each offered only when they mean something —
+ * the same shape the VPN start/stop pair uses. `:signwindow` is only there while a window is open: the menu offers
+ * *Ask for Every Use Again* exactly then, and an open window is not a thing the record knows — the manager's book
+ * does, so it comes in as live state, like `:bridged`.</p>
+ */
+function keyTokens(details: EntityMetadata, signWindowOpen: boolean): string {
+  return `:key${details.sshAgent === true ? ':agenton' : ':agentoff'}${signWindowOpen ? ':signwindow' : ''}`;
+}
+
 // eslint-disable-next-line complexity -- one branch per capability; moved verbatim from treeDataProvider
 export function entityContextValue(
   details: EntityMetadata | undefined,
@@ -125,6 +177,11 @@ export function entityContextValue(
   trashed: boolean = false,
   /** A URL that would open, per the flag walk (issue #104) — `:url`, *Open Site in Browser*. */
   hasUrl: boolean = false,
+  /**
+   * An SSH signing window is open on this key right now (#197, E2.2) — `:signwindow`, *Ask for Every Use Again*.
+   * Live state like `:bridged`, never the persisted `:agenton`.
+   */
+  signWindowOpen: boolean = false,
 ): string {
   let contextValue = trashed ? 'entity:trashed' : 'entity';
   // One named predicate instead of two spellings of "is this SSH?" — the tree used to ask
@@ -142,10 +199,7 @@ export function entityContextValue(
     contextValue += bridged ? ':bridged' : ':nobridge';
   }
   if (details?.isSshKey) {
-    contextValue += ':key';
-    // Two tokens rather than one, so Add and Remove are each offered only when they mean
-    // something — the same shape the VPN start/stop pair uses.
-    contextValue += details.sshAgent === true ? ':agenton' : ':agentoff';
+    contextValue += keyTokens(details, signWindowOpen);
   }
   if (details?.isVpn) {
     contextValue += ':vpn';

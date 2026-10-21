@@ -1403,7 +1403,7 @@ grant per call; `agentDoors.test.ts` pins the sentence), and the binary's own he
 
 ## Every lock ends every window (2026-10-21, #197 E2.1)
 
-`vaultKeysLock.test.ts` (9 tests, on `sshAgentWorld.ts` + `vaultKeysWorld.ts`): a REAL `VaultKeys` and the manager that `wireSshAgent(deps)` itself builds, in ONE module graph, so the wiring is under test and not only the helper it calls.
+`vaultKeysLock.test.ts` (9 tests at E2.1, 15 since E2.2 — see the next section; on `sshAgentWorld.ts` + `vaultKeysWorld.ts`): a REAL `VaultKeys` and the manager that `wireSshAgent(deps)` itself builds, in ONE module graph, so the wiring is under test and not only the helper it calls.
 
 | test | what it proves |
 |---|---|
@@ -1418,6 +1418,23 @@ grant per call; `agentDoors.test.ts` pins the sentence), and the binary's own he
 | *nothing this suite logged carries key material* | the key-material guard (`keyMaterialLogged()`) |
 
 **Watched RED** on the interface step (seam in place, `lock()` not yet firing, `endAllWindows` empty; the suite otherwise green at 5717 pass): every lock ends the windows `1 !== 2` (*the lock left the window open*) · corporate deactivation `1 !== 2` · a second listener `0 !== 1` (*the other listener was not told*) · no revoke `1 !== 2` (*the next signature asked again*) · across a lock `1 !== 2` (*the answer given across the lock opened a window*). **Break-its** (each undone, red seen, restored): drop `this.locked.fire()` → the five above; `endAllWindows` also calls `revokeAll()` → only *never unloads or revokes* (*the captured key object was revoked*); drop the `context.subscriptions.push` → only the subscription test (`0 !== 2`); a settable single callback instead of the multicast event → the second-listener test (*the agent was displaced*) and the subscription test; `endAllWindows` without the lock epoch → only the across-a-lock test. `ssh-agent-itest.cjs` section 6 with the firing removed: *FAIL a lock ends the window: the third signature asks again — 1 dialogs*.
+
+## An open window is on the key's row, and Ask for Every Use Again ends it (2026-10-21, #197 E2.2)
+
+34 tests, the full suite 5761 (5756 pass, 0 fail, 5 skipped) from 5722 + 5 skipped.
+
+| suite | what it proves |
+|---|---|
+| `sshAgentManagerRow.test.ts` (11, new, on `sshAgentWorld.ts`) | *Ask for Every Use Again ends the window and keeps the key loaded* (the captured `LoadedKey.sign` still returns a Buffer — R8) · *an answer given across it signs once and opens no window* (the fence moves with no window open) · *a fence alone is not an open window* (a re-load, then `endWindows` is `false`) · the button on a key that is not loaded · *the row sees a window of this key while it is open, and none after the button* · *a row in another account never shows the window of this key* · *the row never shows a window the gate would not honour* (wall 1 min, monotonic 11 min) · *the expiry timer is never armed for more than five minutes* and *re-arms* (`t.mock.timers`, the two clocks moved by hand) · *disposing the manager clears the expiry timer it armed* (the handle of the last `setTimeout` reaches `clearTimeout`) · the key-material guard |
+| `vaultKeysLock.test.ts` (+6) | through the manager `wireSshAgent` builds and a stub provider: *the row is told to repaint* when a window is granted, expires (mocked `setTimeout` and `Date`), the vault locks, *Ask for Every Use Again* is used, and the key is unloaded · *the row text reaches the tree through the wiring* (`provider.signWindowLabel` says *signs without asking until HH:MM*, and `''` for the same id in another account) |
+| `treeRowText.test.ts` (+8) | `signWindowLabel` (the row text; nothing when none open; login and both joined) · `entityDescription` (open window last) · the text is not filter text · `:signwindow` only while a window is open and only on a key row · *the menu offers Ask for Every Use Again exactly while a window is open*: the `when` regexes READ from `package.json` (the row button `inline@2` and the entry `2_actions@13`) against `entityContextValue` |
+| `requestTime.test.ts` (+4) | `clockUntil`: the zone's HH:MM · rounded UP to the minute · `tomorrow` across local midnight, and not before it · "today" in the zone of the offset, not UTC |
+| `addKeyToAgentReference.test.ts` (+3) | the harness captures every registered command (`handlerFor`) and its `sshAgent` fake gains `endWindows`: *on a CONNECTION row it ends the windows of the key it points at* (`keyRowFor`) · *it says which of the two sentences is true* · a reference to an entry that is gone ends nothing and says so |
+| `treeProviderPasswordFlag.test.ts` (+1) | the provider's hook: a key with an open window carries `:signwindow` and the description; with no hook set (the default) nothing; the hook is asked per row |
+| `sshAgentManager.test.ts` (+1) | the signing prompt says what ends a window |
+| `helpCoverage.test.ts`, `manifest.test.ts` (existing) | the new command is described in the help, and reachable from a menu |
+
+**Watched RED** (interface step in place: `endWindows` returned `false`, `windowsFor` `{}`, `onWindowsChanged` a no-op; `package.json` first for the help): `helpCoverage` *credSshManager.askEveryUseAgain — "Ask for Every Use Again"* with the command added first, and `manifest` *add it to a menu* · the button leaves the window open `1 !== 2` · an answer across the button opened a window `1 !== 2` · the row repaints on grant, expiry, lock, button and unload — `false !== true` for all five · the prompt text has no *Locking the vault ends the window…* · the command harness: the connection's key not ended (`[] !== ['k2']`), no message. **Break-its** (each fix undone, the real red, restored): the label returns `''` · `:signwindow` always added · the menu `when` loosened to `:agenton` · `clockUntil` without the day check · the timer armed for the full deadline · the row reading the raw `open` map · `had` read from `keyFences` · `windowsFor` ignoring `accountId` · the wiring without the label assignment · the wiring without `onWindowsChanged` · the command passing the connection's own id · one sentence for both · the fence moved only when a window was open · the button revoking the key · the timer not re-armed · `dispose` leaving the timer · the provider ignoring the hook.
 
 ## What none of them covers
 

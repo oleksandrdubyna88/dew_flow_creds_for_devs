@@ -43,11 +43,20 @@ async function rig(options: Parameters<typeof world>[0]): Promise<{
   agent: ReturnType<Wiring['wireSshAgent']>;
   context: { subscriptions: { dispose(): unknown }[] };
   gate: FakeServer;
+  /** The tree, as `wireSshAgent` is handed it: counts the repaints and holds the row-text hook the wiring assigns. */
+  provider: { refreshes: number; refresh(): void; signWindowLabel(accountId: string, nodeId: string): string };
 }> {
   const w = world({ ...options, also: ['../vaultKeys', '../sshAgentWiring'] });
   const [keysModule, wiring] = w.modules as [VaultKeysModule, Wiring];
   const vaultKeys = new keysModule.VaultKeys(secretStorage(new Map()));
   const context = { subscriptions: [] as { dispose(): unknown }[] };
+  const provider = {
+    refreshes: 0,
+    refresh(): void {
+      provider.refreshes += 1;
+    },
+    signWindowLabel: (_accountId: string, _nodeId: string): string => '',
+  };
   const agent = wiring.wireSshAgent({
     context,
     storage: agentStorage({ keys: { [KEY_ID]: realPrivateKey() } }) as never,
@@ -62,10 +71,11 @@ async function rig(options: Parameters<typeof world>[0]): Promise<{
         vaultKeys.noteUserActivity();
       },
     },
+    provider,
     onAddress: () => undefined,
   });
   await agent.load('a1', keyEntity(KEY_ID, 'prod'));
-  return { w, vaultKeys, agent, context, gate: w.server() as FakeServer };
+  return { w, vaultKeys, agent, context, gate: w.server() as FakeServer, provider };
 }
 
 test('every lock ends the SSH windows: Lock Vaults and the idle timer, through VaultKeys.lock()', async () => {
@@ -171,6 +181,72 @@ test('wireSshAgent puts the manager and the lock subscription into context.subsc
 
   assert.equal(await gate.confirm(key, login), true);
   assert.equal(w.dialogs.length, 1, 'the second subscription is not the link to the lock: disposed, the lock still ended the window');
+});
+
+/**
+ * The row is told to repaint (#197, E2.2): one test per way the book of windows changes, through the manager
+ * `wireSshAgent` built and the stub provider it was handed. `onWindowsChanged` is a field the WIRING sets, so a
+ * deleted assignment is these five going red, not a tree that shows a window for ten minutes after it ended.
+ */
+test('the row is told to repaint when a window is granted', async () => {
+  const { gate, provider } = await rig({ answers: [ALLOW_WINDOW] });
+  const before = provider.refreshes;
+
+  await gate.confirm(key, login);
+
+  assert.ok(provider.refreshes > before, 'a grant did not repaint the row');
+});
+
+test('the row is told to repaint when a window expires', async (t) => {
+  // Mocked setTimeout and Date: the window runs out at ten minutes on the wall clock, the timer looks every five.
+  const { gate, provider } = await rig({ answers: [ALLOW_WINDOW] });
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: Date.UTC(2026, 8, 24, 10, 0, 0) });
+  await gate.confirm(key, login);
+  const before = provider.refreshes;
+
+  t.mock.timers.tick(5 * 60_000);
+  t.mock.timers.tick(5 * 60_000);
+
+  assert.ok(provider.refreshes > before, 'an expired window did not repaint the row');
+});
+
+test('the row is told to repaint when the vault locks', async () => {
+  const { gate, vaultKeys, provider } = await rig({ answers: [ALLOW_WINDOW] });
+  await gate.confirm(key, login);
+  const before = provider.refreshes;
+
+  vaultKeys.lock();
+
+  assert.ok(provider.refreshes > before, 'a lock did not repaint the row');
+});
+
+test('the row is told to repaint when Ask for Every Use Again is used', async () => {
+  const { gate, agent, provider } = await rig({ answers: [ALLOW_WINDOW] });
+  await gate.confirm(key, login);
+  const before = provider.refreshes;
+
+  agent.endWindows(KEY_ID);
+
+  assert.ok(provider.refreshes > before, 'the button did not repaint the row');
+});
+
+test('the row is told to repaint when the key is unloaded', async () => {
+  const { gate, agent, provider } = await rig({ answers: [ALLOW_WINDOW] });
+  await gate.confirm(key, login);
+  const before = provider.refreshes;
+
+  agent.unload(KEY_ID);
+
+  assert.ok(provider.refreshes > before, 'an unload did not repaint the row');
+});
+
+test('the row text reaches the tree through the wiring: a grant, then the provider says the key signs without asking', async () => {
+  const { gate, provider } = await rig({ answers: [ALLOW_WINDOW] });
+  assert.equal(provider.signWindowLabel('a1', KEY_ID), '', 'nothing is open before the grant');
+  await gate.confirm(key, login);
+
+  assert.match(provider.signWindowLabel('a1', KEY_ID), /^signs without asking until \d\d:\d\d( tomorrow)?$/);
+  assert.equal(provider.signWindowLabel('another-account', KEY_ID), '', 'the same id in another account is not this key');
 });
 
 test('nothing this suite logged carries key material', () => {

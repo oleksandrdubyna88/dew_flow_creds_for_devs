@@ -566,7 +566,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // The SSH agent (`sshAgentWiring.ts`). Its address is published in the endpoint file so a relay inside WSL
   // can find it without a pid, and — when the setting is on — raises and lowers the relay with the agent.
   const sshAgent = wireSshAgent({
-    context, storage, storageDir, envCollection: envCollection(), vaultKeys,
+    context, storage, storageDir, envCollection: envCollection(), vaultKeys, provider,
     onAddress: (socketPath) => { agentServer.setAgentAddress(socketPath); followAgentWithRelay(socketPath); },
   });
 

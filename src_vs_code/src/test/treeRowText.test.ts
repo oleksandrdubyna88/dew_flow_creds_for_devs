@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import { test } from 'node:test';
-import { baseTarget, describeTarget, entityContextValue, tagLabel } from '../treeRowText';
+import { baseTarget, describeTarget, entityContextValue, entityDescription, signWindowLabel, tagLabel } from '../treeRowText';
 import { EntityMetadata, TreeNode } from '../types';
 
 /**
@@ -126,4 +128,88 @@ test('an entry with a lifetime is :burnable — Burn Now… is offered there and
   const ttl = { ...SSH, expiresAt: 1_800_000_000_000, burnPolicy: 'ttl' } as typeof SSH;
   assert.ok(entityContextValue(ttl, false, false).includes(':burnable'));
   assert.ok(!entityContextValue(SSH, false, false).includes(':burnable'));
+});
+
+/**
+ * An open SSH signing window on the key's row (#197, E2.2): the text, the context-menu token, and the menu that
+ * offers *Ask for Every Use Again* exactly while one is open.
+ */
+
+const NOON = Date.UTC(2026, 8, 24, 9, 0, 0); // 12:00 in UTC+03:00
+const open = (until: number): { generation: number; grantedAt: number; grantedAtMono: number; until: number } => ({
+  generation: 1,
+  grantedAt: NOON,
+  grantedAtMono: 0,
+  until,
+});
+
+test('a key row with an open window says until when it signs without asking', () => {
+  const label = signWindowLabel({ all: open(NOON + 10 * 60_000) }, NOON, 180);
+
+  assert.equal(label, 'signs without asking until 12:10');
+});
+
+test('a key row with no open window says nothing', () => {
+  assert.equal(signWindowLabel({}, NOON, 180), '');
+});
+
+test('a login window says logins, and both windows are joined, signing first', () => {
+  const both = signWindowLabel({ login: open(NOON + 6 * 3_600_000), all: open(NOON + 10 * 60_000) }, NOON, 180);
+
+  assert.equal(both, 'signs without asking until 12:10  ·  logins without asking until 18:00');
+  assert.equal(signWindowLabel({ login: open(NOON + 6 * 3_600_000) }, NOON, 180), 'logins without asking until 18:00');
+});
+
+test('the description puts the open window last, after the target and a waiting rotation', () => {
+  const node = entity({ host: 'h', user: 'u', isSshEnabled: true });
+
+  assert.equal(entityDescription(node, NOON, 'rotated password waiting', 'signs without asking until 12:10'), 'u@h  ·  rotated password waiting  ·  signs without asking until 12:10');
+  assert.equal(entityDescription(node, NOON, '', ''), 'u@h', 'nothing to add, nothing to join');
+});
+
+test('the row text of an open window is not filter text: describeTarget never carries it', () => {
+  // treeSearch matches what describeTarget renders; a window is live state, so a search must not find a row by it.
+  assert.equal(describeTarget(entity({ host: 'h', user: 'u', isSshEnabled: true })).includes('without asking'), false);
+});
+
+const KEY = { isSshKey: true, sshAgent: true } as EntityMetadata;
+
+test(':signwindow only while a window is open', () => {
+  assert.match(entityContextValue(KEY, false, false, false, false, true), /:agenton:signwindow(:|$)/);
+  assert.equal(entityContextValue(KEY, false, false, false, false, false).includes(':signwindow'), false);
+  assert.equal(entityContextValue(KEY, false).includes(':signwindow'), false, 'the default is no window');
+});
+
+test(':signwindow belongs to a key row alone', () => {
+  assert.equal(entityContextValue(SSH, false, false, false, false, true).includes(':signwindow'), false);
+});
+
+interface MenuItem {
+  readonly command: string;
+  readonly when?: string;
+  readonly group?: string;
+}
+
+const manifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, '..', '..', 'package.json'), 'utf8')) as {
+  contributes: { menus: Record<string, MenuItem[]> };
+};
+
+/** The `viewItem =~ /…/` pattern of a `when` clause, as a RegExp. */
+function viewItemPattern(when: string | undefined): RegExp {
+  const match = /viewItem =~ \/(.+)\//.exec(when ?? '');
+  assert.ok(match !== null, `no viewItem pattern in: ${when ?? '(no when)'}`);
+  return new RegExp(match[1]);
+}
+
+test('the menu offers Ask for Every Use Again exactly while a window is open — as a row button and in the context menu', () => {
+  const items = manifest.contributes.menus['view/item/context'].filter((m) => m.command === 'credSshManager.askEveryUseAgain');
+  assert.deepEqual(items.map((m) => m.group).sort(), ['2_actions@13', 'inline@2'], 'one row button and one menu entry');
+  const withWindow = entityContextValue(KEY, false, false, false, false, true);
+  const without = entityContextValue(KEY, false, false, false, false, false);
+
+  for (const item of items) {
+    const pattern = viewItemPattern(item.when);
+    assert.equal(pattern.test(withWindow), true, `${item.group} is not offered while a window is open: ${withWindow}`);
+    assert.equal(pattern.test(without), false, `${item.group} is offered with no window open: ${without}`);
+  }
 });

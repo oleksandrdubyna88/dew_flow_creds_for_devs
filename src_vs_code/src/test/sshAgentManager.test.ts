@@ -374,6 +374,16 @@ test('the prompt states its deadline, derived from the same constant the broker 
   assert.match(w.dialogs[0], /Unanswered, it is refused after 5 minutes\./);
 });
 
+test('the prompt says what ends a window: locking the vault, and Ask for Every Use Again on the row (#197, E2.2)', async () => {
+  const w = world({ answers: [ALLOW_ONCE] });
+  const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() } });
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+
+  await (w.server() as FakeServer).confirm({ entityId: KEY_ID, name: 'prod', fingerprint: 'SHA256:abc' }, { kind: 'auth' });
+
+  assert.match(w.dialogs[0], /Locking the vault ends the window, and so does "Ask for Every Use Again" on the key's row\./);
+});
+
 test('answering a dialog is the one provable moment of human presence', async () => {
   const w = world({ answers: [ALLOW_ONCE] });
   const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() } });

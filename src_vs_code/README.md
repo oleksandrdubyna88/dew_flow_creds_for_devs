@@ -288,7 +288,7 @@ an SSH login as a particular user, or a Git commit signature — and when it was
 anyone can decide about. Unanswered for five minutes it refuses — the same bound as the agent
 consent dialog — and a click after that signs nothing. Three answers: **Allow once**, **Allow for 10 minutes**
 (a `git push` signs and authenticates in one breath, and two modals per push is how people learn
-to click without reading), or **Deny**. While a 10-minute window is open, any process that can reach the agent signs with that key without asking, until the time is up or the vault is locked. A login prompt names the login and, for a current OpenSSH server, the server's host key on a line of its own. Every request is a line in **CredsForDevs: SSH Agent**.
+to click without reading), or **Deny**. While a 10-minute window is open, any process that can reach the agent signs with that key without asking, until the time is up or the vault is locked. A key whose window is open says so on its row — *signs without asking until 12:10* — and **Ask for Every Use Again** on that row (the button beside the name, or its context menu) ends the window: the key stays loaded and the next signature asks. A login prompt names the login and, for a current OpenSSH server, the server's host key on a line of its own. Every request is a line in **CredsForDevs: SSH Agent**.
 
 **Git commit signing.** *Copy Git Signing Config* puts the `gpg.format ssh` lines on the clipboard
 with the public key inline (`user.signingkey "key::ssh-ed25519 AAAA…"`), so Git signs with a key
@@ -1172,7 +1172,7 @@ also on the right-click menu where it applies.
 - **Tree** — Add Folder · Add Entity · Edit · Clone… · Delete · Move to Folder… · Change Folder
   Type… · Move Up · Move Down · View Details · Restore This Version… · Refresh
 - **SSH** — Connect SSH · Toggle SSH (on/off) · Copy Password · Install SSH Key to System
-  (~/.ssh) · Add to SSH Agent · Remove from SSH Agent · Copy Git Signing Config
+  (~/.ssh) · Add to SSH Agent · Remove from SSH Agent · Ask for Every Use Again · Copy Git Signing Config
 - **One-time codes** — Copy One-Time Code
 - **Websites** — Open Site in Browser (an entry's URL, http and https only; also a button beside the
   URL in *View Details*)
@@ -1205,7 +1205,7 @@ also on the right-click menu where it applies.
   and Policy… (on any account row of a corporate server)
 - **Corporate projects** — New Project… (on the Team row, or a colleague's) · Assign to Project… ·
   Remove from Project… (both on a colleague's Team row, for admins and officers)
-- **Keys on disk** — Install SSH Key to System (~/.ssh) · Remove Installed Key… · Add to SSH Agent · Remove from SSH Agent
+- **Keys on disk** — Install SSH Key to System (~/.ssh) · Remove Installed Key… · Add to SSH Agent · Remove from SSH Agent · Ask for Every Use Again
 - **Scans** — Health Report (weak, reused, exposed) · Check Clipboard for Vault Secrets ·
   Scan This File for Vault Secrets · Show Diagnostics
 - **Sharing, cont.** — Withdraw a Share You Sent…

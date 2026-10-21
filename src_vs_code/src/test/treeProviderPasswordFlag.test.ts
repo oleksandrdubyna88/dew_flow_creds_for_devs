@@ -29,6 +29,7 @@ class FakeTreeItem {
 
 interface Provider {
   passwordIds?: Set<string>;
+  signWindowLabel?: (accountId: string, nodeId: string) => string;
   getChildren(element?: TreeElement): TreeElement[];
   getTreeItem(element: TreeElement): FakeTreeItem | Promise<FakeTreeItem>;
 }
@@ -214,4 +215,22 @@ test('clearing the seed clears the token, so Copy One-Time Code stops being offe
   const item = await tree.getTreeItem({ kind: 'node', accountId: 'a1', node: cleared });
 
   assert.equal((item.contextValue ?? '').includes(':totp'), false, item.contextValue);
+});
+
+// ---- an open SSH window on the key's row (#197, E2.2) -------------------------------
+
+test('a key with an open window carries :signwindow and says so in the description; the default says nothing', async () => {
+  const { tree } = build([]);
+  const node = keyEntity('k3', { sshAgent: true });
+  const quiet = await tree.getTreeItem({ kind: 'node', accountId: 'a1', node });
+  assert.equal((quiet.contextValue ?? '').includes(':signwindow'), false, 'no hook set: no window');
+
+  tree.signWindowLabel = (accountId, nodeId) => (accountId === 'a1' && nodeId === 'k3' ? 'signs without asking until 12:10' : '');
+  const open = await tree.getTreeItem({ kind: 'node', accountId: 'a1', node });
+  const other = await tree.getTreeItem({ kind: 'node', accountId: 'a1', node: keyEntity('k4', { sshAgent: true }) });
+
+  assert.match(open.contextValue ?? '', /:agenton:signwindow/);
+  assert.equal(open.description, 'signs without asking until 12:10');
+  assert.equal((other.contextValue ?? '').includes(':signwindow'), false, 'the hook is asked per row');
+  assert.equal(other.description, '');
 });
