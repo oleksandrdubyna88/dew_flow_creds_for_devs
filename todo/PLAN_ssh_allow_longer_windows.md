@@ -1,6 +1,6 @@
 # PLAN — the SSH signing prompt offers longer windows, and a window can never outlive what it was given for
 
-> Status: **E1 shipped in extension 1.14.2 (2026-10-21); E2 is built and waits for its PR and `extension-v1.15.0`; E3 is not started. Plan dated 2026-10-20.** Scope: `src_vs_code/src` — `agentConsent.ts`,
+> Status: **E1 shipped in extension 1.14.2 (2026-10-21); E2 merged (#267) and releasing as `extension-v1.15.0`; E3's stories are written and wait for the plan gate. Plan dated 2026-10-20.** Scope: `src_vs_code/src` — `agentConsent.ts`,
 > `sshAgentManager.ts`, `sshAgentServer.ts`, `sshAgentProtocol.ts`, `vaultKeys.ts`, `requestTime.ts`,
 > `treeRowText.ts`, `treeDataProvider.ts`, `commands/agentCommands.ts`, `agentDoors.ts`, the five `help*.ts`, three
 > new pure modules (`allowWindows.ts`, `consentTurns.ts`, `durationText.ts`), two new `vscode` modules
@@ -784,6 +784,9 @@ disagreed on where one-prompt-per-key goes; the decision and its reason are unde
   the diagram), `module_tests.md`; the plan and its three stories documents promoted together with their deviations.
 - **Cornerstone areas.** None new. The parser and the window rules are reused as shipped; E3's risk is in words and
   wiring, which Opus judges and the scenario proves.
+- **Owner decision 2026-10-21 (SHA-1).** SHA-1 RSA signing is NOT removed ("не трогаем"); E3 only keeps it out of every
+  long window — a 10-minute window covers it as today.
+- **Stories.** [PLAN_ssh_allow_longer_windows_E3.md](PLAN_ssh_allow_longer_windows_E3.md) — E3.1–E3.4.
 
 The two cornerstone AREAS (named under E1 and E2): the window book's rules (`allowWindows.ts`), and the boundary
 between the asynchronous prompt and the signing material (`sshAgentServer.ts` post-await check, revoke-on-replace and
