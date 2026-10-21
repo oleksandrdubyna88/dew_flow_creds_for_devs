@@ -751,6 +751,7 @@ disagreed on where one-prompt-per-key goes; the decision and its reason are unde
 - **Cornerstone areas.** The same material boundary as E1, on its asynchronous side: `ConsentTurns` must stop a late
   continuation (`withTimeout` only stops the waiting), and an answer across a lock allows once and opens nothing. Opus
   marks at most the quota across E1 and E2 — one story per area, both areas named in the ledger below.
+- **Stories.** [PLAN_ssh_allow_longer_windows_E2.md](PLAN_ssh_allow_longer_windows_E2.md)
 
 ### E3 — the longer windows for logins (#197) (feature release)
 
@@ -789,4 +790,4 @@ between the asynchronous prompt and the signing material (`sshAgentServer.ts` po
 the `revoked` closure, `consentTurns.ts` late continuations, the fence crossings). Opus marks one concrete story per area
 when E1's and E2's stories documents are written, and fills the ledger's story slots in the same commit.
 
-Cornerstones: 1 of 2 — E1.3 a window belongs to one generation of one key (the window book, `allowWindows.ts`)
+Cornerstones: 2 of 2 — E1.3 a window belongs to one generation of one key (the window book, `allowWindows.ts`), E2.3 one prompt per key, and an answer that comes late or across a fence opens nothing (the asynchronous side of the material boundary: `consentTurns.ts`, the per-connection signal, the fence crossings)
