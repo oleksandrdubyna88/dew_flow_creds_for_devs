@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.14.2](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.14.1...extension-v1.14.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* **extension:** an SSH allow window never outlives what it was given for ([#197](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/197) E1) ([#262](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/262)) ([77afb10](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/77afb10f9d71eea5a0db1c5e2251d5e3af3b22c2))
+* launch the Windows half through `setpriv --pdeathsig KILL --` (shared WindowsBridge.StartPiped) so the proxy carries PR_SET_PDEATHSIG(SIGKILL) and the kernel ends it the instant the wrapper process dies, even while stopped. Guarded forks run on one dedicated long-lived thread (pdeathsig is thread-scoped through .NET's fork — a retiring pool worker would otherwise kill the proxy mid-session); setpriv is resolved from trusted dirs and probed once for --pdeathsig support; the guard arms only when the binary resolves, preserving the exit-99 missing-binary diagnosis; CREDS_NO_PDEATH_GUARD=1 is the off switch. Covers the MCP pump and the relay's relay-pipe children. ([5530e8b](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/5530e8b966586682ad004bb9ab17ddf31d1affa6))
+* **mcp:** a stopped WSL interop proxy dies with its wrapper (defect D) ([5530e8b](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/5530e8b966586682ad004bb9ab17ddf31d1affa6))
+
 ## [1.14.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.14.0...extension-v1.14.1) (2026-10-12)
 
 
