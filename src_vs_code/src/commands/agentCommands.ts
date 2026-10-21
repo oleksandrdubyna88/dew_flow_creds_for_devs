@@ -48,7 +48,7 @@ import { describeAliasProblem } from '../cliAliases';
 import { resolveKind } from '../entityKind';
 import { cliAliasNote, cliCommandFor } from '../cliCommandText';
 import { withAlias } from '../cliAliases';
-import { asElement } from '../commandTargets';
+import { KeyRow, asElement, detailedNode } from '../commandTargets';
 import { connectEntity } from '../sshConnect';
 import * as path from 'node:path';
 import { describeSshTarget } from '../sshCommand';
@@ -635,6 +635,21 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
       : storage.getNode(accountId, referenced);
   };
 
+  // The key row a click stands for — or nothing: the ONE prologue of Add, Remove and Ask for Every Use Again. A click
+  // that is no node with details is ignored; a connection whose key entry is gone gets the same warning from all three.
+  const keyRowOrWarn = (target: unknown): KeyRow | undefined => {
+    const element = detailedNode(target);
+    if (element === undefined) {
+      return undefined;
+    }
+    const keyNode = keyRowFor(element.accountId, element.node);
+    if (keyNode?.details === undefined) {
+      void vscode.window.showWarningMessage(`"${element.node.name}" points at a key entry that is no longer in the vault.`);
+      return undefined;
+    }
+    return { accountId: element.accountId, keyNode, details: keyNode.details };
+  };
+
   // Serve this key through the extension's own SSH agent — the alternative to writing it out
   // as a file, and the only door to Git commit signing with a vault-held key.
   /**
@@ -656,23 +671,17 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
    */
   register('credSshManager.addKeyToAgent', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = asElement(target);
-    if (element?.kind !== 'node' || !element.node.details) {
+    const row = keyRowOrWarn(target);
+    if (row === undefined) {
       return false;
     }
-    const keyNode = keyRowFor(element.accountId, element.node);
-    if (keyNode?.details === undefined) {
-      void vscode.window.showWarningMessage(
-        `"${element.node.name}" points at a key entry that is no longer in the vault.`,
-      );
-      return false;
-    }
-    const result = await sshAgent.load(element.accountId, keyNode.details, clickOpener(storage, element.accountId, 'load its key into the SSH agent'));
+    const { accountId, keyNode } = row;
+    const result = await sshAgent.load(accountId, row.details, clickOpener(storage, accountId, 'load its key into the SSH agent'));
     if (!result.ok) {
       void (result.reason === '' ? undefined : vscode.window.showWarningMessage(result.reason));
       return false;
     }
-    await storage.updateDetailsFields(element.accountId, keyNode.id, { sshAgent: true });
+    await storage.updateDetailsFields(accountId, keyNode.id, { sshAgent: true });
     mutated();
     void vscode.window.showInformationMessage(
       `"${keyNode.name}" (${result.fingerprint}) is served by the agent. New terminals get ` +
@@ -686,43 +695,33 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
 
   register('credSshManager.removeKeyFromAgent', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = asElement(target);
-    if (element?.kind !== 'node' || !element.node.details) {
+    // The SAME row `addKeyToAgent` acted on (`keyRowOrWarn`). A connection entry can borrow another entity's key
+    // through `sshKeyEntityId`; unloading the connection's own id asked the agent for an id it never held and
+    // cleared the flag on the connection while the key row kept claiming to be served.
+    const row = keyRowOrWarn(target);
+    if (row === undefined) {
       return;
     }
-    // The SAME row `addKeyToAgent` acted on. A connection entry can borrow another entity's key
-    // through `sshKeyEntityId`, and the add side follows that reference — this side did not, so it
-    // asked the agent to unload an id it never held and cleared the flag on the connection row while
-    // the key row kept claiming to be served. Raised by a review of the add-side fix; a pair of
-    // operations that disagree about which row they mean is worse than either being wrong alone.
-    const keyNode = keyRowFor(element.accountId, element.node);
-    if (keyNode?.details === undefined) {
-      return;
-    }
-    sshAgent.unload(keyNode.details.id);
-    await storage.updateDetailsFields(element.accountId, keyNode.id, { sshAgent: undefined });
+    const { accountId, keyNode } = row;
+    sshAgent.unload(row.details.id);
+    await storage.updateDetailsFields(accountId, keyNode.id, { sshAgent: undefined });
     mutated();
     void vscode.window.showInformationMessage(`"${keyNode.name}" is no longer served by the agent.`);
   });
 
   /**
    * *Ask for Every Use Again* (#197, E2.2): this key's SSH window ends; the key stays loaded and the next signature
-   * asks — it never revokes (only *Remove from SSH Agent* does). The SAME row as add and remove (`keyRowFor`): the
+   * asks — it never revokes (only *Remove from SSH Agent* does). The SAME row as add and remove (`keyRowOrWarn`): the
    * windows belong to the KEY a connection points at. No `mutated()`: the row repaints through `onWindowsChanged`.
    */
   register('credSshManager.askEveryUseAgain', (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
-    const element = asElement(target);
-    if (element?.kind !== 'node' || !element.node.details) {
+    const row = keyRowOrWarn(target);
+    if (row === undefined) {
       return;
     }
-    const keyNode = keyRowFor(element.accountId, element.node);
-    if (keyNode?.details === undefined) {
-      void vscode.window.showWarningMessage(`"${element.node.name}" points at a key entry that is no longer in the vault.`);
-      return;
-    }
-    const had = sshAgent.endWindows(keyNode.details.id);
-    void vscode.window.showInformationMessage(askedAgainMessage(keyNode.name, had));
+    const had = sshAgent.endWindows(row.details.id);
+    void vscode.window.showInformationMessage(askedAgainMessage(row.keyNode.name, had));
   });
 
   /**

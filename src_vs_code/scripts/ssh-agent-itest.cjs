@@ -281,7 +281,8 @@ async function withVscodeStub(dir, body) {
            return { dispose: () => { const at = this.listeners.indexOf(listener); if (at >= 0) this.listeners.splice(at, 1); } };
          };
        }
-       fire(value) { for (const listener of [...this.listeners]) listener(value); }
+       // Like VS Code's Emitter: one listener's throw is reported, never allowed to stop the next listener.
+       fire(value) { for (const listener of [...this.listeners]) { try { listener(value); } catch (error) { console.error('listener threw:', error); } } }
        dispose() { this.listeners.length = 0; }
      }
      module.exports = { EventEmitter, window: {

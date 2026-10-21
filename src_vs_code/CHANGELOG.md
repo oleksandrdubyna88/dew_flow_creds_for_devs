@@ -16,8 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added — the row shows an open window; Ask for Every Use Again
 
 - **A key whose window is open says so on its row** — *signs without asking until 12:10* — and the row stops saying it
-  the moment the window ends (an expiry, a lock, the button below, an unload). The time is when the window is over,
-  rounded up to the minute; it is not part of what the tree filter matches.
+  the moment the window ends (at most five minutes late after the clock changes) — an expiry, a lock, the button
+  below, an unload. The time is when the window is over, rounded up to the minute, on whichever of the two clocks ends
+  it first; it is not part of what the tree filter matches.
 - **Ask for Every Use Again** on that row — a button beside the name, and an entry in the row's context menu — ends the
   window. The key stays loaded and the next signature asks. If a signing prompt for that key is on screen when you
   use it, answering *Allow for 10 minutes* signs that one signature and opens no window. The signing prompt now says

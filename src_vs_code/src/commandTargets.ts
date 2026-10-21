@@ -1,4 +1,4 @@
-import { EntityKind, TreeElement, TreeNode } from './types';
+import { EntityKind, EntityMetadata, TreeElement, TreeNode } from './types';
 import { KeyCandidate } from './entityFormPanel';
 import type { LauncherCandidate } from './entityFormShape';
 import { executableLine } from './dependencyRun';
@@ -177,6 +177,19 @@ export function asElement(value: unknown): TreeElement | undefined {
     return v;
   }
   return undefined;
+}
+
+/** The key row a click on the agent's key commands stands for: its account, the row, and the details it carries. */
+export interface KeyRow {
+  readonly accountId: string;
+  readonly keyNode: TreeNode;
+  readonly details: EntityMetadata;
+}
+
+/** The node element behind a command's argument when it carries details — a palette call or another row is nothing. */
+export function detailedNode(target: unknown): Extract<TreeElement, { kind: 'node' }> | undefined {
+  const element = asElement(target);
+  return element?.kind === 'node' && element.node.details !== undefined ? element : undefined;
 }
 
 /**

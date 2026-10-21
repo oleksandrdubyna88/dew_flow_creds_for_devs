@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ALLOW_ONCE, ALLOW_WINDOW } from '../agentConsent';
 import { evictAndLock } from '../corpBindingWiring';
+import { makeLockNow } from '../lockNow';
 import {
   FakeServer,
   KEY_ID,
@@ -16,7 +17,8 @@ import {
   unanswered,
   world,
 } from './sshAgentWorld';
-import { ACCOUNT, PIN, VaultKeysModule, secretStorage, storePin, vaultWithTwoWraps } from './vaultKeysWorld';
+import { StubEventEmitter } from './vscodeStub';
+import { ACCOUNT, PIN, VaultKeysModule, secretStorage, vaultWithTwoWraps } from './vaultKeysWorld';
 
 /**
  * Every lock of the vault ends every SSH signing window (#197, E2.1).
@@ -37,7 +39,11 @@ const key = { entityId: KEY_ID, name: 'prod', fingerprint: 'SHA256:abc' };
 const login = { kind: 'ssh-login', user: 'me', service: 'ssh-connection' };
 
 /** A real `VaultKeys` and a real manager joined by `wireSshAgent`, with one key loaded and the gate in hand. */
-async function rig(options: Parameters<typeof world>[0]): Promise<{
+async function rig(
+  options: Parameters<typeof world>[0],
+  /** Subscribed to the lock BEFORE `wireSshAgent` subscribes the agent — the order a second subsystem could have. */
+  subscribeFirst: (onDidLock: InstanceType<VaultKeysModule['VaultKeys']>['onDidLock']) => void = () => undefined,
+): Promise<{
   w: ReturnType<typeof world>;
   vaultKeys: InstanceType<VaultKeysModule['VaultKeys']>;
   agent: ReturnType<Wiring['wireSshAgent']>;
@@ -49,6 +55,7 @@ async function rig(options: Parameters<typeof world>[0]): Promise<{
   const w = world({ ...options, also: ['../vaultKeys', '../sshAgentWiring'] });
   const [keysModule, wiring] = w.modules as [VaultKeysModule, Wiring];
   const vaultKeys = new keysModule.VaultKeys(secretStorage(new Map()));
+  subscribeFirst(vaultKeys.onDidLock);
   const context = { subscriptions: [] as { dispose(): unknown }[] };
   const provider = {
     refreshes: 0,
@@ -90,6 +97,19 @@ test('every lock ends the SSH windows: Lock Vaults and the idle timer, through V
   assert.equal(w.dialogs.length, 2, 'the lock left the window open');
 });
 
+test('lockNow — what the idle timer and Lock Vaults both call — ends the SSH windows', async () => {
+  // Through the same function the extension builds (`makeLockNow`), over the real VaultKeys: a lockNow that stopped
+  // calling `vaultKeys.lock()` would leave a notice and an open window.
+  const { w, vaultKeys, gate } = await rig({ answers: [ALLOW_WINDOW, ALLOW_ONCE] });
+  const lockNow = makeLockNow({ vaultKeys, closeForms: () => 0, refreshReadiness: () => Promise.resolve(undefined), say: () => undefined });
+  await gate.confirm(key, login);
+
+  lockNow('Vaults locked.');
+  await gate.confirm(key, login);
+
+  assert.equal(w.dialogs.length, 2, 'lockNow left the window open');
+});
+
 test('corporate deactivation ends the windows too: evictAndLock(vaultKeys)(account)', async () => {
   // Deactivation calls `lock()` directly and skips the command's own steps — it must not skip this one.
   const { w, vaultKeys, gate } = await rig({ answers: [ALLOW_WINDOW, ALLOW_ONCE] });
@@ -113,6 +133,40 @@ test('a second lock listener does not displace the agent', async () => {
 
   assert.equal(heard.length, 1, 'the other listener was not told');
   assert.equal(w.dialogs.length, 2, 'the agent was displaced by the other listener');
+});
+
+test('a lock listener subscribed BEFORE the agent\'s that throws does not stop the agent\'s windows ending', async () => {
+  // VS Code's Emitter isolates listener errors; the stub must too, or this ordering would hide the very defect
+  // it exists to show: a throwing earlier subscriber leaving every signing window open after a lock.
+  const { w, vaultKeys, gate } = await rig({ answers: [ALLOW_WINDOW, ALLOW_ONCE] }, (onDidLock) => {
+    onDidLock(() => {
+      throw new Error('a subscriber that always fails');
+    });
+  });
+  await gate.confirm(key, login);
+
+  vaultKeys.lock();
+  await gate.confirm(key, login);
+
+  assert.equal(w.dialogs.length, 2, 'the throwing listener stopped the agent from ending the window');
+  assert.equal(
+    StubEventEmitter.reported.some((error) => error.message === 'a subscriber that always fails'),
+    true,
+    'the listener error was swallowed without being reported',
+  );
+});
+
+test('a lock after VaultKeys is disposed is harmless: it still locks, and tells nobody', async () => {
+  // The extension disposes VaultKeys (and so its lock event) on deactivation; the idle timer's last tick, or a
+  // corporate eviction, may still lock after that. It must neither throw nor reach a listener of a dead event.
+  const { vaultKeys } = await rig({});
+  const heard: string[] = [];
+  vaultKeys.onDidLock(() => heard.push('heard'));
+  vaultKeys.dispose();
+
+  assert.doesNotThrow(() => vaultKeys.lock());
+
+  assert.deepEqual(heard, [], 'a listener of the disposed event was told');
 });
 
 test('a lock ends windows and never unloads or revokes a key', async () => {
@@ -144,10 +198,36 @@ test('an answer given across a lock signs once and opens no window', async () =>
   assert.equal(w.dialogs.length, 2, 'the answer given across the lock opened a window');
 });
 
-test('unlocking re-arms nothing: the next signatures still ask, every time', async () => {
-  // Guard, green before and after: the unlock opens no window of its own, so each signature asks.
+test('an answer given across a lock is said in the agent log: signed once, no window was opened', async () => {
+  // The audit (Fable): the lock fence changes the outcome of a timed answer, so the record must say so.
+  const modal = unanswered();
+  const { w, vaultKeys, gate } = await rig({ answers: [modal.answer] });
+
+  const pending = gate.confirm(key, login);
+  vaultKeys.lock();
+  modal.clickLate(ALLOW_WINDOW);
+  await pending;
+
+  assert.ok(
+    w.logs.some((line) => line.endsWith('"prod": answered "Allow for 10 minutes" after the vaults were locked — signed once, no window was opened')),
+    `the log does not say the answer crossed the lock: ${JSON.stringify(w.logs)}`,
+  );
+});
+
+test('an answer given with no lock in between logs no fence line', async () => {
+  const { w, gate } = await rig({ answers: [ALLOW_WINDOW] });
+
+  await gate.confirm(key, login);
+
+  assert.deepEqual(w.logs.filter((line) => line.includes('signed once, no window was opened')), [], 'a plain grant logged a fence');
+});
+
+test('an unlock opens no window of its own: the next signatures still ask, every time', async () => {
+  // Guard, green before and after: an unlock opens no window of its own, so each signature asks. The
+  // INTERACTIVE unlock is used because the silent route refuses while the vault is locked (a lock means
+  // "refuse the stored secret until a person says otherwise"); `typed` answers its PIN prompt, so no PIN
+  // needs to be stored first.
   const { w, vaultKeys, gate } = await rig({ answers: [ALLOW_ONCE, ALLOW_ONCE], typed: PIN });
-  await storePin(vaultKeys, PIN);
   vaultKeys.lock();
 
   const unlocked = await vaultKeys.unlock(ACCOUNT, vaultWithTwoWraps().content, { interactive: true });

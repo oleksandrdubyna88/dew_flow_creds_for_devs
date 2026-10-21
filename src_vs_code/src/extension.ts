@@ -51,7 +51,8 @@ import { warnIfKeyringMissing } from './keyringWarningHost';
 import { AgentDoors, DoorSources, doorsOf } from './agentDoors';
 import { DepDecorationProvider } from './depDecorations';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
-import { formPanels, lockNotice } from './formPanels';
+import { formPanels } from './formPanels';
+import { makeLockNow } from './lockNow';
 import { ConfigRouteSources } from './brokerConfigRoute';
 import { EntityFlagsRefresher, entityFlagSource, entityKey } from './entityFlags';
 import { createDiagnosticLog } from './diagnosticLog';
@@ -270,6 +271,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // Unlock coordinator (PIN / security keys / cached master keys).
   const vaultKeys = new VaultKeys(context.secrets);
+  context.subscriptions.push(vaultKeys); // disposes the lock event with the extension
 
   // Transport per account (NAS folder or vault server) + sharing on top.
   const transports = new TransportFactory(storage, googleAuth);
@@ -363,21 +365,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push({ dispose: () => clearInterval(reminderTimer) });
   void syncReminderTick();
 
-  /**
-   * Lock the vaults, and everything that must follow from it.
-   *
-   * <p>One helper rather than the same sequence spelled at two call sites: the idle timer and
-   * the *Lock Vaults* command differ only in what they say afterwards. Closing the open forms is
-   * exactly the kind of step that gets added to one of two copies — a form holds a plaintext
-   * secret in its webview, and since the page now survives being hidden it holds it for as long
-   * as the tab is open, which is the trade this change made deliberately.</p>
-   */
-  const lockNow = (notice: string): void => {
-    vaultKeys.lock();
-    const closedForms = formPanels.closeAll();
-    void refreshReadiness();
-    void vscode.window.showInformationMessage(lockNotice(notice, closedForms));
-  };
+  // Lock the vaults and everything that must follow (`lockNow.ts`): the idle timer and Lock Vaults go through it.
+  const lockNow = makeLockNow({
+    vaultKeys,
+    closeForms: () => formPanels.closeAll(),
+    refreshReadiness: () => refreshReadiness(), // declared below; read at the first lock, not now
+    say: (message) => void vscode.window.showInformationMessage(message),
+  });
 
   // Auto-lock. Checked on a coarse timer: the window is measured in tens of minutes, so
   // a minute of drift costs nothing and a tighter tick would only wake the machine more.
@@ -567,6 +561,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // can find it without a pid, and — when the setting is on — raises and lowers the relay with the agent.
   const sshAgent = wireSshAgent({
     context, storage, storageDir, envCollection: envCollection(), vaultKeys, provider,
+    // `wslRelay` (via followAgentWithRelay) is a `const` declared below: safe only because no address is published during construction.
     onAddress: (socketPath) => { agentServer.setAgentAddress(socketPath); followAgentWithRelay(socketPath); },
   });
 

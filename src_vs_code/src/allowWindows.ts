@@ -259,6 +259,15 @@ function endOf(window: OpenWindow, now: number, nowMono: number): number {
   return Math.min(window.until, monoEnd);
 }
 
+/**
+ * These windows with `until` replaced by where each really ends on BOTH clocks — what a row may promise. A wall
+ * clock set back after the grant leaves the wall deadline later than the monotonic end, and the gate honours the
+ * earlier one; a copy for display, never fed back into the book.
+ */
+export function withEndOnBothClocks(windows: ScopeWindows, now: number, nowMono: number): ScopeWindows {
+  return Object.fromEntries(entriesOf(windows).map(([scope, window]) => [scope, { ...window, until: endOf(window, now, nowMono) }]));
+}
+
 /** The nearest end, on either clock, among the open windows that have not ended yet, for the timer that repaints the row. */
 export function nextExpiry(book: AllowWindows, now: number, nowMono: number): number | undefined {
   const ends = [...book.open.values()].flatMap((windows) => entriesOf(windows).map(([, window]) => endOf(window, now, nowMono))).filter((end) => end > now);

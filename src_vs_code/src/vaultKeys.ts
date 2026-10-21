@@ -198,6 +198,11 @@ export class VaultKeys {
     this.locked.fire();
   }
 
+  /** Ends the lock event with the extension: a lock after this still locks, and tells nobody. */
+  dispose(): void {
+    this.locked.dispose();
+  }
+
   isLocked(): boolean {
     return this.lockState.isLocked();
   }

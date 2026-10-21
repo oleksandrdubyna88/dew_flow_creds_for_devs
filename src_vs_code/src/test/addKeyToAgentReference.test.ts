@@ -36,6 +36,8 @@ interface World {
   loads: Loaded[];
   /** The entity ids `sshAgent.endWindows` was asked to end (*Ask for Every Use Again*, #197 E2.2). */
   ends: string[];
+  /** The entity ids `sshAgent.unload` was asked to drop (*Remove from SSH Agent*). */
+  unloads: string[];
   marked: { id: string; fields: unknown }[];
   warned: string[];
   told: string[];
@@ -51,6 +53,7 @@ const KEY = { id: 'k2', name: 'server key 2', details: { id: 'k2', name: 'server
 function world(loadFails = false, hadWindow = false): World {
   const loads: Loaded[] = [];
   const ends: string[] = [];
+  const unloads: string[] = [];
   const marked: { id: string; fields: unknown }[] = [];
   const warned: string[] = [];
   const told: string[] = [];
@@ -90,6 +93,10 @@ function world(loadFails = false, hadWindow = false): World {
         ends.push(entityId);
         return hadWindow;
       },
+      unload: (entityId: string): boolean => {
+        unloads.push(entityId);
+        return true;
+      },
       load: (accountId: string, details: { id: string; name: string }): Promise<unknown> => {
         loads.push({ accountId, entityId: details.id, entityName: details.name });
         return Promise.resolve(
@@ -120,7 +127,7 @@ function world(loadFails = false, hadWindow = false): World {
     assert.ok(found !== undefined, `not registered: ${command}`);
     return found;
   };
-  return { handler, handlerFor, loads, ends, marked, warned, told };
+  return { handler, handlerFor, loads, ends, unloads, marked, warned, told };
 }
 
 const clickOn = (w: World): Promise<unknown> =>
@@ -208,4 +215,24 @@ test('Ask for Every Use Again on a reference to an entry that is gone ends nothi
 
   assert.deepEqual(w.ends, [], 'it ended the windows of something it could not find');
   assert.match(w.warned[0], /no longer in the vault/);
+});
+
+test('Remove from SSH Agent on a connection unloads the KEY it points at', async () => {
+  const w = world();
+
+  await w.handlerFor('credSshManager.removeKeyFromAgent')({ kind: 'node', accountId: 'a1', node: CONNECTION });
+
+  assert.deepEqual(w.unloads, ['k2'], 'the id of the connection itself reached the agent');
+  assert.deepEqual(w.marked, [{ id: 'k2', fields: { sshAgent: undefined } }]);
+});
+
+test('Remove from SSH Agent on a reference to an entry that is gone unloads nothing and says so', async () => {
+  // It used to return without a word, while Add and Ask for Every Use Again said it: the three share one lookup now.
+  const w = world();
+  const dangling = { ...CONNECTION, details: { ...CONNECTION.details, sshKeyEntityId: 'missing' } };
+
+  await w.handlerFor('credSshManager.removeKeyFromAgent')({ kind: 'node', accountId: 'a1', node: dangling });
+
+  assert.deepEqual(w.unloads, [], 'it unloaded something it could not find');
+  assert.match(w.warned[0] ?? '', /no longer in the vault/, 'the click did nothing and said nothing');
 });

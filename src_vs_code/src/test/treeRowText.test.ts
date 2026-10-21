@@ -3,6 +3,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { baseTarget, describeTarget, entityContextValue, entityDescription, signWindowLabel, tagLabel } from '../treeRowText';
+import { matchesTerms, nodeHaystack } from '../treeSearch';
 import { EntityMetadata, TreeNode } from '../types';
 
 /**
@@ -167,9 +168,15 @@ test('the description puts the open window last, after the target and a waiting 
   assert.equal(entityDescription(node, NOON, '', ''), 'u@h', 'nothing to add, nothing to join');
 });
 
-test('the row text of an open window is not filter text: describeTarget never carries it', () => {
-  // treeSearch matches what describeTarget renders; a window is live state, so a search must not find a row by it.
-  assert.equal(describeTarget(entity({ host: 'h', user: 'u', isSshEnabled: true })).includes('without asking'), false);
+test('the row text of an open window is not filter text: the filter\'s own haystack never carries it', () => {
+  // A window is live state, so a search must not find a row by it. Asserted on the REAL filter (`nodeHaystack`,
+  // what `matchesTerms` looks in), not on `describeTarget`, which the window text never went through.
+  const node = entity({ host: 'h', user: 'u', isSshEnabled: true });
+  const label = signWindowLabel({ all: { generation: 1, grantedAt: NOON, grantedAtMono: 0, until: NOON + 600_000 } }, NOON, 0);
+  assert.match(label, /without asking/, 'the fixture really produces the window text');
+
+  assert.equal(nodeHaystack(node).includes('without asking'), false);
+  assert.equal(matchesTerms(nodeHaystack(node), ['without asking']), false, 'a search for the window text found the row');
 });
 
 const KEY = { isSshKey: true, sshAgent: true } as EntityMetadata;

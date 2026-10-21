@@ -18,7 +18,7 @@ import { AgentKey, SshAgentServer, agentSocketPath } from './sshAgentServer';
 import { ParsedSshKey, parseSshPrivateKey } from './sshKeyParse';
 import { SecretOpener } from './secretOpener';
 import { automaticOpenerFor } from './automaticRead';
-import { CONSENT_TIMEOUT_MS, SIGNING_BUTTONS, consentFromChoice } from './agentConsent';
+import { ALLOW_WINDOW, CONSENT_TIMEOUT_MS, SIGNING_BUTTONS, consentFromChoice } from './agentConsent';
 import {
   ALL_ONLY,
   AllowWindows,
@@ -27,6 +27,7 @@ import {
   OpenWindow,
   ScopeWindows,
   askTicket,
+  GrantOutcome,
   endAllWindows,
   endWindows,
   forgetKey,
@@ -34,6 +35,7 @@ import {
   nextExpiry,
   windowCovers,
   windowsFor as windowsInBook,
+  withEndOnBothClocks,
   withoutExpired,
 } from './allowWindows';
 import { signForAgent } from './sshAgentSign';
@@ -46,6 +48,18 @@ import { EntityMetadata, TreeNode } from './types';
  * full ten minutes would sleep through a wall clock that jumped (a laptop waking), so it looks every five at most.
  */
 const EXPIRY_LOOK_MS = 5 * 60_000;
+
+/**
+ * What the agent log says when a timed answer crossed something (#197, E2.1/E2.2): the key was removed or replaced
+ * while the prompt was open, or the vault was locked, or *Ask for Every Use Again* was used. The last two still
+ * allow the ONE signature; none opens a window. The record must say which, because the outcome differs from the
+ * click the person made. The information message that tells the person is E2.3's.
+ */
+const CROSSED_LINE: Readonly<Partial<Record<GrantOutcome, string>>> = {
+  'stale-key': 'answered after the key was removed or replaced — no window was opened',
+  'fenced-key': `answered "${ALLOW_WINDOW}" after Ask for Every Use Again — signed once, no window was opened`,
+  'fenced-lock': `answered "${ALLOW_WINDOW}" after the vaults were locked — signed once, no window was opened`,
+};
 
 /** Both of the window book's clocks at one instant: the wall clock and the monotonic one. */
 interface Moment {
@@ -285,7 +299,11 @@ export class SshAgentManager implements vscode.Disposable {
    */
   endAllWindows(reason: string): void {
     this.setWindows(endAllWindows(this.windows));
-    this.log(`every signing window ended: ${reason}`);
+    // Every lock reaches here, so a person who never loaded a key must not get a log channel of their own on
+    // their first lock: the epoch always moves, the line is for the agent that has keys to answer for.
+    if (this.keys.size > 0) {
+      this.log(`every signing window ended: ${reason}`);
+    }
   }
 
   /**
@@ -295,7 +313,7 @@ export class SshAgentManager implements vscode.Disposable {
    * this never revokes and never unloads: the key stays loaded and the next signature asks.
    */
   endWindows(entityId: string): boolean {
-    const had = Object.keys(this.liveWindows(entityId)).length > 0;
+    const had = Object.keys(this.liveWindows(entityId, this.moment())).length > 0;
     this.setWindows(endWindows(this.windows, entityId));
     this.log(`Ask for Every Use Again: ${had ? 'ended the window of' : 'no open window on'} "${this.nameOf(entityId)}"`);
     return had;
@@ -305,17 +323,23 @@ export class SshAgentManager implements vscode.Disposable {
    * The windows the gate would honour for the key on this tree row — what the row shows. Scoped by account: the
    * tree asks per (account, node) and the manager keys by the bare entity id, so a key loaded under another
    * account answers `{}`. Never the book's raw `open` map, which holds windows a clock has already ended.
+   *
+   * <p>Each window's `until` is where it ends on BOTH clocks — the earlier of its wall deadline and where the
+   * monotonic clock puts it (`withEndOnBothClocks`) — so a row never promises more than the gate will honour
+   * after a wall clock set back (E2.2 review L1).</p>
    */
   windowsFor(accountId: string, entityId: string): ScopeWindows {
-    return this.keys.get(entityId)?.accountId === accountId ? this.liveWindows(entityId) : {};
+    if (this.keys.get(entityId)?.accountId !== accountId) {
+      return {};
+    }
+    const at = this.moment();
+    return withEndOnBothClocks(this.liveWindows(entityId, at), at.wall, at.mono);
   }
 
-  /** The windows of this key that cover a request right now, on BOTH clocks (the gate's own rule). */
-  private liveWindows(entityId: string): ScopeWindows {
+  /** The windows of this key that cover a request at `at`, on BOTH clocks (the gate's own rule). */
+  private liveWindows(entityId: string, at: Moment): ScopeWindows {
     const generation = this.generationOf(entityId);
-    return generation === undefined
-      ? {}
-      : windowsInBook(this.windows, { entityId, generation }, ALL_ONLY, this.clock().getTime(), this.monotonic());
+    return generation === undefined ? {} : windowsInBook(this.windows, { entityId, generation }, ALL_ONLY, at.wall, at.mono);
   }
 
   private nameOf(entityId: string): string {
@@ -350,9 +374,16 @@ export class SshAgentManager implements vscode.Disposable {
     this.expiry = this.windows.open.size === 0 ? undefined : this.timerFor(at ?? this.moment());
   }
 
-  private timerFor(at: Moment): ReturnType<typeof setTimeout> | undefined {
+  /**
+   * A book that holds something always gets a look. When nothing is left to wait for (`nextExpiry` finds no end
+   * ahead) yet the book still holds a window — a clock jump ended it between two looks — the look is at once, so
+   * the entry is dropped and the row repainted instead of both lingering until some unrelated change (E2.2 L2).
+   * It cannot loop: `expired` drops every window `nextExpiry` ignores, and an empty book arms nothing.
+   */
+  private timerFor(at: Moment): ReturnType<typeof setTimeout> {
     const next = nextExpiry(this.windows, at.wall, at.mono);
-    return next === undefined ? undefined : unrefTimer(setTimeout(() => this.expired(), Math.min(next - at.wall, EXPIRY_LOOK_MS)));
+    const delay = next === undefined ? 0 : Math.min(next - at.wall, EXPIRY_LOOK_MS);
+    return unrefTimer(setTimeout(() => this.expired(), delay));
   }
 
   /** The timer fired: drop what ended (the same book, silently, when nothing did) and look again. */
@@ -508,16 +539,20 @@ export class SshAgentManager implements vscode.Disposable {
    * says `stale-key` when the key was unloaded or re-loaded while the prompt was open, and then nothing is
    * allowed and no window opens. (An *Allow once* across the same event is refused by the server, which
    * compares the key OBJECT it asked about with the one now served.) The other two crossings, `fenced-key` (the row
-   * button) and `fenced-lock` (any lock), also allow this one signature and open no window; the book says which.
+   * button) and `fenced-lock` (any lock), allow this one signature and open no window.
+   *
+   * <p>All three are written to the agent log (`CROSSED_LINE`): each makes the outcome differ from the click the
+   * person made, and a record that stayed silent about two of them could not answer "why did that window not
+   * open?" afterwards.</p>
    */
   private openWindow(key: AgentKey, ticket: AskTicket, at: { grantedAt: number; grantedAtMono: number; until: number }): boolean {
     const { book, outcome } = grantWindow(this.windows, ticket, 'all', this.generationOf(key.entityId), at.grantedAt, at.grantedAtMono, at.until);
     this.setWindows(book, { wall: at.grantedAt, mono: at.grantedAtMono });
-    if (outcome === 'stale-key') {
-      this.log(`"${key.name}": answered after the key was removed or replaced — no window was opened`);
-      return false;
+    const crossed = CROSSED_LINE[outcome];
+    if (crossed !== undefined) {
+      this.log(`"${key.name}": ${crossed}`);
     }
-    return true;
+    return outcome !== 'stale-key';
   }
 
   /**

@@ -49,6 +49,8 @@ export interface World {
   presence: number;
   logs: string[];
   disposals: number;
+  /** How many output channels the manager created — the agent log is made on first use, never at startup. */
+  channels: number;
 }
 
 export function realPrivateKey(): string {
@@ -81,6 +83,7 @@ export function world(options: {
     presence: 0,
     logs: watchLogs([]),
     disposals: 0,
+    channels: 0,
   };
 
   class StubAgentServer {
@@ -131,6 +134,7 @@ export function world(options: {
           // A disposed channel refuses a write — a log line after the window's end must not reach it,
           // and a test about that has to be able to see the throw.
           let closed = false;
+          w.channels += 1;
           return {
             appendLine: (line: string): void => {
               if (closed) {

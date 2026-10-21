@@ -142,6 +142,9 @@ export function configStub(values: Record<string, unknown> = {}): ConfigStub {
  * exactly as VS Code does and read the terminal's output.</p>
  */
 export class StubEventEmitter<T> {
+  /** What listeners threw, in order — VS Code reports these to its error handler and carries on; so does this. */
+  static readonly reported: Error[] = [];
+
   private readonly listeners: ((value: T) => void)[] = [];
 
   readonly event = (listener: (value: T) => void): { dispose(): void } => {
@@ -156,10 +159,22 @@ export class StubEventEmitter<T> {
     };
   };
 
+  /**
+   * Every listener hears the event, whatever an earlier one threw — VS Code's Emitter catches per listener and
+   * reports the error afterwards, and a stub that let the first throw end the loop would hide the one ordering
+   * that matters: a failing subscriber registered BEFORE the one under test (E2.1 review). The errors are kept
+   * in {@link StubEventEmitter.reported}, so a test can still see that one was thrown.
+   */
   fire(value: T): void {
+    const failures: Error[] = [];
     for (const listener of [...this.listeners]) {
-      listener(value);
+      try {
+        listener(value);
+      } catch (error) {
+        failures.push(error instanceof Error ? error : new Error(String(error)));
+      }
     }
+    StubEventEmitter.reported.push(...failures);
   }
 
   dispose(): void {

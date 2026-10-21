@@ -79,6 +79,60 @@ test('an answer given across Ask for Every Use Again signs once and opens no win
   assert.equal(had, false, 'no window was open when the button was used');
 });
 
+test('an answer given across Ask for Every Use Again is said in the agent log: signed once, no window was opened', async () => {
+  // The audit (Fable): the key fence changes the outcome of a timed answer, so the record must say so.
+  const modal = unanswered();
+  const w = world({ answers: [modal.answer] });
+  const { instance, gate } = await loaded(w);
+
+  const pending = gate.confirm(key, login);
+  instance.endWindows(KEY_ID);
+  modal.clickLate(ALLOW_WINDOW);
+  await pending;
+
+  assert.ok(
+    w.logs.some((line) => line.endsWith('"prod": answered "Allow for 10 minutes" after Ask for Every Use Again — signed once, no window was opened')),
+    `the log does not say the answer crossed the button: ${JSON.stringify(w.logs)}`,
+  );
+});
+
+test('a lock with a key loaded writes the reason line, whether or not a window was open', async () => {
+  const w = world({});
+  const { instance } = await loaded(w);
+
+  instance.endAllWindows('the vaults were locked');
+
+  assert.ok(
+    w.logs.some((line) => line.endsWith('every signing window ended: the vaults were locked')),
+    `the reason line is missing: ${JSON.stringify(w.logs)}`,
+  );
+});
+
+test('a lock with no key loaded is silent: no log line and no output channel', () => {
+  // Every lock reaches the agent now (E2.1), so a person who never loaded a key must not get a channel of
+  // their own on their first lock.
+  const w = world({});
+  const { instance } = manager(w, {});
+
+  instance.endAllWindows('the vaults were locked');
+
+  assert.deepEqual(w.logs, [], 'a lock with nothing to end wrote a line');
+  assert.equal(w.channels, 0, 'a lock with nothing to end created the output channel');
+});
+
+test('a lock after the manager is disposed is harmless: no throw, no line, no channel', async () => {
+  // Deactivation disposes the manager; a lock arriving after it (the idle timer's last tick) must not reach
+  // the closed log.
+  const w = world({});
+  const { instance } = await loaded(w);
+  instance.dispose();
+  const channels = w.channels;
+
+  assert.doesNotThrow(() => instance.endAllWindows('the vaults were locked'));
+
+  assert.equal(w.channels, channels, 'a lock after dispose made a new channel');
+});
+
 test('a fence alone is not an open window: the button after a re-load says there was none', async () => {
   // A re-load moves the key's fence (and forgets the key), so the book now HAS an entry for it — but no window.
   const w = world({ answers: [ALLOW_ONCE] });
@@ -132,6 +186,53 @@ test('the row never shows a window the gate would not honour: wall 1 minute, mon
   assert.deepEqual(instance.windowsFor('a1', KEY_ID), {}, 'the row shows a window the gate refuses');
   await gate.confirm(key, login);
   assert.equal(w.dialogs.length, 2, 'and the gate agrees: it asked again');
+});
+
+test('the row shows the end on BOTH clocks: after the wall clock is set back, the earlier (monotonic) end', async () => {
+  // Granted at wall W, mono M: the wall deadline is W+10. Five minutes pass on both clocks, then the wall clock is
+  // set back three minutes (W+2) while the monotonic one carries on (M+5): the window really ends ten minutes
+  // after the grant on the monotonic clock — five more from now, which is W+7 on the NEW wall time. Both clocks
+  // must permit, so the row shows the earlier of the two.
+  const c = clocks();
+  const w = world({ answers: [ALLOW_WINDOW] });
+  const { instance, gate } = await loaded(w, { clock: c.clock, monotonic: c.monotonic });
+  await gate.confirm(key, login);
+
+  c.mono(M + 5 * MIN);
+  c.wall(W + 2 * MIN);
+
+  assert.equal(instance.windowsFor('a1', KEY_ID).all?.until, W + 7 * MIN, 'the row promised the wall deadline, not the earlier end');
+});
+
+test('the row shows the wall deadline when it is the earlier end', async () => {
+  const c = clocks();
+  const w = world({ answers: [ALLOW_WINDOW] });
+  const { instance, gate } = await loaded(w, { clock: c.clock, monotonic: c.monotonic });
+  await gate.confirm(key, login);
+
+  c.wall(W + 2 * MIN);
+  c.mono(M + 2 * MIN);
+
+  assert.equal(instance.windowsFor('a1', KEY_ID).all?.until, W + ALLOW_WINDOW_MS, 'both clocks agree, so the end is the deadline');
+});
+
+test('a window that has ended but is still in the book is dropped and the row repainted, even when no timer is pending', async (t) => {
+  // After a clock jump `nextExpiry` finds nothing left to wait for, yet the book still holds the ended window:
+  // the next change of the book must arm a look at once, not leave the entry (and the row) behind.
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const c = clocks();
+  const w = world({ answers: [ALLOW_WINDOW] });
+  const { instance, gate } = await loaded(w, { clock: c.clock, monotonic: c.monotonic });
+  await gate.confirm(key, login);
+  c.wall(W + 60 * MIN);
+  c.mono(M + 60 * MIN);
+  instance.endWindows('another-key');
+  const changes: string[] = [];
+  instance.onWindowsChanged = () => changes.push('changed');
+
+  t.mock.timers.tick(1);
+
+  assert.deepEqual(changes, ['changed'], 'the ended window stayed in the book and the row was not repainted');
 });
 
 test('the expiry timer is never armed for more than five minutes, so a clock that jumped is noticed', async (t) => {
