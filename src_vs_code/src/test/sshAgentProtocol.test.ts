@@ -257,12 +257,12 @@ test('displayText turns every line break, format mark and separator into "?", on
     ['\v', 'vertical tab'],
     ['\f', 'form feed'],
     ['\u0085', 'next line (NEL)'],
-    [' ', 'line separator'],
-    [' ', 'paragraph separator'],
-    ['​', 'zero-width space'],
-    ['﻿', 'byte-order mark'],
-    ['⁦', 'left-to-right isolate'],
-    ['‮', 'right-to-left override'],
+    ['\u2028', 'line separator'],
+    ['\u2029', 'paragraph separator'],
+    ['\u200B', 'zero-width space'],
+    ['\uFEFF', 'byte-order mark'],
+    ['\u2066', 'left-to-right isolate'],
+    ['\u202E', 'right-to-left override'],
     ['\uD800', 'lone surrogate'],
   ];
 

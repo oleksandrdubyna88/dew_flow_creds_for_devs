@@ -8,7 +8,7 @@ import { describeServerLine, describeSignRequest, encodeString } from '../sshAge
 import {
   FakeServer,
   KEY_ID,
-  assertNoKeyMaterialLogged,
+  keyMaterialLogged,
   keyEntity,
   manager,
   realPrivateKey,
@@ -256,7 +256,7 @@ test('an SSHSIG NAMESPACE cannot forge a host-key line', async () => {
 });
 
 test('a key NAME with quotes, control marks and great length is shown escaped, marked and cut', async () => {
-  const { lines } = await promptFor(`a" b‮${'n'.repeat(200)}`, false);
+  const { lines } = await promptFor(`a" b\u202E${'n'.repeat(200)}`, false);
 
   assert.ok(lines[0].startsWith('Use the SSH key "a\\" b?'), lines[0]);
   assert.ok(lines[0].includes('…"'), 'a cut name says so');
@@ -572,5 +572,5 @@ test("a disposed manager's key objects refuse to sign", async () => {
 
 test('nothing this suite logged carries key material', () => {
   // The last test of the file: every captured log, against every key the file loaded.
-  assertNoKeyMaterialLogged();
+  assert.deepEqual(keyMaterialLogged(), [], 'a log line carries key material');
 });

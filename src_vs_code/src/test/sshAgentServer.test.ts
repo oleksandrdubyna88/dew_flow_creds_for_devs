@@ -22,7 +22,7 @@ import { AgentKey, SshAgentServer, agentSocketPath } from '../sshAgentServer';
 import { parseSshPrivateKey } from '../sshKeyParse';
 import { signForAgent } from '../sshAgentSign';
 import { HOSTBOUND_METHOD, userauth } from './sshUserauth';
-import { assertNoKeyMaterialLogged, watchLogs, watchSecret } from './sshAgentWorld';
+import { keyMaterialLogged, watchLogs, watchSecret } from './sshAgentWorld';
 
 /**
  * The agent over a REAL socket, driven with hand-built frames — the closest a unit test gets to
@@ -509,5 +509,5 @@ test('the socket is per window: a pipe on Windows, a file beside the purged key 
 
 test('nothing this suite logged carries key material', () => {
   // The last test of the file: every harness's log, against every key the file generated.
-  assertNoKeyMaterialLogged();
+  assert.deepEqual(keyMaterialLogged(), [], 'a log line carries key material');
 });

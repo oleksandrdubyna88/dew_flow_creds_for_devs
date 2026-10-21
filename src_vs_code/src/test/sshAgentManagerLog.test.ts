@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import {
   FakeServer,
   KEY_ID,
-  assertNoKeyMaterialLogged,
+  keyMaterialLogged,
   keyEntity,
   keyMaterialIn,
   manager,
@@ -91,5 +91,5 @@ test('the key-material guard sees a PEM header and the base64 body of a key it w
 });
 
 test('nothing this suite logged carries key material', () => {
-  assertNoKeyMaterialLogged();
+  assert.deepEqual(keyMaterialLogged(), [], 'a log line carries key material');
 });

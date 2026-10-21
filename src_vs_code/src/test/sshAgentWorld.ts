@@ -159,7 +159,7 @@ export function manager(
   Object.values(options.keys ?? {}).forEach((pem) => pem !== undefined && watchSecret(pem));
   const storage = {
     getPrivateKey: (_a: string, id: string): Promise<string | undefined> =>
-      Promise.resolve((options.keys ?? {})[id]),
+      Promise.resolve(options.keys?.[id]),
     getAccounts: (): unknown[] => [{ accountId: 'a1', email: 'me@corp.com', provider: 'google' }],
     getNodes: (): TreeNode[] => options.nodes ?? [],
   };
@@ -278,9 +278,14 @@ export function keyMaterialIn(logs: readonly string[], secrets: readonly string[
   return logs.filter((line) => line.includes('PRIVATE KEY') || bodyLines.some((body) => line.includes(body)));
 }
 
+/** Every line the suite logged so far that carries key material — empty when the suite is clean (#197). */
+export function keyMaterialLogged(): string[] {
+  return keyMaterialIn(capturedLogs.flat(), secretsFedIn);
+}
+
 /** The suite-wide guard: nothing the suite logged contains key material (#197). */
 export function assertNoKeyMaterialLogged(): void {
-  const leaked = keyMaterialIn(capturedLogs.flat(), secretsFedIn);
+  const leaked = keyMaterialLogged();
   if (leaked.length > 0) {
     throw new Error(`a log line carries key material: ${leaked[0]}`);
   }

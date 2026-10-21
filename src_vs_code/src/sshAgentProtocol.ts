@@ -175,8 +175,13 @@ export function decodeSignRequest(payload: Buffer): SignRequest | undefined {
 
 /** `SHA256:base64(sha256(blob))`, without padding — exactly what `ssh-keygen -lf` shows. */
 export function keyFingerprintOf(publicBlob: Buffer): string {
-  const digest = crypto.createHash('sha256').update(publicBlob).digest('base64').replace(/=+$/, '');
-  return `SHA256:${digest}`;
+  return `SHA256:${withoutBase64Padding(crypto.createHash('sha256').update(publicBlob).digest('base64'))}`;
+}
+
+/** Base64 padding (`=`) only ever ends the text, so the first one marks where the data stops. */
+function withoutBase64Padding(base64: string): string {
+  const padding = base64.indexOf('=');
+  return padding === -1 ? base64 : base64.slice(0, padding);
 }
 
 /** The key type name at the head of a public blob (`ssh-ed25519`, `ssh-rsa`, …). */
@@ -263,7 +268,7 @@ function readUserauthFields(reader: ByteReader): UserauthHead | undefined {
   const fields = [reader.readString(), reader.readString(), reader.readString()].map((part) =>
     part?.toString('utf8'),
   );
-  if (fields.some((field) => field === undefined) || fields[1] !== SSH_CONNECTION) {
+  if (fields.includes(undefined) || fields[1] !== SSH_CONNECTION) {
     return undefined;
   }
   return { user: fields[0] as string, service: fields[1], method: fields[2] as string };
@@ -423,7 +428,7 @@ export const MAX_DISPLAY = 64;
  * naming the server is the one line people are told to trust.
  */
 export function displayText(raw: string, max: number): string {
-  const safe = withoutControlChars(raw).replace(/[\\"]/g, '\\$&');
+  const safe = withoutControlChars(raw).replace(/[\\"]/g, String.raw`\$&`);
   const characters = [...safe];
   return characters.length <= max ? safe : `${withoutDanglingEscape(characters.slice(0, max - 1).join(''))}…`;
 }

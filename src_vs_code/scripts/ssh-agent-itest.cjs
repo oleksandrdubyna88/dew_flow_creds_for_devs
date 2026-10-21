@@ -23,8 +23,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const net = require('net');
-const { execFile, spawn } = require('child_process');
+const net = require('node:net');
+const { execFile, spawn } = require('node:child_process');
 
 const OUT = path.join(__dirname, '..', 'out');
 const { SshAgentServer, agentSocketPath } = require(path.join(OUT, 'sshAgentServer.js'));
@@ -149,7 +149,7 @@ async function main() {
     );
     // ssh-keygen -Y verify reads the signed data from stdin, so feed it the file.
     const verifiedWithStdin = await new Promise((resolve) => {
-      const child = require('child_process').spawn(
+      const child = require('node:child_process').spawn(
         tools.sshKeygen,
         ['-Y', 'verify', '-f', signersPath, '-I', 'itest@example.com', '-n', 'git', '-s', signaturePath],
         { env },
@@ -396,18 +396,28 @@ async function startSshd(sshdDir, hostKeyPath, authorizedKeys) {
     ].join('\n'),
   );
   const sshd = launch(SSHD, ['-d', '-e', '-f', config]);
-  const listening = new RegExp(`Server listening on 127\\.0\\.0\\.1 port ${port}`);
-  const deadline = Date.now() + 10_000;
-  while (Date.now() < deadline) {
-    if (listening.test(sshd.stderr)) {
-      return { sshd, port, knownHosts };
-    }
-    if (sshd.exited) {
-      return { sshd, failure: `sshd exited before it listened: ${sshd.stderr.trim()}` };
-    }
-    await new Promise((resolve) => setTimeout(resolve, 50));
+  const listening = new RegExp(String.raw`Server listening on 127\.0\.0\.1 port ${port}`);
+  const failure = await listeningFailure(sshd, listening, Date.now() + 10_000);
+  return failure === undefined ? { sshd, port, knownHosts } : { sshd, failure };
+}
+
+/**
+ * Polls sshd's stderr every 50 ms until it says it is listening. Resolves `undefined` on success, else
+ * the sentence naming what went wrong. One poll after another is the point — each looks at what the
+ * previous one left — so it recurses rather than looping over `await`.
+ */
+async function listeningFailure(sshd, listening, deadline) {
+  if (listening.test(sshd.stderr)) {
+    return undefined;
   }
-  return { sshd, failure: `no "Server listening" line within 10 s: ${sshd.stderr.trim()}` };
+  if (sshd.exited) {
+    return `sshd exited before it listened: ${sshd.stderr.trim()}`;
+  }
+  if (Date.now() >= deadline) {
+    return `no "Server listening" line within 10 s: ${sshd.stderr.trim()}`;
+  }
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  return listeningFailure(sshd, listening, deadline);
 }
 
 /**
