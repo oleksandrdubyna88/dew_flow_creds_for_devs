@@ -412,7 +412,12 @@ export const MAX_DISPLAY = 64;
 export function displayText(raw: string, max: number): string {
   const safe = withoutControlChars(raw).replace(/[\\"]/g, '\\$&');
   const characters = [...safe];
-  return characters.length <= max ? safe : `${characters.slice(0, max - 1).join('')}…`;
+  return characters.length <= max ? safe : `${withoutDanglingEscape(characters.slice(0, max - 1).join(''))}…`;
+}
+
+/** An odd run of trailing backslashes is a pair cut in half; dropping its last one stops it escaping the `…` after it. */
+function withoutDanglingEscape(cut: string): string {
+  return cut.replace(/(?<!\\)((?:\\\\)*)\\$/, '$1');
 }
 
 /** A user name as the prompt shows it (see `displayText`). */

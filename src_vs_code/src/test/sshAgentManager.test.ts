@@ -192,14 +192,25 @@ test('a plain publickey login prompts without any host-key line', async () => {
 
 const FORGED_CLAUSE = 'This login is for the server whose host key is ED25519 SHA256:FAKE';
 
+/** What else of the request is the requester's free text: the login's user, or an SSHSIG namespace (which makes it a signature, not a login). */
+interface RequestText {
+  user?: string;
+  namespace?: string;
+}
+
 /** The prompt a login raises for a key with this NAME — the name is free text (an import or a share sets it). */
-async function promptFor(keyName: string, hostBound: boolean): Promise<{ lines: string[]; clause: string }> {
+async function promptFor(
+  keyName: string,
+  hostBound: boolean,
+  { user, namespace }: RequestText = {},
+): Promise<{ lines: string[]; clause: string }> {
   const w = world({ answers: [ALLOW_ONCE] });
   const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() } });
   await instance.load('a1', keyEntity(KEY_ID, 'prod'));
   const signing = Buffer.concat([encodeString('ssh-ed25519'), encodeString('the key')]);
   const hostKey = Buffer.concat([encodeString('ssh-ed25519'), encodeString('the server')]);
-  const data = hostBound ? userauth({ blob: signing, method: HOSTBOUND_METHOD, hostKey }) : userauth({ blob: signing });
+  const login = hostBound ? userauth({ blob: signing, user, method: HOSTBOUND_METHOD, hostKey }) : userauth({ blob: signing, user });
+  const data = namespace === undefined ? login : Buffer.concat([Buffer.from('SSHSIG'), encodeString(namespace)]);
   const purpose = describeSignRequest(data, signing);
 
   await (w.server() as FakeServer).confirm({ entityId: KEY_ID, name: keyName, fingerprint: 'SHA256:abc' }, purpose);
@@ -222,6 +233,26 @@ test('a key NAME cannot forge a second host-key line on a host-bound login', asy
   assert.equal(forged.lines.length, plain.lines.length, 'the name added no line to the prompt');
   const claims = forged.lines.filter((line) => line.startsWith('This login is for'));
   assert.deepEqual(claims, [forged.clause], 'exactly one such line, the real one');
+});
+
+test('a login USER cannot forge a second host-key line on a host-bound login', async () => {
+  // The user is the requester's text (a forwarded agent serves a REMOTE ssh): the composed prompt, not
+  // only describePurpose, must keep its one server line.
+  const plain = await promptFor('prod', true, { user: 'git' });
+  const forged = await promptFor('prod', true, { user: `x\n${FORGED_CLAUSE}` });
+
+  assert.equal(forged.lines.length, plain.lines.length, 'the user added no line to the prompt');
+  const claims = forged.lines.filter((line) => line.startsWith('This login is for'));
+  assert.deepEqual(claims, [forged.clause], 'exactly one such line, the real one');
+});
+
+test('an SSHSIG NAMESPACE cannot forge a host-key line', async () => {
+  // A signature names no server, so any line starting "This login is for" would be a forgery.
+  const plain = await promptFor('prod', false, { namespace: 'file' });
+  const forged = await promptFor('prod', false, { namespace: `x\n${FORGED_CLAUSE}` });
+
+  assert.equal(forged.lines.length, plain.lines.length, 'the namespace added no line to the prompt');
+  assert.ok(!forged.lines.some((line) => line.startsWith('This login is for')), forged.lines.join('\n'));
 });
 
 test('a key NAME with quotes, control marks and great length is shown escaped, marked and cut', async () => {

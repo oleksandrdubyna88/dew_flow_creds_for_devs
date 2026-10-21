@@ -19,6 +19,7 @@ import {
   keyFingerprintOf,
   keyTypeOf,
   describeUnknownShape,
+  displayText,
 } from '../sshAgentProtocol';
 import { HOSTBOUND_METHOD, userauth } from './sshUserauth';
 
@@ -243,6 +244,63 @@ test('a user name is untrusted text: it cannot end the sentence, start a line or
   assert.ok(shown !== undefined && [...shown].length <= 64, `the name is capped at 64 characters: ${said}`);
   assert.ok(shown?.endsWith('…'), 'a cut name says so');
   assert.equal(describeServerLine(purpose), '', 'a plain publickey request names no host key, whatever the user wrote');
+});
+
+/** A lone surrogate half, spelled out (not the implementation's own character class). */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+test('displayText turns every line break, format mark and separator into "?", one character at a time', () => {
+  // Written out character by character, so narrowing the implementation's class turns THIS red and
+  // names the character: the prompt's trust rests on no one of these being able to start a line.
+  const hostile: Array<[string, string]> = [
+    ['\r', 'carriage return'],
+    ['\v', 'vertical tab'],
+    ['\f', 'form feed'],
+    ['\u0085', 'next line (NEL)'],
+    [' ', 'line separator'],
+    [' ', 'paragraph separator'],
+    ['​', 'zero-width space'],
+    ['﻿', 'byte-order mark'],
+    ['⁦', 'left-to-right isolate'],
+    ['‮', 'right-to-left override'],
+    ['\uD800', 'lone surrogate'],
+  ];
+
+  for (const [character, name] of hostile) {
+    assert.equal(displayText(`a${character}b`, 64), 'a?b', `${name} (U+${(character.codePointAt(0) ?? 0).toString(16).toUpperCase()})`);
+  }
+});
+
+test('displayText cuts on whole characters: a surrogate pair at the cut stays whole, whichever side it falls', () => {
+  const emoji = '\u{1F600}';
+  // The pair is characters 63 and 64 of 73: the cut keeps 63, so the emoji is the LAST one kept.
+  const kept = displayText(`${'a'.repeat(62)}${emoji}${'z'.repeat(10)}`, 64);
+  // The pair is characters 64 and 65: the cut drops it whole rather than keeping half.
+  const dropped = displayText(`${'a'.repeat(63)}${emoji}${'z'.repeat(10)}`, 64);
+
+  assert.equal(kept, `${'a'.repeat(62)}${emoji}…`);
+  assert.equal(dropped, `${'a'.repeat(63)}…`);
+  for (const shown of [kept, dropped]) {
+    assert.ok(!LONE_SURROGATE.test(shown), JSON.stringify(shown));
+    assert.ok(shown.endsWith('…'), 'a cut text says so');
+    assert.equal([...shown].length, 64, 'the cap includes the ellipsis');
+  }
+});
+
+test('displayText never leaves a half-escape at the cut: a backslash or quote pair that straddles it', () => {
+  // A quote becomes TWO characters (backslash, quote); the cut can fall between them, and a dangling
+  // backslash would escape the ellipsis. An escaped backslash that fits whole is kept.
+  const quote = displayText(`${'a'.repeat(62)}"${'z'.repeat(10)}`, 64);
+  const backslash = displayText(`${'a'.repeat(62)}\\${'z'.repeat(10)}`, 64);
+  const whole = displayText(`${'a'.repeat(61)}\\${'z'.repeat(3)}`, 64);
+
+  assert.equal(quote, `${'a'.repeat(62)}…`);
+  assert.equal(backslash, `${'a'.repeat(62)}…`);
+  assert.equal(whole, `${'a'.repeat(61)}\\\\…`, 'a whole escaped backslash (two characters) survives the cut');
+  for (const shown of [quote, backslash, whole]) {
+    assert.ok(!LONE_SURROGATE.test(shown), JSON.stringify(shown));
+    assert.ok(shown.endsWith('…'), 'a cut text says so');
+  }
 });
 
 test('a short plain user name is shown as it is', () => {
