@@ -17,10 +17,9 @@ import { ALLOW_WINDOW_MS, withinAllowWindow } from './agentConsent';
  * {@link AskTicket} taken when the request arrived says which, and `grantWindow` checks it.</p>
  *
  * <p><b>Fences.</b> Every revocation moves a fence, and an answer that was given across one opens no window.
- * Per key (unload, re-load, and later the row button) and one for the whole vault (any lock). What crossed is
+ * Per key (unload, re-load and the row button) and one for the whole vault (any lock). What crossed is
  * reported in this order: `stale-key` (the key was unloaded or re-loaded), `fenced-key`, `fenced-lock`.
- * In E1 only `forgetKey` and the grant exist on the wire; the lock and row-button fences are DEFINED here and
- * tested, but nothing calls them until the next epic.</p>
+ * On the wire since E2: the lock (`endAllWindows`, E2.1) and the row button (`endWindows`, E2.2).</p>
  *
  * <p><b>Two clocks, both must permit.</b> The wall clock says `grantedAt <= now < until`; a monotonic clock
  * says `0 <= nowMono - grantedAtMono < until - grantedAt`. A wall clock set back after the grant therefore
@@ -258,6 +257,15 @@ export function withoutExpired(book: AllowWindows, now: number, nowMono: number)
 function endOf(window: OpenWindow, now: number, nowMono: number): number {
   const monoEnd = now + (window.grantedAtMono + (window.until - window.grantedAt) - nowMono);
   return Math.min(window.until, monoEnd);
+}
+
+/**
+ * These windows with `until` replaced by where each really ends on BOTH clocks — what a row may promise. A wall
+ * clock set back after the grant leaves the wall deadline later than the monotonic end, and the gate honours the
+ * earlier one; a copy for display, never fed back into the book.
+ */
+export function withEndOnBothClocks(windows: ScopeWindows, now: number, nowMono: number): ScopeWindows {
+  return Object.fromEntries(entriesOf(windows).map(([scope, window]) => [scope, { ...window, until: endOf(window, now, nowMono) }]));
 }
 
 /** The nearest end, on either clock, among the open windows that have not ended yet, for the timer that repaints the row. */

@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { EntityMetadata, TreeNode } from '../types';
-import { loadWithVscode } from './vscodeStub';
+import { StubEventEmitter, loadEachWithVscode } from './vscodeStub';
 
 /**
  * The SSH agent manager's test world: the real `SshAgentManager` over a stub socket server and a `vscode`
@@ -17,6 +17,10 @@ import { loadWithVscode } from './vscodeStub';
  * real wiring rather than by reaching into a private method: the manager hands the server that callback,
  * so holding the server means holding the gate.</p>
  *
+ * <p>`also` loads further modules into the SAME module graph as the manager (E2.1: a real `VaultKeys` and the
+ * SSH wiring that connects it to the manager) — `loadEachWithVscode` evicts the whole graph on every call, so
+ * two separate loads would leave each module holding its own copy of the others.</p>
+ *
  * <p>Not named `*.test.ts`, so the runner never treats it as a suite.</p>
  */
 
@@ -25,17 +29,27 @@ export type Manager = typeof import('../sshAgentManager');
 export interface FakeServer {
   socketPath: string;
   listening: boolean;
-  confirm(key: { entityId: string; name: string; fingerprint: string }, purpose: unknown): Promise<boolean>;
+  /** `data` and `signal` default inside the world (an empty buffer, a never-aborted signal): no call site changes. */
+  confirm(
+    key: { entityId: string; name: string; fingerprint: string },
+    purpose: unknown,
+    data?: Buffer,
+    signal?: AbortSignal,
+  ): Promise<boolean>;
   keys(): unknown[];
   dispose(): void;
 }
 
 export interface World {
   mod: Manager;
+  /** The modules `also` asked for, in order, loaded beside the manager under the same `vscode`. */
+  modules: unknown[];
   server(): FakeServer | undefined;
   /** Modal answers, consumed in order; undefined means dismissed, a pending promise means unanswered. */
   answers: (string | undefined | Promise<string>)[];
   dialogs: string[];
+  /** The information messages shown, in order — what a person is TOLD (E2.3). */
+  infos: string[];
   /** The buttons each dialog offered, in order — what the prompt really lets a person answer. */
   buttons: string[][];
   env: Record<string, string>;
@@ -43,6 +57,8 @@ export interface World {
   presence: number;
   logs: string[];
   disposals: number;
+  /** How many output channels the manager created — the agent log is made on first use, never at startup. */
+  channels: number;
 }
 
 export function realPrivateKey(): string {
@@ -58,19 +74,25 @@ export function world(options: {
   keys?: Record<string, string | undefined>;
   nodes?: TreeNode[];
   answers?: (string | undefined | Promise<string>)[];
+  also?: string[];
+  /** What a person types when a vault loaded via `also` asks for the PIN (the interactive unlock). */
+  typed?: string;
 }): World {
   let server: FakeServer | undefined;
   const w: World = {
     mod: undefined as never,
+    modules: [],
     server: (): FakeServer | undefined => server,
     answers: [...(options.answers ?? [])],
     dialogs: [],
+    infos: [],
     buttons: [],
     env: {},
     envDescription: '',
     presence: 0,
     logs: watchLogs([]),
     disposals: 0,
+    channels: 0,
   };
 
   class StubAgentServer {
@@ -82,11 +104,17 @@ export function world(options: {
     constructor(o: {
       socketPath: string;
       keys: () => unknown[];
-      confirm: FakeServer['confirm'];
+      confirm: (
+        key: { entityId: string; name: string; fingerprint: string },
+        purpose: unknown,
+        data: Buffer,
+        signal: AbortSignal,
+      ) => Promise<boolean>;
       log: (m: string) => void;
     }) {
       this.socketPath = o.socketPath;
-      this.confirm = o.confirm;
+      this.confirm = (key, purpose, data = Buffer.alloc(0), signal = new AbortController().signal) =>
+        o.confirm(key, purpose, data, signal);
       this.keys = o.keys;
       server = this as unknown as FakeServer;
     }
@@ -102,10 +130,20 @@ export function world(options: {
     }
   }
 
-  w.mod = loadWithVscode<Manager>(
-    '../sshAgentManager',
+  const [mod, ...also] = loadEachWithVscode(
+    ['../sshAgentManager', ...(options.also ?? [])],
     {
+      // A working emitter: the real semantics, so `VaultKeys.onDidLock` delivers to its listeners as it does in VS Code.
+      EventEmitter: StubEventEmitter,
+      // What a real `VaultKeys` reads when it is loaded beside the manager: its silent routes ask nobody anything.
+      workspace: { getConfiguration: () => ({ get: <T>(_key: string, fallback: T): T => fallback }) },
       window: {
+        showErrorMessage: (): Promise<undefined> => Promise.resolve(undefined),
+        showInputBox: (): Promise<string | undefined> => Promise.resolve(options.typed),
+        showInformationMessage: (m: string): Promise<undefined> => {
+          w.infos.push(m);
+          return Promise.resolve(undefined);
+        },
         showWarningMessage: (m: string, _options?: unknown, ...buttons: string[]): Promise<string | undefined> => {
           w.dialogs.push(m);
           w.buttons.push(buttons);
@@ -115,6 +153,7 @@ export function world(options: {
           // A disposed channel refuses a write — a log line after the window's end must not reach it,
           // and a test about that has to be able to see the throw.
           let closed = false;
+          w.channels += 1;
           return {
             appendLine: (line: string): void => {
               if (closed) {
@@ -137,6 +176,8 @@ export function world(options: {
       },
     },
   );
+  w.mod = mod as Manager;
+  w.modules = also;
   return w;
 }
 
@@ -156,30 +197,12 @@ export function manager(
   dir: string;
 } {
   const dir = storageDir();
-  Object.values(options.keys ?? {}).forEach((pem) => pem !== undefined && watchSecret(pem));
-  const storage = {
-    getPrivateKey: (_a: string, id: string): Promise<string | undefined> =>
-      Promise.resolve(options.keys?.[id]),
-    getAccounts: (): unknown[] => [{ accountId: 'a1', email: 'me@corp.com', provider: 'google' }],
-    getNodes: (): TreeNode[] => options.nodes ?? [],
-  };
-  const envCollection = {
-    replace: (name: string, value: string): void => {
-      w.env[name] = value;
-    },
-    delete: (name: string): void => {
-      delete w.env[name];
-    },
-    set description(value: string) {
-      w.envDescription = value;
-    },
-  };
   return {
     dir,
     instance: new w.mod.SshAgentManager(
-      storage as never,
+      agentStorage(options) as never,
       dir,
-      envCollection as never,
+      agentEnv(w) as never,
       () => {
         w.presence += 1;
       },
@@ -189,6 +212,40 @@ export function manager(
       options.monotonic,
     ),
   };
+}
+
+/** The vault side of the agent: the keys it may open, the one account, and the nodes that ask to be served. */
+export function agentStorage(options: { keys?: Record<string, string | undefined>; nodes?: TreeNode[] }): {
+  getPrivateKey(accountId: string, id: string): Promise<string | undefined>;
+  getAccounts(): unknown[];
+  getNodes(): TreeNode[];
+} {
+  Object.values(options.keys ?? {}).forEach((pem) => pem !== undefined && watchSecret(pem));
+  return {
+    getPrivateKey: (_a: string, id: string): Promise<string | undefined> =>
+      Promise.resolve(options.keys?.[id]),
+    getAccounts: (): unknown[] => [{ accountId: 'a1', email: 'me@corp.com', provider: 'google' }],
+    getNodes: (): TreeNode[] => options.nodes ?? [],
+  };
+}
+
+/** The terminal environment the agent publishes `SSH_AUTH_SOCK` into, recorded on the world. */
+export function agentEnv(w: World): {
+  replace(name: string, value: string): void;
+  delete(name: string): void;
+  description: string;
+} {
+  return {
+    replace: (name: string, value: string): void => {
+      w.env[name] = value;
+    },
+    delete: (name: string): void => {
+      delete w.env[name];
+    },
+    set description(value: string) {
+      w.envDescription = value;
+    },
+  } as never;
 }
 
 /**
@@ -241,6 +298,15 @@ export function unanswered(): {
   });
   return { answer, clickLate, failLate };
 }
+
+/** The key object the (stub) server holds for the first served key — the thing a late caller would sign with. */
+export function servedKey(w: { server(): FakeServer | undefined }): { sign(data: Buffer, flags: number): Buffer | undefined } {
+  const keys = (w.server() as FakeServer).keys() as { sign(data: Buffer, flags: number): Buffer | undefined }[];
+  return keys[0];
+}
+
+/** Bytes a client wants signed — any bytes; `servedKey(w).sign(SIGNED_BYTES, 0)` is a Buffer while the key is live. */
+export const SIGNED_BYTES = Buffer.from('bytes a client wants signed');
 
 /** Every log a suite captured and every secret it fed in — what the key-material guard below reads. */
 const capturedLogs: string[][] = [];

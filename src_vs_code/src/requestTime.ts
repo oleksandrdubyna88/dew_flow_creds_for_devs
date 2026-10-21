@@ -51,3 +51,23 @@ function formatUtcOffset(offsetMinutes: number): string {
 function pad(n: number): string {
   return String(n).padStart(2, '0');
 }
+
+/**
+ * `18:40` — the wall-clock time an open window ends, in a zone `offsetMinutes` east of UTC, or `00:05 tomorrow`
+ * when that is not today (#197, E2.2; the longer-lived windows of E3 reuse it).
+ *
+ * <p>Rounded UP to the minute: the text says when the window is over, never a minute before it is — a window
+ * that ends at 12:10:30 says 12:11, not a 12:10 it outlasts. "Today" is the zone's calendar day at `nowMs`, so
+ * the arithmetic takes the offset as a NUMBER, like the rest of this module, and a test does not depend on the
+ * zone of the machine that runs it.</p>
+ */
+export function clockUntil(epochMs: number, nowMs: number, offsetMinutes: number): string {
+  const end = Math.ceil(epochMs / 60_000) * 60_000;
+  const clock = new Date(end + offsetMinutes * 60_000).toISOString().slice(11, 16);
+  return localDay(end, offsetMinutes) === localDay(nowMs, offsetMinutes) ? clock : `${clock} tomorrow`;
+}
+
+/** The calendar day, as a day number, on the wall clock of a zone `offsetMinutes` east of UTC. */
+function localDay(epochMs: number, offsetMinutes: number): number {
+  return Math.floor((epochMs + offsetMinutes * 60_000) / 86_400_000);
+}

@@ -1,8 +1,8 @@
 # PLAN — E1 of #197: a window can never outlive what it was given for (fix release)
 
-> Status: **E1 built on `feat/197-e1-a-window-never-outlives-its-key`, 2026-10-21** — stories E1.1–E1.4 and their
-> review fixes landed, the coai code gate passed (`proceed`, 12 of 12 reviewers); it ships in the next extension
-> release and stays in `todo/` until its parent promotes (E2 and E3 are open). Scope: `src_vs_code` — `sshAgentProtocol.ts`,
+> Status: **E1 shipped in extension 1.14.2, 2026-10-21** (PR #262; Marketplace 11:27 UTC) — stories E1.1–E1.4 and
+> their review fixes, the coai code gate `proceed` (12 of 12 reviewers), the live OpenSSH login green in CI; it stays
+> in `todo/` until its parent promotes (E2 and E3 are open). Scope: `src_vs_code` — `sshAgentProtocol.ts`,
 > `sshAgentServer.ts`, `sshAgentManager.ts`, `agentConsent.ts`, a new pure `allowWindows.ts`, `sshKeyParse.ts` (one
 > function moves out), the five `help*.ts`, `package.json`, `agentDoors.ts`, `extension.ts` (one sentence),
 > `commands/agentCommands.ts` (one sentence), `README.md`, the walkthrough, `CHANGELOG.md`, `scripts/ssh-agent-itest.cjs`,
@@ -510,8 +510,13 @@ quoted in the PR.
 - [ ] `npm run itest:ssh-agent` green locally and in CI, the live OpenSSH login section RUN (not skipped) in CI.
 - [ ] Temp folders of every touched test carry `testsToDelete-`; the sshd ran with `-d`, was killed by its own pid,
       and its `exit` was awaited before the folder was removed.
-- [ ] M1 (a real login from Windows to an OpenSSH ≥ 8.9 server shows the host-bound prompt) is recorded in the PR as
-      **owed by the owner** — it needs the owner's Windows machine and a real server.
+- [x] M1 (a real login from Windows to an OpenSSH ≥ 8.9 server shows the host-bound prompt) — **done 2026-10-21** on
+      the owner's machine with 1.14.2 installed: OpenSSH_for_Windows 9.5p2 → OpenSSH 9.7p1 (a throwaway container),
+      key "server key" (RSA, `SHA256:BEC7JL2s…`); the prompt read *"to sign an SSH login as "m1" (ssh-connection)"*
+      and, as its own paragraph, *"This login is for the server whose host key is ED25519 SHA256:x74LzKLQ…"*,
+      matching the server's `ssh-keygen -l`; the owner answered Allow once and the login went through (the
+      owner's screenshot). Before 1.14.2 the same login read *"a signature whose purpose this build does not
+      recognise"* — the issue's own screenshot.
 - [ ] Docs of each story landed with it; Mermaid renders; `plan-lifecycle.mjs` and `pin-check.mjs` pass.
 - [ ] coai `review_code` with `plan: todo/PLAN_ssh_allow_longer_windows.md`, `epic: 1/3`; every finding resolved;
       verdicts and reviewer counts reported.

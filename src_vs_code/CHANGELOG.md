@@ -6,6 +6,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — the row shows an open window, Ask for Every Use Again, and one signing prompt per key
+
+- **A key whose window is open says so on its row** — *signs without asking until 12:10* — and the row stops saying it
+  the moment the window ends (at most five minutes late after the clock changes) — an expiry, a lock, the button
+  below, an unload. The time is when the window is over, rounded up to the minute, on whichever of the two clocks ends
+  it first; it is not part of what the tree filter matches.
+- **Ask for Every Use Again** on that row — a button beside the name, and an entry in the row's context menu — ends the
+  window. The key stays loaded and the next signature asks. If a signing prompt for that key is on screen when you
+  use it, answering *Allow for 10 minutes* allows that one signature and opens no window. The signing prompt now says
+  what ends a window: locking the vault, and this button.
+- **One signing prompt per key at a time.** A second request for a key whose prompt is on screen waits for it
+  (instead of opening a second modal beside it); at most three wait, and a fifth is refused at once. A request whose
+  program has gone (the `ssh` was killed, the terminal closed) leaves the queue and is never shown. A request that waited
+  is told how long it has left — rounded down, and in seconds under two minutes (*45 seconds*, never a *1 minute* that is
+  really thirty seconds) — and one left with under fifteen seconds is refused rather than shown a prompt it cannot
+  answer, unless a window an earlier prompt opened already covers it, in which case it signs without asking. While an earlier prompt for a key is still on screen after its request was
+  refused (VS Code cannot close a modal), a new request for that key is refused and you are told — *answer or close it*; a click on a prompt that
+  had already been refused signs nothing and says so. An answer given across a lock or *Ask for Every Use Again* allows
+  that one signature, opens no window and says so in a message. A request that has to wait is written in the agent log
+  (*waiting behind the signing prompt already open for this key*), one line each.
+- **A program that floods the agent is cut off.** OpenSSH asks one thing at a time; a local program that leaves one
+  signing prompt open and keeps sending requests behind it is not served without limit. A connection may have at most
+  32 requests waiting for their answers, and the next one closes it (the agent log says *refused a pipelined backlog
+  and closed the connection*, and the prompt it was waiting on is abandoned). The agent also stops reading a connection
+  whose client stops reading its answers.
+
+### Changed — a lock ends every window
+
+- **Locking the vaults ends every SSH signing window.** By hand (*Lock Vaults*), by the idle timer or by a corporate
+  deactivation: whichever road reaches the lock, a window opened with *Allow for 10 minutes* ends with it. The key stays
+  loaded and the next signature asks again. A prompt that is still on screen when the vault locks may still be answered —
+  *Allow once* allows that one signature, and *Allow for 10 minutes* answered after the lock allows it once and opens no
+  window.
+- **Remove from SSH Agent on a connection whose key entry is gone now warns** — *"name" points at a key entry that is no
+  longer in the vault* — instead of doing nothing.
+
 ## [1.14.2] — 2026-10-21 — The signing prompt names a current OpenSSH login, and a removed key never signs
 
 ### Fixed — a login to a current OpenSSH server is named, with the server's host key

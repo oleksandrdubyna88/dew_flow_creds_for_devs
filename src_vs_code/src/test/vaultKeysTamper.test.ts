@@ -1,11 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { randomBytes } from 'node:crypto';
-import type * as vscode from 'vscode';
-import { loadWithVscode } from './vscodeStub';
-import { encryptJsonWrapped } from '../cryptoUtils';
-import { wrapWithPin } from '../keyWrap';
-import type { StoredAccount } from '../types';
+import { ACCOUNT, PIN, keysHolding, vaultWithTwoWraps } from './vaultKeysWorld';
 
 /**
  * A tampered vault is refused BEFORE its key and its wrap list are cached (audit 2026-09-09, #2).
@@ -22,68 +17,6 @@ import type { StoredAccount } from '../types';
  * silent-PIN route reads the stored PIN and unwraps without asking anybody anything, which is also
  * the route background sync takes.</p>
  */
-
-const ACCOUNT: StoredAccount = { accountId: 'acct-1', email: 'me@corp.com', provider: 'google' };
-const PIN = 'correct horse battery staple';
-
-/**
- * A `vscode.SecretStorage` backed by a Map.
- *
- * <p>Typed as the real interface rather than cast in at the call site: a cast there would let a
- * change to `SecretStorage` pass compilation and fail at runtime, which is the trap the TypeScript
- * rule names. The one `as never` that remains is on the event, which no test subscribes to.</p>
- */
-function secretStorage(stored: Map<string, string>): vscode.SecretStorage {
-  return {
-    get: (key: string): Thenable<string | undefined> => Promise.resolve(stored.get(key)),
-    store: (key: string, value: string): Thenable<void> => {
-      stored.set(key, value);
-      return Promise.resolve();
-    },
-    delete: (key: string): Thenable<void> => {
-      stored.delete(key);
-      return Promise.resolve();
-    },
-    onDidChange: (() => ({ dispose: (): void => undefined })) as never,
-    keys: () => Promise.resolve([...stored.keys()]),
-  } as vscode.SecretStorage;
-}
-
-/** `VaultKeys` holding one stored PIN, and a window onto the cache the refusal must leave empty. */
-async function keysHolding(pin: string | undefined, typed?: string): Promise<{
-  keys: InstanceType<typeof import('../vaultKeys').VaultKeys>;
-  cache: Map<string, unknown>;
-  stored: Map<string, string>;
-}> {
-  const stored = new Map<string, string>();
-  const mod = loadWithVscode<typeof import('../vaultKeys')>('../vaultKeys', {
-    window: {
-      showWarningMessage: (): undefined => undefined,
-      showErrorMessage: (): undefined => undefined,
-      // What the person types when the vault asks. Present so the INTERACTIVE PIN route — the one
-      // that persists what it was given — can be driven at all.
-      showInputBox: (): Promise<string | undefined> => Promise.resolve(typed),
-    },
-    workspace: { getConfiguration: () => ({ get: <T>(_k: string, d: T): T => d }) },
-  });
-  const keys = new mod.VaultKeys(secretStorage(stored));
-  if (pin !== undefined) {
-    // Stored through the instance, because the key it files a PIN under is its own business.
-    await (keys as unknown as { savePin(a: StoredAccount, p: string): Promise<void> }).savePin(ACCOUNT, pin);
-  }
-  // The cache is private, and what this file asserts about is precisely that it stays empty. One
-  // reach-in, named, rather than an exported accessor that exists only for a test.
-  const cache = (keys as unknown as { cache: Map<string, unknown> }).cache;
-  return { keys, cache, stored };
-}
-
-/** A v4 vault openable by `PIN`, carrying a PIN wrap and a second wrap worth stripping. */
-function vaultWithTwoWraps(): { content: string; master: Buffer } {
-  const master = randomBytes(32);
-  const pinWrap = wrapWithPin(master, ACCOUNT.accountId, PIN, Date.now());
-  const decoy = { ...pinWrap, kind: 'recovery' as const, id: 'recovery' };
-  return { content: encryptJsonWrapped({ nodes: [] }, master, [pinWrap, decoy]), master };
-}
 
 test('an intact vault unlocks and IS cached', async () => {
   const { keys, cache } = await keysHolding(PIN);

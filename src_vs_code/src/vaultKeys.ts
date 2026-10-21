@@ -101,6 +101,16 @@ export class VaultKeys {
 
   private readonly cache = new Map<string, VaultKey>();
 
+  /**
+   * Fires, once, after every lock — whichever road reached `lock()` (the *Lock Vaults* command, the idle
+   * timer, a corporate deactivation). A multicast event on purpose, never a settable callback like
+   * `loginKeys`: a second subsystem assigning one later would silently replace the SSH agent's handler
+   * and leave signing windows open after a lock (#197, E2.1).
+   */
+  private readonly locked = new vscode.EventEmitter<void>();
+
+  readonly onDidLock: vscode.Event<void> = this.locked.event;
+
   /** Locked-ness and the idle clock. Kept out of this class so its rules are testable
    *  without a `vscode` runtime — see lockState.ts. */
   private readonly lockState = new LockState();
@@ -184,6 +194,13 @@ export class VaultKeys {
     }
     this.cache.clear();
     this.lockState.lock();
+    // Last, after the vault is already locked: a listener (the SSH agent ends its windows) sees the final state.
+    this.locked.fire();
+  }
+
+  /** Ends the lock event with the extension: a lock after this still locks, and tells nobody. */
+  dispose(): void {
+    this.locked.dispose();
   }
 
   isLocked(): boolean {

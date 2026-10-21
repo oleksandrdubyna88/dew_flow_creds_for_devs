@@ -1,6 +1,6 @@
 # PLAN — the SSH signing prompt offers longer windows, and a window can never outlive what it was given for
 
-> Status: **plan only, nothing implemented yet, 2026-10-20.** Scope: `src_vs_code/src` — `agentConsent.ts`,
+> Status: **E1 shipped in extension 1.14.2 (2026-10-21); E2 is built and waits for its PR and `extension-v1.15.0`; E3 is not started. Plan dated 2026-10-20.** Scope: `src_vs_code/src` — `agentConsent.ts`,
 > `sshAgentManager.ts`, `sshAgentServer.ts`, `sshAgentProtocol.ts`, `vaultKeys.ts`, `requestTime.ts`,
 > `treeRowText.ts`, `treeDataProvider.ts`, `commands/agentCommands.ts`, `agentDoors.ts`, the five `help*.ts`, three
 > new pure modules (`allowWindows.ts`, `consentTurns.ts`, `durationText.ts`), two new `vscode` modules
@@ -751,6 +751,7 @@ disagreed on where one-prompt-per-key goes; the decision and its reason are unde
 - **Cornerstone areas.** The same material boundary as E1, on its asynchronous side: `ConsentTurns` must stop a late
   continuation (`withTimeout` only stops the waiting), and an answer across a lock allows once and opens nothing. Opus
   marks at most the quota across E1 and E2 — one story per area, both areas named in the ledger below.
+- **Stories.** [PLAN_ssh_allow_longer_windows_E2.md](PLAN_ssh_allow_longer_windows_E2.md)
 
 ### E3 — the longer windows for logins (#197) (feature release)
 
@@ -789,4 +790,4 @@ between the asynchronous prompt and the signing material (`sshAgentServer.ts` po
 the `revoked` closure, `consentTurns.ts` late continuations, the fence crossings). Opus marks one concrete story per area
 when E1's and E2's stories documents are written, and fills the ledger's story slots in the same commit.
 
-Cornerstones: 1 of 2 — E1.3 a window belongs to one generation of one key (the window book, `allowWindows.ts`)
+Cornerstones: 2 of 2 — E1.3 a window belongs to one generation of one key (the window book, `allowWindows.ts`), E2.3 one prompt per key, and an answer that comes late or across a fence opens nothing (the asynchronous side of the material boundary: `consentTurns.ts`, the per-connection signal, the fence crossings)

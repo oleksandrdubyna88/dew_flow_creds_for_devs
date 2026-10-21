@@ -762,6 +762,12 @@
         "category": "CredsForDevs"
       },
       {
+        "command": "credSshManager.askEveryUseAgain",
+        "title": "Ask for Every Use Again",
+        "category": "CredsForDevs",
+        "icon": "$(circle-slash)"
+      },
+      {
         "command": "credSshManager.copyGitSigningConfig",
         "title": "Copy Git Signing Config",
         "category": "CredsForDevs"
@@ -1225,6 +1231,10 @@
           "when": "false"
         },
         {
+          "command": "credSshManager.askEveryUseAgain",
+          "when": "false"
+        },
+        {
           "command": "credSshManager.restoreRevision",
           "when": "false"
         },
@@ -1486,6 +1496,16 @@
         {
           "command": "credSshManager.removeKeyFromAgent",
           "when": "view == credSshManagerView && viewItem =~ /:agenton/",
+          "group": "2_actions@13"
+        },
+        {
+          "command": "credSshManager.askEveryUseAgain",
+          "when": "view == credSshManagerView && viewItem =~ /:signwindow/",
+          "group": "inline@2"
+        },
+        {
+          "command": "credSshManager.askEveryUseAgain",
+          "when": "view == credSshManagerView && viewItem =~ /:signwindow/",
           "group": "2_actions@13"
         },
         {

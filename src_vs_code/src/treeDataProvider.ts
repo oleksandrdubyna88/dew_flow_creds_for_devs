@@ -22,14 +22,13 @@ import {
 } from './treeSearch';
 import { entityKey } from './entityFlags';
 import { waitingHint } from './rotationWaiting';
-import { describeRemaining } from './entityExpiry';
 import { parentFolderOf, refuseMove, refuseProjectFolderChange } from './moveGate';
 import { SyncReadiness } from './syncReadiness';
 import { OrgRecoveryAccess, orgAccessWithRole } from './orgRecoveryAccess';
 import { CorpPolicyState } from './corpPolicy';
 import { matchingTeamMembers } from './teamSearch';
 import { MemberListEntry, ProjectRow } from './orgMembersClient';
-import { describeTarget, entityContextValue, markInvalid, folderContextValue } from './treeRowText';
+import { entityContextValue, entityDescription, markInvalid, folderContextValue } from './treeRowText';
 import { FOLDER_COLOR, buildTooltip, entityIcon, folderIcon, kindIcon } from './treeIcons';
 import { parentOf } from './treeParent';
 import { describeRetention, isInTrash, isTrashFolder } from './trash';
@@ -188,6 +187,7 @@ export class CredTreeDataProvider
   isBridged: ((accountId: string, nodeId: string) => boolean) | undefined;
   /** Whether a CLI alias points at this entry — filled by the extension (T23). */
   hasCliAlias: ((accountId: string, nodeId: string) => boolean) | undefined;
+  signWindowLabel: (accountId: string, nodeId: string) => string = () => ''; // set by sshAgentWiring.ts (E2.2)
 
   constructor(
     private readonly storage: StorageManager,
@@ -631,6 +631,7 @@ export class CredTreeDataProvider
     // `label` and `iconPath` are both given explicitly below — a resourceUri only supplies
     // those two when they are absent.
     item.resourceUri = depUri(accountId, node.id);
+    const signWindow = this.signWindowLabel(accountId, node.id);
     // Capability flags drive the context menu: only actions that are
     // actually possible for THIS entity are offered.
     item.contextValue = entityContextValue(
@@ -639,6 +640,7 @@ export class CredTreeDataProvider
       this.isBridged?.(accountId, node.id) ?? false,
       isInTrash(node, (id) => this.storage.getNode(accountId, id)),
       this.urlIds.has(entityKey(accountId, node.id)),
+      signWindow !== '',
     );
     // Both the kind glyph and — where an agent may reach this entry — the access ladder, because
     // a row has exactly one icon slot. See `entityIcon` for what that costs and why.
@@ -648,14 +650,9 @@ export class CredTreeDataProvider
       (id) => this.storage.getNode(accountId, id),
       this.hasHistory(accountId, node.id),
     );
-    // What it points at, and — for a short-lived entry — how long it has. Deliberately in the
-    // description rather than as a second icon tint: the tint already means "has previous
-    // versions", and one channel carrying two meanings tells you neither. Same separator the
-    // account row uses.
+    // The description (`entityDescription`, `treeRowText.ts`): its join and why it is not a second tint.
     const waiting = waitingHint(node.details, this.waitingIds.has(entityKey(accountId, node.id)));
-    item.description = [describeTarget(node), describeRemaining(node, Date.now()), waiting.description]
-      .filter(Boolean)
-      .join('  ·  ');
+    item.description = entityDescription(node, Date.now(), waiting.description, signWindow);
     item.tooltip = buildTooltip(node, waiting.tooltip);
     // Single click only selects (the handler ignores it); a DOUBLE click
     // opens the read-only viewer. Actions live in the context menu.

@@ -1,4 +1,4 @@
-import { EntityKind, TreeElement, TreeNode } from './types';
+import { EntityKind, EntityMetadata, TreeElement, TreeNode } from './types';
 import { KeyCandidate } from './entityFormPanel';
 import type { LauncherCandidate } from './entityFormShape';
 import { executableLine } from './dependencyRun';
@@ -120,6 +120,15 @@ function hasCommand(details: TreeNode['details']): boolean {
   return details !== undefined && executableLine(details) !== undefined;
 }
 
+/**
+ * What *Add to SSH Agent* warns about when the agent could not take the key: the reason, or NOTHING when the
+ * reason is empty (it has been said already, or the person declined the PIN prompt). A list, so the caller shows each warning
+ * and the empty case is not a branch in a command handler that is at the complexity limit.
+ */
+export function loadFailureWarnings(reason: string): string[] {
+  return reason === '' ? [] : [reason];
+}
+
 // eslint-disable-next-line complexity
 export function asElement(value: unknown): TreeElement | undefined {
   if (typeof value !== 'object' || value === null) {
@@ -177,6 +186,19 @@ export function asElement(value: unknown): TreeElement | undefined {
     return v;
   }
   return undefined;
+}
+
+/** The key row a click on the agent's key commands stands for: its account, the row, and the details it carries. */
+export interface KeyRow {
+  readonly accountId: string;
+  readonly keyNode: TreeNode;
+  readonly details: EntityMetadata;
+}
+
+/** The node element behind a command's argument when it carries details — a palette call or another row is nothing. */
+export function detailedNode(target: unknown): Extract<TreeElement, { kind: 'node' }> | undefined {
+  const element = asElement(target);
+  return element?.kind === 'node' && element.node.details !== undefined ? element : undefined;
 }
 
 /**
