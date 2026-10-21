@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.4](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/cli-v0.4.3...cli-v0.4.4) (2026-10-21)
+
+
+### Bug Fixes
+
+* **cli:** the relay sentence is true for every extension version ([#197](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/197)) ([#272](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/272)) ([b709426](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/b709426d7290239524176fcad903e99959ed6d45))
+
 ## [0.4.3](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/cli-v0.4.2...cli-v0.4.3) (2026-10-21)
 
 
