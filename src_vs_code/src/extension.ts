@@ -581,7 +581,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   void sshAgent.loadMarked().then((count) => {
     if (count > 0) {
       void vscode.window.showInformationMessage(
-        `${count} SSH key(s) are served by the CredsForDevs agent. A signature asks first (once, or for 10 minutes); see "CredsForDevs: SSH Agent" for the record.`,
+        `${count} SSH key(s) are served by the CredsForDevs agent. A signature asks first; the answer covers it once, or every use for 10 minutes; see "CredsForDevs: SSH Agent" for the record.`,
       );
     }
   });

@@ -74,7 +74,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   10 minutes* (it was *…asks every time*), and it says what a login prompt shows: the login and, for a current OpenSSH
   server, the server's host key on a line of its own. The WSL relay article says that while a 10-minute window is open any
   process in WSL signs with that key without asking.
-- **The command is *Add to SSH Agent (asks before signing)***, not *(confirm every use)*. The same fix is in the setting
+- **The command is plain *Add to SSH Agent***, not *(confirm every use)* and not *(asks before signing)* — a title that promises a question is false while a window is open. The same fix is in the setting
   *wslAgentRelay*, the key-served notices, the *Agent doors* row for WSL, the walkthrough and both READMEs.
 - **Not changed, because it is still true:** the CLI door row says it asks every time — a CLI call gets a fresh grant for each
   call. The `creds` command-line text for `relay` ships with the next `cli-v` release.

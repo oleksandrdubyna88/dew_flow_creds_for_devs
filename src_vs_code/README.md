@@ -1205,7 +1205,7 @@ also on the right-click menu where it applies.
   and Policy… (on any account row of a corporate server)
 - **Corporate projects** — New Project… (on the Team row, or a colleague's) · Assign to Project… ·
   Remove from Project… (both on a colleague's Team row, for admins and officers)
-- **Keys on disk** — Install SSH Key to System (~/.ssh) · Remove Installed Key… · Add to SSH Agent (asks before signing) · Remove from SSH Agent
+- **Keys on disk** — Install SSH Key to System (~/.ssh) · Remove Installed Key… · Add to SSH Agent · Remove from SSH Agent
 - **Scans** — Health Report (weak, reused, exposed) · Check Clipboard for Vault Secrets ·
   Scan This File for Vault Secrets · Show Diagnostics
 - **Sharing, cont.** — Withdraw a Share You Sent…

@@ -753,7 +753,7 @@
       },
       {
         "command": "credSshManager.addKeyToAgent",
-        "title": "Add to SSH Agent (asks before signing)",
+        "title": "Add to SSH Agent",
         "category": "CredsForDevs"
       },
       {

@@ -146,6 +146,8 @@ test('the dialog offers exactly the signing buttons, Allow once first', async ()
 
   assert.deepEqual(w.buttons, [[...SIGNING_BUTTONS]]);
   assert.equal(w.buttons[0][0], ALLOW_ONCE);
+  // Written out, not derived: a reorder in agentConsent.ts must turn this red.
+  assert.deepEqual(w.buttons[0], ['Allow once', 'Allow for 10 minutes', 'Deny']);
 });
 
 test('the host key of a login is a line of the prompt of its own, and the user name cannot write one', async () => {

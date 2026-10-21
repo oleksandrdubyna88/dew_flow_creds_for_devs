@@ -17,14 +17,14 @@ import {
 
 /**
  * The agent itself: a local socket that answers the SSH agent protocol, serving keys held in
- * the vault and asking before every signature — a person, or a window they opened.
+ * the vault and asking a person before it signs, unless a 10-minute window they opened covers the key.
  *
  * <p>`vscode`-free on purpose — the socket, the framing and the decision to refuse are testable
  * without an editor, and the only thing the editor contributes is the dialog, which arrives as
  * the `confirm` callback.</p>
  *
- * <p><b>Why a socket of our own rather than `ssh-add` into the system agent.</b> Per-use
- * confirmation is the whole feature, and `ssh-add -c` delegates that to an askpass program the
+ * <p><b>Why a socket of our own rather than `ssh-add` into the system agent.</b> Confirmation in front of the
+ * signature is the whole feature, and `ssh-add -c` delegates that to an askpass program the
  * Windows service agent cannot display — and it would also mean writing the key out for
  * `ssh-add` to read, which is precisely what this removes. Serving it ourselves keeps the key in
  * this process's memory and puts the dialog where the decision is made.</p>

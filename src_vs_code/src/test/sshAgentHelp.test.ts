@@ -214,3 +214,40 @@ test('no replaced sentence survives in the code that shows or documents the prom
   }
   assert.deepEqual(survivors, []);
 });
+
+/**
+ * A command title must not promise what a window can switch off (#197 E1.4 review, M1). "Add to SSH Agent
+ * (asks before signing)" was read as "every signature asks" — false while a 10-minute window is open. The
+ * title is the plain command name; what the prompt offers is said in the help, once.
+ */
+const TITLE_PROMISES_ASKING = /Add to SSH Agent \([^)]*(?:asks|confirm)[^)]*\)/i;
+
+test('the guard on command titles matches the two promises the title once made', () => {
+  assert.match('Add to SSH Agent (asks before signing)', TITLE_PROMISES_ASKING);
+  assert.match('Add to SSH Agent (confirm every use)', TITLE_PROMISES_ASKING);
+  assert.doesNotMatch('Add to SSH Agent', TITLE_PROMISES_ASKING);
+});
+
+test('no command title, README or help language puts "asks before signing" after Add to SSH Agent', () => {
+  const found: string[] = [];
+  const manifest = path.join(REPO, 'src_vs_code', 'package.json');
+  const files = [
+    manifest,
+    path.join(REPO, 'README.md'),
+    path.join(REPO, 'src_vs_code', 'README.md'),
+    ...HELP_LANGUAGES.map((language) => path.join(REPO, 'src_vs_code', 'src', HELP_FILES[language])),
+  ];
+  assertRepoRoot(files);
+  for (const file of files) {
+    const text = read(file);
+    assert.notEqual(text.trim(), '', `${file}: read nothing — the scan below would pass on empty text`);
+    const hit = TITLE_PROMISES_ASKING.exec(text);
+    if (hit !== null) {
+      found.push(`${path.relative(REPO, file).split(path.sep).join('/')} still says "${hit[0]}"`);
+    }
+  }
+  assert.deepEqual(found, []);
+  const commands = (JSON.parse(read(manifest)) as { contributes: { commands: Array<{ title: string }> } }).contributes
+    .commands;
+  assert.ok(commands.some((command) => command.title === 'Add to SSH Agent'), 'the command is not in the manifest');
+});

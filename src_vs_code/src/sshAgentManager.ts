@@ -316,14 +316,6 @@ export class SshAgentManager implements vscode.Disposable {
   }
 
   /**
-   * The dialog in front of a signature no open window covers.
-   *
-   * <p>It names the key, its fingerprint and what is being signed, because "a key is being
-   * used" is not a decision anybody can make. A dismissed dialog refuses this one signature
-   * and remembers nothing — the same rule the broker's consent follows, for the same reason: a
-   * mis-click must not lock a key out for the window's life.</p>
-   */
-  /**
    * The one case the dialog cannot describe, written down so it can be answered afterwards.
    *
    * <p>Its own method rather than a branch inside `confirm`, which is at the complexity the
@@ -416,6 +408,13 @@ export class SshAgentManager implements vscode.Disposable {
   }
 
   /**
+   * The dialog in front of a signature no open window covers.
+   *
+   * <p>It names the key, its fingerprint and what is being signed, because "a key is being
+   * used" is not a decision anybody can make. A dismissed dialog refuses this one signature
+   * and remembers nothing — the same rule the broker's consent follows, for the same reason: a
+   * mis-click must not lock a key out for the window's life.</p>
+   *
    * The prompt itself, bounded by the broker's consent timeout: unanswered, it refuses — before
    * #131's tail it waited forever, so a prompt found an hour later still signed and the `ssh` or
    * `git` that asked hung. A click after the bound changes nothing (VS Code cannot close a modal, so
