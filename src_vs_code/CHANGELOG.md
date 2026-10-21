@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.14.2] — 2026-10-21 — The signing prompt names a current OpenSSH login, and a removed key never signs
+
 ### Fixed — a login to a current OpenSSH server is named, with the server's host key
 
 - **The signing prompt names a login to an OpenSSH 8.9+ server.** Since 8.9 the client asks the agent to sign the
