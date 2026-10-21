@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.0] — 2026-10-21 — A lock ends every SSH window, the row shows it, and one signing prompt per key
+
 ### Added — the row shows an open window, Ask for Every Use Again, and one signing prompt per key
 
 - **A key whose window is open says so on its row** — *signs without asking until 12:10* — and the row stops saying it
