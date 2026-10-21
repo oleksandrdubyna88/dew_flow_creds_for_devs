@@ -1,8 +1,8 @@
 # PLAN — E1 of #197: a window can never outlive what it was given for (fix release)
 
-> Status: **E1 built on `feat/197-e1-a-window-never-outlives-its-key`, 2026-10-21** — stories E1.1–E1.4 and their
-> review fixes landed, the coai code gate passed (`proceed`, 12 of 12 reviewers); it ships in the next extension
-> release and stays in `todo/` until its parent promotes (E2 and E3 are open). Scope: `src_vs_code` — `sshAgentProtocol.ts`,
+> Status: **E1 shipped in extension 1.14.2, 2026-10-21** (PR #262; Marketplace 11:27 UTC) — stories E1.1–E1.4 and
+> their review fixes, the coai code gate `proceed` (12 of 12 reviewers), the live OpenSSH login green in CI; it stays
+> in `todo/` until its parent promotes (E2 and E3 are open). Scope: `src_vs_code` — `sshAgentProtocol.ts`,
 > `sshAgentServer.ts`, `sshAgentManager.ts`, `agentConsent.ts`, a new pure `allowWindows.ts`, `sshKeyParse.ts` (one
 > function moves out), the five `help*.ts`, `package.json`, `agentDoors.ts`, `extension.ts` (one sentence),
 > `commands/agentCommands.ts` (one sentence), `README.md`, the walkthrough, `CHANGELOG.md`, `scripts/ssh-agent-itest.cjs`,
