@@ -305,14 +305,26 @@ const readHostKeyTail: TailReader = (reader) => {
     : undefined;
 };
 
-const TAILS: ReadonlyMap<string, TailReader> = new Map([
-  [PUBLICKEY_METHOD, readNoTail],
-  [HOSTBOUND_METHOD, readHostKeyTail],
-]);
+/**
+ * The tail reader for a method — a closed `switch`, not a lookup keyed by the requester's text, so no
+ * method name the client sends can select anything but these two readers (CodeQL
+ * js/unvalidated-dynamic-method-call on #262 flagged the earlier map lookup).
+ */
+function tailFor(method: string): TailReader | undefined {
+  switch (method) {
+    case PUBLICKEY_METHOD:
+      return readNoTail;
+    case HOSTBOUND_METHOD:
+      return readHostKeyTail;
+    default:
+      return undefined;
+  }
+}
 
 /** The rest of the request after its head; `undefined` when it is not exactly a login for this key. */
 function readKeyTail(reader: ByteReader, method: string, signingKeyBlob: Buffer): ServerClaim | undefined {
-  return namesThisKey(reader, signingKeyBlob) ? TAILS.get(method)?.(reader) : undefined;
+  const tail = tailFor(method);
+  return tail !== undefined && namesThisKey(reader, signingKeyBlob) ? tail(reader) : undefined;
 }
 
 /**
