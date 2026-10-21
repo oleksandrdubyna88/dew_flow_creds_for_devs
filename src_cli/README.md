@@ -140,9 +140,9 @@ one — or with the window. The export line stays your shell's job: VS Code has 
 namespace per window, and a Windows terminal needs the named pipe where a WSL one needs this
 socket.
 
-The private key never enters WSL. A signature asks for consent **on Windows** first (*Allow once*,
-*Allow for 10 minutes*, *Deny*); while a window is open, any process that reaches the agent signs with that key
-without asking. The address is resolved on every connection, so unloading a key and loading
+The private key never enters WSL. A signature asks for consent **on Windows** first, unless a window
+opened in that prompt still covers it; while a window is open, any process that reaches the agent signs
+with that key without asking. The address is resolved on every connection, so unloading a key and loading
 another is picked up without restarting the relay.
 
 `CREDS_RELAY_SOCKET` overrides the path; without `XDG_RUNTIME_DIR` it falls back to
