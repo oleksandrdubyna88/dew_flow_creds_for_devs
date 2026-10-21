@@ -362,6 +362,271 @@ membership → covered? → ticket → prompt → answered → settle → openWi
 function in the touched files ≤ 4 complexity and ≤ 50 lines; Opus review and Fable's security judgement passed.
 Constraints C1–C11, especially C1, C2, C7, C8, C10, C11.
 
+#### E2.3 spec (Fable)
+
+Anchors are `origin/main` fd4a8e33 (the local `main`, 8d93997e, is stale). E2.1 is landing in the same tree and has
+already moved the world's lines (`world` :57→:63, `unanswered` :231→:265) — re-find every anchor by its quoted text.
+Where this spec and the frame above differ, this spec wins (the list closes here).
+
+##### 1. The contract
+
+**`src/keyedQueue.ts`** (pure) — the keyed-tail half of `OneUseLane.run` (`oneUseLane.ts:70-84`), moved verbatim:
+`class KeyedQueue { run<T>(key: string, work: () => Promise<T>): Promise<T>; size(): number }`. `run` chains `work`
+after every earlier job of `key` has SETTLED (`.then(() => work(), () => work())` — failure advances like success),
+resolves/rejects as `work` does, and deletes a key whose tail is its own (the `try { return await ours } finally`);
+`size()` counts keys with a job in flight, for tests. `OneUseLane` keeps everything else; `tails` becomes `private
+readonly queue = new KeyedQueue()` and `run` is `return this.queue.run(entityId, () => this.afterTheQueue(entityId,
+work));`. Its only suite is `oneUseAndCap.test.ts` (via the broker; `burnOnUse.test.ts` tests `burnIfOneUse`, not the lane).
+
+**`src/consentTurns.ts`** (pure, no `vscode`):
+
+```ts
+export const MIN_PROMPT_MS = 15_000;
+export function promptFloor(boundMs: number): number;            // Math.min(MIN_PROMPT_MS, boundMs / 20)
+export type RefusalKind = 'timed-out' | 'gone' | 'full' | 'orphaned' | 'too-late';
+/** `first`: the first refusal of this kind since the key's slot was last free — `full` and `orphaned` repeat, the rest are always first. */
+export interface Refusal { readonly kind: RefusalKind; readonly first: boolean }
+export type TurnOutcome<T> = { readonly kind: 'answered'; readonly value: T } | Refusal;
+export class ConsentTurns {
+  constructor(boundMs: number, now: () => number, maxWaiting = 3);     // `now` is the manager's monotonic clock (C1: 2)
+  take<T>(key: string, request: AbortSignal, work: (turn: AbortSignal, leftMs: number) => Promise<T>): Promise<TurnOutcome<T>>;
+  pending(): number;   // keys holding ANY state (an open turn, waiters, an orphaned slot) — for tests, deciding nothing
+  clear(): void;       // dispose: every open turn and waiter resolves `gone`, every slot frees, a fresh queue
+}
+```
+
+- **Arrival, synchronous, before the queue:** `request.aborted` → `gone`; the slot orphaned → `orphaned` (`first` =
+  this orphan's first refusal); `waiting >= maxWaiting` → `full` (`first` = the first since the slot was last free).
+  Else `deadline = now() + boundMs`, `waiting += 1`, and a `job` joins `KeyedQueue.run(key, job)`.
+- **A waiter** leaves by its own signal (`gone`) or by the orphaning of the open turn (`orphaned`) — at once, `waiting
+  -= 1`, its `job` later a no-op (a `done` flag). No timer while waiting: the open turn arrived earlier with the same
+  bound, so its deadline comes first and orphans the slot. One timer per key at most, armed at turn start.
+- **The turn** (`job` runs — every earlier job settled): `waiting -= 1`; `leftMs = deadline − now()`; under
+  `promptFloor(boundMs)` → `too-late`, `work` never called (a request that did not wait is microseconds short of the
+  bound — never under the floor; `durationText` rounds it to today's *5 minutes* / *1 second*). Else `turn = new
+  AbortController()`, `setTimeout(end('timed-out'), leftMs)` — NOT unref'd (`withTimeout.ts:9-15`) — the request's
+  abort → `end('gone')`, then `await work(turn.signal, leftMs)`.
+- **`end(kind)`** decides the outcome while `work` still runs: `turn.abort()`, resolve `{ kind, first: true }`, the slot
+  is ORPHANED, every waiter of the key resolves `orphaned` NOW (the first with `first: true`). **The outcome is decided
+  once** — `work`'s value (`answered`) or `end`, whichever is first; a value after it is dropped, a rejection after it
+  swallowed, a rejection BEFORE it rejects `take` (the caller's bug surfaces; the server's dispatch catch makes it FAILURE).
+- **The slot frees when `work` SETTLES** (`finally`): timer cleared, listener removed, `orphan = false`, the `first`
+  counters reset, the key's entry deleted when `waiting === 0` — guarded by `keys.get(key) === state`. The key's next
+  job runs after this `finally`, so it sees everything `work` wrote (R4).
+- **`clear()`**: every open turn aborted and resolved `gone`, every waiter resolved `gone`, then `keys = new Map()`,
+  `queue = new KeyedQueue()` — an old job's `finally` finds a foreign state and touches nothing. ≤ 4 each: `take` →
+  `refusedAtArrival` (3 branches) → `enqueue` → `turn` → `end` / `freed`; a tiny `Waiter` (`done`, `resolve`,
+  `reject`, `leave(kind)`) keeps every listener a one-liner.
+
+**`src/sshAgentServer.ts`.** `confirm(key, purpose, data, signal: AbortSignal)` on `SshAgentServerOptions` (the line
+`confirm(key: AgentKey, purpose: SignPurpose, data: Buffer): Promise<boolean>;`). `serve`: `const client = new
+AbortController()`, `let replies: Promise<void> = Promise.resolve()`; the `'close'` handler also `client.abort()`. The
+loop `for (const frame of frames) { void this.handle(frame, socket); }` becomes `const answer = this.handle(frame,
+client.signal).catch((error: unknown) => this.failed(error)); replies = replies.then(() => answer).then((reply) =>
+this.write(socket, reply));` — dispatched at once, caught at dispatch (R7), written in arrival order. `handle(frame,
+signal): Promise<Buffer>` RETURNS its reply; `answerSign` and `confirmAndSign` take `signal` through to
+`this.options.confirm(key, …, request.data, signal)`; the post-await `keys().includes(key)` check stays. `failed(error)`:
+log `the agent could not answer a request: ${describeError(error)}` (`describeError.ts` imports nothing), return
+`encodeFailure()`. The manager's `ensureStarted` lambda: `confirm: (key, purpose, data, signal) => this.confirm(key, purpose, data, signal)`.
+
+**`src/sshAgentManager.ts`.** `private readonly turns: ConsentTurns`, set in the constructor body after
+`this.monotonic = monotonicSource(monotonic);` as `new ConsentTurns(this.consentTimeoutMs, this.monotonic)`.
+
+- `confirm(key, purpose, data, signal)`: the arrival reads, `noteUnknown`, the not-loaded refusal, `arrived`, the
+  covered check — as today, before any `await`; then `const outcome = await this.turns.take(key.entityId, signal,
+  (turn, leftMs) => this.turnStarted(key, purpose, asked, arrived, turn, leftMs)); return this.outcomeOf(key,
+  purpose, outcome);`. The line `const ticket = askTicket(this.windows, arrived);` and the `askToSign` await LEAVE it.
+- `turnStarted(key, purpose, asked, arrived, turn, leftMs): Promise<boolean>` — the whole turn, complexity 4:
+  (1) `this.generationOf(key.entityId) !== arrived.generation` → log `"${name}": the key was removed or re-added
+  while the request waited — refused`, `false` (the membership check AFTER the wait); (2) the covered re-check with
+  fresh `this.clock().getTime()` / `this.monotonic()` → `logCovered`, `true`; (3) `const ticket = askTicket(this.windows,
+  arrived);` — NOW, after the wait (§2); (4) `const choice = await this.askToSign(key, purpose, asked, leftMs);` and in
+  the SAME continuation, no `await` between: `if (turn.aborted) { return this.stale(key, choice); } return
+  this.settle(key, ticket, choice);`.
+- `stale(key, choice): false` — `choice !== undefined` → `tell(…)`: *"That signing request had already been refused — it
+  waited longer than {bound}, or its program had gone. Nothing was signed."*, `{bound} =
+  durationText(this.consentTimeoutMs)`. Never `settle`, never presence.
+- `askToSign(key, purpose, asked, leftMs)`: the text as today with `Unanswered, it is refused after
+  ${durationText(leftMs)}.`; returns `Promise.resolve(modal).then((choice) => choice, (error: unknown) =>
+  this.modalFailed(error))` — no `withTimeout` (drop the import), no `no answer` line here; `modalFailed` returns
+  `undefined`, its log line stays. It awaits the modal to the END: it is R1's watcher.
+- `outcomeOf(key, purpose, outcome): boolean` — `answered` → `outcome.value`; `!outcome.first` → `false` silently;
+  else `this.log(REFUSAL.get(outcome.kind)(key, purpose, bound))`, and `orphaned` → `tell(*"A signing prompt for
+  "{name}" is still open from an earlier request — answer or close it."*)`; `false`. `REFUSAL` is a module-level
+  `Map<RefusalKind, (key, purpose, bound) => string>` (C8; a lookup is no branch): `timed-out` → `no answer in
+  ${bound} — refused ${describePurposeForLog(purpose)}` (the itest `:317` and *an unanswered signing prompt* read
+  `/no answer .*refused/`); `gone` → `"${name}": the program that asked has gone — refused`; `full` → `"${name}": too
+  many requests are waiting for an answer — refused (one line for this burst)`; `orphaned` → `"${name}": a signing
+  prompt is still open from an earlier request — new requests are refused until it is answered or closed`; `too-late`
+  → `"${name}": the request waited too long behind another prompt — refused without a prompt`.
+- `openWindow`: `stale-key` as today; then `const notice = CROSSING_NOTICE.get(outcome); if (notice !== undefined) {
+  this.tell(notice); } return true;` — `CROSSING_NOTICE = new Map([['fenced-key', …], ['fenced-lock', …]])`, §2's two
+  sentences. Complexity 3. (E2.2 routes `this.windows = book` through `setWindows`; keep whichever is there.)
+- `tell(text)`: `if (!this.disposed) { void vscode.window.showInformationMessage(text); }` — the one door for every
+  information message (names through `displayText(key.name, MAX_DISPLAY)`). `dispose()`: `this.turns.clear()` after
+  `this.disposed = true`.
+
+**The world** (`sshAgentWorld.ts`): `FakeServer.confirm(key, purpose, data?: Buffer, signal?: AbortSignal)`; the
+`StubAgentServer` fills the defaults so no call site changes — `(key, purpose, data = Buffer.alloc(0), signal = new
+AbortController().signal) => o.confirm(key, purpose, data, signal)` (C1: 3); `infos: string[]` on `World`, and
+`showInformationMessage: (m: string): Promise<undefined> => { w.infos.push(m); return Promise.resolve(undefined); }`.
+
+##### 2. The scenarios
+
+Constants: `MIN = 60_000`, `M = 50_000` (monotonic — never 0), `KEY = { entityId: KEY_ID, name: 'prod', fingerprint:
+'SHA256:abc' }`, `AUTH = { kind: 'auth' }`. Helpers: `ask(signal?)` = `(w.server() as FakeServer).confirm(KEY, AUTH,
+undefined, signal)`; `tick()` = `await new Promise((r) => setImmediate(r))`; `atOnce(p)` = `Promise.race([p, new
+Promise((r) => setTimeout(r, 500, 'slow'))])` — a request queued behind a held modal answers `'slow'`. `m1 =
+unanswered()` is always the FIRST modal; answers are `[m1.answer, ALLOW_ONCE]` and the bound the default unless said;
+every test loads `KEY_ID` first; `r1 = ask()` is issued before `r2`, and so on.
+
+**`src/test/sshAgentManagerTurns.test.ts`** (new; the world):
+
+- T1 *a second request for the same key waits for the open prompt* — r1, r2, `tick()` → `dialogs.length === 1`;
+  `m1.clickLate(ALLOW_ONCE)`; `await r1 === true`, `await r2 === true`, `dialogs.length === 2`, `presence === 2` —
+  *Allow once* authorised only its own signature (never shared the broker's way, `brokerConsent.ts:63`). **RED on
+  `main`:** `2 !== 1`.
+- T2 *a window opened by the first prompt covers the waiting request without a prompt* (R4) — `[m1.answer]`; r1, r2;
+  `m1.clickLate(ALLOW_WINDOW)`; `await Promise.all([r1, r2])` → `[true, true]`; `dialogs.length === 1`. Awaits only
+  the two promises — no hop counting. **RED:** `2 !== 1`.
+- T3 *different keys do not wait for each other* (guard, green before and after) — m1 held on `key-1`; `confirm` for
+  `key-2` → `true` through `atOnce`, `dialogs.length === 2`.
+- T4 *a request whose key was re-added while it waited is refused without a prompt* — r1, r2; `await
+  instance.load('a1', keyEntity(KEY_ID, 'prod'))` (a new generation); `m1.clickLate(ALLOW_ONCE)`; `await r2 === false`,
+  `dialogs.length === 1`, a log `/removed or re-added while the request waited/`. **RED:** `2 !== 1`.
+- T5 *a request whose client has gone leaves the queue and is never shown* — r1; `ac = new AbortController()`, `r2 =
+  ask(ac.signal)`, `ac.abort()`; `await atOnce(r2) === false`; `m1.clickLate(ALLOW_ONCE)`; `await ask() === true`;
+  `dialogs.length === 2`. **RED:** `3 !== 2` (on `main` r2 prompts at arrival and takes the answer).
+- T6 *the fifth request (1 open + 3 waiting) is refused at once and never shown later* (R6) — `[m1.answer, ALLOW_ONCE
+  ×3]`; r1–r4; `await atOnce(r5) === false`, `dialogs.length === 1`; `m1.clickLate(ALLOW_ONCE)`; r1–r4 all `true`;
+  `dialogs.length === 4`. **RED:** `5 !== 1`.
+- T7 *a burst of refusals at the cap writes one log line* — T6 with r5 and r6; `logs.filter(/too many requests are
+  waiting/).length === 1`; after r2–r4 drain, `r7 = ask()` prompts (`dialogs.length === 5`): the cap is per open
+  turn, not sticky. **RED:** no such line.
+- T8 *a request that waited says the time it really has left* — `mono = M`, `monotonic: () => mono`; r1, r2; `mono +=
+  4 * MIN`; `m1.clickLate(ALLOW_ONCE)`; `await r2`; `dialogs[0]` `/after 5 minutes\./`, `dialogs[1]` `/after 1
+  minute\./`. **RED:** `dialogs[1]` says *5 minutes*.
+- T9 *a waiter left with less than the floor is refused at its turn, never shown a modal it cannot answer* (R5) — T8
+  with `mono += 4 * MIN + 54_000`; `await r2 === false`; `dialogs.length === 1`; log `/waited too long behind another
+  prompt/`. **RED:** `2 !== 1`.
+- T10 *the time left is read from the monotonic clock, not the wall clock* (new) — T9 moving ONLY the wall clock
+  (`clock: () => new Date(now)`, `now += 4 * MIN + 54_000`, `mono` still) → r2 prompts, `dialogs[1]` `/after 5
+  minutes\./`. Break-it: `leftMs` from `Date.now()` → no second dialog.
+- T11 *while an orphaned modal holds the key, a new request is refused at once; answering the orphan signs nothing,
+  says so, and frees the key* (G0/G3) — `consentTimeoutMs: 20`; `await r1 === false` (log `/no answer in 1 second —
+  refused/`); `await atOnce(r2) === false`, `dialogs.length === 1`, `infos` = one `/still open from an earlier
+  request/`; `await r3 === false`, `infos.length === 1` still; `m1.clickLate(ALLOW_WINDOW)`, `tick()`: `presence ===
+  0`, `infos[1]` `/had already been refused/`; `await r4 === true`, `dialogs.length === 2`. **RED:** r2 prompts, `2 !== 1`.
+- T12 *a click on a prompt whose turn ended signs nothing, and says so* (R1) — bound 20; `await r1 === false`;
+  `m1.clickLate(ALLOW_WINDOW)`, `tick()`; `infos.length === 1`, `/waited longer than 1 second, or its program had
+  gone/`; `presence === 0`; `await r2 === true`, `dialogs.length === 2`. **RED:** `0 !== 1`.
+- T13 *an answer given across a lock: once, no window, and the message says the vault locked* — r1;
+  `instance.endAllWindows('the vaults were locked')`; `m1.clickLate(ALLOW_WINDOW)`; `await r1 === true`; `infos[0]`
+  `/vault locked while you were choosing/`; `await r2 === true`, `dialogs.length === 2`. **RED on E2.2's head:** `0 !==
+  1` (`main` has no `endAllWindows`: the suite first compiles on E2.1's step 1).
+- T14 *an answer given across Ask for Every Use Again: once, no window, and the message says so* — T13 with
+  `instance.endWindows(KEY_ID)`; `/Ask for Every Use Again was used while you were choosing/`. **RED on E2.2's head:** `0 !== 1`.
+- T15 *a lock while a request waits does not fence the answer given after its turn starts* (§2) — `[m1.answer,
+  ALLOW_WINDOW]`; r1, r2; `instance.endAllWindows('lock')`; `m1.clickLate(ALLOW_ONCE)`; `await r2 === true`; `await r3
+  === true` with `dialogs.length === 2` (covered) and `infos.length === 0`. **RED on E2.2's head:** the ticket taken
+  at arrival → `fenced-lock` → r3 prompts, `3 !== 2`.
+- T16 *disposing during a queue refuses everything, shows nothing and logs nothing afterwards* — bound 20;
+  `[m1.answer]`; r1–r3; `instance.dispose()`; `n = logs.length`; `await Promise.all([r1, r2, r3])` → all `false`;
+  `m1.clickLate(ALLOW_WINDOW)`, `tick()`; `logs.length === n`, `infos.length === 0`, `dialogs.length === 1`. **RED:** `3 !== 1`.
+
+**`src/test/sshAgentServer.test.ts`** (+3 after *every prompt open for a removed key*; the harness's `confirm` becomes
+`(key, purpose, signal: AbortSignal) => Promise<boolean>`, passed as `(key, purpose, _data, signal) => confirm(key, purpose, signal)`):
+
+- S1 *a pipelined identities request behind a held sign request is answered in order* — `heldPrompt()`;
+  `askOnOneSocket(path, [signRequestFor(…), Buffer.from([SSH_AGENTC_REQUEST_IDENTITIES])])`; `await prompt.asked`;
+  `prompt.answer(true)`; the replies' first bytes `[SSH_AGENT_SIGN_RESPONSE, SSH_AGENT_IDENTITIES_ANSWER]`. **RED on
+  `main`:** `[12, 14]` — the identities answer was written first.
+- S2 *a closed client connection aborts its request's signal* — a confirm that captures `signal` and returns `new
+  Promise(() => {})`; a raw `net.createConnection` (the shape of `askOnOneSocket`) writes one sign frame; after the
+  capture, `socket.destroy()`; `await Promise.race([once(signal, 'abort'), 2 s])` → `signal.aborted === true`. **RED
+  after the interface step** (a never-aborted signal): *not aborted within 2 s*; on `main` the suite does not compile.
+- S3 *a confirm that throws behind a held prompt is answered FAILURE, in order, with no unhandled rejection* (R7) —
+  confirm #1 returns the held click, #2 `throw new Error('the gate broke')`; `askOnOneSocket(path, [sign, sign])`;
+  release #1; replies `[SSH_AGENT_SIGN_RESPONSE, SSH_AGENT_FAILURE]`, log `/could not answer a request: the gate
+  broke/`. **RED on `main`:** the escaped rejection kills the test child (Node's default `--unhandled-rejections=throw`;
+  `run-tests.mjs` sets nothing else) — the file reports the error, not the table's 5-second wait.
+
+**`src/test/keyedQueue.test.ts`** (new — cannot be red; the break-it in brackets): K1 *jobs of one key run one at a
+time, in arrival order* (call `work()` outside the chain); K2 *a job that rejects fails only its own caller — the job
+behind it still runs* (`.then(next)` without the second `next`); K3 *two keys never wait for each other* (one tail);
+K4 *a key whose last job settled holds nothing — `size() === 0` after a resolve and after a reject* (never delete);
+K5 *`run` answers the job's value and its rejection*. Plus `oneUseAndCap.test.ts` green on the extracted lane.
+
+**`src/test/consentTurns.test.ts`** (new — cannot be red; `mono = M`, `now = () => mono`; `t.mock.timers.enable({ apis:
+['setTimeout'] })` and a `tick(ms)` moving BOTH clocks, as `secretClipboard.test.ts`'s `advance` does; `work` returns a
+deferred the test settles; `signal()` = `new AbortController()`):
+
+C1 *the first request's work starts at once with the full bound* — `leftMs === bound`, `pending() === 1` (start on a
+timer). C2 *a second request waits, and its turn starts when the first work SETTLES, not when its outcome is decided*
+(start the next on `take`'s resolution). C3 *an already-aborted request is `gone` at once and never joins* —
+`pending() === 0`, work never called. C4 *a waiter whose signal fires leaves at once; its work never runs; the next
+waiter takes the slot*. C5 *the cap counts waiters only: the fifth request is `full` (`first: true`), the sixth `full`
+(`first: false`), the fourth is not; after everything settles a new burst's refusal is `first: true` again* (count the
+open turn; never reset). C6 *a gone waiter frees its place at the cap* (never decrement). C7 *the bound ends the open
+turn and orphans the slot: `turn.signal.aborted`, `timed-out` resolves at once, every waiter resolves `orphaned` now
+(the first `first: true`), a new request is `orphaned` (`first: false`), `pending()` stays 1 until the work settles,
+then 0 and the next request's work runs* — `tick(bound)` (free the slot in `end` → the next work runs beside the
+orphan). C8 *the request's signal during the turn is `gone` and orphans the same way*. C9 *the floor: a waiter with
+less than `promptFloor` left is `too-late` without `work`; with exactly the floor it runs* — bound `300_000`; settle
+work 1 at `mono += 285_000` → work 2 runs, `leftMs === 15_000`; at `+ 285_001` → `too-late`; `promptFloor(300_000)
+=== 15_000`, `promptFloor(20) === 1`, `promptFloor(1_000_000) === 15_000` (`<=`; `MIN_PROMPT_MS` alone). C10 *the time
+left is measured from arrival* — waited 100 of a 1000 bound → `leftMs === 900`. C11 *a value after the outcome is
+dropped and a rejection after it is swallowed* — `tick(bound)`, then settle the deferred; the outcome stays
+`timed-out`; a `process.once('unhandledRejection')` spy counts 0 (no `catch` on work). C12 *a rejection before the
+outcome rejects `take` and frees the slot* — `assert.rejects(…, /boom/)`, `pending() === 0`, the next request's work
+runs (never free on rejection). C13 *an answered turn leaves no timer behind* — real timers, bound `60_000`:
+`process.getActiveResourcesInfo().filter((r) => r === 'Timeout').length` equal before `take` and after the outcome
+(clear the timer only in `end`). C14 *`clear()` resolves the open turn and every waiter `gone`, aborts the turn's
+signal, leaves nothing pending, and the old work settling afterwards touches nothing* — after `clear()` a `take` for the
+same key runs its work at once (keep the old queue). C15 *different keys are independent* — two open turns at once (one
+slot for all keys). C16 *the per-key bookkeeping is empty after every outcome* (G2) — a table over `answered`, `gone`
+at arrival, `gone` while waiting, `full`, `too-late`, `timed-out` + settled, `orphaned` + settled, rejected, cleared →
+`pending() === 0`.
+
+##### 3. The brief — in this order
+
+1. `keyedQueue.ts` + K1–K5; `OneUseLane` on it; `oneUseAndCap.test.ts` green. 2. `consentTurns.ts` + C1–C16 (pure —
+   complete here). 3. **Server interface step, green:** the fourth `confirm` parameter, `serve` passing `new
+   AbortController().signal` (never aborted), the world's defaults, the harness pass-through, the manager's
+   `_signal: AbortSignal` (C5). 4. S1–S3 red, quoted. 5. The server fix (§1). 6. **Manager interface step, green:**
+   `w.infos` + `showInformationMessage` in the world, nothing else. 7. T1–T16 red, quoted (T13/T15 need E2.1's
+   `endAllWindows`, T14 E2.2's `endWindows` — both land before this story). 8. The manager fix (§1); the `withTimeout`
+   import dropped; *a click AFTER the timeout* stays green and now also records the stale message. 9. Docs: the story's
+   paragraph above; `oneUseLane.ts`'s header names `keyedQueue.ts`; the itest's stub (`withVscodeStub`) must carry
+   `showInformationMessage` — E2.1 adds it; add it here if absent. **Sizes:** `sshAgentManager.ts` ≈ 680 after
+   E2.1/E2.2 and this (+~90), `sshAgentServer.ts` ≈ 235, the world ≈ 340, `sshAgentServer.test.ts` ≈ 610 — all under 800.
+
+**Not to change:** `allowWindows.ts`, `agentConsent.ts`, `sharedPrompt.ts` / `brokerConsent.ts` (the broker keeps
+sharing its answer — a different promise), `withTimeout.ts` (still `credsAgentServer`'s and the locked-vault offer's),
+`OneUseLane`'s public surface and `afterTheQueue`, `extension.ts`, `sshAgentWiring.ts`, `vaultKeys.ts`, the frame
+loop's "dispatch at once", the post-await `keys().includes(key)` check, the `no answer in … — refused` wording.
+
+##### 4. The traps, each with the test that pins it
+
+1. **An `await` between `turn.aborted` and the window write** (presence through an awaited call, a logged `await`): a
+   macrotask — the bound timer, a socket `close` — runs in the gap. T2, T11; C7 holds the slot through `work`, not the outcome.
+2. **The slot freed on the signal (`end`) instead of on `work`'s settle** — a second modal beside the orphan. C7, T11.
+3. **The ticket taken at arrival or before the wait** — T15; **the covered re-check skipped at turn start** — T2; **the
+   membership check only before the wait** — T4; **`leftMs` from the wall clock** — T10, C10; **the floor with `<=` or
+   `MIN_PROMPT_MS` alone** — C9.
+4. **The reply chain**: `replies.then(() => answer)` without the dispatch catch lets one rejection stop every later reply
+   of that socket; a catch returning `undefined` makes `encodeFrame(undefined)` throw in `write` — S3. Serial handling
+   per socket (an `await` in the frame loop) deadlocks *every prompt open for a removed key*.
+5. **OneUseLane changed by the extraction** — advancing only on success (K2), deleting a key another job owns (K4), the
+   lane keyed by the queue's key instead of `laneKeyFor` (`oneUseAndCap.test.ts` *two DOORS*).
+6. **A timer that holds `node:test` open** — the bound timer not cleared on an answered turn (five minutes idle at the
+   default bound) — C13; unref'd — a bare run of *an unanswered signing prompt* exits with no answer (`withTimeout.ts:9-15`).
+7. **`tell` after `dispose()`** — T16, `sshAgentManagerLog.test.ts` *an answer that arrives after the window closed*;
+   **the stale message on Escape** (`choice === undefined` is not a click) — T11 counts `infos` exactly.
+8. **A gone waiter still counted toward the cap** — C6; **the open turn counted** — C5; **waiters left queued behind an
+   orphan** — C7's `pending()`, T11's `atOnce(r2)`; **`first` never reset** — C5's third assertion, T7's r7; **the
+   answer shared between waiters** — T1's `presence === 2`; **a late rejection unhandled** — C11, S3.
+
 ## 7. Epic Definition of Done
 
 - [ ] Every story's RED was observed on the code before its fix (the interface step where §4–§6 say so) and is
