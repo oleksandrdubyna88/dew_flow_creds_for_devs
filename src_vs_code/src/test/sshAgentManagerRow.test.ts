@@ -79,7 +79,7 @@ test('an answer given across Ask for Every Use Again signs once and opens no win
   assert.equal(had, false, 'no window was open when the button was used');
 });
 
-test('an answer given across Ask for Every Use Again is said in the agent log: signed once, no window was opened', async () => {
+test('an answer given across Ask for Every Use Again is said in the agent log: allowed once, no window was opened', async () => {
   // The audit (Fable): the key fence changes the outcome of a timed answer, so the record must say so.
   const modal = unanswered();
   const w = world({ answers: [modal.answer] });
@@ -91,7 +91,7 @@ test('an answer given across Ask for Every Use Again is said in the agent log: s
   await pending;
 
   assert.ok(
-    w.logs.some((line) => line.endsWith('"prod": answered "Allow for 10 minutes" after Ask for Every Use Again — signed once, no window was opened')),
+    w.logs.some((line) => line.endsWith('"prod": answered "Allow for 10 minutes" after Ask for Every Use Again — allowed once, no window was opened')),
     `the log does not say the answer crossed the button: ${JSON.stringify(w.logs)}`,
   );
 });

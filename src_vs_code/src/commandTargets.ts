@@ -120,6 +120,15 @@ function hasCommand(details: TreeNode['details']): boolean {
   return details !== undefined && executableLine(details) !== undefined;
 }
 
+/**
+ * What *Add to SSH Agent* warns about when the agent could not take the key: the reason, or NOTHING when the
+ * reason is empty (it has been said already, or the person declined the PIN prompt). A list, so the caller shows each warning
+ * and the empty case is not a branch in a command handler that is at the complexity limit.
+ */
+export function loadFailureWarnings(reason: string): string[] {
+  return reason === '' ? [] : [reason];
+}
+
 // eslint-disable-next-line complexity
 export function asElement(value: unknown): TreeElement | undefined {
   if (typeof value !== 'object' || value === null) {

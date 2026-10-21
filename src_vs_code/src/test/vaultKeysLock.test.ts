@@ -198,7 +198,7 @@ test('an answer given across a lock signs once and opens no window', async () =>
   assert.equal(w.dialogs.length, 2, 'the answer given across the lock opened a window');
 });
 
-test('an answer given across a lock is said in the agent log: signed once, no window was opened', async () => {
+test('an answer given across a lock is said in the agent log: allowed once, no window was opened', async () => {
   // The audit (Fable): the lock fence changes the outcome of a timed answer, so the record must say so.
   const modal = unanswered();
   const { w, vaultKeys, gate } = await rig({ answers: [modal.answer] });
@@ -209,7 +209,7 @@ test('an answer given across a lock is said in the agent log: signed once, no wi
   await pending;
 
   assert.ok(
-    w.logs.some((line) => line.endsWith('"prod": answered "Allow for 10 minutes" after the vaults were locked — signed once, no window was opened')),
+    w.logs.some((line) => line.endsWith('"prod": answered "Allow for 10 minutes" after the vaults were locked — allowed once, no window was opened')),
     `the log does not say the answer crossed the lock: ${JSON.stringify(w.logs)}`,
   );
 });
@@ -219,7 +219,7 @@ test('an answer given with no lock in between logs no fence line', async () => {
 
   await gate.confirm(key, login);
 
-  assert.deepEqual(w.logs.filter((line) => line.includes('signed once, no window was opened')), [], 'a plain grant logged a fence');
+  assert.deepEqual(w.logs.filter((line) => line.includes('allowed once, no window was opened')), [], 'a plain grant logged a fence');
 });
 
 test('an unlock opens no window of its own: the next signatures still ask, every time', async () => {

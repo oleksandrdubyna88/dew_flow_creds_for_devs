@@ -1,6 +1,6 @@
 # PLAN — E2 of #197: a window is visible, ends on any lock or from the row, and one prompt per key (feature release)
 
-> Status: **plan only, nothing implemented yet, 2026-10-21.** Scope: `src_vs_code` — `vaultKeys.ts` (`onDidLock`), a
+> Status: **E2 built on `feat/197-e2-lock-row-and-one-prompt`, 2026-10-21 — E2.1–E2.3 and their review fixes; the coai code gate passed (proceed, 12 of 12 reviewers); waits for its PR and `extension-v1.15.0`.** Scope: `src_vs_code` — `vaultKeys.ts` (`onDidLock`), a
 > new `sshAgentWiring.ts` (the SSH wiring moves out of `extension.ts`), `sshAgentManager.ts`, `sshAgentServer.ts`, two
 > new pure modules `consentTurns.ts` and `keyedQueue.ts` (`oneUseLane.ts` reuses the second), `treeRowText.ts`,
 > `treeDataProvider.ts` (line-neutral), `requestTime.ts` (`clockUntil`), `commands/agentCommands.ts`, `package.json`,
@@ -359,7 +359,7 @@ membership → covered? → ticket → prompt → answered → settle → openWi
 `module_tests.md`: the three suites. The `oneUseLane.ts` doc names `keyedQueue.ts`.
 
 **Done when.** The 16 REDs quoted beside their GREENs and every break-it of the two new modules run once; every
-function in the touched files ≤ 4 complexity and ≤ 50 lines; Opus review and Fable's security judgement passed.
+function the epic added or changed ≤ 4 complexity and ≤ 50 lines; Opus review and Fable's security judgement passed.
 Constraints C1–C11, especially C1, C2, C7, C8, C10, C11.
 
 #### E2.3 spec (Fable)

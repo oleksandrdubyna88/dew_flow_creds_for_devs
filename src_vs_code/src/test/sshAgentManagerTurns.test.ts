@@ -382,6 +382,30 @@ test('T19 the time left is told rounded DOWN, and in seconds under two minutes',
   }
 });
 
+/** What the agent log says to a request that joined the queue behind an open prompt for its key. */
+const QUEUED_LINE = /"prod": waiting behind the signing prompt already open for this key — it is asked when that one is answered \(refused if it waits past 5 minutes\)/;
+
+test('T20 a request that queues behind an open prompt is said once in the agent log; the first request says nothing', async () => {
+  const m1 = unanswered();
+  const { w, ask } = await loaded({ answers: [m1.answer, ALLOW_ONCE, ALLOW_ONCE] });
+  const r1 = ask();
+  await tick();
+  assert.deepEqual(w.logs.filter((line) => /waiting behind/.test(line)), [], 'the plain first request logged a queue line');
+
+  const r2 = ask();
+  await tick();
+  assert.equal(w.logs.filter((line) => QUEUED_LINE.test(line)).length, 1, w.logs.join('\n'));
+  assert.equal(w.infos.length, 0, 'the queue line is a log line, never an information message');
+
+  const r3 = ask();
+  await tick();
+  assert.equal(w.logs.filter((line) => QUEUED_LINE.test(line)).length, 2, 'one line per waiter');
+
+  m1.clickLate(ALLOW_ONCE);
+  assert.deepEqual(await Promise.all([r1, r2, r3]), [true, true, true]);
+  assert.equal(w.logs.filter((line) => /waiting behind/.test(line)).length, 2, 'answering the waiters adds no queue line');
+});
+
 /** Ways a client's `close` can arrive right after the click: the next macrotask, the one after, a timer. */
 const GOES_AWAY_AFTER_THE_CLICK: [string, (abort: () => void) => void][] = [
   ['setImmediate', (abort) => void setImmediate(abort)],

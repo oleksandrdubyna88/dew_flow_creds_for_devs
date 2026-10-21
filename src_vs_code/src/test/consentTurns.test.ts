@@ -576,3 +576,30 @@ test('C20 a request that was decided while it waited does not keep its data aliv
   a.settle('done');
   await first;
 });
+
+test('C21 queued is told once per request that joins behind an open turn — never for the first, a refusal or a gone request', async (t) => {
+  const { turns } = setup(t, { maxWaiting: 1 });
+  const told: string[] = [];
+  const queued = (name: string) => (): void => void told.push(name);
+  const a = job();
+  const first = turns.take('k', signal().signal, a.work, () => undefined, queued('first'));
+  assert.deepEqual(told, [], 'the request nobody is ahead of is not queued');
+
+  const b = job();
+  const second = turns.take('k', signal().signal, b.work, () => undefined, queued('second'));
+  assert.deepEqual(told, ['second'], 'told when it joins, before its turn');
+
+  const full = turns.take('k', signal().signal, job().work, () => undefined, queued('third'));
+  assert.deepEqual(await peek(full), refusal('full', true));
+  const gone = signal();
+  gone.abort();
+  const aborted = turns.take('k', gone.signal, job().work, () => undefined, queued('fourth'));
+  assert.deepEqual(await peek(aborted), refusal('gone', true));
+  assert.deepEqual(told, ['second'], 'a refused or already-gone request never joined the queue');
+
+  a.settle('done');
+  await first;
+  await tick();
+  b.settle('done too');
+  await second;
+});

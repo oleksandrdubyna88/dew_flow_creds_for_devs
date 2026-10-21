@@ -48,7 +48,7 @@ import { describeAliasProblem } from '../cliAliases';
 import { resolveKind } from '../entityKind';
 import { cliAliasNote, cliCommandFor } from '../cliCommandText';
 import { withAlias } from '../cliAliases';
-import { KeyRow, asElement, detailedNode } from '../commandTargets';
+import { KeyRow, asElement, detailedNode, loadFailureWarnings } from '../commandTargets';
 import { connectEntity } from '../sshConnect';
 import * as path from 'node:path';
 import { describeSshTarget } from '../sshCommand';
@@ -678,7 +678,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
     const { accountId, keyNode } = row;
     const result = await sshAgent.load(accountId, row.details, clickOpener(storage, accountId, 'load its key into the SSH agent'));
     if (!result.ok) {
-      void (result.reason === '' ? undefined : vscode.window.showWarningMessage(result.reason));
+      loadFailureWarnings(result.reason).forEach((text) => void vscode.window.showWarningMessage(text));
       return false;
     }
     await storage.updateDetailsFields(accountId, keyNode.id, { sshAgent: true });

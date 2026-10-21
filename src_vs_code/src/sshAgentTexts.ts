@@ -11,9 +11,9 @@ import { AgentKey } from './sshAgentServer';
  */
 
 /**
- * What a person is TOLD when a timed answer crossed a fence (#197, E2.3) — the information message beside the log
- * line above. The click they made allowed one signature and opened no window; without the message the window
- * simply never appears and nothing says why.
+ * What a person is TOLD when a timed answer crossed a fence (#197, E2.3) — the information message that goes with
+ * `CROSSED_LINE`, the log line in `sshAgentManager.ts`. The click they made allowed one signature and opened no
+ * window; without the message the window simply never appears and nothing says why.
  */
 export const CROSSING_NOTICE: ReadonlyMap<GrantOutcome, string> = new Map([
   [
@@ -40,6 +40,17 @@ export const REFUSAL: ReadonlyMap<RefusalKind, RefusalLine> = new Map<RefusalKin
   ],
   ['too-late', (key) => `"${key.name}": the request waited too long behind another prompt — refused without a prompt`],
 ]);
+
+/**
+ * The log line of a request that joined the queue behind the prompt already open for its key — so a request that is
+ * only waiting is never mistaken for a hung one. One per waiter; the bound is the fixed one, counted from arrival.
+ */
+export function queuedLine(key: AgentKey, bound: string): string {
+  return (
+    `"${key.name}": waiting behind the signing prompt already open for this key — ` +
+    `it is asked when that one is answered (refused if it waits past ${bound})`
+  );
+}
 
 /** The log line for a refusal — a fallback keeps the lookup total should a kind ever be added without a line. */
 export function refusalLine(kind: RefusalKind, key: AgentKey, purpose: SignPurpose, bound: string): string {

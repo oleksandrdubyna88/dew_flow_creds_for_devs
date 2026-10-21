@@ -14,7 +14,7 @@ import {
 import { localRequestTimeLine, localWallTime } from './requestTime';
 import { unrefTimer } from './withTimeout';
 import { ConsentTurns, RefusalKind, TurnOutcome } from './consentTurns';
-import { CROSSING_NOTICE, durationText, refusalLine, timeLeftText } from './sshAgentTexts';
+import { CROSSING_NOTICE, durationText, queuedLine, refusalLine, timeLeftText } from './sshAgentTexts';
 import { describeError } from './describeError';
 import { AgentKey, SshAgentServer, agentSocketPath } from './sshAgentServer';
 import { ParsedSshKey, parseSshPrivateKey } from './sshKeyParse';
@@ -56,12 +56,13 @@ const EXPIRY_LOOK_MS = 5 * 60_000;
  * What the agent log says when a timed answer crossed something (#197, E2.1/E2.2): the key was removed or replaced
  * while the prompt was open, or the vault was locked, or *Ask for Every Use Again* was used. The last two still
  * allow the ONE signature; none opens a window. The record must say which, because the outcome differs from the
- * click the person made. The information message that tells the person is E2.3's.
+ * click the person made. For the last two the person is told as well, in an information message
+ * (`CROSSING_NOTICE` in `sshAgentTexts.ts`).
  */
 const CROSSED_LINE: Readonly<Partial<Record<GrantOutcome, string>>> = {
   'stale-key': 'answered after the key was removed or replaced — no window was opened',
-  'fenced-key': `answered "${ALLOW_WINDOW}" after Ask for Every Use Again — signed once, no window was opened`,
-  'fenced-lock': `answered "${ALLOW_WINDOW}" after the vaults were locked — signed once, no window was opened`,
+  'fenced-key': `answered "${ALLOW_WINDOW}" after Ask for Every Use Again — allowed once, no window was opened`,
+  'fenced-lock': `answered "${ALLOW_WINDOW}" after the vaults were locked — allowed once, no window was opened`,
 };
 
 /** Both of the window book's clocks at one instant: the wall clock and the monotonic one. */
@@ -514,6 +515,7 @@ export class SshAgentManager implements vscode.Disposable {
       signal,
       (turn, leftMs) => this.turnStarted(key, purpose, asked, arrived, turn, leftMs),
       (waited) => this.beforePrompt(key, purpose, arrived, waited),
+      () => this.log(queuedLine(key, durationText(this.consentTimeoutMs))),
     );
     return this.outcomeOf(key, purpose, outcome);
   }

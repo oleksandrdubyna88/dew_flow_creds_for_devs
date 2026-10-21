@@ -51,15 +51,23 @@ type Work<T> = (turn: AbortSignal, leftMs: number) => Promise<T>;
  */
 type Before<T> = (waited: boolean) => T | undefined;
 
-/** The two things a request brings. Dropped (`FORGOTTEN`) once the request is decided: its data is not kept alive. */
+/**
+ * Told once, at admission, to a request that joins the queue behind an open turn — so the caller can say that the
+ * request is waiting (and not hung). Never told for the first request, a refused one or one already gone.
+ */
+type Queued = () => void;
+
+/** The three things a request brings. Dropped (`FORGOTTEN`) once the request is decided: its data is not kept alive. */
 interface Steps<T> {
   readonly work: Work<T>;
   readonly before: Before<T>;
+  readonly queued: Queued;
 }
 
 const FORGOTTEN: Steps<never> = {
   work: () => Promise.reject(new Error('this request was decided before its turn')),
   before: () => undefined,
+  queued: () => undefined,
 };
 
 /** One request's place in the queue: its outcome, and whether it has been decided. */
@@ -246,14 +254,21 @@ export class ConsentTurns {
 
   /**
    * Run `work` for this request when it is its turn, or say why it will not be. At its turn `before` is asked first
-   * (it may answer the request without a prompt), then the floor is applied, then `work` runs.
+   * (it may answer the request without a prompt), then the floor is applied, then `work` runs. `queued` is told when
+   * the request is admitted behind an open turn — before its turn, once.
    */
-  take<T>(key: string, request: AbortSignal, work: Work<T>, before: Before<T> = () => undefined): Promise<TurnOutcome<T>> {
+  take<T>(
+    key: string,
+    request: AbortSignal,
+    work: Work<T>,
+    before: Before<T> = () => undefined,
+    queued: Queued = () => undefined,
+  ): Promise<TurnOutcome<T>> {
     const refused = this.refusedAtArrival(this.slots.get(key), request);
     if (refused !== undefined) {
       return Promise.resolve(refused);
     }
-    return new Promise((resolve, reject) => this.enqueue(key, request, { work, before }, new Waiter<T>(resolve, reject)));
+    return new Promise((resolve, reject) => this.enqueue(key, request, { work, before, queued }, new Waiter<T>(resolve, reject)));
   }
 
   /** How many keys hold ANY state (an open turn, waiters, an orphaned slot) — for tests, deciding nothing. */
@@ -279,7 +294,11 @@ export class ConsentTurns {
 
   private enqueue<T>(key: string, request: AbortSignal, steps: Steps<T>, waiter: Waiter<T>): void {
     const slot = this.slots.get(key) ?? this.created(key);
-    const entry: Entry<T> = { key, slot, waiter, steps, waited: slot.live > 0, arrivedAt: this.now(), open: undefined };
+    const waited = slot.live > 0;
+    if (waited) {
+      steps.queued();
+    }
+    const entry: Entry<T> = { key, slot, waiter, steps, waited, arrivedAt: this.now(), open: undefined };
     slot.live += 1;
     slot.waiters.add(waiter as Waiter<never>);
     const onAbort = (): void => this.requestAborted(entry);
