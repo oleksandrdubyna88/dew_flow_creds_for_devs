@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.14.2...extension-v1.15.0) (2026-10-21)
+
+
+### Features
+
+* **extension:** a lock ends every SSH window, the row shows it, one prompt per key ([#197](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/197) E2) ([#267](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/267)) ([2997a55](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/2997a5582198ef49b04fae0f4ab78f3418022fca))
+
 ## [1.14.2](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.14.1...extension-v1.14.2) (2026-10-21)
 
 
