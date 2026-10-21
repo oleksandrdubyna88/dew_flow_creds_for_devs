@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from whoever asked for the signature — a forwarded agent serves a remote `ssh`), the name of the key (an import or a
   share sets it) and the namespace of a Git or file signature. Control and format characters (newlines, right-to-left
   and zero-width marks) become `?`, a quote or backslash is escaped, and the text is cut at 64 characters with `…`;
-  the raw user name is only in the agent's log. The host-key line is written by this build alone, so none of these can
+  in the log the user name appears JSON-quoted, with control and format characters replaced by `?` like any log line. The host-key line is written by this build alone, so none of these can
   imitate it: a key named with a line break and a fake *This login is for the server…* line adds no line to the prompt.
   Only the service `ssh-connection` is a login, and the session id must be the size of a key-exchange hash (20, 32, 48
   or 64 bytes).

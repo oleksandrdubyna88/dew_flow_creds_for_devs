@@ -163,7 +163,7 @@ export function endLoginWindows(book): AllowWindows;        // auto-lock set to 
 export function endAllWindows(book): AllowWindows;          // any lock: lockEpoch + 1, empty
 export function forgetKey(book, entityId): AllowWindows;    // unload / re-load: that key's fence + 1
 export function withoutExpired(book, now, nowMono): AllowWindows;
-export function nextExpiry(book, now): number | undefined;
+export function nextExpiry(book, now, nowMono): number | undefined;  // the earlier end of the two clocks
 ```
 
 `windowCovers` uses the existing `withinAllowWindow` (`agentConsent.ts:80-82`) plus `grantedAt <= now` (I4) — the same

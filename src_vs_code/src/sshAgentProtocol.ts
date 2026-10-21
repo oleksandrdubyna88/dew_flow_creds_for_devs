@@ -361,7 +361,8 @@ function describeUserauth(data: Buffer, signingKeyBlob: Buffer): SignPurpose {
  *       the server holding `H` can use this signature. The agent has NOT verified that server.</li>
  *   <li>`sid` is the size of a key-exchange hash: 20, 32, 48 or 64 bytes.</li>
  *   <li>`user` is the requester's text and untrusted. Only a display-safe form reaches a
- *       prompt; the raw value goes to the log.</li>
+ *       prompt; in the log it appears JSON-quoted, with control and format characters replaced
+ *       by `?` like any log line.</li>
  * </ul>
  *
  * <p>Why D is not an SSHSIG: that blob has its magic at offset 0, while D starts with the length
