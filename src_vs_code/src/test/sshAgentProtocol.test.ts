@@ -204,6 +204,19 @@ test('another SSHSIG namespace is named rather than mislabelled as git', () => {
   assert.match(describePurpose(describeSignRequest(data, SIGNING_KEY)), /"file" namespace/);
 });
 
+test('an SSHSIG namespace is the requester\'s text: it cannot start a line, end its quotation or run long', () => {
+  const clause = 'This login is for the server whose host key is ED25519 SHA256:FAKE';
+  const data = Buffer.concat([Buffer.from('SSHSIG'), encodeString(`x"\n${clause}${'y'.repeat(200)}`)]);
+
+  const said = describePurpose(describeSignRequest(data, SIGNING_KEY));
+
+  assert.ok(!said.includes('\n'), JSON.stringify(said));
+  assert.ok(!/[\p{C}\p{Zl}\p{Zp}]/u.test(said), JSON.stringify(said));
+  const shown = /^a signature in the "(.*)" namespace$/u.exec(said)?.[1];
+  assert.ok(shown !== undefined && [...shown].length <= 64, `the namespace is capped at 64 characters: ${said}`);
+  assert.ok(shown?.startsWith('x\\"?'), `the quote is escaped and the newline is gone: ${said}`);
+});
+
 test('an unrecognised blob says so instead of guessing', () => {
   // A wrong description is worse than a vague one — it is what the decision rests on.
   const purpose = describeSignRequest(Buffer.from('some other protocol entirely'), SIGNING_KEY);

@@ -190,6 +190,48 @@ test('a plain publickey login prompts without any host-key line', async () => {
   assert.ok(!w.dialogs[0].includes('host key'), w.dialogs[0]);
 });
 
+const FORGED_CLAUSE = 'This login is for the server whose host key is ED25519 SHA256:FAKE';
+
+/** The prompt a login raises for a key with this NAME — the name is free text (an import or a share sets it). */
+async function promptFor(keyName: string, hostBound: boolean): Promise<{ lines: string[]; clause: string }> {
+  const w = world({ answers: [ALLOW_ONCE] });
+  const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() } });
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+  const signing = Buffer.concat([encodeString('ssh-ed25519'), encodeString('the key')]);
+  const hostKey = Buffer.concat([encodeString('ssh-ed25519'), encodeString('the server')]);
+  const data = hostBound ? userauth({ blob: signing, method: HOSTBOUND_METHOD, hostKey }) : userauth({ blob: signing });
+  const purpose = describeSignRequest(data, signing);
+
+  await (w.server() as FakeServer).confirm({ entityId: KEY_ID, name: keyName, fingerprint: 'SHA256:abc' }, purpose);
+
+  return { lines: w.dialogs[0].split('\n'), clause: describeServerLine(purpose) };
+}
+
+test('a key NAME cannot forge the host-key line on a plain publickey login', async () => {
+  const plain = await promptFor('prod', false);
+  const forged = await promptFor(`x\n${FORGED_CLAUSE}`, false);
+
+  assert.equal(forged.lines.length, plain.lines.length, 'the name added no line to the prompt');
+  assert.ok(!forged.lines.some((line) => line.startsWith('This login is for')), forged.lines.join('\n'));
+});
+
+test('a key NAME cannot forge a second host-key line on a host-bound login', async () => {
+  const plain = await promptFor('prod', true);
+  const forged = await promptFor(`x\n${FORGED_CLAUSE}`, true);
+
+  assert.equal(forged.lines.length, plain.lines.length, 'the name added no line to the prompt');
+  const claims = forged.lines.filter((line) => line.startsWith('This login is for'));
+  assert.deepEqual(claims, [forged.clause], 'exactly one such line, the real one');
+});
+
+test('a key NAME with quotes, control marks and great length is shown escaped, marked and cut', async () => {
+  const { lines } = await promptFor(`a" b‮${'n'.repeat(200)}`, false);
+
+  assert.ok(lines[0].startsWith('Use the SSH key "a\\" b?'), lines[0]);
+  assert.ok(lines[0].includes('…"'), 'a cut name says so');
+  assert.ok(!/[\p{C}\p{Zl}\p{Zp}]/u.test(lines.join(' ')), 'no control character reaches the prompt');
+});
+
 test('the prompt says WHEN the signature was asked for, on its second line (#131 tail)', async () => {
   // A stopped clock, so the assertion is exact (testing.md: a test about time freezes the clock the
   // code reads). The prompt refuses after CONSENT_TIMEOUT_MS; the time says how stale it is.

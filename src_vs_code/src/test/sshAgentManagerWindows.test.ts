@@ -10,7 +10,7 @@ import { FakeServer, KEY_ID, assertNoKeyMaterialLogged, keyEntity, manager, real
  * <p>What the book itself decides is `allowWindows.test.ts`, with no editor in sight. What is only true
  * here is that the manager asks it the right question at the right moment: the generation is read when the
  * request ARRIVES (before the first `await`), a key loaded again starts with no window, and an answer given
- * after the key was removed or re-added opens none. The world is `sshAgentWorld.ts`; keys are the plain
+ * after the key was removed or replaced opens none. The world is `sshAgentWorld.ts`; keys are the plain
  * objects the old suite passes, so a manager that read `key.generation` off them would refuse every request
  * as "not loaded" — which is what the first assertion of each test would then say.</p>
  */
@@ -35,6 +35,14 @@ function steppedClock(): { clock: () => Date; set: (ms: number) => void } {
   return { clock: () => new Date(now), set: (ms) => (now = ms) };
 }
 
+/** The manager's refusal line is a REASON (the server writes the verdict), and the one phrase is "removed or replaced". */
+function assertStaleReason(logs: string[]): void {
+  const reason = logs.filter((line) => /answered after the key was removed or replaced — no window was opened/.test(line));
+  assert.equal(reason.length, 1, `no stale-key reason in:\n${logs.join('\n')}`);
+  assert.ok(!reason[0].includes('REFUSED'), `a reason, not a second verdict: ${reason[0]}`);
+  assert.ok(!logs.some((line) => /removed or re-added/.test(line)), 'one phrase for the event: removed or replaced');
+}
+
 test('re-adding a key that is already loaded starts it with no window', async () => {
   // A second `load` of an id that is already served is not an unload — and it used to inherit the window.
   const w = world({ answers: [ALLOW_WINDOW, ALLOW_ONCE] });
@@ -57,7 +65,7 @@ test('an answer given after Remove from SSH Agent refuses, and says so', async (
   modal.clickLate(ALLOW_WINDOW);
 
   assert.equal(await pending, false, 'a window answer for a removed key must not allow');
-  assert.ok(w.logs.some((line) => /REFUSED .* removed or re-added/.test(line)), `no refusal line in:\n${w.logs.join('\n')}`);
+  assertStaleReason(w.logs);
 });
 
 test('Allow for 10 minutes on a prompt whose key was unloaded opens no window for the key loaded next', async () => {
@@ -85,7 +93,7 @@ test('an answer given across a re-load refuses, and says so', async () => {
   modal.clickLate(ALLOW_WINDOW);
 
   assert.equal(await pending, false, 'a window answer for a replaced generation must not allow');
-  assert.ok(w.logs.some((line) => /REFUSED .* removed or re-added/.test(line)), `no refusal line in:\n${w.logs.join('\n')}`);
+  assertStaleReason(w.logs);
 });
 
 test('Allow for 10 minutes on a prompt whose key was re-loaded meanwhile opens no window for the new generation', async () => {
@@ -201,7 +209,9 @@ test('a request for a key that is not loaded is refused without a dialog', async
 
   assert.equal(allowed, false);
   assert.equal(w.dialogs.length, 0, 'nothing to ask about');
-  assert.ok(w.logs.some((line) => /not loaded/.test(line)), `no "not loaded" line in:\n${w.logs.join('\n')}`);
+  const reason = w.logs.filter((line) => /the key is not loaded/.test(line));
+  assert.equal(reason.length, 1, `no "the key is not loaded" line in:\n${w.logs.join('\n')}`);
+  assert.ok(!reason[0].includes('REFUSED'), `a reason, not a second verdict: ${reason[0]}`);
   // The LAST test of the file: node:test runs a file in order, so every log of the suite has been written.
   assertNoKeyMaterialLogged();
 });

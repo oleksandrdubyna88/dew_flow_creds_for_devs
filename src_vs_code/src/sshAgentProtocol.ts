@@ -392,25 +392,32 @@ export function describeUnknownShape(data: Buffer): string {
 /**
  * Text with no way to start a line of its own: control and format characters (newlines, RTL and
  * zero-width marks — `\p{C}`) and the Unicode line and paragraph separators become `?`. The core of
- * `displayUser`, and what the agent's log applies to every line, so a name cannot forge one.
+ * `displayText`, and what the agent's log applies to every line, so a name cannot forge one.
  */
 export function withoutControlChars(text: string): string {
   return text.replace(/[\p{C}\p{Zl}\p{Zp}]/gu, '?');
 }
 
-/** The longest user name a prompt shows, ellipsis included. */
-const MAX_USER_DISPLAY = 64;
+/** The longest user name, key name or namespace a prompt shows, ellipsis included. */
+export const MAX_DISPLAY = 64;
 
 /**
- * A user name made safe to put inside a sentence: control and format characters (newlines, RTL and
- * zero-width marks — `\p{C}`) and the Unicode line and paragraph separators become `?`, a quote or
- * backslash is escaped so the name cannot end its own quotation, and the result is cut at 64
- * characters with `…`. The user is the requester's text: nothing of it may start a line.
+ * Text made safe to put inside a sentence of the prompt: control and format characters (newlines, RTL
+ * and zero-width marks — `\p{C}`) and the Unicode line and paragraph separators become `?`, a quote or
+ * backslash is escaped so the text cannot end its own quotation, and the result is cut at `max`
+ * characters with `…`. THE one sanitiser for everything in the prompt that somebody else wrote — the
+ * login's user, the key's name, an SSHSIG namespace: nothing of it may start a line, because the line
+ * naming the server is the one line people are told to trust.
  */
-function displayUser(user: string): string {
-  const safe = withoutControlChars(user).replace(/[\\"]/g, '\\$&');
+export function displayText(raw: string, max: number): string {
+  const safe = withoutControlChars(raw).replace(/[\\"]/g, '\\$&');
   const characters = [...safe];
-  return characters.length <= MAX_USER_DISPLAY ? safe : `${characters.slice(0, MAX_USER_DISPLAY - 1).join('')}…`;
+  return characters.length <= max ? safe : `${characters.slice(0, max - 1).join('')}…`;
+}
+
+/** A user name as the prompt shows it (see `displayText`). */
+function displayUser(user: string): string {
+  return displayText(user, MAX_DISPLAY);
 }
 
 /** A login as one sentence, the user name being whatever text the caller chose to show. */
@@ -453,7 +460,7 @@ export function describePurpose(purpose: SignPurpose): string {
     case 'sshsig':
       return purpose.namespace === 'git'
         ? 'a Git signature (commit or tag)'
-        : `a signature in the "${purpose.namespace}" namespace`;
+        : `a signature in the "${displayText(purpose.namespace, MAX_DISPLAY)}" namespace`;
     default:
       return 'a signature whose purpose this build does not recognise';
   }

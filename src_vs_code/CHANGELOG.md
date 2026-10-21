@@ -15,17 +15,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   host key is ED25519 SHA256:…*. The host key is what the client signed over, and OpenSSH's sshd checks it against its
   own host key — so only the server that holds that key accepts this signature. The agent does not check the server
   itself; the line tells the person which server the login is for.
-- **The user name in the prompt is shown as text, never trusted.** It comes from whoever asked for the signature (a
-  forwarded agent serves a remote `ssh`). Control and format characters (newlines, right-to-left and zero-width
-  marks) become `?`, a quote is escaped, and the name is cut at 64 characters with `…`; the raw name is only in the
-  agent's log. The host-key line is written by this build alone, so a user name cannot imitate it. Only the service
-  `ssh-connection` is a login, and the session id must be the size of a key-exchange hash (20, 32, 48 or 64 bytes).
+- **Whatever somebody else wrote is shown in the prompt as text, never trusted.** That is the user name (it comes
+  from whoever asked for the signature — a forwarded agent serves a remote `ssh`), the name of the key (an import or a
+  share sets it) and the namespace of a Git or file signature. Control and format characters (newlines, right-to-left
+  and zero-width marks) become `?`, a quote or backslash is escaped, and the text is cut at 64 characters with `…`;
+  the raw user name is only in the agent's log. The host-key line is written by this build alone, so none of these can
+  imitate it: a key named with a line break and a fake *This login is for the server…* line adds no line to the prompt.
+  Only the service `ssh-connection` is a login, and the session id must be the size of a key-exchange hash (20, 32, 48
+  or 64 bytes).
 - **A certificate login is reported as unrecognised.** A login with an OpenSSH certificate names the certificate, and
   this agent signs with plain keys; the request is not described as a login of the plain key.
 - **Only a complete login request is called a login.** The request is read whole: every field, the key it names must
   be the key being signed with, and nothing may follow the last field. A request that only *starts* like a login, names
   another key, or is the "would this key be accepted" probe (no signature flag) is described as unrecognised, which is
   the honest sentence for something this build cannot name.
+
 ### Fixed — a removed or replaced key never signs
 
 - **A key removed while its prompt was open no longer signs.** The signing prompt can stay on screen for minutes (VS Code
@@ -33,7 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or loaded it again. The agent now checks, after the answer, that the key it was asked about is still the one it serves
   — by object, so a key re-loaded with identical bytes is refused too — and a key object that was removed, replaced or
   disposed refuses to sign whoever holds it. The refusal is written in the agent's log, and it says *removed or
-  replaced*.
+  replaced*. The log gives the reason (for example *the key is not loaded*) and the agent then writes its own *REFUSED*
+  line.
 - **The agent's log has one line per entry, and stops with the window.** A key's name is free text (an import or a
   share sets it), so a name with a line break could write a second line that looked like the agent's own
   `SIGNED with …` record. Control characters and line breaks in a log entry now become `?`. After the window closes the
@@ -46,24 +51,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed — a window belongs to one generation of one key
 
 - **Re-loading a key starts it with no window.** "Allow for 10 minutes" is remembered for the key the person answered
-  about. A key that was loaded again under the same entry (Add to SSH Agent used a second time, or used after the saved
-  flag changed — for example after a sync or Restore Version; a sync alone does not load a key again) used to keep the
-  old window and sign without asking. Every load is now a new generation of the key, and a window covers only the generation it was
-  granted to.
+  about. A key that was loaded again under the same entry (a second *Add to SSH Agent* on a key that is already
+  loaded, or the load of marked keys at startup) used to keep the old window and sign without asking. Every load is now
+  a new generation of the key, and a window covers only the generation it was granted to.
 - **An answer given across an unload or a re-load opens no window.** The signing prompt can stay on screen for minutes
   (VS Code cannot close a modal). If the key was removed, or loaded again, while it was open, *Allow for 10 minutes* on it
   used to start a window that then covered the key loaded next. The answer is now refused and no window opens; the
-  agent's log says *answered after the key was removed or re-added — no window was opened*.
+  agent's log says *answered after the key was removed or replaced — no window was opened*.
 - **A request for a key that is not loaded is refused without a prompt.** This is a defensive check, not a fix: the
   socket offers only loaded keys, so a client cannot reach it today.
 - **Every silent signature names its window in the agent's log**: *allowed without asking: 10-minute window of "name"
   until <time> (granted <time>) for <what>*.
 - **A window needs two clocks to agree.** It ends when the wall clock says so, and also when a monotonic clock — one
   that a clock setting cannot move — says the ten minutes are over. Setting the system clock back after the click no
-  longer stretches a window.
-- **Not part of this release yet:** the book also has rules for a vault lock and for an "Ask for Every Use Again" button
-  (a lock ends every window, the row button ends the windows of one key; both fence an answer given
-  meanwhile). They are written and tested but nothing calls them: a lock does not end a window today.
+  longer stretches a window. A wall clock set back below the time of the click makes the window cover nothing until
+  the clock passes that time again: the agent asks again, which is the safe direction.
+- **A vault lock does not end an open 10-minute window.**
 
 ### Changed — the help and the menus say what the signing prompt really offers
 
@@ -74,10 +77,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   10 minutes* (it was *…asks every time*), and it says what a login prompt shows: the login and, for a current OpenSSH
   server, the server's host key on a line of its own. The WSL relay article says that while a 10-minute window is open any
   process in WSL signs with that key without asking.
-- **The command is plain *Add to SSH Agent***, not *(confirm every use)* and not *(asks before signing)* — a title that promises a question is false while a window is open. The same fix is in the setting
-  *wslAgentRelay*, the key-served notices, the *Agent doors* row for WSL, the walkthrough and both READMEs.
-- **Not changed, because it is still true:** the CLI door row says it asks every time — a CLI call gets a fresh grant for each
-  call. The `creds` command-line text for `relay` ships with the next `cli-v` release.
+- **The command is plain *Add to SSH Agent***, not *(confirm every use)* and not *(asks before signing)* — a title
+  that promises a question is false while a window is open. The same fix is in the setting *wslAgentRelay*, the
+  key-served notices, the *Agent doors* row for WSL, the walkthrough and both READMEs.
+- **Not changed, because it is still true:** the CLI door row says it asks every time — a CLI call gets a fresh grant
+  for each call. The `creds` command-line help is unchanged in this release.
 - **A guard.** A test reads the signing prompt's buttons from the code and fails when a help article does not name one of
   them; a second one fails when any of the replaced sentences is still in any help language, the README, the manifest or the
   code that shows the prompt.

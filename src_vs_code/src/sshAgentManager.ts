@@ -7,6 +7,8 @@ import {
   describePurposeForLog,
   describeServerLine,
   describeUnknownShape,
+  MAX_DISPLAY,
+  displayText,
   withoutControlChars,
 } from './sshAgentProtocol';
 import { localRequestTimeLine, localWallTime } from './requestTime';
@@ -35,7 +37,7 @@ import { EntityMetadata, TreeNode } from './types';
 
 /**
  * The editor's half of the SSH agent: which keys are loaded, the modal in front of every
- * signature, and the `SSH_AUTH_SOCK` that makes `ssh` and `git` find it.
+ * signature no open window covers, and the `SSH_AUTH_SOCK` that makes `ssh` and `git` find it.
  *
  * <p>Key material lives in this object's memory for as long as a key is loaded, and NOWHERE
  * else — the point of the feature is that no file with mode 0600 exists to be read, copied or
@@ -44,7 +46,8 @@ import { EntityMetadata, TreeNode } from './types';
  * later `load` of the same entity and by `dispose()`, so a holder that kept the object cannot
  * sign with it (#197).</p>
  *
- * <p><b>The confirmation is per use and cannot be made sticky by accident.</b> "Allow for 10
+ * <p><b>The confirmation is per use, unless the person opens a window — and a window cannot be opened by
+ * accident.</b> "Allow for 10
  * minutes" exists because `git push` signs and authenticates in one breath and two modals per
  * push would teach people to click without reading; it is per KEY, it is remembered in memory
  * only, and it is stated in the dialog rather than implied.</p>
@@ -351,7 +354,7 @@ export class SshAgentManager implements vscode.Disposable {
     // time on the prompt and the start of the window are two facts on purpose.
     this.noteUnknown(purpose, data);
     if (generation === undefined) {
-      this.log(`REFUSED a signature with "${key.name}": the key is not loaded`);
+      this.log(`"${key.name}": the key is not loaded`);
       return false;
     }
     const arrived = { entityId: key.entityId, generation };
@@ -391,17 +394,18 @@ export class SshAgentManager implements vscode.Disposable {
   }
 
   /**
-   * Record a timed answer. THE one place the generation is checked: the book says `stale-key` when the key
-   * was unloaded or re-loaded while the prompt was open, and then nothing is allowed and no window opens.
-   * (An *Allow once* across the same event is refused by the server, which compares the key OBJECT it asked
-   * about with the one now served.) E1 can produce no other crossing; the two fences that exist only for a
-   * later epic's lock and row button read as "allow this one signature, no window".
+   * Record a timed answer. THE one place the manager decides on a moved generation. (The book checks the
+   * generation in three places — crossing, covers, liveAndLater — but only here is the outcome acted on.) It
+   * says `stale-key` when the key was unloaded or re-loaded while the prompt was open, and then nothing is
+   * allowed and no window opens. (An *Allow once* across the same event is refused by the server, which
+   * compares the key OBJECT it asked about with the one now served.) This release can produce no other
+   * crossing.
    */
   private openWindow(key: AgentKey, ticket: AskTicket, at: { grantedAt: number; grantedAtMono: number; until: number }): boolean {
     const { book, outcome } = grantWindow(this.windows, ticket, 'all', this.generationOf(key.entityId), at.grantedAt, at.grantedAtMono, at.until);
     this.windows = book;
     if (outcome === 'stale-key') {
-      this.log(`REFUSED a signature with "${key.name}": answered after the key was removed or re-added — no window was opened`);
+      this.log(`"${key.name}": answered after the key was removed or replaced — no window was opened`);
       return false;
     }
     return true;
@@ -428,7 +432,7 @@ export class SshAgentManager implements vscode.Disposable {
   private async askToSign(key: AgentKey, purpose: SignPurpose, asked: Date): Promise<string | undefined> {
     const bound = durationText(this.consentTimeoutMs);
     const modal = vscode.window.showWarningMessage(
-      `Use the SSH key "${key.name}" to sign ${describePurpose(purpose)}?\n${localRequestTimeLine(asked)}\n\n` +
+      `Use the SSH key "${displayText(key.name, MAX_DISPLAY)}" to sign ${describePurpose(purpose)}?\n${localRequestTimeLine(asked)}\n\n` +
         `${key.fingerprint}\n\n` +
         serverParagraph(purpose) +
         'The key itself never leaves this window. Allow once, or allow every use of this key for ' +

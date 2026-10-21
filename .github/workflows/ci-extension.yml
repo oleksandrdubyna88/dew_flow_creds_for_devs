@@ -143,7 +143,7 @@ jobs:
       # `sudo usermod -p '*' runner` first.
       - name: Install sshd for the live OpenSSH login
         run: |
-          test -x /usr/sbin/sshd || (sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssh-server)
+          test -x /usr/sbin/sshd || (sudo apt-get -o Acquire::Retries=3 update && sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --no-install-recommends openssh-server)
           sudo mkdir -p /run/sshd
 
       - name: Integration test (SSH agent against a real ssh-add)

@@ -344,9 +344,14 @@ function launch(exe, args, options = {}) {
   return result;
 }
 
-/** Resolves when the child has exited or `ms` have passed — whichever is first. */
+/** Resolves when the child has exited or `ms` have passed — whichever is first. The timer is cleared when the
+ * race settles, so a child that exited at once leaves nothing referenced to keep this process alive. */
 function settledWithin(result, ms) {
-  return Promise.race([result.done, new Promise((resolve) => setTimeout(resolve, ms, undefined))]);
+  let timer;
+  const timedOut = new Promise((resolve) => {
+    timer = setTimeout(resolve, ms, undefined);
+  });
+  return Promise.race([result.done, timedOut]).finally(() => clearTimeout(timer));
 }
 
 /** A free loopback port: bind 0, read it, let go. Racy by nature — the caller retries once. */

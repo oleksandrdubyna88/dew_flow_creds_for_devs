@@ -38,7 +38,7 @@ is node throughout because what these need is process control, not a test runner
 | `src_vs_code/scripts/masked-run-itest.cjs` | a masked run through a real pty, asserting no whole secret appears | **yes, added 2026-09-06** | pass |
 | `src_minimalapi_server/scripts/backup-archive-itest.cjs` | the REAL server binary sealing, verifying and opening a backup archive | **yes, added 2026-09-07** — in `ci · server`, on the server's own path filter | pass |
 | `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | the same MCP surface, bridged from inside a WSL distribution; since 2026-10-11 (E5.S1 of `PLAN_wsl_bridge_outlives_its_client.md`) a Claude-Code-shaped client INSIDE the distribution (`wsl-mcp-client.cjs`, the wrapper's real parent) opens the captured session with its held `subscriptions/listen` and ends it six ways — SIGINT, SIGTERM, SIGHUP, a closed stdin, SIGKILL of the wrapper, and (E6/defect D, 2026-10-14) the `/init` interop proxy SIGSTOPped then the wrapper SIGKILLed — and the Windows `creds-mcp.exe` of the run must be alive before each ending (the positive control) and gone within 5 s after it | no — see below | pass — **42** checks (2026-10-11, the final harness; 40 on its first version); 4 of them RED against the pre-E2/E3 build, 10 of 40 on the first version (see *The bridge, proved on the real machine*). E6 added the sixth, `stopped`, ending; its real-bridge run is the manual E6.S2 step, the mechanism measured directly in RESULTS, *Defect D*, and the CI-runnable proof is `WslPumpHostTests.A_child_left_STOPPED_and_orphaned_still_dies_with_the_wrapper` |
-| `src_vs_code/scripts/ssh-agent-itest.cjs` | the SSH agent on a named pipe, and which ssh client can reach it; since 2026-09-24 the REAL `SshAgentManager` too, with a signing prompt nobody answers — the real `ssh-keygen -Y sign` must fail within the bound, not hang; since 2026-10-20 (#197 E1.1, section 5, POSIX only) a LIVE login — a real `ssh` against a user-mode `sshd -d` on loopback with a throwaway host key, through the real manager — whose dialog must name *an SSH login* and carry, as a line of its own, *This login is for the server whose host key is ED25519* followed by the fingerprint `ssh-keygen -l -E sha256` prints for that host key (the host-bound request OpenSSH 8.9+ sends). **This live section is pending its first CI run** — it has run only as a local `skip` (no `sshd` on the author's machine); no CI log line of it passing is quoted here yet, and this sentence stays until one is. On a failed login the check's detail carries the last 20 lines of sshd's `-d -e` output. It does **not** prove a login from Windows: that is M1, a real Windows client against a real server, owed by hand. Without `/usr/sbin/sshd` it is a `FAIL` when `CI=true` and a printed `skip` locally; on Windows it prints `skip  live OpenSSH login — POSIX only; M1 covers Windows` | **yes, added 2026-09-11** — the POSIX branch only, see below; the CI job installs `sshd` first | pass |
+| `src_vs_code/scripts/ssh-agent-itest.cjs` | the SSH agent on a named pipe, and which ssh client can reach it; since 2026-09-24 the REAL `SshAgentManager` too, with a signing prompt nobody answers — the real `ssh-keygen -Y sign` must fail within the bound, not hang; since 2026-10-20 (#197 E1.1, section 5, POSIX only) a LIVE login — a real `ssh` against a user-mode `sshd -d` on loopback with a throwaway host key, through the real manager — whose dialog must name *an SSH login* and carry, as a line of its own, *This login is for the server whose host key is ED25519* followed by the fingerprint `ssh-keygen -l -E sha256` prints for that host key (the host-bound request OpenSSH 8.9+ sends). **This live section is pending its first CI run** — it has run only as a local `skip` (no `sshd` on the author's machine); no CI log line of it passing is quoted here yet, and this sentence stays until one is. On a failed login the check's detail carries the last 20 lines of sshd's `-d -e` output. It does **not** prove a login from Windows: that is M1, a real Windows client against a real server, owed by hand. Without `/usr/sbin/sshd` it is a `FAIL` when `CI=true` and a printed `skip` locally; on Windows it prints `skip  live OpenSSH login — POSIX only; M1 covers Windows` | **yes, added 2026-09-11** — the POSIX branch only, see below; the CI job installs `sshd` first (apt with `Acquire::Retries=3`, so a mirror hiccup does not turn the job red) | pass (sections 1–4); section 5 (live OpenSSH login) pending its first CI run |
 | `src_vs_code/scripts/wsl-agent-relay-itest.cjs` | `ssh-keygen -Y sign` inside Linux reaching an agent in a Windows process; since 2026-10-11 (E5.S1) also that the relay's Windows children end with their connections — ten `ssh-add -l` leave 0 `creds.exe relay-pipe` of the run and the relay's fd count at its baseline; the relay is stopped by its own pid; the manager's `dispose()` takes down a relay holding a LIVE connection, its relay-pipe on Windows included | no — see below | pass **after repair — see below**; **40** checks (2026-10-11, the final harness; 36 on its first version), 9 of them RED against the pre-E3 build |
 | `src_vs_code/scripts/server-transport-itest.cjs` | `ServerTransport` against a RUNNING Cred Vault Server | no — see below | **not run** — needs a server on `127.0.0.1:5113` |
 
@@ -1243,6 +1243,45 @@ server running, h took 6.0 s for a 2 s deadline. **Limit:** the script signals o
 the server itself; a launcher such as `dotnet run` would leave the app behind on a KILL, which is why CI starts
 the apphost.
 
+## A login names its server (2026-10-20, #197 E1.1)
+
+OpenSSH 8.9+ asks an agent to sign the host-bound form of the login request. The protocol and the server tests are driven
+by ONE builder, `src/test/sshUserauth.ts` (`userauth({ blob, user, method, hostKey, … })`, the method names written as
+literals because they are the wire contract), so the two suites cannot drift into two ideas of a well-formed request.
+
+| suite | what it proves |
+|---|---|
+| `sshAgentProtocol.test.ts` (36 tests) | the request is read whole — every field, the key it names is the key signing, nothing after the last field · plain and host-bound methods, an empty or missing host key, a wrong service, message number or session-id size, a certificate login and the no-signature probe are `unknown` · `describeServerLine` is a line of its own and the user name cannot imitate it · the log keeps the raw user, the prompt never does |
+| `sshAgentServer.test.ts` (17 tests) | over a real socket: a host-bound login of the served key is described as a login; a login naming key A and asked of key B is not a login |
+| `sshAgentManager.test.ts` | the host-key clause is one whole line of the prompt, and a plain publickey login has none |
+| `ssh-agent-itest.cjs` section 5 | a live `ssh` against a user-mode `sshd` — pending its first CI run (see the table at the top) |
+
+## The prompt shows other people's text as text (2026-10-21, #197 E1 whole-epic review)
+
+The key name (an import or a share sets it) and an SSHSIG namespace reached the prompt raw; a name with a line break could
+print a fake *This login is for the server whose host key is …* line. One sanitiser, `displayText`, now serves the user, the
+key name and the namespace.
+
+| test | what it proves |
+|---|---|
+| `sshAgentManager.test.ts` → *a key NAME cannot forge the host-key line on a plain publickey login* | the prompt has as many lines as with a plain name, and none starts *This login is for* |
+| `sshAgentManager.test.ts` → *a key NAME cannot forge a second host-key line on a host-bound login* | exactly ONE such line, the real one |
+| `sshAgentManager.test.ts` → *a key NAME with quotes, control marks and great length is shown escaped, marked and cut* | `a" b‮…` reads `"a\" b?…` and ends in `…` |
+| `sshAgentProtocol.test.ts` → *an SSHSIG namespace is the requester's text* | no newline, no control character, capped at 64 |
+| `sshAgentManagerWindows.test.ts` → *an answer given after Remove… / across a re-load refuses* · *a request for a key that is not loaded…* | the manager's refusal lines are REASONS (*answered after the key was removed or replaced — no window was opened*, *the key is not loaded*) with no `REFUSED` of their own: the server writes the verdict once |
+
+**Watched RED** on the unfixed code: `7 !== 6` (plain login) and `9 !== 8` (host-bound) — one line more than a plain name;
+the namespace test saw `a signature in the "x"⏎This login is for the server whose host key is …`; the log tests saw
+`REFUSED a signature with "prod": answered after the key was removed or re-added`. **Break-it:** the prompt reading
+`key.name` raw turns the three name tests red; the namespace raw turns the namespace test red; the old log words turn the
+three log tests red.
+
+**Open, not fixed (2026-10-21):** during E1 two unrelated tests each failed ONCE in a full local run and never again —
+`sshExecRunner.test` (`false !== true`; the line is unknown, the output was not kept) and `wslProcess.test` *an answer comes
+back as the text the child printed* (actual `''`, expected the path; 6.5 s). Both spawn real child processes under 8 parallel
+workers at lowered priority. Not reproduced in 3 later full runs (5704 pass, 0 fail each) and 5 single-file runs; there is
+no CI record of either.
+
 ## A removed or replaced key never signs (2026-10-20, #197 E1.2)
 
 The agent's prompt can stay open for minutes, and the person can remove or re-load the key meanwhile; an *Allow* given
@@ -1258,8 +1297,8 @@ afterwards must sign nothing ([PLAN_ssh_allow_longer_windows_E1.md](../todo/PLAN
 carry: the stub socket server, the `vscode` spy (dialogs, the BUTTONS each one offered, the output channel, the
 environment collection), `realPrivateKey`, `manager`, `keyEntity`, `unanswered`, and the temp storage directory —
 now named `testsToDelete-agent-…` (the server suite's two temp folders too) and swept at exit. `sshAgentManager.test.ts`
-went from 585 to 429 lines with no assertion changed, was 475 with the three new tests, and is 489 with the
-key-material guard of the review below. (The plan's "≤ 450" was not met by E1.2 itself; the first version of this
+went from 585 to 429 lines with no assertion changed, was 475 with the three new tests, and was 489 with the
+key-material guard of the review below; E1.3 and E1.1 took it to 503, and the E1 whole-epic review (key name in the prompt) to 545 — its real line count today. (The plan's "≤ 450" was not met by E1.2 itself; the first version of this
 paragraph said 386, which was wrong.) The world's output-channel spy refuses a write after its `dispose()`, like the real
 channel, and `unanswered()` also returns `failLate` (a modal that rejects late).
 
@@ -1341,7 +1380,7 @@ alone: only *an answer given across a re-load refuses* red; `forgetKey` removed 
 ## What every text says the signing prompt does (2026-10-20, #197 E1.4)
 
 A sentence is not something a compiler or a behaviour test reads, and the signing prompt's texts had drifted from the prompt
-for as long as the ten-minute window existed. `sshAgentHelp.test.ts` (5 tests) holds them to it; `repoFiles.ts` is the one
+for as long as the ten-minute window existed. `sshAgentHelp.test.ts` (7 tests) holds them to it; `repoFiles.ts` is the one
 place a test derives the repository root and reads a repository file (moved out of `readmeClaims.test.ts`, which imports it).
 
 | test | what it proves |
@@ -1351,10 +1390,12 @@ place a test derives the repository root and reads a repository file (moved out 
 | *the scan matches every old English sentence* | the companion a pattern test needs: each old sentence, quoted verbatim, must match — it caught `SSH agent, confirming every use` the first time |
 | *no replaced sentence survives, in any language of the help* | each of the five `help*.ts` against its OWN old wording (a pattern in English cannot see *jedes Mal*) |
 | *no replaced sentence survives in the code that shows or documents the prompt* | `extension.ts`, `agentDoors.ts`, `commands/agentCommands.ts` and the comments that said the same |
+| *the guard on command titles matches the two promises the title once made* | the companion of the next one: `Add to SSH Agent (asks before signing)` and `(confirm every use)` must match `TITLE_PROMISES_ASKING`, plain `Add to SSH Agent` must not |
+| *no command title, README or help language puts "asks before signing" after Add to SSH Agent* | the manifest, both READMEs and the five help files hold no such title, and the manifest does carry the plain command |
 | `sshAgentManager.test.ts` → *the dialog offers exactly the signing buttons, Allow once first* | the dialog's buttons equal `SIGNING_BUTTONS` |
 
 **Deliberately not scanned:** `agentDoors.ts` line 87, the CLI door, which really asks every time (`handleAlias` mints a fresh
-grant per call; `agentDoors.test.ts` pins the sentence), and `src_cli` (its text ships with the next `cli-v`).
+grant per call; `agentDoors.test.ts` pins the sentence), and the binary's own help in `src_cli` (`CommandLine.cs` waits for its `cli-v` release; `src_cli/README.md` was corrected).
 
 ## What none of them covers
 
