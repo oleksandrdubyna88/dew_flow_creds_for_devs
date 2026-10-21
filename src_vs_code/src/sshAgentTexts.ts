@@ -1,6 +1,7 @@
-import { ALLOW_WINDOW } from './agentConsent';
+import { ALLOW_LONGER, LONGER_WINDOWS_MS } from './agentConsent';
 import { GrantOutcome } from './allowWindows';
 import { RefusalKind } from './consentTurns';
+import { clockUntil } from './requestTime';
 import { SignPurpose, describePurposeForLog } from './sshAgentProtocol';
 import { AgentKey } from './sshAgentServer';
 
@@ -34,11 +35,64 @@ export const CROSSING_NOTICE: ReadonlyMap<GrantOutcome, string> = new Map([
  * click the person made. For the last two the person is told as well, in an information message
  * (`CROSSING_NOTICE`, just above). Moved here from `sshAgentManager.ts` in E3.1.
  */
-export const CROSSED_LINE: Readonly<Partial<Record<GrantOutcome, string>>> = {
-  'stale-key': 'answered after the key was removed or replaced — no window was opened',
-  'fenced-key': `answered "${ALLOW_WINDOW}" after Ask for Every Use Again — allowed once, no window was opened`,
-  'fenced-lock': `answered "${ALLOW_WINDOW}" after the vaults were locked — allowed once, no window was opened`,
-};
+const CROSSED_LINE: ReadonlyMap<GrantOutcome, (answered: string) => string> = new Map<GrantOutcome, (answered: string) => string>([
+  ['stale-key', () => 'answered after the key was removed or replaced — no window was opened'],
+  ['fenced-key', (answered) => `answered ${answered} after Ask for Every Use Again — allowed once, no window was opened`],
+  ['fenced-lock', (answered) => `answered ${answered} after the vaults were locked — allowed once, no window was opened`],
+]);
+
+/** The answer as the log quotes it: its label, and the length when it was a long one — `"Allow longer…" (4 hours)`. */
+function answeredText(answer: string, ms: number | undefined): string {
+  return ms === undefined ? `"${answer}"` : `"${answer}" (${durationText(ms)})`;
+}
+
+/**
+ * The log line for a timed answer that crossed something, naming the ANSWER that was given (E3.2: the table used to
+ * quote *Allow for 10 minutes* for every crossing). `undefined` for an outcome that crossed nothing.
+ */
+export function crossedLine(outcome: GrantOutcome, answer: string, ms?: number): string | undefined {
+  return CROSSED_LINE.get(outcome)?.(answeredText(answer, ms));
+}
+
+/** A reason *Allow longer…* cannot be honoured, as the person is told — `why` has no trailing period. */
+export function pickRefusedNotice(why: string): string {
+  return `${why} — this signature was allowed once; no window was opened.`;
+}
+
+/** The log line when *Allow longer…* came back but could no longer be honoured, so no list was opened (the middle check). */
+export function noListLine(key: Pick<AgentKey, 'name'>, why: string): string {
+  return `"${key.name}": answered "${ALLOW_LONGER}" but ${why} — allowed once, no list was opened`;
+}
+
+/** The log line when a length was picked but could no longer be honoured at the pick. */
+export function pickRefusedLine(key: Pick<AgentKey, 'name'>, ms: number, why: string): string {
+  return `"${key.name}": picked ${durationText(ms)} but ${why} — allowed once, no window was opened`;
+}
+
+/** What the person is told when idle auto-lock is turned off and login windows were open. */
+export function loginWindowsEndedNotice(keys: number): string {
+  return `Idle auto-lock is off, so the login windows of ${plural(keys, 'key')} were ended — a long window needs a lock to end it.`;
+}
+
+/** One entry of the list of lengths: the label the person sees, when it ends, and the length it stands for. */
+export interface LongerItem {
+  readonly label: string;
+  readonly description: string;
+  readonly ms: number;
+}
+
+/**
+ * The list *Allow longer…* opens: 1, 4, 8 and 12 hours with the time each would end, computed when the list opens
+ * (the window itself starts at the pick), and the sentence that says a lock ends it earlier. `offsetMinutes` is the
+ * zone, as a number, like the rest of `requestTime.ts`.
+ */
+export function longerItems(now: number, offsetMinutes: number, autoLockMinutes: number): LongerItem[] {
+  return LONGER_WINDOWS_MS.map((ms) => ({
+    label: durationText(ms),
+    description: `until ${clockUntil(now + ms, now, offsetMinutes)}, or until the vault locks (idle auto-lock: ${autoLockMinutes} min)`,
+    ms,
+  }));
+}
 
 export type RefusalLine = (key: AgentKey, purpose: SignPurpose, bound: string) => string;
 
@@ -73,11 +127,21 @@ export function refusalLine(kind: RefusalKind, key: AgentKey, purpose: SignPurpo
 
 const plural = (count: number, unit: string): string => `${count} ${unit}${count === 1 ? '' : 's'}`;
 
+const HOUR_MS = 3_600_000;
+
+/** An exact number of hours, one or more — "1 hour", "12 hours"; an hour and a half stays "90 minutes". */
+function isWholeHours(ms: number): boolean {
+  return ms >= HOUR_MS && ms % HOUR_MS === 0;
+}
+
 /**
- * A FIXED bound, to the nearest unit: "5 minutes", "1 minute" — or seconds under a minute, so a short bound never
- * reads "0 minutes". Not for a time that is running out: see `timeLeftText`.
+ * A FIXED bound, to the nearest unit: "5 minutes", "1 minute", "1 hour" (a whole number of hours only) — or seconds
+ * under a minute, so a short bound never reads "0 minutes". Not for a time that is running out: see `timeLeftText`.
  */
 export function durationText(ms: number): string {
+  if (isWholeHours(ms)) {
+    return plural(ms / HOUR_MS, 'hour');
+  }
   const minutes = Math.round(ms / 60_000);
   return minutes >= 1 ? plural(minutes, 'minute') : plural(Math.max(1, Math.round(ms / 1000)), 'second');
 }

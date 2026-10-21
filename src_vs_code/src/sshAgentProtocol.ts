@@ -279,12 +279,25 @@ function readUserauthHead(reader: ByteReader): UserauthHead | undefined {
   return startsUserauth(reader.readString(), reader.readByte()) ? readUserauthFields(reader) : undefined;
 }
 
-/** `has_signature = TRUE || algorithm || public key blob`, the blob being the one signing now. */
+/** The signature algorithms an `ssh-rsa` key may sign a login with besides its own name (RFC 8332). */
+const RSA_SHA2_ALGORITHMS: ReadonlySet<string> = new Set(['rsa-sha2-256', 'rsa-sha2-512']);
+
+/** Whether a login that says `name` can be signed by a key of `keyType`: its own type, or for RSA also the two SHA-2 names. */
+function algorithmMatches(name: string, keyType: string): boolean {
+  return name === keyType || (keyType === 'ssh-rsa' && RSA_SHA2_ALGORITHMS.has(name));
+}
+
+/** The login's algorithm must fit the key that signs it (#197 E3.2, C-b). A closed set compared with `Set.has`, never a lookup keyed by the requester's text. */
+function algorithmFits(algorithm: Buffer | undefined, keyType: string | undefined): boolean {
+  return algorithm !== undefined && keyType !== undefined && algorithmMatches(algorithm.toString('utf8'), keyType);
+}
+
+/** `has_signature = TRUE || algorithm || public key blob`, the blob being the one signing now and the algorithm one it can sign with. */
 function namesThisKey(reader: ByteReader, signingKeyBlob: Buffer): boolean {
   const hasSignature = reader.readByte();
   const algorithm = reader.readString();
   const keyBlob = reader.readString();
-  return hasSignature === 1 && algorithm !== undefined && keyBlob !== undefined && keyBlob.equals(signingKeyBlob);
+  return hasSignature === 1 && keyBlob !== undefined && keyBlob.equals(signingKeyBlob) && algorithmFits(algorithm, keyTypeOf(signingKeyBlob));
 }
 
 /** What a tail says about the server: nothing, or the host key's fingerprint and type. */
@@ -360,6 +373,10 @@ function describeUserauth(data: Buffer, signingKeyBlob: Buffer): SignPurpose {
  *       key A, asked of key B, is not a login. A certificate login names the certificate blob,
  *       so it is reported as unrecognised: this agent holds plain keys and does not describe a
  *       certificate as one.</li>
+ *   <li>`alg` fits the key that signs: it equals the key's type, or — for an `ssh-rsa` key — is `rsa-sha2-256` or
+ *       `rsa-sha2-512` (RFC 8332). An empty algorithm, or one that belongs to another key type, is not a login:
+ *       a login is an authorisation input for hours, so a request whose own words do not fit the key is
+ *       reported as unrecognised, not guessed at.</li>
  *   <li>`method` is exactly `publickey` (no `H`) or `publickey-hostbound-v00@openssh.com`
  *       (`H` present and non-empty). `H` is the server host key the client signed over. sshd
  *       rebuilds the data with ITS OWN host key and aborts when the packet's differs, so only

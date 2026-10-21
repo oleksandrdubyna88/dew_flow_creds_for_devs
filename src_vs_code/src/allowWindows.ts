@@ -189,10 +189,24 @@ export function windowsFor(book: AllowWindows, key: KeyRef, scopes: readonly Win
   return Object.fromEntries(entries.filter(([scope, window]) => scopes.includes(scope) && covers(window, key, now, nowMono)));
 }
 
+/** The first of `scopes`, in that order, whose window covers a request now — and which scope that is. */
+export function coveringWindow(
+  book: AllowWindows,
+  key: KeyRef,
+  scopes: readonly WindowScope[],
+  now: number,
+  nowMono: number,
+): { scope: WindowScope; window: OpenWindow } | undefined {
+  const live = windowsFor(book, key, scopes, now, nowMono);
+  return scopes.flatMap((scope) => {
+    const window = live[scope];
+    return window === undefined ? [] : [{ scope, window }];
+  })[0];
+}
+
 /** The first of `scopes`, in that order, whose window covers a request now. */
 export function windowCovers(book: AllowWindows, key: KeyRef, scopes: readonly WindowScope[], now: number, nowMono: number): OpenWindow | undefined {
-  const live = windowsFor(book, key, scopes, now, nowMono);
-  return scopes.map((scope) => live[scope]).find((window) => window !== undefined);
+  return coveringWindow(book, key, scopes, now, nowMono)?.window;
 }
 
 /** A new open-map without one key. */

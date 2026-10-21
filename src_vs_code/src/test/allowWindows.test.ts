@@ -9,6 +9,7 @@ import {
   NO_WINDOWS,
   WindowScope,
   askTicket,
+  coveringWindow,
   endAllWindows,
   endLoginWindows,
   endWindows,
@@ -312,4 +313,33 @@ test('a window the monotonic clock already ended never blocks a grant either', (
   const again = grantWindow(book, askTicket(book, A), 'all', 1, W + 9 * MIN, M + 11 * MIN, W + 9 * MIN + 30_000);
 
   assert.equal(again.outcome, 'opened');
+});
+
+/** The scope a covering window was found under and where it ends — `undefined` when nothing covers. */
+function scopeAndEnd(found: ReturnType<typeof coveringWindow>): [WindowScope, number] | undefined {
+  return found === undefined ? undefined : [found.scope, found.window.until];
+}
+
+test('coveringWindow names the scope that covers, first in the order asked, and windowCovers is its window', () => {
+  // Both scopes open for the same key: which one is reported depends only on the order the gate asks in.
+  const both = grant(tenMinutes(), A, 'login', W, M, W + 4 * H);
+  const at = [W + MIN, M + MIN] as const;
+
+  const allFirst = coveringWindow(both, A, ['all', 'login'], ...at);
+  const loginFirst = coveringWindow(both, A, ['login', 'all'], ...at);
+  assert.deepEqual(scopeAndEnd(allFirst), ['all', W + 10 * MIN]);
+  assert.deepEqual(scopeAndEnd(loginFirst), ['login', W + 4 * H]);
+  assert.equal(windowCovers(both, A, ['all', 'login'], ...at), allFirst?.window);
+  assert.equal(windowCovers(both, A, ['login', 'all'], ...at), loginFirst?.window);
+});
+
+test('coveringWindow skips a scope that does not cover and says nothing when none does', () => {
+  const loginOnly = grant(NO_WINDOWS, A, 'login', W, M, W + 4 * H);
+  const at = [W + MIN, M + MIN] as const;
+
+  assert.equal(coveringWindow(loginOnly, A, ['all', 'login'], ...at)?.scope, 'login', 'the empty scope is skipped');
+  assert.equal(coveringWindow(loginOnly, A, ALL_ONLY, ...at), undefined, 'a scope not asked about never covers');
+  assert.equal(coveringWindow(loginOnly, B, ['all', 'login'], ...at), undefined, 'another key');
+  assert.equal(coveringWindow(loginOnly, A, ['all', 'login'], W + 5 * H, M + 5 * H), undefined, 'over');
+  assert.equal(windowCovers(loginOnly, A, ALL_ONLY, ...at), undefined);
 });

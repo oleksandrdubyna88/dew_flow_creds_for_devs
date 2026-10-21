@@ -3,7 +3,7 @@ import * as crypto from 'node:crypto';
 import { test } from 'node:test';
 import { ByteReader, encodeString } from '../sshAgentProtocol';
 import { keyFingerprintOf, parseSshPrivateKey } from '../sshKeyParse';
-import { digestForAlgorithm, rsaVariant, signForAgent } from '../sshAgentSign';
+import { digestForAlgorithm, rsaVariant, signForAgent, signsWithSha1 } from '../sshAgentSign';
 
 /**
  * The security-critical half of the SSH agent: reading a stored key and producing a signature
@@ -255,4 +255,38 @@ test('an ENCRYPTED one still gets the passphrase reason, which is a different pr
 
   assert.equal(result.ok, false);
   assert.match(result.ok ? '' : result.reason, /passphrase/);
+});
+
+/** The algorithm name at the head of a signature blob — read back with the protocol's own reader. */
+function algorithmInBlob(blob: Buffer): string | undefined {
+  return new ByteReader(blob).readString()?.toString('utf8');
+}
+
+test('SHA-1 is decided by what the signer really writes, for every flag combination', () => {
+  const rsa = parseSshPrivateKey(pem('rsa', { modulusLength: 2048 }));
+  const key = (rsa as { ok: true; key: ReturnType<typeof parseKey> }).key;
+  const seen = new Set<string | undefined>();
+  for (let flags = 0; flags <= 7; flags += 1) {
+    const written = algorithmInBlob(signForAgent(key, DATA, flags) as Buffer);
+    seen.add(written);
+    assert.equal(signsWithSha1('ssh-rsa', flags), written === 'ssh-rsa', `flags ${flags} wrote ${written}`);
+  }
+  assert.deepEqual([...seen].sort(), ['rsa-sha2-256', 'rsa-sha2-512', 'ssh-rsa'], 'the loop saw SHA-1 and both SHA-2 outcomes');
+  assert.equal(signsWithSha1('ssh-rsa', 0), true);
+  assert.equal(signsWithSha1('ssh-rsa', 1), true, 'flag 1 is neither SHA-2 flag, so the signer still writes SHA-1');
+});
+
+test('Ed25519 and ECDSA never sign with SHA-1, whatever the flags say, and an absent type is not SHA-1 RSA', () => {
+  for (const [type, options, algorithm] of [
+    ['ed25519', {}, 'ssh-ed25519'],
+    ['ec', { namedCurve: 'prime256v1' }, 'ecdsa-sha2-nistp256'],
+  ] as const) {
+    const parsed = parseSshPrivateKey(pem(type, options));
+    const key = (parsed as { ok: true; key: ReturnType<typeof parseKey> }).key;
+    assert.equal(algorithmInBlob(signForAgent(key, DATA, 0) as Buffer), algorithm);
+    for (let flags = 0; flags <= 7; flags += 1) {
+      assert.equal(signsWithSha1(algorithm, flags), false, `${algorithm} with flags ${flags}`);
+    }
+  }
+  assert.equal(signsWithSha1(undefined, 0), false);
 });

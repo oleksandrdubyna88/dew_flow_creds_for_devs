@@ -11,12 +11,12 @@ import {
 } from './sshAgentProtocol';
 import { localWallTime } from './requestTime';
 import { ConsentTurns, RefusalKind, TurnOutcome } from './consentTurns';
-import { CROSSED_LINE, CROSSING_NOTICE, durationText, queuedLine, refusalLine } from './sshAgentTexts';
+import { CROSSING_NOTICE, crossedLine, durationText, queuedLine, refusalLine } from './sshAgentTexts';
 import { AgentKey, SshAgentServer, agentSocketPath } from './sshAgentServer';
 import { ParsedSshKey, parseSshPrivateKey } from './sshKeyParse';
 import { SecretOpener } from './secretOpener';
 import { automaticOpenerFor } from './automaticRead';
-import { CONSENT_TIMEOUT_MS, consentFromChoice } from './agentConsent';
+import { ALLOW_WINDOW, CONSENT_TIMEOUT_MS, consentFromChoice } from './agentConsent';
 import {
   ALL_ONLY,
   AskTicket,
@@ -580,14 +580,14 @@ export class SshAgentManager implements vscode.Disposable {
    * compares the key OBJECT it asked about with the one now served.) The other two crossings, `fenced-key` (the row
    * button) and `fenced-lock` (any lock), allow this one signature and open no window.
    *
-   * <p>All three are written to the agent log (`CROSSED_LINE`): each makes the outcome differ from the click the
+   * <p>All three are written to the agent log (`crossedLine`): each makes the outcome differ from the click the
    * person made, and a record that stayed silent about two of them could not answer "why did that window not
    * open?" afterwards.</p>
    */
   private openWindow(key: AgentKey, ticket: AskTicket, at: { grantedAt: number; grantedAtMono: number; until: number }): boolean {
     const { book, outcome } = grantWindow(this.windows.current, ticket, 'all', this.generationOf(key.entityId), at.grantedAt, at.grantedAtMono, at.until);
     this.windows.set(book, { wall: at.grantedAt, mono: at.grantedAtMono });
-    const crossed = CROSSED_LINE[outcome];
+    const crossed = crossedLine(outcome, ALLOW_WINDOW);
     if (crossed !== undefined) {
       this.log(`"${key.name}": ${crossed}`);
     }

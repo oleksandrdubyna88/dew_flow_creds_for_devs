@@ -45,6 +45,16 @@ export function rsaVariant(flags: number): { algorithm: string; digest: string }
   return { algorithm: 'ssh-rsa', digest: 'sha1' };
 }
 
+/**
+ * Whether signing for a key of this type with these flags would produce a SHA-1 signature — asked of the signer's
+ * own rule (`rsaVariant`), so the answer cannot drift from what `signForAgent` really writes. Only an `ssh-rsa`
+ * key can: Ed25519 and ECDSA hash with their own algorithm whatever the flags say. A request a key would sign with
+ * SHA-1 is never covered by a long window (#197 E3; the owner's decision of 2026-10-21).
+ */
+export function signsWithSha1(keyType: string | undefined, flags: number): boolean {
+  return keyType === 'ssh-rsa' && rsaVariant(flags).digest === 'sha1';
+}
+
 const ECDSA_DIGESTS: Record<string, string> = {
   'ecdsa-sha2-nistp256': 'sha256',
   'ecdsa-sha2-nistp384': 'sha384',
