@@ -69,6 +69,28 @@ test('K6 a key with nothing in flight starts its job synchronously — and a syn
   await running;
 });
 
+test('K7 a run on the same key from INSIDE a job waits for that job — an idle key is not re-entrant', async () => {
+  // The first job of an idle key starts synchronously (K6), before `run` has returned: a `run` it makes itself must
+  // already find the key held, or the two would run side by side.
+  const queue = new KeyedQueue();
+  const order: string[] = [];
+  let inner: Promise<void> = Promise.resolve();
+  const outer = queue.run('k', async () => {
+    order.push('outer starts');
+    inner = queue.run('k', () => {
+      order.push('inner runs');
+      return Promise.resolve();
+    });
+    await tick();
+    order.push('outer ends');
+  });
+
+  await Promise.all([outer, inner]);
+
+  assert.deepEqual(order, ['outer starts', 'outer ends', 'inner runs']);
+  assert.equal(queue.size(), 0);
+});
+
 test('K2 a job that rejects fails only its own caller — the job behind it still runs', async () => {
   const queue = new KeyedQueue();
   const first = job();

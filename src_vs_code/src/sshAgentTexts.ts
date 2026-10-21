@@ -46,12 +46,24 @@ export function refusalLine(kind: RefusalKind, key: AgentKey, purpose: SignPurpo
   return (REFUSAL.get(kind) ?? ((k: AgentKey) => `"${k.name}": refused`))(key, purpose, bound);
 }
 
-/** "5 minutes", "1 minute" — or seconds under a minute, so a short bound never reads "0 minutes". */
+const plural = (count: number, unit: string): string => `${count} ${unit}${count === 1 ? '' : 's'}`;
+
+/**
+ * A FIXED bound, to the nearest unit: "5 minutes", "1 minute" — or seconds under a minute, so a short bound never
+ * reads "0 minutes". Not for a time that is running out: see `timeLeftText`.
+ */
 export function durationText(ms: number): string {
   const minutes = Math.round(ms / 60_000);
-  if (minutes >= 1) {
-    return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+  return minutes >= 1 ? plural(minutes, 'minute') : plural(Math.max(1, Math.round(ms / 1000)), 'second');
+}
+
+/**
+ * The time a prompt has LEFT, as the person is told it: rounded DOWN (a prompt never promises more time than it
+ * has — 30 s left must not read "1 minute"), and in seconds below two minutes, where a minute is too coarse to act on.
+ */
+export function timeLeftText(ms: number): string {
+  if (ms >= 120_000) {
+    return plural(Math.floor(ms / 60_000), 'minute');
   }
-  const seconds = Math.max(1, Math.round(ms / 1000));
-  return `${seconds} second${seconds === 1 ? '' : 's'}`;
+  return plural(Math.max(1, Math.floor(ms / 1000)), 'second');
 }

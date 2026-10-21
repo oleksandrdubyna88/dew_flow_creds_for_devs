@@ -21,25 +21,37 @@ export class KeyedQueue {
    * for a key is on screen before `confirm` returns its promise, which is what lets a lock or a button used the
    * instant afterwards cross it (and what the older tests of that gate rely on). A synchronous throw is a
    * rejection, as for any later job.</p>
+   *
+   * <p><b>Re-entrant.</b> Our place in the queue is taken BEFORE the job starts, so a `run` the job makes on the same
+   * key from inside itself — which happens synchronously, on an idle key — finds the key held and waits for the job
+   * (a job must not AWAIT such a run: that would wait on itself).</p>
    */
   async run<T>(key: string, work: () => Promise<T>): Promise<T> {
-    const tail = this.tails.get(key);
-    const ours =
-      tail === undefined
-        ? new Promise<T>((resolve) => resolve(work()))
-        : tail.then(
-            () => work(),
-            () => work(),
-          );
+    const previous = this.tails.get(key);
+    let release: () => void = () => undefined;
+    const ours = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     this.tails.set(key, ours);
+    const result = previous === undefined ? new Promise<T>((resolve) => resolve(work())) : this.after(previous, work);
+    // The next job starts when this one SETTLES, on failure as on success; `ours` itself never rejects.
+    result.then(release, release);
     try {
-      return await ours;
+      return await result;
     } finally {
       // Only if nobody queued behind us: whoever did owns the tail now.
       if (this.tails.get(key) === ours) {
         this.tails.delete(key);
       }
     }
+  }
+
+  /** `work` once `previous` has settled — whichever way it settled. */
+  private after<T>(previous: Promise<unknown>, work: () => Promise<T>): Promise<T> {
+    return previous.then(
+      () => work(),
+      () => work(),
+    );
   }
 
   /** How many keys have a job in flight — for tests, deciding nothing. */

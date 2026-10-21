@@ -14,7 +14,7 @@ import {
 import { localRequestTimeLine, localWallTime } from './requestTime';
 import { unrefTimer } from './withTimeout';
 import { ConsentTurns, RefusalKind, TurnOutcome } from './consentTurns';
-import { CROSSING_NOTICE, durationText, refusalLine } from './sshAgentTexts';
+import { CROSSING_NOTICE, durationText, refusalLine, timeLeftText } from './sshAgentTexts';
 import { describeError } from './describeError';
 import { AgentKey, SshAgentServer, agentSocketPath } from './sshAgentServer';
 import { ParsedSshKey, parseSshPrivateKey } from './sshKeyParse';
@@ -509,18 +509,19 @@ export class SshAgentManager implements vscode.Disposable {
       this.logCovered(key, purpose, covered);
       return true;
     }
-    const outcome = await this.turns.take(key.entityId, signal, (turn, leftMs) =>
-      this.turnStarted(key, purpose, asked, arrived, turn, leftMs),
+    const outcome = await this.turns.take(
+      key.entityId,
+      signal,
+      (turn, leftMs) => this.turnStarted(key, purpose, asked, arrived, turn, leftMs),
+      (waited) => this.beforePrompt(key, purpose, arrived, waited),
     );
     return this.outcomeOf(key, purpose, outcome);
   }
 
   /**
-   * The whole turn at the prompt, run when every earlier turn for this key has SETTLED. Everything the request
-   * learned at arrival can have changed while it waited, so it is checked again, in this order: the key is still the
-   * one asked about (E1.2's judgement — a removed key is refused without a prompt); a window an earlier turn opened
-   * covers it (no second prompt); THEN the ticket (a fence that moved while it waited must not fence an answer
-   * given after it is shown — the fence guards the time the prompt is on screen); then the modal.
+   * The turn at the prompt, run when every earlier turn for this key has SETTLED and `beforePrompt` had nothing to
+   * say. The ticket is taken NOW, after any wait (a fence that moved while the request waited must not fence an
+   * answer given after the prompt is shown — the fence guards the time the prompt is on screen); then the modal.
    *
    * <p><b>After the modal, with no `await` in between:</b> a turn that ended meanwhile (`turn.aborted`) signs
    * nothing; a live one applies its answer here, inside the turn. The slot frees only when this settles, so the
@@ -535,25 +536,24 @@ export class SshAgentManager implements vscode.Disposable {
     turn: AbortSignal,
     leftMs: number,
   ): Promise<boolean> {
-    const early = this.beforePrompt(key, purpose, arrived, leftMs);
-    if (early !== undefined) {
-      return early;
-    }
     const ticket = askTicket(this.windows, arrived);
     const choice = await this.askToSign(key, purpose, asked, leftMs);
     return turn.aborted ? this.stale(choice) : this.settle(key, ticket, choice);
   }
 
   /**
-   * The turn's start checks: `false` (refused), `true` (a window covers it) or `undefined` (go on to the prompt).
-   * The key must still be the one asked about; then a window an earlier turn opened may cover the request.
+   * What the turn's start settles without a prompt, asked BEFORE the time floor is applied: `false` (refused), `true`
+   * (a window covers it) or `undefined` (go on). Everything the request learned at arrival can have changed while it
+   * waited, so it is checked again, in this order: the key is still the one asked about (E1.2's judgement — a removed
+   * key is refused without a prompt); a window an earlier turn opened covers it (no second prompt, and not refused
+   * for want of time either — a covered request needs neither).
    */
-  private beforePrompt(key: AgentKey, purpose: SignPurpose, arrived: KeyRef, leftMs: number): boolean | undefined {
+  private beforePrompt(key: AgentKey, purpose: SignPurpose, arrived: KeyRef, waited: boolean): boolean | undefined {
     if (this.generationOf(key.entityId) !== arrived.generation) {
       this.log(`"${key.name}": the key was removed or re-added while the request waited — refused`);
       return false;
     }
-    const covered = this.coveredAfterWaiting(arrived, leftMs);
+    const covered = this.coveredAfterWaiting(arrived, waited);
     if (covered === undefined) {
       return undefined;
     }
@@ -562,12 +562,12 @@ export class SshAgentManager implements vscode.Disposable {
   }
 
   /**
-   * The window book asked again with fresh readings of both clocks — but only for a request that WAITED (it has less
-   * than the whole bound left). One that did not wait was checked at arrival, in this same synchronous breath;
-   * reading the clocks twice for it would only move the gate's "one reading at the click" accounting.
+   * The window book asked again with fresh readings of both clocks — but only for a request that WAITED, which the
+   * queue says (never inferred from the time left: a frozen clock leaves a waiter the whole bound). One that did not
+   * wait was checked at arrival, in this same synchronous breath; reading the clocks twice for it would only move the
+   * gate's "one reading at the click" accounting.
    */
-  private coveredAfterWaiting(arrived: KeyRef, leftMs: number): OpenWindow | undefined {
-    const waited = leftMs < this.consentTimeoutMs;
+  private coveredAfterWaiting(arrived: KeyRef, waited: boolean): OpenWindow | undefined {
     return waited ? windowCovers(this.windows, arrived, ALL_ONLY, this.clock().getTime(), this.monotonic()) : undefined;
   }
 
@@ -686,7 +686,7 @@ export class SshAgentManager implements vscode.Disposable {
         'The key itself never leaves this window. Allow once, or allow every use of this key for ' +
         'ten minutes — long enough for a push that signs and authenticates in one go. ' +
         `Locking the vault ends the window, and so does "Ask for Every Use Again" on the key's row. ` +
-        `Unanswered, it is refused after ${durationText(leftMs)}.`,
+        `Unanswered, it is refused after ${timeLeftText(leftMs)}.`,
       { modal: true },
       ...SIGNING_BUTTONS,
     );

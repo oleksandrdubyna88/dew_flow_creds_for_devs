@@ -74,6 +74,57 @@ export function agentSocketPath(storageDir: string, platform: NodeJS.Platform, p
   return path.join(storageDir, 'keys', String(pid), 'agent.sock');
 }
 
+/**
+ * How many replies one connection may have outstanding (dispatched, not yet written) before it is closed. OpenSSH is
+ * strictly request/response — it never sends a second request before the first is answered — so the honest depth is
+ * 1; a few more cover a client that pipelines identities. Frames are dispatched at once and their replies are held
+ * back to keep arrival order, so without a cap one open prompt plus a flood of 5-byte requests grew the held replies
+ * without limit (#197, E2.3 security judgement F1).
+ */
+export const MAX_PIPELINED_REPLIES = 32;
+
+/**
+ * One client connection: the signal that says its program has gone, and the replies still owed to it. Frames are
+ * dispatched at once (two prompts on one socket open together), but a client matches replies to requests by
+ * position, so the replies are WRITTEN in arrival order — a chain whose length is `outstanding`.
+ */
+class Connection {
+  /** Aborted when this connection closes: a request whose program has gone must not keep a prompt queued. */
+  readonly client = new AbortController();
+
+  private tail: Promise<void> = Promise.resolve();
+
+  private outstanding = 0;
+
+  constructor(readonly socket: net.Socket) {}
+
+  /** Too many replies are held behind one that is not ready: the connection is flooding, not asking. */
+  get full(): boolean {
+    return this.outstanding >= MAX_PIPELINED_REPLIES;
+  }
+
+  /**
+   * Write `answer` after every earlier reply of this connection. The chain ends in a catch that closes the
+   * connection: a reply that cannot be produced or written (a log sink that throws inside `failed`) must neither
+   * reject into nothing nor leave the client waiting for a reply that will never come.
+   */
+  reply(answer: Promise<Buffer>, write: (reply: Buffer) => void): void {
+    this.outstanding += 1;
+    // Observed at once: `answer` may reject while an earlier reply still holds the chain, and the chain below is
+    // what decides what that means (it closes the connection).
+    answer.catch(() => undefined);
+    this.tail = this.tail
+      .then(() => answer)
+      .then(write)
+      .catch(() => {
+        this.socket.destroy();
+      })
+      .finally(() => {
+        this.outstanding -= 1;
+      });
+  }
+}
+
 export class SshAgentServer {
   private server: net.Server | undefined;
   private readonly sockets = new Set<net.Socket>();
@@ -105,30 +156,44 @@ export class SshAgentServer {
   private serve(socket: net.Socket): void {
     this.sockets.add(socket);
     const reader = new FrameReader();
-    // Aborted when this connection closes: a request whose program has gone must not keep a prompt queued.
-    const client = new AbortController();
-    // The tail of this connection's REPLIES. Frames are dispatched at once (two prompts on one socket open
-    // together), but a client matches replies to requests by position, so they are written in arrival order.
-    let replies: Promise<void> = Promise.resolve();
+    const connection = new Connection(socket);
     socket.on('error', () => socket.destroy());
+    // A client that stopped reading paused us (`write`); once it has taken what we wrote, read its requests again.
+    socket.on('drain', () => socket.resume());
     socket.on('close', () => {
       this.sockets.delete(socket);
-      client.abort();
+      connection.client.abort();
     });
-    socket.on('data', (chunk: Buffer) => {
-      const frames = reader.push(chunk);
-      if (reader.overflow) {
-        this.options.log('refused an oversize agent frame and closed the connection');
-        socket.destroy();
+    socket.on('data', (chunk: Buffer) => this.received(connection, reader, chunk));
+  }
+
+  /** Bytes from a client: whole frames are dispatched at once, until the connection holds too many replies. */
+  private received(connection: Connection, reader: FrameReader, chunk: Buffer): void {
+    const frames = reader.push(chunk);
+    if (reader.overflow) {
+      this.hangUp(connection, 'refused an oversize agent frame and closed the connection');
+      return;
+    }
+    for (const frame of frames) {
+      if (connection.full) {
+        this.hangUp(connection, 'refused a pipelined backlog and closed the connection');
         return;
       }
-      for (const frame of frames) {
-        // Caught where it is DISPATCHED: a rejection behind a held reply must never be unhandled, and must not
-        // stop the replies after it.
-        const answer = this.handle(frame, client.signal).catch((error: unknown) => this.failed(error));
-        replies = replies.then(() => answer).then((reply) => this.write(socket, reply));
-      }
-    });
+      this.dispatch(frame, connection);
+    }
+  }
+
+  /** Refuse the connection: the reason in the log, the socket closed — which also abandons its open prompts. */
+  private hangUp(connection: Connection, reason: string): void {
+    this.options.log(reason);
+    connection.socket.destroy();
+  }
+
+  private dispatch(frame: Buffer, connection: Connection): void {
+    // Caught where it is DISPATCHED: a rejection behind a held reply must never be unhandled, and must not stop
+    // the replies after it.
+    const answer = this.handle(frame, connection.client.signal).catch((error: unknown) => this.failed(error));
+    connection.reply(answer, (reply) => this.write(connection.socket, reply));
   }
 
   /** The reply to one frame; the caller writes it, in order. */
@@ -146,7 +211,7 @@ export class SshAgentServer {
 
   /** A request the agent could not answer (a gate that threw): FAILURE, and the reason in the log. */
   private failed(error: unknown): Buffer {
-    return this.refused(`could not answer a request: ${describeError(error)}`);
+    return this.refused(`the agent could not answer a request: ${describeError(error)}`);
   }
 
   /** Resolve a SIGN_REQUEST to its reply — the signature blob, or FAILURE with a reason logged. */
@@ -194,9 +259,10 @@ export class SshAgentServer {
     return encodeSignResponse(signature);
   }
 
+  /** Write a reply; when the socket's buffer is full, stop reading requests until it drains (the 'drain' handler). */
   private write(socket: net.Socket, payload: Buffer): void {
-    if (!socket.destroyed) {
-      socket.write(encodeFrame(payload));
+    if (!socket.destroyed && !socket.write(encodeFrame(payload))) {
+      socket.pause();
     }
   }
 

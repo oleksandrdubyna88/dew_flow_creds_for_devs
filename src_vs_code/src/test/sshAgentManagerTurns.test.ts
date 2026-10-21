@@ -172,7 +172,7 @@ test('T8 a request that waited says the time it really has left', async () => {
   await r2;
 
   assert.match(w.dialogs[0], /refused after 5 minutes\./);
-  assert.match(w.dialogs[1], /refused after 1 minute\./);
+  assert.match(w.dialogs[1], /refused after 60 seconds\./, 'under two minutes the time left is told in seconds');
 });
 
 test('T9 a waiter left with less than the floor is refused at its turn, never shown a modal it cannot answer', async () => {
@@ -326,6 +326,91 @@ test('T16 disposing during a queue refuses everything, shows nothing and logs no
   assert.equal(w.infos.length, 0);
   assert.equal(w.dialogs.length, 1);
 });
+
+test('T17 the waiter is known to have waited even when the monotonic clock does not move', async () => {
+  // `waited` is said by the queue, not inferred from the time left: with a clock frozen at M the time left equals the
+  // whole bound for a waiter too, and the window re-check must still run.
+  const m1 = unanswered();
+  const { w, ask } = await loaded({ answers: [m1.answer], monotonic: () => M });
+  const r1 = ask();
+  const r2 = ask();
+  await tick();
+
+  m1.clickLate(ALLOW_WINDOW);
+
+  assert.deepEqual(await Promise.all([r1, r2]), [true, true]);
+  assert.equal(w.dialogs.length, 1, 'the window the first prompt opened covered the waiter');
+});
+
+test('T18 a waiter that a window covers is answered by the window even with less than the floor left', async () => {
+  const m1 = unanswered();
+  let mono = M;
+  const { w, ask } = await loaded({ answers: [m1.answer], monotonic: () => mono });
+  const r1 = ask();
+  const r2 = ask();
+  await tick();
+
+  mono += 4 * MIN + 54_000; // 6 s left of 5 minutes: under the 15 s floor
+  m1.clickLate(ALLOW_WINDOW);
+
+  assert.equal(await r1, true);
+  assert.equal(await r2, true, 'covered, so signed silently — not refused for want of time');
+  assert.equal(w.dialogs.length, 1);
+  assert.equal(w.logs.some((line) => /waited too long behind another prompt/.test(line)), false, w.logs.join('\n'));
+});
+
+test('T19 the time left is told rounded DOWN, and in seconds under two minutes', async () => {
+  const cases: [number, RegExp][] = [
+    [30_000, /refused after 30 seconds\./],
+    [45_000, /refused after 45 seconds\./],
+    [210_000, /refused after 3 minutes\./],
+  ];
+  for (const [left, expected] of cases) {
+    const m1 = unanswered();
+    let mono = M;
+    const { w, ask } = await loaded({ answers: [m1.answer, ALLOW_ONCE], monotonic: () => mono });
+    const r1 = ask();
+    const r2 = ask();
+    await tick();
+
+    mono += 5 * MIN - left;
+    m1.clickLate(ALLOW_ONCE);
+    await r1;
+    await r2;
+
+    assert.match(w.dialogs[1], expected, `with ${left} ms left`);
+  }
+});
+
+/** Ways a client's `close` can arrive right after the click: the next macrotask, the one after, a timer. */
+const GOES_AWAY_AFTER_THE_CLICK: [string, (abort: () => void) => void][] = [
+  ['setImmediate', (abort) => void setImmediate(abort)],
+  ['setImmediate twice', (abort) => void setImmediate(() => setImmediate(abort))],
+  ['setTimeout 0', (abort) => void setTimeout(abort, 0)],
+];
+
+for (const [name, later] of GOES_AWAY_AFTER_THE_CLICK) {
+  test(`R4 a client that goes away (${name}) right after the click either loses to the answer or wins entirely`, async () => {
+    // The answer is applied in the SAME continuation that checks the turn (`turnStarted`): no macrotask — the
+    // client's close, the bound timer — can run between the check and the window. So the request either was answered
+    // (signed, window open) or refused (nothing signed, NO window); never refused with a window, never signed without.
+    const m1 = unanswered();
+    const { w, instance, ask } = await loaded({ answers: [m1.answer] });
+    const client = new AbortController();
+    const r1 = ask(client.signal);
+    await tick();
+
+    m1.clickLate(ALLOW_WINDOW);
+    later(() => client.abort());
+    const signed = await r1;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    const windowOpen = Object.keys(instance.windowsFor('a1', KEY_ID)).length > 0;
+    assert.equal(windowOpen, signed, `signed=${signed} but window=${windowOpen}: an answer applied outside its turn`);
+    assert.equal(w.infos.length, signed ? 0 : 1, signed ? 'answered: nothing to tell' : 'refused: the click is told it signed nothing');
+    instance.dispose();
+  });
+}
 
 test('nothing this suite logged carries key material', () => {
   assert.deepEqual(keyMaterialLogged(), [], 'a log line carries key material');

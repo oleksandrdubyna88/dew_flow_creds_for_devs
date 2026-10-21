@@ -44,6 +44,24 @@ export type TurnOutcome<T> = { readonly kind: 'answered'; readonly value: T } | 
 /** The turn's work: given the turn's signal (aborted when the turn ends) and the time left, answer. */
 type Work<T> = (turn: AbortSignal, leftMs: number) => Promise<T>;
 
+/**
+ * What a request may be answered WITHOUT a prompt when its turn arrives — before the floor is applied, so a request
+ * that something already covers is never refused for want of time. `waited` says whether anybody was ahead of it
+ * (explicitly: the caller must not infer it from a time that a frozen clock cannot move). `undefined` = go on.
+ */
+type Before<T> = (waited: boolean) => T | undefined;
+
+/** The two things a request brings. Dropped (`FORGOTTEN`) once the request is decided: its data is not kept alive. */
+interface Steps<T> {
+  readonly work: Work<T>;
+  readonly before: Before<T>;
+}
+
+const FORGOTTEN: Steps<never> = {
+  work: () => Promise.reject(new Error('this request was decided before its turn')),
+  before: () => undefined,
+};
+
 /** One request's place in the queue: its outcome, and whether it has been decided. */
 class Waiter<T> {
   done = false;
@@ -160,7 +178,8 @@ interface Entry<T> {
   readonly key: string;
   readonly slot: KeySlot;
   readonly waiter: Waiter<T>;
-  readonly work: Work<T>;
+  /** What to run at its turn; replaced by `FORGOTTEN` the moment the request is decided, wherever that happens. */
+  steps: Steps<T>;
   /** Someone was ahead of it — only such a request can be short of time at its turn. */
   readonly waited: boolean;
   readonly arrivedAt: number;
@@ -225,13 +244,16 @@ export class ConsentTurns {
     private readonly maxWaiting = 3,
   ) {}
 
-  /** Run `work` for this request when it is its turn, or say why it will not be. */
-  take<T>(key: string, request: AbortSignal, work: Work<T>): Promise<TurnOutcome<T>> {
+  /**
+   * Run `work` for this request when it is its turn, or say why it will not be. At its turn `before` is asked first
+   * (it may answer the request without a prompt), then the floor is applied, then `work` runs.
+   */
+  take<T>(key: string, request: AbortSignal, work: Work<T>, before: Before<T> = () => undefined): Promise<TurnOutcome<T>> {
     const refused = this.refusedAtArrival(this.slots.get(key), request);
     if (refused !== undefined) {
       return Promise.resolve(refused);
     }
-    return new Promise((resolve, reject) => this.enqueue(key, request, work, new Waiter<T>(resolve, reject)));
+    return new Promise((resolve, reject) => this.enqueue(key, request, { work, before }, new Waiter<T>(resolve, reject)));
   }
 
   /** How many keys hold ANY state (an open turn, waiters, an orphaned slot) — for tests, deciding nothing. */
@@ -255,15 +277,25 @@ export class ConsentTurns {
     return slot?.refusalAtArrival(this.maxWaiting);
   }
 
-  private enqueue<T>(key: string, request: AbortSignal, work: Work<T>, waiter: Waiter<T>): void {
+  private enqueue<T>(key: string, request: AbortSignal, steps: Steps<T>, waiter: Waiter<T>): void {
     const slot = this.slots.get(key) ?? this.created(key);
-    const entry: Entry<T> = { key, slot, waiter, work, waited: slot.live > 0, arrivedAt: this.now(), open: undefined };
+    const entry: Entry<T> = { key, slot, waiter, steps, waited: slot.live > 0, arrivedAt: this.now(), open: undefined };
     slot.live += 1;
     slot.waiters.add(waiter as Waiter<never>);
     const onAbort = (): void => this.requestAborted(entry);
     request.addEventListener('abort', onAbort, { once: true });
-    waiter.onDone(() => request.removeEventListener('abort', onAbort));
-    void this.queue.run(key, () => this.turn(entry));
+    waiter.onDone(() => {
+      request.removeEventListener('abort', onAbort);
+      // The queued job still holds this entry until the open modal settles; it must not hold the request's data too.
+      entry.steps = FORGOTTEN;
+    });
+    this.queue.run(key, () => this.turn(entry)).catch((error: unknown) => this.crashed(entry, error));
+  }
+
+  /** A turn that failed before its work began (`before` threw): the caller's bug surfaces as `take` rejecting. */
+  private crashed<T>(entry: Entry<T>, error: unknown): void {
+    entry.slot.finish(entry.waiter, (w) => w.reject(error));
+    this.release(entry.key, entry.slot);
   }
 
   private created(key: string): KeySlot {
@@ -288,12 +320,25 @@ export class ConsentTurns {
     }
     entry.slot.waiters.delete(entry.waiter as Waiter<never>);
     const leftMs = this.leftMs(entry);
-    if (entry.waited && leftMs < promptFloor(this.boundMs)) {
-      entry.slot.finish(entry.waiter, (w) => w.resolve({ kind: 'too-late', first: true }));
-      this.release(entry.key, entry.slot);
+    const outcome = this.withoutPrompt(entry, leftMs);
+    if (outcome === undefined) {
+      await this.run(entry, leftMs);
       return;
     }
-    await this.run(entry, leftMs);
+    entry.slot.finish(entry.waiter, (w) => w.resolve(outcome));
+    this.release(entry.key, entry.slot);
+  }
+
+  /**
+   * The outcome of a request that needs no modal: answered by `before` (a window an earlier turn opened covers it),
+   * or too late. `before` comes FIRST — a request that something already covers is not refused for want of time.
+   */
+  private withoutPrompt<T>(entry: Entry<T>, leftMs: number): TurnOutcome<T> | undefined {
+    const early = entry.steps.before(entry.waited);
+    if (early !== undefined) {
+      return { kind: 'answered', value: early };
+    }
+    return entry.waited && leftMs < promptFloor(this.boundMs) ? { kind: 'too-late', first: true } : undefined;
   }
 
   /** What is left of the bound — measured from arrival for a request that waited, the whole bound otherwise. */
@@ -308,7 +353,7 @@ export class ConsentTurns {
     entry.slot.open = open;
     open.arm(leftMs);
     try {
-      open.answered(await entry.work(open.controller.signal, leftMs));
+      open.answered(await entry.steps.work(open.controller.signal, leftMs));
     } catch (error) {
       open.failed(error);
     } finally {

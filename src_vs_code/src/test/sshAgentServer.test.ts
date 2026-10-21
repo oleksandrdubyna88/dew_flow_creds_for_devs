@@ -19,7 +19,7 @@ import {
   encodeString,
   keyFingerprintOf,
 } from '../sshAgentProtocol';
-import { AgentKey, SshAgentServer, agentSocketPath } from '../sshAgentServer';
+import { AgentKey, MAX_PIPELINED_REPLIES, SshAgentServer, agentSocketPath } from '../sshAgentServer';
 import { parseSshPrivateKey } from '../sshKeyParse';
 import { signForAgent } from '../sshAgentSign';
 import { HOSTBOUND_METHOD, userauth } from './sshUserauth';
@@ -64,6 +64,8 @@ interface Harness {
 async function harness(
   keys: AgentKey[],
   confirm: (key: AgentKey, purpose: SignPurpose, signal: AbortSignal) => Promise<boolean> = () => Promise.resolve(true),
+  /** Runs before a line is kept — a sink that throws is how a test reaches the code around `log`. */
+  beforeLog: (message: string) => void = () => undefined,
 ): Promise<Harness> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'testsToDelete-agent-'));
   const socketPath =
@@ -75,7 +77,10 @@ async function harness(
     socketPath,
     keys: () => keys,
     confirm: (key, purpose, _data, signal) => confirm(key, purpose, signal),
-    log: (message) => logs.push(message),
+    log: (message) => {
+      beforeLog(message);
+      logs.push(message);
+    },
   });
   await server.listen();
 
@@ -477,8 +482,151 @@ test('S3 a confirm that throws behind a held prompt is answered FAILURE, in orde
       (await replies).map((reply) => new ByteReader(reply).readByte()),
       [SSH_AGENT_SIGN_RESPONSE, SSH_AGENT_FAILURE],
     );
-    assert.match(h.logs.join('\n'), /could not answer a request: the gate broke/);
+    assert.match(h.logs.join('\n'), /the agent could not answer a request: the gate broke/);
   } finally {
+    h.dispose();
+  }
+});
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** `'closed'` if the socket closes within `ms` (the server hung up), `'open'` if it does not. */
+async function closedWithin(socket: net.Socket, ms: number): Promise<'closed' | 'open'> {
+  let giveUp: ReturnType<typeof setTimeout> | undefined;
+  const verdict = await Promise.race([
+    once(socket, 'close').then(() => 'closed' as const),
+    new Promise<'open'>((resolve) => {
+      giveUp = setTimeout(() => resolve('open'), ms);
+    }),
+  ]);
+  clearTimeout(giveUp);
+  return verdict;
+}
+
+/** A client connection that has connected and counts what comes back; it never throws on a reset. */
+async function openClient(socketPath: string): Promise<{ socket: net.Socket; received: () => number }> {
+  const socket = net.createConnection(socketPath);
+  let received = 0;
+  socket.on('error', () => undefined);
+  socket.on('data', (chunk: Buffer) => {
+    received += chunk.length;
+  });
+  await once(socket, 'connect');
+  return { socket, received: () => received };
+}
+
+const identitiesFrame = (): Buffer => encodeFrame(Buffer.from([SSH_AGENTC_REQUEST_IDENTITIES]));
+
+test('S4 the frame past the backlog cap closes the connection, and the prompt it was queued behind is abandoned', async () => {
+  // One prompt held open on a socket, then a flood of 5-byte requests: each reply is retained behind the held one,
+  // so without a cap memory grows with the flood (F1). OpenSSH never has more than one request outstanding.
+  const a = newKey('prod key');
+  const prompt = heldPrompt();
+  let captured: AbortSignal | undefined;
+  const h = await harness([a.key], (key, purpose, signal) => {
+    captured = signal;
+    return prompt.confirm(key, purpose);
+  });
+  try {
+    const client = await openClient(h.server.socketPath);
+    const sign = encodeFrame(signRequestFor(a.key.identity.publicBlob, Buffer.from('data')));
+    // the held sign request plus MAX_PIPELINED_REPLIES identities requests: one frame more than the cap allows
+    client.socket.write(Buffer.concat([sign, ...Array.from({ length: MAX_PIPELINED_REPLIES }, identitiesFrame)]));
+
+    assert.equal(await closedWithin(client.socket, 2_000), 'closed', 'the server hung up on the flooding connection');
+    assert.equal((captured as AbortSignal).aborted, true, 'the held prompt is abandoned: its request is gone');
+    assert.equal(
+      h.logs.filter((line) => /refused a pipelined backlog and closed the connection/.test(line)).length,
+      1,
+      'said once',
+    );
+    prompt.answer(true); // the modal's late click
+    await sleep(50);
+    assert.equal(client.received(), 0, 'nothing was written back to the connection that was closed');
+  } finally {
+    h.dispose();
+  }
+});
+
+test('S4b a client at the cap — the held request and MAX-1 pipelined ones — is answered in order, not closed', async () => {
+  const a = newKey('prod key');
+  const prompt = heldPrompt();
+  const h = await harness([a.key], prompt.confirm);
+  try {
+    const sign = signRequestFor(a.key.identity.publicBlob, Buffer.from('data'));
+    const identities = Buffer.from([SSH_AGENTC_REQUEST_IDENTITIES]);
+    const replies = askOnOneSocket(h.server.socketPath, [sign, ...Array.from({ length: MAX_PIPELINED_REPLIES - 1 }, () => identities)]);
+    await prompt.asked;
+    prompt.answer(true);
+
+    const types = (await replies).map((reply) => new ByteReader(reply).readByte());
+    assert.deepEqual(types, [SSH_AGENT_SIGN_RESPONSE, ...Array.from({ length: MAX_PIPELINED_REPLIES - 1 }, () => SSH_AGENT_IDENTITIES_ANSWER)]);
+    assert.equal(h.logs.filter((line) => /pipelined backlog/.test(line)).length, 0);
+  } finally {
+    h.dispose();
+  }
+});
+
+test('S5 a client that does not read its replies is not read from either — the next request waits for the drain', async () => {
+  // `write` used to ignore `socket.write`'s return: a client that stopped reading let replies pile up in this
+  // process. Four megabytes of key comment make ONE identities reply larger than any socket buffer.
+  const a = newKey('prod key');
+  const big: AgentKey = { ...a.key, identity: { ...a.key.identity, comment: 'c'.repeat(4 * 1024 * 1024) } };
+  let asked = 0;
+  const h = await harness([big], () => {
+    asked += 1;
+    return Promise.resolve(true);
+  });
+  try {
+    const client = await openClient(h.server.socketPath);
+    client.socket.pause(); // a client that has stopped reading
+    client.socket.write(identitiesFrame());
+    await sleep(300);
+    client.socket.write(encodeFrame(signRequestFor(big.identity.publicBlob, Buffer.from('data'))));
+    await sleep(300);
+    assert.equal(asked, 0, 'the sign request sat unread while the first reply could not be delivered');
+
+    client.socket.resume(); // the client reads again: the drain resumes the server
+    for (let waited = 0; asked === 0 && waited < 4_000; waited += 50) {
+      await sleep(50);
+    }
+    assert.equal(asked, 1, 'and it was read once the reply drained');
+    client.socket.destroy();
+  } finally {
+    h.dispose();
+  }
+});
+
+test('S6 a log that throws while a request is being refused closes that connection and leaves no unhandled rejection', async () => {
+  // `failed` is the last resort of the reply chain; if even it throws, the connection is what is given up — the
+  // chain must not reject into nowhere, and the other connections must go on being served.
+  const a = newKey('prod key');
+  const rejections: unknown[] = [];
+  const onRejection = (reason: unknown): void => {
+    rejections.push(reason);
+  };
+  process.on('unhandledRejection', onRejection);
+  const h = await harness(
+    [a.key],
+    () => {
+      throw new Error('the gate broke');
+    },
+    (message) => {
+      if (/could not answer a request/.test(message)) {
+        throw new Error('the log sink broke');
+      }
+    },
+  );
+  try {
+    const client = await openClient(h.server.socketPath);
+    client.socket.write(encodeFrame(signRequestFor(a.key.identity.publicBlob, Buffer.from('data'))));
+
+    assert.equal(await closedWithin(client.socket, 2_000), 'closed', 'that connection was closed');
+    await sleep(50);
+    assert.deepEqual(rejections, [], 'and nothing rejected into the void');
+    assert.equal(new ByteReader(await h.request(Buffer.from([SSH_AGENTC_REQUEST_IDENTITIES]))).readByte(), SSH_AGENT_IDENTITIES_ANSWER, 'the agent still serves');
+  } finally {
+    process.off('unhandledRejection', onRejection);
     h.dispose();
   }
 });

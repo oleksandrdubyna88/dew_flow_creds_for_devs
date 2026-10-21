@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test, TestContext } from 'node:test';
+import * as v8 from 'node:v8';
+import * as vm from 'node:vm';
 import { ConsentTurns, MIN_PROMPT_MS, Refusal, TurnOutcome, promptFloor } from '../consentTurns';
 
 /**
@@ -470,4 +472,107 @@ test('C16 the per-key bookkeeping is empty again after every outcome', async (t)
     await tick();
     assert.equal(turns.pending(), 0, `${name}: nothing is left held`);
   }
+});
+
+test('C17 a request that something already covers is answered before the floor is applied', async (t) => {
+  const bound = 300_000;
+  const { turns, moveClockOnly } = setup(t, { bound });
+  const a = job();
+  const asked: boolean[] = [];
+  const first = turns.take('k', signal().signal, a.work, (waited) => {
+    asked.push(waited);
+    return undefined;
+  });
+  const covered = job();
+  const second = turns.take('k', signal().signal, covered.work, (waited) => {
+    asked.push(waited);
+    return 'covered';
+  });
+  await tick();
+
+  moveClockOnly(bound - 1_000); // 1 s left: far under the 15 s floor
+  a.settle('one');
+  await first;
+
+  assert.deepEqual(await second, { kind: 'answered', value: 'covered' }, 'answered by what covers it, not refused for want of time');
+  assert.equal(covered.started(), false, 'and no prompt was opened');
+  assert.deepEqual(asked, [false, true], 'the first request did not wait; the second did — said, not inferred');
+  assert.equal(turns.pending(), 0);
+});
+
+test('C18 with nothing to cover it, a waiter under the floor is still too-late — after it was asked', async (t) => {
+  const bound = 300_000;
+  const { turns, moveClockOnly } = setup(t, { bound });
+  const [a, b] = [job(), job()];
+  let waitedSeen: boolean | undefined;
+  const first = turns.take('k', signal().signal, a.work);
+  const second = turns.take('k', signal().signal, b.work, (waited) => {
+    waitedSeen = waited;
+    return undefined;
+  });
+  await tick();
+
+  moveClockOnly(bound - 1_000);
+  a.settle('one');
+  await first;
+
+  assert.deepEqual(await second, refusal('too-late', true));
+  assert.equal(waitedSeen, true);
+  assert.equal(b.started(), false);
+});
+
+test('C19 a `before` that throws rejects take and frees the slot', async (t) => {
+  const { turns } = setup(t);
+  const [a, b] = [job(), job()];
+  const first = turns.take('k', signal().signal, a.work);
+  const second = turns
+    .take('k', signal().signal, job().work, () => {
+      throw new Error('the check broke');
+    })
+    .then(
+      () => 'answered',
+      (error: unknown) => (error as Error).message,
+    );
+  await tick();
+
+  a.settle('one');
+  await first;
+  await tick();
+  const verdict = await Promise.race([second, new Promise<string>((resolve) => setImmediate(() => resolve('still waiting')))]);
+  assert.equal(verdict, 'the check broke');
+  assert.equal(turns.pending(), 0);
+
+  const next = turns.take('k', signal().signal, b.work);
+  await tick();
+  assert.equal(b.started(), true, 'the next request is not stuck behind it');
+  b.settle('fine');
+  assert.deepEqual(await next, { kind: 'answered', value: 'fine' });
+});
+
+/** A request whose work closure holds `payload`; the only reference the test keeps is a weak one. */
+function takeHolding(turns: ConsentTurns, request: AbortSignal): WeakRef<object> {
+  const payload = { data: 'the signing request the closure holds' };
+  void turns.take('k', request, () => Promise.resolve(payload.data.length));
+  return new WeakRef(payload);
+}
+
+test('C20 a request that was decided while it waited does not keep its data alive until the open modal settles', async (t) => {
+  v8.setFlagsFromString('--expose-gc');
+  const collect = vm.runInNewContext('gc') as () => void;
+  const { turns } = setup(t);
+  const a = job();
+  const first = turns.take('k', signal().signal, a.work);
+  const leaving = signal();
+  const held = takeHolding(turns, leaving.signal);
+  await tick();
+
+  leaving.abort(); // the waiter is gone; the open modal (job `a`) is still on screen, so its queued job is not run yet
+  for (let round = 0; round < 3; round += 1) {
+    collect();
+    await tick();
+  }
+
+  assert.equal(held.deref(), undefined, 'the departed request\'s closure was released');
+  a.settle('done');
+  await first;
 });
