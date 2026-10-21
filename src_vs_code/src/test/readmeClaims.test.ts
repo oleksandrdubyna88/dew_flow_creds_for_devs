@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { ENTITY_KINDS } from '../types';
 import { MCP_SWITCHES } from '../mcpSwitches';
+import { REPO, assertRepoRoot, read } from './repoFiles';
 
 /**
  * The README's claims, checked by machine.
@@ -24,46 +25,15 @@ import { MCP_SWITCHES } from '../mcpSwitches';
  * sentence that was live on the listing, so that defect cannot come back silently.</p>
  */
 
-/**
- * The repository root, from THIS file rather than from the working directory.
- *
- * <p>Three levels up lands on the root from both layouts — `src_vs_code/src/test` at authoring time
- * and `src_vs_code/out/test` at run time — because the two are the same depth. That coincidence is
- * load-bearing enough to assert rather than trust: four reviewers read the line and counted it
- * wrong, which is a fair sign that a future reader will too. So the guard below names the directory
- * it resolved and what it failed to find there, instead of letting an `ENOENT` arrive from
- * somewhere else.</p>
- */
-const REPO = path.resolve(__dirname, '..', '..', '..');
 const ROOT_README = path.join(REPO, 'README.md');
 const LISTING = path.join(REPO, 'src_vs_code', 'README.md');
 const INSTALL = path.join(REPO, 'install.sh');
 const PROTOCOL = path.join(REPO, 'src_vs_code', 'src', 'brokerProtocol.ts');
 
 test('the suite is looking at the repository it thinks it is', () => {
-  for (const file of [ROOT_README, LISTING, INSTALL, PROTOCOL]) {
-    assert.equal(
-      fs.existsSync(file),
-      true,
-      `resolved the repository root to ${REPO}, where ${path.relative(REPO, file)} is not — ` +
-        'every assertion below would be reading the wrong document',
-    );
-  }
+  assertRepoRoot([ROOT_README, LISTING, INSTALL, PROTOCOL]);
   assert.notEqual(ROOT_README, LISTING, 'the two READMEs must not resolve to one file');
 });
-
-/** Read once. Each of these is read by four or five assertions, and none of them mutates it. */
-const cache = new Map<string, string>();
-
-function read(file: string): string {
-  const held = cache.get(file);
-  if (held !== undefined) {
-    return held;
-  }
-  const text = fs.readFileSync(file, 'utf8');
-  cache.set(file, text);
-  return text;
-}
 
 /**
  * The text with every run of whitespace collapsed to one space.

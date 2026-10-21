@@ -27,12 +27,24 @@
  * a folder from twelve hours to every-time has to take effect at once, and flipping it back must
  * not retroactively authorise anything. One comparison is shared — `withinAllowWindow` below — and
  * the two shapes stay apart until there is a third instance to learn from.</p>
+ *
+ * <p>#197 (a window per generation of a key, longer windows for logins) was considered and is NOT that third
+ * instance: it widens the SAME instance — still a deadline fixed at the click, per key, in memory, in one
+ * window — and its rules live in `allowWindows.ts`. The MCP stamp keeps every property that made it different
+ * (persisted, read fresh, a START, fenced by a timestamp because another window can write the store).</p>
  */
 
 /** The labels the dialog offers. Exported so the dialog and this decision cannot drift apart. */
 export const ALLOW_ONCE = 'Allow once';
 export const ALLOW_WINDOW = 'Allow for 10 minutes';
 export const DENY = 'Deny';
+
+/**
+ * Every answer the signing prompt offers, in the order the buttons stand. The dialog spreads this list and
+ * the help test loops over it, so a button added here that no help article names turns that test red by
+ * itself. #197 E3 inserts `ALLOW_LONGER` here.
+ */
+export const SIGNING_BUTTONS = [ALLOW_ONCE, ALLOW_WINDOW, DENY] as const;
 
 /** How long `ALLOW_WINDOW` covers. */
 export const ALLOW_WINDOW_MS = 10 * 60_000;

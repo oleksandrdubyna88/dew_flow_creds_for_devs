@@ -13,12 +13,16 @@ import {
   SSH_AGENT_FAILURE,
   SSH_AGENT_IDENTITIES_ANSWER,
   SSH_AGENT_SIGN_RESPONSE,
+  SignPurpose,
   encodeFrame,
   encodeString,
+  keyFingerprintOf,
 } from '../sshAgentProtocol';
 import { AgentKey, SshAgentServer, agentSocketPath } from '../sshAgentServer';
 import { parseSshPrivateKey } from '../sshKeyParse';
 import { signForAgent } from '../sshAgentSign';
+import { HOSTBOUND_METHOD, userauth } from './sshUserauth';
+import { keyMaterialLogged, watchLogs, watchSecret } from './sshAgentWorld';
 
 /**
  * The agent over a REAL socket, driven with hand-built frames — the closest a unit test gets to
@@ -26,10 +30,14 @@ import { signForAgent } from '../sshAgentSign';
  */
 
 function newKey(name: string): { key: AgentKey; publicKey: crypto.KeyObject } {
-  const pem = crypto.generateKeyPairSync('ed25519', {
-    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-    publicKeyEncoding: { type: 'spki', format: 'pem' },
-  }).privateKey.toString();
+  const pem = watchSecret(
+    crypto
+      .generateKeyPairSync('ed25519', {
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+        publicKeyEncoding: { type: 'spki', format: 'pem' },
+      })
+      .privateKey.toString(),
+  );
   const parsed = parseSshPrivateKey(pem, name);
   assert.equal(parsed.ok, true);
   const inner = (parsed as { ok: true; key: { publicBlob: Buffer; fingerprint: string; key: crypto.KeyObject } }).key;
@@ -54,18 +62,18 @@ interface Harness {
 
 async function harness(
   keys: AgentKey[],
-  confirm: (key: AgentKey) => Promise<boolean> = () => Promise.resolve(true),
+  confirm: (key: AgentKey, purpose: SignPurpose) => Promise<boolean> = () => Promise.resolve(true),
 ): Promise<Harness> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-agent-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'testsToDelete-agent-'));
   const socketPath =
     process.platform === 'win32'
       ? `\\\\.\\pipe\\creds-agent-test-${process.pid}-${Math.floor(process.hrtime()[1])}`
       : path.join(dir, 'agent.sock');
-  const logs: string[] = [];
+  const logs = watchLogs([]);
   const server = new SshAgentServer({
     socketPath,
     keys: () => keys,
-    confirm: (key) => confirm(key),
+    confirm: (key, purpose) => confirm(key, purpose),
     log: (message) => logs.push(message),
   });
   await server.listen();
@@ -182,6 +190,210 @@ test('EVERY signature is confirmed — a second request asks again', async () =>
   }
 });
 
+test('the server checks the purpose against the key it was asked for: a host-bound login of the served key', async () => {
+  // What the dialog says is decided here, from the bytes AND the key the request names — the
+  // request below is what a current OpenSSH client sends, and it used to read as "unrecognised".
+  const a = newKey('prod key');
+  const hostKey = Buffer.concat([encodeString('ssh-ed25519'), encodeString('the server host key')]);
+  let seen: SignPurpose | undefined;
+  const h = await harness([a.key], (_key, purpose) => {
+    seen = purpose;
+    return Promise.resolve(true);
+  });
+  try {
+    const data = userauth({ blob: a.key.identity.publicBlob, method: HOSTBOUND_METHOD, hostKey });
+    await h.request(signRequestFor(a.key.identity.publicBlob, data));
+
+    assert.deepEqual(seen, {
+      kind: 'ssh-login',
+      user: 'git',
+      service: 'ssh-connection',
+      hostKey: keyFingerprintOf(hostKey),
+      hostKeyType: 'ED25519',
+    });
+  } finally {
+    h.dispose();
+  }
+});
+
+test('a login that names key A, sent as a sign request for key B, is not a login', async () => {
+  // Both keys are really held. The bytes say "log in with A"; the request asks B to sign them.
+  // Reading that as a login would put a login's name on a signature nobody logged in with.
+  const a = newKey('key A');
+  const b = newKey('key B');
+  let seen: SignPurpose | undefined;
+  const h = await harness([a.key, b.key], (_key, purpose) => {
+    seen = purpose;
+    return Promise.resolve(true);
+  });
+  try {
+    const data = userauth({ blob: a.key.identity.publicBlob });
+    await h.request(signRequestFor(b.key.identity.publicBlob, data));
+
+    assert.deepEqual(seen, { kind: 'unknown' });
+  } finally {
+    h.dispose();
+  }
+});
+
+/** A confirm the test answers by hand: `asked` settles when the prompt is open, `answer` is the human's click. */
+function heldPrompt(): {
+  confirm: (key: AgentKey, purpose: SignPurpose) => Promise<boolean>;
+  asked: Promise<void>;
+  answer: (allow: boolean) => void;
+} {
+  let answer: (allow: boolean) => void = () => undefined;
+  let opened: () => void = () => undefined;
+  const asked = new Promise<void>((resolve) => {
+    opened = resolve;
+  });
+  const click = new Promise<boolean>((resolve) => {
+    answer = resolve;
+  });
+  return {
+    asked,
+    answer: (allow) => answer(allow),
+    confirm: () => {
+      opened();
+      return click;
+    },
+  };
+}
+
+/** The same key as `served`, signing through it — and counting, so a test can say it never signed. */
+function countingCopy(served: AgentKey): { key: AgentKey; signed: () => number } {
+  let signed = 0;
+  return {
+    signed: () => signed,
+    key: {
+      ...served,
+      sign: (data, flags) => {
+        signed += 1;
+        return served.sign(data, flags);
+      },
+    },
+  };
+}
+
+test('a key removed while its prompt is open does not sign, whatever the answer', async () => {
+  // The prompt can stay open for minutes (a modal cannot be closed), and the person can remove the key
+  // from the agent meanwhile. "Allow" on a prompt about a key that is gone must not sign with it.
+  const a = newKey('prod key');
+  const held = countingCopy(a.key);
+  const keys: AgentKey[] = [held.key];
+  const prompt = heldPrompt();
+  const h = await harness(keys, prompt.confirm);
+  try {
+    const reply = h.request(signRequestFor(a.key.identity.publicBlob, Buffer.from('data')));
+    await prompt.asked;
+    keys.length = 0; // Remove from SSH Agent, while the prompt is still on screen
+    prompt.answer(true);
+
+    assert.equal(new ByteReader(await reply).readByte(), SSH_AGENT_FAILURE);
+    assert.equal(held.signed(), 0, 'the removed key never signed');
+    assert.match(h.logs.join('\n'), /REFUSED a signature with "prod key" — the key was removed or replaced while its prompt was open/);
+  } finally {
+    h.dispose();
+  }
+});
+
+test('a key re-loaded while its prompt is open signs with neither the old nor the new material', async () => {
+  // Same public bytes, a new object: the answer was given about the old one. Identity is the check —
+  // bytes would pass a replacement that was loaded from a different (or revoked) source.
+  const a = newKey('prod key');
+  const old = countingCopy(a.key);
+  const reloaded = countingCopy(a.key);
+  const keys: AgentKey[] = [old.key];
+  const prompt = heldPrompt();
+  const h = await harness(keys, prompt.confirm);
+  try {
+    const reply = h.request(signRequestFor(a.key.identity.publicBlob, Buffer.from('data')));
+    await prompt.asked;
+    keys.splice(0, 1, reloaded.key); // the key was loaded again under the same entity
+    prompt.answer(true);
+
+    assert.equal(new ByteReader(await reply).readByte(), SSH_AGENT_FAILURE);
+    assert.equal(old.signed() + reloaded.signed(), 0, 'neither object signed');
+    assert.match(h.logs.join('\n'), /REFUSED a signature with "prod key" — the key was removed or replaced while its prompt was open/);
+  } finally {
+    h.dispose();
+  }
+});
+
+test('a key replaced inside the covered-window path is refused: the check is after the await even with no prompt', async () => {
+  // A confirm that never opens a modal (a signature inside the ten-minute window) still returns a promise,
+  // and the keys can change before it settles. The check must run after that await, not before it.
+  const a = newKey('prod key');
+  const old = countingCopy(a.key);
+  const reloaded = countingCopy(a.key);
+  const keys: AgentKey[] = [old.key];
+  const h = await harness(keys, () => {
+    keys.splice(0, 1, reloaded.key); // replaced synchronously, no prompt anywhere
+    return Promise.resolve(true);
+  });
+  try {
+    const reply = await h.request(signRequestFor(a.key.identity.publicBlob, Buffer.from('data')));
+
+    assert.equal(new ByteReader(reply).readByte(), SSH_AGENT_FAILURE);
+    assert.equal(old.signed() + reloaded.signed(), 0, 'neither object signed');
+  } finally {
+    h.dispose();
+  }
+});
+
+/** Send every payload on ONE connection, and read one reply per payload. */
+function askOnOneSocket(socketPath: string, payloads: Buffer[]): Promise<Buffer[]> {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection(socketPath);
+    const reader = new FrameReader();
+    const replies: Buffer[] = [];
+    socket.on('connect', () => payloads.forEach((payload) => socket.write(encodeFrame(payload))));
+    socket.on('data', (chunk: Buffer) => {
+      replies.push(...reader.push(chunk));
+      if (replies.length === payloads.length) {
+        socket.end();
+        resolve(replies);
+      }
+    });
+    socket.on('error', reject);
+  });
+}
+
+test('every prompt open for a removed key is refused — two on one socket and one on another', async () => {
+  const a = newKey('prod key');
+  const held = countingCopy(a.key);
+  const keys: AgentKey[] = [held.key];
+  const releases: ((allow: boolean) => void)[] = [];
+  let allOpen: () => void = () => undefined;
+  const opened = new Promise<void>((resolve) => {
+    allOpen = resolve;
+  });
+  const h = await harness(keys, () => {
+    const click = new Promise<boolean>((resolve) => releases.push(resolve));
+    if (releases.length === 3) {
+      allOpen();
+    }
+    return click;
+  });
+  try {
+    const request = signRequestFor(a.key.identity.publicBlob, Buffer.from('data'));
+    const sameSocket = askOnOneSocket(h.server.socketPath, [request, request]);
+    const otherSocket = askOnOneSocket(h.server.socketPath, [request]);
+    await opened;
+    keys.length = 0; // Remove from SSH Agent, with three prompts on screen
+    releases.forEach((release) => release(true));
+
+    const replies = [...(await sameSocket), ...(await otherSocket)];
+    assert.deepEqual(
+      replies.map((reply) => new ByteReader(reply).readByte()),
+      [SSH_AGENT_FAILURE, SSH_AGENT_FAILURE, SSH_AGENT_FAILURE],
+    );
+    assert.equal(held.signed(), 0, 'the removed key never signed');
+  } finally {
+    h.dispose();
+  }
+});
+
 test('a key the agent does not hold is refused without asking anybody', async () => {
   const held = newKey('held');
   const other = newKey('not held');
@@ -228,7 +440,7 @@ test('a malformed sign request is refused rather than throwing out of the agent'
 test('the keys are re-read per request, so unloading one takes effect at once', async () => {
   const a = newKey('prod key');
   const keys: AgentKey[] = [a.key];
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-agent-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'testsToDelete-agent-'));
   const socketPath =
     process.platform === 'win32'
       ? `\\\\.\\pipe\\creds-agent-live-${process.pid}`
@@ -293,4 +505,9 @@ test('the socket is per window: a pipe on Windows, a file beside the purged key 
     agentSocketPath(path.join('/storage'), 'linux', 4242),
     path.join('/storage', 'keys', '4242', 'agent.sock'),
   );
+});
+
+test('nothing this suite logged carries key material', () => {
+  // The last test of the file: every harness's log, against every key the file generated.
+  assert.deepEqual(keyMaterialLogged(), [], 'a log line carries key material');
 });

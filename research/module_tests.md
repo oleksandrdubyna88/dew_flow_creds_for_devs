@@ -38,7 +38,7 @@ is node throughout because what these need is process control, not a test runner
 | `src_vs_code/scripts/masked-run-itest.cjs` | a masked run through a real pty, asserting no whole secret appears | **yes, added 2026-09-06** | pass |
 | `src_minimalapi_server/scripts/backup-archive-itest.cjs` | the REAL server binary sealing, verifying and opening a backup archive | **yes, added 2026-09-07** — in `ci · server`, on the server's own path filter | pass |
 | `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | the same MCP surface, bridged from inside a WSL distribution; since 2026-10-11 (E5.S1 of `PLAN_wsl_bridge_outlives_its_client.md`) a Claude-Code-shaped client INSIDE the distribution (`wsl-mcp-client.cjs`, the wrapper's real parent) opens the captured session with its held `subscriptions/listen` and ends it six ways — SIGINT, SIGTERM, SIGHUP, a closed stdin, SIGKILL of the wrapper, and (E6/defect D, 2026-10-14) the `/init` interop proxy SIGSTOPped then the wrapper SIGKILLed — and the Windows `creds-mcp.exe` of the run must be alive before each ending (the positive control) and gone within 5 s after it | no — see below | pass — **42** checks (2026-10-11, the final harness; 40 on its first version); 4 of them RED against the pre-E2/E3 build, 10 of 40 on the first version (see *The bridge, proved on the real machine*). E6 added the sixth, `stopped`, ending; its real-bridge run is the manual E6.S2 step, the mechanism measured directly in RESULTS, *Defect D*, and the CI-runnable proof is `WslPumpHostTests.A_child_left_STOPPED_and_orphaned_still_dies_with_the_wrapper` |
-| `src_vs_code/scripts/ssh-agent-itest.cjs` | the SSH agent on a named pipe, and which ssh client can reach it; since 2026-09-24 the REAL `SshAgentManager` too, with a signing prompt nobody answers — the real `ssh-keygen -Y sign` must fail within the bound, not hang | **yes, added 2026-09-11** — the POSIX branch only, see below | pass |
+| `src_vs_code/scripts/ssh-agent-itest.cjs` | the SSH agent on a named pipe, and which ssh client can reach it; since 2026-09-24 the REAL `SshAgentManager` too, with a signing prompt nobody answers — the real `ssh-keygen -Y sign` must fail within the bound, not hang; since 2026-10-20 (#197 E1.1, section 5, POSIX only) a LIVE login — a real `ssh` against a user-mode `sshd -d` on loopback with a throwaway host key, through the real manager — whose dialog must name *an SSH login* and carry, as a line of its own, *This login is for the server whose host key is ED25519* followed by the fingerprint `ssh-keygen -l -E sha256` prints for that host key (the host-bound request OpenSSH 8.9+ sends). **It ran on the CI runner** (PR #262, run 39580477985, `ubuntu-latest`, `OpenSSH_9.6p1 Ubuntu-3ubuntu13.20`): *ok the real ssh logged in to sshd through the agent · ok the dialog names an SSH login · ok the dialog names the server's host key on a line of its own*; and, before that, in an Alpine container as a non-root user with a locked account (OpenSSH 10.3p1) — so a non-root `sshd` does not trip on the account lock. On a failed login the check's detail carries the last 20 lines of sshd's `-d -e` output. It does **not** prove a login from Windows: that is M1, a real Windows client against a real server, owed by hand. Without `/usr/sbin/sshd` it is a `FAIL` when `CI=true` and a printed `skip` locally; on Windows it prints `skip  live OpenSSH login — POSIX only; M1 covers Windows` | **yes, added 2026-09-11** — the POSIX branch only, see below; the CI job installs `sshd` first (apt with `Acquire::Retries=3`, so a mirror hiccup does not turn the job red) | pass (all five sections; section 5 in CI on `ubuntu-latest`, PR #262) |
 | `src_vs_code/scripts/wsl-agent-relay-itest.cjs` | `ssh-keygen -Y sign` inside Linux reaching an agent in a Windows process; since 2026-10-11 (E5.S1) also that the relay's Windows children end with their connections — ten `ssh-add -l` leave 0 `creds.exe relay-pipe` of the run and the relay's fd count at its baseline; the relay is stopped by its own pid; the manager's `dispose()` takes down a relay holding a LIVE connection, its relay-pipe on Windows included | no — see below | pass **after repair — see below**; **40** checks (2026-10-11, the final harness; 36 on its first version), 9 of them RED against the pre-E3 build |
 | `src_vs_code/scripts/server-transport-itest.cjs` | `ServerTransport` against a RUNNING Cred Vault Server | no — see below | **not run** — needs a server on `127.0.0.1:5113` |
 
@@ -134,7 +134,7 @@ these cleans up after itself on a normal exit; what follows is what to remove af
 | `src_vs_code/scripts/creds-cli-itest.cjs` | `dotnet build src_cli/src/CredsCli.csproj` | a broker listener, an endpoint file |
 | `src_vs_code/scripts/creds-mcp-itest.cjs` | `dotnet build src_mcp/src/CredsMcp.csproj` | a `creds-mcp` child on stdio |
 | `src_vs_code/scripts/masked-run-itest.cjs` | nothing | nothing — the child dies with the pty |
-| `src_vs_code/scripts/ssh-agent-itest.cjs` | OpenSSH (`ssh-add`, `ssh-keygen`) — built-in on Windows, on PATH elsewhere; CI runs it on Ubuntu | a named pipe or socket freed when the process exits, and a `creds-agent-itest-*` temp dir (key, stub, manager dir) |
+| `src_vs_code/scripts/ssh-agent-itest.cjs` | OpenSSH (`ssh-add`, `ssh-keygen`) — built-in on Windows, on PATH elsewhere; CI runs it on Ubuntu | a named pipe or socket freed when the process exits, a `testsToDelete-ait-*` temp dir (key, stub, the managers' storage `m` and `l`) and — only on a run that reaches the live login — a `testsToDelete-sshd-*` dir (host key, `authorized_keys`, `known_hosts`, `sshd_config`). under `-d` sshd neither daemonises nor forks per connection, but its privilege separation and the session still fork children that exit when the connection closes — which is why the run ends the ssh client FIRST, then sshd, by their own pids; each is awaited (5 s bound) and, if it did not exit, killed with SIGKILL and awaited again; only then is the folder removed, and a failure of that removal never replaces the real error |
 | `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | WSL + the .NET SDK, node and python3 inside it | nothing it started — the sweep stops the run's own processes by pid on both sides; `${XDG_CACHE_HOME:-~/.cache}/creds-itest/` (a build per changed set of inputs, a directory per run) stays by design, a few MB each, until the person clears it |
 | `src_vs_code/scripts/wsl-agent-relay-itest.cjs` | the same, plus OpenSSH inside it | the same; a run's sockets and scratch files are under its own `…/creds-itest/<run>/` |
 | `src_vs_code/scripts/server-transport-itest.cjs` | a Cred Vault Server on `127.0.0.1:5113`, Local auth | nothing of its own |
@@ -1242,6 +1242,162 @@ code round and were watched RED in CI first: i printed the stand-in's arguments,
 server running, h took 6.0 s for a 2 s deadline. **Limit:** the script signals only the pid it started, so its command must be
 the server itself; a launcher such as `dotnet run` would leave the app behind on a KILL, which is why CI starts
 the apphost.
+
+## A login names its server (2026-10-20, #197 E1.1)
+
+OpenSSH 8.9+ asks an agent to sign the host-bound form of the login request. The protocol and the server tests are driven
+by ONE builder, `src/test/sshUserauth.ts` (`userauth({ blob, user, method, hostKey, … })`, the method names written as
+literals because they are the wire contract), so the two suites cannot drift into two ideas of a well-formed request.
+
+| suite | what it proves |
+|---|---|
+| `sshAgentProtocol.test.ts` (36 tests) | the request is read whole — every field, the key it names is the key signing, nothing after the last field · plain and host-bound methods, an empty or missing host key, a wrong service, message number or session-id size, a certificate login and the no-signature probe are `unknown` · `describeServerLine` is a line of its own and the user name cannot imitate it · the log keeps the raw user, the prompt never does |
+| `sshAgentServer.test.ts` (17 tests) | over a real socket: a host-bound login of the served key is described as a login; a login naming key A and asked of key B is not a login |
+| `sshAgentManager.test.ts` | the host-key clause is one whole line of the prompt, and a plain publickey login has none |
+| `ssh-agent-itest.cjs` section 5 | a live `ssh` against a user-mode `sshd` — **passed on the CI runner** (PR #262, run 39580477985, `ubuntu-latest`, OpenSSH 9.6p1) and in an Alpine container as a non-root user with a locked account (OpenSSH 10.3p1); see the table at the top |
+
+## The prompt shows other people's text as text (2026-10-21, #197 E1 whole-epic review)
+
+The key name (an import or a share sets it) and an SSHSIG namespace reached the prompt raw; a name with a line break could
+print a fake *This login is for the server whose host key is …* line. One sanitiser, `displayText`, now serves the user, the
+key name and the namespace.
+
+| test | what it proves |
+|---|---|
+| `sshAgentManager.test.ts` → *a key NAME cannot forge the host-key line on a plain publickey login* | the prompt has as many lines as with a plain name, and none starts *This login is for* |
+| `sshAgentManager.test.ts` → *a key NAME cannot forge a second host-key line on a host-bound login* | exactly ONE such line, the real one |
+| `sshAgentManager.test.ts` → *a key NAME with quotes, control marks and great length is shown escaped, marked and cut* | `a" b⟨U+202E⟩…` reads `"a\" b?…` and ends in `…` |
+| `sshAgentProtocol.test.ts` → *an SSHSIG namespace is the requester's text* | no newline, no control character, capped at 64 |
+| `sshAgentManager.test.ts` → *a login USER cannot forge a second host-key line on a host-bound login* · *an SSHSIG NAMESPACE cannot forge a host-key line* | the COMPOSED prompt (not only `describePurpose`) for a hostile user / namespace `x⏎This login is for the server whose host key is …`: as many lines as with a benign one; on a host-bound login exactly ONE `This login is for` line (the real one), on a signature none. Break-it: raw `purpose.user` / `namespace` in the prompt → both red (one line too many) |
+| `sshAgentProtocol.test.ts` → *displayText turns every line break, format mark and separator into "?"* · *cuts on whole characters* · *never leaves a half-escape at the cut* | table of 11 spelled-out characters (CR, VT, FF, NEL, U+2028/2029, ZWSP, BOM, LRI, RLO, lone surrogate) → `?`, named in the failure; a surrogate pair at the 64-character cut stays whole; a backslash/quote pair cut in half leaves no dangling `\` before `…` (an escaped backslash that fits whole is kept) |
+| `sshAgentManagerWindows.test.ts` → *an answer given after Remove… / across a re-load refuses* · *a request for a key that is not loaded…* | the manager's refusal lines are REASONS (*answered after the key was removed or replaced — no window was opened*, *the key is not loaded*) with no `REFUSED` of their own: the server writes the verdict once |
+
+**Watched RED** on the unfixed code: `7 !== 6` (plain login) and `9 !== 8` (host-bound) — one line more than a plain name;
+the namespace test saw `a signature in the "x"⏎This login is for the server whose host key is …`; the log tests saw
+`REFUSED a signature with "prod": answered after the key was removed or re-added`. **Break-it:** the prompt reading
+`key.name` raw turns the three name tests red; the namespace raw turns the namespace test red; the old log words turn the
+three log tests red.
+
+**Open, not fixed (2026-10-21):** during E1 two unrelated tests each failed ONCE in a full local run and never again —
+`sshExecRunner.test` (`false !== true`; the line is unknown, the output was not kept) and `wslProcess.test` *an answer comes
+back as the text the child printed* (actual `''`, expected the path; 6.5 s). Both spawn real child processes under 8 parallel
+workers at lowered priority. Not reproduced in 3 later full runs (5704 pass, 0 fail each) and 5 single-file runs; there is
+no CI record of either.
+
+## A removed or replaced key never signs (2026-10-20, #197 E1.2)
+
+The agent's prompt can stay open for minutes, and the person can remove or re-load the key meanwhile; an *Allow* given
+afterwards must sign nothing ([PLAN_ssh_allow_longer_windows_E1.md](../todo/PLAN_ssh_allow_longer_windows_E1.md) §4).
+
+| test | what it proves |
+|---|---|
+| `sshAgentServer.test.ts` → *a key removed while its prompt is open does not sign, whatever the answer* | over a REAL socket, the prompt held open by the test; the key leaves the served list, the answer is *Allow* → reply `FAILURE`, the key's `sign` never called, the refusal logged |
+| `sshAgentServer.test.ts` → *a key re-loaded while its prompt is open signs with neither the old nor the new material* | the same key re-added as a new object (identical public bytes) → `FAILURE`, neither object signed |
+| `sshAgentManager.test.ts` → *a replaced key object refuses to sign, even with identical public bytes* · *an unloaded key object refuses to sign* · *a disposed manager's key objects refuse to sign* | through the CAPTURED `LoadedKey.sign` (the manager tests run a stub server, so the server's check cannot be what they see); the replacement itself signs, which is what proves the fixture is a real key |
+
+**The shared world.** `src/test/sshAgentWorld.ts` (precedent `pinWorld.ts`) holds what `sshAgentManager.test.ts` used to
+carry: the stub socket server, the `vscode` spy (dialogs, the BUTTONS each one offered, the output channel, the
+environment collection), `realPrivateKey`, `manager`, `keyEntity`, `unanswered`, and the temp storage directory —
+now named `testsToDelete-agent-…` (the server suite's two temp folders too) and swept at exit. `sshAgentManager.test.ts`
+went from 585 to 429 lines with no assertion changed, was 475 with the three new tests, and was 489 with the
+key-material guard of the review below; E1.3 and E1.1 took it to 503, and the E1 whole-epic review (key name in the prompt) to 545 — its real line count today. (The plan's "≤ 450" was not met by E1.2 itself; the first version of this
+paragraph said 386, which was wrong.) The world's output-channel spy refuses a write after its `dispose()`, like the real
+channel, and `unanswered()` also returns `failLate` (a modal that rejects late).
+
+### The review's additions (2026-10-20, #197 E1.2 review)
+
+| test | what it proves |
+|---|---|
+| `sshAgentServer.test.ts` → both E1.2 tests | now also assert the refusal line says *removed or replaced* |
+| `sshAgentServer.test.ts` → *a key replaced inside the covered-window path is refused: the check is after the await even with no prompt* | a confirm that swaps the key synchronously and answers `true` with no modal → `FAILURE`, the counting copy signed 0 |
+| `sshAgentServer.test.ts` → *every prompt open for a removed key is refused — two on one socket and one on another* | three prompts for one key held open, the key removed, all answered *Allow* → three `FAILURE`, signed 0 |
+| `sshAgentManagerLog.test.ts` (new file) → *a prompt that runs out of time / FAILS / is answered after the window closed* | no throw out of the confirm, nothing written after `dispose()` (the spy channel throws on a write after dispose) |
+| `sshAgentManagerLog.test.ts` → *a key named with line breaks writes one line per log call* | name `x⏎SIGNED with "y"U+2028z` → as many lines in the channel as log calls |
+| both suites → *nothing this suite logged carries key material* (last test of `sshAgentManager.test.ts`, `sshAgentServer.test.ts`, `sshAgentManagerLog.test.ts`) | `assertNoKeyMaterialLogged()` of `sshAgentWorld.ts` reads every log the file captured (`watchLogs`) against every key it generated (`watchSecret`): no `PRIVATE KEY` header and no base64 line of a key; `keyMaterialIn` is pure and has its own test showing it catches a leak |
+
+**Watched RED** (unfixed code): the server tests' `assert.match` of *removed or replaced* against the old *removed while …*
+line; *a prompt that runs out of time…* and *…FAILS…* with `Error: the output channel was disposed`; the forged-line test
+with `8 !== 4` (eight lines in the channel for four log calls). The covered-window, three-prompt and key-material tests are
+guards that were green on the shipped code; **break-it** shows their teeth: moving the check before the `await`, or
+removing it, turns the covered-window and three-prompt tests red (and the two E1.2 server tests); a `loaded` line that
+prints the key turns the guard red (`a log line carries key material: … -----BEGIN PRIVATE KEY-----?…`); without the
+`disposed` guard in `log` or without `withoutControlChars` the matching tests above turn red. *An answer after the window
+closed* is also a guard — that path writes no line on the shipped code either.
+
+**Watched RED** on unfixed code, each for its real reason: the two server tests read reply type `14` (`SIGN_RESPONSE`)
+where `5` (`FAILURE`) was expected; the three manager tests got a signature `Buffer` where `undefined` was expected.
+**Break-it**, one fix at a time: without the server's post-`await` check only the two server tests go red; without
+`revoke()` in `serve()`, in `unload()` or in `dispose()`, exactly the matching manager test goes red.
+
+## A window belongs to one generation of one key (2026-10-20, #197 E1.3)
+
+The window book ([module_extension.md](module_extension.md), *The SSH agent*) is pure, so its rules are tests with no
+editor; the manager's half — that the right question is asked at the right moment — is a second suite on the shared world.
+
+| suite | what it proves |
+|---|---|
+| `allowWindows.test.ts` (26 tests, pure) | a window never covers the next generation of its key · a revocation fences an answer even with no window open, and never an answer for another key · `stale-key` wins over the other two fences · a fence never moved reads 0 · no grant reaches past its scope's ceiling (`login` pinned equal to `ASK_WINDOW_MS`, which the TEST imports) · a shorter grant never shortens a longer one · the two clocks — (11 min, 1 min) and (1 min, 11 min) refuse, the boundary is strict on both, a wall clock set back above `grantedAt` refuses · a login window never covers a Git signature · a book that did not change is the same object, and a grant never touches the book it was given · lock, login-end and sweep behave as the book says · **review round:** a dead window (wall clock set back, or ended on the monotonic clock) never blocks a grant · a window of generation 1 never blocks a grant for generation 2 · a live same-generation window that ends later still wins (*kept-later*) · `nextExpiry` is the earlier end of the two clocks |
+| `sshAgentManagerWindows.test.ts` (11 tests, on `sshAgentWorld.ts`) | re-adding a loaded key starts with no window · an answer after *Remove from SSH Agent* refuses and names it · *Allow for 10 minutes* on a prompt whose key was unloaded (or re-loaded) opens no window for the key loaded next · every silent signature logs its window and its end · the gate reads the injected monotonic clock · a request for a key that is not loaded is refused with no dialog · **review round:** the monotonic clock is read at the click (origin 10 h, prompt held 5 min, second request 12 min after arrival is covered) · the window runs ten minutes from ONE wall-clock reading at the click (clock +6 min per read) · a key loaded again gets its own window, the old generation's does not shadow it (stopped clock). `assertNoKeyMaterialLogged()` now runs in the LAST test of the file |
+
+`manager()` in the world gained `monotonic?: () => number` (the manager's last constructor parameter, optional with no default —
+a defaulted fourth parameter takes the constructor to complexity 5 and `npm run lint` says so). A test's monotonic origin is
+never 0: a book that stored `grantedAtMono` as 0, or never stored it, computes the wrong elapsed time.
+
+**Watched RED** on the code before the book (unfixed manager, the new suite only): re-adding a loaded key `1 !== 2`
+(*the re-loaded key asked again*); *Allow for 10 minutes* after an unload: the answer returned `true !== false` and the key
+loaded next did not ask, `1 !== 2`; across a re-load the same two; the silent signature logged
+*allowed (within the 10-minute window) for an SSH login as "me" (ssh-connection)* where `allowed without asking` was expected;
+an unloaded key opened a dialog and was allowed, `true !== false`. The monotonic-clock test cannot be red as an assertion: the
+parameter does not exist on the old manager, so it fails to compile (`Expected 4-7 arguments, but got 8`). The pure suite
+**cannot be red** — the module is new — so it was broken instead.
+
+**Break-it**, one mutation at a time (each compiled, the suites run, the file restored): in the book — mono boundary `<=`
+(*the boundary expires on both clocks*); wall boundary `>=` in `withinAllowWindow`; the mono half of `covers` dropped (four tests);
+fence compared with `<` (*a revocation fences an answer even when no window was open*); `?? 0` removed (*a fresh key's first grant
+opens*, `undefined !== 0`); the `ReadonlyMap` mutated through a cast (seven tests); `kept-later` building a new book;
+`grantedAtMono` stored as 0; `withoutExpired` leaving an empty key entry, dropping a key's other scope, or ignoring the mono clock;
+`scopesFor` with `!== 0`; `endLoginWindows` moving the key fence; the generation ignored in `covers` and in the crossing; the lock
+fence checked before `stale-key`; no ceiling; a shorter grant overwriting a longer; `forgetKey` leaving the entry; `nextExpiry`
+taking the latest. In the manager — the generation read after the `await` (the two re-load tests), or off the `AgentKey` argument
+(every dialog test: all refused as *not loaded*); the monotonic clock injected but not used; the stale answer not refused; no new
+generation (re-load test); the not-loaded refusal removed. **Two mutations survive, and that is stated:** `forgetKey` in `unload()` and
+the reset in `dispose()` change nothing a test can see in E1 — an unloaded key is refused as *not loaded* and a re-load forgets again — they
+keep the book from holding windows of dead keys, which E2's row and expiry timer will read. And `forgetKey` in `serve()` alone is
+redundant with the generation check in `covers`: removing it, or the new generation, alone leaves the re-add test green;
+removing **both** turns it red (`1 !== 2`) — the defect needed both rules to be missing.
+
+**The E1.3 review round (Opus + Fable, 2026-10-20).** *Watched RED on the book as it was* (HEAD 3387fdcb, pure suite): *a dead window never
+blocks a grant* — `'opened'` expected, `'kept-later'` actual (the old rule compared only `until`); *a window of generation 1 never blocks a grant for
+generation 2* — the same pair; *nextExpiry is the earlier end of the two clocks* — expected `W + 2 min`, actual `W + 10 min` (the wall `until`). The
+manager tests added here pin behaviour that was already correct, so they cannot be red on the code: they were broken instead.
+**Break-it, every mutant:** in the book — `placed` back to the old rule (`existing.until >= until` only): both new grant tests red · liveness on the wall clock only: red
+only on *a window the monotonic clock already ended never blocks a grant either* (the reason that fifth test exists) · the "later" comparison dropped: *a shorter grant never
+shortens a longer one* and *ending the login windows moves no fence* red · the generation dropped from the liveness check: *generation 1 never blocks generation 2* red ·
+`nextExpiry` ending at the wall `until`: its test red. In the manager — `grantedAtMono = 0` and the arrival reading used in `settle`: both turn *the monotonic clock is read
+at the click* red · two wall-clock reads at the click, in either order: *the window runs ten minutes from ONE reading* red (one by the window ending early, the other by the log line's
+end) · for *a key loaded again gets its own window*: `forgetKey` removed from `serve()` **stays green** now (the book's same-generation rule covers it — the two rules are redundant, the test
+pins the pair); `forgetKey` removed AND the old `placed` rule restored: red (3 dialogs, not 2); generation never moving AND `forgetKey` removed: red (four tests); generation never moving
+alone: only *an answer given across a re-load refuses* red; `forgetKey` removed AND `covers` not checking the generation: red (two tests).
+
+## What every text says the signing prompt does (2026-10-20, #197 E1.4)
+
+A sentence is not something a compiler or a behaviour test reads, and the signing prompt's texts had drifted from the prompt
+for as long as the ten-minute window existed. `sshAgentHelp.test.ts` (7 tests) holds them to it; `repoFiles.ts` is the one
+place a test derives the repository root and reads a repository file (moved out of `readmeClaims.test.ts`, which imports it).
+
+| test | what it proves |
+|---|---|
+| *the help names every answer the signing prompt offers, in every language* | loops `SIGNING_BUTTONS` (exported by `agentConsent.ts`, spread by the dialog — never a copy) × `HELP_LANGUAGES` over the `ssh-agent` article; goes red by itself when *Allow longer…* joins the list |
+| *no shipped text says every signature asks* | a pattern over the English `ssh-agent` and `wsl-relay` articles, `package.json`, both READMEs and the walkthrough |
+| *the scan matches every old English sentence* | the companion a pattern test needs: each old sentence, quoted verbatim, must match — it caught `SSH agent, confirming every use` the first time |
+| *no replaced sentence survives, in any language of the help* | each of the five `help*.ts` against its OWN old wording (a pattern in English cannot see *jedes Mal*) |
+| *no replaced sentence survives in the code that shows or documents the prompt* | `extension.ts`, `agentDoors.ts`, `commands/agentCommands.ts` and the comments that said the same |
+| *the guard on command titles matches the two promises the title once made* | the companion of the next one: `Add to SSH Agent (asks before signing)` and `(confirm every use)` must match `TITLE_PROMISES_ASKING`, plain `Add to SSH Agent` must not |
+| *no command title, README or help language puts "asks before signing" after Add to SSH Agent* | the manifest, both READMEs and the five help files hold no such title, and the manifest does carry the plain command |
+| `sshAgentManager.test.ts` → *the dialog offers exactly the signing buttons, Allow once first* | the dialog's buttons equal `SIGNING_BUTTONS` |
+
+**Deliberately not scanned:** `agentDoors.ts` line 87, the CLI door, which really asks every time (`handleAlias` mints a fresh
+grant per call; `agentDoors.test.ts` pins the sentence), and the binary's own help in `src_cli` (`CommandLine.cs` waits for its `cli-v` release; `src_cli/README.md` was corrected).
 
 ## What none of them covers
 

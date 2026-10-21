@@ -1,6 +1,6 @@
 import { describeError } from './describeError';
 import * as crypto from 'node:crypto';
-import { ByteReader, encodeString } from './sshAgentProtocol';
+import { ByteReader, encodeString, keyFingerprintOf } from './sshAgentProtocol';
 
 /**
  * Reading a stored private key into something that can sign, and deriving the public blob the
@@ -162,11 +162,10 @@ function algorithmOf(key: crypto.KeyObject): SshKeyAlgorithm | undefined {
   return SIMPLE_ALGORITHMS[type];
 }
 
-/** `SHA256:base64(sha256(blob))`, without padding — exactly what `ssh-keygen -lf` shows. */
-export function keyFingerprintOf(publicBlob: Buffer): string {
-  const digest = crypto.createHash('sha256').update(publicBlob).digest('base64').replace(/=+$/, '');
-  return `SHA256:${digest}`;
-}
+// The fingerprint reads a public blob, which is protocol, so it lives in `sshAgentProtocol.ts`
+// (the userauth parser needs it for a host key, and this file already imports that one). It is
+// re-exported so `hostKeyPin.ts` and the tests keep their import.
+export { keyFingerprintOf };
 
 const OPENSSH_FORMAT_REASON =
   'it is stored in the OpenSSH format (`-----BEGIN OPENSSH PRIVATE KEY-----`), which this agent ' +

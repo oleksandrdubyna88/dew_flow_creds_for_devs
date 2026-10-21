@@ -120,7 +120,7 @@ server transport.
 ## What the extension holds
 
 **Nine kinds of entry**, each with the action it exists for: **credentials**, **SSH connections** and
-**SSH keys** (connect, install, serve from an agent with a prompt per signature), **VPN configs**
+**SSH keys** (connect, install, serve from an agent that asks before it signs), **VPN configs**
 (start and stop the tunnel), **database connections** (open in your client, or run a query),
 **terminal commands** (arguments as rows, each with its own note), **scripts** (a highlighted editor,
 variables pulled out as `${NAME}` rows and delivered through the environment rather than pasted into

@@ -563,7 +563,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // audited — the reasons are in `brokerProtocol.isConfigReadRoute`.
     configRoute: configRouteSources(storage),
   });
-  // The SSH agent: keys served from memory, every use confirmed, SSH_AUTH_SOCK injected into
+  // The SSH agent: keys served from memory, asked before signing, SSH_AUTH_SOCK injected into
   // new terminals. Nothing starts until a key is actually loaded.
   const sshAgent = new SshAgentManager(
     storage,
@@ -581,7 +581,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   void sshAgent.loadMarked().then((count) => {
     if (count > 0) {
       void vscode.window.showInformationMessage(
-        `${count} SSH key(s) are served by the CredsForDevs agent. Every use asks first; see "CredsForDevs: SSH Agent" for the record.`,
+        `${count} SSH key(s) are served by the CredsForDevs agent. A signature asks first; the answer covers it once, or every use for 10 minutes; see "CredsForDevs: SSH Agent" for the record.`,
       );
     }
   });

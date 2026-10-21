@@ -1,22 +1,35 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { SignPurpose, describePurpose, describeUnknownShape } from './sshAgentProtocol';
-import { localRequestTimeLine } from './requestTime';
+import {
+  SignPurpose,
+  describePurpose,
+  describePurposeForLog,
+  describeServerLine,
+  describeUnknownShape,
+  MAX_DISPLAY,
+  displayText,
+  withoutControlChars,
+} from './sshAgentProtocol';
+import { localRequestTimeLine, localWallTime } from './requestTime';
 import { withTimeout } from './withTimeout';
 import { describeError } from './describeError';
 import { AgentKey, SshAgentServer, agentSocketPath } from './sshAgentServer';
 import { ParsedSshKey, parseSshPrivateKey } from './sshKeyParse';
 import { SecretOpener } from './secretOpener';
 import { automaticOpenerFor } from './automaticRead';
+import { CONSENT_TIMEOUT_MS, SIGNING_BUTTONS, consentFromChoice } from './agentConsent';
 import {
-  ALLOW_ONCE,
-  ALLOW_WINDOW,
-  CONSENT_TIMEOUT_MS,
-  DENY,
-  consentFromChoice,
-  withinAllowWindow,
-} from './agentConsent';
+  ALL_ONLY,
+  AllowWindows,
+  AskTicket,
+  NO_WINDOWS,
+  OpenWindow,
+  askTicket,
+  forgetKey,
+  grantWindow,
+  windowCovers,
+} from './allowWindows';
 import { signForAgent } from './sshAgentSign';
 import { StorageManager } from './storageManager';
 import { materializedKeyPath } from './materializedKeys';
@@ -24,14 +37,17 @@ import { EntityMetadata, TreeNode } from './types';
 
 /**
  * The editor's half of the SSH agent: which keys are loaded, the modal in front of every
- * signature, and the `SSH_AUTH_SOCK` that makes `ssh` and `git` find it.
+ * signature no open window covers, and the `SSH_AUTH_SOCK` that makes `ssh` and `git` find it.
  *
  * <p>Key material lives in this object's memory for as long as a key is loaded, and NOWHERE
  * else — the point of the feature is that no file with mode 0600 exists to be read, copied or
- * left behind by a crash. `dispose()` drops it with the window, which is also the whole
- * revocation story, exactly as it is for the agent broker's grants.</p>
+ * left behind by a crash. `dispose()` drops it with the window, as it does for the agent
+ * broker's grants. Revocation is also `revoke()` on the key object, called by `unload()`, by a
+ * later `load` of the same entity and by `dispose()`, so a holder that kept the object cannot
+ * sign with it (#197).</p>
  *
- * <p><b>The confirmation is per use and cannot be made sticky by accident.</b> "Allow for 10
+ * <p><b>The confirmation is per use, unless the person opens a window — and a window cannot be opened by
+ * accident.</b> "Allow for 10
  * minutes" exists because `git push` signs and authenticates in one breath and two modals per
  * push would teach people to click without reading; it is per KEY, it is remembered in memory
  * only, and it is stated in the dialog rather than implied.</p>
@@ -68,14 +84,35 @@ function parsedKey(content: string | undefined, name: string): { ok: true; key: 
 interface LoadedKey extends AgentKey {
   accountId: string;
   publicLine: string;
+  /**
+   * Which load of this entity this object is (#197, I2): a number from `serve`, never reused. A window is
+   * granted to one generation and covers no other, so a key re-loaded under the same id inherits nothing.
+   */
+  generation: number;
+  /**
+   * End this object's right to sign, for good (#197, I1). Called when the key is unloaded, replaced by a
+   * later `load` of the same entity, or the manager is disposed — so a holder that kept the object (a
+   * prompt that was open meanwhile) cannot sign with it, whatever it was answered. By object, never by
+   * public bytes: a replacement with identical bytes is a different object and revokes the old one.
+   */
+  revoke(): void;
 }
 
 export class SshAgentManager implements vscode.Disposable {
   private server: SshAgentServer | undefined;
   private readonly keys = new Map<string, LoadedKey>();
-  /** entityId -> the moment a blanket allow expires. In memory only, by design. */
-  private readonly allowedUntil = new Map<string, number>();
+  /**
+   * The open "allow without asking" windows — `allowWindows.ts` holds the rules. In memory only, by design.
+   * Replaced, never mutated: the book is an immutable value.
+   */
+  private windows: AllowWindows = NO_WINDOWS;
+  /** The last generation `serve` handed out. */
+  private generations = 0;
+  /** Monotonic time for the window book's second clock (see `monotonicSource`). */
+  private readonly monotonic: () => number;
   private output: vscode.OutputChannel | undefined;
+  /** Set by `dispose()` for good: the log is closed with the window. */
+  private disposed = false;
 
   constructor(
     private readonly storage: StorageManager,
@@ -96,7 +133,15 @@ export class SshAgentManager implements vscode.Disposable {
     private readonly clock: () => Date = () => new Date(),
     /** How long the signing prompt waits before it refuses — the broker's bound; tests shorten it. */
     private readonly consentTimeoutMs: number = CONSENT_TIMEOUT_MS,
-  ) {}
+    /**
+     * Monotonic milliseconds — the window book's second clock, so a wall clock set back after a grant cannot
+     * stretch it. Optional with NO default: a defaulted parameter is a branch for the complexity rule, and the
+     * constructor is at the limit. A test hands one in; production reads `performance.now()`.
+     */
+    monotonic?: () => number,
+  ) {
+    this.monotonic = monotonicSource(monotonic);
+  }
 
   get socketPath(): string | undefined {
     return this.server?.socketPath;
@@ -147,15 +192,48 @@ export class SshAgentManager implements vscode.Disposable {
   }
 
   private serve(accountId: string, details: EntityMetadata, key: ParsedSshKey): void {
+    // A key loaded again under the same id replaces the old object, which must stop signing at once.
+    this.keys.get(details.id)?.revoke();
+    // And it is a new generation: it inherits no window, however it got here (first load, re-load, restart).
+    this.windows = forgetKey(this.windows, details.id);
     this.keys.set(details.id, {
+      generation: ++this.generations,
       accountId,
       entityId: details.id,
       name: details.name,
       fingerprint: key.fingerprint,
       publicLine: key.publicLine,
       identity: { publicBlob: key.publicBlob, comment: details.name },
-      sign: (data, flags) => signForAgent(key, data, flags),
+      ...this.signing(key, details.name),
     });
+  }
+
+  /**
+   * The signing half of one served key: `sign` until `revoke`, and a logged refusal after it. The revoked
+   * handle lets go of the parsed key too, so an object kept past its life holds no material to misuse.
+   * The server's own "could not sign (unsupported request)" cannot say this — `signForAgent` also returns
+   * `undefined` for a key or a flag it cannot sign.
+   *
+   * <p><b>What this does NOT do — a memory limit, stated.</b> After unload, replace or dispose the key
+   * object cannot sign and drops its reference to the parsed key. But the parsed key (a Node `KeyObject`)
+   * and the PEM text read from SecretStorage stay in the heap until the garbage collector runs: a
+   * `KeyObject` cannot be zeroed and a JS string cannot be overwritten. That is weaker than
+   * `vaultKeys.lock()`, which wipes a Buffer the extension owns, and it is so by construction.</p>
+   */
+  private signing(key: ParsedSshKey, name: string): Pick<LoadedKey, 'sign' | 'revoke'> {
+    let material: ParsedSshKey | undefined = key;
+    return {
+      sign: (data, flags) => {
+        if (material === undefined) {
+          this.log(`refused to sign with "${name}": the key was removed or replaced`);
+          return undefined;
+        }
+        return signForAgent(material, data, flags);
+      },
+      revoke: () => {
+        material = undefined;
+      },
+    };
   }
 
   /** Stop serving one key. Its material goes with it. */
@@ -164,8 +242,9 @@ export class SshAgentManager implements vscode.Disposable {
     if (key === undefined) {
       return false;
     }
+    key.revoke();
     this.keys.delete(entityId);
-    this.allowedUntil.delete(entityId);
+    this.windows = forgetKey(this.windows, entityId);
     this.log(`unloaded "${key.name}"`);
     if (this.keys.size === 0) {
       this.stop();
@@ -240,14 +319,6 @@ export class SshAgentManager implements vscode.Disposable {
   }
 
   /**
-   * The dialog in front of every signature.
-   *
-   * <p>It names the key, its fingerprint and what is being signed, because "a key is being
-   * used" is not a decision anybody can make. A dismissed dialog refuses this one signature
-   * and remembers nothing — the same rule the broker's consent follows, for the same reason: a
-   * mis-click must not lock a key out for the window's life.</p>
-   */
-  /**
    * The one case the dialog cannot describe, written down so it can be answered afterwards.
    *
    * <p>Its own method rather than a branch inside `confirm`, which is at the complexity the
@@ -260,31 +331,94 @@ export class SshAgentManager implements vscode.Disposable {
     }
   }
 
+  private generationOf(entityId: string): number | undefined {
+    return this.keys.get(entityId)?.generation;
+  }
+
+  /**
+   * The gate: is this signature allowed without asking, and if not, ask.
+   *
+   * <p><b>Arrival is read before the first `await`</b> — the time of the request, the key's generation and
+   * the monotonic clock. The server hands the request over synchronously, so these are the facts of the
+   * moment it came in; a generation read after the prompt would be the CURRENT one, and a key re-loaded
+   * during the prompt would then look like the key that was asked about. It is read from the manager's own
+   * map, not from the `AgentKey` handed in.</p>
+   */
   private async confirm(key: AgentKey, purpose: SignPurpose, data: Buffer): Promise<boolean> {
     // When the signature was asked for, taken as it enters — the time on the prompt is what says how
     // old the request is (#131), and the prompt refuses after CONSENT_TIMEOUT_MS unanswered.
     const asked = this.clock();
-    // The grant's ten minutes still start at the CLICK (`this.clock()` below), as agentConsent.ts
-    // documents — the time on the prompt and the start of the window are two facts on purpose.
+    const generation = this.generationOf(key.entityId);
+    const nowMono = this.monotonic();
+    // The grant's ten minutes still start at the CLICK (`settle`), as agentConsent.ts documents — the
+    // time on the prompt and the start of the window are two facts on purpose.
     this.noteUnknown(purpose, data);
-    if (withinAllowWindow(this.allowedUntil.get(key.entityId), asked.getTime())) {
-      this.log(`allowed (within the 10-minute window) for ${describePurpose(purpose)}`);
+    if (generation === undefined) {
+      this.log(`"${key.name}": the key is not loaded`);
+      return false;
+    }
+    const arrived = { entityId: key.entityId, generation };
+    const covered = windowCovers(this.windows, arrived, ALL_ONLY, asked.getTime(), nowMono);
+    if (covered !== undefined) {
+      this.logCovered(key, purpose, covered);
       return true;
     }
+    const ticket = askTicket(this.windows, arrived);
     const choice = await this.askToSign(key, purpose, asked);
-    // What the answer MEANS is `agentConsent.ts` — pure, and therefore tested. What is left
-    // here is applying it: the presence signal and the remembered window.
-    const decision = consentFromChoice(choice, this.clock().getTime());
-    if (decision.present) {
-      this.onUserPresent();
-    }
-    if (decision.allowedUntil !== undefined) {
-      this.allowedUntil.set(key.entityId, decision.allowedUntil);
-    }
-    return decision.allow;
+    return this.settle(key, ticket, choice);
+  }
+
+  /** I10: a silent signature says which window allowed it, and until when. */
+  private logCovered(key: AgentKey, purpose: SignPurpose, window: OpenWindow): void {
+    this.log(
+      `allowed without asking: 10-minute window of "${key.name}" until ${localWallTime(new Date(window.until))} ` +
+        `(granted ${localWallTime(new Date(window.grantedAt))}) for ${describePurposeForLog(purpose)}`,
+    );
   }
 
   /**
+   * Apply the answer. What it MEANS is `agentConsent.ts` — pure, and therefore tested; what is left here is
+   * the presence signal and the remembered window. Both clocks are read once, side by side, at the click.
+   */
+  private settle(key: AgentKey, ticket: AskTicket, choice: string | undefined): boolean {
+    const grantedAt = this.clock().getTime();
+    const grantedAtMono = this.monotonic();
+    const decision = consentFromChoice(choice, grantedAt);
+    if (decision.present) {
+      this.onUserPresent();
+    }
+    if (decision.allowedUntil === undefined) {
+      return decision.allow;
+    }
+    return this.openWindow(key, ticket, { grantedAt, grantedAtMono, until: decision.allowedUntil });
+  }
+
+  /**
+   * Record a timed answer. THE one place the manager decides on a moved generation. (The book checks the
+   * generation in three places — crossing, covers, liveAndLater — but only here is the outcome acted on.) It
+   * says `stale-key` when the key was unloaded or re-loaded while the prompt was open, and then nothing is
+   * allowed and no window opens. (An *Allow once* across the same event is refused by the server, which
+   * compares the key OBJECT it asked about with the one now served.) This release can produce no other
+   * crossing.
+   */
+  private openWindow(key: AgentKey, ticket: AskTicket, at: { grantedAt: number; grantedAtMono: number; until: number }): boolean {
+    const { book, outcome } = grantWindow(this.windows, ticket, 'all', this.generationOf(key.entityId), at.grantedAt, at.grantedAtMono, at.until);
+    this.windows = book;
+    if (outcome === 'stale-key') {
+      this.log(`"${key.name}": answered after the key was removed or replaced — no window was opened`);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * The dialog in front of a signature no open window covers.
+   *
+   * <p>It names the key, its fingerprint and what is being signed, because "a key is being
+   * used" is not a decision anybody can make. A dismissed dialog refuses this one signature
+   * and remembers nothing — the same rule the broker's consent follows, for the same reason: a
+   * mis-click must not lock a key out for the window's life.</p>
+   *
    * The prompt itself, bounded by the broker's consent timeout: unanswered, it refuses — before
    * #131's tail it waited forever, so a prompt found an hour later still signed and the `ssh` or
    * `git` that asked hung. A click after the bound changes nothing (VS Code cannot close a modal, so
@@ -298,15 +432,14 @@ export class SshAgentManager implements vscode.Disposable {
   private async askToSign(key: AgentKey, purpose: SignPurpose, asked: Date): Promise<string | undefined> {
     const bound = durationText(this.consentTimeoutMs);
     const modal = vscode.window.showWarningMessage(
-      `Use the SSH key "${key.name}" to sign ${describePurpose(purpose)}?\n${localRequestTimeLine(asked)}\n\n` +
+      `Use the SSH key "${displayText(key.name, MAX_DISPLAY)}" to sign ${describePurpose(purpose)}?\n${localRequestTimeLine(asked)}\n\n` +
         `${key.fingerprint}\n\n` +
+        serverParagraph(purpose) +
         'The key itself never leaves this window. Allow once, or allow every use of this key for ' +
         'ten minutes — long enough for a push that signs and authenticates in one go. ' +
         `Unanswered, it is refused after ${bound}.`,
       { modal: true },
-      ALLOW_ONCE,
-      ALLOW_WINDOW,
-      DENY,
+      ...SIGNING_BUTTONS,
     );
     // A modal that REJECTS (the window closing under it) is a dismissal — and `withTimeout` must be
     // handed a promise that does not reject.
@@ -316,7 +449,7 @@ export class SshAgentManager implements vscode.Disposable {
     );
     const answered = await withTimeout(settled, this.consentTimeoutMs);
     if (answered === undefined) {
-      this.log(`no answer in ${bound} — refused ${describePurpose(purpose)}`);
+      this.log(`no answer in ${bound} — refused ${describePurposeForLog(purpose)}`);
     }
     return answered?.choice;
   }
@@ -327,9 +460,18 @@ export class SshAgentManager implements vscode.Disposable {
     return { choice: undefined };
   }
 
+  /**
+   * One call is one line: a key's name is free text (an import, a share sets it), so line breaks and
+   * control characters in the message become `?` here, for every line that carries a name. After
+   * `dispose()` this writes nothing and does not make a channel again — a late answer or timeout of a
+   * prompt that outlived the window must not reach a channel that is gone.
+   */
   private log(message: string): void {
+    if (this.disposed) {
+      return;
+    }
     this.output ??= vscode.window.createOutputChannel('CredsForDevs: SSH Agent');
-    this.output.appendLine(`${new Date().toISOString()} ${message}`);
+    this.output.appendLine(`${new Date().toISOString()} ${withoutControlChars(message)}`);
   }
 
   /** Whether this entity's key would be served by the agent rather than written to disk. */
@@ -349,14 +491,40 @@ export class SshAgentManager implements vscode.Disposable {
     return this.keys.has(details.sshKeyEntityId ?? details.id);
   }
 
+  /** Every served key object stops signing — before the map forgets them. */
+  private revokeAll(): void {
+    for (const key of this.keys.values()) {
+      key.revoke();
+    }
+  }
+
   dispose(): void {
+    this.revokeAll();
     this.keys.clear();
-    this.allowedUntil.clear();
+    this.windows = NO_WINDOWS;
     this.server?.dispose();
     this.server = undefined;
+    this.disposed = true;
     this.output?.dispose();
+    this.output = undefined;
     removeSocketFile(this.storageDir);
   }
+}
+
+/**
+ * The window book's second clock. `performance.now()` is libuv's `uv_hrtime`, which on Windows is
+ * `QueryPerformanceCounter` — documented as counting through standby and hibernation (Microsoft Learn,
+ * "Acquiring high-resolution time stamps"). Where a platform's counter pauses in sleep the wall clock still
+ * ends the window: both must permit.
+ */
+function monotonicSource(source: (() => number) | undefined): () => number {
+  return source ?? (() => performance.now());
+}
+
+/** The server line of a login prompt as a paragraph of its own — nothing for a request that names no server. */
+function serverParagraph(purpose: SignPurpose): string {
+  const line = describeServerLine(purpose);
+  return line === '' ? '' : `${line}\n\n`;
 }
 
 /** "5 minutes", "1 minute" — or seconds under a minute, so a short bound never reads "0 minutes". */

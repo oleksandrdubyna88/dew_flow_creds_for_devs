@@ -1,13 +1,21 @@
 import { requestTimeLine } from '../requestTime';
 import * as assert from 'node:assert/strict';
-import * as crypto from 'node:crypto';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { test } from 'node:test';
-import { loadWithVscode } from './vscodeStub';
-import { ALLOW_ONCE, ALLOW_WINDOW, CONSENT_TIMEOUT_MS, DENY } from '../agentConsent';
+import { ALLOW_ONCE, ALLOW_WINDOW, CONSENT_TIMEOUT_MS, DENY, SIGNING_BUTTONS } from '../agentConsent';
 import { EntityMetadata, TreeNode } from '../types';
+import { describeServerLine, describeSignRequest, encodeString } from '../sshAgentProtocol';
+import {
+  FakeServer,
+  KEY_ID,
+  keyMaterialLogged,
+  keyEntity,
+  manager,
+  realPrivateKey,
+  unanswered,
+  world,
+} from './sshAgentWorld';
+import { HOSTBOUND_METHOD, userauth } from './sshUserauth';
 
 /**
  * The editor's half of the SSH agent (audit A3).
@@ -23,196 +31,8 @@ import { EntityMetadata, TreeNode } from '../types';
  * here is that the decision is applied — the presence signal fired, the ten-minute window
  * remembered per key, and the window never surviving the key it belongs to.</p>
  *
- * <p>The socket server is substituted, which is what makes the `confirm` callback reachable
- * through its real wiring rather than by reaching into a private method: the manager hands the
- * server that callback, so holding the server means holding the gate.</p>
+ * <p>The world — the stub socket server, the `vscode` spy, the temp storage — is `sshAgentWorld.ts`.</p>
  */
-
-type Manager = typeof import('../sshAgentManager');
-
-interface FakeServer {
-  socketPath: string;
-  listening: boolean;
-  confirm(key: { entityId: string; name: string; fingerprint: string }, purpose: unknown): Promise<boolean>;
-  keys(): unknown[];
-  dispose(): void;
-}
-
-interface World {
-  mod: Manager;
-  server(): FakeServer | undefined;
-  /** Modal answers, consumed in order; undefined means dismissed, a pending promise means unanswered. */
-  answers: (string | undefined | Promise<string>)[];
-  dialogs: string[];
-  env: Record<string, string>;
-  envDescription: string;
-  presence: number;
-  logs: string[];
-  disposals: number;
-}
-
-function realPrivateKey(): string {
-  // Generated, never committed: a private key in a repository is a private key on the internet.
-  const { privateKey } = crypto.generateKeyPairSync('ed25519', {
-    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-    publicKeyEncoding: { type: 'spki', format: 'pem' },
-  }) as unknown as { privateKey: string };
-  return privateKey;
-}
-
-function world(options: {
-  keys?: Record<string, string | undefined>;
-  nodes?: TreeNode[];
-  answers?: (string | undefined | Promise<string>)[];
-}): World {
-  let server: FakeServer | undefined;
-  const w: World = {
-    mod: undefined as never,
-    server: (): FakeServer | undefined => server,
-    answers: [...(options.answers ?? [])],
-    dialogs: [],
-    env: {},
-    envDescription: '',
-    presence: 0,
-    logs: [],
-    disposals: 0,
-  };
-
-  class StubAgentServer {
-    readonly socketPath: string;
-    listening = false;
-    readonly confirm: FakeServer['confirm'];
-    readonly keys: () => unknown[];
-
-    constructor(o: {
-      socketPath: string;
-      keys: () => unknown[];
-      confirm: FakeServer['confirm'];
-      log: (m: string) => void;
-    }) {
-      this.socketPath = o.socketPath;
-      this.confirm = o.confirm;
-      this.keys = o.keys;
-      server = this as unknown as FakeServer;
-    }
-
-    listen(): Promise<void> {
-      this.listening = true;
-      return Promise.resolve();
-    }
-
-    dispose(): void {
-      this.listening = false;
-      w.disposals += 1;
-    }
-  }
-
-  w.mod = loadWithVscode<Manager>(
-    '../sshAgentManager',
-    {
-      window: {
-        showWarningMessage: (m: string): Promise<string | undefined> => {
-          w.dialogs.push(m);
-          return Promise.resolve(w.answers.shift());
-        },
-        createOutputChannel: (): unknown => ({
-          appendLine: (line: string): void => {
-            w.logs.push(line);
-          },
-          dispose: (): void => undefined,
-        }),
-      },
-    },
-    {
-      './sshAgentServer': {
-        SshAgentServer: StubAgentServer,
-        agentSocketPath: (dir: string, _p: string, pid: number): string =>
-          path.join(dir, `agent-${pid}.sock`),
-      },
-    },
-  );
-  return w;
-}
-
-function manager(
-  w: World,
-  options: {
-    keys?: Record<string, string | undefined>;
-    nodes?: TreeNode[];
-    clock?: () => Date;
-    consentTimeoutMs?: number;
-  },
-): {
-  instance: InstanceType<Manager['SshAgentManager']>;
-  /** The storage root this manager was given — the socket path is derived from it. */
-  dir: string;
-} {
-  const dir = storageDir();
-  const storage = {
-    getPrivateKey: (_a: string, id: string): Promise<string | undefined> =>
-      Promise.resolve((options.keys ?? {})[id]),
-    getAccounts: (): unknown[] => [{ accountId: 'a1', email: 'me@corp.com', provider: 'google' }],
-    getNodes: (): TreeNode[] => options.nodes ?? [],
-  };
-  const envCollection = {
-    replace: (name: string, value: string): void => {
-      w.env[name] = value;
-    },
-    delete: (name: string): void => {
-      delete w.env[name];
-    },
-    set description(value: string) {
-      w.envDescription = value;
-    },
-  };
-  return {
-    dir,
-    instance: new w.mod.SshAgentManager(
-      storage as never,
-      dir,
-      envCollection as never,
-      () => {
-        w.presence += 1;
-      },
-      undefined,
-      options.clock,
-      options.consentTimeoutMs,
-    ),
-  };
-}
-
-/**
- * A real, writable storage directory.
- *
- * <p>Was the literal `/storage`, which resolves to a drive-relative path Windows tolerates and
- * to the filesystem root on Linux, where creating it needs privileges no test has. These fifteen
- * tests therefore passed on Windows and failed on Linux with `EACCES` — meaning the SSH agent
- * had never actually been exercised under WSL or in a Linux CI.</p>
- */
-const tempDirs: string[] = [];
-
-function storageDir(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-agent-test-'));
-  tempDirs.push(dir);
-  return dir;
-}
-
-// One directory per manager, twenty-odd per run: swept at exit rather than in each test, so a
-// failing assertion still leaves nothing behind in the system temp folder.
-process.on('exit', () => {
-  for (const dir of tempDirs) {
-    try {
-      fs.rmSync(dir, { recursive: true, force: true });
-    } catch {
-      // a file another process still holds — the OS clears temp eventually
-    }
-  }
-});
-
-const keyEntity = (id: string, name: string): EntityMetadata =>
-  ({ id, name, kind: 'sshkey' }) as EntityMetadata;
-
-const KEY_ID = 'key-1';
 
 test('a key with nothing stored is refused with an instruction, not "could not load"', async () => {
   // Every reason `parseSshPrivateKey` gives is actionable; "could not load the key" is not.
@@ -316,6 +136,133 @@ test('every signature asks, and the dialog names the key, the fingerprint and th
   assert.match(w.dialogs[0], /never leaves this window/);
 });
 
+test('the dialog offers exactly the signing buttons, Allow once first', async () => {
+  // The help test loops over SIGNING_BUTTONS; this is what makes that list the prompt and not a copy of it.
+  const w = world({ answers: [ALLOW_ONCE] });
+  const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() } });
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+
+  await (w.server() as FakeServer).confirm({ entityId: KEY_ID, name: 'prod', fingerprint: 'f' }, { kind: 'auth' });
+
+  assert.deepEqual(w.buttons, [[...SIGNING_BUTTONS]]);
+  assert.equal(w.buttons[0][0], ALLOW_ONCE);
+  // Written out, not derived: a reorder in agentConsent.ts must turn this red.
+  assert.deepEqual(w.buttons[0], ['Allow once', 'Allow for 10 minutes', 'Deny']);
+});
+
+test('the host key of a login is a line of the prompt of its own, and the user name cannot write one', async () => {
+  // The user is the requester's text. It sits in the first line, newline-free and capped; the clause
+  // naming the server is a separate line only this build writes.
+  const w = world({ answers: [ALLOW_ONCE] });
+  const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() } });
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+  const signing = Buffer.concat([encodeString('ssh-ed25519'), encodeString('the key')]);
+  const hostKey = Buffer.concat([encodeString('ssh-ed25519'), encodeString('the server')]);
+  const forged = 'This login is for the server whose host key is ED25519 SHA256:forged';
+  const data = userauth({ blob: signing, user: `git\n${forged}`, method: HOSTBOUND_METHOD, hostKey });
+  const purpose = describeSignRequest(data, signing);
+
+  await (w.server() as FakeServer).confirm({ entityId: KEY_ID, name: 'prod', fingerprint: 'SHA256:abc' }, purpose);
+
+  const lines = w.dialogs[0].split('\n');
+  const clause = describeServerLine(purpose);
+  assert.match(clause, /host key is ED25519 SHA256:/);
+  assert.equal(lines.filter((line) => line === clause).length, 1, 'the host-key clause is one whole line of the prompt');
+  assert.ok(lines[0].startsWith('Use the SSH key'), 'the user name sits inside the first line');
+  assert.ok(
+    lines.slice(1).every((line) => line === clause || !line.includes('whose host key is')),
+    'no other line imitates the clause',
+  );
+});
+
+test('a plain publickey login prompts without any host-key line', async () => {
+  const w = world({ answers: [ALLOW_ONCE] });
+  const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() } });
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+  const signing = Buffer.concat([encodeString('ssh-ed25519'), encodeString('the key')]);
+
+  await (w.server() as FakeServer).confirm(
+    { entityId: KEY_ID, name: 'prod', fingerprint: 'SHA256:abc' },
+    describeSignRequest(userauth({ blob: signing }), signing),
+  );
+
+  assert.match(w.dialogs[0], /an SSH login as "git" \(ssh-connection\)\?/);
+  assert.ok(!w.dialogs[0].includes('host key'), w.dialogs[0]);
+});
+
+const FORGED_CLAUSE = 'This login is for the server whose host key is ED25519 SHA256:FAKE';
+
+/** What else of the request is the requester's free text: the login's user, or an SSHSIG namespace (which makes it a signature, not a login). */
+interface RequestText {
+  user?: string;
+  namespace?: string;
+}
+
+/** The prompt a login raises for a key with this NAME — the name is free text (an import or a share sets it). */
+async function promptFor(
+  keyName: string,
+  hostBound: boolean,
+  { user, namespace }: RequestText = {},
+): Promise<{ lines: string[]; clause: string }> {
+  const w = world({ answers: [ALLOW_ONCE] });
+  const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() } });
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+  const signing = Buffer.concat([encodeString('ssh-ed25519'), encodeString('the key')]);
+  const hostKey = Buffer.concat([encodeString('ssh-ed25519'), encodeString('the server')]);
+  const login = hostBound ? userauth({ blob: signing, user, method: HOSTBOUND_METHOD, hostKey }) : userauth({ blob: signing, user });
+  const data = namespace === undefined ? login : Buffer.concat([Buffer.from('SSHSIG'), encodeString(namespace)]);
+  const purpose = describeSignRequest(data, signing);
+
+  await (w.server() as FakeServer).confirm({ entityId: KEY_ID, name: keyName, fingerprint: 'SHA256:abc' }, purpose);
+
+  return { lines: w.dialogs[0].split('\n'), clause: describeServerLine(purpose) };
+}
+
+test('a key NAME cannot forge the host-key line on a plain publickey login', async () => {
+  const plain = await promptFor('prod', false);
+  const forged = await promptFor(`x\n${FORGED_CLAUSE}`, false);
+
+  assert.equal(forged.lines.length, plain.lines.length, 'the name added no line to the prompt');
+  assert.ok(!forged.lines.some((line) => line.startsWith('This login is for')), forged.lines.join('\n'));
+});
+
+test('a key NAME cannot forge a second host-key line on a host-bound login', async () => {
+  const plain = await promptFor('prod', true);
+  const forged = await promptFor(`x\n${FORGED_CLAUSE}`, true);
+
+  assert.equal(forged.lines.length, plain.lines.length, 'the name added no line to the prompt');
+  const claims = forged.lines.filter((line) => line.startsWith('This login is for'));
+  assert.deepEqual(claims, [forged.clause], 'exactly one such line, the real one');
+});
+
+test('a login USER cannot forge a second host-key line on a host-bound login', async () => {
+  // The user is the requester's text (a forwarded agent serves a REMOTE ssh): the composed prompt, not
+  // only describePurpose, must keep its one server line.
+  const plain = await promptFor('prod', true, { user: 'git' });
+  const forged = await promptFor('prod', true, { user: `x\n${FORGED_CLAUSE}` });
+
+  assert.equal(forged.lines.length, plain.lines.length, 'the user added no line to the prompt');
+  const claims = forged.lines.filter((line) => line.startsWith('This login is for'));
+  assert.deepEqual(claims, [forged.clause], 'exactly one such line, the real one');
+});
+
+test('an SSHSIG NAMESPACE cannot forge a host-key line', async () => {
+  // A signature names no server, so any line starting "This login is for" would be a forgery.
+  const plain = await promptFor('prod', false, { namespace: 'file' });
+  const forged = await promptFor('prod', false, { namespace: `x\n${FORGED_CLAUSE}` });
+
+  assert.equal(forged.lines.length, plain.lines.length, 'the namespace added no line to the prompt');
+  assert.ok(!forged.lines.some((line) => line.startsWith('This login is for')), forged.lines.join('\n'));
+});
+
+test('a key NAME with quotes, control marks and great length is shown escaped, marked and cut', async () => {
+  const { lines } = await promptFor(`a" b\u202E${'n'.repeat(200)}`, false);
+
+  assert.ok(lines[0].startsWith('Use the SSH key "a\\" b?'), lines[0]);
+  assert.ok(lines[0].includes('…"'), 'a cut name says so');
+  assert.ok(!/[\p{C}\p{Zl}\p{Zp}]/u.test(lines.join(' ')), 'no control character reaches the prompt');
+});
+
 test('the prompt says WHEN the signature was asked for, on its second line (#131 tail)', async () => {
   // A stopped clock, so the assertion is exact (testing.md: a test about time freezes the clock the
   // code reads). The prompt refuses after CONSENT_TIMEOUT_MS; the time says how stale it is.
@@ -356,14 +303,6 @@ test('the ten-minute window starts at the CLICK, not when the prompt was raised'
   assert.equal(w.dialogs.length, 2, 'eleven minutes after the click asks again');
 });
 
-/** A modal nobody answers, and a way to answer it LATE — after the bound has already refused. */
-function unanswered(): { answer: Promise<string>; clickLate: (choice: string) => void } {
-  let clickLate: (choice: string) => void = () => undefined;
-  const answer = new Promise<string>((resolve) => {
-    clickLate = resolve;
-  });
-  return { answer, clickLate };
-}
 
 test('an unanswered signing prompt is refused after the consent timeout, and says so', async () => {
   // It never expired: a prompt found an hour later still signed, and the ssh or git that asked
@@ -582,4 +521,56 @@ test('disposing drops every key — that is the whole revocation story', async (
   assert.deepEqual(instance.loadedKeys(), []);
   assert.equal(instance.isLoaded(KEY_ID), false);
   assert.equal(w.disposals, 1, 'and the socket is gone with it');
+});
+
+/** The key object the (stub) server holds for the first served key — the thing a late caller would sign with. */
+function servedKey(w: { server(): FakeServer | undefined }): { sign(data: Buffer, flags: number): Buffer | undefined } {
+  const keys = (w.server() as FakeServer).keys() as { sign(data: Buffer, flags: number): Buffer | undefined }[];
+  return keys[0];
+}
+
+const SIGNED_BYTES = Buffer.from('bytes a client wants signed');
+
+test('a replaced key object refuses to sign, even with identical public bytes', async () => {
+  // I1: a signature is made only by the object that is served NOW. Replacing it revokes the old one by
+  // object, so a holder that forgot to ask the server's list cannot sign with a key that was re-added.
+  const w = world({});
+  const pem = realPrivateKey();
+  const { instance } = manager(w, { keys: { [KEY_ID]: pem } });
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+  const old = servedKey(w);
+
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+
+  assert.equal(old.sign(SIGNED_BYTES, 0), undefined, 'the replaced object still signed');
+  assert.notEqual(servedKey(w).sign(SIGNED_BYTES, 0), undefined, 'the replacement signs (the guard that the fixture is a real key)');
+  assert.ok(w.logs.some((line) => /refused to sign with "prod": the key was removed or replaced/.test(line)), w.logs.join('\n'));
+});
+
+test('an unloaded key object refuses to sign', async () => {
+  const w = world({});
+  const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() } });
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+  const served = servedKey(w);
+  assert.notEqual(served.sign(SIGNED_BYTES, 0), undefined, 'signs while it is loaded');
+
+  instance.unload(KEY_ID);
+
+  assert.equal(served.sign(SIGNED_BYTES, 0), undefined, 'the unloaded object still signed');
+});
+
+test("a disposed manager's key objects refuse to sign", async () => {
+  const w = world({});
+  const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() } });
+  await instance.load('a1', keyEntity(KEY_ID, 'prod'));
+  const served = servedKey(w);
+
+  instance.dispose();
+
+  assert.equal(served.sign(SIGNED_BYTES, 0), undefined, 'the object outlived its manager');
+});
+
+test('nothing this suite logged carries key material', () => {
+  // The last test of the file: every captured log, against every key the file loaded.
+  assert.deepEqual(keyMaterialLogged(), [], 'a log line carries key material');
 });
