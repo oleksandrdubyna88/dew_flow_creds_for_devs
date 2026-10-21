@@ -1,3 +1,4 @@
+import { ALLOW_WINDOW } from './agentConsent';
 import { GrantOutcome } from './allowWindows';
 import { RefusalKind } from './consentTurns';
 import { SignPurpose, describePurposeForLog } from './sshAgentProtocol';
@@ -12,7 +13,7 @@ import { AgentKey } from './sshAgentServer';
 
 /**
  * What a person is TOLD when a timed answer crossed a fence (#197, E2.3) — the information message that goes with
- * `CROSSED_LINE`, the log line in `sshAgentManager.ts`. The click they made allowed one signature and opened no
+ * `CROSSED_LINE`, the log line just below. The click they made allowed one signature and opened no
  * window; without the message the window simply never appears and nothing says why.
  */
 export const CROSSING_NOTICE: ReadonlyMap<GrantOutcome, string> = new Map([
@@ -25,6 +26,19 @@ export const CROSSING_NOTICE: ReadonlyMap<GrantOutcome, string> = new Map([
     'The vault locked while you were choosing — this signature was allowed once; no window was opened.',
   ],
 ]);
+
+/**
+ * What the agent log says when a timed answer crossed something (#197, E2.1/E2.2): the key was removed or replaced
+ * while the prompt was open, or the vault was locked, or *Ask for Every Use Again* was used. The last two still
+ * allow the ONE signature; none opens a window. The record must say which, because the outcome differs from the
+ * click the person made. For the last two the person is told as well, in an information message
+ * (`CROSSING_NOTICE`, just above). Moved here from `sshAgentManager.ts` in E3.1.
+ */
+export const CROSSED_LINE: Readonly<Partial<Record<GrantOutcome, string>>> = {
+  'stale-key': 'answered after the key was removed or replaced — no window was opened',
+  'fenced-key': `answered "${ALLOW_WINDOW}" after Ask for Every Use Again — allowed once, no window was opened`,
+  'fenced-lock': `answered "${ALLOW_WINDOW}" after the vaults were locked — allowed once, no window was opened`,
+};
 
 export type RefusalLine = (key: AgentKey, purpose: SignPurpose, bound: string) => string;
 

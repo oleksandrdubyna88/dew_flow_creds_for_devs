@@ -186,6 +186,8 @@ const REPLACED_IN_CODE: ReadonlyArray<{ file: string; old: string }> = [
   { file: 'sshProgram.ts', old: 'serving keys from memory with a dialog per signature' }, // :10
   { file: 'sshAgentServer.ts', old: 'asking a human before every signature' }, // :20
   { file: 'sshAgentManager.ts', old: 'The dialog in front of every signature.' }, // :319
+  // The prompt moved to sshSignPrompt.ts (E3.1): the same old string must not come back in its new home.
+  { file: 'sshSignPrompt.ts', old: 'The dialog in front of every signature.' },
 ];
 
 test('no replaced sentence survives, in any language of the help', () => {

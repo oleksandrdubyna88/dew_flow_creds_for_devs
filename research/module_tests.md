@@ -1503,6 +1503,22 @@ four others. **Break-it:** dropping `scope` from `agentGrantMaxCalls` alone turn
 (scope: undefined, restricted: true)`*. **Not covered:** that VS Code itself ignores a workspace value for a `machine`
 setting — that is the editor's contract, and nothing here drives VS Code (see below).
 
+## The window holder and the signing prompt left the manager (2026-10-21, #197 E3.1)
+
+A pure extraction: `SigningWindows` (`sshAgentWindows.ts`, no `vscode`) and the modal (`sshSignPrompt.ts`) left
+`sshAgentManager.ts`, 770 → 662 lines. **No suite changed and no assertion changed** — `npm test` before and after reads
+`tests 5845 · pass 5840 · fail 0 · skipped 5`, both times. The one test-file edit is the `REPLACED_IN_CODE` entry in
+`sshAgentHelp.test.ts` that makes the old-sentence scan follow the prompt to `sshSignPrompt.ts`. Two break-its, each run
+once on the moved code and restored, show the existing suites still reach it:
+
+| Break-it | Red |
+|---|---|
+| delete `this.arm(at)` from `SigningWindows.set` | `sshAgentManagerRow.test.ts` → *the expiry timer re-arms: a window that outlives the first look is repainted when it ends* (`the timer was not armed again after the first look`; three neighbours go red with it) |
+| drop `...SIGNING_BUTTONS` from the moved modal | `sshAgentManager.test.ts` → *the dialog offers exactly the signing buttons, Allow once first* (`[[]]` where `[['Allow once', 'Allow for 10 minutes', 'Deny']]` was expected) |
+
+`itest:ssh-agent` is unchanged: the manager is still required from `out/`, and `sshSignPrompt.js` resolves `vscode` to
+the same stub in the same scope.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.

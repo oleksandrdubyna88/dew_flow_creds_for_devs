@@ -347,7 +347,8 @@ title (`:4845-4847`) names `sshSignPrompt.ts` as the modal's home. `research/mod
 changed; the two break-its.
 
 **Done when.** Suite green with the same count, typecheck, lint, ratchet green; the manager's real `wc -l` measured and
-written here (expected ≈ 665 or below — if E3.3's budget to 760 does not fit, move more before E3.3, never during); both
+written here (expected ≈ 665 or below — if E3.3's budget to 760 does not fit, move more before E3.3, never during) —
+**measured in E3.1: 662, from 770** (`sshAgentWindows.ts` 100, `sshSignPrompt.ts` 61); both
 break-its quoted; no test file edited except the `REPLACED_IN_CODE` entry.
 
 ## 5. E3.2 — what an answer means, what may be offered, what SHA-1 RSA is never given, what a login is (pure)

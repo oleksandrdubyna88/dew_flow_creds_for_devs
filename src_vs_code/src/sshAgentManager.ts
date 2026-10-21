@@ -3,72 +3,53 @@ import * as path from 'node:path';
 import * as vscode from 'vscode';
 import {
   SignPurpose,
-  describePurpose,
   describePurposeForLog,
-  describeServerLine,
   describeUnknownShape,
   MAX_DISPLAY,
   displayText,
   withoutControlChars,
 } from './sshAgentProtocol';
-import { localRequestTimeLine, localWallTime } from './requestTime';
-import { unrefTimer } from './withTimeout';
+import { localWallTime } from './requestTime';
 import { ConsentTurns, RefusalKind, TurnOutcome } from './consentTurns';
-import { CROSSING_NOTICE, durationText, queuedLine, refusalLine, timeLeftText } from './sshAgentTexts';
-import { describeError } from './describeError';
+import { CROSSED_LINE, CROSSING_NOTICE, durationText, queuedLine, refusalLine } from './sshAgentTexts';
 import { AgentKey, SshAgentServer, agentSocketPath } from './sshAgentServer';
 import { ParsedSshKey, parseSshPrivateKey } from './sshKeyParse';
 import { SecretOpener } from './secretOpener';
 import { automaticOpenerFor } from './automaticRead';
-import { ALLOW_WINDOW, CONSENT_TIMEOUT_MS, SIGNING_BUTTONS, consentFromChoice } from './agentConsent';
+import { CONSENT_TIMEOUT_MS, consentFromChoice } from './agentConsent';
 import {
   ALL_ONLY,
-  AllowWindows,
   AskTicket,
   NO_WINDOWS,
   OpenWindow,
   ScopeWindows,
   askTicket,
-  GrantOutcome,
   KeyRef,
   endAllWindows,
   endWindows,
   forgetKey,
   grantWindow,
-  nextExpiry,
   windowCovers,
-  windowsFor as windowsInBook,
   withEndOnBothClocks,
-  withoutExpired,
 } from './allowWindows';
+import { Moment, SigningWindows } from './sshAgentWindows';
+import { askSigning } from './sshSignPrompt';
 import { signForAgent } from './sshAgentSign';
 import { StorageManager } from './storageManager';
 import { materializedKeyPath } from './materializedKeys';
 import { EntityMetadata, TreeNode } from './types';
 
 /**
- * How long the expiry timer may sleep (#197, E2.2). The row repaints when a window ends; a timer armed for the
- * full ten minutes would sleep through a wall clock that jumped (a laptop waking), so it looks every five at most.
+ * One request as it ARRIVED (#197, E3.1): the key, what is being signed, the time of the request (what the prompt
+ * shows) and the key's generation (what a window is granted to). Built once in `confirm`, before the first `await`,
+ * and handed to the turn and to the re-check after a wait — so the request's facts travel as one value, and the
+ * next fact a story adds (E3.3's claim) is a field, not a seventh parameter.
  */
-const EXPIRY_LOOK_MS = 5 * 60_000;
-
-/**
- * What the agent log says when a timed answer crossed something (#197, E2.1/E2.2): the key was removed or replaced
- * while the prompt was open, or the vault was locked, or *Ask for Every Use Again* was used. The last two still
- * allow the ONE signature; none opens a window. The record must say which, because the outcome differs from the
- * click the person made. For the last two the person is told as well, in an information message
- * (`CROSSING_NOTICE` in `sshAgentTexts.ts`).
- */
-const CROSSED_LINE: Readonly<Partial<Record<GrantOutcome, string>>> = {
-  'stale-key': 'answered after the key was removed or replaced — no window was opened',
-  'fenced-key': `answered "${ALLOW_WINDOW}" after Ask for Every Use Again — allowed once, no window was opened`,
-  'fenced-lock': `answered "${ALLOW_WINDOW}" after the vaults were locked — allowed once, no window was opened`,
-};
-
-/** Both of the window book's clocks at one instant: the wall clock and the monotonic one. */
-interface Moment {
-  readonly wall: number;
-  readonly mono: number;
+interface Arrival {
+  readonly key: AgentKey;
+  readonly purpose: SignPurpose;
+  readonly asked: Date;
+  readonly arrived: KeyRef;
 }
 
 /**
@@ -138,12 +119,10 @@ export class SshAgentManager implements vscode.Disposable {
   private server: SshAgentServer | undefined;
   private readonly keys = new Map<string, LoadedKey>();
   /**
-   * The open "allow without asking" windows — `allowWindows.ts` holds the rules. In memory only, by design.
-   * Replaced, never mutated: the book is an immutable value.
+   * The holder of the open "allow without asking" windows (`sshAgentWindows.ts`; `allowWindows.ts` holds the rules).
+   * In memory only, by design. Built in the constructor body, after `monotonic` is set.
    */
-  private windows: AllowWindows = NO_WINDOWS;
-  /** The timer that repaints the row when the nearest window ends; re-armed by every change of the book. */
-  private expiry: ReturnType<typeof setTimeout> | undefined;
+  private readonly windows: SigningWindows;
   /** The last generation `serve` handed out. */
   private generations = 0;
   /** Monotonic time for the window book's second clock (see `monotonicSource`). */
@@ -188,6 +167,14 @@ export class SshAgentManager implements vscode.Disposable {
   ) {
     this.monotonic = monotonicSource(monotonic);
     this.turns = new ConsentTurns(this.consentTimeoutMs, this.monotonic);
+    this.windows = new SigningWindows(this.clock, this.monotonic, () => this.windowsChanged());
+  }
+
+  /** The book changed: the row repaints — unless the manager is gone (`onWindowsChanged` is the wiring's field). */
+  private windowsChanged(): void {
+    if (!this.disposed) {
+      this.onWindowsChanged();
+    }
   }
 
   get socketPath(): string | undefined {
@@ -242,7 +229,7 @@ export class SshAgentManager implements vscode.Disposable {
     // A key loaded again under the same id replaces the old object, which must stop signing at once.
     this.keys.get(details.id)?.revoke();
     // And it is a new generation: it inherits no window, however it got here (first load, re-load, restart).
-    this.setWindows(forgetKey(this.windows, details.id));
+    this.windows.set(forgetKey(this.windows.current, details.id));
     this.keys.set(details.id, {
       generation: ++this.generations,
       accountId,
@@ -291,7 +278,7 @@ export class SshAgentManager implements vscode.Disposable {
     }
     key.revoke();
     this.keys.delete(entityId);
-    this.setWindows(forgetKey(this.windows, entityId));
+    this.windows.set(forgetKey(this.windows.current, entityId));
     this.log(`unloaded "${key.name}"`);
     if (this.keys.size === 0) {
       this.stop();
@@ -305,7 +292,7 @@ export class SshAgentManager implements vscode.Disposable {
    * loaded and the next signature asks again; only `serve`, `unload` and `dispose` end a key's right to sign.
    */
   endAllWindows(reason: string): void {
-    this.setWindows(endAllWindows(this.windows));
+    this.windows.set(endAllWindows(this.windows.current));
     // Every lock reaches here, so a person who never loaded a key must not get a log channel of their own on
     // their first lock: the epoch always moves, the line is for the agent that has keys to answer for.
     if (this.keys.size > 0) {
@@ -320,8 +307,8 @@ export class SshAgentManager implements vscode.Disposable {
    * this never revokes and never unloads: the key stays loaded and the next signature asks.
    */
   endWindows(entityId: string): boolean {
-    const had = Object.keys(this.liveWindows(entityId, this.moment())).length > 0;
-    this.setWindows(endWindows(this.windows, entityId));
+    const had = Object.keys(this.liveWindows(entityId, this.windows.moment())).length > 0;
+    this.windows.set(endWindows(this.windows.current, entityId));
     this.log(`Ask for Every Use Again: ${had ? 'ended the window of' : 'no open window on'} "${this.nameOf(entityId)}"`);
     return had;
   }
@@ -339,64 +326,18 @@ export class SshAgentManager implements vscode.Disposable {
     if (this.keys.get(entityId)?.accountId !== accountId) {
       return {};
     }
-    const at = this.moment();
+    const at = this.windows.moment();
     return withEndOnBothClocks(this.liveWindows(entityId, at), at.wall, at.mono);
   }
 
   /** The windows of this key that cover a request at `at`, on BOTH clocks (the gate's own rule). */
   private liveWindows(entityId: string, at: Moment): ScopeWindows {
     const generation = this.generationOf(entityId);
-    return generation === undefined ? {} : windowsInBook(this.windows, { entityId, generation }, ALL_ONLY, at.wall, at.mono);
+    return generation === undefined ? {} : this.windows.live({ entityId, generation }, ALL_ONLY, at);
   }
 
   private nameOf(entityId: string): string {
     return this.keys.get(entityId)?.name ?? entityId;
-  }
-
-  /**
-   * THE one place the book is replaced. A new book is a change: the row is told to repaint (`onWindowsChanged`,
-   * unless the manager is gone), and the expiry timer is armed again for whatever is nearest to ending.
-   */
-  private setWindows(next: AllowWindows, at?: Moment): void {
-    const changed = next !== this.windows;
-    this.windows = next;
-    if (changed && !this.disposed) {
-      this.onWindowsChanged();
-    }
-    this.arm(at);
-  }
-
-  /** Both clocks, read side by side — what the book's rules are asked with. */
-  private moment(): Moment {
-    return { wall: this.clock().getTime(), mono: this.monotonic() };
-  }
-
-  /**
-   * Clear the old timer, then sleep until the nearest window ends — never longer than `EXPIRY_LOOK_MS`. With no
-   * window open it reads NO clock: the gate's "one reading of the clock at the click" counts reads, and a load
-   * or an unload with nothing open has nothing to time. `at` is the caller's own reading when it has one.
-   */
-  private arm(at?: Moment): void {
-    clearTimeout(this.expiry);
-    this.expiry = this.windows.open.size === 0 ? undefined : this.timerFor(at ?? this.moment());
-  }
-
-  /**
-   * A book that holds something always gets a look. When nothing is left to wait for (`nextExpiry` finds no end
-   * ahead) yet the book still holds a window — a clock jump ended it between two looks — the look is at once, so
-   * the entry is dropped and the row repainted instead of both lingering until some unrelated change (E2.2 L2).
-   * It cannot loop: `expired` drops every window `nextExpiry` ignores, and an empty book arms nothing.
-   */
-  private timerFor(at: Moment): ReturnType<typeof setTimeout> {
-    const next = nextExpiry(this.windows, at.wall, at.mono);
-    const delay = next === undefined ? 0 : Math.min(next - at.wall, EXPIRY_LOOK_MS);
-    return unrefTimer(setTimeout(() => this.expired(), delay));
-  }
-
-  /** The timer fired: drop what ended (the same book, silently, when nothing did) and look again. */
-  private expired(): void {
-    const at = this.moment();
-    this.setWindows(withoutExpired(this.windows, at.wall, at.mono), at);
   }
 
   /** Whether this node is a key entity that asks to be served and is not loaded yet. */
@@ -504,8 +445,8 @@ export class SshAgentManager implements vscode.Disposable {
       this.log(`"${key.name}": the key is not loaded`);
       return false;
     }
-    const arrived = { entityId: key.entityId, generation };
-    const covered = windowCovers(this.windows, arrived, ALL_ONLY, asked.getTime(), nowMono);
+    const arrival: Arrival = { key, purpose, asked, arrived: { entityId: key.entityId, generation } };
+    const covered = windowCovers(this.windows.current, arrival.arrived, ALL_ONLY, asked.getTime(), nowMono);
     if (covered !== undefined) {
       this.logCovered(key, purpose, covered);
       return true;
@@ -513,8 +454,8 @@ export class SshAgentManager implements vscode.Disposable {
     const outcome = await this.turns.take(
       key.entityId,
       signal,
-      (turn, leftMs) => this.turnStarted(key, purpose, asked, arrived, turn, leftMs),
-      (waited) => this.beforePrompt(key, purpose, arrived, waited),
+      (turn, leftMs) => this.turnStarted(arrival, turn, leftMs),
+      (waited) => this.beforePrompt(arrival, waited),
       () => this.log(queuedLine(key, durationText(this.consentTimeoutMs))),
     );
     return this.outcomeOf(key, purpose, outcome);
@@ -530,16 +471,9 @@ export class SshAgentManager implements vscode.Disposable {
    * next turn's re-check always sees the window this one opened — by construction, not by counting promise hops.
    * No timer or socket `close` can run between the check and the apply.</p>
    */
-  private async turnStarted(
-    key: AgentKey,
-    purpose: SignPurpose,
-    asked: Date,
-    arrived: KeyRef,
-    turn: AbortSignal,
-    leftMs: number,
-  ): Promise<boolean> {
-    const ticket = askTicket(this.windows, arrived);
-    const choice = await this.askToSign(key, purpose, asked, leftMs);
+  private async turnStarted({ key, purpose, asked, arrived }: Arrival, turn: AbortSignal, leftMs: number): Promise<boolean> {
+    const ticket = askTicket(this.windows.current, arrived);
+    const choice = await askSigning(key, purpose, asked, leftMs, (message) => this.log(message));
     return turn.aborted ? this.stale(choice) : this.settle(key, ticket, choice);
   }
 
@@ -550,7 +484,7 @@ export class SshAgentManager implements vscode.Disposable {
    * key is refused without a prompt); a window an earlier turn opened covers it (no second prompt, and not refused
    * for want of time either — a covered request needs neither).
    */
-  private beforePrompt(key: AgentKey, purpose: SignPurpose, arrived: KeyRef, waited: boolean): boolean | undefined {
+  private beforePrompt({ key, purpose, arrived }: Arrival, waited: boolean): boolean | undefined {
     if (this.generationOf(key.entityId) !== arrived.generation) {
       this.log(`"${key.name}": the key was removed or re-added while the request waited — refused`);
       return false;
@@ -570,7 +504,7 @@ export class SshAgentManager implements vscode.Disposable {
    * gate's "one reading at the click" accounting.
    */
   private coveredAfterWaiting(arrived: KeyRef, waited: boolean): OpenWindow | undefined {
-    return waited ? windowCovers(this.windows, arrived, ALL_ONLY, this.clock().getTime(), this.monotonic()) : undefined;
+    return waited ? windowCovers(this.windows.current, arrived, ALL_ONLY, this.clock().getTime(), this.monotonic()) : undefined;
   }
 
   /** What became of a request that was not answered: the log line (once per burst) and, for an orphan, a notice. */
@@ -651,8 +585,8 @@ export class SshAgentManager implements vscode.Disposable {
    * open?" afterwards.</p>
    */
   private openWindow(key: AgentKey, ticket: AskTicket, at: { grantedAt: number; grantedAtMono: number; until: number }): boolean {
-    const { book, outcome } = grantWindow(this.windows, ticket, 'all', this.generationOf(key.entityId), at.grantedAt, at.grantedAtMono, at.until);
-    this.setWindows(book, { wall: at.grantedAt, mono: at.grantedAtMono });
+    const { book, outcome } = grantWindow(this.windows.current, ticket, 'all', this.generationOf(key.entityId), at.grantedAt, at.grantedAtMono, at.until);
+    this.windows.set(book, { wall: at.grantedAt, mono: at.grantedAtMono });
     const crossed = CROSSED_LINE[outcome];
     if (crossed !== undefined) {
       this.log(`"${key.name}": ${crossed}`);
@@ -662,43 +596,6 @@ export class SshAgentManager implements vscode.Disposable {
       this.tell(notice);
     }
     return outcome !== 'stale-key';
-  }
-
-  /**
-   * The dialog in front of a signature no open window covers.
-   *
-   * <p>It names the key, its fingerprint and what is being signed, because "a key is being
-   * used" is not a decision anybody can make. A dismissed dialog refuses this one signature
-   * and remembers nothing — the same rule the broker's consent follows, for the same reason: a
-   * mis-click must not lock a key out for the window's life.</p>
-   *
-   * The prompt itself. The bound is not here any more: `ConsentTurns` times the TURN and refuses a request that
-   * waits too long (before #131's tail it waited forever, so a prompt found an hour later still signed and the `ssh`
-   * or `git` that asked hung). This awaits the modal to its END — a click after the turn ended still comes back
-   * here, which is what lets `turnStarted` say so (VS Code cannot close a modal, so it can still be clicked).
-   *
-   * <p>The text says the time this request really has left (`leftMs`): the full bound for a request that did not
-   * wait, less for one that waited behind another prompt.</p>
-   */
-  private askToSign(key: AgentKey, purpose: SignPurpose, asked: Date, leftMs: number): Promise<string | undefined> {
-    const modal = vscode.window.showWarningMessage(
-      `Use the SSH key "${displayText(key.name, MAX_DISPLAY)}" to sign ${describePurpose(purpose)}?\n${localRequestTimeLine(asked)}\n\n` +
-        `${key.fingerprint}\n\n` +
-        serverParagraph(purpose) +
-        'The key itself never leaves this window. Allow once, or allow every use of this key for ' +
-        'ten minutes — long enough for a push that signs and authenticates in one go. ' +
-        `Locking the vault ends the window, and so does "Ask for Every Use Again" on the key's row. ` +
-        `Unanswered, it is refused after ${timeLeftText(leftMs)}.`,
-      { modal: true },
-      ...SIGNING_BUTTONS,
-    );
-    // A modal that REJECTS (the window closing under it) is a dismissal — said in the log, never swallowed.
-    return Promise.resolve(modal).catch((error: unknown) => this.modalFailed(error));
-  }
-
-  private modalFailed(error: unknown): undefined {
-    this.log(`the signing prompt failed: ${describeError(error)} — refused`);
-    return undefined;
   }
 
   /**
@@ -744,7 +641,8 @@ export class SshAgentManager implements vscode.Disposable {
     this.turns.clear();
     this.revokeAll();
     this.keys.clear();
-    this.setWindows(NO_WINDOWS);
+    this.windows.set(NO_WINDOWS);
+    this.windows.dispose();
     this.server?.dispose();
     this.server = undefined;
     this.output?.dispose();
@@ -761,10 +659,4 @@ export class SshAgentManager implements vscode.Disposable {
  */
 function monotonicSource(source: (() => number) | undefined): () => number {
   return source ?? (() => performance.now());
-}
-
-/** The server line of a login prompt as a paragraph of its own — nothing for a request that names no server. */
-function serverParagraph(purpose: SignPurpose): string {
-  const line = describeServerLine(purpose);
-  return line === '' ? '' : `${line}\n\n`;
 }
