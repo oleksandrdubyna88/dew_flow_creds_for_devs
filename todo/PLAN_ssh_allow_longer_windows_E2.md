@@ -1,6 +1,6 @@
 # PLAN — E2 of #197: a window is visible, ends on any lock or from the row, and one prompt per key (feature release)
 
-> Status: **E2 merged as #267 (2997a558), 2026-10-21 — E2.1–E2.3 and their review fixes; the coai code gate passed (proceed, 12 of 12 reviewers); releasing as `extension-v1.15.0`; it stays in `todo/` until its parent promotes.** Scope: `src_vs_code` — `vaultKeys.ts` (`onDidLock`), a
+> Status: **E2 merged as #267 (2997a558), 2026-10-21 — E2.1–E2.3 and their review fixes; the coai code gate passed (proceed, 12 of 12 reviewers); shipped in `extension-v1.15.0` (release #268, Marketplace 1.15.0 at 20:28Z); the owner's manual check on the installed 1.15.0 is asked; it stays in `todo/` until its parent promotes.** Scope: `src_vs_code` — `vaultKeys.ts` (`onDidLock`), a
 > new `sshAgentWiring.ts` (the SSH wiring moves out of `extension.ts`), `sshAgentManager.ts`, `sshAgentServer.ts`, two
 > new pure modules `consentTurns.ts` and `keyedQueue.ts` (`oneUseLane.ts` reuses the second), `treeRowText.ts`,
 > `treeDataProvider.ts` (line-neutral), `requestTime.ts` (`clockUntil`), `commands/agentCommands.ts`, `package.json`,
