@@ -205,8 +205,9 @@ internal static class CommandLine
         `creds config -`, or sets CREDSFORDEVS_KEY and runs `creds config`.
 
         In WSL, `creds relay` gives ssh and git an agent socket inside the distribution.
-        The key stays in the VS Code window on Windows and every use asks there. It prints
-        the export line to set; leave it running.
+        The key stays in the VS Code window on Windows; a signature asks there, unless a
+        window you opened in that prompt covers it. It prints the export line to set; leave
+        it running.
 
         Quoting: put double quotes around the whole command and single quotes inside.
         Inner double quotes are dropped by Windows PowerShell, which silently changes what

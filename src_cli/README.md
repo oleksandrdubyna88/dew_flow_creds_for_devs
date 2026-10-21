@@ -140,9 +140,9 @@ one — or with the window. The export line stays your shell's job: VS Code has 
 namespace per window, and a Windows terminal needs the named pipe where a WSL one needs this
 socket.
 
-The private key never enters WSL. A signature asks for consent **on Windows** first (*Allow once*,
-*Allow for 10 minutes*, *Deny*); while a window is open, any process that reaches the agent signs with that key
-without asking. The address is resolved on every connection, so unloading a key and loading
+The private key never enters WSL. A signature asks for consent **on Windows** first, unless a window
+opened in that prompt still covers it; while a window is open, any process that reaches the agent signs
+with that key without asking. The address is resolved on every connection, so unloading a key and loading
 another is picked up without restarting the relay.
 
 `CREDS_RELAY_SOCKET` overrides the path; without `XDG_RUNTIME_DIR` it falls back to
@@ -152,8 +152,9 @@ serving is refused rather than hijacked.
 **It widens the reach of the agent, and that is the point to weigh.** A named pipe is reachable
 by one Windows user; a unix socket is reachable by every process in that distribution running as
 you. The mitigation is not the socket mode — it is that a signature still has to be allowed on
-Windows, so the worst a process in WSL can do is ask, visibly. The relay is opt-in and never
-starts itself.
+Windows: outside a window opened there, the worst a process in WSL can do is ask, visibly; while
+such a window is open, it signs with that key without asking, exactly as a Windows process does.
+The relay is opt-in and never starts itself.
 
 **The relay logs to a file** (since 2026-10-09): `creds-relay-{HH-mm-ss}-{pid}.log` under a folder per
 UTC day in `$XDG_STATE_HOME/creds-for-devs/logs` (or `~/.local/state/creds-for-devs/logs`) — its

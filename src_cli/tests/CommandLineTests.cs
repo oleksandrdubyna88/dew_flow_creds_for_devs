@@ -58,6 +58,20 @@ public class CommandLineTests
     }
 
     [Fact]
+    public void The_help_never_claims_that_every_use_asks_and_names_no_button_or_duration()
+    {
+        // The CLI ships on its own clock: the extension's consent prompt grew an allow window and
+        // will offer more of them. "Every use asks" was true for exactly one extension version, and
+        // a sentence that names a button or a length is false for the next. The help line wraps, so
+        // compare it with its whitespace collapsed.
+        var help = System.Text.RegularExpressions.Regex.Replace(CommandLine.HelpText, @"\s+", " ");
+
+        help.Should().NotContain("every use asks");
+        help.Should().Contain("unless a window you opened in that prompt covers it");
+        help.Should().NotContainAny("Allow once", "Allow for", "minutes", "hour");
+    }
+
+    [Fact]
     public void Ssh_posts_to_the_exec_route_because_that_is_what_the_broker_calls_it()
     {
         CommandLine.WireVerb("ssh").Should().Be("exec");
