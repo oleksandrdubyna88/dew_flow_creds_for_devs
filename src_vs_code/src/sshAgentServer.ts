@@ -14,6 +14,7 @@ import {
   encodeIdentitiesAnswer,
   encodeSignResponse,
 } from './sshAgentProtocol';
+import { describeError } from './describeError';
 
 /**
  * The agent itself: a local socket that answers the SSH agent protocol, serving keys held in
@@ -52,8 +53,12 @@ export interface SshAgentServerOptions {
   socketPath: string;
   /** The keys to serve, re-read on every request so an unload takes effect immediately. */
   keys(): AgentKey[];
-  /** Ask the human. `false` refuses this one signature; it is asked EVERY time it returns false. */
-  confirm(key: AgentKey, purpose: SignPurpose, data: Buffer): Promise<boolean>;
+  /**
+   * Ask the human. `false` refuses this one signature; it is asked EVERY time it returns false. `signal` aborts when
+   * the connection the request came in on closes: a program that has gone away must not keep a prompt in the
+   * queue, or be shown one (#197, E2.3).
+   */
+  confirm(key: AgentKey, purpose: SignPurpose, data: Buffer, signal: AbortSignal): Promise<boolean>;
   /** One line per request, for the audit channel. */
   log(message: string): void;
 }
@@ -100,8 +105,16 @@ export class SshAgentServer {
   private serve(socket: net.Socket): void {
     this.sockets.add(socket);
     const reader = new FrameReader();
+    // Aborted when this connection closes: a request whose program has gone must not keep a prompt queued.
+    const client = new AbortController();
+    // The tail of this connection's REPLIES. Frames are dispatched at once (two prompts on one socket open
+    // together), but a client matches replies to requests by position, so they are written in arrival order.
+    let replies: Promise<void> = Promise.resolve();
     socket.on('error', () => socket.destroy());
-    socket.on('close', () => this.sockets.delete(socket));
+    socket.on('close', () => {
+      this.sockets.delete(socket);
+      client.abort();
+    });
     socket.on('data', (chunk: Buffer) => {
       const frames = reader.push(chunk);
       if (reader.overflow) {
@@ -110,27 +123,34 @@ export class SshAgentServer {
         return;
       }
       for (const frame of frames) {
-        void this.handle(frame, socket);
+        // Caught where it is DISPATCHED: a rejection behind a held reply must never be unhandled, and must not
+        // stop the replies after it.
+        const answer = this.handle(frame, client.signal).catch((error: unknown) => this.failed(error));
+        replies = replies.then(() => answer).then((reply) => this.write(socket, reply));
       }
     });
   }
 
-  private async handle(frame: Buffer, socket: net.Socket): Promise<void> {
+  /** The reply to one frame; the caller writes it, in order. */
+  private async handle(frame: Buffer, signal: AbortSignal): Promise<Buffer> {
     if (frame[0] === SSH_AGENTC_REQUEST_IDENTITIES) {
-      this.write(socket, encodeIdentitiesAnswer(this.options.keys().map((k) => k.identity)));
-      return;
+      return encodeIdentitiesAnswer(this.options.keys().map((k) => k.identity));
     }
     if (frame[0] !== SSH_AGENTC_SIGN_REQUEST) {
       // Everything else — add, remove, lock, extensions. A read-only agent by construction:
       // nothing a client sends can change what it serves.
-      this.write(socket, encodeFailure());
-      return;
+      return encodeFailure();
     }
-    this.write(socket, await this.answerSign(frame));
+    return this.answerSign(frame, signal);
+  }
+
+  /** A request the agent could not answer (a gate that threw): FAILURE, and the reason in the log. */
+  private failed(error: unknown): Buffer {
+    return this.refused(`could not answer a request: ${describeError(error)}`);
   }
 
   /** Resolve a SIGN_REQUEST to its reply — the signature blob, or FAILURE with a reason logged. */
-  private async answerSign(frame: Buffer): Promise<Buffer> {
+  private async answerSign(frame: Buffer, signal: AbortSignal): Promise<Buffer> {
     const request = decodeSignRequest(frame);
     // A malformed request, or a client offering a key we no longer hold — the normal way a
     // client walks the identities it knows about. Refuse quietly, without a dialog.
@@ -138,11 +158,11 @@ export class SshAgentServer {
     if (key === undefined || request === undefined) {
       return encodeFailure();
     }
-    return this.confirmAndSign(key, request);
+    return this.confirmAndSign(key, request, signal);
   }
 
-  private async confirmAndSign(key: AgentKey, request: SignRequest): Promise<Buffer> {
-    const allowed = await this.options.confirm(key, describeSignRequest(request.data, request.publicBlob), request.data);
+  private async confirmAndSign(key: AgentKey, request: SignRequest, signal: AbortSignal): Promise<Buffer> {
+    const allowed = await this.options.confirm(key, describeSignRequest(request.data, request.publicBlob), request.data, signal);
     if (!allowed) {
       return this.refused(`REFUSED a signature with "${key.name}"`);
     }

@@ -12,7 +12,9 @@ import {
   withoutControlChars,
 } from './sshAgentProtocol';
 import { localRequestTimeLine, localWallTime } from './requestTime';
-import { unrefTimer, withTimeout } from './withTimeout';
+import { unrefTimer } from './withTimeout';
+import { ConsentTurns, RefusalKind, TurnOutcome } from './consentTurns';
+import { CROSSING_NOTICE, durationText, refusalLine } from './sshAgentTexts';
 import { describeError } from './describeError';
 import { AgentKey, SshAgentServer, agentSocketPath } from './sshAgentServer';
 import { ParsedSshKey, parseSshPrivateKey } from './sshKeyParse';
@@ -28,6 +30,7 @@ import {
   ScopeWindows,
   askTicket,
   GrantOutcome,
+  KeyRef,
   endAllWindows,
   endWindows,
   forgetKey,
@@ -144,6 +147,8 @@ export class SshAgentManager implements vscode.Disposable {
   private generations = 0;
   /** Monotonic time for the window book's second clock (see `monotonicSource`). */
   private readonly monotonic: () => number;
+  /** One prompt per key at a time: the queue, the cap, the floor, the orphaned-modal slot (`consentTurns.ts`). */
+  private readonly turns: ConsentTurns;
   private output: vscode.OutputChannel | undefined;
   /** Set by `dispose()` for good: the log is closed with the window. */
   private disposed = false;
@@ -181,6 +186,7 @@ export class SshAgentManager implements vscode.Disposable {
     monotonic?: () => number,
   ) {
     this.monotonic = monotonicSource(monotonic);
+    this.turns = new ConsentTurns(this.consentTimeoutMs, this.monotonic);
   }
 
   get socketPath(): string | undefined {
@@ -438,7 +444,7 @@ export class SshAgentManager implements vscode.Disposable {
     const server = new SshAgentServer({
       socketPath,
       keys: () => [...this.keys.values()],
-      confirm: (key, purpose, data) => this.confirm(key, purpose, data),
+      confirm: (key, purpose, data, signal) => this.confirm(key, purpose, data, signal),
       log: (message) => this.log(message),
     });
     await server.listen();
@@ -484,7 +490,7 @@ export class SshAgentManager implements vscode.Disposable {
    * during the prompt would then look like the key that was asked about. It is read from the manager's own
    * map, not from the `AgentKey` handed in.</p>
    */
-  private async confirm(key: AgentKey, purpose: SignPurpose, data: Buffer): Promise<boolean> {
+  private async confirm(key: AgentKey, purpose: SignPurpose, data: Buffer, signal: AbortSignal): Promise<boolean> {
     // When the signature was asked for, taken as it enters — the time on the prompt is what says how
     // old the request is (#131), and the prompt refuses after CONSENT_TIMEOUT_MS unanswered.
     const asked = this.clock();
@@ -503,9 +509,106 @@ export class SshAgentManager implements vscode.Disposable {
       this.logCovered(key, purpose, covered);
       return true;
     }
+    const outcome = await this.turns.take(key.entityId, signal, (turn, leftMs) =>
+      this.turnStarted(key, purpose, asked, arrived, turn, leftMs),
+    );
+    return this.outcomeOf(key, purpose, outcome);
+  }
+
+  /**
+   * The whole turn at the prompt, run when every earlier turn for this key has SETTLED. Everything the request
+   * learned at arrival can have changed while it waited, so it is checked again, in this order: the key is still the
+   * one asked about (E1.2's judgement — a removed key is refused without a prompt); a window an earlier turn opened
+   * covers it (no second prompt); THEN the ticket (a fence that moved while it waited must not fence an answer
+   * given after it is shown — the fence guards the time the prompt is on screen); then the modal.
+   *
+   * <p><b>After the modal, with no `await` in between:</b> a turn that ended meanwhile (`turn.aborted`) signs
+   * nothing; a live one applies its answer here, inside the turn. The slot frees only when this settles, so the
+   * next turn's re-check always sees the window this one opened — by construction, not by counting promise hops.
+   * No timer or socket `close` can run between the check and the apply.</p>
+   */
+  private async turnStarted(
+    key: AgentKey,
+    purpose: SignPurpose,
+    asked: Date,
+    arrived: KeyRef,
+    turn: AbortSignal,
+    leftMs: number,
+  ): Promise<boolean> {
+    const early = this.beforePrompt(key, purpose, arrived, leftMs);
+    if (early !== undefined) {
+      return early;
+    }
     const ticket = askTicket(this.windows, arrived);
-    const choice = await this.askToSign(key, purpose, asked);
-    return this.settle(key, ticket, choice);
+    const choice = await this.askToSign(key, purpose, asked, leftMs);
+    return turn.aborted ? this.stale(choice) : this.settle(key, ticket, choice);
+  }
+
+  /**
+   * The turn's start checks: `false` (refused), `true` (a window covers it) or `undefined` (go on to the prompt).
+   * The key must still be the one asked about; then a window an earlier turn opened may cover the request.
+   */
+  private beforePrompt(key: AgentKey, purpose: SignPurpose, arrived: KeyRef, leftMs: number): boolean | undefined {
+    if (this.generationOf(key.entityId) !== arrived.generation) {
+      this.log(`"${key.name}": the key was removed or re-added while the request waited — refused`);
+      return false;
+    }
+    const covered = this.coveredAfterWaiting(arrived, leftMs);
+    if (covered === undefined) {
+      return undefined;
+    }
+    this.logCovered(key, purpose, covered);
+    return true;
+  }
+
+  /**
+   * The window book asked again with fresh readings of both clocks — but only for a request that WAITED (it has less
+   * than the whole bound left). One that did not wait was checked at arrival, in this same synchronous breath;
+   * reading the clocks twice for it would only move the gate's "one reading at the click" accounting.
+   */
+  private coveredAfterWaiting(arrived: KeyRef, leftMs: number): OpenWindow | undefined {
+    const waited = leftMs < this.consentTimeoutMs;
+    return waited ? windowCovers(this.windows, arrived, ALL_ONLY, this.clock().getTime(), this.monotonic()) : undefined;
+  }
+
+  /** What became of a request that was not answered: the log line (once per burst) and, for an orphan, a notice. */
+  private outcomeOf(key: AgentKey, purpose: SignPurpose, outcome: TurnOutcome<boolean>): boolean {
+    if (outcome.kind === 'answered') {
+      return outcome.value;
+    }
+    if (outcome.first) {
+      this.refused(key, purpose, outcome.kind);
+    }
+    return false;
+  }
+
+  private refused(key: AgentKey, purpose: SignPurpose, kind: RefusalKind): void {
+    this.log(refusalLine(kind, key, purpose, durationText(this.consentTimeoutMs)));
+    if (kind === 'orphaned') {
+      this.tell(`A signing prompt for "${displayText(key.name, MAX_DISPLAY)}" is still open from an earlier request — answer or close it.`);
+    }
+  }
+
+  /**
+   * A label came back after the turn ended: nothing is signed, no presence is counted, no window opens — and the
+   * person is told, because VS Code cannot close a modal and they clicked something that no longer meant anything.
+   * Escape or a closed window (`undefined`) is not a click and says nothing.
+   */
+  private stale(choice: string | undefined): false {
+    if (choice !== undefined) {
+      this.tell(
+        `That signing request had already been refused — it waited longer than ${durationText(this.consentTimeoutMs)}, ` +
+          'or its program had gone. Nothing was signed.',
+      );
+    }
+    return false;
+  }
+
+  /** The one door for every information message — silent once the window is gone. */
+  private tell(text: string): void {
+    if (!this.disposed) {
+      void vscode.window.showInformationMessage(text);
+    }
   }
 
   /** I10: a silent signature says which window allowed it, and until when. */
@@ -552,6 +655,10 @@ export class SshAgentManager implements vscode.Disposable {
     if (crossed !== undefined) {
       this.log(`"${key.name}": ${crossed}`);
     }
+    const notice = CROSSING_NOTICE.get(outcome);
+    if (notice !== undefined) {
+      this.tell(notice);
+    }
     return outcome !== 'stale-key';
   }
 
@@ -563,18 +670,15 @@ export class SshAgentManager implements vscode.Disposable {
    * and remembers nothing — the same rule the broker's consent follows, for the same reason: a
    * mis-click must not lock a key out for the window's life.</p>
    *
-   * The prompt itself, bounded by the broker's consent timeout: unanswered, it refuses — before
-   * #131's tail it waited forever, so a prompt found an hour later still signed and the `ssh` or
-   * `git` that asked hung. A click after the bound changes nothing (VS Code cannot close a modal, so
-   * it can still be clicked): `withTimeout` has already answered `undefined`, which is a dismissal.
+   * The prompt itself. The bound is not here any more: `ConsentTurns` times the TURN and refuses a request that
+   * waits too long (before #131's tail it waited forever, so a prompt found an hour later still signed and the `ssh`
+   * or `git` that asked hung). This awaits the modal to its END — a click after the turn ended still comes back
+   * here, which is what lets `turnStarted` say so (VS Code cannot close a modal, so it can still be clicked).
    *
-   * <p>The answer is wrapped so a timeout (no wrapper) can be told from Escape (a wrapper around
-   * `undefined`) — only the timeout gets a line in the log. The timer is NOT unref'd: the extension
-   * host outlives it anyway, and an unref'd timer ends a test run that has nothing else alive
-   * (see `withTimeout.ts`).</p>
+   * <p>The text says the time this request really has left (`leftMs`): the full bound for a request that did not
+   * wait, less for one that waited behind another prompt.</p>
    */
-  private async askToSign(key: AgentKey, purpose: SignPurpose, asked: Date): Promise<string | undefined> {
-    const bound = durationText(this.consentTimeoutMs);
+  private askToSign(key: AgentKey, purpose: SignPurpose, asked: Date, leftMs: number): Promise<string | undefined> {
     const modal = vscode.window.showWarningMessage(
       `Use the SSH key "${displayText(key.name, MAX_DISPLAY)}" to sign ${describePurpose(purpose)}?\n${localRequestTimeLine(asked)}\n\n` +
         `${key.fingerprint}\n\n` +
@@ -582,27 +686,17 @@ export class SshAgentManager implements vscode.Disposable {
         'The key itself never leaves this window. Allow once, or allow every use of this key for ' +
         'ten minutes — long enough for a push that signs and authenticates in one go. ' +
         `Locking the vault ends the window, and so does "Ask for Every Use Again" on the key's row. ` +
-        `Unanswered, it is refused after ${bound}.`,
+        `Unanswered, it is refused after ${durationText(leftMs)}.`,
       { modal: true },
       ...SIGNING_BUTTONS,
     );
-    // A modal that REJECTS (the window closing under it) is a dismissal — and `withTimeout` must be
-    // handed a promise that does not reject.
-    const settled = Promise.resolve(modal).then(
-      (choice) => ({ choice }),
-      (error: unknown) => this.modalFailed(error),
-    );
-    const answered = await withTimeout(settled, this.consentTimeoutMs);
-    if (answered === undefined) {
-      this.log(`no answer in ${bound} — refused ${describePurposeForLog(purpose)}`);
-    }
-    return answered?.choice;
+    // A modal that REJECTS (the window closing under it) is a dismissal — said in the log, never swallowed.
+    return Promise.resolve(modal).catch((error: unknown) => this.modalFailed(error));
   }
 
-  /** A modal that rejected is a dismissal — said in the log, never swallowed. */
-  private modalFailed(error: unknown): { choice: undefined } {
+  private modalFailed(error: unknown): undefined {
     this.log(`the signing prompt failed: ${describeError(error)} — refused`);
-    return { choice: undefined };
+    return undefined;
   }
 
   /**
@@ -645,6 +739,7 @@ export class SshAgentManager implements vscode.Disposable {
 
   dispose(): void {
     this.disposed = true;
+    this.turns.clear();
     this.revokeAll();
     this.keys.clear();
     this.setWindows(NO_WINDOWS);
@@ -670,14 +765,4 @@ function monotonicSource(source: (() => number) | undefined): () => number {
 function serverParagraph(purpose: SignPurpose): string {
   const line = describeServerLine(purpose);
   return line === '' ? '' : `${line}\n\n`;
-}
-
-/** "5 minutes", "1 minute" — or seconds under a minute, so a short bound never reads "0 minutes". */
-function durationText(ms: number): string {
-  const minutes = Math.round(ms / 60_000);
-  if (minutes >= 1) {
-    return `${minutes} minute${minutes === 1 ? '' : 's'}`;
-  }
-  const seconds = Math.max(1, Math.round(ms / 1000));
-  return `${seconds} second${seconds === 1 ? '' : 's'}`;
 }

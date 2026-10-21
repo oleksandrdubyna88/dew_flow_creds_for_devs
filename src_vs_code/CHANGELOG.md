@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window. The key stays loaded and the next signature asks. If a signing prompt for that key is on screen when you
   use it, answering *Allow for 10 minutes* signs that one signature and opens no window. The signing prompt now says
   what ends a window: locking the vault, and this button.
+- **One signing prompt per key at a time.** A second request for a key whose prompt is on screen waits for it
+  (instead of opening a second modal beside it); at most three wait, and a fifth is refused at once. A request whose
+  program has gone (the `ssh` was killed, the terminal closed) leaves the queue and is never shown. A request that waited
+  is told how long it has left, and one left with under fifteen seconds is refused rather than shown a prompt it cannot
+  answer. While an earlier prompt for a key is still on screen after its request was refused (VS Code cannot close a
+  modal), a new request for that key is refused and you are told — *answer or close it*; a click on a prompt that
+  had already been refused signs nothing and says so. An answer given across a lock or *Ask for Every Use Again* still
+  signs once and opens no window, and now says so in a message.
 
 ## [1.14.2] — 2026-10-21 — The signing prompt names a current OpenSSH login, and a removed key never signs
 

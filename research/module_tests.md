@@ -1448,6 +1448,36 @@ grant per call; `agentDoors.test.ts` pins the sentence), and the binary's own he
 
 **Watched RED**: the fenced-lock and fenced-key lines absent from the log (`the log does not say the answer crossed the button: [… "Ask for Every Use Again: no open window on \"prod\""]`) · a lock with no key wrote a line (`a lock with nothing to end wrote a line`) · the throwing subscriber (`Error: a subscriber that always fails`, out of `lock()`) · the row promised the wall deadline (`1790244600000 !== 1790244420000`) · the ended window stayed in the book (`the ended window stayed in the book and the row was not repainted`) · Remove on a dangling reference (`the click did nothing and said nothing`).
 
+## One prompt per key at a time (2026-10-21, #197 E2.3 — the cornerstone)
+
+Four suites, one guarantee: a key has one modal on screen at a time, and an answer that comes late or across a fence
+opens nothing. `sshAgentManagerTurns.test.ts` drives the real manager through the world's stub server with `unanswered()`
+modals the test clicks late (VS Code cannot close a modal, so neither can the test); the two new modules are tested
+pure, on mocked `setTimeout` and a clock the test moves.
+
+| suite | what it proves |
+|---|---|
+| `sshAgentManagerTurns.test.ts` (17, new, on `sshAgentWorld.ts`) | **T1** a second request for the key waits (one dialog), and *Allow once* authorises only its own signature (`presence === 2`) · **T2** a window the first prompt opened covers the waiting request, no second dialog · **T3** other keys do not wait · **T4** a key re-added while a request waited → refused, no prompt, *removed or re-added while the request waited* · **T5** a request whose client has gone leaves the queue and is never shown · **T6** 1 open + 3 waiting, the fifth refused at once and never shown later · **T7** one log line per burst at the cap, and the cap is per open turn · **T8** a request that waited says the time it really has left (*1 minute* after waiting 4) · **T9** under the floor → refused at its turn, no modal · **T10** the time left reads the monotonic clock (a wall-clock jump refuses nobody) · **T11** an ORPHANED modal holds the key: a new request is refused at once, one notice, the stale click signs nothing and says so, the key frees · **T12** a click on a prompt whose turn ended signs nothing and says so; **T12b** Escape says nothing · **T13**/**T14** an answer across a lock / *Ask for Every Use Again*: once, no window, and the message · **T15** a lock while a request waits does not fence the answer given after its turn starts · **T16** `dispose()` during a queue refuses everything, shows and logs nothing |
+| `consentTurns.test.ts` (16, new) | **C1** the first work starts before `take` returns, with the full bound · **C2** the next turn starts when the work SETTLES, and sees what it wrote · **C3** an aborted request is `gone` at once, never joins · **C4** a waiter whose signal fires leaves at once, its work never runs · **C5** the cap counts waiters only; `first` repeats once per burst and resets · **C6** a gone waiter frees its place · **C7** the bound ends the turn, orphans the slot, refuses every waiter and new request until the work settles · **C8** the request's signal during the turn orphans the same way · **C9** the floor, exactly at it runs, `promptFloor` for 300 000 / 20 / 1 000 000 · **C10** time left from arrival · **C11** a late value is dropped and a late rejection swallowed (no `unhandledRejection`) · **C12** a rejection before the outcome rejects `take` and frees the slot · **C13** an answered turn leaves no timer (`process.getActiveResourcesInfo`) · **C14** `clear()` resolves everything `gone`, a new request runs at once, the old work settling touches nothing · **C15** keys are independent · **C16** `pending() === 0` after every outcome (nine of them) |
+| `keyedQueue.test.ts` (7, new) | **K1** one job at a time, in order · **K2** a rejection fails only its own caller · **K3** two keys never wait · **K4**/**K4b** nothing held after a resolve or reject, and a key another job queued behind is not deleted · **K5** value and rejection · **K6** an idle key starts its job synchronously, a synchronous throw is a rejection. `oneUseAndCap.test.ts` is the lane's own suite and stays green on the extracted queue |
+| `sshAgentServer.test.ts` (+3) | **S1** a pipelined identities request behind a held sign request is answered after it · **S2** closing the connection aborts the request's signal · **S3** a gate that throws behind a held prompt is FAILURE, in order, logged, with no unhandled rejection |
+
+The world gained `w.infos` (the information messages shown) and a `FakeServer.confirm(key, purpose, data?, signal?)` whose
+defaults live inside the world — no call site changed.
+
+**Watched RED.** Server (interface step in place, a never-aborted signal): S1 `[12, 14]` against `[14, 12]` (the identities
+answer written first) · S2 *not aborted within 2 s* · S3 `Error: the gate broke` escaping as an unhandled rejection (the
+file reports the error, the socket never gets its second reply). Manager (interface step: the signal ignored): T1 `2 !== 1`
+(*one modal per key at a time*) · T2 `[true, false]` against `[true, true]` · T4 `true !== false` · T5 *it left at once, not when
+the open prompt ended* · T6 `5 !== 1` · T7 `true !== false` (the sixth request answered) · T8 *refused after 5 minutes* where
+`/after 1 minute\./` was wanted · T9 `true !== false` · T11 *refused at once, not queued behind the modal still on screen* ·
+T12 `0 !== 1` (no information message) · T13/T14 `infos[0]` undefined · T15 `false !== true` · T16 `3 !== 1`. T3 and T10 were
+green before the fix (guards: other keys; the monotonic clock — the second has its own break-it).
+
+**Not covered, said once:** the `R4` trap *an `await` between `turn.aborted` and the window write* — a macrotask (the bound
+timer, a socket `close`) would have to fire in a gap the code does not have; the guard is the structure (the check and the
+apply are one synchronous continuation) and the slot held through `work`, which T2/T11/C7 pin from the outside.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.

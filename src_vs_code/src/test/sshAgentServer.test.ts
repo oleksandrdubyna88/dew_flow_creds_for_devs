@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import * as crypto from 'node:crypto';
+import { once } from 'node:events';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
@@ -62,7 +63,7 @@ interface Harness {
 
 async function harness(
   keys: AgentKey[],
-  confirm: (key: AgentKey, purpose: SignPurpose) => Promise<boolean> = () => Promise.resolve(true),
+  confirm: (key: AgentKey, purpose: SignPurpose, signal: AbortSignal) => Promise<boolean> = () => Promise.resolve(true),
 ): Promise<Harness> {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'testsToDelete-agent-'));
   const socketPath =
@@ -73,7 +74,7 @@ async function harness(
   const server = new SshAgentServer({
     socketPath,
     keys: () => keys,
-    confirm: (key, purpose) => confirm(key, purpose),
+    confirm: (key, purpose, _data, signal) => confirm(key, purpose, signal),
     log: (message) => logs.push(message),
   });
   await server.listen();
@@ -389,6 +390,94 @@ test('every prompt open for a removed key is refused — two on one socket and o
       [SSH_AGENT_FAILURE, SSH_AGENT_FAILURE, SSH_AGENT_FAILURE],
     );
     assert.equal(held.signed(), 0, 'the removed key never signed');
+  } finally {
+    h.dispose();
+  }
+});
+
+test('S1 a pipelined identities request behind a held sign request is answered in order', async () => {
+  // Frames are DISPATCHED at once (the test above needs two prompts open on one socket), but the replies of one
+  // connection are written in the order its requests arrived: a client matches replies to requests by position.
+  const a = newKey('prod key');
+  const prompt = heldPrompt();
+  const h = await harness([a.key], prompt.confirm);
+  try {
+    const replies = askOnOneSocket(h.server.socketPath, [
+      signRequestFor(a.key.identity.publicBlob, Buffer.from('data')),
+      Buffer.from([SSH_AGENTC_REQUEST_IDENTITIES]),
+    ]);
+    await prompt.asked;
+    prompt.answer(true);
+
+    assert.deepEqual(
+      (await replies).map((reply) => new ByteReader(reply).readByte()),
+      [SSH_AGENT_SIGN_RESPONSE, SSH_AGENT_IDENTITIES_ANSWER],
+    );
+  } finally {
+    h.dispose();
+  }
+});
+
+test("S2 a closed client connection aborts its request's signal", async () => {
+  // A program that gave up (ssh killed, the terminal closed) must not keep a prompt queued or be shown one.
+  const a = newKey('prod key');
+  let captured: AbortSignal | undefined;
+  let arrived: () => void = () => undefined;
+  const asked = new Promise<void>((resolve) => {
+    arrived = resolve;
+  });
+  const h = await harness([a.key], (_key, _purpose, signal) => {
+    captured = signal;
+    arrived();
+    return new Promise<boolean>(() => undefined);
+  });
+  try {
+    const socket = net.createConnection(h.server.socketPath);
+    socket.on('error', () => undefined);
+    socket.on('connect', () => socket.write(encodeFrame(signRequestFor(a.key.identity.publicBlob, Buffer.from('data')))));
+    await asked;
+    socket.destroy();
+
+    const signal = captured as AbortSignal;
+    let giveUp: ReturnType<typeof setTimeout> | undefined;
+    const verdict = await Promise.race([
+      once(signal, 'abort').then(() => 'aborted'),
+      new Promise<string>((resolve) => {
+        giveUp = setTimeout(() => resolve('not aborted within 2 s'), 2_000);
+      }),
+    ]);
+    clearTimeout(giveUp);
+    assert.equal(verdict, 'aborted');
+    assert.equal(signal.aborted, true);
+  } finally {
+    h.dispose();
+  }
+});
+
+test('S3 a confirm that throws behind a held prompt is answered FAILURE, in order, with no unhandled rejection', async () => {
+  // The reply is caught where the frame is dispatched, not where it is written: a rejection behind a held reply
+  // must neither escape as an unhandled one nor stop the replies after it.
+  const a = newKey('prod key');
+  const prompt = heldPrompt();
+  let calls = 0;
+  const h = await harness([a.key], (key, purpose) => {
+    calls += 1;
+    if (calls === 1) {
+      return prompt.confirm(key, purpose);
+    }
+    throw new Error('the gate broke');
+  });
+  try {
+    const request = signRequestFor(a.key.identity.publicBlob, Buffer.from('data'));
+    const replies = askOnOneSocket(h.server.socketPath, [request, request]);
+    await prompt.asked;
+    prompt.answer(true);
+
+    assert.deepEqual(
+      (await replies).map((reply) => new ByteReader(reply).readByte()),
+      [SSH_AGENT_SIGN_RESPONSE, SSH_AGENT_FAILURE],
+    );
+    assert.match(h.logs.join('\n'), /could not answer a request: the gate broke/);
   } finally {
     h.dispose();
   }

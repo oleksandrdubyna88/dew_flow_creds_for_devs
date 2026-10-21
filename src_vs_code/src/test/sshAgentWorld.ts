@@ -29,7 +29,13 @@ export type Manager = typeof import('../sshAgentManager');
 export interface FakeServer {
   socketPath: string;
   listening: boolean;
-  confirm(key: { entityId: string; name: string; fingerprint: string }, purpose: unknown): Promise<boolean>;
+  /** `data` and `signal` default inside the world (an empty buffer, a never-aborted signal): no call site changes. */
+  confirm(
+    key: { entityId: string; name: string; fingerprint: string },
+    purpose: unknown,
+    data?: Buffer,
+    signal?: AbortSignal,
+  ): Promise<boolean>;
   keys(): unknown[];
   dispose(): void;
 }
@@ -42,6 +48,8 @@ export interface World {
   /** Modal answers, consumed in order; undefined means dismissed, a pending promise means unanswered. */
   answers: (string | undefined | Promise<string>)[];
   dialogs: string[];
+  /** The information messages shown, in order — what a person is TOLD (E2.3). */
+  infos: string[];
   /** The buttons each dialog offered, in order — what the prompt really lets a person answer. */
   buttons: string[][];
   env: Record<string, string>;
@@ -77,6 +85,7 @@ export function world(options: {
     server: (): FakeServer | undefined => server,
     answers: [...(options.answers ?? [])],
     dialogs: [],
+    infos: [],
     buttons: [],
     env: {},
     envDescription: '',
@@ -95,11 +104,17 @@ export function world(options: {
     constructor(o: {
       socketPath: string;
       keys: () => unknown[];
-      confirm: FakeServer['confirm'];
+      confirm: (
+        key: { entityId: string; name: string; fingerprint: string },
+        purpose: unknown,
+        data: Buffer,
+        signal: AbortSignal,
+      ) => Promise<boolean>;
       log: (m: string) => void;
     }) {
       this.socketPath = o.socketPath;
-      this.confirm = o.confirm;
+      this.confirm = (key, purpose, data = Buffer.alloc(0), signal = new AbortController().signal) =>
+        o.confirm(key, purpose, data, signal);
       this.keys = o.keys;
       server = this as unknown as FakeServer;
     }
@@ -125,6 +140,10 @@ export function world(options: {
       window: {
         showErrorMessage: (): Promise<undefined> => Promise.resolve(undefined),
         showInputBox: (): Promise<string | undefined> => Promise.resolve(options.typed),
+        showInformationMessage: (m: string): Promise<undefined> => {
+          w.infos.push(m);
+          return Promise.resolve(undefined);
+        },
         showWarningMessage: (m: string, _options?: unknown, ...buttons: string[]): Promise<string | undefined> => {
           w.dialogs.push(m);
           w.buttons.push(buttons);
