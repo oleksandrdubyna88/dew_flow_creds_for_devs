@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.16.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.15.1...extension-v1.16.0) (2026-10-22)
+
+
+### Features
+
+* **extension:** Allow longer… — SSH logins sign without asking for 1, 4, 8 or 12 hours ([#197](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/197) E3) ([#277](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/277)) ([cc07b6d](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/cc07b6d83c9abb546de19fa4735e934d8b0b3682))
+
+
+### Bug Fixes
+
+* **extension:** a program that asks and disconnects in a loop cannot grow the consent queue behind an open prompt ([#197](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/197) feature gate) ([#278](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/278)) ([6879db3](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/6879db35328b8e0b3a720fd7d7b81da3089c3a62))
+
 ## [1.15.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.15.0...extension-v1.15.1) (2026-10-22)
 
 
