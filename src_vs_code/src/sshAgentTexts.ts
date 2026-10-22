@@ -74,9 +74,22 @@ export function pickRefusedLine(key: Pick<AgentKey, 'name'>, ms: number, why: st
   return `"${key.name}": picked ${durationText(ms)} but ${midSentence(why)} — allowed once, no window was opened`;
 }
 
+/**
+ * The log line when a shorter length was picked while a longer login window still stands: the pick changed nothing
+ * (`grantWindow` keeps the later window), and the record must say so — otherwise the person's 1 hour simply vanishes.
+ */
+export function keptLaterLine(ms: number, standingUntil: number): string {
+  return `answered ${answeredText(ALLOW_LONGER, ms)} — the earlier login window until ${localWallTime(new Date(standingUntil))} stands, no new window was opened`;
+}
+
+/** What the person is told, once, when the length they picked was shorter than the login window that still stands. */
+export function keptLaterNotice(standingUntil: number): string {
+  return `Your earlier login window until ${localWallTime(new Date(standingUntil))} still stands — the shorter length you picked was not applied.`;
+}
+
 /** What the person is told when idle auto-lock is turned off and login windows were open. */
 export function loginWindowsEndedNotice(keys: number): string {
-  return `Idle auto-lock is off, so the login windows of ${plural(keys, 'key')} were ended — a long window needs a lock to end it.`;
+  return `Idle auto-lock is off, so the login windows of ${plural(keys, 'key')} were ended — a long window needs a lock in this VS Code window to end it.`;
 }
 
 /** One entry of the list of lengths: the label the person sees, when it ends, and the length it stands for. */
@@ -87,14 +100,17 @@ export interface LongerItem {
 }
 
 /**
- * The list *Allow longer…* opens: 1, 4, 8 and 12 hours with the time each would end, computed when the list opens
- * (the window itself starts at the pick), and the sentence that says a lock ends it earlier. `offsetMinutes` is the
- * zone, as a number, like the rest of `requestTime.ts`.
+ * The list *Allow longer…* opens: 1, 4, 8 and 12 hours with the time each would end, computed when the list opens —
+ * so it says "from your pick, about …": the window itself starts at the pick, not at the list (E3.3 review L5/F3; the
+ * row shows the true end afterwards) — and the sentence that says a lock in this VS Code window ends it earlier.
+ * `offsetMinutes` is the zone, as a number, like the rest of `requestTime.ts`.
  */
 export function longerItems(now: number, offsetMinutes: number, autoLockMinutes: number): LongerItem[] {
   return LONGER_WINDOWS_MS.map((ms) => ({
     label: durationText(ms),
-    description: `until ${clockUntil(now + ms, now, offsetMinutes)}, or until the vault locks (idle auto-lock: ${autoLockMinutes} min)`,
+    description:
+      `from your pick, about ${clockUntil(now + ms, now, offsetMinutes)}, ` +
+      `or until the vault locks in this VS Code window (idle auto-lock: ${autoLockMinutes} min)`,
     ms,
   }));
 }

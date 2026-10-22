@@ -14,6 +14,8 @@ import {
   coveredLine,
   crossedLine,
   durationText,
+  keptLaterLine,
+  keptLaterNotice,
   longerItems,
   loginWindowsEndedNotice,
   noListLine,
@@ -46,6 +48,7 @@ import {
 } from './agentConsent';
 import {
   AskTicket,
+  GrantOutcome,
   NO_WINDOWS,
   OpenWindow,
   ScopeWindows,
@@ -535,9 +538,13 @@ export class SshAgentManager implements vscode.Disposable {
     return turn.aborted ? this.stale(choice !== undefined) : this.settle(arrival, ticket, answer);
   }
 
-  /** May *Allow longer…* be honoured now? Asked three times: for the button, before the list, and at the pick. */
+  /**
+   * May *Allow longer…* be honoured now? Asked three times: for the button, before the list, and at the pick. An
+   * auto-lock that is overdue counts like a lock — the gate honours no login window in that gap (`loginLive`), so the
+   * offer must not promise one (E3.3 Fable F2).
+   */
   private offerFor(arrival: Arrival): LongerOffer {
-    return longerOffer(arrival.claim, this.lockedNow(), this.autoLockMinutes());
+    return longerOffer(arrival.claim, this.lockedNow(), this.autoLockMinutes(), this.autoLockOverdue());
   }
 
   /**
@@ -703,7 +710,25 @@ export class SshAgentManager implements vscode.Disposable {
     if (notice !== undefined) {
       this.tell(notice);
     }
+    this.reportKeptLater(key, window, outcome, at.grantedAt);
     return outcome !== 'stale-key';
+  }
+
+  /**
+   * A shorter pick while a longer login window still stands: `grantWindow` keeps the later window, and the person's
+   * pick would otherwise vanish without a word — said in the log and once to the person (E3.3 Fable F2).
+   */
+  private reportKeptLater(key: AgentKey, window: NonNullable<SigningDecision['window']>, outcome: GrantOutcome, grantedAt: number): void {
+    const standing = this.standingLogin(key, window.scope, outcome);
+    if (standing !== undefined) {
+      this.log(`"${key.name}": ${keptLaterLine(window.until - grantedAt, standing.until)}`);
+      this.tell(keptLaterNotice(standing.until));
+    }
+  }
+
+  /** The login window that outlived this grant — only for a login grant `grantWindow` answered `kept-later`. */
+  private standingLogin(key: AgentKey, scope: WindowScope, outcome: GrantOutcome): OpenWindow | undefined {
+    return outcome === 'kept-later' && scope === 'login' ? this.windows.current.open.get(key.entityId)?.login : undefined;
   }
 
   /**

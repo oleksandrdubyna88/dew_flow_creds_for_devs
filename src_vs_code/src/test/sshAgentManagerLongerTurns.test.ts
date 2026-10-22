@@ -52,6 +52,25 @@ test('L6 a late Allow longer… opens no list and says the request had already b
   assert.equal(w.presence, 0);
 });
 
+test('L6b a late Allow longer… on a vault that locked meanwhile is told it was too late — the aborted check comes before the middle check', async () => {
+  // Both checks would stop the list; only the order decides what is said and whether presence counts. A turn that
+  // ended signs nothing and counts nobody — it must not be answered as "allowed once" because the vault locked too.
+  const modal = unanswered();
+  const { w, instance, ask } = await loaded({ answers: [modal.answer], consentTimeoutMs: 40 });
+  assert.equal(await ask(), false, 'the bound refused the request');
+
+  instance.lockedNow = () => true;
+  modal.clickLate(LONGER);
+  await tick();
+  await tick();
+
+  assert.equal(w.presence, 0, 'a refused request counts no presence');
+  assert.equal(w.picks.length, 0);
+  assert.equal(w.infos.length, 1, `only one thing is said:\n${w.infos.join('\n')}`);
+  assert.match(w.infos[0], STALE, 'the stale notice');
+  assert.equal(w.infos.some((text) => /allowed once/.test(text)), false, 'and not the "allowed once, no window" notice');
+});
+
 /** Ways a client's `close` can arrive right after the PICK: the next macrotask, the one after, a timer. */
 const GOES_AWAY_AFTER_THE_PICK: [string, (abort: () => void) => void][] = [
   ['setImmediate', (abort) => void setImmediate(abort)],
@@ -93,6 +112,8 @@ test('L20 the pick races: an abort and a pick (or an Escape) that meet before th
     ['abort, then an item', (client, pick) => { client.abort(); pick.pickLate('4 hours'); }, 1],
     ['abort, then Escape', (client, pick) => { client.abort(); pick.escapeLate(); }, 0],
     ['Escape, then abort', (client, pick) => { pick.escapeLate(); client.abort(); }, 0],
+    // A list that FAILS is nobody's click: silent, even though the turn ended first (the stale message is for a click).
+    ['abort, then a rejected list', (client, pick) => { client.abort(); pick.rejectLate(new Error('the window is closing')); }, 0],
   ];
   for (const [name, race, told] of races) {
     const modal = unanswered();

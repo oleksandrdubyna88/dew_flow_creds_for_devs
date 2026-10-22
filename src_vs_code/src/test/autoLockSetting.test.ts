@@ -35,15 +35,16 @@ test('W7 the reader: unset reads 60, 0 reads 0, a negative value is returned as 
   assert.equal(setting.autoLockMinutesSetting(), -5);
 });
 
-test('W7b the listener ends login windows at -5 as at 0, and only for this setting', async () => {
-  const w = world({ also: ['../autoLockSetting', '../sshAgentWiring'], answers: [LONGER, LONGER, LONGER] });
+test('W7b the listener ends login windows at -5 and at a value that is not a number as at 0, and only for this setting', async () => {
+  const w = world({ also: ['../autoLockSetting', '../sshAgentWiring'], answers: [LONGER, LONGER, LONGER, LONGER] });
   const [, wiring] = w.modules as [Setting, Wiring];
   const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() } });
   await instance.load('a1', keyEntity(KEY_ID, 'prod'));
   const gate = w.server() as FakeServer;
   const link = wiring.connectAgentToSettings({ isLocked: () => false, dueForAutoLock: () => false }, instance);
 
-  for (const minutes of [0, -5]) {
+  // 'x' is what a hand-edited settings.json can hold: not a number is off, as `scopesFor` and `longerOffer` read it.
+  for (const minutes of [0, -5, 'x']) {
     w.settings.autoLockMinutes = 60;
     w.pickAnswers.push('4 hours');
     await gate.confirm(KEY, LOGIN);
@@ -51,9 +52,11 @@ test('W7b the listener ends login windows at -5 as at 0, and only for this setti
 
     w.changeSetting('autoLockMinutes', minutes);
 
-    assert.deepEqual(instance.windowsFor('a1', KEY_ID), {}, `${minutes}: the login window ended`);
+    assert.deepEqual(instance.windowsFor('a1', KEY_ID), {}, `${minutes}: the login window is not shown`);
+    w.settings.autoLockMinutes = 60; // no event: the row reads the setting, so it hid the window; this shows whether it ENDED
+    assert.deepEqual(instance.windowsFor('a1', KEY_ID), {}, `${minutes}: the login window ended, not merely hidden`);
   }
-  assert.equal(w.infos.length, 2, 'told each time a login window was ended');
+  assert.equal(w.infos.length, 3, 'told each time a login window was ended');
 
   w.settings.autoLockMinutes = 60;
   w.pickAnswers.push('4 hours');

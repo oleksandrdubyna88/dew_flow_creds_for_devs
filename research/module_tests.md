@@ -1523,7 +1523,7 @@ the same stub in the same scope.
 
 ## *Allow longer…* at the manager, and the wiring that bounds it (2026-10-22, #197 E3.3)
 
-`npm test`: `tests 5916 · pass 5911 · fail 0 · skipped 5` (5875 / 5870 before). The world (`sshAgentWorld.ts`) gained a
+`npm test`: `tests 5924 · pass 5919 · fail 0 · skipped 5` after the review fixes below (5916 / 5911 when the story landed; 5875 / 5870 before it). The world (`sshAgentWorld.ts`) gained a
 `showQuickPick` that answers BY LABEL against the real items (a label the list never offered throws — a test cannot pick
 what the person was not shown), `unansweredPick({ stubborn })` (a list that answers only when the test says, even after its
 token was cancelled), `rejectedPick()`, a `CancellationTokenSource` whose instances are recorded (`w.sources`, so `disposed`
@@ -1582,6 +1582,32 @@ L8b's interface-step RED was `told once` `[]`; the guards L6, L14, L17, L20, L20
 
 `itest:ssh-agent` is unchanged (section 7, the live login window, is E3.4); on Windows it passes with the POSIX-only skip
 line, and in a `node:22-alpine` container with `openssh` (non-root user, `CI=true`) sections 5 and 6 RUN and pass.
+
+### The review of E3.3 (Opus + Fable's security judgement, 2026-10-22) — what was added, each watched
+
+New tests: **L13b / L13c** a Git signature, and a SHA-1 RSA login (flags 0 on an RSA key), that WAITED behind a login prompt are not covered by the login window that prompt opens (`w.dialogs.length === 2`) · **L8c** an auto-lock that became overdue while the modal was up: no list, allowed once, told why · **L9** (+1 row) a prompt in the overdue gap offers three buttons and says *… idle auto-lock is about to lock it* · **L19b** the list's time left is the TURN's (two of five minutes spent on the modal read *3 minutes*) · **L21b** a shorter pick under a longer standing login window keeps it, logs one line and tells once · **L6b** a late *Allow longer…* on a vault that locked meanwhile is told it was too late (the aborted check precedes the middle check) · **L20** (+1 row) abort, then a REJECTED list: silent, no presence · **W7b** (+1 value) `'x'` as the setting ends login windows, and every row now also proves the window ENDED rather than was merely hidden (the setting is put back to 60 without an event) · `agentConsent.test.ts` (+1, 2 changed): the overdue reason, and a length the list never offered is `declined-longer` · `sshAgentTexts.test.ts` (+1): `keptLaterLine` / `keptLaterNotice`. **Wording only** (no behaviour; the tests that quote the text changed with it): the list items read *from your pick, about 14:40, or until the vault locks in this VS Code window (idle auto-lock: 60 min)* and `loginWindowsEndedNotice` says *a lock in this VS Code window*.
+
+| Behaviour fixed | RED (verbatim, on the unfixed code) |
+|---|---|
+| F2 the offer in the overdue gap (`longerOffer` ignored `overdue`) | unit: `actual: { offer: true }, expected: { offer: false, why: 'Longer windows need the vault unlocked — idle auto-lock is about to lock it' }` · **L9** *an auto-lock that is overdue (the lock lands within the minute): the button is absent* — `[ 'Allow once', 'Allow for 10 minutes', 'Allow longer…', 'Deny' ]` · **L8c** *the click was an Allow: this one signature goes ahead* `false` |
+| F2 a kept-later pick was silent | **L21b** `actual: [], expected: [ 'Your earlier login window until … still stands — the shorter length you picked was not applied.' ]` |
+| F4 an unoffered length allowed once | `actual: { kind: 'once' }, expected: { kind: 'declined-longer' }` (and *Escape on the list*, frozen: `false` where `true`) |
+| L4 the listener's `<= 0` | **W7b** *x: the login window ended, not merely hidden* — `{ login: { generation: 1, … } }` where `{}` was expected |
+
+Guards that were green at once (the production code was already right) and then shown to have teeth — each break-it run once and restored:
+
+| Break-it | Red |
+|---|---|
+| `coveringAt` asks `this.scopes(this.loginLive())`, the claim dropped (M1) | **L13b** *the waiting Git signature asked for itself: the login window did not cover it* `1 !== 2` · **L13c** the same for SHA-1 `1 !== 2` (also L11, L12) |
+| the offer's overdue input back to `false` (F2) | L8c and L9 as above |
+| `reportKeptLater` not called (F2) | **L21b** the notice and the log line missing |
+| `answerFromPick` returns `ONCE` for an unoffered length (F4) | the three `agentConsent` tests above |
+| the listener's `<= 0` back (L4) | **W7b** *x: the login window ended, not merely hidden* |
+| `longer` checks the middle (eligibility) before `turn.aborted` (L1) | **L6b** *a refused request counts no presence* |
+| the list's deadline taken after the modal's await (L2) | **L19b** *five minutes in all, two spent* — `… refused after 5 minutes.` where `3 minutes` was expected |
+| `this.stale(pick.kind !== 'escaped')` after the pick (L3) | **L20** *abort, then a rejected list: the message only for a click that meant something* `1 !== 0` |
+
+**Which leg of L17 carries the R4 break-it.** An `await new Promise((r) => setImmediate(r))` between the `turn.aborted` check and the grant was re-run on this head: only the **`setImmediate`** leg goes red (*signed=false but window=true: a pick applied outside its turn*). The test schedules the client's `close` with `setImmediate` right after the pick, i.e. BEFORE the break-it's own `setImmediate` can be queued, so the abort runs first and lands inside the gap. In the **`setImmediate` twice** leg the abort is queued for the second macrotask, so the gap's single hop resumes first and the grant completes before the abort; in the **`setTimeout 0`** leg the timer (clamped to at least 1 ms) fires after the gap's `setImmediate` as well. Those two legs are the guard against a gap of a different size, not the proof of this one; a gap long enough to outlast them is the one thing none of the three sees (see the existing *Not covered* paragraph above).
 
 ## What none of them covers
 

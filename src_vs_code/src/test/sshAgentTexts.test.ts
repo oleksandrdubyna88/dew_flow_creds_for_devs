@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { ALLOW_WINDOW } from '../agentConsent';
+import { localWallTime } from '../requestTime';
 import {
   crossedLine,
   durationText,
+  keptLaterLine,
+  keptLaterNotice,
   loginWindowsEndedNotice,
   longerItems,
   noListLine,
@@ -68,10 +71,10 @@ test('the list offers four items with their end times and the auto-lock sentence
   assert.deepEqual(
     items.map((item) => [item.label, item.description, item.ms]),
     [
-      ['1 hour', 'until 12:55, or until the vault locks (idle auto-lock: 60 min)', 3_600_000],
-      ['4 hours', 'until 15:55, or until the vault locks (idle auto-lock: 60 min)', 4 * 3_600_000],
-      ['8 hours', 'until 19:55, or until the vault locks (idle auto-lock: 60 min)', 8 * 3_600_000],
-      ['12 hours', 'until 23:55, or until the vault locks (idle auto-lock: 60 min)', 12 * 3_600_000],
+      ['1 hour', 'from your pick, about 12:55, or until the vault locks in this VS Code window (idle auto-lock: 60 min)', 3_600_000],
+      ['4 hours', 'from your pick, about 15:55, or until the vault locks in this VS Code window (idle auto-lock: 60 min)', 4 * 3_600_000],
+      ['8 hours', 'from your pick, about 19:55, or until the vault locks in this VS Code window (idle auto-lock: 60 min)', 8 * 3_600_000],
+      ['12 hours', 'from your pick, about 23:55, or until the vault locks in this VS Code window (idle auto-lock: 60 min)', 12 * 3_600_000],
     ],
   );
 });
@@ -81,16 +84,16 @@ test('the list says "tomorrow" across midnight and reads the zone as an offset n
   assert.deepEqual(
     longerItems(evening, 0, 15).map((item) => item.description),
     [
-      'until 17:55, or until the vault locks (idle auto-lock: 15 min)',
-      'until 20:55, or until the vault locks (idle auto-lock: 15 min)',
-      'until 00:55 tomorrow, or until the vault locks (idle auto-lock: 15 min)',
-      'until 04:55 tomorrow, or until the vault locks (idle auto-lock: 15 min)',
+      'from your pick, about 17:55, or until the vault locks in this VS Code window (idle auto-lock: 15 min)',
+      'from your pick, about 20:55, or until the vault locks in this VS Code window (idle auto-lock: 15 min)',
+      'from your pick, about 00:55 tomorrow, or until the vault locks in this VS Code window (idle auto-lock: 15 min)',
+      'from your pick, about 04:55 tomorrow, or until the vault locks in this VS Code window (idle auto-lock: 15 min)',
     ],
   );
   // 08:55 UTC is 11:55 in UTC+03:00: the end times are wall-clock times of THAT zone.
   const east = longerItems(Date.UTC(2026, 8, 24, 8, 55), 180, 60);
-  assert.equal(east[0].description.startsWith('until 12:55,'), true);
-  assert.equal(east[3].description.startsWith('until 23:55,'), true);
+  assert.equal(east[0].description.startsWith('from your pick, about 12:55,'), true);
+  assert.equal(east[3].description.startsWith('from your pick, about 23:55,'), true);
 });
 
 test('the crossing line names the answer that was given', () => {
@@ -133,11 +136,24 @@ test('the notices read as the plan says', () => {
   );
   assert.equal(
     loginWindowsEndedNotice(1),
-    'Idle auto-lock is off, so the login windows of 1 key were ended \u2014 a long window needs a lock to end it.',
+    'Idle auto-lock is off, so the login windows of 1 key were ended \u2014 a long window needs a lock in this VS Code window to end it.',
   );
   assert.equal(
     loginWindowsEndedNotice(2),
-    'Idle auto-lock is off, so the login windows of 2 keys were ended \u2014 a long window needs a lock to end it.',
+    'Idle auto-lock is off, so the login windows of 2 keys were ended \u2014 a long window needs a lock in this VS Code window to end it.',
+  );
+});
+
+test('a shorter pick that a longer login window outlived says which window stands, in the log and to the person', () => {
+  const until = Date.UTC(2026, 8, 24, 23, 55);
+  const clock = localWallTime(new Date(until));
+  assert.equal(
+    keptLaterLine(3_600_000, until),
+    `answered "Allow longer…" (1 hour) — the earlier login window until ${clock} stands, no new window was opened`,
+  );
+  assert.equal(
+    keptLaterNotice(until),
+    `Your earlier login window until ${clock} still stands — the shorter length you picked was not applied.`,
   );
 });
 

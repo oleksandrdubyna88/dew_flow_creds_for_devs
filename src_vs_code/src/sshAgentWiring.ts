@@ -5,6 +5,7 @@ import type { CredTreeDataProvider } from './treeDataProvider';
 import { signWindowLabel } from './treeRowText';
 import type { VaultKeys } from './vaultKeys';
 import { autoLockMinutesSetting } from './autoLockSetting';
+import { autoLockIsOn } from './agentConsent';
 
 /**
  * The SSH agent's wiring, out of `extension.ts` (#197, E2.1): the manager, the notice about the keys it
@@ -68,7 +69,8 @@ export function connectAgentToTree(
  * What a long login window is bounded by (#197, E3.3): the lock state, how overdue the idle auto-lock is and what it
  * is set to. Three assignments the manager asks at EVERY check — it fails closed without them, so a deleted one is a
  * prompt that never offers *Allow longer…*, never a window that outlives its lock. Returns the subscription to the
- * setting: turning idle auto-lock off (`<= 0`, a negative value reads as off) ends every login window that is open.
+ * setting: turning idle auto-lock off (`!autoLockIsOn`: 0, a negative value or anything that is not a number) ends
+ * every login window that is open — the same reading `scopesFor` and the offer use.
  */
 export function connectAgentToSettings(
   vaultKeys: Pick<VaultKeys, 'isLocked' | 'dueForAutoLock'>,
@@ -78,7 +80,7 @@ export function connectAgentToSettings(
   sshAgent.autoLockOverdue = () => vaultKeys.dueForAutoLock(Date.now(), autoLockMinutesSetting());
   sshAgent.autoLockMinutes = autoLockMinutesSetting;
   return vscode.workspace.onDidChangeConfiguration((event) => {
-    if (event.affectsConfiguration('credSshManager.autoLockMinutes') && autoLockMinutesSetting() <= 0) {
+    if (event.affectsConfiguration('credSshManager.autoLockMinutes') && !autoLockIsOn(autoLockMinutesSetting())) {
       sshAgent.endLoginWindows('idle auto-lock was turned off');
     }
   });

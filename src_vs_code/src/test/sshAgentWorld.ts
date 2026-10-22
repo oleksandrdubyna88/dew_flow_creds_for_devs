@@ -98,15 +98,18 @@ export function unansweredPick(options: { stubborn?: boolean } = {}): {
   answer: Promise<string | undefined>;
   pickLate: (label: string) => void;
   escapeLate: () => void;
+  rejectLate: (error: Error) => void;
 } {
   let settle: (label: string | undefined) => void = () => undefined;
+  let fail: (error: Error) => void = () => undefined;
   const answer = Object.assign(
-    new Promise<string | undefined>((resolve) => {
+    new Promise<string | undefined>((resolve, reject) => {
       settle = resolve;
+      fail = reject;
     }),
     { stubborn: options.stubborn === true },
   );
-  return { answer, pickLate: (label) => settle(label), escapeLate: () => settle(undefined) };
+  return { answer, pickLate: (label) => settle(label), escapeLate: () => settle(undefined), rejectLate: (error) => fail(error) };
 }
 
 /** A list that rejects, the way `showQuickPick` does when the window closes under it. */

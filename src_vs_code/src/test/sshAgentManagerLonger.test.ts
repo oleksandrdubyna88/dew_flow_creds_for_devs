@@ -20,6 +20,7 @@ import { FOUR_BUTTONS, GIT, H, LOGIN, LONGER, M, MIN, THREE_BUTTONS, W, atOnce, 
 /** The sentence the modal and the notices give when auto-lock is off. */
 const AUTO_LOCK_OFF = 'Longer windows need idle auto-lock: credSshManager.autoLockMinutes is off';
 const LOCKED = 'Longer windows need the vault unlocked — a lock ends them';
+const OVERDUE = 'Longer windows need the vault unlocked — idle auto-lock is about to lock it';
 const SHA1 = 'Longer windows need a SHA-2 signature: this RSA login asked for SHA-1';
 const LOGINS_ONLY = 'Longer windows cover SSH logins only';
 
@@ -69,7 +70,10 @@ test('L3 the list offers 1, 4, 8 and 12 hours, shortest first, each with its end
   assert.deepEqual(items.map((item) => item.ms), [1, 4, 8, 12].map((hours) => hours * H));
   assert.deepEqual(
     items.map((item) => item.description),
-    [1, 4, 8, 12].map((hours) => `until ${clockUntil(W + hours * H, W, offset)}, or until the vault locks (idle auto-lock: 60 min)`),
+    [1, 4, 8, 12].map(
+      (hours) =>
+        `from your pick, about ${clockUntil(W + hours * H, W, offset)}, or until the vault locks in this VS Code window (idle auto-lock: 60 min)`,
+    ),
   );
   assert.equal(options.title, 'How long may "pro?d" log in without asking?', 'a line break in the name shows as ?');
   assert.equal(options.ignoreFocusOut, true, 'a click elsewhere must not dismiss the list');
@@ -172,11 +176,26 @@ test('L8b the vault locked while the MODAL was up: Allow longer… opens no list
   );
 });
 
+test('L8c an auto-lock that became overdue while the MODAL was up: Allow longer… opens no list, allows once and says why', async () => {
+  const modal = unanswered();
+  const { w, instance, ask } = await loaded({ answers: [modal.answer] });
+  const asked = ask();
+  await tick();
+
+  instance.autoLockOverdue = () => true;
+  modal.clickLate(LONGER);
+
+  assert.equal(await asked, true, 'the click was an Allow: this one signature goes ahead');
+  assert.equal(w.picks.length, 0, 'no list for something the gate would not honour');
+  assert.deepEqual(w.infos, [`${OVERDUE}. This signature was allowed once; no window was opened.`]);
+});
+
 test('L9 the button is not offered for a Git signature, an unknown request, a locked vault, auto-lock off or SHA-1 RSA — and the prompt says which', async () => {
   const cases: [string, Parameters<typeof loaded>[0], { purpose?: unknown; flags?: number }, string][] = [
     ['a Git signature', { answers: [ALLOW_ONCE] }, { purpose: GIT }, LOGINS_ONLY],
     ['an unrecognised request', { answers: [ALLOW_ONCE] }, { purpose: { kind: 'unknown' } }, LOGINS_ONLY],
     ['a locked vault', { answers: [ALLOW_ONCE], locked: true }, {}, LOCKED],
+    ['an auto-lock that is overdue (the lock lands within the minute)', { answers: [ALLOW_ONCE], overdue: true }, {}, OVERDUE],
     ['auto-lock off', { answers: [ALLOW_ONCE], autoLockMinutes: 0 }, {}, AUTO_LOCK_OFF],
     ['a negative auto-lock', { answers: [ALLOW_ONCE], autoLockMinutes: -5 }, {}, AUTO_LOCK_OFF],
     ['SHA-1 RSA (flags 0)', { answers: [ALLOW_ONCE], keyType: 'rsa' }, { flags: 0 }, SHA1],
@@ -244,6 +263,34 @@ test('L13 a login window opened by the first prompt covers the waiting login wit
 
   assert.deepEqual(await Promise.all([first, second]), [true, true]);
   assert.equal(w.dialogs.length, 1, 'the waiting login was covered, not asked');
+});
+
+test('L13b a Git signature that waited behind the login prompt is NOT covered by the login window that prompt opened', async () => {
+  // The gate asks again after a wait, and asks with the WAITER's claim: a window for logins must never cover a
+  // signature that is not one (Opus review of E3.3, M1). Dropping the claim there would sign the Git request silently.
+  const modal = unanswered();
+  const { w, ask } = await loaded({ answers: [modal.answer, ALLOW_ONCE], picks: ['4 hours'] });
+  const first = ask();
+  const git = ask({ purpose: GIT });
+  await tick();
+
+  modal.clickLate(LONGER);
+
+  assert.deepEqual(await Promise.all([first, git]), [true, true]);
+  assert.equal(w.dialogs.length, 2, 'the waiting Git signature asked for itself: the login window did not cover it');
+});
+
+test('L13c a SHA-1 RSA login that waited behind the login prompt is NOT covered by the login window that prompt opened', async () => {
+  const modal = unanswered();
+  const { w, ask } = await loaded({ answers: [modal.answer, ALLOW_ONCE], picks: ['4 hours'], keyType: 'rsa' });
+  const first = ask({ flags: 2 }); // rsa-sha2-256: a login that may have a long window
+  const sha1 = ask({ flags: 0 }); // the same key, asking for SHA-1: it may not
+  await tick();
+
+  modal.clickLate(LONGER);
+
+  assert.deepEqual(await Promise.all([first, sha1]), [true, true]);
+  assert.equal(w.dialogs.length, 2, 'the waiting SHA-1 login asked for itself: the login window did not cover it');
 });
 
 test('L14 the gate and the row answer "which windows count" through the same rule — a waiter, and an immediate arrival', async () => {
@@ -340,6 +387,41 @@ test('L19 the list says the time the request has left — a request that waited 
   assert.match(w.picks[0].options.placeHolder ?? '', /Unanswered, it is refused after 60 seconds\.$/);
 });
 
+test('L19b the list says the time the TURN has left: what the modal already spent is not given back', async () => {
+  const modal = unanswered();
+  let mono = M;
+  const { w, ask } = await loaded({ answers: [modal.answer], picks: [undefined], monotonic: () => mono });
+  const asked = ask();
+  await tick();
+
+  mono += 2 * MIN; // the person read the prompt for two minutes before choosing Allow longer…
+  modal.clickLate(LONGER);
+  await asked;
+
+  assert.equal(w.picks.length, 1);
+  assert.match(w.picks[0].options.placeHolder ?? '', /Unanswered, it is refused after 3 minutes\.$/, 'five minutes in all, two spent');
+});
+
+test('L21b a shorter pick while a longer login window still stands keeps the longer one, and says so — in the log and once to the person', async () => {
+  const c = clocks();
+  const modal = unanswered();
+  const { w, instance, ask } = await loaded({ answers: [LONGER, modal.answer], picks: ['12 hours', '1 hour'], clock: c.clock, monotonic: c.monotonic });
+  await ask();
+  instance.autoLockOverdue = () => true; // the window is hidden, so this login asks for itself …
+  const second = ask();
+  await tick();
+  instance.autoLockOverdue = () => false; // … and the person is back by the time they choose
+
+  modal.clickLate(LONGER);
+
+  assert.equal(await second, true, 'the pick allows this login');
+  const until = localWallTime(new Date(W + 12 * H));
+  assert.equal(instance.windowsFor('a1', KEY_ID).login?.until, W + 12 * H, 'the longer window is untouched');
+  assert.deepEqual(w.infos, [`Your earlier login window until ${until} still stands — the shorter length you picked was not applied.`]);
+  const line = `"prod": answered "Allow longer…" (1 hour) — the earlier login window until ${until} stands, no new window was opened`;
+  assert.ok(w.logs.some((l) => l.endsWith(line)), `the log names it:\n${w.logs.join('\n')}`);
+});
+
 test('L21 an auto-lock that is overdue leaves no login window honoured: the login prompts and the row hides the window', async () => {
   const { w, instance, ask } = await loaded({ answers: [LONGER, ALLOW_ONCE], picks: ['4 hours'] });
   await ask();
@@ -375,6 +457,7 @@ test('W5 a manager nobody wired offers no longer window and honours none — eac
   // (d) only the lock and auto-lock wired: overdue defaults to true, so a granted login window is never honoured.
   const overdue = await loaded({ answers: [LONGER, ALLOW_ONCE], picks: ['4 hours'], wired: false, autoLockMinutes: 60, locked: false });
   await overdue.ask();
+  assert.deepEqual(overdue.w.buttons[0], THREE_BUTTONS, 'overdue defaults to true: no button (the stub still answered Allow longer…)');
   assert.deepEqual(overdue.instance.windowsFor('a1', KEY_ID), {}, 'a window granted while overdue defaults to true is not shown');
   await overdue.ask();
   assert.equal(overdue.w.dialogs.length, 2, 'and not honoured: the next login prompts');

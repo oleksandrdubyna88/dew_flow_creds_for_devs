@@ -20,7 +20,7 @@
  *   <li><b>Allow longer…</b> authorises NOTHING by itself: it opens a list of lengths (1, 4, 8, 12 hours), and
  *       only a length picked from that list remembers anything — for SSH logins only, from the pick. Escape on the
  *       list refuses this signature and counts as presence (a person clicked and then declined); the bound running
- *       out does not. A length the list never offered allows once and arms nothing (#197 E3).</li>
+ *       out does not. A length the list never offered is refused the same way and arms nothing (#197 E3).</li>
  * </ul>
  *
  * <p>What may be OFFERED a long window is decided here too (`longWindowClaim`, `longerOffer`): a login only, never
@@ -128,15 +128,19 @@ export function answerFromModal(choice: string | undefined): SigningAnswer | 'pi
   return (MODAL_ANSWERS.get(choice) ?? (() => ONCE))();
 }
 
+/** Escape on the list refuses this signature and counts as presence — shared, so frozen like the other fixed answers. */
+const DECLINED_LONGER: SigningAnswer = Object.freeze({ kind: 'declined-longer' as const });
+
 /**
  * Read the list's answer, the length in milliseconds. `undefined` (Escape, or VS Code closed the list) refuses and
- * counts as presence; a length the list never offered allows once and arms nothing.
+ * counts as presence. A length the list never offered is not a click on it — it is a driver, not a person — and is
+ * refused the same way: an "allow" is the wrong way to fail for a value nobody chose (E3.3 Fable F4).
  */
 export function answerFromPick(ms: number | undefined): SigningAnswer {
-  if (ms === undefined) {
-    return { kind: 'declined-longer' };
+  if (ms !== undefined && LONGER_WINDOWS_MS.includes(ms)) {
+    return { kind: 'window', scope: 'login', ms };
   }
-  return LONGER_WINDOWS_MS.includes(ms) ? { kind: 'window', scope: 'login', ms } : ONCE;
+  return DECLINED_LONGER;
 }
 
 /**
@@ -202,6 +206,8 @@ interface OfferFacts {
   claim: LongWindowClaim;
   locked: boolean;
   autoLockMinutes: number;
+  /** Idle auto-lock is already due: the vault is unlocked now, but the idle timer's next tick (within a minute) locks it. */
+  overdue: boolean;
 }
 
 /**
@@ -211,8 +217,12 @@ interface OfferFacts {
  */
 const LOGIN_CLAIMS: ReadonlySet<LongWindowClaim> = new Set<LongWindowClaim>(['login', 'sha1-login']);
 
-/** Idle auto-lock is on only for a positive number: `0`, a negative one and `NaN` all read as off. */
-function autoLockIsOn(minutes: number): boolean {
+/**
+ * Idle auto-lock is on only for a positive number: `0`, a negative one, `NaN` and anything that is not a number all
+ * read as off. The ONE spelling of that rule — `scopesFor`, the offer below and the settings listener all ask it, so
+ * a value one of them reads as "on" can never be read as "off" by another (E3.3 review L4).
+ */
+export function autoLockIsOn(minutes: number): boolean {
   return minutes > 0;
 }
 
@@ -231,10 +241,18 @@ const NO_OFFER: readonly { why: string; applies: (facts: OfferFacts) => boolean 
     why: 'Longer windows need idle auto-lock: credSshManager.autoLockMinutes is off',
     applies: (facts) => !autoLockIsOn(facts.autoLockMinutes),
   },
+  {
+    // The gate honours no login window in this gap (`loginLive`), so the offer must not promise one (E3.3 Fable F2).
+    why: 'Longer windows need the vault unlocked — idle auto-lock is about to lock it',
+    applies: (facts) => facts.overdue,
+  },
 ];
 
-/** Whether the prompt may offer *Allow longer…* — and the first reason it may not. */
-export function longerOffer(claim: LongWindowClaim, locked: boolean, autoLockMinutes: number): LongerOffer {
-  const refusal = NO_OFFER.find((reason) => reason.applies({ claim, locked, autoLockMinutes }));
+/**
+ * Whether the prompt may offer *Allow longer…* — and the first reason it may not. `overdue` is "idle auto-lock is due
+ * but the timer has not fired yet": treated like locked, because that is what the gate does with it.
+ */
+export function longerOffer(claim: LongWindowClaim, locked: boolean, autoLockMinutes: number, overdue: boolean): LongerOffer {
+  const refusal = NO_OFFER.find((reason) => reason.applies({ claim, locked, autoLockMinutes, overdue }));
   return refusal === undefined ? { offer: true } : { offer: false, why: refusal.why };
 }

@@ -1,4 +1,4 @@
-import { ALLOW_WINDOW_MS, withinAllowWindow } from './agentConsent';
+import { ALLOW_WINDOW_MS, autoLockIsOn, withinAllowWindow } from './agentConsent';
 
 /**
  * The SSH agent's window book: which "allow without asking" windows are open, for which generation of which
@@ -159,7 +159,7 @@ export function grantWindow(
 
 /** Which windows may cover a request: a login window only for a login, and only while auto-lock is on. */
 export function scopesFor(purposeIsLogin: boolean, autoLockMinutes: number): readonly WindowScope[] {
-  return purposeIsLogin && autoLockMinutes > 0 ? ['all', 'login'] : ALL_ONLY;
+  return purposeIsLogin && autoLockIsOn(autoLockMinutes) ? ['all', 'login'] : ALL_ONLY;
 }
 
 /** The wall clock's half: granted already, and not yet over. Strict at the end, like `withinAllowWindow`. */

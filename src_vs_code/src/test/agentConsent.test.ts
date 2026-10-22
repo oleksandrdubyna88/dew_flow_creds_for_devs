@@ -70,7 +70,7 @@ test('how the list ended: a pick is its length, Escape declines (present), a lis
   assert.deepEqual(decideSigning(answerFromList({ kind: 'escaped' }), NOW), { allow: false, present: true });
   const failed = decideSigning(answerFromList({ kind: 'failed' }), NOW);
   assert.deepEqual(failed, { allow: false, present: false }, 'a rejected list is a dismissal, NOT Escape: no presence');
-  assert.deepEqual(answerFromList({ kind: 'picked', ms: 2 * H }), { kind: 'once' }, 'a length the list never offered arms nothing');
+  assert.deepEqual(answerFromList({ kind: 'picked', ms: 2 * H }), { kind: 'declined-longer' }, 'a length the list never offered is refused');
 });
 
 test('Allow longer… authorises nothing by itself: it asks for the list', () => {
@@ -114,11 +114,13 @@ test('Escape on the list refuses and counts as presence; the bound running out d
   assert.deepEqual(decideSigning(answer(DENY), NOW), { allow: false, present: true });
 });
 
-test('a length the list never offered allows once and arms nothing', () => {
+test('a length the list never offered is a driver, not a person: it refuses, as Escape does, and arms nothing', () => {
+  // The list offers four lengths and nothing else, so any other value did not come from a click on it. An "allow" is
+  // the wrong failure for that: the signature is refused (a person is present — someone reached the list).
   for (const ms of [2 * H, 0, -H, 13 * H, 3_600_001, Number.NaN]) {
     const picked = answerFromPick(ms);
-    assert.deepEqual(picked, { kind: 'once' }, `${ms}`);
-    assert.deepEqual(decideSigning(picked, NOW), { allow: true, present: true });
+    assert.deepEqual(picked, { kind: 'declined-longer' }, `${ms}`);
+    assert.deepEqual(decideSigning(picked, NOW), { allow: false, present: true }, `${ms}`);
   }
 });
 
@@ -137,43 +139,52 @@ test('a login with a SHA-2 or non-RSA signature may have a long window; SHA-1 RS
 });
 
 test('the longer answer is offered only for a login: never for SHA-1, locked, or with auto-lock off — and says which', () => {
-  assert.deepEqual(longerOffer('login', false, 60), { offer: true });
-  assert.deepEqual(longerOffer('login', false, 1), { offer: true });
-  assert.deepEqual(longerOffer('not-login', false, 60), { offer: false, why: 'Longer windows cover SSH logins only' });
-  assert.deepEqual(longerOffer('sha1-login', false, 60), {
+  assert.deepEqual(longerOffer('login', false, 60, false), { offer: true });
+  assert.deepEqual(longerOffer('login', false, 1, false), { offer: true });
+  assert.deepEqual(longerOffer('not-login', false, 60, false), { offer: false, why: 'Longer windows cover SSH logins only' });
+  assert.deepEqual(longerOffer('sha1-login', false, 60, false), {
     offer: false,
     why: 'Longer windows need a SHA-2 signature: this RSA login asked for SHA-1',
   });
-  assert.deepEqual(longerOffer('login', true, 60), {
+  assert.deepEqual(longerOffer('login', true, 60, false), {
     offer: false,
     why: 'Longer windows need the vault unlocked — a lock ends them',
   });
   const off = { offer: false, why: 'Longer windows need idle auto-lock: credSshManager.autoLockMinutes is off' };
-  assert.deepEqual(longerOffer('login', false, 0), off);
-  assert.deepEqual(longerOffer('login', false, -5), off, 'a negative value is off too');
-  assert.deepEqual(longerOffer('login', false, Number.NaN), off, 'a value that is not a number is not "on"');
+  assert.deepEqual(longerOffer('login', false, 0, false), off);
+  assert.deepEqual(longerOffer('login', false, -5, false), off, 'a negative value is off too');
+  assert.deepEqual(longerOffer('login', false, Number.NaN, false), off, 'a value that is not a number is not "on"');
+});
+
+test('an auto-lock that is overdue is not offered a long window either — the gate would not honour it, so the offer does not make it', () => {
+  assert.deepEqual(longerOffer('login', false, 60, true), {
+    offer: false,
+    why: 'Longer windows need the vault unlocked — idle auto-lock is about to lock it',
+  });
 });
 
 test('a claim that is neither login nor sha1-login is never offered a long window, and gets the "logins only" reason', () => {
   for (const claim of ['forwarded-login', '', 'LOGIN', 'sshsig'] as unknown as LongWindowClaim[]) {
     assert.deepEqual(
-      longerOffer(claim, false, 60),
+      longerOffer(claim, false, 60, false),
       { offer: false, why: 'Longer windows cover SSH logins only' },
       `claim "${claim}"`,
     );
   }
-  assert.equal((longerOffer('forwarded-login' as unknown as LongWindowClaim, true, 0) as { why: string }).why, 'Longer windows cover SSH logins only');
+  assert.equal((longerOffer('forwarded-login' as unknown as LongWindowClaim, true, 0, false) as { why: string }).why, 'Longer windows cover SSH logins only');
 });
 
 test('the answers shared by every prompt are frozen, so no caller can turn "once" into something else', () => {
   assert.equal(Object.isFrozen(answerFromModal(ALLOW_ONCE)), true, 'allow once');
   assert.equal(Object.isFrozen(answerFromModal(undefined)), true, 'unanswered');
   assert.equal(Object.isFrozen(answerFromModal('Allow, I suppose')), true, 'an unrecognised label allows once');
-  assert.equal(Object.isFrozen(answerFromPick(2 * H)), true, 'a length never offered allows once');
+  assert.equal(Object.isFrozen(answerFromPick(2 * H)), true, 'a length never offered is refused');
+  assert.equal(Object.isFrozen(answerFromPick(undefined)), true, 'Escape on the list');
 });
 
-test('when several reasons apply, the first in the order is the one said: logins only, SHA-1, locked, auto-lock', () => {
-  assert.equal((longerOffer('not-login', true, 0) as { why: string }).why, 'Longer windows cover SSH logins only');
-  assert.match((longerOffer('sha1-login', true, 0) as { why: string }).why, /SHA-2/);
-  assert.match((longerOffer('login', true, 0) as { why: string }).why, /unlocked/);
+test('when several reasons apply, the first in the order is the one said: logins only, SHA-1, locked, auto-lock off, overdue', () => {
+  assert.equal((longerOffer('not-login', true, 0, true) as { why: string }).why, 'Longer windows cover SSH logins only');
+  assert.match((longerOffer('sha1-login', true, 0, true) as { why: string }).why, /SHA-2/);
+  assert.match((longerOffer('login', true, 0, true) as { why: string }).why, /unlocked — a lock ends them/);
+  assert.match((longerOffer('login', false, 0, true) as { why: string }).why, /autoLockMinutes is off/, 'overdue means nothing when auto-lock is off');
 });

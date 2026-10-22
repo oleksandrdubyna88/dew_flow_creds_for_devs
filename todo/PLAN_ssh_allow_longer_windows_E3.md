@@ -91,8 +91,9 @@ E3.3 get Fable's security judgement at review, outside the quota. The ledger lin
   any request now. **Never `scopesFor(false, …)` and never `ALL_ONLY` there** — both are `['all']`, and the row would
   never show a login window (readiness finding 2). With auto-lock on, unlocked and not overdue this is `['all',
   'login']`; otherwise `['all']`, so the row cannot show a login window the gate would refuse. `ALL_ONLY` keeps its
-  export (the book's tests use it) and loses its last production caller. The offer (`longerOffer`) reads `lockedNow()`
-  and `autoLockMinutes()` only — the click that answers it is itself activity, which ends the overdue state.
+  export (the book's tests use it) and loses its last production caller. The offer (`longerOffer`) reads `lockedNow()`,
+  `autoLockMinutes()` and `autoLockOverdue()` — an overdue auto-lock is treated like a lock, so the gap offers no *Allow longer…*
+  (E3.3 review F2; the first draft left the overdue state out, on the argument that the click ends it).
 - **The hooks fail closed.** `lockedNow: () => boolean = () => true`, `autoLockOverdue: () => boolean = () => true`,
   `autoLockMinutes: () => number = () => 0` — fields with defaults, the `onWindowsChanged` shape (`:161`), not
   constructor parameters (the constructor is at complexity 4). A manager nobody wired offers no longer window and
@@ -189,7 +190,7 @@ E3.3 get Fable's security judgement at review, outside the quota. The ledger lin
   E2.3); (2) a covered request never prompts — the arrival check (`:508`) and `beforePrompt` after a wait (`:553-564`);
   (3) every login request of that generation with a SHA-2 (or non-RSA) signature is covered while the login scope is
   live; (4) the requests a login window does not cover — a Git signature, an unrecognised one, SHA-1 RSA, anything while
-  locked, overdue or with auto-lock off — are never offered *Allow longer…* or never reach a grant; (5) every road that
+  locked, overdue or with auto-lock off — are never offered *Allow longer…* (the offer asks `longerOffer(claim, lockedNow(), autoLockMinutes(), autoLockOverdue())`, so the overdue gap offers nothing — E3.3 review F2) and never reach a grant; (5) every road that
   ends the window (lock, button, unload, re-load, auto-lock 0, expiry) removes it before the next grant. So *"1 hour
   answered after 12 hours"* cannot be produced through the prompt. The rule stays proven where it lives
   (`src_vs_code/src/test/allowWindows.test.ts`, E1.3 test 7); the manager test is the reachable form: **a 10-minute

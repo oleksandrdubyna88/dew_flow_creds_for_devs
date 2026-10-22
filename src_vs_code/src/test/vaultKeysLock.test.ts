@@ -354,7 +354,7 @@ test('W1 setting idle auto-lock to 0 ends every login window, keeps the 10-minut
   w.changeSetting('autoLockMinutes', 0);
 
   assert.deepEqual(Object.keys(agent.windowsFor('a1', KEY_ID)), ['all'], 'only the 10-minute window is left');
-  assert.deepEqual(w.infos, ['Idle auto-lock is off, so the login windows of 1 key were ended — a long window needs a lock to end it.']);
+  assert.deepEqual(w.infos, ['Idle auto-lock is off, so the login windows of 1 key were ended — a long window needs a lock in this VS Code window to end it.']);
   assert.ok(provider.refreshes > repaints, 'the row was repainted');
   w.changeSetting('autoLockMinutes', 60);
   assert.deepEqual(Object.keys(agent.windowsFor('a1', KEY_ID)), ['all'], 'the login window was ENDED, not hidden: turning auto-lock back on does not bring it back');

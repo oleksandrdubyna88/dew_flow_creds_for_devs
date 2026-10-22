@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   *logins without asking until 18:40*. An RSA login that asks for the old SHA-1 signature is never covered by a long
   window (its prompt says so; *Allow for 10 minutes* still covers it). Setting idle auto-lock to 0 ends every login
   window that is open and tells you once; an auto-lock that is overdue (the idle timer has not ticked yet) leaves no
-  long window honoured. The prompt now says that any process running as you that reaches the agent signs without asking
+  long window honoured and the prompt offers none; the list says each end time is "from your pick" — the window
+  starts when you choose. The prompt now says that any process running as you that reaches the agent signs without asking
   while a window is open, and what ends it.
 
 ### Changed — idle auto-lock is a machine-wide setting (#197)
