@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.15.0...extension-v1.15.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **extension:** the WSL relay and the agent-grant bounds are machine settings — a repository cannot run a program in WSL or loosen a grant ([#274](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/274)) ([dda3ad6](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/dda3ad67a284703c33db648570a2a6678dc7dd29))
+
 ## [1.15.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.14.2...extension-v1.15.0) (2026-10-21)
 
 
