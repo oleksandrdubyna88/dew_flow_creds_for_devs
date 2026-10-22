@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.15.1] — 2026-10-22 — Security — a repository's settings cannot run a program in WSL or loosen an agent grant
+
 ### Security
 
 - **A repository's workspace settings could switch the WSL relay on and name a program to run in WSL, and could
