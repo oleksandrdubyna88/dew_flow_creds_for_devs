@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **A repository's workspace settings could switch the WSL relay on and name a program to run in WSL, and could
+  loosen an AI agent's grant bounds.** A trusted repository's `.vscode/settings.json` could turn
+  `wslAgentRelay` on and point `wslRelayCommand` at a program inside that repository, which the relay then ran
+  inside WSL as you whenever a key was loaded; and it could raise or switch off `agentGrantIdleMinutes` and
+  `agentGrantMaxCalls`, the bounds on how long and how often an agent's token works. These five settings are
+  now machine-wide and are ignored in workspace and folder settings.
+
+### Changed
+
+- **`wslAgentRelay`, `wslRelayCommand`, `wslRelayDistros`, `agentGrantIdleMinutes` and `agentGrantMaxCalls` apply
+  only from User settings.** A value set in `.vscode/settings.json` or in folder settings no longer applies;
+  set it in User settings. *Set Up the WSL Agent Relay* already writes there, so a normal setup is unaffected.
+
 ## [1.15.0] — 2026-10-21 — A lock ends every SSH window, the row shows it, and one signing prompt per key
 
 ### Added — the row shows an open window, Ask for Every Use Again, and one signing prompt per key

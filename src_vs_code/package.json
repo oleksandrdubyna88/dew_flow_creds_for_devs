@@ -106,21 +106,27 @@
         },
         "credSshManager.wslAgentRelay": {
           "type": "boolean",
+          "scope": "machine",
+          "restricted": true,
           "default": false,
-          "markdownDescription": "Run `creds relay` inside WSL while a key is loaded into the SSH agent, so `ssh` and `git` in a WSL shell can use it. **This widens the agent's reach**: the named pipe is reachable by one Windows user, the relay's unix socket by every process in that distribution running as you. A signature still asks on Windows first; while a 10-minute window is open, any process in that distribution signs with the key without asking. Run `CredsForDevs: Set Up the WSL Agent Relay` — it turns this on and offers to add the one `export SSH_AUTH_SOCK=...` line your shell needs."
+          "markdownDescription": "Run `creds relay` inside WSL while a key is loaded into the SSH agent, so `ssh` and `git` in a WSL shell can use it. **Machine-wide:** set in User settings only — a repository's workspace or folder settings are ignored, because this decides what runs inside WSL. **This widens the agent's reach**: the named pipe is reachable by one Windows user, the relay's unix socket by every process in that distribution running as you. A signature still asks on Windows first; while a 10-minute window is open, any process in that distribution signs with the key without asking. Run `CredsForDevs: Set Up the WSL Agent Relay` — it turns this on and offers to add the one `export SSH_AUTH_SOCK=...` line your shell needs."
         },
         "credSshManager.wslRelayCommand": {
           "type": "string",
+          "scope": "machine",
+          "restricted": true,
           "default": "creds",
-          "markdownDescription": "How `creds` is invoked inside WSL. A plain command name or path — it is refused rather than escaped, because it reaches a login shell."
+          "markdownDescription": "How `creds` is invoked inside WSL. A plain command name or path — it is refused rather than escaped, because it reaches a login shell. **Machine-wide:** set in User settings only — a repository's workspace or folder settings are ignored."
         },
         "credSshManager.wslRelayDistros": {
           "type": "array",
+          "scope": "machine",
+          "restricted": true,
           "items": {
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Which WSL distributions reach the SSH agent. A socket lives inside one distribution's filesystem, so each needs its own relay — and each needs `creds` installed in it. Empty means the one WSL calls default. `CredsForDevs: Set Up the WSL Agent Relay` lists what it found and lets you pick."
+          "markdownDescription": "Which WSL distributions reach the SSH agent. A socket lives inside one distribution's filesystem, so each needs its own relay — and each needs `creds` installed in it. Empty means the one WSL calls default. `CredsForDevs: Set Up the WSL Agent Relay` lists what it found and lets you pick. **Machine-wide:** set in User settings only — a repository's workspace or folder settings are ignored."
         },
         "credSshManager.autoSync": {
           "type": "boolean",
@@ -209,15 +215,19 @@
         },
         "credSshManager.agentGrantIdleMinutes": {
           "type": "number",
+          "scope": "machine",
+          "restricted": true,
           "default": 60,
           "minimum": 0,
-          "markdownDescription": "How long a **Share with Claude Code** token stays valid without being used, in minutes. A token an agent is actively using stays live; one it forgot about — pasted into a transcript that outlives the task — goes dead on its own. `0` means no idle limit; every token still dies when this window closes."
+          "markdownDescription": "How long a **Share with Claude Code** token stays valid without being used, in minutes. A token an agent is actively using stays live; one it forgot about — pasted into a transcript that outlives the task — goes dead on its own. `0` means no idle limit; every token still dies when this window closes. **Machine-wide:** set in User settings only — a repository's workspace or folder settings are ignored."
         },
         "credSshManager.agentGrantMaxCalls": {
           "type": "number",
+          "scope": "machine",
+          "restricted": true,
           "default": 0,
           "minimum": 0,
-          "markdownDescription": "The most calls one **Share with Claude Code** token may make before it expires. `0` means no cap. Useful for a one-off task: share, let the agent make its handful of calls, and know the token is spent."
+          "markdownDescription": "The most calls one **Share with Claude Code** token may make before it expires. `0` means no cap. Useful for a one-off task: share, let the agent make its handful of calls, and know the token is spent. **Machine-wide:** set in User settings only — a repository's workspace or folder settings are ignored."
         },
         "credSshManager.gitDeployKeys": {
           "type": "object",
