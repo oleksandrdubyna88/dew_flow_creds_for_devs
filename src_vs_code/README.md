@@ -1107,6 +1107,12 @@ Two rules govern how they combine:
 
 ### Agents, the CLI and WSL
 
+`agentGrantIdleMinutes`, `agentGrantMaxCalls`, `wslAgentRelay`, `wslRelayCommand` and `wslRelayDistros`
+are **machine-wide**: set them in *User* settings. A value in a repository's `.vscode/settings.json`
+or in folder settings is ignored, because those settings decide what runs inside WSL and how long an
+agent's token works — a repository you open must not be able to change either. *Set Up the WSL Agent
+Relay* already writes to User settings.
+
 | Setting | Default | What it does |
 |---|---|---|
 | `agentGrantIdleMinutes` | `60` | A *Share with Claude Code* token dies after this long unused. `0` disables the idle timeout — the token still dies with the window |

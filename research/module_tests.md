@@ -1486,6 +1486,19 @@ schedule, or a different kind of gap (a synchronous log that blocks), is not see
 check and the apply are one synchronous continuation) and the slot held through `work`, which T2/T11/C7 pin too. No
 source-text tripwire counts the `await`s of `turnStarted`: it would be brittle, and the behaviour is what matters.
 
+## A repository's settings cannot reach the relay or the grant bounds (2026-10-22)
+
+`manifest.test.ts` gained one data-driven guard: every key in `REPOSITORY_MUST_NOT_SET` (`wslAgentRelay`,
+`wslRelayCommand`, `wslRelayDistros`, `agentGrantIdleMinutes`, `agentGrantMaxCalls`) must declare `"scope": "machine"`
+and `"restricted": true`. A setting with no `scope` is read from `.vscode/settings.json`, which a repository ships, so a
+trusted repository could switch the relay on and name a program inside itself to run in WSL, or loosen an agent's grant
+bounds. A new security-relevant setting is one more line in the list. A companion test asserts every listed key still
+exists in the manifest, so a rename cannot leave the guard checking nothing.
+**Watched RED** against the old manifest: *`credSshManager.wslAgentRelay (scope: undefined, restricted: undefined)`* and the
+four others. **Break-it:** dropping `scope` from `agentGrantMaxCalls` alone turns the guard red with *`credSshManager.agentGrantMaxCalls
+(scope: undefined, restricted: true)`*. **Not covered:** that VS Code itself ignores a workspace value for a `machine`
+setting — that is the editor's contract, and nothing here drives VS Code (see below).
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.

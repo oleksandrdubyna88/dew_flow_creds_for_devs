@@ -225,3 +225,50 @@ test('every command is filed under the one category, so the palette groups them'
 
   assert.deepEqual(missing, []);
 });
+
+/**
+ * Settings a repository must never be able to set.
+ *
+ * A setting with no `scope` is `window`-scoped, and a window-scoped setting is read from
+ * `.vscode/settings.json` too — which a repository ships. So whatever a trusted repository can set
+ * here, it sets for the person who opened it. `machine` keeps VS Code from reading the value out of
+ * workspace and folder settings at all; `restricted` adds the Workspace Trust refusal on top.
+ *
+ * Each of these is something the setting's reader ACTS on:
+ * - the three relay settings decide whether, and which program, runs inside WSL as the user;
+ * - the two grant settings are the bounds on how long, and how often, an AI agent's token works.
+ *
+ * Add a new security-relevant setting to this list — one line — and it is covered.
+ */
+const REPOSITORY_MUST_NOT_SET = [
+  'credSshManager.wslAgentRelay',
+  'credSshManager.wslRelayCommand',
+  'credSshManager.wslRelayDistros',
+  'credSshManager.agentGrantIdleMinutes',
+  'credSshManager.agentGrantMaxCalls',
+];
+
+test('settings a repository must not set are machine-scoped and restricted', () => {
+  const properties = manifest.contributes.configuration.properties as Record<
+    string,
+    { scope?: string; restricted?: boolean } | undefined
+  >;
+
+  const offenders = REPOSITORY_MUST_NOT_SET.filter(
+    (key) => properties[key]?.scope !== 'machine' || properties[key]?.restricted !== true,
+  ).map((key) => `${key} (scope: ${String(properties[key]?.scope)}, restricted: ${String(properties[key]?.restricted)})`);
+
+  assert.deepEqual(offenders, []);
+});
+
+test('the list of settings a repository must not set still names settings that exist', () => {
+  // The companion that keeps the check above alive: a renamed setting would otherwise be read as
+  // `undefined` and flagged, but a typo introduced WITH the list would be flagged as an offender
+  // too — this one says plainly which it is.
+  const properties = manifest.contributes.configuration.properties;
+
+  assert.deepEqual(
+    REPOSITORY_MUST_NOT_SET.filter((key) => !(key in properties)),
+    [],
+  );
+});

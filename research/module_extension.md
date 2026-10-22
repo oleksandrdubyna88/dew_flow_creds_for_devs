@@ -4479,7 +4479,12 @@ leaving the probe as the deciding check:
 When `credSshManager.wslAgentRelay` is on, the same callback also raises **`WslRelayManager`**
 (`wslRelayManager.ts`) — `creds relay` inside the distribution, started with the agent and killed
 with it. The socket path is read from the relay's own first line rather than re-derived here, and
-both settings that reach the login shell are refused rather than escaped. The export a WSL shell
+both settings that reach the login shell are refused rather than escaped (`isSafeShellWord` — a syntax guard that
+accepts a path, so it is not what keeps a repository out). **What does is the manifest:** `wslAgentRelay`,
+`wslRelayCommand` and `wslRelayDistros`, and the grant bounds `agentGrantIdleMinutes` / `agentGrantMaxCalls`, are
+declared `"scope": "machine"` + `"restricted": true`, so VS Code reads them from User settings only and a repository's
+`.vscode/settings.json` or folder settings are ignored (before 2026-10-22 a trusted repository could switch the relay on and
+name `/mnt/d/<repo>/tool` as the command, or loosen a grant; `manifest.test.ts` pins the list). The export a WSL shell
 needs stays in that shell's rc, written once by `CredsForDevs: Set Up the WSL Agent Relay`: VS
 Code has one environment namespace per window, and a Windows terminal needs the pipe where a WSL
 one needs the socket.
@@ -4579,7 +4584,8 @@ empty list, which made one assertion impossible to pass and the two around it im
   `shareFormat` still seals/opens shares synchronously (a follow-up).
 - **Grant lifetime.** `GrantRegistry.lookup(secret, now, limits)` returns live / expired(why) /
   unknown and deletes an expired grant on the way out; `touch` bumps `uses` and `lastUsedAt`
-  only after consent. Limits come from `agentGrantIdleMinutes` / `agentGrantMaxCalls`, read per
+  only after consent. Limits come from `agentGrantIdleMinutes` / `agentGrantMaxCalls` (machine-scoped and
+  restricted, so a repository's workspace settings cannot loosen them), read per
   request. `UseActionRegistry.actionsFor(kind)` feeds the consent dialog the full list of what
   an Allow buys.
 - **One viewer.** `dialogs.showEntityDetails` (SSH-only QuickPick) is deleted; `viewDetails`
