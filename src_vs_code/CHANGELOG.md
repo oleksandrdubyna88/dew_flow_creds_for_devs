@@ -37,6 +37,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `autoLockMinutes` description say a lock ends both kinds of window, that with auto-lock off no window longer than 10
   minutes is offered, and that the setting is machine-wide.
 
+### Security — a program that asks and disconnects in a loop cannot grow the signing queue (#197)
+
+- **A program that repeatedly asks for a signature and disconnects while a signing prompt is open can no longer make
+  the agent hold an unbounded queue.** Each request that left the line still held a place in the key's queue until the
+  open prompt was answered, so a loop of "ask, hang up" grew that queue for as long as the prompt stayed up (up to 5
+  minutes). A key now holds at most 32 waiting requests, counting the ones that already left; the next is refused at
+  once, as when four requests are already waiting. A real request after the prompt is answered is shown at once.
+
 ## [1.15.1] — 2026-10-22 — Security — a repository's settings cannot run a program in WSL or loosen an agent grant
 
 ### Security

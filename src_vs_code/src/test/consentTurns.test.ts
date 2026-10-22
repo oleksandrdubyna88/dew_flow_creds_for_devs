@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test, TestContext } from 'node:test';
 import * as v8 from 'node:v8';
 import * as vm from 'node:vm';
-import { ConsentTurns, MIN_PROMPT_MS, Refusal, TurnOutcome, promptFloor } from '../consentTurns';
+import { ConsentTurns, MAX_RETAINED, MIN_PROMPT_MS, Refusal, TurnOutcome, promptFloor } from '../consentTurns';
 
 /**
  * The turn each signing request takes at the prompt (#197, E2.3) — C1–C16 of the spec. Pure, so the whole suite
@@ -602,4 +602,40 @@ test('C21 queued is told once per request that joins behind an open turn — nev
   await tick();
   b.settle('done too');
   await second;
+});
+
+test('C22 cancellation churn behind an open modal keeps the retained jobs bounded, and the key frees when the modal settles', async (t) => {
+  const { turns } = setup(t);
+  const open = job();
+  const first = turns.take('k', signal().signal, open.work);
+  const churn = 200;
+  const refused: string[] = [];
+  let admitted = 0;
+
+  for (let attempt = 0; attempt < churn; attempt += 1) {
+    const client = signal();
+    const verdict = await peek(turns.take('k', client.signal, job().work));
+    if (verdict === 'pending') {
+      admitted += 1;
+    } else {
+      refused.push(verdict.kind);
+    }
+    client.abort(); // the program hangs up: its place at the waiting cap is free again, its job is still chained
+  }
+
+  assert.ok(admitted <= MAX_RETAINED, `${admitted} of ${churn} requests were admitted behind one open modal; the cap is ${MAX_RETAINED}`);
+  assert.ok(turns.retained('k') <= MAX_RETAINED, 'the jobs the key holds that have not run stay under the cap');
+  assert.equal(refused.length, churn - admitted, 'every request that was not admitted was refused');
+  assert.deepEqual([...new Set(refused)], ['full'], 'with the refusal the waiting cap gives');
+
+  open.settle('done');
+  await first;
+  await tick();
+  assert.equal(turns.retained('k'), 0, 'the ghosts ran as no-ops and the count is back to zero');
+  assert.equal(turns.pending(), 0, 'and the key holds nothing');
+  const next = job();
+  const fresh = turns.take('k', signal().signal, next.work);
+  assert.equal(next.started(), true, 'a request after the modal is shown at once: no ghost is left in front of it');
+  next.settle('yes');
+  assert.deepEqual(await fresh, { kind: 'answered', value: 'yes' });
 });
