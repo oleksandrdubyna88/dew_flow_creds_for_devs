@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { EntityMetadata, TreeNode } from '../types';
-import { StubEventEmitter, loadEachWithVscode } from './vscodeStub';
+import { StubCancellationToken, StubCancellationTokenSource, StubEventEmitter, loadEachWithVscode } from './vscodeStub';
 
 /**
  * The SSH agent manager's test world: the real `SshAgentManager` over a stub socket server and a `vscode`
@@ -29,12 +29,16 @@ export type Manager = typeof import('../sshAgentManager');
 export interface FakeServer {
   socketPath: string;
   listening: boolean;
-  /** `data` and `signal` default inside the world (an empty buffer, a never-aborted signal): no call site changes. */
+  /**
+   * `data`, `signal` and `flags` default inside the world (an empty buffer, a never-aborted signal, flags `0` — the
+   * flag-less request that RSA signs with SHA-1): no call site changes.
+   */
   confirm(
     key: { entityId: string; name: string; fingerprint: string },
     purpose: unknown,
     data?: Buffer,
     signal?: AbortSignal,
+    flags?: number,
   ): Promise<boolean>;
   keys(): unknown[];
   dispose(): void;
@@ -59,14 +63,136 @@ export interface World {
   disposals: number;
   /** How many output channels the manager created — the agent log is made on first use, never at startup. */
   channels: number;
+  /** The lists *Allow longer…* opened, in order: the real items and the options (title, placeholder) they were shown with. */
+  picks: { items: PickItem[]; options: { title?: string; placeHolder?: string; ignoreFocusOut?: boolean } }[];
+  /**
+   * What the lists answer, consumed in order, BY LABEL against the real items (a label the list never offered throws:
+   * a test cannot pick what the person was not shown). `undefined` is Escape; a promise stays open until the test
+   * settles it (`unansweredPick`); `rejectedPick()` makes the list reject, as a closing window does.
+   */
+  pickAnswers: PickAnswer[];
+  /** Every `CancellationTokenSource` the manager made, so a test can see that it was disposed. */
+  sources: StubCancellationTokenSource[];
+  /** The settings a `workspace.getConfiguration().get` reads, by bare key; unset reads the caller's fallback. */
+  settings: Record<string, unknown>;
+  /** Change a setting and tell every `onDidChangeConfiguration` listener, as VS Code does. */
+  changeSetting(key: string, value: unknown): void;
 }
 
-export function realPrivateKey(): string {
+/** One entry of a list as the manager hands it to `showQuickPick`. */
+export interface PickItem {
+  label: string;
+  description?: string;
+  ms: number;
+}
+
+/** What a list answers: a label, Escape, a list that stays open, or a rejection. */
+export type PickAnswer = string | undefined | Promise<string | undefined> | { rejects: Error };
+
+/**
+ * A list nobody answers yet, and ways to answer it late: pick a label or press Escape. A `stubborn` list does NOT
+ * close when its token is cancelled — it answers only when the test says, which is how a pick that reaches the
+ * manager AFTER its turn ended is built (the races of #197 E3.3, L20).
+ */
+export function unansweredPick(options: { stubborn?: boolean } = {}): {
+  answer: Promise<string | undefined>;
+  pickLate: (label: string) => void;
+  escapeLate: () => void;
+  rejectLate: (error: Error) => void;
+} {
+  let settle: (label: string | undefined) => void = () => undefined;
+  let fail: (error: Error) => void = () => undefined;
+  const answer = Object.assign(
+    new Promise<string | undefined>((resolve, reject) => {
+      settle = resolve;
+      fail = reject;
+    }),
+    { stubborn: options.stubborn === true },
+  );
+  return { answer, pickLate: (label) => settle(label), escapeLate: () => settle(undefined), rejectLate: (error) => fail(error) };
+}
+
+/** A list that rejects, the way `showQuickPick` does when the window closes under it. */
+export function rejectedPick(message = 'the window is closing'): { rejects: Error } {
+  return { rejects: new Error(message) };
+}
+
+/** The item a label names; a label the list never offered is a bug in the TEST, and says so. */
+function itemLabelled(items: PickItem[], label: string): PickItem {
+  const item = items.find((one) => one.label === label);
+  if (item === undefined) {
+    throw new Error(`the test picked "${label}" but the list offered ${items.map((one) => `"${one.label}"`).join(', ')}`);
+  }
+  return item;
+}
+
+/** A list's answer: the item for the label, `undefined` when the token is cancelled first or the answer is Escape. */
+function answerPick(items: PickItem[], answer: PickAnswer, token: StubCancellationToken): Promise<PickItem | undefined> {
+  const rejects = Reflect.get(Object(answer), 'rejects');
+  if (rejects instanceof Error) {
+    return Promise.reject(rejects);
+  }
+  const stubborn = Reflect.get(Object(answer), 'stubborn') === true;
+  const picked = Promise.resolve(answer as string | undefined | Promise<string | undefined>).then((label) => (label === undefined ? undefined : itemLabelled(items, label)));
+  return Promise.race([picked, closedBy(token, stubborn)]);
+}
+
+/** Resolves `undefined` when the token is cancelled (or already was) — never for a stubborn list. */
+function closedBy(token: StubCancellationToken, stubborn: boolean): Promise<undefined> {
+  return new Promise<undefined>((resolve) => {
+    if (stubborn) {
+      return;
+    }
+    if (token.isCancellationRequested) {
+      resolve(undefined);
+    } else {
+      token.onCancellationRequested(() => resolve(undefined));
+    }
+  });
+}
+
+type ConfigListener = (event: { affectsConfiguration(section: string): boolean }) => void;
+
+/**
+ * The `workspace` a real `VaultKeys` and the auto-lock reader see: `settings` is what `get` reads (unset: the caller's
+ * fallback) and `onDidChangeConfiguration` registers a listener (the world's `changeSetting` is VS Code telling them).
+ */
+function workspaceStub(w: { settings: Record<string, unknown> }, listeners: Set<ConfigListener>): Record<string, unknown> {
+  return {
+    getConfiguration: () => ({ get: <T>(key: string, fallback: T): T => (key in w.settings ? (w.settings[key] as T) : fallback) }),
+    onDidChangeConfiguration: (listener: ConfigListener) => {
+      listeners.add(listener);
+      return { dispose: (): void => void listeners.delete(listener) };
+    },
+  };
+}
+
+/** An output channel that refuses a write after it was disposed — a late log line must not reach a channel that is gone. */
+function outputChannelStub(w: World): unknown {
+  let closed = false;
+  w.channels += 1;
+  return {
+    appendLine: (line: string): void => {
+      if (closed) {
+        throw new Error('the output channel was disposed');
+      }
+      w.logs.push(line);
+    },
+    dispose: (): void => {
+      closed = true;
+    },
+  };
+}
+
+export type KeyType = 'ed25519' | 'rsa';
+
+export function realPrivateKey(type: KeyType = 'ed25519'): string {
   // Generated, never committed: a private key in a repository is a private key on the internet.
-  const { privateKey } = crypto.generateKeyPairSync('ed25519', {
+  const { privateKey } = crypto.generateKeyPairSync(type as 'ed25519', {
+    ...(type === 'rsa' ? { modulusLength: 2048 } : {}),
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
     publicKeyEncoding: { type: 'spki', format: 'pem' },
-  }) as unknown as { privateKey: string };
+  } as never) as unknown as { privateKey: string };
   return privateKey;
 }
 
@@ -77,6 +203,8 @@ export function world(options: {
   also?: string[];
   /** What a person types when a vault loaded via `also` asks for the PIN (the interactive unlock). */
   typed?: string;
+  /** Keep the REAL `SshAgentServer` (a real socket) instead of the stub — for the test that crosses the server's own lambda. */
+  realServer?: boolean;
 }): World {
   let server: FakeServer | undefined;
   const w: World = {
@@ -93,7 +221,17 @@ export function world(options: {
     logs: watchLogs([]),
     disposals: 0,
     channels: 0,
+    picks: [],
+    pickAnswers: [],
+    sources: [],
+    settings: {},
+    changeSetting: (key, value) => {
+      w.settings[key] = value;
+      const event = { affectsConfiguration: (section: string): boolean => section === 'credSshManager' || section === `credSshManager.${key}` };
+      configListeners.forEach((listener) => listener(event));
+    },
   };
+  const configListeners = new Set<ConfigListener>();
 
   class StubAgentServer {
     readonly socketPath: string;
@@ -109,12 +247,13 @@ export function world(options: {
         purpose: unknown,
         data: Buffer,
         signal: AbortSignal,
+        flags: number,
       ) => Promise<boolean>;
       log: (m: string) => void;
     }) {
       this.socketPath = o.socketPath;
-      this.confirm = (key, purpose, data = Buffer.alloc(0), signal = new AbortController().signal) =>
-        o.confirm(key, purpose, data, signal);
+      this.confirm = (key, purpose, data = Buffer.alloc(0), signal = new AbortController().signal, flags = 0) =>
+        o.confirm(key, purpose, data, signal, flags);
       this.keys = o.keys;
       server = this as unknown as FakeServer;
     }
@@ -136,8 +275,18 @@ export function world(options: {
       // A working emitter: the real semantics, so `VaultKeys.onDidLock` delivers to its listeners as it does in VS Code.
       EventEmitter: StubEventEmitter,
       // What a real `VaultKeys` reads when it is loaded beside the manager: its silent routes ask nobody anything.
-      workspace: { getConfiguration: () => ({ get: <T>(_key: string, fallback: T): T => fallback }) },
+      workspace: workspaceStub(w, configListeners),
+      CancellationTokenSource: class extends StubCancellationTokenSource {
+        constructor() {
+          super();
+          w.sources.push(this);
+        }
+      },
       window: {
+        showQuickPick: (items: PickItem[], options: World['picks'][number]['options'], token: StubCancellationToken): Promise<PickItem | undefined> => {
+          w.picks.push({ items, options });
+          return answerPick(items, w.pickAnswers.shift(), token);
+        },
         showErrorMessage: (): Promise<undefined> => Promise.resolve(undefined),
         showInputBox: (): Promise<string | undefined> => Promise.resolve(options.typed),
         showInformationMessage: (m: string): Promise<undefined> => {
@@ -149,32 +298,17 @@ export function world(options: {
           w.buttons.push(buttons);
           return Promise.resolve(w.answers.shift());
         },
-        createOutputChannel: (): unknown => {
-          // A disposed channel refuses a write — a log line after the window's end must not reach it,
-          // and a test about that has to be able to see the throw.
-          let closed = false;
-          w.channels += 1;
-          return {
-            appendLine: (line: string): void => {
-              if (closed) {
-                throw new Error('the output channel was disposed');
-              }
-              w.logs.push(line);
-            },
-            dispose: (): void => {
-              closed = true;
-            },
-          };
+        createOutputChannel: (): unknown => outputChannelStub(w),
+      },
+    },
+    options.realServer === true
+      ? {}
+      : {
+          './sshAgentServer': {
+            SshAgentServer: StubAgentServer,
+            agentSocketPath: (dir: string, _p: string, pid: number): string => path.join(dir, `agent-${pid}.sock`),
+          },
         },
-      },
-    },
-    {
-      './sshAgentServer': {
-        SshAgentServer: StubAgentServer,
-        agentSocketPath: (dir: string, _p: string, pid: number): string =>
-          path.join(dir, `agent-${pid}.sock`),
-      },
-    },
   );
   w.mod = mod as Manager;
   w.modules = also;
@@ -190,6 +324,13 @@ export function manager(
     consentTimeoutMs?: number;
     /** The window book's second clock; the real one is `performance.now()`, which a test cannot move. */
     monotonic?: () => number;
+    /**
+     * The three hooks the wiring sets, as values (#197, E3.3). Left out, the hook keeps its FAIL-CLOSED default —
+     * which is what a manager nobody wired has. A test that changes one mid-way assigns the field on the instance.
+     */
+    autoLockMinutes?: number;
+    locked?: boolean;
+    overdue?: boolean;
   },
 ): {
   instance: InstanceType<Manager['SshAgentManager']>;
@@ -197,21 +338,37 @@ export function manager(
   dir: string;
 } {
   const dir = storageDir();
-  return {
+  const instance = new w.mod.SshAgentManager(
+    agentStorage(options) as never,
     dir,
-    instance: new w.mod.SshAgentManager(
-      agentStorage(options) as never,
-      dir,
-      agentEnv(w) as never,
-      () => {
-        w.presence += 1;
-      },
-      undefined,
-      options.clock,
-      options.consentTimeoutMs,
-      options.monotonic,
-    ),
-  };
+    agentEnv(w) as never,
+    () => {
+      w.presence += 1;
+    },
+    undefined,
+    options.clock,
+    options.consentTimeoutMs,
+    options.monotonic,
+  );
+  hooked(instance, options);
+  return { dir, instance };
+}
+
+/** Wire the hooks a test asked for; the rest stay as the manager builds them (fail closed). */
+function hooked(
+  instance: InstanceType<Manager['SshAgentManager']>,
+  options: { autoLockMinutes?: number; locked?: boolean; overdue?: boolean },
+): void {
+  const { autoLockMinutes, locked, overdue } = options;
+  if (autoLockMinutes !== undefined) {
+    instance.autoLockMinutes = () => autoLockMinutes;
+  }
+  if (locked !== undefined) {
+    instance.lockedNow = () => locked;
+  }
+  if (overdue !== undefined) {
+    instance.autoLockOverdue = () => overdue;
+  }
 }
 
 /** The vault side of the agent: the keys it may open, the one account, and the nodes that ask to be served. */

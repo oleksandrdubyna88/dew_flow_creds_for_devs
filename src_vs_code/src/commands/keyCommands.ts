@@ -26,6 +26,7 @@ import { envelopeWithRecoveryCode } from '../securityKeyOps';
 import { showRecoveryCodeView } from '../recoveryCodeView';
 import { isRecoveryCodeError } from '../recoveryCode';
 import { envelopeWithoutRecoveryCode } from '../securityKeyOps';
+import { autoLockMinutesSetting } from '../autoLockSetting';
 export interface KeyCommandsHost {
   readonly keyHost: KeyAddHost;
   readonly lockNow: (notice: string) => void;
@@ -373,7 +374,7 @@ export function registerKeyCommands(host: KeyCommandsHost): void {
 
   register('credSshManager.setAutoLock', async () => {
     const config = vscode.workspace.getConfiguration('credSshManager');
-    const current = config.get<number>('autoLockMinutes', 60);
+    const current = autoLockMinutesSetting();
     const hours = [1, 3, 5, 8, 12, 24];
     const items: (vscode.QuickPickItem & { minutes: number })[] = [
       ...hours.map((h) => ({

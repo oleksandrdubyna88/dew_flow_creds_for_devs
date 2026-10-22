@@ -294,6 +294,24 @@ test('disposing the manager clears the expiry timer it armed', async (t) => {
   assert.equal(handed.includes(timer), true, 'the expiry timer outlived the manager');
 });
 
+test('a change after dispose() tells the row nothing: the tree outlives the manager, the repaint must not', async () => {
+  // `onWindowsChanged` is the wiring's field and points at the tree's refresh; the manager is disposed with the
+  // extension but a late lock, a late unload or a late timer may still change the book (E3.1's judge found this
+  // green with the guard deleted).
+  const w = world({ answers: [ALLOW_WINDOW] });
+  const { instance, gate } = await loaded(w);
+  await gate.confirm(key, login);
+  const changes: string[] = [];
+  instance.onWindowsChanged = () => changes.push('changed');
+  assert.notDeepEqual(instance.windowsFor('a1', KEY_ID), {}, 'the control: a window is open');
+
+  instance.dispose();
+  instance.endAllWindows('a lock after the window was disposed');
+  instance.unload(KEY_ID);
+
+  assert.deepEqual(changes, [], 'the row was repainted by a manager that is gone');
+});
+
 test('nothing this suite logged carries key material', () => {
   assertNoKeyMaterialLogged();
 });

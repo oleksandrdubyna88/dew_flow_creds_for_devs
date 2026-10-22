@@ -1,4 +1,4 @@
-import { ALLOW_WINDOW_MS, withinAllowWindow } from './agentConsent';
+import { ALLOW_WINDOW_MS, autoLockIsOn, withinAllowWindow } from './agentConsent';
 
 /**
  * The SSH agent's window book: which "allow without asking" windows are open, for which generation of which
@@ -159,7 +159,7 @@ export function grantWindow(
 
 /** Which windows may cover a request: a login window only for a login, and only while auto-lock is on. */
 export function scopesFor(purposeIsLogin: boolean, autoLockMinutes: number): readonly WindowScope[] {
-  return purposeIsLogin && autoLockMinutes > 0 ? ['all', 'login'] : ALL_ONLY;
+  return purposeIsLogin && autoLockIsOn(autoLockMinutes) ? ['all', 'login'] : ALL_ONLY;
 }
 
 /** The wall clock's half: granted already, and not yet over. Strict at the end, like `withinAllowWindow`. */
@@ -189,10 +189,24 @@ export function windowsFor(book: AllowWindows, key: KeyRef, scopes: readonly Win
   return Object.fromEntries(entries.filter(([scope, window]) => scopes.includes(scope) && covers(window, key, now, nowMono)));
 }
 
+/** The first of `scopes`, in that order, whose window covers a request now — and which scope that is. */
+export function coveringWindow(
+  book: AllowWindows,
+  key: KeyRef,
+  scopes: readonly WindowScope[],
+  now: number,
+  nowMono: number,
+): { scope: WindowScope; window: OpenWindow } | undefined {
+  const live = windowsFor(book, key, scopes, now, nowMono);
+  return scopes.flatMap((scope) => {
+    const window = live[scope];
+    return window === undefined ? [] : [{ scope, window }];
+  })[0];
+}
+
 /** The first of `scopes`, in that order, whose window covers a request now. */
 export function windowCovers(book: AllowWindows, key: KeyRef, scopes: readonly WindowScope[], now: number, nowMono: number): OpenWindow | undefined {
-  const live = windowsFor(book, key, scopes, now, nowMono);
-  return scopes.map((scope) => live[scope]).find((window) => window !== undefined);
+  return coveringWindow(book, key, scopes, now, nowMono)?.window;
 }
 
 /** A new open-map without one key. */

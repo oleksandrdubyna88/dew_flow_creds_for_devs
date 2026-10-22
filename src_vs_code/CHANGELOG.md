@@ -6,6 +6,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — longer SSH windows for logins (#197)
+
+- **A login prompt offers *Allow longer…*: 1, 4, 8 or 12 hours of SSH logins with that key without asking** — `git push`
+  and `git fetch` over SSH included. A Git signature, or anything else, still asks. It is offered only while the vault is
+  unlocked and idle auto-lock is on, and every lock in this VS Code window ends the window — so with the default
+  60-minute auto-lock a long window usually ends after an hour unless you keep using the vault. The key's row says
+  *logins without asking until 18:40*. An RSA login that asks for the old SHA-1 signature is never covered by a long
+  window (its prompt says so; *Allow for 10 minutes* still covers it). Setting idle auto-lock to 0 ends every login
+  window that is open and tells you once; an auto-lock that is overdue (the idle timer has not ticked yet) leaves no
+  long window honoured and the prompt offers none; the list says each end time is "from your pick" — the window
+  starts when you choose. The prompt now says that any process running as you that reaches the agent signs without asking
+  while a window is open, and what ends it.
+
+### Changed — idle auto-lock is a machine-wide setting, and the texts say what the prompt offers (#197)
+
+- **`credSshManager.autoLockMinutes` is now machine-wide (User settings only):** a workspace or folder value (a
+  repository's `.vscode/settings.json`) is no longer applied. It is what bounds a long login window, so a repository
+  must not be able to raise it.
+- **An SSH login whose algorithm does not fit the key is no longer treated as a login.** A request that names an
+  algorithm the signing key cannot produce is not a login, so a long window never covers it.
+- **Escape on the length list refuses the signature** (and counts as you being there); picking a length the list never
+  offered is refused the same way.
+- **A lock while the length list is open allows that one signature, with a message** — it opens no window.
+- **Everything that describes the signing prompt now says it offers four answers** — *Allow once*, *Allow for 10
+  minutes*, *Allow longer…* (SSH logins only: 1, 4, 8 or 12 hours) and *Deny* — **and that a lock in this VS Code window
+  ends every window.** The help (the SSH agent, WSL relay and locking articles, in all five languages), the README, the
+  walkthrough, the descriptions of `wslAgentRelay` and `autoLockMinutes`, the *WSL agent relay on* row and the notices
+  shown at startup and after *Add to SSH Agent* no longer say "once, or for 10 minutes". The locking article and the
+  `autoLockMinutes` description say a lock ends both kinds of window, that with auto-lock off no window longer than 10
+  minutes is offered, and that the setting is machine-wide.
+
 ## [1.15.1] — 2026-10-22 — Security — a repository's settings cannot run a program in WSL or loosen an agent grant
 
 ### Security

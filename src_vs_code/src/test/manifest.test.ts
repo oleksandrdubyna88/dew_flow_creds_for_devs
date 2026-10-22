@@ -236,7 +236,8 @@ test('every command is filed under the one category, so the palette groups them'
  *
  * Each of these is something the setting's reader ACTS on:
  * - the three relay settings decide whether, and which program, runs inside WSL as the user;
- * - the two grant settings are the bounds on how long, and how often, an AI agent's token works.
+ * - the two grant settings are the bounds on how long, and how often, an AI agent's token works;
+ * - `autoLockMinutes` is what bounds a long SSH login window (a window lasts at most until the vault locks).
  *
  * Add a new security-relevant setting to this list — one line — and it is covered.
  */
@@ -246,17 +247,36 @@ const REPOSITORY_MUST_NOT_SET = [
   'credSshManager.wslRelayDistros',
   'credSshManager.agentGrantIdleMinutes',
   'credSshManager.agentGrantMaxCalls',
+  'credSshManager.autoLockMinutes',
 ];
 
-test('settings a repository must not set are machine-scoped and restricted', () => {
+/**
+ * A listed setting passes in EITHER of two ways. `machine` + `restricted`: the value is never read from workspace and
+ * folder settings, and Workspace Trust adds its refusal. `application`: the same two exclusions, and a Remote
+ * (SSH / WSL / container) settings value is refused as well. `autoLockMinutes` is the `application` one on purpose —
+ * `machine` would silently stop Settings Sync of a setting people already sync (the extension is `extensionKind:
+ * ["ui"]`, so `machine` and `application` both ignore workspace and folder values), and `restricted` adds nothing once
+ * workspace values are ignored (#197 E3.3 and its review).
+ */
+type Scoped = { scope?: string; restricted?: boolean } | undefined;
+
+function isMachineRestricted(setting: Scoped): boolean {
+  return setting?.scope === 'machine' && setting.restricted === true;
+}
+
+function keepsRepositoriesOut(setting: Scoped): boolean {
+  return setting?.scope === 'application' || isMachineRestricted(setting);
+}
+
+test('settings a repository must not set are machine-scoped and restricted, or application-scoped', () => {
   const properties = manifest.contributes.configuration.properties as Record<
     string,
     { scope?: string; restricted?: boolean } | undefined
   >;
 
-  const offenders = REPOSITORY_MUST_NOT_SET.filter(
-    (key) => properties[key]?.scope !== 'machine' || properties[key]?.restricted !== true,
-  ).map((key) => `${key} (scope: ${String(properties[key]?.scope)}, restricted: ${String(properties[key]?.restricted)})`);
+  const offenders = REPOSITORY_MUST_NOT_SET.filter((key) => !keepsRepositoriesOut(properties[key])).map(
+    (key) => `${key} (scope: ${String(properties[key]?.scope)}, restricted: ${String(properties[key]?.restricted)})`,
+  );
 
   assert.deepEqual(offenders, []);
 });

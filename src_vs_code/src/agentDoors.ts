@@ -18,6 +18,7 @@
  *
  * <p>Pure: the state comes in, the rows come out, and the text is one table.</p>
  */
+import { RELAY_ROW_DETAIL } from './sshAgentTexts';
 
 export interface AgentDoors {
   /** CLI alias names pointing at this entry. */
@@ -100,7 +101,7 @@ const DOORS: ReadonlyArray<{ live: (d: AgentDoors) => boolean; row: (d: AgentDoo
     live: (d) => d.wslRelay,
     row: () => ({
       label: 'WSL agent relay on',
-      detail: 'ssh and git inside WSL can use this key, asking on Windows first (once, or for 10 minutes).',
+      detail: RELAY_ROW_DETAIL,
       command: 'credSshManager.setUpWslRelay',
     }),
   },

@@ -192,6 +192,43 @@ test('a host-bound userauth without its host key is unrecognised', () => {
   assert.deepEqual(describeSignRequest(data, SIGNING_KEY), { kind: 'unknown' });
 });
 
+// ---- the algorithm must fit the key that signs (#197 E3.2, risk consultation C-b) ----------------------------------
+
+const RSA_KEY = blob('ssh-rsa', 'an RSA key');
+const ECDSA_KEY = blob('ecdsa-sha2-nistp256', 'an ECDSA key');
+
+test('a login says an algorithm its key can sign with: RSA says ssh-rsa, rsa-sha2-256 or rsa-sha2-512; the others say their own type', () => {
+  // The positive a file of negatives needs (testing.md): without it the refusals below pass if the fixture is what fails.
+  for (const algorithm of ['ssh-rsa', 'rsa-sha2-256', 'rsa-sha2-512']) {
+    const data = userauth({ blob: RSA_KEY, algorithm });
+    assert.equal(describeSignRequest(data, RSA_KEY).kind, 'ssh-login', `an RSA login saying ${algorithm}`);
+  }
+  assert.equal(describeSignRequest(userauth({ blob: SIGNING_KEY }), SIGNING_KEY).kind, 'ssh-login', 'Ed25519 says ssh-ed25519');
+  assert.equal(describeSignRequest(userauth({ blob: ECDSA_KEY }), ECDSA_KEY).kind, 'ssh-login', 'ECDSA says its curve');
+});
+
+test('a userauth whose algorithm is empty is not a login (an RSA signing key)', () => {
+  // The old rule asked only that an algorithm be PRESENT; an empty one named nothing and still passed.
+  const data = userauth({ blob: RSA_KEY, algorithm: '' });
+  assert.deepEqual(describeSignRequest(data, RSA_KEY), { kind: 'unknown' });
+  assert.deepEqual(describeSignRequest(userauth({ blob: SIGNING_KEY, algorithm: '' }), SIGNING_KEY), { kind: 'unknown' });
+});
+
+test('a userauth whose algorithm belongs to another key type is not a login', () => {
+  const mismatches: [string, Buffer, string][] = [
+    ['an RSA key', RSA_KEY, 'ssh-ed25519'],
+    ['an Ed25519 key', SIGNING_KEY, 'ssh-rsa'],
+    ['an Ed25519 key', SIGNING_KEY, 'rsa-sha2-256'],
+    ['an ECDSA key', ECDSA_KEY, 'ecdsa-sha2-nistp384'],
+    ['an RSA key', RSA_KEY, 'rsa-sha2-384'],
+    ['an RSA key', RSA_KEY, 'RSA-SHA2-256'],
+  ];
+  for (const [what, key, algorithm] of mismatches) {
+    const data = userauth({ blob: key, algorithm });
+    assert.deepEqual(describeSignRequest(data, key), { kind: 'unknown' }, `${what} signing a request that says ${algorithm}`);
+  }
+});
+
 test('a git commit signature is recognised by its SSHSIG namespace', () => {
   const data = Buffer.concat([Buffer.from('SSHSIG'), encodeString('git'), encodeString('')]);
 

@@ -2,7 +2,7 @@ import { requestTimeLine } from '../requestTime';
 import * as assert from 'node:assert/strict';
 import * as path from 'node:path';
 import { test } from 'node:test';
-import { ALLOW_ONCE, ALLOW_WINDOW, CONSENT_TIMEOUT_MS, DENY, SIGNING_BUTTONS } from '../agentConsent';
+import { ALLOW_LONGER, ALLOW_ONCE, ALLOW_WINDOW, CONSENT_TIMEOUT_MS, DENY, SIGNING_BUTTONS } from '../agentConsent';
 import { EntityMetadata, TreeNode } from '../types';
 import { describeServerLine, describeSignRequest, encodeString } from '../sshAgentProtocol';
 import {
@@ -138,15 +138,16 @@ test('every signature asks, and the dialog names the key, the fingerprint and th
   assert.match(w.dialogs[0], /never leaves this window/);
 });
 
-test('the dialog offers exactly the signing buttons, Allow once first', async () => {
-  // The help test loops over SIGNING_BUTTONS; this is what makes that list the prompt and not a copy of it.
+test('a prompt that cannot offer a longer window offers the signing buttons without Allow longer…, Allow once first', async () => {
+  // The help test loops over SIGNING_BUTTONS; this is what makes that list the prompt and not a copy of it. The
+  // fully wired login prompt, with the longer window as its third button, is `sshAgentManagerLonger.test.ts` (L1).
   const w = world({ answers: [ALLOW_ONCE] });
   const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() } });
   await instance.load('a1', keyEntity(KEY_ID, 'prod'));
 
   await (w.server() as FakeServer).confirm({ entityId: KEY_ID, name: 'prod', fingerprint: 'f' }, { kind: 'auth' });
 
-  assert.deepEqual(w.buttons, [[...SIGNING_BUTTONS]]);
+  assert.deepEqual(w.buttons, [SIGNING_BUTTONS.filter((button: string) => button !== ALLOW_LONGER)]);
   assert.equal(w.buttons[0][0], ALLOW_ONCE);
   // Written out, not derived: a reorder in agentConsent.ts must turn this red.
   assert.deepEqual(w.buttons[0], ['Allow once', 'Allow for 10 minutes', 'Deny']);
@@ -374,14 +375,19 @@ test('the prompt states its deadline, derived from the same constant the broker 
   assert.match(w.dialogs[0], /Unanswered, it is refused after 5 minutes\./);
 });
 
-test('the prompt says what ends a window: locking the vault, and Ask for Every Use Again on the row (#197, E2.2)', async () => {
+test('L18 the prompt says any process running as you signs without asking while a window is open, and what ends every window (#197, E2.2, E3.3)', async () => {
   const w = world({ answers: [ALLOW_ONCE] });
   const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() } });
   await instance.load('a1', keyEntity(KEY_ID, 'prod'));
 
   await (w.server() as FakeServer).confirm({ entityId: KEY_ID, name: 'prod', fingerprint: 'SHA256:abc' }, { kind: 'auth' });
 
-  assert.match(w.dialogs[0], /Locking the vault ends the window, and so does "Ask for Every Use Again" on the key's row\./);
+  assert.match(w.dialogs[0], /any process running as you that reaches this agent/, 'who signs without asking while a window is open');
+  assert.match(
+    w.dialogs[0],
+    /Locking the vault in this VS Code window ends every window, and so does "Ask for Every Use Again" on the key's row\./,
+    'what ends it, and in which window',
+  );
 });
 
 test('answering a dialog is the one provable moment of human presence', async () => {

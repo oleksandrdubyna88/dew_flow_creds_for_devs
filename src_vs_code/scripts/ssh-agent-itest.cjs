@@ -23,21 +23,26 @@
 // Section 6 (every platform, no sshd) is the lock: a REAL `VaultKeys`, joined to a real manager by
 // `connectAgentToLock`, ends a ten-minute window the moment it locks — and the key, still loaded,
 // signs again for a real `ssh-keygen -Y sign` after one more answer (#197, E2.1).
+//
+// Section 7 (POSIX only) is the login window (#197, E3.4): real `ssh` logins against real `sshd -d` runs, one run
+// per login. *Allow longer…* -> 1 hour, and the next login raises no dialog; a Git signature still asks, without
+// *Allow longer…*; a lock ends the window and login 3 asks, without it. An RSA key adds the SHA-1 line: a login
+// that asks for `ssh-rsa` (SHA-1) is never covered by the long window and its prompt says why. The sshd helpers
+// live in `itestSshd.cjs`, shared with section 5.
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const net = require('node:net');
-const { execFile, spawn } = require('node:child_process');
+const { execFile } = require('node:child_process');
+const { SSHD, startSshd, launch, endChild, lastLines, login } = require('./itestSshd.cjs');
 
 const OUT = path.join(__dirname, '..', 'out');
 const { SshAgentServer, agentSocketPath } = require(path.join(OUT, 'sshAgentServer.js'));
 const { parseSshPrivateKey } = require(path.join(OUT, 'sshKeyParse.js'));
 const { signForAgent } = require(path.join(OUT, 'sshAgentSign.js'));
-const { ALLOW_ONCE, ALLOW_WINDOW } = require(path.join(OUT, 'agentConsent.js'));
+const { ALLOW_ONCE, ALLOW_WINDOW, ALLOW_LONGER } = require(path.join(OUT, 'agentConsent.js'));
 
 const isWindows = process.platform === 'win32';
-const SSHD = '/usr/sbin/sshd';
 // A modal nobody answers. The stub (written once, below) reads its answer from a global at CALL
 // time, so one module serves both sections that need a `vscode`: it can be a promise that never
 // settles (section 4), a click on "Allow once" (section 5) or, as an ARRAY, a sequence of clicks answered in
@@ -194,6 +199,8 @@ async function main() {
     await liveHostBoundLogin(pem, publicPath, dir);
     // ---- 6. a real vault lock ends a real ten-minute window (#197, E2.1) ----------------------
     await lockEndsTheWindow(pem, publicPath, dir);
+    // ---- 7. a real login window: Allow longer… lets the next real ssh login through (#197, E3.4) -----
+    await liveLoginWindow(pem, dir);
   });
 
   // --- what makes `-A` more than a flag (2026-08-26) --------------------------------------
@@ -285,7 +292,26 @@ async function withVscodeStub(dir, body) {
        fire(value) { for (const listener of [...this.listeners]) { try { listener(value); } catch (error) { console.error('listener threw:', error); } } }
        dispose() { this.listeners.length = 0; }
      }
-     module.exports = { EventEmitter, window: {
+     class CancellationTokenSource {
+       constructor() {
+         this.cancelled = new EventEmitter();
+         this.token = { isCancellationRequested: false, onCancellationRequested: this.cancelled.event };
+       }
+       cancel() { this.token.isCancellationRequested = true; this.cancelled.fire(); }
+       dispose() { this.cancelled.dispose(); }
+     }
+     // Settings come from a global read at call time: section 7 runs with auto-lock at its default, 60.
+     const workspace = {
+       getConfiguration: () => ({ get: (key, fallback) => (global.__AGENT_SETTINGS__ && key in global.__AGENT_SETTINGS__ ? global.__AGENT_SETTINGS__[key] : fallback) }),
+       onDidChangeConfiguration: new EventEmitter().event,
+     };
+     module.exports = { EventEmitter, CancellationTokenSource, workspace, window: {
+       // The list of lengths: the label named in global.__AGENT_PICK__ is the item "clicked"; none named is Escape.
+       showQuickPick: (items, options) => {
+         global.__AGENT_LISTS__.push({ items: [...items], options });
+         const wanted = global.__AGENT_PICK__.shift();
+         return Promise.resolve(items.find((item) => item.label === wanted));
+       },
        showWarningMessage: (message, options, ...buttons) => {
          global.__AGENT_DIALOGS__.push({ message, buttons });
          const answer = global.__AGENT_ANSWER__;
@@ -299,6 +325,8 @@ async function withVscodeStub(dir, body) {
   global.__AGENT_LOG__ = [];
   global.__AGENT_DIALOGS__ = [];
   global.__AGENT_INFOS__ = [];
+  global.__AGENT_LISTS__ = [];
+  global.__AGENT_PICK__ = [];
   const original = Module._resolveFilename;
   Module._resolveFilename = (request, ...rest) => (request === 'vscode' ? stubPath : original.call(Module, request, ...rest));
   try {
@@ -420,127 +448,6 @@ async function signThreeTimes(vaultKeys, manager, publicPath, dir, socket) {
   );
   check('and the key was not revoked: the third signature, answered once, signs (exit 0)', third.code === 0, `exit ${third.code}: ${third.stderr.trim()}`);
   check('the key is still loaded after the lock', manager.isLoaded('e-lock') === true);
-}
-
-/** Spawns a child and collects its output — unlike `run`, the caller holds the pid and can end it. */
-function launch(exe, args, options = {}) {
-  const child = spawn(exe, args, { stdio: ['ignore', 'pipe', 'pipe'], ...options });
-  const result = { child, stdout: '', stderr: '', exited: false };
-  child.stdout.on('data', (chunk) => {
-    result.stdout += chunk;
-  });
-  child.stderr.on('data', (chunk) => {
-    result.stderr += chunk;
-  });
-  result.done = new Promise((resolve) => {
-    child.once('exit', (code) => {
-      result.exited = true;
-      resolve(code);
-    });
-    child.once('error', (error) => {
-      result.stderr += String(error);
-      result.exited = true;
-      resolve(-1);
-    });
-  });
-  return result;
-}
-
-/** Resolves when the child has exited or `ms` have passed — whichever is first. The timer is cleared when the
- * race settles, so a child that exited at once leaves nothing referenced to keep this process alive. */
-function settledWithin(result, ms) {
-  let timer;
-  const timedOut = new Promise((resolve) => {
-    timer = setTimeout(resolve, ms, undefined);
-  });
-  return Promise.race([result.done, timedOut]).finally(() => clearTimeout(timer));
-}
-
-/** A free loopback port: bind 0, read it, let go. Racy by nature — the caller retries once. */
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const probe = net.createServer();
-    probe.once('error', reject);
-    probe.listen(0, '127.0.0.1', () => {
-      const { port } = probe.address();
-      probe.close(() => resolve(port));
-    });
-  });
-}
-
-/**
- * Starts `sshd -d` on a fresh port and waits for its "Server listening" line.
- *
- * <p>Not a TCP probe: under `-d` a probe would spend the ONE connection sshd serves. Returns
- * `{ sshd, port, knownHosts }`, or `{ sshd, failure }` naming what sshd said — never a skip,
- * because a masked failure here is exactly how a live section turns into a green that proves
- * nothing.</p>
- */
-async function startSshd(sshdDir, hostKeyPath, authorizedKeys) {
-  const port = await freePort();
-  const knownHosts = path.join(sshdDir, 'known_hosts');
-  const hostPublic = fs.readFileSync(`${hostKeyPath}.pub`, 'utf8').trim().split(/\s+/).slice(0, 2).join(' ');
-  fs.writeFileSync(knownHosts, `[127.0.0.1]:${port} ${hostPublic}\n`);
-  const config = path.join(sshdDir, 'sshd_config');
-  // Absolute paths only: sshd refuses to start from a relative one.
-  fs.writeFileSync(
-    config,
-    [
-      `ListenAddress 127.0.0.1:${port}`,
-      `HostKey ${hostKeyPath}`,
-      `AuthorizedKeysFile ${authorizedKeys}`,
-      `PidFile ${path.join(sshdDir, 'sshd.pid')}`,
-      'UsePAM no',
-      'StrictModes no',
-      'PasswordAuthentication no',
-      'KbdInteractiveAuthentication no',
-      '',
-    ].join('\n'),
-  );
-  const sshd = launch(SSHD, ['-d', '-e', '-f', config]);
-  const listening = new RegExp(String.raw`Server listening on 127\.0\.0\.1 port ${port}`);
-  const failure = await listeningFailure(sshd, listening, Date.now() + 10_000);
-  return failure === undefined ? { sshd, port, knownHosts } : { sshd, failure };
-}
-
-/**
- * Polls sshd's stderr every 50 ms until it says it is listening. Resolves `undefined` on success, else
- * the sentence naming what went wrong. One poll after another is the point — each looks at what the
- * previous one left — so it recurses rather than looping over `await`.
- */
-async function listeningFailure(sshd, listening, deadline) {
-  if (listening.test(sshd.stderr)) {
-    return undefined;
-  }
-  if (sshd.exited) {
-    return `sshd exited before it listened: ${sshd.stderr.trim()}`;
-  }
-  if (Date.now() >= deadline) {
-    return `no "Server listening" line within 10 s: ${sshd.stderr.trim()}`;
-  }
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  return listeningFailure(sshd, listening, deadline);
-}
-
-/**
- * Ends a child by ITS pid if it is still running, and waits (bounded) for its exit. A child that
- * ignores the polite signal is killed outright and waited for once more — the folder it holds
- * files in cannot be removed while it lives.
- */
-async function endChild(result) {
-  if (!result.exited) {
-    result.child.kill();
-  }
-  await settledWithin(result, 5_000);
-  if (!result.exited) {
-    result.child.kill('SIGKILL');
-    await settledWithin(result, 5_000);
-  }
-}
-
-/** The last `count` lines of a child's output — what it said just before the failure. */
-function lastLines(text, count) {
-  return text.trim().split(/\r?\n/).slice(-count).join('\n');
 }
 
 /**
@@ -669,6 +576,182 @@ async function liveHostBoundLogin(pem, publicPath, dir) {
       // a file the OS still holds; a cleanup failure must never replace the real error above
     }
   }
+}
+
+/**
+ * The login window, proven with real OpenSSH (#197, E3.4): what *Allow longer…* promises is that the NEXT real `ssh`
+ * login goes through without a dialog — and that a Git signature, a lock and (for an RSA key) a SHA-1 login do not.
+ * A unit test builds the userauth request by hand; only a real client and a real server show the window covers what
+ * OpenSSH really sends. Two legs, each with its own key, vault and manager, and ONE `sshd -d` run per login (it serves
+ * exactly one connection): Ed25519 first, then RSA, where login 3 asks for `ssh-rsa` and must NOT be covered.
+ *
+ * <p>POSIX only, like section 5; with `CI=true` a missing sshd FAILS. Teardown as in section 5: the client, then sshd
+ * by its pid, then the folder.</p>
+ */
+async function liveLoginWindow(pem, dir) {
+  if (loginWindowSkipped()) {
+    return;
+  }
+  const sshdDir = fs.mkdtempSync(path.join(os.tmpdir(), 'testsToDelete-sshd-'));
+  const began = Date.now();
+  try {
+    await loginLegs(pem, dir, sshdDir);
+    console.log(`info  live login window: six sshd runs, ${Date.now() - began} ms`);
+  } finally {
+    removeFolder(sshdDir);
+  }
+}
+
+/** Whether section 7 cannot run here: Windows (a skip), or no sshd (a skip locally, a FAIL on the CI runner). */
+function loginWindowSkipped() {
+  if (isWindows) {
+    console.log('skip  live login window — POSIX only; the Extension Development Host check covers Windows');
+    return true;
+  }
+  if (fs.existsSync(SSHD)) {
+    return false;
+  }
+  if (process.env.CI === 'true') {
+    check('a live login window ran', false, `${SSHD} is missing — a skipped live login window on the runner proves nothing`);
+  } else {
+    console.log('skip  live login window — sshd not installed');
+  }
+  return true;
+}
+
+/** A cleanup failure (a file the OS still holds) must never replace the real error above it. */
+function removeFolder(folder) {
+  try {
+    fs.rmSync(folder, { recursive: true, force: true });
+  } catch {
+    // swept by the OS
+  }
+}
+
+/** The two legs, sharing one throwaway host key: Ed25519 first, then RSA, whose sshd also accepts `ssh-rsa` (SHA-1). */
+async function loginLegs(pem, dir, sshdDir) {
+  const hostKey = path.join(sshdDir, 'host_key');
+  const generated = await run(tools.sshKeygen, ['-q', '-t', 'ed25519', '-N', '', '-f', hostKey]);
+  check('a throwaway sshd host key was generated for the login window', generated.code === 0, generated.stderr.trim());
+  if (generated.code !== 0) {
+    return;
+  }
+  const base = { dir, sshdDir, hostKey };
+  await windowLeg({ ...base, label: 'Ed25519', pem, folder: 'w2', extraConfig: [] }, edScenario);
+  const rsa = crypto.generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
+  await windowLeg({ ...base, label: 'RSA', pem: rsa.privateKey.toString(), folder: 'w3', extraConfig: ['PubkeyAcceptedAlgorithms +ssh-rsa'] }, rsaScenario);
+}
+
+/** One leg: the key's public half and authorized_keys line written, a world built, the scenario run, the world closed. */
+async function windowLeg(rig, scenario) {
+  const parsed = parseSshPrivateKey(rig.pem, `itest ${rig.label} key`);
+  check(`the ${rig.label} login-window key parses`, parsed.ok === true, parsed.reason);
+  if (parsed.ok !== true) {
+    return;
+  }
+  rig.publicPath = path.join(rig.sshdDir, `${rig.folder}.pub`);
+  fs.writeFileSync(rig.publicPath, `${parsed.key.publicLine}
+`);
+  rig.authorizedKeys = path.join(rig.sshdDir, `${rig.folder}.authorized_keys`);
+  fs.writeFileSync(rig.authorizedKeys, `${parsed.key.publicLine}
+`);
+  const world = legWorld(rig);
+  try {
+    if (await legServes(rig, world)) {
+      [global.__AGENT_DIALOGS__, global.__AGENT_LISTS__, global.__AGENT_LOG__].forEach((list) => { list.length = 0; });
+      await scenario(rig, world.vaultKeys);
+    }
+  } finally {
+    world.close();
+  }
+}
+
+/** A real `VaultKeys`, the lock link and the settings link (auto-lock at its default, 60) and a manager of its own. */
+function legWorld(rig) {
+  const { VaultKeys } = require(path.join(OUT, 'vaultKeys.js'));
+  const { connectAgentToLock, connectAgentToSettings } = require(path.join(OUT, 'sshAgentWiring.js'));
+  const { SshAgentManager } = require(path.join(OUT, 'sshAgentManager.js'));
+  const published = {};
+  const vaultKeys = new VaultKeys(mapSecretStorage());
+  const manager = new SshAgentManager(
+    { getPrivateKey: () => Promise.resolve(rig.pem) },
+    path.join(rig.dir, rig.folder),
+    { replace: (name, value) => { published[name] = value; }, delete: () => undefined, set description(_v) {} },
+    () => vaultKeys.noteUserActivity(),
+  );
+  const links = [connectAgentToLock(vaultKeys, manager), connectAgentToSettings(vaultKeys, manager)];
+  const close = () => {
+    links.forEach((link) => link.dispose());
+    manager.dispose();
+  };
+  return { vaultKeys, manager, published, close };
+}
+
+/** Loads the leg's key and checks the socket path fits a unix socket; true when the scenario may run. */
+async function legServes(rig, world) {
+  const loaded = await world.manager.load('a1', { id: `e-window-${rig.folder}`, name: `itest ${rig.label} key`, isSshEnabled: false, isSshKey: true });
+  check(`the real manager loads and serves the ${rig.label} key for the login window`, loaded.ok === true, loaded.reason);
+  rig.socket = world.published.SSH_AUTH_SOCK;
+  const fits = typeof rig.socket === 'string' && rig.socket.length < 104;
+  check(`the ${rig.label} login-window agent socket path fits a unix socket`, fits, String(rig.socket));
+  return loaded.ok === true && fits;
+}
+
+const dialogCount = () => `${global.__AGENT_DIALOGS__.length} dialogs`;
+const lastDialog = () => global.__AGENT_DIALOGS__[global.__AGENT_DIALOGS__.length - 1] ?? { message: '', buttons: [] };
+
+/** Login 1 of a leg: the prompt offers four buttons, the list offers four lengths, `1 hour` is picked and the login succeeds. */
+async function firstLoginPicksOneHour(rig) {
+  const first = await login(rig, { answers: [ALLOW_LONGER], picks: ['1 hour'] });
+  check(`${rig.label}: login 1, answered "${ALLOW_LONGER}" and "1 hour", logs in`, first.code === 0, first.detail);
+  check(`${rig.label}: login 1 raised one dialog`, global.__AGENT_DIALOGS__.length === 1, dialogCount());
+  check(`${rig.label}: and it offered four buttons`, lastDialog().buttons.length === 4 && lastDialog().buttons.includes(ALLOW_LONGER), JSON.stringify(lastDialog().buttons));
+  const lengths = global.__AGENT_LISTS__.map((list) => list.items.map((item) => item.label).join(', '));
+  check(`${rig.label}: and one list of 1, 4, 8 and 12 hours`, lengths.length === 1 && lengths[0] === '1 hour, 4 hours, 8 hours, 12 hours', JSON.stringify(lengths));
+}
+
+/** Login 2 of a leg: no answers on offer — a dialog would be refused — so the window covered it or the login fails. */
+async function secondLoginRidesTheWindow(rig) {
+  const second = await login(rig, {});
+  check(`${rig.label}: login 2 rides the window and logs in`, second.code === 0, second.detail);
+  check(`${rig.label}: login 2 raised no dialog`, global.__AGENT_DIALOGS__.length === 1, dialogCount());
+  check(
+    `${rig.label}: the agent log names the login window`,
+    global.__AGENT_LOG__.some((line) => line.includes(`login window of "itest ${rig.label} key"`)),
+    global.__AGENT_LOG__.join(' | '),
+  );
+}
+
+/** Ed25519: login, login (window), a Git signature (asks, without the list), a lock, login 3 (asks, without the list). */
+async function edScenario(rig, vaultKeys) {
+  await firstLoginPicksOneHour(rig);
+  await secondLoginRidesTheWindow(rig);
+  const messagePath = path.join(rig.sshdDir, 'window-git.txt');
+  fs.writeFileSync(messagePath, 'a Git signature, which a login window never covers\n');
+  global.__AGENT_ANSWER__ = [ALLOW_ONCE];
+  const git = await run(tools.sshKeygen, ['-Y', 'sign', '-f', rig.publicPath, '-n', 'git', messagePath], { env: { ...process.env, SSH_AUTH_SOCK: rig.socket } });
+  check('Ed25519: a Git signature during the window still asks', global.__AGENT_DIALOGS__.length === 2, dialogCount());
+  check(`Ed25519: and its dialog has no "${ALLOW_LONGER}"`, !lastDialog().buttons.includes(ALLOW_LONGER), JSON.stringify(lastDialog().buttons));
+  check('Ed25519: and, answered once, it signs (exit 0)', git.code === 0, `exit ${git.code}: ${git.stderr.trim()}`);
+
+  vaultKeys.lock();
+  const third = await login(rig, { answers: [ALLOW_ONCE] });
+  check('Ed25519: after a lock, login 3 asks again', global.__AGENT_DIALOGS__.length === 3, dialogCount());
+  check(`Ed25519: and its dialog offers no "${ALLOW_LONGER}"`, !lastDialog().buttons.includes(ALLOW_LONGER), JSON.stringify(lastDialog().buttons));
+  check('Ed25519: and says the vault must be unlocked', /Longer windows need the vault unlocked/.test(lastDialog().message), JSON.stringify(lastDialog().message));
+  check('Ed25519: and, answered once, the login succeeds (the lock revoked nothing)', third.code === 0, third.detail);
+}
+
+/** RSA: login, login (window, SHA-2), then a login that asks for `ssh-rsa` (SHA-1) — asked, without the list, saying why. */
+async function rsaScenario(rig) {
+  await firstLoginPicksOneHour(rig);
+  await secondLoginRidesTheWindow(rig);
+  const sha1 = await login(rig, { answers: [ALLOW_ONCE], options: ['-o', 'PubkeyAcceptedAlgorithms=ssh-rsa'] });
+  console.log(`info  RSA login 3 with ssh-rsa (SHA-1): exit ${sha1.code}`);
+  check('RSA: a SHA-1 login is not covered by the window: login 3 asks', global.__AGENT_DIALOGS__.length === 2, `${dialogCount()}\n${sha1.detail}`);
+  check(`RSA: and its dialog has no "${ALLOW_LONGER}"`, !lastDialog().buttons.includes(ALLOW_LONGER), JSON.stringify(lastDialog().buttons));
+  check('RSA: and names the SHA-1 reason', /Longer windows need a SHA-2 signature/.test(lastDialog().message), JSON.stringify(lastDialog().message));
+  check('RSA: and, answered once, the SHA-1 login still succeeds (exit 0): SHA-1 stays signable, it only never gets a long window (owner, 2026-10-21)', sha1.code === 0, sha1.detail);
 }
 
 main().catch((error) => {
