@@ -28,6 +28,18 @@ export function promptFloor(boundMs: number): number {
   return Math.min(MIN_PROMPT_MS, boundMs / 20);
 }
 
+/**
+ * How many jobs one key may hold in its queue that have not RUN yet — live waiters and the ghosts of gone ones alike.
+ *
+ * <p>A waiter whose client went away frees its place at `maxWaiting` at once (a real next request must not be blocked
+ * by a ghost), but its job stays chained behind the open modal until that modal settles — up to the whole bound. A
+ * local program that asks for a key and hangs up in a loop would otherwise grow that chain without limit for the
+ * five minutes. Real use never comes near this: ssh and git ask one thing at a time, so at most `maxWaiting` (3)
+ * jobs are ever live, and a few more may be ghosts of clients that gave up. 32 is about ten times that — loose
+ * enough that no honest burst is refused, tight enough that churn stops growing the queue after a few dozen jobs.</p>
+ */
+export const MAX_RETAINED = 32;
+
 export type RefusalKind = 'timed-out' | 'gone' | 'full' | 'orphaned' | 'too-late';
 
 /**
@@ -116,6 +128,9 @@ class KeySlot {
   /** Requests admitted and not yet decided: the open turn plus those waiting for it. */
   live = 0;
 
+  /** Jobs that joined the key's queue and have not run yet — live waiters AND the ghosts of gone ones (`MAX_RETAINED`). */
+  retained = 0;
+
   /** A turn's `work` has not settled yet — the slot is held, whatever its outcome says. */
   working = false;
 
@@ -128,16 +143,22 @@ class KeySlot {
 
   readonly waiters = new Set<Waiter<never>>();
 
+  /** Nothing held — and no job left in the key's queue either: a gone waiter's ghost still counts until it has run. */
   idle(): boolean {
-    return this.live === 0 && !this.working;
+    return this.live === 0 && !this.working && this.retained === 0;
   }
 
-  /** The refusal a request gets at arrival, if any: an orphaned modal first, then the cap (waiters only). */
+  /** The refusal a request gets at arrival, if any: an orphaned modal first, then the caps (`full`). */
   refusalAtArrival(maxWaiting: number): Refusal | undefined {
     if (this.orphan) {
       return this.refusal('orphaned');
     }
-    return this.live > maxWaiting ? this.refusal('full') : undefined;
+    return this.full(maxWaiting) ? this.refusal('full') : undefined;
+  }
+
+  /** The waiting cap (live waiters only — a gone one freed its place) or the retention cap (ghosts count too). */
+  private full(maxWaiting: number): boolean {
+    return this.live > maxWaiting || this.retained >= MAX_RETAINED;
   }
 
   refusal(kind: RefusalKind): Refusal {
@@ -276,6 +297,11 @@ export class ConsentTurns {
     return this.slots.size;
   }
 
+  /** How many jobs the key holds that have not run yet (0 for an unknown key) — for tests, deciding nothing. */
+  retained(key: string): number {
+    return this.slots.get(key)?.retained ?? 0;
+  }
+
   /** Dispose: every open turn and waiter resolves `gone`, every slot frees, and a fresh queue replaces the old. */
   clear(): void {
     for (const slot of this.slots.values()) {
@@ -300,6 +326,7 @@ export class ConsentTurns {
     }
     const entry: Entry<T> = { key, slot, waiter, steps, waited, arrivedAt: this.now(), open: undefined };
     slot.live += 1;
+    slot.retained += 1;
     slot.waiters.add(waiter as Waiter<never>);
     const onAbort = (): void => this.requestAborted(entry);
     request.addEventListener('abort', onAbort, { once: true });
@@ -334,7 +361,7 @@ export class ConsentTurns {
   }
 
   private async turn<T>(entry: Entry<T>): Promise<void> {
-    if (entry.waiter.done) {
+    if (this.drained(entry)) {
       return;
     }
     entry.slot.waiters.delete(entry.waiter as Waiter<never>);
@@ -346,6 +373,19 @@ export class ConsentTurns {
     }
     entry.slot.finish(entry.waiter, (w) => w.resolve(outcome));
     this.release(entry.key, entry.slot);
+  }
+
+  /**
+   * The job leaves the queue's backlog now that it runs. `true` when its request was decided while it waited (a
+   * ghost): nothing to do but give the key back if that was the last thing it held.
+   */
+  private drained<T>(entry: Entry<T>): boolean {
+    entry.slot.retained -= 1;
+    if (!entry.waiter.done) {
+      return false;
+    }
+    this.release(entry.key, entry.slot);
+    return true;
   }
 
   /**
