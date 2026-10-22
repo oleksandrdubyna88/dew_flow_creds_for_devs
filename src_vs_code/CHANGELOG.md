@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.16.0] — 2026-10-22 — Allow longer…: SSH logins sign without asking for 1, 4, 8 or 12 hours
+
 ### Added — longer SSH windows for logins (#197)
 
 - **A login prompt offers *Allow longer…*: 1, 4, 8 or 12 hours of SSH logins with that key without asking** — `git push`
