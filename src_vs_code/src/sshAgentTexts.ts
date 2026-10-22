@@ -214,3 +214,20 @@ export function timeLeftText(ms: number): string {
   }
   return plural(Math.max(1, Math.floor(ms / 1000)), 'second');
 }
+
+/**
+ * The three user-facing sentences that used to live inside code (#197 E3.4, coai plan-gate finding 3): exported so a
+ * test reads STRINGS, never source text. What a signature prompt offers, said where the person meets it — the
+ * relay row in Agents, the notice at startup, the note after *Add to SSH Agent*.
+ */
+
+/** The relay row's detail line in the agent doors. */
+export const RELAY_ROW_DETAIL = 'ssh and git inside WSL can use this key, asking on Windows first (once, for 10 minutes, or for SSH logins up to 12 hours).';
+
+/** The one line at startup when keys are already served. */
+export function KEYS_SERVED_NOTICE(count: number): string {
+  return `${count} SSH key(s) are served by the CredsForDevs agent. A signature asks first; the answer covers it once, every use for 10 minutes, or SSH logins for up to 12 hours; see "CredsForDevs: SSH Agent" for the record.`;
+}
+
+/** What *Add to SSH Agent* tells the person once the key is served. */
+export const AGENT_SERVED_NOTE = 'New terminals get SSH_AUTH_SOCK automatically; a signature asks first — once, for 10 minutes, or logins for up to 12 hours.';

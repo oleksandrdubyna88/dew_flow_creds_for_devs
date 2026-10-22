@@ -25,6 +25,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repository's `.vscode/settings.json`) is no longer applied. It is what bounds a long login window, so a repository
   must not be able to raise it.
 
+### Changed — the texts say what the prompt offers (#197)
+
+- **Everything that describes the signing prompt now says it offers four answers** — *Allow once*, *Allow for 10
+  minutes*, *Allow longer…* (SSH logins only: 1, 4, 8 or 12 hours) and *Deny* — **and that a lock in this VS Code window
+  ends every window.** The help (the SSH agent, WSL relay and locking articles, in all five languages), the README, the
+  walkthrough, the descriptions of `wslAgentRelay` and `autoLockMinutes`, the *WSL agent relay on* row and the notices
+  shown at startup and after *Add to SSH Agent* no longer say "once, or for 10 minutes". The locking article and the
+  `autoLockMinutes` description say a lock ends both kinds of window, that with auto-lock off no window longer than 10
+  minutes is offered, and that the setting is machine-wide.
+
 ## [1.15.1] — 2026-10-22 — Security — a repository's settings cannot run a program in WSL or loosen an agent grant
 
 ### Security

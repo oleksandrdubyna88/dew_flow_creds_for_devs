@@ -12,6 +12,7 @@ import { createDiagnosticLog } from '../diagnosticLog';
 import { CredsProduct } from '../credsInstall';
 import { CredTreeDataProvider } from '../treeDataProvider';
 import { SshAgentManager } from '../sshAgentManager';
+import { AGENT_SERVED_NOTE } from '../sshAgentTexts';
 import { StorageManager } from '../storageManager';
 import { VaultKeys } from '../vaultKeys';
 import * as vscode from 'vscode';
@@ -684,8 +685,7 @@ export function registerAgentCommands(host: AgentCommandsHost): void {
     await storage.updateDetailsFields(accountId, keyNode.id, { sshAgent: true });
     mutated();
     void vscode.window.showInformationMessage(
-      `"${keyNode.name}" (${result.fingerprint}) is served by the agent. New terminals get ` +
-        'SSH_AUTH_SOCK automatically; a signature asks first, once or for 10 minutes.' +
+      `"${keyNode.name}" (${result.fingerprint}) is served by the agent. ${AGENT_SERVED_NOTE}` +
         (process.platform === 'win32'
           ? ' On Windows the built-in OpenSSH client reaches it; the ssh that ships with Git for Windows cannot.'
           : ''),

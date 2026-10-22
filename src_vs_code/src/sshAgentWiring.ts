@@ -6,6 +6,7 @@ import { signWindowLabel } from './treeRowText';
 import type { VaultKeys } from './vaultKeys';
 import { autoLockMinutesSetting } from './autoLockSetting';
 import { autoLockIsOn } from './agentConsent';
+import { KEYS_SERVED_NOTICE } from './sshAgentTexts';
 
 /**
  * The SSH agent's wiring, out of `extension.ts` (#197, E2.1): the manager, the notice about the keys it
@@ -103,7 +104,7 @@ export function wireSshAgent(deps: SshAgentWiringDeps): SshAgentManager {
 function tellKeysServed(count: number): void {
   if (count > 0) {
     void vscode.window.showInformationMessage(
-      `${count} SSH key(s) are served by the CredsForDevs agent. A signature asks first; the answer covers it once, or every use for 10 minutes; see "CredsForDevs: SSH Agent" for the record.`,
+      KEYS_SERVED_NOTICE(count),
     );
   }
 }

@@ -635,6 +635,16 @@ five help files, both READMEs, the walkthrough, `package.json`, `src/**/*.ts` (b
      locked; then auto-lock 0 → the prompt says why and offers no list, and with a login window open the information
      message appears; a `.vscode/settings.json` with `"credSshManager.autoLockMinutes": 600` changes nothing
      (application scope). Screenshots in the PR.
+
+   **Recorded at E3.4 (2026-10-22): the three measurements above are owed by the owner, on the installed 1.16.0** — the
+   coder cannot raise a modal in a real VS Code window, and a result here is a number someone looked at, not one that was
+   inferred. Fill the last column, for VS Code **1.93** and for the **current stable**:
+
+   | Measurement | Pass when | Fail when | Result (owner, on the installed 1.16.0) |
+   |---|---|---|---|
+   | M2 — the list under a second dialog | the list (`ignoreFocusOut: true`) survives a second key's modal raised over it; a second quick pick or Ctrl+P closing it resolves as Escape (the request is refused, presence counted); and with an item highlighted and the bound run out, the list disappears, the request is refused, nothing is signed, and the next request for that key prompts (the slot freed) | any of the three differs; record which, with a screenshot | 1.93: not yet measured · current stable: not yet measured |
+   | M3 — the four-button modal at 1280 px | in `window.dialogStyle` `native` AND `custom`, all four buttons and *Cancel* are visible with unclipped labels and *Allow once* is the default (Enter) | otherwise — with a screenshot, and the plan stops for a decision | 1.93 native / custom: not yet measured · current stable native / custom: not yet measured |
+   | Extension Development Host check on Windows | every step of the bullet above behaves as written, including `.vscode/settings.json` with `"credSshManager.autoLockMinutes": 600` changing nothing | any step differs; record which, with a screenshot | not yet run |
 4. **The Linux container run** (E2's recipe): `docker run --rm --name testsToDelete-ait-e3-<id>`, a non-root user,
    `openssh-server` + `openssh-client`, the worktree copied in; sections 5, 6 and 7 all RUN — output quoted.
 
@@ -649,6 +659,17 @@ the leftovers row (`:137`) the folder `w2`; the words suite.
 **Done when.** The 4 REDs quoted (the scenario's by revert, then restored and green); the four translations read
 sentence by sentence against the English by the Opus review, its verdict quoted in the PR; M2, M3 (both VS Code
 versions) and the EDH check recorded; section 7 green in the Linux container and RUN in CI, its time quoted.
+
+**As built (E3.4, 2026-10-22), where it differs from the brief.** (1) R-b's pattern is `/\b10[- ]minutes?\b/`, not
+`/\b10 minutes\b/`: the `wslAgentRelay` description on 1.15.1 says *"a 10-minute window"*, which the plan's pattern
+does not match, so R-b would have passed vacuously on exactly the text it guards — the companion test caught it. (2) A
+failure names a markdown unit by its line (`src_vs_code/README.md paragraph at line 41 …`), not by an ordinal. (3) The
+sshd helpers moved to `scripts/itestSshd.cjs` (the plan's own allowance) together with section 7's `login`, so the itest
+is 759 lines; `startSshd` gained an `extraConfig` argument for the RSA leg's `PubkeyAcceptedAlgorithms +ssh-rsa`. (4)
+Section 7's six `sshd` runs took 1960 ms in the Alpine container — far under the estimated 20 s; the first CI run's time
+is still to be quoted. (5) The words suite has 8 tests (R-a, R-a's companion, R-a+, R-b, R-b's two companions, the
+auto-lock texts, the three-dots guard), for the plan's three unit REDs. (6) The `autoLockMinutes` row of the extension
+README's settings table also says *machine-wide* (true since E3.3; the plan listed only the bullet at `:905`).
 
 ## 8. Epic Definition of Done
 

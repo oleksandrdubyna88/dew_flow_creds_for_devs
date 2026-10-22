@@ -18,7 +18,7 @@ import { describeError } from './describeError';
 
 /**
  * The agent itself: a local socket that answers the SSH agent protocol, serving keys held in
- * the vault and asking a person before it signs, unless a 10-minute window they opened covers the key.
+ * the vault and asking a person before it signs, unless a window they opened covers the request (10 minutes, or hours for logins).
  *
  * <p>`vscode`-free on purpose — the socket, the framing and the decision to refuse are testable
  * without an editor, and the only thing the editor contributes is the dialog, which arrives as

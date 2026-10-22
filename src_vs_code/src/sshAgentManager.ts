@@ -96,10 +96,10 @@ interface Arrival {
  * sign with it (#197).</p>
  *
  * <p><b>The confirmation is per use, unless the person opens a window — and a window cannot be opened by
- * accident.</b> "Allow for 10
- * minutes" exists because `git push` signs and authenticates in one breath and two modals per
- * push would teach people to click without reading; it is per KEY, it is remembered in memory
- * only, and it is stated in the dialog rather than implied.</p>
+ * accident.</b> "Allow for 10 minutes" exists because `git push` signs and authenticates in one breath and two
+ * modals per push would teach people to click without reading; "Allow longer…" (1-12 hours) covers SSH logins
+ * only. Both are per KEY, remembered in memory only, ended by a lock in this VS Code window, and stated in the
+ * dialog rather than implied.</p>
  */
 
 export class SshAgentManager implements vscode.Disposable {
