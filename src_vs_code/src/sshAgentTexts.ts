@@ -1,8 +1,8 @@
 import { ALLOW_LONGER, LONGER_WINDOWS_MS } from './agentConsent';
-import { GrantOutcome } from './allowWindows';
+import { GrantOutcome, OpenWindow, WindowScope } from './allowWindows';
 import { RefusalKind } from './consentTurns';
-import { clockUntil } from './requestTime';
-import { SignPurpose, describePurposeForLog } from './sshAgentProtocol';
+import { clockUntil, localWallTime } from './requestTime';
+import { MAX_DISPLAY, SignPurpose, describePurposeForLog, displayText } from './sshAgentProtocol';
 import { AgentKey } from './sshAgentServer';
 
 /**
@@ -97,6 +97,43 @@ export function longerItems(now: number, offsetMinutes: number, autoLockMinutes:
     description: `until ${clockUntil(now + ms, now, offsetMinutes)}, or until the vault locks (idle auto-lock: ${autoLockMinutes} min)`,
     ms,
   }));
+}
+
+/** The list's title: the key's name is somebody else's text, so it goes through `displayText` like every name in a prompt. */
+export function listTitle(name: string): string {
+  return `How long may "${displayText(name, MAX_DISPLAY)}" log in without asking?`;
+}
+
+/** The list's placeholder: what it covers, what Escape does, and the time this request really has left. */
+export function listPlaceholder(leftMs: number): string {
+  return (
+    'SSH logins only, git push and fetch included. Escape refuses this signature. ' +
+    `Unanswered, it is refused after ${timeLeftText(leftMs)}.`
+  );
+}
+
+/** What each window is called in the agent log (I10) — a closed Map, never a computed name. */
+const WINDOW_NAME: ReadonlyMap<WindowScope, string> = new Map<WindowScope, string>([
+  ['all', '10-minute window'],
+  ['login', 'login window'],
+]);
+
+/** I10: a silent signature says which window allowed it, until when, and when it was granted. */
+export function coveredLine(name: string, scope: WindowScope, window: OpenWindow, purposeText: string): string {
+  return (
+    `allowed without asking: ${WINDOW_NAME.get(scope) ?? 'window'} of "${name}" until ${localWallTime(new Date(window.until))} ` +
+    `(granted ${localWallTime(new Date(window.grantedAt))}) for ${purposeText}`
+  );
+}
+
+/** Told to a person whose click arrived after its request was refused — VS Code cannot close a modal or a list for them. */
+export function staleNotice(bound: string): string {
+  return `That signing request had already been refused — it waited longer than ${bound}, or its program had gone. Nothing was signed.`;
+}
+
+/** Told once when a prompt is still open from an earlier request and new ones are refused behind it. */
+export function orphanNotice(name: string): string {
+  return `A signing prompt for "${displayText(name, MAX_DISPLAY)}" is still open from an earlier request — answer or close it.`;
 }
 
 export type RefusalLine = (key: AgentKey, purpose: SignPurpose, bound: string) => string;

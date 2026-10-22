@@ -11,8 +11,8 @@ import {
   LongWindowClaim,
   SigningAnswer,
   answerFromModal,
+  answerFromList,
   answerFromPick,
-  consentFromChoice,
   decideSigning,
   longWindowClaim,
   longerOffer,
@@ -23,41 +23,9 @@ import { SignPurpose } from '../sshAgentProtocol';
 
 const NOW = 1_800_000_000_000;
 
-test('Allow once signs this request and remembers nothing', () => {
-  assert.deepEqual(consentFromChoice(ALLOW_ONCE, NOW), { allow: true, present: true });
-});
-
-test('Allow for 10 minutes is the ONLY answer that arms a window', () => {
-  assert.deepEqual(consentFromChoice(ALLOW_WINDOW, NOW), {
-    allow: true,
-    present: true,
-    allowedUntil: NOW + ALLOW_WINDOW_MS,
-  });
-  assert.equal(consentFromChoice(ALLOW_ONCE, NOW).allowedUntil, undefined);
-  assert.equal(consentFromChoice(DENY, NOW).allowedUntil, undefined);
-});
-
-test('Deny refuses this signature but is NOT remembered — the next request asks again', () => {
-  // A key that could not be used once is not a key that should become unusable.
-  const denied = consentFromChoice(DENY, NOW);
-  assert.equal(denied.allow, false);
-  assert.equal(denied.allowedUntil, undefined);
-  assert.equal(denied.present, true, 'saying no is a person being there');
-});
-
-test('a DISMISSED dialog refuses, and counts as nobody being present', () => {
-  // The asymmetry that matters: Escape or a missed notification must not be recorded as a
-  // decision, and must not postpone the idle auto-lock the way a real answer does.
-  assert.deepEqual(consentFromChoice(undefined, NOW), { allow: false, present: false });
-});
-
-test('an unrecognised label allows once rather than arming anything', () => {
-  // If a label is ever renamed and this file is not updated, the failure should be "asks every
-  // time" — annoying — rather than "signs silently for ten minutes".
-  const odd = consentFromChoice('Allow, I suppose', NOW);
-  assert.equal(odd.allow, true);
-  assert.equal(odd.allowedUntil, undefined);
-});
+// `consentFromChoice` is gone (#197 E3.3): its guarantees — Allow once remembers nothing, Allow for 10 minutes is the
+// only one-click answer that arms a window, Deny is presence but not remembered, a dismissal is neither, an
+// unrecognised label allows once — are `answerFromModal` + `decideSigning`, tested below.
 
 test('the window covers requests until it expires, and not one after', () => {
   const until = NOW + ALLOW_WINDOW_MS;
@@ -94,7 +62,15 @@ test('the label of the longer answer is "Allow longer" and ONE ellipsis characte
   assert.equal(ALLOW_LONGER.startsWith('Allow longer'), true);
   assert.deepEqual([...ALLOW_LONGER.slice('Allow longer'.length)].map((c) => c.codePointAt(0)), [0x2026]);
   assert.equal(ALLOW_LONGER.includes('...'), false);
-  assert.equal((SIGNING_BUTTONS as readonly string[]).includes(ALLOW_LONGER), false, 'E3.3 adds it to the buttons, with the help');
+  assert.deepEqual([...SIGNING_BUTTONS], [ALLOW_ONCE, ALLOW_WINDOW, ALLOW_LONGER, DENY], 'it stands third, before Deny');
+});
+
+test('how the list ended: a pick is its length, Escape declines (present), a list that failed answers nobody', () => {
+  assert.deepEqual(answerFromList({ kind: 'picked', ms: 4 * H }), { kind: 'window', scope: 'login', ms: 4 * H });
+  assert.deepEqual(decideSigning(answerFromList({ kind: 'escaped' }), NOW), { allow: false, present: true });
+  const failed = decideSigning(answerFromList({ kind: 'failed' }), NOW);
+  assert.deepEqual(failed, { allow: false, present: false }, 'a rejected list is a dismissal, NOT Escape: no presence');
+  assert.deepEqual(answerFromList({ kind: 'picked', ms: 2 * H }), { kind: 'once' }, 'a length the list never offered arms nothing');
 });
 
 test('Allow longer… authorises nothing by itself: it asks for the list', () => {

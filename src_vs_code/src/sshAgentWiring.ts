@@ -4,6 +4,7 @@ import type { StorageManager } from './storageManager';
 import type { CredTreeDataProvider } from './treeDataProvider';
 import { signWindowLabel } from './treeRowText';
 import type { VaultKeys } from './vaultKeys';
+import { autoLockMinutesSetting } from './autoLockSetting';
 
 /**
  * The SSH agent's wiring, out of `extension.ts` (#197, E2.1): the manager, the notice about the keys it
@@ -21,7 +22,7 @@ export interface SshAgentWiringDeps {
   readonly storage: StorageManager;
   readonly storageDir: string;
   readonly envCollection: vscode.GlobalEnvironmentVariableCollection;
-  readonly vaultKeys: Pick<VaultKeys, 'noteUserActivity' | 'onDidLock'>;
+  readonly vaultKeys: Pick<VaultKeys, 'noteUserActivity' | 'onDidLock' | 'isLocked' | 'dueForAutoLock'>;
   /** The tree: told to repaint when a window opens or ends, and given the text a key's row shows (E2.2). */
   readonly provider: Pick<CredTreeDataProvider, 'refresh' | 'signWindowLabel'>;
   /**
@@ -64,13 +65,33 @@ export function connectAgentToTree(
 }
 
 /**
+ * What a long login window is bounded by (#197, E3.3): the lock state, how overdue the idle auto-lock is and what it
+ * is set to. Three assignments the manager asks at EVERY check — it fails closed without them, so a deleted one is a
+ * prompt that never offers *Allow longer…*, never a window that outlives its lock. Returns the subscription to the
+ * setting: turning idle auto-lock off (`<= 0`, a negative value reads as off) ends every login window that is open.
+ */
+export function connectAgentToSettings(
+  vaultKeys: Pick<VaultKeys, 'isLocked' | 'dueForAutoLock'>,
+  sshAgent: Pick<SshAgentManager, 'lockedNow' | 'autoLockOverdue' | 'autoLockMinutes' | 'endLoginWindows'>,
+): vscode.Disposable {
+  sshAgent.lockedNow = () => vaultKeys.isLocked();
+  sshAgent.autoLockOverdue = () => vaultKeys.dueForAutoLock(Date.now(), autoLockMinutesSetting());
+  sshAgent.autoLockMinutes = autoLockMinutesSetting;
+  return vscode.workspace.onDidChangeConfiguration((event) => {
+    if (event.affectsConfiguration('credSshManager.autoLockMinutes') && autoLockMinutesSetting() <= 0) {
+      sshAgent.endLoginWindows('idle auto-lock was turned off');
+    }
+  });
+}
+
+/**
  * The SSH agent: keys served from memory, asked before signing, `SSH_AUTH_SOCK` injected into new
  * terminals. Nothing starts until a key is actually loaded.
  */
 export function wireSshAgent(deps: SshAgentWiringDeps): SshAgentManager {
   const { context, storage, storageDir, envCollection, vaultKeys, provider, onAddress } = deps;
   const sshAgent = new SshAgentManager(storage, storageDir, envCollection, () => vaultKeys.noteUserActivity(), onAddress);
-  context.subscriptions.push(sshAgent, connectAgentToLock(vaultKeys, sshAgent));
+  context.subscriptions.push(sshAgent, connectAgentToLock(vaultKeys, sshAgent), connectAgentToSettings(vaultKeys, sshAgent));
   connectAgentToTree(provider, sshAgent);
   void sshAgent.loadMarked().then(tellKeysServed);
   return sshAgent;

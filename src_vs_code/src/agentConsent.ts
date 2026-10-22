@@ -56,9 +56,9 @@ export const DENY = 'Deny';
 /**
  * Every answer the signing prompt offers, in the order the buttons stand. The dialog spreads this list and
  * the help test loops over it, so a button added here that no help article names turns that test red by
- * itself. #197 E3.3 inserts `ALLOW_LONGER` here (not before: the help names it in the same story).
+ * itself. `ALLOW_LONGER` stands third, before `DENY` (#197 E3.3); the prompt leaves it out when `longerOffer` says no.
  */
-export const SIGNING_BUTTONS = [ALLOW_ONCE, ALLOW_WINDOW, DENY] as const;
+export const SIGNING_BUTTONS = [ALLOW_ONCE, ALLOW_WINDOW, ALLOW_LONGER, DENY] as const;
 
 /** How long `ALLOW_WINDOW` covers. */
 export const ALLOW_WINDOW_MS = 10 * 60_000;
@@ -70,37 +70,6 @@ export const ALLOW_WINDOW_MS = 10 * 60_000;
  * when the signing prompt got the same bound (it had none: one found an hour later still signed).
  */
 export const CONSENT_TIMEOUT_MS = 5 * 60_000;
-
-export interface ConsentDecision {
-  /** Whether this signature goes ahead. */
-  allow: boolean;
-  /**
-   * Until when this key may sign without asking again, or `undefined` for "ask every time".
-   * Only ever set by `ALLOW_WINDOW`.
-   */
-  allowedUntil?: number;
-  /**
-   * Whether a person demonstrably answered. A dismissed dialog is NOT presence — the same rule
-   * that stops agent traffic from postponing the idle auto-lock.
-   */
-  present: boolean;
-}
-
-/** Read the dialog's answer. `undefined` is a dismissal, which is the common case, not an error. */
-export function consentFromChoice(choice: string | undefined, now: number): ConsentDecision {
-  if (choice === undefined) {
-    return { allow: false, present: false };
-  }
-  if (choice === DENY) {
-    return { allow: false, present: true };
-  }
-  if (choice === ALLOW_WINDOW) {
-    return { allow: true, present: true, allowedUntil: now + ALLOW_WINDOW_MS };
-  }
-  // `ALLOW_ONCE`, and anything unrecognised, allows exactly this one signature and remembers
-  // nothing. Erring toward "ask again" is the safe direction for an unexpected label.
-  return { allow: true, present: true };
-}
 
 /** Whether an earlier "allow for 10 minutes" still covers a request now. */
 export function withinAllowWindow(allowedUntil: number | undefined, now: number): boolean {
@@ -131,8 +100,10 @@ export interface SigningDecision {
 }
 
 // Shared by every prompt, so frozen: a caller that wrote to one would change the answer of every later prompt.
-const UNANSWERED: SigningAnswer = Object.freeze({ kind: 'unanswered' as const });
-const ONCE: SigningAnswer = Object.freeze({ kind: 'once' as const });
+// Exported for the manager's two answers that are not a click: a list that failed (`unanswered`) and a pick that could
+// no longer be honoured (`once`).
+export const UNANSWERED: SigningAnswer = Object.freeze({ kind: 'unanswered' as const });
+export const ONCE: SigningAnswer = Object.freeze({ kind: 'once' as const });
 
 /**
  * What each button means. A closed `Map` of small functions (complexity), looked up by the dialog's own return
@@ -166,6 +137,21 @@ export function answerFromPick(ms: number | undefined): SigningAnswer {
     return { kind: 'declined-longer' };
   }
   return LONGER_WINDOWS_MS.includes(ms) ? { kind: 'window', scope: 'login', ms } : ONCE;
+}
+
+/**
+ * How the list ended. `picked` carries the length read from the ITEM the list returned (never from its label);
+ * `escaped` is Escape, or VS Code closing the list for another one; `failed` is a list that rejected (the window
+ * closing under it) — a dismissal like a modal that fails, and NOT Escape: it counts no presence.
+ */
+export type ListPick = { kind: 'picked'; ms: number } | { kind: 'escaped' } | { kind: 'failed' };
+
+/** What the end of the list means: a failed list is `unanswered`, anything else is `answerFromPick`. */
+export function answerFromList(pick: ListPick): SigningAnswer {
+  if (pick.kind === 'failed') {
+    return UNANSWERED;
+  }
+  return answerFromPick(pick.kind === 'picked' ? pick.ms : undefined);
 }
 
 const REFUSED_BUT_PRESENT = (): SigningDecision => ({ allow: false, present: true });

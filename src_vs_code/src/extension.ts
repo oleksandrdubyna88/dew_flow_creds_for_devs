@@ -87,6 +87,7 @@ import { syncReminderDue } from './syncReminder';
 import { RefSource } from './secretRef';
 import { MIN_MASKABLE_LENGTH } from './outputMask';
 import { wireSshAgent } from './sshAgentWiring';
+import { autoLockMinutesSetting } from './autoLockSetting';
 import { folderPath } from './quickOpen';
 import { LockStatusBar } from './statusBar';
 import { asElement } from './commandTargets';
@@ -376,9 +377,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Auto-lock. Checked on a coarse timer: the window is measured in tens of minutes, so
   // a minute of drift costs nothing and a tighter tick would only wake the machine more.
   const autoLock = setInterval(() => {
-    const minutes = vscode.workspace
-      .getConfiguration('credSshManager')
-      .get<number>('autoLockMinutes', 60);
+    const minutes = autoLockMinutesSetting();
     if (vaultKeys.dueForAutoLock(Date.now(), minutes)) {
       lockNow(
         `Vaults locked after ${minutes} minutes idle. Local credentials still work; sync resumes when you unlock.`,

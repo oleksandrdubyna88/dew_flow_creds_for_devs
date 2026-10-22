@@ -1521,6 +1521,68 @@ once on the moved code and restored, show the existing suites still reach it:
 `itest:ssh-agent` is unchanged: the manager is still required from `out/`, and `sshSignPrompt.js` resolves `vscode` to
 the same stub in the same scope.
 
+## *Allow longer…* at the manager, and the wiring that bounds it (2026-10-22, #197 E3.3)
+
+`npm test`: `tests 5916 · pass 5911 · fail 0 · skipped 5` (5875 / 5870 before). The world (`sshAgentWorld.ts`) gained a
+`showQuickPick` that answers BY LABEL against the real items (a label the list never offered throws — a test cannot pick
+what the person was not shown), `unansweredPick({ stubborn })` (a list that answers only when the test says, even after its
+token was cancelled), `rejectedPick()`, a `CancellationTokenSource` whose instances are recorded (`w.sources`, so `disposed`
+is observable), a `workspace` with settable `w.settings` and an `onDidChangeConfiguration` that `w.changeSetting` fires,
+`realPrivateKey('rsa')`, `world({ realServer: true })`, `FakeServer.confirm(…, flags?)` and `manager()` options that set the
+three fail-closed hooks. `sshAgentLongerRig.ts` (a loaded manager with the hooks WIRED unless a test says otherwise, both
+clocks in the test's hand, `ask()`) and `sshAgentClient.ts` (`signRequestFor`, `askOnOneSocket`, moved out of
+`sshAgentServer.test.ts` so the real-socket suites share one builder) are helpers, not suites.
+
+| Suite | Tests (the guarantee) |
+|---|---|
+| `sshAgentManagerLonger.test.ts` (22) | **L1** a login prompt offers *Allow longer…* third, before *Deny*; a Git signature's does not · **L2** 4 hours from the PICK, not from the prompt (it sat 3 minutes), `presence === 1` · **L3** the list: 1, 4, 8, 12 hours with end times and the auto-lock sentence, the title through `displayText`, `ignoreFocusOut`, the time left · **L4/L4b** Escape refuses, counts presence, says nothing — also after the offer became ineligible (lock, auto-lock off) · **L7/L8/L8b** the pick re-check and the middle check allow once, open nothing, say why · **L9/L9b** no button for a Git signature, an unrecognised request, a locked vault, auto-lock off or negative, SHA-1 RSA — and the prompt says which; an Ed25519 login and an RSA login with flags 2 are offered it · **L11** a covered login never waits behind an open Git prompt · **L12** a 10-minute Git answer never shortens a 12-hour login window · **L13** the first prompt's login window covers the waiting login · **L14** the gate and the row ask one rule — a waiter (the hook flips between the grant and the waiter's turn) and an immediate arrival · **L15** every silent login names its window · **L16** an answer across a lock or *Ask for Every Use Again* names *Allow longer…* and its length in the log · **L19** the list says the time left · **L21** an overdue auto-lock leaves no login window honoured · **W5** each fail-closed default on its own · the whole modal text, offered and not offered |
+| `sshAgentManagerLongerTurns.test.ts` (10) | **L5** the bound covers the list: refused, the queued login `orphaned` with the notice once, then the key prompts again · **L6** a late *Allow longer…* opens no list and is told · **L17** R4 on the pick path (`setImmediate`, twice, `setTimeout 0`) · **L20** the pick races (abort → item, abort → Escape, Escape → abort) · **L20b** a gone client opens no list · **L20c** `pickLength` owns its token: cancelled only by its turn, disposed and unhooked after a pick, an Escape, an aborted turn · **L22** a rejected list is refused with no presence and one log line |
+| `sshAgentManagerFlags.test.ts` (2) | **L10** through the REAL server and the manager's own forwarding lambda: an RSA key's login window covers flags 2, 4 and 6; flags 0 and 1 prompt, offer no *Allow longer…*, say the SHA-1 reason; the 10-minute answer then covers the next flags-0 login |
+| `sshAgentServer.test.ts` (+1) | **S1** the server hands the request's flags to the gate |
+| `vaultKeysLock.test.ts` (+4) | **W1** auto-lock set to 0 ends every login window, keeps the 10-minute one, tells once, repaints — and does not come back at 60 · **W2** the wiring tells the manager locked / overdue / minutes · **W3** a window granted on a vault never unlocked has an auto-lock to end it · **W4** a lock ends a login window through the real seam |
+| `autoLockSetting.test.ts` (4) | **W6** `credSshManager.autoLockMinutes` is `"scope": "application"` · **W7/W7b** the reader (60 / 0 / −5) and the listener at −5 as at 0 |
+| `agentConsent.test.ts` | `consentFromChoice` and its five tests are gone (their guarantees are `answerFromModal` + `decideSigning`); *the buttons are the four, Allow longer… third*; `answerFromList` (a failed list is `unanswered`: no presence) |
+| `sshAgentManager.test.ts`, `sshAgentManagerRow.test.ts`, `sshAgentWindows.test.ts` | **L18** the prompt names *any process running as you* and *this VS Code window*; the prompt that cannot offer a longer window offers three buttons · a change after `dispose()` tells the row nothing · `SigningWindows.moment()` reads the wall clock first and the monotonic clock second (E3.1's carried gaps) |
+
+**Watched RED** (interface step in place: the world, the hooks, `confirm(…, _flags)`; the prompt still offers three buttons):
+S1 `[0, 0]` against `[2, 6]` · L1 `'Allow longer…'` missing from the buttons · L2 `2 !== 1` (*one minute before pick + 4
+hours a login is silent*) · L3 `0 !== 1` (no list) · L4 `true !== false` · L9 the prompt carried no reason (*… for ten
+minutes … Locking the vault ends the window …*) · L11 `'slow' !== true` · L12 `undefined` where `1792616400000` was expected ·
+L13 `[true, false]` against `[true, true]` · L15 no *login window of* line · L16 no crossing line · L19 `0 !== 1` · L22
+`true !== false` · L5, L7, L4b stop earlier at *the list is open* `0 !== 1` · L18 no match for *any process running as you …* ·
+W6 `undefined` where `'application'` was expected. On the head with every sub-step but (d) (the overdue auto-lock): **L21** and
+**W5** (overdue default) showed the login window still covering/shown; on the head with (a)–(i) and no (j): **W1** *both windows
+are open* (only `all`), **W2** *a login prompt offers Allow longer…* (three buttons), **W4** *the login window is open*.
+L8b's interface-step RED was `told once` `[]`; the guards L6, L14, L17, L20, L20c, W3, W7 are green once their sub-step exists.
+
+**Break-its, each run once on the finished code and restored** (the red, in short):
+
+| Break-it | Red |
+|---|---|
+| open the list before checking `turn.aborted` (L6) | *the click is told it signed nothing* `0 !== 1` |
+| the row reads `['all', 'login']` as a constant (L14) | *the row hides a window the gate would not honour* (also L21, W5) |
+| the gate reads auto-lock fixed at `60` (L14) | *the waiter was not covered: auto-lock was off when its turn came* `1 !== 2` |
+| an `await new Promise((r) => setImmediate(r))` between the check and the grant on the pick path (L17) | *signed=false but window=true: a pick applied outside its turn* (the `setImmediate` timing) |
+| check Escape before `turn.aborted` (L20) | *abort, then Escape: an aborted turn counts no presence* `1 !== 0` |
+| the eligibility re-check before the `undefined` check (L4b) | *Escape refuses* `true !== false` (both variants) |
+| drop the middle check (L8b) | *the click was an Allow: this one signature goes ahead* `false !== true` |
+| no `finally` (L20) / no `removeEventListener` (L20c) | *the list's token source was disposed* `false !== true` / *the abort listener was removed after a pick* `1 !== 0` |
+| no `catch` in `pickLength` (L22) | `Error: the window is closing` out of the test |
+| a failed list answered as Escape (`answerFromList`) | *a rejected list is a dismissal, NOT Escape: no presence* and L22 `1 !== 0` |
+| the wiring's `onUserPresent` does not note activity (W3) | *the pick counted as activity, so the vault is due for auto-lock* `false !== true` |
+| `endAllWindows` ends only `all` (W4) | *the lock ENDED the login window: unlocking opens none of its own* |
+| each hook's default flipped: `autoLockMinutes = () => 60` / `lockedNow = () => false` / `autoLockOverdue = () => false` (W5) | *auto-lock defaults to off* / *the vault defaults to locked* / *a window granted while overdue defaults to true is not shown* |
+| the listener's `<= 0` as `=== 0` (W7b) | *told each time a login window was ended* `1 !== 2` |
+| drop `"scope": "application"` (W6) | `undefined` where `'application'` was expected |
+| the key type not read from the loaded key (L10, L9) | *the SHA-1 login is NOT covered by the long window* `1 !== 2` |
+| the forwarding lambda drops the flags (L10) | *a SHA-2 RSA login may be offered the longer window* (three buttons) |
+| the gate asks the purpose instead of the claim (L10) | *the SHA-1 login is NOT covered by the long window* `1 !== 2` |
+| `SigningWindows.moment()` reads the monotonic clock first | `['mono', 'wall']` where `['wall', 'mono']` was expected |
+| `windowsChanged` without the `disposed` guard | *the row was repainted by a manager that is gone* |
+
+`itest:ssh-agent` is unchanged (section 7, the live login window, is E3.4); on Windows it passes with the POSIX-only skip
+line, and in a `node:22-alpine` container with `openssh` (non-root user, `CI=true`) sections 5 and 6 RUN and pass.
+
 ## What none of them covers
 
 Named rather than implied, because the rule asks for exactly this.

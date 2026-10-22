@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — longer SSH windows for logins (#197)
+
+- **A login prompt offers *Allow longer…*: 1, 4, 8 or 12 hours of SSH logins with that key without asking** — `git push`
+  and `git fetch` over SSH included. A Git signature, or anything else, still asks. It is offered only while the vault is
+  unlocked and idle auto-lock is on, and every lock in this VS Code window ends the window — so with the default
+  60-minute auto-lock a long window usually ends after an hour unless you keep using the vault. The key's row says
+  *logins without asking until 18:40*. An RSA login that asks for the old SHA-1 signature is never covered by a long
+  window (its prompt says so; *Allow for 10 minutes* still covers it). Setting idle auto-lock to 0 ends every login
+  window that is open and tells you once; an auto-lock that is overdue (the idle timer has not ticked yet) leaves no
+  long window honoured. The prompt now says that any process running as you that reaches the agent signs without asking
+  while a window is open, and what ends it.
+
+### Changed — idle auto-lock is a machine-wide setting (#197)
+
+- **`credSshManager.autoLockMinutes` is now an application-scoped setting:** a workspace or folder value (a
+  repository's `.vscode/settings.json`) is no longer applied. It is what bounds a long login window, so a repository
+  must not be able to raise it.
+
 ## [1.15.1] — 2026-10-22 — Security — a repository's settings cannot run a program in WSL or loosen an agent grant
 
 ### Security

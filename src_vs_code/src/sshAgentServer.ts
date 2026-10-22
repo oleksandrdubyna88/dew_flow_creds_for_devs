@@ -56,9 +56,10 @@ export interface SshAgentServerOptions {
   /**
    * Ask the human. `false` refuses this one signature; it is asked EVERY time it returns false. `signal` aborts when
    * the connection the request came in on closes: a program that has gone away must not keep a prompt in the
-   * queue, or be shown one (#197, E2.3).
+   * queue, or be shown one (#197, E2.3). `flags` are the request's `SSH_AGENT_RSA_SHA2_*` bits: they decide which
+   * digest an RSA key would sign with, so the gate needs them to tell a SHA-1 login from a SHA-2 one (#197, E3.3).
    */
-  confirm(key: AgentKey, purpose: SignPurpose, data: Buffer, signal: AbortSignal): Promise<boolean>;
+  confirm(key: AgentKey, purpose: SignPurpose, data: Buffer, signal: AbortSignal, flags: number): Promise<boolean>;
   /** One line per request, for the audit channel. */
   log(message: string): void;
 }
@@ -227,7 +228,7 @@ export class SshAgentServer {
   }
 
   private async confirmAndSign(key: AgentKey, request: SignRequest, signal: AbortSignal): Promise<Buffer> {
-    const allowed = await this.options.confirm(key, describeSignRequest(request.data, request.publicBlob), request.data, signal);
+    const allowed = await this.options.confirm(key, describeSignRequest(request.data, request.publicBlob), request.data, signal, request.flags);
     if (!allowed) {
       return this.refused(`REFUSED a signature with "${key.name}"`);
     }

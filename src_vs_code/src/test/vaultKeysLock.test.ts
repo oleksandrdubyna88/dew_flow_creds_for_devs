@@ -17,6 +17,7 @@ import {
   unanswered,
   world,
 } from './sshAgentWorld';
+import { LONGER } from './sshAgentLongerRig';
 import { StubEventEmitter } from './vscodeStub';
 import { ACCOUNT, PIN, VaultKeysModule, secretStorage, vaultWithTwoWraps } from './vaultKeysWorld';
 
@@ -64,20 +65,24 @@ async function rig(
     },
     signWindowLabel: (_accountId: string, _nodeId: string): string => '',
   };
+  // The real `VaultKeys`, with its presence signal counted on the world: `wireSshAgent` hands the manager
+  // `vaultKeys.noteUserActivity` as the moment a human answered. The lock state and the auto-lock rule are the real
+  // ones too — they are what `connectAgentToSettings` reads (#197, E3.3).
+  const wiredKeys = {
+    onDidLock: vaultKeys.onDidLock,
+    isLocked: () => vaultKeys.isLocked(),
+    dueForAutoLock: (nowMs: number, idleMinutes: number) => vaultKeys.dueForAutoLock(nowMs, idleMinutes),
+    noteUserActivity: () => {
+      w.presence += 1;
+      vaultKeys.noteUserActivity();
+    },
+  };
   const agent = wiring.wireSshAgent({
     context,
     storage: agentStorage({ keys: { [KEY_ID]: realPrivateKey() } }) as never,
     storageDir: storageDir(),
     envCollection: agentEnv(w) as never,
-    // The real `VaultKeys`, with its presence signal counted on the world: `wireSshAgent` hands the manager
-    // `vaultKeys.noteUserActivity` as the moment a human answered.
-    vaultKeys: {
-      onDidLock: vaultKeys.onDidLock,
-      noteUserActivity: () => {
-        w.presence += 1;
-        vaultKeys.noteUserActivity();
-      },
-    },
+    vaultKeys: wiredKeys,
     provider,
     onAddress: () => undefined,
   });
@@ -252,7 +257,7 @@ test('a silent signature is not presence', async () => {
 
 test('wireSshAgent puts the manager and the lock subscription into context.subscriptions', async () => {
   const { w, vaultKeys, agent, context, gate } = await rig({ answers: [ALLOW_WINDOW, ALLOW_WINDOW] });
-  assert.equal(context.subscriptions.length, 2, 'the manager and the lock link');
+  assert.equal(context.subscriptions.length, 3, 'the manager, the lock link and the settings link (E3.3)');
   assert.equal(context.subscriptions[0], agent, 'the manager is disposed with the extension');
   await gate.confirm(key, login);
 
@@ -327,6 +332,97 @@ test('the row text reaches the tree through the wiring: a grant, then the provid
 
   assert.match(provider.signWindowLabel('a1', KEY_ID), /^signs without asking until \d\d:\d\d( tomorrow)?$/);
   assert.equal(provider.signWindowLabel('another-account', KEY_ID), '', 'the same id in another account is not this key');
+});
+
+/**
+ * The login windows and the wiring (#197, E3.3): what `connectAgentToSettings` tells the manager, and what it does
+ * when auto-lock is turned off. The manager's own rules are `sshAgentManagerLonger.test.ts`; these are about the
+ * SEAM — a deleted assignment is a prompt that never offers the button, or a window that outlives its auto-lock.
+ */
+const gitSignature = { kind: 'sshsig', namespace: 'git' };
+const FOUR = ['Allow once', 'Allow for 10 minutes', 'Allow longer…', 'Deny'];
+const THREE = ['Allow once', 'Allow for 10 minutes', 'Deny'];
+
+test('W1 setting idle auto-lock to 0 ends every login window, keeps the 10-minute ones, tells the person once and repaints the row', async () => {
+  const { w, agent, gate, provider } = await rig({ answers: [LONGER, ALLOW_WINDOW] });
+  w.pickAnswers.push('4 hours');
+  await gate.confirm(key, login);
+  await gate.confirm(key, gitSignature);
+  assert.deepEqual(Object.keys(agent.windowsFor('a1', KEY_ID)).sort(), ['all', 'login'], 'the control: both windows are open');
+  const repaints = provider.refreshes;
+
+  w.changeSetting('autoLockMinutes', 0);
+
+  assert.deepEqual(Object.keys(agent.windowsFor('a1', KEY_ID)), ['all'], 'only the 10-minute window is left');
+  assert.deepEqual(w.infos, ['Idle auto-lock is off, so the login windows of 1 key were ended — a long window needs a lock to end it.']);
+  assert.ok(provider.refreshes > repaints, 'the row was repainted');
+  w.changeSetting('autoLockMinutes', 60);
+  assert.deepEqual(Object.keys(agent.windowsFor('a1', KEY_ID)), ['all'], 'the login window was ENDED, not hidden: turning auto-lock back on does not bring it back');
+  w.changeSetting('autoLockMinutes', 0);
+  w.changeSetting('somethingElse', 1);
+  assert.equal(w.infos.length, 1, 'with no login window open the person is told nothing, and an unrelated setting does nothing');
+});
+
+test('W2 wireSshAgent tells the manager whether the vault is locked, whether auto-lock is overdue and what it is set to', async (t) => {
+  // Unlocked, auto-lock 60, not overdue: the prompt offers the button.
+  const open = await rig({ answers: [ALLOW_ONCE] });
+  await open.gate.confirm(key, login);
+  assert.deepEqual(open.w.buttons[0], FOUR, 'the control: wired, a login prompt offers Allow longer…');
+
+  // Locked: the same prompt does not.
+  const locked = await rig({ answers: [ALLOW_ONCE] });
+  locked.vaultKeys.lock();
+  await locked.gate.confirm(key, login);
+  assert.deepEqual(locked.w.buttons[0], THREE, 'a locked vault offers no longer window');
+  assert.ok(locked.w.dialogs[0].includes('Longer windows need the vault unlocked'), locked.w.dialogs[0]);
+
+  // Auto-lock off in the settings: nor does this one.
+  const off = await rig({ answers: [ALLOW_ONCE] });
+  off.w.settings.autoLockMinutes = 0;
+  await off.gate.confirm(key, login);
+  assert.deepEqual(off.w.buttons[0], THREE, 'auto-lock 0 offers no longer window');
+
+  // Overdue: a granted window is not honoured once the idle time has passed, whatever the timer has not yet done.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 9, 21, 9, 0, 0) });
+  const overdue = await rig({ answers: [LONGER, ALLOW_ONCE] });
+  overdue.w.pickAnswers.push('4 hours');
+  await overdue.gate.confirm(key, login);
+  assert.equal(await overdue.gate.confirm(key, login), true);
+  assert.equal(overdue.w.dialogs.length, 1, 'the control: the window covers while the vault was used a moment ago');
+
+  t.mock.timers.tick(61 * 60_000);
+
+  assert.deepEqual(overdue.agent.windowsFor('a1', KEY_ID), {}, 'overdue: the row hides the window');
+  await overdue.gate.confirm(key, login);
+  assert.equal(overdue.w.dialogs.length, 2, 'overdue: the login prompts although the idle timer has not locked yet');
+});
+
+test('W3 a login window granted on a vault that was never unlocked still has an auto-lock to end it', async () => {
+  // `dueForAutoLock` is false while `lastActivity` is unset (a vault never unlocked would never lock). The click on
+  // the prompt IS activity — through `onUserPresent` — and that is what gives the window its end.
+  const { w, vaultKeys, gate } = await rig({ answers: [LONGER] });
+  w.pickAnswers.push('4 hours');
+  const later = Date.now() + 2 * 60 * 60_000;
+  assert.equal(vaultKeys.dueForAutoLock(later, 60), false, 'the control: no activity yet, so nothing is due');
+
+  await gate.confirm(key, login);
+
+  assert.equal(vaultKeys.dueForAutoLock(later, 60), true, 'the pick counted as activity, so the vault is due for auto-lock');
+});
+
+test('W4 a lock through the real seam ends a login window too — it does not come back when the vault is unlocked', async () => {
+  const { w, vaultKeys, agent, gate } = await rig({ answers: [LONGER, ALLOW_ONCE], typed: PIN });
+  w.pickAnswers.push('4 hours');
+  await gate.confirm(key, login);
+  assert.notDeepEqual(agent.windowsFor('a1', KEY_ID), {}, 'the control: the login window is open');
+
+  vaultKeys.lock();
+  const unlocked = await vaultKeys.unlock(ACCOUNT, vaultWithTwoWraps().content, { interactive: true });
+
+  assert.notEqual(unlocked, undefined, 'the fixture really unlocks the vault');
+  assert.deepEqual(agent.windowsFor('a1', KEY_ID), {}, 'the lock ENDED the login window: unlocking opens none of its own');
+  await gate.confirm(key, login);
+  assert.equal(w.dialogs.length, 2, 'the next login prompts');
 });
 
 test('nothing this suite logged carries key material', () => {

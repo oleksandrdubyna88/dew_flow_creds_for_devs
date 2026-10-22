@@ -23,6 +23,7 @@ import { AgentKey, MAX_PIPELINED_REPLIES, SshAgentServer, agentSocketPath } from
 import { parseSshPrivateKey } from '../sshKeyParse';
 import { signForAgent } from '../sshAgentSign';
 import { HOSTBOUND_METHOD, userauth } from './sshUserauth';
+import { askOnOneSocket, signRequestFor } from './sshAgentClient';
 import { keyMaterialLogged, watchLogs, watchSecret } from './sshAgentWorld';
 
 /**
@@ -63,7 +64,7 @@ interface Harness {
 
 async function harness(
   keys: AgentKey[],
-  confirm: (key: AgentKey, purpose: SignPurpose, signal: AbortSignal) => Promise<boolean> = () => Promise.resolve(true),
+  confirm: (key: AgentKey, purpose: SignPurpose, signal: AbortSignal, flags: number) => Promise<boolean> = () => Promise.resolve(true),
   /** Runs before a line is kept — a sink that throws is how a test reaches the code around `log`. */
   beforeLog: (message: string) => void = () => undefined,
 ): Promise<Harness> {
@@ -76,7 +77,7 @@ async function harness(
   const server = new SshAgentServer({
     socketPath,
     keys: () => keys,
-    confirm: (key, purpose, _data, signal) => confirm(key, purpose, signal),
+    confirm: (key, purpose, _data, signal, flags) => confirm(key, purpose, signal, flags),
     log: (message) => {
       beforeLog(message);
       logs.push(message);
@@ -121,17 +122,6 @@ async function harness(
     },
   };
 }
-
-const signRequestFor = (publicBlob: Buffer, data: Buffer, flags = 0): Buffer => {
-  const flagBytes = Buffer.alloc(4);
-  flagBytes.writeUInt32BE(flags, 0);
-  return Buffer.concat([
-    Buffer.from([SSH_AGENTC_SIGN_REQUEST]),
-    encodeString(publicBlob),
-    encodeString(data),
-    flagBytes,
-  ]);
-};
 
 test('the agent lists the keys it holds, with their comments', async () => {
   const a = newKey('prod key');
@@ -346,24 +336,6 @@ test('a key replaced inside the covered-window path is refused: the check is aft
     h.dispose();
   }
 });
-
-/** Send every payload on ONE connection, and read one reply per payload. */
-function askOnOneSocket(socketPath: string, payloads: Buffer[]): Promise<Buffer[]> {
-  return new Promise((resolve, reject) => {
-    const socket = net.createConnection(socketPath);
-    const reader = new FrameReader();
-    const replies: Buffer[] = [];
-    socket.on('connect', () => payloads.forEach((payload) => socket.write(encodeFrame(payload))));
-    socket.on('data', (chunk: Buffer) => {
-      replies.push(...reader.push(chunk));
-      if (replies.length === payloads.length) {
-        socket.end();
-        resolve(replies);
-      }
-    });
-    socket.on('error', reject);
-  });
-}
 
 test('every prompt open for a removed key is refused — two on one socket and one on another', async () => {
   const a = newKey('prod key');
@@ -731,6 +703,24 @@ test('dispose stops the agent answering at all', async () => {
   assert.equal(h.server.listening, false);
 
   await assert.rejects(h.request(Buffer.from([SSH_AGENTC_REQUEST_IDENTITIES])));
+});
+
+test('the server hands the request\'s flags to the gate (#197 E3.3 S1)', async () => {
+  // The flags decide which digest an RSA key signs with, so the gate cannot tell a SHA-1 login from a SHA-2 one
+  // without them. They are the last four bytes of the sign request; a constant here would hide that.
+  const a = newKey('prod key');
+  const seen: number[] = [];
+  const h = await harness([a.key], (_key, _purpose, _signal, flags) => {
+    seen.push(flags);
+    return Promise.resolve(true);
+  });
+  try {
+    await h.request(signRequestFor(a.key.identity.publicBlob, Buffer.from('data one'), 2));
+    await h.request(signRequestFor(a.key.identity.publicBlob, Buffer.from('data two'), 6));
+    assert.deepEqual(seen, [2, 6], 'the gate saw the flags of each request');
+  } finally {
+    h.dispose();
+  }
 });
 
 test('the socket is per window: a pipe on Windows, a file beside the purged key directory', () => {

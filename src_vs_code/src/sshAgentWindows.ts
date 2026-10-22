@@ -14,6 +14,16 @@ export interface Moment {
 }
 
 /**
+ * The window book's second clock. `performance.now()` is libuv's `uv_hrtime`, which on Windows is
+ * `QueryPerformanceCounter` — documented as counting through standby and hibernation (Microsoft Learn,
+ * "Acquiring high-resolution time stamps"). Where a platform's counter pauses in sleep the wall clock still
+ * ends the window: both must permit.
+ */
+export function monotonicSource(source: (() => number) | undefined): () => number {
+  return source ?? (() => performance.now());
+}
+
+/**
  * The holder of the SSH agent's open "allow without asking" windows (#197, E3.1): the book, the two clocks it is asked
  * with, and the timer that repaints the row when the nearest window ends. `allowWindows.ts` holds the RULES; this is
  * the one place the book is replaced. No `vscode` here — the manager hands in what to do when the book changes.
@@ -62,6 +72,12 @@ export class SigningWindows {
   /** The windows of this key that cover a request at `at`, on BOTH clocks (the gate's own rule). */
   live(key: KeyRef, scopes: readonly WindowScope[], at: Moment): ScopeWindows {
     return windowsInBook(this.book, key, scopes, at.wall, at.mono);
+  }
+
+  /** How many of these keys hold a login window that covers a request now — what auto-lock set to 0 is about to end. */
+  loginHolders(keys: Iterable<KeyRef>): number {
+    const at = this.moment();
+    return [...keys].filter((key) => this.live(key, ['login'], at).login !== undefined).length;
   }
 
   /** Stop the expiry timer for good — the book is not read again. */
