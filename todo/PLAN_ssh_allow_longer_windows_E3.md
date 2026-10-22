@@ -811,6 +811,13 @@ follow-up issues, `autoLockMinutes` application-scoped in E3.3 with W6 (since fo
   the coai session (`resolve`). Accepted: `autoLockIsOn` must refuse a non-number (a string `"60"` coerced to on);
   the `flags` parameter of `SshAgentServerOptions.confirm` is documented (the OpenSSH flag values, `signsWithSha1`);
   `MS_PER_HOUR` for `LONGER_WINDOWS_MS`; a JSDoc on `SHA1_BY_KEY_TYPE` (a new key type is added consciously).
+  Rejected: *`autoLockSetting.ts` imports `vscode` though it has a test* — it IS the editor-facing adapter (one
+  `getConfiguration` read); the decision lives in the pure `autoLockIsOn`, and the adapter is tested through the
+  repository's vscode stub like the manager. *Login scope should come before `all` in `scopesFor`* (two reviewers) —
+  coverage is yes/no per request and windows are not consumed, so the order only changes which window the I10 log line
+  names; L12 pins that a 10-minute window never shortens a login window. *`coveringWindow` allocates per call* — at most
+  two scopes per key, on a human-paced login. *Cache the auto-lock setting* — wrong by design: the gate must read the
+  live value at every check (I6's backstop, L14).
 - **The review of the whole of E3** (Opus), all accepted. **M1** every `;` inside a Mermaid sequence message or flowchart
   edge label removed from `module_extension.md` (a `;` ends a statement), and every block of the file parsed with
   `@mermaid-js/mermaid-cli@11` (13 of 13); **M2** the manager's size recorded (785, E3.3 as-built (1)); **M3** the status
