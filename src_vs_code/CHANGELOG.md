@@ -19,14 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   starts when you choose. The prompt now says that any process running as you that reaches the agent signs without asking
   while a window is open, and what ends it.
 
-### Changed — idle auto-lock is a machine-wide setting (#197)
+### Changed — idle auto-lock is a machine-wide setting, and the texts say what the prompt offers (#197)
 
-- **`credSshManager.autoLockMinutes` is now an application-scoped setting:** a workspace or folder value (a
+- **`credSshManager.autoLockMinutes` is now machine-wide (User settings only):** a workspace or folder value (a
   repository's `.vscode/settings.json`) is no longer applied. It is what bounds a long login window, so a repository
   must not be able to raise it.
-
-### Changed — the texts say what the prompt offers (#197)
-
+- **An SSH login whose algorithm does not fit the key is no longer treated as a login.** A request that names an
+  algorithm the signing key cannot produce is not a login, so a long window never covers it.
+- **Escape on the length list refuses the signature** (and counts as you being there); picking a length the list never
+  offered is refused the same way.
+- **A lock while the length list is open allows that one signature, with a message** — it opens no window.
 - **Everything that describes the signing prompt now says it offers four answers** — *Allow once*, *Allow for 10
   minutes*, *Allow longer…* (SSH logins only: 1, 4, 8 or 12 hours) and *Deny* — **and that a lock in this VS Code window
   ends every window.** The help (the SSH agent, WSL relay and locking articles, in all five languages), the README, the

@@ -6,22 +6,22 @@ import { FakeServer, KEY_ID, keyEntity, keyMaterialLogged, manager, realPrivateK
 import { KEY, LOGIN, LONGER } from './sshAgentLongerRig';
 
 /**
- * The idle auto-lock setting (#197, E3.3): ONE reader of it, and the one fact about where it may be set. It is what
- * bounds a long login window, so a repository's `.vscode/settings.json` must not be able to raise it.
+ * The idle auto-lock setting (#197, E3.3): ONE reader of it, and its default. It is what bounds a long login window, so
+ * a repository's `.vscode/settings.json` must not be able to raise it — that scope is guarded in `manifest.test.ts`,
+ * with the other settings a repository must not set (one list, not two).
  */
 
 type Setting = typeof import('../autoLockSetting');
 type Wiring = typeof import('../sshAgentWiring');
 
-test('W6 credSshManager.autoLockMinutes is application-scoped, so a workspace cannot raise it', () => {
+test("W6 the manifest default of credSshManager.autoLockMinutes is the reader's default", () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8')) as {
-    contributes: { configuration: { properties: Record<string, { scope?: string; default?: number }> } };
+    contributes: { configuration: { properties: Record<string, { default?: number }> } };
   };
 
-  const property = manifest.contributes.configuration.properties['credSshManager.autoLockMinutes'];
+  const [setting] = world({ also: ['../autoLockSetting'] }).modules as [Setting];
 
-  assert.equal(property.scope, 'application', 'a workspace or folder value would be applied, and a repository could raise the bound');
-  assert.equal(property.default, 60, 'the control: this is the setting whose default is the reader\'s default');
+  assert.equal(manifest.contributes.configuration.properties['credSshManager.autoLockMinutes'].default, setting.AUTO_LOCK_DEFAULT_MINUTES);
 });
 
 test('W7 the reader: unset reads 60, 0 reads 0, a negative value is returned as it is (and reads as off)', () => {
@@ -35,7 +35,7 @@ test('W7 the reader: unset reads 60, 0 reads 0, a negative value is returned as 
   assert.equal(setting.autoLockMinutesSetting(), -5);
 });
 
-test('W7b the listener ends login windows at -5 and at a value that is not a number as at 0, and only for this setting', async () => {
+test('W7b the listener ends login windows at -5 and at a value that is not a number as at 0, and a positive value ends nothing', async () => {
   const w = world({ also: ['../autoLockSetting', '../sshAgentWiring'], answers: [LONGER, LONGER, LONGER, LONGER] });
   const [, wiring] = w.modules as [Setting, Wiring];
   const { instance } = manager(w, { keys: { [KEY_ID]: realPrivateKey() } });

@@ -78,8 +78,10 @@ export function withinAllowWindow(allowedUntil: number | undefined, now: number)
 
 // ---- #197 E3.2: what an answer means, what may be offered ---------------------------------------------------------
 
+const MS_PER_HOUR = 60 * 60 * 1000;
+
 /** The lengths *Allow longer…* offers, shortest first. None may pass the login ceiling (`MAX_WINDOW_MS.login`). */
-export const LONGER_WINDOWS_MS: readonly number[] = Object.freeze([1, 4, 8, 12].map((hours) => hours * 3_600_000));
+export const LONGER_WINDOWS_MS: readonly number[] = Object.freeze([1, 4, 8, 12].map((hours) => hours * MS_PER_HOUR));
 
 /**
  * What a person's answer to the signing prompt MEANS, before any rule about whether it may be honoured.
@@ -218,12 +220,14 @@ interface OfferFacts {
 const LOGIN_CLAIMS: ReadonlySet<LongWindowClaim> = new Set<LongWindowClaim>(['login', 'sha1-login']);
 
 /**
- * Idle auto-lock is on only for a positive number: `0`, a negative one, `NaN` and anything that is not a number all
- * read as off. The ONE spelling of that rule — `scopesFor`, the offer below and the settings listener all ask it, so
- * a value one of them reads as "on" can never be read as "off" by another (E3.3 review L4).
+ * Idle auto-lock is on only for a positive finite NUMBER: `0`, a negative one, `NaN`, `Infinity` and anything that is
+ * not a number all read as off. The `typeof` matters: `"60" > 0` is true in JavaScript, and a hand-edited
+ * `settings.json` can hold the string `"60"` — which must not switch the long windows on (coai code gate). The ONE
+ * spelling of that rule — `scopesFor`, the offer below and the settings listener all ask it, so a value one of them
+ * reads as "on" can never be read as "off" by another (E3.3 review L4).
  */
 export function autoLockIsOn(minutes: number): boolean {
-  return minutes > 0;
+  return typeof minutes === 'number' && Number.isFinite(minutes) && minutes > 0;
 }
 
 /**

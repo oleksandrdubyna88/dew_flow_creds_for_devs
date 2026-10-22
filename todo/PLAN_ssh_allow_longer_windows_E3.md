@@ -1,7 +1,7 @@
 # PLAN — E3 of #197: the longer windows for SSH logins (feature release)
 
-> Status: **plan only, nothing implemented yet, 2026-10-21** (revised the same day after the coai plan gate, the risk
-> consultation, Opus's own review and the owner's four answers — §10). Scope: `src_vs_code` — a pure extraction out of
+> Status: **E3 built on `feat/197-e3-longer-windows`, 2026-10-22 — E3.1–E3.4 and their review fixes; the coai code gate passed (proceed, 12 of 12); waits for its PR and `extension-v1.16.0`.** (The plan was revised on
+> 2026-10-21 after the coai plan gate, the risk consultation, Opus's own review and the owner's four answers — §10.) Scope: `src_vs_code` — a pure extraction out of
 > `sshAgentManager.ts` into a new `sshAgentWindows.ts` (the window holder, `vscode`-free) and a new `sshSignPrompt.ts`
 > (the prompt, both steps); `agentConsent.ts` (`ALLOW_LONGER`, the answers, `longWindowClaim`, `longerOffer`),
 > `allowWindows.ts` (`coveringWindow`), `sshAgentProtocol.ts` (a login's algorithm must fit the key), `sshAgentSign.ts`
@@ -117,7 +117,7 @@ E3.3 get Fable's security judgement at review, outside the quota. The ledger lin
 - **Auto-lock set to 0 while login windows are open.** `endLoginWindows(reason): number` ends every `login` window (the
   10-minute ones and every fence stay — `allowWindows.ts:247-249`), writes one log line when a key is loaded, and —
   when it ended at least one live login window — tells the person once: *"Idle auto-lock is off, so the login windows of
-  {n} key(s) were ended — a long window needs a lock to end it."* Silent when there were none. It never revokes and
+  {n} key(s) were ended — a long window needs a lock in this VS Code window to end it."* Silent when there were none. It never revokes and
   never unloads (E1.2's judgement: one method per meaning).
 - **A lock ends the windows of THIS VS Code window** (owner, 2026-10-21, Q-B). `VaultKeys` and the agent are per
   window; a lock in a second VS Code window does not reach this one's agent. The modal, the five help languages and the
@@ -308,7 +308,7 @@ call on a requester-keyed lookup (CodeQL): a closed `switch` or `Map.get`. C9 `n
 from the manager's own map. C11 `testsToDelete-…` temp names; a test monotonic clock never starts at 0 (`M = 50_000`).
 C12 every new suite that loads a key ends with the key-material guard (`keyMaterialLogged()`). **C13**
 `commands/agentCommands.ts` is at 798: its edit shrinks or keeps it. **C14** `sshAgentManager.ts`: E3.1 measures and
-records the real `wc -l`; E3.3 leaves it ≤ 760 — the list, `pickLength`, the modal text, the `why`s and the notices
+records the real `wc -l`; E3.3 leaves it ≤ 760 (**missed after the review fixes: 785, §6 As built (1)**) — the list, `pickLength`, the modal text, the `why`s and the notices
 live in `sshSignPrompt.ts` / `sshAgentTexts.ts`. **C15** `ALLOW_LONGER` ends in U+2026 `…`, one character: every help
 language, README and test carries the same character, never three ASCII dots — a guard scans for `Allow longer...`.
 **C16** the hooks fail closed (`() => true`, `() => true`, `() => 0`). **C17** R4: no `await` between the last
@@ -377,7 +377,8 @@ any non-empty algorithm → the two REDs go red again).
   `answerFromPick(4 h)` then `decideSigning(…, now)` → `login`, `until === now + 4 h` (break-it: `+ 1 h`); *Escape on
   the list refuses and counts as presence; the bound running out does not* — `declined-longer` → `{ allow: false,
   present: true }`, `unanswered` → `present: false` (break-it: declined not present); *a length the list never offered
-  allows once and arms nothing* — `answerFromPick(2 h)` (break-it: accept any number); *the lengths are 1, 4, 8 and 12
+  is refused, with presence, and arms nothing* — `answerFromPick(2 h)` → `declined-longer`, `{ allow: false, present: true }`
+  (a value the list never held is a driver, not a person — E3.3 Fable F4; the first build allowed it once; break-it: accept any number); *the lengths are 1, 4, 8 and 12
   hours, shortest first, none past the login ceiling* — `LONGER_WINDOWS_MS` against `MAX_WINDOW_MS.login` imported
   (break-it: 13 h); `longWindowClaim`: *a login with a SHA-2 or non-RSA signature may have a long window, SHA-1 RSA and
   every other purpose may not* (break-it: ignore `sha1`); `longerOffer`: *offered only for a login, never for SHA-1,
@@ -549,9 +550,31 @@ list; the bound orphans it like a modal's), `:4862` (four answers). `research/mo
 the break-its.
 
 **Done when.** The 24 REDs quoted at their observation points beside their GREENs and the 9 break-its run once; every
-function the story added or changed ≤ 4 complexity and ≤ 50 lines; the manager ≤ 760 lines; Opus review and Fable's
+function the story added or changed ≤ 4 complexity and ≤ 50 lines; the manager ≤ 760 lines (**785 after the review fixes**); Opus review and Fable's
 security judgement passed — the judgement reads `longWindowClaim`, `loginLive`, the three eligibility questions, the
 post-list order and the pick path's R4 by name.
+
+**As built (E3.3, with its reviews and the whole-epic review, 2026-10-22), where it differs from the brief.**
+(1) **The manager is 785 lines, not ≤ 760** (a recorded deviation from C14 and the Done-when above). E3.3 as first built
+met it — `ffc5d653` left `sshAgentManager.ts` at 760 — and the review fixes then added `reportKeptLater`,
+`standingLogin` and `offerFor` (with the overdue input) to it: 785 at `c02c0184`, unchanged since. The lint limit of 800
+still holds, and nothing was moved — more moves out of the manager are not worth a third refactor of a file that is
+under its limit. (2) **W6 is folded into the one manifest guard.** The separate W6 (*`autoLockMinutes` is
+application-scoped*) asked the manifest the same question as the 1.15.1 patch's `REPOSITORY_MUST_NOT_SET` in
+`manifest.test.ts`, with a second list. There is now ONE list: `credSshManager.autoLockMinutes` joined it, a listed
+setting passes when it is EITHER `machine` + `restricted` OR `application`-scoped, the reverse test and the description
+test stay, and `autoLockMinutes`'s description carries the same **Machine-wide:** clause as the 1.15.1 settings
+(the description test covers it). W6 in `autoLockSetting.test.ts` keeps what else it checked — the manifest default is
+the reader's default (60). (3) **Why `autoLockMinutes` is `application`, not `machine`:** the extension's
+`extensionKind` is `["ui"]`, so `machine` and `application` BOTH ignore workspace and folder values; `application` also
+refuses a Remote (SSH / WSL / container) settings value; `machine` would silently stop Settings Sync of a setting people
+already sync; and `restricted` adds nothing once workspace values are ignored. (4) **`autoLockIsOn` is on only for a
+positive finite number:** `typeof minutes === 'number' && Number.isFinite(minutes) && minutes > 0` — a hand-edited
+string `"60"` is `> 0` in JavaScript and used to switch the long windows on (coai code gate); `scopesFor`, the offer and
+the settings listener all ask this one function. (5) **From the Fable judgement:** a length the list never offered is
+refused, with presence (F4), not allowed once; an auto-lock that is overdue offers no longer window (F2) and a
+shorter pick under a longer standing login window is logged and told (`reportKeptLater`); the list's items say
+*from your pick, about HH:MM* (F3). (6) The auto-lock-off notice ends *"… a lock in this VS Code window to end it."*
 
 ## 7. E3.4 — every user-facing text of 1.16.0 says what the prompt offers, a live login proves the window, the release ships
 
@@ -568,7 +591,7 @@ test reads strings rather than source text: `KEYS_SERVED_NOTICE(count)` (`sshAge
 | R-a: in every help language, a field of the `ssh-agent`, `wsl-relay` or `protection` article that names `ALLOW_WINDOW` also names `ALLOW_LONGER` (the labels are English everywhere — rule 7) | `wsl-relay (en) whatItIs names "Allow for 10 minutes" and not "Allow longer…"` (and de, es, ru, uk) |
 | R-a+: the `protection` article names both window answers — a lock ends a window opened with either — in every language | `protection (en) names neither "Allow for 10 minutes" nor "Allow longer…"` |
 | R-b: an English user-facing unit (a README paragraph, a walkthrough line, the `wslAgentRelay` and `autoLockMinutes` descriptions, the three constants) that names the 10-minute window (`/\b10 minutes\b/`) also names the longer one (`/Allow longer…\|12 hours/`) | `src_vs_code/README.md paragraph 1 names the 10-minute window and not the longer one` (`:41`) |
-| scenario, section 7 (POSIX, brief step 2) | the fix landed in E3.3, so the teeth are shown by revert (testing.md): with the gate's scopes reverted to `ALL_ONLY`, *login 2 raised no dialog* fails — `2 dialogs` |
+| scenario, section 7 (POSIX, brief step 2) | the fix landed in E3.3, so the teeth are shown by revert (testing.md): with `coveringAt`'s scopes forced to `['all']` it prints `FAIL Ed25519: login 2 raised no dialog — 2 dialogs` and 9 checks fail; dropping `PubkeyAcceptedAlgorithms +ssh-rsa` from the RSA leg's sshd config makes the SHA-1 leg fail |
 
 Companions (a scan that matches nothing proves nothing): *R-b's pattern matches the old sentences it was written for* —
 `README.md:41`'s and `package.json:110`'s old text, quoted, match the 10-minute pattern and not the longer one, and the
@@ -666,7 +689,7 @@ does not match, so R-b would have passed vacuously on exactly the text it guards
 failure names a markdown unit by its line (`src_vs_code/README.md paragraph at line 41 …`), not by an ordinal. (3) The
 sshd helpers moved to `scripts/itestSshd.cjs` (the plan's own allowance) together with section 7's `login`, so the itest
 is 759 lines; `startSshd` gained an `extraConfig` argument for the RSA leg's `PubkeyAcceptedAlgorithms +ssh-rsa`. (4)
-Section 7's six `sshd` runs took 1960 ms in the Alpine container — far under the estimated 20 s; the first CI run's time
+Section 7's six `sshd` runs took 1960–2452 ms in the Alpine container — far under the estimated 20 s; the first CI run's time
 is still to be quoted. (5) The words suite has 8 tests (R-a, R-a's companion, R-a+, R-b, R-b's two companions, the
 auto-lock texts, the three-dots guard), for the plan's three unit REDs. (6) The `autoLockMinutes` row of the extension
 README's settings table also says *machine-wide* (true since E3.3; the plan listed only the bullet at `:905`).
@@ -676,7 +699,7 @@ README's settings table also says *machine-wide* (true since E3.3; the plan list
 - [ ] Every story's RED was observed at the point §5–§7 name and is quoted in the PR beside its GREEN — 31 REDs (3 + 24
       + 4); every break-it quoted once.
 - [ ] In `src_vs_code`: `npm test`, `npm run typecheck`, `npm run lint`, `npm run ratchet` green; `.size-baseline.json`
-      lowered for `extension.ts`; `sshAgentManager.ts` ≤ 760; `commands/agentCommands.ts` ≤ 800; `treeDataProvider.ts`
+      lowered for `extension.ts`; `sshAgentManager.ts` 785 lines (the ≤ 760 target was met by E3.3 as built and missed by the review fixes — §6 As built (1); the lint limit of 800 holds); `commands/agentCommands.ts` ≤ 800; `treeDataProvider.ts`
       untouched; `helpCoverage`, `manifest`, `readmeClaims` green.
 - [ ] `npm run itest:ssh-agent` green locally (Windows: sections 1–4 and 6) **and in a Linux container** (sections 5,
       6, 7 RUN), and green in CI (`ci-extension.yml:150`) with section 7 RUN, not skipped.
@@ -760,4 +783,42 @@ closed. Wrong anchors corrected: `package.json:178`, `research/PLAN_wsl_agent_re
 `sshAgentManagerTurns.test.ts:409-438`; test paths written as `src_vs_code/src/test/…`.
 
 **Owner answers, 2026-10-21** (§9): Q1, Q-B, Q-C, Q-D folded in — the CLI out of E3, *"in this VS Code window"*, two
-follow-up issues, `autoLockMinutes` application-scoped in E3.3 with W6.
+follow-up issues, `autoLockMinutes` application-scoped in E3.3 with W6 (since folded into the one manifest guard — §6 As built (2)).
+
+**Reviews after the build, 2026-10-22.**
+
+- **E3.2, Opus review** (`67671608`): **M1** an unknown or unreadable key type fails closed — `signsWithSha1` decides
+  from a closed set (Ed25519 and the three ECDSA curves never SHA-1, `ssh-rsa` asks `rsaVariant`) and everything else
+  is SHA-1, so an unreadable type can never reach a 12-hour window; **M2** `longerOffer`'s first reason refuses every
+  claim that is not `login` or `sha1-login` (a closed set); **L1** the protocol's flags paragraph names `signsWithSha1`;
+  **L2** the shared answers (`ONCE`, `UNANSWERED`) are frozen; **L3** `pickRefusedNotice` is one sentence and the two
+  log lines lower-case the reason after *but*.
+- **E3.3, Opus review** (`c02c0184`): **M1** → **L13b / L13c** — a Git signature or a SHA-1 RSA login that waited behind
+  a login prompt is never covered by the login window that prompt opened; **L1** → **L6b** the aborted check precedes
+  the middle check (a late click on a vault that locked meanwhile is told it was too late); **L2** → **L19b** the list's
+  time left is the TURN's; **L3** → the **L20** row — abort, then a rejected list, is silent and counts no presence;
+  **L4** the settings listener uses `autoLockIsOn` (a value that is not a number ends the login windows); **L5** the
+  list says *about* (the end is taken when it opens, the window starts at the pick); **L6** docs and wording.
+- **E3.3, Fable's security judgement:** **F1** the pre-existing settings hole — a repository's `.vscode/settings.json`
+  could switch the WSL relay on, name a program to run in WSL and loosen the agent-grant bounds — was fixed and
+  released separately as **1.15.1** ([#274](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/274)), not folded into E3; **F2** the offer in the auto-lock-overdue gap
+  (`longerOffer` takes `autoLockOverdue`) plus the *kept-later* notice; **F3** = L5; **F4** a length the list never
+  offered is refused with presence; **F5** accepted; **F6** wording.
+- **E3.4:** the 1.16.0 texts (`sshAgentWords.test.ts`, 8 tests), section 7 of `ssh-agent-itest.cjs` (a live OpenSSH
+  login window; the sshd helpers moved to `scripts/itestSshd.cjs`), the owner's three measurements recorded as owed.
+- **coai code gate** (`review_code`, `plan: todo/PLAN_ssh_allow_longer_windows.md`, `epic: 3/3`): verdict **`proceed`**,
+  **12 of 12** reviewers answered, **9 findings — 4 accepted, 5 rejected**, each rejection with its reason recorded in
+  the coai session (`resolve`). Accepted: `autoLockIsOn` must refuse a non-number (a string `"60"` coerced to on);
+  the `flags` parameter of `SshAgentServerOptions.confirm` is documented (the OpenSSH flag values, `signsWithSha1`);
+  `MS_PER_HOUR` for `LONGER_WINDOWS_MS`; a JSDoc on `SHA1_BY_KEY_TYPE` (a new key type is added consciously).
+- **The review of the whole of E3** (Opus), all accepted. **M1** every `;` inside a Mermaid sequence message or flowchart
+  edge label removed from `module_extension.md` (a `;` ends a statement), and every block of the file parsed with
+  `@mermaid-js/mermaid-cli@11` (13 of 13); **M2** the manager's size recorded (785, E3.3 as-built (1)); **M3** the status
+  lines, this record, §5 (the unoffered length is refused), §2 (the notice) and the scenario REDs by revert brought to
+  what is true; **M4** one guard for settings a repository must not set (E3.3 as-built (2) and (3)). Lows: the itest's
+  RSA SHA-1 leg asserts the login still succeeds (`sha1.code === 0`, proving SHA-1 stays signable — break-it: answering
+  *Deny*); the W7b test no longer claims *"and only for this setting"*; `module_extension.md` names `agentConsent.ts`
+  and `sshAgentTexts.ts` in the diagram, the *Allow longer…* row title, `cli-v0.4.4` (#272/#273) and the follow-ups
+  [#270](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/270) (a cross-window lock) and [#271](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/271) (a forwarded agent); the two `### Changed` headings of the CHANGELOG
+  merged and three behaviours added to it; one term for auto-lock per help article (de *Auto-Sperre*, es *bloqueo
+  automático*, English *auto-lock*, ru *автоблокировка*, uk *автоблокування*).

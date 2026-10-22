@@ -1255,7 +1255,7 @@ literals because they are the wire contract), so the two suites cannot drift int
 | `sshAgentServer.test.ts` (17 tests) | over a real socket: a host-bound login of the served key is described as a login; a login naming key A and asked of key B is not a login |
 | `sshAgentManager.test.ts` | the host-key clause is one whole line of the prompt, and a plain publickey login has none |
 | `ssh-agent-itest.cjs` section 5 | a live `ssh` against a user-mode `sshd` — **passed on the CI runner** (PR #262, run 39580477985, `ubuntu-latest`, OpenSSH 9.6p1) and in an Alpine container as a non-root user with a locked account (OpenSSH 10.3p1); see the table at the top |
-| `ssh-agent-itest.cjs` section 7 | the login window with real OpenSSH (#197 E3.4): *Allow longer…* → *1 hour*, the next real `ssh` login raises no dialog, a Git signature and a post-lock login ask without the list, an RSA login that asks for `ssh-rsa` (SHA-1) is not covered — **passed in an Alpine container** (OpenSSH 10.3p1, non-root), six `sshd -d` runs in 1960 ms; its first run in CI is the number to quote once the PR's checks have run. Not proven: a login from Windows (the Extension Development Host check) |
+| `ssh-agent-itest.cjs` section 7 | the login window with real OpenSSH (#197 E3.4): *Allow longer…* → *1 hour*, the next real `ssh` login raises no dialog, a Git signature and a post-lock login ask without the list, an RSA login that asks for `ssh-rsa` (SHA-1) is not covered — **passed in an Alpine container** (OpenSSH 10.3p1, non-root), six `sshd -d` runs in 1960–2452 ms; the RSA leg also asserts the SHA-1 login still succeeds (exit 0) — SHA-1 stays signable, it only never gets a long window; **teeth by revert:** `coveringAt`'s scopes forced to `['all']` → `FAIL Ed25519: login 2 raised no dialog — 2 dialogs`, 9 checks failed, and dropping `PubkeyAcceptedAlgorithms +ssh-rsa` fails the SHA-1 leg; its first run in CI is the number to quote once the PR's checks have run. Not proven: a login from Windows (the Extension Development Host check) |
 
 ## The prompt shows other people's text as text (2026-10-21, #197 E1 whole-epic review)
 
@@ -1512,7 +1512,7 @@ source-text tripwire counts the `await`s of `turnStarted`: it would be brittle, 
 
 `manifest.test.ts` gained one data-driven guard: every key in `REPOSITORY_MUST_NOT_SET` (`wslAgentRelay`,
 `wslRelayCommand`, `wslRelayDistros`, `agentGrantIdleMinutes`, `agentGrantMaxCalls`) must declare `"scope": "machine"`
-and `"restricted": true`. A setting with no `scope` is read from `.vscode/settings.json`, which a repository ships, so a
+and `"restricted": true` (since the E3 whole-epic review: or be `application`-scoped, which is how `autoLockMinutes` joined the list). A setting with no `scope` is read from `.vscode/settings.json`, which a repository ships, so a
 trusted repository could switch the relay on and name a program inside itself to run in WSL, or loosen an agent's grant
 bounds. A new security-relevant setting is one more line in the list. A companion test asserts every listed key still
 exists in the manifest, so a rename cannot leave the guard checking nothing. Two more tests make the list and the
@@ -1560,7 +1560,7 @@ clocks in the test's hand, `ask()`) and `sshAgentClient.ts` (`signRequestFor`, `
 | `sshAgentManagerFlags.test.ts` (2) | **L10** through the REAL server and the manager's own forwarding lambda: an RSA key's login window covers flags 2, 4 and 6; flags 0 and 1 prompt, offer no *Allow longer…*, say the SHA-1 reason; the 10-minute answer then covers the next flags-0 login |
 | `sshAgentServer.test.ts` (+1) | **S1** the server hands the request's flags to the gate |
 | `vaultKeysLock.test.ts` (+4) | **W1** auto-lock set to 0 ends every login window, keeps the 10-minute one, tells once, repaints — and does not come back at 60 · **W2** the wiring tells the manager locked / overdue / minutes · **W3** a window granted on a vault never unlocked has an auto-lock to end it · **W4** a lock ends a login window through the real seam |
-| `autoLockSetting.test.ts` (4) | **W6** `credSshManager.autoLockMinutes` is `"scope": "application"` · **W7/W7b** the reader (60 / 0 / −5) and the listener at −5 as at 0 |
+| `autoLockSetting.test.ts` (4) | **W6** the manifest default of `credSshManager.autoLockMinutes` is the reader's default (the `"scope": "application"` check moved into `manifest.test.ts`'s one list) · **W7/W7b** the reader (60 / 0 / −5) and the listener at −5 as at 0 |
 | `agentConsent.test.ts` | `consentFromChoice` and its five tests are gone (their guarantees are `answerFromModal` + `decideSigning`); *the buttons are the four, Allow longer… third*; `answerFromList` (a failed list is `unanswered`: no presence) |
 | `sshAgentManager.test.ts`, `sshAgentManagerRow.test.ts`, `sshAgentWindows.test.ts` | **L18** the prompt names *any process running as you* and *this VS Code window*; the prompt that cannot offer a longer window offers three buttons · a change after `dispose()` tells the row nothing · `SigningWindows.moment()` reads the wall clock first and the monotonic clock second (E3.1's carried gaps) |
 
@@ -1593,7 +1593,7 @@ L8b's interface-step RED was `told once` `[]`; the guards L6, L14, L17, L20, L20
 | `endAllWindows` ends only `all` (W4) | *the lock ENDED the login window: unlocking opens none of its own* |
 | each hook's default flipped: `autoLockMinutes = () => 60` / `lockedNow = () => false` / `autoLockOverdue = () => false` (W5) | *auto-lock defaults to off* / *the vault defaults to locked* / *a window granted while overdue defaults to true is not shown* |
 | the listener's `<= 0` as `=== 0` (W7b) | *told each time a login window was ended* `1 !== 2` |
-| drop `"scope": "application"` (W6) | `undefined` where `'application'` was expected |
+| drop `"scope": "application"` (E3.3's W6; since the whole-epic review the widened `manifest.test.ts` guard) | `credSshManager.autoLockMinutes (scope: undefined, restricted: undefined)` |
 | the key type not read from the loaded key (L10, L9) | *the SHA-1 login is NOT covered by the long window* `1 !== 2` |
 | the forwarding lambda drops the flags (L10) | *a SHA-2 RSA login may be offered the longer window* (three buttons) |
 | the gate asks the purpose instead of the claim (L10) | *the SHA-1 login is NOT covered by the long window* `1 !== 2` |
@@ -1628,6 +1628,26 @@ Guards that were green at once (the production code was already right) and then 
 | `this.stale(pick.kind !== 'escaped')` after the pick (L3) | **L20** *abort, then a rejected list: the message only for a click that meant something* `1 !== 0` |
 
 **Which leg of L17 carries the R4 break-it.** An `await new Promise((r) => setImmediate(r))` between the `turn.aborted` check and the grant was re-run on this head: only the **`setImmediate`** leg goes red (*signed=false but window=true: a pick applied outside its turn*). The test schedules the client's `close` with `setImmediate` right after the pick, i.e. BEFORE the break-it's own `setImmediate` can be queued, so the abort runs first and lands inside the gap. In the **`setImmediate` twice** leg the abort is queued for the second macrotask, so the gap's single hop resumes first and the grant completes before the abort; in the **`setTimeout 0`** leg the timer (clamped to at least 1 ms) fires after the gap's `setImmediate` as well. Those two legs are the guard against a gap of a different size, not the proof of this one; a gap long enough to outlast them is the one thing none of the three sees (see the existing *Not covered* paragraph above).
+
+### The coai code gate and the review of the whole of E3 (2026-10-22) — what changed, each watched
+
+| Behaviour fixed | RED (verbatim, on the unfixed code) |
+|---|---|
+| `autoLockIsOn` read a string as on (`"60" > 0` is true) — `agentConsent.test.ts` *idle auto-lock is on only for a positive finite NUMBER* | `AssertionError [ERR_ASSERTION]: 60: not a positive finite number reads as off` — `true !== false` (the first non-number, the string `'60'`) |
+| the manifest guard did not cover `autoLockMinutes` (it was checked by its own W6, a second list) — `manifest.test.ts`, run against the manifest with the scope REMOVED (scratch edit, restored) | `+ [ 'credSshManager.autoLockMinutes (scope: undefined, restricted: undefined)' ] - []` |
+
+Break-its, each run once and restored:
+
+| Break-it | Red |
+|---|---|
+| `autoLockIsOn` back to `return minutes > 0;` | *60: not a positive finite number reads as off* `true !== false` |
+| `autoLockIsOn` as `typeof minutes === 'number' && minutes > 0` (no `Number.isFinite`) | *Infinity: not a positive finite number reads as off* |
+| `autoLockIsOn` with `Number.isFinite` and without the `typeof` | **stays green, on purpose recorded:** `Number.isFinite` does not coerce (`Number.isFinite('60')` is `false`), so the `typeof` is not observable on its own; it stays as the explicit statement of the rule (the code-gate finding asked for it) and `minutes > 0` is the break-it that has teeth |
+| the itest's SHA-1 leg answered *Deny* instead of *Allow once* (`ssh-agent-itest.cjs`, container) | `FAIL RSA: and, answered once, the SHA-1 login still succeeds (exit 0): SHA-1 stays signable, it only never gets a long window (owner, 2026-10-21) — exit 255: sign_and_send_pubkey: signing failed` |
+
+**One list, not two.** `REPOSITORY_MUST_NOT_SET` in `manifest.test.ts` now also names `credSshManager.autoLockMinutes`, and a listed setting passes when it is EITHER `machine` + `restricted` OR `application`-scoped (`keepsRepositoriesOut`); the reverse test (every `machine` + `restricted` setting is listed) and the description test (every listed setting carries the **Machine-wide:** clause, `autoLockMinutes` now included) are unchanged. `autoLockSetting.test.ts`'s separate **W6** (the scope) is gone; what it also checked — the manifest default equals the reader's default (60) — stays as W6. Why `application` and not `machine`: see `module_extension.md` (the SSH agent rows).
+
+**The scenario, shown by revert (section 7, E3.4).** The fix landed in E3.3, so the teeth are shown by reverting it: with `coveringAt`'s scopes forced to `['all']` the live scenario prints `FAIL Ed25519: login 2 raised no dialog — 2 dialogs` and 9 checks fail; dropping `PubkeyAcceptedAlgorithms +ssh-rsa` from the RSA leg's sshd config makes the SHA-1 leg fail (the server then refuses the algorithm the client was told to ask for). Section 7 took 1667–2452 ms in the Alpine container (six `sshd -d` runs; 1667 ms on the final run, 67 checks ok).
 
 ## What none of them covers
 

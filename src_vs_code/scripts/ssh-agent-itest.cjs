@@ -751,6 +751,7 @@ async function rsaScenario(rig) {
   check('RSA: a SHA-1 login is not covered by the window: login 3 asks', global.__AGENT_DIALOGS__.length === 2, `${dialogCount()}\n${sha1.detail}`);
   check(`RSA: and its dialog has no "${ALLOW_LONGER}"`, !lastDialog().buttons.includes(ALLOW_LONGER), JSON.stringify(lastDialog().buttons));
   check('RSA: and names the SHA-1 reason', /Longer windows need a SHA-2 signature/.test(lastDialog().message), JSON.stringify(lastDialog().message));
+  check('RSA: and, answered once, the SHA-1 login still succeeds (exit 0): SHA-1 stays signable, it only never gets a long window (owner, 2026-10-21)', sha1.code === 0, sha1.detail);
 }
 
 main().catch((error) => {

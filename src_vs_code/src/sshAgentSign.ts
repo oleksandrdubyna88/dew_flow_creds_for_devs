@@ -61,7 +61,12 @@ export function signsWithSha1(keyType: string | undefined, flags: number): boole
 
 const NEVER_SHA1 = (): boolean => false;
 
-/** Which key types are known not to sign with SHA-1 (always), and which ask the signer's own rule (RSA). */
+/**
+ * Which key types are known not to sign with SHA-1 (always), and which ask the signer's own rule (RSA). Every entry
+ * must be a key type whose specification NEVER signs with SHA-1, or `ssh-rsa`, which asks `rsaVariant`. A type that is
+ * not in this map is SHA-1 ON PURPOSE (`signsWithSha1` fails closed: a long window is granted on evidence, never on
+ * the absence of it) — so a new key type is added here consciously, after reading how it signs, never by default.
+ */
 const SHA1_BY_KEY_TYPE: ReadonlyMap<string, (flags: number) => boolean> = new Map<string, (flags: number) => boolean>([
   ['ssh-ed25519', NEVER_SHA1],
   ['ecdsa-sha2-nistp256', NEVER_SHA1],

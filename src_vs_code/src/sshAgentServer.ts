@@ -56,8 +56,13 @@ export interface SshAgentServerOptions {
   /**
    * Ask the human. `false` refuses this one signature; it is asked EVERY time it returns false. `signal` aborts when
    * the connection the request came in on closes: a program that has gone away must not keep a prompt in the
-   * queue, or be shown one (#197, E2.3). `flags` are the request's `SSH_AGENT_RSA_SHA2_*` bits: they decide which
-   * digest an RSA key would sign with, so the gate needs them to tell a SHA-1 login from a SHA-2 one (#197, E3.3).
+   * queue, or be shown one (#197, E2.3).
+   *
+   * `flags` are the request's OpenSSH sign-request flag bits, as the client sent them: `SSH_AGENT_RSA_SHA2_256 = 2` and
+   * `SSH_AGENT_RSA_SHA2_512 = 4`. They decide which digest an RSA key signs with — `0`, or no SHA-2 bit, on an RSA key
+   * means the legacy SHA-1 signature (`ssh-rsa`); Ed25519 and ECDSA ignore them. The gate needs them to tell a SHA-1
+   * login from a SHA-2 one: ask `signsWithSha1(keyType, flags)` (`sshAgentSign.ts`), never the bits directly, so the
+   * answer is the signer's own (#197, E3.3).
    */
   confirm(key: AgentKey, purpose: SignPurpose, data: Buffer, signal: AbortSignal, flags: number): Promise<boolean>;
   /** One line per request, for the audit channel. */

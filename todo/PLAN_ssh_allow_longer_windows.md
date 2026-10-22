@@ -1,6 +1,6 @@
 # PLAN — the SSH signing prompt offers longer windows, and a window can never outlive what it was given for
 
-> Status: **E1 shipped in extension 1.14.2 (2026-10-21); E2 merged (#267) and releasing as `extension-v1.15.0`; E3's stories are written and wait for the plan gate. Plan dated 2026-10-20.** Scope: `src_vs_code/src` — `agentConsent.ts`,
+> Status: **E1 shipped in extension 1.14.2 (2026-10-21), E2 in 1.15.0, the security patch in 1.15.1 (2026-10-22); E3 is built and waits for `extension-v1.16.0`. Plan dated 2026-10-20.** Scope: `src_vs_code/src` — `agentConsent.ts`,
 > `sshAgentManager.ts`, `sshAgentServer.ts`, `sshAgentProtocol.ts`, `vaultKeys.ts`, `requestTime.ts`,
 > `treeRowText.ts`, `treeDataProvider.ts`, `commands/agentCommands.ts`, `agentDoors.ts`, the five `help*.ts`, three
 > new pure modules (`allowWindows.ts`, `consentTurns.ts`, `durationText.ts`), two new `vscode` modules
@@ -423,7 +423,7 @@ most the time the list stayed open. The row and the log show the exact deadline.
 allowed once; no window was opened."* / *"Ask for Every Use Again was used while you were choosing — this signature was
 allowed once; no window was opened."* · a stale modal (§6.5): *"That signing request had already been refused — it
 waited longer than {bound}, or its program had gone. Nothing was signed."* · auto-lock set to 0 with a login window
-open: *"Idle auto-lock is off, so the login windows of {n} key(s) were ended — a long window needs a lock to end it."*
+open: *"Idle auto-lock is off, so the login windows of {n} key(s) were ended — a long window needs a lock in this VS Code window to end it."*
 
 ## 8. Growth budget
 

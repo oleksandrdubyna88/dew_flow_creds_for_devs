@@ -13,6 +13,7 @@ import {
   answerFromModal,
   answerFromList,
   answerFromPick,
+  autoLockIsOn,
   decideSigning,
   longWindowClaim,
   longerOffer,
@@ -187,4 +188,14 @@ test('when several reasons apply, the first in the order is the one said: logins
   assert.match((longerOffer('sha1-login', true, 0, true) as { why: string }).why, /SHA-2/);
   assert.match((longerOffer('login', true, 0, true) as { why: string }).why, /unlocked — a lock ends them/);
   assert.match((longerOffer('login', false, 0, true) as { why: string }).why, /autoLockMinutes is off/, 'overdue means nothing when auto-lock is off');
+});
+
+test('idle auto-lock is on only for a positive finite NUMBER: a string "60" from a hand-edited settings.json is OFF, and so is every other non-number', () => {
+  for (const minutes of [60, 1, 0.5]) {
+    assert.equal(autoLockIsOn(minutes), true, `${minutes}: the control — a positive number is on`);
+  }
+  for (const minutes of ['60', '1', ' 60 ', true, [60], { valueOf: () => 60 }, null, undefined, NaN, Infinity, 0, -5]) {
+    assert.equal(autoLockIsOn(minutes as unknown as number), false, `${String(minutes)}: not a positive finite number reads as off`);
+  }
+  assert.equal((longerOffer('login', false, '60' as unknown as number, false) as { offer: boolean }).offer, false, 'the offer reads a string as off too');
 });
