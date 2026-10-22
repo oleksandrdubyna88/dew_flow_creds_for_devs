@@ -261,6 +261,38 @@ test('settings a repository must not set are machine-scoped and restricted', () 
   assert.deepEqual(offenders, []);
 });
 
+test('every machine-scoped, restricted setting is on the list a repository must not set', () => {
+  // The reverse of the check above: that one proves the list is honoured by the manifest, this one
+  // proves the manifest has nothing the list does not know about — so the list and the manifest are
+  // one truth, and a setting made machine+restricted by hand cannot sit outside the guard.
+  const properties = manifest.contributes.configuration.properties as Record<
+    string,
+    { scope?: string; restricted?: boolean }
+  >;
+
+  const unlisted = Object.entries(properties)
+    .filter(([, setting]) => setting.scope === 'machine' && setting.restricted === true)
+    .map(([key]) => key)
+    .filter((key) => !REPOSITORY_MUST_NOT_SET.includes(key));
+
+  assert.deepEqual(unlisted, []);
+});
+
+test('every setting a repository must not set says so in its description', () => {
+  // The sentence the person reads in the Settings UI must not drift from the scope the manifest
+  // declares: the clause is what tells them a repository cannot change the value.
+  const properties = manifest.contributes.configuration.properties as Record<
+    string,
+    { markdownDescription?: string } | undefined
+  >;
+
+  const silent = REPOSITORY_MUST_NOT_SET.filter(
+    (key) => !(properties[key]?.markdownDescription ?? '').includes('**Machine-wide:**'),
+  );
+
+  assert.deepEqual(silent, []);
+});
+
 test('the list of settings a repository must not set still names settings that exist', () => {
   // The companion that keeps the check above alive: a renamed setting would otherwise be read as
   // `undefined` and flagged, but a typo introduced WITH the list would be flagged as an offender

@@ -1493,7 +1493,11 @@ source-text tripwire counts the `await`s of `turnStarted`: it would be brittle, 
 and `"restricted": true`. A setting with no `scope` is read from `.vscode/settings.json`, which a repository ships, so a
 trusted repository could switch the relay on and name a program inside itself to run in WSL, or loosen an agent's grant
 bounds. A new security-relevant setting is one more line in the list. A companion test asserts every listed key still
-exists in the manifest, so a rename cannot leave the guard checking nothing.
+exists in the manifest, so a rename cannot leave the guard checking nothing. Two more tests make the list and the
+manifest one truth: *every machine-scoped, restricted setting is on the list a repository must not set* (the reverse — a
+setting made `machine` + `restricted` by hand and left off the list fails it), and *every setting a repository must not set
+says so in its description* (its `markdownDescription` must carry `**Machine-wide:**`, so the sentence in the Settings UI
+cannot drift from the scope).
 **Watched RED** against the old manifest: *`credSshManager.wslAgentRelay (scope: undefined, restricted: undefined)`* and the
 four others. **Break-it:** dropping `scope` from `agentGrantMaxCalls` alone turns the guard red with *`credSshManager.agentGrantMaxCalls
 (scope: undefined, restricted: true)`*. **Not covered:** that VS Code itself ignores a workspace value for a `machine`

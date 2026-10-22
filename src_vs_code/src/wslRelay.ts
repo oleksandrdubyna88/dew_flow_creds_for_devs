@@ -28,11 +28,11 @@ export const RC_MARKER = '# CredsForDevs — the SSH agent, relayed from the VS 
  * <p>Both come from settings, so they are REFUSED rather than escaped: the character set is what a
  * command name and a distribution name actually need, and anything else is a different question
  * being asked. There is nothing to quote correctly if nothing quotable is accepted.</p>
- * <p><b>This is a syntax guard, not a trust boundary.</b> It accepts a path, so it cannot tell a
- * program the person installed from one a repository ships. What keeps a repository's
- * `.vscode/settings.json` out is the manifest: the relay settings are declared `machine`-scoped
- * and `restricted`, so VS Code never reads them from workspace or folder settings. A test pins that
- * (`manifest.test.ts`).</p>
+ * <p><b>This is a syntax guard, not a trust boundary.</b> It accepts path characters, so it cannot
+ * tell a program the user installed from one a repository ships. What keeps a repository's
+ * `.vscode/settings.json` out is the manifest: each relay setting is declared `"scope": "machine"`
+ * and `"restricted": true`, so VS Code never reads it from workspace or folder settings. A test pins
+ * that (`manifest.test.ts`).</p>
  */
 export function isSafeShellWord(value: string): boolean {
   return value.length > 0 && value.length <= 200 && /^[A-Za-z0-9_./:-]+$/.test(value);
