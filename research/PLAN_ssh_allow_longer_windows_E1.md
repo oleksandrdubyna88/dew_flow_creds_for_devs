@@ -519,8 +519,11 @@ quoted in the PR.
       owner's screenshot). Before 1.14.2 the same login read *"a signature whose purpose this build does not
       recognise"* — the issue's own screenshot.
 - [ ] Docs of each story landed with it; Mermaid renders; `plan-lifecycle.mjs` and `pin-check.mjs` pass.
-- [ ] coai `review_code` with `plan:` the parent (then under `todo/`), `epic: 1/3`; every finding resolved;
-      verdicts and reviewer counts reported.
+- [x] coai `review_code` with `plan:` the parent (then under `todo/`), `epic: 1/3`; every finding resolved;
+      verdicts and reviewer counts reported — **`proceed`, 12 of 12 reviewers answered, 8 findings: 3 accepted and
+      fixed, 5 rejected with reasons** (the localized help predates this change; `src_cli/README.md` described the
+      agent, not the CLI door; the two 12-hour ceilings are two decisions pinned equal by a test; `NO_WINDOWS`'s maps
+      are typed read-only; moving the 10-minute constant would create an import cycle). Recorded in PR #262.
 - [ ] PR opened, CodeRabbit answered, merged on green checks only.
 - [ ] The `extension-v1.14.2` tag is **not** cut without the owner's approval.
 

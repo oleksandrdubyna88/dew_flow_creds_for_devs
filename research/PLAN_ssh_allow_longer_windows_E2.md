@@ -645,8 +645,16 @@ loop's "dispatch at once", the post-await `keys().includes(key)` check, the `no 
       Every Use Again* clears it; grant again → *Lock Vaults* clears it. Recorded in the PR.
 - [ ] Temp folders carry `testsToDelete-`; docs landed with each story; Mermaid renders; `plan-lifecycle.mjs` and
       `pin-check.mjs` pass.
-- [ ] coai `review_code` with `plan:` the parent (then under `todo/`), `epic: 2/3`; every finding resolved;
-      verdicts and reviewer counts reported.
+- [x] coai `review_code` with `plan:` the parent (then under `todo/`), `epic: 2/3`; every finding resolved;
+      verdicts and reviewer counts reported — **`proceed`, 12 of 12 reviewers answered, 10 findings: 1 accepted, 9
+      rejected with reasons.** Accepted: a request queued behind an open prompt writes one log line. Rejected: one
+      consent bound "blocks E3" (it confuses the 5-minute answer bound with the 12-hour login window); `lockNow.ts`
+      imports a UI module (`formPanels.ts` imports nothing); `Refusal.first` belongs in the manager (the per-key state
+      lives in `ConsentTurns`); an information message per queued request (the cause is the same key's modal already
+      on screen); `nextExpiry` cost (runs once per book change, tens of keys); a tree refresh on every clock tick (the
+      premise is false — only a new book fires it); the floor on short bounds (the finding's own arithmetic shows it is
+      at most 5 % of the bound); the row hook called for every row (gating it raises `entityItem` past complexity 4);
+      immutability of `KeyedQueue`'s private map (a stateful service, moved verbatim from `OneUseLane`).
 - [ ] PR opened; CodeRabbit answered; Sonar (quality gate) and CodeQL green; merged on green checks only.
 - [ ] Release through release-please: dispatch → the changelog PR → merge the release PR → dispatch again for
       `extension-v1.15.0`; the Marketplace shows 1.15.0 (verified, not assumed); this status line records it.

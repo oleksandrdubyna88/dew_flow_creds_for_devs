@@ -715,8 +715,8 @@ README's settings table also says *machine-wide* (true since E3.3; the plan list
       CLI sentence is its own `fix(cli)` PR, §1).
 - [ ] Temp folders carry `testsToDelete-`; docs landed with each story; Mermaid renders; `plan-lifecycle.mjs`,
       `pin-check.mjs` and `.github/scripts/public-hygiene.mjs` pass.
-- [ ] coai `review_code` with `plan:` the parent (then under `todo/`), `epic: 3/3`; every finding resolved;
-      verdicts and reviewer counts reported.
+- [x] coai `review_code` with `plan:` the parent (then under `todo/`), `epic: 3/3`; every finding resolved;
+      verdicts and reviewer counts reported — `proceed`, 12 of 12, 9 findings, 4 accepted and 5 rejected (§10).
 - [ ] **Order.** The PR is merged only after `extension-v1.15.0` is tagged, its changelog PR is merged and the Marketplace
       shows 1.15.0 — otherwise release-please folds E2 and E3 into one release. The branch is rebased onto that `main`
       before the code gate, and after the rebase `CHANGELOG.md` is checked for a duplicated section (E2's bullets under
