@@ -1,6 +1,13 @@
 # PLAN — E3 of #197: the longer windows for SSH logins (feature release)
 
-> Status: **E3 built on `feat/197-e3-longer-windows`, 2026-10-22 — E3.1–E3.4 and their review fixes; the coai code gate passed (proceed, 12 of 12); waits for its PR and `extension-v1.16.0`.** (The plan was revised on
+> Status: **IMPLEMENTED, 2026-10-22.** E3 merged as #277 — E3.1–E3.4 and their review fixes; the coai code gate
+> passed (proceed, 12 of 12) — and #278 (the consent queue's retained jobs capped at 32 per key: the accepted finding of
+> the coai FEATURE gate, verdict `proceed`, over the whole plan); shipped in **`extension-v1.16.0`** (release
+> #281/#282; on the Marketplace from 2026-10-22 18:52 UTC). Fable's F1 finding shipped on its own as **1.15.1** (#274).
+> **Owed by the owner, NOT yet done:** M2, M3 and the Windows Extension Development Host check on the installed 1.16.0
+> (§7 step 3 — the result column still reads *not yet measured*), and the 1.15.1 check (a workspace `wslAgentRelay:
+> true` is ignored). Deviations: §3 and the *As built* notes of §6 and §7; the plan-wide list is the parent's §17;
+> certificate logins went to [PLAN_ssh_certificate_logins.md](../todo/PLAN_ssh_certificate_logins.md). (The plan was revised on
 > 2026-10-21 after the coai plan gate, the risk consultation, Opus's own review and the owner's four answers — §10.) Scope: `src_vs_code` — a pure extraction out of
 > `sshAgentManager.ts` into a new `sshAgentWindows.ts` (the window holder, `vscode`-free) and a new `sshSignPrompt.ts`
 > (the prompt, both steps); `agentConsent.ts` (`ALLOW_LONGER`, the answers, `longWindowClaim`, `longerOffer`),
@@ -708,8 +715,8 @@ README's settings table also says *machine-wide* (true since E3.3; the plan list
       CLI sentence is its own `fix(cli)` PR, §1).
 - [ ] Temp folders carry `testsToDelete-`; docs landed with each story; Mermaid renders; `plan-lifecycle.mjs`,
       `pin-check.mjs` and `.github/scripts/public-hygiene.mjs` pass.
-- [ ] coai `review_code` with `plan: todo/PLAN_ssh_allow_longer_windows.md`, `epic: 3/3`; every finding resolved;
-      verdicts and reviewer counts reported.
+- [x] coai `review_code` with `plan:` the parent (then under `todo/`), `epic: 3/3`; every finding resolved;
+      verdicts and reviewer counts reported — `proceed`, 12 of 12, 9 findings, 4 accepted and 5 rejected (§10).
 - [ ] **Order.** The PR is merged only after `extension-v1.15.0` is tagged, its changelog PR is merged and the Marketplace
       shows 1.15.0 — otherwise release-please folds E2 and E3 into one release. The branch is rebased onto that `main`
       before the code gate, and after the rebase `CHANGELOG.md` is checked for a duplicated section (E2's bullets under
@@ -745,6 +752,8 @@ No owner question is open.
 broadcast (Q-B); a long window never covering a forwarded request (Q-C, next to #259); **a closable turn** — an
 `end()` that does not orphan the slot while a dialog that CAN be closed (the list) is up, so waiters are not refused for
 a dialog that is about to close itself (review H1; `consentTurns.ts:229-236`); certificate logins (at promotion).
+Filed as: the cross-window lock #270, the forwarded agent #271, the closable turn #280, certificate logins #279 with
+its plan [PLAN_ssh_certificate_logins.md](../todo/PLAN_ssh_certificate_logins.md).
 
 ## 10. Review record
 
@@ -806,7 +815,7 @@ follow-up issues, `autoLockMinutes` application-scoped in E3.3 with W6 (since fo
   offered is refused with presence; **F5** accepted; **F6** wording.
 - **E3.4:** the 1.16.0 texts (`sshAgentWords.test.ts`, 8 tests), section 7 of `ssh-agent-itest.cjs` (a live OpenSSH
   login window; the sshd helpers moved to `scripts/itestSshd.cjs`), the owner's three measurements recorded as owed.
-- **coai code gate** (`review_code`, `plan: todo/PLAN_ssh_allow_longer_windows.md`, `epic: 3/3`): verdict **`proceed`**,
+- **coai code gate** (`review_code`, `plan:` the parent, then under `todo/`, `epic: 3/3`): verdict **`proceed`**,
   **12 of 12** reviewers answered, **9 findings — 4 accepted, 5 rejected**, each rejection with its reason recorded in
   the coai session (`resolve`). Accepted: `autoLockIsOn` must refuse a non-number (a string `"60"` coerced to on);
   the `flags` parameter of `SshAgentServerOptions.confirm` is documented (the OpenSSH flag values, `signsWithSha1`);

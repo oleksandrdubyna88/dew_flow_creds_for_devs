@@ -1,6 +1,10 @@
 # PLAN — E2 of #197: a window is visible, ends on any lock or from the row, and one prompt per key (feature release)
 
-> Status: **E2 merged as #267 (2997a558), 2026-10-21 — E2.1–E2.3 and their review fixes; the coai code gate passed (proceed, 12 of 12 reviewers); shipped in `extension-v1.15.0` (release #268, Marketplace 1.15.0 at 20:28Z); the owner's manual check on the installed 1.15.0 is asked; it stays in `todo/` until its parent promotes.** Scope: `src_vs_code` — `vaultKeys.ts` (`onDidLock`), a
+> Status: **IMPLEMENTED, 2026-10-22.** (The date its parent completed; promoted together with it and E1, E3.) E2
+> merged as #267 (2997a558) on 2026-10-21 — E2.1–E2.3 and their review fixes; the coai code gate passed (proceed, 12 of
+> 12 reviewers); shipped in **`extension-v1.15.0`** (release #268, Marketplace 1.15.0 at 20:28Z). Cornerstone E2.3.
+> **Owed by the owner, NOT yet done:** the row check on the installed 1.15.x (§7, the Extension Development Host item).
+> Deviations: §3 and §8 *Built*; the plan-wide list is the parent's §17. Scope: `src_vs_code` — `vaultKeys.ts` (`onDidLock`), a
 > new `sshAgentWiring.ts` (the SSH wiring moves out of `extension.ts`), `sshAgentManager.ts`, `sshAgentServer.ts`, two
 > new pure modules `consentTurns.ts` and `keyedQueue.ts` (`oneUseLane.ts` reuses the second), `treeRowText.ts`,
 > `treeDataProvider.ts` (line-neutral), `requestTime.ts` (`clockUntil`), `commands/agentCommands.ts`, `package.json`,
@@ -641,8 +645,16 @@ loop's "dispatch at once", the post-await `keys().includes(key)` check, the `no 
       Every Use Again* clears it; grant again → *Lock Vaults* clears it. Recorded in the PR.
 - [ ] Temp folders carry `testsToDelete-`; docs landed with each story; Mermaid renders; `plan-lifecycle.mjs` and
       `pin-check.mjs` pass.
-- [ ] coai `review_code` with `plan: todo/PLAN_ssh_allow_longer_windows.md`, `epic: 2/3`; every finding resolved;
-      verdicts and reviewer counts reported.
+- [x] coai `review_code` with `plan:` the parent (then under `todo/`), `epic: 2/3`; every finding resolved;
+      verdicts and reviewer counts reported — **`proceed`, 12 of 12 reviewers answered, 10 findings: 1 accepted, 9
+      rejected with reasons.** Accepted: a request queued behind an open prompt writes one log line. Rejected: one
+      consent bound "blocks E3" (it confuses the 5-minute answer bound with the 12-hour login window); `lockNow.ts`
+      imports a UI module (`formPanels.ts` imports nothing); `Refusal.first` belongs in the manager (the per-key state
+      lives in `ConsentTurns`); an information message per queued request (the cause is the same key's modal already
+      on screen); `nextExpiry` cost (runs once per book change, tens of keys); a tree refresh on every clock tick (the
+      premise is false — only a new book fires it); the floor on short bounds (the finding's own arithmetic shows it is
+      at most 5 % of the bound); the row hook called for every row (gating it raises `entityItem` past complexity 4);
+      immutability of `KeyedQueue`'s private map (a stateful service, moved verbatim from `OneUseLane`).
 - [ ] PR opened; CodeRabbit answered; Sonar (quality gate) and CodeQL green; merged on green checks only.
 - [ ] Release through release-please: dispatch → the changelog PR → merge the release PR → dispatch again for
       `extension-v1.15.0`; the Marketplace shows 1.15.0 (verified, not assumed); this status line records it.
