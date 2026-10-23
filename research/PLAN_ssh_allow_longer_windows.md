@@ -1,6 +1,15 @@
 # PLAN — the SSH signing prompt offers longer windows, and a window can never outlive what it was given for
 
-> Status: **E1 shipped in extension 1.14.2 (2026-10-21), E2 in 1.15.0, the security patch in 1.15.1 (2026-10-22); E3 is built and waits for `extension-v1.16.0`. Plan dated 2026-10-20.** Scope: `src_vs_code/src` — `agentConsent.ts`,
+> Status: **IMPLEMENTED, 2026-10-22.** The three epics shipped as three extension releases: E1 in **1.14.2** (#262,
+> 2026-10-21; the owner's M1 check done on Windows), E2 in **1.15.0** (#267, release #268, 2026-10-21), E3 in
+> **1.16.0** (#277 and #278, release #281/#282, 2026-10-22; on the Marketplace from 18:52 UTC). #278 caps the consent
+> queue's retained jobs at 32 per key — the accepted finding of the coai FEATURE gate (verdict `proceed`) over the whole
+> plan. Beside the epics: **1.15.1** (#274, 2026-10-22), a security hole that was there before this plan and was found by
+> E3's Fable judgement (five settings a repository could set are now machine-scoped and restricted), and the CLI
+> sentence in **cli-v0.4.3** (#263) and **cli-v0.4.4** (#272/#273). Cornerstones 2 of 2 (E1.3, E2.3). **Owed by the
+> owner, NOT yet done:** the E2 row check on 1.15.x, the 1.15.1 check, and M2, M3 and the Windows Extension Development
+> Host check on 1.16.0 — §18. What shipped differently: §17. The open tail (certificate logins, #270, #271, #280): §18.
+> Plan dated 2026-10-20. Scope as planned (`durationText.ts` was never made — §17): `src_vs_code/src` — `agentConsent.ts`,
 > `sshAgentManager.ts`, `sshAgentServer.ts`, `sshAgentProtocol.ts`, `vaultKeys.ts`, `requestTime.ts`,
 > `treeRowText.ts`, `treeDataProvider.ts`, `commands/agentCommands.ts`, `agentDoors.ts`, the five `help*.ts`, three
 > new pure modules (`allowWindows.ts`, `consentTurns.ts`, `durationText.ts`), two new `vscode` modules
@@ -10,12 +19,12 @@
 >
 > Issue: [#197](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/197) — *«добавить кнопки 1 ч 4 ч 8 ч
 > 12 ч»* (add buttons 1 h, 4 h, 8 h, 12 h), with a screenshot of the signing prompt.
-> Related: [PLAN_ssh_agent.md](../research/PLAN_ssh_agent.md),
-> [PLAN_ssh_sign_prompt_timeout.md](../research/PLAN_ssh_sign_prompt_timeout.md),
-> [PLAN_ssh_sign_prompt_time.md](../research/PLAN_ssh_sign_prompt_time.md),
-> [PLAN_agent_consent_policy.md](../research/PLAN_agent_consent_policy.md),
-> [PLAN_wsl_agent_relay.md](../research/PLAN_wsl_agent_relay.md),
-> [module_extension.md](../research/module_extension.md) §*SSH agent*.
+> Related: [PLAN_ssh_agent.md](PLAN_ssh_agent.md),
+> [PLAN_ssh_sign_prompt_timeout.md](PLAN_ssh_sign_prompt_timeout.md),
+> [PLAN_ssh_sign_prompt_time.md](PLAN_ssh_sign_prompt_time.md),
+> [PLAN_agent_consent_policy.md](PLAN_agent_consent_policy.md),
+> [PLAN_wsl_agent_relay.md](PLAN_wsl_agent_relay.md),
+> [module_extension.md](module_extension.md) §*SSH agent*.
 
 ## 1. The request, and what the screenshot actually shows
 
@@ -656,13 +665,78 @@ the dash is left for stories; "logins include git push and fetch" is said in the
 **Operator commands applied** (from the gate's reply): epics of three to four stories — E1's S0 is folded into its
 first story when E1's stories document is written; the epic split by Fable after the question consultant was asked
 what matters (§Epics); from here on, every `review_plan` / `review_code` call names `plan:
-todo/PLAN_ssh_allow_longer_windows.md` and `epic: k/3`; questions after `proceed` go to the consultants first.
+PLAN_ssh_allow_longer_windows.md` (by its path under `todo/`, where it was then) and `epic: k/3`; questions after
+`proceed` go to the consultants first.
+
+## 17. Deviations — what shipped differently from this plan
+
+Collected at promotion (2026-10-22) from E1 §2 and §8, E2 §3 and §8, E3 §2, §3, §6 *As built*, §7 *As built* and
+§10. Each stories document keeps the full reasoning; this is the list.
+
+**E3 (1.16.0)**
+
+| # | The plan said | What shipped | Where decided |
+|---|---|---|---|
+| 1 | A new pure module `durationText.ts` (§6.6) | Never made. `durationText` learns whole hours where it already lived since E2.3, `sshAgentTexts.ts` | E3 §2 |
+| 2 | The CLI sentence (`CommandLine.cs:208`) is edited in E3 and ships with the next `cli-v` | The CLI left E3. The CLI sentence shipped on its own, as **cli-v0.4.3** (#263) and **cli-v0.4.4** (#272/#273, the `fix(cli)` PR with a version-independent sentence). E3 has no `src_cli` change | owner Q1, 2026-10-21; E3 §1 |
+| 3 | SHA-1 RSA is kept out of long windows by `scopesFor` taking the flags, or by the caller (Epics → E3) | One road: `signsWithSha1(keyType, flags)` in `sshAgentSign.ts` asks the signer's own rule, and `longWindowClaim(purpose, sha1)` in `agentConsent.ts` makes the claim `login` / `sha1-login` / `not-login` that the gate and the offer both read. The flags reach the gate as a fifth `confirm` argument; `scopesFor` keeps its signature. An unknown or unreadable key type counts as SHA-1 (fail closed) | E3 §2, E3.2 review M1 |
+| 4 | D3 with two lengths is shown at the manager (*"1 hour answered after 12 hours"*, S7) | Unreachable through the prompt — what was CHECKED, each on the code: one prompt per key; a covered request never prompts; every SHA-2 login of that generation is covered while the login scope is live; every request a login window does not cover is never offered *Allow longer…*; every road that ends a window removes it before the next grant. The rule stays proven in the pure book (`allowWindows.test.ts`, E1.3 test 7); the manager test is the reachable form, **L12**: a 10-minute answer for a Git signature never shortens an open 12-hour login window | E3 §2 |
+| 5 | A login is a complete userauth for this key (§6.3) | Also: the userauth's **algorithm must fit the signing key** — the key's own type, or `rsa-sha2-256` / `rsa-sha2-512` for an `ssh-rsa` key (RFC 8332). Anything else is `unknown` | risk consultation C-b; E3.2 |
+| 6 | The hooks have no-op defaults | The hooks **fail closed**: `lockedNow = () => true`, `autoLockOverdue = () => true`, `autoLockMinutes = () => 0`. A manager nobody wired offers no longer window and honours none | E3 §2, C16 |
+| 7 | Locked or auto-lock off blocks a long window | Also an **overdue auto-lock counts as locked**: the gate honours `login` only when not locked and not overdue (`loginLive()`), and the offer shows no *Allow longer…* in that gap — the idle timer ticks every 60 s, so a waking laptop would otherwise sign silently until the lock lands | E3 review M1; Fable F2 |
+| 8 | O1: *Allow longer…* authorises nothing by itself | Eligibility is asked three times (modal, the click, the pick). At the **middle check** an answer that is no longer eligible **allows that one signature once**, opens no window and says why — against O1's letter, in line with I3's `fenced-lock` | E3 review M3; E3 §2 answer table |
+| 9 | §7's list text | The list also says the **time left**: *"Unanswered, it is refused after {left}."* (the turn's deadline), and its items say *from your pick, about HH:MM* | E3 §2; Fable F3 |
+| 10 | — | A length the list never offered is **refused**, with presence counted, not allowed once | Fable F4 |
+| 11 | — | The **kept-later notice**: a shorter pick under a longer standing login window is logged and told (`reportKeptLater`); the longer window stays | Fable F2; E3 §6 *As built* (5) |
+| 12 | §6.8: the setting is read as it is | `credSshManager.autoLockMinutes` is **application-scoped** (owner Q-D): it is what bounds a long window, so a repository's `.vscode/settings.json` must not raise it. Why `application` and not `machine`: the extension is `extensionKind: ["ui"]`, so both ignore workspace and folder values; `application` also refuses a Remote settings value; `machine` would silently stop Settings Sync of a setting people already sync; `restricted` adds nothing once workspace values are ignored. Its manifest check is folded into the one 1.15.1 guard. `autoLockIsOn` is on only for a positive finite number (a string `"60"` used to switch long windows on — coai code gate) | owner Q-D; E3 §6 *As built* (2)–(4) |
+| 13 | *"locking the vault ends the window"* | The texts say **"in this VS Code window"**: `VaultKeys` and the agent are per window, and a lock in another window does not reach this one (#270) | owner Q-B |
+| 14 | `sshAgentManager.ts` ≤ 760 lines after E3.3 (C14) | **785 lines.** E3.3 as first built met it (760 at `ffc5d653`); the review fixes (`reportKeptLater`, `standingLogin`, `offerFor`) added 25. The lint limit of 800 holds | E3 §6 *As built* (1) |
+| 15 | — | **1.15.1 was split out.** Fable's judgement of E3.3 (F1) found a hole that was there before this plan: a repository's workspace settings could switch the WSL relay on and run a program the repository names, or loosen the agent-grant bounds. Fixed and released on its own as 1.15.1 (#274): five settings are now machine-scoped and restricted. Not folded into E3 | Fable F1 |
+| 16 | — | **#278**, after the E3 merge: a program that asks and disconnects in a loop cannot grow the consent queue behind an open prompt — retained jobs are capped at 32 per key. The accepted finding of the coai FEATURE gate (`proceed`) over the whole plan; shipped in 1.16.0 | coai feature gate |
+| 17 | — | Smaller: E3.1 is a pure extraction first (`sshAgentWindows.ts`, and `sshSignPrompt.ts` arrives by a move); `coveringWindow` added to the book; `CROSSED_LINE` names the answer given; the last `why` says *"is off"* (a negative value is off too); `consentFromChoice` deleted; a bound on an open list orphans the slot like a modal's (H1 — the closable turn is #280); the `protection` help article names both window answers; R-b's pattern is `/\b10[- ]minutes?\b/`; the sshd helpers moved to `scripts/itestSshd.cjs` | E3 §3, §6, §7 |
+
+**E2 (1.15.0).** `lockedNow`, `autoLockMinutes`, `endLoginWindows` and the config listener moved from E2 to E3 (no user
+before a `login` window existed); S6's *"a covered request never waits behind an open prompt"* test moved to E3 (L11);
+`clockUntil` was born in E2.2 for the row; S10.1's lock leg shipped in E2.1; the prompt's time left is `timeLeftText`
+(rounded down, seconds below two minutes), not `durationText`; `ConsentTurns.take` gained a `before(waited)` hook asked
+before the floor; the server caps a connection at 32 pipelined replies and pauses a client that stops reading;
+`KeyedQueue` starts an idle key's first job synchronously and is re-entrant; `queued` logs one line per waiting request
+(E2 §3, §8).
+
+**E1 (1.14.2).** `research/architecture.md:460` was corrected in E1.4, not E2; `SIGNING_BUTTONS` was introduced in E1.4
+with its help test, not in S3; S0's stub additions were deferred to E2/E3; the pin `MAX_WINDOW_MS.login ===
+ASK_WINDOW_MS` moved to E1.3; the book stores two clocks (`grantedAtMono` beside `grantedAt`, gate G0) and the parent's
+I4 and §6.1 were updated; `keyFingerprintOf` moved out of `sshKeyParse.ts` to break an import cycle (E1 §2, §8).
+
+## 18. Open tail
+
+**Follow-ups, each its own issue:**
+
+| What | Where |
+|---|---|
+| **Certificate logins.** An OpenSSH `…-cert-v01` userauth is classified `unknown` since E1.1 (the safe direction, pinned by a test), so a login window never covers it | [#279](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/279); plan [PLAN_ssh_certificate_logins.md](../todo/PLAN_ssh_certificate_logins.md) |
+| **A cross-window lock.** A lock in one VS Code window does not end the windows of another window's agent | [#270](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/270) |
+| **A forwarded agent.** A long window does not tell a forwarded request apart (OpenSSH `session-bind` `is_forwarding` is not read) | [#271](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/271) |
+| **A closable turn.** The bound on an open list orphans the slot like a modal's, so waiters are refused for a dialog that is about to close itself (`consentTurns.ts` `end()`) | [#280](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/280) |
+
+The four issues filed at plan time (§3, §13: #257, #258, #259, #260) are outside this plan; their state is not
+re-checked in this record.
+
+**Owed by the owner — NOT yet done** (a manual check is a result someone looked at; none of these is recorded as done):
+
+- **E2's row check on 1.15.x** — grant → the row says *signs without asking until …* → *Ask for Every Use Again*
+  clears it; grant again → *Lock Vaults* clears it (E2 §7).
+- **The 1.15.1 check** — a workspace `.vscode/settings.json` with `"credSshManager.wslAgentRelay": true` is ignored.
+- **M2, M3 and the Windows Extension Development Host check on 1.16.0** — on VS Code 1.93 and the current stable; the
+  pass/fail table is E3 §7 step 3, its result column still reads *not yet measured*.
+
+Also not yet recorded: the first CI run's time for the itest's section 7 (E3 §7 *As built* (4)).
 
 ## Epics
 
 Three epics, three extension releases, in this order. Each release ships a state that is true on its own, and the
 texts of that release describe that state — nothing waits for the last epic to be corrected. Each epic's stories are one
-document, `todo/PLAN_ssh_allow_longer_windows_E<n>.md`, written by Opus **when that epic starts**, not now; it links back
+document, `PLAN_ssh_allow_longer_windows_E<n>.md` (in `todo/` while open), written by Opus **when that epic starts**, not now; it links back
 here, this section links to it, and it gets its own `todo/README.md` row. Release numbers below assume no other
 extension release lands in between (the extension is at 1.14.1 today); release-please decides the real number.
 

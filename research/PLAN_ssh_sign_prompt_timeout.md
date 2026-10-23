@@ -8,7 +8,7 @@
 > [module_extension.md](module_extension.md) §Consent, §SSH agent; [module_tests.md](module_tests.md).
 
 > **Pointer, 2026-10-20 (#197 E1.4).** This record says the prompt is raised before every signature. A signature inside an open 10-minute window is not asked about at all; the timeout below governs the prompt that is raised. The texts were corrected in E1.4; the plan is
-> [PLAN_ssh_allow_longer_windows.md](../todo/PLAN_ssh_allow_longer_windows.md).
+> [PLAN_ssh_allow_longer_windows.md](PLAN_ssh_allow_longer_windows.md).
 
 ## What shipped differently — read this first
 

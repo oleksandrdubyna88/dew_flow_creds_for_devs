@@ -1288,7 +1288,7 @@ no CI record of either.
 ## A removed or replaced key never signs (2026-10-20, #197 E1.2)
 
 The agent's prompt can stay open for minutes, and the person can remove or re-load the key meanwhile; an *Allow* given
-afterwards must sign nothing ([PLAN_ssh_allow_longer_windows_E1.md](../todo/PLAN_ssh_allow_longer_windows_E1.md) §4).
+afterwards must sign nothing ([PLAN_ssh_allow_longer_windows_E1.md](PLAN_ssh_allow_longer_windows_E1.md) §4).
 
 | test | what it proves |
 |---|---|

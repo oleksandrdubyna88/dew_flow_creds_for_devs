@@ -1,8 +1,9 @@
 # PLAN — E1 of #197: a window can never outlive what it was given for (fix release)
 
-> Status: **E1 shipped in extension 1.14.2, 2026-10-21** (PR #262; Marketplace 11:27 UTC) — stories E1.1–E1.4 and
-> their review fixes, the coai code gate `proceed` (12 of 12 reviewers), the live OpenSSH login green in CI; it stays
-> in `todo/` until its parent promotes (E2 and E3 are open). Scope: `src_vs_code` — `sshAgentProtocol.ts`,
+> Status: **IMPLEMENTED, 2026-10-22.** (The date its parent completed; promoted together with it and E2, E3.) E1
+> shipped in extension **1.14.2** on 2026-10-21 (PR #262; Marketplace 11:27 UTC) — stories E1.1–E1.4 and their review
+> fixes, the coai code gate `proceed` (12 of 12 reviewers), the live OpenSSH login green in CI, the owner's M1 check
+> done on Windows (§7). Cornerstone E1.3. Deviations: §2; the plan-wide list is the parent's §17. Scope: `src_vs_code` — `sshAgentProtocol.ts`,
 > `sshAgentServer.ts`, `sshAgentManager.ts`, `agentConsent.ts`, a new pure `allowWindows.ts`, `sshKeyParse.ts` (one
 > function moves out), the five `help*.ts`, `package.json`, `agentDoors.ts`, `extension.ts` (one sentence),
 > `commands/agentCommands.ts` (one sentence), `README.md`, the walkthrough, `CHANGELOG.md`, `scripts/ssh-agent-itest.cjs`,
@@ -518,7 +519,7 @@ quoted in the PR.
       owner's screenshot). Before 1.14.2 the same login read *"a signature whose purpose this build does not
       recognise"* — the issue's own screenshot.
 - [ ] Docs of each story landed with it; Mermaid renders; `plan-lifecycle.mjs` and `pin-check.mjs` pass.
-- [ ] coai `review_code` with `plan: todo/PLAN_ssh_allow_longer_windows.md`, `epic: 1/3`; every finding resolved;
+- [ ] coai `review_code` with `plan:` the parent (then under `todo/`), `epic: 1/3`; every finding resolved;
       verdicts and reviewer counts reported.
 - [ ] PR opened, CodeRabbit answered, merged on green checks only.
 - [ ] The `extension-v1.14.2` tag is **not** cut without the owner's approval.
