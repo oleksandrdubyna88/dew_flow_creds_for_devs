@@ -127,7 +127,7 @@ jobs:
       # ---------------------------------------------------------------------
       - name: Log in to ghcr.io
         if: github.event.workflow_run.head_branch == 'main' || github.ref == 'refs/heads/main'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
