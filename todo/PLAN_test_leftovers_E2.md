@@ -13,7 +13,12 @@
 > discovery); `research/module_tests.md` and `research/architecture.md`.
 >
 > Re-split by Fable (plan → epics role), 2026-11-01. Not a cornerstone (parent, E2 entry; the quota ledger is untouched).
-> Models per story below: Sonnet codes, Opus briefs and reviews, nothing here is Fable's.
+> Models per story below: Sonnet codes, Opus briefs and reviews; two cornerstones (§ *Epics*) have their spec by Fable.
+>
+> **Plan-gate round 2 (2026-11-01, coai session `0b24304d`): `proceed`**, with 1 of 2 reviewers counted — the file (122 KB) did
+> not reach the other whole. One finding accepted (the bash helper claims FIRST, S4) and the operator's commands applied:
+> five epics of 3–5 stories at the bottom of this document (§ *Epics*, the last section), per-epic branches and gates, two
+> cornerstones, a consultation per three epics (`9d8564bb` before E2.1–E2.3). Stage B is five pull requests, not one (D8).
 
 **Committed together with this document** (one commit, the shared `common/planning-docs.md` § *A plan split into
 epics and stories*): its row in `todo/README.md` under *Currently open*, as the first row of the table —
@@ -53,6 +58,9 @@ below is a section of the contract; `R:n` a line of the detail at `105d53c`; `O:
 | `owner-blind` with the binding tracer everywhere | in `.cs` by literal, no tracer (any bare-prefix literal outside the helper's folder is a finding); scripts keep the shipped classifier | owner decision 3 of R6 |
 | The facts, read at `a7b3ecf2` | re-verified at `47724fd`; the 24 commits since moved anchors in six files and added **six legacy-name producers** (below) | the merge of `main` into this branch |
 | (nothing) | a **must-not-copy-back-in** list (D9) from wave 1 and the mcp Darwin follow-ups 1–6 | the parent's *Wave 1 done* paragraph; E3's *Darwin follow-ups* |
+| `owned.sh`: `mktemp -d`, then the claim | **claim first**, then register, then an exclusive `mkdir` — no `mktemp`; a kill between the two steps leaves an orphan claim the next sweep collects, never an unclaimed folder (S4; a test kills a child between the steps) | plan-gate round 2, the one finding (accepted): rule §2's order |
+| `HostProcess.TempDirectory` returns `OwnedDir.Create(..).Path`; `Remove` calls `Removal.Quietly` | the adapter keeps the `OwnedDir` and `Remove` DISPOSES it: at `197cc76` the registry entry leaves only in `OwnedDir.Dispose()` (`OwnedDir.cs:55`, `:71`), so the first shape left every removed folder registered as never disposed and the audit red (S3) | the question consultant (`9d8564bb`, Codex), verified against the file |
+| One producer pull request (wave-1 shape) | **five epics, five stacked branches, five pull requests**, each with one plan gate and one code gate; the barrier evidence before the FIRST producer merge (E2.1) | the gate's operator commands (round 2); § *Epics* |
 
 Kept unchanged where they still hold: the facts tables (each anchor re-read), D5 (the carve-out), D6 (acme), the growth
 surface, the plan-gate round 1 record, the notes for the parent (N1–N13, with N14–N19 added).
@@ -318,7 +326,7 @@ each `.csproj`; one root `xunit.runner.json` linked by `Directory.Build.props:18
 |---|---|---|---|
 | Node | `src_vs_code/scripts/lib/leftovers.cjs` + `leftovers.d.cts` — a **wrapper** | loads the MOUNTED `tools/lib/owned.mjs` and `tools/lib/leftovers-sweep.mjs` (resolved from the repository root: `.claude/rules/shared/tools/lib/`), binds the token once with `ownedFor({ token: REPO_TOKEN, row: REPO_ROW })` (O:750-762) and re-exports `ownedDir`, `ownedName`, `ownedPattern`, `cleanupScope`, `tempRoot`, `removeQuietly`, `readOwner`, `ownerState`, `thisOwner`, `thisOwnerToken`, `formatOwner`, `runRecord`, `sweepLeftovers`; adds three things of this repository's own — `shortSocketRoot()`, `ownedFile(scope, what, name)`, `writeStub(scope, what, text)` — and nothing else. `REPO_TOKEN = 'creds'` and `REPO_ROW = 'the developer-credentials server and extension'` are written in this file ONCE (the guard's `TOKEN_CONSTANT` shape, G:745: `REPO_TOKEN = "…"`). Decision 11: nothing of the reference is copied; a defect in it is fixed in `dew_flow_conventions` and taken by a pin bump | unit tests (`import … from '../../scripts/lib/leftovers.cjs'` — the same relative path from `src/test/` and `out/test/`), the harnesses (`require('./lib/leftovers.cjs')`), `run-tests.mjs`, `run-itests.mjs`, `backup-archive-itest.cjs` (`require('../../src_vs_code/scripts/lib/leftovers.cjs')`) |
 | C# | E3's helper, **copied by file** into `src_service_defaults/tests/Support/Leftovers/`, namespace `CredsForDevs.Tests.Leftovers` | every file of `dew_flow_mcp · tests/Mcp.Tests/Leftovers/` at `197cc76` that is not a test (`Owned`, `OwnedDir`, `OwnedScope`, `OwnedToken`, `Owner`, `OwnerToken`, `OwnerVectors`, `OwnerFixtures`, `Liveness`, `Scope`, `Native`, `NativeDarwin`, `DarwinLayout`, `DarwinFifoChild`, `PosixFifo`, `Errno`, `Removal`, `Unremovable`, `UnmatchablePid`, `WindowsOwnership`, `LeftoversSweep`, `LeftoversSweepFixture`, `LeftoversAudit`, `LeftoversAuditException`, `LeftoversSelfTest`, `LeftoversGuard*`) byte-identical save the namespace line, **except** `OwnedToken.cs` (rewritten: `RepoToken = "creds"`, `RepoRow = "the developer-credentials server and extension"` — the `creds` row of the detail's `## Tokens` table, R:317), `LeftoversGuardFiles.cs` and the two path constants of `LeftoversGuard.cs` (this repository's discovery, D7); every test file of that folder copied too, into `src_service_defaults/tests/Leftovers/`, token and namespace renamed. The things this repository needs beyond E3 live in files of their own (`OwnedCreds.cs`: `ShortSocketRoot`; `LeftoversSocketRootSweepFixture.cs`: the second root's sweep and audit) — a copied file is never edited, so the next byte-compare against E3 is one `diff` | compiled in place by `CredsForDevs.ServiceDefaults.Tests`; linked by the other four with ONE wildcard `<Compile Include="..\..\src_service_defaults\tests\Support\Leftovers\*.cs" Link="Support\Leftovers\%(Filename)%(Extension)" />` each (the existing `Support/` precedent). The guard's repository scan (`LeftoversRepositoryGuardTests`) and the guard's own tests compile in `ServiceDefaults.Tests` only — one scan per run of the family, on three OSes |
-| bash | `.github/scripts/lib/owned.sh`, sourced | written here — the contract wants a bash helper where tests are bash (R:69); the janitor is never sourced (its contract, § *Running it*). It holds the token once as `REPO_TOKEN="creds"` (the same constant shape, so the guard counts it). Its owner token: `u$(id -u)` on Linux and macOS; on Git for Windows' bash the `w<digits>` form is a SHA-256 of the normalised account name (R:28-34) whose rules the vectors pin — `owned.sh` asks the mounted reference ONCE per script (`node --input-type=module -e 'import { thisOwner, formatOwner } …'` against `.claude/rules/shared/tools/lib/owned.mjs`), which rule §3 allows ("ONE child per script or run to learn a constant of the host"); no `node` on PATH there → the script refuses with one line (fail closed). On Linux and macOS no child is needed | the four CI/test shell scripts, `deploy/restore-archive-itest.sh`, `deploy/acme-test/run.sh` |
+| bash | `.github/scripts/lib/owned.sh`, sourced | written here — the contract wants a bash helper where tests are bash (R:69); the janitor is never sourced (its contract, § *Running it*). It holds the token once as `REPO_TOKEN="creds"` (the same constant shape, so the guard counts it). Its order is the contract's — claim, register, create — and it uses no `mktemp` (S4; plan-gate round 2). Its owner token: `u$(id -u)` on Linux and macOS; on Git for Windows' bash the `w<digits>` form is a SHA-256 of the normalised account name (R:28-34) whose rules the vectors pin — `owned.sh` asks the mounted reference ONCE per script (`node --input-type=module -e 'import { thisOwner, formatOwner } …'` against `.claude/rules/shared/tools/lib/owned.mjs`), which rule §3 allows ("ONE child per script or run to learn a constant of the host"); no `node` on PATH there → the script refuses with one line (fail closed). On Linux and macOS no child is needed | the four CI/test shell scripts, `deploy/restore-archive-itest.sh`, `deploy/acme-test/run.sh` |
 
 *Rejected:* a CommonJS port of the reference (October's D1) — decision 11. *Rejected:* a bash port of the owner-token hash
 (three lines of `janitor.sh:142-155`) — the vectors file is the proof of that hash and a copy drifts from it. *Rejected:*
@@ -330,8 +338,8 @@ in Node, `OwnerToken.This` in C#, `u$(id -u)` / the reference in bash); `<what>`
 `creds-`/`cred-vault-`/`cvbk-` lead and trailing `-` (`creds-sock-` → `sock`, `cred-vault-backup-store` →
 `backup-store`, `cvbk-download-` → `download`); the whole name ≤ 63 characters, so `<what>` ≤ 63 − 14 − 11 − 6 − 1 − 6 = 25
 characters with the longest owner token (`w` + 10 digits) — the helper refuses a longer one. A folder that will hold a
-Unix socket keeps `<what>` ≤ 5 characters. `<id>`: 6 of `[A-Za-z0-9]` (the reference's `randomId`; E3's `IdAlphabet`;
-`mktemp`'s `XXXXXX` in bash). Docker names use the same id rule; compose project names must be lowercase, so the acme
+Unix socket keeps `<what>` ≤ 5 characters. `<id>`: 6 of `[A-Za-z0-9]` (the reference's `randomId`; E3's `IdAlphabet`) or, in bash,
+8 hex characters from `/dev/urandom` (rule §1 accepts 6 to 12). Docker names use the same id rule; compose project names must be lowercase, so the acme
 project is `teststodelete-<owner>-creds-acme-<id>` (rule §1's second spelling). Per-pid FILES in the temp root
 (`hostKeyPin.test.ts:74`, `sshExecRunner.test.ts:79`, `requestLife.test.ts:33`, the stubs) move INSIDE an owned
 folder — one kind (folder) instead of two. The six legacy-name sites of the facts take the owner form like every
@@ -466,17 +474,23 @@ remainder plan).
   found, 1495 files read). The exact-name removals of the facts (`sshAgentWorld.ts:426-429`, `ssh-agent-itest.cjs:247`,
   `:574`, `:625`, the `rmSync` of every safe site) remove what their own process made by its full path; none matches a
   prefix. S0 records this and nothing else.
-- **Stage B (producer) is ONE squash-merged pull request**, in the shape wave 1 used (E3: "one branch, one pull
-  request; S2–S4 are its reviewable commits; none merges alone — the guard's test over this repository is red until the
-  migration lands, and a helper that emits the owner form without its sweep is half the promise"). The pin bump (S1) is
-  already merged, by itself. S2–S5 are commits on `feat/test-leftovers-e2`, each reviewed as a unit.
+- **Stage B (producer) is FIVE pull requests, one per epic of § *Epics*** (the gate's operator commands, round 2;
+  this replaces wave 1's one-PR shape and settles the October question "one or two"). Each epic has its own branch, cut
+  from the previous epic's merge commit (stacked: `feat/leftovers-e2-1-node-unit` from `main`, `…-2-node-harness` from
+  E2.1's merge, and so on), one `mcp__coai__review_plan` round on its own section of this document and one
+  `mcp__coai__review_code` round, an Opus review, and green legs on every OS it touches; each merges a COMPLETE resource
+  lifecycle for its scope (name, claim, removal, sweep, proofs), so no merged state has a producer without its sweep.
+  The whole-repository guards switch on LAST (E2.5); after each earlier epic the shipped Node guard is RUN and its
+  remaining findings are recorded on that epic's PR as migration evidence — never turned into exemptions. The pin bump
+  (S1) is already merged, by itself. The question consultant is asked once per three epics, before each group is built:
+  `9d8564bb` (2026-11-01) covered E2.1–E2.3; a second consult precedes E2.4.
 - **The merge conditions**, as E3's (a)–(d): (a) the pin at `105d53c` — done; (b) R6 records every consumer's sweep-only
   stage as landed or empty — done 2026-10-31 (this family's seven and the private sibling's ten; the barrier opened);
   (c) the per-machine *Barrier checklist* of `dew_flow_conventions · research/PLAN_test_leftovers_merged_core.md` is
   recorded for every machine that runs these tests — the operator's WSL machine is recorded open (R6, 2026-10-31); **the
   owner's Windows machine (Git Bash, the acme probe, the by-hand Windows runs of S2 sc. 10 and S3 sc. 4) is not tested**
-  and must be before the producer merges; (d) the one-time hand clean-up of D4's old names is recorded per machine in
-  the PR — each path removed, or kept with a reason. The stories may be written, gated, built and reviewed before that;
+  and must be before the FIRST producer merge, E2.1's; (d) the one-time hand clean-up of D4's old names is recorded per machine in
+  the PR of the epic whose names they are — each path removed, or kept with a reason. The stories may be written, gated, built and reviewed before that;
   the merge waits. If the released text differs from what is cited here, stop and report — never resolve the difference
   in code.
 
@@ -502,6 +516,7 @@ this repository is protected and what a reviewer checks:
 | 15 | the Windows caller SID read once per process (E4 item 28) — the first thread decided for all | a reviewer checks the copied `Native.OwnerSidOf` path reads per call | S3 review |
 | 16 | a janitor test run in the REAL temp root raced the other tests and exited 1 in 3 runs of 6 (E3 S4) | the copied `LeftoversJanitorTests` plants in a PRIVATE root handed as `TMPDIR` | S3 (copied) |
 | 17 | a sweep over the old names "to help" — the one-time clean-up is the owner's (E3, E4: 682 `mcp-*` folders, the `bge-*` folders, retained for the owner) | D4: nothing sweeps `creds-*`, `cred-vault-*`, `cvbk-*` or the legacy `testsToDelete-agent-*`; the hand clean-up record of D8 | S2/S3/S4 list before and after |
+| 18 | an adapter that takes an `OwnedDir`'s PATH and removes it by path leaves the registry entry behind: `Create` registers (`OwnedDir.cs:55`), only `Dispose()` unregisters (`:71`) — the audit then fails on folders that are gone (found by the question consultant on this plan's October S3, verified 2026-11-01) | S3: `HostProcess` keeps the `OwnedDir` and disposes it; every other site holds the `OwnedDir`/`OwnedScope` itself | S3 sc. 2: a `HostProcess.TempDirectory`+`Remove` pair leaves `OwnedDir.Unreclaimed()` empty (RED with the path-only adapter) |
 
 **Growth surface.** After E2 a full local run makes ≈ 60 Node unit-test folders (S2 RED fixes the exact number) plus
 the safe ones it already made, ≈ 25 harness folders, the C# folders of S3, nine shell worlds; each a few KB except
@@ -516,19 +531,22 @@ killed sweep's are restored or listed by the next (R:194).
 
 ## Order
 
-| Stage · story | Model (brief · code · review) | Depends on | Lands |
-|---|---|---|---|
-| A · S0 — the sweep-only stage: recorded empty | Opus (this section) · main session (a record, no code) · Opus | — | the record is this document's D8 and the parent's R6; nothing to merge |
-| B · S1 — the pin on release `105d53c` | — | — | **done**: PR #289 (`47724fd`), merged alone 2026-11-01 |
-| B · S2 — the Node wrapper, its runners' sweep and audit, and every Node site | Opus · Sonnet · Opus | S1; S2 sc. 0 (the `require(esm)` measurement) | first commit(s) of the producer branch |
-| B · S3 — E3's C# helper copied with its Darwin path, linked into five projects, every C# site | Opus · Sonnet · Opus | S1; **E3's merged producer stage** (`4feb245`) and Darwin path (`197cc76`) — both merged | in parallel with S2 on the same branch |
-| B · S4 — the CI smoke carve-out, acme-test, the bash helper and the shell scripts | Opus · Sonnet · Opus | S1 (the release carries `janitor.sh --token`, D6) | in parallel with S2 |
-| B · S5 — the two guards' CI steps, the exemptions, the docs | Opus · Sonnet · Opus | S2–S4 (both guards are red until they land) | the last commit of the producer branch |
+The build order is the five epics of § *Epics* (the last section): E2.1 → E2.2 → E2.3 → E2.4 → E2.5, each on its own
+branch cut from the previous epic's merge commit, each one pull request with one plan gate and one code gate (D8).
+The sections S0–S5 below are the detailed briefs the stories point to: S2 feeds E2.1 and E2.2, S3 feeds E2.3, S4 feeds
+E2.4, S5 feeds E2.5; S0 and S1 are records.
 
-**The producer branch is one pull request** (D8), squash-merged after the plan gate (`mcp__coai__review_plan` on this
-document, `proceed`), the code gate and an Opus review, with green Linux, Windows AND macOS legs, and merge conditions
-(a)–(d) met. Where this document and the released contract differ, the contract wins and the difference is reported to
-the parent, never resolved in code.
+| Stage · brief | Model (brief · code · review) | Depends on | Lands in |
+|---|---|---|---|
+| A · S0 — the sweep-only stage: recorded empty | Opus (this section) · main session (a record, no code) · Opus | — | this document's D8 and the parent's R6; re-run on every epic's head |
+| B · S1 — the pin on release `105d53c` | — | — | **done**: PR #289 (`47724fd`), merged alone 2026-11-01 |
+| B · S2 — the Node wrapper, its runners' sweep and audit, and every Node site | Opus · Sonnet · Opus; the runner story is a cornerstone (Fable spec) | S1; S2 sc. 0 | E2.1 (unit tests), E2.2 (harnesses) |
+| B · S3 — E3's C# helper copied with its Darwin path, linked into five projects, every C# site | Opus · Sonnet · Opus | S1; E3 merged (`4feb245`, `197cc76`); E2.2 merged | E2.3 |
+| B · S4 — the CI smoke carve-out, acme-test, the bash helper and the shell scripts | Opus · Sonnet · Opus; the `owned.sh` story is a cornerstone (Fable spec) | S1; E2.3 merged; the second consult | E2.4 |
+| B · S5 — the two guards' CI steps, the exemptions, the docs | Opus · Sonnet · Opus | E2.1–E2.4 merged | E2.5 |
+
+Where this document and the released contract differ, the contract wins and the difference is reported to the parent,
+never resolved in code.
 
 ### Boundary with E1/R7 and E3 (both sides — the shared planning rule § *A boundary between two plans*)
 
@@ -569,7 +587,8 @@ grammar, 512 bytes, the 2-second tolerance = §3; 10 minutes = §4. Nothing of S
 ## S2 — The Node wrapper, its runners' sweep and audit, and every Node site
 
 - **Models.** Brief by Opus (this section); code by a Sonnet coder; review by Opus against rule §1–§4, D1–D4, D9 and the
-  mounted `owned.mjs` / `leftovers-sweep.mjs` / `run-tests.mjs`.
+  mounted `owned.mjs` / `leftovers-sweep.mjs` / `run-tests.mjs`. The runner story (E2.1.S2) is a cornerstone: its spec is
+  Fable's (§ *Epics*). This brief is built as E2.1 (the unit tests) and E2.2 (the harnesses).
 - **Goal.** No unit test, harness or the server's harness leaves a folder or file in either root on any path; a
   killed run's are collected by the next `npm test` / `itest:all`; `npm test` fails when the suite itself left one;
   nothing of the reference is copied.
@@ -710,8 +729,8 @@ the sites:
 - **Files.** New `src_service_defaults/tests/Support/Leftovers/*.cs` (the copies; `OwnedToken.cs` rewritten;
   `LeftoversGuardFiles.cs` and the two constants of `LeftoversGuard.cs` rewritten for D7; `OwnedCreds.cs` and
   `LeftoversSocketRootSweepFixture.cs` of this repository's own; the fixture file carries `[assembly: AssemblyFixture]`);
-  new `src_service_defaults/tests/Leftovers/*.cs` (every test file of E3's folder, token and namespace renamed, plus
-  `SweepRanTests.cs` and this repository's own below); the four other `.csproj` files (one wildcard `Compile Include`
+  new `src_service_defaults/tests/Leftovers/*.cs` (every test file of E3's folder but `LeftoversRepositoryGuardTests.cs`, which E2.5 adds over a
+  clean tree — token and namespace renamed, plus `SweepRanTests.cs` and this repository's own below); the four other `.csproj` files (one wildcard `Compile Include`
   each; `AllowUnsafeBlocks` added to `BrokerClient.Tests.csproj` and `CredVaultServer.Tests.csproj`); the C# site files of
   the facts; `.github/workflows/ci-clients.yml` (the submodule step; the macOS leg's four steps from `dew_flow_mcp ·
   .github/workflows/ci.yml:144-200` — the `arm64` check with uid and system printed, the layout self-test with its grep,
@@ -727,10 +746,16 @@ the sites:
   `LeftoversSocketRootSweepFixture` (a second assembly fixture) runs the copied `LeftoversSweep.Run` over that root at
   start and `LeftoversSweepFixture.RealAudit(ShortSocketRoot, OwnedDir.Unreclaimed())` at the end, through the SAME
   `GuardedSweep`/`GuardedAudit` entry points (D9 #9); on Windows, where the roots are one, it does nothing.
-- `HostProcess.TempDirectory(prefix)` and `HostProcess.Remove(path)` are WIDENED, not copied around: `TempDirectory`
-  becomes `OwnedDir.Create(what)`'s path (claim first), `Remove` becomes `Removal.Quietly(path, …)` — so the 14 callers
-  keep their shape and only their argument changes (`"creds-mcp-pump"` → `"mcp-pump"`), and a refused removal stops
-  being silent (one warning line, the folder left prefixed and claimed).
+- `HostProcess.TempDirectory(prefix)` and `HostProcess.Remove(path)` are WIDENED into a **registry-correct adapter**, not
+  copied around: `TempDirectory(what)` calls `OwnedDir.Create(what)` (claim first) and KEEPS the `OwnedDir` in a static
+  `ConcurrentDictionary<string, OwnedDir>` keyed by its path, returning the path; `Remove(path)` takes the entry out and
+  calls its `Dispose()` — never `Removal.Quietly` on the path, never `Directory.Delete` — so the 14 callers keep their shape
+  and only their argument changes (`"creds-mcp-pump"` → `"mcp-pump"`), a refused removal stops being silent (one warning
+  line, the folder left prefixed and claimed, the entry kept as `DisposeAttempted`), and the end-of-run audit sees the
+  folder leave the registry. A path `Remove` was not given by `TempDirectory` is one warning and nothing removed. **Why
+  this shape and not the October one** (verified 2026-11-01 against `197cc76`): `OwnedDir.Create` enters the registry
+  (`OwnedDir.cs:55`) and only `OwnedDir.Dispose()` leaves it (`:71`); returning the bare path and removing through
+  `Removal.Quietly` would have left all 14 folders registered as never disposed and failed every run's audit (D9 #18).
 - `BackupArchiveCommandTests.cs:143`'s kit becomes a **per-run, owned** folder: `_owned.Dir("aot-kit")`
   (`testsToDelete-<owner>-creds-aot-kit-<id>`, claimed by the run, removed with the class's scope on every path). The test
   prints the kit's path and the two command lines (`:139-140`, rewritten to name `<printed kit>/archive.cvbk` and
@@ -806,7 +831,8 @@ carried and any that were not, with why. Then, for this repository:
 
 ## S4 — The CI smoke carve-out, acme-test, the bash helper and the shell scripts
 
-- **Models.** Brief by Opus; code by a Sonnet coder; review by Opus against rule §2, §5, D1 (bash), D3, D5, D6.
+- **Models.** Brief by Opus; code by a Sonnet coder; review by Opus against rule §2, §5, D1 (bash), D3, D5, D6. The
+  `owned.sh` story (E2.4.S1) is a cornerstone: its spec is Fable's (§ *Epics*).
 - **Goal.** The image smoke follows the carve-out and a failed smoke stays failed and never publishes; the acme probe
   leaves nothing in the checkout, the temp root or the Docker daemon; every CI/test shell script names, claims and
   removes its scratch on every path, in the owner form.
@@ -818,7 +844,8 @@ carried and any that were not, with why. Then, for this repository:
   gains `owned.sh` and `deploy/acme-test/run.sh`); `deploy/README.md:252` if it describes `state/`;
   `research/architecture.md:363` (the image line).
 
-**The change — `owned.sh`** (sourced; bash; no `set -e` of its own):
+**The change — `owned.sh`** (sourced; bash; no `set -e` of its own; **claim first** — plan-gate round 2's finding, rule
+§2's order as `owned.mjs` has it, O:641-660):
 
 ```bash
 REPO_TOKEN="creds"                                     # rule §1 — the ONLY place the shell token is written (the guard's constant shape)
@@ -826,29 +853,38 @@ owned_token   # prints the caller's owner token: u$(id -u) on Linux/macOS; on MI
               # from the mounted reference through node (D1); no node → one line on stderr, return 1 (every caller exits)
 owned_owner   # prints <token>:<host>@<linux|macos|windows>:<pid> — host from `hostname` with [@:[:space:]] runs → '-', the WSL
               # ~distro suffix when WSL_DISTRO_NAME is set; os from `uname -s`; pid: on Windows read from /proc/$$/winpid, else $$
-owned_dir <what>     # validates what (non-empty, no / \ control, no leading -, ≤ 25); prints the new folder:
-                     # mktemp -d "${TMPDIR:-/tmp}/testsToDelete-$(owned_token)-${REPO_TOKEN}-<what>-XXXXXX" — the ONE mktemp, exempted
-owned_claim <dir>    # (set -o noclobber; owned_owner > "<dir>.owner") — a failed claim: owned_remove, return 1
+owned_dir <var> <what>   # sets the caller's variable with printf -v — NO command substitution, so it runs in the caller's shell and
+                         # the trap it checks is the caller's. Validates what (non-empty, no / \ control, no leading -, ≤ 25). Then, in
+                         # rule §2's order, up to three draws of dir="${TMPDIR:-/tmp}/testsToDelete-$(owned_token)-${REPO_TOKEN}-<what>-<8 hex>":
+                         #   1. CLAIM  — (set -o noclobber; owned_owner > "$dir.owner"): the exclusive create; EEXIST → somebody's name, draw again
+                         #   2. REGISTER — OWNED_MADE+=("$dir"); on the first call: `trap -p EXIT` empty → `trap owned_cleanup EXIT`; not empty
+                         #      and not naming owned_cleanup → one line, the own claim removed, return 1 (a script with its own trap calls
+                         #      owned_cleanup inside it and sets it BEFORE its first owned_dir); OWNED_KEEP=1 skips this step (handed-on resources)
+                         #   3. CREATE — mkdir "$dir" (exclusive: a folder already there is a squatter's — one warning, the own claim removed
+                         #      only while it still holds exactly what was written (cmp), never the folder, draw again)
+                         # Seam: OWNED_HOOK_AFTER_CLAIM names a function run between 1 and 2 (the kill test); unset in every real run.
 owned_remove <dir>   # refuses an empty path or a basename not matching ^testsToDelete-<token>-creds- (the CALLER's token, read
                      # once — never the bare prefix); five tries 0.1 s apart: rm -rf -- "<dir>", then rm -f -- "<dir>.owner";
                      # on giving up ONE stderr line, return 0
+owned_cleanup        # owned_remove on every entry of OWNED_MADE, last first; idempotent; never exits the shell
 ```
 
 The name pattern inside `owned_remove` is built from the token variable (`^testsToDelete-${OWNED_TOKEN}-creds-`), never
 written with a bare prefix — the shipped classifier reads a bare-prefix glob or regex in a `.sh` as `owner-blind`, and the
-class takes no exemption. Every caller does, in this order — create, register, claim (rule §2; a claim-before-create is
-not possible with `mktemp`, and the window is the one the contract's bash form accepts, R:69-76: the folder is a fresh
-random one, so nothing can sit under its name): `work="$(owned_dir smoke-test)"; trap 'owned_remove "$work"' EXIT;
-owned_claim "$work" || exit 1` (a script with its own trap calls `owned_remove "$work"` inside it:
-`start-server-and-wait.test.sh:36-42`).
+class takes no exemption. `mktemp` is gone: it creates before it claims, and a process killed between its `mkdir` and the
+claim leaves an UNCLAIMED owner-form folder that rule §4 lists and never collects (the finding). With the claim first, a
+kill between the claim and the `mkdir` leaves an **orphan claim** with a record whose pid is gone, which every sweep of
+rule §4 collects (R:84-87). Every caller does ONE line, after its own trap if it has one: `owned_dir work smoke-test || exit 1`
+(a script with its own trap, `start-server-and-wait.test.sh:36-43`, adds `owned_cleanup` to its `cleanup` body and keeps
+`trap cleanup EXIT` before the call).
 
 **The change — the scripts.** `mcp-listen-smoke.test.sh:19`, `version-smoke.test.sh:14`,
 `start-server-and-wait.test.sh:28` → the line above (the `rm -rf` at `:72`, `:81` goes); `restore-archive-itest.sh`
-→ one `owned_dir` per `world()` call, each added to an array that ONE `trap … EXIT` (registered before the first
-`world`) removes; `mcp-listen-smoke.sh:35-36` and `version-smoke.sh:30`, `:64` → under `RUNNER_TEMP` (a runner-owned
+→ one `owned_dir WORLD world` per `world()` call; `owned_cleanup`, the one EXIT trap (installed by the first call),
+removes all nine; `mcp-listen-smoke.sh:35-36` and `version-smoke.sh:30`, `:64` → under `RUNNER_TEMP` (a runner-owned
 root, emptied per job) unchanged — no finding by R:258; off CI (no `RUNNER_TEMP`, no explicit root) → `owned_dir` + trap
 (the per-pid `creds-*-smoke-$$` leaf goes); `start-server-and-wait.sh:107`'s default (no `START_SERVER_LOG`) →
-`owned_dir server-log` without a trap, because the log is handed on (`:132`) — its claim names the shell that made it, so
+`OWNED_KEEP=1 owned_dir log server-log` (claimed, created, kept out of the cleanup list), because the log is handed on (`:132`) — its claim names the shell that made it, so
 the next sweep collects it once that shell is gone, and the test (`start-server-and-wait.test.sh`) passes
 `START_SERVER_LOG="$work/…"` so its runs leave nothing.
 
@@ -905,10 +941,11 @@ this order:
    'exit 130' INT` / `trap 'exit 143' TERM` (so an interrupt runs the EXIT trap once). `cleanup` skips each step whose
    input is not made yet: when `PROJECT` is set, `docker compose -p "$PROJECT" -f docker-compose.acme-test.yml down -v
    --remove-orphans || true`; when `STATE` is set, `docker run --rm -v "$STATE":/s alpine sh -c 'rm -rf /s/certs /s/data
-   /s/logs' || true`, then `owned_remove "$STATE"`.
+   /s/logs' || true`, then `owned_cleanup` (`owned_remove` on `$STATE`) — so the EXIT trap's body names `owned_cleanup`, as
+   `owned_dir` requires (its check); the trap is set before the first `owned_dir`.
 2. The start-of-run sweep of D6: `JANITOR_MIN_AGE_MINUTES=10 bash ../../.claude/rules/shared/tools/janitor.sh --token
    creds` (exit 0 and 3 fine; any other code one line, the run goes on; on Windows a dry run until armed).
-3. `STATE="$(owned_dir acme)"` and `owned_claim "$STATE" || exit 1`; `id` = its six-character suffix lowercased;
+3. `owned_dir STATE acme || exit 1` (claim, register, create, in the caller's shell); `id` = its six-character suffix lowercased;
    `PROJECT="teststodelete-$(owned_token)-creds-acme-$id"`, `COMPOSE=(docker compose -p "$PROJECT" -f
    docker-compose.acme-test.yml)`; `export ACME_STATE="$STATE"`.
 
@@ -930,14 +967,28 @@ The fixed-name `cleanup` at `:53` and the `rm -rf state` at `:54` go (`mkdir -p`
 2. **The happy path on the real shape** — `gh workflow run docker.yml --ref <the PR branch>`: green, the remover's
    listing empty, `Log in`/`Publish` skipped by their own `if:` (not main). `actionlint` green (`ci-server.yml:294-332`).
 3. **`owned.sh` keeps rule §1–§3** (new `.github/scripts/lib/owned.test.sh`, run from `ci-clients.yml` beside the two
-   smoke self-tests, three OSes): `owned_dir x` → `^testsToDelete-[uw][0-9]{1,10}-creds-x-[A-Za-z0-9]{6}$` under
-   `${TMPDIR:-/tmp}`, its owner segment equal to what `node -e` prints from the mounted `thisOwnerToken()` on the same
-   machine (the one cross-helper check, all three OSes); the claim parses with the contract's record grammar and, on
-   Windows, names a pid `tasklist` lists while the script runs; a bad `what` → non-zero, nothing made; `owned_remove ""`
-   and `owned_remove /tmp/other` refuse and remove nothing; a script killed with `kill -9 $$` from a child leaves the
-   folder AND its claim (the next sweep's input); `owned_remove` on a folder whose parent is read-only (POSIX, premise
-   asserted) returns 0, one line, both remain; with `node` hidden from PATH on Windows (`PATH=/usr/bin` in a subshell)
-   `owned_token` returns 1 with its line (fail closed).
+   smoke self-tests, three OSes, in a PRIVATE root handed as `TMPDIR`): `owned_dir d x` → `d` matches
+   `^testsToDelete-[uw][0-9]{1,10}-creds-x-[0-9a-f]{8}$` under that root, its owner segment equal to what `node -e` prints
+   from the mounted `thisOwnerToken()` on the same machine (the one cross-helper check, all three OSes); `d.owner` exists
+   and parses with the contract's record grammar and, on Windows, names a pid `tasklist` lists while the script runs;
+   **the claim is older than the folder** (`d.owner`'s mtime ≤ `d`'s birth, or the seam: with `OWNED_HOOK_AFTER_CLAIM`
+   set to a function that records `[ -e "$d.owner" ] && [ ! -e "$d" ]`, the record is true); a bad `what` → non-zero,
+   nothing made, no claim; `owned_remove ""` and `owned_remove /tmp/other` refuse and remove nothing; `owned_dir` in a
+   script whose EXIT trap does not name `owned_cleanup` → non-zero, the own claim removed, nothing created; a squatter
+   (a folder planted at the drawn name through the seam) → one warning, the claim redrawn, the planted folder untouched;
+   `owned_remove` on a folder whose parent is read-only (POSIX, premise asserted) returns 0, one line, both remain; with
+   `node` hidden from PATH on Windows (`PATH=/usr/bin` in a subshell) `owned_token` returns 1 with its line (fail closed).
+   **The kill between the two steps (the round-2 finding; RED first against a `mktemp`-first helper):** a child bash
+   script sources `owned.sh` with `OWNED_HOOK_AFTER_CLAIM=die` (`die() { kill -9 $$; }`) and calls `owned_dir d x` →
+   the child dies between the claim and the `mkdir`; the private root then holds exactly ONE entry, `…-x-<id>.owner`,
+   and no folder; its mtime is set 11 minutes back (`touch -d`); `JANITOR_MIN_AGE_MINUTES=10 bash
+   .claude/rules/shared/tools/janitor.sh --token creds` with `TMPDIR` = that root → on Linux and macOS the root is EMPTY
+   afterwards (the orphan claim of a gone pid is collected); on Windows (a dry run unless armed) the janitor's output
+   names the claim as what it would remove, and the same root fed to the Node reference's `sweepLeftovers({ tmp })`
+   through `node -e` is empty afterwards — measured, not assumed. RED on the `mktemp`-first shape: the same kill after the
+   `mkdir` and before the claim leaves an UNCLAIMED folder that both sweeps list as unmarked and never remove. And a kill
+   AFTER the `mkdir` (`kill -9 $$` from a child of the script) leaves the folder AND its claim, which the same sweep
+   collects.
 4. **The shell scripts leave nothing** — RED on `main`: `restore-archive-itest.sh` leaves nine `tmp.*` folders (count
    them before/after one run); `mcp-listen-smoke.test.sh` interrupted with SIGINT mid-run leaves its `tmp.*` folder.
    GREEN: zero new old-form entries; the interrupted run leaves nothing (the trap ran).
@@ -975,7 +1026,8 @@ The fixed-name `cleanup` at `:53` and the `rm -rf state` at `:54` go (`mkdir -p`
 - **Files.** `.github/workflows/docs.yml` (two steps after *Public hygiene*: `npm ci --ignore-scripts --prefix
   .claude/rules/shared`, then `node .claude/rules/shared/tools/leftovers-check.mjs --repo . --profile node --token creds
   --identity "the developer-credentials server and extension"`); the C# guard's discovery (S3's `LeftoversGuardFiles.cs`)
-  and `LeftoversRepositoryGuardTests` (already compiled by S3; this story makes it green); the inline exemptions of D7;
+  and `LeftoversRepositoryGuardTests` (added here, in E2.5, over a clean tree — the C# guard's scan over the tree is run
+  by hand after E2.3 and E2.4 and its list recorded on those PRs as migration evidence); the inline exemptions of D7;
   `research/module_tests.md` (a section *Test leftovers* after `:146`), `research/architecture.md:366` (the docs·plans
   line names the Node guard), `CLAUDE.md` (one line in *Commands*: the janitor, `bash
   .claude/rules/shared/tools/janitor.sh --dry-run`, from Git for Windows' bash on Windows; one line: the two guards and
@@ -1031,6 +1083,8 @@ The fixed-name `cleanup` at `:53` and the `rm -rf state` at `:54` go (`mkdir -p`
 | Unwind test for the helper | S2 sc. 4–5 (the wrapper), S3 (E3's set, copied), S4 sc. 3 (bash) |
 | (contract) owner claim, two keys, start-of-run sweep, concurrent-owner survival | S2 sc. 5, 8; S3 (E3's set); S4 sc. 6 |
 | (contract) teardown that gives up stays prefixed and claimed | S3 sc. 2 (the widened `Remove`), sc. 3 (`failed-dispose`); S4 sc. 3 |
+| (round 2) a kill between claim and create leaves nothing the next sweep does not collect — RED-GREEN-RED | S4 sc. 3 (the kill test; RED on a `mktemp`-first helper, GREEN claim-first, RED again with the two steps swapped by hand) |
+| (consultant, verified) a removed `HostProcess` folder leaves the registry | S3 sc. 2 (`OwnedDir.Unreclaimed()` empty after `Remove`; RED with the path-only adapter) |
 | (wave 1) the audit never removes a live sibling's folder — RED-GREEN-RED | S2 sc. 8 (a record-equality audit; RED with an owner-segment compare, GREEN, RED again with the compare reverted); S3 sc. 5 |
 | (wave 1) split, escaped or concatenated spellings are findings — RED-GREEN-RED | S5 sc. 2, through the copied folded reading; reverting `LeftoversGuardLiterals.cs` to a whole-literal read turns it RED again (by hand, recorded) |
 | (wave 1) an exclusive rename, a hex quarantine suffix, a FIFO that cannot block, the elevated runner | S3: the copied `NativeTests`, `DarwinNativeTests`, `LeftoversSweepTests`, `RunnerFactsTests`, `WindowsOwnership` on the three legs |
@@ -1061,6 +1115,9 @@ The fixed-name `cleanup` at `:53` and the `rm -rf state` at `:54` go (`mkdir -p`
 - [ ] The merge conditions (a)–(d) of D8 are recorded on the producer PR, the owner's Windows machine included.
 - [ ] `research/module_tests.md`, `research/architecture.md` and `CLAUDE.md` describe the helpers, the sweeps, the
       audit, the two guards and the janitor.
+- [ ] Each epic of § *Epics* merged through its own branch, plan gate and code gate, in order; the second consult ran before
+      E2.4; the shipped Node guard's remaining findings after E2.1, E2.2, E2.3 and E2.4 are recorded on those PRs as
+      migration evidence (never exemptions) and reach zero in E2.5.
 - [ ] A plan-gate round on THIS document reached `proceed` before the first producer commit; the summary of the producer
       PR names the rounds, the reviewers that answered, and the Opus review.
 
@@ -1086,11 +1143,35 @@ re-read against the release (each item's wording updated where the release chang
 Rejected:
 
 - `owned_claim` in a subshell could mask a pre-existing claim — the folder is the random one `owned_dir` has just
-  created, so its claim cannot pre-exist, and the subshell's exit status reaches the caller.
+  created, so its claim cannot pre-exist, and the subshell's exit status reaches the caller. *(Moot since round 2:
+  `owned_claim` is gone; the claim is written first, inside `owned_dir`, in the caller's own shell.)*
 
 Also reflected from the contract, settled: the owner host compared case-insensitively (D3); a CI job's owner pid
 is the runner worker `$PPID` (D5, N11). **This document needs a new round**: a re-split is a whole re-review
 (`common/plan-change-control.md` step 7), and the parent's wave-1 paragraph says so for every consumer's stories.
+
+## Plan-gate round 2 (2026-11-01) — the re-split's own round
+
+coai session `0b24304d` over this document: verdict **`proceed`**, 1 of 2 reviewers counted (the 122 KB file did not reach
+the other whole — a size this document now records as a limit of its own; a split into a facts companion is the owner's
+call). One finding, **accepted**: S4's `owned_dir` ran `mktemp -d` and claimed afterwards, so a kill in that gap left an
+unclaimed owner-form folder that rule §4 lists and never collects. Applied: the bash helper claims FIRST, registers, then
+creates exclusively (D1, D2, S4 — the block, the callers, acme, sc. 3's kill test, RED on the old shape).
+
+The gate's operator commands, applied: five epics of 3–5 stories, split by Fable, written at the bottom (§ *Epics*);
+cornerstones marked (2 of Q = 2); per-epic branches from the previous epic's commit; one plan gate and one code gate per
+epic; a consultation once per three epics before each group (D8, Order).
+
+The question consultant (`9d8564bb`, Codex with the files, Gemini without), each item verified before adoption:
+
+| Consultant said | Verified | Adopted |
+|---|---|---|
+| Five sequential epics, each a complete lifecycle for its scope; whole-repository guard activation last (Codex; Gemini the same order) | against the facts: the Node profile reads every `.sh` and the workflows, so a guard switched on before E2.4 is red on 13 findings not of that epic | yes — § *Epics*, D8 |
+| `HostProcess.TempDirectory` returning `OwnedDir.Create(..).Path` with `Remove` → `Removal.Quietly` leaves registry entries (`OwnedDir.cs:49`) | yes: `Create` registers at `OwnedDir.cs:55`, only `Dispose()` unregisters at `:71`; the audit's `NeverDisposed` would fire on every run | yes — S3 (the registry-correct adapter), D9 #18, S3 sc. 2 |
+| acme's fixed-project `down` can destroy a running probe; project, labels, state and teardown belong together | already D6/N3 (`run.sh:53`); nothing new | already so; E2.4.S4 is one story for all four |
+| Switch the shipped Node guard on at the end of the Node epics, not the end (Gemini) | measured on `47724fd`: 9 shell `raw-temp` + 4 `docker-name`/`docker-run` findings are not Node's and stay until E2.4 → the step would be red for two epics | **no** — the guard is RUN after each epic and its list recorded (migration evidence); it switches on in E2.5 |
+| Cornerstones: the end-of-run audit against live siblings; the creds-only primitives (`owned.sh`, the short socket-root sweep) (Gemini) | the audit and `owned.sh` are the two places a mistake deletes live data or is written from scratch here; the socket-root sweep is one call into copied code behind the same guarded entry points | partly — two cornerstones (the quota): E2.1.S2 and E2.4.S1; the socket-root fixture is an Opus-briefed story |
+| Do not adopt coai's unreleased raw-temp baseline proposal; leftover findings after an epic are migration evidence, not exemptions (both) | nothing here adopted it | yes — D8 |
 
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
@@ -1118,3 +1199,150 @@ stories (N1–N13); Fable, 2026-11-01, against `47724fd`, release `105d53c` and 
 | N17 | (for E3) | `LeftoversGuardFiles.cs` and the `HelperFile`/`HelperFolder` constants of `LeftoversGuard.cs` are mcp's layout (`tests/`, `src/`, `.github/scripts/`, `http/`); a copy rewrites them — so "every file but `OwnedToken.cs` copied byte-identical" holds for the helper and not for the guard's discovery | D1, D7; E3's table may say so |
 | N18 | (for E3) | the carve-out is not recognised by E3's guard; a copy in a repository with a CI container excludes that workflow by name and lets the shipped Node guard judge it, rather than growing a carve-out reader in C# | D7 |
 | N19 | (for the parent) | the Node wrapper keeps the reference's Windows kernel-owner check (profile only; F16 open) while the C# copy checks the SID too: on one Windows machine the two helpers of this repository judge differently. Not resolved here; closed by F16 | D3 |
+
+## Epics
+
+Five epics, E = 5, so the cornerstone quota is Q = ⌈2·5/5⌉ = 2 (`common/subagent-models.md`). Split by Fable on
+2026-11-01 after the question consultant (`9d8564bb`; the second consult precedes E2.4). One epic per complete resource
+lifecycle, in the order what leaks most and what the next epic needs: the Node unit suite (the biggest leak, the wrapper
+every later Node story uses), the Node harnesses, the five C# executables, the shell/Docker/acme side, then the
+whole-repository guards. Each epic: its own branch from the previous epic's merge commit, one pull request, one
+`mcp__coai__review_plan` round on its section here, one `mcp__coai__review_code` round, an Opus review (D8). Every story:
+brief and scenarios by Opus, code by Sonnet, review by Opus — except the two cornerstones, whose spec is Fable's. The
+detailed briefs are S2–S5 above; a story names the scenarios it owns.
+
+**Cornerstones: 2 of 2 — E2.1.S2, E2.4.S1.**
+
+### E2.1 — The Node unit-test lifecycle
+
+- **Goal.** `npm test` creates only owned, claimed folders through the wrapper, removes them on every path, sweeps both
+  roots at start, and fails a run that left something claimed with its own record — the first owner-form producer of
+  this repository, with the barrier evidence (D8 (c), (d)) on its PR before it merges.
+- **Scope.** S2 minus the harnesses: the wrapper, `run-tests.mjs`, the 30 unit files (`*.test.ts`, `vpnWorld.ts`,
+  `sshAgentWorld.ts`), `ci-extension.yml`'s mount fetch, `module_tests.md`'s unit rows.
+- **Depends on.** S1 (done); `9d8564bb`; the barrier record of the owner's Windows machine (merge, not build).
+- **Done when.** S2 sc. 0–9 and 12 green, 10's unit half and 11 recorded; the shipped Node guard run on the branch head
+  and its remaining findings (expected: the harness-free list — shell, docker, `commandParse`) recorded on the PR.
+- **Stories.**
+  - **E2.1.S1 — the wrapper and the mount** (Opus · Sonnet · Opus): sc. 0 (the `require(esm)` measurement),
+    `leftovers.cjs` + `leftovers.d.cts` with `ownedFor`, `shortSocketRoot`, `ownedFile`, `writeStub`, fail-closed
+    loading; the submodule step in `ci-extension.yml`. Owns sc. 1, 2, 3, 7, 9, 12.
+  - **E2.1.S2 — the runner: record, both-root sweep, parent-only audit** — **CORNERSTONE, spec by Fable**, code by
+    Sonnet, review by Opus. `TESTSTODELETE_RUN` exported to the children; `sweepLeftovers` over both roots in
+    `runWithSweep`'s shape, never the exit code; the end-of-run audit by EXACT record after `node --test` returned,
+    removal by `removeQuietly`, the verdict rule of D4; sweeping and auditing never conflated (D9 #1). Owns sc. 5, 6, 8.
+    Why a cornerstone: it is the one place in the Node half where a wrong compare deletes a live sibling's folders, and
+    the audit is this repository's own logic over the reference, not a copy.
+  - **E2.1.S3 — the plain unit folders** (Opus · Sonnet · Opus): the sites of the facts that make a folder and hold no
+    socket — `archiveDownload`, `agentUseActions`, `arrivalPin`, `brokerAbandoned`, `brokerEndpointSweep`, `cliEndpoint`,
+    `configSnippet`, `connectionOptions`, `crossWindowWrites`, `dependencyChain`, `diagnosticLog`, `gitTransport`,
+    `gitTransportSerial`, `hostKeyPin`, `hostKeyTrust`, `hygieneScan`, `keyInstaller`, `materializedKeys`, `pinClickPaths`,
+    `sshDefaultProbe`, `sshExecRunner`, `sshUseActions`, `wslMcpCheckHost`, `vpnWorld.ts` and its 29 callers,
+    `vpnGoneRequest` — the per-file patterns of S2. Owns sc. 4 and the unit half of sc. 10 (RED counted first).
+  - **E2.1.S4 — the process and socket tests, the `*World.ts` helpers, the unit-side legacy names, macOS** (Opus ·
+    Sonnet · Opus): `brokerListeners`, `brokerOriginDoor`, `requestLife`, `sshAgentServer` (`:71`, `:652`),
+    `sshAgentWorld.ts:419-429` under `shortSocketRoot()`; the legacy `testsToDelete-agent-` sites gone; the by-hand
+    macOS socket-length record. Owns sc. 11 and the guard evidence run of this epic.
+- **Cornerstone area:** the audit (S2).
+
+### E2.2 — The Node harness lifecycle
+
+- **Goal.** `npm run itest:all` and every harness, the server's included, make only owned folders and stubs, remove
+  them on every exit path, and the `itest:all` runner sweeps both roots at start with the run's record propagated — and
+  NO harness-wide end audit, because a harness's children may still be ending (D4).
+- **Scope.** S2's harness half: `run-itests.mjs`, the ten `scripts/*.cjs`, `backup-archive-itest.cjs`,
+  `ci-server.yml`'s `build · test` mount fetch, `module_tests.md:130-146`.
+- **Depends on.** E2.1 merged (the wrapper).
+- **Done when.** The harness half of sc. 10 recorded (RED first: 8 leaking folders, 7 stubs, `backup-archive`'s three,
+  the `ait`/`sshd` folders on a failing path); every CI harness step green with the mount; the guard evidence run recorded.
+- **Stories.**
+  - **E2.2.S1 — `run-itests.mjs`: record propagation and the both-root sweep, no audit** (Opus · Sonnet · Opus); the
+    submodule step before `ci-server.yml:81`; the runner's scope sentence.
+  - **E2.2.S2 — the extension harnesses' folders and stubs** (Opus · Sonnet · Opus): `agent-broker`, `creds-cli`,
+    `creds-mcp`, `creds-mcp-wsl`, `git-transport`, `masked-run`, `server-transport`, `tree-perf-bench` — the
+    module-level scope closed in `finally` AND `.catch`, every stub through `writeStub`, children handed `TMPDIR`/`TEMP`/`TMP`.
+  - **E2.2.S3 — `ssh-agent-itest` and the server's backup harness, with the proofs** (Opus · Sonnet · Opus): the three
+    legacy `ait`/`sshd` sites and the early exits (`:89`, `:757-759`); `backup-archive-itest.cjs`'s `tempDir(tag)`;
+    sc. 10's harness half and the bench run; the guard evidence run.
+- **Cornerstone area:** none.
+
+### E2.3 — The C# lifecycle across the five executables
+
+- **Goal.** E3's helper, with its Darwin path, runs in all five xUnit executables on Linux, Windows and macOS; every C#
+  site is owned; each executable sweeps both roots at start and fails a run that left something it claimed.
+- **Scope.** S3 whole, except `LeftoversRepositoryGuardTests` (E2.5).
+- **Depends on.** E2.2 merged; E3 at `197cc76`.
+- **Done when.** S3 sc. 1–6 green or recorded on the three legs; the C# guard's scan over the tree run by hand and its
+  list recorded (shell and docker findings expected until E2.4); the hand clean-up of the C# old names recorded per machine.
+- **Stories.**
+  - **E2.3.S1 — copy the helper, link it, the CI prerequisites** (Opus · Sonnet · Opus): the files of D1, `OwnedToken.cs`,
+    the four wildcard links, `AllowUnsafeBlocks` in the two projects, the mount fetch in `ci-clients.yml` and
+    `ci-server.yml`, the macOS steps, the audit teeth on three OSes, `SweepRanTests`, the copy-is-the-copy test. Owns
+    sc. 1, 3, 5, 6.
+  - **E2.3.S2 — the socket-root extension and the registry-correct `HostProcess` adapter** (Opus · Sonnet · Opus):
+    `OwnedCreds.ShortSocketRoot`, `LeftoversSocketRootSweepFixture` through the guarded entry points (D9 #9);
+    `HostProcess.TempDirectory`/`Remove` keeping and disposing the `OwnedDir` (D9 #18). Owns sc. 2's `Remove` and
+    second-root parts.
+  - **E2.3.S3 — the client, process and socket sites** (Opus · Sonnet · Opus): `src_cli/tests` (`AgentRelayHostTests`,
+    `AgentRelayConnectionTests`, `RelayLogTests`, `AgentRelayTests`, `RelayPipeEndingTests`), `src_mcp/tests`,
+    `src_broker_client/tests` (`EndpointsTests`, `SessionTitleTests`), `src_service_defaults/tests` (`CredsLoggingTests`,
+    `LogRootTests`), the 14 `HostProcess` callers; the socket lengths asserted on Linux and macOS.
+  - **E2.3.S4 — the server factories, `VaultServer` and the store tests** (Opus · Sonnet · Opus): the seven private
+    `TempDir()`/`NewDir()`/`NewPath()` and the ctor-made dirs of the `Org*`, `Startup*`, `LoggingSink`, `LoginKeyStore`,
+    `ShareMaintenance` classes; `VaultServer.cs:45` without the shared parent; the dispose order of the live-host tests.
+  - **E2.3.S5 — the backup sites and the AOT kit, with the proofs** (Opus · Sonnet · Opus): `BackupArchiveCommandTests`
+    (the per-run kit, `CREDS_AOT_KIT_DIR`), `BackupArchiveTests`, `BackupKeyFileTests`, `BackupRunnerTests`,
+    `BackupStoreTests`; sc. 2's counts and sc. 4; the hand-run guard list.
+- **Cornerstone area:** none (the helper is a copy; what is new here is thin and behind E3's guards).
+
+### E2.4 — Shell, the Docker smoke, acme
+
+- **Goal.** Every CI/test shell script, the image smoke and the acme probe name, claim and remove their scratch in the
+  owner form; a failed smoke stays failed and never publishes; acme's project, labels, state and teardown are one.
+- **Scope.** S4 whole.
+- **Depends on.** E2.3 merged; the second consultation (once per three epics; before this group).
+- **Done when.** S4 sc. 1–7 green or recorded; the guard evidence run shows only `commandParse.test.ts:40` and the
+  product scripts (the exemptions of E2.5).
+- **Stories.**
+  - **E2.4.S1 — `owned.sh`, claim-first, and its self-test** — **CORNERSTONE, spec by Fable**, code by Sonnet, review by
+    Opus. The helper of S4's block (claim → register → create, no `mktemp`, the trap check, `OWNED_KEEP`, the Windows
+    token through the reference, the Windows pid), `owned.test.sh` with the kill-between test, the `ci-clients.yml`
+    self-test step. Owns sc. 3. Why a cornerstone: the only helper written from scratch in this repository, in the
+    language with the fewest guarantees, carrying the round-2 finding and the Windows subtleties the other helpers get
+    from the reference.
+  - **E2.4.S2 — the shell scripts** (Opus · Sonnet · Opus): the two smoke self-tests, `start-server-and-wait.{sh,test.sh}`,
+    `restore-archive-itest.sh`'s nine worlds, the two smoke scripts off CI; shellcheck. Owns sc. 4.
+  - **E2.4.S3 — the Docker smoke carve-out** (Opus · Sonnet · Opus): the names, labels, the runner-worker record, ONE
+    always-run remover; the throwaway-branch failure evidence (FAILED and `Publish` skipped) and the happy path. Owns
+    sc. 1, 2.
+  - **E2.4.S4 — acme: project identity, labels, state and teardown together** (Opus · Sonnet · Opus): D6 whole — the
+    owned project and state, the top-of-script trap, the janitor `--token creds` sweep, the kill and interrupt cases,
+    `.gitignore`, `deploy/README.md`, `architecture.md:363`. Owns sc. 5, 6, 7.
+- **Cornerstone area:** the bash helper (S4).
+
+### E2.5 — Repository-wide enforcement
+
+- **Goal.** Both whole-tree guards are on and green on three OS legs and in the required `docs.yml` job; every remaining
+  finding is a real exemption with a reason; the barrier rescan is clean; the docs and the records are complete.
+- **Scope.** S5 whole, plus the parts of S3 deferred here.
+- **Depends on.** E2.1–E2.4 merged.
+- **Done when.** S5 sc. 1–6; `plan-lifecycle.mjs` clean; this document's status line reads `E2 shipped, <date>; promotes
+  with its parent`.
+- **Stories.**
+  - **E2.5.S1 — the C# guard's creds discovery and its tests** (Opus · Sonnet · Opus): `LeftoversGuardFiles.cs` for this
+    tree, the two path constants, the `docker.yml` exclusion and the wrapper's folding allowance pinned,
+    `LeftoversRepositoryGuardTests` over a clean tree, `LeftoversGuardCredsTests`. Owns sc. 2, 3, 5.
+  - **E2.5.S2 — the inline exemptions, the shipped Node guard in `docs.yml`, the token checks, the break-its** (Opus ·
+    Sonnet · Opus): `npm ci --ignore-scripts --prefix .claude/rules/shared` + `leftovers-check.mjs --profile node` as a
+    required step; the exemptions of D7; sc. 1, 4, 6.
+  - **E2.5.S3 — the final barrier rescan, the docs and the completion records** (Opus · Sonnet · Opus):
+    `sweeper-scan.mjs` on the PR head; `module_tests.md`, `architecture.md:366`, `CLAUDE.md`; the merge-condition
+    records collected from the five PRs; the status line and the README row.
+- **Cornerstone area:** none.
+
+### Dependencies and order
+
+E2.1 → E2.2 → E2.3 → E2.4 → E2.5, strictly: each branch is cut from the previous merge commit, so the wrapper (E2.1) is
+there for the harnesses (E2.2), the C# copy (E2.3) sees the Node side clean, the shell helper (E2.4) is the last
+producer, and the guards (E2.5) switch on over a clean tree. The barrier evidence (D8 (c), (d)) is on E2.1's PR before
+it merges; the shipped Node guard's remaining findings are recorded after each of E2.1–E2.4 and must only shrink.
