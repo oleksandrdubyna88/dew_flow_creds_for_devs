@@ -336,7 +336,7 @@ mount is already in every clone and the pin is the version.
 **D2 — Names (rule §1, R:23-68).** `testsToDelete-<owner>-creds-<what>-<id>`; `<owner>` from the helper (`thisOwnerToken()`
 in Node, `OwnerToken.This` in C#, `u$(id -u)` / the reference in bash); `<what>` is the old prefix without its
 `creds-`/`cred-vault-`/`cvbk-` lead and trailing `-` (`creds-sock-` → `sock`, `cred-vault-backup-store` →
-`backup-store`, `cvbk-download-` → `download`); the whole name ≤ 63 characters, so `<what>` ≤ 63 − 14 − 11 − 6 − 1 − 6 = 25
+`backup-store`, `cvbk-download-` → `download`); the whole name ≤ 63 characters, so `<what>` ≤ 63 − 14 − 11 − 7 − 1 − 6 = 24 for a 6-character `<id>` and 22 for the 8-character bash `<id>` (`-creds-` is 7; CodeRabbit on #253)
 characters with the longest owner token (`w` + 10 digits) — the helper refuses a longer one. A folder that will hold a
 Unix socket keeps `<what>` ≤ 5 characters. `<id>`: 6 of `[A-Za-z0-9]` (the reference's `randomId`; E3's `IdAlphabet`) or, in bash,
 8 hex characters from `/dev/urandom` (rule §1 accepts 6 to 12). Docker names use the same id rule; compose project names must be lowercase, so the acme
@@ -854,7 +854,7 @@ owned_token   # prints the caller's owner token: u$(id -u) on Linux/macOS; on MI
 owned_owner   # prints <token>:<host>@<linux|macos|windows>:<pid> — host from `hostname` with [@:[:space:]] runs → '-', the WSL
               # ~distro suffix when WSL_DISTRO_NAME is set; os from `uname -s`; pid: on Windows read from /proc/$$/winpid, else $$
 owned_dir <var> <what>   # sets the caller's variable with printf -v — NO command substitution, so it runs in the caller's shell and
-                         # the trap it checks is the caller's. Validates what (non-empty, no / \ control, no leading -, ≤ 25). Then, in
+                         # the trap it checks is the caller's. Validates what (non-empty, no / \ control, no leading -, ≤ 22 for the 8-hex id). Then, in
                          # rule §2's order, up to three draws of dir="${TMPDIR:-/tmp}/testsToDelete-$(owned_token)-${REPO_TOKEN}-<what>-<8 hex>":
                          #   1. CLAIM  — (set -o noclobber; owned_owner > "$dir.owner"): the exclusive create; EEXIST → somebody's name, draw again
                          #   2. REGISTER — OWNED_MADE+=("$dir"); on the first call: `trap -p EXIT` empty → `trap owned_cleanup EXIT`; not empty
