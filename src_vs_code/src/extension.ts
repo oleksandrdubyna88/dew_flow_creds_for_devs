@@ -51,7 +51,8 @@ import { warnIfKeyringMissing } from './keyringWarningHost';
 import { AgentDoors, DoorSources, doorsOf } from './agentDoors';
 import { DepDecorationProvider } from './depDecorations';
 import { ExpansionMemory, expansionKey } from './treeExpansion';
-import { formPanels, lockNotice } from './formPanels';
+import { formPanels } from './formPanels';
+import { makeLockNow } from './lockNow';
 import { ConfigRouteSources } from './brokerConfigRoute';
 import { EntityFlagsRefresher, entityFlagSource, entityKey } from './entityFlags';
 import { createDiagnosticLog } from './diagnosticLog';
@@ -85,7 +86,8 @@ import { registerPinCommands } from './pinCommands';
 import { syncReminderDue } from './syncReminder';
 import { RefSource } from './secretRef';
 import { MIN_MASKABLE_LENGTH } from './outputMask';
-import { SshAgentManager } from './sshAgentManager';
+import { wireSshAgent } from './sshAgentWiring';
+import { autoLockMinutesSetting } from './autoLockSetting';
 import { folderPath } from './quickOpen';
 import { LockStatusBar } from './statusBar';
 import { asElement } from './commandTargets';
@@ -270,6 +272,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // Unlock coordinator (PIN / security keys / cached master keys).
   const vaultKeys = new VaultKeys(context.secrets);
+  context.subscriptions.push(vaultKeys); // disposes the lock event with the extension
 
   // Transport per account (NAS folder or vault server) + sharing on top.
   const transports = new TransportFactory(storage, googleAuth);
@@ -363,28 +366,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push({ dispose: () => clearInterval(reminderTimer) });
   void syncReminderTick();
 
-  /**
-   * Lock the vaults, and everything that must follow from it.
-   *
-   * <p>One helper rather than the same sequence spelled at two call sites: the idle timer and
-   * the *Lock Vaults* command differ only in what they say afterwards. Closing the open forms is
-   * exactly the kind of step that gets added to one of two copies — a form holds a plaintext
-   * secret in its webview, and since the page now survives being hidden it holds it for as long
-   * as the tab is open, which is the trade this change made deliberately.</p>
-   */
-  const lockNow = (notice: string): void => {
-    vaultKeys.lock();
-    const closedForms = formPanels.closeAll();
-    void refreshReadiness();
-    void vscode.window.showInformationMessage(lockNotice(notice, closedForms));
-  };
+  // Lock the vaults and everything that must follow (`lockNow.ts`): the idle timer and Lock Vaults go through it.
+  const lockNow = makeLockNow({
+    vaultKeys,
+    closeForms: () => formPanels.closeAll(),
+    refreshReadiness: () => refreshReadiness(), // declared below; read at the first lock, not now
+    say: (message) => void vscode.window.showInformationMessage(message),
+  });
 
   // Auto-lock. Checked on a coarse timer: the window is measured in tens of minutes, so
   // a minute of drift costs nothing and a tighter tick would only wake the machine more.
   const autoLock = setInterval(() => {
-    const minutes = vscode.workspace
-      .getConfiguration('credSshManager')
-      .get<number>('autoLockMinutes', 60);
+    const minutes = autoLockMinutesSetting();
     if (vaultKeys.dueForAutoLock(Date.now(), minutes)) {
       lockNow(
         `Vaults locked after ${minutes} minutes idle. Local credentials still work; sync resumes when you unlock.`,
@@ -563,27 +556,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // audited — the reasons are in `brokerProtocol.isConfigReadRoute`.
     configRoute: configRouteSources(storage),
   });
-  // The SSH agent: keys served from memory, every use confirmed, SSH_AUTH_SOCK injected into
-  // new terminals. Nothing starts until a key is actually loaded.
-  const sshAgent = new SshAgentManager(
-    storage,
-    storageDir,
-    envCollection(),
-    () => vaultKeys.noteUserActivity(),
-    // Published in the endpoint file so a relay inside WSL can find this agent without a pid,
-    // and — when the setting is on — used to raise and lower the relay with the agent itself.
-    (socketPath) => {
-      agentServer.setAgentAddress(socketPath);
-      followAgentWithRelay(socketPath);
-    },
-  );
-  context.subscriptions.push(sshAgent);
-  void sshAgent.loadMarked().then((count) => {
-    if (count > 0) {
-      void vscode.window.showInformationMessage(
-        `${count} SSH key(s) are served by the CredsForDevs agent. Every use asks first; see "CredsForDevs: SSH Agent" for the record.`,
-      );
-    }
+  // The SSH agent (`sshAgentWiring.ts`). Its address is published in the endpoint file so a relay inside WSL
+  // can find it without a pid, and — when the setting is on — raises and lowers the relay with the agent.
+  const sshAgent = wireSshAgent({
+    context, storage, storageDir, envCollection: envCollection(), vaultKeys, provider,
+    // `wslRelay` (via followAgentWithRelay) is a `const` declared below: safe only because no address is published during construction.
+    onAddress: (socketPath) => { agentServer.setAgentAddress(socketPath); followAgentWithRelay(socketPath); },
   });
 
   // The relay that carries this agent into WSL, where a Linux kernel cannot open a named pipe.

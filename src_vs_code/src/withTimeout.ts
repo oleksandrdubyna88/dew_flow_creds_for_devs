@@ -25,11 +25,20 @@ export function withTimeout<T>(
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(undefined), ms);
     if (options.unref === true) {
-      (timer as unknown as { unref?: () => void }).unref?.();
+      unrefTimer(timer);
     }
     void promise.then((value) => {
       clearTimeout(timer);
       resolve(value);
     });
   });
+}
+
+/**
+ * Let the process exit while this timer is pending — and hand the timer back, so a caller can keep it to clear.
+ * Optional-call because a test's mocked timer may have no `unref`; one helper so the cast is spelled once.
+ */
+export function unrefTimer(timer: ReturnType<typeof setTimeout>): ReturnType<typeof setTimeout> {
+  (timer as unknown as { unref?: () => void }).unref?.();
+  return timer;
 }

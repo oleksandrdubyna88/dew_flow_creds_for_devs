@@ -87,8 +87,14 @@ The named pipe is reachable by this Windows user. A unix socket inside WSL is re
 process in that distribution running as that user**. That is a real widening, and the mitigation is
 not the socket's mode:
 
-- every signature still raises the **consent dialog on Windows**, per key and per use (D1), so the
-  worst a process inside WSL can do is *ask*, visibly;
+- a signature still raises the **consent dialog on Windows**, per key (D1): *Allow once* covers that one
+  signature, and *Allow for 10 minutes* lets **any process in the distribution** sign with that key without
+  asking until the window ends, and any lock of the vault ends the window — so outside a window the worst a process can do is *ask*, visibly, and
+  inside one it can sign, silently, with that key (2026-10-20, #197 E1.4: this bullet said "per use" before).
+  Since 1.16.0 (2026-10-22, #197 E3) an SSH login also offers *Allow longer…*: 1, 4, 8 or 12 hours during which any
+  process in the distribution can **log in over SSH** with that key without asking — a login window covers SSH logins
+  only (never a Git signature, never SHA-1 RSA), is not offered while the vault is locked or idle auto-lock is off, and
+  ends with a lock in this VS Code window, with *Ask for Every Use Again*, or when auto-lock is set to 0;
 - the socket is 0600 and lives in `/run/user/<uid>` when it exists, `/tmp` otherwise;
 - the relay is **opt-in and explicit** — it does not start itself.
 

@@ -7,7 +7,7 @@ import * as path from 'path';
  *
  * <p><b>Why this module exists — measured 2026-08-26.</b> Agent forwarding had been wired end
  * to end for months: a per-entity checkbox, `-A` in the argv (`sshOptions.ts`), and an agent
- * serving keys from memory with a dialog per signature (`sshAgentServer.ts`). On Windows it
+ * serving keys from memory, asking before it signs (`sshAgentServer.ts`). On Windows it
  * forwarded nothing, and could not have. Two independent reasons, neither of which produces an
  * error:</p>
  *

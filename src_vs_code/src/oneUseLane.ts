@@ -1,4 +1,5 @@
 import { burnIfSpent } from './brokerResponse';
+import { KeyedQueue } from './keyedQueue';
 
 /**
  * One call at a time for an entry that may only be used once — and the second one refused.
@@ -12,6 +13,10 @@ import { burnIfSpent } from './brokerResponse';
  * <p>Only one-use entries queue. Two parallel queries against an ordinary `prod-db` keep running in
  * parallel: serialising everything would trade a real capability for a guarantee only one kind of
  * entry needs.</p>
+ *
+ * <p>The per-entity chain itself is `keyedQueue.ts` — one implementation, shared with the SSH agent's
+ * consent turns (`consentTurns.ts`, #197 E2.3). This file keeps what is specific to a one-use entry: the
+ * spent set and the refusal before `work`.</p>
  */
 
 /**
@@ -34,13 +39,14 @@ export interface LaneOutcome<T> {
 
 export class OneUseLane {
   /**
-   * The tail of each entity's queue, and the entities already spent this window.
+   * The per-entity queue (`keyedQueue.ts`, shared with the SSH agent's consent turns), and the entities already
+   * spent this window.
    *
    * <p>Both are pruned: the queue entry when its last promise settles, so the map never outgrows
    * the set of IN-FLIGHT entries; the spent set never, because it is the memory that refuses a
    * second call, and it lives exactly as long as the window a grant can live in.</p>
    */
-  private readonly tails = new Map<string, Promise<unknown>>();
+  private readonly queue = new KeyedQueue();
 
   private readonly spent = new Set<string>();
 
@@ -67,20 +73,8 @@ export class OneUseLane {
    * `.then(next)`. A rejection propagating down the queue would fail every call behind it with
    * somebody else's error, which the gate also caught.</p>
    */
-  async run<T>(entityId: string, work: () => Promise<T>): Promise<LaneOutcome<T>> {
-    const ours = (this.tails.get(entityId) ?? Promise.resolve()).then(
-      () => this.afterTheQueue(entityId, work),
-      () => this.afterTheQueue(entityId, work),
-    );
-    this.tails.set(entityId, ours);
-    try {
-      return await ours;
-    } finally {
-      // Only if nobody queued behind us: whoever did owns the tail now.
-      if (this.tails.get(entityId) === ours) {
-        this.tails.delete(entityId);
-      }
-    }
+  run<T>(entityId: string, work: () => Promise<T>): Promise<LaneOutcome<T>> {
+    return this.queue.run(entityId, () => this.afterTheQueue(entityId, work));
   }
 
   private async afterTheQueue<T>(entityId: string, work: () => Promise<T>): Promise<LaneOutcome<T>> {

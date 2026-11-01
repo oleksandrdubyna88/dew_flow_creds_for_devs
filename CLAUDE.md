@@ -183,6 +183,12 @@ people's credentials, so a defect here is not a defect in a toy.
    forbids is changing a route, a status or a shape that a released client already depends on without
    changing the client with it. (Reconciled 2026-09-06, after a review round read the old wording as a
    blocker for a deliberately server-only story.)
+7. **The extension's help ships in five languages, by the owner's decision (2026-10-21).** `helpEn.ts`,
+   `helpDe.ts`, `helpEs.ts`, `helpRu.ts`, `helpUk.ts` are the one exception to the shared rule *"User-facing
+   text is English"* (`.claude/rules/shared/common/coding-style.md`). A change to a help article changes all
+   five, with the English article as the source; UI labels quoted in the help (button and command names) stay
+   in English in every language. Everything else a user reads — prompts, messages, commands, the README — stays
+   English. Written down because a review gate flagged the translations as a rule violation (#262).
 
 ## Definition of Done
 

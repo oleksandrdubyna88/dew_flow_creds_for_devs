@@ -38,7 +38,7 @@ a folder to sync your own machines; add the optional self-hosted server when a t
 |---|---|
 | **SSH in one click** | The stored password is supplied to `ssh` through `SSH_ASKPASS` — never retyped, never on a command line, never in scrollback. A key kept in the vault is written out `0600` for that session and deleted when the terminal closes |
 | **SSH keys** | Store the key pair itself, or point at a file on this machine. One connection can borrow another entity's key. *Install SSH Key to System* writes the pair into `~/.ssh` — dir `0700`, private `0600`, public `0644` |
-| **SSH agent, confirming every use** | *Add to SSH Agent* serves a stored key from memory over a socket of this window's own, so **no key file exists on disk at all** — and every single use opens a dialog naming the key and what it is signing: an SSH login as *user*, or a Git commit. New terminals get `SSH_AUTH_SOCK`, so `ssh` and `git` just find it |
+| **SSH agent, asking before it signs** | *Add to SSH Agent* serves a stored key from memory over a socket of this window's own, so **no key file exists on disk at all** — and a signature opens a dialog naming the key and what it is signing: an SSH login as *user*, or a Git commit. You answer *Allow once*, *Allow for 10 minutes*, *Allow longer…* (SSH logins only: 1, 4, 8 or 12 hours) or *Deny* — and locking the vault in this VS Code window ends every window. New terminals get `SSH_AUTH_SOCK`, so `ssh` and `git` just find it |
 | **Git commit signing** | *Copy Git Signing Config* gives you the `gpg.format ssh` lines with the public key inline, so Git signs commits with a key that lives only in the vault |
 | **One-time codes (TOTP)** | Paste the `otpauth://` URI or the base32 secret from any service's "can't scan the QR code?" screen. The viewer shows the live code with a countdown; the tree has *Copy One-Time Code*. Steam Guard too — so the second app can stay closed |
 | **Secret references + masked run** | Write `creds://you@corp.com/prod-db/password` where a value would go in a command or a script, then *Run with Secrets*: the value reaches only the child process's environment, and every appearance of it in what that process prints is replaced with a `<CREDS_MASKED:NAME>` marker naming which one it was |
@@ -70,7 +70,7 @@ a folder to sync your own machines; add the optional self-hosted server when a t
 | **Capability filters** | The tree filter understands what an entry CAN DO, not just what is written on it: `has:totp`, `has:cli`, `has:env`, `has:code-access`, `has:deps`, `has:attachment`, `has:image`, `is:ephemeral`, and `mcp:visible` / `usable` / `rotate` / `create` / `delete-own` / `delete-any` — combinable with free text (`aws has:totp mcp:usable`). Predicates read metadata only; an unrecognised one is named on the search row rather than silently matched as text |
 | **A missing tool becomes an offer** | Connect over SSH on a machine with no ssh client, or start a VPN with no WireGuard, and instead of a dead terminal you get a modal naming what is missing and — on Yes — a visible terminal running the platform's own install recipe |
 | **Remote Bridge** | On a Remote-SSH host the local window is unreachable by definition; *Open Remote Bridge…* holds an `ssh -R` tunnel so `creds` on the host reaches the window that holds the vault. *Install `creds` on the Host…* puts the binary there from the entity's own context menu |
-| **Inside WSL** | `creds` hands calls to the Windows binary through interop — nothing new listens anywhere. *Set Up the WSL Agent Relay* serves the SSH agent on a unix socket inside the distribution, so `ssh` and `git` in WSL can use vault keys with a confirmation dialog per signature |
+| **Inside WSL** | `creds` hands calls to the Windows binary through interop — nothing new listens anywhere. *Set Up the WSL Agent Relay* serves the SSH agent on a unix socket inside the distribution, so `ssh` and `git` in WSL can use vault keys, asking on Windows first (once, for 10 minutes, or for SSH logins up to 12 hours; locking the vault in this VS Code window ends every window) |
 | **Text zoom** | ± buttons on every CredsForDevs page scale the text up to five steps either way; the offset is shown (`+3`), stored in a synced setting, and every open page follows it at once |
 | **Diagnostics you can attach** | *Show Diagnostics* opens the one output channel and names the per-run log file on disk — sync, backup, transport and unlock failures land there, and no secret can, by construction |
 | **Several accounts** | Microsoft and Google profiles side by side, each with its own tree, its own vault location, and its own team — separated by a blank row, each account row counting `entries / in the Trash / shared` |
@@ -282,13 +282,15 @@ own (a named pipe on Windows). `SSH_AUTH_SOCK` is set in every integrated termin
 afterwards, so `ssh` and `git` find it with no configuration — and the `0600` file the extension
 used to write for `ssh -i` stops existing. *Connect SSH* on an agent-served key passes no `-i`.
 
-**Every single use asks.** The dialog names the key, its fingerprint, *what is being signed* —
+**A signature asks first.** The dialog names the key, its fingerprint, *what is being signed* —
 an SSH login as a particular user, or a Git commit signature — and when it was asked
 (*Requested 2026-09-24 12:30:00 (UTC+03:00).*), because "a key is being used" is not something
 anyone can decide about. Unanswered for five minutes it refuses — the same bound as the agent
-consent dialog — and a click after that signs nothing. Three answers: **Allow once**, **Allow for 10 minutes**
+consent dialog — and a click after that signs nothing. Four answers: **Allow once**, **Allow for 10 minutes**
 (a `git push` signs and authenticates in one breath, and two modals per push is how people learn
-to click without reading), or **Deny**. Every request is a line in **CredsForDevs: SSH Agent**.
+to click without reading), **Allow longer…** (below), or **Deny**. While a 10-minute window is open, any process that can reach the agent signs with that key without asking, until the time is up or the vault is locked in this VS Code window. A key whose window is open says so on its row — *signs without asking until 12:10* — and **Ask for Every Use Again** on that row (the button beside the name, or its context menu) ends the window: the key stays loaded and the next signature asks. A login prompt names the login and, for a current OpenSSH server, the server's host key on a line of its own. Every request is a line in **CredsForDevs: SSH Agent**.
+
+**A longer window, for SSH logins only.** On a login prompt — never on a Git signature — *Allow longer…* opens a list: 1, 4, 8 or 12 hours, each with the time it would end. The one you pick lets every SSH login with that key through without asking until then (`git push` and `git fetch` over SSH included), while a Git signature, or anything else, still asks. The key's row says *logins without asking until 18:40*. Locking the vault **in this VS Code window** ends it, and so do **Ask for Every Use Again** and setting auto-lock to `0`; with the default 60-minute auto-lock a long window therefore usually ends after an hour, unless you keep using the vault. *Allow longer…* is not offered while the vault is locked or auto-lock is off, and an RSA login that asks for the old SHA-1 signature is never covered by a long window (its prompt says so; *Allow for 10 minutes* still covers it).
 
 **Git commit signing.** *Copy Git Signing Config* puts the `gpg.format ssh` lines on the clipboard
 with the public key inline (`user.signingkey "key::ssh-ed25519 AAAA…"`), so Git signs with a key
@@ -902,13 +904,15 @@ A vault can be opened by **several security keys plus the PIN**, in the
 - **Unlock**: the master key is cached in memory for the window, so
   background sync never asks for a touch again. `Lock Vaults (clear cached
   keys)` drops the cache; `Unlock Vault (Security Key)…` prompts on demand.
-- **Auto-lock** (`credSshManager.autoLockMinutes`, default 60, `0` disables) locks the
+- **Auto-lock** (`credSshManager.autoLockMinutes`, default 60, `0` disables; a machine-wide setting, which a repository's own settings cannot change) locks the
   vaults after an idle window measured in **your** actions — opening or copying a
   credential, connecting, installing a key, editing an entry, unlocking. Not mouse
   movement, and deliberately not background sync: a five-minute sync timer counted as
   activity would mean the window never elapses and the setting silently does nothing.
-  Locking forgets the cached master key; local credentials keep working, because they
-  live in the OS keychain and are not protected by the vault key.
+  Locking forgets the cached master key and ends every SSH signing window of this VS Code
+  window (*Allow for 10 minutes* and *Allow longer…*); local credentials keep working, because they
+  live in the OS keychain and are not protected by the vault key. With auto-lock off,
+  *Allow longer…* is not offered.
 - **Remove**: account row → **Remove Security Key…** (pick from the list).
 - **The PIN always remains a fallback** — losing every key does not lock you
   out, and losing the PIN does not either as long as one key is registered.
@@ -1107,11 +1111,17 @@ Two rules govern how they combine:
 
 ### Agents, the CLI and WSL
 
+`agentGrantIdleMinutes`, `agentGrantMaxCalls`, `wslAgentRelay`, `wslRelayCommand` and `wslRelayDistros`
+are **machine-wide**: set them in *User* settings. A value in a repository's `.vscode/settings.json`
+or in folder settings is ignored, because those settings decide what runs inside WSL and how long an
+agent's token works — a repository you open must not be able to change either. *Set Up the WSL Agent
+Relay* already writes to User settings.
+
 | Setting | Default | What it does |
 |---|---|---|
 | `agentGrantIdleMinutes` | `60` | A *Share with Claude Code* token dies after this long unused. `0` disables the idle timeout — the token still dies with the window |
 | `agentGrantMaxCalls` | `0` | The most calls one token may make before it expires; `0` is no cap. Useful for a one-off task: share, let the agent make its handful of calls, and know the token is spent |
-| `wslAgentRelay` | `false` | Serve the SSH agent on a unix socket inside WSL distributions, so `ssh` and `git` there use vault keys with a dialog per signature. **From the UI:** *Set Up the WSL Agent Relay* |
+| `wslAgentRelay` | `false` | Serve the SSH agent on a unix socket inside WSL distributions, so `ssh` and `git` there use vault keys, asking on Windows first (once, for 10 minutes, or for SSH logins up to 12 hours). **From the UI:** *Set Up the WSL Agent Relay* |
 | `wslRelayCommand` | *(auto)* | What the relay runs inside the distribution — override only if `creds` is not on the default path there |
 | `wslRelayDistros` | `[]` | Which distributions get the relay; empty means the default distribution |
 | `gitDeployKeys` | `{}` | Per-repository SSH key for the **git sync** transport: maps a repo URL to the entity whose key pushes it |
@@ -1129,7 +1139,7 @@ Two rules govern how they combine:
 
 | Setting | Default | What it does |
 |---|---|---|
-| `autoLockMinutes` | `60` | Lock after this many minutes **without you using the vault**; `0` disables. "Using" means an action of yours that touches a secret — open, copy, connect, install a key, edit, unlock. It is **not** mouse movement and **not** background sync: a timer firing is not you being present. Locking forgets the cached master key and refuses the saved Sync PIN until you unlock deliberately; your credentials keep working locally, because they live in the OS keychain and are not protected by the vault key. **From the UI:** *Set Auto-Lock…* |
+| `autoLockMinutes` | `60` | Lock after this many minutes **without you using the vault**; `0` disables (and no *Allow longer…* SSH window is offered). A machine-wide setting: a workspace or folder value is not applied. "Using" means an action of yours that touches a secret — open, copy, connect, install a key, edit, unlock. It is **not** mouse movement and **not** background sync: a timer firing is not you being present. Locking forgets the cached master key and refuses the saved Sync PIN until you unlock deliberately; your credentials keep working locally, because they live in the OS keychain and are not protected by the vault key. **From the UI:** *Set Auto-Lock…* |
 
 ### Sign-in
 
@@ -1172,7 +1182,7 @@ also on the right-click menu where it applies.
 - **Tree** — Add Folder · Add Entity · Edit · Clone… · Delete · Move to Folder… · Change Folder
   Type… · Move Up · Move Down · View Details · Restore This Version… · Refresh
 - **SSH** — Connect SSH · Toggle SSH (on/off) · Copy Password · Install SSH Key to System
-  (~/.ssh) · Add to SSH Agent · Remove from SSH Agent · Copy Git Signing Config
+  (~/.ssh) · Add to SSH Agent · Remove from SSH Agent · Ask for Every Use Again · Copy Git Signing Config
 - **One-time codes** — Copy One-Time Code
 - **Websites** — Open Site in Browser (an entry's URL, http and https only; also a button beside the
   URL in *View Details*)
@@ -1205,7 +1215,7 @@ also on the right-click menu where it applies.
   and Policy… (on any account row of a corporate server)
 - **Corporate projects** — New Project… (on the Team row, or a colleague's) · Assign to Project… ·
   Remove from Project… (both on a colleague's Team row, for admins and officers)
-- **Keys on disk** — Install SSH Key to System (~/.ssh) · Remove Installed Key… · Add to SSH Agent (confirm every use) · Remove from SSH Agent
+- **Keys on disk** — Install SSH Key to System (~/.ssh) · Remove Installed Key… · Add to SSH Agent · Remove from SSH Agent · Ask for Every Use Again
 - **Scans** — Health Report (weak, reused, exposed) · Check Clipboard for Vault Secrets ·
   Scan This File for Vault Secrets · Show Diagnostics
 - **Sharing, cont.** — Withdraw a Share You Sent…

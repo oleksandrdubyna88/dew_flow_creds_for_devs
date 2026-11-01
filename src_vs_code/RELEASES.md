@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.16.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.15.1...extension-v1.16.0) (2026-10-22)
+
+
+### Features
+
+* **extension:** Allow longer… — SSH logins sign without asking for 1, 4, 8 or 12 hours ([#197](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/197) E3) ([#277](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/277)) ([cc07b6d](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/cc07b6d83c9abb546de19fa4735e934d8b0b3682))
+
+
+### Bug Fixes
+
+* **extension:** a program that asks and disconnects in a loop cannot grow the consent queue behind an open prompt ([#197](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/197) feature gate) ([#278](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/278)) ([6879db3](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/6879db35328b8e0b3a720fd7d7b81da3089c3a62))
+
+## [1.15.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.15.0...extension-v1.15.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **extension:** the WSL relay and the agent-grant bounds are machine settings — a repository cannot run a program in WSL or loosen a grant ([#274](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/274)) ([dda3ad6](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/dda3ad67a284703c33db648570a2a6678dc7dd29))
+
+## [1.15.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.14.2...extension-v1.15.0) (2026-10-21)
+
+
+### Features
+
+* **extension:** a lock ends every SSH window, the row shows it, one prompt per key ([#197](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/197) E2) ([#267](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/267)) ([2997a55](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/2997a5582198ef49b04fae0f4ab78f3418022fca))
+
+## [1.14.2](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.14.1...extension-v1.14.2) (2026-10-21)
+
+
+### Bug Fixes
+
+* **extension:** an SSH allow window never outlives what it was given for ([#197](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/197) E1) ([#262](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/262)) ([77afb10](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/77afb10f9d71eea5a0db1c5e2251d5e3af3b22c2))
+* launch the Windows half through `setpriv --pdeathsig KILL --` (shared WindowsBridge.StartPiped) so the proxy carries PR_SET_PDEATHSIG(SIGKILL) and the kernel ends it the instant the wrapper process dies, even while stopped. Guarded forks run on one dedicated long-lived thread (pdeathsig is thread-scoped through .NET's fork — a retiring pool worker would otherwise kill the proxy mid-session); setpriv is resolved from trusted dirs and probed once for --pdeathsig support; the guard arms only when the binary resolves, preserving the exit-99 missing-binary diagnosis; CREDS_NO_PDEATH_GUARD=1 is the off switch. Covers the MCP pump and the relay's relay-pipe children. ([5530e8b](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/5530e8b966586682ad004bb9ab17ddf31d1affa6))
+* **mcp:** a stopped WSL interop proxy dies with its wrapper (defect D) ([5530e8b](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/5530e8b966586682ad004bb9ab17ddf31d1affa6))
+
 ## [1.14.1](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.14.0...extension-v1.14.1) (2026-10-12)
 
 

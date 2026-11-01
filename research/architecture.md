@@ -457,7 +457,7 @@ at all". There are two.
 
 **The agent relay**, which already existed, is preferred wherever it can serve: the command carries
 no `-i` at all and is prefixed with `env SSH_AUTH_SOCK='<the relay socket>' ` for that one command,
-so the key stays on Windows, every signature still raises the consent dialog there, and the client is
+so the key stays on Windows, the signature still asks there (*Allow once*, a 10-minute window for any signature, or — for an SSH login only — *Allow longer…*, a window of 1, 4, 8 or 12 hours, never for SHA-1 RSA and never while the vault is locked or idle auto-lock is off; during a window any process in the distribution signs with that key without asking, a login window covering SSH logins only — until it runs out or the vault is locked: any lock of the vault in this VS Code window ends every window, and so does *Ask for Every Use Again* on the key's row; 2026-10-22, #197 E3), and the client is
 the distribution's own — its `~/.ssh/config`, its resolver, its network namespace.
 
 **The Windows client**, otherwise. WSL launches `/mnt/c/Windows/System32/OpenSSH/ssh.exe` through

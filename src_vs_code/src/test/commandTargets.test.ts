@@ -4,6 +4,7 @@ import {
   asElement,
   collectJumpCandidates,
   folderKindOf,
+  loadFailureWarnings,
   resolveBulkTargets,
   withdrawalMessage,
 } from '../commandTargets';
@@ -269,4 +270,9 @@ test('a row that carries no account still answers nothing, so the palette pick s
   assert.equal(elementAccount(undefined), undefined);
   assert.equal(elementAccount(nodeElement() as TreeElement), undefined);
   assert.equal(elementAccount({ kind: 'search' }), undefined);
+});
+
+test('Add to SSH Agent warns with the reason, and says nothing for a stop that was already said', () => {
+  assert.deepEqual(loadFailureWarnings('"prod" has no private key stored in the vault.'), ['"prod" has no private key stored in the vault.']);
+  assert.deepEqual(loadFailureWarnings(''), [], 'a declined PIN prompt has been said already');
 });

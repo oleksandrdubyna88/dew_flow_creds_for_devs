@@ -55,6 +55,9 @@
 > - **`Connect SSH` prefers the agent only for a key the agent serves**; a key path on disk and a
 >   password are unchanged.
 
+> **Pointer, 2026-10-20 (#197 E1.4).** This record says every use is confirmed. Since the ten-minute window shipped (see the deviations above) that is only true of *Allow once*: *Allow for 10 minutes* lets every use of that key sign without asking, and the prompt now also names the host key of a login to a current OpenSSH server. The texts were corrected in E1.4; the plan is
+> [PLAN_ssh_allow_longer_windows.md](PLAN_ssh_allow_longer_windows.md).
+
 ## Symptom
 
 A private key kept in the vault is written to disk (`0600`, owner-only ACL) every time `ssh -i` needs a

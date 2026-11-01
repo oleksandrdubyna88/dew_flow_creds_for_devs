@@ -71,6 +71,9 @@ const PUBLIC_SERVICE_ADDRESSES = new Map([
   ['gitlab.com', ['git']],
   ['bitbucket.org', ['git']],
   ['ssh.dev.azure.com', ['git']],
+  // Not a mailbox: OpenSSH names its protocol extensions under its own domain (its PROTOCOL file). Only
+  // the exact names this repository cites pass; anyone's address at openssh.com still fails.
+  ['openssh.com', ['publickey-hostbound-v00']],
 ]);
 
 const PLACEHOLDER_USERS = new Set([
@@ -324,6 +327,8 @@ function lineCases(secretWord) {
     [mail('ops', 'mail.x.com'), ['e-mail']],
     [`${mail('git', 'bitbucket.org')}:me/v.git, ${mail('git', 'ssh.dev.azure.com')}:v3/o/p/r, ${nix('', 'home', 'runner', 'work')}`, []],
     [`react${'@'}18.3.1 and actions/checkout${'@'}v4`, []],
+    [`method \`${mail('publickey-hostbound-v00', 'openssh.com')}\``, []],
+    [mail('jane.doe', 'openssh.com'), ['e-mail']],
     [`ssh ubuntu${'@'}${ip(10, 44, 3, 2)}`, ['private-ip']],
     [`host ${ip(172, 20, 1, 9)}`, ['private-ip']],
     [`${ip(192, 168, 7, 20)} is home`, ['private-ip']],

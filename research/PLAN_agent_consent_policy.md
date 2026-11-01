@@ -33,6 +33,9 @@
 > answered, 19 findings, 16 accepted and 3 rejected with reasons. §12 records what changed and why; the
 > two reversals of my own earlier text are in §1.1 and §5.1, and both were right.
 
+> **Pointer, 2026-10-20 (#197 E1.4).** D1 below keeps this policy off the SSH signature dialog, and "ask every time" here is the MCP door's policy. The SSH prompt is not "every time" either: it offers *Allow once*, *Allow for 10 minutes* and *Deny*, and a window covers every use of that key for ten minutes. The texts were corrected in E1.4; the plan is
+> [PLAN_ssh_allow_longer_windows.md](PLAN_ssh_allow_longer_windows.md).
+
 ## The symptom
 
 Every MCP call raises a modal. Not the first per session, not the first per entry — every single one.
