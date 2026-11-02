@@ -8,6 +8,9 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
+import { shortSocketRoot } from '../../scripts/lib/leftovers.cjs';
+import { MAX_UNIX_SOCKET_PATH, socketPathFor } from '../brokerListeners';
+import { agentSocketPath } from '../sshAgentServer';
 import { rawTempSites } from './tempSiteScan';
 
 // `out/test` and `src/test` are both two folders below `src_vs_code`.
@@ -42,6 +45,18 @@ const PLAIN_UNIT_FOLDERS = [
   'vpnWorld.ts',
 ];
 
+/**
+ * E2.1.S4: the tests that start a process or bind a Unix socket, and the two `*World.ts` helpers that make a storage folder. Their
+ * folders are made under the SHORT socket root, because a socket path must stay under 103 bytes on macOS.
+ */
+const PROCESS_AND_SOCKET_SITES = [
+  'brokerListeners.test.ts',
+  'brokerOriginDoor.test.ts',
+  'requestLife.test.ts',
+  'sshAgentServer.test.ts',
+  'sshAgentWorld.ts',
+];
+
 /** `file:line` of every line with a raw temp call, in the named files of this folder (a line with two calls is one site). */
 function sitesIn(files: readonly string[]): string[] {
   const sites = files.flatMap((file) => rawTempSites(fs.readFileSync(path.join(TESTS, file), 'utf8'), file).map((line) => `${file}:${line}`));
@@ -71,5 +86,32 @@ test('the scan does not mistake a word in a comment or a string for a call', () 
 test('every file the scan names exists and is read (a renamed file must not drop out of the scan)', () => {
   for (const file of PLAIN_UNIT_FOLDERS) {
     assert.ok(fs.statSync(path.join(TESTS, file)).size > 0, `${file} is not where the scan looks`);
+  }
+});
+
+test('the process and socket tests make no temp path of their own', () => {
+  assert.deepEqual(sitesIn(PROCESS_AND_SOCKET_SITES), []);
+});
+
+test('no unit-test file names a folder in the legacy `agent` form: a name without the owner segment is never collected', () => {
+  const needle = 'testsTo' + 'Delete-agent-'; // spelled in two pieces: this file must not be the one it finds
+  const files = fs.readdirSync(TESTS).filter((name) => name.endsWith('.ts'));
+  const legacy = files.filter((name) => fs.readFileSync(path.join(TESTS, name), 'utf8').includes(needle));
+
+  assert.ok(files.length > 100, 'the scan reads the whole test folder');
+  assert.deepEqual(legacy, []);
+});
+
+test('the longest socket path an owned folder under the short root can have fits the unix limit, with the longest owner and a ten-digit pid', () => {
+  // The owner token `w` + 10 digits is the longest the grammar allows, `agent` the longest `what` a socket folder takes (5), the
+  // id six characters. macOS caps a socket path at 103 bytes and its TMPDIR is about 49 characters, which is why the folder is
+  // under `/tmp` and not under the temp root; this is asserted on every OS so a longer owner, id or pid is red on Linux too.
+  const folder = path.join(shortSocketRoot(), 'testsToDelete-w4294967295-creds-agent-abcdef');
+  const broker = socketPathFor(folder, 4294967295, 'linux');
+  const agent = agentSocketPath(folder, 'linux', 4294967295);
+
+  assert.ok(broker !== undefined, `the broker's socket path is refused as too long: ${folder}`);
+  for (const socket of [broker, agent]) {
+    assert.ok(Buffer.byteLength(socket) <= MAX_UNIX_SOCKET_PATH, `${socket} is ${Buffer.byteLength(socket)} bytes, the limit is ${MAX_UNIX_SOCKET_PATH}`);
   }
 });
