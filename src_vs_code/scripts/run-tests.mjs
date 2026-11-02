@@ -87,10 +87,23 @@ async function loadHelpers() {
   return { helper, tree };
 }
 
+/** A root as the file system names it: symlinks resolved once (macOS: `/tmp` is `/private/tmp`), so two spellings of one folder are one root [E2.1 code2 3]. */
+function canonical(root) {
+  try {
+    return fs.realpathSync(root);
+  } catch {
+    return path.resolve(root); // a root that is not there is audited as the empty folder it is
+  }
+}
+
+/** The roots as canonical paths, each once. */
+export function canonicalRoots(roots) {
+  return [...new Set(roots.map(canonical))];
+}
+
 /** The roots a sweep and the audit read: the temp root, and the short socket root when it is another folder. */
 export function rootsOf(helper) {
-  const roots = [helper.tempRoot(), helper.shortSocketRoot()];
-  return roots.filter((root, index) => roots.findIndex((other) => path.resolve(other) === path.resolve(root)) === index);
+  return canonicalRoots([helper.tempRoot(), helper.shortSocketRoot()]);
 }
 
 /** The start-of-run sweep is not wired to this repository's token yet (the mounted sweep serves the reference's own token only). */
@@ -139,25 +152,33 @@ function isDirectory(target) {
 
 /**
  * What the run left. `claimed`: every folder and orphan claim whose claim is EXACTLY `record` and whose folder passes the
- * kernel-owner key; `unmarked`: owner-form folders with no claim, which nobody's helper knows (listed, never touched). A claim
- * of any other record — another run, a harness, a C# executable — is in neither list.
+ * kernel-owner key; `unmarked`: owner-form folders with no claim, which nobody's helper knows (listed, never touched); `foreign`:
+ * claim files the caller does not own — never read, removed or counted [E2.1 code2 0]. The key is asked of the CLAIM file itself,
+ * before anything is read from it, whether or not the folder is still there (an orphan has none). A claim of any other record —
+ * another run, a harness, a C# executable — is in none of the lists. `mine` is a seam (a second uid cannot be had in a test).
  */
-export function auditRoots(helper, roots, record) {
-  const claimed = [];
-  const unmarked = [];
+export function auditRoots(helper, roots, record, mine = helper.isMine) {
+  const found = { claimed: [], unmarked: [], foreign: [] };
   for (const root of roots) {
-    for (const target of candidates(helper, root)) {
-      const there = fs.existsSync(target);
-      if (there && (!isDirectory(target) || !helper.isMine(target))) continue;
-      const owner = helper.readOwner(target, 'folder');
-      if (owner === null) {
-        if (there) unmarked.push(target);
-      } else if (owner.unreadable !== true && helper.formatOwner(owner) === record) {
-        claimed.push(target);
-      }
-    }
+    for (const target of candidates(helper, root)) sortOne(helper, target, record, mine, found);
   }
-  return { claimed, unmarked };
+  return found;
+}
+
+function sortOne(helper, target, record, mine, found) {
+  const there = fs.existsSync(target);
+  if (there && (!isDirectory(target) || !mine(target))) return;
+  const claim = `${target}.owner`;
+  if (fs.existsSync(claim) && !mine(claim)) {
+    found.foreign.push(claim);
+    return;
+  }
+  const owner = helper.readOwner(target, 'folder', { mine });
+  if (owner === null) {
+    if (there) found.unmarked.push(target);
+  } else if (owner.unreadable !== true && helper.formatOwner(owner) === record) {
+    found.claimed.push(target);
+  }
 }
 
 /** Remove what the run claimed, by its exact name; the helper never throws and says once when it gives up. */
@@ -178,9 +199,10 @@ function refusalOf(ended) {
  * exception is a tree with no handle (Windows) and nothing claimed: there is nothing to remove or list, and failing every Windows
  * run for a confirmation the platform cannot give would make the suite unusable there.
  */
-function finishAudit({ helper, roots, record, ended, code, write }) {
-  const { claimed, unmarked } = auditRoots(helper, roots, record);
+function finishAudit({ helper, roots, record, ended, code, write, mine }) {
+  const { claimed, unmarked, foreign } = auditRoots(helper, roots, record, mine);
   for (const target of unmarked) write(`run-tests: unmarked: ${target} — an owner-form folder with no claim, left alone`);
+  for (const target of foreign) write(`run-tests: foreign: ${target} — a claim another user owns, never read or removed`);
   if (ended.ended) removeClaimed(helper, claimed);
   const failsAnyway = !ended.ended && ended.reason !== 'no-handle';
   if (claimed.length === 0 && !failsAnyway) return code;
@@ -235,7 +257,7 @@ let active = false;
 /**
  * Sweep, run the suite in a tree of its own, end the tree, audit, and return the code to leave with. The seams are for tests:
  * `spawn` (starts the coordinator), `sweep`, `roots`, `record` (the string exported as `TESTSTODELETE_RUN`), `confirm` (the
- * answer to "is the tree ended"), `survivors` (what is still alive outside the group), `settleTimeoutMs`, `timeoutMs`, `stdio`,
+ * answer to "is the tree ended"), `survivors` (what is still alive outside the group), `pidAlive`, `mine` (the kernel-owner question), `settleTimeoutMs`, `timeoutMs`, `stdio`,
  * `write` (one line to stderr).
  */
 export async function runWithAudit(extra = [], seams = {}) {
@@ -263,7 +285,7 @@ async function runOnce(extra, seams, write) {
     return 1;
   }
   const { helper, tree } = helpers;
-  const roots = seams.roots ?? rootsOf(helper);
+  const roots = seams.roots === undefined ? rootsOf(helper) : canonicalRoots(seams.roots);
   sweepAll({ sweep: seams.sweep ?? sweepNotWired, roots, write });
   const record = seams.record ?? helper.formatOwner(helper.thisOwner()); // held ONCE: exported below, compared by the audit
   const env = { ...process.env, TESTSTODELETE_RUN: record };
@@ -272,9 +294,9 @@ async function runOnce(extra, seams, write) {
   const result = await wait(child, { timeoutMs, tree, write });
   stopForwarding();
   if (result.error) write(`run-tests: ${result.error.message}`);
-  const ended = await tree.endTree(child, { confirm: seams.confirm, survivors: seams.survivors, record, settleTimeoutMs: seams.settleTimeoutMs });
-  const code = exitCodeOf(result);
-  return finishAudit({ helper, roots, record, ended, code: result.timedOut && code === 0 ? 124 : code, write });
+  const ended = await tree.endTree(child, { confirm: seams.confirm, survivors: seams.survivors, pidAlive: seams.pidAlive, record, since: helper.thisOwner().start, startOf: (pid) => helper.processProbe(pid).start, settleTimeoutMs: seams.settleTimeoutMs });
+  // A run that timed out exits 124 whatever the coordinator's own code or signal was: the verdict is "ended by the runner" [E2.1 code2 8].
+  return finishAudit({ helper, roots, record, ended, code: result.timedOut ? 124 : exitCodeOf(result), write, mine: seams.mine });
 }
 
 const invokedDirectly = (() => {

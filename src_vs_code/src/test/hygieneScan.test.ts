@@ -1,5 +1,5 @@
 import * as assert from 'node:assert/strict';
-import { stored } from '../storedSecret';
+import { type StoredSecret, stored } from '../storedSecret';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -30,6 +30,7 @@ after(() => scope.close());
  */
 
 type Scan = typeof import('../hygieneScan');
+type ScanReads = import('../hygieneScan').ScanReads;
 
 interface World {
   mod: Scan;
@@ -144,24 +145,23 @@ test('workspace .env files are read with the relative path the report will show'
   assert.deepEqual(found, [{ path: 'api/.env', content: 'AWS_SECRET_ACCESS_KEY=abc' }]);
 });
 
-function storageOf(entities: { id: string; name: string; password?: string; connection?: string }[]): unknown {
+/** A vault of entities that holds the given secrets: every field of every record is written out, and the secrets are minted as the keychain mints them. */
+function storageOf(entities: { id: string; name: string; password?: string; connection?: string }[]): ScanReads {
+  const account: StoredAccount = { accountId: 'a1', email: 'me@corp.com', provider: 'google' };
+  const secret = (read: (e: { password?: string; connection?: string }) => string | undefined) => (_account: string, id: string): Promise<StoredSecret | undefined> =>
+    Promise.resolve(stored(read(entities.find((e) => e.id === id) ?? {})));
   return {
-    getAccounts: (): StoredAccount[] => [
-      { accountId: 'a1', email: 'me@corp.com', provider: 'google' } as StoredAccount,
-    ],
-    getNodes: (): TreeNode[] =>
-      entities.map((e) => ({ id: e.id, name: e.name, type: 'entity' }) as TreeNode),
-    getPassword: (_a: string, id: string): Promise<string | undefined> =>
-      Promise.resolve(entities.find((e) => e.id === id)?.password),
-    getDbConnection: (_a: string, id: string): Promise<string | undefined> =>
-      Promise.resolve(entities.find((e) => e.id === id)?.connection),
+    getAccounts: (): StoredAccount[] => [account],
+    getNodes: (): TreeNode[] => entities.map((e): TreeNode => ({ id: e.id, name: e.name, type: 'entity' })),
+    getPassword: secret((e) => e.password),
+    getDbConnection: secret((e) => e.connection),
   };
 }
 
 test('every stored password is collected with the entity it belongs to', async () => {
   const w = world({});
   const collected = await w.mod.collectPasswords(
-    storageOf([{ id: 'e1', name: 'prod', password: 'hunter2' }]) as never,
+    storageOf([{ id: 'e1', name: 'prod', password: 'hunter2' }])
   );
 
   assert.deepEqual(collected, [
@@ -173,7 +173,7 @@ test('a password inside a database connection string is weighed too', async () =
   // It is a password like any other, and it is the one people forget is stored at all.
   const w = world({});
   const collected = await w.mod.collectPasswords(
-    storageOf([{ id: 'e1', name: 'db', connection: 'postgresql://me:hunter2@h:5432/app' }]) as never,
+    storageOf([{ id: 'e1', name: 'db', connection: 'postgresql://me:hunter2@h:5432/app' }])
   );
 
   assert.deepEqual(collected.map((c) => [c.field, c.value]), [['database password', 'hunter2']]);
@@ -181,7 +181,7 @@ test('a password inside a database connection string is weighed too', async () =
 
 test('an entity with no secret contributes nothing to weigh', async () => {
   const w = world({});
-  const collected = await w.mod.collectPasswords(storageOf([{ id: 'e1', name: 'empty' }]) as never);
+  const collected = await w.mod.collectPasswords(storageOf([{ id: 'e1', name: 'empty' }]));
 
   assert.deepEqual(collected, []);
 });
@@ -194,7 +194,7 @@ test('a damaged wrap is not graded as a password by the health report', async ()
   assert.equal(readSecret(stored(damaged)).kind, 'corrupt', 'the fixture is what the parser calls damaged');
   const w = world({});
   const collected = await w.mod.collectPasswords(
-    storageOf([{ id: 'e1', name: 'prod', password: damaged }, { id: 'e2', name: 'db', connection: damaged }]) as never,
+    storageOf([{ id: 'e1', name: 'prod', password: damaged }, { id: 'e2', name: 'db', connection: damaged }])
   );
 
   assert.deepEqual(collected.map((c) => [c.entityName, c.field]), [], 'a damaged wrap was graded as a password');
@@ -206,7 +206,7 @@ test('a woven password is not graded as a strong, unique password', async () => 
   assert.equal(read.kind === 'value' && read.woven, true, 'the fixture is what the parser calls woven');
   const w = world({});
   const collected = await w.mod.collectPasswords(
-    storageOf([{ id: 'e1', name: 'woven', password: woven }, { id: 'e2', name: 'plain', password: 'hunter2' }]) as never,
+    storageOf([{ id: 'e1', name: 'woven', password: woven }, { id: 'e2', name: 'plain', password: 'hunter2' }])
   );
 
   assert.deepEqual(collected.map((c) => [c.entityName, c.value]), [['plain', 'hunter2']], 'a woven pair was graded as a password');
@@ -229,7 +229,7 @@ test('a connection string that is woven, sealed or damaged is never graded as a 
       { id: 'e2', name: 'sealed', connection: sealed },
       { id: 'e3', name: 'damaged', connection: damaged },
       { id: 'e4', name: 'readable', connection: 'postgresql://me:hunter2@h:5432/app' },
-    ]) as never,
+    ])
   );
 
   assert.deepEqual(collected.map((c) => [c.entityName, c.field, c.value]), [['readable', 'database password', 'hunter2']], 'a connection string that is not a readable value was graded as a password');
@@ -237,14 +237,14 @@ test('a connection string that is woven, sealed or damaged is never graded as a 
 
 test('folders are not mistaken for entities', async () => {
   const w = world({});
-  const storage = {
-    getAccounts: (): StoredAccount[] => [{ accountId: 'a1', email: 'me@corp.com' } as StoredAccount],
-    getNodes: (): TreeNode[] => [{ id: 'f1', name: 'Team', type: 'folder' } as TreeNode],
+  const storage: ScanReads = {
+    getAccounts: (): StoredAccount[] => [{ accountId: 'a1', email: 'me@corp.com', provider: 'google' }],
+    getNodes: (): TreeNode[] => [{ id: 'f1', name: 'Team', type: 'folder' }],
     getPassword: (): Promise<undefined> => Promise.reject(new Error('never asked')),
     getDbConnection: (): Promise<undefined> => Promise.reject(new Error('never asked')),
   };
 
-  assert.deepEqual(await w.mod.collectPasswords(storage as never), []);
+  assert.deepEqual(await w.mod.collectPasswords(storage), []);
 });
 
 test('the breach check is OFF unless the setting says otherwise — and asks nothing', async () => {
@@ -277,7 +277,7 @@ test('the modal states what actually leaves the machine, not just that something
 test('a scan with no passwords never asks about breaches', async () => {
   // Nothing to check is not a decision to put in front of anybody.
   const w = world({ settings: { breachCheck: true }, answers: ['Check them'] });
-  const result = await w.mod.runHygieneScan(storageOf([]) as never);
+  const result = await w.mod.runHygieneScan(storageOf([]));
 
   assert.deepEqual(w.dialogs, []);
   assert.ok(result.markdown.length > 0, 'and the report still renders');
@@ -288,7 +288,7 @@ test('a full scan renders a report and finds the unencrypted key on disk', async
   fs.writeFileSync(path.join(sshDir(w), 'id_ed25519'), UNENCRYPTED);
 
   const result = await w.mod.runHygieneScan(
-    storageOf([{ id: 'e1', name: 'prod', password: 'password' }]) as never,
+    storageOf([{ id: 'e1', name: 'prod', password: 'password' }])
   );
 
   assert.ok(result.findings.length > 0, 'a weak password and a bare key are both findings');
@@ -300,7 +300,7 @@ test('a breach check that was never confirmed leaves the report saying so', asyn
   // clean-looking report means two different things.
   const w = world({ settings: {} });
   const withPasswords = await w.mod.runHygieneScan(
-    storageOf([{ id: 'e1', name: 'prod', password: 'Tr0ub4dor&3xyz' }]) as never,
+    storageOf([{ id: 'e1', name: 'prod', password: 'Tr0ub4dor&3xyz' }])
   );
 
   assert.ok(withPasswords.markdown.length > 0);
