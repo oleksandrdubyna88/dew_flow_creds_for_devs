@@ -26,6 +26,7 @@ export interface Seams {
   record?: string;
   confirm?: (tree?: unknown) => Promise<Ended>;
   survivors?: (query: { rootPid?: number; record: string }) => number[] | Promise<number[]>;
+  settleTimeoutMs?: number;
   timeoutMs?: number;
   stdio?: string;
   write?: (line: string) => void;

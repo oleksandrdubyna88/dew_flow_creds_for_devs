@@ -88,6 +88,7 @@ test('survivors that cannot be accounted for keep the audit at list-and-fail', a
     sweep: nothingSwept,
     confirm: ENDED,
     survivors: () => [NO_SUCH_PID],
+    settleTimeoutMs: 120,
     write: log.write,
   });
 

@@ -1,3 +1,5 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import * as ts from 'typescript';
 
 /**
@@ -35,9 +37,22 @@ function calleeName(callee: ts.Expression): string {
 const isTempCall = (callee: ts.Expression): boolean => TEMP_CALLS.has(calleeName(callee));
 
 /**
- * SKELETON of the [E2.1 code 11] discovery: every `.ts` file under `root`, as paths relative to it, minus the exclusions. It finds
- * nothing yet; `leftoversSites.test.ts` is written against it and watched failing first.
+ * Every `.ts` file under `root`, as paths relative to it (with `/`), minus the exclusions: an entry of `excluded` is a file's
+ * relative path or a folder's, and takes everything below the folder. A new test file is read the day it is written, with no
+ * list to extend [E2.1 code 11].
  */
-export function discoverSources(_root: string, _excluded: ReadonlyMap<string, string>): string[] {
-  return [];
+export function discoverSources(root: string, excluded: ReadonlyMap<string, string>): string[] {
+  const found: string[] = [];
+  const walk = (relative: string): void => {
+    for (const entry of fs.readdirSync(path.join(root, relative), { withFileTypes: true })) {
+      visit(relative === '' ? entry.name : `${relative}/${entry.name}`, entry);
+    }
+  };
+  const visit = (child: string, entry: fs.Dirent): void => {
+    if (excluded.has(child)) return;
+    if (entry.isDirectory()) walk(child);
+    else if (entry.name.endsWith('.ts')) found.push(child);
+  };
+  walk('');
+  return found.sort();
 }

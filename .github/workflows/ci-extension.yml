@@ -185,7 +185,7 @@ jobs:
 
   # The runner's kill path on Windows. `scripts/run-tests.mjs` ends the WHOLE tree of the `node --test` it started
   # and proves it ended before its audit removes anything; on Windows that is the reference's job-object supervisor
-  # (PowerShell 7, preinstalled on the hosted image), a mechanism no Linux run can observe. The two test files below
+  # (PowerShell 7, preinstalled on the hosted image), a mechanism no Linux run can observe. The test files below
   # are the wrapper's and the runner's own: the second starts a REAL `node --test` whose suite kills itself and leaves
   # a descendant behind, then asserts the descendant is gone and its folder removed. The extension suite as a whole
   # still runs on Ubuntu only (`build-test`).
@@ -218,4 +218,4 @@ jobs:
         run: npm run compile
 
       - name: Runner lifecycle (wrapper and runner scenarios)
-        run: node --test out/test/leftoversWrapper.test.js out/test/leftoversRunner.test.js
+        run: node --test out/test/leftoversWrapper.test.js out/test/leftoversRunner.test.js out/test/leftoversRunnerGate.test.js
