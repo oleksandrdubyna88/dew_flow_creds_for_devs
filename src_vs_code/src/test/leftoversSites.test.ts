@@ -1,9 +1,9 @@
 // The unit tests make their scratch through the leftovers wrapper (`scripts/lib/leftovers.cjs`) or not at all. A test that
 // calls `os.tmpdir()` or `mkdtemp` itself makes a folder nothing names, claims or removes on a failed assertion, and which
-// the next run cannot tell from a stranger's — so each migrated file is scanned for a raw temp call, story by story.
+// the next run cannot tell from a stranger's — so every file under the test tree is scanned for a raw temp call.
 //
 // A scan that matches nothing passes forever (testing.md), so the prohibition has companions: the scan must find a planted
-// raw call, must NOT find a word in a comment or a string, and must read every file it names.
+// raw call, must NOT find a word in a comment or a string, and must discover the whole tree (the known files are in it).
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -11,60 +11,42 @@ import { test } from 'node:test';
 import { shortSocketRoot } from '../../scripts/lib/leftovers.cjs';
 import { MAX_UNIX_SOCKET_PATH, socketPathFor } from '../brokerListeners';
 import { agentSocketPath } from '../sshAgentServer';
-import { rawTempSites } from './tempSiteScan';
+import { discoverSources, rawTempSites } from './tempSiteScan';
 
 // `out/test` and `src/test` are both two folders below `src_vs_code`.
 const TESTS = path.resolve(__dirname, '..', '..', 'src', 'test');
 
-/** E2.1.S3: the plain unit folders — every site that makes a folder and holds no socket. */
-const PLAIN_UNIT_FOLDERS = [
-  'archiveDownload.test.ts',
-  'agentUseActions.test.ts',
-  'arrivalPin.test.ts',
-  'brokerAbandoned.test.ts',
-  'brokerEndpointSweep.test.ts',
-  'cliEndpoint.test.ts',
-  'configSnippet.test.ts',
-  'connectionOptions.test.ts',
-  'crossWindowWrites.test.ts',
-  'dependencyChain.test.ts',
-  'diagnosticLog.test.ts',
-  'gitTransport.test.ts',
-  'gitTransportSerial.test.ts',
-  'hostKeyPin.test.ts',
-  'hostKeyTrust.test.ts',
-  'hygieneScan.test.ts',
-  'keyInstaller.test.ts',
-  'materializedKeys.test.ts',
-  'pinClickPaths.test.ts',
-  'sshDefaultProbe.test.ts',
-  'sshExecRunner.test.ts',
-  'sshUseActions.test.ts',
-  'wslMcpCheckHost.test.ts',
-  'vpnGoneRequest.test.ts',
-  'vpnWorld.ts',
-];
-
 /**
- * E2.1.S4: the tests that start a process or bind a Unix socket, and the two `*World.ts` helpers that make a storage folder. Their
- * folders are made under the SHORT socket root, because a socket path must stay under 103 bytes on macOS.
+ * What the scan does NOT read, each with its reason. Everything else under the test tree is scanned by default: a new test file
+ * is covered the day it is written, with no list to remember to extend [E2.1 code 11].
  */
-const PROCESS_AND_SOCKET_SITES = [
-  'brokerListeners.test.ts',
-  'brokerOriginDoor.test.ts',
-  'requestLife.test.ts',
-  'sshAgentServer.test.ts',
-  'sshAgentWorld.ts',
-];
+const EXCLUDED = new Map<string, string>([
+  ['tempSiteScan.ts', 'the scan itself: it names the calls it looks for'],
+  ['fixtures', 'sample programs that typedFixtures.test.ts compiles to prove the type checker refuses them; not tests of this repository'],
+]);
 
-/** `file:line` of every line with a raw temp call, in the named files of this folder (a line with two calls is one site). */
-function sitesIn(files: readonly string[]): string[] {
-  const sites = files.flatMap((file) => rawTempSites(fs.readFileSync(path.join(TESTS, file), 'utf8'), file).map((line) => `${file}:${line}`));
-  return [...new Set(sites)];
+/** `file:line` of every line with a raw temp call, in the discovered files (a line with two calls is one site). */
+function sites(): string[] {
+  const found = discoverSources(TESTS, EXCLUDED).flatMap((file) => rawTempSites(fs.readFileSync(path.join(TESTS, file), 'utf8'), file).map((line) => `${file}:${line}`));
+  return [...new Set(found)];
 }
 
-test('the plain unit folders make no temp path of their own', () => {
-  assert.deepEqual(sitesIn(PLAIN_UNIT_FOLDERS), []);
+test('no test and no test helper makes a temp path of its own: every file under the test tree is scanned', () => {
+  assert.deepEqual(sites(), []);
+});
+
+test('the discovery reads the whole test tree: the known files are in it, the excluded ones are not, each exclusion has a reason and is real', () => {
+  const found = discoverSources(TESTS, EXCLUDED);
+
+  for (const known of ['brokerListeners.test.ts', 'sshAgentServer.test.ts', 'vpnWorld.ts', 'sshAgentWorld.ts', 'leftoversSites.test.ts']) {
+    assert.ok(found.includes(known), `${known} is not discovered`);
+  }
+  assert.ok(found.length > 400, `the discovery found only ${found.length} files`);
+  assert.equal(found.some((file) => file === 'tempSiteScan.ts' || file.startsWith('fixtures/')), false);
+  for (const [entry, reason] of EXCLUDED) {
+    assert.ok(reason.split(/\s+/).length >= 3, `the exclusion of ${entry} needs a reason`);
+    assert.ok(fs.existsSync(path.join(TESTS, entry)), `the exclusion ${entry} names nothing: remove it`);
+  }
 });
 
 // The planted samples are assembled from pieces: this file is read by the repository's own guard, which reads text and would
@@ -86,16 +68,6 @@ test('the scan does not mistake a word in a comment or a string for a call', () 
   const prose = [`// os.${TMP}() is what the old code called`, `const note = '${MK}Sync(os.${TMP}())';`, `/* ${TMP}() */`].join('\n');
 
   assert.deepEqual(rawTempSites(prose), []);
-});
-
-test('every file the scan names exists and is read (a renamed file must not drop out of the scan)', () => {
-  for (const file of PLAIN_UNIT_FOLDERS) {
-    assert.ok(fs.statSync(path.join(TESTS, file)).size > 0, `${file} is not where the scan looks`);
-  }
-});
-
-test('the process and socket tests make no temp path of their own', () => {
-  assert.deepEqual(sitesIn(PROCESS_AND_SOCKET_SITES), []);
 });
 
 test('no unit-test file names a folder in the legacy `agent` form: a name without the owner segment is never collected', () => {

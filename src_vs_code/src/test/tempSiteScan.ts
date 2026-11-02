@@ -33,3 +33,11 @@ function calleeName(callee: ts.Expression): string {
 }
 
 const isTempCall = (callee: ts.Expression): boolean => TEMP_CALLS.has(calleeName(callee));
+
+/**
+ * SKELETON of the [E2.1 code 11] discovery: every `.ts` file under `root`, as paths relative to it, minus the exclusions. It finds
+ * nothing yet; `leftoversSites.test.ts` is written against it and watched failing first.
+ */
+export function discoverSources(_root: string, _excluded: ReadonlyMap<string, string>): string[] {
+  return [];
+}
