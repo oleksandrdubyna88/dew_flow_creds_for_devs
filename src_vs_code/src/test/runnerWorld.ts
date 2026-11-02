@@ -25,6 +25,9 @@ export interface Found {
   unverified: string[];
 }
 export interface Seams {
+  hardBoundMs?: number;
+  platform?: string;
+  startedAt?: number;
   spawn?: Spawn;
   sweep?: (options: { repo: string; tmp: string }) => object;
   roots?: string[];
@@ -44,12 +47,51 @@ export interface Runner {
   timeoutFrom(env: Record<string, string | undefined>): number;
   DEFAULT_TIMEOUT_MS: number;
 }
+/** The process table as a scan reads it: who is whose parent, and which pids exist. */
+export interface Table {
+  children: Map<number, number[]>;
+  known: Set<number>;
+}
+/** A table of `pids`, each a child of pid 1 unless `edges` says otherwise (`[parent, child]`). */
+export function tableOf(pids: number[], edges: Array<[number, number]> = []): Table {
+  const children = new Map<number, number[]>();
+  for (const [parent, child] of edges) children.set(parent, [...(children.get(parent) ?? []), child]);
+  return { children, known: new Set([...pids, ...edges.flat()]) };
+}
+
+export interface ScanQuery {
+  rootPid?: number;
+  record: string;
+  platform?: string;
+  procRoot?: string;
+  since?: number;
+  startOf?: (pid: number) => number | undefined;
+  table?: () => Table;
+  psTimeoutMs?: number;
+  ours?: (name: string) => boolean;
+  pause?: (ms: number) => Promise<void>;
+}
 export interface TreeModule {
   confirmTreeEnded(
     tree: { root: number } | undefined,
-    options?: { timeoutMs?: number; stepMs?: number; maxStepMs?: number; probe?: () => boolean; count?: () => number; now?: () => number; pause?: (ms: number) => Promise<void> },
+    options?: { timeoutMs?: number; stepMs?: number; maxStepMs?: number; probe?: () => boolean; count?: () => number; now?: () => number; pause?: (ms: number) => Promise<void>; platform?: string },
   ): Promise<Ended>;
-  findSurvivors(query: { rootPid?: number; record: string; platform?: string; procRoot?: string; since?: number; startOf?: (pid: number) => number | undefined }): Found;
+  findSurvivors(query: ScanQuery): Promise<Found>;
+  endTree(
+    child: { pid?: number } | EventEmitter,
+    options?: {
+      confirm?: (tree?: unknown) => Promise<Ended>;
+      survivors?: (query: ScanQuery) => Found | Promise<Found>;
+      pidAlive?: (pid: number) => boolean;
+      kill?: (pid: number) => void;
+      killGroup?: () => void;
+      record?: string;
+      since?: number;
+      startOf?: (pid: number) => number | undefined;
+      platform?: string;
+      settleTimeoutMs?: number;
+    },
+  ): Promise<Ended & { cause?: string }>;
   startInJob(command: string, args: string[], options: { env: NodeJS.ProcessEnv; stdio?: string }, runFn?: () => Promise<unknown>): EventEmitter;
   SUPERVISOR_MAX_OUTPUT_BYTES: number;
 }
@@ -121,7 +163,7 @@ export const exists = (target: string): boolean => fs.existsSync(target);
 /** Is `pid` a process right now? `process.kill(pid, 0)` on POSIX; `tasklist` on Windows, where signal 0 is not a probe everywhere. */
 export function isAlive(pid: number): boolean {
   if (process.platform === 'win32') {
-    const answer = execFileSync('tasklist', ['/FI', `PID eq ${pid}`, '/NH', '/FO', 'CSV'], { encoding: 'utf8' });
+    const answer = execFileSync('tasklist', ['/FI', `PID eq ${pid}`, '/NH', '/FO', 'CSV'], { encoding: 'utf8', timeout: 30_000, killSignal: 'SIGKILL' });
     return answer.includes(`"${pid}"`);
   }
   try {

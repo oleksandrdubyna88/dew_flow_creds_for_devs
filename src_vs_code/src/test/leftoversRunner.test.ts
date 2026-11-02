@@ -8,7 +8,7 @@
 // The tests that start a REAL `node --test` run on Linux and on the `windows-latest` job of `ci-extension.yml` (the
 // extension job is ubuntu-only otherwise): the kill path is the one place a Windows-only defect can hide.
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
@@ -244,15 +244,14 @@ test('without the mount the runner refuses before node --test starts, and names 
   const marker = path.join(root, 'ran.test.cjs');
   fs.writeFileSync(marker, `require('node:fs').writeFileSync(${JSON.stringify(path.join(root, 'ran'))}, 'x');`);
 
-  let output = '';
-  let status: number | null = 0;
-  try {
-    output = execFileSync(process.execPath, [path.join(scripts, 'run-tests.mjs'), marker], { encoding: 'utf8', stdio: 'pipe', env: { ...process.env, ...WITHOUT_TEST_CONTEXT } });
-  } catch (error) {
-    const failure = error as { status: number | null; stderr: string };
-    status = failure.status;
-    output = failure.stderr;
-  }
+  const run = spawnSync(process.execPath, [path.join(scripts, 'run-tests.mjs'), marker], {
+    encoding: 'utf8',
+    timeout: 60_000,
+    killSignal: 'SIGKILL',
+    env: { ...process.env, ...WITHOUT_TEST_CONTEXT },
+  });
+  const status = run.status;
+  const output = run.stderr;
 
   assert.equal(status, 1);
   assert.match(output, /git submodule update --init \.claude\/rules\/shared/);

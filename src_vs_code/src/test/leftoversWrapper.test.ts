@@ -116,6 +116,8 @@ test('a test that fails still removes its folder and its claim', async () => {
     // it reports to that parent and exits 0 whatever happened.
     const run = spawnSync(process.execPath, ['--test', file], {
       encoding: 'utf8',
+      timeout: 120_000,
+      killSignal: 'SIGKILL',
       env: { ...process.env, NODE_TEST_CONTEXT: undefined, WRAPPER_TEST_PARENT: parent, WRAPPER_TEST_PATH: where, TESTSTODELETE_RUN: '' },
     });
 
@@ -179,7 +181,7 @@ test('with the mount missing the wrapper refuses and names the command that rest
   fs.mkdirSync(lib, { recursive: true });
   fs.copyFileSync(WRAPPER, path.join(lib, 'leftovers.cjs'));
 
-  const run = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(path.join(lib, 'leftovers.cjs'))})`], { encoding: 'utf8' });
+  const run = spawnSync(process.execPath, ['-e', `require(${JSON.stringify(path.join(lib, 'leftovers.cjs'))})`], { encoding: 'utf8', timeout: 60_000, killSignal: 'SIGKILL' });
 
   assert.notEqual(run.status, 0, 'a missing mount is a refusal, not a silent pass');
   assert.match(run.stderr, /git submodule update --init \.claude\/rules\/shared/);

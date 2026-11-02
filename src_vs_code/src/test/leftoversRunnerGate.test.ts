@@ -12,10 +12,14 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import { ownedDir, processProbe, tempRoot, thisOwner } from '../../scripts/lib/leftovers.cjs';
 import {
-  ENDED, RECORD, WRAPPER, exists, isAlive, lines, me, nothingSwept, plant, privateRoot, processTree, runner, suite, withEnv,
+  ENDED, RECORD, WRAPPER, exists, isAlive, lines, me, nothingSwept, plant, privateRoot, processTree, runner, suite, tableOf, withEnv,
 } from './runnerWorld';
 
 const posixOnly = process.platform === 'win32' ? { skip: 'process groups and sessions are POSIX; Windows has the job-object supervisor' } : {};
+/** The environment marker and the fake /proc are Linux's: on macOS the scan has no environment to read and fails closed (see the darwin scenario). */
+const linuxOnly = process.platform === 'linux' ? {} : { skip: 'reads /proc and the Linux environment marker; macOS lists and fails instead (the darwin scenario)' };
+/** A mode-0 file is still readable by root, so the scenarios that rely on EACCES skip under it. */
+const blindOnly = process.platform === 'linux' && process.getuid?.() !== 0 ? {} : { skip: 'needs Linux and a caller that is not root: mode 0 stops only the others' };
 
 /** A pid no process can have: the kernel never hands out more than 2^22 on a 64-bit Linux. */
 const NO_SUCH_PID = 4_194_305;
@@ -56,7 +60,7 @@ function assertBoundary(work: string, pid: number, said: string[]): void {
   assert.ok(said.some((line) => line.includes('(not removed:')), `a preserved folder must be reported: ${said.join(' | ')}`);
 }
 
-test('a descendant that left the process group is ended before any removal, or the folder is kept and the audit fails', posixOnly, async (t) => {
+test('a descendant that left the process group is ended before any removal, or the folder is kept and the audit fails', linuxOnly, async (t) => {
   const { runWithAudit } = await runner();
   const root = privateRoot(t);
   const work = path.join(root, 'work');
@@ -327,7 +331,7 @@ test('[E2.1 code2 0] an orphan claim the caller does not own is listed and never
 
   assert.equal(code, 0, 'a claim that is not ours is not a folder this run left');
   assert.ok(exists(orphan), 'another user\'s claim is never touched');
-  assert.ok(log.seen.some((line) => line.includes('foreign:') && line.includes(orphan)), log.seen.join(' | '));
+  assert.ok(log.seen.some((line) => line.includes('foreign:') && line.includes(orphan) && line.includes('does not fail this run') && /uid \d+/.test(line)), log.seen.join(' | '));
 });
 
 test('[E2.1 code2 0] a folder whose claim is another user\'s is kept too, even when the folder is ours and the text names this run', async (t) => {
@@ -353,7 +357,7 @@ function sleeper(value: string): ReturnType<typeof spawn> {
   return spawn(process.execPath, ['-e', 'setInterval(() => undefined, 1000)'], { stdio: 'ignore', env: { ...process.env, TESTSTODELETE_RUN: value } });
 }
 
-test('[E2.1 code2 1] the marker is matched by the whole entry: the record as a prefix of a longer value, or inside another name, is not this run', posixOnly, async () => {
+test('[E2.1 code2 1] the marker is matched by the whole entry: the record as a prefix of a longer value, or inside another name, is not this run', linuxOnly, async () => {
   const tree = await processTree();
   const exact = sleeper(RECORD);
   const longer = sleeper(`${RECORD}9`);
@@ -361,7 +365,7 @@ test('[E2.1 code2 1] the marker is matched by the whole entry: the record as a p
   try {
     await new Promise((resolve) => setTimeout(resolve, 300)); // the three have started and their environments are readable
 
-    const found = tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'linux', since: thisOwner().start, startOf: (pid) => processProbe(pid).start });
+    const found = await tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'linux', since: thisOwner().start, startOf: (pid) => processProbe(pid).start });
 
     assert.deepEqual(found.pids, [exact.pid], 'only the process whose entry is exactly TESTSTODELETE_RUN=<record>');
     assert.deepEqual(found.unverified, []);
@@ -398,7 +402,7 @@ test('[E2.1 code2 3] a root given as a symlink is audited on its canonical path'
   assert.ok(log.seen.some((line) => line.includes(fs.realpathSync(real)) && line.includes(dir)), `the line names the canonical path: ${log.seen.join(' | ')}`);
 });
 
-test('[E2.1 code2 4] an unreadable /proc is "cannot confirm" on the marker path, never a throw — and the parent-pid chain still runs', posixOnly, async () => {
+test('[E2.1 code2 4] an unreadable /proc is "cannot confirm" on the marker path, never a throw — and the parent-pid chain still runs', linuxOnly, async () => {
   const tree = await processTree();
   const parent = spawn(
     process.execPath,
@@ -408,7 +412,7 @@ test('[E2.1 code2 4] an unreadable /proc is "cannot confirm" on the marker path,
   try {
     await new Promise((resolve) => setTimeout(resolve, 400));
 
-    const found = tree.findSurvivors({ rootPid: parent.pid, record: RECORD, platform: 'linux', procRoot: path.join(tempRoot(), 'no-such-proc') });
+    const found = await tree.findSurvivors({ rootPid: parent.pid, record: RECORD, platform: 'linux', procRoot: path.join(tempRoot(), 'no-such-proc') });
 
     assert.ok(found.unverified.length > 0, 'the marker path says it could not look');
     assert.equal(found.pids.length, 1, 'the chain below the root was still walked: the grandchild is found');
@@ -495,22 +499,22 @@ function blindProc(scope: Parameters<typeof ownedDir>[0]): string {
   return proc;
 }
 
-test('[E2.1 code2 4] a process of ours that started BEFORE the run and cannot be read is not a doubt: it cannot be a descendant', posixOnly, async (t) => {
+test('[E2.1 code2 4] a process of ours that started BEFORE the run and cannot be read is not a doubt: it cannot be a descendant', blindOnly, async (t) => {
   const tree = await processTree();
   const proc = blindProc(t);
 
-  const older = tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'linux', procRoot: proc, since: 1_000_000, startOf: () => 999_000 });
+  const older = await tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'linux', procRoot: proc, table: () => tableOf([4242]), since: 1_000_000, startOf: () => 999_000 });
 
   assert.deepEqual(older, { pids: [], unverified: [] });
 });
 
-test('[E2.1 code2 4] a process of ours that started AFTER the run began, or whose start is unknown, and cannot be read, is unverified', posixOnly, async (t) => {
+test('[E2.1 code2 4] a process of ours that started AFTER the run began, or whose start is unknown, and cannot be read, is unverified', blindOnly, async (t) => {
   const tree = await processTree();
   const proc = blindProc(t);
 
-  const newer = tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'linux', procRoot: proc, since: 1_000_000, startOf: () => 1_000_005 });
-  const unknown = tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'linux', procRoot: proc, since: 1_000_000, startOf: () => undefined });
-  const undated = tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'linux', procRoot: proc });
+  const newer = await tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'linux', procRoot: proc, table: () => tableOf([4242]), since: 1_000_000, startOf: () => 1_000_005 });
+  const unknown = await tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'linux', procRoot: proc, table: () => tableOf([4242]), since: 1_000_000, startOf: () => undefined });
+  const undated = await tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'linux', procRoot: proc, table: () => tableOf([4242]) });
 
   for (const found of [newer, unknown, undated]) {
     assert.equal(found.pids.length, 0);
