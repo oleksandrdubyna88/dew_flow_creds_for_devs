@@ -155,19 +155,21 @@ sibling file `<folder>.owner` (never inside, because tests assert the exact cont
   The wait is bounded: 60 minutes, `RUN_TESTS_TIMEOUT_MS` overrides it, and a timeout that fires is reported before the tree
   is ended. One run at a time per process. **On Windows the audit removes nothing for now**: the reference's job supervisor
   gives no acknowledgment that its job is empty, so the audit lists and fails a run that left a claimed folder (a passing run
-  with nothing claimed stays passing); on macOS a session-leader orphan whose parent died is not seen.
+  with nothing claimed stays passing); **on macOS the survivor scan has no environment to read, so the audit lists and fails and removes nothing there**; where a record has no start time (macOS, Windows) only claims made since the runner started are removed, older ones are listed as `unproven:`.
 - **Where the collection guarantee holds.** `npm test` (and, with E2.2, `npm run itest:all`) sweep; a direct
   `node --test out/test/<file>.test.js` makes and removes its own scratch but does not sweep old leftovers — the next
   runner run, or the janitor, does. **On Windows the Node sweep collects nothing** until F16 closes: the reference lists
   `unverified:` there. The collector on Windows is the C# sweep of the xUnit executables (E2.3) or the janitor.
 - **Not wired yet: the start-of-run sweep.** The mounted `sweepLeftovers` is bound to the reference's own token
   (`leftovers-sweep.mjs:78`) and ignores `creds` folders (measured 2026-11-02), so the runner calls it through a `sweep`
-  seam whose default says so on one line per root. Collecting a killed run's folders waits for a decision recorded in
-  `todo/PLAN_test_leftovers_E2.md` (§ *E2.1 build record*).
+  seam whose default says so on one line per root. The fix (F22, `sweepLeftovers({ …, token })`) is merged in the
+  conventions repository but NOT released: the pin bump to a release that carries it comes first, then the wiring step
+  recorded in `todo/PLAN_test_leftovers_E2.md` (§ *E2.1 build record*).
 - **Proofs.** `leftoversWrapper.test.ts` (binding, names, claim beside the folder, unwind, export list, refusal without
   the mount), `leftoversRunner.test.ts` (the audit by record, the other record's folder untouched, the kill path with a
   real `node --test` and a surviving descendant, the timeout, the refusal; `ci-extension.yml` job
-  `runner lifecycle · windows` runs the two files on Windows) and `leftoversSites.test.ts` (a syntax-tree scan for raw
+  `runner lifecycle · windows` runs the wrapper, runner and gate files on Windows; `leftoversRunnerGate.test.ts` and
+  `leftoversRunnerHardening.test.ts` carry the process-tree, macOS and bound scenarios) and `leftoversSites.test.ts` (a syntax-tree scan for raw
   temp calls in the migrated files, with companions that keep the scan alive).
 - **Old names** (`creds-*`, `cvbk-*`, `arrival-lease-*`, `wsl-mcp-check-*`, `creds-life-*.sock`, the legacy
   `testsToDelete-agent-*`) are not swept: `creds-` is not a registered token and other software uses such names. A

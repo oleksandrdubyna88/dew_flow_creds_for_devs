@@ -1289,7 +1289,7 @@ and was not tried. Until one is chosen nothing collects a killed `npm test`'s fo
 | 2 | `ownedName` limit test: 26 × `x` throws | the test derives the room from the caller's owner (`63 - len(prefix) - 1 - 6`) and checks room accepted, room + 1 refused | the reference budgets the owner first: under `u1000` 30 characters fit, 26 would not throw |
 | 3 | sc. 3: the claim parses to `thisOwner()` | it equals `runRecord()` (the run's record under a runner, this process's otherwise) | under `npm test` every claim carries the exported `TESTSTODELETE_RUN`, by design |
 | 4 | sc. 4: `await t.test('inner', …)` with its rejection caught | a real `node --test` fixture that fails, with `NODE_TEST_CONTEXT` cleared | a failing subtest fails its parent; a nested `node --test` that inherits `NODE_TEST_CONTEXT` reports to its parent and exits 0 |
-| 5 | the runner has a timeout | `timeoutMs` is a seam with no default; tested with 4 s | the old runner had none; a default would be a new limit on every suite |
+| 5 | the runner has a timeout | `timeoutMs` is a seam, and since the gate (code 9/13) it DEFAULTS to 60 minutes, overridable by `RUN_TESTS_TIMEOUT_MS`; tested with 4 s and 40 ms | the old runner had none; the rule asks a ceiling on every launched process, and a suite that hangs for ever is the case it exists for |
 | 6 | Windows: job object, `taskkill /T /F /PID`, `tasklist` by pids | the reference's `run(…, { containTree: true })` supervisor (a job with KILL_ON_JOB_CLOSE); the confirmation there is the job's own guarantee | a walk from a dead coordinator misses descendants whose parent died first — exactly sc. 8c's fixture; the reference already solves it. NOT run here: the `runner lifecycle · windows` job of `ci-extension.yml` is the first observation |
 | 7 | the audit seam "the record" given as `TESTSTODELETE_RUN` by the test | the runner takes a `record` seam (default `formatOwner(thisOwner())`); an ambient `TESTSTODELETE_RUN` is ignored by the runner | a runner is the top of a run; the nested runner in a test must not export the outer one's record |
 | 8 | `ci-extension.yml` fetches the mount | also the extension job of `release.yml`, which runs `npm test` before it publishes | found while editing: without the mount that job would fail |
@@ -1332,7 +1332,7 @@ the consult's verified points.
 | **[E2.1 code 0]** | the `sweepNotWired` stub goes when the real sweep is wired — see the wiring step below |
 | rejected by the gate | 2, 6, 8 and 12 (12: a start-sweep error never changes the exit code, as in the family's runners) |
 | **[E2.1 risk 2]** Windows | `confirmTreeEnded(undefined)` no longer succeeds: it answers `not ended, reason: 'no-handle'`, so on Windows the audit removes nothing; it lists and fails the run when something is claimed, and a passing suite with nothing claimed stays passing. **Follow-up for `dew_flow_conventions`:** a "job is empty" acknowledgment from the reference's supervisor (`process-job.ps1` / `proc.mjs`) — until then Windows never removes in the audit (the Windows kill-path test asserts the descendant is dead and the folder preserved) |
-| **[E2.1 risk 3]** | `runWithAudit` refuses a second call while one is active in the process (a module-level guard, released in a `finally`): both would share `thisOwner()`'s cached record and audit each other's folders. **Recorded:** on Windows and macOS the record has no start time, so a reused pid could match a dead run's record; the audit runs only while THIS runner is alive (its own pid cannot be a reused one), and later sweeps rely on the reference's own liveness rules |
+| **[E2.1 risk 3]** | `runWithAudit` refuses a second call while one is active in the process (a module-level guard, released in a `finally`): both would share `thisOwner()`'s cached record and audit each other's folders. **Recorded, and corrected in round 3 [E2.1 Opus 2]:** on Windows and macOS the record has no start time, so a dead earlier run whose pid was reused by THIS runner writes the SAME record text — "the audit runs only while this runner is alive" does not protect against that, because the dead run's folders match. Where the record has no start time the audit now keeps only claims whose file is at or after this runner's start (less two seconds) and lists the others as `unproven:`; later sweeps rely on the reference's own liveness rules |
 | **[E2.1 risk 4]** | the wiring step — written now, built after F22's release and creds' pin bump (below) |
 
 **The wiring step for F22 (built after the pin; not before).** When the pinned release carries `sweepLeftovers({ …, token })`:
@@ -1344,7 +1344,10 @@ production default of the `sweep` seam with that function; keep the both-root de
 root): an aged gone-owner `creds` folder is collected on POSIX; a folder of a live or unknown owner survives; a folder of
 another token survives; both roots are covered (a dead-claimed `…-creds-sock-…` in the second root is removed); on Windows
 the sweep lists `unverified:` and removes nothing (F16). These are the plan's scenarios 5 and 6, written against the real
-sweep at last.
+sweep at last. Added in round 3: **the pin bump to a release that CARRIES F22 comes first** (F22 is merged in the conventions
+repository but not released at the time of writing); the wrapper loads `leftovers-sweep.mjs` with the same fail-closed check as
+`owned.mjs` (no mount, no sweep); `token` is put AFTER the caller's options so a caller cannot override it; the runner's header
+(its step 2 says "not wired yet") and `module_tests.md` (the *Not wired yet* bullet) are rewritten in the same change.
 
 ### E2.1 build record, part 3 — code round 2 (2026-11-02)
 
@@ -1361,6 +1364,28 @@ Tests `53e8a7a` and `76833a1`, code `59446a7`. Rejected by the gate: 2 (the refe
 | **[E2.1 code2 7]** | the group poll is a bare `kill(-pgid, 0)`; `ps` runs only to count members for an answer that is not "ended" |
 | **[E2.1 code2 8]** | a run that timed out exits 124 whatever the coordinator's own code or signal |
 | **[E2.1 code2 9]** | `hygieneScan` takes `ScanReads` (the four reads it uses, `Pick<StorageManager, …>`); its test builds a typed factory with whole record shapes and secrets minted with `stored`, and the `as never` casts of the changed fixtures are gone (`mod: undefined as never`, a placeholder assigned after the stub loads, is not among them). A type-level change: no RED to watch |
+
+### E2.1 build record, part 4 — code round 3 and the Opus review (2026-11-02)
+
+Tests `7cd670e`, code `c2fd390`. Rejected by the gate: 2 (the two ownership checks are defence in depth) and 4 (the claim is
+owner-checked before any read since round 2).
+
+| Mark | Result |
+|---|---|
+| **[E2.1 Opus 1]** MAJOR, macOS | on any POSIX that is not Linux the survivor scan adds the fixed entry `no environment scan on this OS`, so the run lists and fails and never removes there (a detached grandchild reparented to launchd was invisible to the ppid walk and the audit would have removed a LIVE folder). Tested with platform `darwin` at the scan, `endTree` and runner levels; the setsid scenario is Linux-only with that reason. **Consequence, stated plainly:** on macOS the unit suite's audit removes nothing and fails a run that left a claimed folder, until a macOS-capable survivor scan exists |
+| **[E2.1 Opus 2]** MAJOR | where the record has no start time, only claims at or after the runner's start (less two seconds) are this run's; older ones are listed `unproven:` and never removed. Tested on Linux through a start-less record seam. The run-tests header and risk 3 are corrected |
+| **[E2.1 code3 9 + Opus 3]** | both `ps` calls have a 5 s ceiling and are killed with SIGKILL; a timeout is `unverified`. Every spawnSync/execFileSync of the tests (`leftoversRunner.test.ts`, `runnerWorld.ts` tasklist, `leftoversWrapper.test.ts` twice) has one. Tested with a fake `ps` that hangs |
+| **[E2.1 Opus bound]** | a coordinator that survives SIGKILL is given up on after a second bound (30 s, a seam): list-and-fail, exit 124 |
+| **[E2.1 code3 0]** | `candidates()` takes the same `mine` predicate as the sort |
+| **[E2.1 code3 1]** | `endTree`'s `since` and `startOf` default inside `processTree.mjs` from the reference's `processProbe` |
+| **[E2.1 code3 3/6]** | the environ retries are awaited pauses, never `Atomics.wait`; the scan is asynchronous |
+| **[E2.1 code3 5]** | unverified causes are kept when known survivors remain |
+| **[E2.1 code3 7]** | `/proc` entries are matched against the table `ps` gave before any stat or dating |
+| **[E2.1 code3 8]** | the foreign line says it does not fail this run and names the owning uid |
+| **[E2.1 code3 10]** | each survivor is bound to its start time and re-verified before it is signalled; the group is signalled and the chain walked only while the group still has members |
+| **[E2.1 code3 11]** | ownership is checked before any retry of an unreadable environment |
+| **[E2.1 code3 12]** | each parent's child list is built once and pushed to |
+| **[E2.1 Opus minor]** | on Windows with a pid the confirmation still has no handle; the Linux scan's gaps are in the `processTree.mjs` header (a cleared environment is invisible; a non-dumpable or set-uid descendant is a doubt only when it started after the runner); the Linux-only and root-skipped scenarios say why; the remaining `as` casts of changed fixtures are gone (three types narrowed to what they use: `EntityCommandsHost.vaultKeys`, `runVpn`'s vault keys, the agent manager's `envCollection`); the stale text (run-tests header, deviation 5, module_tests) is corrected; the F22 wiring step gained its four additions |
 
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
