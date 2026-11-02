@@ -38,10 +38,18 @@ function jobs(): Array<[string, string, string]> {
 
 const withoutComments = (text: string): string => text.split('\n').filter((line) => !/^\s*#/.test(line)).join('\n');
 
+/** Does this job run the unit tests without fetching the mount BEFORE the first test command? */
+function lacksMountFirst(text: string): boolean {
+  const live = withoutComments(text);
+  const tests = live.search(RUNS_UNIT_TESTS);
+  if (tests < 0) return false;
+  const fetch = live.search(FETCHES_MOUNT);
+  return fetch < 0 || fetch > tests; // a step's text is in step order, so a fetch below the first test command came too late
+}
+
 test('every job that runs the extension\'s unit tests fetches the shared-rules mount first', () => {
   const missing = jobs()
-    .filter(([, , text]) => RUNS_UNIT_TESTS.test(withoutComments(text)))
-    .filter(([, , text]) => !FETCHES_MOUNT.test(withoutComments(text)))
+    .filter(([, , text]) => lacksMountFirst(text))
     .map(([file, job]) => `${file}:${job}`);
 
   assert.deepEqual(missing, [], 'these jobs run the unit tests with no mount, so the wrapper refuses and every test file fails');
@@ -53,4 +61,12 @@ test('the scan still finds the jobs known to run the unit tests, so it cannot pa
   for (const known of ['ci-extension.yml:build-test', 'ci-extension.yml:runner-windows', 'release.yml:extension', 'sonarcloud.yml:sonar']) {
     assert.ok(running.includes(known), `${known} is not recognised as a job that runs the unit tests (found: ${running.join(', ')})`);
   }
+});
+
+test('a fetch step BELOW the tests is no fetch: the tests have already refused by then [E2.1 code7 4]', () => {
+  const job = ['      - run: npm test', '      - run: git submodule update --init --depth 1 .claude/rules/shared'].join('\n');
+  const fetchFirst = ['      - run: git submodule update --init --depth 1 .claude/rules/shared', '      - run: npm test'].join('\n');
+
+  assert.equal(lacksMountFirst(job), true, 'the fetch comes after npm test, so the job runs the tests with no mount');
+  assert.equal(lacksMountFirst(fetchFirst), false, 'the companion: the fetch before the tests is the mount');
 });
