@@ -8,8 +8,9 @@
 //   1. loads the leftovers helper (`scripts/lib/leftovers.cjs`, a wrapper over the MOUNTED reference). No mount, no run:
 //      one line naming `git submodule update --init .claude/rules/shared`, and `node --test` is never started;
 //   2. sweeps what a KILLED earlier run left (rule section 4), in BOTH roots when the socket root differs from the temp
-//      root; it reports and never changes the exit code. NOT WIRED YET: the mounted sweep serves the reference's own token
-//      only, so for now this step reports one line per root saying so; it is wired after F22 (plan, E2.1 build record);
+//      root; it reports and never changes the exit code. It is the MOUNTED reference's `sweepLeftovers` (F22, release cc24f9e) with
+//      this repository's token bound AFTER the caller's options, so nothing can turn it onto another repository's folders; the
+//      module is loaded fail-closed — if it cannot be, one line says so and nothing is swept;
 //   3. exports the run's record ONCE, as `TESTSTODELETE_RUN=<record>` in the child's environment (rule section 3), and
 //      holds that exact string: every test-file process claims with it, and the audit compares it as a string, never a
 //      record recomputed afterwards [E2.1 plan gate 0];
@@ -45,7 +46,7 @@ import { createRequire } from 'node:module';
 import * as fs from 'node:fs';
 import { availableParallelism, constants } from 'node:os';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -112,16 +113,22 @@ export function rootsOf(helper) {
   return canonicalRoots([helper.tempRoot(), helper.shortSocketRoot()]);
 }
 
-/** The start-of-run sweep is not wired to this repository's token yet (the mounted sweep serves the reference's own token only). */
-export function sweepNotWired() {
-  throw new Error("the mounted sweep serves the token 'conventions' only, so it cannot collect 'creds' folders — see todo/PLAN_test_leftovers_E2.md");
+/**
+ * The mounted reference's sweep, loaded on its own so that a failure to load it is ONE line and no sweep, never a failed run and
+ * never a fall back to anything else. `import()` by file URL: the runner itself imports nothing from the mount at load time.
+ */
+async function loadReferenceSweep() {
+  const file = path.join(REPO_ROOT, '.claude', 'rules', 'shared', 'tools', 'lib', 'leftovers-sweep.mjs');
+  const { sweepLeftovers } = await import(pathToFileURL(file).href);
+  if (typeof sweepLeftovers !== 'function') throw new Error(`${file} exports no sweepLeftovers`);
+  return sweepLeftovers;
 }
 
 /** One report line only when the sweep found something; a thrown sweep is one line; never the exit code. */
-function sweepAll({ sweep, roots, write }) {
+function sweepAll({ sweep, options, roots, write }) {
   for (const tmp of roots) {
     try {
-      const { removed = [], preserved = [], errors = [], listed = [] } = sweep({ repo: REPO_ROOT, tmp });
+      const { removed = [], preserved = [], errors = [], listed = [] } = sweep({ ...options, repo: REPO_ROOT, tmp });
       if (removed.length + preserved.length + errors.length + listed.length === 0) continue;
       write(`run-tests: leftovers in ${tmp} — removed ${removed.length}, preserved ${preserved.length}`);
       for (const line of listed) write(`run-tests: ${line}`);
@@ -305,7 +312,7 @@ let active = false;
 
 /**
  * Sweep, run the suite in a tree of its own, end the tree, audit, and return the code to leave with. The seams are for tests:
- * `spawn` (starts the coordinator), `sweep`, `roots`, `record` (the string exported as `TESTSTODELETE_RUN`), `confirm` (the
+ * `spawn` (starts the coordinator), `sweep`, `sweepOptions` (extra options for the default sweep), `loadSweep`, `roots`, `record` (the string exported as `TESTSTODELETE_RUN`), `confirm` (the
  * answer to "is the tree ended"), `survivors` (what is still alive outside the group), `pidAlive`, `mine` (the kernel-owner question), `platform`, `startedAt`, `settleTimeoutMs`, `timeoutMs`, `hardBoundMs`, `stdio`,
  * `write` (one line to stderr).
  */
@@ -323,6 +330,18 @@ export async function runWithAudit(extra = [], seams = {}) {
   }
 }
 
+/** The start-of-run sweep: the seam, or the reference's with this repository's token AFTER the caller's options. `undefined` (with one line) when it cannot be loaded. */
+async function sweepFor(seams, helper, write) {
+  if (seams.sweep !== undefined) return seams.sweep;
+  try {
+    const reference = await (seams.loadSweep ?? loadReferenceSweep)();
+    return (options) => reference({ ...options, token: helper.REPO_TOKEN });
+  } catch (error) {
+    write(`run-tests: leftovers sweep not run (${String(error?.message ?? error).split('\n')[0]})`);
+    return undefined;
+  }
+}
+
 async function runOnce(extra, seams, write) {
   let helpers;
   let timeoutMs;
@@ -336,7 +355,8 @@ async function runOnce(extra, seams, write) {
   const { helper, tree } = helpers;
   const startedAt = seams.startedAt ?? Date.now();
   const roots = seams.roots === undefined ? rootsOf(helper) : canonicalRoots(seams.roots);
-  sweepAll({ sweep: seams.sweep ?? sweepNotWired, roots, write });
+  const sweep = await sweepFor(seams, helper, write);
+  if (sweep !== undefined) sweepAll({ sweep, options: seams.sweepOptions, roots, write });
   const record = seams.record ?? helper.formatOwner(helper.thisOwner()); // held ONCE: exported below, compared by the audit
   const env = { ...process.env, TESTSTODELETE_RUN: record };
   const child = tree.startInOwnTree(process.execPath, testArgs(extra), { stdio: seams.stdio ?? 'inherit', env }, seams.spawn);

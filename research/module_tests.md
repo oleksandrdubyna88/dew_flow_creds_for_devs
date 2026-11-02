@@ -160,12 +160,14 @@ sibling file `<folder>.owner` (never inside, because tests assert the exact cont
   `node --test out/test/<file>.test.js` makes and removes its own scratch but does not sweep old leftovers — the next
   runner run, or the janitor, does. **On Windows the Node sweep collects nothing** until F16 closes: the reference lists
   `unverified:` there. The collector on Windows is the C# sweep of the xUnit executables (E2.3) or the janitor.
-- **Not wired yet: the start-of-run sweep.** The mounted `sweepLeftovers` is bound to the reference's own token
-  (`leftovers-sweep.mjs:78`) and ignores `creds` folders (measured 2026-11-02), so the runner calls it through a `sweep`
-  seam whose default says so on one line per root. The fix (F22, `sweepLeftovers({ …, token })`) is merged in the
-  conventions repository but NOT released: the pin bump to a release that carries it comes first, then the wiring step
-  recorded in `todo/PLAN_test_leftovers_E2.md` (§ *E2.1 build record*).
-- **Proofs.** `leftoversWrapper.test.ts` (binding, names, claim beside the folder, unwind, export list, refusal without
+- **The start-of-run sweep (wired, F22, release `cc24f9e`).** The runner's default sweep is the MOUNTED reference's
+  `sweepLeftovers` from `.claude/rules/shared/tools/lib/leftovers-sweep.mjs`, called with this repository's token AFTER the
+  caller's options (a `token` in them cannot override it), over both roots. It is loaded fail-closed on its own: if the module
+  cannot be loaded the runner writes ONE line (`leftovers sweep not run (…)`), sweeps nothing and keeps the suite's exit code. A
+  sweep never changes the exit code. It collects a dead-owner, old, owner-form `creds` folder under the two keys; a live or
+  unknown owner, another token's folder and an unmarked folder survive (listed); on Windows it lists `unverified:` and removes
+  nothing (F16). Before F22 the mounted sweep ignored `creds` folders (it served the reference's own token only).
+- **Proofs.** `leftoversRunnerSweep.test.ts` (the real default sweep in private roots), `leftoversWrapper.test.ts` (binding, names, claim beside the folder, unwind, export list, refusal without
   the mount), `leftoversRunner.test.ts` (the audit by record, the other record's folder untouched, the kill path with a
   real `node --test` and a surviving descendant, the timeout, the refusal; `ci-extension.yml` job
   `runner lifecycle · windows` runs the wrapper, runner and gate files on Windows; `leftoversRunnerGate.test.ts` and

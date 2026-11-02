@@ -1391,6 +1391,23 @@ owner-checked before any read since round 2).
 | **[E2.1 code4 11]** rejected | set-uid and non-dumpable descendants stay a documented gap: failing closed on them would fail every run on a multi-user host (a doubt only when the process started after the runner did) |
 | **[E2.1 Opus minor]** | on Windows with a pid the confirmation still has no handle; the Linux scan's gaps are in the `processTree.mjs` header (a cleared environment is invisible; a non-dumpable or set-uid descendant is a doubt only when it started after the runner); the Linux-only and root-skipped scenarios say why; the remaining `as` casts of changed fixtures are gone (three types narrowed to what they use: `EntityCommandsHost.vaultKeys`, `runVpn`'s vault keys, the agent manager's `envCollection`); the stale text (run-tests header, deviation 5, module_tests) is corrected; the F22 wiring step gained its four additions |
 
+### E2.1 build record, part 5 — the F22 wiring (2026-11-02)
+
+**[E2.1 F22 wiring]** The blocker of the first build record is resolved: conventions release `cc24f9e` (F22: `sweepLeftovers({ …, token })`)
+is promoted and creds main pins it (#293, `bfc5348`); this branch merged `origin/main` (a merge) and has the submodule at `cc24f9e`.
+Tests `81529d6`, code in the commit after it. The runner's default sweep is the mounted reference's `sweepLeftovers`, loaded
+fail-closed on its own from `.claude/rules/shared/tools/lib/leftovers-sweep.mjs` and called as `{ ...options, token: REPO_TOKEN }` — the
+token AFTER the caller's options, `REPO_TOKEN` from the wrapper (written once). A failure to load is one report line, no sweep, the
+suite's own exit code. `sweepNotWired` and its line are gone. Scenarios 5 and 6 of the plan are now covered by
+`leftoversRunnerSweep.test.ts` on the REAL sweep in private roots (a probe that calls pid 4242 dead, a clock eleven minutes on): a dead,
+old `creds` folder is collected on POSIX; a live `creds` folder, a dead `conventions` folder and an unmarked folder survive; the report
+lines are `sweepAll`'s; a `token` in the caller's options changes nothing (red when the token is put first); a sweep that cannot be
+loaded fails closed; on Windows the sweep lists `unverified:` (F16; that scenario runs on the Windows leg). The wiring step's four
+round-3 additions are all done (a release that carries F22 first; the same fail-closed load; `token` last; header and `module_tests.md`
+rewritten). Collection of a killed `npm test` run's folders now works on Linux and macOS; on Windows the Node sweep still lists only
+until F16 closes. **E2.1 no longer waits for F22.** What it still waits for before merging: the macOS by-hand record, the Windows
+CI leg's first green and by-hand count, the merge conditions (c) and (d) of D8.
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's

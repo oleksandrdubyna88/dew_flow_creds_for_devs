@@ -23,7 +23,8 @@ function folder(root: string, token: string, what: string, record: string): stri
 const DEAD_PID = 4242;
 /** A record naming a pid the probe will call dead: this process's host and namespace, so only the liveness decides. */
 const deadRecord = (): string => formatOwner(ownerWith(DEAD_PID, thisOwner().start ?? 1));
-const liveRecord = (): string => formatOwner(thisOwner());
+/** Another run that is alive (this process's parent): not this runner's own record, which the audit would count as left behind. */
+const liveRecord = (): string => formatOwner(ownerWith(process.ppid, thisOwner().start ?? 1));
 const elevenMinutesOn = (): number => Date.now() + 11 * 60_000;
 const probe = (pid: number): { state: string } => ({ state: pid === DEAD_PID ? 'dead' : 'live' });
 
@@ -56,8 +57,8 @@ test('[E2.1 F22 wiring] the sweep\'s report lines are written as sweepAll writes
   await runWithAudit([], { spawn: suite(0), roots: [root], confirm: ENDED, sweepOptions: { probe, now: elevenMinutesOn() }, write: log.write });
 
   const real = fs.realpathSync(root);
-  assert.ok(log.seen.includes(`run-tests: leftovers in ${real} — removed 1, preserved 1`), log.seen.join(' | '));
-  assert.ok(log.seen.some((line) => line.startsWith('run-tests: unmarked:') && line.includes(unmarked)), 'an unmarked folder is listed');
+  assert.ok(log.seen.includes(`run-tests: leftovers in ${real} — removed 1, preserved 2`), log.seen.join(' | '));
+  assert.ok(log.seen.includes(`run-tests: unmarked: folder ${path.basename(unmarked)}`), 'the sweep\'s own listed line follows the report line');
 });
 
 test('[E2.1 F22 wiring] the consumer\'s token cannot be overridden by the caller\'s options', posixOnly, async (t) => {
