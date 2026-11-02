@@ -122,6 +122,50 @@ implied. Its assertions and CI status are read off the file; whether they still 
 until someone starts a server and runs it. That is the honest state, and it is why it sits last in
 `itest:all` with its prerequisite spelled out.
 
+## What the unit suite leaves behind (E2.1, 2026-11-02)
+
+`npm test` makes only folders that are **named, claimed, removed and collected** under
+`.claude/rules/shared/common/test-leftovers.md`: `testsToDelete-<owner>-creds-<what>-<id>`, with the claim in a
+sibling file `<folder>.owner` (never inside, because tests assert the exact content of their folders).
+
+- **The helper.** `src_vs_code/scripts/lib/leftovers.cjs` (types in `leftovers.d.cts`) is a WRAPPER over the mounted
+  reference `.claude/rules/shared/tools/lib/owned.mjs`. It binds the token `creds` once with `ownedFor` and re-exports
+  the reference's functions as they are (`ownedDir`, `cleanupScope`, `tempRoot`, `removeQuietly`, `readOwner`, …).
+  It adds three things: `shortSocketRoot()`, `ownedFile()` and `writeStub()`. Nothing of the reference is copied.
+  No mount, no helper: it refuses and names `git submodule update --init .claude/rules/shared`. CI fetches the mount in
+  the extension job and in the extension release job before `npm test`.
+- **A test makes its folder** with `ownedDir(t, '<what>')` (`t` is the test context) or, for a helper that many tests
+  call, with one module-level `const scope = cleanupScope(); after(() => scope.close());` in the file. A failing
+  assertion still removes the folder. Never at module load: a run that filters the file's tests away skips its hooks.
+- **Sockets** live in folders made under `shortSocketRoot()` (`/tmp` on Linux and macOS, the temp root on Windows),
+  with a `<what>` of at most five characters: macOS allows 103 bytes in a socket path and its temp root is about 49
+  characters long. `leftoversSites.test.ts` computes the longest path (owner `w` + 10 digits, ten-digit pid) through
+  the product's own `socketPathFor` and `agentSocketPath` and asserts it fits, on every OS.
+- **The runner** `scripts/run-tests.mjs`, in this order: loads the helper; sweeps both roots (see below); exports its
+  record once as `TESTSTODELETE_RUN=<record>`; starts `node --test` in a process tree of its own (a group on POSIX, the
+  reference's job-object supervisor on Windows); when the coordinator has exited, ends the WHOLE tree and confirms no
+  descendant is alive; then audits. The audit finds every owner-form folder and orphan claim of both roots whose claim
+  is EXACTLY the record the runner exported (a string, never recomputed), removes it, and turns a passing suite into
+  exit 1 with `this run left <n> folder(s) it claimed`. A folder claimed by any other record is never touched and never
+  counted; an unmarked folder is listed. If the tree cannot be confirmed ended, the audit removes nothing, fails the run
+  and says `(not removed: <n> descendant(s) still alive)`.
+- **Where the collection guarantee holds.** `npm test` (and, with E2.2, `npm run itest:all`) sweep; a direct
+  `node --test out/test/<file>.test.js` makes and removes its own scratch but does not sweep old leftovers — the next
+  runner run, or the janitor, does. **On Windows the Node sweep collects nothing** until F16 closes: the reference lists
+  `unverified:` there. The collector on Windows is the C# sweep of the xUnit executables (E2.3) or the janitor.
+- **Not wired yet: the start-of-run sweep.** The mounted `sweepLeftovers` is bound to the reference's own token
+  (`leftovers-sweep.mjs:78`) and ignores `creds` folders (measured 2026-11-02), so the runner calls it through a `sweep`
+  seam whose default says so on one line per root. Collecting a killed run's folders waits for a decision recorded in
+  `todo/PLAN_test_leftovers_E2.md` (§ *E2.1 build record*).
+- **Proofs.** `leftoversWrapper.test.ts` (binding, names, claim beside the folder, unwind, export list, refusal without
+  the mount), `leftoversRunner.test.ts` (the audit by record, the other record's folder untouched, the kill path with a
+  real `node --test` and a surviving descendant, the timeout, the refusal; `ci-extension.yml` job
+  `runner lifecycle · windows` runs the two files on Windows) and `leftoversSites.test.ts` (a syntax-tree scan for raw
+  temp calls in the migrated files, with companions that keep the scan alive).
+- **Old names** (`creds-*`, `cvbk-*`, `arrival-lease-*`, `wsl-mcp-check-*`, `creds-life-*.sock`, the legacy
+  `testsToDelete-agent-*`) are not swept: `creds-` is not a registered token and other software uses such names. A
+  person removes the ones already on a machine by hand.
+
 ## Prerequisites, timeouts and cleanup
 
 A harness that leaves a socket, a port or a temp directory behind makes the NEXT run lie. Each of

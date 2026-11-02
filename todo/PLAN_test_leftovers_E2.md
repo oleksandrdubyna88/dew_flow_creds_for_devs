@@ -1260,6 +1260,59 @@ The cadence consult for epics 1–3, `e2d20eab`; all three points verified in th
    `_owned.Dir("corpse")` under the temp root. Applied: `OwnedCreds.ShortSocketRoot`, the full path's UTF-8 byte length
    computed for the macOS runner's roots, in E2.3.S3's socket proof — S3's table, E2.3.S3.
 
+## E2.1 build record (2026-11-02, branch `feat/test-leftovers-e2.1`, not pushed, not merged)
+
+Built by a Sonnet coder from the E2.1 section above, story by story, tests first, each RED watched again with the code
+stashed. Commits, oldest first (S1 `5d7bfb3` test, `800d6e4` code; S2 `bbd9834` test, `141a5cd` code; S3 `6a8a7bf` test,
+`0c82386` code; S4 `fee779f` test, `bfb07e5` code; `789cb75` the scan test's samples; this record). Suite: **5938 tests
+before, 5969 after, 0 failed**; `npm run typecheck`, `npm run lint` clean.
+
+**A blocker, found by measurement, recorded not resolved in code (D8: where the released text differs from what is cited
+here, stop and report).** D1 and S2 say the wrapper re-exports `sweepLeftovers` and the runner sweeps both roots with it.
+It cannot serve `creds`: `leftovers-sweep.mjs:78` compares every name's token with the reference's OWN `REPO_TOKEN`
+(`conventions`, from its `owned-token.mjs`), `ownedFor` does not bind the sweep, and `sweepLeftovers` has no `token`
+parameter. Measured with a dead-claimed `creds` folder and a dead-claimed `conventions` folder in one private root and
+`probe: () => ({ state: 'dead' })`: the sweep removed only the `conventions` one. So scenarios 5 and 6 (the sweep collects a
+killed test's folder; the second root) are NOT written, and the runner's start sweep is wired through a `sweep` seam whose
+default throws one clear line per root (so a missing sweep is never silent). Options, for the owner and the parent: (1) a
+conventions follow-up (F22) that gives `sweepLeftovers` a `token` parameter (and `classifyName` consumers the same), taken by a
+pin bump — the plan's own rule for "a behaviour the wrapper needs and the reference lacks"; (2) vendoring `owned.mjs` with its
+own `owned-token.mjs`, the shape the reference's header offers, which D1 rejected; (3) a Node module-customization hook that
+redirects the reference's `./owned-token.mjs` import to this repository's token — no copy, but it leans on loader internals
+and was not tried. Until one is chosen nothing collects a killed `npm test`'s folders (the janitor still does).
+
+**Deviations from the E2.1 text, each with its reason.**
+
+| # | Plan said | Done | Why |
+|---|---|---|---|
+| 1 | the wrapper exports exactly D1's list | also exports `isMine`; does not export `sweepLeftovers` | the audit's kernel-owner key for a folder needs `isMine`; the sweep is the blocker above |
+| 2 | `ownedName` limit test: 26 × `x` throws | the test derives the room from the caller's owner (`63 - len(prefix) - 1 - 6`) and checks room accepted, room + 1 refused | the reference budgets the owner first: under `u1000` 30 characters fit, 26 would not throw |
+| 3 | sc. 3: the claim parses to `thisOwner()` | it equals `runRecord()` (the run's record under a runner, this process's otherwise) | under `npm test` every claim carries the exported `TESTSTODELETE_RUN`, by design |
+| 4 | sc. 4: `await t.test('inner', …)` with its rejection caught | a real `node --test` fixture that fails, with `NODE_TEST_CONTEXT` cleared | a failing subtest fails its parent; a nested `node --test` that inherits `NODE_TEST_CONTEXT` reports to its parent and exits 0 |
+| 5 | the runner has a timeout | `timeoutMs` is a seam with no default; tested with 4 s | the old runner had none; a default would be a new limit on every suite |
+| 6 | Windows: job object, `taskkill /T /F /PID`, `tasklist` by pids | the reference's `run(…, { containTree: true })` supervisor (a job with KILL_ON_JOB_CLOSE); the confirmation there is the job's own guarantee | a walk from a dead coordinator misses descendants whose parent died first — exactly sc. 8c's fixture; the reference already solves it. NOT run here: the `runner lifecycle · windows` job of `ci-extension.yml` is the first observation |
+| 7 | the audit seam "the record" given as `TESTSTODELETE_RUN` by the test | the runner takes a `record` seam (default `formatOwner(thisOwner())`); an ambient `TESTSTODELETE_RUN` is ignored by the runner | a runner is the top of a run; the nested runner in a test must not export the outer one's record |
+| 8 | `ci-extension.yml` fetches the mount | also the extension job of `release.yml`, which runs `npm test` before it publishes | found while editing: without the mount that job would fail |
+| 9 | `module_tests.md:125-146` | a new section *What the unit suite leaves behind* before the harness table; the harness rows are E2.2's | the unit rows had no home; `localCpuBudget.test.ts` lost its `runTests(spawn)` case for `exitCodeOf` (the spawnSync-only runner is gone) |
+| 10 | S3 owns sc. 4 and the leak count | a syntax-tree scan test (`leftoversSites.test.ts`, with its two companions) is the automated RED for S3 and S4, beside the by-hand count | a RED that a machine can repeat; the repository guards of E2.5 stay the whole-tree enforcement |
+
+**Evidence.** Scenario 10, unit half (Linux/WSL, `TMPDIR` pointed at a private short folder): one `npm test` left **60**
+old-name entries before (14 `creds-endpoint`, 11 `creds-conn`, 9 `creds-gitunit`, 6 `creds-log`, 5 `cvbk-download`, 4 `creds-sock`,
+2 `creds-window-lock`, 2 `creds-sweep`, 1 each `creds-ro`, `creds-mask`, `creds-kh2`, `creds-kh`, `creds-gitserial`,
+`creds-gitclone`, `creds-chain`), **4** after S3, **0** after S4, and no owner-form entry at any point. (A private `TMPDIR`
+must stay short: the first attempt used a 120-character one and `brokerListeners.test.ts` hung on a socket path past
+the OS limit — a measurement of D4's reason.) The shipped Node guard on this head: **16 findings** (62 on `47724fd`) —
+9 `raw-temp` in shell (4 CI scripts, `restore-archive-itest.sh`, three product scripts, `install.sh` twice), 6 in `docker.yml`,
+1 `commandParse.test.ts:40` — the expected harness-free list, all E2.4/E2.5's. `sweeper-scan.mjs --root .`: `none found
+(1502 file(s) read) — the barrier is open for this scope`.
+
+**Open before E2.1 may merge (D8 and the story text).** (a) the blocker above; (b) sc. 11, the by-hand macOS record (the
+path computation is asserted on every OS; no macOS machine ran the five socket files); (c) the Windows by-hand `npm test`
+count (56 expected), the `runner lifecycle · windows` leg's first green (sc. 8c's kill path on a real job object), and the
+Windows RED the spec asks for ("observed on Linux and Windows"; only Linux was observed); (d) sc. 12 by hand
+(a renamed `owned.mjs`) — the automated refusal tests cover the same line; (e) barrier conditions (c) and (d) of D8 for the
+owner's Windows machine; (f) a `review_code` round and the Opus review.
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
