@@ -62,6 +62,7 @@ function writeStub(scope, what, text) {
 module.exports = {
   REPO_TOKEN,
   REPO_ROW,
+  REFERENCE_LIB: LIB,
   ownedName: owned.ownedName,
   ownedPattern: owned.ownedPattern,
   ownedDir: owned.ownedDir,

@@ -117,8 +117,8 @@ export function rootsOf(helper) {
  * The mounted reference's sweep, loaded on its own so that a failure to load it is ONE line and no sweep, never a failed run and
  * never a fall back to anything else. `import()` by file URL: the runner itself imports nothing from the mount at load time.
  */
-async function loadReferenceSweep() {
-  const file = path.join(REPO_ROOT, '.claude', 'rules', 'shared', 'tools', 'lib', 'leftovers-sweep.mjs');
+async function loadReferenceSweep(helper) {
+  const file = path.join(helper.REFERENCE_LIB, 'leftovers-sweep.mjs'); // the mount's location is the wrapper's, written once there [E2.1 code6 1]
   const { sweepLeftovers } = await import(pathToFileURL(file).href);
   if (typeof sweepLeftovers !== 'function') throw new Error(`${file} exports no sweepLeftovers`);
   return sweepLeftovers;
@@ -334,7 +334,7 @@ export async function runWithAudit(extra = [], seams = {}) {
 async function sweepFor(seams, helper, write) {
   if (seams.sweep !== undefined) return seams.sweep;
   try {
-    const reference = await (seams.loadSweep ?? loadReferenceSweep)();
+    const reference = await (seams.loadSweep ?? loadReferenceSweep)(helper);
     return (options) => reference({ ...options, token: helper.REPO_TOKEN });
   } catch (error) {
     write(`run-tests: leftovers sweep not run (${String(error?.message ?? error).split('\n')[0]})`);

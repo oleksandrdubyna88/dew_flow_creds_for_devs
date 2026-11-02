@@ -38,6 +38,8 @@ export interface OwnedDirOptions {
 export const REPO_TOKEN: string;
 /** The repository's row of the `## Tokens` table of the mounted rule. */
 export const REPO_ROW: string;
+/** The mounted reference's `tools/lib` folder — the one place the mount's location is written. */
+export const REFERENCE_LIB: string;
 
 /** A fresh name `testsToDelete-<owner>-creds-<what>-<id>`; nothing is made. */
 export function ownedName(what: string): string;

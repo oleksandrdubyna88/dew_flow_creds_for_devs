@@ -1408,6 +1408,12 @@ rewritten). Collection of a killed `npm test` run's folders now works on Linux a
 until F16 closes. **E2.1 no longer waits for F22.** What it still waits for before merging: the macOS by-hand record, the Windows
 CI leg's first green and by-hand count, the merge conditions (c) and (d) of D8.
 
+**[E2.1 code6 1]** Code round 6 over the wiring (base `4bf9797`): the sweep loader built the mount's path again
+(`.claude/rules/shared/tools/lib`). The wrapper now exports `REFERENCE_LIB` (its `LIB`, declared in `leftovers.d.cts`) and the
+loader joins `leftovers-sweep.mjs` to it, so the mount's location is written in one place. No behaviour change; `npm test`,
+typecheck and lint exit 0. Rejected **[E2.1 code6 0]**: `seams.sweep` replaces the whole sweep by design (a test seam), and
+`sweepOptions` is documented as the default sweep's only.
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
