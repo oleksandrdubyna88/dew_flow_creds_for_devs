@@ -19,13 +19,20 @@ export interface Ended {
   alive: number;
   reason?: string;
 }
+/** What a scan for survivors answers: the pids it found, and what it could not look at (an unreadable /proc). */
+export interface Found {
+  pids: number[];
+  unverified: string[];
+}
 export interface Seams {
   spawn?: Spawn;
   sweep?: (options: { repo: string; tmp: string }) => object;
   roots?: string[];
   record?: string;
   confirm?: (tree?: unknown) => Promise<Ended>;
-  survivors?: (query: { rootPid?: number; record: string }) => number[] | Promise<number[]>;
+  survivors?: (query: { rootPid?: number; record: string }) => Found | Promise<Found>;
+  pidAlive?: (pid: number) => boolean;
+  mine?: (target: string) => boolean;
   settleTimeoutMs?: number;
   timeoutMs?: number;
   stdio?: string;
@@ -40,8 +47,10 @@ export interface Runner {
 export interface TreeModule {
   confirmTreeEnded(
     tree: { root: number } | undefined,
-    options?: { timeoutMs?: number; stepMs?: number; maxStepMs?: number; ask?: () => number; now?: () => number; pause?: (ms: number) => Promise<void> },
+    options?: { timeoutMs?: number; stepMs?: number; maxStepMs?: number; probe?: () => boolean; count?: () => number; now?: () => number; pause?: (ms: number) => Promise<void> },
   ): Promise<Ended>;
+  findSurvivors(query: { rootPid?: number; record: string; platform?: string; procRoot?: string }): Found;
+  startInJob(command: string, args: string[], options: { env: NodeJS.ProcessEnv; stdio?: string }, runFn?: () => Promise<unknown>): EventEmitter;
   SUPERVISOR_MAX_OUTPUT_BYTES: number;
 }
 

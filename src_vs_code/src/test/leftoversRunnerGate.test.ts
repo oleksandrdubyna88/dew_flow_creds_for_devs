@@ -5,12 +5,14 @@
 // Same rules as `leftoversRunner.test.ts`: private roots through the `roots` seam, never the real sweep, and a REAL
 // `node --test` only where the point is the real process tree.
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
+import { ownedDir, tempRoot } from '../../scripts/lib/leftovers.cjs';
 import {
-  ENDED, RECORD, WRAPPER, exists, isAlive, lines, nothingSwept, plant, privateRoot, processTree, runner, suite, withEnv,
+  ENDED, RECORD, WRAPPER, exists, isAlive, lines, me, nothingSwept, plant, privateRoot, processTree, runner, suite, withEnv,
 } from './runnerWorld';
 
 const posixOnly = process.platform === 'win32' ? { skip: 'process groups and sessions are POSIX; Windows has the job-object supervisor' } : {};
@@ -87,7 +89,8 @@ test('survivors that cannot be accounted for keep the audit at list-and-fail', a
     roots: [root],
     sweep: nothingSwept,
     confirm: ENDED,
-    survivors: () => [NO_SUCH_PID],
+    survivors: () => ({ pids: [NO_SUCH_PID], unverified: [] }),
+    pidAlive: () => true,
     settleTimeoutMs: 120,
     write: log.write,
   });
@@ -194,7 +197,7 @@ test('the confirmation polls with a backoff from 50 ms to 1 s, inside its bound,
 
   const answer = await tree.confirmTreeEnded(
     { root: 1 },
-    { timeoutMs: 5000, ask: () => 3, now: () => clock, pause: async (ms) => { waited.push(ms); clock += ms; } },
+    { timeoutMs: 5000, probe: () => true, count: () => 3, now: () => clock, pause: async (ms) => { waited.push(ms); clock += ms; } },
   );
 
   assert.deepEqual(answer, { ended: false, alive: 3 });
@@ -203,14 +206,17 @@ test('the confirmation polls with a backoff from 50 ms to 1 s, inside its bound,
   assert.ok(waited.reduce((sum, ms) => sum + ms, 0) <= 5000, 'the polling stays inside the bound');
 });
 
-test('the confirmation stops asking as soon as the answer is none', async () => {
+test('the confirmation asks "is anyone there" with no process listing, and counts members only when it must report them', async () => {
   const tree = await processTree();
-  const answers = [2, 1, 0];
+  const answers = [true, true, false];
+  let counted = 0;
 
-  const answer = await tree.confirmTreeEnded({ root: 1 }, { ask: () => answers.shift() ?? 0, pause: async () => undefined });
+  const ended = await tree.confirmTreeEnded({ root: 1 }, { probe: () => answers.shift() ?? false, count: () => { counted += 1; return 9; }, pause: async () => undefined });
+  const never = await tree.confirmTreeEnded({ root: 1 }, { timeoutMs: 100, probe: () => true, count: () => { counted += 1; return 2; }, pause: async () => undefined, now: (() => { let t = 0; return () => (t += 60); })() });
 
-  assert.deepEqual(answer, { ended: true, alive: 0 });
-  assert.deepEqual(answers, []);
+  assert.deepEqual(ended, { ended: true, alive: 0 });
+  assert.deepEqual(never, { ended: false, alive: 2 });
+  assert.equal(counted, 1, 'counted once, for the answer that is not "ended" — never while polling');
 });
 
 test('the Windows supervisor\'s captured output has a finite bound', async () => {
@@ -301,4 +307,180 @@ test('a second run in the same process while one is active is refused, and the f
   assert.ok(log.seen.some((line) => line.includes('already running in this process')), log.seen.join(' | '));
   assert.equal(code, 0);
   assert.equal(again, 0, 'the guard is released when the first run ends');
+});
+
+// ---- code round 2 -----------------------------------------------------------------------------------------------------------
+
+test('[E2.1 code2 0] an orphan claim the caller does not own is listed and never read, removed or counted', async (t) => {
+  const { runWithAudit } = await runner();
+  const root = privateRoot(t);
+  const log = lines();
+  const orphan = path.join(root, `testsToDelete-${me}-creds-strange-abc123.owner`);
+  const code = await runWithAudit([], {
+    spawn: suite(0, () => fs.writeFileSync(orphan, `${RECORD}\n`)),
+    roots: [root],
+    sweep: nothingSwept,
+    confirm: ENDED,
+    mine: (target) => !target.endsWith('.owner'), // the claim file belongs to somebody else
+    write: log.write,
+  });
+
+  assert.equal(code, 0, 'a claim that is not ours is not a folder this run left');
+  assert.ok(exists(orphan), 'another user\'s claim is never touched');
+  assert.ok(log.seen.some((line) => line.includes('foreign:') && line.includes(orphan)), log.seen.join(' | '));
+});
+
+test('[E2.1 code2 0] a folder whose claim is another user\'s is kept too, even when the folder is ours and the text names this run', async (t) => {
+  const { runWithAudit } = await runner();
+  const root = privateRoot(t);
+  const log = lines();
+  let dir = '';
+  const code = await runWithAudit([], {
+    spawn: suite(0, () => { dir = plant(root, 'theirs', RECORD); }),
+    roots: [root],
+    sweep: nothingSwept,
+    confirm: ENDED,
+    mine: (target) => !target.endsWith('.owner'),
+    write: log.write,
+  });
+
+  assert.equal(code, 0);
+  assert.ok(exists(dir) && exists(`${dir}.owner`));
+});
+
+/** A child that sleeps, with `TESTSTODELETE_RUN` set to `value`; the caller ends it. */
+function sleeper(value: string): ReturnType<typeof spawn> {
+  return spawn(process.execPath, ['-e', 'setInterval(() => undefined, 1000)'], { stdio: 'ignore', env: { ...process.env, TESTSTODELETE_RUN: value } });
+}
+
+test('[E2.1 code2 1] the marker is matched by the whole entry: the record as a prefix of a longer value, or inside another name, is not this run', posixOnly, async () => {
+  const tree = await processTree();
+  const exact = sleeper(RECORD);
+  const longer = sleeper(`${RECORD}9`);
+  const prefixed = sleeper(`9${RECORD}`);
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 300)); // the three have started and their environments are readable
+
+    const found = tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'linux' });
+
+    assert.deepEqual(found.pids, [exact.pid], 'only the process whose entry is exactly TESTSTODELETE_RUN=<record>');
+    assert.deepEqual(found.unverified, []);
+  } finally {
+    for (const child of [exact, longer, prefixed]) child.kill('SIGKILL');
+  }
+});
+
+test('[E2.1 code2 3] a root that is a symlink to another root is one root, not two: the audit counts a folder once', posixOnly, async (t) => {
+  const { runWithAudit } = await runner();
+  const real = privateRoot(t);
+  const link = path.join(ownedDir(t, 'lnk'), 'to-real');
+  fs.symlinkSync(real, link);
+  const log = lines();
+  let dir = '';
+
+  const code = await runWithAudit([], { spawn: suite(0, () => { dir = plant(real, 'twice', RECORD); }), roots: [real, link], sweep: nothingSwept, confirm: ENDED, write: log.write });
+
+  assert.equal(code, 1);
+  assert.ok(!exists(dir));
+  assert.ok(log.seen.some((line) => line.includes('this run left 1 folder(s)')), `one folder, counted once: ${log.seen.join(' | ')}`);
+});
+
+test('[E2.1 code2 3] a root given as a symlink is audited on its canonical path', posixOnly, async (t) => {
+  const { runWithAudit } = await runner();
+  const real = privateRoot(t);
+  const link = path.join(ownedDir(t, 'lnk'), 'to-real');
+  fs.symlinkSync(real, link);
+  const log = lines();
+  let dir = '';
+
+  await runWithAudit([], { spawn: suite(0, () => { dir = plant(real, 'canon', RECORD); }), roots: [link], sweep: nothingSwept, confirm: ENDED, write: log.write });
+
+  assert.ok(log.seen.some((line) => line.includes(fs.realpathSync(real)) && line.includes(dir)), `the line names the canonical path: ${log.seen.join(' | ')}`);
+});
+
+test('[E2.1 code2 4] an unreadable /proc is "cannot confirm" on the marker path, never a throw — and the parent-pid chain still runs', posixOnly, async () => {
+  const tree = await processTree();
+  const parent = spawn(
+    process.execPath,
+    ['-e', "require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => undefined, 1000)'], { stdio: 'ignore' }); setInterval(() => undefined, 1000);"],
+    { stdio: 'ignore', detached: true },
+  );
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+
+    const found = tree.findSurvivors({ rootPid: parent.pid, record: RECORD, platform: 'linux', procRoot: path.join(tempRoot(), 'no-such-proc') });
+
+    assert.ok(found.unverified.length > 0, 'the marker path says it could not look');
+    assert.equal(found.pids.length, 1, 'the chain below the root was still walked: the grandchild is found');
+    assert.ok(!found.pids.includes(parent.pid ?? -1));
+  } finally {
+    if (parent.pid !== undefined) process.kill(-parent.pid, 'SIGKILL');
+  }
+});
+
+test('[E2.1 code2 4] a scan that could not look keeps list-and-fail even when it found nothing', async (t) => {
+  const { runWithAudit } = await runner();
+  const root = privateRoot(t);
+  const log = lines();
+  let left = '';
+  const code = await runWithAudit([], {
+    spawn: suite(0, () => { left = plant(root, 'blind', RECORD); }),
+    roots: [root],
+    sweep: nothingSwept,
+    confirm: ENDED,
+    survivors: () => ({ pids: [], unverified: ['/proc'] }),
+    write: log.write,
+  });
+
+  assert.equal(code, 1);
+  assert.ok(exists(left));
+  assert.ok(log.seen.some((line) => line.includes('could not be confirmed')), log.seen.join(' | '));
+});
+
+test('[E2.1 code2 5] a supervised start that rejects settles the wait with an error instead of hanging it', async () => {
+  const tree = await processTree();
+  const job = tree.startInJob('node', [], { env: {} }, () => Promise.reject(new Error('pwsh is not there')));
+
+  const error = await new Promise<Error>((resolve) => job.once('error', resolve));
+
+  assert.match(error.message, /pwsh is not there/);
+});
+
+test('[E2.1 code2 6/11] survivors are scanned ONCE after the group is gone; only the pids found are polled until they are dead', async (t) => {
+  const { runWithAudit } = await runner();
+  const root = privateRoot(t);
+  let scans = 0;
+  const asked: number[] = [];
+  let left = '';
+  const answers = [true, true, false];
+
+  const code = await runWithAudit([], {
+    spawn: suite(0, () => { left = plant(root, 'once', RECORD); }),
+    roots: [root],
+    sweep: nothingSwept,
+    confirm: ENDED,
+    survivors: () => { scans += 1; return { pids: [NO_SUCH_PID], unverified: [] }; },
+    pidAlive: (pid) => { asked.push(pid); return answers.shift() ?? false; },
+    settleTimeoutMs: 5000,
+    write: lines().write,
+  });
+
+  assert.equal(scans, 1, 'the table and the environments are read once');
+  assert.deepEqual(asked, [NO_SUCH_PID, NO_SUCH_PID, NO_SUCH_PID], 'then only the pid found is asked about');
+  assert.equal(code, 1);
+  assert.equal(exists(left), false, 'dead after the polls: removed');
+});
+
+test('[E2.1 code2 8] a run that timed out exits 124 whatever the coordinator\'s own code or signal was', async (t) => {
+  const { runWithAudit } = await runner();
+  const codes: number[] = [];
+  for (const [status, signal] of [[0, null], [3, null], [null, 'SIGKILL'], [null, 'SIGTERM']] as const) {
+    const hanging = (): EventEmitter => {
+      const child = Object.assign(new EventEmitter(), { stop: () => child.emit('exit', status, signal) });
+      return child;
+    };
+    codes.push(await runWithAudit([], { spawn: hanging, roots: [privateRoot(t)], sweep: nothingSwept, confirm: ENDED, timeoutMs: 20, write: lines().write }));
+  }
+
+  assert.deepEqual(codes, [124, 124, 124, 124]);
 });
