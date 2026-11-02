@@ -257,7 +257,7 @@ test('[E2.1 code4 6] the claim is checked first and is the single authority: for
 test('[E2.1 code4 9] the `count` of a confirmation may be asynchronous (it is a `ps` run through the shared launcher): it is awaited', async () => {
   const tree = await processTree();
 
-  const answer = await tree.confirmTreeEnded({ root: 1 }, { timeoutMs: 20, probe: () => true, count: async () => 3, pause: async () => undefined, now: (() => { let t = 0; return () => (t += 15); })() });
+  const answer = await tree.confirmTreeEnded({ root: 1 }, { timeoutMs: 20, probe: () => true, count: async () => 3, pause: async () => undefined, platform: 'linux', now: (() => { let t = 0; return () => (t += 15); })() });
 
   assert.deepEqual(answer, { ended: false, alive: 3 });
 });

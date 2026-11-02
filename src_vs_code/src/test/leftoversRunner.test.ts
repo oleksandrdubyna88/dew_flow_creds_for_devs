@@ -132,8 +132,15 @@ test('the audit matches the record the runner EXPORTED, not one recomputed after
   assert.equal(made.claim, exported, 'the child claimed with the exported string');
   assert.notEqual(made.pid, thisOwner().pid, 'the child is another process: its pid is nowhere in the claim');
   assert.equal(code, 1);
-  assert.deepEqual(fs.readdirSync(root), [], 'the audit found exactly that folder and removed it');
-  assert.ok(log.seen.some((line) => line.includes('this run left 1 folder(s)')));
+  assert.ok(log.seen.some((line) => line.includes('this run left 1 folder(s)')), 'the audit found exactly that folder, by the exported string');
+  if (process.platform === 'win32') {
+    // Windows has no confirmation that the tree is gone (the job object gives no acknowledgment, risk 2 of the consult): the audit
+    // names the folder and keeps it, and the run fails; the C# sweep of E2.3 or the janitor collects it.
+    assert.equal(fs.readdirSync(root).filter((name) => !name.endsWith('.owner')).length, 1, 'kept: nothing proves the tree ended');
+    assert.ok(log.seen.some((line) => line.includes('(not removed:')), log.seen.join(' | '));
+  } else {
+    assert.deepEqual(fs.readdirSync(root), [], 'the audit found exactly that folder and removed it');
+  }
 });
 
 test('a tree that cannot be confirmed ended is listed, never removed, and fails the run', async (t) => {

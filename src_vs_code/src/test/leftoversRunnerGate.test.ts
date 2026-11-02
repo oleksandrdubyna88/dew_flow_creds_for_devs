@@ -201,7 +201,7 @@ test('the confirmation polls with a backoff from 50 ms to 1 s, inside its bound,
 
   const answer = await tree.confirmTreeEnded(
     { root: 1 },
-    { timeoutMs: 5000, probe: () => true, count: () => 3, now: () => clock, pause: async (ms) => { waited.push(ms); clock += ms; } },
+    { timeoutMs: 5000, probe: () => true, count: () => 3, now: () => clock, pause: async (ms) => { waited.push(ms); clock += ms; }, platform: 'linux' },
   );
 
   assert.deepEqual(answer, { ended: false, alive: 3 });
@@ -210,13 +210,23 @@ test('the confirmation polls with a backoff from 50 ms to 1 s, inside its bound,
   assert.ok(waited.reduce((sum, ms) => sum + ms, 0) <= 5000, 'the polling stays inside the bound');
 });
 
+test('on Windows the confirmation answers "no handle" BEFORE it uses a probe or a count: nothing there can confirm a job is empty', async () => {
+  const tree = await processTree();
+  let asked = 0;
+
+  const answer = await tree.confirmTreeEnded({ root: 1 }, { platform: 'win32', probe: () => { asked += 1; return false; }, count: () => { asked += 1; return 0; } });
+
+  assert.deepEqual(answer, { ended: false, alive: 0, reason: 'no-handle' });
+  assert.equal(asked, 0, 'a probe that answered "nobody" would have been taken for a proof');
+});
+
 test('the confirmation asks "is anyone there" with no process listing, and counts members only when it must report them', async () => {
   const tree = await processTree();
   const answers = [true, true, false];
   let counted = 0;
 
-  const ended = await tree.confirmTreeEnded({ root: 1 }, { probe: () => answers.shift() ?? false, count: () => { counted += 1; return 9; }, pause: async () => undefined });
-  const never = await tree.confirmTreeEnded({ root: 1 }, { timeoutMs: 100, probe: () => true, count: () => { counted += 1; return 2; }, pause: async () => undefined, now: (() => { let t = 0; return () => (t += 60); })() });
+  const ended = await tree.confirmTreeEnded({ root: 1 }, { probe: () => answers.shift() ?? false, count: () => { counted += 1; return 9; }, pause: async () => undefined, platform: 'linux' });
+  const never = await tree.confirmTreeEnded({ root: 1 }, { timeoutMs: 100, probe: () => true, count: () => { counted += 1; return 2; }, pause: async () => undefined, now: (() => { let t = 0; return () => (t += 60); })(), platform: 'linux' });
 
   assert.deepEqual(ended, { ended: true, alive: 0 });
   assert.deepEqual(never, { ended: false, alive: 2 });
