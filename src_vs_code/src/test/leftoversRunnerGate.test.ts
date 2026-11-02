@@ -10,7 +10,7 @@ import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
-import { ownedDir, tempRoot } from '../../scripts/lib/leftovers.cjs';
+import { ownedDir, processProbe, tempRoot, thisOwner } from '../../scripts/lib/leftovers.cjs';
 import {
   ENDED, RECORD, WRAPPER, exists, isAlive, lines, me, nothingSwept, plant, privateRoot, processTree, runner, suite, withEnv,
 } from './runnerWorld';
@@ -361,7 +361,7 @@ test('[E2.1 code2 1] the marker is matched by the whole entry: the record as a p
   try {
     await new Promise((resolve) => setTimeout(resolve, 300)); // the three have started and their environments are readable
 
-    const found = tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'linux' });
+    const found = tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'linux', since: thisOwner().start, startOf: (pid) => processProbe(pid).start });
 
     assert.deepEqual(found.pids, [exact.pid], 'only the process whose entry is exactly TESTSTODELETE_RUN=<record>');
     assert.deepEqual(found.unverified, []);
@@ -483,4 +483,37 @@ test('[E2.1 code2 8] a run that timed out exits 124 whatever the coordinator\'s 
   }
 
   assert.deepEqual(codes, [124, 124, 124, 124]);
+});
+
+/** A fake /proc with one process of ours whose environment cannot be read (mode 0): what a hardened daemon of the same user looks like. */
+function blindProc(scope: Parameters<typeof ownedDir>[0]): string {
+  const proc = ownedDir(scope, 'proc');
+  fs.mkdirSync(path.join(proc, '4242'));
+  const environ = path.join(proc, '4242', 'environ');
+  fs.writeFileSync(environ, 'TESTSTODELETE_RUN=x');
+  fs.chmodSync(environ, 0);
+  return proc;
+}
+
+test('[E2.1 code2 4] a process of ours that started BEFORE the run and cannot be read is not a doubt: it cannot be a descendant', posixOnly, async (t) => {
+  const tree = await processTree();
+  const proc = blindProc(t);
+
+  const older = tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'linux', procRoot: proc, since: 1_000_000, startOf: () => 999_000 });
+
+  assert.deepEqual(older, { pids: [], unverified: [] });
+});
+
+test('[E2.1 code2 4] a process of ours that started AFTER the run began, or whose start is unknown, and cannot be read, is unverified', posixOnly, async (t) => {
+  const tree = await processTree();
+  const proc = blindProc(t);
+
+  const newer = tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'linux', procRoot: proc, since: 1_000_000, startOf: () => 1_000_005 });
+  const unknown = tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'linux', procRoot: proc, since: 1_000_000, startOf: () => undefined });
+  const undated = tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'linux', procRoot: proc });
+
+  for (const found of [newer, unknown, undated]) {
+    assert.equal(found.pids.length, 0);
+    assert.equal(found.unverified.length, 1, JSON.stringify(found));
+  }
 });

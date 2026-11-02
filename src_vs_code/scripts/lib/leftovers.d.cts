@@ -52,11 +52,13 @@ export function tempRoot(): string;
 /** Remove a folder, then its claim. Never throws. */
 export function removeQuietly(dir: string): boolean;
 /** The claim of a folder: `null` (unmarked), an owner, or `{ unreadable: true }`. */
-export function readOwner(target: string, kind: 'folder' | 'worktree'): OwnerRead;
+export function readOwner(target: string, kind: 'folder' | 'worktree', options?: { mine?: (target: string) => boolean }): OwnerRead;
 /** The liveness of an owner record. */
 export function ownerState(owner: OwnerRead, probe?: (pid: number) => unknown, facts?: object): OwnerState;
 /** The caller's kernel-owner question, rule section 3: the real uid on POSIX; a path inside the profile on Windows. */
 export function isMine(target: string): boolean;
+/** What the OS says of a pid, never signalling it: `live`, `dead` or something that is neither, and on Linux its start in Unix seconds. */
+export function processProbe(pid: number): { state: string; start?: number };
 /** This process as an owner record. */
 export function thisOwner(): Owner;
 /** The caller's owner token: `u<uid>` on POSIX, `w<digits>` on Windows. */

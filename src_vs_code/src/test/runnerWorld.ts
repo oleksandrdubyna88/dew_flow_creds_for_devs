@@ -49,7 +49,7 @@ export interface TreeModule {
     tree: { root: number } | undefined,
     options?: { timeoutMs?: number; stepMs?: number; maxStepMs?: number; probe?: () => boolean; count?: () => number; now?: () => number; pause?: (ms: number) => Promise<void> },
   ): Promise<Ended>;
-  findSurvivors(query: { rootPid?: number; record: string; platform?: string; procRoot?: string }): Found;
+  findSurvivors(query: { rootPid?: number; record: string; platform?: string; procRoot?: string; since?: number; startOf?: (pid: number) => number | undefined }): Found;
   startInJob(command: string, args: string[], options: { env: NodeJS.ProcessEnv; stdio?: string }, runFn?: () => Promise<unknown>): EventEmitter;
   SUPERVISOR_MAX_OUTPUT_BYTES: number;
 }

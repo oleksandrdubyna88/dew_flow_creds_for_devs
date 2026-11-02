@@ -71,6 +71,7 @@ module.exports = {
   readOwner: owned.readOwner,
   ownerState: owned.ownerState,
   isMine: owned.isMine,
+  processProbe: owned.processProbe,
   thisOwner: owned.thisOwner,
   thisOwnerToken: owned.thisOwnerToken,
   formatOwner: owned.formatOwner,
