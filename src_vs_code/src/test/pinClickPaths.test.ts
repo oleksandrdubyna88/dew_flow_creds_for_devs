@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { stored } from '../storedSecret';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { after, test } from 'node:test';
 import { withoutPassword } from '../dbConnString';
@@ -10,10 +9,19 @@ import type { StorageManager } from '../storageManager';
 import { EntityMetadata, TreeNode } from '../types';
 import { ACCOUNT, PIN, Sinks, clickVscode, everythingSunk, locked, memoryStorage, seedEntry, sinks } from './pinWorld';
 import { loadWithVscode } from './vscodeStub';
+import { cleanupScope, ownedDir, tempRoot } from '../../scripts/lib/leftovers.cjs';
 
-/** A real directory for the paths the code under test actually creates (the key directory, the agent socket) — never a fixed root, which Linux CI cannot create. */
-const REAL_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-pinclick-'));
-after(() => fs.rmSync(REAL_DIR, { recursive: true, force: true }));
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end — also when one of them fails. */
+const scope = cleanupScope();
+after(() => scope.close());
+
+let realDir: string | undefined;
+/**
+ * A real directory for the paths the code under test actually creates (the key directory, the agent socket) — never a fixed root,
+ * which Linux CI cannot create. Made by the first test that asks, never at module load: a run that filters this file's tests away
+ * would otherwise make a folder no hook removes (rule section 2).
+ */
+const REAL_DIR = (): string => (realDir ??= ownedDir(scope, 'pinclick'));
 
 /**
  * D6 of the entry-PIN plan: every CLICK that hands a stored value to a sink opens it through the
@@ -96,7 +104,7 @@ async function click(row: Row, inputs: (string | undefined)[], protect = true): 
   mod.registerEntityCommands({
     register: (command, handler) => handlers.set(command, handler),
     storage,
-    storageDir: path.join(REAL_DIR, 'creds-test'),
+    storageDir: path.join(REAL_DIR(), 'creds-test'),
     doorsAt: () => ({}) as never,
     mutated: () => undefined,
     vaultKeys: { noteUserActivity: () => undefined } as never,
@@ -306,23 +314,19 @@ test('Write config file: a declined PIN writes no file', async () => {
 });
 
 test('Start VPN writes the OPENED config where the tunnel reads it, after one PIN — and a decline writes nothing', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-vpn-'));
-  try {
-    for (const [inputs, expected] of [[[PIN], VPN], [[undefined], undefined]] as const) {
-      const s = sinks();
-      const stub = clickVscode([...inputs], s);
-      const storage = memoryStorage(stub);
-      const details = entry({ kind: 'vpn', vpnType: 'wireguard' });
-      await seedEntry(storage, details, { 'VPN configuration': await locked(VPN) });
-      const { writeVpnConfig } = loadWithVscode<typeof import('../vpnLauncherRun')>('../vpnLauncherRun', stub);
+  const dir = ownedDir(scope, 'vpn');
+  for (const [inputs, expected] of [[[PIN], VPN], [[undefined], undefined]] as const) {
+    const s = sinks();
+    const stub = clickVscode([...inputs], s);
+    const storage = memoryStorage(stub);
+    const details = entry({ kind: 'vpn', vpnType: 'wireguard' });
+    await seedEntry(storage, details, { 'VPN configuration': await locked(VPN) });
+    const { writeVpnConfig } = loadWithVscode<typeof import('../vpnLauncherRun')>('../vpnLauncherRun', stub);
 
-      const written = await writeVpnConfig({ accountId: ACCOUNT, details, storage, storageDir: dir, trust: {} as never }, 'prod.conf');
+    const written = await writeVpnConfig({ accountId: ACCOUNT, details, storage, storageDir: dir, trust: {} as never }, 'prod.conf');
 
-      assert.equal(written === undefined ? undefined : fs.readFileSync(written, 'utf8'), expected);
-      assert.equal(s.boxes, 1);
-    }
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    assert.equal(written === undefined ? undefined : fs.readFileSync(written, 'utf8'), expected);
+    assert.equal(s.boxes, 1);
   }
 });
 
@@ -341,7 +345,7 @@ function agentManager(stub: Record<string, unknown>, storage: StorageManager): A
   };
   class StubServer {
     listening = false;
-    socketPath = path.join(REAL_DIR, 'agent.sock');
+    socketPath = path.join(REAL_DIR(), 'agent.sock');
     listen(): Promise<void> {
       this.listening = true;
       return Promise.resolve();
@@ -351,8 +355,8 @@ function agentManager(stub: Record<string, unknown>, storage: StorageManager): A
     }
   }
   const mod = loadWithVscode<typeof import('../sshAgentManager')>('../sshAgentManager', withLog, {
-    './sshAgentServer': { SshAgentServer: StubServer, agentSocketPath: (): string => path.join(REAL_DIR, 'agent.sock') },
+    './sshAgentServer': { SshAgentServer: StubServer, agentSocketPath: (): string => path.join(REAL_DIR(), 'agent.sock') },
   });
   const env = { replace: (): void => undefined, delete: (): void => undefined, description: '' };
-  return { instance: new mod.SshAgentManager(storage, os.tmpdir(), env as never, () => undefined), logs };
+  return { instance: new mod.SshAgentManager(storage, tempRoot(), env as never, () => undefined), logs };
 }

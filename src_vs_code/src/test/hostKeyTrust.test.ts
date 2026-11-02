@@ -1,11 +1,14 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
 import { formatHostKey, HostKey } from '../hostKeyPin';
 import { EntityMetadata } from '../types';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * The conversation about a host key, and the file that enforces the answer (audit B10).
@@ -121,7 +124,7 @@ test('the way past a mismatch is a DIFFERENT click from trusting a new host', as
 });
 
 test('the known_hosts file is written where ssh will read it, once there is a pin', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-kh-'));
+  const dir = ownedDir(scope, 'kh');
 
   const file = trust(asked()).materializeKnownHosts(dir, entity({ hostKey: formatHostKey(KEY) }));
 
@@ -132,7 +135,7 @@ test('the known_hosts file is written where ssh will read it, once there is a pi
 });
 
 test('no pin, or no host, means no file — never an empty one ssh would treat as authoritative', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-kh2-'));
+  const dir = ownedDir(scope, 'kh2');
   const mod = trust(asked());
 
   assert.equal(mod.materializeKnownHosts(dir, entity()), undefined, 'no pin yet');

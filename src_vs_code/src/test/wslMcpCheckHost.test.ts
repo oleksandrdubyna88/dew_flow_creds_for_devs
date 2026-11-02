@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { after, test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
 import { CREDS_MCP, binaryNameFor, ridFor } from '../credsInstall';
@@ -48,13 +48,9 @@ interface Harness {
   readonly storageDir: string;
 }
 
-/** Every temporary storage folder a harness made — removed when the file's tests end. */
-const made: string[] = [];
-after(() => {
-  for (const dir of made) {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
+/** Every temporary storage folder a harness made is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 const olderAnswer: WslOutcome = {
   kind: 'exited',
@@ -116,8 +112,7 @@ function harness(options: Options): Harness {
     registerWslMcpCheck(register: (id: string, h: Handler) => void, host: unknown, warn: (m: string) => void, platform: string): void;
   }>('../mcpInstallTarget', stub, { './wslProcess': wslProcess });
 
-  const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wsl-mcp-check-'));
-  made.push(storageDir);
+  const storageDir = ownedDir(scope, 'wsl-mcp-check');
   const handlers = new Map<string, Handler>();
   const store = {
     get: <T>(key: string): T | undefined => state.get(key) as T | undefined,

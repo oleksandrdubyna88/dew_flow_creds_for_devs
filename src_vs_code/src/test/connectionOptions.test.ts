@@ -1,13 +1,16 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
 import { memoryStorage } from './pinWorld';
 import { formatHostKey, HostKey } from '../hostKeyPin';
 import type { StorageManager } from '../storageManager';
 import { EntityMetadata } from '../types';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * Whether a connection may go ahead at all, and under what options (audit D7 + B10).
@@ -61,7 +64,7 @@ interface WorldOptions {
 function world(options: WorldOptions = {}): World {
   const warnings: string[] = [];
   const scanSignals: (AbortSignal | undefined)[] = [];
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-conn-'));
+  const dir = ownedDir(scope, 'conn');
 
   const answer = (m: string): Promise<string | undefined> => {
     warnings.push(m);

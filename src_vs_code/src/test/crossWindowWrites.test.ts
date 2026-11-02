@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as nodePath from 'node:path';
+import { after, test } from 'node:test';
 import { TreeNode } from '../types';
 import { loadWithVscode } from './vscodeStub';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * Two windows, one profile — the boundary `SerialQueue` states in its own header and cannot cross.
@@ -129,7 +131,7 @@ function twoWindows(lockDir?: string): {
 
 /** A real directory, because the lock's whole claim is about a real `mkdir`. */
 function lockDirectory(): string {
-  return fs.mkdtempSync(nodePath.join(os.tmpdir(), 'creds-window-lock-'));
+  return ownedDir(scope, 'window-lock');
 }
 
 const ACCOUNT = { accountId: 'acc-1', email: 'a@example.com', provider: 'microsoft' };

@@ -1,8 +1,5 @@
 import assert from 'node:assert/strict';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { isExternalBundle } from '../externalBundle';
 import type { EntityMetadata, TreeNode } from '../types';
 import type { ImportedEntity } from '../importFormats';
@@ -11,6 +8,11 @@ import {
   Arrivals, FIRST_PIN, FOLDER_BOX, NOTE, SECRET, TRANSIT,
   arrivals, boxes, folderShare, infos, neverInTheClear, opened, owned, sealedUnder,
 } from './arrivalWorld';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * A folder that asks for a PIN asks it too when a share or an import lands in it
@@ -165,22 +167,18 @@ test('the answer spans the whole conversation: shares opened by two transit PINs
 });
 
 test('no lease is held across the folder’s PIN box — a second window’s runOrSkip from inside the box runs', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'arrival-lease-'));
-  try {
-    const w = await arrivals({ protectedIn: ['Production'], lockDir: dir }, [TRANSIT, PIN]);
-    w.s.modalAnswers.push('Use this PIN');
-    // The control: the probe CAN see a held lease — from inside this window's own write, it is skipped.
-    const control = await w.storage.writes.run(() => w.probe());
-    assert.equal(control, 'skipped', 'the probe cannot see a held lease, so it proves nothing');
+  const dir = ownedDir(scope, 'arrival-lease');
+  const w = await arrivals({ protectedIn: ['Production'], lockDir: dir }, [TRANSIT, PIN]);
+  w.s.modalAnswers.push('Use this PIN');
+  // The control: the probe CAN see a held lease — from inside this window's own write, it is skipped.
+  const control = await w.storage.writes.run(() => w.probe());
+  assert.equal(control, 'skipped', 'the probe cannot see a held lease, so it proves nothing');
 
-    await w.inbox.acceptMany([owned(folderShare('alpha', ['Production'])), owned(folderShare('beta', ['Production']))]);
+  await w.inbox.acceptMany([owned(folderShare('alpha', ['Production'])), owned(folderShare('beta', ['Production']))]);
 
-    assert.ok(w.probes.length > 0, 'precondition: the folder’s PIN box was raised');
-    assert.deepEqual(w.probes.filter((p) => p !== 'ran'), [], 'the folder’s PIN box was raised while this window held the lease');
-    assert.equal(w.entries().length, 2, infos(w));
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  assert.ok(w.probes.length > 0, 'precondition: the folder’s PIN box was raised');
+  assert.deepEqual(w.probes.filter((p) => p !== 'ran'), [], 'the folder’s PIN box was raised while this window held the lease');
+  assert.equal(w.entries().length, 2, infos(w));
 });
 
 // ---------------------------------------------------------------------------------------------

@@ -1,11 +1,15 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
 import { EntityMetadata } from '../types';
 import { RunVpn, hostOs, memoryTrust, ownerChain, quotedPath, startVpn, storageOf, terminalNamed, world } from './vpnWorld';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * Issue #103 end to end under the `vscode` stub: the owner's own chain. A VPN whose launcher is a
@@ -18,56 +22,40 @@ import { RunVpn, hostOs, memoryTrust, ownerChain, quotedPath, startVpn, storageO
 
 test('the owner\'s chain: the installer runs and is AWAITED, then the launcher is typed with {config} filled in', async () => {
   const w = world({});
-  const { started, dir } = await startVpn(w, ownerChain());
-  try {
-    assert.equal(started, true, w.warnings.join('\n'));
-    const chain = terminalNamed(w, 'CredsForDevs: before ops relay stage');
-    assert.deepEqual(chain.executed, ['install-openvpn'], 'the installer ran; the launcher did NOT run twice');
-    const launcher = terminalNamed(w, 'CredsForDevs: start openvpn');
-    assert.equal(launcher.sent.length, 1);
-    assert.match(launcher.sent[0], /^openvpn --config '.*ops_relay_stage\.ovpn'$/);
-    assert.equal(fs.readFileSync(quotedPath(launcher.sent[0]), 'utf8'), 'client\nremote vpn.example 1194\n', 'the config the line names was written');
-    // Both lines were confirmed once — the chain in one modal, the launcher's template in its own.
-    assert.ok(w.warnings.some((t) => /Before "ops relay stage", these run in .*, in order/.test(t)), w.warnings.join('\n'));
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  const { started } = await startVpn(scope, w, ownerChain());
+  assert.equal(started, true, w.warnings.join('\n'));
+  const chain = terminalNamed(w, 'CredsForDevs: before ops relay stage');
+  assert.deepEqual(chain.executed, ['install-openvpn'], 'the installer ran; the launcher did NOT run twice');
+  const launcher = terminalNamed(w, 'CredsForDevs: start openvpn');
+  assert.equal(launcher.sent.length, 1);
+  assert.match(launcher.sent[0], /^openvpn --config '.*ops_relay_stage\.ovpn'$/);
+  assert.equal(fs.readFileSync(quotedPath(launcher.sent[0]), 'utf8'), 'client\nremote vpn.example 1194\n', 'the config the line names was written');
+  // Both lines were confirmed once — the chain in one modal, the launcher's template in its own.
+  assert.ok(w.warnings.some((t) => /Before "ops relay stage", these run in .*, in order/.test(t)), w.warnings.join('\n'));
 });
 
 test('a failed installer ASKS, and Stop stops — the launcher is never typed, and the caller hears FALSE', async () => {
   const w = world({ 'install-openvpn': 1 }, { notification: 'Stop' });
-  const { started, dir } = await startVpn(w, ownerChain());
-  try {
-    assert.equal(started, false);
-    assert.equal(w.terminals.find((t) => t.name === 'CredsForDevs: start openvpn'), undefined);
-    assert.ok(w.infos.some((t) => /"install openvpn" exited with code 1/.test(t)), w.infos.join('\n'));
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  const { started } = await startVpn(scope, w, ownerChain());
+  assert.equal(started, false);
+  assert.equal(w.terminals.find((t) => t.name === 'CredsForDevs: start openvpn'), undefined);
+  assert.ok(w.infos.some((t) => /"install openvpn" exited with code 1/.test(t)), w.infos.join('\n'));
 });
 
 test('an installer that exits non-zero because the tool is already there: Continue goes on to the launcher', async () => {
   // winget answers "no applicable upgrade" with a non-zero code; a hard stop would block every
   // start after the first.
   const w = world({ 'install-openvpn': -1978335189 }, { notification: 'Continue' });
-  const { started, dir } = await startVpn(w, ownerChain());
-  try {
-    assert.equal(started, true, w.warnings.join('\n'));
-    assert.equal(terminalNamed(w, 'CredsForDevs: start openvpn').sent.length, 1);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  const { started } = await startVpn(scope, w, ownerChain());
+  assert.equal(started, true, w.warnings.join('\n'));
+  assert.equal(terminalNamed(w, 'CredsForDevs: start openvpn').sent.length, 1);
 });
 
 test('the chain modal dismissed: nothing runs and the caller hears FALSE', async () => {
   const w = world({}, { modal: 'dismiss' });
-  const { started, dir } = await startVpn(w, ownerChain());
-  try {
-    assert.equal(started, false);
-    assert.equal(w.terminals.length, 0, 'no terminal was opened for a chain the person declined');
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  const { started } = await startVpn(scope, w, ownerChain());
+  assert.equal(started, false);
+  assert.equal(w.terminals.length, 0, 'no terminal was opened for a chain the person declined');
 });
 
 test('a launcher in the Trash is not run — the built-in launcher is used, with a warning', async () => {
@@ -84,18 +72,14 @@ test('a launcher in the Trash is not run — the built-in launcher is used, with
       return id === 'start' ? { id, type: 'entity', parentId: 'trash', details: nodes.start } : plain.getNode(account, id);
     },
   };
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-chain-'));
-  try {
-    const { runVpn } = loadWithVscode<{ runVpn: RunVpn }>('../vpnRun', w.vscode, {
-      './vpnExec': { resolveVpnLauncher: () => ({ kind: 'cli', exe: 'openvpn' }) },
-    });
-    const target = { kind: 'node', accountId: 'a1', node: { id: 'vpn', name: nodes.vpn.name, details: nodes.vpn } };
-    await runVpn(target, 'start', storage, dir, { noteUserActivity: () => undefined }, memoryTrust());
-    assert.ok(w.warnings.some((t) => /The launcher of "ops relay stage" no longer exists/.test(t)), w.warnings.join('\n'));
-    assert.equal(w.terminals.find((t) => t.name === 'CredsForDevs: start openvpn'), undefined, 'the trashed launcher never ran');
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  const dir = ownedDir(scope, 'chain');
+  const { runVpn } = loadWithVscode<{ runVpn: RunVpn }>('../vpnRun', w.vscode, {
+    './vpnExec': { resolveVpnLauncher: () => ({ kind: 'cli', exe: 'openvpn' }) },
+  });
+  const target = { kind: 'node', accountId: 'a1', node: { id: 'vpn', name: nodes.vpn.name, details: nodes.vpn } };
+  await runVpn(target, 'start', storage, dir, { noteUserActivity: () => undefined }, memoryTrust());
+  assert.ok(w.warnings.some((t) => /The launcher of "ops relay stage" no longer exists/.test(t)), w.warnings.join('\n'));
+  assert.equal(w.terminals.find((t) => t.name === 'CredsForDevs: start openvpn'), undefined, 'the trashed launcher never ran');
 });
 
 test('a launcher without {config} writes no file and types its line as it is', async () => {
@@ -103,25 +87,17 @@ test('a launcher without {config} writes no file and types its line as it is', a
   nodes.start = { ...nodes.start, command: 'rasdial "Work VPN"', runDependencies: undefined };
   nodes.vpn = { ...nodes.vpn, runDependencies: undefined };
   const w = world({});
-  const { started, dir } = await startVpn(w, nodes);
-  try {
-    assert.equal(started, true);
-    assert.deepEqual(terminalNamed(w, 'CredsForDevs: start openvpn').sent, ['rasdial "Work VPN"']);
-    assert.equal(fs.existsSync(path.join(dir, 'keys')), false, 'no config was materialized');
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  const { started, dir } = await startVpn(scope, w, nodes);
+  assert.equal(started, true);
+  assert.deepEqual(terminalNamed(w, 'CredsForDevs: start openvpn').sent, ['rasdial "Work VPN"']);
+  assert.equal(fs.existsSync(path.join(dir, 'keys')), false, 'no config was materialized');
 });
 
 test('a shell that never starts is named, not waited on (gate round 1, finding 0)', async () => {
   const w = world({}, { integration: false });
-  const { started, dir } = await startVpn(w, ownerChain());
-  try {
-    assert.equal(started, false);
-    assert.ok(w.warnings.some((t) => /terminal closed before it was ready/.test(t)), w.warnings.join('\n'));
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  const { started } = await startVpn(scope, w, ownerChain());
+  assert.equal(started, false);
+  assert.ok(w.warnings.some((t) => /terminal closed before it was ready/.test(t)), w.warnings.join('\n'));
 });
 
 test('without the execute mark nothing runs first — the launcher alone is typed', async () => {
@@ -129,14 +105,10 @@ test('without the execute mark nothing runs first — the launcher alone is type
   nodes.vpn = { ...nodes.vpn, runDependencies: undefined };
   nodes.start = { ...nodes.start, runDependencies: undefined };
   const w = world({});
-  const { started, dir } = await startVpn(w, nodes);
-  try {
-    assert.equal(started, true);
-    assert.equal(w.terminals.find((t) => t.name.startsWith('CredsForDevs: before')), undefined);
-    assert.equal(w.terminals.find((t) => t.name === 'CredsForDevs: start openvpn')?.sent.length, 1);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  const { started } = await startVpn(scope, w, nodes);
+  assert.equal(started, true);
+  assert.equal(w.terminals.find((t) => t.name.startsWith('CredsForDevs: before')), undefined);
+  assert.equal(w.terminals.find((t) => t.name === 'CredsForDevs: start openvpn')?.sent.length, 1);
 });
 
 test('the chain terminal closed between two steps: the second is refused, never typed into a dead terminal', async () => {
@@ -148,18 +120,14 @@ test('the chain terminal closed between two steps: the second is refused, never 
   const vpn: EntityMetadata = { id: 'vpn', name: 'ops relay stage', isSshEnabled: false, isVpn: true, vpnType: 'openvpn', dependsOn: ['a', 'b'], runDependencies: true };
   const nodes = { a: first, b: second, vpn };
   const w = world({}, { closeAfterFirst: true });
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-chain-'));
-  try {
-    const { runVpn } = loadWithVscode<{ runVpn: RunVpn }>('../vpnRun', w.vscode, {
-      './vpnExec': { resolveVpnLauncher: () => ({ kind: 'cli', exe: 'openvpn' }) },
-    });
-    const target = { kind: 'node', accountId: 'a1', node: { id: 'vpn', name: vpn.name, details: vpn } };
-    const started = await runVpn(target, 'start', storageOf(nodes), dir, { noteUserActivity: () => undefined }, memoryTrust());
+  const dir = ownedDir(scope, 'chain');
+  const { runVpn } = loadWithVscode<{ runVpn: RunVpn }>('../vpnRun', w.vscode, {
+    './vpnExec': { resolveVpnLauncher: () => ({ kind: 'cli', exe: 'openvpn' }) },
+  });
+  const target = { kind: 'node', accountId: 'a1', node: { id: 'vpn', name: vpn.name, details: vpn } };
+  const started = await runVpn(target, 'start', storageOf(nodes), dir, { noteUserActivity: () => undefined }, memoryTrust());
 
-    assert.equal(started, false);
-    assert.deepEqual(terminalNamed(w, 'CredsForDevs: before ops relay stage').executed, ['first-step']);
-    assert.ok(w.warnings.some((t) => /closed before "second" could run/.test(t)), w.warnings.join('\n'));
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  assert.equal(started, false);
+  assert.deepEqual(terminalNamed(w, 'CredsForDevs: before ops relay stage').executed, ['first-step']);
+  assert.ok(w.warnings.some((t) => /closed before "second" could run/.test(t)), w.warnings.join('\n'));
 });
