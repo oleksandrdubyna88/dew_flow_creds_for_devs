@@ -25,6 +25,9 @@ export interface Found {
   unverified: string[];
 }
 export interface Seams {
+  /** Extra options for the DEFAULT sweep only (`probe`, `now`, …): what the reference's own tests inject. */
+  sweepOptions?: Record<string, unknown>;
+  loadSweep?: () => Promise<unknown>;
   hardBoundMs?: number;
   platform?: string;
   startedAt?: number;
