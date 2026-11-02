@@ -60,9 +60,12 @@ function plant(root: string, what: string, record?: string): string {
 }
 
 /** A coordinator that "runs a suite": does `work`, then exits with `status`. Starts nothing; its pid is none. */
-function suite(status: number, work: () => void = () => undefined, seen?: { env?: NodeJS.ProcessEnv }): Spawn {
-  return (_command, _args, options) => {
-    if (seen !== undefined) seen.env = options.env;
+function suite(status: number, work: () => void = () => undefined, seen?: { env?: NodeJS.ProcessEnv; args?: string[] }): Spawn {
+  return (_command, args, options) => {
+    if (seen !== undefined) {
+      seen.env = options.env;
+      seen.args = args;
+    }
     const child = new EventEmitter();
     setImmediate(() => {
       work();
@@ -98,10 +101,11 @@ test('a sweep that throws is one line, and the suite keeps its own code', async 
 
 test('the child gets the run\'s record as TESTSTODELETE_RUN, and it is this process\'s own record', async (t) => {
   const { runWithAudit } = await runner();
-  const seen: { env?: NodeJS.ProcessEnv } = {};
-  await runWithAudit([], { spawn: suite(0, undefined, seen), roots: [privateRoot(t)], sweep: nothingSwept, write: lines().write });
+  const seen: { env?: NodeJS.ProcessEnv; args?: string[] } = {};
+  await runWithAudit(['x.test.js'], { spawn: suite(0, undefined, seen), roots: [privateRoot(t)], sweep: nothingSwept, write: lines().write });
 
   assert.equal(seen.env?.TESTSTODELETE_RUN, RECORD);
+  assert.equal(seen.args?.at(-1), 'x.test.js', 'the pattern reaches node --test unchanged');
 });
 
 test('a suite that passed and left a folder it claimed fails with exit 1, names the folder, and the folder is removed', async (t) => {
@@ -246,10 +250,24 @@ function isAlive(pid: number): boolean {
   }
 }
 
-/** The runner starts the REAL `node --test` over `file`, with the fixture's own environment added to the child's. */
-function realSuite(root: string, pidFile: string): Spawn {
-  return (command, args, options) =>
-    spawn(command, args, { ...options, env: { ...options.env, ...WITHOUT_TEST_CONTEXT, FIXTURE_PARENT: root, FIXTURE_PID_FILE: pidFile }, stdio: 'ignore' } as object) as ChildProcess;
+/**
+ * Run `body` with extra variables in this process's environment (and no NODE_TEST_CONTEXT): the runner copies its own
+ * environment into the real `node --test` it starts, on every OS and through its own tree policy — a spawn seam here would
+ * bypass the Windows supervisor, which is exactly what the kill path must not skip.
+ */
+async function withEnv<T>(vars: Record<string, string>, body: () => Promise<T>): Promise<T> {
+  const saved = new Map<string, string | undefined>();
+  for (const key of [...Object.keys(vars), 'NODE_TEST_CONTEXT']) saved.set(key, process.env[key]);
+  delete process.env.NODE_TEST_CONTEXT;
+  Object.assign(process.env, vars);
+  try {
+    return await body();
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 }
 
 test('the kill path: a descendant that outlives the suite is ended before any removal, and the run fails', async (t) => {
@@ -261,7 +279,9 @@ test('the kill path: a descendant that outlives the suite is ended before any re
   const work = path.join(root, 'work');
   fs.mkdirSync(work);
 
-  const code = await runWithAudit([file], { spawn: realSuite(work, pidFile), roots: [work], sweep: nothingSwept, stdio: 'ignore', write: log.write });
+  const code = await withEnv({ FIXTURE_PARENT: work, FIXTURE_PID_FILE: pidFile }, () =>
+    runWithAudit([file], { roots: [work], sweep: nothingSwept, stdio: 'ignore', write: log.write }),
+  );
 
   const pid = Number(fs.readFileSync(pidFile, 'utf8'));
   assert.ok(Number.isSafeInteger(pid) && pid > 0, 'the fixture printed its descendant\'s pid');
@@ -279,7 +299,9 @@ test('the timeout ends the whole tree: the descendant of a suite that never fini
   const work = path.join(root, 'work');
   fs.mkdirSync(work);
 
-  const code = await runWithAudit([file], { spawn: realSuite(work, pidFile), roots: [work], sweep: nothingSwept, stdio: 'ignore', timeoutMs: 4000, write: lines().write });
+  const code = await withEnv({ FIXTURE_PARENT: work, FIXTURE_PID_FILE: pidFile }, () =>
+    runWithAudit([file], { roots: [work], sweep: nothingSwept, stdio: 'ignore', timeoutMs: 4000, write: lines().write }),
+  );
 
   const pid = Number(fs.readFileSync(pidFile, 'utf8'));
   assert.equal(isAlive(pid), false, 'the descendant is dead');
