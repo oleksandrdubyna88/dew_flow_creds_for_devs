@@ -8,7 +8,7 @@
 // wherever that is already at most 8. The preload (`--import`) lowers THIS process, and the `node --test` child
 // inherits the priority (the Windows priority class and the POSIX nice value are both inherited). Under CI,
 // or without the shared-rules mount, the preload lowers nothing. This file needs no mount, so CI runs it.
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { availableParallelism, constants } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -41,6 +41,22 @@ export function runTests(extra = [], spawn = spawnSync) {
     return 128 + (constants.signals[result.signal] ?? 0);
   }
   return result.status ?? 1;
+}
+
+/**
+ * SKELETON of E2.1.S2 — the seams are accepted and the old behaviour kept: wait for the coordinator alone, no sweep, no record
+ * exported, no tree policy, no audit. `leftoversRunner.test.ts` is written against this name and watched failing here first.
+ */
+export async function runWithAudit(extra = [], seams = {}) {
+  const start = seams.spawn ?? ((command, args, options) => spawn(command, args, options));
+  const child = start(process.execPath, testArgs(extra), { stdio: seams.stdio ?? 'inherit', env: process.env });
+  const timer = seams.timeoutMs === undefined ? undefined : setTimeout(() => child.kill('SIGKILL'), seams.timeoutMs);
+  return new Promise((resolve) => {
+    child.once('exit', (status, signal) => {
+      clearTimeout(timer);
+      resolve(signal ? 128 + (constants.signals[signal] ?? 0) : (status ?? 1));
+    });
+  });
 }
 
 const invokedDirectly = (() => {
