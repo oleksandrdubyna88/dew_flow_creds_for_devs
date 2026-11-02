@@ -19,6 +19,10 @@
 //            **macOS (and any POSIX that is not Linux) fails closed** [E2.1 Opus 1]: a detached grandchild whose parent died is
 //            reparented to launchd, the parent-pid walk finds nothing, and there is no environment to read — so the scan always
 //            adds the entry `no environment scan on this OS`, and the run lists and fails and never removes there.
+//            **A survivor is signalled only with a start time bound** [E2.1 code4 12]: a pid with none (never captured, or already going)
+//            cannot be told from a reused number, so it is never killed and, while it is alive, keeps the answer at "not ended".
+//            On non-Linux `startOf` is always undefined, so a chain-walk survivor there is no longer killed either; that platform
+//            already fails closed with `no environment scan on this OS`, so the run lists and fails and removes nothing.
 //            **What the Linux scan cannot see** [E2.1 Opus]: a descendant that cleared its environment (`env -i`, `execve` with
 //            another one) no longer carries the marker, and a non-dumpable or set-uid descendant has an environment the kernel
 //            will not show — the latter is a doubt (it fails the run) only when it started after the runner did; the former is
@@ -30,7 +34,7 @@
 //            with and answers "not confirmed" (`no-handle`): the audit removes nothing on Windows until the reference offers
 //            that acknowledgment (a follow-up, recorded in the plan). The Windows CI leg of `ci-extension.yml`
 //            (`runner lifecycle · windows`) observes that the descendant is dead.
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import { processProbe } from '../../../.claude/rules/shared/tools/lib/owned.mjs';
@@ -91,18 +95,21 @@ export function killWholeTree(child, tree) {
   else if (tree !== undefined) killTree(child);
 }
 
-/** The output of one `ps`. Throws — "cannot confirm" — when it cannot be launched, exits non-zero or passes its ceiling (and is killed). */
-function psOutput(args, timeoutMs) {
-  const answer = spawnSync('ps', args, { encoding: 'utf8', timeout: timeoutMs, killSignal: 'SIGKILL' });
-  if (answer.error?.code === 'ETIMEDOUT') throw new Error(`ps timed out after ${timeoutMs} ms`);
-  if (answer.error || answer.status !== 0 || typeof answer.stdout !== 'string') throw new Error('the process table could not be read');
-  return answer.stdout;
+/**
+ * The output of one `ps`, through the shared launcher (`run` of the reference: one launcher, and its timeout ends the whole tree
+ * [E2.1 code4 9]). Throws — "cannot confirm" — when it cannot be launched, exits non-zero or passes its ceiling.
+ */
+async function psOutput(args, timeoutMs) {
+  const answer = await run('ps', args, { timeoutMs });
+  if (answer.timedOut) throw new Error(`ps timed out after ${timeoutMs} ms`);
+  if (answer.spawnFailed || answer.code !== 0 || typeof answer.out !== 'string') throw new Error('the process table could not be read');
+  return answer.out;
 }
 
-/** How many members of the POSIX group `pgid` the process table shows (1 when it cannot be counted). Spawns `ps`: only for an answer that must say how many. */
-function groupMembers(pgid) {
+/** How many members of the POSIX group `pgid` the process table shows (1 when it cannot be counted). Runs `ps`: only for an answer that must say how many. */
+async function groupMembers(pgid) {
   try {
-    return Math.max(1, psOutput(['-A', '-o', 'pgid='], PS_TIMEOUT_MS).split('\n').filter((line) => Number(line.trim()) === pgid).length);
+    return Math.max(1, (await psOutput(['-A', '-o', 'pgid='], PS_TIMEOUT_MS)).split('\n').filter((line) => Number(line.trim()) === pgid).length);
   } catch {
     return 1;
   }
@@ -140,14 +147,14 @@ export async function confirmTreeEnded(tree, { timeoutMs = CONFIRM_TIMEOUT_MS, s
     step = Math.min(step * 2, maxStepMs);
     alive = probe();
   }
-  return alive ? { ended: false, alive: count() } : { ended: true, alive: 0 };
+  return alive ? { ended: false, alive: await count() } : { ended: true, alive: 0 };
 }
 
 /** The process table, read ONCE per scan: `children` is `ppid -> [pid]` (each list built once and pushed to), `known` every pid listed. Throws when it cannot be read. */
-function readTable(timeoutMs) {
+async function readTable(timeoutMs) {
   const children = new Map();
   const known = new Set();
-  for (const line of psOutput(['-A', '-o', 'pid=,ppid='], timeoutMs).split('\n')) {
+  for (const line of (await psOutput(['-A', '-o', 'pid=,ppid='], timeoutMs)).split('\n')) {
     const [pid, parent, ...rest] = line.trim().split(/\s+/).map(Number);
     if (rest.length !== 0 || !Number.isSafeInteger(pid) || !Number.isSafeInteger(parent)) continue;
     known.add(pid);
@@ -263,7 +270,7 @@ export async function findSurvivors({ rootPid, record, platform = process.platfo
   const result = { pids: new Set(), unverified: [] };
   let known;
   try {
-    const listed = table();
+    const listed = await table();
     known = listed.known;
     if (Number.isSafeInteger(rootPid) && rootPid > 0) for (const pid of chainBelow(rootPid, listed.children)) result.pids.add(pid);
   } catch (error) {
@@ -311,13 +318,18 @@ const startOfDefault = (pid) => processProbe(pid).start;
 async function settle({ rootPid, record, since, startOf, platform, survivors, pidAlive, kill, timeoutMs }) {
   const { pids, unverified } = await survivors({ rootPid, record, since, startOf, platform });
   const bound = new Map(pids.map((pid) => [pid, startOf(pid)]));
-  const same = (pid) => bound.get(pid) === undefined || startOf(pid) === bound.get(pid);
+  // A pid is the run's survivor only while its start time still matches the one bound at the scan. A pid with NO bound start (it
+  // was not captured, or the process was already going) can never be told from a reused number: it is never signalled, and while it
+  // is alive it keeps the answer at "not ended" [E2.1 code4 12].
+  const bounded = (pid) => bound.get(pid) !== undefined;
+  const same = (pid) => bounded(pid) && startOf(pid) === bound.get(pid);
+  const stillOurs = (pid) => pidAlive(pid) && (!bounded(pid) || same(pid));
   const deadline = Date.now() + timeoutMs;
   let step = CONFIRM_STEP_MS;
   let remaining = pids;
   while (remaining.length > 0) {
     for (const pid of remaining) if (same(pid)) kill(pid);
-    remaining = remaining.filter((pid) => same(pid) && pidAlive(pid));
+    remaining = remaining.filter(stillOurs);
     if (remaining.length === 0 || Date.now() >= deadline) break;
     await pause(Math.min(step, deadline - Date.now()));
     step = Math.min(step * 2, CONFIRM_MAX_STEP_MS);

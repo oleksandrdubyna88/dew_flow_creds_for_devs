@@ -22,6 +22,8 @@
 //      is a folder this run made and never removed. It is removed, and a passing suite becomes exit 1 naming it. Any other
 //      record's folder (a concurrent run, a harness, a C# run) is never touched and never counted. A tree that cannot be
 //      confirmed ended removes nothing: the audit lists, fails the run and leaves the folders to a later sweep.
+//      The claim is judged first and by one predicate: a claim another user owns is listed `foreign:` (it never fails the run) and
+//      nothing else of that entry is looked at [E2.1 code4 1, 6].
 //
 // Where the collection guarantee holds. "A killed run's leftovers are collected by the next run" holds for the runners
 // that sweep: `npm test`, `npm run itest:all` and the xUnit executables. A direct `node --test out/test/<file>.test.js`
@@ -130,8 +132,11 @@ function sweepAll({ sweep, roots, write }) {
   }
 }
 
-/** The entries of `root` that are this repository's, this caller's, in the owner form: the folder path of each folder AND each orphan claim. `mine` is the same kernel-owner predicate the sort uses: a name nobody of ours made is never a candidate, unless it is a claim, which is listed. */
-function candidates(helper, root, mine) {
+/**
+ * The entries of `root` that are this repository's, this caller's, in the owner form: the path of each folder AND of each orphan
+ * claim's stem. Purely structural — no ownership or existence is asked here; `sortOne` is the single authority [E2.1 code4 1, 6].
+ */
+function candidates(helper, root) {
   let names;
   try {
     names = fs.readdirSync(root);
@@ -139,11 +144,11 @@ function candidates(helper, root, mine) {
     return [];
   }
   const pattern = helper.ownedPattern();
-  const folders = new Set(names.filter((name) => pattern.test(name) && !name.endsWith('.owner')));
+  const stems = new Set();
   for (const name of names) {
-    if (pattern.test(name) && name.endsWith('.owner')) folders.add(name.slice(0, -'.owner'.length)); // an orphan claim names its folder
+    if (pattern.test(name)) stems.add(name.endsWith('.owner') ? name.slice(0, -'.owner'.length) : name); // a claim names its folder, which may be gone
   }
-  return [...folders].map((name) => path.join(root, name)).filter((target) => mine(target) || fs.existsSync(`${target}.owner`));
+  return [...stems].map((name) => path.join(root, name));
 }
 
 function isDirectory(target) {
@@ -165,7 +170,7 @@ function isDirectory(target) {
 export function auditRoots(helper, roots, record, mine = helper.isMine, startedAt = 0) {
   const found = { claimed: [], unmarked: [], foreign: [], unproven: [] };
   for (const root of roots) {
-    for (const target of candidates(helper, root, mine)) sortOne(helper, target, record, mine, startedAt, found);
+    for (const target of candidates(helper, root)) sortOne(helper, target, record, mine, startedAt, found);
   }
   return found;
 }
@@ -182,14 +187,19 @@ function madeDuringRun(claim, startedAt) {
   }
 }
 
+/**
+ * One candidate, judged by the one `mine` predicate. The CLAIM comes first, whatever the folder is: a claim that exists and is not
+ * ours is listed as foreign and nothing else is looked at (the folder is not stat-ed again) [E2.1 code4 1, 6]. Then the folder
+ * (not a directory, or not ours: left alone), then the claim's record.
+ */
 function sortOne(helper, target, record, mine, startedAt, found) {
-  const there = fs.existsSync(target);
-  if (there && (!isDirectory(target) || !mine(target))) return;
   const claim = `${target}.owner`;
   if (fs.existsSync(claim) && !mine(claim)) {
     found.foreign.push(claim);
     return;
   }
+  const there = fs.existsSync(target);
+  if (there && (!isDirectory(target) || !mine(target))) return;
   const owner = helper.readOwner(target, 'folder', { mine });
   if (owner === null) {
     if (there) found.unmarked.push(target);
