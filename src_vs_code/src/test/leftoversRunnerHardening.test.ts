@@ -220,3 +220,109 @@ test('[E2.1 Opus] on Windows, through a seam that gives a pid, the confirmation 
 
   assert.deepEqual(answer, { ended: false, alive: 0, reason: 'no-handle' });
 });
+
+// ---- code gate round 4 ------------------------------------------------------------------------------------------------------
+
+test('[E2.1 code4 1] a foreign folder that has a foreign claim is LISTED as foreign, and nothing is removed', async (t) => {
+  const { runWithAudit } = await runner();
+  const root = privateRoot(t);
+  const log = lines();
+  let dir = '';
+
+  const code = await runWithAudit([], { spawn: suite(0, () => { dir = plant(root, 'alien', RECORD); }), roots: [root], sweep: nothingSwept, confirm: ENDED, mine: () => false, write: log.write });
+
+  assert.equal(code, 0, 'it is not a folder this run left');
+  assert.ok(exists(dir) && exists(`${dir}.owner`));
+  assert.ok(log.seen.some((line) => line.includes('foreign:') && line.includes(`${dir}.owner`)), `the claim is listed, not silently dropped: ${log.seen.join(' | ')}`);
+});
+
+test('[E2.1 code4 6] the claim is checked first and is the single authority: for a foreign claim the folder is never asked about', async (t) => {
+  const { runWithAudit } = await runner();
+  const root = privateRoot(t);
+  const asked: string[] = [];
+  let dir = '';
+
+  await runWithAudit([], {
+    spawn: suite(0, () => { dir = plant(root, 'once', RECORD); }),
+    roots: [root],
+    sweep: nothingSwept,
+    confirm: ENDED,
+    mine: (target) => { asked.push(target); return false; },
+    write: lines().write,
+  });
+
+  assert.deepEqual(asked, [`${dir}.owner`], 'one question, about the claim, and no second stat of the folder');
+});
+
+test('[E2.1 code4 9] the `count` of a confirmation may be asynchronous (it is a `ps` run through the shared launcher): it is awaited', async () => {
+  const tree = await processTree();
+
+  const answer = await tree.confirmTreeEnded({ root: 1 }, { timeoutMs: 20, probe: () => true, count: async () => 3, pause: async () => undefined, now: (() => { let t = 0; return () => (t += 15); })() });
+
+  assert.deepEqual(answer, { ended: false, alive: 3 });
+});
+
+test('[E2.1 code4 9] a `ps` that hangs with a child of its own is killed WHOLE, through the shared launcher, inside the ceiling', posixOnly, async (t) => {
+  const tree = await processTree();
+  const bin = ownedDir(t, 'fakeps2');
+  fs.writeFileSync(path.join(bin, 'ps'), '#!/bin/sh\nsleep 30 &\nwait\n', { mode: 0o755 });
+  const began = Date.now();
+
+  const found = await withEnv({ PATH: `${bin}${path.delimiter}${process.env.PATH ?? ''}` }, () => tree.findSurvivors({ rootPid: 123456, record: RECORD, platform: 'darwin', psTimeoutMs: 300 }));
+
+  assert.ok(Date.now() - began < 10_000, 'the grandchild of the hung ps did not hold the run for its 30 seconds');
+  assert.ok(found.unverified.some((entry) => /timed out/.test(entry)), JSON.stringify(found));
+});
+
+test('[E2.1 code4 12] a survivor with no start time to bind is never signalled; alive, it keeps the answer at not-ended', async () => {
+  const tree = await processTree();
+  const killed: number[] = [];
+
+  const ended = await tree.endTree(new EventEmitter(), {
+    confirm: ENDED,
+    survivors: () => ({ pids: [4_194_305], unverified: [] }),
+    startOf: () => undefined,
+    pidAlive: () => true,
+    kill: (pid) => { killed.push(pid); },
+    settleTimeoutMs: 80,
+  });
+
+  assert.deepEqual(killed, [], 'a pid that cannot be told from a reused one is not killed');
+  assert.equal(ended.ended, false);
+  assert.equal(ended.alive, 1);
+});
+
+test('[E2.1 code4 12] a survivor with no start time that is already dead is simply gone', async () => {
+  const tree = await processTree();
+  const killed: number[] = [];
+
+  const ended = await tree.endTree(new EventEmitter(), {
+    confirm: ENDED,
+    survivors: () => ({ pids: [4_194_305], unverified: [] }),
+    startOf: () => undefined,
+    pidAlive: () => false,
+    kill: (pid) => { killed.push(pid); },
+    settleTimeoutMs: 80,
+  });
+
+  assert.deepEqual(killed, []);
+  assert.deepEqual(ended, { ended: true, alive: 0 });
+});
+
+test('[E2.1 code4 12] a survivor whose start time was bound IS killed, and polled until it is dead', async () => {
+  const tree = await processTree();
+  const killed: number[] = [];
+  const answers = [true, false];
+
+  const ended = await tree.endTree(new EventEmitter(), {
+    confirm: ENDED,
+    survivors: () => ({ pids: [4_194_305], unverified: [] }),
+    startOf: () => 700,
+    pidAlive: () => answers.shift() ?? false,
+    kill: (pid) => { killed.push(pid); },
+    settleTimeoutMs: 500,
+  });
+
+  assert.ok(killed.length >= 1 && killed.every((pid) => pid === 4_194_305), 'signalled (again at each poll while it lives)');
+  assert.equal(ended.ended, true);
+});

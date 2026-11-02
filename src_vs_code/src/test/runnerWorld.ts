@@ -74,7 +74,7 @@ export interface ScanQuery {
 export interface TreeModule {
   confirmTreeEnded(
     tree: { root: number } | undefined,
-    options?: { timeoutMs?: number; stepMs?: number; maxStepMs?: number; probe?: () => boolean; count?: () => number; now?: () => number; pause?: (ms: number) => Promise<void>; platform?: string },
+    options?: { timeoutMs?: number; stepMs?: number; maxStepMs?: number; probe?: () => boolean; count?: () => number | Promise<number>; now?: () => number; pause?: (ms: number) => Promise<void>; platform?: string },
   ): Promise<Ended>;
   findSurvivors(query: ScanQuery): Promise<Found>;
   endTree(
