@@ -35,6 +35,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # The tests make their scratch through scripts/lib/leftovers.cjs, a WRAPPER over the shared
+      # rules' test-leftovers reference, and `npm test` sweeps and audits through the same mount.
+      # No mount, no helper, no test: the wrapper refuses with this very command. Only that ONE
+      # submodule, as docs.yml does, and from the working directory of the repository root.
+      - name: Fetch the shared rules
+        working-directory: .
+        run: git submodule update --init --depth 1 .claude/rules/shared
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.x

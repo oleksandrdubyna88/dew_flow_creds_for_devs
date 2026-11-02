@@ -112,9 +112,11 @@ test('a test that fails still removes its folder and its claim', async () => {
   const parent = path.join(root, 'parent');
   fs.mkdirSync(parent);
   try {
+    // NODE_TEST_CONTEXT is how node tells a test process it is a child of a runner; a nested `node --test` that inherits
+    // it reports to that parent and exits 0 whatever happened.
     const run = spawnSync(process.execPath, ['--test', file], {
       encoding: 'utf8',
-      env: { ...process.env, WRAPPER_TEST_PARENT: parent, WRAPPER_TEST_PATH: where, TESTSTODELETE_RUN: '' },
+      env: { ...process.env, NODE_TEST_CONTEXT: undefined, WRAPPER_TEST_PARENT: parent, WRAPPER_TEST_PATH: where, TESTSTODELETE_RUN: '' },
     });
 
     assert.notEqual(run.status, 0, 'the fixture test must fail, or this proves nothing about a failing body');
