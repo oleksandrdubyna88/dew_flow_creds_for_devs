@@ -148,7 +148,13 @@ sibling file `<folder>.owner` (never inside, because tests assert the exact cont
   is EXACTLY the record the runner exported (a string, never recomputed), removes it, and turns a passing suite into
   exit 1 with `this run left <n> folder(s) it claimed`. A folder claimed by any other record is never touched and never
   counted; an unmarked folder is listed. If the tree cannot be confirmed ended, the audit removes nothing, fails the run
-  and says `(not removed: <n> descendant(s) still alive)`.
+  and says `(not removed: <n> descendant(s) still alive)` — or `could not be confirmed` when the check itself failed. After the
+  group is killed the runner also looks for what LEFT the group (a grandchild that called `setsid`): on Linux every process
+  carrying the run's record in its environment, everywhere the parent-pid chain; survivors are ended and asked about again.
+  The wait is bounded: 60 minutes, `RUN_TESTS_TIMEOUT_MS` overrides it, and a timeout that fires is reported before the tree
+  is ended. One run at a time per process. **On Windows the audit removes nothing for now**: the reference's job supervisor
+  gives no acknowledgment that its job is empty, so the audit lists and fails a run that left a claimed folder (a passing run
+  with nothing claimed stays passing); on macOS a session-leader orphan whose parent died is not seen.
 - **Where the collection guarantee holds.** `npm test` (and, with E2.2, `npm run itest:all`) sweep; a direct
   `node --test out/test/<file>.test.js` makes and removes its own scratch but does not sweep old leftovers — the next
   runner run, or the janitor, does. **On Windows the Node sweep collects nothing** until F16 closes: the reference lists

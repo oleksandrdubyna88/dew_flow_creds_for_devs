@@ -1313,6 +1313,39 @@ Windows RED the spec asks for ("observed on Linux and Windows"; only Linux was o
 (a renamed `owned.mjs`) — the automated refusal tests cover the same line; (e) barrier conditions (c) and (d) of D8 for the
 owner's Windows machine; (f) a `review_code` round and the Opus review.
 
+### E2.1 build record, part 2 — the code gate and the risk consult (2026-11-02)
+
+The code gate (coai session `156fd570`) and the risk consult (`3d75f52c`) were applied as test commit `836e13b` (fourteen
+scenarios red against the first runner) and the commit after it. Marks: `[E2.1 code n]` the gate's accepted findings, `[E2.1 risk n]`
+the consult's verified points.
+
+| Mark | Result |
+|---|---|
+| **[E2.1 code 1]** a descendant that calls `setsid` leaves the group | `findSurvivors` after the group is gone: every process carrying `TESTSTODELETE_RUN=<record>` in its environment on Linux (`/proc/<pid>/environ`), and the parent-pid chain from the root (`ps -A -o pid=,ppid=`) everywhere. Survivors are ended with SIGKILL and asked again; what is left keeps the audit at list-and-fail. Test: a grandchild started `detached`, `stdio: 'ignore'`, `unref()`, holding a claimed folder — at the deletion boundary the folder is removed only if the grandchild is dead, else kept and reported with exit 1 (red against the group-only runner: "the folder was removed while its grandchild was still alive"). **Not seen:** on macOS a session leader whose parent died is reparented to launchd and carries no marker `ps` reads cheaply — the chain walk from a dead root finds nothing. Open point for the macOS by-hand record. The env marker was chosen over the chain alone because a chain walk from a DEAD coordinator cannot reach reparented orphans |
+| **[E2.1 code 3]** | `forwardSignals` installs a handler only for a positive safe-integer pid (a pid of `-5` would have signalled process 5); `wait()` removes both child listeners and the timer on every outcome |
+| **[E2.1 code 4]** | `endTree` never throws: a failing confirmation, a failing survivor scan or an unreadable process table is `reason: 'unknown'` — "cannot confirm", list-and-fail, with its own line `(not removed: the end of the process tree could not be confirmed)` |
+| **[E2.1 code 5]** | the poll backs off 50 ms doubling to 1 s and its last wait is cut to the bound, so the whole poll stays inside 5 s |
+| **[E2.1 code 7]** | the Windows supervisor's captured output is bounded (8 MiB, `SUPERVISOR_MAX_OUTPUT_BYTES`); an overflow, which the reference answers by ending the run, is reported as an error. Windows half observed only on the CI leg |
+| **[E2.1 code 9/13]** | a finite default timeout of 60 minutes; `RUN_TESTS_TIMEOUT_MS` and the `timeoutMs` seam override it (a bad value is refused naming the legal form); when it fires the runner says `reached its timeout of <n> ms — ending the whole process tree`, ends the tree, audits, and exits non-zero (124 when nothing else says so) |
+| **[E2.1 code 10]** | no `as Owner` casts: `ownerWith(pid, start?)` builds a record with every field |
+| **[E2.1 code 11]** | the temp-site scan discovers every `.ts` under the test tree and scans it; two explicit exclusions with reasons (`tempSiteScan.ts` itself, `fixtures/`); a companion checks the discovery finds the known files and that each exclusion is real |
+| **[E2.1 code 0]** | the `sweepNotWired` stub goes when the real sweep is wired — see the wiring step below |
+| rejected by the gate | 2, 6, 8 and 12 (12: a start-sweep error never changes the exit code, as in the family's runners) |
+| **[E2.1 risk 2]** Windows | `confirmTreeEnded(undefined)` no longer succeeds: it answers `not ended, reason: 'no-handle'`, so on Windows the audit removes nothing; it lists and fails the run when something is claimed, and a passing suite with nothing claimed stays passing. **Follow-up for `dew_flow_conventions`:** a "job is empty" acknowledgment from the reference's supervisor (`process-job.ps1` / `proc.mjs`) — until then Windows never removes in the audit (the Windows kill-path test asserts the descendant is dead and the folder preserved) |
+| **[E2.1 risk 3]** | `runWithAudit` refuses a second call while one is active in the process (a module-level guard, released in a `finally`): both would share `thisOwner()`'s cached record and audit each other's folders. **Recorded:** on Windows and macOS the record has no start time, so a reused pid could match a dead run's record; the audit runs only while THIS runner is alive (its own pid cannot be a reused one), and later sweeps rely on the reference's own liveness rules |
+| **[E2.1 risk 4]** | the wiring step — written now, built after F22's release and creds' pin bump (below) |
+
+**The wiring step for F22 (built after the pin; not before).** When the pinned release carries `sweepLeftovers({ …, token })`:
+(1) export from `leftovers.cjs` a `sweepLeftovers` that binds `token: REPO_TOKEN` and is otherwise the reference's, and add it
+to `leftovers.d.cts` (the export-list test turns red until both agree); (2) in `run-tests.mjs` replace `sweepNotWired` as the
+production default of the `sweep` seam with that function; keep the both-root dedup (`rootsOf`), the real repository path
+(`REPO_ROOT`), the one-line report and the non-fatal failure (a start-sweep error never changes the exit code); delete
+`sweepNotWired` and the line it prints; (3) integration tests with the REAL sweep in private roots (never the real temp
+root): an aged gone-owner `creds` folder is collected on POSIX; a folder of a live or unknown owner survives; a folder of
+another token survives; both roots are covered (a dead-claimed `…-creds-sock-…` in the second root is removed); on Windows
+the sweep lists `unverified:` and removes nothing (F16). These are the plan's scenarios 5 and 6, written against the real
+sweep at last.
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
