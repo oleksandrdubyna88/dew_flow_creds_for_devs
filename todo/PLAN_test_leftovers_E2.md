@@ -1414,6 +1414,20 @@ loader joins `leftovers-sweep.mjs` to it, so the mount's location is written in 
 typecheck and lint exit 0. Rejected **[E2.1 code6 0]**: `seams.sweep` replaces the whole sweep by design (a test seam), and
 `sweepOptions` is documented as the default sweep's only.
 
+### E2.1 build record, part 6 — the first CI run of PR #294 (2026-11-02)
+
+The first run gave the Windows evidence D8 and open item (c) ask for, and two failures. **Observed on Windows** (job `runner lifecycle ·
+windows`, run 41533844075, `windows-latest`, Node 22.x): 51 tests of the wrapper, runner and gate files, 48 passed, 3 failed. The passes
+include the real kill path and the timeout (a descendant of a self-killed `node --test` is dead after the runner returns, through the
+reference's job-object supervisor) and the wrapper scenarios: the Windows half of the process-tree policy works. The three failures
+were tests that assumed the POSIX answer, not defects:
+
+| Mark | Result |
+|---|---|
+| **[E2.1 win 21/22]** | the backoff and the "is anyone there" tests exercised the POSIX path of `confirmTreeEnded`; on win32 it answers `no-handle` before it uses `probe` or `count` — the intended fail-closed path ([E2.1 Opus minor], [E2.1 risk 2]). They pass `platform: 'linux'` (the function's seam) so the logic still runs on every OS, and a new gate test asserts the win32 answer itself: `no-handle`, the probe never asked |
+| **[E2.1 win 8]** | the audit matches the EXPORTED record — on Windows it found the folder and did NOT remove it. **Not a defect, and the plan says so:** the job-object supervisor gives no acknowledgment that its job is empty (D4's Windows sentence: the audit removes only after the tree is PROVEN ended; the consult's risk 2, [E2.1 risk 2] in part 2: "on Windows the audit removes nothing unless the supervisor confirms the job is empty"), and D3 hands Windows collection to the C# sweep of E2.3 or the janitor. Sc. 8c's original text ("the folder was removed" on the Windows leg) is superseded by risk 2, which the coordinator accepted; the kill-path scenarios already carried a Windows branch and the first run proves it. The scenario now asserts the Windows answer — the folder kept, `(not removed: …)` on the audit's line, the run failed — where it asserted POSIX removal by accident. Open: a job-empty acknowledgment from the reference (follow-up for conventions) would let Windows remove |
+| **[E2.1 sonar]** | the SonarCloud job runs the unit tests through c8 (`node --test` over the compiled folder) and did not fetch the mount: 44 test files failed with "the shared rules are not mounted". S1 had promised the mount in every job that runs these tests and the plan's list missed this job (it named `ci-extension.yml`, `ci-server.yml`'s build-test job for the harness, and `ci-clients.yml`). Fixed: the repository's usual step after the checkout. `workflowMount.test.ts` now reads every workflow job by job and requires the step in each job that runs the unit tests, with a companion that must recognise the four known jobs (red before the fix: `sonarcloud.yml:sonar`). The jobs that hold the mount for the unit tests today: `ci-extension.yml` (`build-test`, `runner-windows`), `release.yml` (`extension`), `sonarcloud.yml` (`sonar`) |
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's

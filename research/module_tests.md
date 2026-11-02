@@ -133,7 +133,9 @@ sibling file `<folder>.owner` (never inside, because tests assert the exact cont
   the reference's functions as they are (`ownedDir`, `cleanupScope`, `tempRoot`, `removeQuietly`, `readOwner`, …).
   It adds three things: `shortSocketRoot()`, `ownedFile()` and `writeStub()`. Nothing of the reference is copied.
   No mount, no helper: it refuses and names `git submodule update --init .claude/rules/shared`. CI fetches the mount in
-  the extension job and in the extension release job before `npm test`.
+  every job that runs these tests: the extension job, its Windows runner job, the extension release job and the SonarCloud job
+  (its coverage run is `node --test` over the compiled folder). `workflowMount.test.ts` reads the workflows job by job and fails
+  a job that runs the unit tests without the step.
 - **A test makes its folder** with `ownedDir(t, '<what>')` (`t` is the test context) or, for a helper that many tests
   call, with one module-level `const scope = cleanupScope(); after(() => scope.close());` in the file. A failing
   assertion still removes the folder. Never at module load: a run that filters the file's tests away skips its hooks.
