@@ -172,7 +172,7 @@ sibling file `<folder>.owner` (never inside, because tests assert the exact cont
 - **Proofs.** `leftoversRunnerSweep.test.ts` (the real default sweep in private roots), `leftoversWrapper.test.ts` (binding, names, claim beside the folder, unwind, export list, refusal without
   the mount), `leftoversRunner.test.ts` (the audit by record, the other record's folder untouched, the kill path with a
   real `node --test` and a surviving descendant, the timeout, the refusal; `ci-extension.yml` job
-  `runner lifecycle · windows` runs the wrapper, runner and gate files on Windows; `leftoversRunnerGate.test.ts` and
+  `runner lifecycle · windows` runs the wrapper, runner, gate, hardening and sweep files on Windows (the sweep file's F16 `unverified:` scenario and the hardening file's win32 pid case run only there [E2.1 win jobs]); `leftoversRunnerGate.test.ts` and
   `leftoversRunnerHardening.test.ts` carry the process-tree, macOS and bound scenarios) and `leftoversSites.test.ts` (a syntax-tree scan for raw
   temp calls in the migrated files, with companions that keep the scan alive).
 - **Old names** (`creds-*`, `cvbk-*`, `arrival-lease-*`, `wsl-mcp-check-*`, `creds-life-*.sock`, the legacy

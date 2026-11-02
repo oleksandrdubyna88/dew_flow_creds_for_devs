@@ -218,4 +218,4 @@ jobs:
         run: npm run compile
 
       - name: Runner lifecycle (wrapper and runner scenarios)
-        run: node --test out/test/leftoversWrapper.test.js out/test/leftoversRunner.test.js out/test/leftoversRunnerGate.test.js
+        run: node --test out/test/leftoversWrapper.test.js out/test/leftoversRunner.test.js out/test/leftoversRunnerGate.test.js out/test/leftoversRunnerHardening.test.js out/test/leftoversRunnerSweep.test.js
