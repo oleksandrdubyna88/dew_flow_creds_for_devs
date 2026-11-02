@@ -9,6 +9,11 @@ import type { StorageManager } from '../storageManager';
 import { EntityMetadata, TreeNode } from '../types';
 import { ACCOUNT, PIN, Sinks, clickVscode, everythingSunk, locked, memoryStorage, seedEntry, sinks } from './pinWorld';
 import { loadWithVscode } from './vscodeStub';
+import { memoryTrust } from './vpnWorld';
+import type { AgentDoors } from '../agentDoors';
+
+/** No door is open: every field of the record, written out. */
+const NO_DOORS: AgentDoors = { cliAliases: [], codeAccess: false, bridgeOpen: false, wslRelay: false, standingConsent: false };
 import { cleanupScope, ownedDir, tempRoot } from '../../scripts/lib/leftovers.cjs';
 
 /** Every folder this file makes is owned and claimed, and removed when the file's tests end — also when one of them fails. */
@@ -105,10 +110,10 @@ async function click(row: Row, inputs: (string | undefined)[], protect = true): 
     register: (command, handler) => handlers.set(command, handler),
     storage,
     storageDir: path.join(REAL_DIR(), 'creds-test'),
-    doorsAt: () => ({}) as never,
+    doorsAt: (): AgentDoors => NO_DOORS,
     mutated: () => undefined,
-    vaultKeys: { noteUserActivity: () => undefined } as never,
-    trust: {} as never,
+    vaultKeys: { noteUserActivity: () => undefined },
+    trust: memoryTrust(),
   });
   const handler = handlers.get(row.command);
   assert.ok(handler !== undefined, `${row.command} is not registered`);
@@ -323,7 +328,7 @@ test('Start VPN writes the OPENED config where the tunnel reads it, after one PI
     await seedEntry(storage, details, { 'VPN configuration': await locked(VPN) });
     const { writeVpnConfig } = loadWithVscode<typeof import('../vpnLauncherRun')>('../vpnLauncherRun', stub);
 
-    const written = await writeVpnConfig({ accountId: ACCOUNT, details, storage, storageDir: dir, trust: {} as never }, 'prod.conf');
+    const written = await writeVpnConfig({ accountId: ACCOUNT, details, storage, storageDir: dir, trust: memoryTrust() }, 'prod.conf');
 
     assert.equal(written === undefined ? undefined : fs.readFileSync(written, 'utf8'), expected);
     assert.equal(s.boxes, 1);
@@ -358,5 +363,5 @@ function agentManager(stub: Record<string, unknown>, storage: StorageManager): A
     './sshAgentServer': { SshAgentServer: StubServer, agentSocketPath: (): string => path.join(REAL_DIR(), 'agent.sock') },
   });
   const env = { replace: (): void => undefined, delete: (): void => undefined, description: '' };
-  return { instance: new mod.SshAgentManager(storage, tempRoot(), env as never, () => undefined), logs };
+  return { instance: new mod.SshAgentManager(storage, tempRoot(), env, () => undefined), logs };
 }

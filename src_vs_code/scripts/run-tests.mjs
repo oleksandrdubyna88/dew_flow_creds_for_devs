@@ -8,7 +8,8 @@
 //   1. loads the leftovers helper (`scripts/lib/leftovers.cjs`, a wrapper over the MOUNTED reference). No mount, no run:
 //      one line naming `git submodule update --init .claude/rules/shared`, and `node --test` is never started;
 //   2. sweeps what a KILLED earlier run left (rule section 4), in BOTH roots when the socket root differs from the temp
-//      root; it reports and never changes the exit code;
+//      root; it reports and never changes the exit code. NOT WIRED YET: the mounted sweep serves the reference's own token
+//      only, so for now this step reports one line per root saying so; it is wired after F22 (plan, E2.1 build record);
 //   3. exports the run's record ONCE, as `TESTSTODELETE_RUN=<record>` in the child's environment (rule section 3), and
 //      holds that exact string: every test-file process claims with it, and the audit compares it as a string, never a
 //      record recomputed afterwards [E2.1 plan gate 0];
@@ -28,8 +29,11 @@
 // leftovers: the next runner run, or the janitor, does. On Windows the Node sweep COLLECTS NOTHING until F16 closes: the
 // reference lists `unverified:` there (the owner SID is not read); the collector on Windows is the C# sweep of the xUnit
 // executables or the janitor once armed. The audit of step 5 is not that sweep: it removes only this run's own record.
-// On Windows and macOS the record carries no start time, so a dead run's pid that was reused could match it; the audit runs only
-// while THIS runner is alive (its own pid cannot be a reused one), and later sweeps rely on the reference's liveness rules.
+// On Windows and macOS the record carries no start time, so a dead earlier run whose pid was reused by this runner would write
+// the SAME record text. The audit therefore keeps only claims whose file is at or after this runner's start (less a two-second
+// clock slack) and lists the others as `unproven:`, never removing them [E2.1 Opus 2]; where the record has a start time the
+// start time already tells the runs apart. On macOS the survivor scan has no environment to read and fails closed: the audit
+// lists and fails and removes nothing there [E2.1 Opus 1].
 // On Windows the audit removes nothing at all for now: the reference's job supervisor gives no acknowledgment that its job is empty.
 //
 // The preload (`--import`) lowers THIS process, and the `node --test` child inherits the priority (the Windows priority
@@ -126,8 +130,8 @@ function sweepAll({ sweep, roots, write }) {
   }
 }
 
-/** The entries of `root` that are this repository's, this caller's, in the owner form: `{ folder, name }` for each folder AND each orphan claim. */
-function candidates(helper, root) {
+/** The entries of `root` that are this repository's, this caller's, in the owner form: the folder path of each folder AND each orphan claim. `mine` is the same kernel-owner predicate the sort uses: a name nobody of ours made is never a candidate, unless it is a claim, which is listed. */
+function candidates(helper, root, mine) {
   let names;
   try {
     names = fs.readdirSync(root);
@@ -139,7 +143,7 @@ function candidates(helper, root) {
   for (const name of names) {
     if (pattern.test(name) && name.endsWith('.owner')) folders.add(name.slice(0, -'.owner'.length)); // an orphan claim names its folder
   }
-  return [...folders].map((name) => path.join(root, name));
+  return [...folders].map((name) => path.join(root, name)).filter((target) => mine(target) || fs.existsSync(`${target}.owner`));
 }
 
 function isDirectory(target) {
@@ -153,19 +157,32 @@ function isDirectory(target) {
 /**
  * What the run left. `claimed`: every folder and orphan claim whose claim is EXACTLY `record` and whose folder passes the
  * kernel-owner key; `unmarked`: owner-form folders with no claim, which nobody's helper knows (listed, never touched); `foreign`:
- * claim files the caller does not own — never read, removed or counted [E2.1 code2 0]. The key is asked of the CLAIM file itself,
+ * claim files the caller does not own — never read, removed or counted [E2.1 code2 0]; `unproven`: claims with this record's text
+ * on a record that has no start time and a file older than this run (a dead run's reused pid?) — listed, never removed [E2.1 Opus 2]. The key is asked of the CLAIM file itself,
  * before anything is read from it, whether or not the folder is still there (an orphan has none). A claim of any other record —
  * another run, a harness, a C# executable — is in none of the lists. `mine` is a seam (a second uid cannot be had in a test).
  */
-export function auditRoots(helper, roots, record, mine = helper.isMine) {
-  const found = { claimed: [], unmarked: [], foreign: [] };
+export function auditRoots(helper, roots, record, mine = helper.isMine, startedAt = 0) {
+  const found = { claimed: [], unmarked: [], foreign: [], unproven: [] };
   for (const root of roots) {
-    for (const target of candidates(helper, root)) sortOne(helper, target, record, mine, found);
+    for (const target of candidates(helper, root, mine)) sortOne(helper, target, record, mine, startedAt, found);
   }
   return found;
 }
 
-function sortOne(helper, target, record, mine, found) {
+/** A record has a start time when it has more than `<owner>:<host>@<os>:<pid>` — Linux's has, macOS's and Windows's have not. */
+const hasStart = (record) => record.split(':').length >= 4;
+
+/** Is the claim file at or after this run's start (less two seconds of clock slack)? Only asked where the record has no start time. */
+function madeDuringRun(claim, startedAt) {
+  try {
+    return fs.lstatSync(claim).mtimeMs >= startedAt - 2000;
+  } catch {
+    return false;
+  }
+}
+
+function sortOne(helper, target, record, mine, startedAt, found) {
   const there = fs.existsSync(target);
   if (there && (!isDirectory(target) || !mine(target))) return;
   const claim = `${target}.owner`;
@@ -177,7 +194,8 @@ function sortOne(helper, target, record, mine, found) {
   if (owner === null) {
     if (there) found.unmarked.push(target);
   } else if (owner.unreadable !== true && helper.formatOwner(owner) === record) {
-    found.claimed.push(target);
+    if (hasStart(record) || madeDuringRun(claim, startedAt)) found.claimed.push(target);
+    else found.unproven.push(claim);
   }
 }
 
@@ -189,8 +207,18 @@ function removeClaimed(helper, claimed) {
 /** Why nothing was removed, in the audit's one line. */
 function refusalOf(ended) {
   if (ended.alive > 0) return ` (not removed: ${ended.alive} descendant(s) still alive)`;
+  if (ended.reason === 'no-exit') return ' (not removed: the coordinator did not exit after the kill)';
   if (ended.reason === 'no-handle') return ' (not removed: the supervisor gives no acknowledgment that its job is empty)';
   return ' (not removed: the end of the process tree could not be confirmed)';
+}
+
+/** Who owns a file, for the line that lists it: its uid when readable. */
+function ownerOf(target) {
+  try {
+    return `uid ${fs.lstatSync(target).uid}`;
+  } catch {
+    return 'an owner that cannot be read';
+  }
 }
 
 /**
@@ -199,10 +227,11 @@ function refusalOf(ended) {
  * exception is a tree with no handle (Windows) and nothing claimed: there is nothing to remove or list, and failing every Windows
  * run for a confirmation the platform cannot give would make the suite unusable there.
  */
-function finishAudit({ helper, roots, record, ended, code, write, mine }) {
-  const { claimed, unmarked, foreign } = auditRoots(helper, roots, record, mine);
+function finishAudit({ helper, roots, record, ended, code, write, mine, startedAt }) {
+  const { claimed, unmarked, foreign, unproven } = auditRoots(helper, roots, record, mine, startedAt);
   for (const target of unmarked) write(`run-tests: unmarked: ${target} — an owner-form folder with no claim, left alone`);
-  for (const target of foreign) write(`run-tests: foreign: ${target} — a claim another user owns, never read or removed`);
+  for (const target of foreign) write(`run-tests: foreign: ${target} — a claim of ${ownerOf(target)}, never read or removed; it does not fail this run`);
+  for (const target of unproven) write(`run-tests: unproven: ${target} — carries this run's record text but is older than this run (a dead run's pid reused?), left alone`);
   if (ended.ended) removeClaimed(helper, claimed);
   const failsAnyway = !ended.ended && ended.reason !== 'no-handle';
   if (claimed.length === 0 && !failsAnyway) return code;
@@ -210,15 +239,21 @@ function finishAudit({ helper, roots, record, ended, code, write, mine }) {
   return code === 0 ? 1 : code;
 }
 
+/** How long, after the kill, the runner waits for the coordinator to exit before it gives up on it [E2.1 Opus bound]. */
+export const HARD_BOUND_MS = 30_000;
+
 /**
- * Wait for the coordinator to exit, or end its tree when `timeoutMs` passes (saying so first). Resolves once with
- * `{ status, signal, error, timedOut }`; the timer and both listeners are gone on every outcome [E2.1 code 3].
+ * Wait for the coordinator to exit, or end its tree when `timeoutMs` passes (saying so first) and wait at most `hardBoundMs`
+ * more for it to go: a coordinator that survives SIGKILL would otherwise hold the runner for ever. Resolves once with
+ * `{ status, signal, error, timedOut, gaveUp }`; the timers and both listeners are gone on every outcome [E2.1 code 3].
  */
-function wait(child, { timeoutMs, tree, write }) {
+function wait(child, { timeoutMs, hardBoundMs, tree, write }) {
   return new Promise((resolve) => {
     let timedOut = false;
+    let hard;
     const finish = (result) => {
       clearTimeout(timer);
+      clearTimeout(hard);
       child.off('error', onError);
       child.off('exit', onExit);
       resolve({ ...result, timedOut });
@@ -229,6 +264,10 @@ function wait(child, { timeoutMs, tree, write }) {
       timedOut = true;
       write(`run-tests: the suite reached its timeout of ${timeoutMs} ms — ending the whole process tree`);
       tree.killWholeTree(child, tree.snapshotTree(child));
+      hard = setTimeout(() => {
+        write(`run-tests: the coordinator did not exit ${hardBoundMs} ms after the kill — giving up on it`);
+        finish({ gaveUp: true });
+      }, hardBoundMs);
     }, timeoutMs);
     child.once('error', onError);
     child.once('exit', onExit);
@@ -257,7 +296,7 @@ let active = false;
 /**
  * Sweep, run the suite in a tree of its own, end the tree, audit, and return the code to leave with. The seams are for tests:
  * `spawn` (starts the coordinator), `sweep`, `roots`, `record` (the string exported as `TESTSTODELETE_RUN`), `confirm` (the
- * answer to "is the tree ended"), `survivors` (what is still alive outside the group), `pidAlive`, `mine` (the kernel-owner question), `settleTimeoutMs`, `timeoutMs`, `stdio`,
+ * answer to "is the tree ended"), `survivors` (what is still alive outside the group), `pidAlive`, `mine` (the kernel-owner question), `platform`, `startedAt`, `settleTimeoutMs`, `timeoutMs`, `hardBoundMs`, `stdio`,
  * `write` (one line to stderr).
  */
 export async function runWithAudit(extra = [], seams = {}) {
@@ -285,18 +324,20 @@ async function runOnce(extra, seams, write) {
     return 1;
   }
   const { helper, tree } = helpers;
+  const startedAt = seams.startedAt ?? Date.now();
   const roots = seams.roots === undefined ? rootsOf(helper) : canonicalRoots(seams.roots);
   sweepAll({ sweep: seams.sweep ?? sweepNotWired, roots, write });
   const record = seams.record ?? helper.formatOwner(helper.thisOwner()); // held ONCE: exported below, compared by the audit
   const env = { ...process.env, TESTSTODELETE_RUN: record };
   const child = tree.startInOwnTree(process.execPath, testArgs(extra), { stdio: seams.stdio ?? 'inherit', env }, seams.spawn);
   const stopForwarding = forwardSignals(child);
-  const result = await wait(child, { timeoutMs, tree, write });
+  const result = await wait(child, { timeoutMs, hardBoundMs: seams.hardBoundMs ?? HARD_BOUND_MS, tree, write });
   stopForwarding();
   if (result.error) write(`run-tests: ${result.error.message}`);
-  const ended = await tree.endTree(child, { confirm: seams.confirm, survivors: seams.survivors, pidAlive: seams.pidAlive, record, since: helper.thisOwner().start, startOf: (pid) => helper.processProbe(pid).start, settleTimeoutMs: seams.settleTimeoutMs });
+  // A coordinator that outlived the kill and the second bound is alive: nothing proves its tree ended, so nothing is removed.
+  const ended = result.gaveUp ? { ended: false, alive: 0, reason: 'no-exit' } : await tree.endTree(child, { confirm: seams.confirm, survivors: seams.survivors, pidAlive: seams.pidAlive, record, platform: seams.platform, settleTimeoutMs: seams.settleTimeoutMs });
   // A run that timed out exits 124 whatever the coordinator's own code or signal was: the verdict is "ended by the runner" [E2.1 code2 8].
-  return finishAudit({ helper, roots, record, ended, code: result.timedOut ? 124 : exitCodeOf(result), write, mine: seams.mine });
+  return finishAudit({ helper, roots, record, ended, code: result.timedOut ? 124 : exitCodeOf(result), write, mine: seams.mine, startedAt });
 }
 
 const invokedDirectly = (() => {

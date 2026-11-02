@@ -14,9 +14,15 @@
 //            A descendant that DID leave the group is looked for after the group is gone [E2.1 code 1]: on Linux every process whose
 //            environment carries this run's record (`TESTSTODELETE_RUN=<record>`, which every child inherits) is a survivor,
 //            wherever it sits in the table; everywhere, `ps -A -o pid=,ppid=` walked from the root gives the processes still
-//            parented to it. Survivors are ended with SIGKILL and asked about again; what cannot be accounted for keeps the
-//            audit at list-and-fail. Not seen: on macOS a session-leader whose parent died is reparented to launchd and carries
-//            no marker `ps` can read cheaply — recorded in the plan as an open point.
+//            parented to it. Survivors are ended with SIGKILL (each bound to its start time and re-verified before it is
+//            signalled) and asked about again; what cannot be accounted for keeps the audit at list-and-fail.
+//            **macOS (and any POSIX that is not Linux) fails closed** [E2.1 Opus 1]: a detached grandchild whose parent died is
+//            reparented to launchd, the parent-pid walk finds nothing, and there is no environment to read — so the scan always
+//            adds the entry `no environment scan on this OS`, and the run lists and fails and never removes there.
+//            **What the Linux scan cannot see** [E2.1 Opus]: a descendant that cleared its environment (`env -i`, `execve` with
+//            another one) no longer carries the marker, and a non-dumpable or set-uid descendant has an environment the kernel
+//            will not show — the latter is a doubt (it fails the run) only when it started after the runner did; the former is
+//            invisible. Both are outside what this repository's tests do.
 //   Windows  `run(..., { containTree: true })` starts the child under the reference's supervisor (`process-job.ps1`, PowerShell
 //            7): a job object with KILL_ON_JOB_CLOSE, so the descendants end when the supervisor leaves, even those whose
 //            parent died first (a process-table walk from a dead coordinator would miss exactly those). The reference gives no
@@ -27,6 +33,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
+import { processProbe } from '../../../.claude/rules/shared/tools/lib/owned.mjs';
 import { MAX_TIMER_MS, killTree, run } from '../../../.claude/rules/shared/tools/lib/proc.mjs';
 
 /** How long the confirmation waits for the tree to disappear, how often it first asks, and the longest it waits between two questions [E2.1 code 5]. */
@@ -36,6 +43,9 @@ export const CONFIRM_MAX_STEP_MS = 1000;
 
 /** The most output the Windows supervisor's stderr may hold before the reference ends the run [E2.1 code 7]: a bound, not "no limit". */
 export const SUPERVISOR_MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
+
+/** Every `ps` the scan launches has a ceiling and is killed with SIGKILL when it is reached [E2.1 code3 9]: a timeout is "cannot confirm". */
+export const PS_TIMEOUT_MS = 5000;
 
 const WINDOWS = process.platform === 'win32';
 
@@ -81,11 +91,21 @@ export function killWholeTree(child, tree) {
   else if (tree !== undefined) killTree(child);
 }
 
+/** The output of one `ps`. Throws — "cannot confirm" — when it cannot be launched, exits non-zero or passes its ceiling (and is killed). */
+function psOutput(args, timeoutMs) {
+  const answer = spawnSync('ps', args, { encoding: 'utf8', timeout: timeoutMs, killSignal: 'SIGKILL' });
+  if (answer.error?.code === 'ETIMEDOUT') throw new Error(`ps timed out after ${timeoutMs} ms`);
+  if (answer.error || answer.status !== 0 || typeof answer.stdout !== 'string') throw new Error('the process table could not be read');
+  return answer.stdout;
+}
+
 /** How many members of the POSIX group `pgid` the process table shows (1 when it cannot be counted). Spawns `ps`: only for an answer that must say how many. */
 function groupMembers(pgid) {
-  const table = spawnSync('ps', ['-A', '-o', 'pgid='], { encoding: 'utf8' });
-  if (table.status !== 0 || typeof table.stdout !== 'string') return 1;
-  return Math.max(1, table.stdout.split('\n').filter((line) => Number(line.trim()) === pgid).length);
+  try {
+    return Math.max(1, psOutput(['-A', '-o', 'pgid='], PS_TIMEOUT_MS).split('\n').filter((line) => Number(line.trim()) === pgid).length);
+  } catch {
+    return 1;
+  }
 }
 
 /** Is anyone in the group? One `kill(-pgid, 0)`, no process listing: `ESRCH` is the empty group [E2.1 code2 7]. */
@@ -104,13 +124,14 @@ const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * Wait until no member of the tree is alive, or `timeoutMs` passes: `{ ended: true, alive: 0 }`, or `{ ended: false, alive: <n> }`.
  * The question is a bare probe, repeated with a backoff (`stepMs` doubling to `maxStepMs`) whose last wait is cut to what the bound
  * leaves; members are counted (`count`, a `ps`) only for the answer that is not "ended" [E2.1 code 5, code2 7]. `probe`, `count`,
- * `now` and `pause` are seams for tests.
+ * `now`, `pause` and `platform` are seams for tests.
  *
  * With no handle on the tree — a supervised run, whose job has no pid, or a fake — there is nothing to ask, and the answer is NOT
- * "ended": `{ ended: false, alive: 0, reason: 'no-handle' }` [E2.1 risk 2]. A confirmation that cannot confirm is not a confirmation.
+ * "ended": `{ ended: false, alive: 0, reason: 'no-handle' }` [E2.1 risk 2]. The same on Windows even when a pid is given (a spawn
+ * seam): `kill(-pid, 0)` proves nothing there. A confirmation that cannot confirm is not a confirmation.
  */
-export async function confirmTreeEnded(tree, { timeoutMs = CONFIRM_TIMEOUT_MS, stepMs = CONFIRM_STEP_MS, maxStepMs = CONFIRM_MAX_STEP_MS, probe = () => groupAlive(tree), count = () => groupMembers(tree.root), now = Date.now, pause: wait = pause } = {}) {
-  if (tree === undefined) return { ended: false, alive: 0, reason: 'no-handle' };
+export async function confirmTreeEnded(tree, { timeoutMs = CONFIRM_TIMEOUT_MS, stepMs = CONFIRM_STEP_MS, maxStepMs = CONFIRM_MAX_STEP_MS, probe = () => groupAlive(tree), count = () => groupMembers(tree.root), now = Date.now, pause: wait = pause, platform = process.platform } = {}) {
+  if (tree === undefined || platform === 'win32') return { ended: false, alive: 0, reason: 'no-handle' };
   const deadline = now() + timeoutMs;
   let step = stepMs;
   let alive = probe();
@@ -122,16 +143,19 @@ export async function confirmTreeEnded(tree, { timeoutMs = CONFIRM_TIMEOUT_MS, s
   return alive ? { ended: false, alive: count() } : { ended: true, alive: 0 };
 }
 
-/** The process table as one adjacency map `ppid -> [pid]`, read ONCE per scan. Throws when it cannot be read: a table that is not there is not an empty one. */
-function childrenByParent() {
-  const table = spawnSync('ps', ['-A', '-o', 'pid=,ppid='], { encoding: 'utf8' });
-  if (table.error || table.status !== 0 || typeof table.stdout !== 'string') throw new Error('the process table could not be read');
+/** The process table, read ONCE per scan: `children` is `ppid -> [pid]` (each list built once and pushed to), `known` every pid listed. Throws when it cannot be read. */
+function readTable(timeoutMs) {
   const children = new Map();
-  for (const line of table.stdout.split('\n')) {
+  const known = new Set();
+  for (const line of psOutput(['-A', '-o', 'pid=,ppid='], timeoutMs).split('\n')) {
     const [pid, parent, ...rest] = line.trim().split(/\s+/).map(Number);
-    if (rest.length === 0 && Number.isSafeInteger(pid) && Number.isSafeInteger(parent)) children.set(parent, [...(children.get(parent) ?? []), pid]);
+    if (rest.length !== 0 || !Number.isSafeInteger(pid) || !Number.isSafeInteger(parent)) continue;
+    known.add(pid);
+    const list = children.get(parent);
+    if (list === undefined) children.set(parent, [pid]);
+    else list.push(pid);
   }
-  return children;
+  return { children, known };
 }
 
 /** Everything the parent-pid chain reaches below `root`, from one adjacency map. */
@@ -153,7 +177,7 @@ function holdsEntry(block, entry) {
 }
 
 /** Whether `/proc/<pid>` belongs to the caller: only a process of ours is one whose unreadable environment leaves a doubt. */
-function isOurs(procRoot, name) {
+function isOursDefault(procRoot, name) {
   try {
     return fs.statSync(`${procRoot}/${name}`).uid === process.getuid();
   } catch {
@@ -181,23 +205,29 @@ function isDefunct(procRoot, name) {
   }
 }
 
-const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-
-/** Read one environment: the block, `'gone'` for a process that is not (or is no longer) there, or `'unreadable'` after a few tries (a process in the middle of an exec is unreadable for a moment). */
-function readEnviron(procRoot, name) {
+/**
+ * Read one environment: the block; `'gone'` for a process that is not (or no longer) there; `'foreign'` for one that is not ours
+ * (checked BEFORE any retry [E2.1 code3 11]); or `'unreadable'` after a few awaited retries (a process in the middle of an exec is
+ * unreadable for a moment). The wait is a promise, never a blocking sleep [E2.1 code3 3/6].
+ */
+async function readEnviron(procRoot, name, { ours, wait }) {
   for (let attempt = 0; attempt < 4; attempt += 1) {
     try {
       return fs.readFileSync(`${procRoot}/${name}/environ`);
     } catch (error) {
       if (error?.code === 'ENOENT' || error?.code === 'ESRCH' || isDefunct(procRoot, name)) return 'gone';
-      if (attempt < 3) sleepMs(5);
+      if (!ours(name)) return 'foreign';
+      if (attempt < 3) await wait(5);
     }
   }
   return 'unreadable';
 }
 
-/** Linux: `{ pids, unverified }` — the processes whose environment carries exactly `TESTSTODELETE_RUN=<record>`, and what could not be looked at. */
-function markedByRecord(record, procRoot, { since, startOf }) {
+/**
+ * Linux: `{ pids, unverified }` — the processes whose environment carries exactly `TESTSTODELETE_RUN=<record>`, and what could not be
+ * looked at. Only the pids the process table lists are read or dated [E2.1 code3 7]; with no table (`known` undefined) all are.
+ */
+async function markedByRecord(record, procRoot, { since, startOf, known, ours, wait }) {
   const entry = Buffer.from(`TESTSTODELETE_RUN=${record}`);
   const found = { pids: [], unverified: [] };
   let names;
@@ -207,11 +237,11 @@ function markedByRecord(record, procRoot, { since, startOf }) {
     return { pids: [], unverified: [`${procRoot} cannot be listed (${error?.code ?? 'error'})`] };
   }
   for (const name of names) {
-    if (!/^[1-9][0-9]*$/.test(name)) continue;
-    const block = readEnviron(procRoot, name);
-    if (block === 'gone') continue;
+    if (!/^[1-9][0-9]*$/.test(name) || (known !== undefined && !known.has(Number(name)))) continue;
+    const block = await readEnviron(procRoot, name, { ours, wait });
+    if (block === 'gone' || block === 'foreign') continue;
     if (block === 'unreadable') {
-      if (isOurs(procRoot, name) && !startedBeforeRun(name, since, startOf)) found.unverified.push(`${procRoot}/${name}/environ cannot be read`);
+      if (!startedBeforeRun(name, since, startOf)) found.unverified.push(`${procRoot}/${name}/environ cannot be read`);
     } else if (holdsEntry(block, entry)) {
       found.pids.push(Number(name));
     }
@@ -221,23 +251,28 @@ function markedByRecord(record, procRoot, { since, startOf }) {
 
 /**
  * The processes of this run that are still alive after its group was killed, read ONCE: `{ pids, unverified }` [E2.1 code 1,
- * code2 4, 6/11]. The parent-pid chain below `rootPid` (one `ps -A -o pid=,ppid=`), and on Linux every process whose environment
- * carries the run's record as a whole entry. Never this process. `unverified` names what could not be looked at (an unreadable
- * /proc or process table, a process of ours that started after `since` (the run's start, in seconds; `startOf(pid)` dates a pid) and
- * whose environment cannot be read); it never throws, and the other half of the scan still runs. Windows answers nothing: its job ends them.
+ * code2 4, 6/11]. The parent-pid chain below `rootPid` (from one `ps -A -o pid=,ppid=`), and on Linux every process whose
+ * environment carries the run's record as a whole entry; on any other POSIX the scan has no environment to read and says so with a
+ * fixed `unverified` entry, so the run lists and fails [E2.1 Opus 1]. Never this process. `unverified` names what could not be
+ * looked at (a table that cannot be read or passed its `ps` ceiling, an unreadable /proc, a process of ours that started after
+ * `since` and whose environment cannot be read); it never throws, and the other half of the scan still runs. Windows answers
+ * nothing: its job ends them. `table`, `ours`, `pause`, `procRoot`, `platform` and `psTimeoutMs` are seams.
  */
-export function findSurvivors({ rootPid, record, platform = process.platform, procRoot = '/proc', since, startOf }) {
-  const result = { pids: new Set(), unverified: [] };
+export async function findSurvivors({ rootPid, record, platform = process.platform, procRoot = '/proc', since, startOf, psTimeoutMs = PS_TIMEOUT_MS, table = () => readTable(psTimeoutMs), ours = (name) => isOursDefault(procRoot, name), pause: wait = pause }) {
   if (platform === 'win32') return { pids: [], unverified: [] };
-  if (Number.isSafeInteger(rootPid) && rootPid > 0) {
-    try {
-      for (const pid of chainBelow(rootPid, childrenByParent())) result.pids.add(pid);
-    } catch (error) {
-      result.unverified.push(String(error?.message ?? error));
-    }
+  const result = { pids: new Set(), unverified: [] };
+  let known;
+  try {
+    const listed = table();
+    known = listed.known;
+    if (Number.isSafeInteger(rootPid) && rootPid > 0) for (const pid of chainBelow(rootPid, listed.children)) result.pids.add(pid);
+  } catch (error) {
+    result.unverified.push(String(error?.message ?? error));
   }
-  if (platform === 'linux' && typeof record === 'string' && record !== '') {
-    const marked = markedByRecord(record, procRoot, { since, startOf });
+  if (platform !== 'linux') {
+    result.unverified.push('no environment scan on this OS');
+  } else if (typeof record === 'string' && record !== '') {
+    const marked = await markedByRecord(record, procRoot, { since, startOf, known, ours, wait });
     for (const pid of marked.pids) result.pids.add(pid);
     result.unverified.push(...marked.unverified);
   }
@@ -264,40 +299,50 @@ function pidAliveDefault(pid) {
   }
 }
 
+/** The start of `pid` in Unix seconds, from the reference's probe (Linux only; `undefined` elsewhere and for a process that is not there). */
+const startOfDefault = (pid) => processProbe(pid).start;
+
 /**
- * Scan for survivors ONCE, end the ones found, and poll only those pids (with the same backoff) until they are dead or
- * `timeoutMs` passes. Anything the scan could not look at keeps the answer at "cannot confirm".
+ * Scan for survivors ONCE, bind each to its start time, end the ones found and poll only those pids (with the same backoff) until
+ * they are dead or `timeoutMs` passes [E2.1 code3 10]: a pid whose start time changed since the scan is another process (the
+ * number was reused) — never signalled, and no longer a survivor. Anything the scan could not look at keeps the answer at "cannot
+ * confirm", and its causes are kept even when known survivors remain [E2.1 code3 5].
  */
-async function settle({ rootPid, record, since, startOf, survivors, pidAlive, timeoutMs }) {
-  const { pids, unverified } = await survivors({ rootPid, record, since, startOf });
+async function settle({ rootPid, record, since, startOf, platform, survivors, pidAlive, kill, timeoutMs }) {
+  const { pids, unverified } = await survivors({ rootPid, record, since, startOf, platform });
+  const bound = new Map(pids.map((pid) => [pid, startOf(pid)]));
+  const same = (pid) => bound.get(pid) === undefined || startOf(pid) === bound.get(pid);
   const deadline = Date.now() + timeoutMs;
   let step = CONFIRM_STEP_MS;
   let remaining = pids;
   while (remaining.length > 0) {
-    for (const pid of remaining) killPid(pid);
-    remaining = remaining.filter((pid) => pidAlive(pid));
+    for (const pid of remaining) if (same(pid)) kill(pid);
+    remaining = remaining.filter((pid) => same(pid) && pidAlive(pid));
     if (remaining.length === 0 || Date.now() >= deadline) break;
     await pause(Math.min(step, deadline - Date.now()));
     step = Math.min(step * 2, CONFIRM_MAX_STEP_MS);
   }
-  if (remaining.length > 0) return { ended: false, alive: remaining.length };
-  if (unverified.length > 0) return { ended: false, alive: 0, reason: 'unknown', cause: unverified.join('; ') };
+  const cause = unverified.length > 0 ? { cause: unverified.join('; ') } : {};
+  if (remaining.length > 0) return { ended: false, alive: remaining.length, ...cause };
+  if (unverified.length > 0) return { ended: false, alive: 0, reason: 'unknown', ...cause };
   return { ended: true, alive: 0 };
 }
 
 /**
  * End the tree of `child` and report whether that is PROVEN: snapshot, kill the group, confirm it is empty, then look once for
- * what left it and end that too. Never throws: anything that goes wrong is "cannot confirm" (`reason: 'unknown'`), because a cleanup
- * that throws would hide the suite's own verdict and a confirmation that failed is not one [E2.1 code 4]. `confirm`, `survivors`
- * and `pidAlive` are seams for tests.
+ * what left it and end that too. The group is signalled and the chain walked ONLY while the group still has members: once it is
+ * gone its id (the coordinator's pid) may belong to somebody else [E2.1 code3 10]. Never throws: anything that goes wrong is "cannot
+ * confirm" (`reason: 'unknown'`), because a cleanup that throws would hide the suite's own verdict [E2.1 code 4]. `confirm`,
+ * `survivors`, `pidAlive`, `kill`, `killGroup`, `startOf` and `platform` are seams for tests.
  */
-export async function endTree(child, { confirm = confirmTreeEnded, survivors = findSurvivors, pidAlive = pidAliveDefault, record, since, startOf, settleTimeoutMs = CONFIRM_TIMEOUT_MS } = {}) {
+export async function endTree(child, { confirm = confirmTreeEnded, survivors = findSurvivors, pidAlive = pidAliveDefault, kill = killPid, killGroup = killWholeTree, record, since = startOfDefault(process.pid), startOf = startOfDefault, platform = process.platform, settleTimeoutMs = CONFIRM_TIMEOUT_MS } = {}) {
   try {
     const tree = snapshotTree(child);
-    killWholeTree(child, tree);
+    const groupLive = tree !== undefined && groupAlive(tree);
+    if (groupLive || typeof child?.stop === 'function') killGroup(child, tree); // a supervised run is stopped through its job, which has no pid
     const group = await confirm(tree);
     if (!group.ended) return group;
-    return await settle({ rootPid: child?.pid, record, since, startOf, survivors, pidAlive, timeoutMs: settleTimeoutMs });
+    return await settle({ rootPid: groupLive ? child?.pid : undefined, record, since, startOf, platform, survivors, pidAlive, kill, timeoutMs: settleTimeoutMs });
   } catch (error) {
     return { ended: false, alive: 0, reason: 'unknown', cause: String(error?.message ?? error) };
   }
