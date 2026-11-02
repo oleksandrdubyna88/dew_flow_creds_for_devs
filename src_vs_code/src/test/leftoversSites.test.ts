@@ -67,18 +67,23 @@ test('the plain unit folders make no temp path of their own', () => {
   assert.deepEqual(sitesIn(PLAIN_UNIT_FOLDERS), []);
 });
 
+// The planted samples are assembled from pieces: this file is read by the repository's own guard, which reads text and would
+// otherwise take the samples for sites.
+const MK = 'mkdtemp';
+const TMP = 'tmp' + 'dir';
+
 test('the scan finds a raw temp call however it is spelled, and a call across lines', () => {
   const planted = [
-    "const a = fs.mkdtempSync(path.join(os.tmpdir(), 'x'));",
-    "const b = await fs.promises.mkdtemp(",
-    "  path.join(tmpdir(), 'y'));",
+    `const a = fs.${MK}Sync(path.join(os.${TMP}(), 'x'));`,
+    `const b = await fs.promises.${MK}(`,
+    `  path.join(${TMP}(), 'y'));`,
   ].join('\n');
 
   assert.deepEqual(rawTempSites(planted), [1, 1, 2, 3]);
 });
 
 test('the scan does not mistake a word in a comment or a string for a call', () => {
-  const prose = ["// os.tmpdir() is what the old code called", "const note = 'mkdtempSync(os.tmpdir())';", '/* tmpdir() */'].join('\n');
+  const prose = [`// os.${TMP}() is what the old code called`, `const note = '${MK}Sync(os.${TMP}())';`, `/* ${TMP}() */`].join('\n');
 
   assert.deepEqual(rawTempSites(prose), []);
 });
