@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict';
 import * as crypto from 'node:crypto';
 import { once } from 'node:events';
-import * as fs from 'node:fs';
 import * as net from 'node:net';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import {
   ByteReader,
   FrameReader,
@@ -25,6 +23,11 @@ import { signForAgent } from '../sshAgentSign';
 import { HOSTBOUND_METHOD, userauth } from './sshUserauth';
 import { askOnOneSocket, signRequestFor } from './sshAgentClient';
 import { keyMaterialLogged, watchLogs, watchSecret } from './sshAgentWorld';
+import { cleanupScope, ownedDir, shortSocketRoot } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * The agent over a REAL socket, driven with hand-built frames — the closest a unit test gets to
@@ -68,7 +71,7 @@ async function harness(
   /** Runs before a line is kept — a sink that throws is how a test reaches the code around `log`. */
   beforeLog: (message: string) => void = () => undefined,
 ): Promise<Harness> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'testsToDelete-agent-'));
+  const dir = ownedDir(scope, 'agent', { parent: shortSocketRoot() });
   const socketPath =
     process.platform === 'win32'
       ? `\\\\.\\pipe\\creds-agent-test-${process.pid}-${Math.floor(process.hrtime()[1])}`
@@ -114,11 +117,6 @@ async function harness(
     logs,
     dispose: () => {
       server.dispose();
-      try {
-        fs.rmSync(dir, { recursive: true, force: true });
-      } catch {
-        // a socket file the OS still holds — nothing to do
-      }
     },
   };
 }
@@ -649,7 +647,7 @@ test('a malformed sign request is refused rather than throwing out of the agent'
 test('the keys are re-read per request, so unloading one takes effect at once', async () => {
   const a = newKey('prod key');
   const keys: AgentKey[] = [a.key];
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'testsToDelete-agent-'));
+  const dir = ownedDir(scope, 'agent', { parent: shortSocketRoot() });
   const socketPath =
     process.platform === 'win32'
       ? `\\\\.\\pipe\\creds-agent-live-${process.pid}`
@@ -687,11 +685,6 @@ test('the keys are re-read per request, so unloading one takes effect at once', 
     assert.equal(after.readUInt32(), 0);
   } finally {
     server.dispose();
-    try {
-      fs.rmSync(dir, { recursive: true, force: true });
-    } catch {
-      // nothing to do
-    }
   }
 });
 

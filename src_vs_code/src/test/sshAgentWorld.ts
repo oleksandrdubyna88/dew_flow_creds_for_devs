@@ -1,7 +1,7 @@
 import * as crypto from 'node:crypto';
-import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
+import { after } from 'node:test';
+import { cleanupScope, ownedDir, shortSocketRoot } from '../../scripts/lib/leftovers.cjs';
 import { EntityMetadata, TreeNode } from '../types';
 import { StubCancellationToken, StubCancellationTokenSource, StubEventEmitter, loadEachWithVscode } from './vscodeStub';
 
@@ -412,26 +412,18 @@ export function agentEnv(w: World): {
  * to the filesystem root on Linux, where creating it needs privileges no test has. These fifteen
  * tests therefore passed on Windows and failed on Linux with `EACCES` — meaning the SSH agent
  * had never actually been exercised under WSL or in a Linux CI.</p>
+ *
+ * <p>The manager binds its agent socket at `<storage>/keys/<pid>/agent.sock`, so the folder is made under the SHORT socket root
+ * (a Unix socket path must stay under 103 bytes on macOS) and is owned and claimed: one directory per manager, twenty-odd per
+ * run, all removed when the file's tests end — a failing assertion included — and collected by the next run if this one is
+ * killed. It replaces a `process.on('exit')` list that named its folders in the legacy form.</p>
  */
-const tempDirs: string[] = [];
+const scope = cleanupScope();
+after(() => scope.close());
 
 export function storageDir(): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'testsToDelete-agent-'));
-  tempDirs.push(dir);
-  return dir;
+  return ownedDir(scope, 'agent', { parent: shortSocketRoot() });
 }
-
-// One directory per manager, twenty-odd per run: swept at exit rather than in each test, so a
-// failing assertion still leaves nothing behind in the system temp folder.
-process.on('exit', () => {
-  for (const dir of tempDirs) {
-    try {
-      fs.rmSync(dir, { recursive: true, force: true });
-    } catch {
-      // a file another process still holds — the OS clears temp eventually
-    }
-  }
-});
 
 export const keyEntity = (id: string, name: string): EntityMetadata =>
   ({ id, name, kind: 'sshkey' }) as EntityMetadata;

@@ -1,11 +1,13 @@
 import * as assert from 'node:assert/strict';
-import { test } from 'node:test';
-import * as fs from 'node:fs';
+import { after, test } from 'node:test';
 import * as http from 'node:http';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import { socketPathFor } from '../brokerListeners';
 import { call, code, share, world } from './brokerWorld';
+import { cleanupScope, ownedDir, shortSocketRoot } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * A raw request, because `fetch` will not let a caller set `Host` — it is a forbidden header name and
@@ -184,7 +186,7 @@ function onlyForSoLong(request: http.ClientRequest, reject: (why: Error) => void
 
 /** A window with its SECOND listener open, and the address a bridge would forward. */
 function withSocket(): { w: ReturnType<typeof world>; address: string; dir: string } {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-door-'));
+  const dir = ownedDir(scope, 'door', { parent: shortSocketRoot() });
   const w = world({ storageDir: dir });
   const address = socketPathFor(dir, process.pid, process.platform);
   assert.notEqual(address, undefined, 'the harness knows where the second listener would be');
@@ -223,7 +225,7 @@ function post(
  * the product does not have. Sequential subtests share the window, in the order the door sees them.
  */
 test('the socket listener, through the real door', async (t) => {
-  const { w, address, dir } = withSocket();
+  const { w, address } = withSocket();
   try {
     await share(w);
 
@@ -257,6 +259,5 @@ test('the socket listener, through the real door', async (t) => {
     });
   } finally {
     w.server.dispose();
-    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
