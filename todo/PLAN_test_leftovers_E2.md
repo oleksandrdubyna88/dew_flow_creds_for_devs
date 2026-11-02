@@ -1346,6 +1346,22 @@ another token survives; both roots are covered (a dead-claimed `…-creds-sock-�
 the sweep lists `unverified:` and removes nothing (F16). These are the plan's scenarios 5 and 6, written against the real
 sweep at last.
 
+### E2.1 build record, part 3 — code round 2 (2026-11-02)
+
+Tests `53e8a7a` and `76833a1`, code `59446a7`. Rejected by the gate: 2 (the reference sweep is synchronous) and 10 (not a finding).
+
+| Mark | Result |
+|---|---|
+| **[E2.1 code2 0]** SECURITY | the kernel-owner key (`isMine`) is asked of the CLAIM file itself before anything is read from it, whether or not the folder is still there; another user's claim is listed `foreign:` and never read, removed or counted — an orphan claim and a claim beside our own folder, both tested through a `mine` seam (red against the first round's runner) |
+| **[E2.1 code2 1]** | the marker is one whole NUL-separated environ entry compared for equality, in place. The first round's concatenated search was already exact (NUL on both sides), so the near-miss test (the record as a prefix of a longer value, or after a character) pins it; it was red only because the scan's answer changed shape |
+| **[E2.1 code2 3]** | each root is canonicalised once with `realpathSync` and deduplicated (macOS `/tmp` → `/private/tmp`; a symlink to a root is one root); the audit names canonical paths. Tested with a symlinked private root on POSIX |
+| **[E2.1 code2 4]** | an unreadable `/proc` (or process table) is `unverified` for that half of the scan, never a throw; the parent-pid chain still runs; anything unverified keeps list-and-fail. **Found on the way (a defect of the first round, not of the finding):** on a real machine `systemd --user` and `(sd-pam)` belong to the caller and their environment is unreadable, so every run would have been "cannot confirm"; and under churn a zombie or a process in the middle of an exec is unreadable for a moment (the new scenarios flaked with six files at once). An unreadable environment is now a doubt only for a process of ours that started after the runner did (dated with the reference's `processProbe`, which the wrapper now exports) and is not a zombie, after a few retries; processes older than the run cannot be its descendants |
+| **[E2.1 code2 5]** | `startInJob` catches the supervised start: a rejection emits `error` on the job, so `wait()` always settles |
+| **[E2.1 code2 6/11]** | one process table, one adjacency map and one `/proc` pass per scan; the scan runs ONCE after the group is gone and only the pids found are polled (a `pidAlive` seam); environ buffers are searched in place, never concatenated. A process forked by a survivor after the scan is not seen — the scan is by design once |
+| **[E2.1 code2 7]** | the group poll is a bare `kill(-pgid, 0)`; `ps` runs only to count members for an answer that is not "ended" |
+| **[E2.1 code2 8]** | a run that timed out exits 124 whatever the coordinator's own code or signal |
+| **[E2.1 code2 9]** | `hygieneScan` takes `ScanReads` (the four reads it uses, `Pick<StorageManager, …>`); its test builds a typed factory with whole record shapes and secrets minted with `stored`, and the `as never` casts of the changed fixtures are gone (`mod: undefined as never`, a placeholder assigned after the stub loads, is not among them). A type-level change: no RED to watch |
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's

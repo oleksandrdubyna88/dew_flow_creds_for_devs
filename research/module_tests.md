@@ -150,7 +150,8 @@ sibling file `<folder>.owner` (never inside, because tests assert the exact cont
   counted; an unmarked folder is listed. If the tree cannot be confirmed ended, the audit removes nothing, fails the run
   and says `(not removed: <n> descendant(s) still alive)` — or `could not be confirmed` when the check itself failed. After the
   group is killed the runner also looks for what LEFT the group (a grandchild that called `setsid`): on Linux every process
-  carrying the run's record in its environment, everywhere the parent-pid chain; survivors are ended and asked about again.
+  carrying the run's record as a whole environment entry, everywhere the parent-pid chain; the scan runs once after the group is
+  gone, survivors are ended and only those pids are polled. A claim file another user owns is listed and never read.
   The wait is bounded: 60 minutes, `RUN_TESTS_TIMEOUT_MS` overrides it, and a timeout that fires is reported before the tree
   is ended. One run at a time per process. **On Windows the audit removes nothing for now**: the reference's job supervisor
   gives no acknowledgment that its job is empty, so the audit lists and fails a run that left a claimed folder (a passing run
