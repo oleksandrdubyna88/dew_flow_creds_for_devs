@@ -100,6 +100,12 @@ the workflows, and because "merged" reads like "shipped" until you check.
 
 All four are `.github/workflows/release.yml`, triggered on `tags:`.
 
+**The Windows `creds` and `creds-mcp` binaries are signed.** The jobs `cli-sign` and `mcp-sign` call
+`sign-windows.yml` of `dew_flow_release_signing` (Azure Artifact Signing, no stored secret) after the
+build legs and before the release jobs, so Smart App Control lets the binaries run. On a `cli-v*` or
+`mcp-v*` tag, signing is mandatory: without the owner's `release-signing` setup the run is red and the
+release stays a draft. The owner steps are in [todo/PLAN_windows_code_signing.md](todo/PLAN_windows_code_signing.md) §4.
+
 **An extension release bumps TWO files, not one.** `src_vs_code/package.json` and
 `src_vs_code/package-lock.json` both carry the version — the lock in two places, its top level and
 its `packages[""]` entry. `npm ci` checks the lock's *dependencies* against the manifest and says
