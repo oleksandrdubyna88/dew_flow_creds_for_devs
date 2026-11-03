@@ -440,7 +440,8 @@ jobs:
             echo "ASSET=$NAME.tar.gz" >> "$GITHUB_ENV"
           fi
 
-      # A checksum beside each archive, written by the job that BUILT it.
+      # A checksum beside each archive, written by the job that BUILT it. Not the Windows zips: the
+      # shared signing workflow makes them and their sums after signing (`cli-sign`, `mcp-sign`).
       #
       # Per-asset rather than one SHA256SUMS, deliberately: the four builds run on four
       # runners with no barrier between them, and a single combined file would need a fifth
@@ -478,7 +479,7 @@ jobs:
           retention-days: 7
 
   # The Windows packages are signed by the shared signing workflow (Azure Artifact Signing), so
-  # Smart App Control lets the binary run. It uploads the FINAL zip and its checksum as `cli-win-<arch>`.
+  # Smart App Control can accept the binary. It uploads the FINAL zip and its checksum as `cli-win-<arch>`.
   # These are the only jobs of this workflow that may ask for an identity token (releaseSigning.test.ts).
   # todo/PLAN_windows_code_signing.md
   cli-sign:
@@ -679,7 +680,8 @@ jobs:
 
       # The same reason the CLI publishes one, and one more: this binary is installed by a button
       # inside the extension, which verifies what it downloads. A release that publishes no
-      # checksum makes that verification a warning instead of a check.
+      # checksum makes that verification a warning instead of a check. The Windows zips are the
+      # exception: the shared signing workflow makes them and their sums after signing (`mcp-sign`).
       - name: Checksum
         if: ${{ !startsWith(matrix.rid, 'win-') }}
         shell: bash
@@ -707,7 +709,7 @@ jobs:
           retention-days: 7
 
   # The Windows packages are signed by the shared signing workflow (Azure Artifact Signing), so
-  # Smart App Control lets the binary run. It uploads the FINAL zip and its checksum as `mcp-win-<arch>`.
+  # Smart App Control can accept the binary. It uploads the FINAL zip and its checksum as `mcp-win-<arch>`.
   # These are the only jobs of this workflow that may ask for an identity token (releaseSigning.test.ts).
   # todo/PLAN_windows_code_signing.md
   mcp-sign:
