@@ -34,6 +34,9 @@ Narrowed: no
   `extra-files` allow-list, the tag ref forcing `required`, V1 checking the organization record. From epoch 2 on, an
   approving round's own findings are read as part of the approval, as in the coai twin.)
 
+- 2.1 · 2026-11-03 · agent · approach — a job calling a reusable workflow cannot take continue-on-error, so expected-failure calls would leave CI red; the self-test runs the workflow's own run blocks against fixtures and asserts exit codes, with one real trial call
+  (Cadence consultation 7927faa8, epics 1-2. Its advice to tag v1.0.0 only after V1 was not taken: callers pin a SHA, and both callers merge only after V1.)
+
 ## 1. The symptom and the goal
 
 **Symptom.** On Windows 11 with Smart App Control (SAC) turned on, *Install `creds` (terminal CLI)…*
@@ -157,15 +160,27 @@ What the workflow never does: write to a release (`contents: read` only), read a
 none), or build anything. The caller owns build, smoke tests and publishing.
 
 Also in the new repository: `README.md` (inputs, the owner setup, the caller snippet), `LICENSE` (MIT),
-`.github/workflows/ci.yml` (actionlint + shellcheck over the `run:` blocks + a **self-test** that
-calls `sign-windows.yml` on fixture packages and checks each result from a later job with
-`if: always()`. The fixtures: an unsigned PE named as the own file (a .NET apphost from `dotnet new
+`.github/workflows/ci.yml` (actionlint + shellcheck over the `run:` blocks + a **self-test**). A job
+that calls a reusable workflow cannot take `continue-on-error`, so a call that is meant to fail would
+leave every CI run red. The self-test therefore has two parts:
+
+- **Step harness.** `test/run-step.mjs <workflow> <step-id>` prints one step's `run:` text and its
+  shell, read with a YAML parser; `test/selftest.ps1` (on `windows-2025`) runs the mode, inventory, pack
+  and check steps that way, with the environment each case needs, and asserts the exit code and the
+  failing step. This is possible because **no `run:` block holds a `${{ }}` expression** — every input,
+  variable and context value arrives through the step's `env:` (which also closes script injection);
+  the harness fails if one appears.
+- **One real call** of `sign-windows.yml` (case 1 below), which must be green.
+
+The fixtures: an unsigned PE named as the own file (a .NET apphost from `dotnet new
 console`), a Microsoft-signed vendor file (a copy of `C:\Windows\System32\whoami.exe`). The calls:
 (1) a trial with no variables must succeed, and its zip must extract to the same hashes and pass
 `sha256sum -c`; (2) `required: true` with no variables must FAIL; (3) one of the six variables set
 (an environment holding it) must FAIL; (4) the own file missing must FAIL; (5) the vendor-signed file
 named as the own file must FAIL; (6) a vendor file with one byte flipped (`HashMismatch`) must FAIL; (7) an unsigned PE that is neither
-own nor in `extra-files` must FAIL; (8) the same file listed in `extra-files` passes the trial.
+own nor in `extra-files` must FAIL; (8) the same file listed in `extra-files` passes the trial;
+(9) a tag ref (`GITHUB_REF=refs/tags/x`) with `required: false` and no variables must FAIL. Cases 2–9 run
+in the step harness, case 1 as the real call.
 The publisher check on the `sign` path cannot run without Azure; V1 covers it),
 `.github/dependabot.yml` (github-actions), and a tag `v1.0.0` on the merged commit. `main` protected
 like the other repositories (PR only).
@@ -295,8 +310,8 @@ order is: O1–O8 → V1 on the PR branch → V2 on a SAC machine with V1's pack
 ## 6. Test and verification plan
 
 **E1 (new repository):** actionlint over both workflows; shellcheck over the `run:` blocks; the
-self-test's three calls (§3.1). Break-it: make `none + required` take `skip`, watch the self-test's
-check job fail, restore. The `sign` path cannot run without Azure; V1 covers it.
+self-test's nine cases (§3.1). Break-it: make `none + required` take `skip`, watch the harness fail
+naming case 2, restore. The `sign` path cannot run without Azure; V1 covers it.
 
 **E2 (here):** `src_vs_code/src/test/releaseSigning.test.ts`, reading `release.yml` like
 `credsInstall.test.ts:46-57` does (no `vscode` import, CRLF normalised):
@@ -376,7 +391,7 @@ coai twin is a separate plan in `dew_flow_connect_other_ais`, not an epic here. 
   `main` (README stub, LICENSE). All work is on branch `feat/sign-windows` from that commit; the gate reviews that
   branch; the merge is tagged `v1.0.0` and `main` is protected (PR only).
 - **Scope.** `.github/workflows/sign-windows.yml` (§3.1, steps 1–8), `README.md`, `LICENSE`, `.github/dependabot.yml`,
-  `.github/workflows/ci.yml` (actionlint, shellcheck, the eight-call self-test with its fixtures).
+  `.github/workflows/ci.yml` (actionlint, shellcheck, the self-test (step harness + one real call) with its fixtures).
 - **Depends on.** The plan gate `proceed`. Nothing in Azure: the `sign` path is proven later by V1 (E2).
 - **Done when.** CI and the self-test are green on the merged commit; the break-it of §6 (`none + required` made to
   `skip` → the check job fails) is quoted in the PR; `v1.0.0` points at that commit; the README names the four inputs,
@@ -391,7 +406,7 @@ coai twin is a separate plan in `dew_flow_connect_other_ais`, not an epic here. 
      assertion, the inline mode step, and the inventory that classifies own files and vendor files.
   2. E1.2 — the signing leg: `azure/login`, `artifact-signing-action` with its pins and `cache-dependencies: false`,
      Verify (publisher, timestamp, kept vendor files), the hash-matched pack and the upload.
-  3. E1.3 — `ci.yml` with actionlint, shellcheck and the eight self-test calls on fixtures; dependabot; the break-it;
+  3. E1.3 — `ci.yml` with actionlint, shellcheck and the self-test's step harness and its one real call, nine cases on fixtures; dependabot; the break-it;
      tag `v1.0.0` and the branch protection.
 
 ### E2 — this repository signs its Windows binaries (`dew_flow_creds_for_devs`)
