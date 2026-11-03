@@ -295,12 +295,15 @@ test('T3 each release job waits for its signing job', () => {
   assert.ok(needsOf(job(jobs, 'mcp-release')).includes('mcp-binaries'), 'mcp-release must still need mcp-binaries');
 });
 
-test('T4 no job but cli-sign and mcp-sign asks for an identity token', () => {
-  assert.doesNotMatch(header(text), /id-token/, 'the workflow-level permissions must not grant id-token');
+/** What lets a job mint an OIDC token: the named permission, or `write-all`, which includes it. */
+const GRANTS_TOKEN = /id-token|write-all/;
+
+test('T4 no job but cli-sign and mcp-sign asks for an identity token, by name or by write-all', () => {
+  assert.doesNotMatch(header(text), GRANTS_TOKEN, 'the workflow-level permissions must not grant an identity token');
   const holders = [...jobs]
-    .filter(([name, body]) => name !== 'cli-sign' && name !== 'mcp-sign' && /id-token/.test(body))
+    .filter(([name, body]) => name !== 'cli-sign' && name !== 'mcp-sign' && GRANTS_TOKEN.test(body))
     .map(([name]) => name);
-  assert.deepEqual(holders, [], 'only cli-sign and mcp-sign may hold id-token (T2 asserts they do)');
+  assert.deepEqual(holders, [], 'only cli-sign and mcp-sign may grant an identity token (T2 asserts they do)');
   // One positive, so a parser that lost the jobs cannot make this green.
   assert.ok(jobs.size >= 8, `the parser found ${jobs.size} jobs`);
 });
