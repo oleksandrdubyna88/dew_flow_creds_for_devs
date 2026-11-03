@@ -55,6 +55,14 @@ A remote command's own exit code passes through untouched, so `&&`, `||` and `$?
 (89–99) and always print a `[creds-for-devs]` line to stderr, so a collision with a remote code
 stays legible. The band is in the contract file; nothing here defines its own.
 
+## The Windows binary is signed
+
+The `creds.exe` in the `win-x64` and `win-arm64` releases is Authenticode-signed by the owner's
+organization through Azure Artifact Signing, so Windows Smart App Control lets it run. Smart App
+Control was checked on `win-x64`. The `win-arm64` build carries the same signature from the same
+certificate profile; it was not run under Smart App Control. Check a signature in PowerShell with
+`Get-AuthenticodeSignature .\creds.exe`.
+
 ## Building and testing
 
 ```bash
