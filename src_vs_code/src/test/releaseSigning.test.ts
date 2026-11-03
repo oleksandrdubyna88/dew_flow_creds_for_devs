@@ -132,14 +132,10 @@ function jobBlock(jobText: string, key: string): Record<string, string> {
   return out;
 }
 
-/** `needs:` as a list, whether written `a`, `[a, b]` or a block. */
-function needsOf(jobText: string): string[] {
-  const inline = jobKey(jobText, 'needs');
-  if (inline !== undefined) {
-    return inline.replace(/^\[|\]$/g, '').split(',').map((s) => s.trim()).filter((s) => s.length > 0);
-  }
+/** The `- item` lines under a job-level `key:` with no inline value (items 6 spaces deep). */
+function blockListOf(jobText: string, key: string): string[] {
   const lines = jobText.split('\n');
-  const at = lines.findIndex((l) => l === '    needs:');
+  const at = lines.findIndex((l) => l === `    ${key}:`);
   if (at < 0) {
     return [];
   }
@@ -152,6 +148,15 @@ function needsOf(jobText: string): string[] {
     out.push(m[1]!);
   }
   return out;
+}
+
+/** `needs:` as a list, whether written `a`, `[a, b]` or a block. */
+function needsOf(jobText: string): string[] {
+  const inline = jobKey(jobText, 'needs');
+  if (inline === undefined) {
+    return blockListOf(jobText, 'needs');
+  }
+  return inline.replace(/^\[|\]$/g, '').split(',').map((s) => s.trim()).filter((s) => s.length > 0);
 }
 
 /** The RIDs of the job's matrix that run on Windows. */
