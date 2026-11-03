@@ -1,6 +1,6 @@
 # PLAN — the Windows `creds.exe` and `creds-mcp.exe` are signed, so Smart App Control lets them run
 
-> Status: **plan only, nothing implemented yet, 2026-11-03 — re-reviewed, epoch 2 open.** Scope: a new public repository
+> Status: **in progress, 2026-11-03 — epoch 2. E1 merged (`dew_flow_release_signing` #1, `v1.0.0` = 609cc23). E2 built and gated on `ci/windows-code-signing-e2`, waiting for the owner's O1–O8 and the trials V1/V2 before its merge.** Scope: a new public repository
 > `oleksandrdubyna88/dew_flow_release_signing` holding one reusable signing workflow (E1); the
 > `cli-binaries`, `cli-release`, `mcp-binaries` and `mcp-release` jobs of `.github/workflows/release.yml`
 > here (E2); the owner's one-time Azure and GitHub setup. No product code, no contract change.

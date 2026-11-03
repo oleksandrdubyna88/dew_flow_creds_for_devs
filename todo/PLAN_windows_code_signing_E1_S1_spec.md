@@ -1,6 +1,6 @@
 # PLAN — E1.1 spec: the workflow's contract (CORNERSTONE)
 
-> Status: **plan only, nothing implemented yet, 2026-11-03 — cornerstone spec by Fable, written before its code.**
+> Status: **built and merged, 2026-11-03 — cornerstone spec by Fable, written before its code; implemented in `dew_flow_release_signing` #1 (deviations in §S1.11).**
 > Story E1.1 of [PLAN_windows_code_signing_E1.md](PLAN_windows_code_signing_E1.md) (parent
 > [PLAN_windows_code_signing.md](PLAN_windows_code_signing.md) §3.1 steps 1–3, §6, `## Epics` E1). Its own file because
 > the stories document goes whole to the review gate and must stay short; it is promoted with E1's.

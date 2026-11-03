@@ -1,6 +1,6 @@
 # PLAN — Windows code signing, E2: this repository signs its Windows `creds` and `creds-mcp` binaries
 
-> Status: **plan only, 2026-11-03.** Stories of epic E2 of [PLAN_windows_code_signing.md](PLAN_windows_code_signing.md).
+> Status: **built and gated, 2026-11-03 — on `ci/windows-code-signing-e2`, not merged: waits for O1–O8, V1 and V2.** Stories of epic E2 of [PLAN_windows_code_signing.md](PLAN_windows_code_signing.md).
 > Scope: `.github/workflows/release.yml` (jobs `cli-binaries`, `cli-release`, `mcp-binaries`, `mcp-release`, two new
 > jobs `cli-sign` / `mcp-sign`), `src_vs_code/src/test/releaseSigning.test.ts` (new), `CLAUDE.md`, `src_cli/README.md`,
 > `src_mcp/README.md` (new, D9). Branch `ci/windows-code-signing-e2`, cut from `ci/windows-code-signing` (which holds only the plan commits) so E2 gets its own gate session. No product
