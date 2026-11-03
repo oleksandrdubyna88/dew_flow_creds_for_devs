@@ -173,7 +173,7 @@ leave every CI run red. The self-test therefore has two parts:
 - **One real call** of `sign-windows.yml` (case 1 below), which must be green.
 
 The fixtures: an unsigned PE named as the own file (a .NET apphost from `dotnet new
-console`), a Microsoft-signed vendor file (a copy of `C:\Windows\System32\whoami.exe`). The calls:
+console`), a Microsoft-signed vendor file with an embedded signature (a copy of `C:\Program Files\dotnet\dotnet.exe`; `System32` files are catalog-signed). The calls:
 (1) a trial with no variables must succeed, and its zip must extract to the same hashes and pass
 `sha256sum -c`; (2) `required: true` with no variables must FAIL; (3) one of the six variables set
 (an environment holding it) must FAIL; (4) the own file missing must FAIL; (5) the vendor-signed file
@@ -181,8 +181,10 @@ named as the own file must FAIL; (6) a vendor file with one byte flipped (`HashM
 own nor in `extra-files` must FAIL; (8) the same file listed in `extra-files` passes the trial;
 (9) a tag ref (`GITHUB_REF=refs/tags/x`) with `required: false` and no variables must FAIL. Cases 2–9 run
 in the step harness, case 1 as the real call.
-The publisher check on the `sign` path cannot run without Azure; V1 covers it),
-`.github/dependabot.yml` (github-actions), and a tag `v1.0.0` on the merged commit. `main` protected
+The publisher check on the `sign` path cannot run without Azure; V1 covers it. The epic's stories
+document adds cases A1–A5 and fixes the harness's YAML parser and the real call's environment.
+
+Also in the repository: `.github/dependabot.yml` (github-actions), and a tag `v1.0.0` on the merged commit. `main` protected
 like the other repositories (PR only).
 
 ### 3.2 This repository (E2)
