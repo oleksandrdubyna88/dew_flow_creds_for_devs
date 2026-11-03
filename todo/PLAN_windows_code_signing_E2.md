@@ -3,7 +3,7 @@
 > Status: **plan only, 2026-11-03.** Stories of epic E2 of [PLAN_windows_code_signing.md](PLAN_windows_code_signing.md).
 > Scope: `.github/workflows/release.yml` (jobs `cli-binaries`, `cli-release`, `mcp-binaries`, `mcp-release`, two new
 > jobs `cli-sign` / `mcp-sign`), `src_vs_code/src/test/releaseSigning.test.ts` (new), `CLAUDE.md`, `src_cli/README.md`,
-> `src_mcp/README.md` (new, D9). Branch `ci/windows-code-signing` (it exists; it holds only plan commits). No product
+> `src_mcp/README.md` (new, D9). Branch `ci/windows-code-signing-e2`, cut from `ci/windows-code-signing` (which holds only the plan commits) so E2 gets its own gate session. No product
 > code, no contract change.
 
 **Committed together with this document:** its row in `todo/README.md` under *Currently open* (the shared
@@ -21,7 +21,7 @@
 
 No cornerstone in E2, so no Fable spec. Opus's review checks the parent's *watched at review* list: the release jobs
 `needs` the sign jobs, `id-token: write` only on the two caller jobs, the 40-hex pin, and the cross-repository
-federation (only V1 proves it). The coai gate runs once for E2: code rounds on the PR from `ci/windows-code-signing`.
+federation (only V1 proves it). The coai gate runs once for E2: code rounds on the PR from `ci/windows-code-signing-e2`.
 
 ## Binding constraints (from the parent, for every story)
 
@@ -35,7 +35,7 @@ federation (only V1 proves it). The coai gate runs once for E2: code rounds on t
 - **`retention-days: 7` on every cli and mcp artifact** — the unsigned ones and the packaged ones (parent §3.2, §8:
   *Re-run failed jobs* after a signing outage must still find every platform's asset). Today both uploads say `1`.
 - **`Package` uses the Version step's `$VERSION`** (`release.yml:374-381`, `:591-598`). Today it recomputes it from
-  `GITHUB_REF_NAME` (`:429`, `:638`), so a dispatch from `ci/windows-code-signing` puts the branch name, slash
+  `GITHUB_REF_NAME` (`:429`, `:638`), so a dispatch from `ci/windows-code-signing-e2` puts the branch name, slash
   included, into the package name and V1 cannot even package.
 - No new action. New `run:` blocks hold no `${{ }}`; values reach them through `env:` (the existing blocks stay).
 - **Add no `- rid:` line.** `credsInstall.test.ts:46-57` collects every `^\s+- rid:` line of `release.yml` and
@@ -79,9 +79,9 @@ The smoke steps stay where they are, before packaging. The name `unsigned-…` n
 
 - Given today's `release.yml`, when T1 and T5 run, then both are red (table above). Commit the tests first.
 - Given the edits, when T1 and T5 run, then both are green, and `credsInstall.test.ts` stays green (no `- rid:` added).
-- Given a `workflow_dispatch` `target: cli` from `ci/windows-code-signing`, when the build legs run, then the Windows
+- Given a `workflow_dispatch` `target: cli` from `ci/windows-code-signing-e2`, when the build legs run, then the Windows
   legs upload `unsigned-cli-win-x64` / `-win-arm64` holding `creds-0.0.0-win-x64/creds.exe`, and the other four
-  legs upload `cli-<rid>` with `creds-0.0.0-<rid>.tar.gz` (not `creds-ci/windows-code-signing-…`). This run is
+  legs upload `cli-<rid>` with `creds-0.0.0-<rid>.tar.gz` (not `creds-ci/windows-code-signing-e2-…`). This run is
   optional here; V1 runs it anyway.
 
 **Break-it.** The parent asks none for E2.1. Its RED is T1/T5 before the change.
@@ -147,7 +147,7 @@ tag, so a merge before Azure works turns every `cli-v*` / `mcp-v*` release red.
 
 **Scenarios (on the real services).**
 
-- **V1** — given O1–O8, when `workflow_dispatch` `target: cli` and `target: mcp` run from `ci/windows-code-signing`,
+- **V1** — given O1–O8, when `workflow_dispatch` `target: cli` and `target: mcp` run from `ci/windows-code-signing-e2`,
   then every sign leg logs `sign` mode and passes Verify; the four FINAL zips (`cli-win-x64`, `cli-win-arm64`,
   `mcp-win-x64`, `mcp-win-arm64`, from the run's artifacts) extracted on the owner's machine give
   `Get-AuthenticodeSignature` `Valid`, signer = the organization, timestamp present; the certificate subject matches

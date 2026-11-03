@@ -287,7 +287,7 @@ Open, recommended answer in brackets:
   *Selected branches and tags* = `main` + `cli-v*` + `mcp-v*` here, `main` + `mcp-v*` in coai.
   Variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `SIGNING_ENDPOINT`, `SIGNING_ACCOUNT`,
   `SIGNING_PROFILE`, `SIGNING_PUBLISHER` — none is a secret. **Until the merge**, the deployment rule
-  also admits the PR branch (`ci/windows-code-signing` here, coai's twin branch there), so V1 runs
+  also admits the PR branch (`ci/windows-code-signing-e2` here, coai's twin branch there), so V1 runs
   before anything lands on `main`.
 - **O8 — re-read the tag ruleset** (F9) — the guard that makes a tag a human decision.
 - **O9 — after the merge,** remove the PR branches from both environments' deployment rules.
@@ -415,7 +415,7 @@ coai twin is a separate plan in `dew_flow_connect_other_ais`, not an epic here. 
 
 - **Goal.** `cli-binaries` and `mcp-binaries` hand their Windows packages to the E1 workflow, `cli-release` and
   `mcp-release` publish only after signing succeeded, and a tag without the `release-signing` setup is red.
-- **Repository and branch.** Branch `ci/windows-code-signing` from `main` of this repository, started after E1's
+- **Repository and branch.** Branch `ci/windows-code-signing-e2` from `main` of this repository, started after E1's
   `v1.0.0` commit exists (the caller pins that 40-hex SHA). The gate reviews this branch. It merges only after
   O1–O8 and V1 (§5), because D3 makes signing mandatory on a tag.
 - **Scope.** `.github/workflows/release.yml` (the four jobs of §3.2 and two new `cli-sign` / `mcp-sign` jobs),
