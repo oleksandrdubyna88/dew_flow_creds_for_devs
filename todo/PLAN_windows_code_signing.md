@@ -1,6 +1,6 @@
 # PLAN — the Windows `creds.exe` and `creds-mcp.exe` are signed, so Smart App Control lets them run
 
-> Status: **plan only, nothing implemented yet, 2026-11-03 — stopped for re-review.** Scope: a new public repository
+> Status: **plan only, nothing implemented yet, 2026-11-03 — re-reviewed, epoch 2 open.** Scope: a new public repository
 > `oleksandrdubyna88/dew_flow_release_signing` holding one reusable signing workflow (E1); the
 > `cli-binaries`, `cli-release`, `mcp-binaries` and `mcp-release` jobs of `.github/workflows/release.yml`
 > here (E2); the owner's one-time Azure and GitHub setup. No product code, no contract change.
@@ -9,7 +9,7 @@
 
 ## Plan changes
 
-> Epoch 1 · approved 2026-11-03 · by reviewers · state: stopped
+> Epoch 1 · approved 2026-11-03 · by reviewers · state: closed
 
 - 1.1 · 2026-11-03 · reviewer · approach — a called workflow starts with an empty workspace and no context names its own commit, so the mode decision is inline with its variables in env, tested end to end by the self-test
 - 1.2 · 2026-11-03 · reviewer · build-order — O7 admits the PR branch until the merge, so V1 signs before anything lands on main; O9 removes it
@@ -27,6 +27,12 @@ Narrowed: no
   contract checked before any login, extracted-hash check of the final zip, retention 7 days for every cli and mcp
   artifact, the Package step reads the Version step, F8 marked unobserved until V1, V2 moved before the merge on the
   trial package, epics re-split by Fable.)
+
+> Epoch 2 · approved 2026-11-03 · by reviewers · state: open
+
+  (Re-review gate round, 2/2 reviewers, proceed. Its accepted findings 1, 4 and 5 are part of the approved text: the
+  `extra-files` allow-list, the tag ref forcing `required`, V1 checking the organization record. From epoch 2 on, an
+  approving round's own findings are read as part of the approval, as in the coai twin.)
 
 ## 1. The symptom and the goal
 
@@ -93,7 +99,8 @@ Inputs:
 |---|---|---|
 | `artifacts` | string, required | JSON list of output names, e.g. `["cli-win-x64","cli-win-arm64"]`. For each NAME the caller has uploaded `unsigned-NAME`, holding exactly one top-level directory (the package folder). |
 | `own-files` | string, required | JSON list of package-relative paths that are the caller's OWN binaries, e.g. `["creds.exe"]`. Each must exist exactly once and be unsigned before signing, and must carry `SIGNING_PUBLISHER`'s signature after. |
-| `required` | boolean, required | `true` → missing configuration or any failure is red. The callers pass `${{ startsWith(github.ref, 'refs/tags/') }}`. |
+| `extra-files` | string, default `[]` | JSON list of file-name globs (package-relative) of OTHER files the caller allows to be signed when they arrive unsigned, e.g. coai's `["e_sqlite3.dll","*tree-sitter*.dll"]`. An unsigned PE that is neither an own file nor matched here is red — the workflow never signs a binary nobody declared. |
+| `required` | boolean, required | `true` → missing configuration or any failure is red. The callers pass `${{ startsWith(github.ref, 'refs/tags/') }}`. Independently of the input, a caller ref under `refs/tags/` (the `github` context is the caller's) is always treated as required. |
 | `environment` | string, default `release-signing` | the caller's environment that holds the variables and the OIDC trust. |
 
 Job: `runs-on: windows-2025` (F3), `timeout-minutes: 20`, `environment: ${{ inputs.environment }}`,
@@ -106,7 +113,8 @@ Job: `runs-on: windows-2025` (F3), `timeout-minutes: 20`, `environment: ${{ inpu
    step's `env:` (`${{ vars.X }}` — `vars` is not exported to a shell on its own; none of them is a
    secret), with `inputs.required`. It writes `mode=sign|skip`:
    - all six set → `sign`;
-   - none set and not required → `skip`, with a `::warning::` that the trial is **unsigned**;
+   - none set and not required (and the caller's ref is not a tag) → `skip`, with a `::warning::` that
+     the trial is **unsigned**;
    - none set and required → **red**, naming the six variables;
    - some set → **red** in both cases (a half configuration is a mistake, never a skip).
    Inline, not a script: a called workflow starts with an EMPTY workspace, and no context gives it
@@ -116,8 +124,9 @@ Job: `runs-on: windows-2025` (F3), `timeout-minutes: 20`, `environment: ${{ inpu
 3. **Inventory** (pwsh), in every mode and before any login:
    - each `own-files` path exists exactly once under `in/$PKG` and is `NotSigned` — a missing product
      binary, or a vendor-signed file renamed to the product's name, is red here;
-   - every other `*.exe` / `*.dll`: `Valid` → a kept vendor file, logged with its signer; `NotSigned` →
-     to sign; any other status (`HashMismatch`, `NotTrusted`, …) → red.
+   - every other `*.exe` / `*.dll`: `Valid` → a kept vendor file, logged with its signer; `NotSigned`
+     and matched by `extra-files` → to sign; `NotSigned` and NOT matched → red; any other status
+     (`HashMismatch`, `NotTrusted`, …) → red.
    Writes the absolute paths to sign (own files + unsigned others) as a multiline step output.
 4. `azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0` — `if: mode == 'sign'`; `client-id`,
    `tenant-id` from `vars`, `allow-no-subscriptions: true`. Values go as `with:` inputs, never into an
@@ -155,7 +164,8 @@ console`), a Microsoft-signed vendor file (a copy of `C:\Windows\System32\whoami
 (1) a trial with no variables must succeed, and its zip must extract to the same hashes and pass
 `sha256sum -c`; (2) `required: true` with no variables must FAIL; (3) one of the six variables set
 (an environment holding it) must FAIL; (4) the own file missing must FAIL; (5) the vendor-signed file
-named as the own file must FAIL; (6) a vendor file with one byte flipped (`HashMismatch`) must FAIL.
+named as the own file must FAIL; (6) a vendor file with one byte flipped (`HashMismatch`) must FAIL; (7) an unsigned PE that is neither
+own nor in `extra-files` must FAIL; (8) the same file listed in `extra-files` passes the trial.
 The publisher check on the `sign` path cannot run without Azure; V1 covers it),
 `.github/dependabot.yml` (github-actions), and a tag `v1.0.0` on the merged commit. `main` protected
 like the other repositories (PR only).
@@ -310,7 +320,10 @@ Plus `npm run typecheck`, `npm test`, the actionlint job of `ci-server.yml`, `pl
 - **V1** — the dispatch trials on the PR branch (§5), `target: cli` and `target: mcp`: every leg logs
   `sign` mode and passes Verify; then the four FINAL zips (both products × both architectures) are
   downloaded from the runs, extracted, and `Get-AuthenticodeSignature` on the owner's machine says
-  `Valid`, signer = the organization, timestamp present. This is the first observation of F8.
+  `Valid`, signer = the organization, timestamp present. The owner also compares the certificate's
+  subject with the organization name in the Azure identity validation record (O4) — the configured
+  `SIGNING_PUBLISHER` string alone cannot catch a profile linked to the wrong identity. This is the
+  first observation of F8.
 - **V2** — before the merge, on the owner's SAC machine: the extracted `win-x64` trial packages from V1,
   `creds --help` and `creds-mcp --help` in a terminal; SAC blocks neither. So nothing SAC would block is
   ever published.
@@ -363,22 +376,22 @@ coai twin is a separate plan in `dew_flow_connect_other_ais`, not an epic here. 
   `main` (README stub, LICENSE). All work is on branch `feat/sign-windows` from that commit; the gate reviews that
   branch; the merge is tagged `v1.0.0` and `main` is protected (PR only).
 - **Scope.** `.github/workflows/sign-windows.yml` (§3.1, steps 1–8), `README.md`, `LICENSE`, `.github/dependabot.yml`,
-  `.github/workflows/ci.yml` (actionlint, shellcheck, the six-call self-test with its fixtures).
+  `.github/workflows/ci.yml` (actionlint, shellcheck, the eight-call self-test with its fixtures).
 - **Depends on.** The plan gate `proceed`. Nothing in Azure: the `sign` path is proven later by V1 (E2).
 - **Done when.** CI and the self-test are green on the merged commit; the break-it of §6 (`none + required` made to
   `skip` → the check job fails) is quoted in the PR; `v1.0.0` points at that commit; the README names the four inputs,
   the owner steps and the caller snippet of §3.2.
-- **Cornerstone areas.** The caller↔workflow contract: inputs `artifacts`, `own-files`, `required`, `environment`;
+- **Cornerstone areas.** The caller↔workflow contract: inputs `artifacts`, `own-files`, `extra-files`, `required`, `environment`;
   the artifact names `unsigned-NAME` → `NAME`; the mode decision (all six → sign, none → skip only when not required,
   some → red); the own-file vs vendor-file classification before any login. The hash-matched pack step and the publisher
   equality in Verify are security-relevant too, but their contract is in §3.1 word for word and the self-test pins them;
   they get the security judgement at review, outside the quota.
 - **Stories** (`todo/PLAN_windows_code_signing_E1.md`, written when E1 starts):
-  1. E1.1 **(cornerstone)** — the workflow's contract: inputs, the artifact matrix, download and the one-directory
+  1. E1.1 **(cornerstone)** — the workflow's contract: inputs (with `extra-files`), the artifact matrix, download and the one-directory
      assertion, the inline mode step, and the inventory that classifies own files and vendor files.
   2. E1.2 — the signing leg: `azure/login`, `artifact-signing-action` with its pins and `cache-dependencies: false`,
      Verify (publisher, timestamp, kept vendor files), the hash-matched pack and the upload.
-  3. E1.3 — `ci.yml` with actionlint, shellcheck and the six self-test calls on fixtures; dependabot; the break-it;
+  3. E1.3 — `ci.yml` with actionlint, shellcheck and the eight self-test calls on fixtures; dependabot; the break-it;
      tag `v1.0.0` and the branch protection.
 
 ### E2 — this repository signs its Windows binaries (`dew_flow_creds_for_devs`)
