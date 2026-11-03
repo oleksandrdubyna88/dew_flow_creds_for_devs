@@ -394,7 +394,7 @@ coai twin is a separate plan in `dew_flow_connect_other_ais`, not an epic here. 
   `.github/workflows/ci.yml` (actionlint, shellcheck, the self-test (step harness + one real call) with its fixtures).
 - **Depends on.** The plan gate `proceed`. Nothing in Azure: the `sign` path is proven later by V1 (E2).
 - **Done when.** CI and the self-test are green on the merged commit; the break-it of §6 (`none + required` made to
-  `skip` → the check job fails) is quoted in the PR; `v1.0.0` points at that commit; the README names the four inputs,
+  `skip` → the step harness fails naming case 2) is quoted in the PR; `v1.0.0` points at that commit; the README names the five inputs,
   the owner steps and the caller snippet of §3.2.
 - **Cornerstone areas.** The caller↔workflow contract: inputs `artifacts`, `own-files`, `extra-files`, `required`, `environment`;
   the artifact names `unsigned-NAME` → `NAME`; the mode decision (all six → sign, none → skip only when not required,
