@@ -21,10 +21,11 @@ is a separate binary.
 
 ## The Windows binary is signed
 
-The `creds-mcp.exe` in the `win-x64` and `win-arm64` releases is Authenticode-signed by the owner's
-organization through Azure Artifact Signing, so Windows Smart App Control lets it run. Smart App
-Control was checked on `win-x64`. The `win-arm64` build carries the same signature from the same
-certificate profile; it was not run under Smart App Control. Check a signature in PowerShell with
+Releases from the one that carries this change on are Authenticode-signed by the owner's organization
+through Azure Artifact Signing, for `win-x64` and `win-arm64`, so that Windows Smart App Control can
+accept `creds-mcp.exe`. Earlier releases are unsigned. Smart App Control acceptance was checked on
+`win-x64` only; the `win-arm64` build carries the same signature from the same certificate profile and
+was not run under Smart App Control. Check a signature in PowerShell with
 `Get-AuthenticodeSignature .\creds-mcp.exe`.
 
 ## Building and testing
