@@ -489,7 +489,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: oleksandrdubyna88/dew_flow_release_signing/.github/workflows/sign-windows.yml@b3ac50ac471f59cc8d142d347af1cbd134bb4dc8 # v1.0.0
+    uses: oleksandrdubyna88/dew_flow_release_signing/.github/workflows/sign-windows.yml@609cc23bd9d39f61032849fc4910e4447f04e872 # v1.0.0
     with:
       artifacts: '["cli-win-x64","cli-win-arm64"]'
       own-files: '["creds.exe"]'
@@ -719,7 +719,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: oleksandrdubyna88/dew_flow_release_signing/.github/workflows/sign-windows.yml@b3ac50ac471f59cc8d142d347af1cbd134bb4dc8 # v1.0.0
+    uses: oleksandrdubyna88/dew_flow_release_signing/.github/workflows/sign-windows.yml@609cc23bd9d39f61032849fc4910e4447f04e872 # v1.0.0
     with:
       artifacts: '["mcp-win-x64","mcp-win-arm64"]'
       own-files: '["creds-mcp.exe"]'
