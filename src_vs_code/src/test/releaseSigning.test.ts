@@ -20,6 +20,11 @@ import { test } from 'node:test';
 const WORKFLOW = path.join(__dirname, '..', '..', '..', '.github', 'workflows', 'release.yml');
 const SIGN_WORKFLOW = 'oleksandrdubyna88/dew_flow_release_signing/.github/workflows/sign-windows.yml';
 
+/** `text` as a literal inside a RegExp: every metacharacter escaped, the backslash included. */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /** The file with LF endings and no comment lines. A Windows checkout may hold CRLF. */
 function readWorkflow(): string {
   const text = fs.readFileSync(WORKFLOW, 'utf8').replace(/\r\n/g, '\n');
@@ -249,7 +254,7 @@ for (const p of PRODUCTS) {
     assert.ok(uses !== undefined, `${sign} has no job-level uses`);
     assert.match(
       uses,
-      new RegExp(`^${SIGN_WORKFLOW.replace(/[.]/g, '\\.')}@[0-9a-f]{40}( +# +v\\d+\\.\\d+\\.\\d+)?$`),
+      new RegExp(`^${escapeRegExp(SIGN_WORKFLOW)}@[0-9a-f]{40}( +# +v\\d+\\.\\d+\\.\\d+)?$`),
       `${sign} must pin the signing workflow to a 40-hex commit`,
     );
     assert.equal(/^ {4}steps:/m.test(body), false, `${sign} is a caller job: it has no steps`);
