@@ -232,7 +232,7 @@ as the last word on completeness.
 the shared workflow, a tag fails without the `release-signing` setup, where the owner steps live.
 `src_cli/README.md`: the Windows binary is signed, and by whom. The `release.yml` header gains one line.
 
-**The releasable commit (F11).** E2 lands as two commits: `ci(release): …` (the workflow and the test)
+**The releasable commit (F11).** E2 lands as three commits, merged by *Rebase and merge* so each keeps its type: `ci(release): …` (the workflow and the test)
 and `fix(cli): the Windows binary is signed, so Smart App Control lets it run` touching
 `src_cli/README.md`, and `fix(mcp): the Windows binary is signed, so Smart App Control lets it run`
 touching a file under `src_mcp/` (`release-please-config.json:126-129`). `src_mcp/` has no README and
@@ -289,8 +289,8 @@ Open, recommended answer in brackets:
   `SIGNING_PROFILE`, `SIGNING_PUBLISHER` — none is a secret. **Until the merge**, the deployment rule
   also admits the PR branch (`ci/windows-code-signing` here, coai's twin branch there), so V1 runs
   before anything lands on `main`.
-- **O9 — after the merge,** remove the PR branches from both environments' deployment rules.
 - **O8 — re-read the tag ruleset** (F9) — the guard that makes a tag a human decision.
+- **O9 — after the merge,** remove the PR branches from both environments' deployment rules.
 
 ## 5. Build order
 
@@ -369,7 +369,7 @@ A tag is never moved.
 ## 9. Definition of Done
 
 - [ ] E1 merged; CI and the self-test green; `v1.0.0` tagged; `main` protected.
-- [ ] E2 merged; T1–T4 green with the break-it outputs in the PR; actionlint green.
+- [ ] E2 merged; T1–T5 green with the break-it outputs in the PR; actionlint green.
 - [ ] `coai` gate: plan round `proceed`, code rounds on E1 and E2 resolved; verdicts and reviewer counts
       in the summary.
 - [ ] O1–O8 done; V1 and V2 observed before the merge; R1 released; V4 observed on a SAC machine.
