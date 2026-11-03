@@ -129,7 +129,9 @@ resolved. One commit `ci(release): the Windows legs hand an unsigned package to 
    by the shared workflow; a `cli-v*` / `mcp-v*` tag is red without the `release-signing` setup; the owner steps live
    in the parent §4. Commit `docs(claude): …`.
 3. `src_cli/README.md`: a short section before *Building and testing* (`:58`): the Windows binary is Authenticode-signed
-   by the owner's organization through Azure Artifact Signing, so SAC lets it run. Commit
+   by the owner's organization through Azure Artifact Signing (both `win-x64` and `win-arm64`); Smart App Control was
+   checked to let the `win-x64` build run (V2) — the `win-arm64` build carries the same signature from the same
+   profile, but was not run under SAC here. The docs claim exactly that, no more. Commit
    `fix(cli): the Windows binary is signed, so Smart App Control lets it run`.
 4. `src_mcp/README.md` (new, short): what `creds-mcp` is, how the extension installs it (*Install the MCP Server…*,
    `src_vs_code/package.json:922`), and that its Windows build is signed. Commit
@@ -152,8 +154,12 @@ tag, so a merge before Azure works turns every `cli-v*` / `mcp-v*` release red.
   `mcp-win-x64`, `mcp-win-arm64`, from the run's artifacts) extracted on the owner's machine give
   `Get-AuthenticodeSignature` `Valid`, signer = the organization, timestamp present; the certificate subject matches
   the O4 validation record. The first observation of F8. Before O7 the same dispatch logs `skip` with the warning.
-- **V2** — given V1's `win-x64` packages, when `creds --help` and `creds-mcp --help` run on the owner's SAC machine,
-  then SAC blocks neither.
+- **V2** — given V1's `win-x64` packages, when `creds --help`, `creds relay-pipe` (it starts, writes its log and ends
+  with `noAgentAnnounced`) and `creds-mcp --version` run on the owner's SAC machine, then SAC blocks none of them. The
+  `win-arm64` packages are checked for their signature only (V1); the owner's machine is x64.
+- **If O4 is refused or delayed.** Nothing has reached `main`: E2.1–E2.3 live only on this branch. The PR stays a draft;
+  if the identity validation is refused for good, the PR is closed unmerged and the fallback — an RSA OV certificate
+  from a commercial CA with cloud signing — becomes a new plan. No revert is needed.
 - **V3** — given the merge and O9, when a trial is dispatched from a branch other than `main`, then the environment
   refuses it.
 
