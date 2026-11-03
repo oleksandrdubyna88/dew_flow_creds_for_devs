@@ -6,6 +6,9 @@ name: release
 #   cli-v0.1.0        -> four Native AOT `creds` binaries, attached to the release
 #   mcp-v0.1.0        -> four Native AOT `creds-mcp` binaries, attached to the release
 #
+# The Windows zips of `creds` and `creds-mcp` are signed by `dew_flow_release_signing`'s
+# `sign-windows.yml` (jobs `cli-sign`, `mcp-sign`) before the release jobs run.
+#
 # The `cli-v*` line was missing while the `cli-binaries` job below was complete and
 # guarded by `if: startsWith(github.ref, 'refs/tags/cli-v')` — so the job existed, was
 # correct, and could never run. Found by pushing the first cli tag and watching nothing
@@ -426,14 +429,12 @@ jobs:
         env:
           RID: ${{ matrix.rid }}
         run: |
-          VERSION="${GITHUB_REF_NAME#cli-v}"
           NAME="creds-$VERSION-$RID"
-          mkdir "$NAME"
           if [[ "$RID" == win-* ]]; then
-            cp out/creds.exe "$NAME/"
-            7z a "$NAME.zip" "$NAME" > /dev/null
-            echo "ASSET=$NAME.zip" >> "$GITHUB_ENV"
+            mkdir -p "pkg/$NAME"
+            cp out/creds.exe "pkg/$NAME/"
           else
+            mkdir "$NAME"
             cp out/creds "$NAME/"
             tar czf "$NAME.tar.gz" "$NAME"
             echo "ASSET=$NAME.tar.gz" >> "$GITHUB_ENV"
@@ -451,24 +452,54 @@ jobs:
       # trusted because it arrived over TLS — which says the bytes were not altered in
       # transit, and nothing at all about which bytes they are.
       - name: Checksum
+        if: ${{ !startsWith(matrix.rid, 'win-') }}
         shell: bash
         run: sha256sum "$ASSET" > "$ASSET.sha256"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !startsWith(matrix.rid, 'win-') }}
         with:
           name: cli-${{ matrix.rid }}
           path: |
             ${{ env.ASSET }}
             ${{ env.ASSET }}.sha256
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
+
+      # A Windows leg hands the signing job an UNSIGNED package: the directory `creds-<version>-<rid>/`
+      # holding the exe, uploaded by its PARENT so the directory name stays in the artifact. The
+      # name starts with `unsigned-`, so the release job's `pattern: cli-*` never picks it up.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: startsWith(matrix.rid, 'win-')
+        with:
+          name: unsigned-cli-${{ matrix.rid }}
+          path: pkg
+          if-no-files-found: error
+          retention-days: 7
+
+  # The Windows packages are signed by the shared signing workflow (Azure Artifact Signing), so
+  # Smart App Control lets the binary run. It uploads the FINAL zip and its checksum as `cli-win-<arch>`.
+  # These are the only jobs of this workflow that may ask for an identity token (releaseSigning.test.ts).
+  # todo/PLAN_windows_code_signing.md
+  cli-sign:
+    name: sign creds cli (windows)
+    needs: cli-binaries
+    if: startsWith(github.ref, 'refs/tags/cli-v') || inputs.target == 'cli'
+    permissions:
+      contents: read
+      id-token: write
+    uses: oleksandrdubyna88/dew_flow_release_signing/.github/workflows/sign-windows.yml@b3ac50ac471f59cc8d142d347af1cbd134bb4dc8 # v1.0.0
+    with:
+      artifacts: '["cli-win-x64","cli-win-arm64"]'
+      own-files: '["creds.exe"]'
+      required: ${{ startsWith(github.ref, 'refs/tags/') }}
 
   # Same shape as server-release, and here for the same reason: the defect was at all three sites,
   # so the fix is at all three. Fixing only the one that was noticed is the failure
   # .claude/rules/shared/common/security.md calls "a measure applied at SOME of its sites".
   cli-release:
     name: publish cli release
-    needs: cli-binaries
+    needs: [cli-binaries, cli-sign]
     if: startsWith(github.ref, 'refs/tags/cli-v')
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -635,14 +666,12 @@ jobs:
         env:
           RID: ${{ matrix.rid }}
         run: |
-          VERSION="${GITHUB_REF_NAME#mcp-v}"
           NAME="creds-mcp-$VERSION-$RID"
-          mkdir "$NAME"
           if [[ "$RID" == win-* ]]; then
-            cp out/creds-mcp.exe "$NAME/"
-            7z a "$NAME.zip" "$NAME" > /dev/null
-            echo "ASSET=$NAME.zip" >> "$GITHUB_ENV"
+            mkdir -p "pkg/$NAME"
+            cp out/creds-mcp.exe "pkg/$NAME/"
           else
+            mkdir "$NAME"
             cp out/creds-mcp "$NAME/"
             tar czf "$NAME.tar.gz" "$NAME"
             echo "ASSET=$NAME.tar.gz" >> "$GITHUB_ENV"
@@ -652,21 +681,51 @@ jobs:
       # inside the extension, which verifies what it downloads. A release that publishes no
       # checksum makes that verification a warning instead of a check.
       - name: Checksum
+        if: ${{ !startsWith(matrix.rid, 'win-') }}
         shell: bash
         run: sha256sum "$ASSET" > "$ASSET.sha256"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !startsWith(matrix.rid, 'win-') }}
         with:
           name: mcp-${{ matrix.rid }}
           path: |
             ${{ env.ASSET }}
             ${{ env.ASSET }}.sha256
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
+
+      # A Windows leg hands the signing job an UNSIGNED package: the directory `creds-mcp-<version>-<rid>/`
+      # holding the exe, uploaded by its PARENT so the directory name stays in the artifact. The
+      # name starts with `unsigned-`, so the release job's `pattern: mcp-*` never picks it up.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: startsWith(matrix.rid, 'win-')
+        with:
+          name: unsigned-mcp-${{ matrix.rid }}
+          path: pkg
+          if-no-files-found: error
+          retention-days: 7
+
+  # The Windows packages are signed by the shared signing workflow (Azure Artifact Signing), so
+  # Smart App Control lets the binary run. It uploads the FINAL zip and its checksum as `mcp-win-<arch>`.
+  # These are the only jobs of this workflow that may ask for an identity token (releaseSigning.test.ts).
+  # todo/PLAN_windows_code_signing.md
+  mcp-sign:
+    name: sign creds-mcp (windows)
+    needs: mcp-binaries
+    if: startsWith(github.ref, 'refs/tags/mcp-v') || inputs.target == 'mcp'
+    permissions:
+      contents: read
+      id-token: write
+    uses: oleksandrdubyna88/dew_flow_release_signing/.github/workflows/sign-windows.yml@b3ac50ac471f59cc8d142d347af1cbd134bb4dc8 # v1.0.0
+    with:
+      artifacts: '["mcp-win-x64","mcp-win-arm64"]'
+      own-files: '["creds-mcp.exe"]'
+      required: ${{ startsWith(github.ref, 'refs/tags/') }}
 
   mcp-release:
     name: publish mcp release
-    needs: mcp-binaries
+    needs: [mcp-binaries, mcp-sign]
     if: startsWith(github.ref, 'refs/tags/mcp-v')
     runs-on: ubuntu-latest
     timeout-minutes: 30
