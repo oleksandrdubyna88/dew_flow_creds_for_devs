@@ -257,3 +257,12 @@ of 1) and 8, S1.A5–S1.A8 are red on a missing output; that is the state to rec
 6. `inventory` outputs also `kept-files` / `kept-count`, because E1.2's Verify must re-check the kept vendor files.
 7. The download action pin is the one `release.yml:226` carries (v8.0.2); the harness cases are the parent's 2–9 plus
    S1.A1–S1.A8; the fixture that must be `Valid` carries an embedded signature, asserted by the self-test.
+
+## S1.11 — Deviations found while building (2026-11-03)
+
+- **`ConvertFrom-Json -NoEnumerate` is not strict on the runner.** PowerShell 7 on `windows-2025` read `["creds.exe"`
+  (no closing bracket) as a one-element list, so case S1.A1 failed (run 41628108252). Both `inputs` and `inventory`
+  parse with `System.Text.Json.JsonDocument.Parse` instead (commit `fee63f3`); findings and messages are unchanged.
+- G1–G6 held on the runner: `dotnet.exe` is embedded-signed (`Authenticode`, signer `.NET`), the flipped copy reads
+  `HashMismatch`, Git Bash is `C:\Program Files\Git\bin\bash.exe`. The `download` step is exercised only by E1.3's real
+  call, not by the step harness.
