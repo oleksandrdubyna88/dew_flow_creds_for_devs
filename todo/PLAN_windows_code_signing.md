@@ -1,11 +1,19 @@
 # PLAN — the Windows `creds.exe` and `creds-mcp.exe` are signed, so Smart App Control lets them run
 
-> Status: **plan only, nothing implemented yet, 2026-11-03.** Scope: a new public repository
+> Status: **plan only, nothing implemented yet, 2026-11-03 — stopped for re-review.** Scope: a new public repository
 > `oleksandrdubyna88/dew_flow_release_signing` holding one reusable signing workflow (E1); the
 > `cli-binaries`, `cli-release`, `mcp-binaries` and `mcp-release` jobs of `.github/workflows/release.yml`
 > here (E2); the owner's one-time Azure and GitHub setup. No product code, no contract change.
 > Twin plan: `dew_flow_connect_other_ais · todo/PLAN_windows_code_signing.md` (its `coai-mcp` line,
 > the same reusable workflow).
+
+## Plan changes
+
+> Epoch 1 · approved 2026-11-03 · by reviewers · state: stopped
+
+- 1.1 · 2026-11-03 · reviewer · approach — a called workflow starts with an empty workspace and no context names its own commit, so the mode decision is inline with its variables in env, tested end to end by the self-test
+- 1.2 · 2026-11-03 · reviewer · build-order — O7 admits the PR branch until the merge, so V1 signs before anything lands on main; O9 removes it
+  (This second change stopped the plan. Gate round 1 finding 2 was rejected: the nested zip layout is today's.)
 
 ## 1. The symptom and the goal
 
@@ -79,15 +87,18 @@ Job: `runs-on: windows-2025` (F3), `timeout-minutes: 20`, `environment: ${{ inpu
 
 1. **Download** `unsigned-${{ matrix.artifact }}` into `in/`. Assert `in/` holds exactly one directory
    (`PKG`) and nothing else.
-2. **Mode** — `.github/scripts/signing-mode.sh` reads the six variables (`AZURE_CLIENT_ID`,
-   `AZURE_TENANT_ID`, `SIGNING_ENDPOINT`, `SIGNING_ACCOUNT`, `SIGNING_PROFILE`, `SIGNING_PUBLISHER`) and
-   `required`, and writes `mode=sign|skip`:
+2. **Mode** — an inline bash step. The six variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`,
+   `SIGNING_ENDPOINT`, `SIGNING_ACCOUNT`, `SIGNING_PROFILE`, `SIGNING_PUBLISHER`) reach it through the
+   step's `env:` (`${{ vars.X }}` — `vars` is not exported to a shell on its own; none of them is a
+   secret), with `inputs.required`. It writes `mode=sign|skip`:
    - all six set → `sign`;
    - none set and not required → `skip`, with a `::warning::` that the trial is **unsigned**;
    - none set and required → **red**, naming the six variables;
    - some set → **red** in both cases (a half configuration is a mistake, never a skip).
-   It is a script with its own `signing-mode.test.sh`, because this decision is the fail-closed
-   promise and must run on every push, not only on release day.
+   Inline, not a script: a called workflow starts with an EMPTY workspace, and no context gives it
+   its own commit to check out (`github.workflow_sha` is the caller's; only the OIDC token's
+   `job_workflow_sha` claim has it). A checkout of `main` would run code the caller did not pin. The
+   fail-closed promise is tested end to end instead, by the self-test (§6).
 3. **Inventory** (pwsh) — every `*.exe` and `*.dll` under `in/PKG`, by `Get-AuthenticodeSignature`:
    `Valid` → kept as it is and logged with its signer; `NotSigned` → to sign; any other status
    (`HashMismatch`, `NotTrusted`, …) → red. Zero PE files → red (nothing to sign means a wrong artifact).
@@ -101,14 +112,17 @@ Job: `runs-on: windows-2025` (F3), `timeout-minutes: 20`, `environment: ${{ inpu
    **`cache-dependencies: false`** (a job holding `id-token: write` does not restore a cache another
    run could have written; it costs about a minute); `exclude-environment-credential: true` so only the
    `azure/login` session (AzureCliCredential) can authenticate.
-6. **Verify** (pwsh), `if: mode == 'sign'` — for every PE file: status `Valid`; for every file step 3
+6. **Verify** (pwsh), `if: mode == 'sign'`, `SIGNING_PUBLISHER` in its `env:` — for every PE file: status `Valid`; for every file step 3
    listed: `TimeStamperCertificate` present and the signer's simple name **equals**
    `SIGNING_PUBLISHER`. Any miss → red. In `skip` mode the step prints that the files are unsigned.
-7. **Pack** (bash) — `7z a PKG.zip PKG` and `sha256sum PKG.zip > PKG.zip.sha256`, the exact commands of
-   today's Windows legs (`release.yml:433-434`, `:455`), so asset names, layout and checksum format do
-   not change. Then `7z l` of the zip must list the same files as `in/PKG` (the artefact, not the
-   folder, is what ships).
-8. **Upload** `${{ matrix.artifact }}` with `PKG.zip` and `PKG.zip.sha256`, `if-no-files-found: error`,
+7. **Pack** (bash). `PKG` is the directory's real name, e.g. `creds-0.4.6-win-x64`, read in step 1.
+   `mkdir out && (cd in && 7z a "../out/$PKG.zip" "$PKG" > /dev/null)` and
+   `(cd out && sha256sum "$PKG.zip" > "$PKG.zip.sha256")` — the commands of today's Windows legs
+   (`release.yml:433-434`, `:455`), run from the same relative place, so the asset name, the layout
+   inside the zip (`creds-<v>-win-x64/creds.exe`, as every release since cli-v0.1.0) and the checksum
+   format do not change. Then the file list of `7z l -slt out/$PKG.zip` must equal the files under
+   `in/$PKG`, `$PKG/` prefix included (the artefact, not the folder, is what ships).
+8. **Upload** `${{ matrix.artifact }}` with path `out/`, i.e. `$PKG.zip` and `$PKG.zip.sha256`, `if-no-files-found: error`,
    `retention-days: 1` — the same name and contents the build leg uploads today, so the release jobs
    downstream read it unchanged.
 
@@ -116,9 +130,12 @@ What the workflow never does: write to a release (`contents: read` only), read a
 none), or build anything. The caller owns build, smoke tests and publishing.
 
 Also in the new repository: `README.md` (inputs, the owner setup, the caller snippet), `LICENSE` (MIT),
-`.github/workflows/ci.yml` (actionlint + shellcheck + `signing-mode.test.sh` + a **self-test** that
-calls `sign-windows.yml` in `skip` mode on a package holding one Microsoft-signed file — a copy of
-`C:\Windows\System32\whoami.exe` — and asserts the output zip, its listing and its checksum),
+`.github/workflows/ci.yml` (actionlint + shellcheck over the `run:` blocks + a **self-test** that
+calls `sign-windows.yml` three times on a package holding one Microsoft-signed file — a copy of
+`C:\Windows\System32\whoami.exe` — and one unsigned PE, and checks each result from a later job
+with `if: always()`: a trial in an environment with no variables must succeed and yield the zip, its
+listing and a checksum that verifies; `required: true` with no variables must FAIL; a partial
+configuration (an environment holding one of the six variables) must FAIL),
 `.github/dependabot.yml` (github-actions), and a tag `v1.0.0` on the merged commit. `main` protected
 like the other repositories (PR only).
 
@@ -215,7 +232,10 @@ Open, recommended answer in brackets:
 - **O7 — GitHub environments.** In each of the two repositories, an environment `release-signing`:
   *Selected branches and tags* = `main` + `cli-v*` + `mcp-v*` here, `main` + `mcp-v*` in coai.
   Variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `SIGNING_ENDPOINT`, `SIGNING_ACCOUNT`,
-  `SIGNING_PROFILE`, `SIGNING_PUBLISHER` — none is a secret.
+  `SIGNING_PROFILE`, `SIGNING_PUBLISHER` — none is a secret. **Until the merge**, the deployment rule
+  also admits the PR branch (`ci/windows-code-signing` here, coai's twin branch there), so V1 runs
+  before anything lands on `main`.
+- **O9 — after the merge,** remove the PR branches from both environments' deployment rules.
 - **O8 — re-read the tag ruleset** (F9) — the guard that makes a tag a human decision.
 
 ## 5. Build order
@@ -223,24 +243,22 @@ Open, recommended answer in brackets:
 | Step | What | Who |
 |---|---|---|
 | E1 | the new repository, its workflow, CI and self-test; tag `v1.0.0` | agent (the repository is created only after this plan's gate says `proceed`) |
-| E2 | this repository's PR, pinned to E1's commit; merged **only after O1–O8** | agent |
+| E2 | this repository's PR, pinned to E1's commit; merged **only after O1–O8 and V1** | agent |
 | twin | coai's PR, the same pin | agent |
 | O1–O8 | Azure and GitHub setup — can run in parallel with E1/E2 | owner |
-| V1 | dry probe: `workflow_dispatch` `target: cli` on `main` signs both Windows zips | owner + agent |
+| V1 | dry probe: `workflow_dispatch` `target: cli` and `target: mcp` on the PR branch sign the Windows zips | owner + agent |
 | R1 | the cli and mcp patch releases from release-please | owner |
 | V2 | on a SAC machine: reinstall, run | owner |
 
-Why E2 merges only after O1–O8: D3 makes signing mandatory on a tag, so merged before Azure works it
-would turn every `cli-v*`/`mcp-v*` release red. V1 cannot run from the PR branch, because the
-environment admits only `main` and the release tags (O7). So the order is: O1–O8 done → merge E2 →
-V1 at once on `main` → only then R1.
+Why E2 merges only after O1–O8 and V1: D3 makes signing mandatory on a tag, so merged before Azure
+works it would turn every `cli-v*`/`mcp-v*` release red. O7 admits the PR branch until the merge, so the
+order is: O1–O8 → V1 on the PR branch → merge E2 → O9 → R1.
 
 ## 6. Test and verification plan
 
-**E1 (new repository):** actionlint over both workflows; shellcheck over the scripts;
-`signing-mode.test.sh` covers the five cases of step 2 (all set, none + trial, none + required, partial +
-trial, partial + required) — break-it: make `none + required` return `skip`, watch the test fail,
-restore; the self-test run passes in `skip` mode and asserts zip listing and checksum.
+**E1 (new repository):** actionlint over both workflows; shellcheck over the `run:` blocks; the
+self-test's three calls (§3.1). Break-it: make `none + required` take `skip`, watch the self-test's
+check job fail, restore. The `sign` path cannot run without Azure; V1 covers it.
 
 **E2 (here):** `src_vs_code/src/test/releaseSigning.test.ts`, reading `release.yml` like
 `credsInstall.test.ts:46-57` does (no `vscode` import, CRLF normalised):
@@ -258,13 +276,14 @@ Plus `npm run typecheck`, `npm test`, the actionlint job of `ci-server.yml`, `pl
 
 **On the real services:**
 
-- **V1** — the dispatch trial (§5): both legs log `sign` mode, the action signs, Verify passes, and the
+- **V1** — the dispatch trial on the PR branch (§5): both legs log `sign` mode, the action signs, Verify passes, and the
   downloaded zip's `creds.exe` shows *Digital Signatures* with the organization and a timestamp. A
   `Get-AuthenticodeSignature` on the owner's machine says `Valid`.
 - **V2** — after R1, on the owner's SAC machine: *Install `creds` (terminal CLI)…*, then run `creds
   --help` in a terminal; SAC does not block it. The same for *Install the MCP server* and `creds-mcp
   --help`. This is the goal of the plan; without V2 it is not done.
-- **V3 (negative)** — the trial dispatched from a branch other than `main` is refused by the environment.
+- **V3 (negative)** — after O9, a trial dispatched from a branch other than `main` is refused by the
+  environment.
 
 ## 7. Growth surfaces
 
@@ -290,7 +309,3 @@ A tag is never moved.
 - [ ] O1–O8 done; V1 observed; R1 released; V2 observed on a SAC machine.
 - [ ] `CLAUDE.md`, `src_cli/README.md` and the workflow header say the Windows binaries are signed.
 - [ ] Plan promoted to `research/` with its deviations.
-
-## 10. Change ledger
-
-None yet.
