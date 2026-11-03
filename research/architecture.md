@@ -365,7 +365,8 @@ docker image        build -> RUN it -> wait for healthy -> assert 401 on /api/va
 
 docs · plans        plan-lifecycle.mjs + pin-check.mjs from the shared submodule
 
-release             tag-driven: server-v* -> image, extension-v* -> Marketplace
+release             tag-driven: server-v* -> image, extension-v* -> Marketplace,
+                    cli-v* / mcp-v* -> the `creds` / `creds-mcp` binaries (Windows ones signed, below)
 ```
 
 `deploy/**` sits in the server's path filter deliberately: the compose stack is how this server is
@@ -390,6 +391,17 @@ Two further properties worth naming:
 Releases are tag-driven and per product — `server-v*` publishes a multi-arch image and moves
 `:latest`; `extension-v*` publishes to the Marketplace and **refuses while the publisher id is
 still a placeholder**. A tag never ships both.
+
+**The Windows binaries are signed before they are published (2026-11-03,
+[PLAN_windows_code_signing.md](../todo/PLAN_windows_code_signing.md)).** Smart App Control blocks an unsigned
+`creds.exe` or `creds-mcp.exe` on a machine that has it on, so the `cli-v*` and `mcp-v*` pipelines no longer zip
+their Windows legs. A Windows leg uploads an unsigned package (`unsigned-cli-win-x64`, …); the job `cli-sign` /
+`mcp-sign` calls the reusable `sign-windows.yml` of `dew_flow_release_signing`, pinned by commit, which signs the
+exe with Azure Artifact Signing over GitHub OIDC (no stored secret, inside the `release-signing` environment),
+zips it and uploads the final `cli-win-<arch>` / `mcp-win-<arch>` with its checksum; the release job waits for it.
+On a tag signing is mandatory — a missing setup is a red run and the release stays a draft. Only the two sign jobs
+may ask for an identity token. Every cli and mcp artifact keeps 7 days, so *Re-run failed jobs* after a signing
+outage still finds every platform's asset. Smart App Control acceptance was checked on `win-x64` only.
 
 ### Where a copy of the whole deployment lives (2026-09-07, epic 5)
 

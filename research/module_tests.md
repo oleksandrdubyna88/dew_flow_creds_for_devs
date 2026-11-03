@@ -260,6 +260,19 @@ release made it — *--version printed 'creds-mcp 1.0.0', expected exactly 'cred
 line does not name version 0.4.1* (`started: relay-pipe, version 1.0.0, …`), *the log's start line does not name
 version 0.10.1* — GREEN with the stamp, RED again on a fresh publish without it.
 
+**The release workflow's signing wiring is a test (2026-11-03,
+[PLAN_windows_code_signing.md](../todo/PLAN_windows_code_signing.md)).** `src_vs_code/src/test/releaseSigning.test.ts`
+reads `release.yml` as text (no `vscode`, no YAML parser; CRLF normalised, comment lines dropped) and pins what makes
+skipping the signature impossible, because the signing itself cannot run without Azure. T1: the Windows legs of
+`cli-binaries` and `mcp-binaries` upload `unsigned-<product>-<rid>` from `pkg`, and zip and checksum nothing. T2:
+`cli-sign` / `mcp-sign` call the shared workflow at a 40-hex commit with exactly the `win-*` legs of their matrix and
+exactly `contents: read` + `id-token: write`. T3: each release job needs its sign job. T4: nothing else may grant an
+identity token, by `id-token` or by `write-all`, in a job or at the workflow level. T5: `Package` uses the Version
+step's `$VERSION` (never `GITHUB_REF_NAME`), every cli and mcp upload keeps 7 days, and `own-files` names the product's
+own exe. RED against the unchanged workflow (11 of 13 failed); break-its: dropping `cli-sign` from `cli-release`'s
+needs fails T3, `id-token` or `permissions: write-all` on `cli-release` or in the header fails T4, a removed RID in
+`artifacts` fails T2. The cross-repository federation is not tested here; only a real signed run proves it.
+
 **Still not proved by anything automated:** the one-day count on the owner's machine (the plan's first DoD line —
 `creds-mcp.exe` count equals live clients after a day of normal use), which needs the released build installed;
 and the stale-install leg of E4.S2 inside `creds-mcp-wsl-itest.cjs`.
