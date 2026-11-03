@@ -163,10 +163,13 @@ export function lines(): { write: (line: string) => void; seen: string[] } {
 
 export const exists = (target: string): boolean => fs.existsSync(target);
 
+/** Windows' own folder when `SystemRoot` is not in the environment (Windows sets it; this is only the documented default). */
+const DEFAULT_SYSTEM_ROOT = 'C:\\Windows';
+
 /** Is `pid` a process right now? `process.kill(pid, 0)` on POSIX; `tasklist` on Windows, where signal 0 is not a probe everywhere. */
 export function isAlive(pid: number): boolean {
   if (process.platform === 'win32') {
-    const tasklist = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tasklist.exe'); // by its full path, never a PATH lookup
+    const tasklist = path.join(process.env.SystemRoot ?? DEFAULT_SYSTEM_ROOT, 'System32', 'tasklist.exe'); // by its full path, never a PATH lookup
     const answer = execFileSync(tasklist, ['/FI', `PID eq ${pid}`, '/NH', '/FO', 'CSV'], { encoding: 'utf8', timeout: 30_000, killSignal: 'SIGKILL' });
     return answer.includes(`"${pid}"`);
   }
