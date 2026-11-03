@@ -166,7 +166,8 @@ export const exists = (target: string): boolean => fs.existsSync(target);
 /** Is `pid` a process right now? `process.kill(pid, 0)` on POSIX; `tasklist` on Windows, where signal 0 is not a probe everywhere. */
 export function isAlive(pid: number): boolean {
   if (process.platform === 'win32') {
-    const answer = execFileSync('tasklist', ['/FI', `PID eq ${pid}`, '/NH', '/FO', 'CSV'], { encoding: 'utf8', timeout: 30_000, killSignal: 'SIGKILL' });
+    const tasklist = path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'tasklist.exe'); // by its full path, never a PATH lookup
+    const answer = execFileSync(tasklist, ['/FI', `PID eq ${pid}`, '/NH', '/FO', 'CSV'], { encoding: 'utf8', timeout: 30_000, killSignal: 'SIGKILL' });
     return answer.includes(`"${pid}"`);
   }
   try {

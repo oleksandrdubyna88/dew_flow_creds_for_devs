@@ -54,5 +54,5 @@ export function discoverSources(root: string, excluded: ReadonlyMap<string, stri
     else if (entry.name.endsWith('.ts')) found.push(child);
   };
   walk('');
-  return found.sort();
+  return found.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)); // code-unit order, the same on every machine (a locale order is not)
 }
