@@ -102,8 +102,10 @@ All four are `.github/workflows/release.yml`, triggered on `tags:`.
 
 **The Windows `creds` and `creds-mcp` binaries are signed.** The jobs `cli-sign` and `mcp-sign` call
 `sign-windows.yml` of `dew_flow_release_signing` (Azure Artifact Signing, no stored secret) after the
-build legs and before the release jobs, so Smart App Control lets the binaries run. On a `cli-v*` or
-`mcp-v*` tag, signing is mandatory: without the owner's `release-signing` setup the run is red and the
+build legs and before the release jobs. Releases from the one that carries this change on are
+Authenticode-signed by the owner's organization for `win-x64` and `win-arm64`, so that Smart App Control
+can accept them; earlier releases are unsigned. Smart App Control acceptance was checked on `win-x64`
+only. On a `cli-v*` or `mcp-v*` tag, signing is mandatory: without the owner's `release-signing` setup the run is red and the
 release stays a draft. The owner steps are in [todo/PLAN_windows_code_signing.md](todo/PLAN_windows_code_signing.md) §4.
 
 **An extension release bumps TWO files, not one.** `src_vs_code/package.json` and
