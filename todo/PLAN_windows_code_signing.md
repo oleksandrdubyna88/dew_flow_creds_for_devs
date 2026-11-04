@@ -1,6 +1,6 @@
 # PLAN — the Windows `creds.exe` and `creds-mcp.exe` are signed, so Smart App Control lets them run
 
-> Status: **in progress — epoch 3 approved by the owner (2026-11-04). E1 merged (v1.0.0 = 609cc23); E2 built; next E3 (shared workflow v1.1.0), then E4 (callers merge with the switch on); E5 the activation cutover later.** Scope: a new public repository
+> Status: **wiring merged, activation open — 2026-11-04, epoch 3. E1 `v1.0.0` and E3 `v1.1.0` (a9a7ecc) in `dew_flow_release_signing`; creds #295 (ae8aed8) and coai #944 (7de8a74) merged with `ALLOW_UNSIGNED_RELEASES=true`. Releases stay UNSIGNED until E5; the goal is not reached yet. The provider is the owner's open decision (D11).** Scope: a new public repository
 > `oleksandrdubyna88/dew_flow_release_signing` holding one reusable signing workflow (E1, E3); the
 > `cli-binaries`, `cli-release`, `mcp-binaries` and `mcp-release` jobs of `.github/workflows/release.yml`
 > here (E2, E4); the owner's one-time provider and GitHub setup (E5). No product code, no contract change.
@@ -491,12 +491,16 @@ A tag is never moved.
 **Wiring (E1–E4) — merge readiness:**
 
 - [x] E1 merged; CI and the self-test green; `v1.0.0` tagged; `main` protected.
-- [ ] E3 merged; cases 10–13 green with both break-its quoted in the PR; `v1.1.0` tagged; README updated.
-- [ ] E4: T1–T5 green with the break-it outputs in the PR; actionlint green; the pin is `v1.1.0`'s commit;
+- [x] E3 merged (#3, a9a7ecc); cases 10–13 green with both break-its quoted in the PR; `v1.1.0` tagged; README updated.
+- [x] E4: T1–T5 green with the break-it outputs in the PR; actionlint green; the pin is `v1.1.0`'s commit;
       both callers pass the switch; the docs make no present-tense signature or SAC claim; M1 and M2 done;
-      #295 squash-merged with a `ci(release)` title; M3 (release-please proposes nothing) and O9 done. The
-      coai twin merged the same way.
-- [ ] `coai` gate: plan round `proceed` (epoch 3 approved by the owner, narrowed), code rounds on E3 and E4
+      #295 squash-merged with a `ci(release)` title (ae8aed8); M3 (release-please run 41829733199 at ae8aed8:
+      "No user facing commits" for cli, mcp and extension) and O9 done. The coai twin merged the same way
+      (#944, 7de8a74; O9 done; its release-please was not dispatched, because other streams have pending
+      commits there, and a `ci` commit with a clean body is never releasable).
+      Still to observe: the first real `cli-v*` / `mcp-v*` tag under the switch (green, the `UNSIGNED RELEASE`
+      warning on its Windows legs). No such tag has been cut yet.
+- [x] `coai` gate: plan round `proceed` (epoch 3 approved by the owner, narrowed), code rounds on E3 and E4
       resolved; verdicts and reviewer counts in the summary.
 
 **Activation (E5) — the goal; the plan stays in `todo/` until these are ticked:**
