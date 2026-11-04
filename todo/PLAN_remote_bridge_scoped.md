@@ -357,7 +357,7 @@ contract and the bridge's whole lifecycle, reboot included, proven against a rea
 review. Each epic's stories are one document, `todo/PLAN_remote_bridge_scoped_E<n>.md`, written when that epic starts; it links back here and gets its own `todo/README.md` row. Four epics make Q = 2. The story writer marks the one story in each of E1
 and E2 that owns the area and updates the ledger in the same commit. Everything else named below as a security surface takes the security judgement at review, outside the quota. Story names are areas, not titles.
 
-Cornerstones: 0 of 2 — no story marked yet; the areas are named in E1 and E2
+Cornerstones: 1 of 2 — E1.3 ([PLAN_remote_bridge_scoped_E1.md](PLAN_remote_bridge_scoped_E1.md)); the E2 area is still to be marked
 
 ### E1 — The authorization boundary. Nothing reaches a person.
 
