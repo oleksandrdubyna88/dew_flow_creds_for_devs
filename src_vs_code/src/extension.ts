@@ -123,7 +123,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // startupTiming.ts: five candidates for the slow start were read and eliminated, and a guess at
   // the sixth would be a change nobody could confirm.
   const timing = new PhaseTimer();
-  setEnvCollection(context.environmentVariableCollection);
+  setEnvCollection(context.environmentVariableCollection, vscode.env.remoteName);
 
   // One place decides how long a copied secret lingers; see secretClipboard.ts for why
   // it is a settable default rather than an argument at every copy site.
@@ -637,7 +637,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
   useActions.register(scriptRunAction(agentDeps));
   useActions.register(terminalRunAction(agentDeps));
-  useActions.register(credentialExportEnvAction(agentDeps));
+  useActions.register(credentialExportEnvAction({ ...agentDeps, remoteName: vscode.env.remoteName }));
   useActions.register(dbQueryAction(agentDeps));
   useActions.register(vpnAction(agentDeps, 'up'));
   useActions.register(vpnAction(agentDeps, 'down'));

@@ -15,6 +15,8 @@
  * the thin edge that hands them to `window`.</p>
  */
 
+import { windowKind } from './hostShell';
+
 /** A bound name the policy refused to write, and the sentence that says why. */
 export interface EnvWithheld {
   readonly name: string;
@@ -33,11 +35,42 @@ export interface EnvNotice {
   readonly warning?: string;
 }
 
-export function envAppliedNotice(result: EnvApplyResult): EnvNotice {
+/**
+ * @param remoteName `vscode.env.remoteName`, when the caller knows it. Absent reads as a local window,
+ *   so every caller written before the argument existed says what it said.
+ */
+export function envAppliedNotice(result: EnvApplyResult, remoteName?: string): EnvNotice {
+  const warning = [...result.withheld.map(withheldSentence), ...reachSentences(result.written, remoteName)].join(' ');
   return {
     ...(result.written.length > 0 ? { info: writtenSentence(result.written) } : {}),
-    ...(result.withheld.length > 0 ? { warning: result.withheld.map(withheldSentence).join(' ') } : {}),
+    ...(warning.length > 0 ? { warning } : {}),
   };
+}
+
+/**
+ * The warning for a window whose terminals run on ANOTHER computer (E1.1 of the scoped remote bridge).
+ *
+ * <p>The environment collection is applied to the terminals of the window, and in a Remote-SSH or a
+ * container window those run on the remote side: the value is written into the environment of every
+ * new terminal there, where any process of the person's login can read it. It is still written — the
+ * person chose the binding — and the person is told where it goes and how to take it back. A WSL
+ * window is this machine's own side (`windowKind` says `wsl`), so it says nothing.</p>
+ */
+function reachSentences(written: readonly string[], remoteName: string | undefined): string[] {
+  return written.length > 0 && windowKind(remoteName) === 'other' ? [reachSentence(written, remoteName ?? '')] : [];
+}
+
+function reachSentence(written: readonly string[], remoteName: string): string {
+  const list = written.map((name) => `$${name}`).join(', ');
+  const [reaches, values, takeBack] =
+    written.length > 1
+      ? ['reach', 'the values in their environment', 'a value']
+      : ['reaches', 'the value in its environment', 'the value'];
+  return (
+    `${list} ${reaches} another computer: the new terminals of this window run there (${remoteName}), ` +
+      `so each one starts on that computer with ${values}, where any process of your login can read it. ` +
+      `To take ${takeBack} back, remove its binding from the entry; terminals already open keep it until they close.`
+  );
 }
 
 /** The viewer's own sentence, widened to several names — "in this window" added, because that is the boundary the report missed. */

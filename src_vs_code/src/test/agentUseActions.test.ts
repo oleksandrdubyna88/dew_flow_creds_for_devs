@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { commandFingerprint } from '../commandTrust';
 import { lockSecret } from '../secretEnvelope';
+import { EXPORT_REFUSED } from '../brokerProtocol';
 import {
+  credentialExportEnvAction,
   dbQueryAction,
   scriptRunAction,
   terminalRunAction,
@@ -284,4 +286,58 @@ test('vpnAction: a start that was sent before the client left answers as it alwa
   const result = await vpnAction(vpnDeps(true, [], () => request.abort()), 'down').run({ ...ctx, signal: request.signal }, {});
 
   assert.deepEqual(result, { status: 200, body: { opened: true } });
+});
+
+/**
+ * E1.1 — an agent cannot export a secret into the terminals of another computer
+ * (`PLAN_remote_bridge_scoped_E1.md`, X1 and X2).
+ *
+ * <p>Validation and not `run`, because validation runs before the consent modal: a person is never
+ * asked to allow something that will be refused.</p>
+ */
+
+function exportDeps(remoteName: string | undefined, applied: string[] = []) {
+  return fakeDeps({
+    remoteName,
+    storage: {
+      getNode: () => ({ details: { id: 'e1', name: 'prod-db', envBindings: { password: 'PROD_PW' } } }),
+    },
+    applyEnv: async () => {
+      applied.push('applied');
+      return { written: ['PROD_PW'], withheld: [] };
+    },
+  });
+}
+
+test('X1: exportEnv in an ssh-remote window is refused by validate, with a stable code and sentence, and applies nothing', () => {
+  const applied: string[] = [];
+  const action = credentialExportEnvAction(exportDeps('ssh-remote', applied));
+
+  assert.deepEqual(action.validate({}), { ok: false, code: 'not_supported', message: EXPORT_REFUSED });
+  assert.deepEqual(applied, [], 'applyEnv was called');
+});
+
+test('X1: in a local window the same entry is exported as before', async () => {
+  const applied: string[] = [];
+  const action = credentialExportEnvAction(exportDeps(undefined, applied));
+
+  assert.deepEqual(action.validate({}), { ok: true });
+  const result = await action.run(ctx, {});
+
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body, { written: ['PROD_PW'] });
+  assert.equal(applied.length, 1);
+});
+
+test('X2: undefined, empty and wsl admit; every other window refuses with exactly EXPORT_REFUSED', () => {
+  for (const admitted of [undefined, '', 'wsl']) {
+    assert.deepEqual(credentialExportEnvAction(exportDeps(admitted)).validate({}), { ok: true }, `remoteName ${String(admitted)}`);
+  }
+  for (const refused of ['ssh-remote', 'dev-container', 'attached-container', 'codespaces', 'tunnel']) {
+    assert.deepEqual(
+      credentialExportEnvAction(exportDeps(refused)).validate({}),
+      { ok: false, code: 'not_supported', message: EXPORT_REFUSED },
+      `remoteName ${refused}`,
+    );
+  }
 });

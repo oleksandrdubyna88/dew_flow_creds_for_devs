@@ -62,3 +62,57 @@ test('a save that bound nothing says nothing at all', () => {
   assert.equal(notice.info, undefined);
   assert.equal(notice.warning, undefined);
 });
+
+/**
+ * E1.1 — the warning when the terminals are on another computer (`PLAN_remote_bridge_scoped_E1.md`).
+ * The value is still written (owner decision 5); the person is told where it goes.
+ */
+
+const REACHES_ONE =
+  '$X reaches another computer: the new terminals of this window run there (ssh-remote), so each one starts on that computer with the value in its environment, where any process of your login can read it. To take the value back, remove its binding from the entry; terminals already open keep it until they close.';
+
+const REACHES_TWO =
+  '$X, $Y reach another computer: the new terminals of this window run there (ssh-remote), so each one starts on that computer with the values in their environment, where any process of your login can read it. To take a value back, remove its binding from the entry; terminals already open keep it until they close.';
+
+test('W1: one name written in an ssh-remote window: info as today, and exactly the one-name warning', () => {
+  const notice = envAppliedNotice({ written: ['X'], withheld: [] }, 'ssh-remote');
+
+  assert.equal(notice.info, `$X is set ${SET_FOR_NEW_TERMINALS}`);
+  assert.equal(notice.warning, REACHES_ONE);
+});
+
+test('W2: two names, and a withheld name beside them: the two-name sentence comes after the withheld one', () => {
+  const notice = envAppliedNotice(
+    { written: ['X', 'Y'], withheld: [{ name: 'PROD_PW', reason: 'reason one.' }] },
+    'ssh-remote',
+  );
+
+  assert.equal(notice.warning, `$PROD_PW was not written: reason one. ${REACHES_TWO}`);
+});
+
+test('W2: the name in brackets is the remoteName given, not a fixed word', () => {
+  const notice = envAppliedNotice({ written: ['X'], withheld: [] }, 'dev-container');
+
+  assert.equal(notice.warning, REACHES_ONE.replace('(ssh-remote)', '(dev-container)'));
+});
+
+test('W3: a local window, a WSL window, and nothing written say no such sentence', () => {
+  const written = { written: ['X'], withheld: [] };
+
+  assert.equal(envAppliedNotice(written, undefined).warning, undefined);
+  assert.equal(envAppliedNotice(written, '').warning, undefined);
+  assert.equal(envAppliedNotice(written, 'wsl').warning, undefined);
+  assert.deepEqual(envAppliedNotice({ written: [], withheld: [] }, 'ssh-remote'), {});
+  assert.equal(
+    envAppliedNotice({ written: [], withheld: [{ name: 'A', reason: 'r.' }] }, 'ssh-remote').warning,
+    '$A was not written: r.',
+    'nothing reached the other computer, so the sentence about it is not said',
+  );
+});
+
+test('W3: with one argument the answer is today’s answer', () => {
+  const result = { written: ['X'], withheld: [{ name: 'A', reason: 'r.' }] };
+
+  assert.deepEqual(envAppliedNotice(result), envAppliedNotice(result, undefined));
+  assert.equal(envAppliedNotice(result).warning, '$A was not written: r.');
+});

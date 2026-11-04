@@ -193,7 +193,7 @@ export const UK_BODIES: Readonly<Record<string, HelpBody>> = {
     whatItIs: "Нативний бінарник, який користується обліковими даними із сейфа з будь-якого термінала — `creds ssh prod-db -- uname -a` — не отримуючи їх. Вікно, якому належить запис, виконує дію й повертає лише вивід.",
     why: "Не все відбувається всередині VS Code, а вставляння токенів в оболонки — це саме те, заради припинення чого цей продукт існує.",
     setup: "Install… → Install `creds`. На записі: «Enable CLI Access…» карбує ім'я, яке ви набиратимете.",
-    usage: "Дієслова: ssh, terminal, run, script, db, env, config, vpn-up, vpn-down, ls — і `creds relay` усередині WSL для SSH-агента. Переглядач запису перелічує його імена разом із точною командою, готовою до копіювання.",
+    usage: "Дієслова: ssh, terminal, run, script, db, env, config, vpn-up, vpn-down, ls — і `creds relay` усередині WSL для SSH-агента. Переглядач запису перелічує його імена разом із точною командою, готовою до копіювання. `env` відхиляється у вікні Remote-SSH чи контейнера: значення потрапило б на інший комп’ютер. Натомість використайте збережену команду (`terminal`, `script`).",
     whatCanGoWrong: "Перший виклик питає людину у VS Code — це задум, а не зависання. «No open window»: запустіть VS Code або перевірте CLI-доступ запису. На хості Remote-SSH потрібен ще й міст (див. Remote Bridge).",
   },
   'remote-bridge': {

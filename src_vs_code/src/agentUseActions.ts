@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import {
+  EXPORT_REFUSED,
   EnvExportResponseBody,
   ErrorCode,
   ExecResponseBody,
@@ -17,7 +18,7 @@ import { notStarted } from './requestLife';
 import { resolveScriptEnv } from './scriptRender';
 import { scriptRunPlan } from './scriptRun';
 import { buildCommandLine } from './commandLine';
-import { capturedRun, hostShell, osMismatch } from './hostShell';
+import { capturedRun, hostShell, osMismatch, windowKind } from './hostShell';
 import { isCommandTrusted } from './commandTrust';
 import { lockToOwner, materializedKeyPath } from './materializedKeys';
 import { buildDbQueryLaunch, isSafePostgresUri, refuseQuery, resolveDbCli } from './dbCliLauncher';
@@ -241,8 +242,12 @@ export function terminalRunAction(deps: AgentUseDeps & { onPath?: (exe: string) 
  * <p>Honest limitation, and it is in the consent text rather than only here: this reaches
  * integrated terminals opened afterwards in THIS window. An agent whose shell lives
  * outside VS Code gets nothing from it.</p>
+ *
+ * <p>Refused in `validate` — before the consent modal — in a window whose terminals run on another
+ * computer (Remote-SSH, a container): there the value would land on that computer, and no secret
+ * leaves the computer that holds the vault. `not_supported`, the stable `EXPORT_REFUSED` sentence.</p>
  */
-export function credentialExportEnvAction(deps: AgentUseDeps): UseAction {
+export function credentialExportEnvAction(deps: AgentUseDeps & { remoteName: string | undefined }): UseAction {
   return {
     kind: 'credential',
     action: 'exportEnv',
@@ -252,7 +257,7 @@ export function credentialExportEnvAction(deps: AgentUseDeps): UseAction {
       const body = result.body as EnvExportResponseBody;
       return `${body.written.length} variable(s)`;
     },
-    validate: () => ({ ok: true }),
+    validate: () => (windowKind(deps.remoteName) === 'other' ? { ok: false, code: 'not_supported', message: EXPORT_REFUSED } : { ok: true }),
     summarize: () =>
       'into integrated terminals opened after this, in this VS Code window only — a shell outside VS Code is unaffected',
     async run(ctx): Promise<UseActionResult> {

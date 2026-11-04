@@ -547,7 +547,7 @@ export class CredsAgentServer implements vscode.Disposable {
     }
     const validated = useAction.validate(body);
     if (!validated.ok) {
-      this.respondError(res, 'invalid_request', validated.message, grant, action, undefined, who.via, who.caller);
+      this.respondError(res, validated.code ?? 'invalid_request', validated.message, grant, action, undefined, who.via, who.caller);
       return undefined;
     }
     return useAction;

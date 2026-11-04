@@ -95,6 +95,18 @@ export function errorBody(
 export const INTERNAL_FAILURE = 'The action failed inside this window. See the agent journal for the reason.';
 
 /**
+ * What an agent is told when it asks to export a secret into the terminals of another computer.
+ *
+ * <p>One sentence on every door, so a client can match it and a person can search for it. The export
+ * writes the value into the environment collection of the window, and in a Remote-SSH (or container)
+ * window the terminals that collection feeds run on the remote computer: the value would leave the
+ * computer that holds the vault. A stored command is the way round it, because the agent then gets
+ * only the command's output. Refused in `validate`, so no modal asks a person to allow it first.</p>
+ */
+export const EXPORT_REFUSED =
+  "An agent cannot export a secret here: the value would land on another computer (this window's terminals, or the server behind a Remote Bridge), and no secret leaves the computer that holds the vault. Use a stored command instead: the agent gets only its output.";
+
+/**
  * What an agent is told when this window cannot read the values it would have to redact.
  *
  * <p>Said BEFORE the action, always: the table is built first precisely so that a storage read

@@ -10,6 +10,8 @@
  * registry neither knows nor cares.
  */
 
+import type { ErrorCode } from './brokerProtocol';
+
 /** Where in the vault the grant points; the live entity is re-read per call. */
 export interface UseActionContext {
   readonly accountId: string;
@@ -87,7 +89,12 @@ export interface UseAction {
    */
   readonly mutatesSecrets: boolean;
 
-  validate(body: unknown): { ok: true } | { ok: false; message: string };
+  /**
+   * `code` is the error code the refusal answers with; absent, it is `invalid_request` — a malformed
+   * body. A well-formed request this window will not serve (an export into another computer's
+   * terminals) names `not_supported`, so a client does not read it as its own mistake.
+   */
+  validate(body: unknown): { ok: true } | { ok: false; message: string; code?: ErrorCode };
   /** One line for the first-use consent dialog (e.g. the command about to run). */
   summarize(body: unknown): string;
   /** Describe a finished call for the audit line (e.g. `exit 0`, `opened`). */

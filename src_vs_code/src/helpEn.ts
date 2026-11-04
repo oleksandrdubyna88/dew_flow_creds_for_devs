@@ -193,7 +193,7 @@ export const EN_BODIES: Readonly<Record<string, HelpBody>> = {
     whatItIs: "A native binary that uses a vault credential from any terminal — `creds ssh prod-db -- uname -a` — without ever receiving it. The window that owns the entry performs the action and returns only the output.",
     why: "Not everything happens inside VS Code, and pasting tokens into shells is what this product exists to end.",
     setup: "Install… → Install `creds`. On an entry: “Enable CLI Access…” mints the name you will type.",
-    usage: "Verbs: ssh, terminal, run, script, db, env, config, vpn-up, vpn-down, ls — and `creds relay` inside WSL for the SSH agent. The entry’s viewer lists its names with the exact command ready to copy.",
+    usage: "Verbs: ssh, terminal, run, script, db, env, config, vpn-up, vpn-down, ls — and `creds relay` inside WSL for the SSH agent. The entry’s viewer lists its names with the exact command ready to copy. `env` is refused in a Remote-SSH or container window: the value would land on another computer. Use a stored command (`terminal`, `script`) instead.",
     whatCanGoWrong: "The first call asks the human in VS Code — that is the design, not a hang. “No open window”: start VS Code, or check the entry’s CLI access. On a Remote-SSH host you also need the bridge (see Remote Bridge).",
   },
   'remote-bridge': {

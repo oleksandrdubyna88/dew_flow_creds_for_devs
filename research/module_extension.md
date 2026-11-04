@@ -2411,7 +2411,26 @@ positions, so the import is elided and the module is pure at run time — `woven
 imports `automaticRefusal` from it with no stub, and one `vscode.window` call there failed that file at
 load. The agent's `exportEnv` verb keeps answering `{ written }` — `EnvExportResponseBody` is a broker
 contract the CLI and the MCP read — so a binding the policy withheld is not in that answer; widening
-it is a contract change across three codebases and is recorded here as the open tail. The form's row
+it is a contract change across three codebases and is recorded here as the open tail.
+
+*A window whose terminals run on another computer (E1.1 of the scoped remote bridge, 2026-11-04).* In a
+Remote-SSH, container or Codespaces window the collection feeds terminals that run on the REMOTE side,
+so the value lands on another computer. The person's own binding is still written (owner decision 5)
+and is now said: `envAppliedNotice(result, remoteName?)` adds, after any withheld sentences, *"$X
+reaches another computer: the new terminals of this window run there (ssh-remote) … To take the value
+back, remove its binding from the entry; terminals already open keep it until they close."* (the plural
+for several names). It is in the notice and not at the `ENV` button because the notice is the one
+sentence every surface that writes the collection says. The remote name rides `envCollectionRef` as a
+module variable set beside the collection (`setEnvCollection(collection, remoteName)`), so stubs without
+an `env` read as local; `windowKind` decides (`local`, `wsl` and an empty name say nothing). An AGENT's
+`exportEnv` is refused outright in such a window: `credentialExportEnvAction({ …, remoteName })` answers
+from `validate` — before the consent modal — `not_supported` with the one stable `EXPORT_REFUSED`
+sentence (`brokerProtocol.ts`), through the `code` a `validate` result may now name (absent, it is still
+`invalid_request`). `not_supported` and not `invalid_request`, because the MCP walk moves on only from
+a `not_found` and would otherwise tell the agent its request was wrong. `exportRefused.test.ts` drives
+it through the real broker on `/v1/use/` and `/v1/alias/`. Whether the persisted collection reaches
+new remote terminals at all is the M4 measurement in `todo/PLAN_remote_bridge_scoped_E1.md`, taken by a
+person and not yet recorded. The form's row
 label reads *"Expose … in new integrated terminals as env variable"* with `ENV_ROW_HINT` under every
 row: written into every integrated terminal opened after saving, in this window only, never to a file,
 never to a shell outside VS Code. `envSaveNotice.test.ts` drives the REAL create and edit handlers over
@@ -2487,7 +2506,7 @@ needed **no change** — the seam worked as designed. `runBounded` was extracted
 | `script` | `run` | child env (`resolveScriptEnv`) | body ignored; content-trust required |
 | `terminal` | `run` | none — no secret field | body ignored; the ONE `shell: true` caller, safe because no agent text is in the line |
 | `db` | `query` | `PGPASSWORD` / `MYSQL_PWD` / `SQLCMDPASSWORD` | only host/port/db on the command line — argv is world-readable in the process list |
-| `credential` | `exportEnv` | the env collection | answers with NAMES; narrow, and the consent text says so |
+| `credential` | `exportEnv` | the env collection | answers with NAMES; narrow, and the consent text says so. Refused in `validate` (`not_supported`, `EXPORT_REFUSED`) in a window whose terminals run on another computer (Remote-SSH, container) |
 | `vpn` | `up`/`down` | materialized config | opens the human's terminal — no headless child can answer a UAC prompt |
 
 **MongoDB is refused, deliberately.** `mongosh` has no password environment variable and
