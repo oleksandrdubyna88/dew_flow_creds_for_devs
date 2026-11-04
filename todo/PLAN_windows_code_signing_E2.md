@@ -1,14 +1,20 @@
 # PLAN — Windows code signing, E2: this repository signs its Windows `creds` and `creds-mcp` binaries
 
-> Status: **built and gated, 2026-11-03 — on `ci/windows-code-signing-e2`, not merged: waits for O1–O8, V1 and V2.** Stories of epic E2 of [PLAN_windows_code_signing.md](PLAN_windows_code_signing.md).
+> Status: **built and gated, 2026-11-03; re-baselined 2026-11-04 (parent epoch 3) — on `ci/windows-code-signing-e2`, not merged. The merge belongs to E4 (pin bump to `v1.1.0`, the `allow-unsigned-release` switch, docs reworded, squash merge with `ALLOW_UNSIGNED_RELEASES=true`); V1, V2 and the `fix` releases belong to E5, the activation cutover.** Stories of epic E2 of [PLAN_windows_code_signing.md](PLAN_windows_code_signing.md).
 > Scope: `.github/workflows/release.yml` (jobs `cli-binaries`, `cli-release`, `mcp-binaries`, `mcp-release`, two new
 > jobs `cli-sign` / `mcp-sign`), `src_vs_code/src/test/releaseSigning.test.ts` (new), `CLAUDE.md`, `src_cli/README.md`,
 > `src_mcp/README.md` (new, D9). Branch `ci/windows-code-signing-e2`, cut from `ci/windows-code-signing` (which holds only the plan commits) so E2 gets its own gate session. No product
 > code, no contract change.
 
 **Committed together with this document:** its row in `todo/README.md` under *Currently open* (the shared
-`common/planning-docs.md` § *A plan split into epics and stories*). E2 marks no cornerstone; the parent's ledger stays
-`Cornerstones: 1 of 1 — E1.1`.
+`common/planning-docs.md` § *A plan split into epics and stories*). E2 marks no cornerstone; after the epoch-3 re-split
+the parent's ledger reads `Cornerstones: 2 of 2 — E1.1, E3.1`.
+
+**Epoch-3 note (2026-11-04).** The parent's re-review (§3.4, E3–E5) changed what this document said about the merge:
+no provider exists, so E2 does not wait for O1–O8, V1 or V2. E4 continues on this branch and merges it behind the
+switch; E5 does the activation later. Where a paragraph below says "merged only after O1–O8, V1 and V2", "Rebase and
+merge" or "the docs say the Windows binaries are signed", the parent's §3.2, §3.4 and E4 replace it; the paragraphs are
+kept as the record of what E2 built. The stories' code and tests stand as built.
 
 ## Who writes what (the review gate's operator orders)
 
@@ -28,7 +34,8 @@ federation (only V1 proves it). The coai gate runs once for E2: code rounds on t
 - **The pin.** `uses: oleksandrdubyna88/dew_flow_release_signing/.github/workflows/sign-windows.yml@<40-hex> # v1.0.0`.
   E1 is being built now, so the SHA is not known. It is written **at E2.2 time**: E1's merge commit, which the tag
   `v1.0.0` points at (read it with `git ls-remote … refs/tags/v1.0.0` and its `^{}` line if the tag is annotated). E2.1
-  needs no pin and may start before `v1.0.0` exists; E2.2 may not.
+  needs no pin and may start before `v1.0.0` exists; E2.2 may not. (Built: 609cc23. E4 bumps it to `v1.1.0`'s merge
+  commit and adds `allow-unsigned-release: ${{ vars.ALLOW_UNSIGNED_RELEASES == 'true' }}` to both sign jobs.)
 - The five inputs are E1.1's (spec §S1.1): `artifacts`, `own-files`, `extra-files` (default `[]`), `required`,
   `environment` (default `release-signing`). E2 passes `artifacts`, `own-files`, `required` only. This repository's
   packages hold one own file each, so `extra-files` stays at its default; `environment` keeps `release-signing` (O7).
@@ -120,6 +127,12 @@ resolved. One commit `ci(release): the Windows legs hand an unsigned package to 
 
 ## E2.3 — the docs, the releasable commits, V1 and V2, the merge
 
+**Epoch 3:** items 1–4 were built as written. Their present-tense wording ("is signed", "was checked") is true only
+after activation, so E4 rewords all of them (and `research/architecture.md`, `research/module_tests.md`) to "wired for
+signing; releases stay unsigned until the owner activates a provider". The `fix(cli)` / `fix(mcp)` commits below stay
+on this branch but never reach `main`: the PR is squash-merged with a `ci(release): …` title (E4), and the real
+`fix(cli)` / `fix(mcp)` commits are written at activation (E5), when the sentences become true.
+
 **Exact edits.**
 
 1. `release.yml` header (`:3-7`): one line after `:7` — the Windows zips are signed by
@@ -141,13 +154,13 @@ resolved. One commit `ci(release): the Windows legs hand an unsigned package to 
 carries the mcp release commit (`release-please-config.json:126-129`; `src_mcp/RELEASES.md` is the changelog and is
 never edited by hand). **The owner may overturn it**; the alternative is to wait for the next real `src_mcp` change.
 
-**Owner steps E2 waits on.** O1–O8 (parent §4: subscription, provider, account, identity validation, certificate
-profile, identity and federated credentials, the `release-signing` environment admitting this branch, the tag
-ruleset re-read) **before the merge**; V1 and V2 on the PR branch. The PR **may be opened before them** (CI, the coai
-code rounds, Opus's review all run) but it is **merged only after** O1–O8, V1 and V2: D3 makes signing mandatory on a
-tag, so a merge before Azure works turns every `cli-v*` / `mcp-v*` release red.
+**Owner steps E2 waits on (epoch 2 text, replaced in epoch 3).** Epoch 2 merged only after O1–O8, V1 and V2, because
+D3 made signing mandatory on a tag and a merge before Azure worked would have turned every `cli-v*` / `mcp-v*` release
+red. Epoch 3 (parent §3.4, §4 *At the merge*): the merge waits for E3's `v1.1.0`, the E4 changes on this branch, and
+the owner's M1 (`ALLOW_UNSIGNED_RELEASES=true` as a repository variable in both repositories) and M2 (the
+`release-signing` environment holds zero variables). O1–O8, V1 and V2 are E5's, after the merge, on `main`.
 
-**Scenarios (on the real services).**
+**Scenarios (on the real services) — in epoch 3 these run in E5, on `main`, after the merge; kept here as written.**
 
 - **V1** — given O1–O8, when `workflow_dispatch` `target: cli` and `target: mcp` run from `ci/windows-code-signing-e2`,
   then every sign leg logs `sign` mode and passes Verify; the four FINAL zips (`cli-win-x64`, `cli-win-arm64`,
@@ -165,21 +178,25 @@ tag, so a merge before Azure works turns every `cli-v*` / `mcp-v*` release red.
 
 **Break-it.** None asked; V1 is the first test of the `sign` path.
 
-**Done when.** The docs say the Windows binaries are signed; V1 and V2 observed and quoted in the PR; the PR merged with
-*Rebase and merge* (see gap 1); O9 done and V3 observed; release-please has opened the `cli` and `mcp` release PRs.
-R1 and V4 belong to the parent's Definition of Done, after this epic.
+**Done when (epoch 3).** Items 1–4 built and reviewed (done 2026-11-03). The rest moved: the docs rewording, the
+squash merge, O9 and the release-please check are E4's done-when; V1, V2, V3, the `fix` releases (R1) and V4 are E5's.
+(Epoch 2 read: the docs say the Windows binaries are signed; V1 and V2 observed; the PR merged with *Rebase and merge*;
+release-please has opened the `cli` and `mcp` release PRs.)
 
 ## Order
 
 E2.1 (may start now) → E2.2 (after E1's `v1.0.0`, the pin) → E2.3 docs and `fix:` commits → open the PR → coai code
-rounds and Opus's review → O1–O8 (owner, in parallel) → V1 → V2 → merge → O9 → V3 → release-please PRs.
+rounds and Opus's review. Then, in epoch 3: E3 (`v1.1.0`) → E4 on this branch (pin bump, the switch line, T2 extended,
+docs reworded; M1, M2; squash merge; M3; O9) → E5 later (O1–O8 → V1 → V2 → A6 → `fix` commits → R1 → V4 → V3).
 
 ## Gaps found in the parent (recorded, not fixed here)
 
 1. **The merge method.** The parent wants the `fix(cli)` and `fix(mcp)` commits to reach `main` as separate commits
    (§3.2, F11), but this repository squash-merges with the PR title (`main` history; squash and rebase are both
    enabled, merge commits are not). A squash leaves one commit typed by the PR title. E2 must use *Rebase and merge*
-   and keep `main` un-merged into the branch; the parent does not say so.
+   and keep `main` un-merged into the branch; the parent does not say so. **Closed in epoch 3 the other way round:**
+   the squash is now the point — a `ci(release)` title keeps the `fix` commits (which claim a signature) off `main`
+   and cuts no release; the releasable commits come at activation (parent §3.2).
 2. §3.2 says "E2 lands as two commits" and then names three (`ci(release)`, `fix(cli)`, `fix(mcp)`).
 3. §9 says "T1–T4 green"; §6 and the E2 done-when have T5.
 4. The E2 epic says the branch starts after `v1.0.0` exists; E2.1 does not need the pin, so here it may start earlier.
