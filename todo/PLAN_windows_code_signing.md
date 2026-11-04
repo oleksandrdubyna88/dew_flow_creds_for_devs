@@ -262,7 +262,7 @@ cli-sign:
   with:
     artifacts: '["cli-win-x64","cli-win-arm64"]'
     own-files: '["creds.exe"]'
-    required: ${{ startsWith(github.ref, 'refs/tags/') }}
+    required: ${{ startsWith(github.ref, 'refs/tags/') || inputs.required }}
     allow-unsigned-release: ${{ vars.ALLOW_UNSIGNED_RELEASES == 'true' }}
 ```
 
