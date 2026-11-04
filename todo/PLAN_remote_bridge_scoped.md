@@ -1,6 +1,6 @@
 # PLAN — An agent on a remote Linux server uses what the person opened to it, through a bridge scoped to that server
 
-> Status: **plan only, nothing implemented yet, stopped for re-review, 2026-11-04.** The owner changed it twice after its approval. Scope: `src_vs_code` (broker doors, bridge lifecycle, scope,
+> Status: **plan only, nothing implemented yet, stopped for re-review, 2026-11-04.** The owner changed it twice after its approval; this text is the revision going to re-review. Scope: `src_vs_code` (broker doors, bridge lifecycle, scope,
 > agent actions), `src_broker_client`, `src_cli`, `src_mcp`, `install.sh`. No server change. Extends the shipped bridge of
 > [PLAN_remote_broker_bridge.md](../research/PLAN_remote_broker_bridge.md).
 
@@ -12,12 +12,21 @@
 - 1.2 · 2026-11-04 · owner · scope,dod,epics,approach — the VPN serves websites and vpn-up is a script entry: the db tunnel goes, scripts run on the server
   (This second change stopped the plan. Nothing is built, so the re-review has no work to sort.)
 
+### Re-review for epoch 2
+
+Narrowed: yes — the db tunnel left the scope and the Definition of Done, by the owner's own words: "VPN вобще не для баз... забудь"
+
+| Work | Where | Verdict | Action |
+|---|---|---|---|
+| Nothing built | none | none | none |
+
 ## 1. Goal
 
 The person works in VS Code on Windows, in a Remote-SSH window attached to an Ubuntu server. The vault lives in the
 extension on Windows (`extensionKind: ["ui"]`). Claude Code runs on that server, usually inside tmux. It should be able to
 use, through MCP, the entries the person opened to it: run SSH commands, query databases, use a password without seeing
-it, and restart a work VPN that sometimes drops by running a stored script on the server.
+it, and run stored scripts on the server, such as restarting a VPN it needs for reaching websites. All of this must come back by
+itself after the person's PC reboots.
 
 Today it cannot, and the reasons are not the entry kinds. The bridge is half built:
 
@@ -28,8 +37,9 @@ Today it cannot, and the reasons are not the entry kinds. The bridge is half bui
 | D3 | tmux loses the bridge | The path is random per open (`agentCommands.ts:447`), setup is a pasted `export` (`sshBridge.ts:247-261`), and a dropped ssh only logs (`extension.ts:196-202`) |
 | D4 | The bridge skips SSH settings | `agentCommands.ts:448-452` passes neither `knownHostsFile` nor a jump, so it is always `accept-new`; the exec path honours both (`sshUseActions.ts:153,201`) |
 | D5 | The socket reaches the whole broker | One router behind every door (`credsAgentServer.ts:435-489`). MCP and alias routes take no token, "never ask" settles with no modal (`brokerMcpDoor.ts`), and consent stamps carry no host (`mcpConsentPolicy.ts:85`). The config route returns a whole secret body (`brokerConfigRoute.ts:76`) |
-| D6 | An agent's stored command runs on the wrong machine | The person's click runs on the server (`hostShell.ts:185-191`). The agent's run compares with and spawns on `process.platform` (`agentUseActions.ts:206,220`), so a Linux entry is refused and any other runs on Windows |
+| D6 | An agent's stored command or script runs on the wrong machine | A person's click on a Terminal entry runs on the server (`hostShell.ts:185-191`). The agent's run compares with and spawns on `process.platform` (`agentUseActions.ts:206,220`), and `scriptRunAction` (`agentUseActions.ts:125-175`) runs a script from a temp file on Windows, so a bash script needs a bash on Windows and never reaches the server |
 | D7 | A password can reach the server | `exportEnv` writes values to the window's environment collection with no remote check (`agentUseActions.ts:245-274`). In a Remote-SSH window those terminals are on the server. Not yet measured live (M4) |
+| D8 | Nothing survives a reboot | A bridge lives only in the memory of `SshBridgeManager`; nothing records that it was open, and `dispose` kills it (`sshBridgeManager.ts:92-96`) |
 
 ## 2. Owner decisions (2026-11-04)
 
@@ -37,13 +47,14 @@ Today it cannot, and the reasons are not the entry kinds. The bridge is half bui
 2. No plaintext secret reaches the server. A password is used without being seen: the laptop runs a stored command with
    the password in a variable, and the agent gets only the output.
 3. No open window means no access: no daemon and no relay. Calls fail with a clear message.
-4. The person's own `Set env` keeps working in a Remote-SSH window, with a warning. Only an agent's export is refused.
-5. `vpn-up` is a stored Terminal entry, a bash script on the server. It needs no sudo password prompt; the plan does not
-   handle one.
-6. RDP is not in scope.
-
-Assumption, stated to the owner and not objected to: the VPN is up on the server, and the databases are behind it. If
-that proves false, epic-level work on the db tunnel (§4.7) is dropped and nothing else changes.
+4. **Bridges survive a reboot of the person's PC.** A bridge stays open until the person closes it. Closing a window suspends it;
+   only *Close Remote Bridge* ends it.
+5. The person's own `Set env` keeps working in a Remote-SSH window, with a warning. Only an agent's export is refused.
+6. Script entries are usable by the agent when access is open. The VPN is one such script (`vpn-up`, bash, on the server), it serves
+   websites, not databases, and it does not prompt for a sudo password; the plan does not handle one.
+7. Each login user has its own entry and bridge. The Remote-SSH window `ai-runner1` logs in as `dev2`, so an agent there needs an entry
+   for that login; a root entry's private directory cannot serve it.
+8. Out of scope: RDP, and any tunnel to a database. Databases are queried from the laptop as today.
 
 ## 3. Rejected
 
@@ -53,6 +64,9 @@ that proves false, epic-level work on the db tunnel (§4.7) is dropped and nothi
 | Laptop daemon so the editor may be closed | The vault lives in the extension host; needs its own unlock and consent UI; contradicts decision 3 |
 | Companion `workspace` extension relaying over `executeCommand` (designed in full) | Three foundations are unmeasured (a command promise held 5 minutes, where the extension installs, whether `asExternalUri` carries raw TCP); `workspace.openTunnel` is proposed API only; a second Marketplace extension; and `ssh -R` must stay anyway for a plain SSH terminal |
 | Reverse SOCKS proxy, or the VPN config on the server | A proxy hides which process connects. The config is a secret |
+| A db tunnel through the server (in epoch 1) | The owner: the VPN is for websites, so nothing needs it |
+| A stable socket path (measured) | With the client hung, binding the same path fails with `remote port forwarding failed`; a new path after unlinking works at once (§4.3) |
+| A pid in a claim file, for who owns a bridge | A pid is reused after a reboot and `pidIsAlive` calls a protected process alive, so a stale claim can block forever; two windows can both reclaim it (§4.7) |
 | Dropping or widening the Host check on a shared port | Reopens DNS rebinding and still cannot tell which server called |
 
 ## 4. Design
@@ -86,7 +100,7 @@ found".
   the list: `/v1/config/read`, `exportEnv`, `/v1/mcp/create`, `/v1/mcp/folder/*`.
 - **Checked again just before launch.** Name resolution is one wall; a token's grant skips it, and a scope can change while a consent
   modal is open. So the scope is also checked in one place at the moment an action starts, whichever route it came by.
-- **References are scoped too.** A stored command's `creds://` targets and a db entry's tunnel entry must each be in the same server's
+- **References are scoped too.** Every entry a stored command or script reaches through a `creds://` reference must be in the same server's
   scope, or the call is refused naming the missing entry. Otherwise an entry in scope becomes a road to one that is not.
 - **Server identity is the vault entry id** (`serverEntityId`), never a host string, so aliases and jump chains cannot split or merge it.
 - **"Never ask" and "every 12 hours":** a per-server `quiet` switch, default off, which means every call through this bridge
@@ -124,7 +138,7 @@ agent running as another user needs an entry for that login, which is another br
 ### 4.4 The supervisor
 
 `BridgeSupervisor` (pure, spawner and clock injected) replaces `SshBridgeManager`: `connecting → up → down(retry) → closed`,
-backoff 2 to 60 s with jitter, until Close or the window ends. A row reads `up` only after `verifyBridgeSocket` (a local function at `commands/agentCommands.ts:208`, extracted for this) succeeds, never
+backoff 2 to 60 s with jitter, until Close; it is suspended when the window ends (§4.7). A row reads `up` only after `verifyBridgeSocket` (a local function at `commands/agentCommands.ts:208`, extracted for this) succeeds, never
 because a process is alive (the class of defect `sshBridge.ts:95-101` records). The host key and jump chain come from the exec
 path's existing code (`materializeKnownHosts`, `resolveJumpChain`), and `bridgeAuthParity.test.ts` extends to the new execs.
 
@@ -164,12 +178,26 @@ The bridge door decides, through a pure `decideRunSite`:
 | No `creds://` reference | windows | Laptop |
 | Has `creds://` references | windows | **Laptop**, values in the child's environment |
 | Has `creds://` references | unset or linux | **Refused**, with a sentence: the value would have to reach the server; set "Runs on" to Windows to run it on the laptop |
+| A script injecting a variable, no reference | unset or linux | **Refused**, with a sentence (below) |
+| A script injecting a variable | windows | Laptop, variables in the child's environment as today |
 
 Unset means the server on a bridge door, as it does for the person's click, whether or not the line has references. Adding a reference to a line
 therefore never moves it silently to another machine: it refuses until the person says so.
 
+**The table covers Terminal and script entries alike.** A script entry gains the existing `terminalOs` "Runs on" field. On the server rows:
+
+- The body reaches the server **over stdin**, never argv, and is not capped by the 8000-character command limit (`sshExecCommand.ts:25`). It is written to a private file in
+  `~/.creds-for-devs/run/` (0700), then run by its interpreter with **stdin from `/dev/null`** and the file removed at the end. Feeding `bash -s` directly would let a script that reads stdin
+  eat its own body. `sshExecRunner.ts:134` ignores stdin today, so it gains a bounded input path with end-of-file and error handling.
+- **A script that injects any variable does not run on the server**: `Object.keys(resolveScriptEnv(…).env).length > 0` (`scriptRender.ts:169`, which injects
+  every enabled named variable whether or not the body mentions it, so a Python script reading `os.environ` is caught too). A variable may hold a secret and
+  nothing marks which, so the refusal says so and names the two ways out: move the value to a `creds://` reference and set "Runs on" to Windows, or remove it.
+  A literal secret typed into a body is outside this guard; the modal shows the entry, and the person wrote it.
+
 A call not on a bridge door behaves exactly as today. Content trust (`isCommandTrusted`) is unchanged: the person runs the
-line once by hand first. An agent still cannot supply a command (`CommandLine.cs:129-134`). `timeoutMs` becomes sendable,
+line once by hand first. For a script in a Remote-SSH window that click confirms trust (`passScriptGates`, `commands/runCommands.ts:173`) and is then refused by the pinned
+terminal (`launchScript`), so trust is recorded but the words read like a failure: they are reworded to say the agent can now run it. Running a script by a
+person's click on the server is a separate todo (§8). An agent still cannot supply a command (`CommandLine.cs:129-134`). `timeoutMs` becomes sendable,
 clamped by `clampExecTimeout` to 120 s. The wait ends when stdio closes (`sshExecRunner.ts:191-203`), so a script leaving a
 daemon holding stdout runs to the timeout (M3).
 
@@ -178,17 +206,35 @@ resolve into the child's environment, never argv, and every resolved value joins
 surface as sentences. Masking is a guard against accident only (`secretMasker.ts`); the guard against intent is that the line is
 the person's, trusted, and not the agent's to change.
 
-### 4.7 A database behind the server's VPN
+### 4.7 Surviving a reboot
 
-A db entry gains `dbTunnelEntityId`, a typed reference like `jumpHostEntityId` (`types.ts:84`), with share stripping and id
-remapping. Per call, `dbQueryAction`: picks a free loopback port, spawns `ssh -N -L 127.0.0.1:<p>:<host>:<port>` to that entry,
-waits until it accepts (at most 10 s), runs the existing launch against the rewritten address with the password in that child's
-environment only, and kills the tunnel in `finally`. No listener outlives a call.
+**The intent is durable, the access is not.** Opening a bridge writes `bridges/<bridgeId>.json` in the extension's storage: `{accountId, serverEntityId, bridgeId, target}`, the
+scope staying in its own record (§4.2). A file rather than `globalState`, because several windows must see a Close at once and the announcement files already work this way.
+Only *Close Remote Bridge* removes it, and that is offered in every state the record can be in, from any window. Closing or crashing a window removes nothing.
 
-**Stated limits:** the local port is reachable by local processes for those seconds; `verify-full` fails on the hostname when the
-host becomes `127.0.0.1`, and the entry's form says so rather than downgrading silently; and without TLS the server can observe the
-traffic. So the password is not stored on the server, but only TLS protects it from that server. The form says this next to the
-field.
+**Any window restores every saved bridge** once its vault is unlocked, at activation and at unlock. `VaultKeys` has `onDidLock` (`vaultKeys.ts:112`) and no unlock event, and ordinary and
+recovery-code unlock are separate paths, so one `onDidUnlock` is added and both fire it.
+
+**Exactly one window owns a bridge, by a lock the OS releases.** The owner holds a named pipe, `\\.\pipe\creds-bridge-<bridgeId>`. Measured on the owner's PC in VS Code's own Node 24: a second process
+gets `EADDRINUSE` while the holder lives, and gets the pipe the moment the holder is killed. So a power-off leaves no stale claim, two windows cannot both win, and no pid is read. Linux uses an abstract socket
+(`\0creds-bridge-<bridgeId>`), which the kernel also releases on death. macOS has neither, and a socket file survives a kill, so it would need probe and re-verify that must be proven: until that is tested, **a bridge on
+macOS does not restore by itself**; it says so and offers Open. The durable record and the live lock are different mechanisms on purpose.
+
+**The order is the contract.** The lock is the authority: take it, re-read the record, compare the target, re-check the account and scope, start the listener, connect, verify, and only then publish the note. Nothing is published
+or swept without the lock held, and generations carry across a handover, so a previous owner's late verify, publish or cleanup cannot touch the new owner's note or socket.
+
+- **Claim only when able to connect:** a locked window does not claim. A window that locks closes its listener and tunnel and releases the pipe, so another unlocked window can take over.
+  Its record stays.
+- **Windows not owning a bridge** try the pipe every 30 s, so a surviving window takes over when the owner closes.
+- **Close** removes the record; the owner re-reads it every 5 s and shuts down, so revocation from another window takes at most 5 s, and from the owner's own window it is immediate. A retry never brings it back. A window never rewrites a record it did not just read, so a slow window cannot resurrect it.
+
+**A restored bridge restores only what was opened.** The record's `target` is compared with the entry's current user, host and port. If the entry now points elsewhere, the bridge does not come back, and its row says why and offers Open:
+otherwise a scope would silently follow an edited entry to another machine. A PIN-protected or woven credential cannot open unattended, so that row says "needs you" and does not loop.
+
+**A Close from a window that does not own the bridge removes the record; the owner then removes the note.** After a power-off there is no owner, so the note stays until a sweep on that server finds its socket dead, which is harmless by §4.3's argument.
+
+**What a person sees:** after a reboot the row reads *waiting for unlock*, then connecting, then up. The agent door row (`agentDoors.ts:96`) says the bridge reopens by itself until closed. On the server nothing needs doing: the stable `bridgeId`
+lets the new connection unlink its own old sockets, the note is rewritten with the new port and key, and clients read notes per call.
 
 ### 4.8 The export guard
 
@@ -201,8 +247,7 @@ collection does not reach remote terminals, the warning is dropped and the refus
 Step 0 is a measurement, E1's entry condition. Every other step is its own mergeable change, RED first where it fixes a defect. The run-site table and the reference rule are settled in
 this plan before step 3, because scope authorizes what they mean; only their executors come later.
 
-0. **Measure first: M1 and M2**, by hand with Windows `ssh.exe` against the owner's host. §4.3 and §4.5 rest on them. If either fails, stop and
-   rework that design before building on it.
+0. **Measure first: M1 and M2.** Done on 2026-11-04, results in §7. Both passed.
 1. The export guard and warning (§4.8). Independent, and closes the one path a password can take today.
 2. The bridge door and listener (§4.1), the allow-list, and the note's schema in the contract. No UI yet.
 3. Scope at the lookups and before launch, references, per-server consent, modal and audit lines (§4.2).
@@ -211,12 +256,12 @@ this plan before step 3, because scope authorizes what they mean; only their exe
    today's). The test writes the note itself, because the publisher arrives in step 5.
 5. Supervisor, generations, note publication, host key and jump, the open flow with the scope pick (§4.3, §4.4). Reconnect joins the
    real-topology test.
-6. The run site and running on the server (§4.6).
-7. `creds://` in agent runs on the laptop (§4.6). With step 6 it is one pipeline.
-8. The db tunnel (§4.7).
+6. Surviving a reboot: the record, `onDidUnlock`, the ownership lock, restore, Close from any window (§4.7).
+7. The run site for Terminal and script entries, and running on the server over stdin (§4.6).
+8. `creds://` in agent runs on the laptop (§4.6). With step 7 it is one pipeline.
 9. Install and registration on the server (§4.5), with a check that says when the host's client is too old.
 10. **Releases last, clients first:** `cli-v*` and `mcp-v*`, then the extension. Released is not installed, so the door's refusal still
-    names the update. Clients are released after steps 6-8, so the client side has stopped moving.
+    names the update. Clients are released after step 8, so the client side has stopped moving.
 11. Docs, help in five languages (`CLAUDE.md` rule 7), both-sides boundaries, promotion.
 
 Nothing reaches a person until step 5 uses the door, and scope lands before that, so the wider reach never exists unscoped.
@@ -230,14 +275,17 @@ Nothing reaches a person until step 5 uses the door, and scope lands before that
 | Notes on the server | One per live bridge; single digits | Overwritten per connection; removed on Close and by the sweep when the socket is gone | A stale note is harmless (§4.3) |
 | Sockets on the server | One per connection, sshd leaves them behind (`sshBridge.ts:339-357`) | A bridge unlinks its own earlier ones at each connect, listening or not, so a flapping link holds at most one; others swept when `ss` exists | Without `ss`, at most one dead file per bridge ever opened, each under 100 bytes of directory entry; said once to the person |
 | Reconnect loop | One timer per bridge | Close or window end | Dies with the extension host |
-| Db tunnel processes | At most the exec-slot cap (8) | `finally` per call | Killed with the window by the existing child handling; a port is never reused across calls |
+| Bridge records in the extension's storage | Under 1 KB per bridge; one per bridge a person opened | Removed by Close; a record whose entry no longer exists is removed at restore | Kept deliberately: that is the feature |
+| Polls for §4.7 | One timer per record per window: non-owners try the lock every 30 s, the owner re-reads its record every 5 s | Close or window end | Dies with the extension host |
+| Ownership pipes | One per owned bridge | Released by the OS on process death | Nothing is left after a power-off |
+| Script files on the server, `~/.creds-for-devs/run/` | One per running script, at most the exec-slot cap (8), each the size of its body | Removed when the run ends; leftovers swept at the next connect | A killed run leaves one file until then; it holds no variable, because a script with variables does not reach the server |
 
 ## 7. Test plan
 
 - **Door table:** bridge door × {no key, wrong key, right key} × {right port, main port, `localhost`, rebound name, `Origin` present}.
 - **Scope walk:** every route in `contract/broker-v1.json` through a bridge scoped to one entry. An out-of-scope id never gets a 200,
   on any route. This test is the gate for every later route.
-- **Transitive:** a `creds://` target or tunnel entry outside the scope refuses the call; a scope narrowed while a modal is open stops
+- **Transitive:** a `creds://` target outside the scope refuses the call; a scope narrowed while a modal is open stops
   the launch.
 - **Generations:** a superseded attempt neither publishes nor deletes a newer note; Close during a backoff wait stays closed.
 - **Consent:** quiet off asks every time; a stamp via server A covers neither B nor local; Forget clears them.
@@ -251,18 +299,21 @@ Nothing reaches a person until step 5 uses the door, and scope lands before that
 - **Run site:** the §4.6 table, including the refusal; the laptop path is byte-for-byte unchanged off a bridge door.
 - **Secrets:** a reference's value is in the child's environment, never in argv, always in the mask table. **A file listing of the
   server before and after a run of every action shows no secret value**, the DoD of the parent plan.
-- **Db tunnel:** argv shape, address rewrite for URI and key-value forms, tunnel killed on success, failure, timeout and abandon.
+- **Scripts on the server:** a body over 8000 characters runs; a script reading stdin gets end-of-file, not its own body; the body never appears in argv; the file is gone afterwards; an injected variable refuses, including one the body never mentions; end-of-file and a write error on stdin are handled.
+- **Reboot, simulated in CI** (a Linux runner, so the abstract socket; the Windows pipe is M6 and M7, and a green here says nothing about it): a record present at activation restores the bridge once unlocked, with the same `bridgeId` and a new key; the note is rewritten and a client that held the old one follows.
+- **Ownership:** two windows racing get one owner; a killed owner's bridge is taken over within 30 s; a locked owner releases and an unlocked window takes over; Close from a non-owner stops the owner and nothing reopens it; an edited entry target does not restore; a PIN-protected credential says "needs you" and does not loop.
 
 **Measured on the owner's host, because CI cannot:**
 
 | # | What | Why it matters |
 |---|---|---|
-| M1 | Windows `ssh.exe`: `-R` into the 0700 directory, with `-J` and a Windows `UserKnownHostsFile`; the socket's mode | The bridge path has failed on real hosts before (`PLAN_cli_bridge_tail.md`) |
-| M2 | Drop the laptop's network: how long until ssh exits, and whether the new connection serves while the old `sshd` still holds its socket | §4.3 rests on it |
-| M3 | The real `vpn-up` over a non-TTY exec: duration against 120 s, output size, whether it leaves stdout held | §4.6 |
+| M1 | **Done 2026-11-04.** Windows OpenSSH 9.5 to Ubuntu OpenSSH 10.2, strict host key with a Windows `UserKnownHostsFile`: `-R` into the 0700 directory gives a socket of mode 600 owned by the login user, and a request reaches a listener on Windows. After the client ends the socket stays, not listening, and connecting fails at once. **Not checked: `-J`**, because this host has no jump | The bridge path has failed on real hosts before (`PLAN_cli_bridge_tail.md`) |
+| M2 | **Done 2026-11-04, by suspending the client rather than dropping the network.** `sshd` keeps the session: the old path stays listening and a connect hangs (so clients need their 2 s timeout). Binding the same path fails with `remote port forwarding failed`. Unlinking the old path and binding a new one serves at once. **Not checked: how long a real network loss takes `ssh` to exit**, covered by M7 | §4.3 rests on it |
+| M3 | The real `vpn-up` over a non-TTY exec as `dev2`: duration against 120 s, output size, whether it leaves stdout held, whether it has variables (§4.6) | §4.6 |
 | M4 | Does a UI extension's environment collection reach terminals in a Remote-SSH window | §4.8 wording |
 | M5 | `creds-mcp` in a tmux pane older than the bridge; the unix socket path length under a long home | §4.5 |
-| M6 | `psql` through the tunnel with the owner's TLS settings | §4.7 |
+| M6 | **Done 2026-11-04.** A named pipe in VS Code's Node 24 on Windows: `EADDRINUSE` while a live process holds it, available once the holder is killed | §4.7 rests on it |
+| M7 | A real reboot of the owner's PC and a real network drop: the bridge comes back by itself after unlock, and an agent in a tmux session older than the reboot works with no action on the server | Owner decision 4 |
 
 ## 8. Boundaries
 
@@ -272,6 +323,7 @@ Nothing reaches a person until step 5 uses the door, and scope lands before that
 | Connect SSH in a remote window, its refusal and the Remote Bridge button | `todo/PLAN_connect_in_a_remote_window.md` | Unchanged; the button now opens the new flow |
 | The stable `creds` location and PATH | `todo/PLAN_creds_cli_reachable_from_every_caller.md` | Disjoint: Windows and WSL, not a remote host |
 | VPN-kind entries in a remote window (`vpnRun.ts:82` gate also blocks a launcher) | A new todo, not built here | Recorded so it is not lost |
+| A person's click running a script on the server in a Remote-SSH window (today refused by `pinnedTerminal`) | A new todo, not built here | This plan only rewords the refusal and keeps the trust it records |
 | Folder verbs and create over a bridge; `ControlMaster` reuse | Todos | Refused or per-call until then |
 
 `research/module_mcp.md:15` already claims MCP reaches the broker over a forwarded socket on Remote-SSH. That is false until step 4,
@@ -284,81 +336,63 @@ Release coupling: extension, `cli-v*` and `mcp-v*` are separate tags. Windows `c
 
 - [ ] On the owner's server, in tmux, Claude lists and uses through `creds-mcp` exactly the entries scoped to that server, and an entry
       outside the scope is indistinguishable from one that does not exist.
-- [ ] `vpn-up` restarted by the agent runs on the server, after a consent on the laptop, and returns its exit code and output.
+- [ ] A script entry the agent runs, `vpn-up` as `dev2` among them, runs on the server, after a consent on the laptop, and returns its exit code and output.
 - [ ] A command using a password runs on the laptop; the agent sees only masked output.
-- [ ] A database behind the server's VPN answers a query, with the password never stored on the server.
+- [ ] A database query runs from the laptop, and its password never reaches the server.
 - [ ] Closing the window ends all access, with a clear message; reopening restores it, with no action on the server.
+- [ ] **After a reboot of the PC, the bridge returns by itself once a window is open and the vault unlocked**, and only *Close Remote Bridge* ends it.
 - [ ] A dropped network recovers by itself; nothing is replayed; a running `creds-mcp` needs no restart.
 - [ ] File listings before and after show no secret on the server.
-- [ ] The real-topology test runs in CI and was watched RED. M1-M6 are done and recorded.
+- [ ] The real-topology test runs in CI and was watched RED. M1-M7 are done and recorded.
 - [ ] `coai` plan and code gates reached `proceed`; docs, help in five languages and both-sides boundaries are done; the plan is
       promoted with its deviations.
 
 ## Epics
 
-Four epics, in the order of §5, each of three or four stories (the gate's operator command: 3-4 epics of 3-4 logically complete stories). E1 is the
-authorization boundary and lands before anything reaches a person; E2 makes the bridge usable and proves it against a real `sshd`; E3 is the executors
-the boundary authorizes; E4 delivers, clients before the extension. Each epic is one branch and one gated commit with its own plan review, so one PR per
-epic, in sequence. Each epic's stories are one document, `todo/PLAN_remote_bridge_scoped_E<n>.md`, written when that epic starts; it links back here and
-gets its own `todo/README.md` row. Four epics make Q = 2. The story writer marks the one story in each of E1 and E2 that owns the area and updates the
-ledger in the same commit. E3's `decideRunSite` and tunnel take the security judgement at review, outside the quota. Story names below are areas, not titles.
+Four epics, in the order of §5, each of three or four stories (the gate's operator command: 3-4 epics of 3-4 logically complete stories). E1 is the authorization boundary, and nothing reaches a person until it is in; E2 is the cross-machine
+contract and the bridge's whole lifecycle, reboot included, proven against a real `sshd`; E3 is the executors the boundary authorizes; E4 delivers, clients before the extension. Each epic is one branch, one gated commit, one PR, with its own plan
+review. Each epic's stories are one document, `todo/PLAN_remote_bridge_scoped_E<n>.md`, written when that epic starts; it links back here and gets its own `todo/README.md` row. Four epics make Q = 2. The story writer marks the one story in each of E1
+and E2 that owns the area and updates the ledger in the same commit. Everything else named below as a security surface takes the security judgement at review, outside the quota. Story names are areas, not titles.
 
 Cornerstones: 0 of 2 — no story marked yet; the areas are named in E1 and E2
 
-### E1 — The authorization boundary
+### E1 — The authorization boundary. Nothing reaches a person.
 
-- **Goal.** No password can leave by the one road open today; every open bridge gets its own listener behind a door that hands `handle` a trusted
-  `BridgeContext` nothing in a request can set; the door serves an allow-list, default deny; a bridge scoped to one server answers for exactly its entries
-  on every route, and an out-of-scope entry is indistinguishable from one that does not exist; consent through server A silences neither server B nor
-  local use. Nothing is wired to a person yet.
-- **Scope.** §5 steps 0-3. Step 0 (M1, M2) is this epic's entry condition, recorded in its stories document before any story is coded; if either fails the
-  plan is reworked first. Then §4.8, §4.1, §4.2, and the note schema in `contract/broker-v1.json`. New modules throughout: `credsAgentServer.ts` is at 779 of 800.
-- **Stories.** E1.1 the export guard and warning. E1.2 the listener, the door, the key and `BridgeContext`, with the door table. E1.3 the allow-list, the note
-  schema and the scope wall (resolvers, before launch, transitive), with the scope walk RED first. E1.4 per-server consent, modal and audit lines.
-- **Depends on.** Nothing in this plan; M1 and M2 recorded.
-- **Done when.** The §7 door table, scope walk, transitive and consent tests pass, and the walk refuses on the bridge door any contract route not on the
-  allow-list; an agent's export is refused with one stable sentence while the person's `Set env` warns; the two existing doors are byte-for-byte unchanged
-  (`creds-cli-itest.cjs` green and untouched); M1, M2 and M4 recorded.
-- **Cornerstone AREA.** The authorization boundary: the door's trusted context as the only source of server identity, the allow-list as default deny, the
-  wall at the resolvers, the before-launch re-check. A mistake here is a local process raising a modal "from" a server, or an entry in scope becoming a road
-  to one that is not, and nothing downstream can catch either.
+- **Goal.** No password can leave by the one road open today (D7); every open bridge gets its own listener behind a door that hands `handle` a trusted `BridgeContext`; the door serves an allow-list, default deny; a bridge scoped to one server answers
+  for exactly its entries on every route, and an out-of-scope entry is indistinguishable from one that does not exist; consent through server A silences neither server B nor local use. No UI, no publisher, no client change: nothing in E1 can be reached from a server.
+- **Scope.** §5 steps 1-3: §4.8, §4.1, the allow-list and the note schema of §4.3 in `contract/broker-v1.json`, §4.2. New modules, since `credsAgentServer.ts` is at 779 of 800. The run-site table and the reference rule of §4.6 are settled text here; E3 builds their executors.
+- **Stories.** E1.1 the export guard and the `Set env` warning (RED first; M4 recorded with it, since it decides the wording). E1.2 the per-bridge listener, the third door, the key and `BridgeContext`, with the door table. E1.3 the allow-list, the note schema, and the scope wall
+  (resolvers, before-launch re-check, references), with the scope walk RED first. E1.4 per-server consent, the modal line and the audit line from the context.
+- **Depends on.** Nothing in this plan.
+- **Done when.** §7 door table, scope walk, transitive and consent pass; the walk refuses on the bridge door any contract route not on the allow-list, and is the gate every later route must pass; an agent's export is refused with one stable sentence while the person's `Set env` warns;
+  the two existing doors are byte-for-byte unchanged (`creds-cli-itest.cjs` green, untouched); M4 recorded.
+- **Cornerstone AREA.** The authorization boundary: `BridgeContext` as the only source of server identity, the allow-list as default deny, the wall at the resolvers, the before-launch re-check. A mistake here is a local process raising a modal "from" a server, or an in-scope entry becoming a road to one that is not; nothing downstream catches either.
 
-### E2 — The contract across machines and its lifecycle, proven on a real topology
+### E2 — The contract across machines and the bridge's lifecycle, through a reboot
 
-- **Goal.** `creds` and `creds-mcp` on the server reach the broker through a note, one snapshot per logical call, with nothing to re-export after a reconnect;
-  the bridge survives a dropped network by itself and replays nothing; two bridges to one server keep their own notes and scopes; the whole path is proven in
-  CI against a real `ssh -R` into a real `sshd`, watched RED first.
-- **Scope.** §5 steps 4-5 (§4.5, §4.3, §4.4).
-- **Stories.** E2.1 the harness mode and the real-topology test, RED against today's code, writing two notes with different `brokerPort`s itself. E2.2 the
-  clients: the note as endpoint, key and port, the token's note by `brokerPort`, the override, the down messages, the shared socket limit; the test goes green.
-  E2.3 the supervisor: generations, publication, sweep, backoff, Close. E2.4 host key and jump with parity, the open flow and scope pick, and the reconnect and
-  several-bridges cases.
+- **Goal.** `creds` and `creds-mcp` on the server reach the broker through a note, one snapshot per logical call, with nothing to re-export after a reconnect; the bridge survives a dropped network and a reboot of the PC by itself, replays nothing, is owned by exactly one window, and ends only on
+  *Close Remote Bridge* from any window; two bridges to one server keep their own notes and scopes; all of it proven in CI against a real `ssh -R` into a real `sshd`, watched RED first.
+- **Scope.** §5 steps 4-6: §4.5, the harness's non-debug `sshd` mode and the real-topology test, §4.3, §4.4, §4.7.
+- **Stories.** E2.1 the note contract and the clients, with the harness mode and the real-topology test RED against today's code (the test writes the note itself). E2.2 the supervisor: generations, publication, sweep, backoff, host key and jump parity, the open flow and scope pick; reconnect and several-bridges cases.
+  E2.3 durable intent: the record, `onDidUnlock` on both unlock paths, the ownership lock, restore in the fixed order, "needs you" for PIN and woven. E2.4 Close from any window, handover, and the reboot and ownership tests end to end.
 - **Depends on.** E1.
-- **Done when.** The real-topology test runs in `ci-extension.yml` and was watched RED; the §7 generations, reconnect and several-bridges tests pass; a row
-  reads `up` only after the socket verified; an in-flight call during a drop answers "may or may not have run" and is not repeated; M5 recorded.
-- **Cornerstone AREA.** The cross-machine contract and its lifecycle: the note as one snapshot and one endpoint on the client side, generation ownership on the
-  supervisor side. The client half is frozen in the wild once on servers; the supervisor half is where a race deletes another bridge's live note.
+- **Done when.** The real-topology test runs in `ci-extension.yml` and was watched RED; §7 generations, reconnect, several bridges, reboot and ownership pass; a row reads `up` only after the socket verified; nothing is published or swept without the lock held; an in-flight call during a drop answers "may or may not have run" and is not repeated; M5 recorded.
+- **Cornerstone AREA.** The cross-machine contract and its lifecycle: the note as one snapshot and one endpoint in the walk on the client side; on the laptop side generation ownership of socket and note, carried across a handover by the fixed order of §4.7. The client half is frozen in the wild once on servers; the lifecycle half is where a race publishes or deletes another owner's note, or two windows both win.
 
-### E3 — Where a stored command runs, and a database behind the server's VPN
+### E3 — Where a stored command or script runs
 
-- **Goal.** `vpn-up` restarted by the agent runs on the server after a consent on the laptop and returns exit code and output; a command with a password runs on
-  the laptop with the value in the child's environment only, and the agent sees masked output; a line whose reference would have to reach the server is refused;
-  a database behind the server's VPN answers with the password never stored on the server, through a tunnel no listener outlives.
-- **Scope.** §5 steps 6-8 (§4.6, §4.7).
-- **Stories.** E3.1 `decideRunSite` and the server rows, with `timeoutMs`. E3.2 the laptop rows with `creds://`. E3.3 the typed tunnel reference, share, remap and
-  form. E3.4 the per-call tunnel. If the §2 assumption proves false, E3.3 and E3.4 are dropped; nothing else changes.
-- **Depends on.** E1 and E2.
-- **Done when.** The §7 run-site, secrets and db tunnel tests pass; the path off a bridge door is byte-for-byte unchanged; M3 and M6 recorded.
-- **Cornerstone AREA.** None marked. `decideRunSite`, the environment-not-argv rule and the tunnel's lifetime take the security judgement at review; the table is
-  that review's checklist.
+- **Goal.** A script entry the agent runs, `vpn-up` as `dev2` among them, runs on the server after a consent on the laptop and returns exit code and output; a script that injects a variable does not run on the server; a command with a password runs on the laptop with the value in the child's environment only and the agent sees masked output; a line whose reference would have to reach the server is refused.
+- **Scope.** §5 steps 7-8: §4.6 whole.
+- **Stories.** E3.1 the shared run-site policy: `decideRunSite`, the script "Runs on" field, the reworded refusal, the run-site table. E3.2 scripts on the server: the private file, `/dev/null`, the variable guard, bounded stdin, the sweep, `timeoutMs`. E3.3 the laptop rows with `creds://`: environment never argv, the mask table, PIN and woven refusals.
+- **Depends on.** E1 and E2; the real-topology test gains the run-site and script cases.
+- **Done when.** §7 run site, scripts on the server and secrets pass, including a file listing of the server before and after a run of every action showing no secret value; the laptop path is byte-for-byte unchanged off a bridge door; M3 recorded.
+- **Cornerstone AREA.** None marked. `decideRunSite`, the variable guard and the environment-not-argv rule take the security judgement at review; the table is that review's checklist.
 
-### E4 — Delivery: install, registration, releases clients first, docs and promotion
+### E4 — Delivery: install, the owner's measurements, releases clients first, docs and promotion
 
-- **Goal.** A person installs `creds-mcp` on the server from the host menu, registers it with one shown command, is told when the host's client is too old, reads
-  documentation that is true, and the §9 Definition of Done is walked on the owner's server.
-- **Scope.** §5 steps 9-11.
-- **Stories.** E4.1 install and the host menu, with the too-old check. E4.2 registration, docs and the five-language help. E4.3 releases clients first, the DoD walk in
-  tmux, the both-sides boundaries, the new VPN-kind todo, promotion with deviations.
-- **Depends on.** E3 merged; M1-M6 recorded.
-- **Done when.** Every line of §9 is ticked; the plan and its four stories documents are in `research/` with deviations and the three link cases fixed.
+- **Goal.** A person installs `creds-mcp` on the server from the host menu, registers it with one shown command, and is told when the host's client is too old; a real reboot and a real network drop on the owner's PC bring the bridge back by themselves; documentation is true; the plan and its stories documents are promoted with their deviations.
+- **Scope.** §5 steps 9-11: install and registration from §4.5, the too-old check, M7 and what remains of M3-M5, releases, `research/module_mcp.md:15`, help in five languages, the §8 rows and the two new todos.
+- **Stories.** E4.1 the `install.sh` product switch, the host menu, the too-old check, registration offered not written. E4.2 the owner-host measurements and the §9 walk on the owner's server in tmux. E4.3 the releases clients first, docs and help, boundaries and todos, promotion.
+- **Depends on.** E3 merged.
+- **Done when.** Every line of §9 is ticked; `coai` plan and code gates at `proceed`; the plan and its four stories documents are in `research/` with deviations.
 - **Cornerstone AREA.** None.
