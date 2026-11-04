@@ -383,7 +383,7 @@ column because they must be one answer. `<r>` is the request's own refusal as to
 | 7 | `POST /v1/mcp/use/exec`, `…/query` | served, walled | `<r>` → `closed` (403 `denied`, the switch sentence) or usable → throttle (429 `too_many_requests`) → mint with `grantFor()` → step 3 → modal every call → step 4 | `<r>` → 404 `not_found` `No such entry, or this window does not serve it.` No slot taken, no dialog, no journal line |
 | 8 | `POST /v1/alias/exec`, `…/query` | served, walled | `<r>` → throttle → mint → step 3 → modal → step 4 | `<r>` → 404 `not_found` `No entry is enabled for the CLI under "<name>".` No slot, no dialog, no line |
 | 9 | `POST /v1/use/exec`, `…/query` (token) | served, walled | `grantForToken` (401 unknown or expired as today) → `<r>` → §S3.2.10: denied token 403 `GRANT_NOT_ALLOWED`, no dialog; throttle; mint; step 3; modal every call; step 4, the token reserved first | 401 `unauthorized` `Unknown or missing grant token.` — before the body is read, for a live and for an expired token alike |
-| 10 | `…/exportEnv` on `/v1/use/`, `/v1/alias/`, `/v1/mcp/use/` | refused | 404 `not_supported`, `EXPORT_REFUSED` | the same |
+| 10 | `…/exportEnv` on `/v1/use/`, `/v1/alias/`, `/v1/mcp/use/` | refused | 403 `denied`, `EXPORT_REFUSED` | the same |
 | 11 | `…/run`, `…/terminal`, `…/up`, `…/down` on the three prefixes; `…/rotate` on `/v1/mcp/use/` (and on the other two, which never served it) | refused | 404 `not_supported`, `BRIDGE_NOT_SERVED` | the same |
 | 12 | `POST /v1/config/read`, `POST /v1/mcp/create`, `POST /v1/mcp/delete`, `POST /v1/mcp/folder/create`, `…/edit`, `…/delete` | refused | 404 `not_supported`, `BRIDGE_NOT_SERVED`; the hook is never called | the same |
 | 13 | any other method or path (`GET /v1/use/exec`, `POST /v1/health`, `/v1/nope`, `/v1/mcp/future`) | refused | 404 `not_supported`, `BRIDGE_NOT_SERVED` | the same |
@@ -401,7 +401,7 @@ Off a bridge (`bridge === undefined`) nothing in this table applies: `OPEN_VIEW`
 | Name | Where | Status · code | Text |
 |---|---|---|---|
 | `BRIDGE_NOT_SERVED` | `bridgeAllowList.ts` (E1.2) | 404 `not_supported` | `A Remote Bridge does not serve this request. A person can do it in the VS Code window.` |
-| `EXPORT_REFUSED` | `brokerProtocol.ts` (E1.1) | 404 `not_supported` | E1.1's text, verbatim |
+| `EXPORT_REFUSED` | `brokerProtocol.ts` (E1.1) | 403 `denied` | E1.1's text, verbatim |
 | not-found entry | `refusalFor(undefined)`, `brokerRequests.ts:183` | 404 `not_found` | `No such entry, or this window does not serve it.` |
 | not-found alias | `aliasTarget(undefined, name)`, `:165` | 404 `not_found` | `No entry is enabled for the CLI under "<name>".` |
 | `UNKNOWN_TOKEN` | `brokerRequests.ts` (new constant, `:238,252`) | 401 `unauthorized` | `Unknown or missing grant token.` |
