@@ -261,7 +261,7 @@ cli-sign:
     artifacts: '["cli-win-x64","cli-win-arm64"]'
     own-files: '["creds.exe"]'
     required: ${{ startsWith(github.ref, 'refs/tags/') }}
-    allow-unsigned-release: ${{ vars.ALLOW_UNSIGNED_RELEASES == 'true' }}   # E4, §3.4
+    allow-unsigned-release: ${{ vars.ALLOW_UNSIGNED_RELEASES == 'true' }}
 ```
 
 `mcp-sign` is the same with `mcp`. `cli-release` gets `needs: [cli-binaries, cli-sign]` and
@@ -353,9 +353,9 @@ same layout and checksum; the run shows the warning and the banner.
   rules set (O7, done: creds `main`, `ci/windows-code-signing-e2`, `cli-v*`, `mcp-v*`; coai `main`,
   `ci/windows-code-signing`, `mcp-v*`). It holds **zero** of the six variables until the cutover: one
   stray variable makes every release red.
-- **M3 — the squash merge** of #295 and coai #944 (§3.2); check that release-please opens no `cli` or
-  `mcp` PR from it (its config releases on `feat`/`fix`/`deps` only, and the squash body is clean). If one
-  appears anyway, it is closed unmerged with a comment naming this step.
+- **M3 — the squash merge** of #295 and coai #944 (§3.2); check that release-please opens no `cli`, `mcp` or
+  `extension` PR from it (the squash also touches `src_vs_code/`; its config releases on `feat`/`fix`/`deps` only,
+  and the squash body is clean). If one appears anyway, it is closed unmerged with a comment naming this step.
 - **O9 — after the merge,** remove the PR branches from both environments' deployment rules.
 
 **Activation cutover (E5), later, after D11 and D8 (O1–O6 are Azure's road; SignPath replaces them by
