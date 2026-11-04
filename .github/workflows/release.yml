@@ -6,8 +6,11 @@ name: release
 #   cli-v0.1.0        -> four Native AOT `creds` binaries, attached to the release
 #   mcp-v0.1.0        -> four Native AOT `creds-mcp` binaries, attached to the release
 #
-# The Windows zips of `creds` and `creds-mcp` are signed by `dew_flow_release_signing`'s
-# `sign-windows.yml` (jobs `cli-sign`, `mcp-sign`) before the release jobs run.
+# The Windows zips of `creds` and `creds-mcp` go through `dew_flow_release_signing`'s
+# `sign-windows.yml` (jobs `cli-sign`, `mcp-sign`) before the release jobs run. Until the owner
+# activates a signing provider (todo/PLAN_windows_code_signing.md §3.4), the repository variable
+# `ALLOW_UNSIGNED_RELEASES` lets a tag ship them unsigned, as before, with an `UNSIGNED RELEASE`
+# banner.
 #
 # The `cli-v*` line was missing while the `cli-binaries` job below was complete and
 # guarded by `if: startsWith(github.ref, 'refs/tags/cli-v')` — so the job existed, was
@@ -27,6 +30,11 @@ on:
         required: true
         type: choice
         options: [server, extension, cli, mcp]
+      required:
+        description: 'force the signing decision as on a release tag'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -441,7 +449,7 @@ jobs:
           fi
 
       # A checksum beside each archive, written by the job that BUILT it. Not the Windows zips: the
-      # shared signing workflow makes them and their sums after signing (`cli-sign`, `mcp-sign`).
+      # shared signing workflow makes them and their sums after its sign or skip step (`cli-sign`, `mcp-sign`).
       #
       # Per-asset rather than one SHA256SUMS, deliberately: the four builds run on four
       # runners with no barrier between them, and a single combined file would need a fifth
@@ -478,10 +486,18 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # The Windows packages are signed by the shared signing workflow (Azure Artifact Signing), so
-  # Smart App Control can accept the binary. It uploads the FINAL zip and its checksum as `cli-win-<arch>`.
+  # The Windows packages go through the shared signing workflow. Once a signing provider is active it
+  # signs them (Azure Artifact Signing); until then it packs them unsigned. Either way it uploads the
+  # FINAL zip and its checksum as `cli-win-<arch>`.
   # These are the only jobs of this workflow that may ask for an identity token (releaseSigning.test.ts).
   # todo/PLAN_windows_code_signing.md
+  #
+  # `required` forces the signing decision: a tag does, and so does a dispatch with `required: true`
+  # (a trial of the tag path). `allow-unsigned-release` is read from the REPOSITORY variable
+  # `ALLOW_UNSIGNED_RELEASES`. With ZERO signing variables in the `release-signing` environment, a
+  # forced run packs unsigned, with a warning and an `UNSIGNED RELEASE` banner. If the variable is
+  # missing or not exactly `true`, a forced run without signing variables fails. Any other
+  # configuration is unchanged by it. The owner deletes the variable, and this line, at activation.
   cli-sign:
     name: sign creds cli (windows)
     needs: cli-binaries
@@ -489,11 +505,12 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: oleksandrdubyna88/dew_flow_release_signing/.github/workflows/sign-windows.yml@609cc23bd9d39f61032849fc4910e4447f04e872 # v1.0.0
+    uses: oleksandrdubyna88/dew_flow_release_signing/.github/workflows/sign-windows.yml@a9a7eccdf76306d8fdbc67fc917cf8d5a362d851 # v1.1.0
     with:
       artifacts: '["cli-win-x64","cli-win-arm64"]'
       own-files: '["creds.exe"]'
-      required: ${{ startsWith(github.ref, 'refs/tags/') }}
+      required: ${{ startsWith(github.ref, 'refs/tags/') || inputs.required }}
+      allow-unsigned-release: ${{ vars.ALLOW_UNSIGNED_RELEASES == 'true' }}
 
   # Same shape as server-release, and here for the same reason: the defect was at all three sites,
   # so the fix is at all three. Fixing only the one that was noticed is the failure
@@ -681,7 +698,7 @@ jobs:
       # The same reason the CLI publishes one, and one more: this binary is installed by a button
       # inside the extension, which verifies what it downloads. A release that publishes no
       # checksum makes that verification a warning instead of a check. The Windows zips are the
-      # exception: the shared signing workflow makes them and their sums after signing (`mcp-sign`).
+      # exception: the shared signing workflow makes them and their sums after its sign or skip step (`mcp-sign`).
       - name: Checksum
         if: ${{ !startsWith(matrix.rid, 'win-') }}
         shell: bash
@@ -708,10 +725,13 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # The Windows packages are signed by the shared signing workflow (Azure Artifact Signing), so
-  # Smart App Control can accept the binary. It uploads the FINAL zip and its checksum as `mcp-win-<arch>`.
+  # The Windows packages go through the shared signing workflow. Once a signing provider is active it
+  # signs them (Azure Artifact Signing); until then it packs them unsigned. Either way it uploads the
+  # FINAL zip and its checksum as `mcp-win-<arch>`.
   # These are the only jobs of this workflow that may ask for an identity token (releaseSigning.test.ts).
   # todo/PLAN_windows_code_signing.md
+  #
+  # The same `required` and `allow-unsigned-release` rules as `cli-sign` above.
   mcp-sign:
     name: sign creds-mcp (windows)
     needs: mcp-binaries
@@ -719,11 +739,12 @@ jobs:
     permissions:
       contents: read
       id-token: write
-    uses: oleksandrdubyna88/dew_flow_release_signing/.github/workflows/sign-windows.yml@609cc23bd9d39f61032849fc4910e4447f04e872 # v1.0.0
+    uses: oleksandrdubyna88/dew_flow_release_signing/.github/workflows/sign-windows.yml@a9a7eccdf76306d8fdbc67fc917cf8d5a362d851 # v1.1.0
     with:
       artifacts: '["mcp-win-x64","mcp-win-arm64"]'
       own-files: '["creds-mcp.exe"]'
-      required: ${{ startsWith(github.ref, 'refs/tags/') }}
+      required: ${{ startsWith(github.ref, 'refs/tags/') || inputs.required }}
+      allow-unsigned-release: ${{ vars.ALLOW_UNSIGNED_RELEASES == 'true' }}
 
   mcp-release:
     name: publish mcp release

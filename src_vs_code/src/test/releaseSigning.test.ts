@@ -4,26 +4,30 @@ import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 /**
- * The Windows binaries of `creds` and `creds-mcp` are signed before a release publishes them
- * (todo/PLAN_windows_code_signing.md, §6 T1–T5).
+ * The release pipeline is wired to sign the Windows binaries of `creds` and `creds-mcp`
+ * (todo/PLAN_windows_code_signing.md, §6 T1–T5 and T7). Releases stay unsigned, with a warning,
+ * until the owner activates a signing provider.
  *
  * <p>This reads `release.yml` as text, like `credsInstall.test.ts` does: `src_vs_code` has no YAML
  * parser and this adds none. A job is the lines under `  <name>:`, a step is the lines under
  * `      - `, and a comment line is dropped first, so a sentence that explains a rule can never
  * satisfy it or break it.</p>
  *
- * <p>The signing itself cannot run without Azure. What a test CAN pin is the wiring that makes it
- * impossible to skip: the release jobs wait for the signing jobs, nothing else may ask for an
- * identity token, and the signing workflow is called by a commit, not by a name that moves.</p>
+ * <p>The signing itself cannot run without Azure. What a test CAN pin is the wiring through which
+ * signing runs once a provider is active: the release jobs wait for the signing jobs, nothing else
+ * may ask for an identity token, the signing workflow is called by a commit, not by a name that
+ * moves, and the switch that lets a tag ship unsigned is read from a repository variable and
+ * compared with `'true'`.</p>
  */
 
 const WORKFLOW = path.join(__dirname, '..', '..', '..', '.github', 'workflows', 'release.yml');
 const SIGN_WORKFLOW = 'oleksandrdubyna88/dew_flow_release_signing/.github/workflows/sign-windows.yml';
-
-/** `text` as a literal inside a RegExp: every metacharacter escaped, the backslash included. */
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+/** The commit the tag `v1.1.0` of the signing repository points at (its squash commit on `main`). */
+const SIGN_WORKFLOW_SHA = 'a9a7eccdf76306d8fdbc67fc917cf8d5a362d851';
+/** A tag forces the signing decision; so does a dispatch that sets the `required` input. */
+const REQUIRED_EXPRESSION = "${{ startsWith(github.ref, 'refs/tags/') || inputs.required }}";
+/** The switch is read from a REPOSITORY variable and compared, so only the exact string `true` turns it on. */
+const SWITCH_EXPRESSION = "${{ vars.ALLOW_UNSIGNED_RELEASES == 'true' }}";
 
 /** The file with LF endings and no comment lines. A Windows checkout may hold CRLF. */
 function readWorkflow(): string {
@@ -252,10 +256,10 @@ for (const p of PRODUCTS) {
     const body = job(jobs, sign);
     const uses = jobKey(body, 'uses');
     assert.ok(uses !== undefined, `${sign} has no job-level uses`);
-    assert.match(
+    assert.equal(
       uses,
-      new RegExp(`^${escapeRegExp(SIGN_WORKFLOW)}@[0-9a-f]{40}( +# +v\\d+\\.\\d+\\.\\d+)?$`),
-      `${sign} must pin the signing workflow to a 40-hex commit`,
+      `${SIGN_WORKFLOW}@${SIGN_WORKFLOW_SHA} # v1.1.0`,
+      `${sign} must pin the signing workflow to the commit of v1.1.0, never to the tag name`,
     );
     assert.equal(/^ {4}steps:/m.test(body), false, `${sign} is a caller job: it has no steps`);
 
@@ -272,11 +276,20 @@ for (const p of PRODUCTS) {
       `artifacts of ${sign} must be exactly the win-* legs of ${binaries}`,
     );
 
-    assert.equal(jobBlock(body, 'with')['required'], '${{ startsWith(github.ref, \'refs/tags/\') }}');
+    assert.equal(
+      jobBlock(body, 'with')['required'],
+      REQUIRED_EXPRESSION,
+      `${sign} must force the decision on a tag and on a dispatch with required: true`,
+    );
+    assert.equal(
+      jobBlock(body, 'with')['allow-unsigned-release'],
+      SWITCH_EXPRESSION,
+      `${sign} must pass the switch as ${SWITCH_EXPRESSION}: a bare variable is a string GitHub never compares with 'true', and a literal cannot be switched off by deleting the variable`,
+    );
     assert.deepEqual(
       Object.keys(jobBlock(body, 'with')).sort(),
-      ['artifacts', 'own-files', 'required'],
-      `${sign} passes the three inputs it needs; extra-files and environment keep their defaults`,
+      ['allow-unsigned-release', 'artifacts', 'own-files', 'required'],
+      `${sign} passes the four inputs it needs; extra-files and environment keep their defaults`,
     );
     assert.deepEqual(jobBlock(body, 'permissions'), { contents: 'read', 'id-token': 'write' });
     assert.equal(
@@ -311,4 +324,25 @@ test('T4 no job but cli-sign and mcp-sign asks for an identity token, by name or
   assert.deepEqual(holders, [], 'only cli-sign and mcp-sign may grant an identity token (T2 asserts they do)');
   // One positive, so a parser that lost the jobs cannot make this green.
   assert.ok(jobs.size >= 8, `the parser found ${jobs.size} jobs`);
+});
+
+test('T7 no job that calls the signing workflow passes `environment`', () => {
+  // The permission to sign trusts the environment NAME, so no caller may pass one: the shared
+  // workflow's default, `release-signing`, is the only name the owner's trust is written for.
+  // Callers are found by their job-level `uses`, not by a name list, so a third caller is covered.
+  const callers = [...jobs]
+    .filter(([, body]) => jobKey(body, 'uses')?.startsWith(`${SIGN_WORKFLOW}@`) === true)
+    .map(([name]) => name)
+    .sort();
+  assert.deepEqual(callers, ['cli-sign', 'mcp-sign'], 'the callers of the signing workflow');
+  for (const name of callers) {
+    const body = job(jobs, name);
+    assert.equal(
+      Object.keys(jobBlock(body, 'with')).includes('environment'),
+      false,
+      `${name} must not pass \`environment\` in with:`,
+    );
+    assert.equal(jobKey(body, 'environment'), undefined, `${name} must not have a job-level environment`);
+    assert.equal(/^ {4}environment:/m.test(body), false, `${name} must not have a job-level environment block`);
+  }
 });
