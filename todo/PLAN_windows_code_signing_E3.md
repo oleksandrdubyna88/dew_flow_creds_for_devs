@@ -251,3 +251,37 @@ E3.1 code → E3.2 `ci.yml` (the forced call) → E3.2 README and header → B1�
 5. The parent's README list for E3 ("input list, mode table rows, caller snippet, M1/M2/A6 in short") does not name the
    three lines that are wrong after epoch 3 (a tag always red; V1 on the PR branch; O7 holding the six variables). This
    document names them.
+
+## Amendments from the E3 plan gate and the two consultations (2026-11-04, before any code)
+
+The E3 plan gate (2/2 reviewers, proceed), the risk consultation 60e24fe0 (story 3.1) and the cadence consultation
+7a35c2a5 (epics 1–3, from this repository) added these; they are part of E3's approved text:
+
+1. **Row 3r first.** Inside the forced-and-permitted branch, the `GITHUB_STEP_SUMMARY` check runs before anything is
+   written; a new case **E3.A6**: tag ref, zero variables, input `true`, `GITHUB_STEP_SUMMARY` unset → exit 1, no
+   output; **E3.A7**: the same with `GITHUB_STEP_SUMMARY` pointing at a DIRECTORY → the append fails under
+   `set -euo pipefail` → exit 1, no `mode=skip`. Counts: 55 harness cases.
+2. **Every partial count is red with the permission on:** case 12 (one set) and E3.A1 (five set) stay; **E3.A8** loops
+   two, three and four set on a tag ref with the input `true` → each exit 1, `partial signing configuration`.
+3. **`test/wiring.mjs` pins more:** the input's `type: boolean` and `default: false`, the `mode` step's
+   `ALLOW_UNSIGNED_RELEASE` AND `REQUIRED` mappings (`${{ inputs.allow-unsigned-release }}`, `${{ inputs.required }}`),
+   and that no other string names `inputs.allow-unsigned-release`.
+4. **`trial-check-forced`:** `needs: [trial-input, trial-call-forced]`, `timeout-minutes: 10`, `permissions:
+   contents: read, checks: read, actions: read`; besides the four case-1 assertions it (a) asserts the own file
+   `selftest.exe` inside the zip is `NotSigned` and byte-equal to the input (skip mode signed nothing), and (b) reads
+   the CURRENT run attempt's jobs (`/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs`), finds the forced
+   call's sign leg by name, and asserts its check-run annotations hold a warning starting `sign-windows: UNSIGNED
+   RELEASE` — bounded retries (5 × 10 s), an API error is red and says so, distinct from "no such warning". The banner
+   text stays proven at step level (E3.A3): GitHub has no API for a job summary.
+5. **One required gate.** A skipped required check can count as passing (when a call fails, its check job is
+   skipped). `ci.yml` gains `all-green` (`name: ci · all green`), `needs:` every other job, `if: always()`, red unless
+   every `needs.*.result` is `success`. After the merge, `main`'s protection requires `ci · all green` (the existing
+   five contexts stay). This also closes the same gap in v1.0.0's CI.
+6. **README:** `ALLOW_UNSIGNED_RELEASES` is a **repository** variable (Settings → Secrets and variables → Actions →
+   Variables), NOT an environment variable — a caller job that uses a reusable workflow cannot read its environment's
+   variables, so an environment-level setting would be ignored and the tag would be red. The input
+   (`allow-unsigned-release`) and the variable (`ALLOW_UNSIGNED_RELEASES`) are named apart on purpose; the README shows
+   both in the snippet.
+7. **The upload step is named neutrally** ("Upload the package"), since in skip mode it uploads an unsigned one.
+8. Rejected: validating the environment name — the callers pass no `environment` (the default is used); E4 adds a
+   caller test that no sign job passes one.
