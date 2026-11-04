@@ -283,7 +283,12 @@ holds a job-level `environment:`. RED against the E2 workflow with the changed t
 `cli-sign` and `mcp-sign`, on the pin `609cc23… # v1.0.0` against `a9a7ecc… # v1.1.0`); GREEN with the new `release.yml`
 (14 pass). Break-its, each restored: `environment: release-signing` in `cli-sign`'s `with:` on the E2 workflow fails
 T7 (and T2 for both products on the old pin); the switch written as the bare `${{ vars.ALLOW_UNSIGNED_RELEASES }}` fails
-T2 for `cli-sign` (B1); the switch written as the literal `true` fails T2 for `cli-sign` (B2). Nothing here proves that
+T2 for `cli-sign` (B1); the switch written as the literal `true` fails T2 for `cli-sign` (B2). T8 (added after Opus's review, 15 tests in the
+file) pins the dispatch input itself: it slices the comment-free header from `workflow_dispatch:` and asserts the
+input `required` exists with `type: boolean`, `default: false` and the description `force the signing decision as on a
+release tag`, because `default: true` or `type: string` left all 14 earlier tests green and turned every trial into a
+forced run. It is green on the real file (15 pass); three break-its by mutation, each restored, each 15 tests with 14
+pass and 1 fail (T8 only): `default: true`, `type: string`, and a changed description. Nothing here proves that
 the switch works on a real run: a dispatch with `required: true`, and then a tag, do.
 
 **Still not proved by anything automated:** the one-day count on the owner's machine (the plan's first DoD line —
