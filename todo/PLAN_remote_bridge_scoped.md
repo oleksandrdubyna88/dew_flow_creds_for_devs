@@ -18,7 +18,7 @@ Narrowed: yes — the db tunnel left the scope and the Definition of Done, by th
 
 | Work | Where | Verdict | Action |
 |---|---|---|---|
-| Nothing built | none | none | none |
+| Nothing built | — | — | — |
 
 ## 1. Goal
 
