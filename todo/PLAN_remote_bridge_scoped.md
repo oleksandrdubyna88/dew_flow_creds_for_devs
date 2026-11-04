@@ -1,12 +1,12 @@
 # PLAN — An agent on a remote Linux server uses what the person opened to it, through a bridge scoped to that server
 
-> Status: **plan only, nothing implemented yet, stopped for re-review, 2026-11-04.** The owner changed it twice after its approval; this text is the revision going to re-review. Scope: `src_vs_code` (broker doors, bridge lifecycle, scope,
+> Status: **plan only, nothing implemented yet, 2026-11-04.** Epoch 2, after a whole re-review (`good_enough`, 4 of 4 reviewers). Scope: `src_vs_code` (broker doors, bridge lifecycle, scope,
 > agent actions), `src_broker_client`, `src_cli`, `src_mcp`, `install.sh`. No server change. Extends the shipped bridge of
 > [PLAN_remote_broker_bridge.md](../research/PLAN_remote_broker_bridge.md).
 
 ## Plan changes
 
-> Epoch 1 · approved 2026-11-04 · by reviewers · state: stopped
+> Epoch 1 · approved 2026-11-04 · by reviewers · state: closed
 
 - 1.1 · 2026-11-04 · owner · scope,dod — bridges must survive a reboot of the person's PC
 - 1.2 · 2026-11-04 · owner · scope,dod,epics,approach — the VPN serves websites and vpn-up is a script entry: the db tunnel goes, scripts run on the server
@@ -19,6 +19,8 @@ Narrowed: yes — the db tunnel left the scope and the Definition of Done, by th
 | Work | Where | Verdict | Action |
 |---|---|---|---|
 | Nothing built | — | — | — |
+
+> Epoch 2 · approved 2026-11-04 · by owner · state: open
 
 ## 1. Goal
 
@@ -121,7 +123,7 @@ live one. So the **socket path stays per connection**, and the stable thing is a
 - **Every live bridge has its own note**, `<bridgeId>.json`, with `bridgeId` random per open. Two windows on one laptop to one entry are two
   bridges, and each writes and removes only its own note.
 - Each connection: unlink every earlier socket of this `bridgeId`, listening or not, because the supervisor knows they are superseded and
-  clients follow the note; then sweep other sockets that are not listening; spawn `ssh -R <dir>/<bridgeId>-<n>.sock:127.0.0.1:<bridgePort>`;
+  clients follow the note; then sweep other sockets, removing one only when `ss -lx` ran successfully and does not list it as listening. If `ss` is missing or fails, the other sockets are left alone, because nothing has proven them dead; spawn `ssh -R <dir>/<bridgeId>-<n>.sock:127.0.0.1:<bridgePort>`;
   verify the socket; and only then atomically write the note (mode 0600): `{socket, port, brokerPort, key, serverName, openedAt}`.
 - A note whose socket is gone is removed by the same sweep, whoever wrote it.
 - **Each attempt owns its generation** of socket and note; the listener and key live as long as the open bridge. A superseded attempt can neither publish nor delete a newer note
@@ -129,7 +131,7 @@ live one. So the **socket path stays per connection**, and the stable thing is a
 - Close removes the note, best effort, and cancels any waiting retry. A stale note is harmless: its socket is dead and its key died
   with the listener.
 - A path over the socket limit is refused with a sentence, using the limit of `src_cli/src/AgentRelay.cs:116-119`, moved to `src_broker_client` so both clients share it.
-- If `ss` is absent, a bridge still unlinks its own earlier sockets; only other bridges' dead sockets stay, at most one per bridge ever
+- So without `ss`, a bridge still unlinks its own earlier sockets; only other bridges' dead sockets stay, at most one per bridge ever
   opened, and this is said once (§6).
 
 A connection belongs to the login user of the entry. A bridge opened on a root entry serves agents running as root; an
@@ -208,11 +210,12 @@ the person's, trusted, and not the agent's to change.
 
 ### 4.7 Surviving a reboot
 
-**The intent is durable, the access is not.** Opening a bridge writes `bridges/<bridgeId>.json` in the extension's storage: `{accountId, serverEntityId, bridgeId, target}`, the
-scope staying in its own record (§4.2). A file rather than `globalState`, because several windows must see a Close at once and the announcement files already work this way.
+**The intent is durable, the access is not.** Opening a bridge writes `<globalStorageUri>/bridges/<bridgeId>.json`: `{accountId, serverEntityId, bridgeId, target}`, the
+scope staying in its own record (§4.2). That folder is the one every window of this VS Code shares, as the announcement files already rely on (`cliEndpoint.ts`, `Endpoints.cs:55-61`). The file is written by temp-and-rename. A file rather than `globalState`, because several windows must see a Close at once.
 Only *Close Remote Bridge* removes it, and that is offered in every state the record can be in, from any window. Closing or crashing a window removes nothing.
 
-**Any window restores every saved bridge** once its vault is unlocked, at activation and at unlock. `VaultKeys` has `onDidLock` (`vaultKeys.ts:112`) and no unlock event, and ordinary and
+**Any window restores every saved bridge** once its vault is unlocked. Supervisors live in a window's memory, so nothing carries over from a window that ended: at activation, and again on every unlock, a window reads all records and, for each it does not already own, tries the lock and starts a new supervisor if it wins. That
+fresh attempt on unlock is also how a bridge returns when every window had been locked and nobody was trying. `VaultKeys` has `onDidLock` (`vaultKeys.ts:112`) and no unlock event, and ordinary and
 recovery-code unlock are separate paths, so one `onDidUnlock` is added and both fire it.
 
 **Exactly one window owns a bridge, by a lock the OS releases.** The owner holds a named pipe, `\\.\pipe\creds-bridge-<bridgeId>`. Measured on the owner's PC in VS Code's own Node 24: a second process
@@ -313,7 +316,7 @@ Nothing reaches a person until step 5 uses the door, and scope lands before that
 | M4 | Does a UI extension's environment collection reach terminals in a Remote-SSH window | §4.8 wording |
 | M5 | `creds-mcp` in a tmux pane older than the bridge; the unix socket path length under a long home | §4.5 |
 | M6 | **Done 2026-11-04.** A named pipe in VS Code's Node 24 on Windows: `EADDRINUSE` while a live process holds it, available once the holder is killed | §4.7 rests on it |
-| M7 | A real reboot of the owner's PC and a real network drop: the bridge comes back by itself after unlock, and an agent in a tmux session older than the reboot works with no action on the server | Owner decision 4 |
+| M7 | **Blocks the releases and promotion (E4).** A real reboot of the owner's PC and a real network drop. Passes when: after each, with a window open and the vault unlocked, the row reads `up` with no click; a `creds-mcp` tool call from a tmux session older than the event succeeds with no action on the server; the old note and socket are gone; `ssh` exited within 90 s of the drop; and after *Close Remote Bridge* and another reboot the bridge stays closed | Owner decision 4 |
 
 ## 8. Boundaries
 
@@ -394,5 +397,5 @@ Cornerstones: 0 of 2 — no story marked yet; the areas are named in E1 and E2
 - **Scope.** §5 steps 9-11: install and registration from §4.5, the too-old check, M7 and what remains of M3-M5, releases, `research/module_mcp.md:15`, help in five languages, the §8 rows and the two new todos.
 - **Stories.** E4.1 the `install.sh` product switch, the host menu, the too-old check, registration offered not written. E4.2 the owner-host measurements and the §9 walk on the owner's server in tmux. E4.3 the releases clients first, docs and help, boundaries and todos, promotion.
 - **Depends on.** E3 merged.
-- **Done when.** Every line of §9 is ticked; `coai` plan and code gates at `proceed`; the plan and its four stories documents are in `research/` with deviations.
+- **Done when.** M7 passed on its stated conditions before any release tag; every line of §9 is ticked; `coai` plan and code gates at `proceed`; the plan and its four stories documents are in `research/` with deviations.
 - **Cornerstone AREA.** None.
