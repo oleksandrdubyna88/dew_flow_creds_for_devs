@@ -1,6 +1,6 @@
 # PLAN — the Windows `creds.exe` and `creds-mcp.exe` are signed, so Smart App Control lets them run
 
-> Status: **in progress, 2026-11-03 — epoch 2. E1 merged (`dew_flow_release_signing` #1, `v1.0.0` = 609cc23). E2 built and gated on `ci/windows-code-signing-e2`, waiting for the owner's O1–O8 and the trials V1/V2 before its merge.** Scope: a new public repository
+> Status: **in progress — stopped for re-review (2026-11-04), epoch 2. E1 merged (`dew_flow_release_signing` #1, `v1.0.0` = 609cc23). E2 built and gated on `ci/windows-code-signing-e2`, waiting for the owner's O1–O8 and the trials V1/V2 before its merge.** Scope: a new public repository
 > `oleksandrdubyna88/dew_flow_release_signing` holding one reusable signing workflow (E1); the
 > `cli-binaries`, `cli-release`, `mcp-binaries` and `mcp-release` jobs of `.github/workflows/release.yml`
 > here (E2); the owner's one-time Azure and GitHub setup. No product code, no contract change.
@@ -28,7 +28,7 @@ Narrowed: no
   artifact, the Package step reads the Version step, F8 marked unobserved until V1, V2 moved before the merge on the
   trial package, epics re-split by Fable.)
 
-> Epoch 2 · approved 2026-11-03 · by reviewers · state: open
+> Epoch 2 · approved 2026-11-03 · by reviewers · state: stopped
 
   (Re-review gate round, 2/2 reviewers, proceed. Its accepted findings 1, 4 and 5 are part of the approved text: the
   `extra-files` allow-list, the tag ref forcing `required`, V1 checking the organization record. From epoch 2 on, an
@@ -36,6 +36,8 @@ Narrowed: no
 
 - 2.1 · 2026-11-03 · agent · approach — a job calling a reusable workflow cannot take continue-on-error, so expected-failure calls would leave CI red; the self-test runs the workflow's own run blocks against fixtures and asserts exit codes, with one real trial call
   (Cadence consultation 7927faa8, epics 1-2. Its advice to tag v1.0.0 only after V1 was not taken: callers pin a SHA, and both callers merge only after V1.)
+- 2.2 · 2026-11-04 · owner · merge-conditions, contract, approach — merge the callers before any signing provider exists (Azure not set up; SignPath Foundation asked for references), through an explicit ALLOW_UNSIGNED_RELEASES switch so releases stay unsigned as today until it is removed
+  (This second change stopped the plan. Consultation 64aafd4e: both consultants against a plain merge; the owner chose the switch.)
 
 ## 1. The symptom and the goal
 
