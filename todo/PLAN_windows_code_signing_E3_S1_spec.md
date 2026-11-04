@@ -145,7 +145,7 @@ Defaults as E1 §S1.7: tree `in/pkg/` with `app.exe` and `vendor.exe`; the six v
 |---|---|---|---|---|---|
 | 10 | `GITHUB_REF=refs/tags/x`, `AUR=true` | 0 | `::warning::sign-windows: UNSIGNED RELEASE`, `environment 'release-signing'`, `caller ref refs/tags/x`, `cli-win-x64 is packed unsigned` | `mode=skip` | contains `UNSIGNED RELEASE` |
 | 11 | `GITHUB_REF=refs/tags/x`, `AUR=false` | 1 | `signing is required`, `refs/tags/x`, `SIGNING_PUBLISHER is set in environment 'release-signing'` | none | empty |
-| 12 | `AZURE_CLIENT_ID=x`, `AUR=true` | 1 | `partial signing configuration`, `set AZURE_CLIENT_ID`, `missing AZURE_TENANT_ID` | none | empty |
+| 12 | `AZURE_CLIENT_ID=x`, `GITHUB_REF=refs/tags/x`, `AUR=true` | 1 | `partial signing configuration`, `set AZURE_CLIENT_ID`, `missing AZURE_TENANT_ID` | none | empty |
 | 13 | all six `=x`, `GITHUB_REF=refs/tags/x`, `AUR=true` | 0 | `mode: sign` | `mode=sign` | empty |
 | E3.A1 | five of six `=x` (not `SIGNING_PUBLISHER`), `GITHUB_REF=refs/tags/x`, `AUR=true` | 1 | `partial signing configuration`, `missing SIGNING_PUBLISHER` | none | empty |
 | E3.A2 | `REQUIRED=true`, `AUR=true` (branch ref) | 0 | `UNSIGNED RELEASE`, `required=true`, `caller ref refs/heads/main` | `mode=skip` | contains `UNSIGNED RELEASE` |
@@ -217,4 +217,14 @@ B1–B3 are quoted in the PR; B4 and B5 may be run and are not required.
 
 ## S1.10 — Deviations found while building
 
-(Filled by E3.1's coder and reviewer, as E1 §S1.11; empty until then.)
+(Filled by E3.1's coder and reviewer, as E1 §S1.11.)
+
+1. **Case 12 carries a tag ref (correction by the E3.2 review, Opus, 2026-11-04, before any code).** With a branch ref
+   and `REQUIRED=false` the leg is not forced, so the permission never acts in case 12, and break-it B1 (the permission
+   moved above the partial row) could not turn it red. The environment is now `AZURE_CLIENT_ID=x`,
+   `GITHUB_REF=refs/tags/x`, `AUR=true`; the rest of the row is unchanged. It still passes against `v1.0.0` (the partial
+   row is first), so the RED-first sets do not move.
+2. **§S1.7's B1–B3 rows are superseded by the stories document §E3.2 step 4** (same review): B1 is one exact mutant
+   with the red set {12, E3.A1}; B2's red set is {10, E3.A2, E3.A3} (E3.A2 also asserts the banner); B3 also turns the
+   new wiring step red; B3b (the mapping read from `inputs.required`) is added. Decision 9 gains a third proof:
+   `test/wiring.mjs` (E3.2) pins the mapping's SOURCE, which neither the harness nor the forced call can see.

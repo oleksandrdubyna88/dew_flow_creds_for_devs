@@ -1,7 +1,7 @@
 # PLAN — Windows code signing, E3: the shared workflow `v1.1.0` — the exception for missing configuration
 
 > Status: **plan only, nothing implemented yet, 2026-11-04.** Stories of epic E3 of [PLAN_windows_code_signing.md](PLAN_windows_code_signing.md) (§3.1 the inputs and the mode table, §3.4 the switch and the cutover, §6 the E3 tests, `## Epics` E3).
-> Scope: `oleksandrdubyna88/dew_flow_release_signing` only (clone: `/home/jinx/git/dew_flow_release_signing`, `main` = 609cc23 = `v1.0.0`): `.github/workflows/sign-windows.yml` (one input, the `mode` step, the header comment), `test/selftest.ps1` (the summary file, nine cases), `.github/workflows/ci.yml` (a second real call and its check), `README.md`. Branch `feat/allow-unsigned-release` from 609cc23; one PR; the merge commit tagged `v1.1.0`. Nothing in this repository changes for E3; E4 adopts the tag.
+> Scope: `oleksandrdubyna88/dew_flow_release_signing` only (clone: `/home/jinx/git/dew_flow_release_signing`, `main` = 609cc23 = `v1.0.0`): `.github/workflows/sign-windows.yml` (one input, the `mode` step, the header comment), `test/selftest.ps1` (the summary file, nine cases), `.github/workflows/ci.yml` (a second real call and its check, the wiring step), `test/wiring.mjs` (new), `README.md`. Branch `feat/allow-unsigned-release` from 609cc23; one PR; the squash commit tagged `v1.1.0`. Nothing in this repository changes for E3; E4 adopts the tag.
 
 **Committed together with this document:** its row in `todo/README.md` under *Currently open*, and the cornerstone spec
 `todo/PLAN_windows_code_signing_E3_S1_spec.md` with its own row (the shared `common/planning-docs.md` § *A plan split
@@ -50,7 +50,8 @@ at review, outside the quota (parent, E3 *Cornerstone areas*). The coai gate run
 - **The harness cannot see the `env:` mapping.** It sets the step's environment itself, so cases 10–13 stay green when
   the workflow's `allow-unsigned-release` → `ALLOW_UNSIGNED_RELEASE` line is deleted or misspelled (cadence consultation
   96bf9488). The proof of the mapping is a second **real** call in `ci.yml` (E3.2), forced and permitted, which must be
-  green; its break-it deletes the mapping and watches that call go red.
+  green; its break-it deletes the mapping and watches that call go red. The mapping's SOURCE (`inputs.required` or a
+  literal `true` in its place) is invisible to both; `test/wiring.mjs` pins it (E3.2, B3b).
 - **The permission trusts the caller's environment NAME.** GitHub creates an environment the caller names but does not
   have, empty (E1 spec G2). With the permission on, a typo in `environment` on a tag is an unsigned release with the
   banner, not a red run. Accepted for the switch-on period: both callers use the default name `release-signing`, and A6
@@ -73,17 +74,17 @@ spec's §S1.6.
 |---|---|---|---|---|
 | 10 | a tag ref; no variables; input `true` | `mode` | exit 0, `mode=skip`; the `::warning::` says `UNSIGNED RELEASE`, names `release-signing` and `refs/tags/x`; the summary file holds `UNSIGNED RELEASE` | harness, E3.1 |
 | 11 | a tag ref; no variables; input `false` | `mode` | exit 1, `signing is required`, names the six variables; no output, no summary — as case 9 | harness, E3.1 |
-| 12 | one variable set; input `true` | `mode` | exit 1, `partial signing configuration`, names the set and the missing; no output, no summary | harness, E3.1 |
+| 12 | one variable set; a tag ref; input `true` | `mode` | exit 1, `partial signing configuration`, names the set and the missing; no output, no summary | harness, E3.1 |
 | 13 | all six set; a tag ref; input `true` | `mode` | exit 0, `mode=sign`; no summary (the input does nothing) | harness, E3.1 |
 | E3.A1 | five of six set; a tag ref; input `true` | `mode` | exit 1, `partial signing configuration`, `missing SIGNING_PUBLISHER` | harness, E3.1 |
 | E3.A2 | `REQUIRED=true` on a branch ref; no variables; input `true` | `mode` | exit 0, `mode=skip`, the warning and the banner — `required: true` is forced like a tag | harness, E3.1 |
 | E3.A3 | as case 10 | `mode` | the summary file holds the exact banner: the heading `## UNSIGNED RELEASE`, the artifact, the environment, the ref, and the sentence that the exception ends at activation | harness, E3.1 |
 | E3.A4 | a tag ref; no variables; input `1` (not the string `true`) | `mode` | exit 1 as case 11: only the exact string `true` permits | harness, E3.1 |
 | E3.A5 | a branch ref; `REQUIRED=false`; no variables; input `true` | `mode` | exit 0, `UNSIGNED trial`, `mode=skip`, **no** summary — a trial is not a release, the banner is for forced legs only | harness, E3.1 |
-| R2 | the case-1 fixture package; `required: true`; `allow-unsigned-release: true`; environment `selftest-no-signing` (never holds variables) | the real call `trial-call-forced` of `sign-windows.yml` | green; the leg logs `skip` and the warning; the artifact `selftest-forced-win-x64` passes the case-1 checks (layout, hashes, `sha256sum -c`) | `ci.yml`, E3.2 |
+| R2 | the case-1 fixture package; `required: true`; `allow-unsigned-release: true`; environment `selftest-no-signing` (never holds variables) | the real call `trial-call-forced` of `sign-windows.yml` | green; the artifact `selftest-forced-win-x64` passes the case-1 checks (layout, hashes, `sha256sum -c`); the PR quotes the leg's `::warning::sign-windows: UNSIGNED RELEASE` log line, and the run's summary page shows its one banner (read, not asserted: the called workflow has no outputs) | `ci.yml`, E3.2 |
 
 Each harness case asserts the exit code, the output fragments, the outputs written (or that none were) and, new, the
-summary file's content (or that it is empty). The counts after E3: 53 harness cases (44 + 9) and two real calls.
+summary file's content (or that it is empty). The counts after E3: 53 harness cases (44 + 9), one wiring check and two real calls.
 
 ## E3.1 — the input, the `mode` row, the warning and the banner (cornerstone)
 
@@ -131,6 +132,18 @@ and a banner` (with the harness cases).
      harness supplies the step's environment itself (consultation 96bf9488).
    - `push` stays `branches: ['**']`, never a tag: with the permission on, a tag push would now be green, not red, and
      the point of the forced call is to be forced by `required: true`, not by a ref.
+   - The comment above `trial-input` (`ci.yml:70-71`, `The one real call of sign-windows.yml (case 1)`) →
+     `The package for both real calls of sign-windows.yml: trial-call (case 1, the unsigned trial road) and
+     trial-call-forced (R2, forced and permitted). It has an own file and a vendor file, and the called environment
+     never holds variables.`
+   - `test/wiring.mjs` (new; the locked `yaml` parser, as `run-step.mjs`): exits 1 unless the `mode` step's
+     `env.ALLOW_UNSIGNED_RELEASE` is exactly `${{ inputs.allow-unsigned-release }}` and no other string in the file
+     names `inputs.allow-unsigned-release`; on success prints `wiring ok: mode reads allow-unsigned-release from the
+     input only`. The `harness` job runs it as its own step after `Run the self-test` (`node test/wiring.mjs
+     .github/workflows/sign-windows.yml`; no `${{` in that `run:`). Why: a mapping read from the wrong SOURCE
+     (`inputs.required`, a literal `true`) leaves the harness (G10) and both real calls green — `trial-call-forced` is
+     permitted either way and `trial-call` is not forced — while a real tag caller with the input `false` would ship
+     unsigned. The forced call proves the input arrives; this check proves nothing else arrives in its place.
 2. `sign-windows.yml` header comment (`:3-5`): one line — `v1.1.0: allow-unsigned-release is a permission for MISSING
    configuration (zero variables on a forced leg), never an off switch; callers remove it at activation (A6)`.
 3. `README.md`:
@@ -160,42 +173,63 @@ and a banner` (with the harness cases).
      citing the parent §4 as a path.
    - *Self-test* (`:155-156`, `V1 proves it: a dry run on the caller's PR branch before its merge`) → `V1 proves it: a
      signed dispatch trial on the caller's main during the activation cutover (dew_flow_creds_for_devs ·
-     todo/PLAN_windows_code_signing.md section 3.4)`. The self-test list gains `trial-call-forced` / `trial-check-forced`:
-     the one real forced-and-permitted call, green in `skip` mode with the banner.
+     todo/PLAN_windows_code_signing.md section 3.4)`. The self-test list (`:144-145`, `trial-input, trial-call,
+     trial-check: one real call in the unsigned trial road …`) → `trial-input builds the package for both real calls;
+     trial-call, trial-check: the real call in the unsigned trial road (environment selftest-no-signing, which never
+     holds variables) and the checks of its result; trial-call-forced, trial-check-forced: the real forced-and-permitted
+     call, green in skip mode with the banner, and the same checks`. The `harness` entry gains: `then test/wiring.mjs
+     checks that the mode step reads allow-unsigned-release from the input and from nothing else`.
    - *Caller snippet*: `# v1.1.0` on the `uses:` line and
      `allow-unsigned-release: ${{ vars.ALLOW_UNSIGNED_RELEASES == 'true' }}   # until activation (A6)`.
    - The *What `sign-windows.yml` does* step 3: `… from the six signing variables of the caller's environment and the
      allow-unsigned-release input (mode step)`.
-   A docs grep before the PR: no line of the README says a tag is "always red", "always requires signing" or that V1
-   runs on a PR branch.
-4. The break-its (parent §6 and the consultation), each: mutate, run, record the output, restore, run again, record:
-   - **B1** `mode`: make the permission also skip a partial configuration (test the input before the partial row). The
-     harness must fail naming case 12 and E3.A1 (`UNSIGNED RELEASE` where `partial signing configuration` was expected).
-   - **B2** `mode`: skip the forced leg without writing the banner. The harness must fail naming case 10 and E3.A3
-     (`summary lacks 'UNSIGNED RELEASE'`).
+   A docs grep before the PR: no line of the README says a tag is "always red", "always requires signing", that V1
+   runs on a PR branch, or that there is one real call; no comment of `ci.yml` says `The one real call`.
+4. The break-its (parent §6 and the consultations). Each is pushed to a throwaway branch `breakit/e3-bN` cut from the
+   PR head (CI runs on every branch push; the harness needs Windows, so CI is where it runs); its run URL and failing
+   lines are quoted in the PR, and the branch is deleted. Nothing is committed to the PR branch, and the PR head's own
+   green run is the "restored" run.
+   - **B1** `mode`: insert above the partial row
+     `if [ "$forced" = yes ] && [ "${ALLOW_UNSIGNED_RELEASE:-}" = true ] && [ "${#set_names[@]}" -lt 6 ]; then` + row
+     3's body (banner, `mode=skip`, warning) + `exit 0; fi` (the permission skips a half configuration on a forced
+     leg). The harness must fail naming exactly case 12 and E3.A1 (`exit code 0, expected 1; output lacks 'partial
+     signing configuration'`), and no other case.
+   - **B2** `mode`: delete row 3's `write_banner >> "$GITHUB_STEP_SUMMARY"` line (the forced leg skips without the
+     banner). The harness must fail naming exactly case 10, E3.A2 and E3.A3 (`summary lacks 'UNSIGNED RELEASE'` /
+     `summary lacks '## UNSIGNED RELEASE'`).
    - **B3** `sign-windows.yml`: delete the line `ALLOW_UNSIGNED_RELEASE: ${{ inputs.allow-unsigned-release }}` from the
-     `mode` step's `env:`. The harness stays **green** (53 pass — record that, it is the finding of 96bf9488); push the
-     mutant to the PR branch; `trial-call-forced` goes **red** at `mode` with `signing is required`; `trial-call` stays
-     green. Restore; both green. Quote the three outputs in the PR.
+     `mode` step's `env:`. The self-test step prints 53 pass (record that, it is the finding of 96bf9488); the wiring
+     step is red; `trial-call-forced` is red at `mode` with `signing is required`; `trial-call` is green.
+   - **B3b** `sign-windows.yml`: change that line to `ALLOW_UNSIGNED_RELEASE: ${{ inputs.required }}`. The self-test
+     step prints 53 pass; the wiring step is red; `trial-call-forced` and `trial-call` are both green — the wiring
+     check is the only red, which is why it exists.
 5. The PR from `feat/allow-unsigned-release`: title `feat(sign): allow-unsigned-release — a permission for missing
-   configuration on a forced leg`; body: the parent path, the three break-its quoted, the 53/2 counts, the coai verdicts
-   and reviewer counts. Merge by PR (`main` is protected). Tag the merge commit `v1.1.0` (annotated, as `v1.0.0`:
-   `git tag -a v1.1.0 <merge-sha> -m "…"`, pushed; `git ls-remote --tags` shows both the tag object and its `^{}`
-   line). Record the 40-hex merge SHA: E4 and the coai twin pin it (never the tag).
+   configuration on a forced leg`; body: the parent path, the four break-its quoted, the 53/2 counts and the wiring
+   check, the coai verdicts and reviewer counts. Squash-merge by PR (`main` is protected; as `v1.0.0`, #1). Tag the
+   squash commit `v1.1.0` (annotated, as `v1.0.0`: `git tag -a v1.1.0 <squash-sha> -m "…"`, pushed;
+   `git ls-remote --tags` shows both the tag object and its `^{}` line). Record the 40-hex squash-commit SHA: E4 and
+   the coai twin pin it (never the tag).
 
 **Scenarios.**
 
-- Given a clean branch, when CI runs, then `lint`, `harness` (53 `pass` lines), `trial-check` and `trial-check-forced`
-  are green, and the run's summary page shows one `UNSIGNED RELEASE` banner (the forced leg) and no banner from
-  `trial-call` (the trial leg).
-- Given B3's mutant, when CI runs, then `harness` is green and `trial-call-forced` is red; `trial-call` is green.
-- Given the README after step 3, when it is read next to the workflow, then the input's description is the same bytes,
-  and the mode table has five rows.
+- Given a clean branch, when CI runs, then `lint`, `harness` (53 `pass` lines and `wiring ok`), `trial-check` and
+  `trial-check-forced` are green; the PR quotes the `::warning::sign-windows: UNSIGNED RELEASE` line from
+  `trial-call-forced`'s log and the `UNSIGNED trial` line from `trial-call`'s log (`gh run view <id> --log`), and
+  records that the run's summary page shows exactly one `## UNSIGNED RELEASE` banner. (The called workflow has no
+  outputs, so no check job can see the mode; a green forced call alone does not prove row 3.)
+- Given B3's mutant, when CI runs, then the self-test step prints 53 pass, the wiring step is red, `trial-call-forced`
+  is red at `mode` with `signing is required`, and `trial-call` is green.
+- Given B3b's mutant, when CI runs, then the self-test step prints 53 pass, the wiring step is red, and both real calls
+  are green.
+- Given the README after step 3, when it is checked, then a node one-liner prints the YAML-parsed
+  `allow-unsigned-release` description and `grep -cF` finds it exactly once in `README.md`; the mode table has five
+  data rows and an `allow-unsigned-release` column.
 
-**Done when.** CI green on the merged commit with 53 harness cases and both real calls; B1–B3 quoted in the PR; the
-README changes of step 3 in; `v1.1.0` points at the merge commit and its 40-hex SHA is recorded in E4's story document
-when that one is written; the parent's §9 wiring line for E3 ticked; the coai code round resolved. One commit for
-`ci.yml`, one for the README and the header; the break-its leave no diff.
+**Done when.** CI green on the squash commit with 53 harness cases, the wiring check and both real calls; B1–B3b
+quoted in the PR; the README changes of step 3 in; `v1.1.0` points at the squash commit and its 40-hex SHA is recorded
+in E4's story document when that one is written; the parent's §9 wiring line for E3 ticked; the coai code round
+resolved. One commit for `ci.yml` and `test/wiring.mjs`, one for the README and the header; the break-its leave no
+commit on the PR branch.
 
 ## Order
 
