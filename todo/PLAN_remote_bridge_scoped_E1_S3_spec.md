@@ -119,8 +119,10 @@ void FIELDS_MATCH_THE_TYPE;
 ```
 
 `brokerProtocol.ts`: `export const ALIAS_ROUTE_PREFIX = '/v1/alias/';` and `parseAliasRoute` (`:222-229`) uses it in place of its
-literal. Also `export const GRANT_NOT_ALLOWED = 'The human did not allow this grant.';`, used at `credsAgentServer.ts:625` in place
-of the literal (same line count), and by §S3.2.10.
+literal. Nothing else in that file: E1.1 adds `EXPORT_REFUSED` beside `INTERNAL_FAILURE` (`:95`) on branch `feat/remote-bridge-e1-s1`,
+and a second constant in that hunk would collide. So `export const GRANT_NOT_ALLOWED = 'The human did not allow this grant.';` lives
+in `brokerRequests.ts` beside `UNKNOWN_TOKEN`, used at `credsAgentServer.ts:625` in place of the literal (same line count) and by
+§S3.2.10. `bridgeAllowList.ts` imports `EXPORT_REFUSED` from `brokerProtocol.ts`, so E1.1 lands before E1.3 is built.
 
 `scripts/emit-contract.mjs`: after `caller` (`:154-160`) a `bridge` block read off `out/bridgeNote.js`, and `aliasPrefix` read off
 `protocol.ALIAS_ROUTE_PREFIX`; both placed after `caller` in `contract` (`:194`) with a comment in the words of `:192-194`
@@ -403,7 +405,7 @@ Off a bridge (`bridge === undefined`) nothing in this table applies: `OPEN_VIEW`
 | not-found entry | `refusalFor(undefined)`, `brokerRequests.ts:183` | 404 `not_found` | `No such entry, or this window does not serve it.` |
 | not-found alias | `aliasTarget(undefined, name)`, `:165` | 404 `not_found` | `No entry is enabled for the CLI under "<name>".` |
 | `UNKNOWN_TOKEN` | `brokerRequests.ts` (new constant, `:238,252`) | 401 `unauthorized` | `Unknown or missing grant token.` |
-| `GRANT_NOT_ALLOWED` | `brokerProtocol.ts` (new constant, used at `credsAgentServer.ts:625`) | 403 `denied` | `The human did not allow this grant.` |
+| `GRANT_NOT_ALLOWED` | `brokerRequests.ts` (new constant, used at `credsAgentServer.ts:625`) | 403 `denied` | `The human did not allow this grant.` |
 | `REFERENCE_REFUSED(entityName, ref)` | `bridgeScope.ts` | 403 `denied` | `"<entityName>" uses <ref>, which this Remote Bridge does not serve. Add that entry to this bridge's scope, or take the reference out of the stored command or script.` |
 | snippet not found | `configSnippetResult(undefined, …)`, `mcpSnippetRoute.ts:84-85` | 200 | `{ error: 'no such config is open to agents', envVar: 'CREDSFORDEVS_KEY', languages: [] }` (`CONFIG_KEY_ENV`, `configKey.ts:44`; assert through `configSnippetResult(undefined, …)`, not the literal) |
 
@@ -420,8 +422,8 @@ client's walk moves on only from a `not_found` (`src_mcp/src/Windows.cs:158-159`
 | `bridgeAllowList.ts` (new in E1.2) | fill `BRIDGE_ROUTES` and `bridgeRouteRefusal` (§S3.2.4, §S3.3) | — |
 | `bridgeScope.ts` (new) | everything in §S3.2.5, §S3.2.9 | — |
 | `brokerBridgeToken.ts` (new) | §S3.2.10 | — |
-| `brokerProtocol.ts` | `ALIAS_ROUTE_PREFIX`, used in `parseAliasRoute`; `GRANT_NOT_ALLOWED` | `:222-229`; new constants beside `INTERNAL_FAILURE` `:95` |
-| `brokerRequests.ts` | `UNKNOWN_TOKEN`, `Refusal`; the two literals replaced | `:238`, `:252` |
+| `brokerProtocol.ts` | `ALIAS_ROUTE_PREFIX`, used in `parseAliasRoute`; nothing near `:95` (E1.1's hunk) | `:222-229` |
+| `brokerRequests.ts` | `UNKNOWN_TOKEN`, `GRANT_NOT_ALLOWED`, `Refusal`; the two literals replaced | `:238`, `:252` |
 | `grantRegistry.ts` | `Grant.bridge?`; `mint`'s seventh parameter, key absent when undefined | `:20-49`, `:132-155` |
 | `brokerCall.ts` | `CallDeps.atLaunch?`, `CallSubject.spend?`, `answer`, `reservedNow` + `spentToken`, `startNow` passes `bridge` | `:23-49`, `:51-63`, `:124-134`, `:146-154`, `:162-167` |
 | `useActions.ts` | `UseActionContext.bridge?` | `:14-33` |
@@ -441,9 +443,9 @@ nothing wires `bridgeWall` until E2.2, R1).
 
 ## S3.6 — `credsAgentServer.ts`, every edit, counted
 
-E1.2's guard in `handle` (`:435-489`) must be **three** lines — `if (this.refusedOnBridge(res, bridge, req.method, url.pathname)) { return; }`
-with the `Connection: close` and `respondError` inside a private `refusedOnBridge(...): boolean` — because `handle` is 43 code lines
-today and the fifty-line ceiling counts code lines (F11). With that, this story adds:
+E1.2's guard in `handle` (`:435-489`) must be **three** lines — `if (refusedOnBridge(bridge, req.method, url.pathname, res, (code, message) => this.respondError(res, code, message))) { return; }`
+with the `Connection: close` inside the pure `refusedOnBridge` of `bridgeAllowList.ts` (the S2 spec, §S2.2) — because `handle` is 43
+code lines today and the fifty-line ceiling counts code lines (F11). With that, this story adds:
 
 | Where | Edit | Lines |
 |---|---|---|
@@ -460,10 +462,11 @@ today and the fifty-line ceiling counts code lines (F11). With that, this story 
 | `:532` `prepared(res, { …, signal: who.signal, spend: who.spend })` | same line | 0 |
 | `runAndDeliver`, in the `CallDeps` literal after `:663` | `atLaunch: () => launchRefusal(grant, this.hooks.bridgeWall, via, call.body),` | +1 |
 | `:775-779` `RequestWho` | `readonly spend?: string;` | +1 |
-| | **Total** | **+14** |
+| `openBridgeListener` (E1.2's arrow property) | first line: `if (this.hooks.bridgeWall === undefined) { throw new Error('A Remote Bridge cannot open without its scope wall.'); }` (R4) | +3 |
+| | **Total** | **+17** |
 
 `handle` ends at 43 + 3 (E1.2) + 3 (here) = 49 code lines; `perform` at complexity 4; `answer` at complexity 4. The file ends at
-most at 779 − 17 + 12 + 14 = 788 before E1.4's +3. Check with `wc -l src/credsAgentServer.ts` and `npm run lint`.
+779 − 17 + 14 (E1.2, the S2 spec §S2.5) + 17 + 1 (E1.4, the S4 spec) = 794 at most. Check with `wc -l src/credsAgentServer.ts` and `npm run lint`.
 
 ## S3.7 — Scenarios, with the RED-first order
 
