@@ -100,6 +100,18 @@ the workflows, and because "merged" reads like "shipped" until you check.
 
 All four are `.github/workflows/release.yml`, triggered on `tags:`.
 
+**The release pipeline is wired for Windows code signing, and the Windows `creds` and `creds-mcp` releases
+stay unsigned until the owner activates a signing provider.** The jobs `cli-sign` and `mcp-sign` call
+`sign-windows.yml` of `dew_flow_release_signing` (pinned by commit, `v1.1.0`) after the build legs and before the
+release jobs. With no provider active, the repository variable `ALLOW_UNSIGNED_RELEASES=true` lets a `cli-v*` or
+`mcp-v*` tag ship the Windows zips unsigned, as before, with a warning on the run and an `UNSIGNED RELEASE` banner.
+Do not remove that variable outside the activation cutover. If the variable is missing or not exactly `true`, a tag
+run whose `release-signing` environment holds no signing variables fails. A manual dispatch with `required: true`
+takes the same decision as a tag and publishes nothing. Until a release carries a signature, Smart App Control can
+block `creds.exe` and `creds-mcp.exe` on a machine that has it on. After the cutover, `Get-AuthenticodeSignature`
+checks one. The owner steps and the cutover are in
+[todo/PLAN_windows_code_signing.md](todo/PLAN_windows_code_signing.md) §4 and §3.4.
+
 **An extension release bumps TWO files, not one.** `src_vs_code/package.json` and
 `src_vs_code/package-lock.json` both carry the version — the lock in two places, its top level and
 its `packages[""]` entry. `npm ci` checks the lock's *dependencies* against the manifest and says

@@ -55,6 +55,16 @@ A remote command's own exit code passes through untouched, so `&&`, `||` and `$?
 (89–99) and always print a `[creds-for-devs]` line to stderr, so a collision with a remote code
 stays legible. The band is in the contract file; nothing here defines its own.
 
+## Windows code signing (not active yet)
+
+The release pipeline is wired to sign `creds.exe` (the job `cli-sign` calls the shared signing workflow), but
+the `cli-v*` releases stay unsigned until the owner activates a signing provider. Until then, Windows Smart App
+Control can block `creds.exe` on a machine that has it on. While no provider is active, the repository variable
+`ALLOW_UNSIGNED_RELEASES=true` lets a release ship unsigned, with a warning and an `UNSIGNED RELEASE` banner on
+the run; it must not be removed outside the activation cutover. Once a release carries a signature, check it in
+PowerShell with `Get-AuthenticodeSignature .\creds.exe`. The plan is
+[todo/PLAN_windows_code_signing.md](../todo/PLAN_windows_code_signing.md).
+
 ## Building and testing
 
 ```bash

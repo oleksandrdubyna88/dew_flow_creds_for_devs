@@ -260,6 +260,37 @@ release made it — *--version printed 'creds-mcp 1.0.0', expected exactly 'cred
 line does not name version 0.4.1* (`started: relay-pipe, version 1.0.0, …`), *the log's start line does not name
 version 0.10.1* — GREEN with the stamp, RED again on a fresh publish without it.
 
+**The release workflow's signing wiring is a test (2026-11-03,
+[PLAN_windows_code_signing.md](../todo/PLAN_windows_code_signing.md)).** `src_vs_code/src/test/releaseSigning.test.ts`
+reads `release.yml` as text (no `vscode`, no YAML parser; CRLF normalised, comment lines dropped) and pins the wiring
+through which signing runs once a provider is active, because the signing itself cannot run without Azure. T1: the Windows legs of
+`cli-binaries` and `mcp-binaries` upload `unsigned-<product>-<rid>` from `pkg`, and zip and checksum nothing. T2:
+`cli-sign` / `mcp-sign` call the shared workflow at a 40-hex commit (E4: exactly the commit of `v1.1.0`,
+`a9a7eccdf76306d8fdbc67fc917cf8d5a362d851`, written `# v1.1.0`) with exactly the `win-*` legs of their matrix and
+exactly `contents: read` + `id-token: write`. T3: each release job needs its sign job. T4: nothing else may grant an
+identity token, by `id-token` or by `write-all`, in a job or at the workflow level. T5: `Package` uses the Version
+step's `$VERSION` (never `GITHUB_REF_NAME`), every cli and mcp upload keeps 7 days, and `own-files` names the product's
+own exe. RED against the unchanged workflow (11 of 13 failed); break-its: dropping `cli-sign` from `cli-release`'s
+needs fails T3, `id-token` or `permissions: write-all` on `cli-release` or in the header fails T4, a removed RID in
+`artifacts` fails T2. The cross-repository federation is not tested here; only a real signed run proves it.
+
+*E4 (2026-11-04) adopts `v1.1.0` and extends it.* T2 also pins the `with:` key set to exactly `allow-unsigned-release`,
+`artifacts`, `own-files`, `required` (three before), `required` to exactly
+`${{ startsWith(github.ref, 'refs/tags/') || inputs.required }}`, and the switch to exactly
+`${{ vars.ALLOW_UNSIGNED_RELEASES == 'true' }}`. T7 (new) finds the callers of the shared workflow by their job-level
+`uses`, asserts the set is exactly `cli-sign` and `mcp-sign`, and fails if either passes `environment` in `with:` or
+holds a job-level `environment:`. RED against the E2 workflow with the changed test (14 tests, 12 pass, 2 fail: T2 for
+`cli-sign` and `mcp-sign`, on the pin `609cc23… # v1.0.0` against `a9a7ecc… # v1.1.0`); GREEN with the new `release.yml`
+(14 pass). Break-its, each restored: `environment: release-signing` in `cli-sign`'s `with:` on the E2 workflow fails
+T7 (and T2 for both products on the old pin); the switch written as the bare `${{ vars.ALLOW_UNSIGNED_RELEASES }}` fails
+T2 for `cli-sign` (B1); the switch written as the literal `true` fails T2 for `cli-sign` (B2). T8 (added after Opus's review, 15 tests in the
+file) pins the dispatch input itself: it slices the comment-free header from `workflow_dispatch:` and asserts the
+input `required` exists with `type: boolean`, `default: false` and the description `force the signing decision as on a
+release tag`, because `default: true` or `type: string` left all 14 earlier tests green and turned every trial into a
+forced run. It is green on the real file (15 pass); three break-its by mutation, each restored, each 15 tests with 14
+pass and 1 fail (T8 only): `default: true`, `type: string`, and a changed description. Nothing here proves that
+the switch works on a real run: a dispatch with `required: true`, and then a tag, do.
+
 **Still not proved by anything automated:** the one-day count on the owner's machine (the plan's first DoD line —
 `creds-mcp.exe` count equals live clients after a day of normal use), which needs the released build installed;
 and the stale-install leg of E4.S2 inside `creds-mcp-wsl-itest.cjs`.

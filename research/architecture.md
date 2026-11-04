@@ -365,7 +365,8 @@ docker image        build -> RUN it -> wait for healthy -> assert 401 on /api/va
 
 docs · plans        plan-lifecycle.mjs + pin-check.mjs from the shared submodule
 
-release             tag-driven: server-v* -> image, extension-v* -> Marketplace
+release             tag-driven: server-v* -> image, extension-v* -> Marketplace,
+                    cli-v* / mcp-v* -> the `creds` / `creds-mcp` binaries (Windows ones through the signing workflow, below)
 ```
 
 `deploy/**` sits in the server's path filter deliberately: the compose stack is how this server is
@@ -390,6 +391,23 @@ Two further properties worth naming:
 Releases are tag-driven and per product — `server-v*` publishes a multi-arch image and moves
 `:latest`; `extension-v*` publishes to the Marketplace and **refuses while the publisher id is
 still a placeholder**. A tag never ships both.
+
+**The Windows binaries go through a signing workflow before they are published; releases stay unsigned until the
+owner activates a provider (2026-11-03, [PLAN_windows_code_signing.md](../todo/PLAN_windows_code_signing.md)).**
+Smart App Control can block an unsigned `creds.exe` or `creds-mcp.exe` on a machine that has it on, so the `cli-v*`
+and `mcp-v*` pipelines no longer zip their Windows legs. A Windows leg uploads an unsigned package
+(`unsigned-cli-win-x64`, …); the job `cli-sign` / `mcp-sign` calls the reusable `sign-windows.yml` of
+`dew_flow_release_signing` (pinned by the commit of `v1.1.0`), zips the package and uploads the final
+`cli-win-<arch>` / `mcp-win-<arch>` with its checksum; the release job waits for it. With a full configuration in
+the `release-signing` environment (six variables, no secret, GitHub OIDC) that workflow signs the exe with Azure
+Artifact Signing. That is the wiring, not the state: no provider is active, so the environment holds none of the
+six variables (M2) and the repository variable `ALLOW_UNSIGNED_RELEASES=true` (M1) lets a tag take the unsigned
+path, with a warning and an `UNSIGNED RELEASE` banner. If the variable is missing or not exactly `true`, a tag run
+whose environment holds no signing variables fails; one to five variables set fails in every case. A dispatch with
+the input `required: true` takes the tag's decision and publishes nothing. Only the two sign jobs may ask for an
+identity token, and no caller passes `environment`. Activation is a later cutover (A6 removes the switch). Every
+cli and mcp artifact keeps 7 days, so *Re-run failed jobs* after a signing outage still finds every platform's
+asset.
 
 ### Where a copy of the whole deployment lives (2026-09-07, epic 5)
 
