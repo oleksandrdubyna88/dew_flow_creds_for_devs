@@ -144,7 +144,11 @@ prove the switch, which only a tag forces (gap 3).
 itself: read the merged message (`git show -s --format=%B <squash-sha>` — no conventional-commit line in the body), then
 dispatch `release-please.yml` on `main` once and record the run and the SHA it saw. After it ends: no release
 attributable to the squash — no `cli` or `mcp` release PR gains it, and none open before gains it in its changelog
-(a release PR for unrelated, earlier commits is not M3's concern). The squash also touches `src_vs_code/` (the test), so the same holds for
+(a release PR for unrelated, earlier commits is not M3's concern). Before the merge, also check #295's description: no `BEGIN_COMMIT_OVERRIDE` block, and no `release-as` or
+`BREAKING` footer in the description or the squash body (case-insensitive — the parser reads lowercase `release-as`).
+If a release attributable to the squash appears anyway, closing that PR is not enough (the input stays for later runs):
+edit #295's description with a `BEGIN_COMMIT_OVERRIDE` … `END_COMMIT_OVERRIDE` block holding only the `ci(release): …`
+line, dispatch `release-please.yml` again, and show the next proposal is clean (risk consultation 3e1a6d8b). The squash also touches `src_vs_code/` (the test), so the same holds for
 `extension` (gap 4). If one appears anyway, close it unmerged with a comment naming M3.
 
 **O9.** The owner removes `ci/windows-code-signing-e2` from the environment's deployment rule; the agent reads the
