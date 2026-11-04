@@ -2417,18 +2417,24 @@ it is a contract change across three codebases and is recorded here as the open 
 Remote-SSH, container or Codespaces window the collection feeds terminals that run on the REMOTE side,
 so the value lands on another computer. The person's own binding is still written (owner decision 5)
 and is now said: `envAppliedNotice(result, remoteName?)` adds, after any withheld sentences, *"$X
-reaches another computer: the new terminals of this window run there (ssh-remote) … To take the value
-back, remove its binding from the entry; terminals already open keep it until they close."* (the plural
-for several names). It is in the notice and not at the `ENV` button because the notice is the one
+reaches another computer: the new terminals of this window run there (ssh-remote) … where any process
+running under your login can read it. The value stays until you remove the binding through Edit in this
+window; deleting the entry does not remove it."* (the plural for several names: "them"). Deleting an
+entry applies no bindings, so the value stays; that is recorded for E4. It is in the notice and not at the `ENV` button because the notice is the one
 sentence every surface that writes the collection says. The remote name rides `envCollectionRef` as a
 module variable set beside the collection (`setEnvCollection(collection, remoteName)`), so stubs without
 an `env` read as local; `windowKind` decides (`local`, `wsl` and an empty name say nothing). An AGENT's
 `exportEnv` is refused outright in such a window: `credentialExportEnvAction({ …, remoteName })` answers
-from `validate` — before the consent modal — `not_supported` with the one stable `EXPORT_REFUSED`
+from `validate` — before the consent modal — `denied` (403) with the one stable `EXPORT_REFUSED`
 sentence (`brokerProtocol.ts`), through the `code` a `validate` result may now name (absent, it is still
-`invalid_request`). `not_supported` and not `invalid_request`, because the MCP walk moves on only from
-a `not_found` and would otherwise tell the agent its request was wrong. `exportRefused.test.ts` drives
-it through the real broker on `/v1/use/` and `/v1/alias/`. Whether the persisted collection reaches
+`invalid_request`). `denied` and neither `not_supported` nor `invalid_request`: `not_supported` is a 404,
+which the CLI reads as "not this window" and, with no other window, as exit 93 for an entry that exists;
+`invalid_request` tells the agent its own request was wrong. A 403 stops both clients' walks. The sentence
+claims only that the value would land in another computer's terminals, and points at a stored command the
+person already has; it does not say no secret leaves the vault's computer (a person may put a value on the
+server) and does not promise a `creds://` reference works before E3. `exportRefused.test.ts` drives
+it through the real broker on `/v1/use/exec`, `/v1/alias/exec` and the real `exportEnv` routes, and
+`exportWiring.test.ts` reads `extension.ts` to hold that the window passes `vscode.env.remoteName` to both. Whether the persisted collection reaches
 new remote terminals at all is the M4 measurement in `todo/PLAN_remote_bridge_scoped_E1.md`, taken by a
 person and not yet recorded. The form's row
 label reads *"Expose … in new integrated terminals as env variable"* with `ENV_ROW_HINT` under every
@@ -2506,7 +2512,7 @@ needed **no change** — the seam worked as designed. `runBounded` was extracted
 | `script` | `run` | child env (`resolveScriptEnv`) | body ignored; content-trust required |
 | `terminal` | `run` | none — no secret field | body ignored; the ONE `shell: true` caller, safe because no agent text is in the line |
 | `db` | `query` | `PGPASSWORD` / `MYSQL_PWD` / `SQLCMDPASSWORD` | only host/port/db on the command line — argv is world-readable in the process list |
-| `credential` | `exportEnv` | the env collection | answers with NAMES; narrow, and the consent text says so. Refused in `validate` (`not_supported`, `EXPORT_REFUSED`) in a window whose terminals run on another computer (Remote-SSH, container) |
+| `credential` | `exportEnv` | the env collection | answers with NAMES; narrow, and the consent text says so. Refused in `validate` (403 `denied`, `EXPORT_REFUSED`) in a window whose terminals run on another computer (Remote-SSH, container) |
 | `vpn` | `up`/`down` | materialized config | opens the human's terminal — no headless child can answer a UAC prompt |
 
 **MongoDB is refused, deliberately.** `mongosh` has no password environment variable and

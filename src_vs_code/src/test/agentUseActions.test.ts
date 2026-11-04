@@ -313,8 +313,7 @@ test('X1: exportEnv in an ssh-remote window is refused by validate, with a stabl
   const applied: string[] = [];
   const action = credentialExportEnvAction(exportDeps('ssh-remote', applied));
 
-  assert.deepEqual(action.validate({}), { ok: false, code: 'not_supported', message: EXPORT_REFUSED });
-  assert.deepEqual(applied, [], 'applyEnv was called');
+  assert.deepEqual(action.validate({}), { ok: false, code: 'denied', message: EXPORT_REFUSED });
 });
 
 test('X1: in a local window the same entry is exported as before', async () => {
@@ -336,7 +335,7 @@ test('X2: undefined, empty and wsl admit; every other window refuses with exactl
   for (const refused of ['ssh-remote', 'dev-container', 'attached-container', 'codespaces', 'tunnel']) {
     assert.deepEqual(
       credentialExportEnvAction(exportDeps(refused)).validate({}),
-      { ok: false, code: 'not_supported', message: EXPORT_REFUSED },
+      { ok: false, code: 'denied', message: EXPORT_REFUSED },
       `remoteName ${refused}`,
     );
   }

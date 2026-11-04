@@ -91,8 +91,9 @@ export interface UseAction {
 
   /**
    * `code` is the error code the refusal answers with; absent, it is `invalid_request` — a malformed
-   * body. A well-formed request this window will not serve (an export into another computer's
-   * terminals) names `not_supported`, so a client does not read it as its own mistake.
+   * body. A well-formed request this window refuses on purpose (an export into another computer's
+   * terminals) names `denied`: a client does not read it as its own mistake, and, unlike a 404, does
+   * not read it as "this window does not have the entry" and go looking in the next one.
    */
   validate(body: unknown): { ok: true } | { ok: false; message: string; code?: ErrorCode };
   /** One line for the first-use consent dialog (e.g. the command about to run). */

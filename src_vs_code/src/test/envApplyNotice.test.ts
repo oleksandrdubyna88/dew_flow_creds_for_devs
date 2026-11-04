@@ -69,10 +69,10 @@ test('a save that bound nothing says nothing at all', () => {
  */
 
 const REACHES_ONE =
-  '$X reaches another computer: the new terminals of this window run there (ssh-remote), so each one starts on that computer with the value in its environment, where any process of your login can read it. To take the value back, remove its binding from the entry; terminals already open keep it until they close.';
+  '$X reaches another computer: the new terminals of this window run there (ssh-remote), so each one starts on that computer with the value in its environment, where any process running under your login can read it. The value stays until you remove the binding through Edit in this window; deleting the entry does not remove it. Terminals already open keep it until they close.';
 
 const REACHES_TWO =
-  '$X, $Y reach another computer: the new terminals of this window run there (ssh-remote), so each one starts on that computer with the values in their environment, where any process of your login can read it. To take a value back, remove its binding from the entry; terminals already open keep it until they close.';
+  '$X, $Y reach another computer: the new terminals of this window run there (ssh-remote), so each one starts on that computer with the values in their environment, where any process running under your login can read them. The values stay until you remove their bindings through Edit in this window; deleting the entry does not remove them. Terminals already open keep them until they close.';
 
 test('W1: one name written in an ssh-remote window: info as today, and exactly the one-name warning', () => {
   const notice = envAppliedNotice({ written: ['X'], withheld: [] }, 'ssh-remote');

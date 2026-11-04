@@ -52,8 +52,10 @@ export function envAppliedNotice(result: EnvApplyResult, remoteName?: string): E
  *
  * <p>The environment collection is applied to the terminals of the window, and in a Remote-SSH or a
  * container window those run on the remote side: the value is written into the environment of every
- * new terminal there, where any process of the person's login can read it. It is still written — the
- * person chose the binding — and the person is told where it goes and how to take it back. A WSL
+ * new terminal there, where any process running under the person's login can read it. It is still
+ * written — the person chose the binding — and the person is told where it goes and how to take it
+ * back: removing the binding through Edit in this window, because deleting the entry does not remove
+ * the value (no delete path applies the bindings; recorded for E4). A WSL
  * window is this machine's own side (`windowKind` says `wsl`), so it says nothing.</p>
  */
 function reachSentences(written: readonly string[], remoteName: string | undefined): string[] {
@@ -62,14 +64,15 @@ function reachSentences(written: readonly string[], remoteName: string | undefin
 
 function reachSentence(written: readonly string[], remoteName: string): string {
   const list = written.map((name) => `$${name}`).join(', ');
-  const [reaches, values, takeBack] =
+  const [reaches, values, them, stay, bindings, doesNot] =
     written.length > 1
-      ? ['reach', 'the values in their environment', 'a value']
-      : ['reaches', 'the value in its environment', 'the value'];
+      ? ['reach', 'the values in their environment', 'them', 'values stay', 'their bindings', 'them']
+      : ['reaches', 'the value in its environment', 'it', 'value stays', 'the binding', 'it'];
   return (
     `${list} ${reaches} another computer: the new terminals of this window run there (${remoteName}), ` +
-      `so each one starts on that computer with ${values}, where any process of your login can read it. ` +
-      `To take ${takeBack} back, remove its binding from the entry; terminals already open keep it until they close.`
+      `so each one starts on that computer with ${values}, where any process running under your login can read ${them}. ` +
+      `The ${stay} until you remove ${bindings} through Edit in this window; deleting the entry does not remove ${doesNot}. ` +
+      `Terminals already open keep ${them} until they close.`
   );
 }
 

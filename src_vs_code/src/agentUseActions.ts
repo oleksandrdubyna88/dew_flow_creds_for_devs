@@ -244,8 +244,9 @@ export function terminalRunAction(deps: AgentUseDeps & { onPath?: (exe: string) 
  * outside VS Code gets nothing from it.</p>
  *
  * <p>Refused in `validate` — before the consent modal — in a window whose terminals run on another
- * computer (Remote-SSH, a container): there the value would land on that computer, and no secret
- * leaves the computer that holds the vault. `not_supported`, the stable `EXPORT_REFUSED` sentence.</p>
+ * computer (Remote-SSH, a container): there the value would land on that computer. `denied`, with the
+ * stable `EXPORT_REFUSED` sentence. Not `not_supported`: that is a 404, which the CLI reads as "this
+ * window does not have the entry" and walks on from, and as exit 93 for an entry that exists.</p>
  */
 export function credentialExportEnvAction(deps: AgentUseDeps & { remoteName: string | undefined }): UseAction {
   return {
@@ -257,7 +258,7 @@ export function credentialExportEnvAction(deps: AgentUseDeps & { remoteName: str
       const body = result.body as EnvExportResponseBody;
       return `${body.written.length} variable(s)`;
     },
-    validate: () => (windowKind(deps.remoteName) === 'other' ? { ok: false, code: 'not_supported', message: EXPORT_REFUSED } : { ok: true }),
+    validate: () => (windowKind(deps.remoteName) === 'other' ? { ok: false, code: 'denied', message: EXPORT_REFUSED } : { ok: true }),
     summarize: () =>
       'into integrated terminals opened after this, in this VS Code window only — a shell outside VS Code is unaffected',
     async run(ctx): Promise<UseActionResult> {

@@ -89,21 +89,25 @@ Closes D7, the one road a password can take today. Independent of the other thre
 1. **`brokerProtocol.ts`**, beside `INTERNAL_FAILURE` (`:95`), one exported constant. The same words on every door:
 
    ```text
-   EXPORT_REFUSED = 'An agent cannot export a secret here: the value would land on another computer (this window's terminals, or the server behind a Remote Bridge), and no secret leaves the computer that holds the vault. Use a stored command instead: the agent gets only its output.'
+   EXPORT_REFUSED = 'An agent cannot export a secret here: the value would land in the terminals of another computer (this window's, or the server behind a Remote Bridge). Where the person has stored a command for the job, run that instead: the agent gets only its output.'
    ```
+
+   It claims two things only. It does not say "no secret leaves the computer that holds the vault": owner decision 5 lets a person put a value on the server, so that sentence would be false. And it does not say "use a stored command" flatly: no agent executor resolves a `creds://` reference before E3 (`agentUseActions.ts:150,201,221` run the text as saved), so a stored command cannot be promised to carry a vault value. It points at a command the person already has.
 
 2. **`useActions.ts:90`.** `validate` may name a code: `{ ok: true } | { ok: false; message: string; code?: ErrorCode }`. Import `ErrorCode` as a type.
 3. **`credsAgentServer.ts:550`.** `this.respondError(res, validated.code ?? 'invalid_request', validated.message, …)`. Zero added lines; every existing action sends no code, so nothing else changes.
 4. **`agentUseActions.ts:245-274`.** `credentialExportEnvAction(deps: AgentUseDeps & { remoteName: string | undefined })`. Its `validate` (`:255`) becomes:
-   `windowKind(deps.remoteName) === 'other' ? { ok: false, code: 'not_supported', message: EXPORT_REFUSED } : { ok: true }`. `windowKind` is `hostShell.ts:154`, already a neighbour (`agentUseActions.ts:20`).
-   In `validate` and not in `run`, because validation runs before the modal (`credsAgentServer.ts:515,524`): a person is never asked to allow something that will be refused. `not_supported` and not `invalid_request`, because the walk in `src_mcp/src/Windows.cs:161` moves on only from a `not_found`, and `UseTools.cs:502` would tell the agent the request was wrong.
+   `windowKind(deps.remoteName) === 'other' ? { ok: false, code: 'denied', message: EXPORT_REFUSED } : { ok: true }`. `windowKind` is `hostShell.ts:154`, already a neighbour (`agentUseActions.ts:20`).
+   In `validate` and not in `run`, because validation runs before the modal (`credsAgentServer.ts:515,524`): a person is never asked to allow something that will be refused. `denied` (403), and neither `not_supported` nor `invalid_request`. `not_supported` is a 404 (`brokerProtocol.ts:46`): the CLI reads every 404 as "this window does not have that name" and tries the next window (`src_cli/src/Program.cs:209`), and if none answers otherwise it says no window has the entry enabled and exits 93, `entityGone` (`Program.cs:219-220`; `ExitForError` maps `not_supported` to the same code), for an entry that exists. `invalid_request` would tell the agent its own request was wrong (`src_mcp/src/UseTools.cs:502`). `denied` stops the walk on both clients: the CLI falls through only on a 404, so a 403 goes to `ReportError` and exit `denied` (`Program.cs:209-216,451`); the MCP walk moves on only from `not_found` (`Windows.cs:160-161`, `MeansNotMine`); and `UseTools.cs:503` hints "Ask the person to allow it, or … unless the message says it cannot be done by an agent at all, in which case the person does it themselves", which is the case. Checked by reading those lines; no client was run, and `src_cli` is untouched.
 5. **`extension.ts:640`,** same line count: `useActions.register(credentialExportEnvAction({ ...agentDeps, remoteName: vscode.env.remoteName }));`
 6. **`envApplyNotice.ts:36`.** `envAppliedNotice(result, remoteName?: string)`. When `written` is not empty and `windowKind(remoteName) === 'other'`, the `warning` gains this sentence, after any withheld sentences:
 
    ```text
-   One name:  $X reaches another computer: the new terminals of this window run there (ssh-remote), so each one starts on that computer with the value in its environment, where any process of your login can read it. To take the value back, remove its binding from the entry; terminals already open keep it until they close.
-   Two names: $X, $Y reach another computer: … with the values in their environment … To take a value back, remove its binding from the entry; …
+   One name:  $X reaches another computer: the new terminals of this window run there (ssh-remote), so each one starts on that computer with the value in its environment, where any process running under your login can read it. The value stays until you remove the binding through Edit in this window; deleting the entry does not remove it. Terminals already open keep it until they close.
+   Two names: $X, $Y reach another computer: the new terminals of this window run there (ssh-remote), so each one starts on that computer with the values in their environment, where any process running under your login can read them. The values stay until you remove their bindings through Edit in this window; deleting the entry does not remove them. Terminals already open keep them until they close.
    ```
+
+   "Through Edit in this window" because that is the road that applies the bindings to the collection; deleting the entry applies nothing (a gap, recorded below for E4), so the sentence must not let a person believe a delete takes the value back.
 
    `(ssh-remote)` is the `remoteName` given. `writtenSentence` (`:44`) is unchanged, so the person still sees "set for NEW integrated terminals". The value is still written: owner decision 5.
 7. **`envCollectionRef.ts:12,34`.** `setEnvCollection(value, remoteName?: string)` keeps the second argument in a module variable, and `showEnvNotice` passes it on. A module variable rather than `vscode.env.remoteName` at the call, because the stubs in `test/revisionRestore.test.ts`, `test/addEntityPin.test.ts` and others have no `env` and call `showEnvNotice` through real code; they stay untouched and read as local.
@@ -121,16 +125,17 @@ In `test/agentUseActions.test.ts` and `test/envApplyNotice.test.ts`; `X3` in a n
 
 | # | Scenario | Expected |
 |---|---|---|
-| X1 | **RED first.** `credentialExportEnvAction({… remoteName: 'ssh-remote'})`, an entry with a binding | Today `applyEnv` is called and `written` comes back: watch that. After: `validate` answers `{ok:false, code:'not_supported', message: EXPORT_REFUSED}`, and `applyEnv` was never called |
+| X1 | **RED first.** `credentialExportEnvAction({… remoteName: 'ssh-remote'})`, an entry with a binding | Today `applyEnv` is called and `written` comes back: watch that. After: `validate` answers `{ok:false, code:'denied', message: EXPORT_REFUSED}`. That `applyEnv` was never called is asserted in X3, through the broker: `validate` alone cannot show it |
 | X2 | The table | `undefined`, `''`, `'wsl'` admit. `'ssh-remote'`, `'dev-container'`, `'attached-container'`, `'codespaces'`, and an unknown `'tunnel'` refuse with exactly `EXPORT_REFUSED`. The sentence does not vary with the name |
-| X3 | Through the real broker: `world({ realAction: credentialExportEnvAction(…), supports: ['exec'], alias: … })` | On `/v1/use/exec` with a token, and `/v1/alias/exec`: status 404, `error.code === 'not_supported'`, message `EXPORT_REFUSED`; `w.dialogs` is empty; `applyEnv` not called |
+| X3 | Through the real broker: `world({ realAction: credentialExportEnvAction(…), supports: ['exec'], alias: … })`, and on the real route: `world({ kind: 'credential', realAction: …, supports: ['exportEnv'] })` | On `/v1/use/exec` with a token, `/v1/alias/exec`, `/v1/use/exportEnv` with a `credential` token, and `/v1/mcp/use/exportEnv`: status 403, `error.code === 'denied'`, message `EXPORT_REFUSED`; `w.dialogs` is empty; `applyEnv` not called. Control: the same `/v1/use/exportEnv` in a local window answers 200 `{written}` after one dialog |
+| X5 | The window passes its real remote name (`test/exportWiring.test.ts`) | Reading `extension.ts`: `setEnvCollection(…, vscode.env.remoteName)` and `credentialExportEnvAction({ ...agentDeps, remoteName: vscode.env.remoteName })` each appear once, and a companion shows the scan matches the real lines and not the argument-less forms. Deleting either argument turns it RED |
 | X4 | The other actions are unchanged by the new optional code | An action whose `validate` sends no code still answers `invalid_request` (existing `validate` cases in `test/credsAgentServer.test.ts` stay green with no edit) |
 | W1 | **RED first.** `envAppliedNotice({written:['X'],withheld:[]}, 'ssh-remote')` | `info` as today; `warning` is exactly the one-name sentence |
 | W2 | Two names, and a withheld name beside them | Exactly the two-name sentence, after the withheld sentence |
 | W3 | `undefined`, `'wsl'`, and `written: []` in `ssh-remote` | No such sentence. `envAppliedNotice(result)` with one argument equals today's answer |
 | W4 | `setEnvCollection(env, 'ssh-remote')`, then a real `showEnvNotice` | The stubbed `showWarningMessage` got the sentence and the collection was still written (`test/envSaveNotice.test.ts:272-275` shows the road) |
 
-Commands: the common block, with `<name>` = `agentUseActions`, `envApplyNotice`, `exportRefused`, `envSaveNotice`.
+Commands: the common block, with `<name>` = `agentUseActions`, `envApplyNotice`, `exportRefused`, `exportWiring`, `envSaveNotice`.
 
 ### M4 — how the person measures it, and where the result goes
 
@@ -141,7 +146,7 @@ CI has no Remote-SSH window, so this is measured by a person, and it needs no bu
 3. In the same window open a **new** integrated terminal. It must be on the server: run `hostname`.
 4. Run `printenv CREDS_M4_CANARY`.
 5. Reload the window, open another new terminal, and run step 4 again: the collection persists across reloads (`envApply.ts:19-21`), and this says whether the persisted value reaches it too.
-6. Delete the entry and reload. Run step 4 a third time to confirm the value went.
+6. Open the entry's **Edit**, in the same window, switch the binding off and save, then reload. Run step 4 a third time to confirm the value went. (Deleting the entry is not the road: it applies no bindings, so the value is expected to stay. That is the gap recorded below for E4.)
 
 **The wording above is written for the case it does reach**, which is the safe assumption. If steps 4 and 5 print nothing: delete the sentence, W1, W2 and W4, keep `EXPORT_REFUSED` and X1-X4 (§4.8: the refusal stays), and say so in the PR. Record the result here, in the table below, in the same commit. E4 carries it to §7 of the parent at promotion.
 
@@ -150,7 +155,7 @@ CI has no Remote-SSH window, so this is measured by a person, and it needs no bu
 | Date, VS Code version, Remote-SSH version, `hostname` | not measured yet |
 | Step 4, new terminal | not measured yet |
 | Step 5, after a reload | not measured yet |
-| Step 6, after the binding is gone | not measured yet |
+| Step 6, after the binding is removed through Edit in the same window and a reload | not measured yet |
 
 ---
 
@@ -307,7 +312,7 @@ The router has one tail: every call that performs something passes `perform` (`c
    | `GET /v1/health`, `GET /v1/mcp/kinds`, `GET /v1/mcp/kind-help` | served: no vault data |
    | `GET /v1/aliases`, `GET /v1/mcp/entries`, `GET /v1/mcp/config-snippet`, `GET /v1/mcp/folders` | served, walled |
    | `POST /v1/mcp/use/exec`, `/query`; `POST /v1/alias/exec`, `/query`; `POST /v1/use/exec`, `/query` | served, walled. Both already run in the right place: `ssh` from the laptop to the entry, a query from the laptop (owner decision 8) |
-   | `…/exportEnv` on all three prefixes | refused, `not_supported`, `EXPORT_REFUSED`: the allow-list refuses first, in the action's words (§4.8) |
+   | `…/exportEnv` on all three prefixes | refused, 403 `denied`, `EXPORT_REFUSED`: the allow-list refuses first, in the action's words (§4.8) |
    | `…/run` on all three | refused, `BRIDGE_NOT_SERVED`, until E3.1. Today it would run on the laptop's `process.platform` (D6). E2 opens the flow and E3 fixes the site, and any extension tag between them would ship that defect through a bridge |
    | `POST /v1/config/read`, `POST /v1/mcp/create`, `POST /v1/mcp/folder/{create,edit,delete}` | refused, `BRIDGE_NOT_SERVED`: §4.2's never-list |
    | `POST /v1/mcp/delete`, `…/rotate`, `…/terminal`, `…/up`, `…/down` | refused, `BRIDGE_NOT_SERVED`: not named by §1 or §9, so default deny decides. `up`/`down` are also §8's new todo |
@@ -344,7 +349,7 @@ The router has one tail: every call that performs something passes `perform` (`c
 | S3 | **The walk.** Every route through a bridge scoped to `e1`, with `e-out` real and usable in the same world | Every performing route with `e-out`, its alias, and its token: never 200, `w.ran` empty, `w.dialogs` empty. Every read: 200 and the raw text contains neither `e-out` nor its name nor its alias. A served route with `e1`: reaches the action after Allow (`w.ran` has `e1`) |
 | S4 | **Negative control.** The same walk through the main port door | The walk's finding list is **not** empty, and names `e-out`. Kept for good: it proves the walk can see a leak, and is what the walk's RED looks like |
 | S5 | **Indistinguishable.** Two worlds: A has `x` out of scope, B has no `x` at all | For every route, the same request answers the same status and the same body bytes in both. Token: A's real out-of-scope token, live and expired, against B's made-up one. Neither takes a throttle slot; a following call is not refused for lack of one |
-| S6 | The refused routes | `exportEnv` on `/v1/use/`, `/v1/alias/`, `/v1/mcp/use/`: 404, `not_supported`, exactly `EXPORT_REFUSED`, for `e1` and `e-out` alike. `/v1/config/read` with a valid key: 404, `BRIDGE_NOT_SERVED`, and the `configRoute` hook was never called. `run`, `rotate`, `terminal`, `up`, `down`, delete, create, folder verbs: 404, `BRIDGE_NOT_SERVED`, `Connection: close`, no dialog. `GET /v1/use/exec`: the same |
+| S6 | The refused routes | `exportEnv` on `/v1/use/`, `/v1/alias/`, `/v1/mcp/use/`: 403, `denied`, exactly `EXPORT_REFUSED`, for `e1` and `e-out` alike. `/v1/config/read` with a valid key: 404, `BRIDGE_NOT_SERVED`, and the `configRoute` hook was never called. `run`, `rotate`, `terminal`, `up`, `down`, delete, create, folder verbs: 404, `BRIDGE_NOT_SERVED`, `Connection: close`, no dialog. `GET /v1/use/exec`: the same |
 | S7 | Context is the only identity | Two listeners, A scoped to `e1`, B to `e2`. `e2` through A is refused and through B works, whatever the body, header or query claims (`serverEntityId`, `bridgeId`, `accountId`, `caller.agent` set to B's). A's key on B's port: WK |
 | S8 | **Transitive, RED first** (§7): a reference outside the scope | Stored line `deploy creds://a@x/Other/db/password`: `denied`, the exact sentence, no dialog, `w.ran` empty. Through MCP, alias and token alike. RED against E1.2's code once `exec` is on the table |
 | S9 | All reference failures read alike | Out of scope, no such entity, no such account, ambiguous: the same sentence shape, with only the reference text differing, and no candidate path in it. In a script body, a script variable, a command, a command argument, a disabled argument. All targets in scope: the call proceeds |
@@ -441,7 +446,7 @@ Commands: the common block, with `<name>` = `bridgeConsent`, `mcpConsentPolicy`,
 | Out of scope is indistinguishable from not-found | E1.3 | S4, S5 |
 | `stampKey` third segment; nothing breaks on a two-segment key | E1.4 | C1, C2, C3 |
 | Consent through A silences neither B nor local | E1.3 for tokens, E1.4 for stamps | S14, C4, C6 |
-| One stable export sentence, on the bridge door and in an `other` window | E1.1 writes it, E1.3 refuses first in its words | X1-X3, S6 |
+| One stable export sentence, on the bridge door and in an `other` window | E1.1 writes it, E1.3 refuses first in its words | X1-X3, X5, S6 |
 | The person's warning, written for the case M4 reaches | E1.1 | W1-W4 unless M4 shows the value does not reach those terminals, then W3 only; the M4 table |
 
 ## Gaps found in the parent (recorded, not fixed there)
@@ -461,13 +466,17 @@ Only the `Cornerstones:` line of the parent changes. These are decisions this do
 11. **§7's door table reads as if a key refusal could come after `Host`.** §4.5 needs the reverse, so an old `creds` hears "update".
 12. **Not this plan's, for a todo:** `LINE` in `agentAuditLog.ts:135-136` accepts `via (token|alias|mcp)` and not `config`, though `AuditDoor` has it and `credsAgentServer.ts:303` writes it, so a config line reads back as `undefined`. Read, not run. E1 leaves it.
 
+13. **For E2.1: `creds env <name>` cannot reach `exportEnv` today, and the CLI misreads a refusal.** `WireVerb` (`src_cli/src/CommandLine.cs:78`) maps only `ssh` to `exec`, so `creds env <name>` posts to `/v1/alias/env`, while the action the broker registers is `exportEnv`: the broker answers `not_supported`, a 404; and `Program.cs:209` falls through on every 404 and then tells the agent no window has the entry enabled (exit 93). E2.1 should fall through only on the `not_found` code, as `src_mcp/src/Windows.cs:160-161` does; derive the alias action from the contract and not from a second hand-kept map; and add a client itest (`creds-cli-itest.cjs`) that runs `creds env` against a real broker, so the verb is shown to reach the route. E1 leaves `src_cli` untouched, and E1.1's `denied` is chosen so that the refusal is heard once the CLI does reach it.
+14. **A new todo for E4: deleting an entry leaves its bound values in the environment collection.** No delete or trash path calls `applyEnvBindings`, so a value written by `ENV` or by a save stays in `context.environmentVariableCollection` after the entry is gone, until a person removes the binding through Edit or the collection is cleared. Values an agent exported before E1.1 stay the same way. The warning says so ("deleting the entry does not remove it"), and M4 step 6 measures the Edit road. E4 should open the todo and decide whether delete and trash apply the bindings, and whether to clear collection names no entry owns.
+15. **`brokerMcpDoor.ts:215-217` journals "allowed without a prompt" before the refusal.** `quietly(door, grant, read.target, caller, prompts)` writes the audit line when the door settles the grant, and the action's `validate` runs after it, so when the entry's consent is already remembered, an export that `EXPORT_REFUSED` then refuses on `/v1/mcp/use/exportEnv` reads in the journal as "allowed without a prompt" and nothing else. Not fixed here; the refusal itself and the absence of a dialog are held by X3.
+
 ## Order
 
 E1.1, then E1.2, E1.3 after Fable's spec, E1.4. E1.1 is independent and may go first or in parallel, but all four are one commit on this branch. The epic's `Done when`, as a checklist:
 
 - [ ] Door table, scope walk, transitive and consent pass (D1, S3-S5, S8-S12, C4-C8).
 - [ ] The walk refuses every contract route not on the allow-list, and fails on an unnamed one (S1, S2, S6).
-- [ ] An agent's export is refused with one stable sentence; the person's `Set env` warns (X1-X3, S6, and W1-W4 unless M4 removed them, as that section says).
+- [ ] An agent's export is refused with one stable sentence; the person's `Set env` warns (X1-X3, X5, S6, and W1-W4 unless M4 removed them, as that section says).
 - [ ] The two existing doors are unchanged, and `creds-cli-itest.cjs` is green and untouched (R3, the pre-PR block).
 - [ ] M4 recorded in the table above, by the person.
 - [ ] Every RED-first test's failure and pass are in the summary; lint, ratchet and the pre-PR block are green; `coai` plan and code gates at `proceed`.

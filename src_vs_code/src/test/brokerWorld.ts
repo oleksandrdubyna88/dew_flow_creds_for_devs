@@ -28,6 +28,8 @@ interface Ran {
 }
 
 interface World {
+  /** The entity kind this world's grants and MCP lookups point at; `ssh` unless a test serves another. */
+  kind: string;
   mod: Broker;
   server: InstanceType<Broker['CredsAgentServer']>;
   dialogs: string[];
@@ -163,8 +165,15 @@ function world(options: {
    * action a route resolves to; the action's own `run` is the subject.
    */
   realAction?: unknown;
+  /**
+   * The entity kind the grants, the alias and the MCP lookup carry, and the registry resolves the
+   * actions for. `ssh` unless a test serves another kind's real action under its own name (E1.1, X3:
+   * the `credential` kind's `exportEnv`, on the route a client actually posts to).
+   */
+  kind?: string;
 }): World {
   const w: World = {
+    kind: options.kind ?? 'ssh',
     mod: undefined as never,
     server: undefined as never,
     dialogs: [],
@@ -207,7 +216,7 @@ function world(options: {
   const supported = options.supports ?? ['exec'];
   const action = (name: string): unknown => options.realAction ?? scripted(name);
   const scripted = (name: string): unknown => ({
-    kind: 'ssh',
+    kind: w.kind,
     action: name,
     mutatesSecrets: options.rotatesTo !== undefined,
     verb: `run a command on`,
@@ -228,7 +237,7 @@ function world(options: {
   });
   const registry = {
     resolve: (kind: string, name: string): unknown =>
-      kind === 'ssh' && supported.includes(name) ? action(name) : undefined,
+      kind === w.kind && supported.includes(name) ? action(name) : undefined,
     actionsFor: (): unknown[] => supported.map((n) => action(n)),
   };
 
@@ -261,7 +270,7 @@ function hooksFor(w: World, options: Parameters<typeof world>[0]): Record<string
     listAliases: options.aliasList === undefined ? undefined : () => options.aliasList ?? [],
     listMcpEntries: mcpEntriesFor(options.mcpEntries),
     visibleConfig: options.visibleConfig,
-    resolveMcpUse: options.mcpResolve ?? mcpUseFor(options.mcpUse, options.mcpPreConsented),
+    resolveMcpUse: options.mcpResolve ?? mcpUseFor(options.mcpUse, options.mcpPreConsented, w.kind),
     moveToTrash: trashFor(w, options.trash),
     mcpCreate: createFor(w, options.create, options.settle),
     rememberMcpConsent: (accountId: string, entityId: string, rungs: string): Promise<void> => {
@@ -398,6 +407,7 @@ function mcpEntriesFor(
 function mcpUseFor(
   verdict: 'usable' | 'closed' | undefined,
   preConsented = false,
+  kind = 'ssh',
 ): ((id: string, action: string) => McpUseLookup) | undefined {
   if (verdict === undefined) {
     return undefined;
@@ -410,7 +420,7 @@ function mcpUseFor(
       ? { kind: 'closed', entityName: 'prod', needed: action === 'rotate' ? 'edit' : 'use' }
       : {
           kind: 'usable',
-          target: { accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh' },
+          target: { accountId: 'a1', entityId: 'e1', entityName: 'prod', kind },
           preConsented,
           // The ladder this verdict was reached under. A lookup that omits it reads as the empty
           // string, which matches no resolved ladder and so refuses the write — fail-closed, and
@@ -521,7 +531,7 @@ async function call(
 
 /** Mint a grant and hand back the port and secret the CLI would use. */
 async function share(w: World): Promise<{ port: number; secret: string }> {
-  const token = await w.server.share('a1', 'e1', 'prod', 'ssh');
+  const token = await w.server.share('a1', 'e1', 'prod', w.kind);
   const dot = token.indexOf('.');
   return { port: Number(token.slice(0, dot)), secret: token.slice(dot + 1) };
 }

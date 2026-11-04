@@ -9,11 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed — an agent cannot export a secret into another computer's terminals
 
 - **`creds env` (an agent's `exportEnv`) is refused in a Remote-SSH or container window**, with one stable
-  sentence and the code `not_supported`, before any prompt: the value would land on another computer. Use a stored
-  command instead; the agent then gets only its output. A local or WSL window is unchanged.
+  sentence and the code `denied`, before any prompt: the value would land in the terminals of another computer.
+  Where you have stored a command for the job, an agent can run that instead; it then gets only the output. A
+  local or WSL window is unchanged.
 - **Saving an entry with an environment binding in such a window now warns** that the new terminals of the window
-  run on another computer, where any process of your login can read the value, and how to take it back. The value
-  is still written. The help article on the CLI says the same in all five languages.
+  run on another computer, where any process running under your login can read the value; that the value stays
+  until you remove the binding through Edit in this window; and that deleting the entry does not remove it. The
+  value is still written.
+- **The CLI help article says that `env` is refused there** and points to `run` and `script` instead, in all five
+  languages. It does not describe the save warning.
 
 ## [1.16.0] — 2026-10-22 — Allow longer…: SSH logins sign without asking for 1, 4, 8 or 12 hours
 

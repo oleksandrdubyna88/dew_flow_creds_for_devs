@@ -193,7 +193,7 @@ export const ES_BODIES: Readonly<Record<string, HelpBody>> = {
     whatItIs: "Un binario nativo que usa una credencial de la caja fuerte desde cualquier terminal — `creds ssh prod-db -- uname -a` — sin recibirla jamás. La ventana dueña de la entrada realiza la acción y devuelve sólo la salida.",
     why: "No todo ocurre dentro de VS Code, y pegar tokens en shells es justamente lo que este producto existe para terminar.",
     setup: "Install… → Install `creds`. En una entrada: «Enable CLI Access…» acuña el nombre que usted escribirá.",
-    usage: "Verbos: ssh, terminal, run, script, db, env, config, vpn-up, vpn-down, ls — y `creds relay` dentro de WSL para el agente SSH. El visor de la entrada lista sus nombres con el comando exacto listo para copiar. `env` se rechaza en una ventana Remote-SSH o de contenedor: el valor acabaría en otro equipo. Usa en su lugar un comando guardado (`terminal`, `script`).",
+    usage: "Verbos: ssh, terminal, run, script, db, env, config, vpn-up, vpn-down, ls — y `creds relay` dentro de WSL para el agente SSH. El visor de la entrada lista sus nombres con el comando exacto listo para copiar. `env` se rechaza en una ventana Remote-SSH o de contenedor: el valor acabaría en otro equipo. Use en su lugar un comando guardado (`run`, `script`).",
     whatCanGoWrong: "La primera llamada pregunta a la persona en VS Code — eso es el diseño, no un cuelgue. «No open window»: arranque VS Code, o revise el acceso CLI de la entrada. En un host Remote-SSH hace falta además el puente (vea Remote Bridge).",
   },
   'remote-bridge': {

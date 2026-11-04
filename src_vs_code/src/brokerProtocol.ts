@@ -99,12 +99,15 @@ export const INTERNAL_FAILURE = 'The action failed inside this window. See the a
  *
  * <p>One sentence on every door, so a client can match it and a person can search for it. The export
  * writes the value into the environment collection of the window, and in a Remote-SSH (or container)
- * window the terminals that collection feeds run on the remote computer: the value would leave the
- * computer that holds the vault. A stored command is the way round it, because the agent then gets
- * only the command's output. Refused in `validate`, so no modal asks a person to allow it first.</p>
+ * window the terminals that collection feeds run on the remote computer, so the value would land
+ * there. It does not say that no secret ever reaches the server, because a person may put a value
+ * there on purpose (owner decision 5), and it does not say that a stored command can use a vault
+ * value: no agent executor resolves a `creds://` reference before E3, so it only points at a stored
+ * command the person already has. The agent then gets only the command's output. Refused in
+ * `validate`, so no modal asks a person to allow it first.</p>
  */
 export const EXPORT_REFUSED =
-  "An agent cannot export a secret here: the value would land on another computer (this window's terminals, or the server behind a Remote Bridge), and no secret leaves the computer that holds the vault. Use a stored command instead: the agent gets only its output.";
+  "An agent cannot export a secret here: the value would land in the terminals of another computer (this window's, or the server behind a Remote Bridge). Where the person has stored a command for the job, run that instead: the agent gets only its output.";
 
 /**
  * What an agent is told when this window cannot read the values it would have to redact.
