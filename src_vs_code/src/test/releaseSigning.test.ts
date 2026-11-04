@@ -346,3 +346,50 @@ test('T7 no job that calls the signing workflow passes `environment`', () => {
     assert.equal(/^ {4}environment:/m.test(body), false, `${name} must not have a job-level environment block`);
   }
 });
+
+/** The lines under `on.workflow_dispatch.inputs:` (6 spaces deep and more), up to the next key of the header. */
+function dispatchInputLines(head: string): string[] {
+  const at = head.search(/^ {2}workflow_dispatch:\s*$/m);
+  assert.ok(at >= 0, 'release.yml has no `workflow_dispatch:` trigger');
+  const lines = head.slice(at).split('\n').slice(1);
+  const inputsAt = lines.findIndex((l) => /^ {4}inputs:\s*$/.test(l));
+  assert.ok(inputsAt >= 0, 'workflow_dispatch has no `inputs:`');
+  const block = lines.slice(inputsAt + 1);
+  const end = block.findIndex((l) => l.trim() !== '' && !/^ {6}/.test(l));
+  return end < 0 ? block : block.slice(0, end);
+}
+
+/** The keys (8 spaces deep) of one input block as key → value. */
+function inputKeys(lines: string[]): Record<string, string> {
+  const pairs = lines
+    .map((l) => /^ {8}([A-Za-z0-9_-]+):[ \t]*(.*)$/.exec(l))
+    .filter((m): m is RegExpExecArray => m !== null)
+    .map((m): [string, string] => [m[1]!, m[2]!.trim()]);
+  return Object.fromEntries(pairs);
+}
+
+/** The input blocks of the dispatch: input name → its keys. */
+function dispatchInputs(head: string): Map<string, Record<string, string>> {
+  const parts = dispatchInputLines(head)
+    .join('\n')
+    .split(/^(?= {6}[A-Za-z0-9_-]+:\s*$)/m)
+    .filter((part) => part.trim() !== '');
+  return new Map(
+    parts.map((part): [string, Record<string, string>] => {
+      const [first = '', ...rest] = part.split('\n');
+      return [first.trim().replace(/:$/, ''), inputKeys(rest)];
+    }),
+  );
+}
+
+test('T8 the dispatch input `required` is a boolean that defaults to false', () => {
+  // A trial is a dispatch that is NOT forced. `default: true`, or a string type (whose value is
+  // always truthy in an expression), would turn every trial into a forced run.
+  const inputs = dispatchInputs(header(text));
+  assert.ok(inputs.has('target'), 'the parser must find the existing `target` input');
+  const required = inputs.get('required');
+  assert.ok(required !== undefined, 'workflow_dispatch has no input named `required`');
+  assert.equal(required['type'], 'boolean', 'the input `required` must be a boolean');
+  assert.equal(required['default'], 'false', 'the input `required` must default to false: a trial is not forced');
+  assert.equal(required['description'], "'force the signing decision as on a release tag'");
+});
