@@ -83,7 +83,11 @@ test('the longest socket path an owned folder under the short root can have fits
   // The owner token `w` + 10 digits is the longest the grammar allows, `agent` the longest `what` a socket folder takes (5), the
   // id six characters. macOS caps a socket path at 103 bytes and its TMPDIR is about 49 characters, which is why the folder is
   // under `/tmp` and not under the temp root; this is asserted on every OS so a longer owner, id or pid is red on Linux too.
-  const folder = path.join(shortSocketRoot(), 'testsToDelete-w4294967295-creds-agent-abcdef');
+  // The limit is a UNIX one, so the root is the POSIX short root: `shortSocketRoot()` where it is `/tmp` (Linux, macOS), and
+  // `/tmp` itself on Windows, whose short root is the temp root and whose sockets are named pipes with no such limit
+  // ([E2.1 byhand 9]: on the Windows runner this test joined `C:\Users\RUNNER~1\AppData\Local\Temp` and was refused).
+  const posixShortRoot = process.platform === 'win32' ? '/tmp' : shortSocketRoot();
+  const folder = path.posix.join(posixShortRoot, 'testsToDelete-w4294967295-creds-agent-abcdef');
   const broker = socketPathFor(folder, 4294967295, 'linux');
   const agent = agentSocketPath(folder, 'linux', 4294967295);
 
