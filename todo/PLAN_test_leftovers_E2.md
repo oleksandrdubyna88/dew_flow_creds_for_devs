@@ -1479,17 +1479,19 @@ Counts: 16 listed paths (10 `mgb` folders, 6 entries of the two other-repository
 
 | Item | Run 1 (2026-11-04) | Run 2 (after [E2.1 byhand 9]) |
 |---|---|---|
-| run URL and id | https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/actions/runs/41809870657 | TO FILL after run 2 |
-| tested commit (head of `tmp/e21-byhand`) | `b39a18e` | TO FILL after run 2 |
-| `macos-sockets`: conclusion | success (`RESULT: PASS`) | TO FILL after run 2 |
-| macOS version (`sw_vers`) · arch · Node | 26.6.2 (25G83) · arm64 · v22.23.4 | TO FILL after run 2 |
-| the five files: result (tests / pass / fail) | 8/8/0 · 8/8/0 · 25/25/0 · 2/2/0 · 9/9/0 (brokerListeners, brokerOriginDoor, sshAgentServer, sshAgentManagerFlags, requestLife); 32 binds | TO FILL after run 2 |
-| where the sockets were placed (root and folder form) | `shortSocketRoot()` = `/tmp`, folders `testsToDelete-u501-creds-<what>-<random>` | TO FILL after run 2 |
-| longest socket path · bytes (must be under 103) | 63 — `/tmp/testsToDelete-u501-creds-agent-qvTTzB/keys/2957/agent.sock` | TO FILL after run 2 |
-| `windows-unit`: conclusion | failure — one test, see [E2.1 byhand 9] | TO FILL after run 2 |
-| Windows version · Node | win32 10.0.26100 · x64 · v22.23.4 | TO FILL after run 2 |
-| unit suite total: tests / pass / fail / skipped | 6024 / 6005 / 1 / 18 (cancelled 0) | TO FILL after run 2 |
-| COMPARED: new old-name entries (expected 0) · owner-form creds entries left (expected 0) | 0 · 0 | TO FILL after run 2 |
+| run URL and id | https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/actions/runs/41809870657 | https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/actions/runs/41812168328 |
+| tested commit (head of `tmp/e21-byhand`) | `b39a18e` | `cdc116b` (run 1's head plus `[E2.1 byhand 9]`) |
+| `macos-sockets`: conclusion | success (`RESULT: PASS`) | success (`RESULT: PASS`) |
+| macOS version (`sw_vers`) · arch · Node | 26.6.2 (25G83) · arm64 · v22.23.4 | 26.6.2 (25G83) · arm64 · v22.23.4 (`os.tmpdir()` `/var/folders/…/T`, `shortSocketRoot()` `/tmp`) |
+| the five files: result (tests / pass / fail) | 8/8/0 · 8/8/0 · 25/25/0 · 2/2/0 · 9/9/0 (brokerListeners, brokerOriginDoor, sshAgentServer, sshAgentManagerFlags, requestLife); 32 binds | 8/8/0 · 8/8/0 · 25/25/0 · 2/2/0 · 9/9/0; 32 binds |
+| where the sockets were placed (root and folder form) | `shortSocketRoot()` = `/tmp`, folders `testsToDelete-u501-creds-<what>-<random>` | `shortSocketRoot()` = `/tmp`, folders `testsToDelete-u501-creds-<what>-<random>` |
+| longest socket path · bytes (must be under 103) | 63 — `/tmp/testsToDelete-u501-creds-agent-qvTTzB/keys/2957/agent.sock` | 63 — `/tmp/testsToDelete-u501-creds-agent-mmuHHN/keys/2915/agent.sock` |
+| `windows-unit`: conclusion | failure — one test, see [E2.1 byhand 9] | success (`RESULT: PASS`) |
+| Windows version · Node | win32 10.0.26100 · x64 · v22.23.4 | win32 10.0.26100 · x64 · v22.23.4 |
+| unit suite total: tests / pass / fail / skipped | 6024 / 6005 / 1 / 18 (cancelled 0) | 6024 / 6006 / 0 / 18 (cancelled 0); `npm test` exit 0 |
+| COMPARED: new old-name entries (expected 0) · owner-form creds entries left (expected 0) | 0 · 0 | 0 · 0 |
+
+**[E2.1 byhand 10] (2026-11-04):** run 2 is green on both jobs, so items (b) sc. 11 on macOS and (c) the Windows unit-suite count of the "Open before E2.1 may merge" list have their records (the table above; by the question consultants' decision `867ea464`, a recorded hosted run counts as by hand). The throwaway branch `tmp/e21-byhand` is deleted after this record; the four files it carried are quoted by name in `[E2.1 byhand 6..8]`. Still open for the merge: the WSL machine's administrator scan (D8 (c)), the PR's review and gates, and the rollout plan's re-review (it stopped on 2026-11-04 at its entry 4.2; no PR carrying its work merges until epoch 5 is approved).
 
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
