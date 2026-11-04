@@ -1,7 +1,9 @@
 # PLAN — Windows code signing, E4: this repository adopts the shared workflow `v1.1.0` and merges with the switch on
 
 > Status: **plan only, nothing implemented yet, 2026-11-04. Waits for E3 (`v1.1.0` is not merged; its SHA is written here when E3 merges).** Stories of epic E4 of [PLAN_windows_code_signing.md](PLAN_windows_code_signing.md) (§3.2, §3.4, §4 *At the merge*, §6 E4, §8, §9 wiring, `## Epics` E4, the CUT rows of *Re-review for epoch 3*).
-> Scope: `.github/workflows/release.yml` (`cli-sign`, `mcp-sign`, their comments, the header), `src_vs_code/src/test/releaseSigning.test.ts`, `CLAUDE.md`, `src_cli/README.md`, `src_mcp/README.md`, `research/architecture.md`, `research/module_tests.md`, `todo/README.md`; the owner's M1, M2, O9. Branch `ci/windows-code-signing-e2`, PR #295 (continues E2). No product code, no contract change.
+> Scope: `.github/workflows/release.yml` (`cli-sign`, `mcp-sign`, their comments, the header), `src_vs_code/src/test/releaseSigning.test.ts`, `CLAUDE.md`, `src_cli/README.md`, `src_mcp/README.md`, `research/architecture.md`, `research/module_tests.md`, `todo/README.md`; the owner's M1, M2, O9. Work on `ci/windows-code-signing-e4` (its own gate session, cut from the E2 head); before the trials it is
+> fast-forwarded onto `ci/windows-code-signing-e2`, PR #295's branch, which the `release-signing` environment admits —
+> so the trials run on `-e2` and PR #295 carries the work (continues E2). No product code, no contract change.
 
 **Committed together with this document:** its row in `todo/README.md` under *Currently open*. E4 marks no
 cornerstone; the parent's ledger stays `Cornerstones: 2 of 2 — E1.1, E3.1`.
@@ -137,9 +139,12 @@ prove the switch, which only a tag forces (gap 3).
    release-please reads a body. Before the merge, `grep -E '^(feat|fix|deps|chore|docs|ci|test|refactor|perf|build|revert)(\(|!|:)|BREAKING|Release-As' <file>`
    is empty. The body: two or three plain sentences and the parent path.
 
-**M3, after the merge.** List the open release PRs before the merge (`gh pr list --search "release in:title"`). After
-the `release-please` run of the squash commit ends: no `cli` or `mcp` release PR is opened, and none open before
-gains the squash in its changelog. The squash also touches `src_vs_code/` (the test), so the same holds for
+**M3, after the merge.** List the open release PRs before the merge (`gh pr list --search "release in:title"`). Here
+`release-please.yml` runs on `workflow_dispatch` ONLY (its `push: main` trigger is commented out), so nothing runs by
+itself: read the merged message (`git show -s --format=%B <squash-sha>` — no conventional-commit line in the body), then
+dispatch `release-please.yml` on `main` once and record the run and the SHA it saw. After it ends: no release
+attributable to the squash — no `cli` or `mcp` release PR gains it, and none open before gains it in its changelog
+(a release PR for unrelated, earlier commits is not M3's concern). The squash also touches `src_vs_code/` (the test), so the same holds for
 `extension` (gap 4). If one appears anyway, close it unmerged with a comment naming M3.
 
 **O9.** The owner removes `ci/windows-code-signing-e2` from the environment's deployment rule; the agent reads the

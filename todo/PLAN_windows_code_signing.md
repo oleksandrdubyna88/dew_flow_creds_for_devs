@@ -478,8 +478,10 @@ GitHub. Azure: the Basic SKU is a fixed monthly price with a signature quota
   unpublished; *Re-run failed jobs* within **7 days** (the artifacts' retention). Later than that, the
   patch version is burned and the next one is released — never a moved tag. The switch is **not** a
   workaround: with six variables set it does nothing (§3.4).
-- The cutover must be undone (O4 refused late, a wrong profile): delete all six variables in one
-  sitting, restore the switch; releases are unsigned as before.
+- The cutover must be undone (O4 refused late, a wrong profile): BEFORE A6, delete all six variables in one
+  sitting and restore the switch — releases are unsigned as before. AFTER A6 the callers no longer pass the
+  input, so the variable does nothing and a tag with zero variables is red: undoing then needs a reviewed caller PR
+  (revert the A6 PR, which re-adds the input and drops T6) and a new tag — never a variable change alone.
 - Signing must be undone entirely: revert the E4 squash commit; the build legs zip as before.
 
 A tag is never moved.
