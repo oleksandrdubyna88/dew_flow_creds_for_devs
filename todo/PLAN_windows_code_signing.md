@@ -1,6 +1,6 @@
 # PLAN — the Windows `creds.exe` and `creds-mcp.exe` are signed, so Smart App Control lets them run
 
-> Status: **stopped for re-review — re-reviewed baseline for epoch 3, pending approval (2026-11-04). E1 merged (`dew_flow_release_signing` #1, `v1.0.0` = 609cc23). E2 built and gated on `ci/windows-code-signing-e2` (PR #295), unmerged. Remaining: E3 (shared workflow `v1.1.0` with the `allow-unsigned-release` exception), E4 (the callers adopt it, docs reworded, merged with `ALLOW_UNSIGNED_RELEASES=true`), E5 (the activation cutover, owner-gated, later).** Scope: a public repository
+> Status: **in progress — epoch 3 approved by the owner (2026-11-04). E1 merged (v1.0.0 = 609cc23); E2 built; next E3 (shared workflow v1.1.0), then E4 (callers merge with the switch on); E5 the activation cutover later.** Scope: a new public repository
 > `oleksandrdubyna88/dew_flow_release_signing` holding one reusable signing workflow (E1, E3); the
 > `cli-binaries`, `cli-release`, `mcp-binaries` and `mcp-release` jobs of `.github/workflows/release.yml`
 > here (E2, E4); the owner's one-time provider and GitHub setup (E5). No product code, no contract change.
@@ -28,7 +28,7 @@ Narrowed: no
   artifact, the Package step reads the Version step, F8 marked unobserved until V1, V2 moved before the merge on the
   trial package, epics re-split by Fable.)
 
-> Epoch 2 · approved 2026-11-03 · by reviewers · state: stopped
+> Epoch 2 · approved 2026-11-03 · by reviewers · state: closed
 
   (Re-review gate round, 2/2 reviewers, proceed. Its accepted findings 1, 4 and 5 are part of the approved text: the
   `extra-files` allow-list, the tag ref forcing `required`, V1 checking the organization record. From epoch 2 on, an
@@ -58,6 +58,12 @@ Narrowed: yes — the merge no longer waits for a provider; activation moved to 
   (Re-review: the owner, consultation 64aafd4e and the re-review consultation 768212f2 agreed the design of §3.4. The whole plan
   was revised to it: merge readiness separated from activation readiness, O1–O8 moved to the cutover, the Definition of
   Done split into wiring and activation, epics E3–E5 added by Fable, the cornerstone ledger recounted. The rows were sorted by an Opus judge: the docs that claim a signature and the two fix commits are cut, fixed forward in E4 and the twin.)
+
+
+> Epoch 3 · approved 2026-11-04 · by owner · state: open
+
+  (Re-review gate round on docs/windows-code-signing-epoch3, 2/2 reviewers, proceed; its accepted findings 0, 1 and 3 are
+  part of the approved text: A6 removes the input in code too (T6), V5 checks the published assets, M3's fallback.)
 
 ## 1. The symptom and the goal
 
@@ -348,7 +354,8 @@ same layout and checksum; the run shows the warning and the banner.
   `ci/windows-code-signing`, `mcp-v*`). It holds **zero** of the six variables until the cutover: one
   stray variable makes every release red.
 - **M3 — the squash merge** of #295 and coai #944 (§3.2); check that release-please opens no `cli` or
-  `mcp` PR from it.
+  `mcp` PR from it (its config releases on `feat`/`fix`/`deps` only, and the squash body is clean). If one
+  appears anyway, it is closed unmerged with a comment naming this step.
 - **O9 — after the merge,** remove the PR branches from both environments' deployment rules.
 
 **Activation cutover (E5), later, after D11 and D8 (O1–O6 are Azure's road; SignPath replaces them by
@@ -374,8 +381,10 @@ a new plan):**
   the six variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `SIGNING_ENDPOINT`, `SIGNING_ACCOUNT`,
   `SIGNING_PROFILE`, `SIGNING_PUBLISHER` (none is a secret), set **in one sitting**, releases paused.
 - **O8 — re-read the tag ruleset** (F9) — the guard that makes a tag a human decision.
-- **A6 — delete the switch.** After V1 and V2: remove `ALLOW_UNSIGNED_RELEASES` from both
-  repositories. From here D3 holds: a tag without signing is red.
+- **A6 — delete the switch, in code too.** After V1 and V2: remove `ALLOW_UNSIGNED_RELEASES` from both
+  repositories AND, in the same cutover, a PR in each caller removes the `allow-unsigned-release` line, with a
+  test (T6) that fails if any job passes that input. Then no variable can bring the exception back. From here D3
+  holds: a tag without signing is red.
 
 ## 5. Build order
 
@@ -443,6 +452,8 @@ banner, and its Windows zips install and run as today (not under SAC) — F12 ob
   packages from V1, `creds --help`, `creds relay-pipe` (it starts, writes its log and ends with
   `noAgentAnnounced`) and `creds-mcp --version`; SAC blocks none. The `win-arm64` packages are checked
   for their signature only (V1); the owner's machine is x64.
+- **V5** — after R1: the published Windows assets themselves (not the run's artifacts) are downloaded from the
+  release pages for both products and architectures; checksums and signatures checked (DoD).
 - **V4** — after R1, on the same machine: *Install `creds` (terminal CLI)…* and *Install the MCP
   server*, then run both. This is the goal of the plan; without V4 it is not done.
 - **V3 (negative)** — after A6, a trial dispatched from a branch other than `main` is refused by the
@@ -487,9 +498,13 @@ A tag is never moved.
 **Activation (E5) — the goal; the plan stays in `todo/` until these are ticked:**
 
 - [ ] D11 and D8 decided; O1–O8 done; V1 and V2 observed before any signed release.
-- [ ] A6: `ALLOW_UNSIGNED_RELEASES` deleted in both repositories.
+- [ ] A6: `ALLOW_UNSIGNED_RELEASES` deleted in both repositories, and the `allow-unsigned-release` input
+      removed from both callers with T6 green.
 - [ ] R1: the `fix(cli)` / `fix(mcp)` commits merged, the cli and mcp releases cut and signed; V4 observed
       on a SAC machine; V3 observed.
+- [ ] V5: the PUBLISHED Windows assets of the first signed cli and mcp releases (both architectures, and coai's
+      next mcp release) downloaded from the release pages, `sha256sum -c` passed, and every exe/dll inside
+      `Valid`, signed by the organization, timestamped — recorded before activation is called done.
 - [ ] `CLAUDE.md`, `src_cli/README.md`, `src_mcp/README.md`, the research pages and the workflow header say
       the Windows binaries are signed, from which release on, and what was checked under SAC.
 - [ ] Plan promoted to `research/` with its deviations, together with its stories documents.
