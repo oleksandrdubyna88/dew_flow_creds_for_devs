@@ -1,6 +1,6 @@
 # PLAN — E3.1 spec: the exception for missing configuration in `mode` (CORNERSTONE)
 
-> Status: **plan only, nothing implemented yet, 2026-11-04 — cornerstone spec by Fable, written before its code.**
+> Status: **built and merged, 2026-11-04 — cornerstone spec by Fable, written before its code; implemented in `dew_flow_release_signing` #3 (v1.1.0).**
 > Story E3.1 of [PLAN_windows_code_signing_E3.md](PLAN_windows_code_signing_E3.md) (parent
 > [PLAN_windows_code_signing.md](PLAN_windows_code_signing.md) §3.1 input table and step 3, §3.4, §6 E3, `## Epics` E3).
 > Its own file because the stories document goes whole to the review gate and must stay short; it is promoted with E3's.
