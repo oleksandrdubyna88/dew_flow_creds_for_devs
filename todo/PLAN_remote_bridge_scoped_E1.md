@@ -204,6 +204,8 @@ Depends on nothing but the common constraints. Security-judged by Fable at revie
    }
    ```
 
+   **Opens for one `bridgeId` are serialized.** A reconnect can overlap an open, and a map write would otherwise drop the earlier server without closing it, leaving its port and key usable. So the id is reserved before the first await, a second open waits for the first, and a superseded listener is closed before the new one is returned. Scenario: two overlapping opens; afterwards the earlier port refuses connections and its key serves nothing.
+
    `open` starts a loopback server, mints `randomBytes(32).toString('base64url')`, attaches the door with `server.on('request', …)` as `credsAgentServer.ts:193-196` does, and holds the server in a `Map` keyed by bridge id. A second `open` for a live `bridgeId` closes the first: a key lives per open (§4.1). `close()` calls `server.close()` **and** `server.closeAllConnections()`, because a keep-alive connection that outlives its bridge would otherwise still be served. Closed twice is a no-op.
 5. **New `bridgeAllowList.ts`** (pure). Default deny from the first commit: `bridgeRouteRefusal(method, pathname)` knows one route, `GET /v1/health`, and refuses all else with
 
@@ -271,7 +273,7 @@ The router has one tail: every call that performs something passes `perform` (`c
 | Way in | What the view wraps | Out of scope answers | Same as not-found because |
 |---|---|---|---|
 | `GET /v1/aliases` | `aliases`. The list has no ids (`cliAliases.ts:102-106`), so each name goes through the real `resolveAlias` and is kept only if its target is in scope | Absent from the list | The list is all a caller sees |
-| `GET /v1/mcp/entries` | `mcpEntries`, kept when `scope.has(entry.id)`. **`dependsOn` is cut down to names of entries kept in the same answer**, or an in-scope row would name an out-of-scope entry (`mcpEntries.ts:60,273`) | Absent | As above |
+| `GET /v1/mcp/entries` | `mcpEntries`, kept when `scope.has(entry.id)`. **`can` is narrowed to what this door permits** (`mcpEntries.ts:127` copies it from the vault), so a row never advertises `edit` or `delete` that every bridge request refuses; scenario: an entry with every permission on lists only allow-listed ones, and the refused call agrees. **`dependsOn` is cut down to names of entries kept in the same answer**, or an in-scope row would name an out-of-scope entry (`mcpEntries.ts:60,273`) | Absent | As above |
 | `GET /v1/mcp/config-snippet` | `visibleConfig`: `scope.has(id) ? real(id) : undefined` | The refusal body of `configSnippetResult(undefined, …)`, status 200 | `brokerReadRoutes.ts:109-116` answers an unknown id the same way |
 | `GET /v1/mcp/folders` | `folders: () => []` | Empty | A folder is in no scope, and no folder verb is served |
 | `POST /v1/mcp/use/<action>` | `resolveUse`: `scope.has(id)` first, without touching the real lookup; then the real one, restricted to `context.accountId`; a `usable` target from another account is `undefined` | `not_found`, `'No such entry, or this window does not serve it.'` | `refusalFor(undefined)`, `brokerRequests.ts:183`: the code path is the same one, not a copy |
@@ -283,7 +285,7 @@ The router has one tail: every call that performs something passes `perform` (`c
 
 **`creds://` targets, and why the check is E1's while the executors are E3's.** Today no agent executor resolves a reference: `terminalRunAction` and `scriptRunAction` run the text as saved (`agentUseActions.ts:150,201,221`). The only resolver is the person's `runWithSecrets` (`commands/runCommands.ts:244-253,310`). So E1 builds two things that do not need an executor, and E3.3 is obliged to use the second.
 
-1. **The check.** `referenceRefusal(context, grant, wall)`: `storedTexts` → `planRefs(texts).refs` (`runPlan.ts:45`) → for each, `parseSecretRef` and `locate` (`secretRef.ts:130`, exported by this story, no change inside) → the target's account and id against a fresh `Scope`. **One sentence for every failure: no such account, no such entity, ambiguous, out of scope.** `locate`'s own messages are never surfaced here: they would tell a dangling reference from a real one, and "ambiguous" would list real paths. The sentence repeats the reference as stored, which discloses nothing new: the listing already shows the same text (`McpEntry.command`, `mcpEntries.ts:48-49`), and a stored reference may dangle. Code `denied`, so the client's walk stops rather than treating it as "not mine" (`src_mcp/src/Windows.cs:161`):
+1. **The check.** `referenceRefusal(context, grant, wall)`: `storedTexts` → `planRefs(texts).refs` (`runPlan.ts:45`) → for each, `parseSecretRef` and `locate` (`secretRef.ts:130`, exported by this story, no change inside), both wrapped so that any throw or diagnostic message becomes the refusal and never a 500 or a leaked path → the target's account and id against a fresh `Scope`. **One sentence for every failure: no such account, no such entity, ambiguous, out of scope.** `locate`'s own messages are never surfaced here: they would tell a dangling reference from a real one, and "ambiguous" would list real paths. The sentence repeats the reference as stored, which discloses nothing new: the listing already shows the same text (`McpEntry.command`, `mcpEntries.ts:48-49`), and a stored reference may dangle. Code `denied`, so the client's walk stops rather than treating it as "not mine" (`src_mcp/src/Windows.cs:161`):
 
    ```text
    `"${grant.entityName}" uses ${ref}, which this Remote Bridge does not serve. Add that entry to this bridge's scope, or take the reference out of the stored command.`
@@ -292,7 +294,7 @@ The router has one tail: every call that performs something passes `perform` (`c
    It runs twice: in `perform` right after `usable` (`credsAgentServer.ts:515`), so no modal is raised for a call that cannot run; and inside `atLaunch`, so a line edited while the modal is open stops too. In E1 it is tested with the harness's stub action and a `storedTexts` that returns references. In production it first has text to read when E3.1 puts `run` on the list.
 2. **The seam.** `scopedRefSource(context, wall, source: RefSource): RefSource` wraps the real source: `accounts()` answers `context.accountId`'s row only, `entities()` only entries in a fresh `Scope`, `fieldReading()` answers `absent` for anything else. Exported and unit-tested against the real `resolveSecretRefs`, unused in production until E3.3. An action re-reads the live entity after launch (`agentUseActions.ts:79`), so a line can change between the gate and the resolver; with this source the resolver cannot read an out-of-scope value at all. `UseActionContext` (`useActions.ts:14-33`) gains `readonly bridge?: BridgeContext`, set by `startNow` (`brokerCall.ts:162-167`) from `grant.bridge`, without `quiet` or `spendToken`, so E3 can tell a bridge run from any other.
 
-   **E3 inherits three obligations, and E3's stories document must name them:** E3.1 adds `run` to the table and the walk; E3.3 resolves through `scopedRefSource` when `ctx.bridge` is set; both keep the gate's sentence.
+   **E3 inherits three obligations, and E3's stories document must name them:** E3 adds `run` to the table and the walk at its end, after both executors pass; E3.3 resolves through `scopedRefSource` when `ctx.bridge` is set; both keep the gate's sentence.
 
 **The jump chain is not a scope target.** `resolveJumpChain` reads the jump entry's metadata into `-J` (`sshUseActions.ts:201`), no secret of it goes to the agent, and the agent cannot run anything on the jump host. It is part of how the in-scope entry connects, as the person set it. Fable's spec confirms or overturns this; if overturned, it is one more text source for the same check.
 
@@ -440,7 +442,7 @@ Commands: the common block, with `<name>` = `bridgeConsent`, `mcpConsentPolicy`,
 | `stampKey` third segment; nothing breaks on a two-segment key | E1.4 | C1, C2, C3 |
 | Consent through A silences neither B nor local | E1.3 for tokens, E1.4 for stamps | S14, C4, C6 |
 | One stable export sentence, on the bridge door and in an `other` window | E1.1 writes it, E1.3 refuses first in its words | X1-X3, S6 |
-| The person's warning, written for the case M4 reaches | E1.1 | W1-W4, the M4 table |
+| The person's warning, written for the case M4 reaches | E1.1 | W1-W4 unless M4 shows the value does not reach those terminals, then W3 only; the M4 table |
 
 ## Gaps found in the parent (recorded, not fixed there)
 
@@ -465,7 +467,7 @@ E1.1, then E1.2, E1.3 after Fable's spec, E1.4. E1.1 is independent and may go f
 
 - [ ] Door table, scope walk, transitive and consent pass (D1, S3-S5, S8-S12, C4-C8).
 - [ ] The walk refuses every contract route not on the allow-list, and fails on an unnamed one (S1, S2, S6).
-- [ ] An agent's export is refused with one stable sentence; the person's `Set env` warns (X1-X3, W1-W4, S6).
+- [ ] An agent's export is refused with one stable sentence; the person's `Set env` warns (X1-X3, S6, and W1-W4 unless M4 removed them, as that section says).
 - [ ] The two existing doors are unchanged, and `creds-cli-itest.cjs` is green and untouched (R3, the pre-PR block).
 - [ ] M4 recorded in the table above, by the person.
 - [ ] Every RED-first test's failure and pass are in the summary; lint, ratchet and the pre-PR block are green; `coai` plan and code gates at `proceed`.

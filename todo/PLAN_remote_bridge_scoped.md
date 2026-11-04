@@ -22,6 +22,8 @@ Narrowed: yes — the db tunnel left the scope and the Definition of Done, by th
 
 > Epoch 2 · approved 2026-11-04 · by owner · state: open
 
+- 2.1 · 2026-11-04 · agent · approach — an unrelated extension tag would ship the new door before clients are on servers, and an old client never shows the update sentence, so the new flow stays behind a switch until E4
+
 ## 1. Goal
 
 The person works in VS Code on Windows, in a Remote-SSH window attached to an Ubuntu server. The vault lives in the
@@ -162,9 +164,11 @@ reconnect with nothing to re-export. A dead socket fails on the existing 2 s hea
 and the bridge door requires its own. A token belongs to one window, so the client picks the note whose `brokerPort` equals `token.Port`, uses
 that note's socket, port and key, and sends the token as today.
 
-**Compatibility:** an old `creds` against the new door is refused, because it has no key and the wrong port. So **clients ship
-first** (`cli-v*`, `mcp-v*`), and the door's refusal says "update creds on this host". Today's working `creds ssh <token>` is the
-only thing that can regress, and only between the extension release and the update on the host.
+**Compatibility:** an old `creds` against the new door is refused, because it has no key and the wrong port, and it cannot even say why: `IsOurBrokerAsync` (`BrokerClient.cs:96-105`) discards a refused health probe, so it reports that no window is listening. Extension tags also go out for unrelated work (`release.yml:809`), so ordering this plan's releases is not enough. So:
+
+- **The new open flow and restore stay behind a switch**, off in every build until E4 flips it after the clients are released. Until then *Open Remote Bridge* behaves as it does today, and CI turns the switch on.
+- **Clients ship first** (`cli-v*`, `mcp-v*`). Released is not installed, so before the new flow opens on a host it checks that host's `creds` and `creds-mcp` versions and offers the update, instead of relying on a refusal the old client cannot show.
+- E4 tests the previously released `creds` against the new listener and asserts its real output.
 
 Install: `install.sh` gains a product switch (asset name `creds-mcp-$VERSION-$RID`, `release.yml:687`), the host menu offers
 `creds`, `creds-mcp` or both, and registration stays offered rather than written (`mcpClientConfig.ts:9-13`): the person is
@@ -376,6 +380,7 @@ Cornerstones: 1 of 2 — E1.3 ([PLAN_remote_bridge_scoped_E1.md](PLAN_remote_bri
 - **Goal.** `creds` and `creds-mcp` on the server reach the broker through a note, one snapshot per logical call, with nothing to re-export after a reconnect; the bridge survives a dropped network and a reboot of the PC by itself, replays nothing, is owned by exactly one window, and ends only on
   *Close Remote Bridge* from any window; two bridges to one server keep their own notes and scopes; all of it proven in CI against a real `ssh -R` into a real `sshd`, watched RED first.
 - **Scope.** §5 steps 4-6: §4.5, the harness's non-debug `sshd` mode and the real-topology test, §4.3, §4.4, §4.7.
+- **The switch.** Everything a person can reach in E2 sits behind the switch of §4.5.
 - **Stories.** E2.1 the note contract and the clients, with the harness mode and the real-topology test RED against today's code (the test writes the note itself). E2.2 the supervisor: generations, publication, sweep, backoff, host key and jump parity, the open flow and scope pick; reconnect and several-bridges cases.
   E2.3 durable intent: the record, `onDidUnlock` on both unlock paths, the ownership lock, restore in the fixed order, "needs you" for PIN and woven. E2.4 Close from any window, handover, and the reboot and ownership tests end to end.
 - **Depends on.** E1.
@@ -384,6 +389,7 @@ Cornerstones: 1 of 2 — E1.3 ([PLAN_remote_bridge_scoped_E1.md](PLAN_remote_bri
 
 ### E3 — Where a stored command or script runs
 
+- **Order inside the epic.** `run` joins the allow-list at the end of E3, after both executors pass, not in E3.1: policy alone cannot make the laptop executor run on the server.
 - **Goal.** A script entry the agent runs, `vpn-up` as `dev2` among them, runs on the server after a consent on the laptop and returns exit code and output; a script that injects a variable does not run on the server; a command with a password runs on the laptop with the value in the child's environment only and the agent sees masked output; a line whose reference would have to reach the server is refused.
 - **Scope.** §5 steps 7-8: §4.6 whole.
 - **Stories.** E3.1 the shared run-site policy: `decideRunSite`, the script "Runs on" field, the reworded refusal, the run-site table. E3.2 scripts on the server: the private file, `/dev/null`, the variable guard, bounded stdin, the sweep, `timeoutMs`. E3.3 the laptop rows with `creds://`: environment never argv, the mask table, PIN and woven refusals.
@@ -395,7 +401,7 @@ Cornerstones: 1 of 2 — E1.3 ([PLAN_remote_bridge_scoped_E1.md](PLAN_remote_bri
 
 - **Goal.** A person installs `creds-mcp` on the server from the host menu, registers it with one shown command, and is told when the host's client is too old; a real reboot and a real network drop on the owner's PC bring the bridge back by themselves; documentation is true; the plan and its stories documents are promoted with their deviations.
 - **Scope.** §5 steps 9-11: install and registration from §4.5, the too-old check, M7 and what remains of M3-M5, releases, `research/module_mcp.md:15`, help in five languages, the §8 rows and the two new todos.
-- **Stories.** E4.1 the `install.sh` product switch, the host menu, the too-old check, registration offered not written. E4.2 the owner-host measurements and the §9 walk on the owner's server in tmux. E4.3 the releases clients first, docs and help, boundaries and todos, promotion.
+- **Stories.** E4.1 the `install.sh` product switch, the host menu, the version check before the new flow opens, registration offered not written, and flipping the switch of §4.5 only after the clients are released. E4.2 the owner-host measurements and the §9 walk on the owner's server in tmux. E4.3 the releases clients first, docs and help, boundaries and todos, promotion.
 - **Depends on.** E3 merged.
 - **Done when.** M7 passed on its stated conditions before any release tag; every line of §9 is ticked; `coai` plan and code gates at `proceed`; the plan and its four stories documents are in `research/` with deviations.
 - **Cornerstone AREA.** None.
