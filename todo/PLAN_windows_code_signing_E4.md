@@ -149,8 +149,21 @@ rule back (`…/environments/release-signing/deployment-branch-policies`): `main
 E4 merging with the switch on), the E2 row (merged through E4's squash), this row. The M3 and O9 results land after the
 merge, in the next plan commit (gap 5).
 
+**The forced trial (parent ledger 3.1, E4 plan gate findings 0–1).** `release.yml`'s `workflow_dispatch` gains a
+boolean input `required` (default `false`, description: "force the signing decision as on a release tag"), and both
+sign jobs pass `required: ${{ startsWith(github.ref, 'refs/tags/') || inputs.required }}` (on a push `inputs.required`
+is empty, so a tag decides as before). T2 pins that exact expression. Before the merge, with M1 and M2 in place, a
+dispatch with `target: cli` and `required: true`, and one with `target: mcp` and `required: true`, run on the PR branch:
+each Windows leg must be GREEN in `skip` with the `UNSIGNED RELEASE` warning — exactly the tag path a release will take.
+A break-it run with M1 absent is not needed: the shared workflow's own tests cover that row; the forced trial proves the
+caller's wiring. The release jobs still run only on a tag, so nothing is published.
+
+**After the merge (a follow-up PR, gap 5 closed).** `main` takes changes only through PRs, so M3's and O9's read-backs,
+the first real `cli-v*`/`mcp-v*` tag run under the switch (green, the `UNSIGNED RELEASE` warning on its Windows legs), and
+the parent's §9 E4 tick land in one small `docs(plan): record E4 …` PR right after the merge.
+
 **Done when.** The docs of the table reworded and the grep clean (kept hits listed); M1, M2 read back; the two trials
-quoted; CodeRabbit, coai and Opus resolved; #295 squash-merged with a `ci(release)` subject and a clean body; M3 and O9
+and the two forced trials quoted; CodeRabbit, coai and Opus resolved; #295 squash-merged with a `ci(release)` subject and a clean body; M3 and O9
 done and read back; plan-lifecycle.mjs and pin-check.mjs green; the parent's §9 E4 line ticked once the coai twin
 merged too.
 
@@ -168,8 +181,8 @@ is done when both are merged.
 
 ## Order
 
-E3 merged and tagged → the SHA written here → E4.1 RED → E4.1 edits, T7 mutation, B1/B2 → E4.2 docs → grep → M2, M1
-read back → push → the two trials → coai `review_code`, Opus → ready, CodeRabbit → retitle → `main` merged in if
+E3 merged and tagged → the SHA written here → E4.1 RED → E4.1 edits, T7 mutation, B1/B2 → E4.2 docs → grep → M2 and M1
+set and read back (both BEFORE any trial: the forced trial needs M1) → push → the two trials and the two forced trials → coai `review_code`, Opus → ready, CodeRabbit → retitle → `main` merged in if
 needed, checks green on the head SHA → squash, clean body → M3 → O9 → records. E5 later.
 
 ## Gaps found in the parent (recorded, not fixed here)

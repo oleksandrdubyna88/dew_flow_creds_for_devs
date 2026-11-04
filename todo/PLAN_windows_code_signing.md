@@ -65,6 +65,8 @@ Narrowed: yes — the merge no longer waits for a provider; activation moved to 
   (Re-review gate round on docs/windows-code-signing-epoch3, 2/2 reviewers, proceed; its accepted findings 0, 1 and 3 are
   part of the approved text: A6 removes the input in code too (T6), V5 checks the published assets, M3's fallback.)
 
+- 3.1 · 2026-11-04 · reviewer · approach — nothing before the merge proved the caller's switch on a forced run (a dispatch is never forced), so release.yml's workflow_dispatch gains a boolean input `required` and the sign jobs pass `required: ${{ startsWith(github.ref, 'refs/tags/') || inputs.required }}`: a dispatch with required=true takes exactly the tag path before the merge, and later serves V1
+
 ## 1. The symptom and the goal
 
 **Symptom.** On Windows 11 with Smart App Control (SAC) turned on, *Install `creds` (terminal CLI)…*
