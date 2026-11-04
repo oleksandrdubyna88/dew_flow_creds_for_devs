@@ -1,7 +1,7 @@
 # PLAN — Windows code signing, E3: the shared workflow `v1.1.0` — the exception for missing configuration
 
 > Status: **plan only, nothing implemented yet, 2026-11-04.** Stories of epic E3 of [PLAN_windows_code_signing.md](PLAN_windows_code_signing.md) (§3.1 the inputs and the mode table, §3.4 the switch and the cutover, §6 the E3 tests, `## Epics` E3).
-> Scope: `oleksandrdubyna88/dew_flow_release_signing` only (clone: `/home/jinx/git/dew_flow_release_signing`, `main` = 609cc23 = `v1.0.0`): `.github/workflows/sign-windows.yml` (one input, the `mode` step, the header comment), `test/selftest.ps1` (the summary file, nine cases), `.github/workflows/ci.yml` (a second real call and its check, the wiring step), `test/wiring.mjs` (new), `README.md`. Branch `feat/allow-unsigned-release` from 609cc23; one PR; the squash commit tagged `v1.1.0`. Nothing in this repository changes for E3; E4 adopts the tag.
+> Scope: `oleksandrdubyna88/dew_flow_release_signing` only (clone: `dew_flow_release_signing`, `main` = 609cc23 = `v1.0.0`): `.github/workflows/sign-windows.yml` (one input, the `mode` step, the header comment), `test/selftest.ps1` (the summary file, nine cases), `.github/workflows/ci.yml` (a second real call and its check, the wiring step), `test/wiring.mjs` (new), `README.md`. Branch `feat/allow-unsigned-release` from 609cc23; one PR; the squash commit tagged `v1.1.0`. Nothing in this repository changes for E3; E4 adopts the tag.
 
 **Committed together with this document:** its row in `todo/README.md` under *Currently open*, and the cornerstone spec
 `todo/PLAN_windows_code_signing_E3_S1_spec.md` with its own row (the shared `common/planning-docs.md` § *A plan split

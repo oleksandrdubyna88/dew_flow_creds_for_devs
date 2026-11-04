@@ -6,7 +6,7 @@
 > Its own file because the stories document goes whole to the review gate and must stay short; it is promoted with E3's.
 >
 > Scope: `.github/workflows/sign-windows.yml` in `oleksandrdubyna88/dew_flow_release_signing` (clone:
-> `/home/jinx/git/dew_flow_release_signing`, `main` = 609cc23 = `v1.0.0`) — one new input and the `mode` step; and
+> `dew_flow_release_signing`, `main` = 609cc23 = `v1.0.0`) — one new input and the `mode` step; and
 > `test/selftest.ps1` — the summary file, two case keys, nine cases. The second real call in `ci.yml`, the README and the
 > header comment are E3.2; here only what E3.2's forced call must see (§S1.4). Everything the E1.1 spec fixed
 > ([PLAN_windows_code_signing_E1_S1_spec.md](PLAN_windows_code_signing_E1_S1_spec.md)) stays; this spec changes the

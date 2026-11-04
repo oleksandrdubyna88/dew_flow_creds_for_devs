@@ -6,7 +6,7 @@
 > the stories document goes whole to the review gate and must stay short; it is promoted with E1's.
 >
 > Scope: `.github/workflows/sign-windows.yml` in `oleksandrdubyna88/dew_flow_release_signing` (clone:
-> `/home/jinx/git/dew_flow_release_signing`, today only `LICENSE` and `README.md`) — the `workflow_call` inputs, the job
+> `dew_flow_release_signing`, today only `LICENSE` and `README.md`) — the `workflow_call` inputs, the job
 > header, and the steps `inputs`, `pkg`, `mode`, `inventory`. The login, signing, Verify, Pack and Upload steps are E1.2;
 > here only the outputs they read (§S1.6). The harness and the fixtures are E1.3; here only the cases E1.1 owns (§S1.7).
 

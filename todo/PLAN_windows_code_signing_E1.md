@@ -2,7 +2,7 @@
 
 > Status: **built and merged, 2026-11-03 — `dew_flow_release_signing` #1 (squash 609cc23, tag `v1.0.0`); promotes with the parent.** Stories of epic E1 of [PLAN_windows_code_signing.md](PLAN_windows_code_signing.md).
 > Scope: the new public repository `oleksandrdubyna88/dew_flow_release_signing` (cloned at
-> `/home/jinx/git/dew_flow_release_signing`; `main` holds only `README.md` and `LICENSE`). All work is on branch
+> `dew_flow_release_signing`; `main` holds only `README.md` and `LICENSE`). All work is on branch
 > `feat/sign-windows` from that commit. Nothing in this repository changes for E1. The `sign` path needs Azure; it is
 > proven later by V1 in E2.
 
