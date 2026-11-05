@@ -1,6 +1,6 @@
 # PLAN — An agent on a remote Linux server uses what the person opened to it, through a bridge scoped to that server
 
-> Status: **E1 in progress on `feat/remote-bridge-e1`, 2026-11-05.** Epoch 3, after a whole re-review (`proceed`, 2 of 4 reviewers; the other vendor's quota was out, and its answers come back at E1's code gate). Scope: `src_vs_code` (broker doors, bridge lifecycle, scope,
+> Status: **stopped for re-review on `feat/remote-bridge-e1`, 2026-11-05 (change 3.2): no new code on any epic and no merge until epoch 4 opens.** Epoch 3, after a whole re-review (`proceed`, 2 of 4 reviewers; the other vendor's quota was out, and its answers come back at E1's code gate). Scope: `src_vs_code` (broker doors, bridge lifecycle, scope,
 > agent actions), `src_broker_client`, `src_cli`, `src_mcp`, `install.sh`. No server change. Extends the shipped bridge of
 > [PLAN_remote_broker_bridge.md](../research/PLAN_remote_broker_bridge.md).
 
@@ -40,9 +40,11 @@ Narrowed: no
 | E1.2, 547d9e9 and 52cb8a5 | pushed, unmerged | fits | kept; no revision touches the door, key, context or listener |
 | E1.3, a91e981 | pushed, unmerged | fits | allow-list, note schema, per-call token grant, launch gate and reference check kept; fix forward: the file store with revisions, generic refusal bodies with `ctx.bridge` set, `agentForward` refused, per-account suppliers, the gate before `releaseWaiting`, a token re-read at entry and at the gate, per-bridge prompt windows. `credsAgentServer.ts` is at 788 of 800 |
 
-> Epoch 3 · approved 2026-11-05 · by reviewers · state: open
+> Epoch 3 · approved 2026-11-05 · by reviewers · state: stopped
 
 - 3.1 · 2026-11-05 · reviewer · approach — an in-scope entry's port forwards would give the server a road through the laptop for the life of an exec: on a bridge they are stripped from the argv and ssh is told to clear every forwarding, share no connection and open no X11 or tun channel
+- 3.2 · 2026-11-05 · reviewer · approach — a `-J` hop inherits the entry's password through the environment and takes none of the `-o` options, so a hop that asks gets the plaintext and the hop's leg can join the person's connection; a bridged call runs under a written ssh_config, and a hop authenticates by the person's agent or key only, which the plan never named
+  (This second change stopped the plan. The fix satisfies two sentences of the plan, but it names a new behaviour, and in doubt it counts. E1.3 with Amendments 2 and 3 is pushed on the branch; E1.4 is saved unfinished on `wip/remote-bridge-e14-before-stop`; Amendment 4 is written and not built. All of it goes to the re-review's sort.)
   (E1.3 spec, Amendment 3, C.1–C.2. The first change of epoch 3; the plan goes on.)
 
 ## 1. Goal
