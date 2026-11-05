@@ -29,6 +29,8 @@ export interface DependencyRunRequest {
   readonly exclude?: ReadonlySet<string>;
   /** The entry being used — named in the pre-run modal and the terminal title. */
   readonly ownerName: string;
+  /** The owner is a folder (the folder run): it has no Depends on, so a missing row is cleared in the entry that lists it. */
+  readonly ownerIsFolder?: boolean;
   readonly trust: TrustStore;
   /**
    * The agent request this chain runs for, when an agent asked (a VPN start — E4.S3). Fired means its
@@ -137,7 +139,7 @@ async function approve(request: DependencyRunRequest, steps: readonly RunStep[],
   }
   const button = missing.length > 0 ? 'Run the rest' : 'Run';
   const choice = await vscode.window.showWarningMessage(
-    describeRunPlan(request.ownerName, steps, missing, chainShellName(pinned)),
+    describeRunPlan(request.ownerName, steps, missing, chainShellName(pinned), request.ownerIsFolder),
     { modal: true },
     button,
   );
@@ -152,7 +154,8 @@ function chainShellName(pinned: boolean): string {
   return pinned ? pinnedShell().shellPath : 'your default terminal';
 }
 
-async function trustAll(trust: TrustStore, steps: readonly RunStep[]): Promise<true> {
+/** One at a time: `trustCommand` reads, then writes the whole list, so a parallel loop would lose writes. */
+export async function trustAll(trust: TrustStore, steps: readonly { readonly id: string; readonly line: string }[]): Promise<true> {
   for (const step of steps) {
     await trustCommand(trust, step.id, step.line);
   }

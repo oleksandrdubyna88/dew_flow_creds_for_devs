@@ -85,14 +85,15 @@ test('a disabled row survives normalization, because it is deliberate', () => {
 });
 
 test('the description reads as the command plus what each argument means', () => {
-  const text = describeCommand(
-    'aws sso login',
-    [
+  const text = describeCommand({
+    name: 'x',
+    command: 'aws sso login',
+    commandArgs: [
       { value: '--sso-session OD-org', note: 'the SSO profile from ~/.aws/config' },
       { value: '--no-browser' },
     ],
-    'Refresh the AWS session before running terraform.',
-  );
+    commandNote: 'Refresh the AWS session before running terraform.',
+  });
 
   assert.match(text, /aws sso login --sso-session OD-org --no-browser/);
   assert.match(text, /Refresh the AWS session/);
@@ -102,7 +103,7 @@ test('the description reads as the command plus what each argument means', () =>
 });
 
 test('a command with no notes at all still describes itself', () => {
-  const text = describeCommand('ls -la', [], undefined);
+  const text = describeCommand({ name: 'x', command: 'ls -la', commandArgs: [] });
 
   assert.equal(text.trim(), 'ls -la');
 });

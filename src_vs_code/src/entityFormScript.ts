@@ -1,6 +1,7 @@
 import { MAX_ATTACHMENT_BYTES, fileNameRegex, imageNameRegex } from './attachment';
 import { renderForward } from './sshOptions';
 import { jsonForScript } from './webviewHtml';
+import { commandPreviewScript } from './commandPreviewScript';
 import { CommandArg, EntityMetadata, PortForward } from './types';
 import { DependencyFolderCandidate, DependencyRow } from './depGraph';
 import { dependencyPickerScript } from './depPickerScript';
@@ -216,17 +217,7 @@ export function formPageScript(
     updatePreview();
   }
 
-  function updatePreview() {
-    var base = (val('command') || '').trim();
-    var parts = argRows
-      .filter(function (r) { return r.disabled !== true; })
-      .map(function (r) { return (r.value || '').trim(); })
-      .filter(function (r) { return r.length > 0; });
-    var preview = document.getElementById('commandPreview');
-    if (preview) {
-      preview.value = base.length > 0 ? [base].concat(parts).join(' ') : '';
-    }
-  }
+  ${commandPreviewScript()}
 
   (function wireArgs() {
     var add = document.getElementById('addArg');
@@ -238,6 +229,7 @@ export function formPageScript(
         if (inputs.length > 0) { inputs[inputs.length - 1].focus(); }
       });
     }
+    wirePreviewName();
     var command = document.getElementById('command');
     if (command) {
       command.addEventListener('input', updatePreview);

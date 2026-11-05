@@ -46,3 +46,13 @@ test('the other kinds are untouched by the terminal branch', () => {
   assert.match(ssh, /Password: pw/);
   assert.equal(/—/.test(ssh), false);
 });
+
+test('copy_all_shows_the_resolved_line_or_the_template_and_why', () => {
+  const resolved = formatEntityBlock({ ...base, name: 'alert', isTerminal: true, command: 'x {name}' }, undefined);
+  assert.ok(resolved.includes('x alert'), resolved);
+  assert.equal(resolved.includes('will not run'), false, resolved);
+
+  const refused = formatEntityBlock({ ...base, name: 'a b', isTerminal: true, command: 'x {name}' }, undefined);
+  assert.ok(refused.includes('x {name}'), refused);
+  assert.ok(refused.includes('will not run:'), refused);
+});

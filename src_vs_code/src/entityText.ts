@@ -34,7 +34,7 @@ export function formatEntityBlock(
   // means. It was written for the tooltip and simply was not reached from here, which
   // is why the details view showed a name and nothing else.
   if (details.isTerminal) {
-    const described = describeCommand(details.command ?? '', details.commandArgs, details.commandNote);
+    const described = describeCommand(details);
     if (described.length > 0) {
       lines.push('', described);
     }

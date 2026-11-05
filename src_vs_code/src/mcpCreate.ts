@@ -1,6 +1,6 @@
 import { AgentValues, secretKindRefusal, validateAgentFields } from './agentFieldValidation';
 import { AGENT_KINDS, AgentSecret } from './agentKindFields';
-import { buildCommandLine, commandRowLabel } from './commandLine';
+import { commandRowLabel, shownCommandLine, willNotRunLines } from './commandLine';
 import type { EntityFormValues } from './entityFormShape';
 import { McpAccess, resolveMcpInTree } from './mcpAccess';
 import { DrawOptions } from './secretKinds';
@@ -341,14 +341,15 @@ function inSlot(slot: AgentSecret['slot'] | undefined, wanted: AgentSecret['slot
  */
 export function summarizeCreate(request: CreateRequest, target: CreateTarget, kind: string, values: AgentValues): string {
   const head = `${request.name} (${kind}) in "${target.folderName}"`;
-  const shown = WHAT_RUNS[kind as EntityKind]?.(values.details) ?? [];
+  const shown = WHAT_RUNS[kind as EntityKind]?.(values.details, request.name) ?? [];
   return [head, ...shown].join('\n');
 }
 
 /** The kinds that RUN something, and how each says what: the same composition the viewer shows. */
-const WHAT_RUNS: Partial<Record<EntityKind, (details: Partial<EntityMetadata>) => string[]>> = {
-  terminal: (details) => [
-    `${commandRowLabel(details.terminalOs)}: ${buildCommandLine(details.command ?? '', details.commandArgs)}`,
+const WHAT_RUNS: Partial<Record<EntityKind, (details: Partial<EntityMetadata>, name: string) => string[]>> = {
+  terminal: (details, name) => [
+    `${commandRowLabel(details.terminalOs)}: ${shownCommandLine({ ...details, name })}`,
+    ...willNotRunLines({ ...details, name }),
     ...(details.commandNote === undefined ? [] : [details.commandNote]),
   ],
   script: (details) => [`Script (${details.scriptLanguage ?? 'bash'}), in full:`, details.script ?? ''],

@@ -970,6 +970,15 @@
         "icon": "$(save)"
       },
       {
+        "command": "credSshManager.runFolder",
+        "title": "Run All in Folder",
+        "category": "CredsForDevs",
+        "icon": {
+          "light": "media/play-green-light.svg",
+          "dark": "media/play-green.svg"
+        }
+      },
+      {
         "command": "credSshManager.runCommand",
         "title": "Run in Terminal",
         "category": "CredsForDevs",
@@ -1234,6 +1243,10 @@
     "menus": {
       "commandPalette": [
         {
+          "command": "credSshManager.runFolder",
+          "when": "false"
+        },
+        {
           "command": "credSshManager.checkWslMcpInstall",
           "when": "isWindows"
         },
@@ -1335,18 +1348,28 @@
       ],
       "view/item/context": [
         {
+          "command": "credSshManager.runFolder",
+          "when": "view == credSshManagerView && viewItem =~ /^folder(:.*)?:runall$/",
+          "group": "inline@0"
+        },
+        {
+          "command": "credSshManager.runFolder",
+          "when": "view == credSshManagerView && viewItem =~ /^folder(:.*)?:runall$/",
+          "group": "2_actions@0"
+        },
+        {
           "command": "credSshManager.addEntity",
-          "when": "view == credSshManagerView && viewItem =~ /^folder$/",
+          "when": "view == credSshManagerView && viewItem =~ /^folder(:runall)?$/",
           "group": "inline@1"
         },
         {
           "command": "credSshManager.addFolder",
-          "when": "view == credSshManagerView && viewItem =~ /^(account|folder)$/",
+          "when": "view == credSshManagerView && viewItem =~ /^(account|folder(:runall)?)$/",
           "group": "1_create@1"
         },
         {
           "command": "credSshManager.addEntity",
-          "when": "view == credSshManagerView && viewItem =~ /^(account|folder)$/",
+          "when": "view == credSshManagerView && viewItem =~ /^(account|folder(:runall)?)$/",
           "group": "1_create@2"
         },
         {
@@ -1531,17 +1554,17 @@
         },
         {
           "command": "credSshManager.changeFolderType",
-          "when": "view == credSshManagerView && viewItem == folder",
+          "when": "view == credSshManagerView && viewItem =~ /^folder(:runall)?$/",
           "group": "1_create@3"
         },
         {
           "command": "credSshManager.folderUp",
-          "when": "view == credSshManagerView && viewItem == folder",
+          "when": "view == credSshManagerView && viewItem =~ /^folder(:runall)?$/",
           "group": "0_order@1"
         },
         {
           "command": "credSshManager.folderDown",
-          "when": "view == credSshManagerView && viewItem == folder",
+          "when": "view == credSshManagerView && viewItem =~ /^folder(:runall)?$/",
           "group": "0_order@2"
         },
         {

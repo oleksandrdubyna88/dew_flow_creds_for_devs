@@ -148,3 +148,11 @@ test('an ordinary name is left exactly as it is', () => {
     assert.equal(safeLabel(name), name);
   }
 });
+
+test('the_terminal_snippet_names_the_name_token_and_the_script_snippet_stays_exact', () => {
+  const base = { entityName: 'x', token: 'p.s', cliPath: 'C:/cli.js' };
+  const terminal = buildKindSnippet('terminal', base) ?? '';
+  assert.doesNotMatch(terminal, /exactly as saved/);
+  assert.ok(terminal.includes('{name}'), terminal);
+  assert.match(buildKindSnippet('script', base) ?? '', /exactly as saved/);
+});
