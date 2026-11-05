@@ -21,11 +21,14 @@
 //            signalled) and asked about again; what cannot be accounted for keeps the audit at list-and-fail.
 //            **macOS (and any POSIX that is not Linux) fails closed** [E2.1 Opus 1]: a detached grandchild whose parent died is
 //            reparented to launchd, the parent-pid walk finds nothing, and there is no environment to read — so the scan always
-//            adds the entry `no environment scan on this OS`, and the run lists and fails and never removes there.
+//            adds the entry `no environment scan on this OS`, and nothing is ever removed there. The answer has the reason `no-scan`: a
+//            run that claimed a folder lists it and fails; a run that claimed none leaves with the suite's own code, because failing every
+//            macOS run for a confirmation the platform cannot give would make the suite unusable there. That entry beside any other, or a
+//            live survivor, is still a failure.
 //            **A survivor is signalled only with a start time bound** [E2.1 code4 12]: a pid with none (never captured, or already going)
 //            cannot be told from a reused number, so it is never killed and, while it is alive, keeps the answer at "not ended".
 //            On non-Linux `startOf` is always undefined, so a chain-walk survivor there is no longer killed either; that platform
-//            already fails closed with `no environment scan on this OS`, so the run lists and fails and removes nothing.
+//            already answers `no-scan` (`no environment scan on this OS`), so nothing is removed there.
 //            **What the Linux scan cannot see** [E2.1 Opus]: a descendant that cleared its environment (`env -i`, `execve` with
 //            another one) no longer carries the marker, and a non-dumpable or set-uid descendant has an environment the kernel
 //            will not show — the latter is a doubt (it fails the run) only when it started after the runner did; the former is
@@ -53,6 +56,9 @@ export const SUPERVISOR_MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 
 /** Every `ps` the scan launches has a ceiling and is killed with SIGKILL when it is reached [E2.1 code3 9]: a timeout is "cannot confirm". */
 export const PS_TIMEOUT_MS = 5000;
+
+/** The one entry the scan adds on a POSIX that is not Linux, where there is no environment to read [E2.1 Opus 1]. */
+export const NO_ENV_SCAN = 'no environment scan on this OS';
 
 const WINDOWS = process.platform === 'win32';
 
@@ -300,7 +306,7 @@ async function markedByRecord(record, procRoot, { since, startOf, known, ours, w
  * The processes of this run that are still alive after its group was killed, read ONCE: `{ pids, unverified }` [E2.1 code 1,
  * code2 4, 6/11]. The parent-pid chain below `rootPid` (from one `ps -A -o pid=,ppid=`), and on Linux every process whose
  * environment carries the run's record as a whole entry; on any other POSIX the scan has no environment to read and says so with a
- * fixed `unverified` entry, so the run lists and fails [E2.1 Opus 1]. Never this process. `unverified` names what could not be
+ * fixed `unverified` entry, so nothing is removed and the answer is `no-scan` [E2.1 Opus 1]. Never this process. `unverified` names what could not be
  * looked at (a table that cannot be read or passed its `ps` ceiling, an unreadable /proc, a process of ours that started after
  * `since` and whose environment cannot be read); it never throws, and the other half of the scan still runs. Windows answers
  * nothing: its job ends them. `table`, `ours`, `pause`, `procRoot`, `platform` and `psTimeoutMs` are seams.
@@ -317,7 +323,7 @@ export async function findSurvivors({ rootPid, record, platform = process.platfo
     result.unverified.push(String(error?.message ?? error));
   }
   if (platform !== 'linux') {
-    result.unverified.push('no environment scan on this OS');
+    result.unverified.push(NO_ENV_SCAN);
   } else if (typeof record === 'string' && record !== '') {
     const marked = await markedByRecord(record, procRoot, { since, startOf, known, ours, wait });
     for (const pid of marked.pids) result.pids.add(pid);
@@ -376,7 +382,9 @@ async function settle({ rootPid, record, since, startOf, platform, survivors, pi
   }
   const cause = unverified.length > 0 ? { cause: unverified.join('; ') } : {};
   if (remaining.length > 0) return { ended: false, alive: remaining.length, ...cause };
-  if (unverified.length > 0) return { ended: false, alive: 0, reason: 'unknown', ...cause };
+  // The fixed entry ALONE is not a failure of the scan: it is what this OS can never do. It has a reason of its own, so the runner can tell
+  // it from a scan that broke (the entry beside any other one, or a known live survivor, still fails the run) [E2.1 Opus 1, refined].
+  if (unverified.length > 0) return { ended: false, alive: 0, reason: unverified.every((entry) => entry === NO_ENV_SCAN) ? 'no-scan' : 'unknown', ...cause };
   return { ended: true, alive: 0 };
 }
 

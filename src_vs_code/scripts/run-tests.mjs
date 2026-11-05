@@ -35,8 +35,9 @@
 // On Windows and macOS the record carries no start time, so a dead earlier run whose pid was reused by this runner would write
 // the SAME record text. The audit therefore keeps only claims whose file is at or after this runner's start (less a two-second
 // clock slack) and lists the others as `unproven:`, never removing them [E2.1 Opus 2]; where the record has a start time the
-// start time already tells the runs apart. On macOS the survivor scan has no environment to read and fails closed: the audit
-// lists and fails and removes nothing there [E2.1 Opus 1].
+// start time already tells the runs apart. On macOS the survivor scan has no environment to read, so the audit removes NOTHING
+// there (answer `no-scan`): a run that claimed a folder lists it and fails, a run that claimed none leaves with the suite's own code
+// [E2.1 Opus 1, refined]. A root the audit cannot list fails the run (`unlisted:`); a claim it cannot read is named (`unreadable:`).
 // On Windows the audit removes nothing at all for now: the reference's job supervisor gives no acknowledgment that its job is empty.
 //
 // The preload (`--import`) lowers THIS process, and the `node --test` child inherits the priority (the Windows priority
@@ -232,6 +233,7 @@ function refusalOf(ended) {
   if (ended.alive > 0) return ` (not removed: ${ended.alive} descendant(s) still alive)`;
   if (ended.reason === 'no-exit') return ' (not removed: the coordinator did not exit after the kill)';
   if (ended.reason === 'no-handle') return ' (not removed: the supervisor gives no acknowledgment that its job is empty)';
+  if (ended.reason === 'no-scan') return ' (not removed: the end of the process tree could not be confirmed, because this OS gives no way to look for a descendant that left the process group)';
   return ' (not removed: the end of the process tree could not be confirmed)';
 }
 
@@ -247,8 +249,9 @@ function ownerOf(target) {
 /**
  * The audit's whole effect: remove (only with the tree PROVEN ended), report, and return the code to leave with. A tree that is
  * not proven ended fails the run when something is claimed, or when a descendant is known alive or the check itself failed. The one
- * exception is a tree with no handle (Windows) and nothing claimed: there is nothing to remove or list, and failing every Windows
- * run for a confirmation the platform cannot give would make the suite unusable there.
+ * exceptions are a tree with no handle (Windows) and a tree that could only not be scanned for an environment (macOS: `no-scan`),
+ * each with nothing claimed: there is nothing to remove or list, and failing every run for a confirmation the platform cannot give
+ * would make the suite unusable there. A root that could not be listed fails the run whatever else is true.
  */
 function finishAudit({ helper, roots, record, ended, code, write, mine, startedAt }) {
   const { claimed, unmarked, foreign, unproven, unreadable, unlisted } = auditRoots(helper, roots, record, mine, startedAt);
@@ -258,7 +261,7 @@ function finishAudit({ helper, roots, record, ended, code, write, mine, startedA
   for (const target of unproven) write(`run-tests: unproven: ${target} — carries this run's record text but is older than this run (a dead run's pid reused?), left alone`);
   for (const claim of unreadable) write(`run-tests: unreadable: ${claim} — a claim that cannot be read or parsed, so whose folder it is cannot be known; left alone, and it does not fail this run`);
   if (ended.ended) removeClaimed(helper, claimed);
-  const failsAnyway = !ended.ended && ended.reason !== 'no-handle';
+  const failsAnyway = !ended.ended && ended.reason !== 'no-handle' && ended.reason !== 'no-scan';
   if (claimed.length === 0 && !failsAnyway) return unlisted.length > 0 && code === 0 ? 1 : code;
   write(`run-tests: this run left ${claimed.length} folder(s) it claimed — a test made scratch outside a scope: ${claimed.join(', ')}${ended.ended ? '' : refusalOf(ended)}`);
   return code === 0 ? 1 : code;

@@ -13,7 +13,7 @@ import { ENDED, RECORD, exists, lines, nothingSwept, ownerWith, plant, privateRo
 
 const posixOnly = process.platform === 'win32' ? { skip: 'POSIX: a fake ps script' } : {};
 
-test('[E2.1 Opus 1] on a POSIX that is not Linux the scan cannot read an environment, so it says so and the audit lists and fails', async () => {
+test('[E2.1 Opus 1] on a POSIX that is not Linux the scan cannot read an environment, so it says so, with a reason of its own', async () => {
   const tree = await processTree();
 
   const found = await tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'darwin', table: () => tableOf([]) });
@@ -21,8 +21,50 @@ test('[E2.1 Opus 1] on a POSIX that is not Linux the scan cannot read an environ
 
   assert.deepEqual(found.unverified, ['no environment scan on this OS']);
   assert.equal(ended.ended, false);
-  assert.equal(ended.reason, 'unknown');
+  assert.equal(ended.reason, 'no-scan', 'a reason of its own: the scan could not be done on this OS, nothing else is in doubt');
+  assert.equal(ended.alive, 0);
   assert.match(ended.cause ?? '', /no environment scan on this OS/);
+});
+
+const NO_SCAN = 'no environment scan on this OS';
+
+test('[E2.1 Opus 1] the fixed no-scan entry beside any other entry, or beside a live survivor, is not "no-scan": the run still fails on it', async () => {
+  const tree = await processTree();
+  const options = { confirm: ENDED, record: RECORD, platform: 'darwin', pidAlive: () => true, kill: () => undefined, settleTimeoutMs: 30 };
+
+  const beside = await tree.endTree(new EventEmitter(), { ...options, survivors: () => ({ pids: [], unverified: [NO_SCAN, 'the process table could not be read'] }) });
+  const alive = await tree.endTree(new EventEmitter(), { ...options, startOf: () => 1, survivors: () => ({ pids: [4242], unverified: [NO_SCAN] }) });
+
+  assert.equal(beside.reason, 'unknown');
+  assert.match(beside.cause ?? '', /the process table could not be read/);
+  assert.equal(alive.ended, false);
+  assert.equal(alive.alive, 1);
+  assert.equal(alive.reason, undefined, 'a known live descendant is counted, not excused');
+});
+
+test('[E2.1 Opus 1] and the runner, told it is on darwin, with nothing claimed leaves with the suite\'s own code and removes nothing', async (t) => {
+  const { runWithAudit } = await runner();
+  const root = privateRoot(t);
+  const log = lines();
+  let unmarked = '';
+
+  const passed = await runWithAudit([], { spawn: suite(0, () => { unmarked = plant(root, 'mac'); }), roots: [root], sweep: nothingSwept, confirm: ENDED, platform: 'darwin', write: log.write });
+  const failed = await runWithAudit([], { spawn: suite(3), roots: [root], sweep: nothingSwept, confirm: ENDED, platform: 'darwin', write: lines().write });
+
+  assert.equal(passed, 0, 'a clean run is not failed for a confirmation this OS cannot give');
+  assert.equal(failed, 3, 'and a failed suite keeps its own code');
+  assert.ok(exists(unmarked));
+  assert.ok(!log.seen.some((line) => line.includes('this run left')), log.seen.join(' | '));
+});
+
+test('[E2.1 Opus 1] and the runner on darwin still fails when the scan failed for another reason too, even with nothing claimed', async (t) => {
+  const { runWithAudit } = await runner();
+  const log = lines();
+
+  const code = await runWithAudit([], { spawn: suite(0), roots: [privateRoot(t)], sweep: nothingSwept, confirm: ENDED, platform: 'darwin', survivors: () => ({ pids: [], unverified: [NO_SCAN, 'the process table could not be read'] }), write: log.write });
+
+  assert.equal(code, 1);
+  assert.ok(log.seen.some((line) => line.includes('could not be confirmed')), log.seen.join(' | '));
 });
 
 test('[E2.1 Opus 1] and the runner, told it is on darwin, keeps a claimed folder and fails the run', async (t) => {
