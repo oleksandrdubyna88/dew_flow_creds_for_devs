@@ -1659,3 +1659,338 @@ mutants of item 13 (code removed), and one (`storedTexts` reading account a1 who
 - Section 8 of `ssh-agent-itest.cjs` on a runner with `sshd`, and M8 (the Windows OpenSSH 9.5 with `ForwardAgent yes` in the Windows ssh_config).
 - That a `Date`-mocked clock in `mock.timers` does not disturb other tests in the same file: the file's other tests passed in the full run, and
   `mock.timers.reset()` is in a `finally`.
+
+### Amendment 3 (Fable, 2026-11-05) — after `5bfedf8` and its review
+
+Ten review items, each checked against the code at `5bfedf8`; every `file:line` below is at that commit. `credsAgentServer.ts` is 789 of 800 and
+**stays 789** (every edit to it moves lines, none adds one); `extension.ts` stays at 1003. **Item 2 is a plan change** — the parent plan's
+ledger carries it as `3.1` and §4.2's *never the laptop's whole agent* bullet gains its sentence; it is the first change of epoch 3, so the plan goes
+on. Items 1, 3–10 bring the code to the plan as written (one fresh connection for a bridged exec, one dialog at a time for one person, a bounded
+journal, a registry that never loses a live dialog's grant, a slot that always comes back). Where this amendment differs from B.1–B.12 and from
+§S3.14, this amendment wins; nothing above is deleted. Two residual risks are judged at the end (one goes to a todo of its own, named there).
+A Sonnet coder builds from this section alone; the order is in C.12.
+
+**What the review had wrong, so it is not built.** Item 7 named a gap at `brokerMcpDoor.ts:370`: there is none — `handleMcpCreate` (`:370-378`) and
+`handleMcpDelete` (`:282-291`) open their `try` directly after `admit`, and `minted` runs inside `confirmAndCreate`/`confirmAndDelete`. The gaps are
+`handleMcpUse` (`:213-215`), `handleAlias` (`credsAgentServer.ts:338-346`) and `bridgedTokenCall` (`brokerBridgeToken.ts:40-42`). Item 3 named the
+VPN and terminal actions as paths a door reaches: a bridge door serves `exec` and `query` only (`bridgeAllowList.ts`, `SERVED_ACTIONS`), so those
+two are the LOCAL doors' follow-up prompts; they are covered because the fix is one flag per action, not per door. Item 2's sentence "`sshExecCommand.test.ts`
+pins `-L` in a bridged argv" is true (`:122-130`, "and after the port forwards") and that assertion inverts under C.2.
+
+#### C.1 A bridged exec is one fresh connection: no multiplexing (HIGH)
+
+What is true today. `buildSshExecArgv` (`sshExecCommand.ts:100-107`) pushes `-o ForwardAgent=no` on a bridged call and its comment says the agent
+"is forwarded only when ForwardAgent is yes". That is false on a multiplexed connection. With `Host *` / `ForwardAgent yes` / `ControlMaster auto` /
+`ControlPath …` / `ControlPersist` in the laptop's `~/.ssh/config` — a common stanza — the person's own Connect becomes the master and asks for agent
+forwarding on its session; a bridged exec to the same `user@host:port` joins that master as a second session. In OpenSSH's `session.c`,
+`auth_sock_name` is a file-level static set once any session of the CONNECTION asks for forwarding, and `do_setup_env` exports `SSH_AUTH_SOCK` to every
+later session of that connection whether or not it asked. So the exec's shell has `SSH_AUTH_SOCK`, `ssh-add -l` lists every key the laptop's agent
+holds, and the agent signs with them. The mux client also authenticates nothing itself: the pinned key (`-i`), `StrictHostKeyChecking=yes` and the
+pinned `UserKnownHostsFile` of `:94-99` are not applied, and even the port it was given is not the one it reaches. Verified by reading the mux code
+path (`mux.c`: the new session asks for forwarding only if the mux client wanted it, which with `ForwardAgent=no` it does not — and that is beside the
+point, because `session.c` exports the connection's socket to every session once any one of them has asked) and the session code above; measured live in
+C.1's itest leg below, not here (no `sshd` on this machine).
+
+The change. One constant, pushed on a bridged call right after the composer's block (where `-o ForwardAgent=no` sits today), carrying C.2's options too:
+
+```ts
+// sshExecCommand.ts
+/** A bridged call: ONE fresh connection that carries the command and nothing else, whatever the entry or a config file says (Amendment 3, C.1–C.2). */
+export interface SshExecOptions { jump?: string; knownHostsFile?: string; bridged?: boolean; }     // `noAgentForward` is renamed: it stops more than the agent
+/**
+ * The options of a bridged call, in this order. `ForwardAgent=no` alone is not enough: a multiplexed session inherits the master's
+ * forwarded agent and authenticates nothing itself, so connection sharing is off (`ControlPath=none` disables it; `ControlMaster=no` is
+ * belt and braces). `ClearAllForwardings=yes` drops every port forwarding a config file names; `ForwardX11=no` and `Tunnel=no` the two
+ * other channels a config can open. Checked with `ssh -G -F none` on OpenSSH 10.2: controlmaster false, clearallforwardings yes, forwardx11 no,
+ * tunnel false, forwardagent no, and no localforward/remoteforward line even with -L and -R on the command line.
+ */
+export const BRIDGED_SSH_OPTIONS: readonly string[] = ['-o', 'ForwardAgent=no', '-o', 'ControlPath=none', '-o', 'ControlMaster=no', '-o', 'ClearAllForwardings=yes', '-o', 'ForwardX11=no', '-o', 'Tunnel=no'];
+// :102  argv.push(...sshOptionArgv(options.bridged === true ? { ...entity, agentForward: false, portForwards: [] } : entity, options.jump));
+// :105-107  if (options.bridged === true) { argv.push(...BRIDGED_SSH_OPTIONS); }
+// The comment at :100-104 is rewritten: "a bridged call is one fresh connection: the composer gets the entry with its forwards and -A off, and
+// BRIDGED_SSH_OPTIONS tells ssh to share no connection and clear what a config file adds; -A would win over ForwardAgent=no in either order (S3.14 item 3)".
+// sshUseActions.ts:182-189  connectionArgvOptions(...) → { jump, knownHostsFile, bridged }; :243 unchanged (passes ctx.bridge !== undefined).
+```
+
+The first `-o` of an option on the command line wins (ssh_config(5): "the first obtained value will be used"); the composer pushes no `-o`, so the
+position after it changes nothing and is kept for F1's sake. `-J` (ProxyJump) is not a forwarding and survives `ClearAllForwardings`; the jump chain
+stays as the wall decided (§4.2 *What an entry links to*). `SSH_AUTH_SOCK` in the child's environment is still **not** cleared (B.3's reason: it is how
+the in-scope entry may authenticate); what C.1 removes is the server's view of it. The §8 row "`ControlMaster` reuse — per-call until then" is now
+enforced rather than assumed.
+
+Itest, `scripts/itestForwardAgent.cjs` (101 lines today; stays under 800). Section 8 keeps legs 1–2 and gains **the mux pair**: two `startSshd` rigs,
+A and B (`sshd -d` serves one connection each, which is exactly what the pair needs); the config file reads `Host *\n  ForwardAgent yes\n
+ControlMaster auto\n  ControlPath <dir>/mux.sock\n` (a FIXED path, so the mux client joins whatever master holds it, whichever port the argv names —
+the sharpest form of the finding); a master `ssh -F cfg -o StrictHostKeyChecking=yes -o UserKnownHostsFile=<A.knownHosts> -i <userKey> -p <A.port>
+<user>@127.0.0.1 sleep 30` with the agent in its environment, awaited until `mux.sock` appears (its session asked for forwarding, so `auth_sock_name`
+is set on connection A). Leg 3, the control, a hand-written argv — NOT the production one, which after this fix cannot join — `-F cfg -o ForwardAgent=no
+-o StrictHostKeyChecking=yes -o UserKnownHostsFile=<B.knownHosts> -i <userKey> -p <B.port> <user>@127.0.0.1 'printenv SSH_AUTH_SOCK SSH_CONNECTION'`:
+code 0, a non-empty first line, and a second line ending in A's port — it joined the master, got the socket, and never reached the server it named.
+Leg 4, the production argv for an entity on B's port with `bridged: true` under the same `-F cfg`: `code === 1` (printenv's answer for an unset
+variable, C.8), `stdout === ''`, and B's `sshd -d` stderr shows the connection (`Accepted publickey`), so the socket was not merely refused. Teardown:
+the master by `endChild` (or `ssh -O exit -S mux.sock`), both sshds, the agent, the folder. The file's header comment loses "`-o ForwardAgent=no`
+(`buildSshExecArgv`, `noAgentForward`)" and says what the pair shows.
+
+#### C.2 An in-scope entry's forwards are stripped on a bridge (MEDIUM; plan change 3.1)
+
+What is true today. `sshOptionArgv` (`sshOptions.ts:195-200`) renders the entry's `portForwards` as `-L`/`-R` for the exec as for the human terminal,
+`buildSshExecArgv` sends them on a bridge, and `entryRefusal` (`bridgeWallSource.ts:24,29-31`) refuses `agentForward` only. An in-scope entry with
+`portForwards: [{ kind: 'remote', bindPort: 9000, host: 'intranet.example', hostPort: 443 }]` opens, for the life of the exec, a listener on the server
+that the laptop relays to something out of every scope; a `local` one opens the laptop's port to the server's network. `ssh -G` confirms a config
+file's `RemoteForward`/`LocalForward`/`DynamicForward` and `ForwardX11 yes` would ride the same call. The strings come from the entry, which a writer of
+a shared vault chooses (`sshOptions.ts:13-18`).
+
+The decision, the caller's and judged safe here: **strip, do not refuse.** An exec needs no forward (a forward is a tunnel for a session a person
+sits in; the exec runs one command and exits), so nothing a person can do is lost, and the owner has said twice not to refuse what can be made safe.
+The composer is handed the entry with `portForwards: []` (C.1's line), and `ClearAllForwardings=yes` in `BRIDGED_SSH_OPTIONS` covers what a config
+file adds — both, so the argv stays honest and the config is covered. Off a bridge the argv is byte for byte today's.
+
+**What the agent is told: nothing per call.** The strip is unconditional on a bridge, so there is nothing to decide and nothing to report per request,
+and a sentence would disclose the shape of the entry (that it has forwards, to where) to the server. No journal line either. The sentence a person reads
+belongs in the help and the README at E4 (the bridge's section: "a bridged command runs on one fresh connection that forwards nothing — not the agent,
+not the entry's port forwards"). E2's picker inherits a note for its ssh rows: the entry's forwards do not apply through a bridge.
+
+**Every other road from the entry or a config file, checked.** The entry reaches ssh through `host`/`user`/`port` (validated by `isSafeSshTarget`,
+behind `--`), the typed jump chain (`-J`, each hop validated), `portForwards` (now empty) and `agentForward` (now off); `EntityMetadata` holds no
+other ssh option string (`types.ts:84-88`), so a vault writer has no field left that reaches ssh's parser. From a config file: dynamic forwards are
+cleared with the rest; `Tunnel` is set `no`; `RemoteCommand` with a command-line command makes ssh refuse ("Cannot execute command-line and remote
+command") — a failed call, not a road; `ProxyCommand`, `LocalCommand`/`PermitLocalCommand` and `SendEnv` run on the laptop and are the laptop owner's
+own words in their own file — the person's choice for every connection they make, not the server's or a vault writer's, and `ProxyCommand=none` would
+break the person who needs a bastion to reach the host at all. They stay. `PermitRemoteOpen` only qualifies a `-R` SOCKS forward, which no longer
+exists.
+
+Plan edits (this commit): the ledger line `3.1` under epoch 3; §4.2's sentence under *never the laptop's whole agent*; M8 in §7 extended to the whole
+option set on Windows, where Win32-OpenSSH is believed to have no `ControlMaster` at all (unverified here; `ssh -G` on the owner's host says whether the
+option is known — if it is, the mux leg's finding applies there too).
+
+#### C.3 An Allow keeps the place while the call's own follow-up prompt may be on screen (MEDIUM; a regression of B.2)
+
+What is true today. B.2 moved the one place from the call's `finally` to the dialog's close: `ConsentGate.shown` (`brokerConsent.ts:111-122`) calls
+`dialogClosed` in its `finally`, and `OneInFlight.dialogClosed` (`aliasThrottle.ts:181-186`) frees the place. For `exec` that is right (P2). But three
+calls raise a prompt of their own AFTER the Allow, and before `5bfedf8` the place was still held then:
+
+| Call (door) | The follow-up prompt | Where |
+|---|---|---|
+| `create` (local MCP door only; a bridge refuses the route) | the folder's PIN box, `ignoreFocusOut: true`, and the "count taken" modal | `brokerMcpDoor.ts:483` `create.settle` → `pinOnCreate.ts:243-250`, `:259-260` |
+| `terminal` (local alias and MCP doors) | a remote window's refusal modal with remedy buttons | `sshUseActions.ts:285-293` `connectEntity` → `sshConnect.ts:426-433` `askAndPick` |
+| `up` (local doors) | the launcher's trust modal (`trustPrompt.ts:23`, `{ modal: true }`, 'Run'), the config read's PIN, OpenVPN Connect's question, an install offer | `agentUseActions.ts:396` `vpnAction('up')` → `vpnLauncherRun.ts:51-52`, `vpnRun.ts:61` |
+
+`down` shows an information message and returns (`vpnLauncherRun.ts:47-50`); `run` and `query` refuse an untrusted line rather than ask
+(`agentUseActions.ts:139,211`); `exec`'s `prepareAuth` never prompts (`sshExecAuth.ts:71,108`); `delete` has no prompt. On a bridge, `exec` and
+`query` are the only served actions, so no bridged call has a follow-up — the attack is a bridge's call landing on top of a LOCAL call's follow-up:
+the person clicks Allow on a local `create`, the place frees, the PIN box opens, a bridge's call (or any door's) is admitted and its modal opens over
+the box; the person, mid-PIN, presses Enter, and the modal's default button is the first one, Allow. The invariant E1.4 relies on is untouched: every
+`consent` caller on a throttled door admits first and reaches its dialog with no `await`; a silent admission is pre-allowed and raises no dialog;
+`prompted` trusts whoever holds the place.
+
+The boundary, weighed against P2. Holding the place to the call's `release` for EVERY Allow would make one 120-second `exec` answer `busy` to every
+other door — P2's finding. Holding it for nothing is today's gap. The right boundary is the one the table shows: **the place is kept past the dialog's
+close only when THIS call declares that it may put a prompt of its own on screen after the Allow, and then until the call's own `release`**, which for
+the three is bounded by the person's own clicks, the step deadline (`create`: 5 minutes from before the modal), and the request's signal (a client that
+leaves closes the PIN box and ends the call). A Deny, a timeout and an abandoned dialog free the place at the dialog's close as B.2 built it, because
+no follow-up follows them.
+
+```ts
+// aliasThrottle.ts — OneInFlight
+/** The holding whose call has already ended (`released` while its dialog was up), so a kept place must not outlive it. */
+private endedId: number | undefined;
+/** The dialog closed. `keep`: the call may show a prompt of its own next, so the place stays its own until `released` — unless the call has already ended. */
+dialogClosed(held: Holding, keep: boolean = false): void {
+  if (this.owner === held.id) { this.dialog = false; if (!keep || this.endedId === held.id) { this.owner = undefined; } }
+}
+released(held: Holding): void {                          // as today, plus `this.endedId = held.id` when `this.owner === held.id`
+  if (this.owner === held.id) { this.endedId = held.id; if (!this.dialog) { this.owner = undefined; } }
+}
+// TokenlessCeilings.dialogClosed(grant, via, keep: boolean = false): void   → this.flight.dialogClosed(held, keep) under the same condition as today (:374-379)
+
+// brokerConsent.ts
+export interface ConsentQuestion { …; /** The call may show a prompt of its own after an Allow (a PIN box, a trust modal): the place is kept until the call ends. */ readonly followUp?: boolean; }
+export interface ConsentGateDeps { …; dialogClosed?(question: ConsentQuestion, keep: boolean): void; }
+private async shown(question: ConsentQuestion): Promise<string | undefined> {
+  let choice: string | undefined;
+  try { choice = await withTimeout(…); return choice; }
+  finally { this.deps.dialogClosed?.(question, choice === 'Allow' && question.followUp === true); }   // timeout: choice undefined → freed
+}
+
+// useActions.ts — UseAction
+/** This action may put a prompt of its own on screen after the person's Allow (a PIN box, a trust modal, a remedy picker). Absent = no. */
+readonly asksAfterConsent?: boolean;
+// sshUseActions.ts sshTerminalAction: `asksAfterConsent: true`;  agentUseActions.ts vpnAction: `asksAfterConsent: action === 'up'`;  exec, query, run, down, exportEnv: absent.
+
+// brokerMcpDoor.ts:90-96  consent(grant, action, verb, summary, caller, followUp?: boolean): Promise<ConsentOutcome>;
+// :478  door.consent(grant, 'create', 'create an entry in', decision.summary, caller, true)     — create always declares it: `settle` may ask
+// credsAgentServer.ts:118   dialogClosed: (q, keep) => this.ceilings.dialogClosed(q.grant, q.via, keep)                 (same line, 0)
+// credsAgentServer.ts:284-285  consent: (grant, action, verb, summary, caller, followUp) => this.gate.consent({ …, via, followUp }, signal)   (0)
+// credsAgentServer.ts:531   …this.gate.consent({ grant, action, verb: useAction.verb, summary, caller: who.caller, via: who.via, followUp: useAction.asksAfterConsent === true }, who.signal)   (0)
+```
+
+A click on a defused modal (its requests left): `released` already ran, `endedId` names the holding, and the Allow frees the place at that click as
+today. `settle` throwing: `handleMcpCreate`'s `finally` releases; the dialog flag is already down, so the place frees. The `busy` sentence stays true
+for a kept place: a request is waiting for the person's answer — to their own PIN box.
+
+#### C.4 The registry never evicts a live dialog's call grant (LOW-MEDIUM)
+
+What is true today. `EVICTION_ORDER`'s first tier (`grantRegistry.ts:60`) is `scope === 'call' && status !== 'allowed'`, which is a pending call —
+and after B.1's `drop` the pending calls left in the map are exactly those whose dialog is open (or whose client left/timed out during it). One pending
+call then 300 allowed call grants: the pending call is evicted at the 256th mint (`:281-287`) with 256 finished grants kept. A quiet-policy MCP loop at
+the silent ceiling (60 a minute) gets there in about 4.3 minutes, inside the dialog's 5. On Allow, `grants.allow` finds nothing, `line(…, 'ALLOWED')`
+is written anyway (`brokerConsent.ts:135-139`), `after` reads `unsettled(true)` = allowed, `remember` runs, and `reservedNow` (`brokerCall.ts:171-178`)
+refuses `unauthorized`. On Deny the line says DENIED and the caller gets 504. Fails closed, but a person's answer is lost and the journal lies; with
+E1.4's quiet bridges one server's loop can do this to another server's dialog.
+
+```ts
+const EVICTION_ORDER: ReadonlyArray<(grant: Grant) => boolean> = [
+  (g) => g.scope === 'call' && g.status === 'denied',         // a call the person refused: its secret is in no response, it answers nobody
+  (g) => g.scope === 'call' && g.status === 'allowed' && g.uses > 0,   // a call that ran (silent MCP use at sixty a minute lands here)
+  (g) => g.scope === 'call',                                  // the rest: a dialog open now, an Allow not yet reserved, a call whose client left — oldest first
+  (g) => g.status === 'denied',                               // tombstones (already capped at 64)
+  (g) => g.scope === 'token' && g.status === 'pending',       // a token whose first dialog is open
+  (g) => g.scope === 'token',                                 // the last resort, as before
+];
+```
+
+Within tier three the oldest goes first, and a dialog lives five minutes, so a call whose client left an hour ago goes before the one on screen. The
+doc comment at `:290-298` says why the first two tiers are what they are. A4 changes with it (C.10) and gains a broker scenario (C.9, Q1).
+
+#### C.5 The denied-token check runs inside the slot (LOW-MEDIUM), and an unknown token is answered as one (C.10, LOW)
+
+What is true today. `bridgedTokenCall` (`brokerBridgeToken.ts:31-34`) answers `denied` BEFORE `door.admit` (`:36`): `door.refuse` with a grant writes a
+journal line per call, so an agent holding a denied token looping `POST /v1/use/exec` writes one line and queues one append per request with nothing
+counting them — B.1's bound of 121 lines a minute is false on this path. And `status()` is `undefined` for a token evicted or expired while its body
+arrived (B.4 reads only `denied`): the call goes to a dialog and the person's Allow is then refused at `spentToken` — fails closed, but asks for nothing.
+
+```ts
+// brokerBridgeToken.ts
+/** A token that cannot be used now: the person said no, or it is gone (evicted, expired) — answered as the main port would, `unknown`. */
+function tokenRefusal(status: GrantStatus | undefined): { code: ErrorCode; message: string; logged: boolean } | undefined {
+  if (status === 'denied') { return { code: 'denied', message: GRANT_NOT_ALLOWED, logged: true }; }
+  return status === undefined ? { code: 'unauthorized', message: UNKNOWN_TOKEN, logged: false } : undefined;
+}
+export async function bridgedTokenCall(door, res, token, action, body, caller, status): Promise<void> {
+  const slot = door.admit(res, true);
+  if (slot === undefined) { return; }
+  try {
+    const refusal = tokenRefusal(status());
+    if (refusal !== undefined) { door.refuse(res, refusal.code, refusal.message, refusal.logged ? token : undefined, action, undefined, caller); return; }
+    const grant = door.mint(…); door.note(…);          // inside the try: C.7
+    await door.perform(res, grant, action, body, caller, undefined);
+  } finally { slot.release(); }
+}
+```
+
+Consequences, said plainly. A denied token's loop is now an asking call like any other (B.1: "a refusal is a call"): sixty a minute answer `denied`
+with a line each, the rest `too_many_requests` with one line per window — at most 61 lines a minute on this path. While another dialog is open a denied
+token is answered `busy`, not `denied`; it learns `denied` on its next try, and no person is involved either way. An unknown token writes no line
+(`respondError` logs nothing without a grant: a probe is legitimate), as on the main port. T1 still holds: no dialog, no `minted` line, 403 `denied`.
+No mint on either refusal. Complexity: `tokenRefusal` 3, `bridgedTokenCall` 3.
+
+#### C.6 The key file's removal cannot leak the exec slot (LOW)
+
+What is true today. `sshUseActions.ts:256-261`: `fs.rmSync(prepared.materialized, { force: true })` precedes `release()` in one `finally`; `force`
+swallows `ENOENT` only, so an `EPERM`/`EBUSY` (a Windows lock on the key file while `ssh.exe` is still letting go of it) throws out of the `finally`,
+leaks one of the eight exec slots (`MAX_CONCURRENT_EXECS`), leaves the key on disk and replaces a finished result with a rejection. `agentUseActions.ts:167-174`
+wraps the same call in `try/catch`.
+
+```ts
+} finally {
+  try { if (prepared.materialized !== undefined) { fs.rmSync(prepared.materialized, { force: true }); } }
+  catch (error) { deps.note(`ssh:exec — the key file could not be removed: ${describeError(error)}`); }   // the result stands; the slot comes back below
+  finally { release(); }
+}
+```
+
+What a key left on disk means: `materializePrivateKey` (`keyInstaller.ts:146-158`, called at `sshExecAuth.ts:154`) writes it to the materialised-keys
+folder under the person's storage dir, folder 0700, file 0600, locked to the owner, under `<keyEntityId>-<uuid>.key` — per call, so the next call
+does not overwrite it, and this spec found no sweep of that folder. The private key of the in-scope entry's linked key stays readable to the person's
+own account until they delete it; nothing else gains a read. The note names the path's failure, not the key. The leftover is recorded in the todo of
+C.11 so E4 can decide whether a sweep at activation is wanted; it is not built here.
+
+#### C.7 Nothing sits between `admit` and its `try` (LOW)
+
+What is true today. `handleMcpUse` (`brokerMcpDoor.ts:213-215`) runs `callerFrom`, `minted` and `quietly` between `admit` and `try`; `handleAlias`
+(`credsAgentServer.ts:338-346`) runs `mint` and `log` there; `bridgedTokenCall` (`brokerBridgeToken.ts:40-42`) `mint` and `note`. A throw from any of them
+(a journal append failing is the one that could) leaves the place held with no dialog and no `dialogClosed` to come, so every asking door answers
+`busy` until a reload. The fix is to move those lines inside the `try`: 0 lines in each file (the token door's is in C.5's shape). `create` and `delete`
+have no gap (see the correction above).
+
+#### C.8 The live check requires printenv's own exit code (LOW, test)
+
+`itestForwardAgent.cjs:88` accepts `bridged.failure === undefined && bridged.stdout === ''`, which an `ssh` that never connected (a misspelt option, a
+refused connection, a timeout) also satisfies. Legs 2 and 4 require `bridged.code === 1` — `printenv`'s answer for an unset variable — and leg 4 also
+that B's `sshd -d` saw the connection (C.1).
+
+#### C.9 A broker scenario reaches eviction (LOW, test)
+
+B.11's row "R4 → A2, A4" is wrong for A2: with `drop` in place, refused calls leave no grant, so A2 never fills the map and A4 alone catches R4
+(§S3.14's table shows exactly that). The row reads `R4 → A4, Q1`, and Q1 (C.10) fills the map through the broker with silent calls, which also pins C.4.
+
+#### C.10 Scenarios (each RED today, and why)
+
+Files: `test/sshExecCommand.test.ts` (F1 revised, F2), `test/bridgeLinks.test.ts` (F1 through the action), `test/aliasThrottle.test.ts` (K7),
+`test/bridgePrompts.test.ts` (K1–K6, K8, Q1, D1), `test/grantRegistry.test.ts` (A4 revised), `test/sshUseActions.test.ts` (X2),
+`test/bridgeTransitive.test.ts` (T1 kept, T2). `brokerWorld.ts` already has `holdDialogs`, `openDialogs`, `holdSettle`, `hold`, `consentTimeoutMs`; it gains
+a way to register an action stub with `asksAfterConsent: true` (K8) and a `never`-policy entry whose calls are silent (Q1; A3's loop may already have one).
+
+| # | Scenario | Expected | RED today, because |
+|---|---|---|---|
+| F1 | The bridged argv | Through the bridge (`bridgeLinks`) and in the unit test, for an entry with a jump, a `local` and a `remote` forward and `agentForward: true`: the argv has `-J`, no `-A`, no `-L`, no `-R`, then `BRIDGED_SSH_OPTIONS` in order, then `-i`, `--`, the destination; off a bridge the same entry gives `-J -A -L … -R …` and none of the six options (byte for byte today's) | the forwards are sent; only `ForwardAgent=no` is pushed; the B.3 test asserts `-L` present |
+| F2 | The flag's name | `{ bridged: false }` and `{}` send nothing of the six; `noAgentForward` no longer compiles | the field is `noAgentForward` |
+| K1 | The kept place | Local MCP `create` into a PIN folder with `holdSettle`; Allow; while `settle` waits: a call through a bridge and a local alias call both answer `busy`, `w.dialogs.length === 1`; release `settle`: 200 `created`; the bridge's next call is asked | the place frees at the dialog's close and the second modal opens over the PIN box |
+| K2 | Deny frees at once | The same `create`, Deny: the next asking call is admitted before `settle` could have run (`w.settleSignals` stays empty) | green today, pinned |
+| K3 | A timeout frees | `consentTimeoutMs: 100`, `create` unanswered: 504, the next call asked | green today, pinned |
+| K4 | A client leaving during the PIN step frees | `holdSettle`, Allow, abort the client: an `abandoned` line ("during the folder PIN step"), the next call asked, `w.created` empty | green today (the place was already free); pinned so C.3 does not make it `busy` |
+| K5 | P2 unchanged | An Allowed bridged `exec` under `w.hold`: a call through another bridge and a local alias call are both asked | green, pinned (the guard against holding every Allow) |
+| K6 | A late Allow on an abandoned `create` frees | `holdDialogs`, `create`, abort the client, then answer Allow: no `ALLOWED` line, the next call asked (the kept place did not outlive the ended call) | would hang the door under a naive "keep on Allow" |
+| K7 | `OneInFlight`, unit | `dialogClosed(h, true)` keeps the place and `released(h)` then frees it; `released(h)` then `dialogClosed(h, true)` frees; `dialogClosed(h2, true)` for a holding that lost the place frees nothing; `dialogClosed(h)` (no keep) frees as today | no `keep` |
+| K8 | The action's flag | An action stub with `asksAfterConsent: true` held by `w.hold`: a second door's call is `busy` until the action ends; the same stub without the flag: asked (P2) | the flag does not exist |
+| Q1 | Eviction through the broker | `holdDialogs`; a bridged `exec` whose dialog is open; then 300 quiet local MCP calls (`never` policy; `mock.timers` on `Date` moves a minute every sixty, as A1 does); answer the dialog Allow: the exec runs (200), one `ALLOWED` line for a grant that exists, no `unauthorized` | the pending call is evicted at the 256th mint: 401 and a false `ALLOWED` line |
+| A4 | Tiers, revised | 1 pending call (its dialog open) + 300 allowed calls with `uses: 1` + 2 denied calls + 1 pending token + 1 allowed token + 3 denied tokens: after the mints, the denied calls go first, then used allowed calls, and every token, tombstone and the pending call remain; an allowed call with `uses: 0` outlives a used one | tier one is `status !== 'allowed'` |
+| D1 | The denied token's loop | 300 posts with a token the person denied on the main port, through a bridge inside a minute: 60 answer `denied`, 240 `too_many_requests`; the journal grew by ≤ 61 lines; no dialog, no `minted` line; while a dialog of another call is open the same token answers `busy` | 300 `denied`, 300 lines |
+| T2 | A token gone between lookup and body | `sendSlow`; evict or expire the token before the body (a `lookup` past `idleMs`, or the registry filled): 401 `unauthorized` with `UNKNOWN_TOKEN`, no dialog, no line | the call is asked and the Allow refused at `spentToken` |
+| X2 | The locked key file | `fs.rmSync` mocked to throw `EPERM` for the materialised path: the result is the finished exec's 200, `tally.slotsHeld` is 0, the note names the removal failure, X1 still passes | the finally throws: a rejection, a held slot |
+
+#### C.11 Residual risks, judged
+
+- **A door with nobody at the screen.** One unanswered dialog every five minutes, about a hundred overnight — an agent on a server runs unattended and a
+  bridge survives a reboot (§4.7). A click on a dead one writes nothing, and clearing a hundred trains the Allow reflex the modal exists to defeat. The
+  remedy is new behaviour (a door refused after N consecutive timeouts, with a backoff that doubles and is reset by any dialog a person answers on any
+  door; a recovery with no click when the backoff expires and one probe dialog is admitted; a sentence to the agent naming when the door asks again) and
+  so an approach change — the second of epoch 3, which would stop the plan. **It goes to a todo of its own: `todo/PLAN_bridge_dialogs_nobody_answers.md`**,
+  written in this commit with the sketch, the recovery and the sentence, to be reviewed as a plan when E1 is merged or when the owner sees the stack.
+- **The `busy` sentence tells server A that a person is being asked by another door.** The status itself tells the same bit (admitted or `busy`), and the
+  timing is what an attacker would use, so a vaguer sentence changes nothing an agent can do and takes words from an honest agent's operator. **No code
+  change**; the reasoning is recorded in the same todo so it is not re-asked.
+- The materialised key left by C.6's failure path (no sweep found) is noted in that todo for E4.
+
+#### C.12 Order, line counts, Opus additions, unverified
+
+Order: C.4 (`EVICTION_ORDER`, A4) → C.3 (`aliasThrottle.ts` and `brokerConsent.ts` together, K7, then the doors and `useActions.ts`, K1–K6, K8) → Q1 →
+C.5 + C.7 (`brokerBridgeToken.ts`, D1, T2; `brokerMcpDoor.ts`, `credsAgentServer.ts` moves) → C.1 + C.2 (`sshExecCommand.ts`, `sshUseActions.ts`,
+F1, F2, then the itest's mux pair, C.8) → C.6 (X2) → lint, `wc -l`, ratchet, the pre-PR block; then E1.4.
+
+| File | Today | After |
+|---|---|---|
+| `credsAgentServer.ts` | 789 | **789** (`:118`, `:284-285`, `:531` edited in place; `:338-346` moved into the `try`) — E1.4's two bring it to 791 |
+| `extension.ts` | 1003 | 1003 |
+| `aliasThrottle.ts` | 449 | ≈ 456 |
+| `brokerConsent.ts` | 190 | ≈ 196 |
+| `brokerBridgeToken.ts` | 48 | ≈ 60 |
+| `grantRegistry.ts` | 341 | ≈ 343 |
+| `sshExecCommand.ts` | 123 | ≈ 130 |
+| `sshUseActions.ts` | 366 | ≈ 372 |
+| `itestForwardAgent.cjs` | 101 | ≈ 170 |
+
+Every function stays under the complexity limit of 4 without a new disable comment: `OneInFlight.dialogClosed` 3, `tokenRefusal` 3, `bridgedTokenCall`
+3; `buildSshExecArgv` is already exempt. No file nears 800.
+
+Opus checklist, added to §S3.9: `BRIDGED_SSH_OPTIONS` is the one place the six options are spelled and is pushed after the composer, before `-i`; the
+composer never sees a bridged entry's forwards or `-A`; off a bridge the argv is byte for byte today's; `keep` is true only for Allow AND `followUp`;
+`endedId` makes a kept place die with its call; `asksAfterConsent` is set on `terminal` and `up` and nowhere else, and `create` passes `true` at the
+door; `exec`'s question has `followUp: false` (P2); the denied/unknown check is inside the slot and before `mint`; an unknown token logs no line; tier
+one of `EVICTION_ORDER` is denied CALLS, and no tier reaches a token while any call grant exists; `release()` is in the innermost `finally`; the mux
+control leg is hand-written and the bridged leg is the production argv; `bridged.code === 1` is asserted.
+
+Unverified by this spec: the mux behaviour is read from OpenSSH's `session.c`/`mux.c` and `ssh -G`, and is measured only by the itest's pair on a
+runner with `sshd` (and M8 on Windows); that VS Code's modal makes its first button the default on every platform (the attack of C.3 needs it; the fix
+is right either way); whether `sshd -d`'s debug stderr says `Accepted publickey` in the runner's OpenSSH (if not, any line proving a connection to B
+serves); whether an ssh config's `ControlPath` is honoured by Win32-OpenSSH (M8).

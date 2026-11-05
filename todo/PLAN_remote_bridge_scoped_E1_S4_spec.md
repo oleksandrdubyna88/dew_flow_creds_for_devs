@@ -235,3 +235,13 @@ label instead of the context (C15, C20).
    answers the route's OUT sentence, `w.consents` is empty and the store has no new key; the same without the narrow writes one stamp.
    RED once quiet is on (today the forced `rungs: ''` hides it; the test is written against the E1.4 switch). Break-it **Q14**: `remember`
    left before `stopped` → C22. Budget: with Amendment 2's +2, E1.4's two lines bring `credsAgentServer.ts` to 791.
+
+5. **(Added 2026-11-05, after `5bfedf8`'s review; the S3 spec's Amendment 3.) What Amendment 3 changes for E1.4: little, and nothing in
+   §S4.2.** E1.4 is coded on the tree Amendment 3 leaves. (a) `credsAgentServer.ts` is still 789 after Amendment 3 (its edits move lines
+   and change three in place), so E1.4's two lines still bring it to 791. (b) The consent question carries `followUp` (Amendment 3, C.3);
+   a quiet call is pre-allowed and raises no dialog, so the quiet path neither sets nor reads it — the invariant E1.4 relies on (admit first,
+   no `await` before the dialog, a silent admission raises nothing) is unchanged. (c) C21's sixty-one quiet calls cannot reach the registry's
+   cap (256 mints); the quiet loop that evicted a live dialog's grant is Amendment 3's Q1, on the local MCP door, and C21 need not repeat it —
+   but C21 may add one cheap assertion: a dialog held open on bridge B before the loop still decides its call afterwards. (d) The
+   `bridgedTokenCall` admission moved inside its `try` (C.5); `admitAliasCall(res, prompts, bridge)` and its call sites are untouched, so item 1
+   above stands as written.

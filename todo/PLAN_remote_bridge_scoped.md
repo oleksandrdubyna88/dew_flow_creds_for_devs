@@ -42,6 +42,9 @@ Narrowed: no
 
 > Epoch 3 · approved 2026-11-05 · by reviewers · state: open
 
+- 3.1 · 2026-11-05 · reviewer · approach — an in-scope entry's port forwards would give the server a road through the laptop for the life of an exec: on a bridge they are stripped from the argv and ssh is told to clear every forwarding, share no connection and open no X11 or tun channel
+  (E1.3 spec, Amendment 3, C.1–C.2. The first change of epoch 3; the plan goes on.)
+
 ## 1. Goal
 
 The person works in VS Code on Windows, in a Remote-SSH window attached to an Ubuntu server. The vault lives in the
@@ -128,7 +131,7 @@ found".
   scope, or the call is refused with one sentence that echoes nothing from the stored text. Otherwise an entry in scope becomes a road to one that is not.
 - **Listings are per account.** `McpEntry` carries no account and an envelope may repeat an id across accounts (`idQuarantine.ts:41` keeps a safe id), so walling by id alone is a breach: the wall reads the listing and the config snippet from per-account suppliers. Use paths already search one account (`mcpHooks.ts` `accountOnly`).
 - **What an entry links to is part of using it.** An ssh entry's `sshKeyEntityId` and jump chain are not scope targets. `sshkey` can never be opened to MCP (`entityKind.ts:155,179`), so requiring it would refuse every ssh entry with a linked key. The value stays on the laptop, the person set the link, and edit verbs are off the allow-list, so an agent cannot repoint it. This covers what using the key does, including promoting a rotation already waiting on it (`automaticRead.ts:28-33`). A `creds://` reference stays strictly scoped, because it puts a value into a command.
-- **But never the laptop's whole agent:** `agentForward` forwards the shared agent, which lists every loaded identity (`sshUseActions.ts:83-97`, `sshAgentServer.ts:207-208`). An ssh entry with it set is refused on a bridge door, with a sentence saying why, until forwarding has its own boundary.
+- **But never the laptop's whole agent:** `agentForward` forwards the shared agent, which lists every loaded identity (`sshUseActions.ts:83-97`, `sshAgentServer.ts:207-208`). An ssh entry with it set is refused on a bridge door, with a sentence saying why, until forwarding has its own boundary. Nor any other forwarding, and no shared connection (change 3.1): on a bridge the entry's port forwards are dropped from the composed argv and `ssh` is told `ClearAllForwardings=yes`, `ForwardX11=no`, `Tunnel=no`, `ControlPath=none` and `ControlMaster=no` — one fresh connection that carries the command and nothing else, so an exec cannot join the person's own multiplexed session (which would hand it the forwarded agent and skip the pinned key and host key) or open a road from the server through the laptop; off a bridge the argv is unchanged.
 - **Refusals name nothing out of scope.** On a bridge door the sentences that carry a linked entry's or jump host's name (`sshExecAuth.ts:125-127`, `sshOptions.ts:153`) become generic. `ssh`'s own stderr is returned as is, and may carry a jump host's address, or the laptop's key path and a linked key's id in the file name of a key `ssh` could not load.
 - **Server identity is the vault entry id** (`serverEntityId`), never a host string, so aliases and jump chains cannot split or merge it.
 - **Prompts:** each bridge has its own sliding window of prompts, so one server's agent cannot spend the laptop's or another server's, while one dialog at a time stays global. A call the gate refuses before any dialog spends no prompt.
@@ -347,7 +350,7 @@ Nothing reaches a person until step 5 uses the door, and scope lands before that
 | M4 | Does a UI extension's environment collection reach terminals in a Remote-SSH window | §4.8 wording |
 | M5 | `creds-mcp` in a tmux pane older than the bridge; the unix socket path length under a long home | §4.5 |
 | M6 | **Done 2026-11-04.** A named pipe in VS Code's Node 24 on Windows: `EADDRINUSE` while a live process holds it, available once the holder is killed | §4.7 rests on it |
-| M8 | Windows `ssh.exe` on a bridged call with `Host * / ForwardAgent yes` in the person's config: `-o ForwardAgent=no` really stops forwarding. CI proves OpenSSH's precedence on Linux only | §4.2 *never the laptop's whole agent* |
+| M8 | Windows `ssh.exe` on a bridged call with `Host * / ForwardAgent yes`, a `RemoteForward`, `ForwardX11 yes` and — if Win32-OpenSSH knows the options at all — `ControlMaster auto` / `ControlPath` in the person's config, while the person's own Connect is up: the bridged option set (`ForwardAgent=no`, `ControlPath=none`, `ControlMaster=no`, `ClearAllForwardings=yes`, `ForwardX11=no`, `Tunnel=no`) really holds — no `SSH_AUTH_SOCK` on the server, no forward, a fresh connection on the port the argv names. Win32-OpenSSH is believed to have no connection multiplexing (unverified; `ssh -G` on the owner's host says whether `controlmaster` is reported). CI proves OpenSSH's precedence, and the multiplexing case, on Linux only | §4.2 *never the laptop's whole agent*, change 3.1 |
 | M7 | **Blocks the releases and promotion (E4).** A real reboot of the owner's PC and a real network drop. Passes when: after each, with a window open and the vault unlocked, the row reads `up` with no click; a `creds-mcp` tool call from a tmux session older than the event succeeds with no action on the server; the old note and socket are gone; `ssh` exited within 90 s of the drop; and after *Close Remote Bridge* and another reboot the bridge stays closed | Owner decision 4 |
 
 ## 8. Boundaries
