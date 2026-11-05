@@ -558,3 +558,23 @@ that revision changes for this document; nothing is deleted. The parent's §4.9 
    size; the review judges the ownership, not the count.
 8. **M-list.** M8 is E1.6's entry condition and is done by the owner before E1.6's spec is written; M9 (the Windows environment list)
    and M10 (Enter on a bridged modal) are recorded with E1.6 and E1.5. The M4 table above is unchanged and still owed.
+9. **E1.4's modal line is rewritten before E1.4 is finished** (the second pass of the revision, 2026-11-05). `bridgeModalLine`'s `laptop`
+   sentence at `c4b7add` (`bridgeConsentText.ts`; §E1.4 item 6 above), *It runs on this computer, and only its output goes to that
+   server*, is false for `exec`: the connection starts on this computer and the command runs on the entry's host. The modal is the
+   authorisation, so the line is true per action: `exec`: *The connection starts on this computer; the command runs on "<entry>", and its
+   output goes back to that server.* `query`: *It runs on this computer, and only its output goes to that server.* E3's `server` site
+   keeps *It runs on that server.* `bridgeRunSite()` therefore takes the action, not a constant; §S4.10 item 5's text and the S4
+   scenarios that quote the line change with it, in E1.4's finishing commit.
+10. **The lock between partial E1 and E2 (parent §4.9).** The partial-E1 closing commit refuses every bridged `exec` with
+    `BRIDGE_USE_REFUSED` and a journal line until E1.6 writes the per-call file, as a guard with a test; E1.6 removes the guard in the
+    commit that writes the file; the commit of E2.2 that removes scenario R1 asserts that the E1.5 and E1.6 test suites exist.
+11. **"Byte-for-byte unchanged" (§Binding constraints) means the doors' admission**: `admitsRequest` and the door table, scenario R3. What the
+    branch changes on the local doors' consent lifecycle against `main` is listed in the parent's §4.10 (the place freed at the dialog's
+    close, a leaving client keeping it, prompts counted when shown, `ASKING_CEILING`, the kept place for `create`, `terminal` and `up`,
+    eviction tiers and `drop`) and goes in the `CHANGELOG.md` entry of the closing commit; E1.5 lists its own (an unanswered local modal
+    gives `busy` until a click, where `main` re-asked every five minutes).
+12. **The order of Amendment 4 and E1.4.** Amendment 4's preamble says it is coded on the tree E1.4 leaves; item 3 above says E1.4 is
+    finished on the tree the partial-E1 merge leaves, which already holds D.3 (if there) and D.5-D.10. Item 3 is the order; the S3 spec's
+    Amendment 5 says so in one sentence.
+13. **The owner's entries (parent §2.2).** The entries the DoD rests on are imported `Host` blocks; the parent's M8 (6) records the check of
+    the bridge's entry (`keyPath`, the path form, a key with no passphrase) before E1.6's spec is written.

@@ -2521,6 +2521,10 @@ it starts. Both specs are Fable's (security judgement), named in the E1 document
 | D.12's order and counts | **Superseded** | The closing commit builds D.5, D.3 (if here), D.7, D.8, D.6, D.9, D.10 in Amendment 4's order without D.1 and D.2; its counts are re-taken by the coder |
 | The parent's M8 row as Amendment 4 extended it | **Superseded** by the parent's revised M8 (moved forward, the `-F`/`-J`/lock-down experiment, no `Include`) | — |
 
+**The order.** Amendment 4's preamble ("this amendment is coded on the tree E1.4 leaves") is superseded: D.3 (if built here) and D.5-D.10 are
+built in the partial-E1 closing commit, before E1.4, and E1.4 is finished on the tree that commit leaves (the E1 document's epoch 4 amendment,
+items 2, 3 and 12); the line counts of the preamble are re-taken by the coder.
+
 What the E1.6 spec must still establish, beyond M8: that `IdentityAgent none` is honoured at authentication time (ssh_config(5) says so; the
 agent leg (d) of the parent's §7 measures it); the Windows environment list (M9); whether two files in `UserKnownHostsFile` behave on Win32-OpenSSH
 as on OpenSSH 10.2 (two are accepted, new keys go to the first — measured here); the exact journal sentences for the hop refusals (one shape, no
