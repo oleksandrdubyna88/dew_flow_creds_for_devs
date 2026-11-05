@@ -47,6 +47,12 @@ whether it should).
   the materialised-keys folder (0700, the file 0600, locked to the owner, `<keyEntityId>-<uuid>.key`, one per call) until the person deletes it;
   no sweep of that folder was found. E4 decides whether a sweep at activation is wanted; it belongs with the leftovers rules of the shared
   conventions, not here.
+- **A local token call's follow-up prompt holds no place** (Amendment 4, D.3). A token `up` or `terminal` on the main port opens its trust modal or
+  remedy picker with the one dialog place free, so an asking call timed to that moment lands on top. A local token call is not throttled by a
+  decision older than the bridge plan; taking the place there would make a token call answer `busy`, a new behaviour on the path people use,
+  against a coincidence an attacker on a server cannot produce (the person's own local agent must be starting a VPN at that moment). The quiet
+  MCP path, which a policy makes reachable on purpose, takes the place (D.3); the token path is left as this residual, to be weighed with the
+  backoff above.
 
 ## Definition of Done (for the plan that builds this)
 

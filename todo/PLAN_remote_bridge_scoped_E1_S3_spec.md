@@ -2133,3 +2133,364 @@ Every mutation was caught. "First" is the first failure the runner printed. The 
 - **That VS Code's modal makes its first button the default on every platform** (the attack of C.3 needs it; the fix is right either way).
 - **Whether the escaped throw of difference 6 is worth a catch at the listener** — not decided here.
 - **The `ControlPath` semantics of Win32-OpenSSH**, as C.12 says.
+
+### Amendment 4 (Fable, 2026-11-05) — after `235a5e4` and its review
+
+Ten review items, each checked against the code at `235a5e4`; every `file:line` below is at that commit. E1.4 (the S4 spec, §S4.10 item 5) is
+coded before this amendment, on the tree `235a5e4` leaves: this amendment is coded on the tree E1.4 leaves, so `credsAgentServer.ts` is read as
+**791** here and comes out at **792** (one added line, D.3; every other edit to it is in place). `extension.ts` stays at 1003. Where this
+amendment differs from C.1–C.12 and from §S3.15, this amendment wins; nothing above is deleted. **Items 1 and 4 are judged here as bringing the
+code to the plan as written** (owner decision 2, "No plaintext secret reaches the server. A password is used without being seen", and §4.2's
+change-3.1 sentence, "one fresh connection that carries the command and nothing else, so an exec cannot join the person's own multiplexed
+session"); the ledger decision is the plan's, not this section's, and is not written here. A Sonnet coder builds from this section alone; the
+order is in D.12.
+
+**What the review had wrong or over-built, so it is not built that way.** (a) Item 4's fix as a file *created and removed per call*: the
+file's content does not depend on the entry or the call, so it is ONE static file in the materialised-keys folder, written like the askpass
+script (`keyInstaller.ts:193-200`), never removed per call, and nothing is added to the "start of `run` to the spawn" gap §4.2 accepts. (b) Item
+1's alternative, filtering in the askpass script by prompt text: agreed that it is spoofable (a keyboard-interactive prompt is the server's
+text), so it is not built; the hop is denied password and keyboard-interactive authentication at the client, which no server text can undo.
+(c) Item 10's runtime guard `followUp && grant.bridge === undefined`: not built. If a later story served, on a bridge, an action that really
+asks after the Allow, the guard would silently reopen the C.3 gap for it; what E3 needs is to be *made to decide*, so a static test pins the
+fact instead (D.10). (d) Item 3's token door: named as a residual, not built (D.3 says why). (e) Item 2's bound: confirmed, built as the
+reviewer proposed, with the bound also covering D.3's new holder. Items 5–9 are confirmed as reported.
+
+#### D.1 The jump hop never sees the entry's password, and D.4 the hop leg shares no connection (MEDIUM, pre-existing; one fix)
+
+What is true today, measured on OpenSSH 10.2 here with `ssh -v` and `ssh -G` against loopback addresses that refuse the connection (no
+sshd on this machine; nothing was run against any real host). `-J` makes ssh spawn a *nested* ssh for the hop, and that nested process is
+given `-l <user> -p <port> [-F <file>] -v -W '[%h]:%p' <hop>` and **nothing else** (`ssh -v` prints the exact line as "Setting implicit
+ProxyCommand from ProxyJump"). So none of the outer's `-o` options reach it: not `NumberOfPasswordPrompts=1`, not
+`StrictHostKeyChecking=accept-new`, not `BatchMode=yes`, not one of `BRIDGED_SSH_OPTIONS`. What the hop leg DOES get is the environment,
+because it is a child process: `SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE=force` and `CREDS_SSH_PASSWORD` (`sshAskpass.ts:30-46`, set by
+`byPassword`, `sshExecAuth.ts:88-97`), and the askpass script prints that variable for *any* prompt (`sshAskpass.ts:22-27`). `ssh -G` of the
+nested command under a config with `ControlMaster auto` / `ControlPath` / `ControlPersist 600` / `ForwardAgent yes` reports exactly those,
+with `batchmode no`, `passwordauthentication yes`, `kbdinteractiveauthentication yes`, `numberofpasswordprompts 3`. Two consequences:
+
+1. **Item 1.** Entry D authenticates by password and has `jumpHostEntityId` J; bridged `exec` on D is Allowed. If J refuses the laptop
+   agent's keys and offers password or keyboard-interactive authentication, the nested ssh answers with D's password: J receives D's plaintext.
+   J is whatever the entry's chain names — possibly a host an agent on the server controls, possibly S itself. Decision 2 is broken, and
+   §4.2 ("the jump chain is part of using the entry") says nothing about askpass. Pre-existing: the same happens off a bridge, on the local
+   exec path and on the person's own Connect (`sshConnect.ts` composes the same env and `-J`); that part is **out of this plan's scope**
+   (§8's "found on the way" row) and is recorded in `todo/PLAN_askpass_answers_the_hop.md` (this commit), not built here.
+2. **Item 4.** "One fresh connection" (C.1) is true for the outer leg only. With a fixed `ControlPath` in the person's config the hop leg joins
+   whatever master holds that path, whichever host or port it was given, so the destination's TCP arrives from a host the entry does not
+   name; with `ControlPersist` the hop leg can itself become a master that outlives the exec. A `ProxyJump` the person's config supplies
+   behaves the same (measured: that nested ssh is spawned with the same shape). `ForwardAgent yes` on the hop leg forwards nothing — `-W`
+   opens no session (`sessiontype none`, `clearallforwardings yes` are implied by `-W`, measured) — so the agent is not the exposure here;
+   the join, the route and the master are.
+
+The decision, weighed. *Refuse bridged + password + jump:* cheap and honest, but it refuses what can be made safe (the owner, twice), and it
+leaves item 4 untouched for key-authenticated entries. *An explicit `ProxyCommand` built here:* the roadmap keeps `ProxyCommand` out
+(`sshOptions.ts:156-162`, "A typed reference, never a `ProxyCommand`"), it runs through a shell, and it does not reach a config-supplied
+`ProxyJump`. *A generated `-F` file:* ssh hands `-F` to every nested ssh it spawns (measured, for `-J` and for a config `ProxyJump`), "the
+first obtained value will be used" (ssh_config(5)) so a `Host *` block at the top of the file binds the hop leg, and the outer's command-line
+`-o` options are read before any file so they bind the outer. **The file it is.** Measured with `ssh -G` (OpenSSH 10.2):
+
+- the nested command under the file: `batchmode yes`, `passwordauthentication no`, `kbdinteractiveauthentication no`, `controlmaster
+  false`, no `controlpath` line, `forwardagent no`, `clearallforwardings yes`, `forwardx11 no`, `tunnel false` — while the person's own
+  `ControlPersist`, `IdentityFile` and `SendEnv` lines, reached through `Include`, are still reported, so their config still applies where it
+  does not contradict the block;
+- the outer askpass call under the file plus `BRIDGED_ASKPASS_OPTIONS` (below): `batchmode no`, `passwordauthentication yes`,
+  `kbdinteractiveauthentication yes`, `numberofpasswordprompts 1`, `stricthostkeychecking accept-new`, `controlmaster false`;
+- the outer key call under the file: `batchmode yes`, `passwordauthentication no`, `kbdinteractiveauthentication no`, `stricthostkeychecking
+  true` with the pinned file, `controlmaster false`;
+- an `Include` of a file that does not exist is silently nothing; the layout with and without a `Match all` line before the `Include`s gives
+  identical `-G` output (the `Match all` is kept: it says in the file that the includes are unconditional).
+
+```ts
+// sshExecCommand.ts (pure)
+export interface SshExecOptions { jump?: string; knownHostsFile?: string; bridged?: boolean; /** The `-F` file of a bridged call (D.1); a bridged call without one is refused (`undefined`). */ configFile?: string; }
+/**
+ * The ssh_config a bridged call is run under (`-F`), so the options reach the HOP legs too: `-J` spawns a nested ssh with `-l`, `-p`, `-F`
+ * and `-W` only, never the outer's `-o`, but it inherits `-F` and the environment (Amendment 4, D.1). The `Host *` block comes first because
+ * the first obtained value wins; the person's own files are then included by absolute path, so what they say still applies where it does
+ * not contradict the block. The outer overrides what it must on its command line (`BRIDGED_ASKPASS_OPTIONS`). Not a secret: it names no
+ * host, user or value.
+ */
+export function bridgedSshConfig(home: string, platform: NodeJS.Platform, programData: string | undefined): string;
+//   lines: 'Host *', then one '  <Keyword> <value>' per entry of BRIDGED_CONFIG_BLOCK, 'Match all',
+//   `Include ${join(home, '.ssh', 'config')}`, then on win32 `Include ${join(programData ?? 'C:\\ProgramData', 'ssh', 'ssh_config')}`, else 'Include /etc/ssh/ssh_config'; '\n'-terminated.
+export const BRIDGED_CONFIG_BLOCK: ReadonlyArray<readonly [string, string]> = [['BatchMode', 'yes'], ['PasswordAuthentication', 'no'], ['KbdInteractiveAuthentication', 'no'], ['ForwardAgent', 'no'], ['ControlMaster', 'no'], ['ControlPath', 'none'], ['ClearAllForwardings', 'yes'], ['ForwardX11', 'no'], ['Tunnel', 'no']];
+/** What the OUTER askpass call says on its command line to win over the file: the destination may take the password, the hop may not. */
+export const BRIDGED_ASKPASS_OPTIONS: readonly string[] = ['-o', 'BatchMode=no', '-o', 'PasswordAuthentication=yes', '-o', 'KbdInteractiveAuthentication=yes'];
+// buildSshExecArgv: after `argv.push(...BRIDGED_SSH_OPTIONS)` (:122-124) and only when bridged:
+//   if (options.configFile === undefined) { return undefined; }           // a bridged call without its file is refused, like an unsafe host
+//   if (auth === 'askpass') { argv.push(...BRIDGED_ASKPASS_OPTIONS); }
+//   argv.push('-F', options.configFile);
+// Order on a bridge: auth block, host-key block, ConnectTimeout, composer (-J), BRIDGED_SSH_OPTIONS, [BRIDGED_ASKPASS_OPTIONS], -F <file>, [-i], [-p], --, destination, command.
+// Off a bridge: byte for byte today's (F1's off-bridge half stays as it is).
+
+// keyInstaller.ts
+/** The static `-F` file of a bridged call, in the materialised-keys folder (0700) beside the askpass script, mode 0600, rewritten on every call: cheap, and a stale copy cannot survive an upgrade. */
+export function writeBridgedSshConfigFile(storageDir: string, platform: NodeJS.Platform, home: string = os.homedir(), programData: string | undefined = process.env.ProgramData): string;   // → <keysDir>/bridged_ssh_config
+
+// sshUseActions.ts connectionArgvOptions(deps, entity, jump, bridged)  (:182-189)
+//   return { jump, knownHostsFile: materializeKnownHosts(deps.storageDir, entity), bridged, ...(bridged ? { configFile: writeBridgedSshConfigFile(deps.storageDir, process.platform) } : {}) };
+//   A throw from the write lands in run's `try` and is answered by `refuse('internal', …)` — on a bridge the generic sentence, the path in the journal (as `Could not run ssh` is today).
+```
+
+What the hop leg can now do: authenticate with the person's agent (`SSH_AUTH_SOCK` is kept, B.3) or with the identity files the person's
+own config names, against a host key already in the person's known_hosts (an unknown hop fails: `BatchMode yes` refuses the question, as
+today's missing TTY did). What it can no longer do: offer a password or a keyboard-interactive answer (so the askpass script is never asked
+on that leg), join or become a control master, or open a forwarding. A hop that only accepts passwords now fails with ssh's own stderr
+("Permission denied (password…)" or the like, which may name the hop — the plan's standing decision on stderr) instead of "working" by
+sending it the wrong entry's password; nothing a person could do safely is lost. The person's `ProxyCommand`, `LocalCommand`, `SendEnv`,
+`IdentityFile` lines keep applying (C.2's reasoning stands: their own words in their own file), now through the `Include`.
+
+**Windows.** Win32-OpenSSH takes `-F`, and `Include` and `Match` exist in the 8.x/9.x base it ships; what is unverified without the owner's
+host is whether its `Include` resolves an absolute Windows path written with the OS separator, and whether the system file is read from
+`%ProgramData%\ssh\ssh_config` through it. The code does the same on every platform. If the `Include` finds nothing there, the bridged call
+runs *without* the person's config — a bastion they rely on is missed and the call fails — which is the safe direction and is said in the
+journal by ssh's own stderr. **M8 gains this** (plan §7, this commit): on the owner's Windows host, `ssh -G -F <the written file> -l hop -p 1
+-W "[x]:22" 127.0.0.1` reports the nine keywords of the block, and `-G` of the outer with the person's config shows their `IdentityFile`
+through the `Include`. Nothing reaches anyone before M8: the switch stays off until E4.
+
+Itest, `scripts/itestForwardAgent.cjs` (194 today; ≈ 265 after, under 800), on a runner with `sshd` (CI). Section 8 gains **the hop pair**,
+with `HOME` pointed at a folder of the rig for every client process (so `~/.ssh/known_hosts` and `~/.ssh/config` are the rig's, and the
+runner's home is not written: the leftovers rule) and `writeBridgedSshConfigFile(rig.storage, process.platform, rig.home)` writing the
+production file:
+
+- **Leg 0, the hop's view (no sshd needed; runs here too):** `ssh -G -F <the written file> -l hop -p 1 -W '[127.0.0.2]:22' 127.0.0.1` reports
+  `passwordauthentication no`, `kbdinteractiveauthentication no`, `batchmode yes`, `controlmaster false`, `clearallforwardings yes`; and the
+  outer production askpass argv under it reports `passwordauthentication yes`, `batchmode no`, `numberofpasswordprompts 1`.
+- **sshd J**, the hop, started with `PubkeyAuthentication no` and `PasswordAuthentication yes` as its FIRST config lines (`startSshd`'s
+  `extraConfig` moves ahead of the defaults — sshd keeps the first value too, so appended lines could never have overridden
+  `PasswordAuthentication no` at `itestSshd.cjs:84`; section 7's RSA leg, a `+` append, is unaffected by the move); **sshd B**, the
+  destination, as today. J's and B's host keys in the rig home's `~/.ssh/known_hosts`. An askpass stub in the rig: `#!/bin/sh`, appends one
+  line to `<rig>/askpass.log`, prints `$CREDS_SSH_PASSWORD`; the env of both legs carries `SSH_ASKPASS=<stub>`, `SSH_ASKPASS_REQUIRE=force`,
+  `CREDS_SSH_PASSWORD=not-a-real-password`, no agent socket.
+- **Leg 5, the control (hand-written, today's shape, NOT the production argv):** `-o NumberOfPasswordPrompts=1 -o StrictHostKeyChecking=yes
+  -o UserKnownHostsFile=<B.knownHosts> -o ConnectTimeout=10 -J <user>@127.0.0.1:<J.port> -p <B.port> <user>@127.0.0.1 true`, no `-F`:
+  `askpass.log` has at least one line (the hop leg asked our script for the password), and J's `sshd -d` stderr matches `REACHED` (the
+  connection arrived). The exit code is not asserted (J cannot check a password as a user-mode sshd; the point is that the script was asked).
+- **Leg 6, the production argv** for the same entity with `jumpHostEntityId` resolved to `<user>@127.0.0.1:<J.port>`, `auth: 'askpass'`,
+  `bridged: true`, `configFile: <the written file>`: `askpass.log` is empty (nothing on either leg asked for the password: the hop refused
+  password and keyboard-interactive at the client, and B's leg never got that far), J's stderr matches `REACHED`, and the exit code is 255.
+- Not added: a mux leg for the hop (`sshd -d` serves one connection, so J cannot both hold a master and take the fresh connection the proof
+  needs); the hop's `controlmaster false` rests on leg 0's `-G` and on the same mechanism the mux pair measures for the outer.
+
+#### D.2 A kept place is bounded (MEDIUM; a regression of C.3)
+
+What is true today. C.3 keeps the place past the dialog's close for `create`, `terminal` and `up` "until the call's own `release`", and its
+bound claim (the step deadline, the client leaving ends the call) is true for `create` only. `up` → `vpnAction` (`agentUseActions.ts:395-418`)
+→ `runVpn` → a dependency step whose `executed` (`dependencyRunHost.ts:309-333`) resolves only at the shell execution's end or the terminal's
+close (an `ssh -N`, an installer: never, until the person closes the terminal), or `askToContinue` (`:336-339`, a non-modal notification that
+resolves at a click), or OpenVPN Connect's import question (`vpnRun.ts:205-208`, the same); `terminal` → `askAndPick` (`sshConnect.ts:426-433`,
+modal). A client that leaves does not end these promises (`startGate` is read between steps, not inside one). The notifications slide into
+the bell (VS Code's behaviour, not measured here), and every asking door then answers `busy` ("waiting for the person") with nothing on
+screen, until a click or a reload. The dialog's own place is bounded by `CONSENT_TIMEOUT_MS` (`brokerConsent.ts:114-128`); the kept place is
+bounded by nothing.
+
+```ts
+// aliasThrottle.ts — OneInFlight
+import { CONSENT_TIMEOUT_MS } from './agentConsent';            // pure; brokerMcpDoor.ts already imports it
+/** A place that is nobody's dialog (held and not yet prompted, or kept past an Allow for a follow-up) is given up after this long: the dialog's own bound, so one number. */
+export const KEPT_PLACE_MS = CONSENT_TIMEOUT_MS;
+private since = 0;                                               // when the place last became a non-dialog holding (hold, or a keeping dialogClosed)
+hold(nowMs: number): Holding | undefined {
+  if (this.owner !== undefined && (this.dialog || nowMs - this.since < KEPT_PLACE_MS)) { return undefined; }
+  … as today, plus this.since = nowMs;                           // a stale owner's later released/dialogClosed names an id that no longer owns: freed nothing (as today)
+}
+dialogClosed(held: Holding, keep?: boolean, nowMs: number = Date.now()): void {   // when the place is kept: this.since = nowMs
+// TokenlessCeilings: admitAsking passes nowMs to hold; dialogClosed(grant, via, keep?, nowMs = Date.now()) hands it on. Complexity: hold 4 (one condition with ||), dialogClosed 4.
+```
+
+The `busy` sentence stays true for the five minutes ("waiting for the person to answer" — their own trust modal or notification); after
+them the door asks again and the earlier call's prompt, if still up, is one the person can see is older. Scenario K9.
+
+#### D.3 A quiet call that will ask after its Allow takes the place (MEDIUM; the C.3 overlap through a policy)
+
+What is true today. `handleMcpUse` (`brokerMcpDoor.ts:207,211`) admits with `prompts = !read.preConsented`, and a silent admission holds no
+place (`aliasThrottle.ts:334-336`). `up` and `terminal` are use-rung verbs (`mcpEntries.ts:404-420`), so a `never` or `every12h` policy
+pre-consents them: a quiet local `creds_vpn_up` on an entry with a PIN-protected config or an untrusted launcher opens the PIN box or the trust
+modal (`vpnLauncherRun.ts:52,154`; `trustPrompt.ts:23`) with the place free; a bridge's asking call is admitted, its modal lands on top, and
+Enter lands on Allow — C.3's attack, reached by a policy instead of a click. Same for a quiet local `terminal`.
+
+```ts
+// aliasThrottle.ts — TokenlessCeilings
+/** `followUp`: the action may put a prompt of its own on screen (a PIN box, a trust modal). A quiet call with it takes the one place for the call's length, on its silent window; without it, as today. */
+admit(prompts: boolean, nowMs: number, door: string = LOCAL_DOOR, followUp: boolean = false): Admission {
+  const counts = this.countsOf(door, nowMs);
+  if (prompts) { return this.admitAsking(counts, door, nowMs); }
+  return followUp ? this.admitSilentPlace(counts, door, nowMs) : this.admitSilent(counts, door, nowMs);
+}
+/** The place first (busy if held), then the silent window (released again if full): the mirror of admitAsking on the quiet path. */
+private admitSilentPlace(counts: DoorCounts, door: string, nowMs: number): Admission {
+  const held = this.flight.hold(nowMs);
+  if (held === undefined) { return this.refused('busy', door, counts, nowMs); }
+  if (counts.silent.admit(nowMs) !== 'allow') { this.flight.released(held); return this.refused('silent', door, counts, nowMs); }
+  return this.holding(held);
+}
+// brokerMcpDoor.ts — BrokerDoor
+admit(res: http.ServerResponse, prompts: boolean, followUp?: boolean): Slot | undefined;
+/** Whether this action may ask after the Allow (`UseAction.asksAfterConsent`), read before admission so a quiet call can take the place. */
+asksAfter(kind: string, action: string): boolean;
+// handleMcpUse :211   const slot = door.admit(res, prompts, door.asksAfter(read.target.kind, action));
+// credsAgentServer.ts doorFor (:268-290): admit: (res, prompts, followUp) => this.admitAliasCall(res, prompts, view.bridge, followUp),   (in place)
+//                                          asksAfter: (kind, action) => this.actions.resolve(kind, action)?.asksAfterConsent === true,     (+1: 791 → 792)
+// admitAliasCall(res, prompts, bridge?: BridgeContext, followUp?: boolean) → this.ceilings.admit(prompts, Date.now(), bridge?.bridgeId, followUp)   (in place)
+```
+
+What this does to E1.4's invariant ("admit first, no `await` before the dialog, a silent admission is pre-allowed and raises no dialog;
+`prompted` trusts whoever holds the place"): a quiet call still raises no dialog, so `prompted` and `dialogClosed` are never called for it,
+and the place it took comes back through `slot.release()` → `released(held)` with no dialog up — freed at once, or by D.2's bound. The
+invariant is unchanged; what changes is that a silent admission *may hold the place* while its action runs, exactly when the action declares
+`asksAfterConsent`. On a bridge nothing changes: the served actions (`exec`, `query`) declare no follow-up, so a quiet bridged call takes no
+place and C21's sixty-one quiet calls are untouched. `quietly(door, grant, …, prompts)` keeps reading `prompts`: the grant is pre-consented
+and the `allowed without a prompt` line is written as before.
+
+**The local token door, a residual.** A local token call is not throttled at all (`credsAgentServer.ts:495` runs `perform` directly), by a
+decision older than this plan ("a caller holding a real token has already been consented once by a human who chose to"). A token `up` or
+`terminal` opens its trust modal or remedy picker with the place free, and an asking call timed to it lands on top. Taking the place there
+means a token call can be answered `busy`, a new behaviour on the path people actually use, for a window an attacker on a server can only hit
+by timing a call to the person's own local agent starting a VPN — the same coincidence the C.3 attack needed before a policy made it
+reachable, which D.3 closes. Named here and in `todo/PLAN_bridge_dialogs_nobody_answers.md`'s decided list (this commit); not built.
+
+#### D.4 — in D.1.
+
+#### D.5 Pending calls are the last call tier (LOW-MEDIUM; C.4 was half true)
+
+What is true today. Tier three (`grantRegistry.ts:62`) holds pending calls (a dialog open) together with `allowed && uses === 0` calls, oldest
+first. A pre-consented call is `allowed` at mint (`quietly` → `preConsent`, `brokerMcpDoor.ts:244`) and if it is then refused in `usable` —
+an invalid body, a reference out of scope — `drop` (`:321-327`) does nothing, because `drop` deletes pending grants only; a client that leaves
+before `reservedNow` (`brokerCall.ts:171-181`) leaves the same record. Both are dead and stay `allowed, uses 0` for good. A bridged dialog
+opens; a loop of sixty quiet local posts a minute with an empty `command` follows; at the 256th mint tier three's oldest is the dialog's
+grant, and C.4's false `ALLOWED` then 401 is back.
+
+```ts
+const EVICTION_ORDER: ReadonlyArray<(grant: Grant) => boolean> = [
+  (g) => g.scope === 'call' && g.status === 'denied',
+  (g) => g.scope === 'call' && g.status === 'allowed' && g.uses > 0,
+  (g) => g.scope === 'call' && g.status === 'allowed',   // an Allow not yet reserved: a live one for microseconds, a dead one (refused or abandoned after a pre-consent) for good — oldest first
+  (g) => g.scope === 'call',                             // pending: a dialog open now, or a client that left during it — the last call to go
+  (g) => g.status === 'denied',
+  (g) => g.scope === 'token' && g.status === 'pending',
+  (g) => g.scope === 'token',
+];
+```
+
+The live `allowed, uses 0` window (between the gate's `allow` and `reserve`) is a handful of awaits with no dialog in it; 256 mints cannot
+happen inside it. The doc comment at `:291-302` says the fourth tier is pending alone and why. Scenarios Q2 and A4 (revised).
+
+#### D.6 The key file's note cannot cost the slot (LOW)
+
+`removeKeyFile` (`sshUseActions.ts:196-204`) catches the removal and calls `deps.note` in its `catch`; a `note` that throws (a journal append
+failing, C.7's own case) escapes before `release()` (`:272-273`). The `finally` becomes `try { removeKeyFile(deps, prepared.materialized); }
+finally { release(); }` (+2 in `run`, which carries its `max-lines-per-function` disable already; nothing else moves). Scenario X3.
+
+#### D.7 An expired token is refused before the dialog (LOW; §S3.15 difference 5, decided)
+
+`() => this.grants.get(grant.secret)?.status` (`credsAgentServer.ts:495`) reads the stored status, expiry not applied (`get`, `:179-181`), so
+a token whose idle time or call count ran out between the header's `lookup` (`:474`) and the end of the body is asked about and refused at
+`spentToken`. `grantExpiry` (`:118-123`) is exported and pure — it prunes nothing and spends nothing, and a denied grant outranks every clock in
+it — so no decision about the idle clock is involved:
+
+```ts
+// brokerBridgeToken.ts
+/** The token's status as a dialog may rely on it: `undefined` once it is gone or has run out (`grantExpiry`, pure: nothing pruned, nothing spent), its stored status otherwise — `denied` before any clock. */
+export function tokenStatusNow(registry: Pick<GrantRegistry, 'get'>, secret: string, now: number, limits: GrantLimits): GrantStatus | undefined {
+  const grant = registry.get(secret);
+  return grant === undefined || grantExpiry(grant, now, limits) !== undefined ? undefined : grant.status;
+}
+// credsAgentServer.ts:495, in place:  () => tokenStatusNow(this.grants, grant.secret, Date.now(), grantLimits())
+```
+
+Answered 401 `unauthorized` with `UNKNOWN_TOKEN`, no line, no dialog — as the main port answers an expired token (`reservationRefused` says
+which expiry there; here the bridge says `unknown`, the sentence S3.1 chose for a token that cannot be used). Scenario T3.
+
+#### D.8 A throw inside `handle` answers 500 (LOW; §S3.15 difference 6, decided)
+
+`doors` calls `void this.handle(req, res, bridge)` (`credsAgentServer.ts:697`): a throw anywhere in a handler (`create.make`, `settle`, a
+folder `route.run`, a scope read) leaves the request unanswered until the client gives up and raises an unhandled rejection. One line, in place:
+
+```ts
+// credsAgentServer.ts:697
+(req, res, bridge) => void this.handle(req, res, bridge).catch((error: unknown) => unanswered(res, error, (code, message) => this.respondError(res, code, message), (line) => this.log(line))),
+// brokerRequests.ts (pure)
+/** A handler threw: answer 500 with the generic sentence if nothing has been sent, and put the reason in the journal — never in the body (a bridge may be the reader). */
+export function unanswered(res: http.ServerResponse, error: unknown, respondError: (code: ErrorCode, message: string) => void, log: (line: { grant: string; entityName: string; action: string; outcome: string; detail: string }) => void): void {
+  log({ grant: '—', entityName: '', action: 'request', outcome: 'failed', detail: `a handler threw: ${describeError(error)}` });
+  if (!res.headersSent) { respondError('internal', INTERNAL_FAILURE); }
+}
+```
+
+The C.7 test in `bridgeKeptPlace.test.ts:337-349` pinned the defect (`escaped.length === 3`); it changes with the fix: `escaped.length === 0`,
+each of the three requests answered 500 `internal` with `INTERNAL_FAILURE` as its message, and the place still given back (the next call
+asked). The `unhandledRejection` handler the test sets aside is no longer needed.
+
+#### D.9 The itest reads a client's output after `close` (LOW, test)
+
+`launch` (`itestSshd.cjs:15-36`) resolves `done` at `exit`; `runClient` (`itestForwardAgent.cjs:56-69`) reads `stdout` right after it, and a
+chunk can arrive between `exit` and `close`. `launch` gains `closed`, a promise of the `close` event; `runClient` awaits `closed` raced with
+2 s after `done` settles (bounded: a grandchild holding the pipe must not hang the leg). Leg 4's command becomes `printenv SSH_AUTH_SOCK
+SSH_CONNECTION`: `code === 1` (one variable unset), `stdout` is exactly one line and it ends in B's port — the connection to B is then proven by
+B itself, with the `REACHED_B` stderr check kept as it is.
+
+#### D.10 No served bridge action asks after its Allow (LOW, a static test instead of a guard)
+
+A test in `bridgeAllowList.test.ts`: for every action in `SERVED_ACTIONS` and every kind the registry serves it for (`brokerWorld`'s real
+registry), `asksAfterConsent` is not `true`, with the sentence "a bridged action that asks after the Allow needs a decision about the kept
+place on a bridge (Amendment 4, D.10) — this test is where E3 takes it". No runtime guard, for the reason in the preamble.
+
+#### D.11 Scenarios (each RED today, and why)
+
+Files: `test/sshExecCommand.test.ts` (F3, F4), `test/bridgeLinks.test.ts` (F3 through the action), `test/aliasThrottle.test.ts` (K9 unit, K10
+unit), `test/bridgeKeptPlace.test.ts` (K9, K10, Q2, C.7 revised), `test/grantRegistry.test.ts` (A4 revised), `test/sshUseActions.test.ts` (X3),
+`test/bridgeTransitive.test.ts` (T3), `test/bridgeAllowList.test.ts` (S1), `test/keyInstaller.test.ts` (F5). `brokerWorld.ts`/`bridgeWallWorld.ts`
+gain `quietLocal` with a follow-up action (K10) and a quiet local call whose body is invalid (Q2).
+
+| # | Scenario | Expected | RED today, because |
+|---|---|---|---|
+| F3 | The bridged argv carries the file | `bridged: true, configFile: '/s/bridged_ssh_config'`, key auth: `…BRIDGED_SSH_OPTIONS, '-F', '/s/bridged_ssh_config', '-i', …` and none of `BRIDGED_ASKPASS_OPTIONS`; askpass auth: `BRIDGED_ASKPASS_OPTIONS` between the six and `-F`; `bridged: true` without `configFile` → `undefined`; off a bridge with `configFile` set → byte for byte today's, no `-F`; through the action (`bridgeLinks`) the argv has `-F <storageDir>/…/bridged_ssh_config` and the file exists with mode 0600 | no `-F`, no refusal, no askpass options |
+| F4 | The file's text | `bridgedSshConfig('/home/u', 'linux', undefined)` is `Host *` + the nine lines in `BRIDGED_CONFIG_BLOCK` order + `Match all` + `Include /home/u/.ssh/config` + `Include /etc/ssh/ssh_config`; `('C:\\Users\\u', 'win32', 'D:\\PD')` ends with the two Windows includes; no line names a host, user or value | the function does not exist |
+| F5 | The file on disk | `writeBridgedSshConfigFile(dir, 'linux', '/home/u', undefined)` writes `<keysDir>/bridged_ssh_config`, mode 0600, content F4's; a second call rewrites it | the function does not exist |
+| K9 | The kept place expires | `holdDialogs`; a local `up` Allowed and held in the action (`w.hold`): a bridge's call is `busy`; `mock.timers` moves `KEPT_PLACE_MS`; the same call is asked (admitted, a dialog); the `up` ending afterwards frees nothing of the new holder (its dialog is still the open one). Unit: `hold(t)` after `dialogClosed(h, true, t0)` is `undefined` at `t0 + KEPT_PLACE_MS − 1` and a holding at `t0 + KEPT_PLACE_MS`; a holding with a dialog up (`prompted`) is never taken over | the kept place has no bound |
+| K10 | A quiet follow-up takes the place | `quietLocal` (a `never` policy) on an action stub with `asksAfterConsent: true`, held by `w.hold`: a bridge's asking call and a local alias call are `busy` until the action ends, no dialog was raised for the quiet call, its `allowed without a prompt` line is written; the same stub without the flag: both asked (silent calls take no place). Unit: `admit(false, t, door, true)` holds and stamps the silent window; a second one is `busy`; with the silent window full it is `too-many` and the place is free again | a silent admission never holds |
+| Q2 | Eviction by dead pre-consented calls | `holdDialogs`; a bridged `exec`'s dialog open; 300 quiet local MCP calls with an EMPTY `command` (refused in `usable`, each leaving `allowed, uses 0`); Allow: the exec runs (200), one `ALLOWED` line, no `unauthorized` | tier three evicts the pending call first |
+| A4 | Tiers, revised | one pending call + 300 allowed calls `uses 0` + 300 allowed calls `uses 1` + 2 denied calls + the token set of C.10's A4: after the mints the denied calls go first, then used calls, then unreserved calls, and the pending call and every token remain | no tier separates pending from unreserved |
+| X3 | The note throws | `fs.rmSync` throws `EPERM` and `deps.note` throws on that line: the result is the finished exec's 200, `tally.slotsHeld` is 0; X2 still passes | the throw skips `release()` |
+| T3 | A token run out between header and body | `sendSlow` with `idleMs` elapsed after the header was read: 401 `unauthorized` with `UNKNOWN_TOKEN`, no dialog, no line; the same with `maxUses` reached; a token the person DENIED still answers 403 `denied` with its line (`grantExpiry` ignores clocks for it) | the status closure reads the stored status |
+| C.7 (rev.) | A throw after admission is answered | the three throwing requests each answer 500 `internal`, `escaped.length === 0`, the next call is asked | the throw escapes `handle` |
+| S1 | Served actions ask nothing after the Allow | for `exec` and `query` on every kind serving them, `asksAfterConsent !== true` | green today, pinned (D.10) |
+
+Itest legs 0, 5 and 6 (D.1) and the `close` wait (D.9) are the CI's; leg 0 runs on this machine. The spec cannot watch legs 5–6 RED here.
+
+#### D.12 Order, line counts, Opus additions, unverified
+
+Order: D.5 (`EVICTION_ORDER`, A4, Q2) → D.2 + D.3 (`aliasThrottle.ts`: K9 and K10 unit; then `brokerMcpDoor.ts`, `credsAgentServer.ts`; K9,
+K10) → D.7 (T3) → D.8 (C.7 revised) → D.6 (X3) → D.1 (`sshExecCommand.ts`: F4, F3; `keyInstaller.ts`: F5; `sshUseActions.ts`: F3 through the
+action; then the itest: leg 0, the hop pair, D.9) → D.10 (S1) → lint, `wc -l`, ratchet, the pre-PR block.
+
+| File | After E1.4 | After |
+|---|---|---|
+| `credsAgentServer.ts` | 791 | **792** (`asksAfter`; `:272`, `:216-217`, `:495`, `:697` in place) |
+| `extension.ts` | 1003 | 1003 |
+| `aliasThrottle.ts` | 460 | ≈ 485 |
+| `brokerMcpDoor.ts` | 519 | ≈ 526 |
+| `brokerRequests.ts` | 285 | ≈ 295 |
+| `brokerBridgeToken.ts` | 63 | ≈ 72 |
+| `grantRegistry.ts` | 344 | ≈ 346 |
+| `sshExecCommand.ts` | 140 | ≈ 170 |
+| `keyInstaller.ts` | 285 | ≈ 300 |
+| `sshUseActions.ts` | 380 | ≈ 384 |
+| `itestForwardAgent.cjs` | 194 | ≈ 265 |
+| `itestSshd.cjs` | 184 | ≈ 190 |
+
+Every function stays under the complexity limit of 4 without a new disable comment: `OneInFlight.hold` 4, `OneInFlight.dialogClosed` 4,
+`TokenlessCeilings.admit` 3, `admitSilentPlace` 3, `tokenStatusNow` 3, `unanswered` 2, `bridgedSshConfig` 2; `buildSshExecArgv` is already
+exempt. No file nears 800.
+
+Opus checklist, added to §S3.9: the `-F` file is written by `keyInstaller.ts` in the materialised-keys folder, 0600, and the argv names that
+path and no other; `BRIDGED_CONFIG_BLOCK` is the one place the nine keywords are spelled and `Host *` is the file's first line, the includes
+after `Match all`, by absolute path, no tilde; `BRIDGED_ASKPASS_OPTIONS` is pushed only on a bridged askpass call and before `-F`; a bridged
+call without `configFile` returns `undefined`; off a bridge the argv is byte for byte today's; `hold` takes `nowMs` and never takes over a
+holding whose dialog is up; `admit`'s fourth parameter is read only on the quiet path; `asksAfter` reads the real registry, not the body;
+the pending-call tier is the last call tier; `tokenStatusNow` calls `get`, never `lookup` or `reserve`; `unanswered` puts nothing of the error
+in the body; `release()` is in the innermost `finally`; S1 names every served action.
+
+Unverified by this spec: legs 5–6 against a live `sshd` (none here; they run in CI); that Win32-OpenSSH's `Include` resolves the written
+absolute paths and reads `%ProgramData%\ssh\ssh_config` through it (M8, which the plan's §7 row now names; the code is the same on every
+platform and fails toward "no config", said by ssh's stderr); that VS Code's non-modal notifications leave their promise pending in the bell
+(D.2's bound is right either way); whether `sshd -d` as a user prints a password-attempt line for leg 5 (not asserted: the askpass log is the
+proof).
