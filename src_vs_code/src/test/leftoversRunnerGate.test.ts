@@ -220,6 +220,85 @@ test('on Windows the confirmation answers "no handle" BEFORE it uses a probe or 
   assert.equal(asked, 0, 'a probe that answered "nobody" would have been taken for a proof');
 });
 
+/** One `/proc/<pid>/stat` line as the kernel writes it: the name may hold spaces and a `)`, so a reader must cut at the LAST `)`. */
+function statLine(pid: number, state: string, pgrp: number): string {
+  return `${pid} (a (odd) name) ${state} 1 ${pgrp} ${pgrp} 0 -1 4194560 100 0 0 0 1 1 0 0 20 0 1 0 12345 1000000 100 18446744073709551615\n`;
+}
+
+/** A fake `/proc`: one folder per `[pid, state, pgrp]` with its `stat`, in a private folder. */
+function fakeProc(scope: Parameters<typeof privateRoot>[0], members: Array<[number, string, number]>): string {
+  const proc = privateRoot(scope);
+  for (const [pid, state, pgrp] of members) {
+    fs.mkdirSync(path.join(proc, String(pid)));
+    fs.writeFileSync(path.join(proc, String(pid), 'stat'), statLine(pid, state, pgrp));
+  }
+  return proc;
+}
+
+/** A process group that is REALLY alive (so `kill(-pgid, 0)` answers yes), ended when the body returns. */
+async function withLiveGroup<T>(body: (pgid: number) => Promise<T>): Promise<T> {
+  const child = spawn(process.execPath, ['-e', 'setInterval(() => undefined, 1000)'], { detached: true, stdio: 'ignore' });
+  const pgid = child.pid as number;
+  try {
+    return await body(pgid);
+  } finally {
+    try {
+      process.kill(-pgid, 'SIGKILL');
+    } catch {
+      // gone already
+    }
+  }
+}
+
+const QUICK = { timeoutMs: 120, stepMs: 20, maxStepMs: 20, count: () => 1 } as const;
+
+test('[E2.1 refines code2 7] on Linux a group the kill calls alive but whose every member is a zombie is ended (no init reaps in a container)', posixOnly, async (t) => {
+  const tree = await processTree();
+  await withLiveGroup(async (pgid) => {
+    const procRoot = fakeProc(t, [[pgid, 'Z', pgid], [pgid + 1, 'Z', pgid], [pgid + 2, 'S', 1]]); // a live process of ANOTHER group does not count
+    fs.mkdirSync(path.join(procRoot, String(pgid + 3))); // a member that left between the listing and the read: no stat, no doubt
+
+    const answer = await tree.confirmTreeEnded({ root: pgid }, { ...QUICK, platform: 'linux', procRoot });
+
+    assert.deepEqual(answer, { ended: true, alive: 0 });
+  });
+});
+
+test('[E2.1 refines code2 7] one member that is not a zombie keeps the group alive; so does a scan that cannot be done or understood', posixOnly, async (t) => {
+  const tree = await processTree();
+  await withLiveGroup(async (pgid) => {
+    const oneAlive = fakeProc(t, [[pgid, 'Z', pgid], [pgid + 1, 'S', pgid]]);
+    const noMembers = fakeProc(t, [[pgid + 5, 'S', 1]]); // the kill says alive, the table shows no member: the scan is blind, not proof
+    const garbage = fakeProc(t, []);
+    fs.mkdirSync(path.join(garbage, String(pgid)));
+    fs.writeFileSync(path.join(garbage, String(pgid), 'stat'), 'not a stat line');
+    const noProc = path.join(privateRoot(t), 'no-such-proc');
+
+    for (const [what, procRoot] of [['a live member', oneAlive], ['no member in the table', noMembers], ['an unparseable stat', garbage], ['no /proc', noProc]]) {
+      const answer = await tree.confirmTreeEnded({ root: pgid }, { ...QUICK, platform: 'linux', procRoot });
+      assert.equal(answer.ended, false, `${what} must stay "not ended"`);
+    }
+  });
+});
+
+test('[E2.1 refines code2 7] off Linux the kill alone answers: zombies in a /proc-shaped folder change nothing', posixOnly, async (t) => {
+  const tree = await processTree();
+  await withLiveGroup(async (pgid) => {
+    const procRoot = fakeProc(t, [[pgid, 'Z', pgid]]);
+
+    const answer = await tree.confirmTreeEnded({ root: pgid }, { ...QUICK, platform: 'darwin', procRoot });
+
+    assert.equal(answer.ended, false);
+  });
+});
+
+test('[E2.1 refines code2 7] a group nobody is in is ended by the kill alone: no /proc is read', posixOnly, async (t) => {
+  const tree = await processTree();
+  const answer = await tree.confirmTreeEnded({ root: NO_SUCH_PID }, { ...QUICK, platform: 'linux', procRoot: path.join(privateRoot(t), 'no-such-proc') });
+
+  assert.deepEqual(answer, { ended: true, alive: 0 });
+});
+
 test('the confirmation asks "is anyone there" with no process listing, and counts members only when it must report them', async () => {
   const tree = await processTree();
   const answers = [true, true, false];

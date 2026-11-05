@@ -9,7 +9,10 @@
 //
 //   POSIX    the child is started with `detached: true`, so it leads a process GROUP whose id is its pid. `killTree` signals
 //            the group with SIGKILL, and a signal-0 group probe answers `ESRCH` once no member is left (a killed process stays
-//            in the table for a moment until its parent or init collects it, so the answer is polled). A descendant that made
+//            in the table for a moment until its parent or init collects it, so the answer is polled). Where nothing collects it (a
+//            container with no init) the kill keeps saying "alive" for a zombie, so on Linux, and only when the kill says "alive",
+//            `/proc/*/stat` is read once: a group whose every member is in state `Z` is ended; a scan that cannot be done keeps the
+//            answer "alive" [E2.1 code2 7, refined]. A descendant that made
 //            a group of its own (`setsid`) is outside this reach; none of this repository's tests does.
 //            A descendant that DID leave the group is looked for after the group is gone [E2.1 code 1]: on Linux every process whose
 //            environment carries this run's record (`TESTSTODELETE_RUN=<record>`, which every child inherits) is a survivor,
@@ -115,14 +118,51 @@ async function groupMembers(pgid) {
   }
 }
 
-/** Is anyone in the group? One `kill(-pgid, 0)`, no process listing: `ESRCH` is the empty group [E2.1 code2 7]. */
-function groupAlive(tree) {
+/**
+ * Is every member of the group `pgid` a zombie? Reads `<procRoot>/<pid>/stat` once per process. A zombie is dead and holds nothing; it
+ * stays in the table, and so keeps the group "alive" for `kill(-pgid, 0)`, until its parent or init collects it — a container with no
+ * init never does. Fails closed: `false` unless at least one member was seen and every member seen is in state `Z`. A table that
+ * cannot be listed, a `stat` that cannot be read (other than a process that just left) or understood, and a group with no member in
+ * the table (the scan is blind, or the group ended a moment ago, which the next probe says) are all "not only zombies".
+ */
+function onlyZombies(pgid, procRoot) {
+  let names;
+  try {
+    names = fs.readdirSync(procRoot);
+  } catch {
+    return false;
+  }
+  let members = 0;
+  for (const name of names) {
+    if (!/^[1-9][0-9]*$/.test(name)) continue;
+    let stat;
+    try {
+      stat = fs.readFileSync(`${procRoot}/${name}/stat`, 'utf8');
+    } catch (error) {
+      if (error?.code === 'ENOENT' || error?.code === 'ESRCH') continue; // it left between the listing and the read
+      return false;
+    }
+    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' '); // state, ppid, pgrp, ...: cut after the LAST `)`, the name may hold one
+    if (stat.lastIndexOf(')') === -1 || !/^[A-Za-z]$/.test(fields[0]) || !/^[0-9]+$/.test(fields[2] ?? '')) return false;
+    if (Number(fields[2]) !== pgid) continue;
+    if (fields[0] !== 'Z') return false;
+    members += 1;
+  }
+  return members > 0;
+}
+
+/**
+ * Is anyone in the group? One `kill(-pgid, 0)`, no process listing: `ESRCH` is the empty group [E2.1 code2 7]. Only on Linux, and only
+ * when that kill says "alive", `/proc` is read ONCE: a group of zombies only is ended (this REFINES [E2.1 code2 7], it does not
+ * replace it: the kill stays the cheap common answer). Another OS keeps the kill's answer. `platform` and `procRoot` are seams.
+ */
+function groupAlive(tree, { platform = process.platform, procRoot = '/proc' } = {}) {
   try {
     process.kill(-tree.root, 0);
   } catch (error) {
     return error?.code === 'EPERM';
   }
-  return true;
+  return !(platform === 'linux' && onlyZombies(tree.root, procRoot));
 }
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -131,13 +171,13 @@ const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * Wait until no member of the tree is alive, or `timeoutMs` passes: `{ ended: true, alive: 0 }`, or `{ ended: false, alive: <n> }`.
  * The question is a bare probe, repeated with a backoff (`stepMs` doubling to `maxStepMs`) whose last wait is cut to what the bound
  * leaves; members are counted (`count`, a `ps`) only for the answer that is not "ended" [E2.1 code 5, code2 7]. `probe`, `count`,
- * `now`, `pause` and `platform` are seams for tests.
+ * `now`, `pause`, `platform` and `procRoot` are seams for tests.
  *
  * With no handle on the tree — a supervised run, whose job has no pid, or a fake — there is nothing to ask, and the answer is NOT
  * "ended": `{ ended: false, alive: 0, reason: 'no-handle' }` [E2.1 risk 2]. The same on Windows even when a pid is given (a spawn
  * seam): `kill(-pid, 0)` proves nothing there. A confirmation that cannot confirm is not a confirmation.
  */
-export async function confirmTreeEnded(tree, { timeoutMs = CONFIRM_TIMEOUT_MS, stepMs = CONFIRM_STEP_MS, maxStepMs = CONFIRM_MAX_STEP_MS, probe = () => groupAlive(tree), count = () => groupMembers(tree.root), now = Date.now, pause: wait = pause, platform = process.platform } = {}) {
+export async function confirmTreeEnded(tree, { timeoutMs = CONFIRM_TIMEOUT_MS, stepMs = CONFIRM_STEP_MS, maxStepMs = CONFIRM_MAX_STEP_MS, platform = process.platform, procRoot = '/proc', probe = () => groupAlive(tree, { platform, procRoot }), count = () => groupMembers(tree.root), now = Date.now, pause: wait = pause } = {}) {
   if (tree === undefined || platform === 'win32') return { ended: false, alive: 0, reason: 'no-handle' };
   const deadline = now() + timeoutMs;
   let step = stepMs;
@@ -350,7 +390,7 @@ async function settle({ rootPid, record, since, startOf, platform, survivors, pi
 export async function endTree(child, { confirm = confirmTreeEnded, survivors = findSurvivors, pidAlive = pidAliveDefault, kill = killPid, killGroup = killWholeTree, record, since = startOfDefault(process.pid), startOf = startOfDefault, platform = process.platform, settleTimeoutMs = CONFIRM_TIMEOUT_MS } = {}) {
   try {
     const tree = snapshotTree(child);
-    const groupLive = tree !== undefined && groupAlive(tree);
+    const groupLive = tree !== undefined && groupAlive(tree, { platform });
     if (groupLive || typeof child?.stop === 'function') killGroup(child, tree); // a supervised run is stopped through its job, which has no pid
     const group = await confirm(tree);
     if (!group.ended) return group;
