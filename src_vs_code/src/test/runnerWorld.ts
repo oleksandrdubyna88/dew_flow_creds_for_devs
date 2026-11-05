@@ -119,6 +119,13 @@ export const ENDED = async (): Promise<Ended> => ({ ended: true, alive: 0 });
 export const me = thisOwnerToken();
 export const RECORD = formatOwner(thisOwner());
 
+/**
+ * Does the audit REMOVE a claimed folder once the tree is proven ended? Only on Linux, where the survivor scan can read an
+ * environment. Windows has no acknowledgment that a job is empty, and every other POSIX (macOS) has no environment to read
+ * [E2.1 Opus 1]: both list the folder and fail the run. A test that expects the outcome of a REAL run asks this, never `win32` alone.
+ */
+export const auditRemoves = (platform: string = process.platform): boolean => platform === 'linux';
+
 /** A private root for one scenario: the folders the scenario makes and counts are the only ones in it. */
 export const privateRoot = (scope: Scope): string => ownedDir(scope, 'aud');
 

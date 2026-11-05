@@ -9,7 +9,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { formatOwner, ownedDir } from '../../scripts/lib/leftovers.cjs';
-import { ENDED, RECORD, exists, lines, nothingSwept, ownerWith, plant, privateRoot, processTree, runner, suite, tableOf, withEnv } from './runnerWorld';
+import { ENDED, RECORD, auditRemoves, exists, lines, nothingSwept, ownerWith, plant, privateRoot, processTree, runner, suite, tableOf, withEnv } from './runnerWorld';
 
 const posixOnly = process.platform === 'win32' ? { skip: 'POSIX: a fake ps script' } : {};
 
@@ -78,6 +78,23 @@ test('[E2.1 Opus 1] and the runner, told it is on darwin, keeps a claimed folder
   assert.equal(code, 1);
   assert.ok(exists(left), 'a folder a detached grandchild may still hold is never removed on a scan that cannot see it');
   assert.ok(log.seen.some((line) => line.includes('could not be confirmed')), log.seen.join(' | '));
+});
+
+test('[E2.1 Opus 1] the platforms where a claimed folder is kept are every one but Linux: the runner told darwin or freebsd keeps it, and `auditRemoves` says the same', posixOnly, async (t) => {
+  const { runWithAudit } = await runner();
+  const platforms = process.platform === 'linux' ? ['linux', 'darwin', 'freebsd'] : ['darwin', 'freebsd']; // the Linux scan reads this machine's /proc
+  const seen: string[] = [];
+
+  for (const platform of platforms) {
+    const root = privateRoot(t);
+    let left = '';
+    const code = await runWithAudit([], { spawn: suite(0, () => { left = plant(root, 'plat', RECORD); }), roots: [root], sweep: nothingSwept, confirm: ENDED, platform, write: lines().write });
+
+    assert.equal(code, 1, `${platform}: the folder was claimed, so the run fails`);
+    assert.equal(exists(left), !auditRemoves(platform), `${platform}: kept or removed as auditRemoves says`);
+    seen.push(`${platform}:${exists(left) ? 'kept' : 'removed'}`);
+  }
+  assert.deepEqual(seen, platforms.map((platform) => `${platform}:${platform === 'linux' ? 'removed' : 'kept'}`));
 });
 
 test('[E2.1 Opus 2] where the record has no start time, a claim older than this run is listed and never removed', async (t) => {

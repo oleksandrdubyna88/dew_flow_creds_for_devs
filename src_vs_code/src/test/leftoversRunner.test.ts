@@ -14,7 +14,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import { formatOwner, ownedDir, readOwner, thisOwner } from '../../scripts/lib/leftovers.cjs';
 import {
-  ENDED, RECORD, SRC_VS_CODE, WITHOUT_TEST_CONTEXT, WRAPPER, exists, isAlive, lines, me, nothingSwept, ownerWith, plant, privateRoot, runner, suite,
+  ENDED, RECORD, SRC_VS_CODE, WITHOUT_TEST_CONTEXT, WRAPPER, auditRemoves, exists, isAlive, lines, me, nothingSwept, ownerWith, plant, privateRoot, runner, suite,
   type Spawn, withEnv,
 } from './runnerWorld';
 
@@ -133,9 +133,10 @@ test('the audit matches the record the runner EXPORTED, not one recomputed after
   assert.notEqual(made.pid, thisOwner().pid, 'the child is another process: its pid is nowhere in the claim');
   assert.equal(code, 1);
   assert.ok(log.seen.some((line) => line.includes('this run left 1 folder(s)')), 'the audit found exactly that folder, by the exported string');
-  if (process.platform === 'win32') {
-    // Windows has no confirmation that the tree is gone (the job object gives no acknowledgment, risk 2 of the consult): the audit
-    // names the folder and keeps it, and the run fails; the C# sweep of E2.3 or the janitor collects it.
+  if (!auditRemoves()) {
+    // Windows has no confirmation that the tree is gone (the job object gives no acknowledgment, risk 2 of the consult), and macOS
+    // has no environment to scan for a descendant that left the group [E2.1 Opus 1]: the audit names the folder and keeps it, and the
+    // run fails; the C# sweep of E2.3 or the janitor collects it.
     assert.equal(fs.readdirSync(root).filter((name) => !name.endsWith('.owner')).length, 1, 'kept: nothing proves the tree ended');
     assert.ok(log.seen.some((line) => line.includes('(not removed:')), log.seen.join(' | '));
   } else {
@@ -181,12 +182,13 @@ function fixtureFile(root: string, selfKill: boolean): string {
 }
 
 /**
- * What became of the folder a killed suite claimed. On POSIX the group's end is confirmed, so it is removed. On Windows the
- * supervisor gives no acknowledgment that its job is empty (the reference has none yet), so the audit removes nothing there and
- * says so: the descendant is dead (asserted by the caller) and the folder is preserved, listed and the run fails.
+ * What became of the folder a killed suite claimed. On Linux the group's end is confirmed and the survivors are scanned, so it is
+ * removed. On Windows the supervisor gives no acknowledgment that its job is empty (the reference has none yet), and on macOS the
+ * scan has no environment to read, so the audit removes nothing there and says so: the descendant is dead (asserted by the caller)
+ * and the folder is preserved, listed and the run fails.
  */
 function assertFolderOutcome(work: string): void {
-  if (process.platform === 'win32') {
+  if (!auditRemoves()) {
     assert.equal(fs.readdirSync(work).some((name) => name.includes('-creds-eightc-')), true, 'preserved: nothing confirms the job is empty');
   } else {
     assert.deepEqual(fs.readdirSync(work), [], 'the folder the dead suite claimed was removed, after the tree ended');
