@@ -24,6 +24,8 @@
 > the reference sweep only LISTS on Windows; F21 — the identity and exclusive-move helpers exported; the `raw-temp` baseline rule).
 > The refinements of E2.1–E2.3 made as the epic starts are marked `[E2.1 plan gate n]` (coai session `156fd570`) and
 > `[cadence e2d20eab n]` (the consult for epics 1–3), and listed in § *Plan-gate round 3 and the cadence consult*.
+>
+> **Revised 2026-11-05 for the parent's epochs 6 and 7** (§ *Revision for the rollout's epochs 6 and 7*, below). E2.1's code does not change. No epic moves.
 
 **Committed together with this document** (one commit, the shared `common/planning-docs.md` § *A plan split into
 epics and stories*): its row in `todo/README.md` under *Currently open*, as the first row of the table —
@@ -46,6 +48,28 @@ template: `dew_flow_mcp · tests/Mcp.Tests/Leftovers/*.cs` at `197cc76` and its 
 here*). The Rust port's record: `dew_flow_sidecar_rust · research/PLAN_test_leftovers_E4.md` (§ *Deviations*). *Rule §n*
 below is a section of the contract; `R:n` a line of the detail at `105d53c`; `O:n` a line of `owned.mjs`; `S:n` of
 `leftovers-sweep.mjs`; `G:n` of `leftovers-check.mjs`.
+
+## Revision for the rollout's epochs 6 and 7 (2026-11-05)
+
+The parent's § *Epoch 6* item 8.3 and § *Epoch 7* item 8.3 (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`) say what this document must say. The owner approved both epochs. This section lists each point and where it now stands. Where an older line says otherwise, the line is marked and this section wins.
+
+| # | The parent's point | What this document now says | Where |
+|---|---|---|---|
+| 1 | The shipped Node guard does NOT read split spellings (F30) | D9 row 2 is corrected. The C# guard's copied folded reading holds for `.cs`. For `.cjs`, `.mjs` and `.sh`, the claim is zero WHOLE literals, F30 open | D9 row 2; S5 sc. 2; § *Test plan* |
+| 2 | S5 sc. 2's `.cjs` and `.sh` plants cannot be findings | They become the positive test of what the shipped guard detects (a whole legacy literal and, on the lines F30 names, a bare-word glob), plus the one sentence below in E2.5's PR. No row asserts that a split spelling is NOT found, because that row would go red the day F30 ships | S5 sc. 2 |
+| 3 | The DoD's "byte copy save the five named files" | The copy is an ADAPTED copy: a pinned manifest, permitted transformations per file, and a diff check that fails on one unexplained byte (the parent's entry 3.1). coai's `template-manifest.json` and `TheAdaptedCopyTests` are the working shape | D1's C# row; DoD; E2.3 |
+| 4 | F29 | E2.3 reads F29 (the Windows mutex op on the template's text) before it copies | E2.3 |
+| 5 | S4's bash scripts set their trap before any fallible step, with a RED test | `mcp-listen-smoke.test.sh:19` and `version-smoke.test.sh:14` have `rm -rf` and no trap today. Each script in S4 sets its trap before its first fallible step. Its RED is a stubbed failure before the old trap's position, with the premise asserted. A kill stays unsolved, and the brief says so | S4; E2.4 |
+| 6 | E2.5's `docs.yml` guard step | The step's name or comment says "zero whole literals, F30 open" until F30 ships. **F30 has a deadline of 2026-11-19, and it must ship or be re-decided before E2.5 merges** | E2.5 |
+| 7 | Each E2.2 to E2.5 brief opens with the parent's table | Each condition: implementation by file, invocations covered, an executable check. An unmapped row is a design decision before the plan gate | E2.2 to E2.5 |
+| 8 | Each row also says what its check prepares or substitutes (§ *Epoch 7* item 8.1) | The table has that column: what the check prepares, and what real-run behaviour it therefore does not prove. For a row that reads ownership, one resource made the natural way is traced through the reader before the row is approved | E2.2 to E2.5 |
+| 9 | The audit's order (E5's 4.4) | E2.1 and E2.2: the audit runs in the PARENT after `node --test` returns (D9 row 1), so a run folder cannot end first, and E5's question does not arise in that form. E2.3: the brief checks the order on its own tree, because coai's fault was a run folder the fixture disposed first. If a creds suite has no run folder, the brief says so; if it gains one, it plants an orphan claim and shows the RED | D9 row 1; E2.3 |
+| 10 | The elevated Windows exception (§ *Epoch 7*) | The goal's exception below. The Windows handoff proof of E2.3.S2 keeps its fixture and says what it does not prove. **Before E2.3 starts, F31 is raised with the owner: it is reviewed, and either fixed or accepted again, at the first of E2.3's start, a persistent Windows machine, or 2026-12-05** | § *Goal*; D3; E2.3 |
+| 11 | Any test in the copy that says "collected" on Windows | It re-owns its fixture first, and its row in the table says so | E2.3 |
+
+**The one sentence for E2.5's PR, from E5's:** "The shipped Node guard finds a whole legacy literal and, on the lines F30 names, a bare-word glob or an anchored regex over the word; it does not find a word split over `+`, `.concat`, `.join('')`, a template hole, a `\u` or `\x` escape, a one-character class or half of the word; the count depends on the line (F30's note), so this repository's zero for `legacy-name` and `owner-blind` is zero WHOLE literals, F30 open."
+
+**Prerequisites for E2.1's merge:** condition (c), the owner's administrator scan on the WSL machine, is still open. The parent's § *Epoch 6* row "E2.1" records that E2.1 is built and waits for it.
 
 ## What changed from the October version, and why
 
@@ -79,6 +103,8 @@ that run on success AND failure, and — when the run was killed — collected b
 under the two keys of rule §4 (scope: the name's owner, the record's owner, the caller's token and the kernel owner are
 one; abandonment: the record is `gone`). Two guards keep it so. In CI the image smoke follows the contract's carve-out,
 and a failed smoke stays failed and never publishes.
+
+**One bounded exception (the owner, the parent's epoch 7, 2026-11-05; F31).** What a run in an ELEVATED Windows process leaves, because it was killed or could not remove it at its normal end, is owned by `BUILTIN\Administrators` and reads as a stranger's under rule §4's two keys. No sweep removes it, and the audit names it only if it is in the registry. It waits for a person. No rule key is weakened to change this. In that state the audit's claim scan sees nothing, on every Windows CI leg, so a statement that the audit found no leak holds for the claim half on Linux and macOS only. A process that is not elevated is not affected, and no CI leg runs in that state.
 
 **Done when:** stage A is recorded (S0); `npm test`, every `itest:*` harness and the server's harness create only owned,
 claimed folders through the wrapper, leave none after a run, and sweep at start (S2); the five xUnit executables do the
@@ -375,7 +401,7 @@ Windows machine is recorded, not resolved here: the Node side is as strict as th
 `5863c60` the reference **removes nothing on Windows**: it lists `unverified:` and leaves everything (F16 interim). So on
 Windows, E2.1 and E2.2 do NOT collect a killed run's folders; "the next Node run collects it" is false there until F16
 closes. What collects them is the C# sweep of E2.3 (both keys, profile AND owner SID) or the janitor once armed — a
-cross-language handoff that E2.3.S2 proves `[cadence e2d20eab 2]`.
+cross-language handoff that E2.3.S2 proves `[cadence e2d20eab 2]`. **For a run in an elevated process, only a person collects them: § *Goal*'s exception (the parent's epoch 7). E2.3.S2's proof makes the entry the user's first, so it proves the handoff for a run that is not elevated.**
 
 **D4 — Who sweeps what at start (rule §4, R:168-206).** The token is `creds` for every language, so every sweep
 collects every creds folder by the same rule — age ≥ 10 min selects, the two keys authorise, `live`/`unknown` preserve,
@@ -526,7 +552,7 @@ this repository is protected and what a reviewer checks:
 | # | The defect (where found) | Protected by | The reviewer checks |
 |---|---|---|---|
 | 1 | an end-of-run audit that matches folders by the shared `TESTSTODELETE_RUN` record deletes LIVE siblings' folders — the first child to finish deleted the others' (E3 review fix A) | C#: the copied fixture passes `Owner.This`, never the run's record; Node: the audit runs in the PARENT after `node --test` returned, compares the parent's OWN record, and `run-itests.mjs` has no audit | S2 sc. 8: an audit with a `live` sibling's record removes nothing of it; S3 sc. 5: `RealAudit` is called with `Owner.This` |
-| 2 | a guard that reads only whole literals is fooled by split, escaped or concatenated spellings (E3 fix C; E4 item 26) | the copied `LeftoversGuardLiterals.cs` (the folded reading); the shipped Node guard reads the same way | S5 sc. 2: a planted `"testsTo" + "Delete-"` in a `.cs`, a `.cjs` and a `.sh` is a finding each |
+| 2 | a guard that reads only whole literals is fooled by split, escaped or concatenated spellings (E3 fix C; E4 item 26) | the copied `LeftoversGuardLiterals.cs` (the folded reading), for `.cs`. ~~the shipped Node guard reads the same way~~ **It does not: it reads whole literals only (F30; § *Revision* rows 1 and 2)** | S5 sc. 2: a planted `"testsTo" + "Delete-"` in a `.cs` is a finding; ~~a `.cjs` and a `.sh`~~ for those, the positive test of what the shipped guard detects |
 | 3 | a rename that is not exclusive (Rust `std::fs::rename` on Windows and POSIX `rename(2)`) replaces an empty directory at the quarantine name (F17; E4 items 9, 27) | the copied `Native.RenameExclusively` (`renameat2` on Linux, `renamex_np` with `RENAME_EXCL` on Darwin — no reserve-then-rename fallback there, `MoveFileExW` with no flags on Windows); Node: F17 fixed in the reference at `556550c`, taken by the pin | S3: the copied `NativeTests`/`DarwinNativeTests` pass on all three legs; nothing here calls `Directory.Move` or `fs.renameSync` on an owned path |
 | 4 | a quarantine suffix that is not hex breaks every reader's pattern (E4 item 25) | the copy; the reference | S3 sc. 1: the quarantine name test of the copied `LeftoversSweepTests` |
 | 5 | a FIFO swapped in at a claim path blocks the read (F20) | the copied verified read (`O_NONBLOCK | O_NOFOLLOW`, `fstat` identity); Node: F20 fixed at `733c781` | S3: the copied FIFO tests, the Darwin one in a CHILD process with a 90 s bound |
@@ -1097,8 +1123,8 @@ The fixed-name `cleanup` at `:53` and the `rm -rf state` at `:54` go (`mkdir -p`
 2. **Every class fires once, and a valid exemption silences it** — for the C# guard, E3's own `LeftoversGuardTests`
    (copied) plus this repository's additions in `LeftoversGuardCredsTests.cs`: a planted `fs.mkdtempSync(` in
    `src_vs_code/scripts/x.cjs` and in `src_vs_code/src/test/xWorld.ts` ⇒ 1 `raw-temp` each; `Path.GetTempPath()` in
-   `src_cli/tests/X.cs` ⇒ 1; `"testsTo" + "Delete-"` in a `.cs`, a `.cjs` and a `.sh` ⇒ 1 `legacy-name`/`owner-blind` each
-   (D9 #2); `Owned.Prefix` referenced from `src_mcp/tests/X.cs` ⇒ 1 `owner-blind` (D9 #14); `docker compose -p
+   `src_cli/tests/X.cs` ⇒ 1; `"testsTo" + "Delete-"` in a `.cs` ⇒ 1 `legacy-name`/`owner-blind`
+   (D9 #2; **revised, § *Revision* row 2:** a whole legacy literal in a `.cjs` and in a `.sh` ⇒ 1 each through the shipped guard, and no row asserts that a split spelling is not found); `Owned.Prefix` referenced from `src_mcp/tests/X.cs` ⇒ 1 `owner-blind` (D9 #14); `docker compose -p
    cred-vault-acme-test up` in `deploy/acme-test/run.sh` ⇒ 1 `docker-name`, with `-p teststodelete-${OWNER}-creds-acme-$id`
    ⇒ 0; `.github/workflows/docker.yml` ⇒ no docker finding from the C# guard (the pinned exclusion) — and, for the shipped
    Node guard (no new tests here: its own suite covers the classes), three facts pinned by running it over fixture
@@ -1143,7 +1169,7 @@ The fixed-name `cleanup` at `:53` and the `rm -rf state` at `:54` go (`mkdir -p`
 | (round 2) a kill between claim and create leaves nothing the next sweep does not collect — RED-GREEN-RED | S4 sc. 3 (the kill test; RED on a `mktemp`-first helper, GREEN claim-first, RED again with the two steps swapped by hand) |
 | (consultant, verified) a removed `HostProcess` folder leaves the registry | S3 sc. 2 (`OwnedDir.Unreclaimed()` empty after `Remove`; RED with the path-only adapter) |
 | (wave 1) the audit never removes a live sibling's folder — RED-GREEN-RED | S2 sc. 8 (a record-equality audit; RED with an owner-segment compare, GREEN, RED again with the compare reverted); S3 sc. 5 |
-| (wave 1) split, escaped or concatenated spellings are findings — RED-GREEN-RED | S5 sc. 2, through the copied folded reading; reverting `LeftoversGuardLiterals.cs` to a whole-literal read turns it RED again (by hand, recorded) |
+| (wave 1) split, escaped or concatenated spellings are findings in `.cs` — RED-GREEN-RED (**scripts: whole literals only, F30; § *Revision* row 1**) | S5 sc. 2, through the copied folded reading; reverting `LeftoversGuardLiterals.cs` to a whole-literal read turns it RED again (by hand, recorded) |
 | (wave 1) an exclusive rename, a hex quarantine suffix, a FIFO that cannot block, the elevated runner | S3: the copied `NativeTests`, `DarwinNativeTests`, `LeftoversSweepTests`, `RunnerFactsTests`, `WindowsOwnership` on the three legs |
 | (Darwin) the layout holds before anything destructive runs | S3 sc. 6 and the copied `LayoutGateTests`, `DarwinLayoutTests` |
 | (barrier) stage A empty, and still empty at the merge | S0; the rescan line on the producer PR's head |
@@ -1159,7 +1185,7 @@ The fixed-name `cleanup` at `:53` and the `rm -rf state` at `:54` go (`mkdir -p`
 - [ ] `npm test`, `itest:all` and each xUnit executable sweep both roots at start under the two keys and never fail the
       run for it; the runners export `TESTSTODELETE_RUN`; `npm test` and the xUnit executables fail a run that left
       something claimed with their own record, and never touch another record's folder (S2, S3).
-- [ ] E3's helper is a byte copy save the five named files, with its Darwin path, green on Linux, Windows and macOS;
+- [ ] E3's helper is ~~a byte copy save the five named files~~ **an adapted copy with a pinned manifest and a diff check (§ *Revision* row 3)**, with its Darwin path, green on Linux, Windows and macOS, **read with § *Goal*'s elevated Windows exception**;
       `AllowUnsafeBlocks` in all five test projects (S3).
 - [ ] `docker.yml`'s two containers and two volumes are prefixed in the owner form, labelled, removed by one always-run
       exact-name step after the diagnostics, and a failed smoke was observed FAILED with `Publish` skipped (S4).
@@ -1598,7 +1624,7 @@ detailed briefs are S2–S5 above; a story names the scenarios it owns.
 - **Goal.** E3's helper, with its Darwin path, runs in all five xUnit executables on Linux, Windows and macOS; every C#
   site is owned; each executable sweeps both roots at start and fails a run that left something it claimed.
 - **Scope.** S3 whole, except `LeftoversRepositoryGuardTests` (E2.5).
-- **Depends on.** E2.2 merged; E3 at `197cc76`.
+- **Depends on.** E2.2 merged; E3 at `197cc76`. **F31 raised with the owner before this epic starts, and F29 read before the copy (§ *Revision* rows 4 and 10).**
 - **Done when.** S3 sc. 1–6 green or recorded on the three legs; the C# guard's scan over the tree run by hand and its
   list recorded (shell and docker findings expected until E2.4); the hand clean-up of the C# old names recorded per machine.
 - **Stories.**
@@ -1617,7 +1643,7 @@ detailed briefs are S2–S5 above; a story names the scenarios it owns.
     with its claim's owner SID set to another account's (the `WindowsOwnership` fixture that plants a foreign owner)
     → the C# sweep keeps it as `unknown`, listed. On the elevated hosted runner the caller's new files belong to
     `BUILTIN\Administrators` (D9 #6), so the collecting case runs through the fixture that makes the entry the user's,
-    and the test says which outcome the runner's own files gave.
+    and the test says which outcome the runner's own files gave. **What this does not prove (the parent's § *Epoch 7* item 8.1): that a real folder of an elevated run is collected. It is not; it waits for a person.**
   - **E2.3.S3 — the client, process and socket sites** (Opus · Sonnet · Opus): `src_cli/tests` (`AgentRelayHostTests`,
     `AgentRelayConnectionTests`, `RelayLogTests`, `AgentRelayTests`, `RelayPipeEndingTests`), `src_mcp/tests`,
     `src_broker_client/tests` (`EndpointsTests`, `SessionTitleTests`), `src_service_defaults/tests` (`CredsLoggingTests`,
@@ -1662,7 +1688,7 @@ detailed briefs are S2–S5 above; a story names the scenarios it owns.
 - **Goal.** Both whole-tree guards are on and green on three OS legs and in the required `docs.yml` job; every remaining
   finding is a real exemption with a reason; the barrier rescan is clean; the docs and the records are complete.
 - **Scope.** S5 whole, plus the parts of S3 deferred here.
-- **Depends on.** E2.1–E2.4 merged.
+- **Depends on.** E2.1–E2.4 merged. **F30 shipped or re-decided before this epic merges (§ *Revision* row 6).**
 - **Done when.** S5 sc. 1–6; `plan-lifecycle.mjs` clean; this document's status line reads `E2 shipped, <date>; promotes
   with its parent`.
 - **Stories.**
