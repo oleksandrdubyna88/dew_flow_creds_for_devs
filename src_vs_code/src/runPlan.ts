@@ -1,4 +1,4 @@
-import { CommandArg } from './types';
+import { CommandParts } from './commandLine';
 import { SecretRefField, findSecretRefs, parseSecretRef } from './secretRef';
 import { shellFamily } from './hostShell';
 
@@ -81,23 +81,17 @@ export function rewriteRefs(
  * A command line whose referencing arguments read their value from the environment.
  *
  * <p>Disabled rows are left out, as `buildCommandLine` does — the same rule, because this is
- * the same command with a different value channel.</p>
+ * the same command with a different value channel. The parts are `resolveCommand`'s, `{name}` already filled.</p>
  */
-export function buildCommandLineWithRefs(
-  command: string,
-  args: readonly CommandArg[] | undefined,
-  plan: RefPlan,
-  platform: NodeJS.Platform,
-  shellPath?: string,
-): string {
-  const base = rewriteRefs(command.trim(), plan, platform, shellPath);
+export function buildCommandLineWithRefs(parts: CommandParts, plan: RefPlan, platform: NodeJS.Platform, shellPath?: string): string {
+  const base = rewriteRefs(parts.command.trim(), plan, platform, shellPath);
   if (base.length === 0) {
     return '';
   }
-  const parts = (args ?? [])
+  const rest = parts.args
     .filter((arg) => arg.disabled !== true && arg.value.trim().length > 0)
     .map((arg) => rewriteRefs(arg.value.trim(), plan, platform, shellPath));
-  return [base, ...parts].join(' ');
+  return [base, ...rest].join(' ');
 }
 
 /**

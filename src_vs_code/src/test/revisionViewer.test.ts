@@ -202,3 +202,35 @@ test('the history row’s Copy of a version sealed under the entry’s OLDER PIN
   assert.equal(s.boxes, 2, 'the live door, then the version\'s own PIN');
   assert.equal(session().grantedPin(ACCOUNT, ENTRY), PIN, 'the version\'s PIN is not granted over the entry\'s');
 });
+
+// ---------------------------------------------------------------------------------------------
+// `{name}` (parent PLAN_terminal_folder_run.md §1, story S2): a kept version's page and its Copy All fill the
+// name the VERSION had — a share or a sync can leave `details.name` and the revision's own name apart.
+// ---------------------------------------------------------------------------------------------
+
+test('a_kept_version_fills_the_name_it_had_on_the_page_and_in_copy_all', async () => {
+  const s = sinks();
+  const stub = clickVscode([], s);
+  const storage = memoryStorage(stub);
+  const live: EntityMetadata = { id: ENTRY, name: 'live-name', isSshEnabled: false, isTerminal: true, command: 'x {name}' };
+  await seedEntry(storage, live, {});
+  const details: EntityMetadata = { ...live, name: 'bad;name', command: 'x {name}' };
+  await storage.recordRevision(ACCOUNT, ENTRY, { at: 1_700_000_000_000, name: 'old-name', details, secrets: {} });
+  const [recorded] = await storage.getHistory(ACCOUNT, ENTRY);
+  assert.ok(recorded !== undefined, 'precondition: the revision validator took the fixture');
+  const shown: EntityViewOptions[] = [];
+  const mod = loadWithVscode<typeof import('../entityViewerCommands')>('../entityViewerCommands', stub, {
+    './entityViewPanel': { showEntityView: (options: EntityViewOptions): void => void shown.push(options) },
+  });
+  const { renderEntityViewHtml } = require('../entityViewPage') as typeof import('../entityViewPage');
+
+  await mod.openRevisionViewer(ACCOUNT, storage.getNode(ACCOUNT, ENTRY) as TreeNode, recorded, storage);
+
+  assert.equal(shown.length, 1);
+  const html = renderEntityViewHtml(shown[0]);
+  assert.ok(html.includes('x old-name'), 'the page fills the version’s name');
+  const all = await shown[0].copyAllText();
+  assert.ok(all.includes('Name: old-name'), all);
+  assert.ok(all.includes('x old-name'), all);
+  assert.equal(/will not run/.test(all), false, all);
+});

@@ -3,11 +3,13 @@ import { StorageManager } from './storageManager';
 import { TrustStore } from './commandTrust';
 import { EntityMetadata } from './types';
 import { materializedKeyPath, materializeVpnConfig } from './keyInstaller';
+import { commandRefusal } from './commandLine';
 import { executableLine } from './dependencyRun';
 import { ChainEnd, DependencyRunRequest, dependencyRequest, runDependenciesFirst } from './dependencyRunHost';
 import { endedAfter, requestGone } from './requestLife';
 import { ShellFamily, entryShell } from './hostShell';
-import { entryTerminal, shellContext } from './pinnedTerminal';
+import { shellContext } from './pinnedTerminal';
+import { sendGuarded } from './terminalGuard';
 import { confirmTrusted } from './trustPrompt';
 import { clickedSecret } from './pinClick';
 import { launcherConfigFileName, launcherStopNote, substituteConfig, usesConfig } from './vpnLauncher';
@@ -17,10 +19,12 @@ import { launcherConfigFileName, launcherStopNote, substituteConfig, usesConfig 
  * `vscode` half; the pure half is `vpnLauncher.ts`.
  *
  * <p>The order is the one every other stored line follows, plus the chain: the launcher's OS is
- * checked before anyone is asked anything; its line is confirmed once per exact TEMPLATE (the
+ * checked before anyone is asked anything; its line is confirmed once per exact TEMPLATE, with `{name}` already filled (the
  * `{config}` path contains the process id and would re-prompt every session); the dependencies
  * the VPN and the launcher ask for run and are awaited; only then is the config written and the
- * launcher's line typed — into the launcher's own terminal, in its own OS's shell.</p>
+ * launcher's line typed — into the launcher's own terminal, in its own OS's shell, and typed only when that
+ * terminal's last command is known to have finished; otherwise the person is asked, and an agent's request is refused
+ * (`terminalGuard.ts`).</p>
  */
 
 export interface VpnRunContext {
@@ -58,12 +62,18 @@ export async function runWithLauncher(ctx: VpnRunContext, launcher: EntityMetada
 /** The launcher's line — or `undefined`, having said why, when it cannot run here at all. */
 function launcherLine(launcher: EntityMetadata): string | undefined {
   const line = executableLine(launcher);
-  const why = line === undefined ? `The launcher "${launcher.name}" has no command — edit it and fill one in.` : refusedHere(launcher);
+  const why = line === undefined ? `The launcher "${launcher.name}" has no command — edit it and fill one in.` : launcherRefusal(launcher);
   if (why !== undefined) {
     void vscode.window.showWarningMessage(why);
     return undefined;
   }
   return line;
+}
+
+/** Its `{name}` first, then its OS: neither gets as far as the trust modal. */
+function launcherRefusal(launcher: EntityMetadata): string | undefined {
+  const reason = commandRefusal(launcher);
+  return reason === undefined ? refusedHere(launcher) : `The launcher "${launcher.name}" will not start: ${reason}`;
 }
 
 /** The launcher's OS against THIS window's terminal — the rule every Terminal entry follows. */
@@ -100,15 +110,14 @@ async function launch(ctx: VpnRunContext, launcher: EntityMetadata, line: string
   if (configPath === undefined) {
     return false;
   }
-  const opened = entryTerminal(launcher.name, launcher.terminalOs);
-  if (!opened.ok) {
-    void vscode.window.showWarningMessage(opened.reason);
-    return false;
+  // `{config}` quoted for the shell that will READ the line (`readerFamily`) — quoting for another one would be #103
+  // again. With a request behind the start, the guard refuses a busy terminal instead of asking, so no await stands
+  // between `configFor`'s last read of the request and the send (E4.S3).
+  const sent = await sendGuarded(launcher.name, launcher.terminalOs, (family) => withConfig(line, configPath, family), ctx.startGate);
+  if (sent.kind === 'refused') {
+    void vscode.window.showWarningMessage(sent.reason);
   }
-  // `{config}` quoted for the shell that will READ the line (`readerFamily`) — quoting for another
-  // one would be #103 again.
-  opened.terminal.sendText(withConfig(line, configPath, opened.family), true);
-  return true;
+  return sent.kind === 'typed';
 }
 
 /**

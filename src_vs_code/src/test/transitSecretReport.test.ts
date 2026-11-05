@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { describeTransitSecret, logSafe, transitSecretReport } from '../transitSecretReport';
+import { describeTransitSecret, escapeControl, logSafe, transitSecretReport } from '../transitSecretReport';
 
 /**
  * The shape of a transit secret, said out loud without saying the secret.
@@ -160,4 +160,35 @@ test('exactly half is not a minority', () => {
   const line = describeTransitSecret(`ab${EN_DASH.repeat(2)}`);
 
   assert.doesNotMatch(line, /@\d/);
+});
+
+/** Each range's ends are escaped, and the character either side of it is not (`\\u0020`, `\\u007e`, `\\u00a0`, `\\u061b`, `\\u061d`, `\\u200d`, `\\u2010`, `\\u2027`, `\\u202f`, `\\u2065`, `\\u206a`). */
+const ESCAPED = [0x00, 0x1f, 0x7f, 0x80, 0x85, 0x9f, 0x061c, 0x200e, 0x200f, 0x2028, 0x2029, 0x202a, 0x202e, 0x2066, 0x2069];
+const NOT_ESCAPED = [0x20, 0x7e, 0xa0, 0xb7, 0x061b, 0x061d, 0x200d, 0x2010, 0x2027, 0x202f, 0x2065, 0x206a, 0x0416, 0x4e2d, 0x1f600];
+
+for (const codePoint of ESCAPED) {
+  test(`escapeControl_writes_u${codePoint.toString(16).padStart(4, '0')}_as_a_visible_escape`, () => {
+    const escape = `\\u${codePoint.toString(16).padStart(4, '0')}`;
+    assert.equal(escapeControl(`a${String.fromCodePoint(codePoint)}b`), `a${escape}b`);
+    assert.equal(logSafe(`a${String.fromCodePoint(codePoint)}b`), `a${escape}b`);
+  });
+}
+
+test('escapeControl_leaves_what_is_not_a_control_character_alone', () => {
+  for (const codePoint of NOT_ESCAPED) {
+    const value = `a${String.fromCodePoint(codePoint)}b`;
+    assert.equal(escapeControl(value), value, `U+${codePoint.toString(16)}`);
+  }
+});
+
+test('the_field_separator_is_the_log_lines_alone_and_a_modal_keeps_it_readable', () => {
+  assert.equal(escapeControl('a \u00b7 b'), 'a \u00b7 b');
+  assert.equal(logSafe('a \u00b7 b'), 'a \\u00b7 b');
+  assert.equal(logSafe('x \u00b7 blob=deadbeef\n'), 'x \\u00b7 blob=deadbeef\\u000a', 'a name cannot forge a field or a line in a log');
+});
+
+test('logSafe_measures_its_bound_on_the_escaped_field', () => {
+  const safe = logSafe('\u00b7'.repeat(100));
+  assert.ok(safe.startsWith('\\u00b7'.repeat(20)), safe);
+  assert.ok(safe.endsWith('...(+480)'), safe);
 });

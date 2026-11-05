@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { renderHtml } from '../entityFormPage';
+import { formPageScript } from '../entityFormScript';
 import { renderFolderHtml } from '../folderFormPage';
 import {
   COLUMN_MAX_PX,
@@ -714,4 +715,14 @@ test('the default is never merely UNCHECKED under a never-ask folder — it is n
   assert.equal(checkedTag(html, 'mcpAskAlways'), false, 'the default was offered as the chosen answer');
   assert.equal(checkedTag(html, 'mcpAskNever'), false, 'the inherited value was shown as a LOCAL choice');
   assert.equal(checkedTag(html, 'mcpAskInherit'), true);
+});
+
+test('the_form_hints_at_the_token_and_calls_the_wiring', () => {
+  const html = renderHtml(options());
+  assert.ok(html.includes('<code>{name}</code>'), 'the hint names the token');
+  assert.ok(html.includes('id="commandPreviewRefusal"'), 'the note a refused name shows');
+
+  const script = formPageScript('test-nonce-value', undefined);
+  assert.ok(script.includes('wirePreviewName();'), 'the name field is listened to');
+  assert.equal(script.split('function updatePreview').length - 1, 1, 'one preview function, not a copy beside the moved one');
 });

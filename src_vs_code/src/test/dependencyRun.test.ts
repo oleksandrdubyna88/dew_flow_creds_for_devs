@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { EntityMetadata } from '../types';
-import { MAX_CHAIN_DEPTH, StepRefusal, describeRunPlan, planDependencyRun, stepVerdict } from '../dependencyRun';
+import { NAME_REFUSAL } from '../commandName';
+import { MAX_CHAIN_DEPTH, READ_EACH_LINE, StepRefusal, describeRunPlan, executableLine, planDependencyRun, stepVerdict } from '../dependencyRun';
 import { osMismatch } from '../hostShell';
 
 /**
@@ -126,6 +127,20 @@ test('a dangling id is REPORTED as missing, never dropped in silence', () => {
   assert.match(describeRunPlan('vpn', plan.steps, plan.missing, 'bash'), /A dependency no longer exists and cannot run\. To stop being asked, edit "vpn" and remove the missing row/);
 });
 
+test('the missing-row note tells the owner to edit itself, and for a folder tells the person to edit the entry that lists the row', () => {
+  const asked = (folder?: boolean): string => describeRunPlan('Stage', [{ id: 'a', name: 'a', line: 'ls' }], ['gone'], 'bash', folder);
+  const noteOf = (text: string): string => text.slice(text.indexOf('A dependency'), text.indexOf('\n\nA command can arrive'));
+
+  assert.equal(noteOf(asked()), 'A dependency no longer exists and cannot run. To stop being asked, edit "Stage" and remove the missing row under Depends on.');
+  assert.equal(noteOf(asked(false)), noteOf(asked()), 'what every older caller gets does not change');
+  assert.equal(
+    noteOf(asked(true)),
+    'A dependency no longer exists and cannot run. To stop being asked, edit the entry that lists the missing row under Depends on, and remove that row.',
+  );
+  assert.doesNotMatch(asked(true), /edit "Stage"/, 'a folder has no Depends on of its own');
+  assert.ok(asked().endsWith(READ_EACH_LINE) && asked(true).endsWith(READ_EACH_LINE), 'both end with the one shared sentence');
+});
+
 test('a non-executable dependency is an annotation: passed over, not followed', () => {
   const host = { id: 'host', name: 'bastion', isSshEnabled: true, host: 'h', dependsOn: ['x'], runDependencies: true };
   const plan = planDependencyRun([vpn({ dependsOn: ['host'], runDependencies: true })], graph(host, terminal('x', 'x')), here);
@@ -192,4 +207,61 @@ test('a step outcome: 0 goes on, a non-zero code ASKS (an installer finding its 
     kind: 'stop',
     reason: 'The terminal was closed while "install" was running — nothing after it ran.',
   });
+});
+
+// ---------- `{name}` (parent PLAN_terminal_folder_run.md §1, story S2) ----------
+
+test('executableLine_answers_the_template_for_a_refused_name_never_undefined', () => {
+  assert.equal(executableLine(terminal('t', 'x {name}', { name: 'a b' })), 'x {name}');
+  assert.equal(executableLine(terminal('t', 'x {name}', { name: 'alert' })), 'x alert');
+  assert.equal(executableLine(terminal('t', '')), undefined);
+  assert.equal(executableLine(vpn()), undefined);
+});
+
+/** A root that asks for its chain, depending on a step whose name cannot fill `{name}`. */
+function refusedStepPlan(exclude?: ReadonlySet<string>) {
+  const step = terminal('t', 'x {name}', { name: 'a b' });
+  const root = vpn({ dependsOn: ['t'], runDependencies: true });
+  return planDependencyRun([root], graph(step, root), here, exclude);
+}
+
+test('a_refused_step_stops_the_plan_with_its_reason', () => {
+  const plan = refusedStepPlan();
+  assert.equal(plan.ok, false);
+  if (!plan.ok) {
+    assert.match(plan.reason, /"a b" cannot run as a dependency/);
+    assert.ok(plan.reason.includes(NAME_REFUSAL), plan.reason);
+  }
+});
+
+test('an_excluded_entry_is_not_judged_as_a_step', () => {
+  // A launcher (and a folder run's direct entries) refuses on its own road.
+  const plan = refusedStepPlan(new Set(['t']));
+  assert.equal(plan.ok, true);
+  if (plan.ok) {
+    assert.deepEqual(plan.steps, []);
+  }
+});
+
+test('the_chain_modal_text_is_unchanged_for_clean_inputs', () => {
+  const text = describeRunPlan('Stage', [{ id: 'a', name: 'a', line: 'ls -l' }], ['gone'], 'bash');
+  assert.equal(
+    text,
+    `Before "Stage", these run in bash, in order, each waiting for the one before:\n\n1. a: ls -l\n\nA dependency no longer exists and cannot run. To stop being asked, edit "Stage" and remove the missing row under Depends on.\n\n${READ_EACH_LINE}`,
+  );
+});
+
+test('the_chain_modal_writes_the_owner_each_step_and_each_line_through_the_escaper', () => {
+  const steps = [{ id: 'a', name: 'a\n2. (new) evil', line: 'x\r\ny\u202e' }];
+  const text = describeRunPlan('Stage\n9. fake', steps, ['gone'], 'bash');
+  assert.deepEqual(text.split('\n').filter((line) => /^\d+\. /.test(line)), ['1. a\\u000a2. (new) evil: x\\u000d\\u000ay\\u202e']);
+  assert.ok(text.startsWith('Before "Stage\\u000a9. fake", these run in bash'), text);
+  assert.ok(text.includes('edit "Stage\\u000a9. fake" and remove the missing row'), text);
+  assert.equal(steps[0].line, 'x\r\ny\u202e', 'what is typed stays the approved string');
+});
+
+test('a_middle_dot_in_a_step_or_an_owner_stays_readable_in_the_chain_modal', () => {
+  const text = describeRunPlan('a\u00b7b', [{ id: 'c', name: 'c\u00b7d', line: 'e\u00b7f' }], [], 'bash');
+  assert.ok(text.startsWith('Before "a\u00b7b", these run in bash'), text);
+  assert.ok(text.includes('1. c\u00b7d: e\u00b7f'), text);
 });

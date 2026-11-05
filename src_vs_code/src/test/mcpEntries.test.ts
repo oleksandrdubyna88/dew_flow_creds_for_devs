@@ -13,6 +13,7 @@ import {
 } from '../mcpEntries';
 import { McpAccess, McpAskPolicy, ladderKey, normalizeMcpAccess, resolveMcpInTree } from '../mcpAccess';
 import { ConsentStamp, ConsentStampStore, ConsentStamps, STAMPS_KEY, stampKey } from '../mcpConsentPolicy';
+import { nodeHaystack } from '../treeSearch';
 import type { TreeNode } from '../types';
 import { lockSecret, readSecret } from '../secretEnvelope';
 import { StoredSecret, stored } from '../storedSecret';
@@ -279,6 +280,17 @@ test('a node with no details is never an entry, whatever its switches say', () =
   });
 
   assert.equal(built, undefined);
+});
+
+test('an_agent_and_a_search_see_the_stored_command_not_the_resolved_one', () => {
+  // The plan's road table: these show what a person typed, with `{name}` as written.
+  const node = entity('e1', 'alert', { isTerminal: true, command: 'tmux {name}', commandArgs: [{ value: '-t {name}' }] });
+  const resolved = resolveMcpInTree(node, () => folder('f1', 'F', { mcp: { view: true } }));
+
+  const built = mcpEntryFor(node, { resolved, folderName: 'F', hasPassword: false, hasPrivateKey: false, hasNotes: false, hasTotp: false, dependsOn: [] });
+
+  assert.equal(built?.command, 'tmux {name}');
+  assert.ok(nodeHaystack(node).includes('tmux {name}'));
 });
 
 test('the keychain is not read for entries nobody opened', async () => {

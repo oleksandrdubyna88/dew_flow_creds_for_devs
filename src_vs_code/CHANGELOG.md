@@ -6,6 +6,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — one arrow brings back a whole Terminal folder, and `{name}` in a command
+
+- **A folder of type *Terminal command* has a green arrow, *Run All in Folder*, beside its `+` and in its menu.** One
+  click types the line of each entry directly in the folder, each into a new terminal of its own; subfolders are not run.
+  It always asks first, in a question that lists every line in order, marks with `(new)` a line not approved before on this
+  machine, and names each entry that will not run and why. **Run** leaves alone an entry whose terminal is already open;
+  **Close Open Terminals and Run**, offered when any is open, closes those terminals and types their lines too. The lines
+  do not wait for each other: something that has to finish first goes outside the folder, under *Depends on*. At most 32
+  lines and a 4000-character question, because it has to show every line; an entry whose name holds a control character
+  is not run.
+- **`{name}` in a terminal command is the entry's own name,** so `tmux attach -t {name}` needs the name once and follows
+  a rename. The line with the name filled in is the one shown, approved, remembered and typed, so a rename asks again,
+  and an entry that already held a literal `{name}` is asked about once. Only a name of letters, digits and `. _ -`,
+  starting with a letter, a digit or `_`, can stand in for it; any other name, one with a space included, is refused on
+  every road rather than quoted, so that no name arriving by sync or share can become shell syntax. To keep a literal
+  `{name}` in bash, outside double quotes, write `{na''me}`. An older extension types `{name}` as it stands.
+
+### Changed — the green arrow no longer types into a terminal that may be busy
+
+- **The green arrow and a VPN's *Started by* line type into an entry's open terminal only when the extension itself typed
+  a line there and saw that command finish.** A line typed into a running `tmux attach` reached the program inside as a
+  message. Otherwise the terminal is shown and you are asked, *Type It Anyway*; a start an agent asked for is refused
+  instead. **This asks more often than before, deliberately:** without shell integration (cmd, or the setting off) every
+  click on an open terminal asks, and after a window reload it asks until a line let through with *Type It Anyway* has been
+  seen to start and end. With shell integration, repeating a command in a terminal the extension typed into, once that
+  command has been seen to finish, types silently as it always did.
+
 ## [1.16.0] — 2026-10-22 — Allow longer…: SSH logins sign without asking for 1, 4, 8 or 12 hours
 
 ### Added — longer SSH windows for logins (#197)
