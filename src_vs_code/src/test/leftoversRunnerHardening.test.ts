@@ -17,7 +17,8 @@ test('[E2.1 Opus 1] on a POSIX that is not Linux the scan cannot read an environ
   const tree = await processTree();
 
   const found = await tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'darwin', table: () => tableOf([]) });
-  const ended = await tree.endTree(new EventEmitter(), { confirm: ENDED, record: RECORD, platform: 'darwin', survivors: undefined });
+  // The real scan, with a table seam: a host with no `ps` (Windows) would add an entry of its own, and that rightly stays 'unknown'.
+  const ended = await tree.endTree(new EventEmitter(), { confirm: ENDED, record: RECORD, platform: 'darwin', survivors: (args: object) => tree.findSurvivors({ ...args, table: () => tableOf([]) }) });
 
   assert.deepEqual(found.unverified, ['no environment scan on this OS']);
   assert.equal(ended.ended, false);
@@ -45,11 +46,13 @@ test('[E2.1 Opus 1] the fixed no-scan entry beside any other entry, or beside a 
 test('[E2.1 Opus 1] and the runner, told it is on darwin, with nothing claimed leaves with the suite\'s own code and removes nothing', async (t) => {
   const { runWithAudit } = await runner();
   const root = privateRoot(t);
+  const tree = await processTree();
+  const survivors = (args: object) => tree.findSurvivors({ ...args, table: () => tableOf([]) }); // no host's `ps`: see the test above
   const log = lines();
   let unmarked = '';
 
-  const passed = await runWithAudit([], { spawn: suite(0, () => { unmarked = plant(root, 'mac'); }), roots: [root], sweep: nothingSwept, confirm: ENDED, platform: 'darwin', write: log.write });
-  const failed = await runWithAudit([], { spawn: suite(3), roots: [root], sweep: nothingSwept, confirm: ENDED, platform: 'darwin', write: lines().write });
+  const passed = await runWithAudit([], { spawn: suite(0, () => { unmarked = plant(root, 'mac'); }), roots: [root], sweep: nothingSwept, confirm: ENDED, platform: 'darwin', survivors, write: log.write });
+  const failed = await runWithAudit([], { spawn: suite(3), roots: [root], sweep: nothingSwept, confirm: ENDED, platform: 'darwin', survivors, write: lines().write });
 
   assert.equal(passed, 0, 'a clean run is not failed for a confirmation this OS cannot give');
   assert.equal(failed, 3, 'and a failed suite keeps its own code');
