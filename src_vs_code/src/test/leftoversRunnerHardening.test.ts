@@ -18,7 +18,7 @@ test('[E2.1 Opus 1] on a POSIX that is not Linux the scan cannot read an environ
 
   const found = await tree.findSurvivors({ rootPid: undefined, record: RECORD, platform: 'darwin', table: () => tableOf([]) });
   // The real scan, with a table seam: a host with no `ps` (Windows) would add an entry of its own, and that rightly stays 'unknown'.
-  const ended = await tree.endTree(new EventEmitter(), { confirm: ENDED, record: RECORD, platform: 'darwin', survivors: (args: object) => tree.findSurvivors({ ...args, table: () => tableOf([]) }) });
+  const ended = await tree.endTree(new EventEmitter(), { confirm: ENDED, record: RECORD, platform: 'darwin', survivors: (args: Parameters<typeof tree.findSurvivors>[0]) => tree.findSurvivors({ ...args, table: () => tableOf([]) }) });
 
   assert.deepEqual(found.unverified, ['no environment scan on this OS']);
   assert.equal(ended.ended, false);
@@ -47,7 +47,7 @@ test('[E2.1 Opus 1] and the runner, told it is on darwin, with nothing claimed l
   const { runWithAudit } = await runner();
   const root = privateRoot(t);
   const tree = await processTree();
-  const survivors = (args: object) => tree.findSurvivors({ ...args, table: () => tableOf([]) }); // no host's `ps`: see the test above
+  const survivors = (args: Parameters<typeof tree.findSurvivors>[0]) => tree.findSurvivors({ ...args, table: () => tableOf([]) }); // no host's `ps`: see the test above
   const log = lines();
   let unmarked = '';
 
