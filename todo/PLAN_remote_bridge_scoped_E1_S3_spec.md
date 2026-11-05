@@ -1075,6 +1075,235 @@ so nobody "fixes" it.
 - The line counts (`stopped`, the `prepared` edit) and ESLint's complexity for `prepared` after the change are hand counts; `npm run lint` decides.
 - `memoryStorage` from `test/pinWorld.ts` seeding an `sshkey` entity with a sealed value for L2 is read from that helper's exports, not run.
 
+### Amendment 2 (Fable, 2026-11-05) — after the fix-forward `c58842e` and its review
+
+Eight review items. Every `file:line` is at `c58842e`; `credsAgentServer.ts` is 787 of 800. **None is a plan change**: items 1–7 bring the
+code to §4.2's own sentences (one dialog in flight, prompts and bounds per bridge, refusals naming nothing, a scope that cannot be
+restored from a stale copy, suppliers the tests run as production does). Item 1 adds one number §4.2 does not carry — sixty asking calls
+a minute per door — which narrows nothing a person can do and belongs in §4.2's *Prompts* bullet at promotion, not in the change ledger.
+Item 8 is a note, with one small fix. Nothing above is deleted; where this amendment differs from A.1–A.9 and from Sonnet's *As built*,
+this amendment wins.
+
+#### B.1 A pre-dialog refusal is bounded, holds no grant and cannot flood the journal (HIGH)
+
+What is true today: `askingVerdict` (`aliasThrottle.ts:282-291`) checks `busy` and the dialog window only, so a loop of
+`POST /v1/mcp/use/exec {"entry":"e1","command":""}` is admitted every time; each admission mints a `'call'` grant and writes a `minted`
+line (`brokerMcpDoor.ts:209-219`, `brokerBridgeToken.ts:34-45`, `credsAgentServer.ts:332-352` for the alias route), then `usable`
+(`:544-562`) refuses with a second line. At 256 grants `prune` (`grantRegistry.ts:261-279`) evicts the oldest non-allowed grant — a shared
+token whose dialog is open or a denied tombstone — before any call grant, and `brokerAuditWriter.append` (`:65`) grows at request speed.
+
+```ts
+// aliasThrottle.ts
+export const ASKING_CEILING = 60;                        // asking calls a minute, per door: SILENT_CEILING's number, for the same kind of loop
+interface DoorCounts { modal; silent; asking: SlidingWindow; reportedAt }     // `asking` stamped at ADMIT of a prompting call
+// askingVerdict(counts, nowMs): busy (the place held) → asking window full → 'too-many' (nothing held, STAMPED anyway: a refusal is a call) →
+//   modal window full → 'too-many' → hold the place, stamp `asking`, 'allow'. The silent path is unchanged.
+// describe(): the asking refusal reads `Too many requests: <who> may ask at most 60 times a minute, calls refused before any dialog included.`
+//   with <who> `a caller without a token` on LOCAL_DOOR and `this Remote Bridge` otherwise. `refused().report` is true for an asking
+//   refusal exactly as for a silent one: `firstThisWindow(counts, nowMs)` — one journal line per door per window.
+
+// grantRegistry.ts
+/** Delete a `'call'` grant that is still `pending`: a call refused before anybody was asked. A token, or a settled grant, is never dropped. */
+drop(secret: string): void;
+/** Eviction, in one ordered list so the registry never reaches a token while a call grant exists. */
+const EVICTION_ORDER: ReadonlyArray<(grant: Grant) => boolean> = [
+  (g) => g.scope === 'call' && g.status !== 'allowed',   // refused or abandoned calls
+  (g) => g.scope === 'call',                             // allowed calls (silent MCP use)
+  (g) => g.status === 'denied',                          // tombstones (already capped at 64)
+  (g) => g.scope === 'token' && g.status === 'pending',  // a token whose first dialog is open
+  (g) => g.scope === 'token',                            // the last resort, as before
+];
+private oldestEvictable(): string | undefined {          // `EVICTION_ORDER.map((fits) => this.oldestWhere(fits)).find((v) => v !== undefined)` — complexity 1
+```
+
+`credsAgentServer.ts`: in `usable` (`:544-562`) both refusal branches call `this.grants.drop(grant.secret)` before `respondError` (+2);
+`admitAliasCall`'s report line (`:228`) writes `via: prompts ? undefined : 'mcp'` — the comment's "via mcp is a fact" is false for an asking
+refusal (same line). The `minted` line stays: calls under the ceiling are logged as today (two lines each); beyond it one line per window.
+Worst case per door per minute: 60 × 2 + 1 = 121 lines, against unbounded today.
+
+**What this changes on the existing doors, exactly.** The local alias and MCP doors gain the same 60-asking-calls bound (legitimate use is
+a person in a terminal or an agent that thinks between calls; neither nears it). A call they refuse before its dialog no longer leaves a
+pending call grant in the registry. The eviction order change means an idle shared token, a denied tombstone or a token with an open
+dialog is never evicted while any call grant exists — today each of them can be. No answer, status or sentence on either door changes
+below the ceiling; above it a new `too_many_requests` sentence appears where today the call reaches `usable`.
+
+#### B.2 The one place is the dialog's, not the call's (MEDIUM)
+
+Today `OneInFlight` is held from `admit` to the route's `finally` (`credsAgentServer.ts:347-353`, `brokerMcpDoor.ts:216-220`,
+`brokerBridgeToken.ts:41-45`), so (a) a client that hangs up during its dialog ends its call, frees the place, and the next call raises a
+second modal while the first stays on screen defused (`sharedPrompt.ts:52-55,82-85`, `brokerConsent.ts:90-101`), and (b) the place is held
+through the action, so one 120-second `exec` makes every other door `busy` with "waiting for the person to answer".
+
+Decision applied: the place is tied to the modal's life. Reused from `6879db3` (`consentTurns.ts`): the rule that a gone waiter does not
+free the slot its open modal holds, and `first` for one journal line per burst. Its class is not reused: `ConsentTurns` queues up to three
+waiters per SSH key and runs their jobs in turn, while this door refuses with `busy` and has one place for every key.
+
+```ts
+// aliasThrottle.ts
+export class OneInFlight {
+  /** Take the place; `undefined` while it is held. The holding is this ADMISSION's, so a stale release cannot free a later holder's place. */
+  hold(): Holding | undefined;
+  /** A dialog is on screen for the holder: the place now belongs to the dialog. */
+  prompted(held: Holding): void;
+  /** The dialog closed — the person's click, or the 5-minute timeout: the place is free, whatever the call does next. */
+  dialogClosed(held: Holding): void;
+  /** The call ended. Frees the place only if no dialog of this holding is on screen, and only if it still holds the place. */
+  released(held: Holding): void;
+}
+export interface Holding { readonly id: number; }
+// TokenlessCeilings: `admit` holds and puts the Holding into the Slot's closure; `prompted(grant, via, nowMs)` stamps the door's modal
+// window AND calls flight.prompted(current) when doorOfDialog(...) !== undefined; new `dialogClosed(grant, via)` calls flight.dialogClosed(current)
+// under the same condition. Local token dialogs: doorOfDialog is undefined, nothing is held, stamped or closed — `bridgeTransitive.test.ts:239` holds.
+
+// brokerConsent.ts:29-40  ConsentGateDeps.dialogClosed?(question: ConsentQuestion): void
+// brokerConsent.ts:81-95  ask(): `this.deps.prompted?.(question)` before showWarningMessage (as built); the await is wrapped in try/finally and the
+//                          finally calls `this.deps.dialogClosed?.(question)` — before `stillWanted`, so a defused modal frees the place at its click too.
+// credsAgentServer.ts:118  `…, dialogClosed: (q) => this.ceilings.dialogClosed(q.grant, q.via) })` on the same line.
+```
+
+The five-minute timeout: `withTimeout` settles the `ask` and `dialogClosed` frees the place, although VS Code cannot take the modal down.
+Otherwise one unanswered modal would lock every door until the person found it. The stale modal decides nothing (`stillWanted` is false
+once its waiters left; a live waiter was answered `timeout`), and at most one such dead modal per five minutes can stack above a new one.
+
+#### B.3 `ForwardAgent=no` on a bridged call (MEDIUM)
+
+`unusableEntity` (`sshUseActions.ts:129-135`) refuses `entity.agentForward` on a bridge, while `ssh` also reads the laptop's
+`~/.ssh/config`: `Host *` / `ForwardAgent yes` forwards the whole agent for an entry whose flag is off (`sshExecCommand.ts:85-113` sets no
+`ForwardAgent`). A command-line `-o` outranks every config file (ssh_config(5), "command-line options take precedence"), and forwarding
+happens only when `ForwardAgent` is yes, so `-o ForwardAgent=no` alone makes it false.
+
+```ts
+// sshExecCommand.ts:6-9
+export interface SshExecOptions { jump?: string; knownHostsFile?: string; /** A bridged call: never forward the agent, whatever a config file says. */ noAgentForward?: boolean; }
+// buildSshExecArgv, after `sshOptionArgv` (:99): `if (options.noAgentForward === true) { argv.push('-o', 'ForwardAgent=no'); }` — after `-A` would have been,
+// so the option wins over the composer too (there is no `-A` on a bridge, by B.3's guard, but the order makes that irrelevant).
+// sshUseActions.ts connectionArgvOptions(deps, entity, jump, bridged: boolean) → { jump, knownHostsFile, noAgentForward: bridged };  call site :242 passes ctx.bridge !== undefined.
+```
+
+`SSH_AUTH_SOCK` is **not** cleared: with `ForwardAgent=no` the agent is not forwarded, and clearing the socket would also change how the
+in-scope entry *authenticates* (ssh offers agent identities before `-i`), which is not this item's question. Live check: `ssh-agent-itest.cjs`
+style against the harness `sshd` — a config file with `Host *\nForwardAgent yes` passed with `-F`, a live `SSH_AUTH_SOCK`, remote command
+`printenv SSH_AUTH_SOCK`: without `-o ForwardAgent=no` the output is non-empty, with it empty. That proves ssh's precedence on the
+runner's OpenSSH; the action's argv is pinned by F1. Unobserved, for the M-list as **M8**: the same through the real action from the owner's
+Windows OpenSSH 9.5 with a `ForwardAgent yes` in the Windows `ssh_config`.
+
+#### B.4 The token's status is read after the body (LOW)
+
+`handle` reads the token at `:474-478` and `bridgedTokenCall` tests the snapshot (`brokerBridgeToken.ts:29`) after the body was read
+(`:481-493`). A Deny in between is missed until the launch gate.
+
+```ts
+export async function bridgedTokenCall(door, res, token, action, body, caller, status: () => GrantStatus | undefined): Promise<void>
+//  :29  `if (status() === 'denied')`;  credsAgentServer.ts:495 passes `() => this.grants.get(grant.secret)?.status` on the same line.
+```
+
+#### B.5 The revision is a fresh random id
+
+`revision: number` with absent = 0 repeats after `forget` (Sonnet's *As built* note): forget, re-pick (`set` expecting 0 → 1), and a copy
+held at 1 from before the Close saves over it.
+
+```ts
+export const NO_SCOPE = 'absent';                        // the absent state's own revision
+export interface ScopeFile { …; readonly revision: string; }   // `crypto.randomUUID()` at every write
+export interface Scope { …; readonly revision: string; }       // NO_SCOPE when absent or corrupt
+set(accountId, serverEntityId, entries, quiet, expectedRevision: string): Promise<string>;  // `expected !== (file?.revision ?? NO_SCOPE)` → SCOPE_STALE
+```
+
+E2's picker reads `scope.revision` and hands it back; `Scope` changes shape, which E2 (not built) absorbs.
+
+#### B.6 The wall's suppliers are one production function
+
+`bridgeWallWorld.ts:225-239,284` hold their own copies of what E2 would wire, so S22, S23 and L4's first leg exercise the test world.
+
+```ts
+// bridgeWallSource.ts (new, pure)
+/** Everything of a BridgeWallSource that comes from the vault, over one `McpVaultSource`. E2 wires `{ scopes, refSource, ...wallSuppliersOf(storage) }`. */
+export function wallSuppliersOf(vault: McpVaultSource & { getNode(accountId: string, id: string): TreeNode | undefined }): Pick<BridgeWallSource, 'storedTexts' | 'listEntriesOf' | 'visibleConfigOf' | 'entryRefusal'>;
+//  storedTexts: referenceTextsOf(vault.getNode(a, e)?.details ?? {});  listEntriesOf: visibleMcpEntries(accountOnlyVault(vault, a));
+//  visibleConfigOf: visibleConfigDetails(accountOnlyVault(vault, a), e);  entryRefusal: agentForwardRefusal(vault.getNode(a, e)?.details)
+export function agentForwardRefusal(details: EntityMetadata | undefined): Refusal | undefined;   // moved from the test world
+```
+
+The wall world builds `wall = { scopes, refSource, ...spied(wallSuppliersOf(vault)) }`, where `spied` wraps each function to record its
+arguments and, for `listEntriesOf`, to hold the listing when asked; it defines none of the four itself.
+
+#### B.7 (S4) — in the S4 spec §S4.10, item 4.
+
+#### B.8 Notes, and one small fix
+
+- **Said, not coded:** `ssh`'s stderr on a bridge is returned as is (A.2 item 3) and may carry the laptop's materialised key path and the
+  linked key's id, which is in that file's name (`sshExecAuth.ts:155`, `sshUseActions.ts:251`). The owner decides; E3 inherits the answer.
+- **Fix:** a throw out of `prepareAuth` (`sshUseActions.ts:227`) leaks the exec slot taken at `:223`. `const prepared = await prepareAuth(deps, ctx, entity, refuse).catch((error: unknown) => { release(); throw error; });`
+  (+1 line, in a function already exempt from the complexity rule). E3's server-side runs take the same slot.
+
+#### B.9 `credsAgentServer.ts`, counted (787 today)
+
+| Where | Edit | Lines |
+|---|---|---|
+| `:118` | `dialogClosed: (q) => this.ceilings.dialogClosed(q.grant, q.via)` added to the gate's deps | 0 |
+| `:228` | `via: prompts ? undefined : 'mcp'` | 0 |
+| `:495` | `bridgedTokenCall(…, who.caller, () => this.grants.get(grant.secret)?.status)` | 0 |
+| `usable` `:544-562` | `this.grants.drop(grant.secret);` before each of the two `respondError` calls | +2 |
+| | **Total** | **+2 → 789**; E1.4 adds two (S4 §S4.10: `serverEntityId`, `remember` after the gate) → 791 |
+
+`usable`, `prepared`, `perform`, `handle` keep their complexity and length; `extension.ts` stays at 1003.
+
+#### B.10 Scenarios (each RED today, and why)
+
+Files: `test/bridgePrompts.test.ts` (A1–A3, P1–P3), `test/grantRegistry.test.ts` (A4), `test/aliasThrottle.test.ts` (the three classes),
+`test/bridgeTransitive.test.ts` (T1), `test/bridgeStore.test.ts` (V1), `test/bridgeLinks.test.ts` (F1), `test/bridgeWallSource.test.ts`
+(W1), `test/sshUseActions.test.ts` (X1). `test/brokerWorld.ts` gains `consentTimeoutMs?: number`, passed as a mock of `./agentConsent`
+(`loadWithVscode`'s third argument, as `sshUseActions.test.ts:93` does) so P3 does not wait five minutes; `bridgeWallWorld.ts` gains
+`sendAbortable(door, ask): { reply: Promise<Reply>; abort(): void }` over `http.request` (`req.destroy()`) and `sendSlow(door, ask, bodyAfter: Promise<void>)`
+(headers now, body later).
+
+| # | Scenario | Expected | RED today, because |
+|---|---|---|---|
+| A1 | The refused loop, through a bridge | 300 `command: ''` posts to `/v1/mcp/use/exec` within a minute: 60 answer `invalid_request`, 240 answer `too_many_requests` with the asking sentence; the registry holds no pending `'call'` grant afterwards; the journal grew by ≤ 121 lines; `w.dialogs` empty | 300 grants, 600 lines, no refusal |
+| A2 | A held token survives it | Before A1: a shared token with its first dialog open on the main port (`holdDialogs`), an allowed token, and three denied tombstones. After A1 and 300 more alias calls with `command: ''`: the open dialog still decides its call; the allowed token still runs; the tombstones still answer `denied` | `oldestEvictable` evicts the pending token at the 256th mint |
+| A3 | The same loop on the local MCP door and the local alias door | As A1, with the local sentence; the existing five-dialogs-a-minute tests green | unbounded today |
+| A4 | Eviction order | 300 pending calls + 1 pending token + 1 allowed token + 3 denied: after `mint`, every token and tombstone remains; `drop` deletes a pending call, and is a no-op on a token, an allowed call, a denied grant | tier 1 is `status !== 'allowed'` |
+| P1 | Post-and-disconnect | `holdDialogs`; `sendAbortable` through the bridge, abort once the dialog is up; a second call: `busy`, `w.dialogs.length === 1`; answer the dialog: an `ignored` line; a third call: asked | the aborted call's `finally` frees the place; the second raises a modal |
+| P2 | A long action frees the place | Allow a bridged `exec` whose action is held (`w.hold`); a call through another bridge and a local alias call: both asked (`dialogs === 3`), none `busy` | the place is held until the action ends |
+| P3 | The timeout | `consentTimeoutMs: 100`; a dialog never answered: the caller gets 504 `consent_timeout`; the next asking call is admitted; a late click on the first → `ignored`, and the place it would have freed is not the second's (the second's dialog still blocks a third as `busy`) | green today for the first half, pinned; the holding-id half is new |
+| F1 | `ForwardAgent=no` on a bridge | Through the bridge: `runs[0].argv` contains `-o ForwardAgent=no` after the `sshOptionArgv` block; off a bridge it does not; off a bridge with `agentForward: true` the argv has `-A` as today | no such option |
+| T1 | A Deny between the token's lookup and its body | `sendSlow` with a valid token; deny the token (a local dialog answered Deny) before the body is sent; send the body: 403 `GRANT_NOT_ALLOWED`, no dialog, no `minted` line | the snapshot was `pending` |
+| V1 | The ABA on the revision | A reads (revision r1); B `forget`s; B `set`s expecting `NO_SCOPE` → r2; A `set`s expecting r1 → `SCOPE_STALE`; a `set` expecting `NO_SCOPE` on an existing file → `SCOPE_STALE` | 0 → 1 → 1 lands |
+| W1 | The production suppliers | `wallSuppliersOf(collideVault).listEntriesOf('a1')` lists `prod` and not `foreign`; `visibleConfigOf('a1','e1')` is `a1`'s; `entryRefusal` answers `AGENT_FORWARD_REFUSED` for an `agentForward` entry and `undefined` otherwise; `storedTexts` equals `referenceTextsOf` of the entry. S22, S23, L4 run through them (the spies record the calls) | the function does not exist |
+| X1 | The leaked slot | `prepareAuth` made to throw (the mocked `./sshCredential` rejects): `tally.slotsHeld` is 0 afterwards and the result is a failure, not a hang | the slot stays held |
+
+#### B.11 Break-its
+
+| # | Mutation | Red case |
+|---|---|---|
+| R1 | `askingVerdict` without the asking window | A1, A3 |
+| R2 | an asking refusal not stamped (`'too-many'` without `stamp`) | A1 (the 61st is admitted after the 60 refusals… the count must include refusals) |
+| R3 | `drop` deletes a token or an allowed grant | A4 |
+| R4 | `EVICTION_ORDER` as today's three tiers | A2, A4 |
+| R5 | `released` frees while a dialog is open | P1 |
+| R6 | `dialogClosed` not called on timeout | P3 (the second call `busy` after the timeout) |
+| R7 | `released(held)` without the holding id | P3 second half, P2 (a late release frees a new holder) |
+| R8 | `noAgentForward` not pushed, or pushed before `sshOptionArgv` | F1 |
+| R9 | `bridgedTokenCall` tests the snapshot | T1 |
+| R10 | revision a counter again | V1 |
+| R11 | the wall world defines a supplier of its own | W1 (a planted difference between the world's and `wallSuppliersOf`'s answer) |
+| R12 | `.catch` dropped at `prepareAuth` | X1 |
+
+#### B.12 Order, Opus additions, unverified
+
+Order: B.1 registry (`drop`, `EVICTION_ORDER`, A4) → B.1 throttle and B.2 together (one `aliasThrottle.ts` edit, A1–A3, P1–P3) → B.4 → B.5 →
+B.6 → B.3 and B.8 (`sshUseActions.ts`, F1, X1) → lint, `wc -l` (789), ratchet, the pre-PR block; then E1.4.
+
+Opus: `OneInFlight` frees only on a matching `Holding`; `dialogClosed` is in a `finally` in `ask`; local token calls hold, stamp and close
+nothing; `drop` touches only `'call'` + `'pending'`; `EVICTION_ORDER` is a list, `oldestEvictable` complexity 1; the asking window is
+stamped on admission and on refusal; the report line is once per window per door; `-o ForwardAgent=no` comes after `sshOptionArgv`;
+`SSH_AUTH_SOCK` untouched; `revision` is a string and `NO_SCOPE` is never written to a file; the wall world imports `wallSuppliersOf`.
+
+Unverified: `-o ForwardAgent=no` outranking a `Host *` stanza is read from ssh_config(5) and is checked live only on the runner's OpenSSH
+(M8 for Windows); `withTimeout`'s settlement shape (resolve `undefined` or reject) decides where `dialogClosed` sits — the `finally` covers
+both, which is why it is a `finally`; the `./agentConsent` mock reaching `brokerConsent.ts` through `loadWithVscode` is assumed from
+`sshUseActions.test.ts`'s use of the same loader.
+
 
 ## S3.13 — As built, epoch 3 (Sonnet, 2026-11-05)
 

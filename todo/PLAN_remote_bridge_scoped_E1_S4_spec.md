@@ -223,3 +223,15 @@ nothing is deleted, and where this section differs from §S4.2, §S4.4, §S4.7 a
 Budget: the fix-forward leaves `credsAgentServer.ts` at 787; E1.4 adds one line (`remember`'s `serverEntityId`) → 788. `extension.ts`
 stays at 1003. Nothing else in §S4.2–§S4.8 moves. Break-it added: **Q13** — `auditGrantMark` reads the body's `serverName` or the caller
 label instead of the context (C15, C20).
+
+4. **(Added 2026-11-05, after `c58842e`'s review; the S3 spec's §S3.13 Amendment 2 item B.7.) A stamp is written before the gate.**
+   `perform` (`credsAgentServer.ts:538-539`) runs `await this.remember(…)` and then `prepared`, whose `stopped` asks the launch gate
+   (`:570-573`). With quiet on and real `rungs`, an Allow given while the scope was being narrowed would persist a stamp for an entry the
+   gate then refuses — inert today only because a bridged lookup forces `rungs: ''`. E1.4 moves the write behind the gate:
+   `perform` passes `() => this.remember(who.via, grant, asked, rungs)` as a third argument of `prepared` (the `await this.remember` line
+   becomes that argument: −1 +0), and `prepared` runs `await remember();` immediately after `stopped` answers false and before
+   `releaseWaiting` (+1). Off a bridge the gate answers `undefined` and the order of effects a person sees is unchanged: the stamp is still
+   written before the rotation release and the mask read. **C22**: quiet on, `every12h`, `holdDialogs`; narrow to `[]`; Allow: the call
+   answers the route's OUT sentence, `w.consents` is empty and the store has no new key; the same without the narrow writes one stamp.
+   RED once quiet is on (today the forced `rungs: ''` hides it; the test is written against the E1.4 switch). Break-it **Q14**: `remember`
+   left before `stopped` → C22. Budget: with Amendment 2's +2, E1.4's two lines bring `credsAgentServer.ts` to 791.
