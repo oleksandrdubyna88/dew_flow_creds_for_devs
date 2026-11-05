@@ -142,6 +142,15 @@ test('ownedFile is a path inside an owned folder of the right name; the file is 
   assert.ok(fs.existsSync(parent));
 });
 
+test('ownedFile refuses a name that is not one plain path segment', (t) => {
+  const bad = ['', '.', '..', '../escape', '..\\escape', 'a/b', 'a\\b', '/abs', 'C:\\x'];
+
+  for (const name of bad) {
+    assert.throws(() => ownedFile(t, 'segment', name), /ownedFile: the name must be one plain file name/, `name ${JSON.stringify(name)} must be refused`);
+  }
+  assert.ok(path.basename(ownedFile(t, 'segment', 'fine.txt')) === 'fine.txt', 'a plain name is still accepted');
+});
+
 test('writeStub writes the text into an owned folder; two stubs of two scopes are two files', async () => {
   const first = cleanupScope();
   const second = cleanupScope();

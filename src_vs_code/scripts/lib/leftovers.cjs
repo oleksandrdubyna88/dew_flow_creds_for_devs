@@ -47,8 +47,14 @@ function shortSocketRoot() {
   return process.platform === 'win32' ? owned.tempRoot() : '/tmp';
 }
 
-/** A path inside an owned folder `what`: `<ownedDir(scope, what)>/<name>`. The folder is made; the file is not. */
+/**
+ * A path inside an owned folder `what`: `<ownedDir(scope, what)>/<name>`. The folder is made; the file is not. `name` is ONE plain
+ * path segment: a separator of either OS, `.`, `..` or an empty name would leave the owned folder, where nothing removes the file.
+ */
 function ownedFile(scope, what, name) {
+  if (typeof name !== 'string' || name === '' || name === '.' || name === '..' || /[\\/\0]/.test(name)) {
+    throw new TypeError(`ownedFile: the name must be one plain file name, with no separator and not '.', '..' or empty; got ${JSON.stringify(name)}`);
+  }
   return path.join(owned.ownedDir(scope, what), name);
 }
 
