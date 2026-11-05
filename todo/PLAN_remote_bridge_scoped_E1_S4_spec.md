@@ -199,3 +199,27 @@ Commands: E1's common block with `<name>` = `bridgeConsent`, `mcpConsentPolicy`,
 - The `(.*?) \(([^)]*)\)` pair's backtracking with an entity name containing parentheses and a grant field containing a space
   (`tok…f2 bridge=x`) is reasoned from the regex, not run; C14 is the check.
 - `wording`'s line count after the branch is a hand estimate; `npm run lint` decides whether the helper is needed.
+
+## S4.10 — Amendment, epoch 3 (Fable, 2026-11-05)
+
+E1.4 is coded after E1.3's fix-forward (the S3 spec's §S3.13), on the tree that commit leaves. Three things above change;
+nothing is deleted, and where this section differs from §S4.2, §S4.4, §S4.7 and C20, this section wins.
+
+1. **The third parameter of `admitAliasCall` is the context, not a name.** The fix-forward makes it
+   `admitAliasCall(res, prompts, bridge?: BridgeContext)` and keys the prompt windows by `bridge.bridgeId` (§S3.13 A.3.5). E1.4 reads
+   the same parameter for the grant-less line: `:240` becomes `grant: auditGrantMark(bridge?.serverName)`. The call sites (`:284` in
+   `doorFor`, `:344` in `handleAlias`) already pass `view.bridge` after the fix-forward, so E1.4 adds no line there. §S4.2's three
+   `admitAliasCall` lines and §S4.4's row read accordingly; §S4.7's bullet becomes: *the grant-less line's mark comes from the context
+   `admitAliasCall` was handed, the same one that keys its window*.
+2. **Quiet and the per-door silent ceiling.** With quiet on, a call the entry's policy settles takes no modal and is admitted on the
+   bridge's own silent window (sixty a minute per bridge), not the laptop's; the `allowed without a prompt` line (C5) is written
+   as built. A quiet bridge's sixty-first silent call inside a minute answers the bridge's silent sentence of §S3.13 A.3.5. Added
+   scenario **C21**: quiet on, `never`, sixty-one calls through A inside a minute: the last is `too_many_requests` with that sentence; a
+   silent call through B at the same moment is served; a local quiet MCP call is served.
+3. **C20 revised.** Six calls at once through bridge A: the second to sixth are `busy` while the first's dialog is open, and the
+   `too_many_requests` lines' grant field reads `— bridge=<A's name>`; six through B at the same moment behave the same with B's name;
+   six off a bridge read `—`. Five dialogs answered on A then a sixth: `too_many_requests` with the bridge sentence and `— bridge=<A>`.
+
+Budget: the fix-forward leaves `credsAgentServer.ts` at 787; E1.4 adds one line (`remember`'s `serverEntityId`) → 788. `extension.ts`
+stays at 1003. Nothing else in §S4.2–§S4.8 moves. Break-it added: **Q13** — `auditGrantMark` reads the body's `serverName` or the caller
+label instead of the context (C15, C20).

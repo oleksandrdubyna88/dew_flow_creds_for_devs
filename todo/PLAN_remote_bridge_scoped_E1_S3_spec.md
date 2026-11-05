@@ -760,3 +760,317 @@ the table and the scope store. One guard had no test: a bridge door's grant mint
 | W44 | BRIDGE_ROUTES not frozen | the table cannot be changed from outside | 1 |
 | W45 | forget removes nothing | S17: forget removes one record and leaves the others | 1 |
 | W46 | a bridged call grant takes the token scope instead of call | a grant a bridge door mints is a call grant, reclaimed before... | 1 |
+
+## S3.13 — Amendment, epoch 3 (Fable, 2026-11-05)
+
+E1.3 is built as `a91e981`; the plan stopped for a whole re-review and is epoch 3 (`764c9e9`, its *Re-review for epoch 3*
+table). This section is the complete brief for one **fix-forward commit** on `credsAgentServer.ts` at 788 of 800 and
+`extension.ts` at its ratchet (1003, may not grow). Every `file:line` below was opened on `764c9e9` (the source is `a91e981`'s).
+Nothing above is deleted; where this section differs from §S3.0–§S3.12, this section wins. Sentences for E1.4 follow in the
+S4 spec's §S4.10; the E1 document carries a short dated note pointing here.
+
+### A.1 Corrections to the record
+
+- **F10 and §S3.1 item 1 claimed the jump's name is not disclosed. False.** `sshOptions.ts:153` answers `The jump host "<hop.name>" cannot be used: its address is not a valid host.`, and `sshUseActions.ts:203` sends it to the agent as a `no_credential` body. The linked key was not covered at all: `sshExecAuth.ts:126` names the key entity (`"<ownerName>" is protected with its own PIN…`), `:157` carries a path in `Could not write the stored key to disk: <error>`, and `sshUseActions.ts:133` sends them; `:224` sends `Could not run ssh: <error>`, which can carry argv. The decision stands (A.2 item 2): the link and the chain are part of using the entry. What changes is the body of a refusal on a bridge (A.3.6).
+- **F12 and §S3.2.5 put the scope in `globalState`.** Overturned by the plan (§4.2, epoch 3): each window holds its own copy and the last write wins, so a narrow in one window can fail to reach the owner and a stale write can restore it. The store is a file per record with a revision, under the cross-window lock (A.3.1).
+- **§S3.3 step 4 and §S3.9 placed the gate at `answer` only.** `releaseWaiting` (`credsAgentServer.ts:586`) runs between consent and the gate, so a narrow during a modal still promoted a waiting rotation onto an entry the scope no longer admits. The gate is asked first before `releaseWaiting`, and kept at `answer` (A.3.4).
+- **§S3.9 said "the scope is read inside each wrapped function, never held across an `await`".** `bridgeScope.ts:245` reads it before the `await` of the listing. Fixed and tested (A.3.3).
+- **S14** gains a token denied while its call waits; **S17** is rewritten for the file store; **S20** becomes the use half of the collision whose listing half is S22/S23 (the gap §S3.12 recorded).
+- **§S3.12 item 7**: a call refused before any dialog spent a prompt. With A.3.5 it spends none.
+
+### A.2 The eleven decisions, judged
+
+1. **File store — upheld.** `<globalStorageUri>/bridges/scopes/<sha256 hex of scopeKey>.json`; revisioned; written under `LeasedQueue` over a `WindowLock` at `<globalStorageUri>/bridges/scopes.lock`; re-read inside the lock; a stale revision refused with one sentence; temp-and-rename; `read` synchronous and fresh; absent or corrupt is an empty scope at revision 0. Added, because a file can be moved by hand: the record carries `accountId` and `serverEntityId`, and `read` answers empty when they are not the ones asked for. The cap of 64 stays (pruned inside the lock, oldest `at`). No migration; `SCOPES_KEY` goes.
+2. **Linked key and jump chain part of using an entry; `creds://` strictly scoped — upheld.** `sshkey` can never be opened to MCP (`entityKind.ts:155`), the value stays on the laptop, edit verbs are off the list; a reference puts a value into a command, which is the different thing.
+3. **Generic refusal bodies with `ctx.bridge` set — upheld**, at the three sites in `sshUseActions.ts` where every such sentence passes (`:133`, `:203`, `:224`); `sshExecAuth.ts` and `sshOptions.ts` are not edited, since nothing there knows the door. The real reason goes to the journal. `ssh`'s own stderr stays as returned (the plan's words) and may carry a jump host's address.
+4. **`agentForward` refused on a bridge — upheld, twice:** before the modal through the wall (`entryRefusal`), and in the action against the live entity.
+5. **Per-account suppliers — my judgement: on `BridgeWallSource`, not on `BrokerHooks`.** `extension.ts` may not gain a line, E2.2 wires the wall anyway, and `McpEntry` (a contract shape) stays as it is. `closedIn` stays: the lookup is already narrowed by `accountOnly`.
+6. **Scope read after the await — fixed**, with a mid-listing narrow.
+7. **Gate before `releaseWaiting`, kept in `answer` — upheld.** Built once in `prepared`, asked there and handed to `performCall`.
+8. **A token denied mid-flight — upheld.** `bridgedTokenCall` already reads the token fresh at entry (`view.grantForToken` → `lookup`); the launch gate now reads `grants.get(spend)?.status` too and answers `denied`, `GRANT_NOT_ALLOWED`, before anything is reserved.
+9. **Per-bridge prompt windows, one dialog in flight globally, a pre-dialog refusal spends nothing — upheld.** The split is A.3.5. One consequence is stated rather than hidden: the local alias and MCP doors also stop spending a prompt on a call refused before its dialog, because the window now counts dialogs raised; five dialogs a minute and one in flight hold exactly as before.
+10. **`REFERENCE_REFUSED` echoes nothing — upheld.** The stored text of an argument or a variable is text no listing shows.
+11. **Pure modules reach `vscode` through `grantLimits.ts` — upheld.** `expiredMessage` moves to a pure `grantWords.ts`; R2 becomes transitive.
+
+### A.3 What changes, with types and signatures
+
+#### A.3.1 The scope store (`bridgeScope.ts:27-137` replaced)
+
+```ts
+export const SCOPES_DIR = 'bridges/scopes';              // under globalStorageUri
+export const SCOPES_LOCK_DIR = 'bridges/scopes.lock';    // the WindowLock's directory, beside it
+export const MAX_SCOPES = 64;
+export const MAX_SCOPE_ENTRIES = 256;
+export const SCOPE_STALE = 'The scope of this Remote Bridge changed in another window. Look at it again, then save.';
+
+/** The file: what we wrote, and whose it is. */
+export interface ScopeFile {
+  readonly v: 1;
+  readonly accountId: string;
+  readonly serverEntityId: string;
+  readonly entries: readonly string[];
+  readonly quiet: boolean;
+  readonly revision: number;   // 1 on the first write
+  readonly at: number;
+}
+export function scopeFileName(accountId: string, serverEntityId: string): string;  // `${sha256hex(scopeKey(accountId, serverEntityId))}.json`
+
+/** The filesystem as a port, like `LockFs` (windowLock.ts:45-56). */
+export interface ScopeFs {
+  readSync(file: string): string | undefined;          // undefined on ANY error
+  list(dir: string): Promise<readonly string[]>;       // names ending in `.json`; [] when the directory is absent
+  write(file: string, text: string): Promise<void>;    // mkdir -p the parent; write `<file>.<uuid>.tmp`; rename over `file`
+  remove(file: string): Promise<void>;                 // ENOENT is success
+}
+export function nodeScopeFs(): ScopeFs;                 // node:fs; rename retried 3 × 50 ms on EPERM/EBUSY (Windows, a reader holding the file)
+
+export interface Scope {
+  readonly entries: ReadonlySet<string>;
+  readonly quiet: boolean;
+  readonly revision: number;                            // 0 when absent or corrupt; what `set` must be handed back
+  admits(accountId: string, entityId: string): boolean;
+}
+
+export class BridgeScopes {
+  constructor(dir: string, io: ScopeFs, writes: { run<T>(work: () => Promise<T>): Promise<T> }, now: () => number = Date.now);
+  /** Synchronous, fresh: `io.readSync` every call. Empty (revision 0) when absent, unparseable, not a `ScopeFile`, or naming another account or server. */
+  read(accountId: string, serverEntityId: string): Scope;
+  /** Inside `writes.run`: re-read; `revision !== expectedRevision` → reject `Error(SCOPE_STALE)`; write revision+1; prune to MAX_SCOPES by `at`, never this file. Answers the new revision. */
+  set(accountId: string, serverEntityId: string, entries: readonly string[], quiet: boolean, expectedRevision: number): Promise<number>;
+  /** Inside `writes.run`: remove the file. Close-and-forget (E2 wires it). */
+  forget(accountId: string, serverEntityId: string): Promise<void>;
+}
+```
+
+`writes` is `new LeasedQueue(new WindowLock(path.join(globalStorageUri, SCOPES_LOCK_DIR), nodeLockFs()))` in production (E2.2 builds
+it; `LeasedQueue.run` is the shape, `leasedQueue.ts:70`); a `SerialQueue` in a unit test (`LeasedQueue` without a lock *is* one). The
+pruning reads each listed file once inside the lock: ≤ 65 small reads per write. Growth (§S3.10 item 10) is unchanged in size; the
+retirement is `forget` on Close and the prune. `BridgeWallSource.scopes` keeps its type.
+
+#### A.3.2 Per-account suppliers and the entry refusal (`bridgeScope.ts:140-145`, `:243-248`; `mcpEntries.ts:363`)
+
+```ts
+export interface BridgeWallSource {
+  readonly scopes: BridgeScopes;
+  storedTexts(accountId: string, entityId: string): readonly string[];
+  readonly refSource: Pick<RefSource, 'accounts' | 'entities'>;
+  /** The listing of ONE account: `visibleMcpEntries(accountOnlyVault(storage, accountId))`. */
+  listEntriesOf(accountId: string): Promise<readonly McpEntry[]>;
+  /** The snippet's supplier for ONE account: `visibleConfigDetails(accountOnlyVault(storage, accountId), entityId)`. */
+  visibleConfigOf(accountId: string, entityId: string): EntityMetadata | undefined;
+  /** Why this entry cannot be used through a bridge at all, asked before anybody is: E2 wires `details.agentForward === true ? { code: 'denied', message: AGENT_FORWARD_REFUSED(name) } : undefined`. */
+  entryRefusal(accountId: string, entityId: string): Refusal | undefined;
+}
+// mcpEntries.ts — beside accountOnly (:363), which narrows a Pick and stays for the lookups:
+/** The whole `McpVaultSource` with `getAccounts` answering one row; every other method delegates by name (a spread of a StorageManager would lose its prototype). */
+export function accountOnlyVault(source: McpVaultSource, accountId: string): McpVaultSource;
+```
+
+The bridged view's `sources()` ignores `real.mcpEntries` and `real.visibleConfig` and answers from the wall:
+`mcpEntries: async () => { const rows = await wall.listEntriesOf(bridge.accountId); return entriesIn(scope(), rows); }` — the scope read
+**after** the await (A.2 item 6) — and `visibleConfig: (id) => (scope().entries.has(id) ? wall.visibleConfigOf(bridge.accountId, id) : undefined)`.
+`aliases` and `folders` as built. `referenceRefusal(grant, wall)` (`:324-330`) first asks `wall.entryRefusal(grant.accountId, grant.entityId)`
+and answers it when set, then the references as built; its name and both call sites (`credsAgentServer.ts:569`, the gate) are unchanged.
+
+#### A.3.3 Sentences (`bridgeScope.ts:297-299` replaced; two added)
+
+```ts
+export function REFERENCE_REFUSED(entityName: string): string;
+//  `"${entityName}" uses a creds:// reference this Remote Bridge does not serve. Add every entry it names to this bridge's scope, or take the reference out of the stored command or script.`
+export function AGENT_FORWARD_REFUSED(entityName: string): string;
+//  `"${entityName}" is set to forward this computer's SSH agent, and the shared agent answers for every loaded key. A Remote Bridge does not use it: turn agent forwarding off on that entry, or use it from this computer.`
+export function BRIDGE_USE_REFUSED(entityName: string): string;
+//  `"${entityName}" could not be used through this Remote Bridge. The reason is in the agent journal on the computer that holds the vault.`
+```
+
+`UNREADABLE` (`:302`) and the `ref` parameter of `REFERENCE_REFUSED` go; `unservedReference` answers a boolean. Codes: `denied` for the first
+two; the third keeps the code of the refusal it replaces (A.3.6).
+
+#### A.3.4 The gate before `releaseWaiting`, and the denied token (`credsAgentServer.ts:581-599`, `:670-689`; `bridgeScope.ts:336-350`)
+
+```ts
+// bridgeScope.ts
+export function launchRefusal(grant: Grant, wall: BridgeWallSource | undefined, via: AuditDoor, body: Record<string, unknown>, tokenDenied = false): Refusal | undefined;
+//  off a bridge → undefined (as built); on a bridge, in order: tokenDenied → { code: 'denied', message: GRANT_NOT_ALLOWED }; the scope (as built) → outOfScopeAnswer; referenceRefusal (as built, now with entryRefusal first).
+```
+
+`prepared` builds the closure once and asks it before anything an Allow triggers:
+
+```ts
+const atLaunch = (): Refusal | undefined => launchRefusal(grant, this.hooks.bridgeWall, via, call.body, call.spend !== undefined && this.grants.get(call.spend)?.status === 'denied');
+if (this.stopped(res, call, 'after consent', atLaunch)) { return; }          // replaces `if (this.gone(call, 'after consent')) { return; }`
+await this.releaseWaiting(grant);
+…
+await this.runAndDeliver(res, { ...call, table }, atLaunch);                 // runAndDeliver(res, call, atLaunch) passes `atLaunch,` in CallDeps in place of :685
+```
+
+`private stopped(res, call, stage, atLaunch): boolean` — `gone(call, stage)` → `true`; `atLaunch()` refused → `respondError(res, code, message, grant, action, summary, via, caller)` and `true`; else `false`. `prepared` keeps complexity 4; `brokerCall.ts` is unchanged (`answer` still asks `deps.atLaunch`, `:139-150`).
+
+#### A.3.5 Prompts per bridge (`aliasThrottle.ts` whole; `brokerConsent.ts:29-35,38-44,81-95`; `credsAgentServer.ts:118,228-244,284,344`)
+
+`AliasThrottle` (`:67-150`) couples the in-flight rule and the window. It is split into two classes and one coordinator; the class goes
+and `aliasThrottle.test.ts` is rewritten over the three (22 tests' behaviours kept: five a minute, one in flight, the clock-jump rule,
+the two sentences, `release` twice, a refusal releases nothing):
+
+```ts
+/** The count: stamps inside the window that ends now (`inWindow` as built, both bounds). */
+export class SlidingWindow {
+  constructor(max: number, windowMs: number);
+  full(nowMs: number): boolean;
+  stamp(nowMs: number): void;
+  admit(nowMs: number): 'allow' | 'too-many';   // full → too-many, else stamp and allow
+  idle(nowMs: number): boolean;                 // no stamp inside the window: the coordinator prunes such a door
+}
+/** One dialog at a time, for a HUMAN — global, never per door. */
+export class OneInFlight { hold(): boolean; release(): void; }
+
+export const LOCAL_DOOR = 'local';
+export class TokenlessCeilings {
+  /** prompts: `inFlight` held → busy; the door's modal window full → too-many (nothing held); else hold and allow — NO stamp here. Silent: the door's silent window `admit` (stamps now), no in-flight. */
+  admit(prompts: boolean, nowMs: number, door: string = LOCAL_DOOR): Admission;
+  /** A dialog was raised for this grant: stamp the modal window of its door. Nothing for a local token call (`via === 'token'` and no bridge), which is not throttled. */
+  prompted(grant: { bridge?: { context: { bridgeId: string } } }, via: AuditDoor, nowMs: number): void;
+  /** E2 on Close; also prunes doors whose windows are idle. */
+  forget(door: string): void;
+}
+```
+
+Sentences (`describe`): `busy` as built; too-many prompts: local as built (`…a caller without a token may prompt at most 5 times a minute.`),
+on a bridge `Too many requests: this Remote Bridge may prompt at most 5 times a minute.`; silent: local as built, on a bridge
+`Too many requests: this Remote Bridge may make at most 60 silent calls a minute — ones a consent policy lets through without a prompt.`
+On a bridge every door (token included) is bridged, so the local sentence cannot appear on a token route.
+
+The stamp moves to where the dialog is raised: `ConsentGateDeps.prompted?(question: ConsentQuestion): void`, called in `ask`
+(`brokerConsent.ts:81`) immediately before `showWarningMessage`; `ConsentQuestion.via: AuditDoor` is added and both callers pass it
+(`credsAgentServer.ts:297` `via`, `:543` `who.via`). `:118` gains `prompted: (q) => this.ceilings.prompted(q.grant, q.via, Date.now())`
+on the same line. `admitAliasCall(res, prompts, bridge?: BridgeContext)` calls `this.ceilings.admit(prompts, Date.now(), bridge?.bridgeId)`;
+`:284` and `:344` pass `view.bridge`. (E1.4's `auditGrantMark(bridge?.serverName)` reads the same parameter, S4 §S4.10.)
+
+#### A.3.6 Generic bodies and `agentForward` in the real action (`sshUseActions.ts:115-137,181-233`)
+
+```ts
+/** A refusal as the agent reads it: the sentence as today off a bridge; on a bridge the generic sentence, the real one in the journal. The code is kept. */
+function bridgedRefusal(deps: SshUseDeps, ctx: UseActionContext): (code: ErrorCode, message: string) => UseActionResult;
+```
+
+In `sshExecAction.run`: `const refuse = bridgedRefusal(deps, ctx);` after `entityFor`; `prepareAuth(deps, ctx, entity, refuse)` builds `:133`
+with it; `:203` → `refuse('no_credential', chain.reason)`; `:224` → `refuse('internal', …)`. After the `entity.host` check and before
+`acquireExecSlot`: `if (ctx.bridge !== undefined && entity.agentForward === true) { return fail('denied', AGENT_FORWARD_REFUSED(ctx.entityName)); }`.
+The refusals that name only the in-scope entry (`:189`, `:196`) are unchanged. `sshTerminalAction` is not served and is not touched.
+
+#### A.3.7 `grantWords.ts` (new, pure) and R2 transitive
+
+`expiredMessage` (`grantLimits.ts:40-44`) moves to `grantWords.ts` unchanged; `grantLimits.ts` keeps `grantLimits()` and `describeLimits`;
+`brokerRequests.ts:4` imports from `./grantWords`. R2 (`test/bridgeBoundary.test.ts:183`) walks `import … from './x'` (not `import type`)
+recursively from `bridgeContext`, `bridgeNote`, `bridgeAllowList`, `bridgeScope`, `brokerBridgeToken`, `brokerBridgeListeners`,
+`grantWords` and fails naming the chain (`bridgeScope → brokerRequests → grantLimits`) when any module in the closure imports or
+requires `vscode`. `test/bridgeModules.ts` may then `require` the modules bare; keeping the stub loader is allowed.
+
+#### A.3.8 `execSlots.ts` (new, pure) — paying for A.3.4
+
+`acquireExecSlot` (`credsAgentServer.ts:150-163`, 14 lines) becomes `acquireExecSlot = (): (() => void) | undefined => this.slots.acquire();`
+over `private readonly slots = new ExecSlots(MAX_CONCURRENT_EXECS);`, with `class ExecSlots { acquire(): (() => void) | undefined }` and three
+tests (the cap, a release, a second release a no-op).
+
+### A.4 `credsAgentServer.ts`, counted (788 today)
+
+| Where | Edit | Lines |
+|---|---|---|
+| `:150-163` | `acquireExecSlot` → one line over `ExecSlots`, plus the field | −12 |
+| `:118` | `prompted: (q) => this.ceilings.prompted(q.grant, q.via, Date.now())` in the gate's deps | 0 |
+| `:228`, `:229`, `:284`, `:344` | `admitAliasCall(res, prompts, bridge?: BridgeContext)`; `admit(prompts, Date.now(), bridge?.bridgeId)`; callers pass `view.bridge` | 0 |
+| `:297`, `:543` | `via` on the consent question | 0 |
+| `prepared` `:581-599` | `const atLaunch = …` (+1); `stopped` in place of the first `gone` (0); `runAndDeliver(res, …, atLaunch)` (0) | +1 |
+| new `stopped(res, call, stage, atLaunch)` | ~10 lines with its comment | +10 |
+| `:670-689` | `runAndDeliver(res, call, atLaunch)`; `:685` becomes `atLaunch,` | 0 |
+| | **Total** | **−1 → 787**; E1.4's +1 → 788 |
+
+`handle` is untouched (48 code lines); `prepared` and `perform` stay at complexity 4; `extension.ts` unchanged.
+
+### A.5 Scenarios (each RED today, and why)
+
+Files: `test/bridgeScope.test.ts` (S17 rewritten), `test/bridgeStore.test.ts` (new, S25), `test/bridgeScopeWalk.test.ts` (S22–S24),
+`test/bridgeTransitive.test.ts` (S10, S14, S27–S29), `test/bridgePrompts.test.ts` (new, S26), `test/bridgeLinks.test.ts` (new, L1–L5),
+`test/bridgeBoundary.test.ts` (R2), `test/aliasThrottle.test.ts`, `test/execSlots.test.ts`, `test/grantWords.test.ts`.
+
+**How a real-action leg joins the wall world.** `test/brokerWorld.ts` gains `realActions?: Record<string, unknown>`, read before `realAction`
+in `action()` (`:229`), so one route can be real while the others stay scripted. `WallOptions` gains `exec?: UseAction` and
+`releaseWaiting?: (accountId, entityId) => Promise<unknown>`; `wallWorld` passes `realActions: { exec }` and `hooks: { …, releaseWaiting }`
+(`hooks` is spread first and `releaseWaiting` is not shaped, `brokerWorld.ts:253-271`). New `test/bridgeLinksWorld.ts` builds the real
+`sshExecAction` the way `test/sshUseActions.test.ts:90-160` does — `loadWithVscode('../sshUseActions', stub, mocks)` with only
+`./sshExecRunner` (records argv, program, env), `./keyInstaller` (real files, as there) and `./hostKeyTrust` substituted, the REAL
+`./sshCredential` — over `memoryStorage(stub)` from `test/pinWorld.ts:214` seeded with `e1` (ssh, `host: 'prod.corp.com'`, `user: 'deploy'`,
+`sshKeyEntityId: 'k1'`, optionally `jumpHostEntityId: 'j1'`, `agentForward`), `k1` (an `sshkey` holding `PRIVATE KEY BODY`, optionally
+`pinProtected: true` with a sealed value) and `j1` (ssh, `host: 'jump.corp.com'`, `user: 'hop'`, or the invalid host `'bad host!'`), all in
+`a1`; the scope is `['e1']`. The action reads `memoryStorage`; the lookups read the wall world's tree — two sources, by the same ids, said here
+so nobody "fixes" it.
+
+| # | Scenario | Expected | RED today, because |
+|---|---|---|---|
+| S17 | The store, pure | Absent, unparseable, not a `ScopeFile`, `v !== 1`, another account's or server's ids: empty, revision 0. `set` with `expectedRevision` 0 on a new file → 1; again with 1 → 2; with 0 → `SCOPE_STALE` and the file unchanged. 257 entries refused. Cap 64 by `at`, never the file just written. `forget` removes one. A `.tmp` left behind is not listed. `read` after a `set` through a second `BridgeScopes` over the same directory sees it | the class takes a `Memento` |
+| S25 | Across windows (real `node:fs`, a `mkdtemp`, two `LeasedQueue`s over two `WindowLock`s on the one lock directory) | A narrows; B's next `read` is the narrowed scope. B `set`s from a copy at revision 1 after A wrote 2: `SCOPE_STALE`, nothing restored. A reads revision 1, B `forget`s, A `set`s expecting 1: `SCOPE_STALE` (the file is gone, revision 0), still forgotten. Two `set`s racing from both queues: exactly one lands, the other is stale. A corrupt file written beside: empty scope, and the next `set` expecting 0 replaces it | no file store |
+| S22 | The listing is per account (`collide: true`) | Row 4 through the bridge lists `e1` once, named `prod`; `foreign` is nowhere in the body; `listEntriesOf` was called with `a1` only | §S3.12's recorded gap: the row `foreign` is listed |
+| S23 | The snippet is per account (`collide: true`) | Row 5 for `e1` answers `a1`'s config; a world where only `a2` holds a config `e1`: the not-found body | `visibleConfigDetails` answers the first account |
+| S24 | A narrow during the listing | `listEntriesOf` answers a promise the test holds; the scope is narrowed to `[]`; the promise resolves: `entries: []` | `entriesIn(scope(), await …)` read the scope first |
+| S26 | Prompts per bridge | Five dialogs through bridge A inside a minute; the sixth is `too_many_requests` with the bridge sentence; a sixth through bridge B is asked; a local alias call is asked. A dialog held open on A: B's call and a local alias call are `busy`. Five calls refused before any dialog (an out-of-scope reference) then five dialogs: all five asked. The sixth through the token route on a bridge: the bridge sentence, never `a caller without a token`. `forget(A)` then five more on A are asked. Local alias door: five, then the sixth refused, as today (existing route tests green) | one shared window (`§S3.12` item 7); a pre-dialog refusal spends |
+| S27 | The gate before `releaseWaiting` (S10 extended) | `holdDialogs`, narrow, Allow: `releaseWaiting` spy never called, the route's OUT sentence, nothing reserved | `:586` runs before `answer` |
+| S28 | A token denied mid-flight (S14 leg) | A bridged token call's dialog is held; the token is denied through a local dialog answered Deny (or `registryOf(ww).grants` via `deny`); the bridged dialog is answered Allow: 403 `denied`, `GRANT_NOT_ALLOWED`; the token's `uses` unchanged; `w.ran` empty | the gate does not read the token |
+| S29 | `REFERENCE_REFUSED` echoes nothing (S9 extended) | A stored argument `creds://a@x.test/Other/db/password`: the body contains no `creds://`, no `Other`, no `db`; the same sentence for every failure | the sentence carries `<ref>` |
+| L1 | A linked key out of scope is part of using `e1` (real action) | Through the bridge, Allow: 200; `runs[0].argv` has `-i <path under storageDir>`; the body carries no key material, no `k1`, no key name; the materialised file is gone | the wall world has no real action: the file does not compile |
+| L2 | A protected linked key refuses generically | `k1` sealed (`pinProtected`): bridge → 409 `no_credential`, body exactly `BRIDGE_USE_REFUSED('prod')`, no `k1` or its name; `deps.note` got the real sentence; main port → today's sentence naming the key entity (control) | the body names the key entity |
+| L3 | A jump host out of scope | `j1` valid: bridge → 200, argv has `-J hop@jump.corp.com`, the body does not carry `jump.corp.com`'s entry name. `j1` with `'bad host!'`: bridge → generic body; main → `The jump host "jump" cannot be used…` (control) | the body names the jump host |
+| L4 | `agentForward` refused twice | `e1.agentForward: true`: bridge → 403 `denied`, `AGENT_FORWARD_REFUSED('prod')`, `w.dialogs` empty (the wall refused first), `runSshExec` never called. The same with `entryRefusal` stubbed to answer `undefined`: a dialog, then the action refuses with the same sentence. Main port: runs with `-A` (control) | runs with `-A` through the bridge |
+| L5 | `ssh`'s stderr stays | The runner stub answers `stderr: 'kex_exchange_identification: jump.corp.com'`: the body carries it, through the bridge too (the decision, pinned) | compiles with L1 |
+| R2 | Transitive purity | Walking imports from the seven modules reaches no `vscode`; a planted `import * as v from 'vscode'` in a copied `grantWords.ts` is reported with its chain | `bridgeScope → brokerRequests → grantLimits → vscode` |
+
+### A.6 Break-its (mutate, watch the named case fail, restore; both outputs in the PR)
+
+| # | Mutation | Red case |
+|---|---|---|
+| N1 | `set` writes outside `writes.run` | S25 racing `set`s both land |
+| N2 | `set` ignores `expectedRevision` | S17, S25 stale writes land |
+| N3 | `read` caches the parsed file | S17 "a second `BridgeScopes` sees it", S25 |
+| N4 | `read` skips the account/server check | S17 another server's file admits |
+| N5 | `sources.mcpEntries` reads `real.mcpEntries` | S22 |
+| N6 | `sources.visibleConfig` reads `real.visibleConfig` | S23 |
+| N7 | the scope read before the listing's await | S24 |
+| N8 | `prepared` asks nothing before `releaseWaiting` | S27 |
+| N9 | `launchRefusal` ignores `tokenDenied` | S28 |
+| N10 | `admit` keys every door as `LOCAL_DOOR` | S26 (B's sixth refused) |
+| N11 | the modal window stamped at `admit` | S26 (pre-dialog refusals spend) |
+| N12 | `OneInFlight` per door | S26 (two dialogs at once) |
+| N13 | the local sentence on a bridge | S26 token leg |
+| N14 | `REFERENCE_REFUSED` with the reference | S29 |
+| N15a-c | `bridgedRefusal` dropped at `:133` / `:203` / `:224` | L2 / L3 / L3 with a failing runner |
+| N16 | the action's `agentForward` check dropped | L4 second leg |
+| N17 | `referenceRefusal` skips `entryRefusal` | L4 first leg (a dialog is raised) |
+| N18 | `grantWords.ts` imports `grantLimits.ts` | R2 |
+| N19 | R2 reads only the listed files | R2 "has teeth" with the planted import two hops away |
+| N20 | `ExecSlots.acquire` ignores the cap | `execSlots.test.ts` |
+
+### A.7 Order of the fix-forward commit
+
+1. `grantWords.ts`, `execSlots.ts`, R2 transitive (RED first), `aliasThrottle.test.ts` rewritten — pure, no behaviour change on the doors.
+2. The store (A.3.1) with S17/S25; the wall world over a `mkdtemp` and a real `LeasedQueue`.
+3. The suppliers, the listing order, the sentences (A.3.2, A.3.3) with S22–S24, S29.
+4. The gate and the denied token (A.3.4) with S27, S28.
+5. The prompt windows (A.3.5) with S26.
+6. The real action (A.3.6, `bridgeLinksWorld.ts`) with L1–L5.
+7. `npm run lint`, `wc -l src/credsAgentServer.ts` (787), `npm run ratchet`, the pre-PR block; then E1.4 from the S4 spec with §S4.10.
+
+### A.8 Opus checklist, added to §S3.9
+
+- `BridgeScopes` has no `Memento`; `set` and `forget` run inside `writes.run`; `set` re-reads inside; `SCOPE_STALE` on a mismatch; temp-and-rename; `read` is `readSync` and verifies `v`, `accountId`, `serverEntityId`; `revision` is on `Scope`.
+- The bridged view's listing and snippet come from `wall.listEntriesOf`/`wall.visibleConfigOf`; the scope is read after the listing's await; `accountOnlyVault` delegates every method by name.
+- `prepared`: `stopped` asked before `releaseWaiting`; `atLaunch` built once and handed to `performCall`; `answer` still asks it; `tokenDenied` read from `grants.get(spend)` inside the closure.
+- `TokenlessCeilings`: one `OneInFlight`; windows per door; the modal window stamped in `ConsentGate.ask` only, never in `admit`; `prompted` ignores a local token call; the bridge sentences carry no "caller without a token".
+- `sshUseActions.ts`: the three sites go through `bridgedRefusal`; the `agentForward` check sits before `acquireExecSlot`; `sshExecAuth.ts` and `sshOptions.ts` are untouched.
+- `REFERENCE_REFUSED(entityName)` has one parameter; `AGENT_FORWARD_REFUSED` is the one sentence on both legs.
+- No module in R2's closure imports `vscode`; `grantLimits.ts` has no `expiredMessage`.
+- `credsAgentServer.ts` at 787; `extension.ts` at 1003; `npm run ratchet` green.
+
+### A.9 Not verified by this spec
+
+- `fs.rename` over a `.json` another window is reading: atomic within one volume on POSIX and NTFS; on Windows a concurrent reader can make it fail with `EPERM`/`EBUSY`, hence the bounded retry, which S25 cannot provoke on a Linux runner. The owner's M7 is the only real Windows exercise.
+- The line counts (`stopped`, the `prepared` edit) and ESLint's complexity for `prepared` after the change are hand counts; `npm run lint` decides.
+- `memoryStorage` from `test/pinWorld.ts` seeding an `sshkey` entity with a sealed value for L2 is read from that helper's exports, not run.

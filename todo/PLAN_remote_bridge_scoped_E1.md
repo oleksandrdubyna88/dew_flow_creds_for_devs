@@ -481,3 +481,31 @@ E1.1, then E1.2, E1.3 after Fable's spec, E1.4. E1.1 is independent and may go f
 - [ ] M4 recorded in the table above, by the person.
 - [ ] Every RED-first test's failure and pass are in the summary; lint, ratchet and the pre-PR block are green; `coai` plan and code gates at `proceed`.
 16. **A todo, found in E1.2's review and not fixed there: `GET //` is never answered.** `handle` builds `new URL(req.url ?? '/', 'http://127.0.0.1')` as its first statement (`credsAgentServer.ts`, `handle`), before `abandonedWhenClosed` and before the bridge guard, and the three doors reach it through `void this.handle(...)` (`:684`). `new URL('//', 'http://127.0.0.1')` is a protocol-relative reference with an empty host and throws. Confirmed 2026-11-05 on the built tree: `node -e "new URL('//','http://127.0.0.1')"` prints `ERR_INVALID_URL Invalid URL`, and a raw `GET // HTTP/1.1` sent to the main port of a real broker (`out/test/brokerWorld.js`) got 0 bytes back in 1.5 s and raised an `unhandledRejection` with that code. So the request hangs until the client gives up, and the rejection is unhandled. It fails closed (nothing runs, nothing is asked, no body is read) and it is older than the bridge: it is the same on the port and the socket, and a bridge listener inherits it only behind its own door, key included. A todo, not E1's: parse inside a `try` and answer `invalid_request`, and catch at the `void this.handle` call sites; add `GET //` to a door test then. The coder's report and the review disagree on nothing else.
+
+## Amendment, epoch 3 (2026-11-05)
+
+The parent plan stopped for a whole re-review after E1.3 was built (`a91e981`) and is epoch 3 (`764c9e9`). Three passages of this
+document are superseded; nothing is deleted. The complete briefs are [PLAN_remote_bridge_scoped_E1_S3_spec.md](PLAN_remote_bridge_scoped_E1_S3_spec.md)
+§S3.13 (E1.3's fix-forward commit) and [PLAN_remote_bridge_scoped_E1_S4_spec.md](PLAN_remote_bridge_scoped_E1_S4_spec.md) §S4.10 (E1.4, coded after it).
+
+1. **The store (§E1.3 *What changes* item 3, `BridgeScopes` over a `Memento`).** Scopes live in one file per record,
+   `<globalStorageUri>/bridges/scopes/<hash>.json`, with a revision; writes take the cross-window lock of `leasedQueue.ts`/`windowLock.ts`,
+   re-read, and refuse a stale revision with one sentence; `read` stays synchronous and fresh; absent or corrupt is an empty scope.
+   `globalState` is each window's own copy with the last write winning (parent §4.2), which cannot carry a narrow to the window that owns
+   the bridge. No migration, since nothing is wired; Close removes the record (E2 wires it, E1 gives `forget`).
+2. **The jump paragraph (§E1.3 *The jump chain is not a scope target*).** Upheld, and widened to the linked `sshKeyEntityId`: both are part
+   of using the entry (parent §4.2). Its claim that the jump's name is not disclosed was false (`sshOptions.ts:153`), and the linked key's
+   refusals name the key entity (`sshExecAuth.ts:126`). With `ctx.bridge` set, every such body through `sshUseActions.ts:133,203,224` becomes
+   one generic sentence and the reason goes to the journal; `ssh`'s own stderr stays as returned. An ssh entry with `agentForward` is
+   refused on a bridge, before the modal through the wall and again in the action, because the shared agent answers for every loaded key
+   (`sshAgentServer.ts:207-208`). The listing and the snippet come from per-account suppliers on the wall, since `McpEntry` carries no account.
+3. **The token path's shared throttle (§E1.3 *A token never rides its own grant on a bridge*, "take a slot (`admitAliasCall(res, true)`…)").**
+   Each bridge has its own sliding window of five prompts a minute, keyed by `bridgeId`; one dialog in flight stays global; the window is
+   stamped where the dialog is raised (`ConsentGate.ask`), so a call refused before any dialog spends no prompt; the sentence on a bridge
+   names the bridge and never "a caller without a token". E1.4's grant-less audit line reads the context from the same parameter.
+
+Also in the fix-forward: the launch gate is asked before `releaseWaiting` (`credsAgentServer.ts:586`) and kept in `answer`; a token denied
+while its call waits is refused at the gate with `GRANT_NOT_ALLOWED`; the reference sentence echoes nothing from the stored text; the
+listing reads the scope after its await; `expiredMessage` moves to a pure `grantWords.ts` so R2 holds transitively; `acquireExecSlot` moves
+to `execSlots.ts` to pay for the gate. `credsAgentServer.ts` ends at 787 after the fix-forward and 788 after E1.4; `extension.ts` does not grow.
+Order: E1.3's fix-forward, then E1.4.
