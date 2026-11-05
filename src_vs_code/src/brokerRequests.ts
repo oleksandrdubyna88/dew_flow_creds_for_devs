@@ -1,5 +1,5 @@
 import * as http from 'node:http';
-import { ErrorCode, parseBearer, parseJsonObject } from './brokerProtocol';
+import { ErrorCode, MAX_REQUEST_BODY_BYTES, parseBearer, parseJsonObject } from './brokerProtocol';
 import { Grant, GrantLimits, GrantLookup } from './grantRegistry';
 import { expiredMessage } from './grantLimits';
 import { MCP_SWITCHES } from './mcpSwitches';
@@ -250,4 +250,22 @@ export function reservationRefused(refused: GrantLookup, limits: GrantLimits): s
   return refused.kind === 'expired'
     ? expiredMessage(refused.reason, limits)
     : 'Unknown or missing grant token.';
+}
+
+export function readBody(req: http.IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > MAX_REQUEST_BODY_BYTES) {
+        reject(new Error('body too large'));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    req.on('error', reject);
+  });
 }

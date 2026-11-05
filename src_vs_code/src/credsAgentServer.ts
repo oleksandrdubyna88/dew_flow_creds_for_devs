@@ -5,7 +5,6 @@ import {
   INTERNAL_FAILURE,
   MASKING_UNAVAILABLE,
   MAX_CONCURRENT_EXECS,
-  MAX_REQUEST_BODY_BYTES,
   errorBody,
   isConfigReadRoute,
   parseAliasRoute,
@@ -14,6 +13,9 @@ import {
   statusForErrorCode,
 } from './brokerProtocol';
 import { BrokerHooks, checkedHooks } from './brokerHooks';
+import type { BridgeContext } from './bridgeContext';
+import { BridgeListener, BridgeListeners } from './brokerBridgeListeners';
+import { refusedOnBridge } from './bridgeAllowList';
 import { doorsFor } from './brokerOrigin';
 import { CallSubject, performCall } from './brokerCall';
 import { OneUseLane, burnAndMark } from './oneUseLane';
@@ -25,7 +27,7 @@ import { abandonedWhenClosed } from './requestLife';
 import { recordConsent } from './brokerConsentMemory';
 import { McpFolderHooks } from './brokerFolderDoor';
 import { answerMcpRoute } from './brokerMcpRoutes';
-import { aliasTarget, grantForToken, readNamedBody } from './brokerRequests';
+import { aliasTarget, grantForToken, readBody, readNamedBody } from './brokerRequests';
 import { CallerLabel, callerForAudit, callerFrom } from './brokerCaller';
 import { grantLimits } from './grantLimits';
 import { answerConfigRead } from './brokerConfigRoute';
@@ -420,6 +422,12 @@ export class CredsAgentServer implements vscode.Disposable {
     }
   }
 
+  /** A listener for one bridge. E2.2 is its first caller; nothing in this build calls it (R1). */
+  readonly openBridgeListener = async (context: BridgeContext): Promise<BridgeListener> => {
+    await this.ensureStarted();
+    return this.bridgeListeners.open(context);
+  };
+
   /** The GET routes' suppliers — every read route answers from these three. */
   private readSources(): ReadRouteSources {
     return {
@@ -432,10 +440,13 @@ export class CredsAgentServer implements vscode.Disposable {
   }
 
   // eslint-disable-next-line complexity
-  private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  private async handle(req: http.IncomingMessage, res: http.ServerResponse, bridge: BridgeContext | undefined): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     // First, before anything awaits: a listener attached later could miss the client leaving.
     const signal = abandonedWhenClosed(res);
+    if (refusedOnBridge(bridge, req.method, url.pathname, res, (code, message) => this.respondError(res, code, message))) {
+      return;
+    }
 
     // Health, aliases, the entries an agent may see and the folders opened to it — one kind of
     // route, described once in `brokerReadRoutes.ts`: none authenticates, none performs
@@ -666,9 +677,12 @@ export class CredsAgentServer implements vscode.Disposable {
     );
   }
 
+  /** One listener per open bridge, each behind its own door (brokerBridgeListeners.ts). */
+  private readonly bridgeListeners = new BridgeListeners((port, key, context) => this.doors.forBridge(port, key, context));
+
   /** The router, behind one door per listener — see `brokerOrigin.ts` for why, and why two. */
   private readonly doors = doorsFor(
-    (req, res) => void this.handle(req, res),
+    (req, res, bridge) => void this.handle(req, res, bridge),
     () => this.port,
     (res, status, body) => this.respond(res, status, body),
     (message) => this.note(message),
@@ -746,29 +760,12 @@ export class CredsAgentServer implements vscode.Disposable {
 
   dispose(): void {
     this.abort.abort();
+    this.bridgeListeners.closeAll();
     this.server?.close();
     this.server = undefined;
     this.removeLocalTraces();
     this.output?.dispose();
   }
-}
-
-function readBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    req.on('data', (chunk: Buffer) => {
-      size += chunk.length;
-      if (size > MAX_REQUEST_BODY_BYTES) {
-        reject(new Error('body too large'));
-        req.destroy();
-        return;
-      }
-      chunks.push(chunk);
-    });
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
-  });
 }
 
 /** Which door a request came in by, who its body says is calling, and its life (`requestLife.ts`). */

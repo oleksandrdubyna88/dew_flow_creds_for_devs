@@ -236,3 +236,26 @@ Commands: E1's common block with `<name>` = `bridgeBoundary`, `brokerBridgeDoor`
 - `handle`'s code-line count (43 today) is a hand count under ESLint's skip rules; `npm run lint` decides.
 - Node's `, ` join for a repeated custom header is from its documentation; D16 is the check.
 - `server.closeAllConnections()` ending a kept-alive connection mid-wait is Node ≥ 18.2 behaviour, not run here; D5 is the check.
+
+## S2.11 — As built (Sonnet, 2026-11-05)
+
+Built as specified, with these differences. None changes what the door decides.
+
+1. **`admitsBridgeRequest` is two functions.** Written inline it has complexity 6 against the limit of 4. The key steps are
+   `keyRefusal(given, key)`, and `admitsBridgeRequest` is the browser mark, then `keyRefusal(...) ?? Host`. Same order, same answers.
+   The header name is `BRIDGE_KEY_HEADER.toLowerCase()`, not a second literal.
+2. **`credsAgentServer.ts` is 776 lines, `handle` 46 code lines**, as counted. The move also drops the now-unused
+   `MAX_REQUEST_BODY_BYTES` import (`noUnusedLocals`), which the §S2.5 table does not list; the total still lands on 776.
+3. **D5 cannot be written with an idle keep-alive agent alone.** On this runtime (Node 26) `server.close()` already ends *idle*
+   connections, so K4 would survive such a test. D5 holds a socket that has been answered once and is part-way into its next
+   request; `close()` alone leaves it open, `closeAllConnections()` ends it. A second case does the same for `closeAll()`
+   (the dispose path), which the table had no break-it for: K4b.
+4. **K2 under `===` stays green on behaviour**, as §S2.7 says. It is held by one source-pin test (`timingSafeEqual(sha256(` and
+   `createHash('sha256')` in `brokerOrigin.ts`), which proves the digest compare is written, not that it runs in constant time.
+5. **`open` validates before it binds**: `freezeBridgeContext` runs first in `openNow`, so an empty identity rejects with no port bound.
+6. **R3's expected answers** (every contract route over the port and the socket, a browser-shaped request, a wrong `Host`) are the
+   fixture `src/test/fixtures/bridgeBoundary.r3.json`, recorded from untouched code and green before and after the refactor.
+   R1 and R2 are in the same file; R2 also covers `brokerOrigin.ts`.
+7. Extra mutations run beyond K1-K12: the context not frozen, the empty-field check removed, `dispose` not closing bridge listeners,
+   a superseded close deleting its successor's entry, the key note sharing the browser note's flag, the guard inverted, and a
+   non-string key stringified. All are caught.
