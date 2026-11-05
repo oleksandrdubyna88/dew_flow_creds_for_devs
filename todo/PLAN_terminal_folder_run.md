@@ -1,6 +1,6 @@
 # PLAN — Run a whole terminal folder, and `{name}` in a terminal command
 
-> Status: **epoch 2 approved 2026-11-05 after a re-review, document round `proceed` (2 of 4 reviewers answered, both codex); all stories built, in review.** Scope: the VS Code
+> Status: **epoch 2 approved 2026-11-05 after a re-review, document round `proceed` (2 of 4 reviewers answered, both codex); all stories coded, under review, not merged.** Scope: the VS Code
 > extension (`src_vs_code`): the terminal-entry run roads, the folder row's menu, the viewer and form, help in five
 > languages. No server, no contract, no change to stored data.
 
