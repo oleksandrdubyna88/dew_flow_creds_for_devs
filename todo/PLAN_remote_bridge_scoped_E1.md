@@ -395,7 +395,7 @@ Depends on E1.3. Security-judged by Fable at review.
 8. **`grantRegistry.ts:316-318` and `bridgeContext.ts`.** `describe(grant)` appends ` bridge=<name>` when `grant.bridge` is set; `bridgeAuditName(name)` replaces every run of whitespace, `(`, `)`, `→` with `_` and caps at 40. Every line about a bridged call therefore carries it through `GrantRegistry.describe`, at all the funnel's sites, with no new parameter. An example:
 
    ```text
-   [12:00:00Z] #3 exec orders-db (tok…f2 bridge=ai-runner1) via mcp by Claude Code 2.1.268 → exit 0  uptime
+   [12:00:00Z] #3 exec orders-db (tok…f2 bridge=build-server) via mcp by Claude Code 2.1.268 → exit 0  uptime
    ```
 
    It sits in the existing `grant` group, whose pattern is `[^)]*`, which is why the name has no `)`. So `LINE` (`agentAuditLog.ts:135-136`) and `formatAuditLine` do not change, and every old line and reader still parses. The one line with no grant, `too_many_requests` at `credsAgentServer.ts:236`, takes `admitAliasCall`'s third argument and writes `— bridge=<name>`.
