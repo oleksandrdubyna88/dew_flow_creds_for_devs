@@ -143,11 +143,14 @@ function sweepAll({ sweep, options, roots, write }) {
  * The entries of `root` that are this repository's, this caller's, in the owner form: the path of each folder AND of each orphan
  * claim's stem. Purely structural — no ownership or existence is asked here; `sortOne` is the single authority [E2.1 code4 1, 6].
  */
-function candidates(helper, root) {
+function candidates(helper, root, found) {
   let names;
   try {
     names = fs.readdirSync(root);
-  } catch {
+  } catch (error) {
+    // A root that is not there has nothing in it. Any other answer (EACCES, ENOTDIR, ...) means the audit SAW nothing, which is not
+    // "nothing is there": it is named, and finishAudit fails the run on it. Nothing is removed from that root.
+    if (error?.code !== 'ENOENT') found.unlisted.push(`${root} (${error?.code ?? 'error'})`);
     return [];
   }
   const pattern = helper.ownedPattern();
@@ -169,15 +172,16 @@ function isDirectory(target) {
 /**
  * What the run left. `claimed`: every folder and orphan claim whose claim is EXACTLY `record` and whose folder passes the
  * kernel-owner key; `unmarked`: owner-form folders with no claim, which nobody's helper knows (listed, never touched); `foreign`:
- * claim files the caller does not own — never read, removed or counted [E2.1 code2 0]; `unproven`: claims with this record's text
+ * claim files the caller does not own — never read, removed or counted [E2.1 code2 0]; `unlisted`: roots that could not be listed (`<root> (<code>)`; a root
+ * that is not there is not one) — they fail the run; `unreadable`: claims that could not be read or parsed — listed, the folder stays, the exit code is not changed; `unproven`: claims with this record's text
  * on a record that has no start time and a file older than this run (a dead run's reused pid?) — listed, never removed [E2.1 Opus 2]. The key is asked of the CLAIM file itself,
  * before anything is read from it, whether or not the folder is still there (an orphan has none). A claim of any other record —
  * another run, a harness, a C# executable — is in none of the lists. `mine` is a seam (a second uid cannot be had in a test).
  */
 export function auditRoots(helper, roots, record, mine = helper.isMine, startedAt = 0) {
-  const found = { claimed: [], unmarked: [], foreign: [], unproven: [] };
+  const found = { claimed: [], unmarked: [], foreign: [], unproven: [], unreadable: [], unlisted: [] };
   for (const root of roots) {
-    for (const target of candidates(helper, root)) sortOne(helper, target, record, mine, startedAt, found);
+    for (const target of candidates(helper, root, found)) sortOne(helper, target, record, mine, startedAt, found);
   }
   return found;
 }
@@ -210,7 +214,9 @@ function sortOne(helper, target, record, mine, startedAt, found) {
   const owner = helper.readOwner(target, 'folder', { mine });
   if (owner === null) {
     if (there) found.unmarked.push(target);
-  } else if (owner.unreadable !== true && helper.formatOwner(owner) === record) {
+  } else if (owner.unreadable === true) {
+    found.unreadable.push(claim); // whose it is cannot be known: listed, never removed
+  } else if (helper.formatOwner(owner) === record) {
     if (hasStart(record) || madeDuringRun(claim, startedAt)) found.claimed.push(target);
     else found.unproven.push(claim);
   }
@@ -245,13 +251,15 @@ function ownerOf(target) {
  * run for a confirmation the platform cannot give would make the suite unusable there.
  */
 function finishAudit({ helper, roots, record, ended, code, write, mine, startedAt }) {
-  const { claimed, unmarked, foreign, unproven } = auditRoots(helper, roots, record, mine, startedAt);
+  const { claimed, unmarked, foreign, unproven, unreadable, unlisted } = auditRoots(helper, roots, record, mine, startedAt);
+  for (const root of unlisted) write(`run-tests: unlisted: ${root} — the audit could not list this root, so it saw nothing there; nothing was removed from it, and the run fails`);
   for (const target of unmarked) write(`run-tests: unmarked: ${target} — an owner-form folder with no claim, left alone`);
   for (const target of foreign) write(`run-tests: foreign: ${target} — a claim of ${ownerOf(target)}, never read or removed; it does not fail this run`);
   for (const target of unproven) write(`run-tests: unproven: ${target} — carries this run's record text but is older than this run (a dead run's pid reused?), left alone`);
+  for (const claim of unreadable) write(`run-tests: unreadable: ${claim} — a claim that cannot be read or parsed, so whose folder it is cannot be known; left alone, and it does not fail this run`);
   if (ended.ended) removeClaimed(helper, claimed);
   const failsAnyway = !ended.ended && ended.reason !== 'no-handle';
-  if (claimed.length === 0 && !failsAnyway) return code;
+  if (claimed.length === 0 && !failsAnyway) return unlisted.length > 0 && code === 0 ? 1 : code;
   write(`run-tests: this run left ${claimed.length} folder(s) it claimed — a test made scratch outside a scope: ${claimed.join(', ')}${ended.ended ? '' : refusalOf(ended)}`);
   return code === 0 ? 1 : code;
 }
