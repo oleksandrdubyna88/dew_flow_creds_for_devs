@@ -259,3 +259,33 @@ Built as specified, with these differences. None changes what the door decides.
 7. Extra mutations run beyond K1-K12: the context not frozen, the empty-field check removed, `dispose` not closing bridge listeners,
    a superseded close deleting its successor's entry, the key note sharing the browser note's flag, the guard inverted, and a
    non-string key stringified. All are caught.
+
+### Review fixes (Sonnet, 2026-11-05, after the Opus review of 547d9e9)
+
+8. **`freezeBridgeContext` builds the object from the six named fields, not by spreading**, and refuses an identity field
+   that is not a non-empty string. A missing `serverEntityId` used to pass as `undefined`, and an `undefined` equals another
+   `undefined` in E1.3's scope check; it now throws the same sentence as an empty one. `target` must be a string (empty stays
+   allowed) and `remoteOs` a string or `undefined` (an absent one stays allowed); both have their own sentence. The earlier
+   `'key' in frozen` assertions passed for any input because no input carried a key; the tests now pass one, and a `token` and a
+   nested object, and show none arrive.
+9. **`openBridgeListener` refuses after dispose before it starts anything.** `BridgeListeners.open(context, prepare)` takes the
+   broker's `ensureStarted` as `prepare` and runs it only after the disposed check and after the identity is validated, so a
+   late or malformed call no longer binds the main port, writes the endpoint note, opens the journal or creates the output
+   channel. `credsAgentServer.ts` is **775 lines** (the table's 776, one fewer: the method body is one `return`), `handle` still 46 code lines.
+10. **`openNow` re-checks `disposed` after `await previous.listener.close()`** and rejects with the disposed sentence, so an open
+    in flight when `closeAll` lands never resolves with a listener `closeAll` already closed. Three checks now share
+    `refuseIfDisposed`. Pinned by holding the first server's `close` callback until `closeAll` has run.
+11. **Tests that could not fail now can.** K10 sends `Content-Length: 1000` with five bytes to `POST /v1/use/exec` and needs the
+    404 and `Connection: close` before the body completes; with `await readBody(req)` inserted before the guard it times out
+    after 2 s. K5 runs the real `handle` (wrapped only to record its third argument) and shows a `X-Creds-Server`, a query and a
+    body change nothing; honest limit: `handle` uses the bridge only as "is there one" until E1.3, so what K5 can see is what
+    the door hands `handle`, that it is one frozen object for the listener's life, and that the answer is the same. E1.3's
+    scenarios must carry K5 on to what the router does with it. D12 now runs three overlapping opens with each `start` released
+    in turn, so "the third waits for the second" is asserted by the number of servers started (turns set for the first open
+    only: red). D3 repeats on the socket door. R1 walks every non-test source (533 files), excluding only `credsAgentServer.ts`,
+    which defines the method and has its own companion. R2's two patterns are named, and a companion shows each spelling of a
+    vscode import matches, a lookalike does not, and the broker's own source is seen to import it.
+12. **Test harness:** `brokerWorld.ts` counts `createOutputChannel` calls (`outputChannels`), because "the output channel was not
+    created" had no way to be seen.
+    `brokerBridgeListeners.test.ts` passed the 800-line ceiling with the new cases, so the tests that run the real broker moved to
+    `brokerBridgeRealDoor.test.ts` and what both share (`CONTEXT`, `OTHER`, `raw`, `refuses`, `keyed`) to `bridgeDoorHarness.ts`.

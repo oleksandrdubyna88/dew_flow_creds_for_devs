@@ -423,9 +423,8 @@ export class CredsAgentServer implements vscode.Disposable {
   }
 
   /** A listener for one bridge. E2.2 is its first caller; nothing in this build calls it (R1). */
-  readonly openBridgeListener = async (context: BridgeContext): Promise<BridgeListener> => {
-    await this.ensureStarted();
-    return this.bridgeListeners.open(context);
+  readonly openBridgeListener = (context: BridgeContext): Promise<BridgeListener> => {
+    return this.bridgeListeners.open(context, () => this.ensureStarted());
   };
 
   /** The GET routes' suppliers — every read route answers from these three. */

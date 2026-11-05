@@ -132,9 +132,26 @@ function codeOf(file: string): string[] {
     .map((line) => (/^\s*(\/\/|\*|\/\*)/.test(line) ? '' : line));
 }
 
-test('R1: nothing in the window opens a bridge door or hands the broker a wall', () => {
-  const callers = ['extension.ts', ...fs.readdirSync(path.join(sourceDir, 'commands')).map((f) => path.join('commands', f))];
-  assert.ok(callers.length > 10, 'the scan found the commands it is about');
+/** Every non-test source under `src/`, relative to it — the whole of what ships, not the places a caller is expected to be. */
+function shippedSources(dir = ''): string[] {
+  return fs.readdirSync(path.join(sourceDir, dir), { withFileTypes: true }).flatMap((entry) => {
+    const relative = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      return entry.name === 'test' ? [] : shippedSources(relative);
+    }
+    return relative.endsWith('.ts') ? [relative] : [];
+  });
+}
+
+/** The module that DEFINES `openBridgeListener`: the one place its name belongs. R1 has a companion that counts it there. */
+const DEFINES_IT = 'credsAgentServer.ts';
+
+test('R1: nothing in the shipped sources opens a bridge door or hands the broker a wall', () => {
+  const callers = shippedSources().filter((file) => file !== DEFINES_IT);
+  assert.ok(callers.length > 400, `the scan walked every source (${callers.length}), not a short list`);
+  assert.ok(callers.includes('extension.ts'), 'it includes extension.ts');
+  assert.ok(callers.some((file) => file.startsWith('commands')), 'and the commands folder');
+  assert.ok(!callers.some((file) => file.startsWith('test')), 'and no test');
   for (const file of callers) {
     const hits = codeOf(file).filter((line) => /openBridgeListener|bridgeWall/.test(line));
     assert.deepEqual(hits, [], `${file} must not open a Remote Bridge listener yet`);
@@ -151,10 +168,32 @@ test('R1 has teeth: the scan sees the one place the name lives', () => {
   assert.equal(hits.length, 1, 'credsAgentServer.ts defines openBridgeListener exactly once, and nothing calls it');
 });
 
+/** The two ways a module reaches the editor: an `import ... from 'vscode'` and a `require('vscode')`. */
+const IMPORTS_VSCODE = /from\s+['"]vscode['"]/;
+const REQUIRES_VSCODE = /require\(\s*['"]vscode['"]/;
+const reachesVscode = (source: string): boolean => IMPORTS_VSCODE.test(source) || REQUIRES_VSCODE.test(source);
+
 test('R2: the bridge modules are pure', () => {
   for (const file of ['bridgeContext.ts', 'bridgeNote.ts', 'brokerBridgeListeners.ts', 'bridgeAllowList.ts', 'brokerOrigin.ts']) {
     const source = fs.readFileSync(path.join(sourceDir, file), 'utf8');
-    assert.ok(!/from\s+['"]vscode['"]/.test(source), `${file} must not import vscode`);
-    assert.ok(!/require\(\s*['"]vscode['"]/.test(source), `${file} must not require vscode`);
+    assert.ok(!IMPORTS_VSCODE.test(source), `${file} must not import vscode`);
+    assert.ok(!REQUIRES_VSCODE.test(source), `${file} must not require vscode`);
   }
+});
+
+test('R2 has teeth: the patterns match every spelling of a vscode import, and a real file that has one', () => {
+  for (const line of [
+    "import * as vscode from 'vscode';",
+    'import * as vscode from "vscode";',
+    "import type { Uri } from 'vscode';",
+    "import {\n  window,\n} from   'vscode';",
+    "const vscode = require('vscode');",
+    'const vscode = require( "vscode" );',
+  ]) {
+    assert.ok(reachesVscode(line), line);
+  }
+  for (const line of ["import * as uri from 'vscode-uri';", "import { x } from './vscodeStub';", "const a = require('node:fs');"]) {
+    assert.ok(!reachesVscode(line), `${line} is not a vscode import`);
+  }
+  assert.ok(reachesVscode(fs.readFileSync(path.join(sourceDir, 'credsAgentServer.ts'), 'utf8')), 'the broker itself imports vscode, and the scan sees it');
 });

@@ -23,16 +23,39 @@ export interface BridgeContext {
 /** The four fields that identify the bridge. An empty one would be an identity that matches by accident. */
 const IDENTITY_FIELDS = ['bridgeId', 'accountId', 'serverEntityId', 'serverName'] as const;
 
+/** The refusal for the first identity field that is not a non-empty string. A missing field is `undefined`, which is not a string. */
+function badIdentity(context: BridgeContext): string | undefined {
+  const field = IDENTITY_FIELDS.find((name) => {
+    const value: unknown = context[name];
+    return typeof value !== 'string' || value === '';
+  });
+  return field === undefined ? undefined : `A BridgeContext needs a non-empty ${field}.`;
+}
+
+/** The two fields that may be empty or absent still have a shape: `target` a string, `remoteOs` a string or `undefined`. */
+function badShape(context: BridgeContext): string | undefined {
+  if (typeof context.target !== 'string') {
+    return 'A BridgeContext needs a string target (it may be empty).';
+  }
+  return context.remoteOs !== undefined && typeof context.remoteOs !== 'string'
+    ? 'A BridgeContext needs remoteOs to be a string or undefined.'
+    : undefined;
+}
+
 /**
- * A frozen copy, or a refusal naming the first identity field that is empty.
+ * A frozen copy built from the six named fields and nothing else, or a refusal naming the first identity
+ * field that is empty, missing or not a string.
  *
- * <p>E1.3's scope check and E1.4's stamp key compare these strings; `''` equals `''`, so a context built
- * with one empty would admit whatever else was empty.</p>
+ * <p>E1.3's scope check and E1.4's stamp key compare these strings; `''` equals `''` and a missing field
+ * equals another missing one, so a context built with one would admit whatever else lacked it. Copying by
+ * name (not spreading) is what keeps a `key`, or any other property that rode in on the input, out of a
+ * value that reaches a grant, a modal and an audit line.</p>
  */
 export function freezeBridgeContext(context: BridgeContext): Readonly<BridgeContext> {
-  const empty = IDENTITY_FIELDS.find((field) => context[field] === '');
-  if (empty !== undefined) {
-    throw new Error(`A BridgeContext needs a non-empty ${empty}.`);
+  const refusal = badIdentity(context) ?? badShape(context);
+  if (refusal !== undefined) {
+    throw new Error(refusal);
   }
-  return Object.freeze({ ...context });
+  const { bridgeId, accountId, serverEntityId, serverName, target, remoteOs } = context;
+  return Object.freeze({ bridgeId, accountId, serverEntityId, serverName, target, remoteOs });
 }

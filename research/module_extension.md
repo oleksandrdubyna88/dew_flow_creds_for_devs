@@ -3277,7 +3277,7 @@ platforms, which is also the first unit test that ever opened it. Record:
 **A third door, for a Remote Bridge listener, that needs a key** (E1.2 of the scoped remote bridge,
 [PLAN_remote_bridge_scoped_E1_S2_spec.md](../todo/PLAN_remote_bridge_scoped_E1_S2_spec.md); *nothing in
 the extension calls it yet* — `openBridgeListener` has no caller until E2.2, and a test reads
-`extension.ts` and `commands/*.ts` to keep it so). `BridgeListeners` (`brokerBridgeListeners.ts`) opens one
+every non-test source but the broker's own to keep it so). `BridgeListeners` (`brokerBridgeListeners.ts`) opens one
 loopback listener per open bridge, each with its own port and a key of 32 random bytes minted at that open,
 and `doorsFor(...).forBridge(port, key, context)` is the only way to a door for it. The door decides in this
 order: a browser mark, then **no `X-Creds-Bridge` header** (`BRIDGE_NO_KEY`), then **a key that differs**
@@ -3291,7 +3291,7 @@ and written at each call site; nothing in a request can set it, and the key is n
 bridge serves an allow-list of one, `GET /v1/health` (`bridgeAllowList.ts`); everything else is `404
 not_supported` with `Connection: close`, before any body is read. Opens for one `bridgeId` are chained, so a
 reconnect cannot leave the earlier port and key usable, `close()` ends kept-alive connections too, and
-`dispose()` closes every bridge listener and refuses later opens.
+`dispose()` closes every bridge listener and refuses later opens, before the broker starts anything for them.
 
 **A signed envelope without its signature is tampered, not legacy** (`verifyEnvelopeMac`,
 `requireIntactEnvelope`). The envelope MAC exists for one threat, named where it is computed: on a

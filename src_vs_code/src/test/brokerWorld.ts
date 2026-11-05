@@ -37,6 +37,8 @@ interface World {
   answers: (string | undefined)[];
   ran: Ran[];
   audit: string[];
+  /** How many times the broker asked for its output channel: 0 means it never started. */
+  outputChannels: number;
   burned: string[];
   /** Entity ids moved to the Trash by an agent. */
   trashed: string[];
@@ -180,6 +182,7 @@ function world(options: {
     answers: [...(options.answers ?? ['Allow'])],
     ran: [],
     audit: [],
+    outputChannels: 0,
     burned: [],
     trashed: [],
     created: [],
@@ -202,13 +205,16 @@ function world(options: {
           : Promise.resolve(w.answers.shift());
       },
       showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined),
-      createOutputChannel: (): unknown => ({
-        appendLine: (line: string): void => {
-          w.audit.push(line);
-        },
-        dispose: (): void => undefined,
-        show: (): void => undefined,
-      }),
+      createOutputChannel: (): unknown => {
+        w.outputChannels += 1;
+        return {
+          appendLine: (line: string): void => {
+            w.audit.push(line);
+          },
+          dispose: (): void => undefined,
+          show: (): void => undefined,
+        };
+      },
     },
     workspace: { getConfiguration: () => ({ get: settingsFor(options.maxCalls) }) },
   });

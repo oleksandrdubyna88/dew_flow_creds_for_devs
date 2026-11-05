@@ -3,73 +3,17 @@ import * as http from 'node:http';
 import * as net from 'node:net';
 import { test } from 'node:test';
 import { BridgeContext } from '../bridgeContext';
-import { BRIDGE_NOT_SERVED } from '../bridgeAllowList';
 import { BridgeListener, BridgeListeners } from '../brokerBridgeListeners';
 import { BRIDGE_NO_KEY, BRIDGE_WRONG_KEY, doorsFor } from '../brokerOrigin';
 import { startLoopbackServer } from '../loopbackServer';
-import { call, share, world } from './brokerWorld';
+import { CONTEXT, OTHER, SMUGGLED_KEY, Reply, code, keyed, message, pause, raw, refuses } from './bridgeDoorHarness';
 
 /**
- * The third door over real HTTP, and the listener that owns it (E1.2, D1-D13 and D16).
+ * The third door over real HTTP, and the listener that owns it (E1.2, D1, D4-D8, D10, D12, D13 and D16).
  *
- * <p>Two harnesses. `Spied` puts a spy where the router would be, so a test can say what reached it and
- * with which context. `world` is the real broker, for what the real router does behind the door.</p>
+ * <p>`Spied` puts a spy where the router would be, so a test can say what reached it and with which context.
+ * What the real router does behind the door is in `brokerBridgeRealDoor.test.ts`.</p>
  */
-
-const CONTEXT: BridgeContext = {
-  bridgeId: 'bridge-1',
-  accountId: 'acct-1',
-  serverEntityId: 'entry-server-1',
-  serverName: 'prod-server',
-  target: 'me@host:22',
-  remoteOs: 'linux',
-};
-const OTHER: BridgeContext = { ...CONTEXT, bridgeId: 'bridge-2', serverEntityId: 'entry-server-2', serverName: 'other-server' };
-
-interface Reply {
-  readonly status: number;
-  readonly body: string;
-  readonly connection: string | undefined;
-}
-
-/** A request with the headers a test chooses, `Host` included — `fetch` would replace it. */
-function raw(
-  port: number,
-  route: string,
-  headers: http.OutgoingHttpHeaders,
-  options: { method?: string; agent?: http.Agent; body?: string } = {},
-): Promise<Reply> {
-  return new Promise((resolve, reject) => {
-    const request = http.request(
-      { host: '127.0.0.1', port, path: route, method: options.method ?? 'GET', headers, agent: options.agent },
-      (response) => {
-        let text = '';
-        response.on('data', (chunk) => {
-          text += String(chunk);
-        });
-        response.on('end', () => resolve({ status: response.statusCode ?? 0, body: text, connection: response.headers.connection }));
-      },
-    );
-    request.on('error', reject);
-    request.setTimeout(5_000, () => request.destroy(new Error(`no answer from port ${port} for ${route}`)));
-    request.end(options.body);
-  });
-}
-
-const message = (reply: Reply): string => (JSON.parse(reply.body) as { error: { message: string } }).error.message;
-const code = (reply: Reply): string => (JSON.parse(reply.body) as { error: { code: string } }).error.code;
-
-/** A connection attempt to a port nothing listens on is refused; this resolves true when it is. */
-function refuses(port: number): Promise<boolean> {
-  return new Promise((resolve) => {
-    const socket = net.connect(port, '127.0.0.1');
-    socket.on('connect', () => {
-      socket.destroy();
-      resolve(false);
-    });
-    socket.on('error', () => resolve(true));
-  });
-}
 
 /** The router replaced by a spy, behind the real doors. */
 class Spied {
@@ -114,12 +58,6 @@ const REFUSED =
 function cellHeaders(host: string, extra: http.OutgoingHttpHeaders, given: string | undefined): http.OutgoingHttpHeaders {
   return given === undefined ? { Host: host, ...extra } : { Host: host, ...extra, 'X-Creds-Bridge': given };
 }
-
-const keyed = (listener: BridgeListener, extra: http.OutgoingHttpHeaders = {}): http.OutgoingHttpHeaders => ({
-  Host: `127.0.0.1:${listener.port}`,
-  'X-Creds-Bridge': listener.key,
-  ...extra,
-});
 
 test('D1 over HTTP: the door table reaches the router only for the two admitted cells, and answers the rest as fixed sentences', async () => {
   const s = new Spied();
@@ -262,7 +200,11 @@ test('D7: the right key reaches the router with its context — frozen, equal, n
   main.server.on('request', s.doors.onThePort);
   socketLike.server.on('request', s.doors.onTheSocket);
   try {
-    const l = await s.listeners.open(CONTEXT);
+    // A caller that hands `open` an object with a `key` on it (a cast, a spread of something wider) must not
+    // see that key reach the router: the input has to carry one for the assertion below to mean anything.
+    const carrying = { ...CONTEXT, key: SMUGGLED_KEY } as unknown as BridgeContext;
+    assert.ok('key' in carrying);
+    const l = await s.listeners.open(carrying);
     await raw(l.port, '/v1/health', keyed(l));
     await raw(main.port, '/v1/health', { Host: `127.0.0.1:${main.port}` });
     await raw(socketLike.port, '/v1/health', { Host: 'anything' });
@@ -270,6 +212,7 @@ test('D7: the right key reaches the router with its context — frozen, equal, n
     assert.deepEqual(onBridge.bridge, CONTEXT);
     assert.ok(Object.isFrozen(onBridge.bridge));
     assert.ok(!('key' in (onBridge.bridge as object)));
+    assert.ok(!JSON.stringify(onBridge.bridge).includes(SMUGGLED_KEY), 'a key on the input is not handed on');
     assert.ok(!JSON.stringify(onBridge.bridge).includes(l.key), 'the key is nowhere in what the router is given');
     assert.equal(onPort.bridge, undefined);
     assert.equal(onSocket.bridge, undefined);
@@ -373,6 +316,52 @@ test('D12: two overlapping opens for one id — only the second serves, the firs
   }
 });
 
+/** Every call of `start` waits for its own release, in the order the test chooses. */
+function steppedStart(): { start: () => ReturnType<typeof startLoopbackServer>; release: (call: number) => void; calls: () => number } {
+  const gates: (() => void)[] = [];
+  return {
+    start: () => {
+      const gate = new Promise<void>((resolve) => gates.push(resolve));
+      return gate.then(() => startLoopbackServer());
+    },
+    release: (call) => gates[call - 1](),
+    calls: () => gates.length,
+  };
+}
+
+test('D12: three overlapping opens for one id run one after another — only the third serves, the other two ports are dead', async () => {
+  const s = new Spied();
+  const stepped = steppedStart();
+  const listeners = new BridgeListeners((port, key, context) => s.doors.forBridge(port, key, context), stepped.start);
+  try {
+    const first = listeners.open(CONTEXT);
+    const second = listeners.open(CONTEXT);
+    const third = listeners.open(CONTEXT);
+    await pause(50);
+    assert.equal(stepped.calls(), 1, 'only the first has started a server: the others wait their turn');
+    stepped.release(1);
+    await first;
+    await pause(50);
+    assert.equal(stepped.calls(), 2, 'the third waits for the SECOND, not only for the first');
+    stepped.release(2);
+    await second;
+    await pause(50);
+    assert.equal(stepped.calls(), 3);
+    stepped.release(3);
+    const [a, b, c] = await Promise.all([first, second, third]);
+
+    assert.equal((await raw(c.port, '/v1/health', keyed(c))).status, 200, 'the third serves');
+    assert.ok(await refuses(a.port), 'the first port is dead');
+    assert.ok(await refuses(b.port), 'the second port is dead');
+    for (const old of [a, b]) {
+      assert.equal(message(await raw(c.port, '/v1/health', { Host: `127.0.0.1:${c.port}`, 'X-Creds-Bridge': old.key })), BRIDGE_WRONG_KEY);
+    }
+    assert.deepEqual(listeners.ports(), [c.port], 'one entry');
+  } finally {
+    listeners.closeAll();
+  }
+});
+
 test('D12: a third open waits for the second whatever became of it', async () => {
   const s = new Spied();
   let calls = 0;
@@ -433,6 +422,50 @@ test('D13: an open whose start resolves after closeAll leaves no listening port'
   assert.deepEqual(listeners.ports(), []);
 });
 
+test('D13: a closeAll while the superseded listener is still closing rejects the open — it never resolves with a dead listener', async () => {
+  const s = new Spied();
+  const bound: number[] = [];
+  let calls = 0;
+  let closeBegan = (): void => undefined;
+  const began = new Promise<void>((resolve) => {
+    closeBegan = resolve;
+  });
+  let finishClose = (): void => undefined;
+  const listeners = new BridgeListeners(
+    (port, key, context) => s.doors.forBridge(port, key, context),
+    async () => {
+      const started = await startLoopbackServer();
+      bound.push(started.port);
+      calls += 1;
+      if (calls === 1) {
+        // The FIRST listener's close is held, so the second open sits at `await previous.listener.close()`.
+        const realClose = started.server.close.bind(started.server);
+        started.server.close = ((callback?: (error?: Error) => void) => {
+          finishClose = () => void realClose(callback);
+          closeBegan();
+          return started.server;
+        }) as typeof started.server.close;
+      }
+      return started;
+    },
+  );
+  try {
+    await listeners.open(CONTEXT);
+    const second = listeners.open(CONTEXT);
+    const outcome = assert.rejects(second, new Error('The broker is disposed; no Remote Bridge can open.'));
+    await began;
+    assert.equal(bound.length, 2, 'the second listener is bound and registered; the open is waiting on the first one closing');
+    listeners.closeAll();
+    finishClose();
+    await outcome;
+    assert.deepEqual(listeners.ports(), []);
+    assert.ok(await refuses(bound[1]), 'and the second port is not listening');
+  } finally {
+    finishClose();
+    listeners.closeAll();
+  }
+});
+
 test('closeAll is synchronous: the ports are gone when it returns, and every listener is closed', async () => {
   const s = new Spied();
   const a = await s.listeners.open(CONTEXT);
@@ -457,6 +490,27 @@ test('open refuses an empty identity before it binds anything', async () => {
   assert.equal(started, 0);
 });
 
+test('open refuses a missing identity field before it binds anything — it does not pass as undefined', async () => {
+  const s = new Spied();
+  let started = 0;
+  const listeners = new BridgeListeners(
+    (port, key, context) => s.doors.forBridge(port, key, context),
+    () => {
+      started += 1;
+      return startLoopbackServer();
+    },
+  );
+  const lacking: Record<string, unknown> = { ...CONTEXT };
+  delete lacking.serverName;
+  try {
+    await assert.rejects(listeners.open(lacking as unknown as BridgeContext), /non-empty serverName/);
+    assert.equal(started, 0);
+    assert.deepEqual(listeners.ports(), []);
+  } finally {
+    listeners.closeAll();
+  }
+});
+
 test('the listener hands the router a context that is a frozen copy, not the caller\'s object', async () => {
   const s = new Spied();
   try {
@@ -468,109 +522,4 @@ test('the listener hands the router a context that is a frozen copy, not the cal
   } finally {
     s.listeners.closeAll();
   }
-});
-
-/* ---------------- the real broker behind the door ---------------- */
-
-test('D9: the real router — health is served, everything else is a not_supported with Connection: close', async () => {
-  const w = world({ aliasList: [{ name: 'prod', kind: 'ssh' }] });
-  try {
-    const { port: main } = await share(w);
-    const l = await w.server.openBridgeListener(CONTEXT);
-    const theirs = await raw(l.port, '/v1/health', keyed(l));
-    const ours = await raw(main, '/v1/health', { Host: `127.0.0.1:${main}` });
-    assert.equal(theirs.status, 200);
-    assert.equal(theirs.body, ours.body, 'its usual body');
-
-    const refused: [string, string][] = [
-      ['POST', '/v1/use/exec'],
-      ['GET', '/v1/aliases'],
-      ['POST', '/v1/config/read'],
-      ['GET', '/v1/nope'],
-      ['GET', '/v1/mcp/entries'],
-    ];
-    for (const [method, route] of refused) {
-      const reply = await raw(l.port, route, keyed(l), { method, body: method === 'POST' ? '{"command":"id"}' : undefined });
-      assert.equal(reply.status, 404, `${method} ${route}`);
-      assert.equal(code(reply), 'not_supported', `${method} ${route}`);
-      assert.equal(message(reply), BRIDGE_NOT_SERVED, `${method} ${route}`);
-      assert.equal(reply.connection, 'close', `${method} ${route}`);
-    }
-    assert.deepEqual(w.ran, []);
-    assert.deepEqual(w.dialogs, []);
-    assert.equal((await call(main, '/v1/aliases', { method: 'GET' })).status, 200, 'the main port still serves what the bridge does not');
-  } finally {
-    w.server.dispose();
-  }
-});
-
-test('D1 on the real broker: a refusal runs nothing and asks nobody', async () => {
-  const w = world({ alias: { accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh' }, secrets: [] });
-  try {
-    await share(w);
-    const l = await w.server.openBridgeListener(CONTEXT);
-    const bad: http.OutgoingHttpHeaders[] = [
-      { Host: `127.0.0.1:${l.port}` },
-      { Host: `127.0.0.1:${l.port}`, 'X-Creds-Bridge': 'nope' },
-      { Host: 'evil.example', 'X-Creds-Bridge': l.key },
-      keyed(l, { Origin: 'http://evil.example' }),
-    ];
-    for (const headers of bad) {
-      const reply = await raw(l.port, '/v1/alias/exec', headers, { method: 'POST', body: '{"alias":"prod","command":"id"}' });
-      assert.equal(reply.status, 403, JSON.stringify(headers));
-    }
-    assert.deepEqual(w.ran, []);
-    assert.deepEqual(w.dialogs, []);
-  } finally {
-    w.server.dispose();
-  }
-});
-
-test('D3: the key header changes nothing on the main port', async () => {
-  const w = world({ aliasList: [{ name: 'prod', kind: 'ssh' }] });
-  try {
-    const { port } = await share(w);
-    const l = await w.server.openBridgeListener(CONTEXT);
-    const plain = await raw(port, '/v1/aliases', { Host: `127.0.0.1:${port}` });
-    const withKey = await raw(port, '/v1/aliases', { Host: `127.0.0.1:${port}`, 'X-Creds-Bridge': l.key });
-    const wrong = await raw(port, '/v1/aliases', { Host: `127.0.0.1:${port}`, 'X-Creds-Bridge': 'junk' });
-    assert.deepEqual([withKey.status, withKey.body], [plain.status, plain.body]);
-    assert.deepEqual([wrong.status, wrong.body], [plain.status, plain.body]);
-    assert.equal(plain.status, 200);
-    const refused = await raw(port, '/v1/aliases', { Host: `127.0.0.1:${port + 1}`, 'X-Creds-Bridge': l.key });
-    assert.equal(refused.status, 403, 'and a right key does not buy a wrong Host on the port');
-    assert.match(message(refused), /not a web service/);
-  } finally {
-    w.server.dispose();
-  }
-});
-
-test('D10 on the real broker: the key note and the browser note are each said once in the journal', async () => {
-  const w = world({});
-  try {
-    const { port } = await share(w);
-    const a = await w.server.openBridgeListener(CONTEXT);
-    const b = await w.server.openBridgeListener(OTHER);
-    for (const l of [a, b]) {
-      await raw(l.port, '/v1/health', { Host: `127.0.0.1:${l.port}` });
-      await raw(l.port, '/v1/health', { Host: `127.0.0.1:${l.port}` });
-    }
-    await raw(port, '/v1/health', { Host: `127.0.0.1:${port}`, Origin: 'http://evil.example' });
-    await raw(a.port, '/v1/health', keyed(a, { Origin: 'http://evil.example' }));
-    assert.equal(w.audit.filter((line) => line.includes('without its key')).length, 1);
-    assert.equal(w.audit.filter((line) => line.includes('browser-shaped')).length, 1, 'one window, one browser note, whichever listener');
-  } finally {
-    w.server.dispose();
-  }
-});
-
-test('D11: dispose closes every listener', async () => {
-  const w = world({});
-  await share(w);
-  const a = await w.server.openBridgeListener(CONTEXT);
-  const b = await w.server.openBridgeListener(OTHER);
-  assert.equal((await raw(a.port, '/v1/health', keyed(a))).status, 200);
-  w.server.dispose();
-  assert.ok(await refuses(a.port));
-  assert.ok(await refuses(b.port));
 });
