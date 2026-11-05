@@ -34,7 +34,7 @@ jobs:
       # submodule, as ci-extension.yml does; workflowMount.test.ts keeps every job that runs the tests honest.
       - name: Fetch the shared rules
         run: git submodule update --init --depth 1 .claude/rules/shared
-      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: zulu
           java-version: 21
