@@ -73,3 +73,33 @@ export function freezeBridgeContext(context: BridgeContext): Readonly<BridgeCont
   const { bridgeId, accountId, serverEntityId, serverName, target, remoteOs } = context;
   return Object.freeze({ bridgeId, accountId, serverEntityId, serverName, target, remoteOs });
 }
+
+/** Whitespace, `(`, `)`, the field separator `→`, and every control and format character: what a journal line cannot carry inside its grant group. */
+const AUDIT_UNSAFE = /[\s()→\p{Cc}\p{Cf}]+/gu;
+
+/** The most code points of a server's name the journal carries. */
+const AUDIT_NAME_POINTS = 40;
+
+/**
+ * A server's name as it may stand inside the parentheses of an audit line (E1.4).
+ *
+ * <p>Every run of whitespace, `(`, `)`, `→` and control or format characters becomes one `_`, and at most forty code
+ * points are kept. The grant group of a line is read as `\(([^)]*)\)` and the line is cut at its separator, so a name that
+ * kept one of them could end its group or its line early, and `formatAuditLine` would not be the place to find out. An
+ * empty result is `_`: a mark that reads `bridge=` would be a line with a bridge and no name.</p>
+ */
+export function bridgeAuditName(serverName: string): string {
+  const flat = Array.from(serverName.replace(AUDIT_UNSAFE, '_')).slice(0, AUDIT_NAME_POINTS).join('');
+  return flat === '' ? '_' : flat;
+}
+
+/**
+ * The grant field of the one line written with no grant: `—` off a bridge, `— bridge=<name>` on one.
+ *
+ * <p>Takes the CONTEXT, the one the door handed the router and the throttle keyed its window by; a request body has no road
+ * to it. (It takes the context rather than the name so the caller needs no `?.` of its own, and the line a refusal writes
+ * cannot be given a different name from the window it was refused in.)</p>
+ */
+export function auditGrantMark(bridge: BridgeContext | undefined): string {
+  return bridge === undefined ? '—' : `— bridge=${bridgeAuditName(bridge.serverName)}`;
+}

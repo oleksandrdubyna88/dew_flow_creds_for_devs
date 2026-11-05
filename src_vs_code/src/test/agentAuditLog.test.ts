@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { formatAuditLine } from '../agentAuditLog';
+import { formatAuditLine, parseAuditLine } from '../agentAuditLog';
+import { GrantRegistry } from '../grantRegistry';
 
 /**
  * The output channel is this feature's audit trail, so the line has to say
@@ -129,4 +130,43 @@ test('a caller label is one line and cannot carry the field separator, whoever b
 
   assert.equal(line.includes('\n'), false);
   assert.equal(line.split('→').length, 2, line);
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * E1.4 — a line about a bridged call reads back (C14)
+ * ------------------------------------------------------------------------------------------------------------- */
+
+/** A line read back, or a failure that says which line would not parse. */
+function readBack(line: string): NonNullable<ReturnType<typeof parseAuditLine>> {
+  const entry = parseAuditLine(line);
+  return entry === undefined ? assert.fail(`the line did not parse: ${line}`) : entry;
+}
+
+test('C14: a bridged grant\'s line round-trips — name `prod (eu) → db`, the mark inside the grant group, door and caller intact', () => {
+  const registry = new GrantRegistry();
+  const context = { bridgeId: 'b1', accountId: 'a', serverEntityId: 's', serverName: 'prod (eu) → db', target: '', remoteOs: undefined };
+  const grant = registry.mint('a', 'e', 'orders-db', 'ssh', Date.now(), 'call', { context, quiet: true });
+  const mark = GrantRegistry.describe(grant);
+  const line = formatAuditLine({ at, grant: mark, entityName: 'orders (db)', action: 'exec', outcome: 'exit 0', detail: 'uptime', seq: 3, via: 'mcp', caller: 'Claude Code 2.1.268' });
+
+  assert.ok(line.includes(` bridge=prod_eu_db) via mcp by Claude Code 2.1.268 → exit 0`), line);
+  assert.deepEqual({ ...readBack(line), at: undefined }, {
+    at: undefined,
+    grant: mark,
+    entityName: 'orders (db)',
+    action: 'exec',
+    outcome: 'exit 0',
+    seq: 3,
+    via: 'mcp',
+    caller: 'Claude Code 2.1.268',
+    detail: 'uptime',
+  });
+  assert.match(mark, /^\S+… bridge=prod_eu_db$/, 'the grant field is the secret\'s label, a space and the mark');
+});
+
+test('C14: the grant-less line reads back with its mark, and a line written before the mark still parses', () => {
+  const grantless = readBack(formatAuditLine({ at, grant: '— bridge=ai-runner1', entityName: '', action: 'request', outcome: 'too_many_requests', detail: 'Too many requests', via: 'mcp' }));
+  assert.deepEqual([grantless.grant, grantless.outcome], ['— bridge=ai-runner1', 'too_many_requests']);
+  const old = readBack('[09:05:03Z] #3 exec orders-db (tok…f2) via mcp by Claude Code 2.1.268 → exit 0  uptime');
+  assert.deepEqual([old.grant, old.caller], ['tok…f2', 'Claude Code 2.1.268']);
 });

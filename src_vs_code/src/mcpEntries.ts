@@ -447,11 +447,11 @@ function verdictFor(
  * and for every verb it has never heard of — so a route added to the broker and forgotten in that
  * table fails closed here too, rather than inheriting a quiet path nobody meant to give it.</p>
  */
-export function preConsentedFor(found: UsableEntry, stamps: ConsentStamps | undefined, now: number): boolean {
+export function preConsentedFor(found: UsableEntry, stamps: ConsentStamps | undefined, now: number, serverEntityId?: string): boolean {
   if (!mayBeQuiet(found) || stamps === undefined) {
     return false;
   }
-  const key = stampKey(found.accountId, found.node.id);
+  const key = stampKey(found.accountId, found.node.id, serverEntityId);
   return !consentDue(found.access.ask ?? 'always', stamps.get(key, now), ladderKey(found.access), now);
 }
 
@@ -526,6 +526,10 @@ function dependencyNames(node: TreeNode, byId: (id: string) => TreeNode | undefi
  * access nobody was ever asked about. When the two disagree the answer is simply not remembered,
  * which costs one more dialog and is the only direction that cannot grant anything.</p>
  *
+ * <p><b>`serverEntityId` is the Remote Bridge the dialog was answered through</b> (E1.4), and the stamp lands under that
+ * server's key and no other: an answer given through one server is not an answer given to another, nor to local use.
+ * Absent, the key is the local one, byte for byte.</p>
+ *
  * <p>Returns the write rather than dropping it: a rejected update would otherwise be an unobserved
  * failure, and a window closing straight after the answer could lose it.</p>
  */
@@ -536,12 +540,13 @@ export function rememberMcpConsent(
   entityId: string,
   expected: string,
   now: number,
+  serverEntityId?: string,
 ): Promise<void> {
   const access = entryAccessFor(source, accountId, entityId);
   if (!worthRemembering(access, expected)) {
     return Promise.resolve();
   }
-  return stamps.remember(stampKey(accountId, entityId), expected, now);
+  return stamps.remember(stampKey(accountId, entityId, serverEntityId), expected, now);
 }
 
 /** A policy that consults a stamp, on a grant that still reads the way it did when it was shown. */

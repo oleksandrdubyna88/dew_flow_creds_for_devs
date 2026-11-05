@@ -347,6 +347,25 @@ test('resolveUse: a usable answer is never quiet on a bridge, whatever the vault
   assert.deepEqual(found, { kind: 'usable', target: { accountId: A1, entityId: 'in', entityName: 'in', kind: 'ssh' }, preConsented: false, rungs: '' });
 });
 
+test('E1.4 resolveUse: with the server\'s quiet switch on the real answer stands — the policy\'s verdict and the fingerprint a stamp is recorded under', async () => {
+  const view = doorView(CTX, await wallWith(['in', 'closed-in'], true));
+  const resolve = present(view.resolveUse(scriptedLookup().real), 'a resolver');
+  assert.deepEqual(resolve('in', 'exec'), { kind: 'usable', target: { accountId: A1, entityId: 'in', entityName: 'in', kind: 'ssh' }, preConsented: true, rungs: 'quiet' });
+  assert.equal(kindOf(resolve('closed-in', 'exec')), 'closed', 'and a closed entry is as it was');
+  assert.equal(kindOf(resolve('out', 'exec')), 'nothing', 'quiet does not widen the scope: an entry out of it is not found, and not silent');
+});
+
+test('E1.4 resolveUse: quiet is read from the scope at each call — turning it off takes the next call back to asking, and on again back to the policy', async () => {
+  const wall = await wallWith(['in'], true);
+  const resolve = present(doorView(CTX, wall).resolveUse(scriptedLookup().real), 'a resolver');
+  const quietOf = (): unknown => (resolve('in', 'exec') as { preConsented?: boolean; rungs?: string } | undefined);
+  assert.equal((quietOf() as { preConsented: boolean }).preConsented, true);
+  await put(wall.scopes, A1, S1, ['in'], false);
+  assert.deepEqual(quietOf(), { kind: 'usable', target: { accountId: A1, entityId: 'in', entityName: 'in', kind: 'ssh' }, preConsented: false, rungs: '' }, 'off: not pre-consented and no fingerprint to record a stamp under');
+  await put(wall.scopes, A1, S1, ['in'], true);
+  assert.equal((quietOf() as { preConsented: boolean }).preConsented, true);
+});
+
 test('resolveUse: the scope is read when the function is called, not when the view is built', async () => {
   const wall = await wallWith(['in']);
   const resolve = present(doorView(CTX, wall).resolveUse(scriptedLookup().real), 'a resolver');

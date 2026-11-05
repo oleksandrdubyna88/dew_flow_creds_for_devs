@@ -145,9 +145,19 @@ function closedIn(scope: Scope, id: string, found: McpUseLookup): McpUseLookup {
   return scope.entries.has(id) ? found : undefined;
 }
 
-/** Never quiet on a bridge until E1.4 decides what silences it: no stamp is read, none is written. */
+/**
+ * The quiet switch (E1.4). With `quiet` off a bridged lookup is never pre-consented and carries no fingerprint, so no
+ * stamp is read for it (`preConsented: false`) and none can be written for it (`answeredHere` refuses an empty `rungs`):
+ * an answer given while it was off cannot reach forward. With it on the answer is the real lookup's — the entry's own
+ * policy, decided against the stamp under THIS server's key — and the `rungs` a stamp is recorded under.
+ *
+ * <p>`quiet` is read from the same fresh {@link Scope} that admits the target. Nothing in a request reaches it.</p>
+ */
 function usableIn(scope: Scope, found: Extract<McpUseLookup, { kind: 'usable' }>): McpUseLookup {
-  return admitted(scope, found.target) === undefined ? undefined : { ...found, preConsented: false, rungs: '' };
+  if (admitted(scope, found.target) === undefined) {
+    return undefined;
+  }
+  return scope.quiet ? found : { ...found, preConsented: false, rungs: '' };
 }
 
 function bridgedView(bridge: BridgeContext, wall: BridgeWallSource): DoorView {

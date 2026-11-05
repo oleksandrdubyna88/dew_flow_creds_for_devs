@@ -154,6 +154,20 @@ test('after forgetting, a call inside the OLD twelve-hour window asks again', ()
     });
 });
 
+test('E1.4: the command forgets what was answered through a Remote Bridge too — a server stamp inside its old window asks again', async () => {
+  // The Forget command is the one way out of a remembered answer; an answer given through a server must not outlive it.
+  const world = registered();
+  const viaServer = stampKey(A1, E1, 'server-A');
+  const inside = NOW + ASK_WINDOW_MS - 1;
+  await consentStampsFor(world.state).remember(viaServer, RUNGS, NOW);
+  assert.equal(consentDue('every12h', consentStampsFor(world.state).get(viaServer, inside), RUNGS, inside), false, 'it was silent before');
+
+  await forget(world);
+
+  assert.deepEqual(world.state.get(STAMPS_KEY), {}, 'the map holds no server record either');
+  assert.equal(consentDue('every12h', consentStampsFor(world.state).get(viaServer, inside), RUNGS, inside), true);
+});
+
 test('forgetting writes the two machine-local keys and nothing else', () => {
   // The tombstone and the map, both under `credSshManager.*` in globalState. Nothing here syncs,
   // and a third key would be a record this feature never said it kept.
