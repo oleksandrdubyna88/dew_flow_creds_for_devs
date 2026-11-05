@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A folder of type *Terminal command* has a green arrow, *Run All in Folder*, beside its `+` and in its menu.** One
   click types the line of each entry directly in the folder, each into a new terminal of its own; subfolders are not run.
-  It always asks first, in a question that lists every line in order, marks with `(new)` a line not yet run on this
+  It always asks first, in a question that lists every line in order, marks with `(new)` a line not approved before on this
   machine, and names each entry that will not run and why. **Run** leaves alone an entry whose terminal is already open;
   **Close Open Terminals and Run**, offered when any is open, closes those terminals and types their lines too. The lines
   do not wait for each other: something that has to finish first goes outside the folder, under *Depends on*. At most 32
@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and an entry that already held a literal `{name}` is asked about once. Only a name of letters, digits and `. _ -`,
   starting with a letter, a digit or `_`, can stand in for it; any other name, one with a space included, is refused on
   every road rather than quoted, so that no name arriving by sync or share can become shell syntax. To keep a literal
-  `{name}` in bash, write `{na''me}`. An older extension types `{name}` as it stands.
+  `{name}` in bash, outside double quotes, write `{na''me}`. An older extension types `{name}` as it stands.
 
 ### Changed — the green arrow no longer types into a terminal that may be busy
 
