@@ -150,14 +150,17 @@ sibling file `<folder>.owner` (never inside, because tests assert the exact cont
   is EXACTLY the record the runner exported (a string, never recomputed), removes it, and turns a passing suite into
   exit 1 with `this run left <n> folder(s) it claimed`. A folder claimed by any other record is never touched and never
   counted; an unmarked folder is listed. If the tree cannot be confirmed ended, the audit removes nothing, fails the run
-  and says `(not removed: <n> descendant(s) still alive)` — or `could not be confirmed` when the check itself failed. After the
+  and says `(not removed: <n> descendant(s) still alive)` — or `could not be confirmed` when the check itself failed. A root
+  the audit cannot list (anything but "not there") is named (`unlisted: <root> (<code>)`) and fails a passing run; a claim it
+  cannot read is named (`unreadable:`) and left alone. The group probe is one `kill(-pgid, 0)`; only on Linux, and only when it
+  says "alive", `/proc/*/stat` is read once, and a group of zombies only is ended (a container with no init never reaps them). After the
   group is killed the runner also looks for what LEFT the group (a grandchild that called `setsid`): on Linux every process
   carrying the run's record as a whole environment entry, everywhere the parent-pid chain; the scan runs once after the group is
   gone, survivors are ended and only those pids are polled. A claim file another user owns is listed and never read.
   The wait is bounded: 60 minutes, `RUN_TESTS_TIMEOUT_MS` overrides it, and a timeout that fires is reported before the tree
   is ended. One run at a time per process. **On Windows the audit removes nothing for now**: the reference's job supervisor
   gives no acknowledgment that its job is empty, so the audit lists and fails a run that left a claimed folder (a passing run
-  with nothing claimed stays passing); **on macOS the survivor scan has no environment to read, so the audit lists and fails and removes nothing there** (and a chain-walk survivor there is not killed either: a survivor is signalled only with a start time bound, which is Linux's); where a record has no start time (macOS, Windows) only claims made since the runner started are removed, older ones are listed as `unproven:`.
+  with nothing claimed stays passing); **on macOS the survivor scan has no environment to read, so the audit removes nothing there: a run that claimed a folder lists it and fails, a run that claimed none leaves with the suite's own code** (and a chain-walk survivor there is not killed either: a survivor is signalled only with a start time bound, which is Linux's); where a record has no start time (macOS, Windows) only claims made since the runner started are removed, older ones are listed as `unproven:`.
 - **Where the collection guarantee holds.** `npm test` (and, with E2.2, `npm run itest:all`) sweep; a direct
   `node --test out/test/<file>.test.js` makes and removes its own scratch but does not sweep old leftovers — the next
   runner run, or the janitor, does. **On Windows the Node sweep collects nothing** until F16 closes: the reference lists
@@ -173,8 +176,8 @@ sibling file `<folder>.owner` (never inside, because tests assert the exact cont
   the mount), `leftoversRunner.test.ts` (the audit by record, the other record's folder untouched, the kill path with a
   real `node --test` and a surviving descendant, the timeout, the refusal; `ci-extension.yml` job
   `runner lifecycle · windows` runs the wrapper, runner, gate, hardening and sweep files on Windows (the sweep file's F16 `unverified:` scenario and the hardening file's win32 pid case run only there [E2.1 win jobs]); `leftoversRunnerGate.test.ts` and
-  `leftoversRunnerHardening.test.ts` carry the process-tree, macOS and bound scenarios) and `leftoversSites.test.ts` (a syntax-tree scan for raw
-  temp calls in the migrated files, with companions that keep the scan alive).
+  `leftoversRunnerHardening.test.ts` carry the process-tree, macOS and bound scenarios; `leftoversRunnerAudit.test.ts` the root it cannot list and the claim it cannot read) and `leftoversSites.test.ts` (a syntax-tree scan for raw
+  temp calls in the migrated files, a call through a local alias of a named import included, with companions that keep the scan alive).
 - **Old names** (`creds-*`, `cvbk-*`, `arrival-lease-*`, `wsl-mcp-check-*`, `creds-life-*.sock`, the legacy
   `testsToDelete-agent-*`) are not swept: `creds-` is not a registered token and other software uses such names. A
   person removes the ones already on a machine by hand.
