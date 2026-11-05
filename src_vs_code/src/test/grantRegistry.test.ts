@@ -223,6 +223,20 @@ function tombstone(registry: GrantRegistry): { secret: string } {
   return grant;
 }
 
+/** A call grant the person refused: its secret is in no response, it answers nobody. */
+function deniedCallOf(registry: GrantRegistry): { secret: string } {
+  const grant = mintForOneCall(registry);
+  registry.deny(grant.secret);
+  return grant;
+}
+
+/** A call grant the person (or a quiet policy) allowed, not yet reserved. */
+function allowedCall(registry: GrantRegistry): { secret: string } {
+  const grant = mintForOneCall(registry);
+  registry.allow(grant.secret);
+  return grant;
+}
+
 /** An allowed token. */
 function allowedToken(registry: GrantRegistry): { secret: string } {
   const grant = mint(registry);
@@ -305,16 +319,21 @@ test('A4: each tier of the eviction list is reached only when the ones before it
   const anAllowedToken = (r: GrantRegistry): string => allowedToken(r).secret;
   const openToken = (r: GrantRegistry): string => mint(r).secret;
   const aTombstone = (r: GrantRegistry): string => tombstone(r).secret;
-  const allowedCall = (r: GrantRegistry): string => {
-    const g = mintForOneCall(r);
-    r.allow(g.secret);
+  const unusedAllowedCall = (r: GrantRegistry): string => allowedCall(r).secret;
+  const usedAllowedCall = (r: GrantRegistry): string => {
+    const g = allowedCall(r);
+    r.reserve(g.secret);
     return g.secret;
   };
   const pendingCall = (r: GrantRegistry): string => mintForOneCall(r).secret;
+  const deniedCall = (r: GrantRegistry): string => deniedCallOf(r).secret;
 
   const cases: Array<[string, Array<(r: GrantRegistry) => string>, number]> = [
-    ['a pending call before an allowed call', [allowedCall, pendingCall], 1],
-    ['an allowed call before a tombstone', [aTombstone, allowedCall], 1],
+    ['a denied call before a call that ran', [usedAllowedCall, deniedCall], 1],
+    ['a call that ran before a call whose dialog may be open (pending)', [pendingCall, usedAllowedCall], 1],
+    ['a call that ran before an Allow not yet reserved', [unusedAllowedCall, usedAllowedCall], 1],
+    ['a pending call before a tombstone', [aTombstone, pendingCall], 1],
+    ['an allowed, unreserved call before a tombstone', [aTombstone, unusedAllowedCall], 1],
     ['a tombstone before an open token', [openToken, aTombstone], 1],
     ['an open token before an allowed token', [anAllowedToken, openToken], 1],
   ];
@@ -324,4 +343,32 @@ test('A4: each tier of the eviction list is reached only when the ones before it
     const gone = ids.filter((id) => registry.get(id) === undefined);
     assert.deepEqual(gone, [ids[victimAt]], what);
   }
+});
+
+test('A4 (Amendment 3, C.4): a live dialog pending call survives 300 calls that ran; denied calls go first, then calls that ran, oldest first', () => {
+  const registry = new GrantRegistry();
+  const dialogOpen = mintForOneCall(registry); // the call whose dialog is on screen
+  const unreserved = allowedCall(registry); // an Allow not yet reserved: older than every call that ran below
+  const denied = [deniedCallOf(registry), deniedCallOf(registry)];
+  const openToken = mint(registry);
+  const allowed = allowedToken(registry);
+  const tombstones = [tombstone(registry), tombstone(registry), tombstone(registry)];
+  const ran: Array<{ secret: string }> = [];
+  for (let i = 0; i < 300; i += 1) {
+    const call = allowedCall(registry);
+    registry.reserve(call.secret); // silent MCP use: allowed at once, then reserved
+    ran.push(call);
+  }
+
+  // 9 + 300 = 309 grants went in against a cap of 256: 53 were evicted, the 2 denied calls and the 51 oldest calls that ran.
+  assertStatuses(registry, [
+    [dialogOpen, 'pending', 'a dialog is open on this call: it is not reached while a call that ran exists'],
+    [unreserved, 'allowed', 'an Allow not yet reserved is older than every call that ran and still outlives them'],
+    ...denied.map((grant) => [grant, undefined, 'a refused call goes first'] as const),
+    [openToken, 'pending', 'no token while a call grant exists'],
+    [allowed, 'allowed', 'nor an allowed token'],
+    ...tombstones.map((grant) => [grant, 'denied', 'nor a tombstone'] as const),
+    ...ran.slice(0, 51).map((grant) => [grant, undefined, 'the oldest calls that ran go next'] as const),
+    ...ran.slice(51).map((grant) => [grant, 'allowed', 'the newer calls that ran stay'] as const),
+  ]);
 });

@@ -30,9 +30,10 @@
 // that asks for `ssh-rsa` (SHA-1) is never covered by the long window and its prompt says why. The sshd helpers
 // live in `itestSshd.cjs`, shared with section 5.
 //
-// Section 8 (POSIX only, `itestForwardAgent.cjs`) is the measurement behind `-o ForwardAgent=no` on a bridged call: a real
+// Section 8 (POSIX only, `itestForwardAgent.cjs`) is the measurement behind `BRIDGED_SSH_OPTIONS` on a bridged call: a real
 // `ssh` with `Host * / ForwardAgent yes` in its config and a live agent reaches a real `sshd -d`, and the remote has an
-// SSH_AUTH_SOCK without the option and none with it.
+// SSH_AUTH_SOCK without the options and none with them; and a mux pair (`ControlMaster auto` on a fixed `ControlPath`, a
+// master to one sshd) shows that a second ssh JOINS the master unless the bridged options say otherwise.
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');

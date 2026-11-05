@@ -167,6 +167,8 @@ function world(options: {
   supports?: string[];
   /** Leave every dialog open until the test answers it through `w.openDialogs` (E4.S1). */
   holdDialogs?: boolean;
+  /** The scripted actions declare `asksAfterConsent: true`: they may put a prompt of their own on screen after the Allow (Amendment 3, K8). */
+  asksAfterConsent?: boolean;
   /**
    * How long the consent gate waits for an answer, in place of its five minutes (Amendment 2, P3). Passed to the
    * server's graph as a mock of `./agentConsent` with the real module's other exports, so the dialog's timeout can be
@@ -239,6 +241,7 @@ function world(options: {
     kind: w.kind,
     action: name,
     mutatesSecrets: options.rotatesTo !== undefined,
+    ...(options.asksAfterConsent === true ? { asksAfterConsent: true } : {}),
     verb: `run a command on`,
     describeOutcome: (): string => 'exit 0',
     validate: (body: Record<string, unknown>): unknown =>

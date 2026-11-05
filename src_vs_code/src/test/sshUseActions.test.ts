@@ -2,7 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { test } from 'node:test';
+import { mock, test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
 import { memoryStorage, seedEntry } from './pinWorld';
 import { EntityMetadata } from '../types';
@@ -254,6 +254,44 @@ test('X1: a credential read that THROWS gives the slot back and fails the call â
     const result = await exec(w, parts);
     assert.equal(result.status, 200, 'the next call is served');
   } finally {
+    cleanup(w);
+  }
+});
+
+test('C.3: asksAfterConsent is set on the terminal action (a remote window\'s refusal modal can follow the Allow) and not on exec', async () => {
+  const parts: Parts = { source: KEY_SOURCE };
+  const w = await world(parts);
+  try {
+    assert.equal(w.mod.sshTerminalAction(deps(w, parts)).asksAfterConsent, true);
+    assert.equal(w.mod.sshExecAction(deps(w, parts)).asksAfterConsent, undefined, 'exec never prompts after the Allow: P2, a long exec holds nothing');
+  } finally {
+    cleanup(w);
+  }
+});
+
+test('X2: a key file that cannot be removed (a Windows lock) still gives the slot back, keeps the finished result and says so in the journal', async () => {
+  // `fs.rmSync(..., { force: true })` swallows ENOENT only: an EPERM/EBUSY out of the `finally` used to leak one of the eight
+  // exec slots, leave the key on disk and replace a finished result with a rejection (Amendment 3, C.6).
+  const parts: Parts = { source: KEY_SOURCE };
+  const w = await world(parts);
+  // The module object itself: `import * as fs` is a frozen namespace copy, and the action under test calls the real one.
+  const nodeFs = require('node:fs') as typeof fs;
+  const real = nodeFs.rmSync;
+  const refused = mock.method(nodeFs, 'rmSync', (target: fs.PathLike, options?: fs.RmOptions): void => {
+    if (String(target).endsWith('.key')) {
+      throw Object.assign(new Error(`EPERM: operation not permitted, unlink '${String(target)}'`), { code: 'EPERM' });
+    }
+    real(target, options);
+  });
+  try {
+    const result = await exec(w, parts);
+    assert.equal(result.status, 200, 'the finished exec is the answer, not the failed cleanup');
+    assert.equal(refused.mock.callCount() > 0, true, 'the removal was attempted');
+    assert.equal(w.tally.slotsHeld, 0, 'and the slot came back');
+    assert.ok(w.notes.some((note) => note.startsWith('ssh:exec â€” the key file could not be removed: ')), `the note names the removal failure: ${w.notes.join(' | ')}`);
+    assert.ok(w.notes.every((note) => !note.includes('PRIVATE KEY BODY')), 'and not the key');
+  } finally {
+    refused.mock.restore();
     cleanup(w);
   }
 });

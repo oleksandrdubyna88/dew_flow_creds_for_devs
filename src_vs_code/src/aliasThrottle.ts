@@ -153,6 +153,8 @@ export class OneInFlight {
   private owner: number | undefined;
   /** A dialog of that holding is on screen. */
   private dialog = false;
+  /** The holding whose call has already ended (`released` while its dialog was up), so a kept place must not outlive it. */
+  private endedId: number | undefined;
 
   /** Take the place; `undefined` while it is held. The holding is this ADMISSION's, so a stale release cannot free a later holder's place. */
   hold(): Holding | undefined {
@@ -177,18 +179,27 @@ export class OneInFlight {
     }
   }
 
-  /** The dialog closed — the person's click, or the 5-minute timeout: the place is free, whatever the call does next. */
-  dialogClosed(held: Holding): void {
+  /**
+   * The dialog closed — the person's click, or the 5-minute timeout: the place is free, whatever the call does next. `keep` (an
+   * Allow of a call that may show a prompt of its own next, Amendment 3, C.3): the place stays the call's until it is released
+   * — unless the call has already ended, which a kept place must not outlive.
+   */
+  dialogClosed(held: Holding, keep?: boolean): void {
     if (this.owner === held.id) {
-      this.owner = undefined;
       this.dialog = false;
+      if (keep !== true || this.endedId === held.id) {
+        this.owner = undefined;
+      }
     }
   }
 
   /** The call ended. Frees the place only if no dialog of this holding is on screen, and only if it still holds the place. */
   released(held: Holding): void {
-    if (this.owner === held.id && !this.dialog) {
-      this.owner = undefined;
+    if (this.owner === held.id) {
+      this.endedId = held.id;
+      if (!this.dialog) {
+        this.owner = undefined;
+      }
     }
   }
 }
@@ -369,12 +380,12 @@ export class TokenlessCeilings {
   /**
    * The dialog raised for this grant closed — answered, or timed out: the place is free again, whatever its call does
    * next. Pairs with {@link prompted} and frees only the holding that one marked: a second or late close names a holding
-   * that no longer has the place, so it frees nothing of the next holder.
+   * that no longer has the place, so it frees nothing of the next holder. `keep`: see {@link OneInFlight.dialogClosed}.
    */
-  dialogClosed(grant: { bridge?: { context: { bridgeId: string } } }, via: AuditDoor): void {
+  dialogClosed(grant: { bridge?: { context: { bridgeId: string } } }, via: AuditDoor, keep?: boolean): void {
     const held = this.open;
     if (held !== undefined && doorOfDialog(grant.bridge?.context.bridgeId, via) !== undefined) {
-      this.flight.dialogClosed(held);
+      this.flight.dialogClosed(held, keep);
     }
   }
 

@@ -95,6 +95,12 @@ export interface UseAction {
    * same object as the response body, which is the one place this design keeps it out of.</p>
    */
   readonly mutatesSecrets: boolean;
+  /**
+   * This action may put a prompt of its own on screen after the person's Allow (a PIN box, a trust modal, a remedy picker).
+   * Absent = no. The broker then keeps the one dialog place until the call ends, so no second modal opens over that
+   * prompt (Amendment 3, C.3).
+   */
+  readonly asksAfterConsent?: boolean;
 
   /**
    * `code` is the error code the refusal answers with; absent, it is `invalid_request` — a malformed

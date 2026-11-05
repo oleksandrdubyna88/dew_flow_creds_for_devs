@@ -1994,3 +1994,142 @@ Unverified by this spec: the mux behaviour is read from OpenSSH's `session.c`/`m
 runner with `sshd` (and M8 on Windows); that VS Code's modal makes its first button the default on every platform (the attack of C.3 needs it; the fix
 is right either way); whether `sshd -d`'s debug stderr says `Accepted publickey` in the runner's OpenSSH (if not, any line proving a connection to B
 serves); whether an ssh config's `ControlPath` is honoured by Win32-OpenSSH (M8).
+
+## S3.15 — As built, Amendment 3 (Sonnet, 2026-11-05)
+
+C.1–C.9 built in the order of C.12 (C.4, C.3, Q1, C.5 + C.7, C.1 + C.2, C.6). `credsAgentServer.ts` is **789** lines (C.12's count, to the line:
+`:118`, `:284-285` and `:531` edited in place, `handleAlias`'s mint and journal moved into its `try`), `extension.ts` 1003 and unchanged,
+`.claude/rules/shared` not bumped, R3 of the first epoch (`bridgeBoundary.r3.json`) untouched and green. The plan's change 3.1, §4.2 and M8 were
+already in `d21f911`; this commit changes `research/module_extension.md` for what the code now does. Nothing in the spec changes what an agent on
+a bridge can reach beyond what C.1–C.5 say; where it was silent or wrong, below.
+
+### Differences from C.1–C.12
+
+1. **Complexity: `keep` has no default value.** C.3 writes `dialogClosed(held, keep: boolean = false)` and counts the method at 3; ESLint counts a
+   default parameter as a branch, so both `OneInFlight.dialogClosed` and `TokenlessCeilings.dialogClosed` came out at 5 against the limit of 4. They
+   take `keep?: boolean` and test `keep !== true`; nothing else about them differs.
+2. **`removeKeyFile(deps, file)` is a function, not an inline `try/catch/finally`.** `sshExecAction.run` was at 54 lines after C.6's block against a
+   limit of 50 (and the function carries a `max-lines-per-function` disable already, which was not widened). The helper catches everything, so the
+   `finally` is `removeKeyFile(...); release();` and `release()` still runs last. Same behaviour, same note sentence.
+3. **The new broker scenarios are in `bridgeKeptPlace.test.ts`, not `bridgePrompts.test.ts`** (K1–K6, K8, Q1, D1, and a C.7 test). `bridgePrompts.test.ts`
+   reached 808 lines with them against the limit of 800. `settleAll` and `answeredAtOnce` moved to `bridgeWallWorld.ts` (exported) so the two files
+   share them. `bridgeWallWorld.ts` also gained two options, `asksAfterConsent` (K8: the scripted actions declare the flag) and `quietLocal` (Q1: the
+   local MCP door's calls are pre-consented), and `brokerWorld.ts` the first. C.10 says `brokerWorld.ts` gains "a `never`-policy entry whose calls are
+   silent": the wall world's real lookup passes no consent stamps, so it never says `preConsented`; `quietLocal` wraps the lookup's answer instead of
+   building a policy that the stamp store would have to honour.
+4. **T2 evicts the token by filling the registry** (256 more tokens: the real eviction, the oldest pending token is the last resort), not by deleting
+   it. Against the old code the call was not "asked and its Allow refused at `spentToken`" but asked and timed out, because the world answers no dialog
+   (`allows: 0`): `[504, 'consent_timeout', ...]`. Same cause (the call is asked), a different symptom.
+5. **`status()` is `undefined` for an evicted token, not for an expired one.** C.5 says "evicted or expired". The server hands `() => this.grants.get(secret)?.status`;
+   `get` does not apply expiry (only `lookup` does, and prunes), so a token that has merely run out of idle time or calls still reads its stored status here,
+   goes to the dialog and is refused at the launch gate (`spentToken`) as before. That fails closed and is not new; making it 401 earlier would need `lookup` in the
+   status closure, i.e. a decision about spending the idle clock, and is left to the spec. Only the evicted case is built and tested (T2).
+6. **C.7 needed a test the spec does not list, and it showed what the gap costs.** A throw from the journal between `admit` and the `try` escapes `handle`,
+   which the listener calls as `void this.handle(...)`: the request is never answered (the client hangs until it gives up) and Node sees an unhandled
+   rejection, besides the held place. Moving the lines into the `try` gives the place back; it does not answer the request (the `finally` runs and the throw
+   continues). The test hangs up on the failed request, sets the runner's `unhandledRejection` handler aside for its length, counts the three throws and asserts the
+   next call is asked. A catch at the listener (answer 500, log) is a separate change and is not made here.
+7. **Tests beyond C.10's list, each for a guard no listed scenario could reach:** the gate's `keep` argument in `brokerConsentPrompted.test.ts` (Allow with a
+   follow-up keeps; Allow without, Deny, dismissal and the timeout free) — the broker cannot tell `keep` on a Deny from `keep` off, because the call ends in the
+   same microtask turns as its dialog closes, so only a test of the gate sees it; `asksAfterConsent` on each action (`terminal` and `up` true, `down`, `exec` and the
+   other four absent) in `sshUseActions.test.ts` and `agentUseActions.test.ts`; a tier-by-tier case for each new boundary in A4 (a denied call before a call that ran, a call that ran
+   before a pending call, before an unreserved Allow, a pending or unreserved call before a tombstone); the denied-token lines counted (60 lines, one per refusal) in D1.
+8. **F1 through the action cannot carry `-A` on a bridge** (the wall refuses an entry that forwards the agent, twice, before the argv is built), so the through-the-bridge
+   assertion has the jump and both forwards, and the `-A` assertion is the unit test's (`bridged: true` with `agentForward: true`). The off-bridge half of the same
+   scenario goes through the main port with an entry that has `agentForward` and both forwards: `-J -A -L … -R …` and none of the six.
+9. **K2, K3, K4, K5, K6 pass against the old code, as C.10 says** (pinned). K4's stub for the PIN step (`holdPinStep`) resolves when the request's signal fires, as the
+   real `settle` closes its PIN box on it, so the call ends and its place comes back through `release`, not through the abort itself.
+10. **The itest.** `sshdIn(rig, name)` gives each sshd a folder of its own (`startSshd` writes `sshd_config`, `known_hosts` and `sshd.pid` there under fixed names, so
+    two rigs cannot share one). Leg 2 and leg 4 assert `code === 1` and `stdout === ''` (C.8); the "B saw the connection" test accepts `Accepted publickey` **or**
+    `Connection from 127.0.0.1` in B's `sshd -d` stderr, since C.12 leaves the exact line unverified and either proves a connection reached B. The `ssh -G` view of the
+    production argv under the mux config was checked on this machine (OpenSSH 10.2): `controlmaster false`, `clearallforwardings yes`, `forwardx11 no`, `tunnel false`,
+    `forwardagent no`, no `controlpath` line, no forward lines, with `-A`, a remote forward and the config's `ControlMaster auto` all present.
+
+### The RED record (each watched failing, for the reason named, before the code)
+
+- **A4 (C.4)**, the old three-tier list: `a call that ran before a call whose dialog may be open (pending)` (the id evicted was the pending call's, not the call
+  that ran) and `a dialog is open on this call: it is not reached while a call that ran exists` (`undefined` against `'pending'`).
+- **K7**, `aliasThrottle.test.ts` with no `keep` (3 of 5 failed; the other two are pinned and passed): `the Allow closed the dialog and the call may ask again: the place is
+  still its own`, `the second holder keeps its place on its own Allow`, and through the coordinator `the call at 0ms was admitted, not refused`. Four `TS2554` errors
+  (`Expected 1 arguments, but got 2`) came with them; `tsc` emits regardless.
+- **K1**, a local `create` Allowed and held at its PIN step: `a call through the bridge was let in over the PIN box: it raised a second modal`.
+- **K8**, the flagged action held in `w.hold`: `the second door's call did not answer while the action was running`.
+- **Q1**, against the registry of `5bfedf8` (C.4 was built first, as C.12 orders, so `grantRegistry.ts` was put back for this one run): `{"error":{"code":"unauthorized",
+  "message":"Unknown or missing grant token."}}`, `[401, 'unauthorized']` against `[200, '']` — the pending call was evicted at the 256th mint.
+- **D1**: `{ '403 denied': 300 }` against `{ '403 denied': 60, '429 too_many_requests': 240 }`.
+- **T2**: `[504, 'consent_timeout', 'The human did not allow this grant.']` against `[401, 'unauthorized', 'Unknown or missing grant token.']` (the call was asked; see difference 4).
+- **F1** through the action: `-L is not sent on a bridge: -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -J hop@jump.corp.com -L 8080:db:5432 -R 9000:intranet.example:443 -o ForwardAgent=no -i … -- deploy@prod.corp.com id`;
+  the unit F1: `-A is not sent on a bridge: -o BatchMode=yes … -J hop@jump.corp.com -A -L 8080:db:5432 -R 9000:intranet.example:443 -i /tmp/k.key -- deploy@example.com id`;
+  C.1: `sshExecCommand_1.BRIDGED_SSH_OPTIONS is not iterable`; the two-authentication-branch case failed on `key` (nothing of the six was sent).
+- **X2**: the action rejected with `Error: EPERM: operation not permitted, unlink '/tmp/creds-use-…/k1-….key'` instead of answering the finished exec's 200.
+- **F2** can only fail by not compiling (`noAgentForward` was the field); at runtime it passes against the old code. **Passed against the old code, as C.10 says:** K2, K3, K4, K5, K6 (pinned), and K7's "a call that ended during its dialog frees the place" and "`dialogClosed(held)` frees as before".
+- **C.7** has no scenario in C.10; its test is shown by the three `C7-*` mutations below (moving the lines back out of the `try`).
+
+### Totals
+
+`npm run typecheck`, `lint` (0 problems) and `ratchet` clean; `npm test` 6283 tests, 6279 pass, 0 fail, 4 skipped; `itest:cli` all checks passed; `itest:ssh-agent` all checks passed (the live-sshd
+sections, 5, 7 and 8, skip: no sshd here); the .NET build of the solution 0 warnings, 0 errors; `CredsBroker.Tests` 159 of 159; `plan-lifecycle` clean. Line counts: `credsAgentServer.ts` 789,
+`extension.ts` 1003, `aliasThrottle.ts` 460, `brokerConsent.ts` 196, `brokerBridgeToken.ts` 63, `grantRegistry.ts` 344, `sshExecCommand.ts` 140, `sshUseActions.ts` 380, `brokerMcpDoor.ts` 519,
+`itestForwardAgent.cjs` 194, `ssh-agent-itest.cjs` 768, `bridgeKeptPlace.test.ts` 356, `bridgePrompts.test.ts` 457.
+
+### Break-its run (each mutation applied to one source file, the suite files named run in order with `--test-concurrency=1`, the file restored and its sha256 compared with the one taken before: all 44 equal)
+
+Every mutation was caught. "First" is the first failure the runner printed. The mux pair and the other itest legs cannot be mutated here (no `sshd`).
+
+| # | Mutation | First catching test | Failing |
+|---|---|---|---|
+| C4-tier1-old | EVICTION tier 1 is `status !== allowed` again (a pending call goes first) | Q1: 300 quiet local MCP calls while a bridged exec's dialog is open do not evict its grant — the Allow runs the exec, with one ALLOWED line | 3 |
+| C4-tier2-no-uses | tier 2 without `uses > 0` (an Allow not yet reserved goes with the calls that ran) | A4: each tier of the eviction list is reached only when the ones before it are empty, whatever the insertion order | 2 |
+| C4-tier2-uses-gt1 | tier 2 requires `uses > 1` | Q1: 300 quiet local MCP calls while a bridged exec's dialog is open do not evict its grant — the Allow runs the exec, with one ALLOWED line | 3 |
+| C4-tier3-removed | tier 3 (any other call) removed: a pending call outlives nothing but tokens | a shared token survives sustained SILENT mcp use, which mints allowed grants | 5 |
+| C3-keep-ignored | `OneInFlight.dialogClosed` ignores `keep` (frees at the close) | K7: dialogClosed(held, true) keeps the place until the call ends; released then frees it | 5 |
+| C3-no-ended | a kept place is not ended with its call (`endedId` not consulted) | K7: a call that ended during its dialog frees the place when the dialog closes, keep or not | 2 |
+| C3-ended-not-set | `released` does not record that the call ended | K7: a call that ended during its dialog frees the place when the dialog closes, keep or not | 2 |
+| C3-keep-always | `dialogClosed` keeps whatever `keep` says | B.2: a dialog closing frees the place whatever the call does next, and the call ending later frees nothing more | 6 |
+| C3-coordinator-drops-keep | `TokenlessCeilings.dialogClosed` does not hand `keep` on | K7: through the coordinator, keep holds the place across the close until the slot is released | 3 |
+| C3-keep-any-choice | the gate keeps the place for any close of a question with a follow-up (Deny and timeout too) | K7: dialogClosed is told to keep the place for an Allow of a call that declares a follow-up, and for nothing else | 2 |
+| C3-keep-without-followup | the gate keeps the place for every Allow | K5: an Allowed exec does not keep the place (P2 is untouched) — while it runs, a call through another bridge and a local MCP call are both asked | 3 |
+| C3-keep-never | the gate never keeps | K1: a local create that is Allowed keeps the place while its PIN box may be up — a bridge and a local alias call are busy until it ends | 3 |
+| C3-wire-keep | the server drops `keep` between the gate and the ceilings | K1: a local create that is Allowed keeps the place while its PIN box may be up — a bridge and a local alias call are busy until it ends | 2 |
+| C3-wire-door-followup | the MCP door's `consent` drops `followUp` | K1: a local create that is Allowed keeps the place while its PIN box may be up — a bridge and a local alias call are busy until it ends | 1 |
+| C3-wire-perform-false | `perform` never declares a follow-up | K8: an action that declares asksAfterConsent keeps the place until it ends — a second door is busy, and asked once the action is over | 1 |
+| C3-wire-perform-true | `perform` always declares a follow-up | K5: an Allowed exec does not keep the place (P2 is untouched) — while it runs, a call through another bridge and a local MCP call are both asked | 4 |
+| C3-create-no-followup | `create` does not declare a follow-up at the door | K1: a local create that is Allowed keeps the place while its PIN box may be up — a bridge and a local alias call are busy until it ends | 1 |
+| C7-mcp-use-out-of-try | `handleMcpUse` mints and journals between `admit` and `try` again | C.7: a journal append that throws right after admission gives the place back — on the alias, MCP and token doors | 1 |
+| C7-alias-out-of-try | `handleAlias` mints and journals between `admit` and `try` again | C.7: a journal append that throws right after admission gives the place back — on the alias, MCP and token doors | 1 |
+| C5-denied-before-admit | the token's denied/unknown check back before `admit` (outside the slot) | D1: 300 posts with a token the person denied, through a bridge — 60 answer denied, 240 too many; a bounded journal, no dialog, no minted line; busy while another dialog is open | 1 |
+| C5-unknown-passes | a token that is gone is not refused (only `denied` is) | T2: a token evicted after the bridge looked it up and before its body arrived is answered 401 unknown — no dialog, no line, nothing ran | 1 |
+| C5-unknown-logged | an unknown token writes a journal line | T2: a token evicted after the bridge looked it up and before its body arrived is answered 401 unknown — no dialog, no line, nothing ran | 1 |
+| C5-denied-not-logged | a denied token writes no line | D1: 300 posts with a token the person denied, through a bridge — 60 answer denied, 240 too many; a bounded journal, no dialog, no minted line; busy while another dialog is open | 1 |
+| C5-unknown-as-denied | a gone token is answered `denied` (403) as a tombstone | T2: a token evicted after the bridge looked it up and before its body arrived is answered 401 unknown — no dialog, no line, nothing ran | 1 |
+| C7-token-mint-out-of-try | `bridgedTokenCall` mints and journals outside the `try` (before it, after the check) | C.7: a journal append that throws right after admission gives the place back — on the alias, MCP and token doors | 1 |
+| C1-drop-ForwardAgent | `ForwardAgent=no` missing from BRIDGED_SSH_OPTIONS | F1: through a bridge the argv has the jump, no -A -L -R, then the six options in order; off a bridge it has the forwards and none of the six | 4 |
+| C1-drop-ControlPath | `ControlPath=none` missing from BRIDGED_SSH_OPTIONS | F1: through a bridge the argv has the jump, no -A -L -R, then the six options in order; off a bridge it has the forwards and none of the six | 4 |
+| C1-drop-ControlMaster | `ControlMaster=no` missing from BRIDGED_SSH_OPTIONS | F1: through a bridge the argv has the jump, no -A -L -R, then the six options in order; off a bridge it has the forwards and none of the six | 4 |
+| C1-drop-ClearAllForwardings | `ClearAllForwardings=yes` missing from BRIDGED_SSH_OPTIONS | F1: through a bridge the argv has the jump, no -A -L -R, then the six options in order; off a bridge it has the forwards and none of the six | 4 |
+| C1-drop-ForwardX11 | `ForwardX11=no` missing from BRIDGED_SSH_OPTIONS | F1: through a bridge the argv has the jump, no -A -L -R, then the six options in order; off a bridge it has the forwards and none of the six | 4 |
+| C1-drop-Tunnel | `Tunnel=no` missing from BRIDGED_SSH_OPTIONS | F1: through a bridge the argv has the jump, no -A -L -R, then the six options in order; off a bridge it has the forwards and none of the six | 4 |
+| C2-forwards-kept | the entry's port forwards are not stripped on a bridge | F1: through a bridge the argv has the jump, no -A -L -R, then the six options in order; off a bridge it has the forwards and none of the six | 2 |
+| C2-agent-kept | the entry's `-A` is not removed on a bridge | F1: a bridged argv keeps the jump, forwards nothing, then the six options, then the key and the destination | 1 |
+| C1-before-composer | BRIDGED_SSH_OPTIONS pushed before the composer's options | F1: through a bridge the argv has the jump, no -A -L -R, then the six options in order; off a bridge it has the forwards and none of the six | 2 |
+| C1-after-key | BRIDGED_SSH_OPTIONS pushed after the key, not before it | F1: through a bridge the argv has the jump, no -A -L -R, then the six options in order; off a bridge it has the forwards and none of the six | 2 |
+| C1-flag-always | every call is treated as bridged | L4: control — on the main port the same entry runs with -A | 5 |
+| C1-action-never-bridged | the action never asks for the bridged argv | F1: through a bridge the argv has the jump, no -A -L -R, then the six options in order; off a bridge it has the forwards and none of the six | 1 |
+| C1-action-always-bridged | the action always asks for the bridged argv | L4: control — on the main port the same entry runs with -A | 3 |
+| C6-no-catch | `removeKeyFile` lets the failure out | X2: a key file that cannot be removed (a Windows lock) still gives the slot back, keeps the finished result and says so in the journal | 1 |
+| C6-no-note | the removal failure is swallowed without a note | X2: a key file that cannot be removed (a Windows lock) still gives the slot back, keeps the finished result and says so in the journal | 1 |
+| C6-no-release | the slot is not released in the `finally` | X2: a key file that cannot be removed (a Windows lock) still gives the slot back, keeps the finished result and says so in the journal | 2 |
+| C3-terminal-flag-off | `terminal` does not declare `asksAfterConsent` | C.3: asksAfterConsent is set on the terminal action (a remote window's refusal modal can follow the Allow) and not on exec | 1 |
+| C3-vpn-flag-always | `vpnAction` declares the follow-up for `down` too | C.3: asksAfterConsent is set on the VPN start and on no other action of this module — the launcher's trust modal, a PIN and an install offer can follow the Allow | 1 |
+| C3-vpn-flag-never | `vpnAction` never declares it | C.3: asksAfterConsent is set on the VPN start and on no other action of this module — the launcher's trust modal, a PIN and an install offer can follow the Allow | 1 |
+
+### Not verified
+
+- **Section 8 of `ssh-agent-itest.cjs`, in full, on a runner with `sshd`.** There is no `sshd` on this machine (`/usr/sbin/sshd` is missing), so legs 1–4 and the mux pair were not run; the script's
+  syntax was checked (`node --check`) and its skip path ran. What was observed is the client side: `ssh -G -F <Host * / ForwardAgent yes / ControlMaster auto / ControlPath …>` on the production
+  bridged argv (OpenSSH 10.2) reports no multiplexing, `clearallforwardings yes`, `forwardx11 no`, `tunnel false`, `forwardagent no`, and no forward lines for an entry with `-A` and a remote forward.
+  The join itself (`session.c` exporting the master's socket to a second session; `printenv SSH_CONNECTION` ending in A's port), the exit code 1 of `printenv` through `ssh`, and `Accepted publickey` /
+  `Connection from 127.0.0.1` in `sshd -d`'s stderr are C.12's unverified list and stay unverified. M8 (Windows) likewise.
+- **That VS Code's modal makes its first button the default on every platform** (the attack of C.3 needs it; the fix is right either way).
+- **Whether the escaped throw of difference 6 is worth a catch at the listener** — not decided here.
+- **The `ControlPath` semantics of Win32-OpenSSH**, as C.12 says.

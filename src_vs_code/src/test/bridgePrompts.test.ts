@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
-import { Reply, code, message, pause } from './bridgeDoorHarness';
-import { ACCOUNT, CONTEXT_1, Ask, Door, WallWorld, registryOf, send, sendAbortable, until, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
+import { code, message, pause } from './bridgeDoorHarness';
+import { ACCOUNT, CONTEXT_1, Ask, Door, WallWorld, answeredAtOnce, registryOf, send, sendAbortable, settleAll, until, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
 
 /**
  * Prompts per bridge (S26): each bridge has its own sliding window of dialogs, one dialog is in flight for the whole
@@ -358,20 +358,6 @@ test('A3: the local doors share one asking window, and a bridge keeps its own', 
 /* ---------------------------------------------------------------------------------------------------------------
  * Amendment 2, B.2 — the one place is the dialog's, not the call's
  * ------------------------------------------------------------------------------------------------------------- */
-
-/** Answer every dialog still open, so a failed scenario does not leave a request hanging on the broker it is about to dispose. */
-const settleAll = (ww: WallWorld): void => {
-  for (const answer of ww.w.openDialogs) {
-    answer('Deny');
-  }
-};
-
-/** The reply, or the sentence that says the call did not answer in time (a dialog raised behind another, or a place held). */
-async function answeredAtOnce(reply: Promise<Reply>, what: string): Promise<Reply> {
-  const raced = await Promise.race([reply, pause(400).then(() => what)]);
-  assert.notEqual(typeof raced, 'string', typeof raced === 'string' ? raced : '');
-  return raced as Reply;
-}
 
 test('P1: a client that posts and goes away does not free the place its dialog holds — the next call is busy until the dialog is answered', async () => {
   const ww = await wallWorld({ holdDialogs: true });

@@ -532,6 +532,67 @@ test('B.2: a close the coordinator never saw opened, or a second close, frees no
 });
 
 /* ---------------------------------------------------------------------------------------------------------------
+ * Amendment 3, C.3 — an Allow may keep the place while the call's own follow-up prompt is on screen (K7)
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('K7: dialogClosed(held, true) keeps the place until the call ends; released then frees it', () => {
+  const f = new OneInFlight();
+  const held = f.hold() as Holding;
+  f.prompted(held);
+  f.dialogClosed(held, true);
+  assert.equal(f.hold(), undefined, 'the Allow closed the dialog and the call may ask again: the place is still its own');
+  f.released(held);
+  assert.notEqual(f.hold(), undefined, 'the call ending gives the kept place back');
+});
+
+test('K7: a call that ended during its dialog frees the place when the dialog closes, keep or not', () => {
+  const f = new OneInFlight();
+  const held = f.hold() as Holding;
+  f.prompted(held);
+  f.released(held);
+  assert.equal(f.hold(), undefined, 'the dialog is still up');
+  f.dialogClosed(held, true);
+  assert.notEqual(f.hold(), undefined, 'the call is over: a kept place would outlive it for ever');
+});
+
+test('K7: keep names a holding, and a holding that lost the place frees nothing and keeps nothing', () => {
+  const f = new OneInFlight();
+  const first = f.hold() as Holding;
+  f.prompted(first);
+  f.dialogClosed(first);
+  const second = f.hold() as Holding;
+  f.prompted(second);
+  f.dialogClosed(first, true);
+  assert.equal(f.hold(), undefined, 'the first dialog closing again touched nothing of the second holder\'s place');
+  f.dialogClosed(second, true);
+  assert.equal(f.hold(), undefined, 'the second holder keeps its place on its own Allow');
+  f.released(second);
+  assert.notEqual(f.hold(), undefined);
+});
+
+test('K7: dialogClosed(held) and dialogClosed(held, false) free the place as before', () => {
+  const f = new OneInFlight();
+  const first = f.hold() as Holding;
+  f.prompted(first);
+  f.dialogClosed(first);
+  const second = f.hold() as Holding;
+  assert.notEqual(second, undefined, 'no keep: freed at the close');
+  f.prompted(second);
+  f.dialogClosed(second, false);
+  assert.notEqual(f.hold(), undefined, 'keep false: freed at the close');
+});
+
+test('K7: through the coordinator, keep holds the place across the close until the slot is released', () => {
+  const c = new TokenlessCeilings();
+  const slot = admitted(c, true, NOW, 'the call');
+  c.prompted(local, 'alias', NOW);
+  c.dialogClosed(local, 'alias', true);
+  assert.match(refusal(c, true, NOW).message, /already waiting/, 'the call may show a prompt of its own: the place is still its own');
+  slot.release();
+  admitted(c, true, NOW, 'the next call, once the call ended');
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
  * Amendment 2, B.1 — the asking ceiling: a call refused before any dialog is still a call
  * ------------------------------------------------------------------------------------------------------------- */
 

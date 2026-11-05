@@ -12,7 +12,8 @@ import type { McpVaultSource } from '../mcpEntries';
 import type { EntityMetadata, TreeNode } from '../types';
 import { wallSuppliersOf } from '../bridgeWallSource';
 import { visibleMcpEntries } from '../mcpEntries';
-import { keyed, raw, Reply } from './bridgeDoorHarness';
+import * as assert from 'node:assert/strict';
+import { keyed, pause, raw, Reply } from './bridgeDoorHarness';
 import { loadBridgeModules, put } from './bridgeModules';
 import { World, world } from './brokerWorld';
 import { loadWithVscode } from './vscodeStub';
@@ -182,6 +183,10 @@ export interface WallOptions {
   oneUse?: boolean;
   maxCalls?: number;
   holdDialogs?: boolean;
+  /** The scripted actions may put a prompt of their own on screen after the Allow (Amendment 3, K8). */
+  asksAfterConsent?: boolean;
+  /** The local MCP door's calls are pre-consented (a `never` consent policy): they raise no dialog and mint a grant allowed at once (Q1). A bridge's calls are not touched. */
+  quietLocal?: boolean;
   /** The consent gate's wait, in place of five minutes (P3). */
   consentTimeoutMs?: number;
   storedTexts?: readonly string[];
@@ -284,12 +289,13 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
     mcpEntries: [...(await visibleMcpEntries(vault))] as unknown as Record<string, unknown>[],
     mcpResolve: (id, action, server) => {
       lookups.push([id, action, server]);
-      return mcpUseLookup(vault, id, action, undefined, Date.now(), server);
+      return quietened(mcpUseLookup(vault, id, action, undefined, Date.now(), server), o.quietLocal === true && server === undefined);
     },
     visibleConfig: (id) => (['e1', 'e-out', 'x'].includes(id) ? configOf(id) : undefined),
     oneUse: options.oneUse,
     maxCalls: options.maxCalls,
     holdDialogs: options.holdDialogs,
+    asksAfterConsent: options.asksAfterConsent,
     consentTimeoutMs: options.consentTimeoutMs,
     trash: true,
     create: 'open',
@@ -316,6 +322,11 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
       fs.rmSync(storage, { recursive: true, force: true });
     },
   };
+}
+
+/** A usable lookup, said to be answered already by the entry's policy when `quiet`: the call asks nobody. */
+function quietened(found: ReturnType<typeof import('../mcpHooks').mcpUseLookup>, quiet: boolean): ReturnType<typeof import('../mcpHooks').mcpUseLookup> {
+  return quiet && found?.kind === 'usable' ? { ...found, preConsented: true } : found;
 }
 
 function configOf(id: string): EntityMetadata {
@@ -437,3 +448,17 @@ export interface RegistryView {
   deny(secret: string): void;
 }
 export const registryOf = (ww: WallWorld): RegistryView => (ww.w.server as unknown as { grants: RegistryView }).grants;
+
+/** Answer every dialog still open, so a failed scenario does not leave a request hanging on the broker it is about to dispose. */
+export const settleAll = (ww: WallWorld): void => {
+  for (const answer of ww.w.openDialogs) {
+    answer('Deny');
+  }
+};
+
+/** The reply, or the sentence that says the call did not answer in time (a dialog raised behind another, or a place held). */
+export async function answeredAtOnce(reply: Promise<Reply>, what: string): Promise<Reply> {
+  const raced = await Promise.race([reply, pause(400).then(() => what)]);
+  assert.notEqual(typeof raced, 'string', typeof raced === 'string' ? raced : '');
+  return raced as Reply;
+}

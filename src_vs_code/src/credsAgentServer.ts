@@ -115,7 +115,7 @@ export class CredsAgentServer implements vscode.Disposable {
     // Checked, not trusted: five of the seven callers are `.cjs`, where a misspelled key is silent
     // by construction — every hook is optional, so `resolveAlais` reads as "switched off".
     this.hooks = checkedHooks(hooks);
-    this.gate = new ConsentGate({ grants: this.grants, actions, onUserPresent, log: (entry) => this.log(entry), prompted: (q) => this.ceilings.prompted(q.grant, q.via, Date.now()), dialogClosed: (q) => this.ceilings.dialogClosed(q.grant, q.via) });
+    this.gate = new ConsentGate({ grants: this.grants, actions, onUserPresent, log: (entry) => this.log(entry), prompted: (q) => this.ceilings.prompted(q.grant, q.via, Date.now()), dialogClosed: (q, keep) => this.ceilings.dialogClosed(q.grant, q.via, keep) });
     // Built once, in `activate`: the moment to retire the announcements of windows that crashed — only those whose
     // process is provably gone, never this window's own or a live one (PLAN_stale_endpoint_files_slow_every_refusal.md).
     if (this.hooks.storageDir !== undefined) {
@@ -281,8 +281,8 @@ export class CredsAgentServer implements vscode.Disposable {
       note: (entry) => this.log(entry),
       perform: (res, grant, action, body, caller, rungs) =>
         this.perform(res, grant as Grant, action, body, { via, caller, signal, spend }, rungs),
-      consent: (grant, action, verb, summary, caller) =>
-        this.gate.consent({ grant: grant as Grant, action, verb, summary, caller, via }, signal),
+      consent: (grant, action, verb, summary, caller, followUp) =>
+        this.gate.consent({ grant: grant as Grant, action, verb, summary, caller, via, followUp }, signal),
       respond: (res, status, body) => this.respond(res, status, body),
       signal,
       abandon: (grant, action, stage, caller) => this.abandoned(grant as Grant, action, stage, { via, caller }),
@@ -334,17 +334,17 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
 
-    // `'call'` for the same reason as the MCP door: one request's capability, never handed out.
-    const grant = this.grants.mint(target.accountId, target.entityId, target.entityName, target.kind, Date.now(), 'call', view.grantFor());
-    this.log({
-      grant: GrantRegistry.describe(grant),
-      entityName: target.entityName,
-      action: 'alias',
-      outcome: 'minted',
-      detail: `${name} · ${target.kind}`,
-      caller,
-    });
     try {
+      // `'call'` for the same reason as the MCP door: one request's capability, never handed out.
+      const grant = this.grants.mint(target.accountId, target.entityId, target.entityName, target.kind, Date.now(), 'call', view.grantFor());
+      this.log({
+        grant: GrantRegistry.describe(grant),
+        entityName: target.entityName,
+        action: 'alias',
+        outcome: 'minted',
+        detail: `${name} · ${target.kind}`,
+        caller,
+      });
       await this.perform(res, grant, action, body, { via: 'alias', caller, signal });
     } finally {
       // In a `finally`, because a prompt that timed out or threw has still been shown and the
@@ -528,7 +528,7 @@ export class CredsAgentServer implements vscode.Disposable {
     // that raised no modal must not slide this entry's quiet window forward — that is how "once
     // every twelve hours" quietly becomes "once, ever".
     const asked = this.grants.get(grant.secret)?.status !== 'allowed';
-    const consent = await this.gate.consent({ grant, action, verb: useAction.verb, summary, caller: who.caller, via: who.via }, who.signal);
+    const consent = await this.gate.consent({ grant, action, verb: useAction.verb, summary, caller: who.caller, via: who.via, followUp: useAction.asksAfterConsent === true }, who.signal);
     if (consent !== 'allowed') {
       this.notAllowed(res, consent, { grant, action, summary }, who);
       return;

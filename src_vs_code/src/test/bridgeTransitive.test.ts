@@ -12,7 +12,7 @@ import { ACCOUNT, Ask, SERVER, WallWorld, registryOf, send, sendSlow, until, via
  * gate at launch is the one place all three must pass and a test of one route would not notice another skipping it.</p>
  */
 
-const { scope: { REFERENCE_REFUSED }, requests: { GRANT_NOT_ALLOWED } } = loadBridgeModules();
+const { scope: { REFERENCE_REFUSED }, requests: { GRANT_NOT_ALLOWED, UNKNOWN_TOKEN } } = loadBridgeModules();
 
 const LEAK_REF = 'creds://a@x.test/Agents/leak-target/password';
 
@@ -444,6 +444,37 @@ test('T1: a token denied after the bridge looked it up and before its body arriv
     assert.deepEqual([reply.status, code(reply), message(reply)], [403, 'denied', GRANT_NOT_ALLOWED]);
     assert.equal(ww.w.dialogs.length, dialogs, 'and nobody was asked');
     assert.equal(ww.w.audit.slice(journal).some((line) => line.includes('minted')), false, 'no call grant was minted for it');
+    assert.deepEqual(ww.w.ran, [], 'nothing ran');
+  } finally {
+    ww.dispose();
+  }
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Amendment 3, C.5 — a token that is gone between the lookup and the body is answered as an unknown one
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('T2: a token evicted after the bridge looked it up and before its body arrived is answered 401 unknown — no dialog, no line, nothing ran', async () => {
+  const ww = await wallWorld({ allows: 0 });
+  try {
+    const token = await ww.tokenFor(ACCOUNT, 'e1', 'prod');
+    let sendBody = (): void => undefined;
+    const bodyAfter = new Promise<void>((resolve) => {
+      sendBody = resolve;
+    });
+    const slow = sendSlow(viaBridge(ww.bridge), ASK_TOKEN(token), bodyAfter);
+    await pause(100); // the headers have been read and the token looked up: it was pending
+    for (let n = 0; n < 256; n += 1) {
+      await ww.tokenFor(ACCOUNT, 'e1', 'prod'); // the registry fills; the oldest pending token is the last resort, and goes
+    }
+    assert.equal(registryOf(ww).get(token), undefined, 'the registry evicted the token the bridge had looked up');
+    const dialogs = ww.w.dialogs.length;
+    const journal = ww.w.audit.length;
+    sendBody();
+    const reply = await slow;
+    assert.deepEqual([reply.status, code(reply), message(reply)], [401, 'unauthorized', UNKNOWN_TOKEN]);
+    assert.equal(ww.w.dialogs.length, dialogs, 'and nobody was asked');
+    assert.deepEqual(ww.w.audit.slice(journal), [], 'an unknown token writes no line, as on the main port');
     assert.deepEqual(ww.w.ran, [], 'nothing ran');
   } finally {
     ww.dispose();

@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { SshUseDeps, sshExecAction as SshExecAction } from '../sshUseActions';
-import type { EntityMetadata } from '../types';
+import type { EntityMetadata, PortForward } from '../types';
 import type { UseAction } from '../useActions';
 import { ACCOUNT, locked, memoryStorage, seedEntry } from './pinWorld';
 import { loadWithVscode } from './vscodeStub';
@@ -25,6 +25,8 @@ export interface LinksOptions {
   /** `e1`'s jump host `j1`: none, a good address, or one that is not a valid host. */
   readonly jump?: 'none' | 'valid' | 'invalid';
   readonly agentForward?: boolean;
+  /** `e1` has a `local` and a `remote` port forward (Amendment 3, C.2). */
+  readonly forwards?: boolean;
   /** What the pretended `ssh` writes on stderr. */
   readonly stderr?: string;
   /** The pretended `ssh` cannot be started. */
@@ -59,7 +61,7 @@ const ssh = (id: string, name: string, extra: Partial<EntityMetadata>): EntityMe
   ({ id, name, kind: 'ssh', isSshEnabled: true, ...extra }) as EntityMetadata;
 
 export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld> {
-  const o = { key: 'plain', jump: 'none', agentForward: false, stderr: '', runFails: false, writeFails: false, ...options } as const;
+  const o = { key: 'plain', jump: 'none', agentForward: false, forwards: false, stderr: '', runFails: false, writeFails: false, ...options } as const;
   const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-links-'));
   const runs: Run[] = [];
   const notes: string[] = [];
@@ -110,11 +112,22 @@ async function seedVault(storage: Storage, o: Required<LinksOptions>): Promise<v
   await seedJump(storage, o.jump);
 }
 
+/** A `local` and a `remote` forward: the first opens the laptop's port to the server, the second a listener on the server. */
+const FORWARDS: PortForward[] = [
+  { kind: 'local', bindPort: 8080, host: 'db', hostPort: 5432 },
+  { kind: 'remote', bindPort: 9000, host: 'intranet.example', hostPort: 443 },
+];
+
+/** Whether `e1` forwards the agent and its two ports. */
+function forwardingOf(o: Required<LinksOptions>): Partial<EntityMetadata> {
+  return { ...(o.agentForward ? { agentForward: true } : {}), ...(o.forwards ? { portForwards: FORWARDS } : {}) };
+}
+
 /** `e1`'s own settings: the host, and the links to a key and a jump host as the options ask for them. */
 function linksOf(o: Required<LinksOptions>): Partial<EntityMetadata> {
   const key = o.key === 'none' ? {} : { sshKeyEntityId: 'k1' };
   const jump = o.jump === 'none' ? {} : { jumpHostEntityId: 'j1' };
-  return { host: 'prod.corp.com', user: 'deploy', ...key, ...jump, ...(o.agentForward ? { agentForward: true } : {}) };
+  return { host: 'prod.corp.com', user: 'deploy', ...key, ...jump, ...forwardingOf(o) };
 }
 
 /** The key entry `k1`: an `sshkey` that is never shared with an agent, holding the key body, in the clear or sealed under its own PIN. */

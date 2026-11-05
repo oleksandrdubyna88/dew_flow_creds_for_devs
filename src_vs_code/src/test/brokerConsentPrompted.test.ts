@@ -17,12 +17,14 @@ type Gate = typeof import('../brokerConsent');
 interface Seen {
   readonly dialogs: string[];
   readonly prompted: ConsentQuestion[];
+  /** What `dialogClosed` was told, in order: the `keep` of each close (Amendment 3, C.3). */
+  readonly closed: boolean[];
   /** What `prompted` had been told when the first dialog was shown: it must be called BEFORE the dialog. */
   promptedWhenShown: number[];
 }
 
 function gateOver(grants: object): { gate: InstanceType<Gate['ConsentGate']>; seen: Seen; answer(choice: string | undefined): void } {
-  const seen: Seen = { dialogs: [], prompted: [], promptedWhenShown: [] };
+  const seen: Seen = { dialogs: [], prompted: [], closed: [], promptedWhenShown: [] };
   let answer: (choice: string | undefined) => void = () => undefined;
   const stub = {
     window: {
@@ -43,6 +45,7 @@ function gateOver(grants: object): { gate: InstanceType<Gate['ConsentGate']>; se
     onUserPresent: () => undefined,
     log: () => undefined,
     prompted: (question) => void seen.prompted.push(question),
+    dialogClosed: (_question, keep) => void seen.closed.push(keep),
   });
   return { gate, seen, answer: (choice) => answer(choice) };
 }
@@ -109,4 +112,35 @@ test('a gate with no prompted hook still asks (the hook is optional, as it is fo
   const grants = registry('pending');
   const gate = new ConsentGate({ grants: grants as never, actions: { actionsFor: () => [] } as never, onUserPresent: () => undefined, log: () => undefined });
   assert.equal(await gate.consent(question('mcp'), never), 'allowed');
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Amendment 3, C.3 — the close of a dialog says whether the place is kept: only for an Allow of a call that may ask again
+ * ------------------------------------------------------------------------------------------------------------- */
+
+/** The `keep` the gate reports when its dialog is answered `choice` for a question that does (or does not) declare a follow-up. */
+async function keepFor(choice: string | undefined, followUp: boolean | undefined): Promise<boolean[]> {
+  const { gate, seen, answer } = gateOver(registry('pending'));
+  const outcome = gate.consent({ ...question('mcp'), followUp }, never);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  answer(choice);
+  await outcome;
+  return seen.closed;
+}
+
+test('K7: dialogClosed is told to keep the place for an Allow of a call that declares a follow-up, and for nothing else', async () => {
+  assert.deepEqual(await keepFor('Allow', true), [true], 'Allow + followUp: kept');
+  assert.deepEqual(await keepFor('Allow', false), [false], 'Allow without a follow-up (exec, query): freed (P2)');
+  assert.deepEqual(await keepFor('Allow', undefined), [false], 'a question that does not say: freed');
+  assert.deepEqual(await keepFor('Deny', true), [false], 'a Deny frees the place');
+  assert.deepEqual(await keepFor(undefined, true), [false], 'a dismissed dialog frees it');
+});
+
+test('K7: an unanswered dialog (the five-minute timeout) frees the place although the call declares a follow-up', async () => {
+  const stub = { window: { showWarningMessage: (): Promise<string | undefined> => new Promise(() => undefined) }, workspace: { getConfiguration: () => ({ get: (_key: string, fallback: unknown) => fallback }) } };
+  const closed: boolean[] = [];
+  const { ConsentGate } = loadWithVscode<Gate>('../brokerConsent', stub, { './agentConsent': { ...(require('../agentConsent') as object), CONSENT_TIMEOUT_MS: 30 } });
+  const gate = new ConsentGate({ grants: registry('pending') as never, actions: { actionsFor: () => [] } as never, onUserPresent: () => undefined, log: () => undefined, dialogClosed: (_q, keep) => void closed.push(keep) });
+  assert.equal(await gate.consent({ ...question('mcp'), followUp: true }, never), 'timeout');
+  assert.deepEqual(closed, [false]);
 });

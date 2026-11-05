@@ -57,8 +57,9 @@ export interface Grant {
 
 /** Eviction, in one ordered list so the registry never reaches a token while a call grant exists. */
 const EVICTION_ORDER: ReadonlyArray<(grant: Grant) => boolean> = [
-  (g) => g.scope === 'call' && g.status !== 'allowed', // refused or abandoned calls
-  (g) => g.scope === 'call', // allowed calls (silent MCP use)
+  (g) => g.scope === 'call' && g.status === 'denied', // a call the person refused: its secret is in no response, it answers nobody
+  (g) => g.scope === 'call' && g.status === 'allowed' && g.uses > 0, // a call that ran (silent MCP use at sixty a minute lands here)
+  (g) => g.scope === 'call', // the rest: a dialog open now, an Allow not yet reserved, a call whose client left — oldest first
   (g) => g.status === 'denied', // tombstones (already capped at 64)
   (g) => g.scope === 'token' && g.status === 'pending', // a token whose first dialog is open
   (g) => g.scope === 'token', // the last resort, as before
@@ -290,12 +291,14 @@ export class GrantRegistry {
   /**
    * The grant the cap should reclaim next: the first tier of {@link EVICTION_ORDER} that has one, the oldest within it.
    *
-   * <p>A list, so the registry never reaches a token while a call grant exists. The first tier is the calls nobody
-   * holds (refused or abandoned), then the allowed calls: one request's capability whose secret was never in any
-   * response (issue #95 — silent MCP use mints them at sixty a minute). Only then a denied tombstone, a token whose
-   * first dialog is open, and the last resort, the oldest token, which is the case the cap was originally written for.
-   * Amendment 2, B.1: a loop of calls refused before their dialog used to evict a pending token or a tombstone first,
-   * because the first tier was "anything not allowed".</p>
+   * <p>A list, so the registry never reaches a token while a call grant exists. The first two tiers are the calls
+   * that answer nobody: a call the person refused, and a call that ran (issue #95 — silent MCP use mints them at
+   * sixty a minute, allowed at once). The third is every other call, oldest first, and it holds the ones that are
+   * NOT dead: a pending call is, after Amendment 2's `drop`, a call whose dialog is open now (or whose client left
+   * during it), and an allowed call with no use yet is an Allow not yet reserved. Evicting one of those loses a
+   * person's answer (Amendment 3, C.4), so a loop of quiet calls reaches them last among the calls. Only then a
+   * denied tombstone, a token whose first dialog is open, and the last resort, the oldest token, which is the case
+   * the cap was originally written for.</p>
    */
   private oldestEvictable(): string | undefined {
     return EVICTION_ORDER.map((fits) => this.oldestWhere(fits)).find((victim) => victim !== undefined);

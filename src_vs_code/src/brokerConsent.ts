@@ -40,9 +40,10 @@ export interface ConsentGateDeps {
   /**
    * The dialog raised for this question is gone: answered, or given up on at the timeout. The one place a dialog holds is
    * given back here (`aliasThrottle.ts`), not when the call that raised it ends — a client that leaves does not take the
-   * modal off the screen.
+   * modal off the screen. `keep`: the person Allowed and the call may put a prompt of its own on screen next
+   * (`ConsentQuestion.followUp`), so the place stays the call's until the call ends (Amendment 3, C.3).
    */
-  dialogClosed?(question: ConsentQuestion): void;
+  dialogClosed?(question: ConsentQuestion, keep: boolean): void;
 }
 
 /** One consent question, as the broker asks it. */
@@ -54,6 +55,8 @@ export interface ConsentQuestion {
   readonly caller: CallerLabel | undefined;
   /** The door the call came in by: a local token call raises dialogs that are not throttled, a bridged one is counted on its bridge. */
   readonly via: AuditDoor;
+  /** The call may show a prompt of its own after an Allow (a PIN box, a trust modal): the place is kept until the call ends. */
+  readonly followUp?: boolean;
 }
 
 export class ConsentGate {
@@ -109,15 +112,18 @@ export class ConsentGate {
    * although VS Code cannot take the modal down.
    */
   private async shown(question: ConsentQuestion): Promise<string | undefined> {
+    let choice: string | undefined;
     try {
-      return await withTimeout(
+      choice = await withTimeout(
         Promise.resolve(vscode.window.showWarningMessage(this.wording(question), { modal: true }, 'Allow', 'Deny')),
         CONSENT_TIMEOUT_MS,
         // The HTTP server keeps this process alive; the timer need not.
         { unref: true },
       );
+      return choice;
     } finally {
-      this.deps.dialogClosed?.(question);
+      // A timeout leaves `choice` undefined: freed. Only an Allow of a call that may ask again keeps the place.
+      this.deps.dialogClosed?.(question, choice === 'Allow' && question.followUp === true);
     }
   }
 

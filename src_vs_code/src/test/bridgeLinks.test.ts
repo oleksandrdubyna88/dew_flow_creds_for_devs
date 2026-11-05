@@ -173,23 +173,38 @@ test('L5: ssh\'s own stderr stays as returned, on a bridge too — it may carry 
 });
 
 /* ---------------------------------------------------------------------------------------------------------------
- * Amendment 2, B.3 / F1 — ForwardAgent=no on a bridged call
+ * Amendment 3, C.1-C.2 / F1 — a bridged call is one fresh connection that forwards nothing
  * ------------------------------------------------------------------------------------------------------------- */
 
 /** Where `-o ForwardAgent=no` stands in an argv, or -1. */
 const forwardAgentNoAt = (argv: readonly string[]): number => argv.findIndex((arg, i) => arg === '-o' && argv[i + 1] === 'ForwardAgent=no');
 
-test('F1: through a bridge the argv says -o ForwardAgent=no, after the composer\'s jump; off a bridge it does not', async () => {
-  await both({ jump: 'valid' }, {}, async ({ lw, ww }) => {
+/** Where the other five options stand: every word that must be present on a bridge and absent off it. */
+const OTHER_FIVE = ['ControlPath=none', 'ControlMaster=no', 'ClearAllForwardings=yes', 'ForwardX11=no', 'Tunnel=no'];
+
+test('F1: through a bridge the argv has the jump, no -A -L -R, then the six options in order; off a bridge it has the forwards and none of the six', async () => {
+  await both({ jump: 'valid', agentForward: true, forwards: true }, { agentForward: true }, async ({ lw, ww }) => {
+    // The wall refuses an entry that forwards the agent on a bridge, so the bridged call here is the world's own: only
+    // the port forwards remain, and the action is also reached once with the agent off.
+    assert.equal((await body(viaMain(ww), ww)).status, 200);
+    const local = lw.runs[0].argv;
+    assert.ok(local.includes('-A') && local.includes('-L') && local.includes('-R'), `off a bridge today's argv: ${local.join(' ')}`);
+    for (const word of ['ForwardAgent=no', ...OTHER_FIVE]) {
+      assert.ok(!local.includes(word), `${word} is not sent off a bridge`);
+    }
+  });
+  await both({ jump: 'valid', forwards: true }, {}, async ({ lw, ww }) => {
     assert.equal((await body(viaBridge(ww.bridge), ww)).status, 200);
     const bridged = lw.runs[0].argv;
+    for (const forbidden of ['-A', '-L', '-R']) {
+      assert.ok(!bridged.includes(forbidden), `${forbidden} is not sent on a bridge: ${bridged.join(' ')}`);
+    }
     const at = forwardAgentNoAt(bridged);
     assert.notEqual(at, -1, `a bridged call forwards nothing, whatever ~/.ssh/config says: ${bridged.join(' ')}`);
-    assert.ok(bridged.indexOf('-J') !== -1 && bridged.indexOf('-J') < at, `after the options the composer made: ${bridged.join(' ')}`);
-    assert.ok(at < bridged.indexOf('--'), 'and before the destination');
-
-    assert.equal((await body(viaMain(ww), ww)).status, 200);
-    assert.equal(forwardAgentNoAt(lw.runs[1].argv), -1, `off a bridge nothing is added: ${lw.runs[1].argv.join(' ')}`);
+    const options = bridged.slice(at, at + 12).filter((arg) => arg !== '-o');
+    assert.deepEqual(options, ['ForwardAgent=no', ...OTHER_FIVE], `the six, in order: ${bridged.join(' ')}`);
+    assert.ok(bridged.indexOf('-J') !== -1 && bridged.indexOf('-J') < at, `after the jump the composer made: ${bridged.join(' ')}`);
+    assert.ok(at < bridged.indexOf('-i') && bridged.indexOf('-i') < bridged.indexOf('--'), 'before the key and the destination');
   });
 });
 

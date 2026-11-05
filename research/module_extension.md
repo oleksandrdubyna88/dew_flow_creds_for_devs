@@ -3347,7 +3347,12 @@ listing's `await`, so a narrow that lands while the rows are being read is the s
 only authenticates (`brokerBridgeToken.ts`): the call is minted as a grant of its own and asked every time, a Deny
 refuses that call and not the token, and the token's use count moves at the action boundary, before the call grant's.
 The token's status is read **after** the body (`bridgedTokenCall` is handed `() => status`, not a snapshot), so a Deny that
-lands between the token's lookup and the body's arrival is seen at once and not only at the launch gate.
+lands between the token's lookup and the body's arrival is seen at once and not only at the launch gate. **That check runs
+inside the slot, after `admit`** (Amendment 3, C.5): a token the person denied is an asking call like any other, so a loop of
+posts with it is counted (sixty a minute answer `403 denied` with a line each, the rest `429` with one line per window, and
+`busy` while another dialog is open) and not one journal line and one queued append per request with nothing counting them. A
+token that is gone by then (evicted, or expired while its body arrived; `status()` is `undefined`) is answered `401 unauthorized`
+with the main port's sentence and no line, instead of being asked about and refused at `spentToken`. Neither mints a grant.
 
 *What using an entry reaches, and what a bridge is told.* An ssh entry's linked key and jump chain are part of using it,
 not scope targets (`sshkey` can never be opened to MCP, the value stays on the laptop, the edit verbs are off the list), so
@@ -3358,15 +3363,28 @@ not run ssh` carry a path or argv, so on a bridge (`ctx.bridge` set) `sshUseActi
 agent journal. `ssh`'s own stderr is returned as it is and may carry a jump host's address (the plan's decision). An entry
 with `agentForward` is refused on a bridge, twice with one sentence (`AGENT_FORWARD_REFUSED`): before the dialog through
 `wall.entryRefusal` (inside `referenceRefusal`, so it is also the launch gate's word), and in the action against the live
-entity, before a key is written to disk. **A bridged call also never forwards the agent through the laptop's own
-`ssh_config`** (Amendment 2, B.3): the action passes `noAgentForward` to `buildSshExecArgv`, which adds `-o ForwardAgent=no`
-after the composer's options (a command-line option outranks every config file, so `Host * / ForwardAgent yes` forwards
-nothing for a bridged call) and, with it, drops the composer's `-A` (ssh lets `-A` win over `-o ForwardAgent=no` in either
-order; no bridged argv carries `-A` anyway, since an entry with `agentForward` is refused). `SSH_AUTH_SOCK` is not cleared,
-because that would also change how the in-scope entry authenticates. The argv is pinned by tests; that it really stops
-forwarding is measured by section 8 of `scripts/ssh-agent-itest.cjs` (`itestForwardAgent.cjs`) on a runner with `sshd`, and
-on Windows OpenSSH it is the owner's M8. A reference refusal echoes nothing of the stored text: `REFERENCE_REFUSED(name)`
-takes no reference. A throw out of the credential read (`prepareAuth`) gives the exec slot back (it used to leak it).
+entity, before a key is written to disk. **A bridged call is ONE fresh connection that carries the command and nothing else**, whatever the entry or the laptop's own
+`ssh_config` says (Amendment 2, B.3; Amendment 3, C.1-C.2): the action passes `bridged` to `buildSshExecArgv`, which hands the
+composer the entry with its `-A` and its port forwards taken away (ssh lets `-A` win over `-o ForwardAgent=no` in either order, so the
+flag is removed, not out-voted) and pushes `BRIDGED_SSH_OPTIONS` after it: `ForwardAgent=no`, `ControlPath=none`,
+`ControlMaster=no`, `ClearAllForwardings=yes`, `ForwardX11=no`, `Tunnel=no`. `ForwardAgent=no` alone was not enough: with
+`Host * / ForwardAgent yes` and `ControlMaster auto` in the laptop's config the person's own Connect is the master, a bridged exec to
+the same `user@host:port` joined it as a second session, and OpenSSH exports the connection's forwarded agent socket to every session of
+the connection while authenticating nothing for the mux client (the pinned key, `StrictHostKeyChecking=yes` and the pinned
+`UserKnownHostsFile` are not applied, and the port it was given is not the one it reaches). An in-scope entry's `portForwards`
+are stripped rather than refused (an exec needs no forward, and a forward is a road from the server through the laptop); **plan
+change 3.1**. `-J` (the jump chain) is not a forwarding and stays as the wall decided. `SSH_AUTH_SOCK` is not cleared from the
+child's environment, because that would also change how the in-scope entry authenticates; what is removed is the server's view of
+it. `ProxyCommand`, `LocalCommand` and `SendEnv` in the laptop's config are the person's own words for every connection they make
+and stay. The agent is told nothing per call (the strip is unconditional, and a sentence would disclose the shape of the entry); the
+sentence belongs in the E4 help ("a bridged command runs on one fresh connection that forwards nothing"). Off a bridge the argv is
+byte for byte what it was. The argv is pinned by tests; that it really stops forwarding and joining is measured by section 8 of
+`scripts/ssh-agent-itest.cjs` (`itestForwardAgent.cjs`: the agent legs, and a mux pair, two `sshd -d`, a master on one and the
+production argv aimed at the other) on a runner with `sshd`, and on Windows OpenSSH it is the owner's M8. A reference refusal echoes nothing of the stored text: `REFERENCE_REFUSED(name)`
+takes no reference. A throw out of the credential read (`prepareAuth`) gives the exec slot back (it used to leak it), and so does a
+key file that cannot be removed (Amendment 3, C.6: `removeKeyFile` catches the `EPERM`/`EBUSY` a Windows lock gives, writes
+`ssh:exec — the key file could not be removed: …` to the journal, and the exec slot comes back in the same `finally`; the finished
+result stands, and the leftover file is the person's own, in a folder only they can read).
 
 *When it is decided.* Once at the door, and again at the last synchronous step before an action starts
 (`brokerCall.answer`: the client is still there, then the scope and the references are read fresh, then the token and
@@ -3395,15 +3413,25 @@ which decides everything it can. **What the local alias and MCP doors gain, exac
 longer leaves a pending call grant in the registry (`credsAgentServer.usable` drops it: `GrantRegistry.drop` deletes a
 `'call'` grant that is still `pending`, and nothing else). No answer, status or sentence on either door changes below the
 ceiling; above it a `too_many_requests` appears where the call used to reach `usable`. The registry's cap evicts in the order
-of `EVICTION_ORDER`: calls nobody holds, allowed calls (silent MCP use), denied tombstones, a token whose first dialog is
-open, and the oldest token last, so an idle shared token, a tombstone or a token with an open dialog is never evicted while a
-call grant exists (today each of them could be). **One dialog at a time stays global** because the person is one person with
+of `EVICTION_ORDER`: **denied calls** (the person refused them), **allowed calls that ran** (`uses > 0`: silent MCP use), the rest
+of the calls oldest first (a pending call is, after `drop`, one whose dialog is open now or whose client left during it, and an Allow
+not yet reserved has no use yet; Amendment 3, C.4), denied tombstones, a token whose first dialog is open, and the oldest token last,
+so an idle shared token, a tombstone or a token with an open dialog is never evicted while a call grant exists (today each of them
+could be), and a quiet loop at sixty calls a minute can no longer evict the call grant of a dialog on screen (it used to at the 256th
+mint, inside the dialog's five minutes: the person's answer was lost and the journal said `ALLOWED` for a grant that no longer existed). **One dialog at a time stays global** because the person is one person with
 one screen, and **the place belongs to the dialog, not to the call**: `OneInFlight` hands out a `Holding` per admission; once a
 dialog of a throttled door is on screen (`prompted`) the call ending frees nothing, and the place is freed when the dialog
 closes (`ConsentGate.ask` calls `dialogClosed` from a `finally`: the person's click, or the five-minute timeout, although VS
 Code cannot take the modal down), so a client that hangs up during its dialog does not let the next call raise a second modal on
 top of it, and a long action does not make every other door `busy`. A stale release or close (a different holding) frees nothing
-of a later holder's place. A local token call raises dialogs that are not counted, held or closed, as it was never throttled; on
+of a later holder's place. **The one exception is the call that may ask again** (Amendment 3, C.3): an Allow keeps the place, past
+the dialog's close, until the call's own `release` when the call declares that it may put a prompt of its own on screen after the
+Allow — `UseAction.asksAfterConsent` (`terminal`, and `up` of the VPN), and `create` at the door (the folder PIN box and the "count
+taken" modal) — so a second modal cannot open over that prompt and be answered by the Enter that was meant for it. `ConsentQuestion.followUp`
+carries it, `ConsentGate.shown` passes `keep = Allow && followUp` to `dialogClosed`, and `OneInFlight` remembers (`endedId`) a holding
+whose call ended while its dialog was up, so a kept place dies with its call. A Deny, a timeout, a dialog nobody waits for any
+more, and every Allow of an action without the flag (`exec`, `query`: the only actions a bridge serves) free the place at the
+dialog's close as above. A local token call raises dialogs that are not counted, held or closed, as it was never throttled; on
 a bridge a token call is bridged and counted on its bridge, with the bridge's sentence
 (`Too many requests: this Remote Bridge may prompt at most 5 times a minute.`). `forget(door)` is for E2 on Close.
 

@@ -184,8 +184,23 @@ function connectionArgvOptions(
   entity: EntityMetadata,
   jump: string | undefined,
   bridged: boolean,
-): { jump?: string; knownHostsFile?: string; noAgentForward: boolean } {
-  return { jump, knownHostsFile: materializeKnownHosts(deps.storageDir, entity), noAgentForward: bridged };
+): { jump?: string; knownHostsFile?: string; bridged: boolean } {
+  return { jump, knownHostsFile: materializeKnownHosts(deps.storageDir, entity), bridged };
+}
+
+/**
+ * Delete the key file this call materialised, and never throw: `force` swallows ENOENT only, and a lock on the file (Windows,
+ * while `ssh.exe` is still letting go of it) must cost neither the exec slot nor the finished result (Amendment 3, C.6). The note
+ * names the failure, not the key; what stays on disk is the person's own file, in a folder only they can read.
+ */
+function removeKeyFile(deps: SshUseDeps, file: string | undefined): void {
+  try {
+    if (file !== undefined) {
+      fs.rmSync(file, { force: true });
+    }
+  } catch (error) {
+    deps.note(`ssh:exec — the key file could not be removed: ${describeError(error)}`);
+  }
 }
 
 // eslint-disable-next-line max-lines-per-function
@@ -254,9 +269,7 @@ export function sshExecAction(deps: SshUseDeps): UseAction {
       } catch (error) {
         return refuse('internal', `Could not run ssh: ${describeError(error)}`);
       } finally {
-        if (prepared.materialized !== undefined) {
-          fs.rmSync(prepared.materialized, { force: true });
-        }
+        removeKeyFile(deps, prepared.materialized);
         release();
       }
     },
@@ -268,6 +281,7 @@ export function sshTerminalAction(deps: SshUseDeps): UseAction {
     kind: 'ssh',
     action: 'terminal',
     mutatesSecrets: false,
+    asksAfterConsent: true,
     verb: 'open an interactive terminal to',
     describeOutcome: () => 'opened',
     validate: () => ({ ok: true }),
