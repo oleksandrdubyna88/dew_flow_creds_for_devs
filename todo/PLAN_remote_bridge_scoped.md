@@ -1,6 +1,6 @@
 # PLAN — An agent on a remote Linux server uses what the person opened to it, through a bridge scoped to that server
 
-> Status: **plan only, nothing implemented yet, 2026-11-04.** Epoch 2, after a whole re-review (`good_enough`, 4 of 4 reviewers). Scope: `src_vs_code` (broker doors, bridge lifecycle, scope,
+> Status: **E1 in progress on `feat/remote-bridge-e1`, stopped for re-review, 2026-11-05.** Epoch 2 took a second change. Scope: `src_vs_code` (broker doors, bridge lifecycle, scope,
 > agent actions), `src_broker_client`, `src_cli`, `src_mcp`, `install.sh`. No server change. Extends the shipped bridge of
 > [PLAN_remote_broker_bridge.md](../research/PLAN_remote_broker_bridge.md).
 
@@ -20,9 +20,11 @@ Narrowed: yes — the db tunnel left the scope and the Definition of Done, by th
 |---|---|---|---|
 | Nothing built | — | — | — |
 
-> Epoch 2 · approved 2026-11-04 · by owner · state: open
+> Epoch 2 · approved 2026-11-04 · by owner · state: stopped
 
 - 2.1 · 2026-11-04 · agent · approach — an unrelated extension tag would ship the new door before clients are on servers, and an old client never shows the update sentence, so the new flow stays behind a switch until E4
+- 2.2 · 2026-11-05 · reviewer · approach — each window holds its own copy of `globalState` and the last write wins, so a narrowed scope may never reach the owning window and another window can restore it; scope records move to a file in the shared storage folder
+  (This second change stopped the plan. E1.1, E1.2 and E1.3 are committed on the branch and go to the re-review's sort.)
 
 ## 1. Goal
 
