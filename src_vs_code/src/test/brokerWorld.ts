@@ -173,6 +173,8 @@ function world(options: {
    * action a route resolves to; the action's own `run` is the subject.
    */
   realAction?: unknown;
+  /** A real action by name, read before `realAction`, so one route can be real while the others stay scripted. */
+  realActions?: Record<string, unknown>;
   /**
    * The entity kind the grants, the alias and the MCP lookup carry, and the registry resolves the
    * actions for. `ssh` unless a test serves another kind's real action under its own name (E1.1, X3:
@@ -226,7 +228,7 @@ function world(options: {
   });
 
   const supported = options.supports ?? ['exec'];
-  const action = (name: string): unknown => options.realAction ?? scripted(name);
+  const action = (name: string): unknown => options.realActions?.[name] ?? options.realAction ?? scripted(name);
   const scripted = (name: string): unknown => ({
     kind: w.kind,
     action: name,

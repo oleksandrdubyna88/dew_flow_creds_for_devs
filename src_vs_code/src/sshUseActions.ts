@@ -23,6 +23,7 @@ import { RemoteWindowDeps, connectEntity } from './sshConnect';
 import { remedyRunner, remoteWindowDeps } from './remoteConnectHost';
 import { WslRelayManager } from './wslRelayManager';
 import { EntityMetadata } from './types';
+import { AGENT_FORWARD_REFUSED, BRIDGE_USE_REFUSED } from './bridgeScope';
 
 /**
  * The two things an agent may do with an SSH grant: run a command, or open the
@@ -100,6 +101,38 @@ function fail(code: ErrorCode, message: string): UseActionResult {
   return { status: statusForErrorCode(code), body: errorBody(code, message) };
 }
 
+/**
+ * A refusal as the agent reads it: the sentence as it always was off a bridge; on a bridge the generic sentence, the real one in the
+ * journal. The code is kept.
+ *
+ * <p>The sentences that go through here name the entry a linked key or a jump host is (`sshExecAuth.ts`, `sshOptions.ts`), or carry a
+ * path or an argv (`Could not write the stored key`, `Could not run ssh`). The key and the chain are part of USING the entry, so an
+ * agent on a bridge is served through them — but it is not told what they are. Those two files do not know which door asked, so the
+ * door is handled here, where every such sentence passes.</p>
+ */
+function bridgedRefusal(deps: SshUseDeps, ctx: UseActionContext): (code: ErrorCode, message: string) => UseActionResult {
+  return (code, message) => {
+    if (ctx.bridge === undefined) {
+      return fail(code, message);
+    }
+    deps.note(`${ctx.entityName}: ${message} (a Remote Bridge was told only that it could not be used)`);
+    return fail(code, BRIDGE_USE_REFUSED(ctx.entityName));
+  };
+}
+
+/**
+ * Why this entry cannot be connected to at all, decided before anything decrypts a key to disk: an entity whose host was
+ * cleared after the grant was minted cannot be connected to, and writing key material only to refuse the call left it
+ * lying there until the next activate. And on a bridge, an entry that forwards the shared agent (the laptop's whole identity:
+ * the wall says so first, and this is the live entity's word).
+ */
+function unusableEntity(ctx: UseActionContext, entity: EntityMetadata): UseActionResult | undefined {
+  if (!entity.host) {
+    return fail('no_credential', `"${ctx.entityName}" has no host configured.`);
+  }
+  return ctx.bridge !== undefined && entity.agentForward === true ? fail('denied', AGENT_FORWARD_REFUSED(ctx.entityName)) : undefined;
+}
+
 /** The live entity behind a grant, re-read on every call — never a snapshot. */
 function entityFor(deps: SshUseDeps, ctx: UseActionContext): EntityMetadata | undefined {
   return deps.storage.getNode(ctx.accountId, ctx.entityId)?.details;
@@ -116,6 +149,7 @@ async function prepareAuth(
   deps: SshUseDeps,
   ctx: UseActionContext,
   entity: EntityMetadata,
+  refuse: (code: ErrorCode, message: string) => UseActionResult,
 ): Promise<
   | { ok: true; keyPath?: string; env: NodeJS.ProcessEnv; auth: SshExecAuth; materialized?: string }
   | { ok: false; result: UseActionResult }
@@ -130,7 +164,7 @@ async function prepareAuth(
   }
   if (!resolved.ok) {
     const code: ErrorCode = resolved.reason === 'no_credential' ? 'no_credential' : 'internal';
-    return { ok: false, result: fail(code, resolved.message) };
+    return { ok: false, result: refuse(code, resolved.message) };
   }
   const { keyPath, env, auth, materialized } = resolved;
   return { ok: true, keyPath, env, auth, materialized };
@@ -181,18 +215,16 @@ export function sshExecAction(deps: SshUseDeps): UseAction {
       if (entity === undefined) {
         return fail('not_found', `"${ctx.entityName}" no longer exists in the vault.`);
       }
-      // Before anything decrypts a key to disk: an entity whose host was
-      // cleared after the grant was minted cannot be connected to, and writing
-      // key material only to refuse the call left it lying there until the next
-      // activate.
-      if (!entity.host) {
-        return fail('no_credential', `"${ctx.entityName}" has no host configured.`);
+      const refuse = bridgedRefusal(deps, ctx);
+      const unusable = unusableEntity(ctx, entity);
+      if (unusable !== undefined) {
+        return unusable;
       }
       const release = deps.acquireExecSlot();
       if (release === undefined) {
         return fail('too_many_requests', 'Too many SSH commands are already running.');
       }
-      const prepared = await prepareAuth(deps, ctx, entity);
+      const prepared = await prepareAuth(deps, ctx, entity, refuse);
       if (!prepared.ok) {
         release();
         return prepared.result;
@@ -200,7 +232,7 @@ export function sshExecAction(deps: SshUseDeps): UseAction {
       try {
         const chain = resolveJumpChain(entity, (id) => deps.storage.getNode(ctx.accountId, id)?.details);
         if (!chain.ok) {
-          return fail('no_credential', chain.reason);
+          return refuse('no_credential', chain.reason);
         }
         const argv = buildSshExecArgv(
           entity,
@@ -219,10 +251,7 @@ export function sshExecAction(deps: SshUseDeps): UseAction {
         const response: ExecResponseBody = outcome;
         return { status: 200, body: response };
       } catch (error) {
-        return fail(
-          'internal',
-          `Could not run ssh: ${describeError(error)}`,
-        );
+        return refuse('internal', `Could not run ssh: ${describeError(error)}`);
       } finally {
         if (prepared.materialized !== undefined) {
           fs.rmSync(prepared.materialized, { force: true });

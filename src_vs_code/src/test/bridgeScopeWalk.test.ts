@@ -4,7 +4,8 @@ import { BRIDGE_NOT_SERVED, BRIDGE_ROUTES } from '../bridgeAllowList';
 import { BRIDGE_WRONG_KEY } from '../brokerOrigin';
 import { configSnippetResult } from '../mcpSnippetRoute';
 import { Reply, code, message } from './bridgeDoorHarness';
-import { ACCOUNT, Ask, CONTEXT_1, Door, LEAKS, WallWorld, normalised, send, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
+import { put } from './bridgeModules';
+import { ACCOUNT, Ask, CONTEXT_1, Door, LEAKS, WallWorld, normalised, send, until, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
 
 /**
  * The walk (E1.3, S3-S7, S13, S15, S20): every route a bridge serves, asked about the entry that is in scope and the
@@ -341,7 +342,7 @@ test('S15: dependsOn names only what is listed with it, can is narrowed to use, 
     assert.equal(local.can.edit, true, 'and shows every permission the folder has');
 
     assert.deepEqual((await row(viaBridge(ww.bridge))).dependsOn, []);
-    await ww.scopes.set(ACCOUNT, 'server1', ['e1', 'e2'], false);
+    await put(ww.scopes, ACCOUNT, 'server1', ['e1', 'e2']);
     const widened = await row(viaBridge(ww.bridge));
     assert.deepEqual(widened.dependsOn, ['second'], 'e2 is in scope, so its name stays');
     assert.deepEqual(widened.can, { use: true, edit: false, create: false, delete: false });
@@ -393,6 +394,63 @@ test('S13: a grant minted by share, by the alias route or by the MCP door has no
     const bridged = await send(viaBridge(ww.bridge), { path: '/v1/alias/exec', body: { alias: 'one', command: 'id' } });
     assert.equal(bridged.status, 200);
     assert.equal([...registry.values()].filter((grant) => 'bridge' in grant).length, 1, 'and the bridge door\'s grant is the one that has it');
+  } finally {
+    ww.dispose();
+  }
+});
+
+test('S22: the listing is per account — with a2 holding an e1 of its own, a bridge scoped to a1\'s e1 lists a1\'s row once and never the foreign one', async () => {
+  const ww = await wallWorld({ collide: true });
+  try {
+    const local = JSON.parse((await send(viaMain(ww), { method: 'GET', path: '/v1/mcp/entries' })).body) as { entries: { id: string; name: string }[] };
+    assert.deepEqual(local.entries.filter((entry) => entry.id === 'e1').map((entry) => entry.name).sort(), ['foreign', 'prod'], 'positive control: the main port lists both, since it lists every account');
+    const reply = await send(viaBridge(ww.bridge), { method: 'GET', path: '/v1/mcp/entries' });
+    const listed = (JSON.parse(reply.body) as { entries: { id: string; name: string }[] }).entries;
+    assert.deepEqual(listed.map((entry) => [entry.id, entry.name]), [['e1', 'prod']], 'e1 once, named prod');
+    assert.ok(!reply.body.includes('foreign'), 'the foreign entry is nowhere in the body');
+    assert.deepEqual([...new Set(ww.listed)], [ACCOUNT], 'and the supplier was asked about a1 only');
+    assert.ok(ww.listed.length >= 1, 'it WAS asked: the listing came from the per-account supplier');
+  } finally {
+    ww.dispose();
+  }
+});
+
+test('S23: the snippet is per account — e1 answers a1\'s config, and a world where only a2 holds a config e1 answers the not-found body', async () => {
+  const ww = await wallWorld({ collide: true });
+  try {
+    const reply = await send(viaBridge(ww.bridge), { method: 'GET', path: '/v1/mcp/config-snippet?id=e1&language=shell' });
+    const body = JSON.parse(reply.body) as { error?: string; snippet?: { code: string } };
+    assert.equal(body.error, undefined, 'a1\'s e1 is a config in scope');
+    assert.ok(body.snippet !== undefined || (JSON.parse(reply.body) as { languages: unknown[] }).languages.length > 0, 'positive control: a snippet or the catalog is served');
+    assert.ok(!reply.body.includes('foreign'), 'and nothing of the foreign entry');
+    assert.deepEqual([...new Set(ww.configsAsked.map(([account]) => account))], [ACCOUNT], 'the supplier was asked about a1 only');
+    assert.ok(ww.configsAsked.length >= 1, 'and it WAS asked');
+  } finally {
+    ww.dispose();
+  }
+  const only = await wallWorld({ collide: true, a1Config: false });
+  try {
+    const reply = await send(viaBridge(only.bridge), { method: 'GET', path: '/v1/mcp/config-snippet?id=e1&language=shell' });
+    assert.deepEqual(JSON.parse(reply.body), configSnippetResult(undefined, undefined, undefined), 'a2 holds the only config e1, and a bridge of a1 is told there is none');
+    assert.ok(!reply.body.includes('foreign'));
+  } finally {
+    only.dispose();
+  }
+});
+
+test('S24: a scope narrowed while the listing is being read is the scope the listing is cut by', async () => {
+  const ww = await wallWorld({ holdListing: true });
+  try {
+    const request = send(viaBridge(ww.bridge), { method: 'GET', path: '/v1/mcp/entries' });
+    await until(ww.listing.asked, 'the listing to be asked for');
+    await put(ww.scopes, ACCOUNT, 'server1', []);
+    ww.listing.release();
+    const reply = await request;
+    assert.deepEqual((JSON.parse(reply.body) as { entries: unknown[] }).entries, [], 'the scope was read after the listing came back: nothing of e1 is shown');
+    ww.listing.release();
+    await put(ww.scopes, ACCOUNT, 'server1', ['e1']);
+    const widened = await send(viaBridge(ww.bridge), { method: 'GET', path: '/v1/mcp/entries' });
+    assert.deepEqual((JSON.parse(widened.body) as { entries: { id: string }[] }).entries.map((entry) => entry.id), ['e1'], 'positive control: the same listing shows e1 once the scope holds it');
   } finally {
     ww.dispose();
   }

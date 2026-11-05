@@ -1,7 +1,7 @@
 import * as http from 'node:http';
 import { ErrorCode, MAX_REQUEST_BODY_BYTES, parseBearer, parseJsonObject } from './brokerProtocol';
 import { Grant, GrantLimits, GrantLookup } from './grantRegistry';
-import { expiredMessage } from './grantLimits';
+import { expiredMessage } from './grantWords';
 import { MCP_SWITCHES } from './mcpSwitches';
 import { McpRung } from './mcpAccess';
 

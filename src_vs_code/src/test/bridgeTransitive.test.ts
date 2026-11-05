@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Reply, code, message } from './bridgeDoorHarness';
-import { loadBridgeModules, present } from './bridgeModules';
+import { loadBridgeModules, present, put } from './bridgeModules';
 import { ACCOUNT, Ask, SERVER, WallWorld, registryOf, send, until, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
 
 /**
@@ -33,7 +33,7 @@ function routes(token: string): Route[] {
   ];
 }
 
-const sentence = (ref: string): string => REFERENCE_REFUSED('prod', ref);
+const sentence = (): string => REFERENCE_REFUSED('prod');
 const ranOf = (ww: WallWorld): string[] => ww.w.ran.map((r) => r.entityId);
 
 /** One request, started and not awaited — for the scenarios that act while it is open. */
@@ -43,7 +43,7 @@ function begin(ww: WallWorld, ask: Ask): Promise<Reply> {
 
 const ASK_TOKEN = (token: string): Ask => ({ path: '/v1/use/exec', token, body: { command: 'id' } });
 
-const narrowTo = (ww: WallWorld, entries: string[]): Promise<void> => ww.scopes.set(ACCOUNT, SERVER, entries, false);
+const narrowTo = async (ww: WallWorld, entries: string[]): Promise<void> => void (await put(ww.scopes, ACCOUNT, SERVER, entries));
 
 test('S8: a stored command that names an entry out of scope is refused with the one sentence, before any dialog, on all three routes', async () => {
   const ww = await wallWorld({ storedTexts: [`deploy ${LEAK_REF}`] });
@@ -51,7 +51,7 @@ test('S8: a stored command that names an entry out of scope is refused with the 
     const token = await ww.tokenFor(ACCOUNT, 'e1', 'prod');
     for (const route of routes(token)) {
       const reply = await send(viaBridge(ww.bridge), route.ask);
-      assert.deepEqual([reply.status, code(reply), message(reply)], [403, 'denied', sentence(LEAK_REF)], route.via);
+      assert.deepEqual([reply.status, code(reply), message(reply)], [403, 'denied', sentence()], route.via);
     }
     assert.deepEqual(ww.w.dialogs, [], 'nobody was asked to allow a call that cannot run');
     assert.deepEqual(ww.w.ran, []);
@@ -88,7 +88,12 @@ test('S9: every way a reference can fail reads alike through the real broker, an
     for (const ref of failing) {
       ww.texts.current = [`x ${ref}`];
       const reply = await send(bridge, ask);
-      assert.deepEqual([reply.status, code(reply), message(reply)], [403, 'denied', sentence(ref)], ref);
+      assert.deepEqual([reply.status, code(reply), message(reply)], [403, 'denied', sentence()], ref);
+      // S29: the stored text is text no listing shows, so nothing of it is echoed — not the account, not a folder, not a name.
+      for (const part of ref.slice('creds://'.length).split('/')) {
+        assert.ok(!reply.body.includes(part), `"${part}" of ${ref} is in the refusal: ${reply.body}`);
+      }
+      assert.equal(reply.body.split('creds://').length - 1, 1, 'the only creds:// in the body is the sentence\'s own word for what it refused');
     }
     assert.deepEqual(ww.w.dialogs, [], 'and not one of them raised a dialog');
   } finally {
@@ -114,7 +119,7 @@ test('S9: a storedTexts that throws is the same refusal, not a 500', async () =>
       throw new Error('C:\\Users\\person\\vault.json is locked');
     };
     const reply = await send(viaBridge(ww.bridge), { path: '/v1/mcp/use/exec', body: { entry: 'e1', command: 'id' } });
-    assert.deepEqual([reply.status, code(reply), message(reply)], [403, 'denied', sentence('a creds:// reference')]);
+    assert.deepEqual([reply.status, code(reply), message(reply)], [403, 'denied', sentence()]);
     assert.ok(!reply.body.includes('vault.json'));
   } finally {
     ww.dispose();
@@ -127,7 +132,8 @@ const bridgeGrants = (ww: WallWorld): Array<{ status: string; uses: number; brid
 
 /** One route: the modal is open, the scope is narrowed to nothing, the person says Allow. */
 async function narrowedUnderTheModal(index: number): Promise<void> {
-  const ww = await wallWorld({ holdDialogs: true });
+  const promoted: string[] = [];
+  const ww = await wallWorld({ holdDialogs: true, releaseWaiting: (account, entity) => (promoted.push(`${account}/${entity}`), Promise.resolve()) });
   try {
     const route = routes(await ww.tokenFor(ACCOUNT, 'e1', 'prod'))[index];
     const pending = begin(ww, route.ask);
@@ -138,6 +144,7 @@ async function narrowedUnderTheModal(index: number): Promise<void> {
 
     assert.deepEqual([reply.status, code(reply), message(reply)], [route.out.status, route.out.code, route.out.message], route.via);
     assert.deepEqual(ww.w.ran, [], `${route.via}: the action did not run after Allow`);
+    assert.deepEqual(promoted, [], `${route.via}: S27 — a waiting rotation was not promoted onto an entry the scope no longer admits`);
     const never = await send(viaBridge(ww.bridge), route.ask);
     assert.equal(reply.body.replace(/"durationMs":\d+/, ''), never.body.replace(/"durationMs":\d+/, ''), 'the same bytes as a request out of scope from the start');
 
@@ -161,6 +168,42 @@ test('S10: scope narrowed while the modal is open — the call is refused with t
   }
 });
 
+test('S27: positive control — the same call with the scope left alone does promote the waiting rotation, once, before it runs', async () => {
+  for (const index of [0, 1, 2]) {
+    const promoted: string[] = [];
+    const ww = await wallWorld({ releaseWaiting: (account, entity) => (promoted.push(`${account}/${entity}`), Promise.resolve()) });
+    try {
+      const route = routes(await ww.tokenFor(ACCOUNT, 'e1', 'prod'))[index];
+      assert.equal((await send(viaBridge(ww.bridge), route.ask)).status, 200, route.via);
+      assert.deepEqual(promoted, [`${ACCOUNT}/e1`], `${route.via}: the spy is alive, so its silence above means something`);
+    } finally {
+      ww.dispose();
+    }
+  }
+});
+
+test('S28: a token denied while its bridged call waits is refused at the gate — nothing runs, nothing is spent', async () => {
+  const promoted: string[] = [];
+  const ww = await wallWorld({ holdDialogs: true, releaseWaiting: (account, entity) => (promoted.push(`${account}/${entity}`), Promise.resolve()) });
+  try {
+    const token = await ww.tokenFor(ACCOUNT, 'e1', 'prod');
+    const pending = begin(ww, ASK_TOKEN(token));
+    await until(() => ww.w.openDialogs.length === 1, 'the bridged dialog');
+    registryOf(ww).deny(token);
+    ww.w.openDialogs[0]('Allow');
+    const reply = await pending;
+    assert.equal(reply.status, 403, `a token the person denied while the call waited ran anyway: ${reply.body}`);
+    assert.deepEqual([reply.status, code(reply), message(reply)], [403, 'denied', GRANT_NOT_ALLOWED]);
+    assert.deepEqual(ww.w.ran, [], 'the action did not run');
+    assert.equal(registryOf(ww).get(token)?.uses, 0, 'the token\'s uses are as they were');
+    assert.deepEqual(bridgeGrants(ww).map((grant) => grant.uses), [0], 'and so are the call grant\'s');
+    assert.deepEqual(promoted, [], 'and no waiting rotation was promoted for a token the person had refused');
+    assert.ok(ww.w.audit.some((line) => line.includes('denied')), 'one line in the journal for the refusal');
+  } finally {
+    ww.dispose();
+  }
+});
+
 test('S11: a line edited while the modal is open — the new reference is refused at launch, after the dialog', async () => {
   for (const index of [0, 1, 2]) {
     const ww = await wallWorld({ holdDialogs: true, storedTexts: [] });
@@ -172,7 +215,7 @@ test('S11: a line edited while the modal is open — the new reference is refuse
       ww.texts.current = [`deploy ${LEAK_REF}`];
       ww.w.openDialogs[0]('Allow');
       const reply = await pending;
-      assert.deepEqual([reply.status, code(reply), message(reply)], [403, 'denied', sentence(LEAK_REF)], route.via);
+      assert.deepEqual([reply.status, code(reply), message(reply)], [403, 'denied', sentence()], route.via);
       assert.deepEqual(ww.w.ran, [], `${route.via}: nothing ran`);
     } finally {
       ww.dispose();

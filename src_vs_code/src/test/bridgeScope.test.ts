@@ -1,10 +1,11 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { BridgeContext } from '../bridgeContext';
-import type { BridgeWallSource } from '../bridgeScope';
+import type { BridgeScopes as BridgeScopesT, BridgeWallSource, ScopeFile } from '../bridgeScope';
 import type { McpUseLookup } from '../brokerRequests';
+import { accountOnlyVault } from '../mcpAccountVault';
 import type { McpEntry } from '../mcpEntries';
-import { loadBridgeModules, memento, present } from './bridgeModules';
+import { NO_SUPPLIERS, SCOPES_TEST_DIR, loadBridgeModules, memoryScopeFs, memoryScopes, present, put } from './bridgeModules';
 
 /**
  * The scope store and the door view (E1.3, S13 and S17, and the view's own behaviour).
@@ -14,7 +15,7 @@ import { loadBridgeModules, memento, present } from './bridgeModules';
  */
 
 const M = loadBridgeModules();
-const { BridgeScopes, MAX_SCOPES, MAX_SCOPE_ENTRIES, SCOPES_KEY, scopeKey, OPEN_VIEW, CLOSED_VIEW, doorView } = M.scope;
+const { MAX_SCOPES, MAX_SCOPE_ENTRIES, SCOPE_STALE, scopeKey, OPEN_VIEW, CLOSED_VIEW, doorView } = M.scope;
 
 const A1 = 'a1';
 const S1 = 'server1';
@@ -22,124 +23,202 @@ const CTX: BridgeContext = { bridgeId: 'b1', accountId: A1, serverEntityId: S1, 
 
 /** A scope over a fresh store, holding `entries` for (a1, server1). */
 async function wallWith(entries: string[], quiet = false): Promise<BridgeWallSource> {
-  const scopes = new BridgeScopes(memento(), () => 1_000);
-  await scopes.set(A1, S1, entries, quiet);
-  return { scopes, storedTexts: () => [], refSource: { accounts: () => [], entities: () => [] } };
+  const scopes = memoryScopes(M, () => 1_000);
+  await put(scopes, A1, S1, entries, quiet);
+  return { scopes, storedTexts: () => [], refSource: { accounts: () => [], entities: () => [] }, ...NO_SUPPLIERS };
 }
 
-test('S17: a server with no record has an empty scope that admits nothing and is not quiet', () => {
-  const scope = new BridgeScopes(memento()).read(A1, S1);
+test('S17: a server with no file has an empty scope at revision 0 that admits nothing and is not quiet', () => {
+  const scope = memoryScopes(M).read(A1, S1);
   assert.equal(scope.entries.size, 0);
   assert.equal(scope.quiet, false);
+  assert.equal(scope.revision, 0);
   assert.equal(scope.admits(A1, 'e1'), false);
 });
 
-test('S17: a malformed record, in any of its parts, is an empty scope with quiet off', () => {
-  const good = { entries: ['e1'], quiet: true, at: 1 };
+/** The file a well-behaved writer leaves for (a1, server1), as text. */
+const GOOD: ScopeFile = { v: 1, accountId: A1, serverEntityId: S1, entries: ['e1'], quiet: true, revision: 3, at: 1 };
+
+/** The scopes over a disk holding `text` as the file of (a1, server1). */
+function holding(text: string): BridgeScopesT {
+  const io = memoryScopeFs();
+  io.held.set(`${SCOPES_TEST_DIR}/${M.scope.scopeFileName(A1, S1)}`, text);
+  return memoryScopes(M, () => 1, io);
+}
+
+test('S17: a malformed file, in any of its parts, is an empty scope at revision 0 with quiet off', () => {
   const bad: unknown[] = [
-    'junk', 5, null, [], { entries: 'e1', quiet: false, at: 1 }, { entries: [1, 2], quiet: false, at: 1 },
-    { entries: ['e1', 7], quiet: false, at: 1 }, { ...good, quiet: 'yes' }, { ...good, at: 'now' }, { entries: ['e1'], quiet: true },
+    'junk', 5, null, [], { ...GOOD, entries: 'e1' }, { ...GOOD, entries: [1, 2] }, { ...GOOD, entries: ['e1', 7] }, { ...GOOD, quiet: 'yes' },
+    { ...GOOD, at: 'now' }, { ...GOOD, v: 2 }, { ...GOOD, v: undefined }, { ...GOOD, revision: 'one' }, { ...GOOD, revision: 0 }, { ...GOOD, revision: 1.5 },
+    { ...GOOD, accountId: undefined }, { ...GOOD, serverEntityId: 7 },
+    { ...GOOD, accountId: 'a2' }, { ...GOOD, serverEntityId: 'server2' },
   ];
   for (const record of bad) {
-    const store = memento();
-    void store.update(SCOPES_KEY, { [scopeKey(A1, S1)]: record });
-    const scope = new BridgeScopes(store).read(A1, S1);
-    assert.equal(scope.entries.size, 0, JSON.stringify(record));
-    assert.equal(scope.quiet, false, JSON.stringify(record));
+    for (const text of [JSON.stringify(record), `${JSON.stringify(record)}{`]) {
+      const scope = holding(text).read(A1, S1);
+      assert.equal(scope.entries.size, 0, text);
+      assert.equal(scope.quiet, false, text);
+      assert.equal(scope.revision, 0, text);
+    }
   }
-  for (const whole of ['junk', 7, null, [good]]) {
-    const store = memento();
-    void store.update(SCOPES_KEY, whole);
-    assert.equal(new BridgeScopes(store).read(A1, S1).entries.size, 0, `a store holding ${JSON.stringify(whole)}`);
-  }
-  const store = memento();
-  void store.update(SCOPES_KEY, { [scopeKey(A1, S1)]: good });
-  assert.deepEqual([...new BridgeScopes(store).read(A1, S1).entries], ['e1'], 'positive control: the well-formed record reads');
+  assert.equal(holding('').read(A1, S1).revision, 0, 'an empty file');
+  const control = holding(JSON.stringify(GOOD)).read(A1, S1);
+  assert.deepEqual([...control.entries], ['e1'], 'positive control: the well-formed file reads');
+  assert.equal(control.quiet, true);
+  assert.equal(control.revision, 3);
+});
+
+test('S17: a file moved by hand to another server\'s name admits nothing for that server (the file names whose it is)', () => {
+  const io = memoryScopeFs();
+  io.held.set(`${SCOPES_TEST_DIR}/${M.scope.scopeFileName(A1, 'server2')}`, JSON.stringify(GOOD));
+  const scopes = memoryScopes(M, () => 1, io);
+  assert.equal(scopes.read(A1, 'server2').entries.size, 0, 'GOOD names server1; at the name of server2 it is nobody\'s');
+  assert.equal(scopes.read(A1, 'server2').revision, 0);
+  io.held.set(`${SCOPES_TEST_DIR}/${M.scope.scopeFileName('a2', S1)}`, JSON.stringify(GOOD));
+  assert.equal(scopes.read('a2', S1).entries.size, 0, 'and at another account\'s name');
 });
 
 test('S17: admits compares the account as well as the entry, and two accounts with one server id do not mix', async () => {
-  const scopes = new BridgeScopes(memento(), () => 1);
-  await scopes.set(A1, S1, ['e1'], false);
+  const scopes = memoryScopes(M, () => 1);
+  await put(scopes, A1, S1, ['e1']);
   const mine = scopes.read(A1, S1);
   assert.equal(mine.admits(A1, 'e1'), true);
   assert.equal(mine.admits('a2', 'e1'), false, 'the same entity id in another account is not in scope');
   assert.equal(mine.admits(A1, 'e2'), false);
-  assert.equal(scopes.read('a2', S1).entries.size, 0, 'another account\'s record of the same server id is another record');
-  assert.equal(scopes.read(A1, 'server2').entries.size, 0, 'and another server is another record');
+  assert.equal(scopes.read('a2', S1).entries.size, 0, 'another account\'s file of the same server id is another file');
+  assert.equal(scopes.read(A1, 'server2').entries.size, 0, 'and another server is another file');
 });
 
-test('S17: scopeKey is injective across the colon, as stampKey is', () => {
+test('S17: scopeKey is injective across the colon, as stampKey is, and the file name is its hash', () => {
   assert.notEqual(scopeKey('a:b', 'c'), scopeKey('a', 'b:c'));
   assert.equal(scopeKey('a1', 's'), '2:a1:s');
+  const name = M.scope.scopeFileName(A1, S1);
+  assert.match(name, /^[0-9a-f]{64}\.json$/, 'a hash and an extension: no character a Windows file name refuses');
+  assert.notEqual(name, M.scope.scopeFileName('a:b', 'c'));
+  assert.notEqual(M.scope.scopeFileName('a:b', 'c'), M.scope.scopeFileName('a', 'b:c'));
 });
 
-test('S17: read is fresh — a second store over the same memento sees a write the first made, and a scope already read does not move', async () => {
-  const store = memento();
-  const first = new BridgeScopes(store, () => 1);
-  const second = new BridgeScopes(store, () => 2);
+test('S17: set answers the revision it wrote: 0 -> 1 -> 2, and a copy at the wrong revision is refused with the one sentence and changes nothing', async () => {
+  const io = memoryScopeFs();
+  const scopes = memoryScopes(M, () => 1, io);
+  assert.equal(await scopes.set(A1, S1, ['e1'], false, 0), 1);
+  assert.equal(await scopes.set(A1, S1, ['e1', 'e2'], true, 1), 2);
+  const before = [...io.held.entries()];
+  await assert.rejects(scopes.set(A1, S1, [], false, 0), { message: SCOPE_STALE });
+  await assert.rejects(scopes.set(A1, S1, [], false, 1), { message: SCOPE_STALE }, 'a copy one behind');
+  await assert.rejects(scopes.set(A1, S1, [], false, 3), { message: SCOPE_STALE }, 'and one ahead');
+  assert.deepEqual([...io.held.entries()], before, 'the file is as it was');
+  assert.equal(scopes.read(A1, S1).revision, 2);
+  assert.match(SCOPE_STALE, /^The scope of this Remote Bridge changed in another window\. Look at it again, then save\.$/);
+});
+
+test('S17: a corrupt file at the name is replaced by a set that expects revision 0', async () => {
+  const scopes = holding('{ not json');
+  assert.equal(await scopes.set(A1, S1, ['e1'], false, 0), 1);
+  assert.deepEqual([...scopes.read(A1, S1).entries], ['e1']);
+});
+
+test('S17: read is fresh — a second BridgeScopes over the same directory sees a write the first made, and a scope already read does not move', async () => {
+  const io = memoryScopeFs();
+  const first = memoryScopes(M, () => 1, io);
+  const second = memoryScopes(M, () => 2, io);
   const before = second.read(A1, S1);
-  await first.set(A1, S1, ['e1'], true);
+  await put(first, A1, S1, ['e1'], true);
   assert.deepEqual([...second.read(A1, S1).entries], ['e1']);
   assert.equal(second.read(A1, S1).quiet, true);
   assert.equal(before.admits(A1, 'e1'), false, 'a Scope is a snapshot; the next read is the fresh one');
-  await first.set(A1, S1, [], false);
+  await put(first, A1, S1, []);
   assert.equal(second.read(A1, S1).admits(A1, 'e1'), false, 'narrowing is seen at once');
 });
 
-test('S17: forget removes one record and leaves the others', async () => {
-  const scopes = new BridgeScopes(memento(), () => 1);
-  await scopes.set(A1, S1, ['e1'], false);
-  await scopes.set(A1, 'server2', ['e2'], false);
+test('S17: forget removes one file and leaves the others', async () => {
+  const scopes = memoryScopes(M, () => 1);
+  await put(scopes, A1, S1, ['e1']);
+  await put(scopes, A1, 'server2', ['e2']);
   await scopes.forget(A1, S1);
   assert.equal(scopes.read(A1, S1).entries.size, 0);
+  assert.equal(scopes.read(A1, S1).revision, 0, 'a forgotten scope is at revision 0 again');
   assert.deepEqual([...scopes.read(A1, 'server2').entries], ['e2']);
+  await scopes.forget(A1, S1);
 });
 
-test('S17: at most 64 records; the oldest `at` is pruned, never the one just written', async () => {
+test('S17: at most 64 files; the oldest `at` is pruned, never the one just written', async () => {
   let clock = 0;
-  const scopes = new BridgeScopes(memento(), () => (clock += 1));
+  const scopes = memoryScopes(M, () => (clock += 1));
   for (let i = 0; i < MAX_SCOPES; i += 1) {
-    await scopes.set(A1, `s${i}`, [`e${i}`], false);
+    await put(scopes, A1, `s${i}`, [`e${i}`]);
   }
   assert.equal(scopes.read(A1, 's0').admits(A1, 'e0'), true, 'a full store still holds the first');
-  await scopes.set(A1, 'newest', ['e-new'], false);
+  await put(scopes, A1, 'newest', ['e-new']);
   assert.equal(scopes.read(A1, 's0').entries.size, 0, 'the oldest is gone');
   assert.equal(scopes.read(A1, 's1').admits(A1, 'e1'), true, 'the second oldest stays');
   assert.equal(scopes.read(A1, 'newest').admits(A1, 'e-new'), true);
-  await scopes.set(A1, 's1', ['e1', 'again'], false);
-  assert.equal(scopes.read(A1, 's1').admits(A1, 'again'), true, 'rewriting a record does not prune');
+  await put(scopes, A1, 's1', ['e1', 'again']);
+  assert.equal(scopes.read(A1, 's1').admits(A1, 'again'), true, 'rewriting a file does not prune');
   assert.equal(scopes.read(A1, 's2').admits(A1, 'e2'), true);
 });
 
-test('S17: a record written at the same instant as the oldest is still the one kept', async () => {
-  const scopes = new BridgeScopes(memento(), () => 5);
+test('S17: the file just written survives even when it is the oldest of all (a clock that stepped back)', async () => {
+  let clock = 1_000;
+  const scopes = memoryScopes(M, () => clock);
   for (let i = 0; i < MAX_SCOPES; i += 1) {
-    await scopes.set(A1, `s${i}`, [`e${i}`], false);
+    clock += 1;
+    await put(scopes, A1, `s${i}`, [`e${i}`]);
   }
-  await scopes.set(A1, 'newest', ['e-new'], false);
-  assert.equal(scopes.read(A1, 'newest').admits(A1, 'e-new'), true, 'a tie never prunes the record just written');
+  clock = 1;
+  await put(scopes, A1, 'newest', ['e-new']);
+  assert.equal(scopes.read(A1, 'newest').admits(A1, 'e-new'), true, 'its `at` is the smallest, and it is still there');
+  assert.equal(scopes.read(A1, 's0').entries.size, 0, 'the oldest of the OTHERS went instead');
+});
+
+test('S17: a file written at the same instant as the oldest is still the one kept', async () => {
+  const scopes = memoryScopes(M, () => 5);
+  for (let i = 0; i < MAX_SCOPES; i += 1) {
+    await put(scopes, A1, `s${i}`, [`e${i}`]);
+  }
+  await put(scopes, A1, 'newest', ['e-new']);
+  assert.equal(scopes.read(A1, 'newest').admits(A1, 'e-new'), true, 'a tie never prunes the file just written');
+});
+
+test('S17: a file that does not parse is the oldest of all, and a `.tmp` left behind is not listed, so it is never counted', async () => {
+  const io = memoryScopeFs();
+  let clock = 10;
+  const scopes = memoryScopes(M, () => (clock += 1), io);
+  io.held.set(`${SCOPES_TEST_DIR}/zz-junk.json`, 'junk');
+  io.held.set(`${SCOPES_TEST_DIR}/${M.scope.scopeFileName(A1, 's0')}.1234.tmp`, 'half a write');
+  for (let i = 0; i < MAX_SCOPES - 1; i += 1) {
+    await put(scopes, A1, `s${i}`, [`e${i}`]);
+  }
+  assert.ok(io.held.has(`${SCOPES_TEST_DIR}/zz-junk.json`), 'junk and 63 files make 64: nothing pruned yet');
+  await put(scopes, A1, 'newest', ['e-new']);
+  assert.ok(!io.held.has(`${SCOPES_TEST_DIR}/zz-junk.json`), 'the 65th write pruned the junk, not a real scope');
+  assert.equal(scopes.read(A1, 's0').admits(A1, 'e0'), true);
+  assert.ok([...io.held.keys()].some((file) => file.endsWith('.tmp')), 'the half-written temp file is not ours to count or remove');
 });
 
 test('S17: a scope of 256 entries is written; 257 are refused and nothing is stored', async () => {
-  const store = memento();
-  const scopes = new BridgeScopes(store, () => 1);
+  const scopes = memoryScopes(M, () => 1);
   const ids = (n: number): string[] => Array.from({ length: n }, (_, i) => `e${i}`);
-  await scopes.set(A1, S1, ids(MAX_SCOPE_ENTRIES), false);
+  await put(scopes, A1, S1, ids(MAX_SCOPE_ENTRIES));
   assert.equal(scopes.read(A1, S1).entries.size, MAX_SCOPE_ENTRIES);
-  await assert.rejects(scopes.set(A1, S1, ids(MAX_SCOPE_ENTRIES + 1), false), /256/);
-  assert.equal(scopes.read(A1, S1).entries.size, MAX_SCOPE_ENTRIES, 'the refused write left the old record');
+  await assert.rejects(put(scopes, A1, S1, ids(MAX_SCOPE_ENTRIES + 1)), /256/);
+  assert.equal(scopes.read(A1, S1).entries.size, MAX_SCOPE_ENTRIES, 'the refused write left the old file');
+  assert.equal(scopes.read(A1, S1).revision, 1, 'and its revision');
 });
 
-test('S17: writes queue — two sets in flight at once both land, even when the store answers late', async () => {
-  const scopes = new BridgeScopes(memento(true), () => 1);
-  await Promise.all([scopes.set(A1, 's1', ['x'], false), scopes.set(A1, 's2', ['y'], false), scopes.set(A1, 's3', ['z'], false)]);
+test('S17: writes queue — three sets in flight at once all land, even when the disk answers late', async () => {
+  const scopes = memoryScopes(M, () => 1, memoryScopeFs(true));
+  await Promise.all([put(scopes, A1, 's1', ['x']), put(scopes, A1, 's2', ['y']), put(scopes, A1, 's3', ['z'])]);
   assert.deepEqual(['s1', 's2', 's3'].map((s) => [...scopes.read(A1, s).entries][0]), ['x', 'y', 'z']);
 });
 
-test('S17: a record that holds an entry twice reads as a set', async () => {
-  const scopes = new BridgeScopes(memento(), () => 1);
-  await scopes.set(A1, S1, ['e1', 'e1', 'e2'], false);
+test('S17: an entry given twice is written once, and reads as a set', async () => {
+  const io = memoryScopeFs();
+  const scopes = memoryScopes(M, () => 1, io);
+  await put(scopes, A1, S1, ['e1', 'e1', 'e2']);
   assert.equal(scopes.read(A1, S1).entries.size, 2);
+  const written = JSON.parse([...io.held.values()][0]) as ScopeFile;
+  assert.deepEqual(written.entries, ['e1', 'e2'], 'and the file itself holds each id once');
 });
 
 test('S13: OPEN_VIEW is the identity — the existing doors run the code they ran before', () => {
@@ -258,9 +337,9 @@ test('resolveUse: the scope is read when the function is called, not when the vi
   const wall = await wallWith(['in']);
   const resolve = present(doorView(CTX, wall).resolveUse(scriptedLookup().real), 'a resolver');
   assert.equal(kindOf(resolve('in', 'exec')), 'usable');
-  await wall.scopes.set(A1, S1, [], false);
+  await put(wall.scopes, A1, S1, [], false);
   assert.equal(kindOf(resolve('in', 'exec')), 'nothing', 'narrowed since: refused at the next call');
-  await wall.scopes.set(A1, S1, ['in'], false);
+  await put(wall.scopes, A1, S1, ['in'], false);
   assert.equal(kindOf(resolve('in', 'exec')), 'usable');
 });
 
@@ -290,7 +369,7 @@ test('grantFor: the context and the scope\'s switch as it is NOW', async () => {
   const wall = await wallWith(['in'], false);
   const view = doorView(CTX, wall);
   assert.deepEqual(view.grantFor(), { context: CTX, quiet: false });
-  await wall.scopes.set(A1, S1, ['in'], true);
+  await put(wall.scopes, A1, S1, ['in'], true);
   assert.deepEqual(view.grantFor(), { context: CTX, quiet: true });
   assert.equal(present(view.grantFor(), 'a grant').context, CTX, 'the very context the door handed over');
 });
@@ -340,36 +419,76 @@ test('sources.aliases: a name is listed only when it resolves to a target in sco
 });
 
 test('sources.mcpEntries: kept rows are those in scope, can is narrowed to use, dependsOn names only kept rows', async () => {
-  const view = doorView(CTX, await wallWith(['in', 'also']));
+  const asked: string[] = [];
+  const wall = { ...(await wallWith(['in', 'also'])), listEntriesOf: async (account: string): Promise<McpEntry[]> => (asked.push(account), rows) };
+  const view = doorView(CTX, wall);
   const rows = [
     entry('in', 'prod', { dependsOn: ['leak-target', 'friend', 'ghost'] }),
     entry('out', 'leak-target'),
     entry('also', 'friend', { can: { use: false, edit: true, create: false, delete: true } }),
   ];
-  const list = present(view.sources({ mcpEntries: () => Promise.resolve(rows) }, undefined).mcpEntries, 'entries');
+  const theRealHook = (): Promise<McpEntry[]> => Promise.reject(new Error('the whole vault\'s listing is not what a bridge reads'));
+  const list = present(view.sources({ mcpEntries: theRealHook }, undefined).mcpEntries, 'entries');
   const listed = await list();
+  assert.deepEqual(asked, [A1], 'the per-account supplier was asked, for the bridge\'s own account');
   assert.deepEqual(listed.map((row) => row.id), ['in', 'also']);
   assert.deepEqual(listed[0].can, { use: true, edit: false, create: false, delete: false });
   assert.deepEqual(listed[0].dependsOn, ['friend'], 'the name of an entry out of scope is not given away');
   assert.deepEqual(listed[1].can, { use: false, edit: false, create: false, delete: false }, 'use is the vault\'s own');
   assert.equal(rows[0].can.edit, true, 'the source rows are not mutated');
   assert.deepEqual(rows[0].dependsOn, ['leak-target', 'friend', 'ghost']);
-  assert.deepEqual(await present(view.sources({}, undefined).mcpEntries, 'entries')(), []);
+  await put(wall.scopes, A1, S1, [], false);
+  assert.deepEqual(await list(), [], 'narrowed since the view was built');
 });
 
-test('sources.visibleConfig: a config only in scope, and the real supplier is not asked about the rest', async () => {
-  const wall = await wallWith(['in']);
-  const asked: string[] = [];
-  const read = doorView(CTX, wall).sources({ visibleConfig: (id) => (asked.push(id), { id } as never) }, undefined);
+test('sources.visibleConfig: a config only in scope, from the per-account supplier, and it is not asked about the rest', async () => {
+  const asked: string[][] = [];
+  const wall = { ...(await wallWith(['in'])), visibleConfigOf: (account: string, id: string) => (asked.push([account, id]), { id } as never) };
+  const theRealHook = (): never => {
+    throw new Error('the first account\'s config is not what a bridge reads');
+  };
+  const read = doorView(CTX, wall).sources({ visibleConfig: theRealHook }, undefined);
   const config = present(read.visibleConfig, 'configs');
   assert.deepEqual(config('in'), { id: 'in' });
   assert.equal(config('out'), undefined);
-  assert.deepEqual(asked, ['in']);
-  await wall.scopes.set(A1, S1, [], false);
+  assert.deepEqual(asked, [[A1, 'in']], 'asked for the bridge\'s own account, and only about what is in scope');
+  await put(wall.scopes, A1, S1, [], false);
   assert.equal(config('in'), undefined, 'narrowed since the view was built');
 });
 
 test('sources.folders: no folders at all', async () => {
   const read = doorView(CTX, await wallWith(['in'])).sources({ folders: () => [{ id: 'f' }] as never }, undefined);
   assert.deepEqual(present(read.folders, 'folders')(), []);
+});
+
+test('accountOnlyVault: the whole source with one account listed, every other method delegated by name and bound to the source', async () => {
+  // A class instance on purpose: a spread of a StorageManager would lose its prototype, and a method pulled off it
+  // would lose its `this`. The delegation must call the method ON the source.
+  class Vault {
+    readonly calls: string[] = [];
+    private readonly tag = 'vault';
+    getAccounts(): readonly { accountId: string }[] { this.calls.push(`getAccounts ${this.tag}`); return [{ accountId: 'a2' }, { accountId: 'a1' }]; }
+    getNodes(accountId: string): readonly never[] { this.calls.push(`getNodes ${accountId} ${this.tag}`); return []; }
+    getNode(accountId: string, id: string): undefined { this.calls.push(`getNode ${accountId} ${id} ${this.tag}`); return undefined; }
+    getPassword(accountId: string, id: string): Thenable<undefined> { this.calls.push(`getPassword ${accountId} ${id}`); return Promise.resolve(undefined); }
+    getPrivateKey(accountId: string, id: string): Thenable<undefined> { this.calls.push(`getPrivateKey ${accountId} ${id}`); return Promise.resolve(undefined); }
+    getNotes(accountId: string, id: string): Thenable<undefined> { this.calls.push(`getNotes ${accountId} ${id}`); return Promise.resolve(undefined); }
+    getTotp(accountId: string, id: string): Thenable<undefined> { this.calls.push(`getTotp ${accountId} ${id}`); return Promise.resolve(undefined); }
+    getDbConnection(accountId: string, id: string): Thenable<undefined> { this.calls.push(`getDbConnection ${accountId} ${id}`); return Promise.resolve(undefined); }
+  }
+  const source = new Vault();
+  const one = accountOnlyVault(source, 'a1');
+  assert.deepEqual(one.getAccounts(), [{ accountId: 'a1' }], 'only the account asked for');
+  assert.deepEqual(accountOnlyVault(source, 'nobody').getAccounts(), [], 'an unknown account is no account');
+  one.getNodes('a1');
+  one.getNode('a1', 'e1');
+  await one.getPassword('a1', 'e1');
+  await one.getPrivateKey('a1', 'e1');
+  await one.getNotes('a1', 'e1');
+  await one.getTotp('a1', 'e1');
+  await one.getDbConnection('a1', 'e1');
+  assert.deepEqual(source.calls, [
+    'getAccounts vault', 'getAccounts vault', 'getNodes a1 vault', 'getNode a1 e1 vault',
+    'getPassword a1 e1', 'getPrivateKey a1 e1', 'getNotes a1 e1', 'getTotp a1 e1', 'getDbConnection a1 e1',
+  ], 'every method reached the source, with its own `this`');
 });

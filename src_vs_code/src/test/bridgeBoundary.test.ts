@@ -6,6 +6,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { socketPathFor } from '../brokerListeners';
 import { CONTEXT } from './bridgeDoorHarness';
+import { chainToEditor, closureOf } from './importWalk';
 import { share, world } from './brokerWorld';
 
 /**
@@ -180,12 +181,37 @@ const IMPORTS_VSCODE = /from\s+['"]vscode['"]/;
 const REQUIRES_VSCODE = /require\(\s*['"]vscode['"]/;
 const reachesVscode = (source: string): boolean => IMPORTS_VSCODE.test(source) || REQUIRES_VSCODE.test(source);
 
-test('R2: the bridge modules are pure', () => {
-  for (const file of ['bridgeContext.ts', 'bridgeNote.ts', 'brokerBridgeListeners.ts', 'bridgeAllowList.ts', 'bridgeScope.ts', 'brokerBridgeToken.ts', 'brokerOrigin.ts']) {
-    const source = fs.readFileSync(path.join(sourceDir, file), 'utf8');
-    assert.ok(!IMPORTS_VSCODE.test(source), `${file} must not import vscode`);
-    assert.ok(!REQUIRES_VSCODE.test(source), `${file} must not require vscode`);
+/** The modules the bridge's boundary is made of, and everything they load at run time must be free of the editor too. */
+const PURE_ROOTS = ['bridgeContext', 'bridgeNote', 'bridgeAllowList', 'bridgeScope', 'brokerBridgeToken', 'brokerBridgeListeners', 'brokerOrigin', 'grantWords'];
+
+const readSource = (name: string): string | undefined => {
+  const file = path.join(sourceDir, `${name}.ts`);
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined;
+};
+
+test('R2: the bridge modules are pure, and so is everything they load', () => {
+  for (const root of PURE_ROOTS) {
+    assert.ok(readSource(root) !== undefined, `${root}.ts exists`);
+    assert.equal(chainToEditor(root, readSource)?.join(' -> '), undefined, `${root} must not reach vscode, directly or through a module it imports`);
   }
+});
+
+test('R2 has teeth: the walk follows real imports through real files, and names the chain of a planted one', () => {
+  const closure = closureOf('bridgeScope', readSource);
+  for (const reached of ['brokerRequests', 'grantWords', 'runPlan', 'secretRef']) {
+    assert.ok(closure.includes(reached), `the walk from bridgeScope reaches ${reached} (${closure.length} modules)`);
+  }
+  const planted = (name: string): string | undefined =>
+    name === 'grantWords' ? `import * as v from 'vscode';\n${readSource('grantWords')}` : readSource(name);
+  assert.equal(chainToEditor('bridgeScope', planted)?.join(' -> '), 'bridgeScope -> brokerRequests -> grantWords -> vscode');
+  const twoHops = (name: string): string | undefined => (name === 'a' ? "import { b } from './b';" : name === 'b' ? "export * from './c';" : name === 'c' ? "const v = require('vscode');" : undefined);
+  assert.equal(chainToEditor('a', twoHops)?.join(' -> '), 'a -> b -> c -> vscode', 'a vscode import two hops away from the listed file is found');
+  const erased = (name: string): string | undefined => (name === 'a' ? "import type { T } from './b';" : "import * as v from 'vscode';");
+  assert.equal(chainToEditor('a', erased), undefined, 'an `import type` loads nothing at run time and is not followed');
+  const multiline = (name: string): string | undefined => (name === 'a' ? "import {\n  x,\n  y,\n} from './b';" : "import * as v from 'vscode';");
+  assert.deepEqual(chainToEditor('a', multiline), ['a', 'b', 'vscode'], 'an import over several lines is followed');
+  const prose = (name: string): string | undefined => (name === 'a' ? "/** reads from './b' only in words */\n// import * as v from 'vscode';\nexport const a = 1;" : undefined);
+  assert.equal(chainToEditor('a', prose), undefined, 'a comment that names an import is not an import');
 });
 
 test('R2 has teeth: the patterns match every spelling of a vscode import, and a real file that has one', () => {

@@ -3262,7 +3262,7 @@ The TRANSPORT is guarded by the operating system: mode 0600 on POSIX, so another
 before a byte of ours runs — the one real boundary the loopback port never had. On Windows the pipe
 takes the default DACL, which `brokerListeners.ts` documents as a convenience rather than a
 boundary. Behind that, each route authorises as it always did: the token door requires a grant
-token; the **alias door requires none** — its authorisation is `AliasThrottle` plus the consent
+token; the **alias door requires none** — its authorisation is the dialog rate (`TokenlessCeilings`) plus the consent
 modal, and it mints its own grant; the MCP door, the other tokenless one, answers to the same modal
 budget when it prompts and to a separate ceiling of sixty silent calls a minute when a policy has
 answered for the modal (#95) — and the **read routes authenticate nothing**, which is why the
@@ -3298,6 +3298,11 @@ reconnect cannot leave the earlier port and key usable, `close()` ends kept-aliv
 extension opens a bridge* — `extension.ts` passes no `bridgeWall`, and without one `openBridgeListener` rejects, so
 a door with no wall cannot exist). Three things stand behind the third door.
 
+*Purity is transitive.* R2 of `bridgeBoundary.test.ts` walks `import … from './x'` (not `import type`) from the bridge's modules
+(`bridgeContext`, `bridgeNote`, `bridgeAllowList`, `bridgeScope`, `brokerBridgeToken`, `brokerBridgeListeners`, `brokerOrigin`,
+`grantWords`) and fails naming the chain when any module they load imports `vscode`; `expiredMessage` therefore lives in the pure
+`grantWords.ts`, not in `grantLimits.ts`, which reads a setting.
+
 *What it serves.* `BRIDGE_ROUTES` (`bridgeAllowList.ts`) names every route of `contract/broker-v1.json` and
 `/v1/alias/<action>`, served or refused with its reason, and a request is looked up by method and pathname exactly,
 so a route that is in neither table is refused at run time and turns `bridgeAllowList.test.ts` red until somebody
@@ -3309,25 +3314,66 @@ and the config read. The note a bridge publishes (`bridgeNote.ts`) is six fields
 carries them (`bridge.noteFields`) with the header and the directory, and the alias prefix (`aliasPrefix`), all
 additive, `version` still 1.
 
-*Which entries it reaches.* `BridgeScopes` (`bridgeScope.ts`) keeps, per account and server entry, the ids a server's
-agent may reach and whether it is asked each time, in the window's `globalState` and never in the vault; a missing or
-malformed record is an empty scope, read fresh on every use. `doorView(bridge, wall)` wraps every way the router looks
+*Which entries it reaches.* `BridgeScopes` (`bridgeScopeStore.ts`, re-exported by `bridgeScope.ts`) keeps, per account and
+server entry, the ids a server's agent may reach and whether it is asked each time, **in a file per record**,
+`<globalStorageUri>/bridges/scopes/<sha256 of the key>.json`, never in the vault and (epoch 3 of the plan) **not in
+`globalState`**: each window holds its own copy of that and the last write wins, so a narrow made in one window could
+fail to reach the window that owns the bridge, and a stale write could bring back what the owner removed. The file is read
+fresh and synchronously on every check; it carries `v`, `accountId`, `serverEntityId`, the ids, the switch, a `revision` and
+`at`, and a file that is absent, unparseable, not that shape, or names another account or server than the one asked for is an
+empty scope at revision 0. A write goes through the cross-window lock (`writes`, a `LeasedQueue` over a `WindowLock` at
+`bridges/scopes.lock`; E2.2 builds it), re-reads inside it, is refused with `SCOPE_STALE` when the revision it was made from
+is no longer the file's, and is written temp-and-rename (the rename retried 3 times on EPERM/EBUSY, as on Windows when a
+reader holds the file); 64 files at most, the oldest `at` pruned inside the lock, and `forget` removes one on Close.
+`doorView(bridge, wall)` wraps every way the router looks
 something up, so an entry out of scope answers through the route's own not-found function exactly as an entry that is
 not there: the alias and entry listings drop it (and `can` is narrowed to `use`, `dependsOn` to names that are listed),
 the snippet and the folders say nothing of it, the MCP lookup runs for every id narrowed to the context's account and
 the scope decides afterwards (so the time it takes is not an answer), and a token out of scope is unknown whether it is
-live or expired. The existing doors get `OPEN_VIEW`, which hands back the functions it was given. A token on a bridge
+live or expired. **The listing and the snippet are per account**: `McpEntry` carries no account and an envelope may repeat
+an id across accounts, so a wall by id alone over the whole vault's listing would also list the other account's row. The
+bridged view reads them from `wall.listEntriesOf(accountId)` and `wall.visibleConfigOf(accountId, id)` (the real
+`visibleMcpEntries` / `visibleConfigDetails` over `accountOnlyVault(storage, accountId)`, in `mcpAccountVault.ts`, a carrier in
+`pinReaderBoundary.test.ts`: it hands the secret getters on and reads nothing), and reads the scope AFTER the
+listing's `await`, so a narrow that lands while the rows are being read is the scope they are cut by. The existing doors get
+`OPEN_VIEW`, which hands back the functions it was given. A token on a bridge
 only authenticates (`brokerBridgeToken.ts`): the call is minted as a grant of its own and asked every time, a Deny
 refuses that call and not the token, and the token's use count moves at the action boundary, before the call grant's.
+
+*What using an entry reaches, and what a bridge is told.* An ssh entry's linked key and jump chain are part of using it,
+not scope targets (`sshkey` can never be opened to MCP, the value stays on the laptop, the edit verbs are off the list), so
+they work through a bridge; a `creds://` reference puts a value into a command and stays strictly scoped. But the sentences
+of `sshExecAuth.ts` and `sshOptions.ts` name the key entry or the jump host, and `Could not write the stored key` and `Could
+not run ssh` carry a path or argv, so on a bridge (`ctx.bridge` set) `sshUseActions.ts` answers them through
+`bridgedRefusal`: the code of the refusal it replaces and `BRIDGE_USE_REFUSED(name)` as the body, the real sentence to the
+agent journal. `ssh`'s own stderr is returned as it is and may carry a jump host's address (the plan's decision). An entry
+with `agentForward` is refused on a bridge, twice with one sentence (`AGENT_FORWARD_REFUSED`): before the dialog through
+`wall.entryRefusal` (inside `referenceRefusal`, so it is also the launch gate's word), and in the action against the live
+entity, before a key is written to disk. A reference refusal echoes nothing of the stored text: `REFERENCE_REFUSED(name)`
+takes no reference.
 
 *When it is decided.* Once at the door, and again at the last synchronous step before an action starts
 (`brokerCall.answer`: the client is still there, then the scope and the references are read fresh, then the token and
 the call grant are reserved, then the action starts), because a modal can be open for a minute while the person narrows
-the scope or edits the line. A stored command or script that names a `creds://` reference the scope does not serve is
+the scope or edits the line. **And once more before anything an Allow triggers**: `prepared` builds the gate
+(`launchGate`) once and asks it (`stopped`) before `releaseWaiting`, so a narrow made during the modal promotes no waiting
+rotation onto an entry the scope no longer admits; the same closure is handed to `performCall`. It also reads the status of
+the token a bridged token call spends, so a token the person denied while its call waited is refused `403 denied` at that
+point and spends nothing. A stored command or script that names a `creds://` reference the scope does not serve is
 refused `403 denied` with one sentence for every failure (no such account, no such entity, ambiguous, out of scope),
 before any dialog and again at launch. `scopedRefSource` is the seam an executor must resolve through (E3.3); nothing
-uses it yet. Two things to know about the arithmetic: a call refused for a reference still took one of the five prompts a
-minute (the throttle sits before the check), and a bridged call waits for the single dialog slot like an alias call.
+uses it yet.
+
+*Prompts per bridge.* Each bridge has its own sliding window of five dialogs a minute (and sixty silent calls), keyed by
+its `bridgeId` in `TokenlessCeilings` (`aliasThrottle.ts`: `SlidingWindow` the count, `OneInFlight` the single dialog, the
+coordinator the doors); the local door is the key `local`. One dialog at a time stays global, because the person is one
+person with one screen. The window counts **dialogs raised**, stamped by the consent gate (`prompted`, called in
+`ConsentGate.ask` immediately before the dialog is shown), not calls admitted: a call refused before its dialog spends
+nothing. That holds for the local alias and MCP doors too, which is a change for them: a call refused before its dialog
+(a validation failure, a reference the wall refuses) no longer spends one of the five; five dialogs a minute and one in
+flight hold exactly as before. A local token call raises dialogs that are not counted, as it was never throttled; on a
+bridge a token call is bridged and counted on its bridge, with the bridge's sentence
+(`Too many requests: this Remote Bridge may prompt at most 5 times a minute.`). `forget(door)` is for E2 on Close.
 
 **A signed envelope without its signature is tampered, not legacy** (`verifyEnvelopeMac`,
 `requireIntactEnvelope`). The envelope MAC exists for one threat, named where it is computed: on a
@@ -4605,8 +4651,8 @@ opt-in per entry, why the modal names the entry and the action, and why the rout
 token**: the caller gets the action, never a capability it could pass on. An unknown name and a
 name that exists but is not enabled get the same 404, so the route cannot be used to enumerate
 what a vault holds. The modal's RATE is load-bearing for the same reason — `aliasThrottle.ts`: five
-prompts a minute, one in flight — and where the MCP door lets a consent policy answer for the modal
-(#95), the same file's second construction, a ceiling of sixty silent calls a minute with no
+dialogs a minute, one in flight — and where the MCP door lets a consent policy answer for the modal
+(#95), the same file's second window, a ceiling of sixty silent calls a minute with no
 in-flight rule, is what bounds the path in the modal's absence.
 
 Alias calls join the token path at `perform()` — capability check, validation, consent, masking,
@@ -5625,10 +5671,10 @@ the modal. Nothing after that changes: the same mask, the same audit, the same o
 properties hold around it, and each is a test. **The throttle counts modals, not calls**: a quiet
 call takes no slot, because the budget is five *prompts* a minute and spending one would refuse a
 later call for a dialog nobody was going to see — and it releases none either, since releasing a
-slot never taken frees another call's. **What bounds the quiet path instead is its own ceiling**
-(S2.3): sixty silent calls a minute — `SILENT_CEILING`, a second construction of the same
-`AliasThrottle` with no in-flight rule, because that rule protects a human from a stack of dialogs
-and this path has none. The two live together in `TokenlessCeilings`, and which one a call answers
+slot never taken frees another call's. Since E1.3's epoch 3 this is true of the stamp as well as the slot: the window
+is stamped where a dialog is shown, not where a call is admitted. **What bounds the quiet path instead is its own ceiling**
+(S2.3): sixty silent calls a minute — `SILENT_CEILING`, a second `SlidingWindow` with no in-flight rule,
+because that rule protects a human from a stack of dialogs and this path has none. The two live together in `TokenlessCeilings`, and which one a call answers
 to is whether it will ask — decided **once**: `admit` hands back the slot itself (`Slot`), so a
 route cannot name a ceiling twice and name it differently the second time, which would leave the
 modal budget holding an in-flight slot for a call that ended minutes ago. A refusal hands back a

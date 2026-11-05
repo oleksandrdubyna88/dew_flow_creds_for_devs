@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { CONSENT_TIMEOUT_MS } from './agentConsent';
-import type { AuditEntry } from './agentAuditLog';
+import type { AuditDoor, AuditEntry } from './agentAuditLog';
 import { CALLER_DISCLAIMER, CallerLabel, callerLine } from './brokerCaller';
 import type { ConsentOutcome } from './brokerMcpDoor';
 import { describeLimits, grantLimits } from './grantLimits';
@@ -32,6 +32,11 @@ export interface ConsentGateDeps {
   /** The one moment a person is provably present. */
   onUserPresent(): void;
   log(entry: Omit<AuditEntry, 'at' | 'caller'> & { caller?: CallerLabel }): void;
+  /**
+   * A dialog is about to be shown for this question: the one moment a prompt is SPENT (`aliasThrottle.ts`). A call refused
+   * before it got here showed nobody anything and costs nothing; one that joins a dialog already open shows nothing new.
+   */
+  prompted?(question: ConsentQuestion): void;
 }
 
 /** One consent question, as the broker asks it. */
@@ -41,6 +46,8 @@ export interface ConsentQuestion {
   readonly verb: string;
   readonly summary: string;
   readonly caller: CallerLabel | undefined;
+  /** The door the call came in by: a local token call raises dialogs that are not throttled, a bridged one is counted on its bridge. */
+  readonly via: AuditDoor;
 }
 
 export class ConsentGate {
@@ -79,6 +86,7 @@ export class ConsentGate {
   }
 
   private async ask(question: ConsentQuestion, stillWanted: () => boolean): Promise<boolean> {
+    this.deps.prompted?.(question);
     const choice = await withTimeout(
       Promise.resolve(vscode.window.showWarningMessage(this.wording(question), { modal: true }, 'Allow', 'Deny')),
       CONSENT_TIMEOUT_MS,

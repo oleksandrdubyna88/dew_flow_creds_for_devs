@@ -1074,3 +1074,198 @@ so nobody "fixes" it.
 - `fs.rename` over a `.json` another window is reading: atomic within one volume on POSIX and NTFS; on Windows a concurrent reader can make it fail with `EPERM`/`EBUSY`, hence the bounded retry, which S25 cannot provoke on a Linux runner. The owner's M7 is the only real Windows exercise.
 - The line counts (`stopped`, the `prepared` edit) and ESLint's complexity for `prepared` after the change are hand counts; `npm run lint` decides.
 - `memoryStorage` from `test/pinWorld.ts` seeding an `sshkey` entity with a sealed value for L2 is read from that helper's exports, not run.
+
+
+## S3.13 — As built, epoch 3 (Sonnet, 2026-11-05)
+
+One fix-forward commit on `feat/remote-bridge-e1`, built in the order of A.7. `credsAgentServer.ts` is **787** lines (A.4's
+count, to the line), `extension.ts` 1003 and unchanged, `handle` untouched (48 code lines), `prepared` and `perform` at complexity 4. R3 and
+its fixture (`test/fixtures/bridgeBoundary.r3.json`) are untouched, and R3 is green. Nothing of E1.4 was built. `.claude/rules/shared`
+was not bumped (`pin-check.mjs` reports the shared rules stale, as expected).
+
+### Differences from A.1-A.9, none of which moves the boundary
+
+1. **The store is in `bridgeScopeStore.ts`**, re-exported by `bridgeScope.ts` (so every import path A.3 names holds). It keeps
+   `node:fs` out of the module that decides, and `bridgeScope.ts` at 344 lines. `Scope`, `ScopeFile`, `ScopeFs`, `scopeKey` and
+   `scopeFileName` are there too.
+2. **`accountOnlyVault` is in its own file, `mcpAccountVault.ts`, not `mcpEntries.ts`.** `pinReaderBoundary.test.ts` classifies
+   `mcpEntries.ts` an *automatic* reader and refused five delegations of the secret getters in it ("no automatic primitive in that
+   function"): the first full run of `npm test` failed on exactly that. The new file is classified a *carrier* in that test's table
+   (it hands the getters on and reads nothing). Behaviour as A.3.2.
+3. **`launchGate(grants, wall, call)` in `bridgeScope.ts`** builds `atLaunch` (A.3.4 wrote the closure inline in `prepared`); it saves a
+   line there and lets the token-status read be named once. `launchRefusal`'s `tokenDenied` is `tokenDenied?: boolean`, not `= false`:
+   ESLint counts a default value in complexity.
+4. **Every function the spec names is split where `complexity` (max 4) required**, the same as in §S3.12 item 1: `TokenlessCeilings.admit`
+   (`admitted`, `refused`), `doorOfDialog`, `idle`, `walledRefusal`, `admitsEntry`, the file-shape validators of the store,
+   `unusableEntity` in `sshUseActions.ts` (which also keeps `run` under 50 lines: it holds the `!entity.host` check of old and the new
+   `agentForward` check together, in the same order and before `acquireExecSlot`), and `chainFrom`/`firstChain` in the R2 walker.
+5. **`ExecSlots.acquire` is an arrow property**, so `acquireExecSlot = new ExecSlots(MAX_CONCURRENT_EXECS).acquire;` is one line and still
+   about its instance when an action takes it off the server as a bare value (tested). A.4 counted the accessor at -12; it is -13, the
+   `running` field -1, the import +1.
+6. **`TokenlessCeilings`** keeps `reportedAt` per door (the spec did not say; one shared mark would let a flood on one bridge silence the
+   journal line of another), releases an admission once only (a second call of the same `release` frees nothing), and has two additions
+   the spec did not name: `forget(door, nowMs = Date.now())` also prunes every other door whose windows are idle, and `doorCount()`
+   exists so a test can see the prune. `over(windowMs)` is exported for the sentence test.
+7. **`entryBarred` fails closed** (not in A.3.2): a `wall.entryRefusal` that throws is a `denied` with the reference sentence, never an
+   exception out of `usable`. Tested.
+8. **The bridged refusal is journalled** as `"<entry>: <real sentence> (a Remote Bridge was told only that it could not be used)"` through `deps.note`.
+   A.3.6 said "the real one goes to the journal" without a form.
+9. **Test worlds.** `bridgeWallWorld.ts` gives `e1`, `e-out`, `x` and the colliding `foreign` a config of their own (`isConfig`, so the real
+   `visibleConfigDetails` serves a snippet; `codeAccessEnabled` is `false` on those rows instead of absent, the same on every door) and
+   builds `listEntriesOf`, `visibleConfigOf` and `entryRefusal` from the real functions over `accountOnlyVault`; its scope is the REAL
+   `nodeScopeFs` and a `LeasedQueue` over a `WindowLock` in a `mkdtemp` that `dispose()` removes. The pure tests use `memoryScopeFs`/`memoryScopes`/`put`
+   (`bridgeModules.ts`). `S23`'s snippet text does not depend on the config's file name, so its first leg cannot tell a1's snippet from
+   a2's by body; the leg that discriminates is the second (only a2 holds a config `e1`: the not-found body), plus the accounts
+   `visibleConfigOf` was asked about. `S29`: A.5 says the body contains no `creds://`, but the sentence A.3.3 prescribes says "a creds://
+   reference", so the test asserts that the only `creds://` in the body is the sentence's own word and that no part of the stored text
+   is in it.
+10. **Beyond A.5, tests added** for guards no N-row names: `brokerStopped.test.ts` (`stopped` asked directly: a client that has gone, a
+    refusal, an admit), `brokerConsentPrompted.test.ts` (`prompted` is called once, before the dialog, not for a grant that already
+    says allowed/denied, not for a joiner), `grantWords.test.ts`, the broker-level cap and bound-accessor tests in `execSlots.test.ts`, a local
+    token call that is not throttled, a Trash dialog counted on the local door, the clock-stepped-back prune, the file's deduplicated ids,
+    `entryRefusal` first/throws, the three sentences written out, `accountOnlyVault`.
+
+### The consequence on the local alias and MCP doors (A.2 item 9), pinned
+
+`bridgePrompts.test.ts`, "S26 consequence": six calls refused before their dialog by the action's own validation (an empty command)
+leave all five dialogs free on the local alias door and on the local MCP door, and the sixth dialog is `too_many_requests`. It watched
+RED against the old throttle (`alias: refused call 6 is a validation refusal, not a throttle`). **No existing test had to change because of it.**
+The existing tests that count prompts (`S14` "the sixth token call", the MCP "sixty quiet calls ... still gets its five", "an entry that
+prompts is still refused at the sixth", every route test of the alias door) went red for a while mid-build, between the throttle's change
+and the stamp's wiring, and were green again with no edit once the gate called `prompted`. The tests that DID change in this commit changed
+for the other reasons here: `REFERENCE_REFUSED` takes no reference (`bridgeReferences`, `bridgeTransitive`), the scope is a file and `set`
+takes a revision (every helper that called `set`), the wall has three more members (`emptyWall`, `wallOf`, `wallWith`), the two
+`sources.*` unit tests read the wall's suppliers, `aliasThrottle.test.ts` is over three classes, and R2 is transitive.
+
+### The RED record (each watched failing, for the reason named, before the code)
+
+- **R2**, original tree plus a `grantWords.ts` that re-exports from `grantLimits`: `bridgeScope must not reach vscode ... + 'bridgeScope ->
+  brokerRequests -> grantLimits -> vscode'` (the walk's own teeth test: `the walk from bridgeScope reaches grantWords (24 modules)`).
+- **`execSlots.test.ts`**: `Error: Cannot find module '../execSlots'`. **`accountOnlyVault`**: not a function.
+- **`aliasThrottle.test.ts`** against the old class (21 of 32 failed, 11 pass because the old code satisfied them): `call 6, refused before its
+  dialog was refused: Too many requests: a caller without a token may prompt at most 5 times a minute.`
+- **S17/S25**: `TypeError: this.store.get is not a function` (the class took a `Memento`), 37 of 42 failing.
+- **S22**: `e1 once, named prod` with `[ 'e1', 'foreign' ]` also listed. **S23** (leg 2): the snippet was served from a2's `e1`. **S24**, with the
+  scope read before the await: `the scope was read after the listing came back: nothing of e1 is shown` (the full e1 row was returned).
+  **S29**: `"prod" uses creds://nobody@x.test/Agents/second/password, which this Remote Bridge ...` against the one sentence.
+- **S27** (S10 extended): `mcp: S27 — a waiting rotation was not promoted onto an entry the scope no longer admits ... + [ 'a1/e1' ]`.
+  **S28**: `a token the person denied while the call waited ran anyway: {"exitCode":0,"stdout":"ok\n","stderr":""}` and `200 !== 403`.
+- **S26** against the old throttle: `asked call 1` (a window spent by refusals), `alias: refused call 6 is a validation refusal, not a throttle`,
+  `a bridge has its own five`, the sixth through B refused with the local sentence, `ceilingsOf(...).forget is not a function`.
+- **L2**: the body was `"deploy-key" is protected with its own PIN, so it cannot be used automatically ...`; **L2 (write)**: `Could not write the
+  stored key to disk: EACCES: permission denied, open '/tmp/creds-links-.../k1-....key'`; **L3**: `The jump host "jump" cannot be used: its address is
+  not a valid host.`; **L3 (runner)**: `Could not run ssh: spawn ssh ENOENT at /tmp/creds-links-...`; **L4 (action)**: `the action went ahead with
+  the laptop's agent forwarded: {"exitCode":0,...}`. L1, L3 (valid) and L5 were green on first run, as A.5 says they compile-fail only at HEAD.
+
+### Totals
+
+`npm run typecheck`, `lint` (0 problems) and `ratchet` clean; `npm test` 6204 tests, 6200 pass, 0 fail, 4 skipped, after the one repair in item 2
+(the first full run had that one failure, `pinReaderBoundary`, 6199 pass); `npm run itest:cli` all checks passed; `dotnet build dew_flow_creds_for_devs.slnx` 0
+warnings, 0 errors; `CredsBroker.Tests` (built from `src_broker_client/tests/BrokerClient.Tests.csproj`, not in the solution) 159 of 159.
+`node plan-lifecycle.mjs` clean.
+
+### Break-its run (all caught; each mutation applied to one file, that file re-emitted, 733+ tests run, restored and its sha256 compared with the one taken before)
+
+80 mutations: N1-N20, and 60 more guards. **Four guards no test caught** on the first pass, each now has one: G5b (a Trash dialog raised by the
+MCP door's own verbs stamped under the wrong door) by "a dialog the MCP door raises for its own verbs ... is counted on the local door";
+G6 (the prune may remove the file just written) by "the file just written survives even when it is the oldest of all"; G8 (`set` keeps
+duplicate ids: the Set was only hidden by `read`) by "an entry given twice is written once"; G27 (`stopped` ignores a client that has gone)
+by `brokerStopped.test.ts`. G53 and G55 were run against `grantWords.test.ts`, which the default set did not include. G29/G30 were re-run
+after `accountOnlyVault` moved to `mcpAccountVault.ts`.
+
+| # | Mutation | Test that caught it (first) | Failing |
+|---|---|---|---|
+| N1 | `set` writes outside `writes.run` | S25: two sets racing for one server from two windows — exactly one lands, the other is stale | 1 |
+| N2 | `set` ignores `expectedRevision` | S17: set answers the revision it wrote: 0 -> 1 -> 2, and a copy at the wrong revision is refused with the o... | 4 |
+| N3 | `read` caches the parsed file | L1: a linked key out of scope is part of using e1 — it works through the bridge, the file is gone after, an... | 76 |
+| N4 | `read` skips the account/server check | S17: a malformed file, in any of its parts, is an empty scope at revision 0 with quiet off | 2 |
+| N5 | `sources.mcpEntries` reads `real.mcpEntries` | sources.mcpEntries: kept rows are those in scope, can is narrowed to use, dependsOn names only kept rows | 3 |
+| N6 | `sources.visibleConfig` reads `real.visibleConfig` | sources.visibleConfig: a config only in scope, from the per-account supplier, and it is not asked about the... | 2 |
+| N7 | the scope read before the listing's await | S24: a scope narrowed while the listing is being read is the scope the listing is cut by | 1 |
+| N8 | `prepared` asks nothing before `releaseWaiting` | S10: scope narrowed while the modal is open — the call is refused with the route's own sentence, byte for b... | 2 |
+| N9 | `launchRefusal` ignores `tokenDenied` | S28: a token denied while its bridged call waits is refused at the gate — nothing runs, nothing is spent | 1 |
+| N10 | `admit` keys every door as `LOCAL_DOOR` | each door has its own windows: five dialogs on bridge A leave bridge B and the local door untouched | 11 |
+| N11 | the modal window stamped at `admit` | the local door is today's modal budget to the byte: five dialogs, one in flight, those sentences | 20 |
+| N12 | `OneInFlight` per door | one dialog in flight is global: a dialog held open on A makes B and the local door busy | 2 |
+| N13 | the local sentence on a bridge | on a bridge the sentences name the bridge, never a caller without a token | 3 |
+| N14 | `REFERENCE_REFUSED` carries the stored text | S9 and S29: every way a reference can fail reads alike — one sentence, and it echoes nothing of the stored ... | 10 |
+| N15a | `bridgedRefusal` dropped at the credential refusal | L2: a key sealed with its own PIN refuses generically on a bridge — the body names no key, the journal has ... | 2 |
+| N15b | `bridgedRefusal` dropped at the jump chain | L3: a jump host whose address is not valid refuses generically on a bridge, and by name on the main port | 1 |
+| N15c | `bridgedRefusal` dropped at the `ssh` failure | L3: an ssh that cannot be started refuses generically on a bridge — the error may carry argv and a path | 1 |
+| N16 | the action's `agentForward` check dropped | L4: the action refuses on its own when the wall does not — a dialog, then the same sentence, and ssh is nev... | 1 |
+| N17 | `referenceRefusal` skips `entryRefusal` | L4: an entry that forwards the agent is refused before anybody is asked, and ssh is never started | 3 |
+| N18 | `grantWords.ts` imports `grantLimits.ts` | R2: the bridge modules are pure, and so is everything they load | 1 |
+| N19 | R2 reads only the listed files | R2 has teeth: the walk follows real imports through real files, and names the chain of a planted one | 1 |
+| N20 | `ExecSlots.acquire` ignores the cap | ExecSlots hands out exactly its cap and then refuses with undefined | 3 |
+| G1 | `prompted` counts a local token call | a local token call is not throttled: its dialog stamps nothing; a bridged token call is counted on its bridge | 2 |
+| G2 | `prompted` ignores the bridge of the dialog | each door has its own windows: five dialogs on bridge A leave bridge B and the local door untouched | 10 |
+| G3a | the token/MCP door admits without its bridge | S26: five calls refused before any dialog spend nothing — the next five dialogs are all asked | 3 |
+| G3b | the alias route admits without its bridge | S26: each bridge has its own five — the sixth through A is refused, a sixth through B is asked, and so is a... | 3 |
+| G3c | `admitAliasCall` forgets the bridge it was given | S26: each bridge has its own five — the sixth through A is refused, a sixth through B is asked, and so is a... | 6 |
+| G4 | the gate never says a dialog is being shown | S26: each bridge has its own five — the sixth through A is refused, a sixth through B is asked, and so is a... | 10 |
+| G5a | the dialog of a perform is stamped under the wrong door | S26: the local alias door is as it was — five, then the sixth refused with the local sentence, and a bridge... | 5 |
+| G5b | the dialog of a door is stamped under the wrong door | S26: a dialog the MCP door raises for its own verbs (a move to the Trash) is counted on the local door like... | 1 |
+| G5c | the gate is wired without `prompted` | S26: each bridge has its own five — the sixth through A is refused, a sixth through B is asked, and so is a... | 10 |
+| G6 | the prune may remove the file just written | S17: the file just written survives even when it is the oldest of all (a clock that stepped back) | 1 |
+| G7 | the prune never removes | S17: at most 64 files; the oldest `at` is pruned, never the one just written | 2 |
+| G8 | `set` keeps duplicate entries | S17: an entry given twice is written once, and reads as a set | 1 |
+| G9 | a v2 file reads as a scope | S17: a malformed file, in any of its parts, is an empty scope at revision 0 with quiet off | 1 |
+| G10 | a file with no revision reads as a scope | S17: a malformed file, in any of its parts, is an empty scope at revision 0 with quiet off | 1 |
+| G11 | a file with a non-boolean quiet reads as a scope | S17: a malformed file, in any of its parts, is an empty scope at revision 0 with quiet off | 1 |
+| G12 | a file naming an entry list that is not ids reads | S17: a malformed file, in any of its parts, is an empty scope at revision 0 with quiet off | 1 |
+| G13 | the stale sentence changed | S17: set answers the revision it wrote: 0 -> 1 -> 2, and a copy at the wrong revision is refused with the o... | 1 |
+| G14 | a failed rename leaves its temp file | S25: a write that cannot rename leaves no temp file, and says why | 2 |
+| G15 | a held rename (EPERM/EBUSY) is not retried | S25: a rename a reader is holding (EPERM/EBUSY, as on Windows) is retried, and gives up after three tries | 1 |
+| G16 | a held rename is retried for ever | S25: a rename a reader is holding (EPERM/EBUSY, as on Windows) is retried, and gives up after three tries | 1 |
+| G17 | `list` returns files that are not .json | S25: nodeScopeFs lists only .json files, an absent directory as empty, and never a temp file left by a crash | 1 |
+| G18 | `list` of an absent directory throws | S25: nodeScopeFs lists only .json files, an absent directory as empty, and never a temp file left by a crash | 1 |
+| G19 | `forget` keeps the file | S17: forget removes one file and leaves the others | 2 |
+| G20 | the file name is not a hash | S17: scopeKey is injective across the colon, as stampKey is, and the file name is its hash | 1 |
+| G21 | `entryBarred` does not fail closed | A.3.2: an entry the wall does not bar is checked for references as before, and a wall whose answer throws f... | 1 |
+| G22 | `unservedReference` lets a throw through as served | S9: a storedTexts or a vault that THROWS is the same refusal, never an exception | 2 |
+| G23 | the launch gate reads the wrong grant for the token | S28: a token denied while its bridged call waits is refused at the gate — nothing runs, nothing is spent | 1 |
+| G24 | `launchRefusal` skips the scope check | S9: a bridged grant with no wall at all fails closed | 6 |
+| G25 | `launchRefusal` skips the references | launchRefusal: the grant's account and entry against a fresh scope, then its references | 3 |
+| G26 | `runAndDeliver` hands the action boundary no gate | S12: a one-use entry queued in the lane behind a call of another door, narrowed meanwhile — it refuses at i... | 1 |
+| G27 | `stopped` ignores a client that has gone | stopped: a client that has gone stops the call with ONE line in the journal, and the wall is not even asked | 1 |
+| G28 | `stopped` does not answer the refusal | S10: scope narrowed while the modal is open — the call is refused with the route's own sentence, byte for b... | 4 |
+| G29 | `accountOnlyVault` lists every account | accountOnlyVault: the whole source with one account listed, every other method delegated by name and bound ... | 3 |
+| G30 | `accountOnlyVault` loses `this` of the source | accountOnlyVault: the whole source with one account listed, every other method delegated by name and bound ... | 1 |
+| G31 | the snippet is served for an id out of scope | sources.visibleConfig: a config only in scope, from the per-account supplier, and it is not asked about the... | 4 |
+| G32 | the listing is not cut by the scope | sources.mcpEntries: kept rows are those in scope, can is narrowed to use, dependsOn names only kept rows | 8 |
+| G33 | the generic refusal changes the code | L2: a key sealed with its own PIN refuses generically on a bridge — the body names no key, the journal has ... | 2 |
+| G34 | the generic refusal is not journalled | L2: a key sealed with its own PIN refuses generically on a bridge — the body names no key, the journal has ... | 4 |
+| G35 | the generic refusal applies off a bridge too | L2: a key sealed with its own PIN refuses generically on a bridge — the body names no key, the journal has ... | 4 |
+| G36 | the action's agent-forwarding check applies off a bridge too | L4: control — on the main port the same entry runs with -A | 3 |
+| G37 | `forget` leaves the door's counts | forget(door) starts that door over, and leaves the others as they were | 2 |
+| G38 | idle doors are never pruned | a door whose windows are idle is forgotten when another is, and the local door never is | 1 |
+| G39 | the local door can be pruned | a door whose windows are idle is forgotten when another is, and the local door never is | 1 |
+| G40 | a slot released twice frees the next call's place | a slot released twice frees the place once: the second release cannot free the next call's | 1 |
+| G41 | `OneInFlight` lets a second dialog in | one in flight: the second hold is refused until the first is released | 9 |
+| G42 | the window is full one too late | a sliding window admits up to its cap, refuses the next, and counts only what it admitted | 32 |
+| G43 | a refusal behind the one in flight frees the place it never took | a refusal gives back nothing: a call refused behind the one in flight does not free the one in flight | 1 |
+| G44 | the silent ceiling stamps nothing | it refuses the (max+1)th inside the window, and admits again once the window has passed | 10 |
+| G45 | a refused silent call is journalled every time | a runaway loop leaves ONE line a window, not one line a call | 1 |
+| G46 | the `ExecSlots` double release frees two | releasing a slot twice frees it once: the second call is a no-op and cannot open a ninth slot | 1 |
+| G47 | the bridge sentence has the wrong number | the local door is today's modal budget to the byte: five dialogs, one in flight, those sentences | 10 |
+| G48 | `AGENT_FORWARD_REFUSED` names the wrong entry | A.3.3: the three sentences are written out, each takes the entry's name and nothing else | 1 |
+| G50 | the broker's exec cap is far above | the broker hands the actions this cap: MAX_CONCURRENT_EXECS slots and then undefined, and a release makes r... | 1 |
+| G51 | the broker hands the actions a slot function that never grants | the broker hands the actions this cap: MAX_CONCURRENT_EXECS slots and then undefined, and a release makes r... | 2 |
+| G52 | the dialog is counted after it is answered, not when it is shown | prompted is called once, with the question and its door, BEFORE the dialog is shown | 3 |
+| G53 | `grantLimits.ts` carries `expiredMessage` again | grantWords loads with no editor at all, and grantLimits no longer carries the sentence | 1 |
+| G54 | `stopped` is not asked of a live client (the wall never speaks before an Allow) | S10: scope narrowed while the modal is open — the call is refused with the route's own sentence, byte for b... | 3 |
+| G55 | the expiry sentence for a call cap says idle | S14: with a limit of one call, the first bridged call runs and the second says the token ran out — the toke... | 3 |
+
+### Not verified, and a note for the next epoch
+
+- The cap of 64 files prunes by `at`, which a clock stepped back makes unreliable for ordering; the file just written is never pruned.
+- **Revision numbers repeat after a `forget`.** A.2 item 1 says an absent file is revision 0, so a scope that is forgotten (Close) and opened again
+  (a new pick: `set` expecting 0) is at revision 1 once more, and a window that still holds a copy at revision 1 from before the Close would
+  be accepted by `set`. S25 pins what the spec asks (a stale copy is refused while the file is GONE); the ABA after the file is back is not
+  covered and is not covered by the design. It needs that window's picker to stay open across a Close and an Open made in another window.
+  A generation (a random id written at the first `set`, handed back with the revision) would close it; left for the owner, since it changes
+  the shape of `Scope` that E2's picker reads.
+- `fs.rename` over a `.json` another window is reading: as A.9. The retry is covered by a patched `fs.promises.rename`, not by Windows.
+- E2.2 must build `writes` as `new LeasedQueue(new WindowLock(path.join(globalStorageUri, SCOPES_LOCK_DIR), nodeLockFs()))`, call
+  `scopes.forget` and the broker's `ceilings.forget(bridgeId)` (private today; E2 needs a method or the tests' cast) on Close, and wire
+  `listEntriesOf`, `visibleConfigOf` and `entryRefusal` from `accountOnlyVault(storage, accountId)` and `details.agentForward`.

@@ -1,13 +1,13 @@
 import type { AuditDoor } from './agentAuditLog';
 import type { BridgeContext, BridgeGrant } from './bridgeContext';
 import type { ReadRouteSources } from './brokerReadRoutes';
-import { McpUseLookup, McpUseTarget, Refusal, UNKNOWN_TOKEN, aliasTarget, grantForToken, refusalFor } from './brokerRequests';
+import { GRANT_NOT_ALLOWED, McpUseLookup, McpUseTarget, Refusal, UNKNOWN_TOKEN, aliasTarget, grantForToken, refusalFor } from './brokerRequests';
 import type { Grant, GrantLimits, GrantRegistry } from './grantRegistry';
 import type { McpEntry } from './mcpEntries';
-import type { ConsentStampStore } from './mcpConsentPolicy';
+import type { EntityMetadata } from './types';
 import { planRefs } from './runPlan';
 import { RefSource, locateRef } from './secretRef';
-import { SerialQueue } from './serialQueue';
+import { BridgeScopes, type Scope } from './bridgeScopeStore';
 import { parseBearer } from './brokerProtocol';
 
 /**
@@ -21,120 +21,22 @@ import { parseBearer } from './brokerProtocol';
  *
  * <p><b>The scope is read where it is used, never held.</b> Every wrapped function calls
  * {@link BridgeScopes.read} itself, so narrowing a scope takes effect on the next request without a reconnect and
- * a {@link Scope} is never carried across an `await`.</p>
+ * a {@link Scope} is never carried across an `await`. The store is a file per server (`bridgeScopeStore.ts`),
+ * read fresh on every check.</p>
  */
 
-/** Where the scopes live: this machine's `globalState`, never the vault (parent plan §4.2). */
-export const SCOPES_KEY = 'credSshManager.bridgeScopes';
-/** Records kept; past it the oldest `at` goes. */
-export const MAX_SCOPES = 64;
-/** Entries in one scope. No picker offers that many, so `set` refuses past it. */
-export const MAX_SCOPE_ENTRIES = 256;
-
-export interface ScopeRecord {
-  readonly entries: readonly string[];
-  readonly quiet: boolean;
-  readonly at: number;
-}
-
-/** Length-prefixed like `stampKey`, so `a:b` + `c` and `a` + `b:c` are two keys. */
-export function scopeKey(accountId: string, serverEntityId: string): string {
-  return `${accountId.length}:${accountId}:${serverEntityId}`;
-}
-
-/** One server's scope as it was when it was read. */
-export interface Scope {
-  readonly entries: ReadonlySet<string>;
-  readonly quiet: boolean;
-  /** The account is part of the question: an entity id of another account is not in scope. */
-  admits(accountId: string, entityId: string): boolean;
-}
-
-const NOTHING: ScopeRecord = { entries: [], quiet: false, at: 0 };
-
-function isIdList(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((id) => typeof id === 'string');
-}
-
-function hasRecordShape(record: Record<string, unknown>): boolean {
-  return typeof record.quiet === 'boolean' && typeof record.at === 'number' && isIdList(record.entries);
-}
-
-/** A record we wrote: ids, a switch and a time. Anything else (a hand edit, an older build) reads as nothing. */
-function isRecord(value: unknown): value is ScopeRecord {
-  return typeof value === 'object' && value !== null && hasRecordShape(value as Record<string, unknown>);
-}
-
-/** The whole store as a map of records, or an empty one when it is not what we wrote. */
-function recordsOf(stored: unknown): Readonly<Record<string, unknown>> {
-  return typeof stored === 'object' && stored !== null && !Array.isArray(stored) ? (stored as Record<string, unknown>) : {};
-}
-
-function scopeOf(record: ScopeRecord, accountId: string): Scope {
-  const entries: ReadonlySet<string> = new Set(record.entries);
-  return { entries, quiet: record.quiet, admits: (account, entityId) => account === accountId && entries.has(entityId) };
-}
-
-/**
- * The scope of each server, per account: what its agent may reach, and whether it is asked each time.
- *
- * <p>Over the `Memento` subset of the consent stamps. Reads go to the store every time and read defensively: a
- * missing or malformed record is an empty scope that is not quiet, which is "a new server starts empty" and
- * also what a corrupted file should mean. Writes queue, because two concurrent read-modify-writes compose onto the
- * map they read and one of them is lost.</p>
- */
-export class BridgeScopes {
-  private readonly writes = new SerialQueue();
-
-  constructor(
-    private readonly store: ConsentStampStore,
-    private readonly now: () => number = Date.now,
-  ) {}
-
-  /** Synchronous and fresh: the store is asked on every call. */
-  read(accountId: string, serverEntityId: string): Scope {
-    const records = this.records();
-    const key = scopeKey(accountId, serverEntityId);
-    const stored = Object.prototype.hasOwnProperty.call(records, key) ? records[key] : undefined;
-    return scopeOf(isRecord(stored) ? stored : NOTHING, accountId);
-  }
-
-  /** Replace one server's scope. Refuses a scope no picker could have offered. */
-  set(accountId: string, serverEntityId: string, entries: readonly string[], quiet: boolean): Promise<void> {
-    if (entries.length > MAX_SCOPE_ENTRIES) {
-      return Promise.reject(new Error(`A Remote Bridge scope holds at most ${MAX_SCOPE_ENTRIES} entries.`));
-    }
-    const key = scopeKey(accountId, serverEntityId);
-    return this.writes.run(() => this.write(key, { entries: [...new Set(entries)], quiet, at: this.now() }));
-  }
-
-  /** Take one server's record away (Close and forget). */
-  forget(accountId: string, serverEntityId: string): Promise<void> {
-    return this.writes.run(async () => {
-      const rest = { ...this.records() };
-      delete rest[scopeKey(accountId, serverEntityId)];
-      await this.store.update(SCOPES_KEY, rest);
-    });
-  }
-
-  private records(): Readonly<Record<string, unknown>> {
-    return recordsOf(this.store.get<unknown>(SCOPES_KEY));
-  }
-
-  /** Inside the queue: read what is there now, add this, drop the oldest past the cap, store. */
-  private async write(key: string, record: ScopeRecord): Promise<void> {
-    const all = { ...this.records(), [key]: record };
-    const doomed = Object.entries(all)
-      .filter(([other]) => other !== key)
-      .map(([other, value]) => [other, isRecord(value) ? value.at : 0] as const)
-      .sort((a, b) => a[1] - b[1])
-      .slice(0, Math.max(0, Object.keys(all).length - MAX_SCOPES));
-    for (const [other] of doomed) {
-      delete all[other];
-    }
-    await this.store.update(SCOPES_KEY, all);
-  }
-}
+export {
+  BridgeScopes,
+  MAX_SCOPES,
+  MAX_SCOPE_ENTRIES,
+  SCOPES_DIR,
+  SCOPES_LOCK_DIR,
+  SCOPE_STALE,
+  nodeScopeFs,
+  scopeFileName,
+  scopeKey,
+} from './bridgeScopeStore';
+export type { Scope, ScopeFile, ScopeFs } from './bridgeScopeStore';
 
 /** What the wall needs from the vault side. Wired by E2.2 (`extension.ts`); a build without it opens no bridge. */
 export interface BridgeWallSource {
@@ -142,6 +44,18 @@ export interface BridgeWallSource {
   /** The texts a stored command or script would be searched in — `referenceTextsOf(details)` of the LIVE entity. */
   storedTexts(accountId: string, entityId: string): readonly string[];
   readonly refSource: Pick<RefSource, 'accounts' | 'entities'>;
+  /**
+   * The listing of ONE account: `visibleMcpEntries(accountOnlyVault(storage, accountId))`. `McpEntry` carries no
+   * account and an envelope may repeat an id across accounts, so a wall by id alone over the whole vault's listing is a breach.
+   */
+  listEntriesOf(accountId: string): Promise<readonly McpEntry[]>;
+  /** The snippet's supplier for ONE account: `visibleConfigDetails(accountOnlyVault(storage, accountId), entityId)`. */
+  visibleConfigOf(accountId: string, entityId: string): EntityMetadata | undefined;
+  /**
+   * Why this entry cannot be used through a bridge at all, asked before anybody is: E2 wires
+   * `details.agentForward === true ? { code: 'denied', message: AGENT_FORWARD_REFUSED(name) } : undefined`.
+   */
+  entryRefusal(accountId: string, entityId: string): Refusal | undefined;
 }
 
 /** Resolve an entry id for one action; the third argument is what a bridge's view adds. */
@@ -242,8 +156,12 @@ function bridgedView(bridge: BridgeContext, wall: BridgeWallSource): DoorView {
     bridge,
     sources: (real, resolveAlias) => ({
       aliases: () => (real.aliases?.() ?? []).filter((row) => admitted(scope(), resolveAlias?.(row.name)) !== undefined),
-      mcpEntries: async () => entriesIn(scope(), (await real.mcpEntries?.()) ?? []),
-      visibleConfig: (id) => (scope().entries.has(id) ? real.visibleConfig?.(id) : undefined),
+      // The scope is read AFTER the listing comes back: a narrow that lands while the rows are being read is the scope they are cut by.
+      mcpEntries: async () => {
+        const rows = await wall.listEntriesOf(bridge.accountId);
+        return entriesIn(scope(), rows);
+      },
+      visibleConfig: (id) => (scope().entries.has(id) ? wall.visibleConfigOf(bridge.accountId, id) : undefined),
       folders: () => [],
     }),
     // The real lookup runs for EVERY id, in scope or not, and the scope decides afterwards: an id that is out of
@@ -289,17 +207,35 @@ export function outOfScopeAnswer(via: AuditDoor, body: Record<string, unknown>):
 }
 
 /**
- * The one sentence for every reference that cannot be served. Four failures (no such account, no such entity,
- * ambiguous, out of scope) and a throw all say this, because a sentence that told them apart would tell a bridge
- * what is in a vault it may not see. `denied`, not `not_found`: the MCP client's walk moves on from a `not_found`,
- * and this call has to stop.
+ * The one sentence for every reference that cannot be served, and it echoes nothing of the stored text.
+ *
+ * <p>Four failures (no such account, no such entity, ambiguous, out of scope) and a throw all say this, because a
+ * sentence that told them apart would tell a bridge what is in a vault it may not see. And the reference itself is not
+ * repeated (E1.3 epoch 3): the stored text of an argument or a variable is text no listing shows, so a sentence that
+ * quoted it would be a way to read it. `denied`, not `not_found`: the MCP client's walk moves on from a `not_found`, and
+ * this call has to stop.</p>
  */
-export function REFERENCE_REFUSED(entityName: string, ref: string): string {
-  return `"${entityName}" uses ${ref}, which this Remote Bridge does not serve. Add that entry to this bridge's scope, or take the reference out of the stored command or script.`;
+export function REFERENCE_REFUSED(entityName: string): string {
+  return `"${entityName}" uses a creds:// reference this Remote Bridge does not serve. Add every entry it names to this bridge's scope, or take the reference out of the stored command or script.`;
 }
 
-/** Stands in for the reference when none could be read: the texts could not be listed, or there is no wall. */
-const UNREADABLE = 'a creds:// reference';
+/**
+ * An entry that forwards the laptop's SSH agent is not used through a bridge: the shared agent answers for every loaded
+ * key, which is the whole of the laptop's identity, not the one entry in scope. One sentence on both legs of the check
+ * (the wall before the dialog, the action against the live entity), so nobody can tell them apart.
+ */
+export function AGENT_FORWARD_REFUSED(entityName: string): string {
+  return `"${entityName}" is set to forward this computer's SSH agent, and the shared agent answers for every loaded key. A Remote Bridge does not use it: turn agent forwarding off on that entry, or use it from this computer.`;
+}
+
+/**
+ * What an agent on a bridge reads when a use of an in-scope entry fails for a reason that would name something it may not
+ * see (a linked key, a jump host, an error with a path in it). The real reason goes to the journal, on the computer that
+ * holds the vault. The code of the refusal it replaces is kept.
+ */
+export function BRIDGE_USE_REFUSED(entityName: string): string {
+  return `"${entityName}" could not be used through this Remote Bridge. The reason is in the agent journal on the computer that holds the vault.`;
+}
 
 function serves(ref: string, wall: BridgeWallSource, scope: Scope): boolean {
   try {
@@ -310,43 +246,82 @@ function serves(ref: string, wall: BridgeWallSource, scope: Scope): boolean {
   }
 }
 
-/** The first reference of this entity's stored command or script that the scope does not serve; `UNREADABLE` when none could be listed. */
-function unservedReference(grant: Grant, context: BridgeContext, wall: BridgeWallSource): string | undefined {
+/** Whether this entity's stored command or script holds a reference the scope does not serve; a text that cannot be listed counts as one. */
+function unservedReference(grant: Grant, context: BridgeContext, wall: BridgeWallSource): boolean {
   try {
     const scope = wall.scopes.read(context.accountId, context.serverEntityId);
-    return planRefs(wall.storedTexts(grant.accountId, grant.entityId)).refs.find((ref) => !serves(ref, wall, scope));
+    return planRefs(wall.storedTexts(grant.accountId, grant.entityId)).refs.some((ref) => !serves(ref, wall, scope));
   } catch {
-    return UNREADABLE;
+    return true;
   }
 }
 
-/** Every `creds://` target of the grant's entity admitted by a fresh scope, or the one sentence. `undefined` off a bridge. */
-export function referenceRefusal(grant: Grant, wall: BridgeWallSource | undefined): Refusal | undefined {
-  if (grant.bridge === undefined) {
-    return undefined;
+/** The wall's word on this entry as a whole, before references; a wall that cannot answer is a refusal. */
+function entryBarred(grant: Grant, wall: BridgeWallSource): Refusal | undefined {
+  try {
+    return wall.entryRefusal(grant.accountId, grant.entityId);
+  } catch {
+    return { code: 'denied', message: REFERENCE_REFUSED(grant.entityName) };
   }
-  const ref = wall === undefined ? UNREADABLE : unservedReference(grant, grant.bridge.context, wall);
-  return ref === undefined ? undefined : { code: 'denied', message: REFERENCE_REFUSED(grant.entityName, ref) };
 }
 
 /**
- * The gate at launch: the grant's account and entity against a fresh scope, then its references. `undefined` off a
- * bridge. A bridged grant with no wall is refused as out of scope (unreachable: no bridge opens without one).
+ * What stops this grant's entry being used through a bridge at all (`wall.entryRefusal`: an agent-forwarding entry), then
+ * every `creds://` target of its entity admitted by a fresh scope — or the one sentence. `undefined` off a bridge.
+ */
+export function referenceRefusal(grant: Grant, wall: BridgeWallSource | undefined): Refusal | undefined {
+  return grant.bridge === undefined ? undefined : walledRefusal(grant, grant.bridge.context, wall);
+}
+
+function walledRefusal(grant: Grant, context: BridgeContext, wall: BridgeWallSource | undefined): Refusal | undefined {
+  const denied: Refusal = { code: 'denied', message: REFERENCE_REFUSED(grant.entityName) };
+  if (wall === undefined) {
+    return denied;
+  }
+  return entryBarred(grant, wall) ?? (unservedReference(grant, context, wall) ? denied : undefined);
+}
+
+/**
+ * The gate at launch: on a bridge, a token the person has denied since this call was asked, then the grant's account and
+ * entity against a fresh scope, then its references. `undefined` off a bridge. A bridged grant with no wall is refused as
+ * out of scope (unreachable: no bridge opens without one).
+ *
+ * <p>`tokenDenied`: a bridged token call rides a grant of its own, and the token only authenticates it, so the token's
+ * Deny (made on another door while this call waited) is not seen by anything that reads the call grant. The caller reads
+ * the token's status where it can and says so here; the answer is the one a denied token has always got.</p>
  */
 export function launchRefusal(
   grant: Grant,
   wall: BridgeWallSource | undefined,
   via: AuditDoor,
   body: Record<string, unknown>,
+  tokenDenied?: boolean,
 ): Refusal | undefined {
-  const bridge = grant.bridge;
-  if (bridge === undefined) {
+  if (grant.bridge === undefined) {
     return undefined;
   }
-  if (wall === undefined || !wall.scopes.read(bridge.context.accountId, bridge.context.serverEntityId).admits(grant.accountId, grant.entityId)) {
-    return outOfScopeAnswer(via, body);
+  if (tokenDenied === true) {
+    return { code: 'denied', message: GRANT_NOT_ALLOWED };
   }
-  return referenceRefusal(grant, wall);
+  return admitsEntry(grant, grant.bridge.context, wall) ? referenceRefusal(grant, wall) : outOfScopeAnswer(via, body);
+}
+
+/** Whether a fresh read of the bridge's scope admits the grant's account and entry; a bridged grant with no wall admits nothing. */
+function admitsEntry(grant: Grant, context: BridgeContext, wall: BridgeWallSource | undefined): boolean {
+  return wall !== undefined && wall.scopes.read(context.accountId, context.serverEntityId).admits(grant.accountId, grant.entityId);
+}
+
+/**
+ * The launch gate bound to one call, built once: asked before anything an Allow triggers, and again at the action
+ * boundary. The token a bridged token call spends is read from the registry each time the gate is asked, because a Deny
+ * can land at any moment while the dialog is open.
+ */
+export function launchGate(
+  grants: Pick<GrantRegistry, 'get'>,
+  wall: BridgeWallSource | undefined,
+  call: { readonly grant: Grant; readonly via: AuditDoor; readonly body: Record<string, unknown>; readonly spend?: string },
+): () => Refusal | undefined {
+  return () => launchRefusal(call.grant, wall, call.via, call.body, call.spend !== undefined && grants.get(call.spend)?.status === 'denied');
 }
 
 /**

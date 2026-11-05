@@ -1,13 +1,20 @@
+import * as fs from 'node:fs';
 import type * as http from 'node:http';
+import * as os from 'node:os';
+import * as nodePath from 'node:path';
 import type { BridgeContext } from '../bridgeContext';
 import type { BridgeScopes, BridgeWallSource } from '../bridgeScope';
+import { LeasedQueue } from '../leasedQueue';
+import { WindowLock, nodeLockFs } from '../windowLock';
 import type { BridgeListener } from '../brokerBridgeListeners';
 import type { McpFolderHooks } from '../brokerFolderDoor';
 import type { McpVaultSource } from '../mcpEntries';
 import type { EntityMetadata, TreeNode } from '../types';
-import { visibleMcpEntries } from '../mcpEntries';
+import { AGENT_FORWARD_REFUSED } from '../bridgeScope';
+import { accountOnlyVault } from '../mcpAccountVault';
+import { visibleConfigDetails, visibleMcpEntries } from '../mcpEntries';
 import { keyed, raw, Reply } from './bridgeDoorHarness';
-import { loadBridgeModules, memento } from './bridgeModules';
+import { loadBridgeModules, put } from './bridgeModules';
 import { World, world } from './brokerWorld';
 import { loadWithVscode } from './vscodeStub';
 
@@ -48,28 +55,47 @@ function entity(id: string, name: string, parentId: string, extra: Partial<Entit
   return { id, name, type: 'entity', parentId, details: { id, name, kind: 'ssh', isSshEnabled: true, ...extra } as EntityMetadata };
 }
 
-function nodesOf(x: 'usable' | 'closed' | 'absent', collide: boolean): Record<string, TreeNode[]> {
+/** What makes an entry a config an agent may be told how to read: the snippet route serves only these. */
+const config = (name: string): Partial<EntityMetadata> => ({ isConfig: true, configFormat: 'json', configFileName: `${name}.json` } as Partial<EntityMetadata>);
+
+interface Flavour {
+  readonly collide: boolean;
+  /** Whether a1's `e1` is a config. Off, with `collide`, only a2's `e1` is: the snippet must not be served from there. */
+  readonly a1Config: boolean;
+  readonly agentForward: boolean;
+}
+
+function nodesOf(x: 'usable' | 'closed' | 'absent', flavour: Flavour): Record<string, TreeNode[]> {
   const folder = (id: string, mcp: TreeNode['mcp']): TreeNode => ({ id, name: id === 'f1' ? 'Agents' : 'Closed', type: 'folder', parentId: null, mcp });
+  const e1 = entity('e1', 'prod', 'f1', { dependsOn: ['e-out', 'e2'], ...e1Extras(flavour) });
   const a1: TreeNode[] = [
     folder('f1', EVERYTHING),
     folder('f-closed', { view: true }),
-    entity('e1', 'prod', 'f1', { dependsOn: ['e-out', 'e2'] }),
-    entity('e-out', 'leak-target', 'f1'),
+    e1,
+    entity('e-out', 'leak-target', 'f1', config('leak-target')),
     entity('e2', 'second', 'f1'),
     entity('dup1', 'dup', 'f1'),
     entity('dup2', 'dup', 'f1'),
+    ...xNodes(x),
   ];
-  if (x !== 'absent') {
-    a1.push(entity('x', 'hidden-x', x === 'usable' ? 'f1' : 'f-closed'));
-  }
   const a2: TreeNode[] = [folder('f1', EVERYTHING), entity('only-a2', 'only-a2-entry', 'f1')];
   // The same id as an entry of a1, in an account that is searched FIRST: what an unnarrowed lookup would find.
-  return { a2: collide ? [...a2, entity('e1', 'foreign', 'f1')] : a2, a1 };
+  return { a2: flavour.collide ? [...a2, entity('e1', 'foreign', 'f1', config('foreign'))] : a2, a1 };
+}
+
+/** What `e1` has beyond its name: a config of its own (unless the world says a1's is not), and the agent forwarding some scenarios turn on. */
+function e1Extras(flavour: Flavour): Partial<EntityMetadata> {
+  return { ...(flavour.a1Config ? config('prod') : {}), ...(flavour.agentForward ? { agentForward: true } : {}) };
+}
+
+/** The entry called `x`: open to agents, or in a folder whose use is off, or not there. */
+function xNodes(x: 'usable' | 'closed' | 'absent'): TreeNode[] {
+  return x === 'absent' ? [] : [entity('x', 'hidden-x', x === 'usable' ? 'f1' : 'f-closed', config('hidden-x'))];
 }
 
 /** The vault as the broker's collaborators see it, recording which accounts were asked about. */
-function vaultOf(x: 'usable' | 'closed' | 'absent', collide: boolean, asked: string[]): McpVaultSource {
-  const nodes = nodesOf(x, collide);
+function vaultOf(x: 'usable' | 'closed' | 'absent', flavour: Flavour, asked: string[]): McpVaultSource {
+  const nodes = nodesOf(x, flavour);
   const none = (): Thenable<undefined> => Promise.resolve(undefined);
   return {
     getAccounts: () => [{ accountId: 'a2' }, { accountId: ACCOUNT }],
@@ -103,11 +129,22 @@ export interface WallOptions {
   /** An entry called `x` in the vault: open to agents, or with its use switched off, or not there. */
   x?: 'usable' | 'closed' | 'absent';
   /**
-   * Account a2, searched first, holds an entry with the id `e1` of its own. Off by default: the listing and the
-   * snippet are keyed by id alone (`McpEntry` carries no account), so with a collision they would show the
-   * foreign row too. That is a gap the spec has, recorded in its "As built"; only S20 builds the collision.
+   * Account a2, searched first, holds an entry with the id `e1` of its own (named `foreign`, a config of its own). The
+   * listing, the snippet and every use path must keep to a1 (S20, S22, S23).
    */
   collide?: boolean;
+  /** Whether a1's `e1` is a config (default true). Off with `collide`, the only config called `e1` is a2's. */
+  a1Config?: boolean;
+  /** a1's `e1` forwards the laptop's SSH agent (L4). */
+  agentForward?: boolean;
+  /** The wall's `entryRefusal` as E2 wires it (default), or one that never refuses (L4's second leg: the action must refuse alone). */
+  entryRefusal?: 'wired' | 'none';
+  /** `listEntriesOf` answers a promise the test holds until `listing.release()` (S24). */
+  holdListing?: boolean;
+  /** The `exec` action the world runs for real, in place of the script (L1-L5). */
+  exec?: unknown;
+  /** The hook the broker calls before it reads the mask table (S27). */
+  releaseWaiting?: (accountId: string, entityId: string) => Promise<unknown>;
   /** How many `Allow` answers a dialog gets before it is dismissed. Default 60. */
   allows?: number;
   oneUse?: boolean;
@@ -129,6 +166,14 @@ export interface WallWorld {
   readonly lookups: unknown[][];
   /** Every account `getNode` was asked about, in order. */
   readonly nodesAsked: string[];
+  /** Every account `listEntriesOf` was called with, in order. */
+  readonly listed: string[];
+  /** `holdListing`: whether the listing has been asked for, and the key that lets it answer. */
+  readonly listing: { readonly asked: () => boolean; release(): void };
+  /** Every `[accountId, entityId]` `visibleConfigOf` was asked about. */
+  readonly configsAsked: string[][];
+  /** Every `[accountId, entityId]` `entryRefusal` was asked about. */
+  readonly refusalsAsked: string[][];
   /** Calls to the hooks a bridge must never reach: the config read, the folder verbs. */
   readonly forbidden: string[];
   /** A token for an entry, as the person's Share would hand it to an agent. */
@@ -138,7 +183,7 @@ export interface WallWorld {
   dispose(): void;
 }
 
-const DEFAULTS = { scope: ['e1'], quiet: false, x: 'absent', collide: false, allows: 60, storedTexts: NO_TEXTS } as const;
+const DEFAULTS = { scope: ['e1'], quiet: false, x: 'absent', collide: false, a1Config: true, agentForward: false, entryRefusal: 'wired', holdListing: false, allows: 60, storedTexts: NO_TEXTS } as const;
 
 /** The alias names the world knows, each to its target. `xalias` is there only when `x` is. */
 function aliasesFor(x: 'usable' | 'closed' | 'absent'): Record<string, Target> {
@@ -153,11 +198,46 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
   const nodesAsked: string[] = [];
   const lookups: unknown[][] = [];
   const forbidden: string[] = [];
-  const vault = vaultOf(o.x, o.collide, nodesAsked);
-  const scopes = new modules.scope.BridgeScopes(memento(), () => 1_000);
-  await scopes.set(ACCOUNT, SERVER, o.scope, o.quiet);
+  const listed: string[] = [];
+  const configsAsked: string[][] = [];
+  const refusalsAsked: string[][] = [];
+  const vault = vaultOf(o.x, { collide: o.collide, a1Config: o.a1Config, agentForward: o.agentForward }, nodesAsked);
+  let askedListing = false;
+  let releaseListing: () => void = () => undefined;
+  const listingGate = new Promise<void>((resolve) => {
+    releaseListing = resolve;
+  });
+  // A real directory and a real lock, as production has them: the scope is a file, and a test that narrows it narrows a file.
+  const storage = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'creds-wall-'));
+  const scopes = new modules.scope.BridgeScopes(
+    nodePath.join(storage, modules.scope.SCOPES_DIR),
+    modules.scope.nodeScopeFs(),
+    new LeasedQueue(new WindowLock(nodePath.join(storage, modules.scope.SCOPES_LOCK_DIR), nodeLockFs())),
+    () => 1_000,
+  );
+  await put(scopes, ACCOUNT, SERVER, o.scope, o.quiet);
   const texts = { current: o.storedTexts };
-  const wall: BridgeWallSource = { scopes, storedTexts: () => texts.current, refSource: refSourceOf(vault) };
+  const wall: BridgeWallSource = {
+    scopes,
+    storedTexts: () => texts.current,
+    refSource: refSourceOf(vault),
+    // The per-account suppliers, built as E2.2 builds them: the real listing and the real snippet lookup over ONE account's vault.
+    listEntriesOf: async (accountId) => {
+      listed.push(accountId);
+      askedListing = true;
+      const rows = await visibleMcpEntries(accountOnlyVault(vault, accountId));
+      await (o.holdListing ? listingGate : Promise.resolve());
+      return rows;
+    },
+    visibleConfigOf: (accountId, entityId) => {
+      configsAsked.push([accountId, entityId]);
+      return visibleConfigDetails(accountOnlyVault(vault, accountId), entityId);
+    },
+    entryRefusal: (accountId, entityId) => {
+      refusalsAsked.push([accountId, entityId]);
+      return o.entryRefusal === 'wired' ? agentForwardRefusal(vault.getNode(accountId, entityId)?.details) : undefined;
+    },
+  };
   const aliases = aliasesFor(o.x);
   const w = world({
     supports: ['exec', 'query'],
@@ -175,24 +255,34 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
     holdDialogs: options.holdDialogs,
     trash: true,
     create: 'open',
-    hooks: { bridgeWall: wall, configRoute: configSpy(forbidden) },
+    realActions: options.exec === undefined ? undefined : { exec: options.exec },
+    hooks: { bridgeWall: wall, configRoute: configSpy(forbidden), ...(options.releaseWaiting === undefined ? {} : { releaseWaiting: options.releaseWaiting }) },
   });
   w.server.setFolderHooks(folderSpy(forbidden));
   const token = await w.server.share(ACCOUNT, 'e1', 'prod', 'ssh');
   const bridge = await w.server.openBridgeListener(CONTEXT_1);
   return {
-    w, bridge, scopes, wall, vault, texts, lookups, nodesAsked, forbidden,
+    w, bridge, scopes, wall, vault, texts, lookups, nodesAsked, forbidden, listed, configsAsked, refusalsAsked,
+    listing: { asked: () => askedListing, release: () => releaseListing() },
     main: Number(token.slice(0, token.indexOf('.'))),
     tokenFor: async (account, entityId, entityName) => {
       const shared = await w.server.share(account, entityId, entityName, 'ssh');
       return shared.slice(shared.indexOf('.') + 1);
     },
     openOther: async (context, scope) => {
-      await scopes.set(context.accountId, context.serverEntityId, scope, false);
+      await put(scopes, context.accountId, context.serverEntityId, scope);
       return w.server.openBridgeListener(context);
     },
-    dispose: () => w.server.dispose(),
+    dispose: () => {
+      w.server.dispose();
+      fs.rmSync(storage, { recursive: true, force: true });
+    },
   };
+}
+
+/** What E2 wires as the wall's `entryRefusal`: an entry that forwards the laptop's SSH agent is refused, with its sentence. */
+function agentForwardRefusal(details: EntityMetadata | undefined): { code: 'denied'; message: string } | undefined {
+  return details?.agentForward === true ? { code: 'denied', message: AGENT_FORWARD_REFUSED(details.name) } : undefined;
 }
 
 function configOf(id: string): EntityMetadata {
@@ -260,5 +350,7 @@ export async function until(done: () => boolean, what: string, ms = 3_000): Prom
 export interface RegistryView {
   readonly grants: Map<string, { secret: string; status: string; scope: string; uses: number; lastUsedAt: number; bridge?: { context: BridgeContext; quiet: boolean } }>;
   get(secret: string): { status: string; scope: string; uses: number; lastUsedAt: number; bridge?: unknown } | undefined;
+  /** The person's Deny, recorded on a grant. */
+  deny(secret: string): void;
 }
 export const registryOf = (ww: WallWorld): RegistryView => (ww.w.server as unknown as { grants: RegistryView }).grants;

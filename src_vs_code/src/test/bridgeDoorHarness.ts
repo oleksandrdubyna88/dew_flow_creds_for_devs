@@ -3,7 +3,7 @@ import * as net from 'node:net';
 import type { BridgeContext } from '../bridgeContext';
 import type { BridgeListener } from '../brokerBridgeListeners';
 import type { BridgeWallSource } from '../bridgeScope';
-import { loadBridgeModules, memento } from './bridgeModules';
+import { NO_SUPPLIERS, loadBridgeModules, memoryScopes } from './bridgeModules';
 
 /**
  * What the Remote Bridge door tests share: two contexts, a request that keeps its `Host`, and the small
@@ -82,6 +82,5 @@ export const pause = (ms: number): Promise<void> => new Promise((resolve) => set
  * `bridgeScopeWalk.test.ts`.
  */
 export function emptyWall(): { bridgeWall: BridgeWallSource } {
-  const { scope } = loadBridgeModules();
-  return { bridgeWall: { scopes: new scope.BridgeScopes(memento()), storedTexts: () => [], refSource: { accounts: () => [], entities: () => [] } } };
+  return { bridgeWall: { scopes: memoryScopes(loadBridgeModules()), storedTexts: () => [], refSource: { accounts: () => [], entities: () => [] }, ...NO_SUPPLIERS } };
 }

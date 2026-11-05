@@ -6,7 +6,7 @@ import type { Grant } from '../grantRegistry';
 import type { RefSource } from '../secretRef';
 import type { McpVaultSource } from '../mcpEntries';
 import type { TreeNode } from '../types';
-import { loadBridgeModules, memento, present } from './bridgeModules';
+import { NO_SUPPLIERS, loadBridgeModules, memento, memoryScopes, present, put } from './bridgeModules';
 import { loadEachWithVscode, loadWithVscode } from './vscodeStub';
 
 /**
@@ -17,7 +17,7 @@ import { loadEachWithVscode, loadWithVscode } from './vscodeStub';
  */
 
 const M = loadBridgeModules();
-const { BridgeScopes, REFERENCE_REFUSED, referenceRefusal, launchRefusal, outOfScopeAnswer, scopedRefSource } = M.scope;
+const { REFERENCE_REFUSED, referenceRefusal, launchRefusal, outOfScopeAnswer, scopedRefSource } = M.scope;
 
 const CTX: BridgeContext = { bridgeId: 'b1', accountId: 'a1', serverEntityId: 'server1', serverName: 'prod server', target: '', remoteOs: undefined };
 const BRIDGED: BridgeGrant = { context: CTX, quiet: false };
@@ -45,9 +45,9 @@ function refSource(readings: string[] = []): RefSource {
 }
 
 async function wallOf(entries: string[], texts: readonly string[] | (() => readonly string[]) = []): Promise<BridgeWallSource> {
-  const scopes = new BridgeScopes(memento(), () => 1);
-  await scopes.set('a1', 'server1', entries, false);
-  return { scopes, storedTexts: typeof texts === 'function' ? texts : () => texts, refSource: refSource() };
+  const scopes = memoryScopes(M, () => 1);
+  await put(scopes, 'a1', 'server1', entries);
+  return { scopes, storedTexts: typeof texts === 'function' ? texts : () => texts, refSource: refSource(), ...NO_SUPPLIERS };
 }
 
 /** A grant of a bridge door; `{ bridge: undefined }` builds one of the existing doors, which has no such key at all. */
@@ -62,15 +62,16 @@ function grantOf(extra: Partial<Grant> = {}): Grant {
   return grant;
 }
 
-const sentence = (ref: string): string =>
-  `"deploy" uses ${ref}, which this Remote Bridge does not serve. Add that entry to this bridge's scope, or take the reference out of the stored command or script.`;
-const denied = (ref: string): { code: string; message: string } => ({ code: 'denied', message: sentence(ref) });
+/** The one sentence, written out: it echoes nothing of the stored text (S29), so it takes no reference. */
+const sentence = (): string =>
+  '"deploy" uses a creds:// reference this Remote Bridge does not serve. Add every entry it names to this bridge\'s scope, or take the reference out of the stored command or script.';
+const denied = (): { code: string; message: string } => ({ code: 'denied', message: sentence() });
 
 test('the reference sentence is the one of the spec, built by one function', () => {
-  assert.equal(REFERENCE_REFUSED('deploy', 'creds://a@x.test/Other/db/password'), sentence('creds://a@x.test/Other/db/password'));
+  assert.equal(REFERENCE_REFUSED('deploy'), sentence());
 });
 
-test('S9: every way a reference can fail reads alike — one sentence, with only the reference differing', async () => {
+test('S9 and S29: every way a reference can fail reads alike — one sentence, and it echoes nothing of the stored text', async () => {
   const wall = await wallOf(['e1', 'db-mine', 'solo']);
   const failing = [
     'creds://nobody@x.test/Mine/db/password', // no such account
@@ -82,13 +83,12 @@ test('S9: every way a reference can fail reads alike — one sentence, with only
   const messages: string[] = [];
   for (const ref of failing) {
     const refused = referenceRefusal(grantOf(), { ...wall, storedTexts: () => [`deploy ${ref}`] });
-    assert.deepEqual(refused, denied(ref), ref);
+    assert.deepEqual(refused, denied(), ref);
     messages.push(present(refused, 'a refusal').message);
   }
-  const shape = messages.map((message, i) => message.replace(failing[i], '<ref>'));
-  assert.equal(new Set(shape).size, 1, 'the sentences are one sentence');
+  assert.equal(new Set(messages).size, 1, 'the sentences are one sentence, character for character');
   for (const message of messages) {
-    for (const leak of ['db-other', 'Other/db"', 'Mine/db"', 'ambiguous', 'No entity', 'No signed-in']) {
+    for (const leak of ['db-other', 'Other', 'Mine', 'nobody', 'Theirs', 'x.test', 'creds://a', 'password', 'ambiguous', 'No entity', 'No signed-in']) {
       assert.ok(!message.includes(leak), `"${leak}" is not in ${message}`);
     }
   }
@@ -103,10 +103,10 @@ test('S9: a reference to an entry in scope lets the call proceed; so does a text
   assert.equal(referenceRefusal(grantOf(), { ...wall, storedTexts: () => both }), undefined, 'two in scope');
 });
 
-test('S9: the first reference that cannot be served is the one named, and one in scope does not cover another', async () => {
+test('S9: one reference that cannot be served refuses the call, and references in scope around it do not cover it', async () => {
   const wall = await wallOf(['e1', 'solo']);
   const texts = ['creds://a@x.test/Mine/solo/password creds://a@x.test/Other/db/password creds://a@x.test/Mine/db/password'];
-  assert.deepEqual(referenceRefusal(grantOf(), { ...wall, storedTexts: () => texts }), denied('creds://a@x.test/Other/db/password'));
+  assert.deepEqual(referenceRefusal(grantOf(), { ...wall, storedTexts: () => texts }), denied());
 });
 
 test('S9: a storedTexts or a vault that THROWS is the same refusal, never an exception', async () => {
@@ -115,10 +115,10 @@ test('S9: a storedTexts or a vault that THROWS is the same refusal, never an exc
     throw new Error('C:\\Users\\person\\vault.json is locked');
   };
   const unreadable = referenceRefusal(grantOf(), { ...wall, storedTexts: thrown });
-  assert.deepEqual(unreadable, denied('a creds:// reference'));
+  assert.deepEqual(unreadable, denied());
   assert.ok(!present(unreadable, 'a refusal').message.includes('vault.json'), 'the error text is not repeated');
   const brokenVault: BridgeWallSource = { ...wall, storedTexts: () => ['creds://a@x.test/Mine/db/password'], refSource: { accounts: thrown, entities: thrown } };
-  assert.deepEqual(referenceRefusal(grantOf(), brokenVault), denied('creds://a@x.test/Mine/db/password'));
+  assert.deepEqual(referenceRefusal(grantOf(), brokenVault), denied());
 });
 
 test('S9: the stored texts are those of the LIVE entity named by the grant', async () => {
@@ -131,8 +131,8 @@ test('S9: the stored texts are those of the LIVE entity named by the grant', asy
 test('S9: a scope narrowed since the last call is seen by the next one', async () => {
   const wall = await wallOf(['e1', 'solo'], ['creds://a@x.test/Mine/solo/password']);
   assert.equal(referenceRefusal(grantOf(), wall), undefined);
-  await wall.scopes.set('a1', 'server1', ['e1'], false);
-  assert.deepEqual(referenceRefusal(grantOf(), wall), denied('creds://a@x.test/Mine/solo/password'));
+  await put(wall.scopes, 'a1', 'server1', ['e1']);
+  assert.deepEqual(referenceRefusal(grantOf(), wall), denied());
 });
 
 test('S9: off a bridge nothing is read, whatever the wall would say', async () => {
@@ -176,7 +176,7 @@ test('S9: a reference hiding in a script body, a variable, a command, an argumen
   ];
   for (const details of places) {
     const wall = { ...(await wallOf(['e1'])), storedTexts: () => M.runPlan.referenceTextsOf(details) };
-    assert.deepEqual(referenceRefusal(grantOf(), wall), denied(hidden), JSON.stringify(details));
+    assert.deepEqual(referenceRefusal(grantOf(), wall), denied(), JSON.stringify(details));
   }
 });
 
@@ -225,15 +225,15 @@ test('launchRefusal: the grant\'s account and entry against a fresh scope, then 
   assert.deepEqual(launchRefusal(grantOf({ entityId: 'db-other' }), wall, 'alias', { alias: 'leaky' }), outOfScopeAnswer('alias', { alias: 'leaky' }));
   assert.deepEqual(launchRefusal(grantOf({ entityId: 'db-other' }), wall, 'token', {}), outOfScopeAnswer('token', {}));
   assert.deepEqual(launchRefusal(grantOf({ accountId: 'a2', entityId: 'e1' }), wall, 'mcp', {}), outOfScopeAnswer('mcp', {}), 'the same id in another account');
-  await wall.scopes.set('a1', 'server1', ['e1'], false);
-  assert.deepEqual(launchRefusal(grantOf(), wall, 'mcp', {}), denied('creds://a@x.test/Mine/solo/password'), 'a reference that fell out of scope since');
-  await wall.scopes.set('a1', 'server1', [], false);
+  await put(wall.scopes, 'a1', 'server1', ['e1']);
+  assert.deepEqual(launchRefusal(grantOf(), wall, 'mcp', {}), denied(), 'a reference that fell out of scope since');
+  await put(wall.scopes, 'a1', 'server1', []);
   assert.deepEqual(launchRefusal(grantOf(), wall, 'mcp', {}), outOfScopeAnswer('mcp', {}), 'and the entry that fell out first');
 });
 
 test('launchRefusal: the scope is the grant\'s own context\'s, not the first one in the store', async () => {
   const wall = await wallOf(['e1']);
-  await wall.scopes.set('a1', 'server2', ['solo'], false);
+  await put(wall.scopes, 'a1', 'server2', ['solo']);
   const other: BridgeGrant = { context: { ...CTX, serverEntityId: 'server2' }, quiet: false };
   assert.equal(launchRefusal(grantOf({ bridge: BRIDGED }), wall, 'mcp', {}), undefined);
   assert.deepEqual(launchRefusal(grantOf({ bridge: other }), wall, 'mcp', {}), outOfScopeAnswer('mcp', {}), 'e1 is in server1\'s scope, not server2\'s');
@@ -278,7 +278,7 @@ test('S16: fieldReading answers `absent` for anything the scope does not admit a
   assert.deepEqual(await source.fieldReading('a2', 'solo', 'password'), { kind: 'absent' }, 'the same id in another account');
   assert.deepEqual(readings, []);
   assert.deepEqual(await source.fieldReading('a1', 'solo', 'password'), { kind: 'value', value: 'secret-of-solo' });
-  await wall.scopes.set('a1', 'server1', [], false);
+  await put(wall.scopes, 'a1', 'server1', []);
   assert.deepEqual(await source.fieldReading('a1', 'solo', 'password'), { kind: 'absent' }, 'narrowed since the source was built');
 });
 
@@ -328,4 +328,45 @@ test('mcpUseHooks: the resolveMcpUse it builds takes the bridge\'s server, and s
   assert.equal(nameOf(resolveMcpUse('e1', 'exec')), 'foreign', 'positive control: the existing doors search every account, a2 first');
   assert.equal(nameOf(resolveMcpUse('e1', 'exec', { accountId: 'a1', serverEntityId: 's' })), 'prod');
   assert.equal(nameOf(resolveMcpUse('e1', 'exec', { accountId: 'nobody', serverEntityId: 's' })), 'undefined');
+});
+
+const FORWARDING = { code: 'denied' as const, message: M.scope.AGENT_FORWARD_REFUSED('deploy') };
+
+test('A.3.2: the wall\'s word on the entry comes first — an agent-forwarding entry is refused with its own sentence, whatever its text says', async () => {
+  const asked: string[][] = [];
+  const wall = { ...(await wallOf(['e1'], ['ls -l'])), entryRefusal: (account: string, entity: string) => (asked.push([account, entity]), FORWARDING) };
+  assert.deepEqual(referenceRefusal(grantOf(), wall), FORWARDING, 'the text has no reference at all, and the entry is still refused');
+  assert.deepEqual(asked, [['a1', 'e1']], 'asked about the grant\'s own account and entry');
+  assert.deepEqual(launchRefusal(grantOf(), wall, 'mcp', {}), FORWARDING, 'and the launch gate asks it again, against the live entity');
+  const both = { ...wall, storedTexts: () => ['creds://a@x.test/Other/db/password'] };
+  assert.deepEqual(referenceRefusal(grantOf(), both), FORWARDING, 'when both apply the entry\'s own reason is the one given');
+  assert.equal(referenceRefusal(grantOf({ bridge: undefined }), wall), undefined, 'off a bridge the wall is not asked');
+  assert.deepEqual(asked.length, 3, 'and not asked then');
+});
+
+test('A.3.2: an entry the wall does not bar is checked for references as before, and a wall whose answer throws fails closed', async () => {
+  const quiet = await wallOf(['e1'], ['ls -l']);
+  assert.equal(referenceRefusal(grantOf(), quiet), undefined, 'positive control: nothing barred, no reference');
+  const broken = {
+    ...quiet,
+    entryRefusal: (): never => {
+      throw new Error('C:\\Users\\person\\vault.json is locked');
+    },
+  };
+  assert.deepEqual(referenceRefusal(grantOf(), broken), denied(), 'refused with the generic sentence, not an exception');
+  assert.ok(!present(referenceRefusal(grantOf(), broken), 'a refusal').message.includes('vault.json'));
+});
+
+test('A.3.3: the three sentences are written out, each takes the entry\'s name and nothing else', () => {
+  assert.equal(
+    M.scope.AGENT_FORWARD_REFUSED('prod'),
+    '"prod" is set to forward this computer\'s SSH agent, and the shared agent answers for every loaded key. A Remote Bridge does not use it: turn agent forwarding off on that entry, or use it from this computer.',
+  );
+  assert.equal(
+    M.scope.BRIDGE_USE_REFUSED('prod'),
+    '"prod" could not be used through this Remote Bridge. The reason is in the agent journal on the computer that holds the vault.',
+  );
+  assert.equal(M.scope.AGENT_FORWARD_REFUSED.length, 1);
+  assert.equal(M.scope.BRIDGE_USE_REFUSED.length, 1);
+  assert.equal(M.scope.REFERENCE_REFUSED.length, 1);
 });

@@ -1,3 +1,5 @@
+import type { AuditDoor } from './agentAuditLog';
+
 /**
  * How often a caller with no token may make this window ask a human — and, since a consent policy
  * can answer for the human (#95), how often it may make this window act without asking at all.
@@ -34,6 +36,14 @@
  * consented once by a human who chose to; throttling them for a local process's behaviour would
  * turn a defence into an outage in the path people actually use.</p>
  *
+ * <p><b>One door, one window; one human, one dialog (E1.3 epoch 3).</b> A Remote Bridge is a third door, and its agent
+ * must not spend the laptop's five prompts or another server's: each door has its own sliding windows, keyed by the
+ * bridge's id, and the local door keeps the key {@link LOCAL_DOOR}. The one-in-flight rule is NOT per door, because the
+ * human it protects is one person with one screen. And the modal window counts DIALOGS RAISED, stamped by the consent
+ * gate at the moment it shows one ({@link TokenlessCeilings.prompted}), not calls admitted: a call refused before its
+ * dialog (an out-of-scope reference, an entry the wall refuses) shows nobody anything and spends nothing. That holds
+ * for the local alias and MCP doors too.</p>
+ *
  * <p>Pure, with the clock injected, so the rules are a unit test rather than a wait.</p>
  */
 
@@ -64,88 +74,66 @@ export const SILENT_CEILING = 60;
 
 export type ThrottleVerdict = 'allow' | 'busy' | 'too-many';
 
-export class AliasThrottle {
-  /** Timestamps of admissions inside the current window, oldest first. */
-  private admitted: number[] = [];
-  /** Calls admitted and not yet released. Moved and read only while `serialized`. */
-  private pending = 0;
+/** The count: stamps inside the window that ends now, both bounds ({@link inWindow}). */
+export class SlidingWindow {
+  /** Timestamps inside the current window, oldest first. */
+  private stamps: number[] = [];
 
-  /**
-   * The defaults ARE the modal budget, so `new AliasThrottle()` is the alias door's throttle to
-   * the byte. The other construction is the silent ceiling: a higher `max`, the same window, and
-   * `serialized` off. That one bit says whether a human stands behind the throttle — which is
-   * what decides both whether the in-flight rule applies and whether what it counts is prompts
-   * or calls, so the refusal's wording follows it too.
-   */
   constructor(
-    private readonly max = MAX_PROMPTS,
-    private readonly windowMs = WINDOW_MS,
-    private readonly serialized = true,
+    readonly max: number,
+    readonly windowMs: number,
   ) {}
 
-  /**
-   * Whether a call may proceed — to ask, or to act without asking.
-   *
-   * <p>Recorded at the moment of admission rather than of completion: a caller that opens a
-   * dialog and never has it answered has still spent the window, which is exactly the abuse
-   * being prevented.</p>
-   */
-  admit(nowMs: number): ThrottleVerdict {
-    if (this.inFlight()) {
-      return 'busy';
-    }
-    this.admitted = this.admitted.filter((at) => inWindow(at, nowMs, this.windowMs));
-    if (this.admitted.length >= this.max) {
+  /** Whether `max` stamps are already inside the window that ends at `nowMs`. */
+  full(nowMs: number): boolean {
+    this.prune(nowMs);
+    return this.stamps.length >= this.max;
+  }
+
+  /** Count one at `nowMs`. */
+  stamp(nowMs: number): void {
+    this.prune(nowMs);
+    this.stamps.push(nowMs);
+  }
+
+  /** Full: `too-many`, nothing counted. Otherwise count it and allow. */
+  admit(nowMs: number): 'allow' | 'too-many' {
+    if (this.full(nowMs)) {
       return 'too-many';
     }
-    this.admitted.push(nowMs);
-    this.hold();
+    this.stamp(nowMs);
     return 'allow';
   }
 
-  /**
-   * The call this admitted has been answered, dismissed, or timed out. A no-op on an unserialized
-   * throttle, which never held anything — so a caller may release on whichever ceiling admitted
-   * it without first asking which kind that was.
-   */
+  /** Nothing is inside the window: the coordinator may forget the door this belongs to. */
+  idle(nowMs: number): boolean {
+    this.prune(nowMs);
+    return this.stamps.length === 0;
+  }
+
+  private prune(nowMs: number): void {
+    this.stamps = this.stamps.filter((at) => inWindow(at, nowMs, this.windowMs));
+  }
+}
+
+/**
+ * One dialog at a time, for a HUMAN: a stack of modals is unusable long before any count is reached. Global, never per
+ * door: the person is one person with one screen, whichever door the second dialog would come from.
+ */
+export class OneInFlight {
+  private held = false;
+
+  /** Take the one place; `false` when it is taken. */
+  hold(): boolean {
+    if (this.held) {
+      return false;
+    }
+    this.held = true;
+    return true;
+  }
+
   release(): void {
-    if (this.serialized) {
-      this.pending = Math.max(0, this.pending - 1);
-    }
-  }
-
-  /**
-   * The one-in-flight rule, and the only reader of `pending`. It guards a HUMAN — a stack of
-   * modals is unusable long before any count is reached — so a throttle with nobody behind it
-   * never applies it and never answers `busy`, however many calls are in flight.
-   */
-  private inFlight(): boolean {
-    return this.serialized && this.pending > 0;
-  }
-
-  /** Count a call as in flight — only where `inFlight` will ever read it, so the two stay symmetric. */
-  private hold(): void {
-    if (this.serialized) {
-      this.pending += 1;
-    }
-  }
-
-  /**
-   * What to tell a caller that was refused, in words it can act on.
-   *
-   * <p>An instance method since the second construction exists: a refusal is a sentence about
-   * THIS ceiling — its number, its window, and whether what it counted was prompts or calls — and
-   * a static one could only ever describe the modal budget. A silent call refused at sixty and
-   * told it "may prompt at most 5 times a minute" would be wrong in the number and in the verb,
-   * and an agent reading it would set about fixing the wrong thing.</p>
-   */
-  describe(verdict: Exclude<ThrottleVerdict, 'allow'>): string {
-    if (verdict === 'busy') {
-      return 'Another request is already waiting for the person to answer. Try again once they have.';
-    }
-    return this.serialized
-      ? `Too many requests: a caller without a token may prompt at most ${this.max} times ${over(this.windowMs)}.`
-      : `Too many requests: a caller without a token may make at most ${this.max} silent calls ${over(this.windowMs)} — ones a consent policy lets through without a prompt.`;
+    this.held = false;
   }
 }
 
@@ -169,7 +157,7 @@ function inWindow(at: number, nowMs: number, windowMs: number): boolean {
 }
 
 /** The window in a refusal's words: `WINDOW_MS` is "a minute", and any other window is said exactly. */
-function over(windowMs: number): string {
+export function over(windowMs: number): string {
   return windowMs === WINDOW_MS ? 'a minute' : `every ${windowMs / 1000} seconds`;
 }
 
@@ -204,72 +192,159 @@ export interface Admission extends Slot {
   readonly refusal?: { message: string; report: boolean };
 }
 
+/** The key of the local door: the main port and the socket, which are one window's callers with no token. */
+export const LOCAL_DOOR = 'local';
+
+/** Which door a dialog is counted on: its bridge's, the local door for a local alias or MCP call, and none for a local token call, which is not throttled. */
+function doorOfDialog(bridgeId: string | undefined, via: AuditDoor): string | undefined {
+  if (bridgeId !== undefined) {
+    return bridgeId;
+  }
+  return via === 'token' ? undefined : LOCAL_DOOR;
+}
+
+/** One door's counts: its modal window, its silent window, and when its last silent refusal was written down. */
+interface DoorCounts {
+  readonly modal: SlidingWindow;
+  readonly silent: SlidingWindow;
+  reportedAt: number | undefined;
+}
+
+const idle = (counts: DoorCounts, nowMs: number): boolean => counts.modal.idle(nowMs) && counts.silent.idle(nowMs);
+
 /**
- * The two ceilings a caller with no token answers to, and which one a given call gets.
+ * What a caller with no token answers to, per door, and which ceiling a given call gets.
  *
- * <p>Held together because the rule that picks between them is the whole of what the quiet path
- * changed at the door: a call that will ask answers to the modal budget, a call that will not
- * answers to the silent ceiling. A server holding two fields and choosing in every admit and
- * every release is a server that one day chooses differently in one of them — and a slot
- * released on the wrong ceiling frees ANOTHER call's.</p>
+ * <p>Held together because the rule that picks between them is the whole of what the quiet path changed at the door: a
+ * call that will ask answers to the modal budget, a call that will not answers to the silent ceiling. A server holding
+ * the pieces and choosing in every admit and every release is a server that one day chooses differently in one of
+ * them.</p>
+ *
+ * <p>The modal window is NOT stamped here. A call admitted as one that will ask holds the one place and is checked
+ * against its door's window; the stamp is written by {@link prompted}, from the consent gate, when a dialog is shown.
+ * The silent window is stamped at admission, because for a call that raises no dialog admission is the only moment
+ * there is.</p>
  */
 export class TokenlessCeilings {
-  /** The rate at which a caller with no token may make this window ask a human. */
-  private readonly modalBudget = new AliasThrottle();
-  /**
-   * The rate at which a consent policy may let such a caller through WITHOUT asking (#95).
-   * Unserialized, because the in-flight rule protects a human from a stack of dialogs and this
-   * path has neither — and it says so in its refusal, which names calls rather than prompts.
-   */
-  private readonly silentCeiling = new AliasThrottle(SILENT_CEILING, WINDOW_MS, false);
+  /** The one dialog in flight, for every door together. */
+  private readonly flight = new OneInFlight();
+  private readonly doors = new Map<string, DoorCounts>();
 
   /**
-   * When the last silent refusal was WRITTEN DOWN — not when one last happened.
+   * Whether this call may proceed, and — when it may not — what to say and whether to record it. `undefined` refusal is
+   * admission.
    *
-   * <p>The ceiling bounds actions and not refusals: a loop calling a thousand times a minute is
-   * refused nine hundred and forty times, and a line each would be a journal nobody can read about
-   * a machine nobody can diagnose. One line a window says everything the second one would — that
-   * this ceiling fired, and when it started — so that is what is written.</p>
+   * <p>Prompts: the place held → `busy`; this door's modal window full → `too-many` and nothing held; else the place is
+   * held and the call allowed, with NO stamp. Silent: this door's silent window admits (and stamps) or refuses; no place
+   * is taken, because that rule protects a human from a pile-up and this path has no human to protect.</p>
    */
-  private reportedAt: number | undefined;
+  admit(prompts: boolean, nowMs: number, door: string = LOCAL_DOOR): Admission {
+    const counts = this.countsOf(door, nowMs);
+    const verdict = prompts ? this.askingVerdict(counts, nowMs) : counts.silent.admit(nowMs);
+    return verdict === 'allow' ? this.admitted(prompts) : this.refused(verdict, prompts, door, counts, nowMs);
+  }
 
-  /**
-   * Whether this call may proceed, and — when it may not — what to say and whether to record it.
-   *
-   * <p>`undefined` is admission. The decision lives here rather than at the server because picking
-   * the ceiling, asking it, wording its refusal and rationing the record are one rule with four
-   * parts, and a server that held them apart is a server that one day answers one ceiling's verdict
-   * with the other's sentence.</p>
-   */
-  admit(prompts: boolean, nowMs: number): Admission {
-    const ceiling = this.for(prompts);
-    const verdict = ceiling.admit(nowMs);
-    if (verdict === 'allow') {
-      return { release: () => ceiling.release() };
-    }
+  /** The slot an allowed call holds: the one place for a call that will ask, nothing for one that will not. */
+  private admitted(prompts: boolean): Admission {
+    return prompts ? this.holding() : { release: TOOK_NOTHING };
+  }
+
+  private refused(verdict: Exclude<ThrottleVerdict, 'allow'>, prompts: boolean, door: string, counts: DoorCounts, nowMs: number): Admission {
     return {
-      refusal: { message: ceiling.describe(verdict), report: !prompts && this.firstThisWindow(nowMs) },
+      refusal: { message: this.describe(verdict, prompts, door), report: !prompts && this.firstThisWindow(counts, nowMs) },
       release: TOOK_NOTHING,
     };
   }
 
-  /** `prompts` is what the door already decided: whether this call will raise a modal. */
-  private for(prompts: boolean): AliasThrottle {
-    return prompts ? this.modalBudget : this.silentCeiling;
+  /**
+   * A dialog was raised for this grant: count it in the modal window of its door. Nothing for a local token call
+   * (`via === 'token'` and no bridge), which is not throttled and never was. On a bridge every door, token included,
+   * is bridged and counted.
+   */
+  prompted(grant: { bridge?: { context: { bridgeId: string } } }, via: AuditDoor, nowMs: number): void {
+    const door = doorOfDialog(grant.bridge?.context.bridgeId, via);
+    if (door !== undefined) {
+      this.countsOf(door, nowMs).modal.stamp(nowMs);
+    }
+  }
+
+  /** A bridge closed (E2 wires it): its counts go, and so does any door whose windows have nothing in them. */
+  forget(door: string, nowMs: number = Date.now()): void {
+    this.doors.delete(door);
+    this.prune(nowMs);
+  }
+
+  /** How many doors hold counts: the memory a closed bridge would leave if nothing forgot it. For the test. */
+  doorCount(): number {
+    return this.doors.size;
+  }
+
+  private askingVerdict(counts: DoorCounts, nowMs: number): ThrottleVerdict {
+    if (!this.flight.hold()) {
+      return 'busy';
+    }
+    if (counts.modal.full(nowMs)) {
+      this.flight.release();
+      return 'too-many';
+    }
+    return 'allow';
+  }
+
+  /** The place this call holds, given back once, by the call that took it. */
+  private holding(): Slot {
+    let given = false;
+    return {
+      release: () => {
+        if (!given) {
+          given = true;
+          this.flight.release();
+        }
+      },
+    };
+  }
+
+  private countsOf(door: string, nowMs: number): DoorCounts {
+    let counts = this.doors.get(door);
+    if (counts === undefined) {
+      this.prune(nowMs);
+      counts = { modal: new SlidingWindow(MAX_PROMPTS, WINDOW_MS), silent: new SlidingWindow(SILENT_CEILING, WINDOW_MS), reportedAt: undefined };
+      this.doors.set(door, counts);
+    }
+    return counts;
+  }
+
+  /** Doors with nothing in either window, except the local one, which is always there. */
+  private prune(nowMs: number): void {
+    for (const [door, counts] of this.doors) {
+      if (door !== LOCAL_DOOR && idle(counts, nowMs)) {
+        this.doors.delete(door);
+      }
+    }
+  }
+
+  /** What to tell a caller that was refused, in words it can act on: a sentence about THIS ceiling, in the door's own terms. */
+  private describe(verdict: Exclude<ThrottleVerdict, 'allow'>, prompts: boolean, door: string): string {
+    if (verdict === 'busy') {
+      return 'Another request is already waiting for the person to answer. Try again once they have.';
+    }
+    const who = door === LOCAL_DOOR ? 'a caller without a token' : 'this Remote Bridge';
+    return prompts
+      ? `Too many requests: ${who} may prompt at most ${MAX_PROMPTS} times ${over(WINDOW_MS)}.`
+      : `Too many requests: ${who} may make at most ${SILENT_CEILING} silent calls ${over(WINDOW_MS)} — ones a consent policy lets through without a prompt.`;
   }
 
   /**
-   * True once per window, so a runaway loop leaves one line rather than one line per call.
+   * True once per window per door, so a runaway loop leaves one line rather than one line per call.
    *
-   * <p>Measured with {@link inWindow} for the same reason the counts are: a mark left in the future
-   * by a clock that has since moved back would silence the journal for the length of the jump, and
-   * the one fact worth having about a runaway loop is the one that would never arrive.</p>
+   * <p>Measured with {@link inWindow} for the same reason the counts are: a mark left in the future by a clock that has
+   * since moved back would silence the journal for the length of the jump, and the one fact worth having about a runaway
+   * loop is the one that would never arrive.</p>
    */
-  private firstThisWindow(nowMs: number): boolean {
-    if (this.reportedAt !== undefined && inWindow(this.reportedAt, nowMs, WINDOW_MS)) {
+  private firstThisWindow(counts: DoorCounts, nowMs: number): boolean {
+    if (counts.reportedAt !== undefined && inWindow(counts.reportedAt, nowMs, WINDOW_MS)) {
       return false;
     }
-    this.reportedAt = nowMs;
+    counts.reportedAt = nowMs;
     return true;
   }
 }

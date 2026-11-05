@@ -16,7 +16,7 @@ import { BrokerHooks, checkedHooks } from './brokerHooks';
 import type { BridgeContext } from './bridgeContext';
 import { BridgeListener, BridgeListeners } from './brokerBridgeListeners';
 import { refusedOnBridge } from './bridgeAllowList';
-import { DoorView, doorView, launchRefusal, referenceRefusal } from './bridgeScope';
+import { DoorView, doorView, launchGate, referenceRefusal } from './bridgeScope';
 import { bridgedTokenCall } from './brokerBridgeToken';
 import { doorsFor } from './brokerOrigin';
 import { CallSubject, performCall } from './brokerCall';
@@ -29,7 +29,7 @@ import { abandonedWhenClosed } from './requestLife';
 import { recordConsent } from './brokerConsentMemory';
 import { McpFolderHooks } from './brokerFolderDoor';
 import { answerMcpRoute } from './brokerMcpRoutes';
-import { GRANT_NOT_ALLOWED, aliasTarget, readBody, readNamedBody, validationRefusal } from './brokerRequests';
+import { GRANT_NOT_ALLOWED, Refusal, aliasTarget, readBody, readNamedBody, validationRefusal } from './brokerRequests';
 import { CallerLabel, callerForAudit, callerFrom } from './brokerCaller';
 import { grantLimits } from './grantLimits';
 import { answerConfigRead } from './brokerConfigRoute';
@@ -42,6 +42,7 @@ import { startLoopbackServer } from './loopbackServer';
 import { ExtraListener, socketPathFor, startExtraListener } from './brokerListeners';
 import { removeEndpoint, sweepStaleEndpoints, writeEndpoint } from './cliEndpoint';
 import { type Slot, TokenlessCeilings } from './aliasThrottle';
+import { ExecSlots } from './execSlots';
 import { startOnce } from './idempotentStart';
 import { refreshFrom, tableOrFail } from './brokerResponse';
 
@@ -82,7 +83,6 @@ export class CredsAgentServer implements vscode.Disposable {
    * one unloaded. It tells us; we re-announce.</p>
    */
   private agentSocket: string | undefined;
-  private running = 0;
 
   /**
    * Where this window's audit is written, and how many calls it has recorded.
@@ -115,7 +115,7 @@ export class CredsAgentServer implements vscode.Disposable {
     // Checked, not trusted: five of the seven callers are `.cjs`, where a misspelled key is silent
     // by construction — every hook is optional, so `resolveAlais` reads as "switched off".
     this.hooks = checkedHooks(hooks);
-    this.gate = new ConsentGate({ grants: this.grants, actions, onUserPresent, log: (entry) => this.log(entry) });
+    this.gate = new ConsentGate({ grants: this.grants, actions, onUserPresent, log: (entry) => this.log(entry), prompted: (q) => this.ceilings.prompted(q.grant, q.via, Date.now()) });
     // Built once, in `activate`: the moment to retire the announcements of windows that crashed — only those whose
     // process is provably gone, never this window's own or a live one (PLAN_stale_endpoint_files_slow_every_refusal.md).
     if (this.hooks.storageDir !== undefined) {
@@ -148,19 +148,7 @@ export class CredsAgentServer implements vscode.Disposable {
   };
 
   /** Bounded concurrency; `undefined` means "at the ceiling, refuse". */
-  acquireExecSlot = (): (() => void) | undefined => {
-    if (this.running >= MAX_CONCURRENT_EXECS) {
-      return undefined;
-    }
-    this.running += 1;
-    let released = false;
-    return () => {
-      if (!released) {
-        released = true;
-        this.running -= 1;
-      }
-    };
-  };
+  acquireExecSlot = new ExecSlots(MAX_CONCURRENT_EXECS).acquire;
 
   /**
    * Mint a grant for one entity and return the token the snippet shows.
@@ -225,8 +213,8 @@ export class CredsAgentServer implements vscode.Disposable {
    * routes that carry no token pass through here; see `brokerRequests.ts` for what each of them
    * has to satisfy before reaching it.</p>
    */
-  private admitAliasCall(res: http.ServerResponse, prompts: boolean): Slot | undefined {
-    const admission = this.ceilings.admit(prompts, Date.now());
+  private admitAliasCall(res: http.ServerResponse, prompts: boolean, bridge?: BridgeContext): Slot | undefined {
+    const admission = this.ceilings.admit(prompts, Date.now(), bridge?.bridgeId);
     const refused = admission.refusal;
     if (refused === undefined) {
       return admission;
@@ -281,7 +269,7 @@ export class CredsAgentServer implements vscode.Disposable {
     return mcpDoor({
       refuse: (res, code, message, grant, action, detail, caller) =>
         this.respondError(res, code, message, grant as Grant | undefined, action, detail, via, caller),
-      admit: (res, prompts) => this.admitAliasCall(res, prompts),
+      admit: (res, prompts) => this.admitAliasCall(res, prompts, view.bridge),
       // The grant a policy already answered for. `consent` short-circuits on an allowed grant, so
       // the modal is skipped by machinery that was already there rather than by a second path —
       // and everything after it, the mask, the audit line and the one-use burn, is unchanged.
@@ -294,7 +282,7 @@ export class CredsAgentServer implements vscode.Disposable {
       perform: (res, grant, action, body, caller, rungs) =>
         this.perform(res, grant as Grant, action, body, { via, caller, signal, spend }, rungs),
       consent: (grant, action, verb, summary, caller) =>
-        this.gate.consent({ grant: grant as Grant, action, verb, summary, caller }, signal),
+        this.gate.consent({ grant: grant as Grant, action, verb, summary, caller, via }, signal),
       respond: (res, status, body) => this.respond(res, status, body),
       signal,
       abandon: (grant, action, stage, caller) => this.abandoned(grant as Grant, action, stage, { via, caller }),
@@ -341,7 +329,7 @@ export class CredsAgentServer implements vscode.Disposable {
     // Checked after the name resolves so a refusal still cannot be used to learn what exists,
     // and before minting so a refused call spends nothing.
     // `true`: the alias route's authorisation IS the modal, so it always raises one.
-    const slot = this.admitAliasCall(res, true);
+    const slot = this.admitAliasCall(res, true, view.bridge);
     if (slot === undefined) {
       return;
     }
@@ -540,7 +528,7 @@ export class CredsAgentServer implements vscode.Disposable {
     // that raised no modal must not slide this entry's quiet window forward — that is how "once
     // every twelve hours" quietly becomes "once, ever".
     const asked = this.grants.get(grant.secret)?.status !== 'allowed';
-    const consent = await this.gate.consent({ grant, action, verb: useAction.verb, summary, caller: who.caller }, who.signal);
+    const consent = await this.gate.consent({ grant, action, verb: useAction.verb, summary, caller: who.caller, via: who.via }, who.signal);
     if (consent !== 'allowed') {
       this.notAllowed(res, consent, { grant, action, summary }, who);
       return;
@@ -580,7 +568,8 @@ export class CredsAgentServer implements vscode.Disposable {
    */
   private async prepared(res: http.ServerResponse, call: Omit<CallSubject, 'table'>): Promise<void> {
     const { grant, action, summary, via, caller } = call;
-    if (this.gone(call, 'after consent')) {
+    const atLaunch = launchGate(this.grants, this.hooks.bridgeWall, call);
+    if (this.stopped(res, call, 'after consent', atLaunch)) {
       return;
     }
     await this.releaseWaiting(grant);
@@ -595,7 +584,17 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
     // The check after THIS await is `brokerCall.ts`'s, made in the same step that starts the action.
-    await this.runAndDeliver(res, { ...call, table });
+    await this.runAndDeliver(res, { ...call, table }, atLaunch);
+  }
+
+  /** Whether this call goes no further, asked before anything an Allow triggers (`releaseWaiting`): its client has gone, or the scope wall refuses it now. */
+  private stopped(res: http.ServerResponse, call: Omit<CallSubject, 'table'>, stage: string, atLaunch: () => Refusal | undefined): boolean {
+    const left = this.gone(call, stage);
+    const refused = left ? undefined : atLaunch();
+    if (refused !== undefined) {
+      this.respondError(res, refused.code, refused.message, call.grant, call.action, call.summary, call.via, call.caller);
+    }
+    return left || refused !== undefined;
   }
 
   /** A waiting rotated value goes in FIRST, so the mask table holds the value the action will use (`brokerHooks.ts`). */
@@ -667,7 +666,7 @@ export class CredsAgentServer implements vscode.Disposable {
   }
 
   /** The sequence is `brokerCall.performCall`; this binds it to one request. */
-  private async runAndDeliver(res: http.ServerResponse, call: CallSubject): Promise<void> {
+  private async runAndDeliver(res: http.ServerResponse, call: CallSubject, atLaunch: () => Refusal | undefined): Promise<void> {
     const { grant, action, summary, via, caller } = call;
     await performCall(
       {
@@ -682,7 +681,7 @@ export class CredsAgentServer implements vscode.Disposable {
         refresh: refreshFrom(this.hooks.maskEntriesFor, grant),
         burn: (status) => burnAndMark(this.oneUse, this.hooks.burnAfterUse, this.hooks.isOneUse, grant, status, this.note),
         abandon: (stage) => this.abandoned(grant, action, stage, call),
-        atLaunch: () => launchRefusal(grant, this.hooks.bridgeWall, via, call.body),
+        atLaunch,
       },
       call,
     );
