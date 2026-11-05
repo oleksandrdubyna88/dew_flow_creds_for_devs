@@ -265,12 +265,13 @@ chain is refused. Waiting for a step needs VS Code **1.93** or newer.
 is the one you see, approve and run, so a rename asks again. Only a name of letters, digits and
 `. _ -`, starting with a letter, a digit or `_`, can stand in for it, so that no name arriving by
 sync or share can become shell syntax; any other name, one with a space included, is refused with
-the reason and the line does not run. To keep a literal `{name}` in bash, write `{na''me}`.
+the reason and the line does not run. To keep a literal `{name}`, write `{na''me}` — in bash, outside double quotes.
 
 **Run All in Folder** is the same green ▶ on a folder of type *Terminal command*, beside its `+` and
 in its menu: one click types the line of each entry directly in the folder, each into a new terminal
 of its own. Subfolders are not run. It always asks first, listing every line in order, with `(new)`
-on one not yet run on this machine and the reason beside each entry that will not run. **Run** leaves
+on one not approved before on this machine, not one never run (approving saves trust before the
+chain, so a line whose chain you then decline loses `(new)`), and the reason beside each entry that will not run. **Run** leaves
 alone an entry whose terminal is already open; **Close Open Terminals and Run**, offered when any is
 open, closes those terminals and types their lines too. Closing ends whatever runs there; a tmux
 client only detaches, and its session goes on. The lines do not wait for each other: something that
@@ -1218,7 +1219,7 @@ also on the right-click menu where it applies.
   Passphrase… · Health Report · Import from ~/.ssh/config or another manager…
 - **VPN** — Start VPN · Stop VPN · Save VPN Config As…
 - **Databases** — Open in DB Extension · Copy Connection String
-- **Terminal commands** — Run in Terminal · Run All in Folder · Copy Command · Show Command and Notes
+- **Terminal commands** — Run in Terminal · Run All in Folder (on a terminal folder's row) · Copy Command · Show Command and Notes
 - **Scripts** — Run Script
 - **Agents** — Share with Claude Code…
 - **Sharing** — Share with… · Create Entity for… · Accept… · Decline · Accept All from Sender… ·

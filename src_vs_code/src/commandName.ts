@@ -28,7 +28,7 @@ export const NAME_PATTERNS = Object.freeze({
 
 /** The one sentence every road says. It names no entry: the caller does. */
 export const NAME_REFUSAL =
-  "this entry's name cannot stand in for {name}, because only letters, digits and . _ - are allowed, starting with a letter, a digit or _, so that no name can become shell syntax. Rename the entry; to keep a literal {name} in bash, write {na''me}.";
+  "this entry's name cannot stand in for {name}, because only letters, digits and . _ - are allowed, starting with a letter, a digit or _, so that no name can become shell syntax. Rename the entry; to keep a literal {name}, write {na''me} (in bash, outside double quotes).";
 
 /** `search` ignores and restores `lastIndex`, so the `g` flag keeps no state here. Never `.test` this regex. */
 export function usesNameToken(text: string): boolean {

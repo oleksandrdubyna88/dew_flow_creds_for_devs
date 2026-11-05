@@ -2165,7 +2165,7 @@ not re-asked every session. The form's preview runs the same three patterns, han
 retyped. A scan test allows `buildCommandLine(` only in `commandLine.ts`.
 
 **The literal form.** To keep a literal `{name}` write `{na''me}`: in bash 5.3.9 `echo {na''me}` prints `{name}` and the token
-does not match it; `{ name }` prints three words and does not keep it. `cmd.exe` (measured through WSL interop) prints
+does not match it, but only outside double quotes: `printf '%s' "{na''me}"` prints `{na''me}` (measured in the same bash); `{ name }` prints three words and does not keep it. `cmd.exe` (measured through WSL interop) prints
 `{na''me}` for that form and `{name}` for `{na^me}`. PowerShell was not measured.
 
 **The folder run (`folderRun.ts`, `commands/folderRunCommand.ts`, S3 of `PLAN_terminal_folder_run.md`).** `credSshManager.runFolder`
@@ -2184,7 +2184,7 @@ shows all of them; a question over 4,000 characters, counted as it would be show
 same way, naming the count (`beforeAsking`). Both numbers are chosen, not measured: from memory a native dialog does not scroll,
 which is the parent's hand check 8. Rows with no line do not count, and a folder with nothing to type says so
 with no modal. **The modal is always shown** (decision C), however trusted every line is: it lists each line whole, `(new)`
-before the name for a line not yet run on this machine, the rows that will not run and why, the subfolders, and what each
+before the name for a line not approved before on this machine (not one never run: trust is saved at approval, before the chain, so a line whose chain is then declined loses it), the rows that will not run and why, the subfolders, and what each
 button does. Approving trusts each typed line, one at a time (`trustCommand` reads and rewrites the whole list, so a
 `Promise.all` loses all but one), BEFORE the chain; `confirmTrusted` is not called, which would be a second modal. What is
 typed is the string that was approved (`row.line`, resolved once at the plan), so an entry edited while the modal sits changes
