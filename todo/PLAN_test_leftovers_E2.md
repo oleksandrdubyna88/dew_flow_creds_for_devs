@@ -892,7 +892,7 @@ carried and any that were not, with why. Then, for this repository:
    exception the step would be red on its first run.
 4. **Nothing leaks after a full run** (by hand): the old names before and after the five executables on Windows and
    in WSL — the RED count, then zero new old-form entries and zero `testsToDelete-<owner>-creds-*`.
-5. **The copy is the copy** (**revised, § *Revision* row 3: the check is a pinned manifest with the permitted transformations of each file, and it fails on one unexplained byte, backward and forward, as coai's `TheAdaptedCopyTests` does; the text that follows is the first form, superseded**) — a test reads every file of `Support/Leftovers/` whose name is not in the pinned list
+5. **The copy is the copy** (**revised, § *Revision* row 3: the check is a pinned manifest with the permitted transformations of each file, and it fails on one unexplained byte, backward and forward, as coai's `TheAdaptedCopyTests` does; the text up to "And D9 #1" is the first form, superseded, and the D9 #1 sentence stands**) — a test reads every file of `Support/Leftovers/` whose name is not in the pinned list
    (`OwnedToken.cs`, `LeftoversGuardFiles.cs`, `LeftoversGuard.cs`, `OwnedCreds.cs`, `LeftoversSocketRootSweepFixture.cs`)
    and asserts it equals E3's file at `197cc76` save the namespace line — the sha of each E3 file is pinned in the test
    (the vectors file is proof enough for the token; this is proof for the rest). And D9 #1: the real fixture's audit is
