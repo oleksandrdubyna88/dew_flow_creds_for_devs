@@ -1,6 +1,6 @@
 # PLAN — E1.3 spec: the allow-list, the note schema, the scope wall (CORNERSTONE)
 
-> Status: **plan only, nothing implemented yet, 2026-11-04 — cornerstone spec by Fable, written before its code.**
+> Status: **built 2026-11-05 on branch `feat/remote-bridge-e1` (see §S3.12 *As built*); spec by Fable, 2026-11-04, written before its code.**
 > Story E1.3 of [PLAN_remote_bridge_scoped_E1.md](PLAN_remote_bridge_scoped_E1.md) (parent
 > [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) §4.1, §4.2, §4.3 schema only, §4.6 reference rule, `## Epics` E1).
 > Its own file because the stories document goes whole to the review gate and must stay short; it is promoted with E1's.
@@ -587,3 +587,176 @@ then E1's pre-PR block, `CredsBroker.Tests` included.
   `admits` still catches for a `usable` target. Not run here.
 - `fetch` sending `Host: 127.0.0.1:<port>` is the standard; not run against the bridge door here (E1.2's D1 does).
 - `System.Text.Json` skipping the two new contract keys is read from the record and the default, not run; S18's `CredsBroker.Tests` is the check.
+
+## S3.12 — As built (Sonnet, 2026-11-05)
+
+Built in the spec's order: the pure pieces and the table first (step A, with the view still `OPEN_VIEW` for every
+door and nothing at the action boundary), the walk written and watched RED, then the wall (step B). The wall is what
+§S3.2 and §S3.6 say. These are the differences, none of which moves the boundary.
+
+1. **`answer` and `perform` stay at complexity 4 by a different route than the spec's.** ESLint counts `?.` and `??`,
+   which the spec's hand count did not, so `deps.atLaunch?.()` in `answer` and the `?.` already in `perform` made 5
+   each. `answer` now calls `launchRefused(deps)` (a small function that asks the gate, answers a refusal and says
+   whether it did), so `answer` is `aborted → launchRefused || !reservedNow → start`. The early reference check is in
+   `usable`, at its end, where the capability check and the validation already are ("before anybody is asked
+   anything"), and `validated.code ?? 'invalid_request'` moved out to `validationRefusal` in `brokerRequests.ts` to pay
+   for it. Same order of checks, same answers.
+2. **`credsAgentServer.ts` is 788 lines** (the spec's budget: 794 with E1.4's one line). §S3.6's table summed to +17
+   with the token edit at +2; written over three lines it is +3, and `usable` took +2 where `perform` was to take +5.
+   `handle` is 48 code lines (49 was the spec's count), `perform` and `answer` complexity 4, `extension.ts` 1003 (unchanged).
+3. **`openBridgeListener` rejects, it does not throw.** The spec says "throw"; R4 says "rejects", and a synchronous throw
+   from a function that returns a promise is not what `assert.rejects` (or any caller that `await`s in a `try`) sees as
+   a rejection. `Promise.reject(new Error('A Remote Bridge cannot open without its scope wall.'))`, before
+   `ensureStarted`, so nothing is bound or created.
+4. **`BridgeRouteDecision.code` is `ErrorCode`, not `'not_supported'`.** The `exportEnv` rows carry `denied`
+   (the task's "Export refusal is 403 `denied`"), so the literal type in §S3.2.4 could not hold them.
+   The "five fixed POSTs" are six: `config/read`, `create`, `delete` and the three folder verbs.
+5. **`BRIDGE_ROUTES` is built from vocabulary kept in `bridgeAllowList.ts`** (`USE_ACTIONS`, three prefixes, the folder
+   verbs), because the only list of use actions in the repository is a literal in `scripts/emit-contract.mjs`, which
+   no module can import. `ALIAS_ROUTE_PREFIX` is shared. What keeps the copy honest is S1 in both directions, and the
+   served list in `bridgeAllowList.test.ts` is written out on purpose, not derived: it is the authorization decision.
+6. **`bridgeScope.ts` imports `brokerRequests.ts`, which reaches `grantLimits.ts`, which imports `vscode`.** The file
+   imports no `vscode` (R2 reads imports) but cannot be `require`d without the stub, so its tests load it through
+   `loadEachWithVscode` (`test/bridgeModules.ts`). Splitting `expiredMessage` out of `grantLimits.ts` would make it
+   loadable bare; not done, it is not this story's file.
+7. **S14's "six at once" is not what the throttle does.** The modal budget is one dialog in flight plus five a minute.
+   A second concurrent bridged call is `too_many_requests` ("Another request is already waiting"), and the sixth in a
+   minute is `too_many_requests` ("at most 5 times a minute"). Both are tested, as two scenarios. The same fact makes
+   the spec's S12 lane scenario ("two calls; the second waits") impossible through two bridged calls: the lane is
+   entered by a call that holds no slot, so the test queues the bridged call behind a main-port token call, which
+   takes none. A call refused for a reference still took a slot and a prompt of the five (the throttle sits before
+   `perform`), which `S9` had to know: the positive control has its own world.
+8. **Tests that E1.2 wrote and E1.3 had to change**, each because the table grew or a wall became mandatory, none
+   because an answer moved for an existing door: `bridgeAllowList.test.ts` (the one-route table test became the full
+   table's), `brokerBridgeRealDoor.test.ts` (D9 asks routes still refused; K5 and K10 post to `/v1/use/run`, because
+   `/v1/use/exec` is served now and K10 would wait for a body forever; every `world` that opens a listener passes
+   `emptyWall()`), `bridgeBoundary.test.ts` (R1 names two files that define the names, `brokerHooks.ts` as well as the
+   broker; R2 lists the two new modules; R4 added) and `brokerHooks.test.ts` (fifteen hooks, not fourteen). R3 and
+   its fixture are untouched.
+9. **Added beyond §S3.7:** `brokerCallLaunch.test.ts` (the action boundary's order at its finest grain: B3, B14 and
+   what `startNow` hands an action), `bridgeReferences.test.ts` (S9, S16 and the pure halves of S8, S10, S20),
+   `mcpUseHooks` narrowing the account (the factory is what production calls, and `mcpUseLookup` alone would not show a
+   dropped argument), `test/contractRoutes.ts` (the enumeration of S1/S2 with a companion that shows it finds
+   routes), and a per-action split of the walk's "e1 is served" leg (five prompts a minute is five).
+10. **`test/brokerWorld.ts`** gained `aliasMap` as specified, and `mcpResolve` is typed `ResolveUse`.
+11. **Totals at the end:** `npm test` 6133 tests, 6129 pass, 0 fail, 4 skipped; `itest:cli` all checks passed; `npm run typecheck`, `lint` and `ratchet` clean;
+    `node plan-lifecycle.mjs` clean; `pin-check.mjs` reports the shared rules stale against `release`, as it did before
+    this branch and as the task says to leave it. `CredsBroker.Tests` is not in the solution (its project is
+    `src_broker_client/tests/BrokerClient.Tests.csproj`), so the E1 document's `dotnet build` of the `.slnx` does not build
+    it: it was built on its own and ran 159 of 159 against the grown contract, with `src_broker_client` untouched. 73 mutations were run (§S3.8's and the other guards of the wall), all caught.
+
+### The RED record (step A, before the wall; the failure each scenario gave)
+
+- **Pure scenarios** (written first): the test files did not compile against E1.2's tree (`Module '"../bridgeAllowList"'
+  has no exported member 'BRIDGE_ROUTES'`, `Cannot find module '../bridgeScope'`, `Property 'locateRef' does not exist`).
+- **S18**, old contract file with the new code: `actual: undefined, expected: '/v1/alias/'`.
+- **S1**, E1.2's one-route table: `/v1/aliases is in contract/broker-v1.json and not named in bridgeAllowList.ts. Name it:
+  served, or refused and why.` **S6** `exportEnv`: `actual { code: 'not_supported', message: 'A Remote Bridge does not
+  serve this request...' }`, expected `{ code: 'denied', message: "An agent cannot export a secret here..." }`.
+- **Walk at step A** (table filled, every door `OPEN_VIEW`): S3 `row 3 GET /v1/aliases must not say "leaky":
+  {"aliases":[{"name":"one"},{"name":"leaky"},{"name":"second"},{"name":"foreign"}]}`; S4 through the bridge found `row 3 ...
+  names leaky`, `row 4 ... names e-out, leak-target`, `row 5 ... serves it` and `row 7/8/9 ... reached e-out (200)` for both
+  actions; S4's control through the main port was green by design (rows 3, 4, 5, 7, 8, 9); S5 `usable: answer 0` listed
+  `xalias` where the world without it did not, and the token leg answered `200 {"stdout":"ok\n"}` where `401` was
+  expected; S7 `through A: /v1/mcp/use/exec?serverEntityId=server-B actual: true`; S15 `actual: ['leak-target', 'second']
+  expected: []`; S20 the modal read `An agent wants to run a command on "foreign"`; S13 `0 !== 1` (no grant carried the
+  bridge).
+- **Transitive at step A**: S8, S9, S11 ran the call (`200`); S10 ran the action after Allow; S21 `actual: 200, expected: 401`;
+  S12 lane `timed out waiting for the second call to have been asked` (the token shared ONE dialog); S14 `a dialog anyway
+  actual: 1 expected: 2`, `pending` was `allowed`, `does not tombstone the token` was `denied`.
+- **`brokerCallLaunch.test.ts`** at step A: `actual: ['reserve call-secret', 'start', 'respond 200']`, expected `['launch gate',
+  'refuse not_found gone']`; the token legs expected `['reserve token-secret', 'reserve call-secret', 'start']`; `startNow`
+  handed the action `bridge: undefined`.
+- **S6 stayed green at step A** (E1.2's table already refused those rows): kept as the table's pin.
+
+**A gap in the spec, recorded, not fixed.** The listing and the snippet are walled by entry id alone: `McpEntry` carries
+no account, and `visibleConfigDetails` answers the first account that holds the id. If two accounts held an entry with
+one id (a uuid collision, or a copied vault), a bridge scoped to that id in account A would also list, and serve the
+snippet of, the entry in account B, while every use path (id, alias, token, launch) refuses it correctly by account.
+The spec's own S20 builds that collision for the use paths only. Closing it needs the account on the listing's rows or
+an account-aware `visibleConfig`, which is a contract or hook change; the test world builds the collision only for S20
+(`collide: true`) so no other scenario asserts around it.
+
+Mutations were run with a script that replaces one exact snippet (it must occur once), re-emits the one file, runs the
+sixteen test files that touch the wall, restores the file and compares its hash. B1-B14 are §S3.8's, with B5, B6, B7,
+B8, B10, B11 and B14 split where the spec's single row names two mutations. W1-W46 are the other guards of the wall,
+the table and the scope store. One guard had no test: a bridge door's grant minted with `'token'` scope in place of
+`'call'` (W46) passed everything; a test now pins it. The table follows.
+
+### Break-its run (all caught; each mutation applied, tests run, file restored byte for byte and its hash compared)
+
+| # | Mutation | Failing tests (first two) | Failures |
+|---|---|---|---|
+| B1 | view.resolveUse passes a usable target without admits | resolveUse: the real lookup runs for EVERY id with the bridge...; resolveUse: the scope is read when the function is called, no... | 5 |
+| B2 | view.grantForToken without the peek | grantForToken: an out-of-scope token is unknown, live or expi...; S3: through a bridge scoped to e1, e-out answers nothing it s... | 5 |
+| B3 | answer skips atLaunch | S10: scope narrowed while the modal is open — the call is ref...; S11: a line edited while the modal is open — the new referenc... | 8 |
+| B4 | Scope.admits tests entries.has(entityId) only | launchRefusal: the grant's account and entry against a fresh ...; S16: fieldReading answers `absent` for anything the scope doe... | 8 |
+| B5a | referenceRefusal never finds an unserved reference | S9: every way a reference can fail reads alike — one sentence...; S9: the first reference that cannot be served is the one name... | 9 |
+| B5b | serves admits when locateRef is not ok | S9: every way a reference can fail reads alike — one sentence...; S9: a storedTexts or a vault that THROWS is the same refusal,... | 3 |
+| B5c | early reference check in usable dropped | S8: a stored command that names an entry out of scope is refu...; S9: every way a reference can fail reads alike through the re... | 2 |
+| B5d | launchRefusal does not check references | launchRefusal: the grant's account and entry against a fresh ...; S11: a line edited while the modal is open — the new referenc... | 2 |
+| B6a | referenceTextsOf drops commandArgs | S9: referenceTextsOf lists every place a reference may be wri...; S9: a reference hiding in a script body, a variable, a comman... | 2 |
+| B6b | referenceTextsOf drops scriptVars | S9: referenceTextsOf lists every place a reference may be wri...; S9: a reference hiding in a script body, a variable, a comman... | 2 |
+| B6c | referenceTextsOf drops disabled rows | S9: referenceTextsOf lists every place a reference may be wri...; S9: a reference hiding in a script body, a variable, a comman... | 2 |
+| B6d | referenceTextsOf drops disabled script vars | S9: referenceTextsOf lists every place a reference may be wri... | 1 |
+| B7a | mcpEntries wrapper keeps can | sources.mcpEntries: kept rows are those in scope, can is narr...; S3: through the same bridge e1 is served — rows 3, 4, 5 show it | 3 |
+| B7b | mcpEntries wrapper keeps dependsOn | sources.mcpEntries: kept rows are those in scope, can is narr...; S3: through a bridge scoped to e1, e-out answers nothing it s... | 5 |
+| B8a | resolveUse short-circuits on scope before the real lookup | resolveUse: the real lookup runs for EVERY id with the bridge...; S5: an entry that exists and is out of scope answers as one t... | 2 |
+| B8b | closed passes through for an out-of-scope id | resolveUse: the real lookup runs for EVERY id with the bridge...; S5: an entry that exists and is out of scope answers as one t... | 2 |
+| B9a | a future route added served | S1: every route the contract names is named in the table, and...; S2: a route the contract gains later is reported unnamed, how... | 4 |
+| B9b | bridgeRouteRefusal admits an unknown path | row 11 and 12: run, terminal, up, down, rotate, delete, creat...; row 13: any other method or path is refused, whether or not s... | 5 |
+| B10a | onThePort passes a bridge context | R3: the two existing doors answer as they did before the thir...; S4: the same walk through the main port finds e-out on rows 3... | 67 |
+| B10b | mint writes bridge: undefined as a key | S13: a grant minted by share, by the alias route or by the MC... | 1 |
+| B10c | OPEN_VIEW.grantFor returns an object | S13: OPEN_VIEW is the identity — the existing doors run the c...; S4: the same walk through the main port finds e-out on rows 3... | 16 |
+| B11 | outOfScopeAnswer returns a literal for mcp | B11: outOfScopeAnswer asks the route's own functions, so the ... | 1 |
+| B11b | outOfScopeAnswer returns a literal for alias | B11: outOfScopeAnswer asks the route's own functions, so the ... | 1 |
+| B12 | scopedRefSource.fieldReading reads through | S16: scopedRefSource with the real resolveSecretRefs — in sco...; S16: fieldReading answers `absent` for anything the scope doe... | 2 |
+| B13 | sources().aliases returns the real list | sources.aliases: a name is listed only when it resolves to a ...; S3: through a bridge scoped to e1, e-out answers nothing it s... | 6 |
+| B14a | spentToken not at all | S14: with a limit of one call, the first bridged call runs an...; B14: a spent token is reserved FIRST, in the same step, then ... | 3 |
+| B14b | spentToken after the call grant | B14: a spent token is reserved FIRST, in the same step, then ...; B14: a token that has run out refuses the call with the token... | 2 |
+| W1 | sources.visibleConfig unwalled | sources.visibleConfig: a config only in scope, and the real s...; S3: row 5 for an entry out of scope is the usual not-found bo... | 3 |
+| W2 | sources.folders returns the real list | sources.folders: no folders at all; S3: through the same bridge e1 is served — rows 3, 4, 5 show it | 2 |
+| W3 | resolveAlias not walled | resolveAlias: a target is served only when its account and en...; S3: through a bridge scoped to e1, e-out answers nothing it s... | 5 |
+| W4 | grantFor returns nothing on a bridge | grantFor: the context and the scope's switch as it is NOW; S13: a grant minted by share, by the alias route or by the MC... | 9 |
+| W5 | startNow does not pass the bridge | startNow hands the action the CONTEXT of the bridge and nothi... | 1 |
+| W6 | openBridgeListener opens without a wall | R4: a broker with no scope wall cannot open a bridge, and bin... | 1 |
+| W7 | launchRefusal skips the entry/account scope check | launchRefusal: the grant's account and entry against a fresh ...; launchRefusal: the scope is the grant's own context's, not th... | 5 |
+| W8 | scopedRefSource.accounts unfiltered | S16: another account's email resolves to nothing, and its ent... | 1 |
+| W9 | scopedRefSource.entities lists other accounts | S16: another account's email resolves to nothing, and its ent... | 1 |
+| W10 | scopedRefSource.entities narrowed to the scope (the overturned design) | S16: an ambiguous reference stays ambiguous for the agent, ex...; S16: another account's email resolves to nothing, and its ent... | 2 |
+| W11 | BridgeScopes.read is cached | S9: a reference to an entry in scope lets the call proceed; s...; S9: the first reference that cannot be served is the one name... | 47 |
+| W12 | accountOnly does not narrow | accountOnly: the same source with one account, so a lookup ne...; mcpUseHooks: the resolveMcpUse it builds takes the bridge's s... | 3 |
+| W13 | mcpUseLookup ignores the server | mcpUseHooks: the resolveMcpUse it builds takes the bridge's s...; S20: an entry of another account with the same id is not in s... | 2 |
+| W14 | mcpUseHooks does not pass the server | mcpUseHooks: the resolveMcpUse it builds takes the bridge's s... | 1 |
+| W15 | bridged token: denied token not refused | S14: a token the person denied is refused through a bridge wi... | 1 |
+| W16 | bridged token: no throttle slot | S14: a token path is throttled like an alias call — one dialo...; S14: the sixth token call inside a minute is refused | 2 |
+| W17 | bridged token: rides its own grant | S8: a stored command that names an entry out of scope is refu...; S10: scope narrowed while the modal is open — the call is ref... | 10 |
+| W18 | doorFor perform forgets its via | S10: scope narrowed while the modal is open — the call is ref...; S12: a one-use entry queued in the lane behind a call of anot... | 3 |
+| W19 | prepared drops the spend | S14: with a limit of one call, the first bridged call runs an... | 1 |
+| W20 | GET routes not walled | S3: through a bridge scoped to e1, e-out answers nothing it s...; S3: row 5 for an entry out of scope is the usual not-found bo... | 7 |
+| W21 | alias route not walled | S3: through a bridge scoped to e1, e-out answers nothing it s...; S5: an entry that exists and is out of scope answers as one t... | 4 |
+| W22 | mcp route not walled | S3: through a bridge scoped to e1, e-out answers nothing it s...; S5: an entry that exists and is out of scope answers as one t... | 4 |
+| W23 | token on a bridge rides its own grant | S8: a stored command that names an entry out of scope is refu...; S10: scope narrowed while the modal is open — the call is ref... | 10 |
+| W24 | exportEnv refused with the generic sentence | S6: every route of the table answers as its row says, and the...; S6: exportEnv is refused with the export sentence on all thre... | 2 |
+| W25 | run served | the table serves exactly the routes the authorization decisio...; row 11 and 12: run, terminal, up, down, rotate, delete, creat... | 8 |
+| W26 | method not compared | row 13: any other method or path is refused, whether or not s...; S6: every route a bridge does not serve is refused with its s... | 2 |
+| W27 | reference sentence changed | the reference sentence is the one of the spec, built by one f...; S9: every way a reference can fail reads alike — one sentence... | 7 |
+| W28 | CLOSED_VIEW serves lookups | CLOSED_VIEW: a bridge with no wall answers no lookup | 1 |
+| W29 | usable answer keeps the vault's quiet | resolveUse: a usable answer is never quiet on a bridge, whate... | 1 |
+| W30 | contract aliasPrefix drifts | S18: the alias prefix travels, and it is the one parseAliasRo... | 1 |
+| W31 | note field list loses key | the note schema is the six fields of the parent plan, and the...; a note built to the interface has exactly the declared fields... | 3 |
+| W32 | bridged view mints with the wrong account (grantFor context swapped) | grantFor: the context and the scope's switch as it is NOW; S3: through the same bridge e1 reaches the action after Allow... | 15 |
+| W33 | alias list resolver missing returns real aliases | sources.aliases: a name is listed only when it resolves to a ...; D9: the real router — health is served, a route the table doe... | 2 |
+| W34 | locateRef lets a throw escape | locateRef: parsed and located, or `ok: false` with no reason;... | 1 |
+| W35 | unservedReference does not swallow a throw | S9: a storedTexts or a vault that THROWS is the same refusal,...; S9: a storedTexts that throws is the same refusal, not a 500 | 2 |
+| W36 | handle asks the open view for the token | S3: through a bridge scoped to e1, e-out answers nothing it s...; S5: an entry that exists and is out of scope answers as one t... | 4 |
+| W37 | scope store never prunes | S17: at most 64 records; the oldest `at` is pruned, never the... | 1 |
+| W38 | scope store accepts any number of entries | S17: a scope of 256 entries is written; 257 are refused and n... | 1 |
+| W39 | a record with a non-boolean quiet is read | S17: a malformed record, in any of its parts, is an empty sco... | 1 |
+| W40 | scope writes are not queued | S17: writes queue — two sets in flight at once both land, eve... | 1 |
+| W41 | scopeKey is not length-prefixed | S17: scopeKey is injective across the colon, as stampKey is | 1 |
+| W42 | validation refusal loses its default code | a body the action rejects is refused BEFORE the human is asked | 1 |
+| W43 | BRIDGE_NOTE_FIELDS not frozen | the field table cannot be changed from outside the module | 1 |
+| W44 | BRIDGE_ROUTES not frozen | the table cannot be changed from outside | 1 |
+| W45 | forget removes nothing | S17: forget removes one record and leaves the others | 1 |
+| W46 | a bridged call grant takes the token scope instead of call | a grant a bridge door mints is a call grant, reclaimed before... | 1 |

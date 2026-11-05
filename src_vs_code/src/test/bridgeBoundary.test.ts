@@ -5,6 +5,7 @@ import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { socketPathFor } from '../brokerListeners';
+import { CONTEXT } from './bridgeDoorHarness';
 import { share, world } from './brokerWorld';
 
 /**
@@ -143,11 +144,15 @@ function shippedSources(dir = ''): string[] {
   });
 }
 
-/** The module that DEFINES `openBridgeListener`: the one place its name belongs. R1 has a companion that counts it there. */
-const DEFINES_IT = 'credsAgentServer.ts';
+/**
+ * The modules that DEFINE the two names: the one place each belongs. `openBridgeListener` is defined where the
+ * broker is; `bridgeWall` is a hook, so it is named by the broker's hook table and read by the broker. R1 has a
+ * companion that counts them there.
+ */
+const DEFINES_THEM = ['credsAgentServer.ts', 'brokerHooks.ts'];
 
 test('R1: nothing in the shipped sources opens a bridge door or hands the broker a wall', () => {
-  const callers = shippedSources().filter((file) => file !== DEFINES_IT);
+  const callers = shippedSources().filter((file) => !DEFINES_THEM.includes(file));
   assert.ok(callers.length > 400, `the scan walked every source (${callers.length}), not a short list`);
   assert.ok(callers.includes('extension.ts'), 'it includes extension.ts');
   assert.ok(callers.some((file) => file.startsWith('commands')), 'and the commands folder');
@@ -163,9 +168,11 @@ test('R1: nothing in the shipped sources opens a bridge door or hands the broker
   assert.deepEqual(bridgey.sort(), ['credSshManager.closeRemoteBridge', 'credSshManager.openRemoteBridge'], 'no new command');
 });
 
-test('R1 has teeth: the scan sees the one place the name lives', () => {
+test('R1 has teeth: the scan sees the places the names live', () => {
   const hits = codeOf('credsAgentServer.ts').filter((line) => /openBridgeListener/.test(line));
   assert.equal(hits.length, 1, 'credsAgentServer.ts defines openBridgeListener exactly once, and nothing calls it');
+  assert.ok(codeOf('brokerHooks.ts').some((line) => /bridgeWall/.test(line)), 'brokerHooks.ts names the hook');
+  assert.ok(codeOf('credsAgentServer.ts').some((line) => /bridgeWall/.test(line)), 'and the broker reads it');
 });
 
 /** The two ways a module reaches the editor: an `import ... from 'vscode'` and a `require('vscode')`. */
@@ -174,7 +181,7 @@ const REQUIRES_VSCODE = /require\(\s*['"]vscode['"]/;
 const reachesVscode = (source: string): boolean => IMPORTS_VSCODE.test(source) || REQUIRES_VSCODE.test(source);
 
 test('R2: the bridge modules are pure', () => {
-  for (const file of ['bridgeContext.ts', 'bridgeNote.ts', 'brokerBridgeListeners.ts', 'bridgeAllowList.ts', 'brokerOrigin.ts']) {
+  for (const file of ['bridgeContext.ts', 'bridgeNote.ts', 'brokerBridgeListeners.ts', 'bridgeAllowList.ts', 'bridgeScope.ts', 'brokerBridgeToken.ts', 'brokerOrigin.ts']) {
     const source = fs.readFileSync(path.join(sourceDir, file), 'utf8');
     assert.ok(!IMPORTS_VSCODE.test(source), `${file} must not import vscode`);
     assert.ok(!REQUIRES_VSCODE.test(source), `${file} must not require vscode`);
@@ -196,4 +203,14 @@ test('R2 has teeth: the patterns match every spelling of a vscode import, and a 
     assert.ok(!reachesVscode(line), `${line} is not a vscode import`);
   }
   assert.ok(reachesVscode(fs.readFileSync(path.join(sourceDir, 'credsAgentServer.ts'), 'utf8')), 'the broker itself imports vscode, and the scan sees it');
+});
+
+test('R4: a broker with no scope wall cannot open a bridge, and binds nothing', async () => {
+  const w = world({});
+  try {
+    await assert.rejects(() => w.server.openBridgeListener(CONTEXT), { message: 'A Remote Bridge cannot open without its scope wall.' });
+    assert.equal(w.outputChannels, 0, 'the broker was not even started for it: no port, no journal, no output channel');
+  } finally {
+    w.server.dispose();
+  }
 });

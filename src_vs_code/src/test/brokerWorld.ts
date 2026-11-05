@@ -1,4 +1,5 @@
 import { loadWithVscode } from './vscodeStub';
+import type { ResolveUse } from '../bridgeScope';
 import type { McpUseLookup } from '../brokerRequests';
 import type { CreateSettled, McpCreateHooks } from '../brokerMcpDoor';
 
@@ -109,6 +110,11 @@ function world(options: {
   rotatesTo?: string;
   burns?: boolean;
   alias?: { accountId: string; entityId: string; entityName: string; kind: string };
+  /**
+   * More names than the one `prod`, each to its own target — for a test about which names a door may resolve
+   * (E1.3's walk). Read BEFORE the `prod` rule, so a map may also redefine that name.
+   */
+  aliasMap?: Record<string, { accountId: string; entityId: string; entityName: string; kind: string }>;
   /** The names `creds ls` would see. Absent means this window has no registry at all. */
   aliasList?: { name: string; kind: string }[];
   /** What the vault would show an agent. Absent means this window shows agents nothing. */
@@ -125,7 +131,7 @@ function world(options: {
    * the shaped collaborators — a raw `resolveMcpUse` passed there is silently replaced, which is a
    * test that proves nothing while looking like it proves everything.</p>
    */
-  mcpResolve?: (entryId: string, action: string) => McpUseLookup;
+  mcpResolve?: ResolveUse;
   /**
    * The REAL write, for the test that drives a consent from asked to remembered to quiet.
    *
@@ -272,7 +278,7 @@ function hooksFor(w: World, options: Parameters<typeof world>[0]): Record<string
     maskEntriesFor: maskerFor(w, options),
     burnAfterUse: burnerFor(w, options.burns),
     isOneUse: oneUseFor(w, options.oneUse),
-    resolveAlias: aliasResolverFor(options.alias),
+    resolveAlias: aliasResolverFor(options.alias, options.aliasMap),
     listAliases: options.aliasList === undefined ? undefined : () => options.aliasList ?? [],
     listMcpEntries: mcpEntriesFor(options.mcpEntries),
     visibleConfig: options.visibleConfig,
@@ -492,8 +498,12 @@ function createFor(w: World, mode: 'open' | 'closed' | undefined, settled?: Crea
 
 function aliasResolverFor(
   alias: { accountId: string; entityId: string; entityName: string; kind: string } | undefined,
+  aliasMap?: Record<string, { accountId: string; entityId: string; entityName: string; kind: string }>,
 ): ((name: string) => typeof alias) | undefined {
-  return alias === undefined ? undefined : (name: string) => (name === 'prod' ? alias : undefined);
+  if (alias === undefined && aliasMap === undefined) {
+    return undefined;
+  }
+  return (name: string) => (aliasMap !== undefined && Object.hasOwn(aliasMap, name) ? aliasMap[name] : name === 'prod' ? alias : undefined);
 }
 
 interface Answer {

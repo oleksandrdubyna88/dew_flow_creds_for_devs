@@ -18,6 +18,20 @@ import { McpRung } from './mcpAccess';
  * this needs anything on it.</p>
  */
 
+/** The code and the sentence of a refusal, before a door decides how to write it. */
+export type Refusal = { readonly code: ErrorCode; readonly message: string };
+
+/** What an agent is told about a token that is not live and is not its business: unknown, missing, or out of scope. */
+export const UNKNOWN_TOKEN = 'Unknown or missing grant token.';
+
+/** What an agent is told when the person answered Deny, on this call or earlier on this token. */
+export const GRANT_NOT_ALLOWED = 'The human did not allow this grant.';
+
+/** A failed validation as a refusal: the action's own code, or the plain `invalid_request`. */
+export function validationRefusal(failed: { readonly code?: ErrorCode; readonly message: string }): Refusal {
+  return { code: failed.code ?? 'invalid_request', message: failed.message };
+}
+
 /** A parsed body, or the refusal to send instead. */
 export type BodyOutcome =
   | { ok: true; body: Record<string, unknown> }
@@ -173,7 +187,7 @@ export function aliasTarget(
  * person chose, guessable one try at a time, while an entry id is a uuid nobody enumerates. So
  * the alias route answers "no such entry" to both questions on purpose, and this one does not.</p>
  */
-export function refusalFor(found: McpUseLookup): { code: ErrorCode; message: string } {
+export function refusalFor(found: McpUseLookup): Refusal {
   if (found?.kind === 'closed') {
     return {
       code: 'denied',
@@ -235,7 +249,7 @@ export function grantForToken(
   }
   return {
     ok: false,
-    message: found.kind === 'expired' ? expiredMessage(found.reason, limits) : 'Unknown or missing grant token.',
+    message: found.kind === 'expired' ? expiredMessage(found.reason, limits) : UNKNOWN_TOKEN,
   };
 }
 
@@ -249,7 +263,7 @@ export function grantForToken(
 export function reservationRefused(refused: GrantLookup, limits: GrantLimits): string {
   return refused.kind === 'expired'
     ? expiredMessage(refused.reason, limits)
-    : 'Unknown or missing grant token.';
+    : UNKNOWN_TOKEN;
 }
 
 export function readBody(req: http.IncomingMessage): Promise<string> {

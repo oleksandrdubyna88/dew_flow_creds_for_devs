@@ -225,6 +225,9 @@ export interface EnvExportResponseBody {
   written: string[];
 }
 
+/** Where an alias call is posted; the contract carries it, so a client does not hold a literal of its own. */
+export const ALIAS_ROUTE_PREFIX = '/v1/alias/';
+
 /**
  * `/v1/alias/<action>` → the action, for a call that names its entry by alias.
  *
@@ -235,11 +238,10 @@ export interface EnvExportResponseBody {
  * on one route and something else on the other.</p>
  */
 export function parseAliasRoute(pathname: string): string | undefined {
-  const prefix = '/v1/alias/';
-  if (!pathname.startsWith(prefix)) {
+  if (!pathname.startsWith(ALIAS_ROUTE_PREFIX)) {
     return undefined;
   }
-  const action = pathname.slice(prefix.length);
+  const action = pathname.slice(ALIAS_ROUTE_PREFIX.length);
   return ACTION_NAME.test(action) ? action : undefined;
 }
 

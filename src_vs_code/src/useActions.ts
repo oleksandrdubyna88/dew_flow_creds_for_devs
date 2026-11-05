@@ -10,6 +10,7 @@
  * registry neither knows nor cares.
  */
 
+import type { BridgeContext } from './bridgeContext';
 import type { ErrorCode } from './brokerProtocol';
 
 /** Where in the vault the grant points; the live entity is re-read per call. */
@@ -32,6 +33,12 @@ export interface UseActionContext {
    * refused once the request has gone; only an already-started run is left to finish.
    */
   readonly finishOnceStarted?: boolean;
+  /**
+   * Set when the call came in through a Remote Bridge: which one, and for which server. Never the key, and
+   * never `quiet` or a spent token, which the grant's nested `BridgeGrant` keeps out of it. An action that
+   * resolves a `creds://` reference reads values through `scopedRefSource` whenever this is set (E3.3).
+   */
+  readonly bridge?: BridgeContext;
 }
 
 /**

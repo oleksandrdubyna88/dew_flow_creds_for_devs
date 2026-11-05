@@ -3288,10 +3288,46 @@ looks like a browser; every answer is a `403 forbidden` carrying one fixed sente
 own note, once per window, because the browser note says "browser-shaped". The router receives a frozen
 `BridgeContext` from the door (`bridgeContext.ts`) as a third argument, `undefined` on the port and the socket
 and written at each call site; nothing in a request can set it, and the key is not in it. Behind the door the
-bridge serves an allow-list of one, `GET /v1/health` (`bridgeAllowList.ts`); everything else is `404
-not_supported` with `Connection: close`, before any body is read. Opens for one `bridgeId` are chained, so a
+bridge serves an allow-list (`bridgeAllowList.ts`; E1.2 shipped it with one route, `GET /v1/health`, and E1.3
+filled it, below); everything else is `404 not_supported` with `Connection: close`, before any body is read. Opens for one `bridgeId` are chained, so a
 reconnect cannot leave the earlier port and key usable, `close()` ends kept-alive connections too, and
 `dispose()` closes every bridge listener and refuses later opens, before the broker starts anything for them.
+
+**The allow-list, the note schema and the scope wall of a Remote Bridge** (E1.3 of the scoped remote bridge,
+[PLAN_remote_bridge_scoped_E1_S3_spec.md](../todo/PLAN_remote_bridge_scoped_E1_S3_spec.md); *still nothing in the
+extension opens a bridge* — `extension.ts` passes no `bridgeWall`, and without one `openBridgeListener` rejects, so
+a door with no wall cannot exist). Three things stand behind the third door.
+
+*What it serves.* `BRIDGE_ROUTES` (`bridgeAllowList.ts`) names every route of `contract/broker-v1.json` and
+`/v1/alias/<action>`, served or refused with its reason, and a request is looked up by method and pathname exactly,
+so a route that is in neither table is refused at run time and turns `bridgeAllowList.test.ts` red until somebody
+decides about it. Served: the reads (`health`, `kinds`, `kind-help` as they are; `aliases`, `entries`,
+`config-snippet`, `folders` through the wall), and `exec` and `query` on the token, alias and MCP prefixes. Refused
+`403 denied` with the export sentence: `exportEnv`. Refused `404 not_supported` with the bridge's sentence: `run`
+(until E3 decides where a stored command runs), `terminal`, `up`, `down`, `rotate`, delete, create, the folder verbs
+and the config read. The note a bridge publishes (`bridgeNote.ts`) is six fields, and `contract/broker-v1.json`
+carries them (`bridge.noteFields`) with the header and the directory, and the alias prefix (`aliasPrefix`), all
+additive, `version` still 1.
+
+*Which entries it reaches.* `BridgeScopes` (`bridgeScope.ts`) keeps, per account and server entry, the ids a server's
+agent may reach and whether it is asked each time, in the window's `globalState` and never in the vault; a missing or
+malformed record is an empty scope, read fresh on every use. `doorView(bridge, wall)` wraps every way the router looks
+something up, so an entry out of scope answers through the route's own not-found function exactly as an entry that is
+not there: the alias and entry listings drop it (and `can` is narrowed to `use`, `dependsOn` to names that are listed),
+the snippet and the folders say nothing of it, the MCP lookup runs for every id narrowed to the context's account and
+the scope decides afterwards (so the time it takes is not an answer), and a token out of scope is unknown whether it is
+live or expired. The existing doors get `OPEN_VIEW`, which hands back the functions it was given. A token on a bridge
+only authenticates (`brokerBridgeToken.ts`): the call is minted as a grant of its own and asked every time, a Deny
+refuses that call and not the token, and the token's use count moves at the action boundary, before the call grant's.
+
+*When it is decided.* Once at the door, and again at the last synchronous step before an action starts
+(`brokerCall.answer`: the client is still there, then the scope and the references are read fresh, then the token and
+the call grant are reserved, then the action starts), because a modal can be open for a minute while the person narrows
+the scope or edits the line. A stored command or script that names a `creds://` reference the scope does not serve is
+refused `403 denied` with one sentence for every failure (no such account, no such entity, ambiguous, out of scope),
+before any dialog and again at launch. `scopedRefSource` is the seam an executor must resolve through (E3.3); nothing
+uses it yet. Two things to know about the arithmetic: a call refused for a reference still took one of the five prompts a
+minute (the throttle sits before the check), and a bridged call waits for the single dialog slot like an alias call.
 
 **A signed envelope without its signature is tampered, not legacy** (`verifyEnvelopeMac`,
 `requireIntactEnvelope`). The envelope MAC exists for one threat, named where it is computed: on a

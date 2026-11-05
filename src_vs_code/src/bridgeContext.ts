@@ -20,6 +20,20 @@ export interface BridgeContext {
   readonly remoteOs: string | undefined;
 }
 
+/**
+ * What a grant minted on a bridge door carries, and nothing else (E1.3).
+ *
+ * <p>`quiet` is the scope's switch AT MINT TIME, for E1.4 to read. There is deliberately no token here: a token a
+ * bridged token call spends rides the request (`RequestWho` into `CallSubject.spend`), because a second place a
+ * token's secret lives would be a map with a cap and an eviction policy, handed to `describe` and copied into
+ * `UseActionContext`. Nested, not intersected with the context, so `grant.bridge?.context` is the context and
+ * nothing has to be stripped by hand.</p>
+ */
+export interface BridgeGrant {
+  readonly context: BridgeContext;
+  readonly quiet: boolean;
+}
+
 /** The four fields that identify the bridge. An empty one would be an identity that matches by accident. */
 const IDENTITY_FIELDS = ['bridgeId', 'accountId', 'serverEntityId', 'serverName'] as const;
 

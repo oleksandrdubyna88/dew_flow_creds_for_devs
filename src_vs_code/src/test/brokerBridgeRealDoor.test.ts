@@ -8,7 +8,7 @@ import { test } from 'node:test';
 import { BridgeContext } from '../bridgeContext';
 import { BRIDGE_NOT_SERVED } from '../bridgeAllowList';
 import { socketPathFor } from '../brokerListeners';
-import { CONTEXT, OTHER, Reply, code, keyed, message, pause, raw, refuses } from './bridgeDoorHarness';
+import { CONTEXT, OTHER, Reply, code, emptyWall, keyed, message, pause, raw, refuses } from './bridgeDoorHarness';
 import { call, share, world } from './brokerWorld';
 
 /**
@@ -18,8 +18,8 @@ import { call, share, world } from './brokerWorld';
  * these show is what `handle`, the guard and `dispose` really do behind the door.</p>
  */
 
-test('D9: the real router — health is served, everything else is a not_supported with Connection: close', async () => {
-  const w = world({ aliasList: [{ name: 'prod', kind: 'ssh' }] });
+test('D9: the real router — health is served, a route the table does not serve is a not_supported with Connection: close', async () => {
+  const w = world({ aliasList: [{ name: 'prod', kind: 'ssh' }], hooks: emptyWall() });
   try {
     const { port: main } = await share(w);
     const l = await w.server.openBridgeListener(CONTEXT);
@@ -28,12 +28,13 @@ test('D9: the real router — health is served, everything else is a not_support
     assert.equal(theirs.status, 200);
     assert.equal(theirs.body, ours.body, 'its usual body');
 
+    // E1.2 served health alone; from E1.3 the table serves more (`bridgeAllowList.test.ts` pins exactly what),
+    // so what is asked here is a route it does not.
     const refused: [string, string][] = [
-      ['POST', '/v1/use/exec'],
-      ['GET', '/v1/aliases'],
+      ['POST', '/v1/use/run'],
       ['POST', '/v1/config/read'],
       ['GET', '/v1/nope'],
-      ['GET', '/v1/mcp/entries'],
+      ['POST', '/v1/mcp/delete'],
     ];
     for (const [method, route] of refused) {
       const reply = await raw(l.port, route, keyed(l), { method, body: method === 'POST' ? '{"command":"id"}' : undefined });
@@ -45,13 +46,14 @@ test('D9: the real router — health is served, everything else is a not_support
     assert.deepEqual(w.ran, []);
     assert.deepEqual(w.dialogs, []);
     assert.equal((await call(main, '/v1/aliases', { method: 'GET' })).status, 200, 'the main port still serves what the bridge does not');
+    assert.equal(JSON.parse((await raw(l.port, '/v1/aliases', keyed(l))).body).aliases.length, 0, 'and the bridge lists nothing of a vault whose scope is empty');
   } finally {
     w.server.dispose();
   }
 });
 
 test('D1 on the real broker: a refusal runs nothing and asks nobody', async () => {
-  const w = world({ alias: { accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh' }, secrets: [] });
+  const w = world({ alias: { accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh' }, secrets: [], hooks: emptyWall() });
   try {
     await share(w);
     const l = await w.server.openBridgeListener(CONTEXT);
@@ -73,7 +75,7 @@ test('D1 on the real broker: a refusal runs nothing and asks nobody', async () =
 });
 
 test('D3: the key header changes nothing on the main port', async () => {
-  const w = world({ aliasList: [{ name: 'prod', kind: 'ssh' }] });
+  const w = world({ aliasList: [{ name: 'prod', kind: 'ssh' }], hooks: emptyWall() });
   try {
     const { port } = await share(w);
     const l = await w.server.openBridgeListener(CONTEXT);
@@ -93,7 +95,7 @@ test('D3: the key header changes nothing on the main port', async () => {
 
 test('D3: the key header changes nothing on the socket door either', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-d3-'));
-  const w = world({ aliasList: [{ name: 'prod', kind: 'ssh' }], storageDir: dir });
+  const w = world({ aliasList: [{ name: 'prod', kind: 'ssh' }], storageDir: dir, hooks: emptyWall() });
   try {
     await share(w);
     const l = await w.server.openBridgeListener(CONTEXT);
@@ -112,7 +114,7 @@ test('D3: the key header changes nothing on the socket door either', async () =>
 });
 
 test('K5: through the real handle — a server named in a header, a query or a body never reaches or alters the context', async () => {
-  const w = world({ aliasList: [{ name: 'prod', kind: 'ssh' }] });
+  const w = world({ aliasList: [{ name: 'prod', kind: 'ssh' }], hooks: emptyWall() });
   try {
     const { port: main } = await share(w);
     // The real `handle` is called; this only records the third argument it was given and what it looked like after.
@@ -130,7 +132,7 @@ test('K5: through the real handle — a server named in a header, a query or a b
     const claims = { 'X-Creds-Server': 'entry-server-2', 'X-Bridge-Id': 'bridge-2', 'X-Creds-Server-Entity': 'entry-server-2' };
     const plain = await raw(l.port, '/v1/health', keyed(l));
     const claiming = await raw(l.port, '/v1/health?server=entry-server-2&bridgeId=bridge-2', keyed(l, claims));
-    const refused = await raw(l.port, '/v1/use/exec', keyed(l, claims), { method: 'POST', body: '{"server":"entry-server-2","command":"id"}' });
+    const refused = await raw(l.port, '/v1/use/run', keyed(l, claims), { method: 'POST', body: '{"server":"entry-server-2","command":"id"}' });
     await raw(main, '/v1/health', { Host: `127.0.0.1:${main}`, ...claims });
 
     await pause(50);
@@ -151,7 +153,7 @@ test('K5: through the real handle — a server named in a header, a query or a b
 });
 
 test('K10: a refused route is answered before its body arrives — Content-Length 1000, five bytes sent, still a 404', async () => {
-  const w = world({});
+  const w = world({ hooks: emptyWall() });
   try {
     await share(w);
     const l = await w.server.openBridgeListener(CONTEXT);
@@ -167,7 +169,7 @@ test('K10: a refused route is answered before its body arrives — Content-Lengt
       setTimeout(() => reject(new Error('no answer while the body was still incomplete: the body was read before the route was refused')), 2_000).unref();
     });
     socket.write(
-      `POST /v1/use/exec HTTP/1.1\r\nHost: 127.0.0.1:${l.port}\r\nX-Creds-Bridge: ${l.key}\r\n`
+      `POST /v1/use/run HTTP/1.1\r\nHost: 127.0.0.1:${l.port}\r\nX-Creds-Bridge: ${l.key}\r\n`
         + 'Content-Type: application/json\r\nContent-Length: 1000\r\n\r\n{"com',
     );
     try {
@@ -186,7 +188,7 @@ test('K10: a refused route is answered before its body arrives — Content-Lengt
 
 test('openBridgeListener after dispose refuses before it starts anything — no main port, no note, no output channel', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-late-'));
-  const w = world({ storageDir: dir });
+  const w = world({ storageDir: dir, hooks: emptyWall() });
   try {
     w.server.dispose();
     await assert.rejects(w.server.openBridgeListener(CONTEXT), new Error('The broker is disposed; no Remote Bridge can open.'));
@@ -203,7 +205,7 @@ test('openBridgeListener after dispose refuses before it starts anything — no 
 });
 
 test('D10 on the real broker: the key note and the browser note are each said once in the journal', async () => {
-  const w = world({});
+  const w = world({ hooks: emptyWall() });
   try {
     const { port } = await share(w);
     const a = await w.server.openBridgeListener(CONTEXT);
@@ -222,7 +224,7 @@ test('D10 on the real broker: the key note and the browser note are each said on
 });
 
 test('D11: dispose closes every listener', async () => {
-  const w = world({});
+  const w = world({ hooks: emptyWall() });
   await share(w);
   const a = await w.server.openBridgeListener(CONTEXT);
   const b = await w.server.openBridgeListener(OTHER);

@@ -95,6 +95,20 @@
     "maxFieldChars": 80,
     "maxLabelChars": 160
   },
+  "aliasPrefix": "/v1/alias/",
+  "bridge": {
+    "keyHeader": "X-Creds-Bridge",
+    "noteDir": ".creds-for-devs/bridge",
+    "noteSuffix": ".json",
+    "noteFields": {
+      "socket": "string",
+      "port": "number",
+      "brokerPort": "number",
+      "key": "string",
+      "serverName": "string",
+      "openedAt": "string"
+    }
+  },
   "entityKinds": [
     "credential",
     "ssh",

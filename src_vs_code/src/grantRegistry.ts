@@ -1,3 +1,4 @@
+import type { BridgeGrant } from './bridgeContext';
 import { describeSecret, newSecret } from './grantToken';
 
 /**
@@ -46,6 +47,12 @@ export interface Grant {
    * was reported on PR #106 rather than found here.</p>
    */
   readonly scope: GrantScope;
+  /**
+   * Set only by a Remote Bridge door, from the context the door handed the router (E1.3). Absent, as a KEY, on
+   * every grant the two existing doors mint, so every branch that reads it is skipped for them. It survives
+   * `allow`, `deny` and `reserve`, which spread the grant.
+   */
+  readonly bridge?: BridgeGrant;
 }
 
 /** @see Grant.scope */
@@ -136,6 +143,7 @@ export class GrantRegistry {
     kind: string,
     now: number = Date.now(),
     scope: GrantScope = 'token',
+    bridge?: BridgeGrant,
   ): Grant {
     this.prune();
     const grant: Grant = {
@@ -149,6 +157,9 @@ export class GrantRegistry {
       lastUsedAt: now,
       uses: 0,
       scope,
+      // The key is ABSENT when there is no bridge, never present as `undefined`: a grant of the existing doors
+      // is byte-for-byte what it was (`'bridge' in grant` is the pin).
+      ...(bridge === undefined ? {} : { bridge }),
     };
     this.grants.set(grant.secret, grant);
     return grant;

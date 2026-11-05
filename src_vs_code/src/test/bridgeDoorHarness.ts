@@ -2,6 +2,8 @@ import * as http from 'node:http';
 import * as net from 'node:net';
 import type { BridgeContext } from '../bridgeContext';
 import type { BridgeListener } from '../brokerBridgeListeners';
+import type { BridgeWallSource } from '../bridgeScope';
+import { loadBridgeModules, memento } from './bridgeModules';
 
 /**
  * What the Remote Bridge door tests share: two contexts, a request that keeps its `Host`, and the small
@@ -73,3 +75,13 @@ export const keyed = (listener: BridgeListener, extra: http.OutgoingHttpHeaders 
 });
 
 export const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * A wall with an empty scope, for a test of the DOOR: a broker cannot open a bridge without one (R4), and what these
+ * tests ask about is the key, the Host and the table, none of which the scope decides. Everything the wall decides is in
+ * `bridgeScopeWalk.test.ts`.
+ */
+export function emptyWall(): { bridgeWall: BridgeWallSource } {
+  const { scope } = loadBridgeModules();
+  return { bridgeWall: { scopes: new scope.BridgeScopes(memento()), storedTexts: () => [], refSource: { accounts: () => [], entities: () => [] } } };
+}
