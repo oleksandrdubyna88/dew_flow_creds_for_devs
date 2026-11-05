@@ -1,6 +1,6 @@
 # PLAN — An agent on a remote Linux server uses what the person opened to it, through a bridge scoped to that server
 
-> Status: **E1 in progress on `feat/remote-bridge-e1`, stopped for re-review, 2026-11-05.** Epoch 2 took a second change. Scope: `src_vs_code` (broker doors, bridge lifecycle, scope,
+> Status: **E1 in progress on `feat/remote-bridge-e1`, 2026-11-05.** Epoch 3, after a whole re-review (`proceed`, 2 of 4 reviewers; the other vendor's quota was out, and its answers come back at E1's code gate). Scope: `src_vs_code` (broker doors, bridge lifecycle, scope,
 > agent actions), `src_broker_client`, `src_cli`, `src_mcp`, `install.sh`. No server change. Extends the shipped bridge of
 > [PLAN_remote_broker_bridge.md](../research/PLAN_remote_broker_bridge.md).
 
@@ -20,7 +20,7 @@ Narrowed: yes — the db tunnel left the scope and the Definition of Done, by th
 |---|---|---|---|
 | Nothing built | — | — | — |
 
-> Epoch 2 · approved 2026-11-04 · by owner · state: stopped
+> Epoch 2 · approved 2026-11-04 · by owner · state: closed
 
 - 2.1 · 2026-11-04 · agent · approach — an unrelated extension tag would ship the new door before clients are on servers, and an old client never shows the update sentence, so the new flow stays behind a switch until E4
 - 2.2 · 2026-11-05 · reviewer · approach — each window holds its own copy of `globalState` and the last write wins, so a narrowed scope may never reach the owning window and another window can restore it; scope records move to a file in the shared storage folder
@@ -39,6 +39,8 @@ Narrowed: no
 | E1.1, b26fb81 and 4c47ebc | pushed, unmerged | fits | kept; M4 is still owed by the person |
 | E1.2, 547d9e9 and 52cb8a5 | pushed, unmerged | fits | kept; no revision touches the door, key, context or listener |
 | E1.3, a91e981 | pushed, unmerged | fits | allow-list, note schema, per-call token grant, launch gate and reference check kept; fix forward: the file store with revisions, generic refusal bodies with `ctx.bridge` set, `agentForward` refused, per-account suppliers, the gate before `releaseWaiting`, a token re-read at entry and at the gate, per-bridge prompt windows. `credsAgentServer.ts` is at 788 of 800 |
+
+> Epoch 3 · approved 2026-11-05 · by reviewers · state: open
 
 ## 1. Goal
 
@@ -115,6 +117,7 @@ found".
 - **Stored:** one file per record, `<globalStorageUri>/bridges/scopes/<hash>.json`, machine-local and never in the vault (the argument of `mcpConsentPolicy.ts:13-18`), named by a hash of account and server entry because the key's characters
   are not legal in a Windows file name. Not `globalState`: each window holds its own copy and the last write wins (`mcpConsentPolicy.ts:234-241`), so a scope narrowed in one window might never reach the window that owns the bridge, and a stale
   write could restore it. Every check reads the file fresh; an absent or corrupt file is an empty scope.
+- **Retired with the bridge:** *Close Remote Bridge* removes the scope record and that server's consent stamps along with the bridge's record, whichever window it runs in. Opening the bridge again starts from an empty pick.
 - **Written safely:** a record carries a revision. A write takes the cross-window lock of `leasedQueue.ts`, re-reads, and is refused if its revision is stale, so an edit made from an old copy cannot restore what another window removed, and the person is told to look again. The write itself is temp-and-rename.
 - **Chosen:** when opening the bridge, from that account's entries already open to MCP (the same wall as the MCP listing), and editable on the bridged row. A new server starts empty. The pick names the key each ssh entry uses (below).
 - **The bridge door serves an allow-list, default deny.** A route or action added later is refused here until it is named. Never on
@@ -122,7 +125,7 @@ found".
 - **Checked again just before launch.** Name resolution is one wall; a token's grant skips it, and a scope can change while a consent
   modal is open. So the scope is also checked in one place at the moment an action starts, whichever route it came by, and before anything an Allow triggers (`releaseWaiting`, `credsAgentServer.ts:586`), so a narrow during a modal promotes nothing. A token denied while its call waits is refused at that point too. The gap between the start of `run` and the spawn is a keychain read and is accepted.
 - **References are scoped too.** Every entry a stored command or script reaches through a `creds://` reference must be in the same server's
-  scope, or the call is refused naming the missing entry. Otherwise an entry in scope becomes a road to one that is not.
+  scope, or the call is refused with one sentence that echoes nothing from the stored text. Otherwise an entry in scope becomes a road to one that is not.
 - **Listings are per account.** `McpEntry` carries no account and an envelope may repeat an id across accounts (`idQuarantine.ts:41` keeps a safe id), so walling by id alone is a breach: the wall reads the listing and the config snippet from per-account suppliers. Use paths already search one account (`mcpHooks.ts` `accountOnly`).
 - **What an entry links to is part of using it.** An ssh entry's `sshKeyEntityId` and jump chain are not scope targets. `sshkey` can never be opened to MCP (`entityKind.ts:155,179`), so requiring it would refuse every ssh entry with a linked key. The value stays on the laptop, the person set the link, and edit verbs are off the allow-list, so an agent cannot repoint it. This covers what using the key does, including promoting a rotation already waiting on it (`automaticRead.ts:28-33`). A `creds://` reference stays strictly scoped, because it puts a value into a command.
 - **But never the laptop's whole agent:** `agentForward` forwards the shared agent, which lists every loaded identity (`sshUseActions.ts:83-97`, `sshAgentServer.ts:207-208`). An ssh entry with it set is refused on a bridge door, with a sentence saying why, until forwarding has its own boundary.
@@ -219,7 +222,7 @@ therefore never moves it silently to another machine: it refuses until the perso
 - **A script that injects any variable does not run on the server**: `Object.keys(resolveScriptEnv(…).env).length > 0` (`scriptRender.ts:169`, which injects
   every enabled named variable whether or not the body mentions it, so a Python script reading `os.environ` is caught too). A variable may hold a secret and
   nothing marks which, so the refusal says so and names the two ways out: move the value to a `creds://` reference and set "Runs on" to Windows, or remove it.
-  A literal secret typed into a body is outside this guard; the modal shows the entry, and the person wrote it.
+  A literal secret typed into a body is outside this guard, because nothing can tell it from any other string and a heuristic would promise what it cannot keep. So the limit is said where it matters: the scope pick states that a script's body goes to the server, and the file holding it lives only for the run.
 
 A call not on a bridge door behaves exactly as today. Content trust (`isCommandTrusted`) is unchanged: the person runs the
 line once by hand first. For a script in a Remote-SSH window that click confirms trust (`passScriptGates`, `commands/runCommands.ts:173`) and is then refused by the pinned
@@ -299,7 +302,7 @@ Nothing reaches a person until step 5 uses the door, and scope lands before that
 | Surface | Size | Retired by | If interrupted |
 |---|---|---|---|
 | Bridge listeners | One per open bridge; single digits | Close and `dispose` | Dies with the extension host |
-| Scope records in the shared storage folder | Under 1 KB per server; at most one per entry a person bridged | Removed when its bridge is closed and forgotten | Temp-and-rename, so an interrupted write leaves the old file; a leftover temp file is removed at the next write |
+| Scope records in the shared storage folder | Under 1 KB per server; at most one per entry a person bridged | *Close Remote Bridge* removes it together with the bridge's record | Temp-and-rename, so an interrupted write leaves the old file; a leftover temp file is removed at the next write |
 | Notes on the server | One per live bridge; single digits | Overwritten per connection; removed on Close and by the sweep when the socket is gone | A stale note is harmless (§4.3) |
 | Sockets on the server | One per connection, sshd leaves them behind (`sshBridge.ts:339-357`) | A bridge unlinks its own earlier ones at each connect, listening or not, so a flapping link holds at most one; others swept when `ss` exists | Without `ss`, at most one dead file per bridge ever opened, each under 100 bytes of directory entry; said once to the person |
 | Per-bridge prompt windows | One small list of timestamps per open bridge | Gone with the listener | In memory only |
