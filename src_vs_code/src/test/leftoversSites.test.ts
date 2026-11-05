@@ -64,6 +64,23 @@ test('the scan finds a raw temp call however it is spelled, and a call across li
   assert.deepEqual(rawTempSites(planted), [1, 1, 2, 3]);
 });
 
+test('the scan finds a raw temp call made through a local alias of a named import', () => {
+  const planted = [
+    `import { ${MK}Sync as make, ${TMP} } from 'node:fs';`,
+    `import { ${TMP} as where } from 'node:os';`,
+    `const a = make(path.join(where(), 'x'));`,
+    `const b = ${TMP}();`,
+  ].join('\n');
+
+  assert.deepEqual(rawTempSites(planted), [3, 3, 4]);
+});
+
+test('an alias of anything else, and a property that merely has an alias\'s name, is not a temp call', () => {
+  const other = [`import { readFileSync as make } from 'node:fs';`, `import { ${TMP} as where } from 'node:os';`, `make('x'); obj.where(); other.make();`].join('\n');
+
+  assert.deepEqual(rawTempSites(other), []);
+});
+
 test('the scan does not mistake a word in a comment or a string for a call', () => {
   const prose = [`// os.${TMP}() is what the old code called`, `const note = '${MK}Sync(os.${TMP}())';`, `/* ${TMP}() */`].join('\n');
 

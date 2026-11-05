@@ -7,7 +7,8 @@ import * as ts from 'typescript';
  * comment or a string is not a site and a call spelled across lines still is one.
  *
  * <p>A raw temp site is a CALL that makes or names a temp path: `os.tmpdir()` (or an imported `tmpdir()`), and
- * `fs.mkdtemp` / `fs.mkdtempSync` / `fs.promises.mkdtemp`. Everything of the leftovers contract goes through
+ * `fs.mkdtemp` / `fs.mkdtempSync` / `fs.promises.mkdtemp`, and a call through a local alias of a named import of one of them
+ * (`import { mkdtempSync as make }`). Everything of the leftovers contract goes through
  * `scripts/lib/leftovers.cjs` instead (`ownedDir`, `tempRoot`, `shortSocketRoot`).</p>
  *
  * <p>Not named `*.test.ts`, so the runner never treats it as a suite.</p>
@@ -17,8 +18,9 @@ import * as ts from 'typescript';
 export function rawTempSites(source: string, fileName = 'file.ts'): number[] {
   const tree = ts.createSourceFile(fileName, source, ts.ScriptTarget.ES2022, true);
   const lines: number[] = [];
+  const aliases = tempAliases(tree);
   const visit = (node: ts.Node): void => {
-    if (ts.isCallExpression(node) && isTempCall(node.expression)) {
+    if (ts.isCallExpression(node) && isTempCall(node.expression, aliases)) {
       lines.push(tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1);
     }
     ts.forEachChild(node, visit);
@@ -29,12 +31,28 @@ export function rawTempSites(source: string, fileName = 'file.ts'): number[] {
 
 const TEMP_CALLS = new Set(['tmpdir', 'mkdtemp', 'mkdtempSync']);
 
+/**
+ * The local names the file gives to the temp calls by a named import: `import { mkdtempSync as make } from 'node:fs'` makes `make`
+ * one. Only the imported name is looked at, whatever the module is called, so a re-exporting helper cannot hide a call either.
+ */
+function tempAliases(tree: ts.SourceFile): ReadonlySet<string> {
+  const imports = tree.statements.filter(ts.isImportDeclaration);
+  const specifiers = imports.flatMap((statement) => namedImports(statement.importClause?.namedBindings));
+  return new Set(specifiers.filter((element) => TEMP_CALLS.has((element.propertyName ?? element.name).text)).map((element) => element.name.text));
+}
+
+function namedImports(bindings: ts.NamedImportBindings | undefined): readonly ts.ImportSpecifier[] {
+  return bindings !== undefined && ts.isNamedImports(bindings) ? bindings.elements : [];
+}
+
 function calleeName(callee: ts.Expression): string {
   if (ts.isPropertyAccessExpression(callee)) return callee.name.text;
   return ts.isIdentifier(callee) ? callee.text : '';
 }
 
-const isTempCall = (callee: ts.Expression): boolean => TEMP_CALLS.has(calleeName(callee));
+/** A temp call by its own name, or by a bare local alias of one (`make(...)`; a property named like an alias is not it). */
+const isTempCall = (callee: ts.Expression, aliases: ReadonlySet<string>): boolean =>
+  TEMP_CALLS.has(calleeName(callee)) || (ts.isIdentifier(callee) && aliases.has(callee.text));
 
 /**
  * Every `.ts` file under `root`, as paths relative to it (with `/`), minus the exclusions: an entry of `excluded` is a file's
