@@ -245,3 +245,13 @@ label instead of the context (C15, C20).
    but C21 may add one cheap assertion: a dialog held open on bridge B before the loop still decides its call afterwards. (d) The
    `bridgedTokenCall` admission moved inside its `try` (C.5); `admitAliasCall(res, prompts, bridge)` and its call sites are untouched, so item 1
    above stands as written.
+
+## S4.11 — Note, epoch 4 (Fable, 2026-11-05)
+
+The parent stopped a second time (change 3.2) and was revised whole. E1.4's code as it stood is saved on `wip/remote-bridge-e14-before-stop`
+(`c4b7add`), unfinished: its *As built* is unwritten and the ratchet, the itests, the .NET build and `plan-lifecycle` did not run on that tree. The
+sort of the done work marks it; if it fits, it is finished on the tree the partial-E1 merge leaves (the E1 document's epoch 4 amendment, item 3) and
+goes as its own PR. Nothing in §S4.0-§S4.10 changes. Three things are **not** E1.4's and must not be coded here: Amendment 4's `KEPT_PLACE_MS`
+(superseded, never built), the button order of a bridged modal (`Deny`, `Allow`; parent §4.10, Q5) and the 504 sentence of an expired call — all
+E1.5's. C17's "a timed-out dialog → 504, no key" stands as written: the stamp is still not written on a timeout; what E1.5 changes is that the timeout
+no longer frees the place, which C17 does not assert.

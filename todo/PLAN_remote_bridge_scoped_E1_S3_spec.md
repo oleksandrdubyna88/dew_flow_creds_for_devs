@@ -2494,3 +2494,41 @@ absolute paths and reads `%ProgramData%\ssh\ssh_config` through it (M8, which th
 platform and fails toward "no config", said by ssh's stderr); that VS Code's non-modal notifications leave their promise pending in the bell
 (D.2's bound is right either way); whether `sshd -d` as a user prints a password-attempt line for leg 5 (not asserted: the askpass log is the
 proof).
+
+### Amendment 5 (Fable, 2026-11-05) — the dispositions of Amendment 4 after the parent's revision for epoch 4
+
+The parent stopped a second time at change 3.2 and was revised whole (its §4.9, the SSH contract, and §4.10, the consent contract). Nothing of
+Amendment 4 is built. This amendment says, item by item, what stands and what is superseded, and where the replacement is specified. It is not
+itself a buildable spec for the replacements: the containment of the hop legs depends on M8 (Win32-OpenSSH under `-F`, `-J`, `IdentityAgent none`),
+which the owner records before E1.6's spec is written, and the consent lifecycle is a story of its own (E1.5) whose spec is written from §4.10 when
+it starts. Both specs are Fable's (security judgement), named in the E1 document's epoch 4 amendment.
+
+| Item | Disposition | Why, and where the replacement lives |
+|---|---|---|
+| D.1 (the `-F` file that `Include`s the person's files; "a hop authenticates with the person's agent or the identity files the person's own config names") | **Superseded in its containment claim and its credential policy; its mechanics stand** | Measured false on 2026-11-05 (parent D9): a `ProxyCommand` child inherits no `-F` and the whole environment, and `SendEnv`, `LocalCommand`, `PermitLocalCommand`, `accept-new` survive the `Include`. What stands: `-F` reaches `-J`'s child; the hop leg under the file has `BatchMode yes`, `PasswordAuthentication no`, `KbdInteractiveAuthentication no`; the itest hop pair (legs 0, 5, 6) and the `startSshd` `extraConfig` move; `BRIDGED_ASKPASS_OPTIONS` on the outer. What replaces the rest: parent §4.9 — no `Include`; a per-call file with one `Host <hop>` block per hop **before** `Host *` (the first obtained value wins for scalars; a block after `Host *` lost its `UserKnownHostsFile`, measured), each block carrying the hop entry's own materialised key and host-key keywords only; `Host *` carrying the lock-down (`IdentityAgent none`, `IdentitiesOnly yes`, an `IdentityFile` naming a non-existent path so no default identity is added, `ProxyCommand none`, `PermitLocalCommand no`, `StrictHostKeyChecking yes`, `UserKnownHostsFile <bridge file> <~/.ssh/known_hosts>`, and the nine of `BRIDGED_CONFIG_BLOCK`); a hop entry with a password, no key or a sealed key refused before the spawn; an environment allow-list in place of `{ ...process.env }` (`sshExecAuth.ts:95,139,155` are the three spreads); `SSH_AUTH_SOCK` not kept. E1.6's spec |
+| D.2 (`KEPT_PLACE_MS`: a kept place given up after five minutes) | **Superseded; not built** | A timer proves nothing about a prompt (parent D11, §4.10). The kept place lives until the call's `release`; an `up` left in the bell holds it, said in the `busy` sentence. E1.5's spec |
+| D.3 (a quiet call that will ask after its Allow takes the place) | **Stands** | Consistent with §4.10: a prompt on screen holds the place. Built in the partial-E1 closing commit with D.5-D.10, or in E1.5 if its tests are better placed there — E1.5's spec decides, and says |
+| D.4 | In D.1 | — |
+| D.5 (pending calls are the last call tier) | **Stands**; the partial-E1 closing commit | Independent of both contracts |
+| D.6 (the key file's note cannot cost the slot) | **Stands**; the closing commit | — |
+| D.7 (an expired token is refused before the dialog) | **Stands**; the closing commit | — |
+| D.8 (a throw inside `handle` answers 500) | **Stands**; the closing commit | — |
+| D.9 (the itest reads a client's output after `close`) | **Stands**; the closing commit | — |
+| D.10 (no served bridge action asks after its Allow: a static test) | **Stands**; the closing commit | §4.10 relies on it |
+| D.11 scenarios F3, F4, F5 (the file's argv, text and disk form) | Rewritten by E1.6's spec | The text changes shape (per-call, per-hop blocks, no `Include`); the assertions "a bridged call without the file is `undefined`" and "off a bridge byte for byte today's" stand |
+| D.11 scenarios K9, K10 | K9 **dropped** (no bound to test; replaced by §7's "held longer than any former timer" case); K10 **stands** with D.3 | — |
+| D.11 scenarios Q2, A4, X3, T3, C.7 (rev.), S1 | **Stand** | With their items |
+| D.12's order and counts | **Superseded** | The closing commit builds D.5, D.3 (if here), D.7, D.8, D.6, D.9, D.10 in Amendment 4's order without D.1 and D.2; its counts are re-taken by the coder |
+| The parent's M8 row as Amendment 4 extended it | **Superseded** by the parent's revised M8 (moved forward, the `-F`/`-J`/lock-down experiment, no `Include`) | — |
+
+What the E1.6 spec must still establish, beyond M8: that `IdentityAgent none` is honoured at authentication time (ssh_config(5) says so; the
+agent leg (d) of the parent's §7 measures it); the Windows environment list (M9); whether two files in `UserKnownHostsFile` behave on Win32-OpenSSH
+as on OpenSSH 10.2 (two are accepted, new keys go to the first — measured here); the exact journal sentences for the hop refusals (one shape, no
+hop name in the body: `BRIDGE_USE_REFUSED` to the agent, as `bridgedRefusal` does today, `sshUseActions.ts:113-121`).
+
+`todo/PLAN_bridge_dialogs_nobody_answers.md`, which C.11 and D.3 name, is retired by the same revision (parent §8, §2.1 Q6): no backoff and no probe,
+because §4.10 raises no new prompt while one stands; its two recorded decisions (the `busy` sentence stays; the key-file leftover waits for E4) are in
+the parent's §4.10 and §8.
+
+The ledger decision is the parent's, not this section's; the parent is stopped and this amendment is part of the re-review's revision, which is
+not counted.

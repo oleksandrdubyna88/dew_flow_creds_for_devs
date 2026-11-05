@@ -1,7 +1,7 @@
 # PLAN — The scoped remote bridge, E1: the authorization boundary. Nothing reaches a person.
 
-> Status: **plan only, nothing implemented yet, 2026-11-04.** Stories of epic E1 of [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) (§4.1, §4.2, §4.3 schema only, §4.8, §5 steps 1-3, §7, `## Epics` E1).
-> Scope: `src_vs_code/src` (new modules, the broker, one wiring argument), `src_vs_code/scripts/emit-contract.mjs`, `contract/broker-v1.json`. No client, no UI, no publisher, no server change. Branch `feat/remote-bridge-e1`; one gated commit, one PR.
+> Status: **in progress on `feat/remote-bridge-e1`, unmerged, 2026-11-05: E1.1-E1.3 built (with the S3 spec's Amendments 2-3), E1.4 saved unfinished on `wip/remote-bridge-e14-before-stop`, E1.5 and E1.6 added by the parent's revision for epoch 4 (the amendment at the end); the parent is stopped for re-review and nothing here is coded until epoch 4 opens.** Stories of epic E1 of [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) (§4.1, §4.2, §4.3 schema only, §4.8, §4.9 for the exec legs, §4.10, §5 steps 1-3 and 3a-3c, §7, `## Epics` E1).
+> Scope: `src_vs_code/src` (new modules, the broker, one wiring argument), `src_vs_code/scripts/emit-contract.mjs`, `contract/broker-v1.json`, `src_vs_code/scripts/itestForwardAgent.cjs` and `itestSshd.cjs` (E1.6). No client, no UI, no publisher, no server change. Branch `feat/remote-bridge-e1`; the PR shape is the epoch 4 amendment's, not "one PR".
 
 Every path below is relative to `src_vs_code/src/` unless it says otherwise. Every `file:line` was opened on commit c6800b8.
 
@@ -509,3 +509,52 @@ while its call waits is refused at the gate with `GRANT_NOT_ALLOWED`; the refere
 listing reads the scope after its await; `expiredMessage` moves to a pure `grantWords.ts` so R2 holds transitively; `acquireExecSlot` moves
 to `execSlots.ts` to pay for the gate. `credsAgentServer.ts` ends at 787 after the fix-forward and 788 after E1.4; `extension.ts` does not grow.
 Order: E1.3's fix-forward, then E1.4.
+
+## Amendment, epoch 4 (2026-11-05)
+
+The parent plan stopped a second time (change 3.2, `7996d07`) and was revised whole for epoch 4 before the sort and the re-review. What
+that revision changes for this document; nothing is deleted. The parent's §4.9 (the SSH contract), §4.10 (the consent contract), §2.1
+(the owner's questions and the defaults built under) and `## Epics` E1 are the authority where they and an earlier passage here differ.
+
+1. **Two stories are added: E1.5 and E1.6.** The epic is not re-split into more epics; the review boundaries are. Who writes what:
+
+   | Story | Area | Spec and scenarios | Code and tests | Review | Security judgement |
+   |---|---|---|---|---|---|
+   | E1.5 | The consent lifecycle: the one place owned by the dialog until a person's act, never by a timer; the 504 sentence; the late-answer line; `Deny` first on a bridged modal; the ownership in its own module when a file would be squeezed | **Fable**, `todo/PLAN_remote_bridge_scoped_E1_S5_spec.md`, from the parent's §4.10, when the story starts | Sonnet | Opus | Fable, at review, outside the quota (authorisation: what frees the place) |
+   | E1.6 | SSH execution containment: the per-call `-F` file with per-hop blocks and the lock-down, per-leg identities and the hop refusals, the environment allow-list, the host-key rules, itest legs (a)-(g) of the parent's §7 | **Fable**, `todo/PLAN_remote_bridge_scoped_E1_S6_spec.md`, from the parent's §4.9, when the story starts and **after M8 is recorded** | Sonnet | Opus | Fable, at review, outside the quota (authentication: what a leg offers and to whom) |
+
+   Each spec gets its own `todo/README.md` row in the commit that creates it. E1.6's spec may reuse Amendment 4's D.1 mechanics that
+   still stand (the `-F` file, `-J`'s child inheriting it, the hop leg's `BatchMode yes` / `PasswordAuthentication no` /
+   `KbdInteractiveAuthentication no`, the itest hop pair of legs 0, 5, 6) and must drop what §4.9 overturns (the `Include` lines, the hop
+   authenticating by the person's agent, `SSH_AUTH_SOCK` kept in the environment, `process.env` spread into the child).
+2. **The PR shape (parent §2.1 Q7, default).** E1.1-E1.3 as built, with Amendments 2-3 and Amendment 4's D.5-D.10 as E1.3's closing
+   commit, merge as **partial E1** when R1, R4 and the pre-PR `git diff --exit-code` line hold. E1.4, E1.5 and E1.6 follow as one PR
+   each, in that order, each with its own code gate. "All four are one commit on this branch" (§Order) and "one gated commit, one PR"
+   (the status line, §Stories) are superseded. E2 opens nothing until the three are merged.
+3. **E1.4 is kept.** The work on `wip/remote-bridge-e14-before-stop` (`c4b7add`: server stamps, the quiet switch, the stamp behind the
+   launch gate, the modal line, the bridge mark on journal lines, their tests) is coded to the S4 spec with §S4.10 and is finished on the
+   tree the partial-E1 merge leaves: its *As built*, the ratchet, the itests, the .NET build and `plan-lifecycle` were not run on that
+   tree. The sort of the done work marks it; this amendment only says where it goes if it fits. E1.4 does not take `KEPT_PLACE_MS`, the
+   button order or the 504 sentence: those are E1.5's.
+4. **Amendment 4 of the S3 spec is partly superseded** (its own Amendment 5 says which items): D.1's `Include` design and "agent or key"
+   for a hop, and D.2's timer, are gone; D.3 and D.5-D.10 stand. Nothing of Amendment 4 is built yet.
+5. **The jump paragraph, narrowed again.** "The in-scope entry connects exactly as the person configured it" (§E1.3 *The jump chain is
+   not a scope target*, the S3 spec's §S3.1 item 1) is true of the typed chain and false of `~/.ssh/config`: on a bridge the chain is the
+   entry's `jumpHostEntityId` walk and nothing the person's files add, and each hop authenticates with its own entry's key alone (parent
+   §4.9, Q1). The jump chain stays no scope target; a hop entry that cannot authenticate that way is refused with the generic sentence
+   and the reason in the journal, like a linked key `ssh` cannot load.
+6. **What E1 owns, extended (§Which story owns each fact).**
+
+   | Fact | Owner | Test |
+   |---|---|---|
+   | The dialog place is freed by a person's act or the call's end, never by time | E1.5 | the parent's §7 consent-contract cases |
+   | A bridged `ssh` reads no configuration but the per-call file and gets no environment but the allow-list | E1.6 | §7 SSH-contract legs (b), (c) |
+   | Each leg offers one identity, its own entry's; no agent, no default file | E1.6 | legs (d), (e) |
+   | A hop never receives the destination's password | E1.6 | leg (a) |
+   | A password destination is pinned, or refused | E1.6 | leg (f) |
+7. **Binding constraints, read again.** `credsAgentServer.ts` is 789 at `7996d07` (the amendments' counts; Amendment 4 would have brought
+   it to 792). E1.5 and E1.6 add nothing there that a new module can hold: the place's ownership goes to `consentPlace.ts` if
+   `aliasThrottle.ts` would need the room, and the file writer to `keyInstaller.ts` or a new `bridgedSshConfig.ts`. The ceiling is a
+   size; the review judges the ownership, not the count.
+8. **M-list.** M8 is E1.6's entry condition and is done by the owner before E1.6's spec is written; M9 (the Windows environment list)
+   and M10 (Enter on a bridged modal) are recorded with E1.6 and E1.5. The M4 table above is unchanged and still owed.
