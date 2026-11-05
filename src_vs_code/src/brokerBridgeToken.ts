@@ -2,7 +2,7 @@ import type * as http from 'node:http';
 import type { CallerLabel } from './brokerCaller';
 import type { BrokerDoor } from './brokerMcpDoor';
 import { GRANT_NOT_ALLOWED } from './brokerRequests';
-import type { Grant } from './grantRegistry';
+import type { Grant, GrantStatus } from './grantRegistry';
 
 /**
  * A token on a bridge door authenticates only (E1.3, §S3.1 item 4).
@@ -21,12 +21,14 @@ import type { Grant } from './grantRegistry';
 export async function bridgedTokenCall(
   door: BrokerDoor,
   res: http.ServerResponse,
-  token: Pick<Grant, 'secret' | 'accountId' | 'entityId' | 'entityName' | 'kind' | 'status'>,
+  token: Pick<Grant, 'secret' | 'accountId' | 'entityId' | 'entityName' | 'kind'>,
   action: string,
   body: Record<string, unknown>,
   caller: CallerLabel | undefined,
+  /** The token's status NOW, read after the body arrived: a Deny landing while the body was read is seen here, not at the lookup. */
+  status: () => GrantStatus | undefined,
 ): Promise<void> {
-  if (token.status === 'denied') {
+  if (status() === 'denied') {
     door.refuse(res, 'denied', GRANT_NOT_ALLOWED, token, action, undefined, caller);
     return;
   }

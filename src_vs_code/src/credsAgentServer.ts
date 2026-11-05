@@ -115,7 +115,7 @@ export class CredsAgentServer implements vscode.Disposable {
     // Checked, not trusted: five of the seven callers are `.cjs`, where a misspelled key is silent
     // by construction — every hook is optional, so `resolveAlais` reads as "switched off".
     this.hooks = checkedHooks(hooks);
-    this.gate = new ConsentGate({ grants: this.grants, actions, onUserPresent, log: (entry) => this.log(entry), prompted: (q) => this.ceilings.prompted(q.grant, q.via, Date.now()) });
+    this.gate = new ConsentGate({ grants: this.grants, actions, onUserPresent, log: (entry) => this.log(entry), prompted: (q) => this.ceilings.prompted(q.grant, q.via, Date.now()), dialogClosed: (q) => this.ceilings.dialogClosed(q.grant, q.via) });
     // Built once, in `activate`: the moment to retire the announcements of windows that crashed — only those whose
     // process is provably gone, never this window's own or a live one (PLAN_stale_endpoint_files_slow_every_refusal.md).
     if (this.hooks.storageDir !== undefined) {
@@ -223,9 +223,9 @@ export class CredsAgentServer implements vscode.Disposable {
       // `respondError` logs nothing without a grant — an unknown token is probed legitimately, and a
       // line per probe would drown the real calls — but this is no probe: it is the one sign that a
       // runaway loop, or a process working through the entries a policy opened, exists, and a rate
-      // limit nobody can see having fired is one nobody can diagnose. `via: 'mcp'` is a fact, not a
-      // guess: the alias route always prompts; only the MCP door has a policy to answer for a person.
-      this.log({ grant: '—', entityName: '', action: 'request', outcome: 'too_many_requests', detail: refused.message, via: 'mcp' });
+      // limit nobody can see having fired is one nobody can diagnose. The door is the refusal's own (`aliasThrottle.ts`):
+      // `mcp` is a fact for the silent ceiling, which only the MCP door has a policy to reach, and an asking call names none.
+      this.log({ grant: '—', entityName: '', action: 'request', outcome: 'too_many_requests', detail: refused.message, via: refused.via });
     }
     this.respondError(res, 'too_many_requests', refused.message);
     return undefined;
@@ -492,7 +492,7 @@ export class CredsAgentServer implements vscode.Disposable {
     }
 
     const who: RequestWho = { via: 'token', caller: callerFrom(body), signal };
-    await (view.bridge === undefined ? this.perform(res, grant, action, body, who) : bridgedTokenCall(this.doorFor(signal, view, 'token', grant.secret), res, grant, action, body, who.caller));
+    await (view.bridge === undefined ? this.perform(res, grant, action, body, who) : bridgedTokenCall(this.doorFor(signal, view, 'token', grant.secret), res, grant, action, body, who.caller, () => this.grants.get(grant.secret)?.status));
   }
 
   /**
@@ -549,6 +549,7 @@ export class CredsAgentServer implements vscode.Disposable {
   ): UseAction | undefined {
     const useAction = this.actions.resolve(grant.kind, action);
     if (useAction === undefined) {
+      this.grants.drop(grant.secret);
       this.respondError(res, 'not_supported', `"${grant.kind}" entities cannot ${action}.`, grant, action, undefined, who.via, who.caller);
       return undefined;
     }
@@ -556,6 +557,7 @@ export class CredsAgentServer implements vscode.Disposable {
     // A bridged call's stored command is checked once more before anybody is asked: a reference the scope does not serve.
     const refused = validated.ok ? referenceRefusal(grant, this.hooks.bridgeWall) : validationRefusal(validated);
     if (refused !== undefined) {
+      this.grants.drop(grant.secret);
       this.respondError(res, refused.code, refused.message, grant, action, undefined, who.via, who.caller);
       return undefined;
     }

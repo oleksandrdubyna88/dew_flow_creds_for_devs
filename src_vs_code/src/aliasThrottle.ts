@@ -72,6 +72,19 @@ export const WINDOW_MS = 60_000;
  */
 export const SILENT_CEILING = 60;
 
+/**
+ * How many calls that ASK (raise a dialog, or would have, had nothing refused them first) a door may make inside
+ * {@link WINDOW_MS}, refusals included — Amendment 2, B.1.
+ *
+ * <p>The dialog budget counts dialogs SHOWN, which is right for a person's patience and leaves a hole: a call refused
+ * before its dialog (an empty command, an entry the wall bars) showed nobody anything, spent nothing, and cost the broker
+ * a minted grant and two journal lines. A loop of them was bounded by nothing. This is the same number as
+ * {@link SILENT_CEILING} for the same kind of loop — one with no human in it — and it narrows nothing a person can do:
+ * a terminal or an agent that thinks between calls is nowhere near sixty a minute.</p>
+ */
+export const ASKING_CEILING = 60;
+
+
 export type ThrottleVerdict = 'allow' | 'busy' | 'too-many';
 
 /** The count: stamps inside the window that ends now, both bounds ({@link inWindow}). */
@@ -90,10 +103,19 @@ export class SlidingWindow {
     return this.stamps.length >= this.max;
   }
 
-  /** Count one at `nowMs`. */
+  /**
+   * Count one at `nowMs`.
+   *
+   * <p>Only the newest `max` are kept: the window is full exactly when the `max`-th newest stamp is still inside it, so
+   * older ones decide nothing, and a flood of refusals that are stamped (B.1) cannot grow this array — or the cost of
+   * pruning it — with the request rate.</p>
+   */
   stamp(nowMs: number): void {
     this.prune(nowMs);
     this.stamps.push(nowMs);
+    if (this.stamps.length > this.max) {
+      this.stamps.shift();
+    }
   }
 
   /** Full: `too-many`, nothing counted. Otherwise count it and allow. */
@@ -103,6 +125,11 @@ export class SlidingWindow {
     }
     this.stamp(nowMs);
     return 'allow';
+  }
+
+  /** How many stamps are kept: at most `max`. For the test. */
+  stored(): number {
+    return this.stamps.length;
   }
 
   /** Nothing is inside the window: the coordinator may forget the door this belongs to. */
@@ -121,20 +148,54 @@ export class SlidingWindow {
  * door: the person is one person with one screen, whichever door the second dialog would come from.
  */
 export class OneInFlight {
-  private held = false;
+  private nextId = 1;
+  /** The holding that has the place now, if any. */
+  private owner: number | undefined;
+  /** A dialog of that holding is on screen. */
+  private dialog = false;
 
-  /** Take the one place; `false` when it is taken. */
-  hold(): boolean {
-    if (this.held) {
-      return false;
+  /** Take the place; `undefined` while it is held. The holding is this ADMISSION's, so a stale release cannot free a later holder's place. */
+  hold(): Holding | undefined {
+    if (this.owner !== undefined) {
+      return undefined;
     }
-    this.held = true;
-    return true;
+    const held: Holding = { id: this.nextId };
+    this.nextId += 1;
+    this.owner = held.id;
+    return held;
   }
 
-  release(): void {
-    this.held = false;
+  /** The holding that has the place now, or `undefined` while it is free. */
+  holder(): Holding | undefined {
+    return this.owner === undefined ? undefined : { id: this.owner };
   }
+
+  /** A dialog is on screen for the holder: the place now belongs to the dialog. */
+  prompted(held: Holding): void {
+    if (this.owner === held.id) {
+      this.dialog = true;
+    }
+  }
+
+  /** The dialog closed — the person's click, or the 5-minute timeout: the place is free, whatever the call does next. */
+  dialogClosed(held: Holding): void {
+    if (this.owner === held.id) {
+      this.owner = undefined;
+      this.dialog = false;
+    }
+  }
+
+  /** The call ended. Frees the place only if no dialog of this holding is on screen, and only if it still holds the place. */
+  released(held: Holding): void {
+    if (this.owner === held.id && !this.dialog) {
+      this.owner = undefined;
+    }
+  }
+}
+
+/** One admission's claim on the one place: the id lets a late release tell that the place is no longer its own. */
+export interface Holding {
+  readonly id: number;
 }
 
 /**
@@ -188,8 +249,12 @@ const TOOK_NOTHING = (): void => undefined;
 
 /** A held slot, or — when there was none to take — the refusal to answer with. */
 export interface Admission extends Slot {
-  /** `undefined` is admission; otherwise what to tell the caller, and whether to write it down. */
-  readonly refusal?: { message: string; report: boolean };
+  /**
+   * `undefined` is admission; otherwise what to tell the caller, whether to write it down, and — when it is written down —
+   * the door the line may name: `mcp` for the silent ceiling, which only the MCP door has a policy to reach, and none for an
+   * asking call, which can come by any door.
+   */
+  readonly refusal?: { message: string; report: boolean; via?: AuditDoor };
 }
 
 /** The key of the local door: the main port and the socket, which are one window's callers with no token. */
@@ -203,68 +268,113 @@ function doorOfDialog(bridgeId: string | undefined, via: AuditDoor): string | un
   return via === 'token' ? undefined : LOCAL_DOOR;
 }
 
-/** One door's counts: its modal window, its silent window, and when its last silent refusal was written down. */
+/** One door's counts: its three windows, and when its last refusal was written down. */
 interface DoorCounts {
   readonly modal: SlidingWindow;
   readonly silent: SlidingWindow;
+  /** Calls that ask, stamped at admission AND at refusal, because a refusal is a call (B.1). */
+  readonly asking: SlidingWindow;
   reportedAt: number | undefined;
 }
 
-const idle = (counts: DoorCounts, nowMs: number): boolean => counts.modal.idle(nowMs) && counts.silent.idle(nowMs);
+const idle = (counts: DoorCounts, nowMs: number): boolean => counts.modal.idle(nowMs) && counts.silent.idle(nowMs) && counts.asking.idle(nowMs);
+
+/** The door a journalled refusal may name: `mcp` for the silent ceiling (only that door has a policy to reach it), none for an asking call. */
+const viaOf = (ceiling: Ceiling): AuditDoor | undefined => (ceiling === 'silent' ? 'mcp' : undefined);
+
+/** Which ceiling refused: the sentence and whether the journal hears of it follow from it. */
+type Ceiling = 'busy' | 'modal' | 'asking' | 'silent';
 
 /**
  * What a caller with no token answers to, per door, and which ceiling a given call gets.
  *
  * <p>Held together because the rule that picks between them is the whole of what the quiet path changed at the door: a
- * call that will ask answers to the modal budget, a call that will not answers to the silent ceiling. A server holding
- * the pieces and choosing in every admit and every release is a server that one day chooses differently in one of
- * them.</p>
+ * call that will ask answers to the asking ceiling and the modal budget, a call that will not answers to the silent
+ * ceiling. A server holding the pieces and choosing in every admit and every release is a server that one day chooses
+ * differently in one of them.</p>
  *
  * <p>The modal window is NOT stamped here. A call admitted as one that will ask holds the one place and is checked
- * against its door's window; the stamp is written by {@link prompted}, from the consent gate, when a dialog is shown.
- * The silent window is stamped at admission, because for a call that raises no dialog admission is the only moment
- * there is.</p>
+ * against its door's windows; the modal stamp is written by {@link prompted}, from the consent gate, when a dialog is
+ * shown, and the place is the dialog's from then until {@link dialogClosed}. The asking and silent windows are stamped at
+ * admission, because for a call that raises no dialog admission is the only moment there is; the asking window is also
+ * stamped by a refusal.</p>
  */
 export class TokenlessCeilings {
   /** The one dialog in flight, for every door together. */
   private readonly flight = new OneInFlight();
   private readonly doors = new Map<string, DoorCounts>();
+  /** The holding whose dialog is on screen, set by {@link prompted} and consumed by {@link dialogClosed}. */
+  private open: Holding | undefined;
 
   /**
    * Whether this call may proceed, and — when it may not — what to say and whether to record it. `undefined` refusal is
    * admission.
    *
-   * <p>Prompts: the place held → `busy`; this door's modal window full → `too-many` and nothing held; else the place is
-   * held and the call allowed, with NO stamp. Silent: this door's silent window admits (and stamps) or refuses; no place
-   * is taken, because that rule protects a human from a pile-up and this path has no human to protect.</p>
+   * <p>Prompts: the place held → `busy`; this door's asking window full → `too-many`; its modal window full →
+   * `too-many`; else the place is held and the call allowed. Neither refusal holds the place, and both count as a call in
+   * the asking window. Silent: this door's silent window admits (and stamps) or refuses; no place is taken, because that
+   * rule protects a human from a pile-up and this path has no human to protect.</p>
    */
   admit(prompts: boolean, nowMs: number, door: string = LOCAL_DOOR): Admission {
     const counts = this.countsOf(door, nowMs);
-    const verdict = prompts ? this.askingVerdict(counts, nowMs) : counts.silent.admit(nowMs);
-    return verdict === 'allow' ? this.admitted(prompts) : this.refused(verdict, prompts, door, counts, nowMs);
+    return prompts ? this.admitAsking(counts, door, nowMs) : this.admitSilent(counts, door, nowMs);
   }
 
-  /** The slot an allowed call holds: the one place for a call that will ask, nothing for one that will not. */
-  private admitted(prompts: boolean): Admission {
-    return prompts ? this.holding() : { release: TOOK_NOTHING };
+  private admitSilent(counts: DoorCounts, door: string, nowMs: number): Admission {
+    return counts.silent.admit(nowMs) === 'allow' ? { release: TOOK_NOTHING } : this.refused('silent', door, counts, nowMs);
   }
 
-  private refused(verdict: Exclude<ThrottleVerdict, 'allow'>, prompts: boolean, door: string, counts: DoorCounts, nowMs: number): Admission {
-    return {
-      refusal: { message: this.describe(verdict, prompts, door), report: !prompts && this.firstThisWindow(counts, nowMs) },
-      release: TOOK_NOTHING,
-    };
+  private admitAsking(counts: DoorCounts, door: string, nowMs: number): Admission {
+    const held = this.flight.hold();
+    if (held === undefined) {
+      return this.refused('busy', door, counts, nowMs);
+    }
+    const over = this.askingRefusal(counts, nowMs);
+    if (over !== undefined) {
+      this.flight.released(held);
+      return this.refused(over, door, counts, nowMs);
+    }
+    return this.holding(held);
+  }
+
+  /** Why an asking call is refused by a count, in the order of the checks, stamping the asking window when it is admitted. */
+  private askingRefusal(counts: DoorCounts, nowMs: number): Ceiling | undefined {
+    const ceiling = counts.asking.full(nowMs) ? 'asking' : counts.modal.full(nowMs) ? 'modal' : undefined;
+    counts.asking.stamp(nowMs);
+    return ceiling;
+  }
+
+  private refused(ceiling: Ceiling, door: string, counts: DoorCounts, nowMs: number): Admission {
+    const writtenDown = (ceiling === 'silent' || ceiling === 'asking') && this.firstThisWindow(counts, nowMs);
+    return { refusal: { message: this.describe(ceiling, door), report: writtenDown, via: viaOf(ceiling) }, release: TOOK_NOTHING };
   }
 
   /**
-   * A dialog was raised for this grant: count it in the modal window of its door. Nothing for a local token call
-   * (`via === 'token'` and no bridge), which is not throttled and never was. On a bridge every door, token included,
-   * is bridged and counted.
+   * A dialog was raised for this grant: count it in the modal window of its door, and make the place the dialog's.
+   * Nothing for a local token call (`via === 'token'` and no bridge), which is not throttled and never was. On a bridge
+   * every door, token included, is bridged and counted.
    */
   prompted(grant: { bridge?: { context: { bridgeId: string } } }, via: AuditDoor, nowMs: number): void {
     const door = doorOfDialog(grant.bridge?.context.bridgeId, via);
-    if (door !== undefined) {
-      this.countsOf(door, nowMs).modal.stamp(nowMs);
+    if (door === undefined) {
+      return;
+    }
+    this.countsOf(door, nowMs).modal.stamp(nowMs);
+    this.open = this.flight.holder();
+    if (this.open !== undefined) {
+      this.flight.prompted(this.open);
+    }
+  }
+
+  /**
+   * The dialog raised for this grant closed — answered, or timed out: the place is free again, whatever its call does
+   * next. Pairs with {@link prompted} and frees only the holding that one marked: a second or late close names a holding
+   * that no longer has the place, so it frees nothing of the next holder.
+   */
+  dialogClosed(grant: { bridge?: { context: { bridgeId: string } } }, via: AuditDoor): void {
+    const held = this.open;
+    if (held !== undefined && doorOfDialog(grant.bridge?.context.bridgeId, via) !== undefined) {
+      this.flight.dialogClosed(held);
     }
   }
 
@@ -279,41 +389,27 @@ export class TokenlessCeilings {
     return this.doors.size;
   }
 
-  private askingVerdict(counts: DoorCounts, nowMs: number): ThrottleVerdict {
-    if (!this.flight.hold()) {
-      return 'busy';
-    }
-    if (counts.modal.full(nowMs)) {
-      this.flight.release();
-      return 'too-many';
-    }
-    return 'allow';
-  }
-
-  /** The place this call holds, given back once, by the call that took it. */
-  private holding(): Slot {
-    let given = false;
-    return {
-      release: () => {
-        if (!given) {
-          given = true;
-          this.flight.release();
-        }
-      },
-    };
+  /** The place this call holds, given back by the call that took it — and only if the place is still its own, so a second release frees nothing. */
+  private holding(held: Holding): Slot {
+    return { release: () => this.flight.released(held) };
   }
 
   private countsOf(door: string, nowMs: number): DoorCounts {
     let counts = this.doors.get(door);
     if (counts === undefined) {
       this.prune(nowMs);
-      counts = { modal: new SlidingWindow(MAX_PROMPTS, WINDOW_MS), silent: new SlidingWindow(SILENT_CEILING, WINDOW_MS), reportedAt: undefined };
+      counts = {
+        modal: new SlidingWindow(MAX_PROMPTS, WINDOW_MS),
+        silent: new SlidingWindow(SILENT_CEILING, WINDOW_MS),
+        asking: new SlidingWindow(ASKING_CEILING, WINDOW_MS),
+        reportedAt: undefined,
+      };
       this.doors.set(door, counts);
     }
     return counts;
   }
 
-  /** Doors with nothing in either window, except the local one, which is always there. */
+  /** Doors with nothing in any window, except the local one, which is always there. */
   private prune(nowMs: number): void {
     for (const [door, counts] of this.doors) {
       if (door !== LOCAL_DOOR && idle(counts, nowMs)) {
@@ -323,14 +419,17 @@ export class TokenlessCeilings {
   }
 
   /** What to tell a caller that was refused, in words it can act on: a sentence about THIS ceiling, in the door's own terms. */
-  private describe(verdict: Exclude<ThrottleVerdict, 'allow'>, prompts: boolean, door: string): string {
-    if (verdict === 'busy') {
+  private describe(ceiling: Ceiling, door: string): string {
+    if (ceiling === 'busy') {
       return 'Another request is already waiting for the person to answer. Try again once they have.';
     }
     const who = door === LOCAL_DOOR ? 'a caller without a token' : 'this Remote Bridge';
-    return prompts
-      ? `Too many requests: ${who} may prompt at most ${MAX_PROMPTS} times ${over(WINDOW_MS)}.`
-      : `Too many requests: ${who} may make at most ${SILENT_CEILING} silent calls ${over(WINDOW_MS)} — ones a consent policy lets through without a prompt.`;
+    const says = {
+      modal: `may prompt at most ${MAX_PROMPTS} times ${over(WINDOW_MS)}.`,
+      asking: `may ask at most ${ASKING_CEILING} times ${over(WINDOW_MS)}, calls refused before any dialog included.`,
+      silent: `may make at most ${SILENT_CEILING} silent calls ${over(WINDOW_MS)} — ones a consent policy lets through without a prompt.`,
+    };
+    return `Too many requests: ${who} ${says[ceiling]}`;
   }
 
   /**

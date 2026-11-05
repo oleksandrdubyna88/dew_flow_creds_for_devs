@@ -1,8 +1,8 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Reply, code, message } from './bridgeDoorHarness';
+import { Reply, code, message, pause } from './bridgeDoorHarness';
 import { loadBridgeModules, present, put } from './bridgeModules';
-import { ACCOUNT, Ask, SERVER, WallWorld, registryOf, send, until, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
+import { ACCOUNT, Ask, SERVER, WallWorld, registryOf, send, sendSlow, until, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
 
 /**
  * What a call does AFTER the wall let it in (E1.3, S8-S12, S14, S21): the references in the stored command, the scope
@@ -414,6 +414,37 @@ test('a grant a bridge door mints is a call grant, reclaimed before any token so
     const scopes = [...registryOf(ww).grants.values()].filter((grant) => grant.bridge !== undefined).map((grant) => grant.scope);
     assert.deepEqual(scopes, ['call', 'call', 'call']);
     assert.equal(registryOf(ww).get(token)?.scope, 'token', 'and the token itself is still the token it was');
+  } finally {
+    ww.dispose();
+  }
+});
+
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Amendment 2, B.4 — a Deny that lands between the token's lookup and its body
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('T1: a token denied after the bridge looked it up and before its body arrived is refused — no dialog, no minted grant', async () => {
+  const ww = await wallWorld({ allows: 0 });
+  try {
+    const token = await ww.tokenFor(ACCOUNT, 'e1', 'prod');
+    let sendBody = (): void => undefined;
+    const bodyAfter = new Promise<void>((resolve) => {
+      sendBody = resolve;
+    });
+    const slow = sendSlow(viaBridge(ww.bridge), ASK_TOKEN(token), bodyAfter);
+    await pause(100); // the headers have been read and the token looked up: it was pending
+    ww.w.answers.push('Deny');
+    const local = await send(viaMain(ww), ASK_TOKEN(token));
+    assert.equal(local.status, 403, 'a local dialog was answered Deny');
+    const dialogs = ww.w.dialogs.length;
+    const journal = ww.w.audit.length;
+    sendBody();
+    const reply = await slow;
+    assert.deepEqual([reply.status, code(reply), message(reply)], [403, 'denied', GRANT_NOT_ALLOWED]);
+    assert.equal(ww.w.dialogs.length, dialogs, 'and nobody was asked');
+    assert.equal(ww.w.audit.slice(journal).some((line) => line.includes('minted')), false, 'no call grant was minted for it');
+    assert.deepEqual(ww.w.ran, [], 'nothing ran');
   } finally {
     ww.dispose();
   }

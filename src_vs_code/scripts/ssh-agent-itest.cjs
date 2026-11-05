@@ -29,12 +29,17 @@
 // *Allow longer…*; a lock ends the window and login 3 asks, without it. An RSA key adds the SHA-1 line: a login
 // that asks for `ssh-rsa` (SHA-1) is never covered by the long window and its prompt says why. The sshd helpers
 // live in `itestSshd.cjs`, shared with section 5.
+//
+// Section 8 (POSIX only, `itestForwardAgent.cjs`) is the measurement behind `-o ForwardAgent=no` on a bridged call: a real
+// `ssh` with `Host * / ForwardAgent yes` in its config and a live agent reaches a real `sshd -d`, and the remote has an
+// SSH_AUTH_SOCK without the option and none with it.
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFile } = require('node:child_process');
 const { SSHD, startSshd, launch, endChild, lastLines, login } = require('./itestSshd.cjs');
+const { liveNoAgentForward } = require('./itestForwardAgent.cjs');
 
 const OUT = path.join(__dirname, '..', 'out');
 const { SshAgentServer, agentSocketPath } = require(path.join(OUT, 'sshAgentServer.js'));
@@ -201,6 +206,8 @@ async function main() {
     await lockEndsTheWindow(pem, publicPath, dir);
     // ---- 7. a real login window: Allow longer… lets the next real ssh login through (#197, E3.4) -----
     await liveLoginWindow(pem, dir);
+    // ---- 8. a bridged call forwards no agent, whatever ~/.ssh/config says (Amendment 2, B.3) ------------
+    await liveNoAgentForward(check, OUT);
   });
 
   // --- what makes `-A` more than a flag (2026-08-26) --------------------------------------

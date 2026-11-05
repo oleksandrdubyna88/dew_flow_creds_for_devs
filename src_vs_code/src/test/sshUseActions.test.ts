@@ -66,6 +66,8 @@ interface Parts {
   runFails?: boolean;
   /** The window refuses the connection — a remote one can, and the action must not claim success. */
   connectRefuses?: boolean;
+  /** The credential read itself fails (a keychain that errors): `prepareAuth` throws instead of answering (X1). */
+  credentialThrows?: boolean;
 }
 
 const ENTITY = {
@@ -104,7 +106,8 @@ async function world(parts: Parts): Promise<World> {
 function mocks(parts: Parts, storageDir: string, log: Log): Record<string, unknown> {
   return {
     './sshCredential': {
-      resolveSshCredential: (): Promise<unknown> => Promise.resolve(parts.source),
+      resolveSshCredential: (): Promise<unknown> =>
+        parts.credentialThrows === true ? Promise.reject(new Error('the keychain would not answer')) : Promise.resolve(parts.source),
     },
     './keyInstaller': {
       // A REAL file, so the `finally` cleanup is observed by asking the filesystem rather
@@ -233,6 +236,23 @@ test('an entity with no credential left is refused, and the slot is given back',
 
     assert.equal((result.body.error as { code: string }).code, 'no_credential');
     assert.equal(w.tally.slotsHeld, 0);
+  } finally {
+    cleanup(w);
+  }
+});
+
+test('X1: a credential read that THROWS gives the slot back and fails the call — it neither leaks nor hangs', async () => {
+  // `prepareAuth` is awaited after the slot is taken and before the `try` that releases it: a throw out of it used to
+  // leave the slot held for ever, and a handful of such calls would have exhausted the pool.
+  const parts: Parts = { source: KEY_SOURCE, credentialThrows: true };
+  const w = await world(parts);
+  try {
+    await assert.rejects(exec(w, parts), { message: 'the keychain would not answer' });
+    assert.equal(w.tally.slotsHeld, 0, 'the slot came back');
+    assert.deepEqual(w.runs, [], 'and nothing ran');
+    parts.credentialThrows = false; // the mock reads the world's own parts
+    const result = await exec(w, parts);
+    assert.equal(result.status, 200, 'the next call is served');
   } finally {
     cleanup(w);
   }

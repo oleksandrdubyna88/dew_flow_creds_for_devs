@@ -17,7 +17,7 @@ import { loadBridgeModules, put } from './bridgeModules';
  */
 
 const M = loadBridgeModules();
-const { SCOPE_STALE, SCOPES_DIR, SCOPES_LOCK_DIR, nodeScopeFs, scopeFileName } = M.scope;
+const { NO_SCOPE, SCOPE_STALE, SCOPES_DIR, SCOPES_LOCK_DIR, nodeScopeFs, scopeFileName } = M.scope;
 
 const A1 = 'a1';
 const S1 = 'server1';
@@ -50,7 +50,7 @@ test('S25: a scope narrowed in one window is the next read in another, with no r
     await put(a, A1, S1, ['e1']);
     assert.deepEqual([...b.read(A1, S1).entries], ['e1'], 'A narrowed; B\'s next read is the narrowed scope');
     assert.equal(b.read(A1, S1).admits(A1, 'e2'), false);
-    assert.equal(b.read(A1, S1).revision, 2);
+    assert.notEqual(b.read(A1, S1).revision, NO_SCOPE);
   });
 });
 
@@ -58,11 +58,11 @@ test('S25: a write made from an old copy is refused and restores nothing', async
   await twoWindows(async ({ a, b }) => {
     await put(a, A1, S1, ['e1', 'e2']);
     const copy = b.read(A1, S1);
-    assert.equal(copy.revision, 1, 'B looked at revision 1');
+    assert.notEqual(copy.revision, NO_SCOPE, 'B looked at a scope that exists');
     await put(a, A1, S1, ['e1']);
     await assert.rejects(b.set(A1, S1, ['e1', 'e2'], false, copy.revision), { message: SCOPE_STALE });
     assert.deepEqual([...a.read(A1, S1).entries], ['e1'], 'A\'s narrow stands: nothing was restored');
-    assert.equal(a.read(A1, S1).revision, 2);
+    assert.notEqual(a.read(A1, S1).revision, copy.revision, 'and A\'s revision is not the one B held');
   });
 });
 
@@ -71,16 +71,17 @@ test('S25: a window that forgot the scope cannot be undone by a window that stil
     await put(a, A1, S1, ['e1']);
     const copy = a.read(A1, S1);
     await b.forget(A1, S1);
-    await assert.rejects(a.set(A1, S1, ['e1'], false, copy.revision), { message: SCOPE_STALE }, 'the file is gone; it is at revision 0 now');
+    await assert.rejects(a.set(A1, S1, ['e1'], false, copy.revision), { message: SCOPE_STALE }, 'the file is gone; it is NO_SCOPE now');
     assert.equal(a.read(A1, S1).entries.size, 0, 'still forgotten');
-    assert.equal(a.read(A1, S1).revision, 0);
+    assert.equal(a.read(A1, S1).revision, NO_SCOPE);
   });
 });
 
 test('S25: two sets racing for one server from two windows — exactly one lands, the other is stale', async () => {
   await twoWindows(async ({ a, b }) => {
     await put(a, A1, S1, ['e1']);
-    const outcomes = await Promise.allSettled([a.set(A1, S1, ['from-a'], false, 1), b.set(A1, S1, ['from-b'], false, 1)]);
+    const held = a.read(A1, S1).revision;
+    const outcomes = await Promise.allSettled([a.set(A1, S1, ['from-a'], false, held), b.set(A1, S1, ['from-b'], false, held)]);
     const landed = outcomes.filter((outcome) => outcome.status === 'fulfilled');
     const refused = outcomes.filter((outcome) => outcome.status === 'rejected');
     assert.equal(landed.length, 1, 'one landed');
@@ -88,17 +89,17 @@ test('S25: two sets racing for one server from two windows — exactly one lands
     assert.equal((refused[0] as PromiseRejectedResult).reason.message, SCOPE_STALE);
     const winner = (await Promise.all([outcomes[0].status === 'fulfilled' ? 'from-a' : 'from-b']))[0];
     assert.deepEqual([...b.read(A1, S1).entries], [winner], 'the file holds the winner');
-    assert.equal(b.read(A1, S1).revision, 2, 'at revision 2: the loser did not write on top');
+    assert.equal(b.read(A1, S1).revision, (landed[0] as PromiseFulfilledResult<string>).value, 'at the winner\'s revision: the loser did not write on top');
   });
 });
 
-test('S25: a corrupt file written beside the store is an empty scope, and the next set expecting 0 replaces it', async () => {
+test('S25: a corrupt file written beside the store is an empty scope, and the next set expecting NO_SCOPE replaces it', async () => {
   await twoWindows(async ({ a, b, fileOf, scopesDir }) => {
     fs.mkdirSync(scopesDir, { recursive: true });
     fs.writeFileSync(fileOf(A1, S1), '{ half a file');
     assert.equal(b.read(A1, S1).entries.size, 0);
-    assert.equal(b.read(A1, S1).revision, 0);
-    assert.equal(await a.set(A1, S1, ['e1'], false, 0), 1);
+    assert.equal(b.read(A1, S1).revision, NO_SCOPE);
+    assert.equal(await a.set(A1, S1, ['e1'], false, NO_SCOPE), a.read(A1, S1).revision);
     assert.deepEqual([...b.read(A1, S1).entries], ['e1']);
     assert.equal(JSON.parse(fs.readFileSync(fileOf(A1, S1), 'utf8')).v, 1, 'what is on disk is a ScopeFile again');
   });
@@ -108,7 +109,7 @@ test('S25: the file carries whose it is, and the lock directory is left clean wh
   await twoWindows(async ({ a, dir, fileOf, scopesDir }) => {
     await put(a, A1, S1, ['e1']);
     const text = JSON.parse(fs.readFileSync(fileOf(A1, S1), 'utf8'));
-    assert.deepEqual(text, { v: 1, accountId: A1, serverEntityId: S1, entries: ['e1'], quiet: false, revision: 1, at: 1_000 });
+    assert.deepEqual(text, { v: 1, accountId: A1, serverEntityId: S1, entries: ['e1'], quiet: false, revision: a.read(A1, S1).revision, at: 1_000 });
     assert.deepEqual(fs.readdirSync(scopesDir), [scopeFileName(A1, S1)], 'only the file: no temp file stays behind');
     assert.ok(!fs.existsSync(nodePath.join(dir, SCOPES_LOCK_DIR)), 'and the lock is released');
   });
@@ -176,5 +177,25 @@ test('S25: a rename a reader is holding (EPERM/EBUSY, as on Windows) is retried,
     assert.ok(!fs.readdirSync(scopesDir).some((name) => name.endsWith('.tmp')), 'and leaves no temp file');
     const other = await renameFailing('EACCES', 1, () => io.write(nodePath.join(scopesDir, 'other.json'), '{}').catch(() => undefined));
     assert.equal(other, 1, 'any other error is not retried');
+  });
+});
+
+test('V1: forget, set again, and a copy from before the Close is stale — the revision is never reused', async () => {
+  await twoWindows(async ({ a, b }) => {
+    await put(a, A1, S1, ['e1', 'e2']);
+    const copy = a.read(A1, S1); // A's picker looked at the scope as it was
+    await b.forget(A1, S1); // the person closed the bridge in B...
+    const reopened = await b.set(A1, S1, ['e1'], false, NO_SCOPE); // ...and opened it again: a new pick, from nothing
+    assert.notEqual(reopened, copy.revision, 'the new file does not carry the old copy\'s revision');
+    await assert.rejects(a.set(A1, S1, ['e1', 'e2'], false, copy.revision), { message: SCOPE_STALE }, 'A\'s copy from before the Close cannot save over the new pick');
+    assert.deepEqual([...b.read(A1, S1).entries], ['e1'], 'the new pick stands');
+  });
+});
+
+test('V1: a set that expects the absent scope on a scope that exists is stale', async () => {
+  await twoWindows(async ({ a, b }) => {
+    await put(a, A1, S1, ['e1']);
+    await assert.rejects(b.set(A1, S1, ['e1', 'e2'], false, NO_SCOPE), { message: SCOPE_STALE });
+    assert.deepEqual([...a.read(A1, S1).entries], ['e1']);
   });
 });

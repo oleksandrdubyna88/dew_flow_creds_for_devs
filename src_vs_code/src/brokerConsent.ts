@@ -37,6 +37,12 @@ export interface ConsentGateDeps {
    * before it got here showed nobody anything and costs nothing; one that joins a dialog already open shows nothing new.
    */
   prompted?(question: ConsentQuestion): void;
+  /**
+   * The dialog raised for this question is gone: answered, or given up on at the timeout. The one place a dialog holds is
+   * given back here (`aliasThrottle.ts`), not when the call that raised it ends — a client that leaves does not take the
+   * modal off the screen.
+   */
+  dialogClosed?(question: ConsentQuestion): void;
 }
 
 /** One consent question, as the broker asks it. */
@@ -87,12 +93,7 @@ export class ConsentGate {
 
   private async ask(question: ConsentQuestion, stillWanted: () => boolean): Promise<boolean> {
     this.deps.prompted?.(question);
-    const choice = await withTimeout(
-      Promise.resolve(vscode.window.showWarningMessage(this.wording(question), { modal: true }, 'Allow', 'Deny')),
-      CONSENT_TIMEOUT_MS,
-      // The HTTP server keeps this process alive; the timer need not.
-      { unref: true },
-    );
+    const choice = await this.shown(question);
     // The defused modal (§3.3): it could not be closed when its requests left, so the answer it gives
     // after that is read here and applied to nothing.
     if (!stillWanted()) {
@@ -100,6 +101,24 @@ export class ConsentGate {
       return false;
     }
     return this.apply(question, choice);
+  }
+
+  /**
+   * The dialog, awaited for at most the timeout. In a `finally` that tells the throttle the dialog is gone before anything is
+   * decided from the answer, so a defused modal (its requests left) frees the place at its click, and a timeout frees it
+   * although VS Code cannot take the modal down.
+   */
+  private async shown(question: ConsentQuestion): Promise<string | undefined> {
+    try {
+      return await withTimeout(
+        Promise.resolve(vscode.window.showWarningMessage(this.wording(question), { modal: true }, 'Allow', 'Deny')),
+        CONSENT_TIMEOUT_MS,
+        // The HTTP server keeps this process alive; the timer need not.
+        { unref: true },
+      );
+    } finally {
+      this.deps.dialogClosed?.(question);
+    }
   }
 
   /** Allow or Deny, applied to the grant; anything else refuses this call and leaves it re-promptable. */

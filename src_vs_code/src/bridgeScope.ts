@@ -29,6 +29,7 @@ export {
   BridgeScopes,
   MAX_SCOPES,
   MAX_SCOPE_ENTRIES,
+  NO_SCOPE,
   SCOPES_DIR,
   SCOPES_LOCK_DIR,
   SCOPE_STALE,

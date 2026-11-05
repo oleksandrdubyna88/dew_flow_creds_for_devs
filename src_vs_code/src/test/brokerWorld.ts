@@ -168,6 +168,12 @@ function world(options: {
   /** Leave every dialog open until the test answers it through `w.openDialogs` (E4.S1). */
   holdDialogs?: boolean;
   /**
+   * How long the consent gate waits for an answer, in place of its five minutes (Amendment 2, P3). Passed to the
+   * server's graph as a mock of `./agentConsent` with the real module's other exports, so the dialog's timeout can be
+   * watched in milliseconds and nothing else of that module changes.
+   */
+  consentTimeoutMs?: number;
+  /**
    * A REAL action to serve on the `exec` route instead of the scripted stub — for a test about what that
    * action itself does when its request goes (E4.S3, the VPN start). The broker does not care which
    * action a route resolves to; the action's own `run` is the subject.
@@ -225,7 +231,7 @@ function world(options: {
       },
     },
     workspace: { getConfiguration: () => ({ get: settingsFor(options.maxCalls) }) },
-  });
+  }, consentMocks(options.consentTimeoutMs));
 
   const supported = options.supports ?? ['exec'];
   const action = (name: string): unknown => options.realActions?.[name] ?? options.realAction ?? scripted(name);
@@ -263,6 +269,11 @@ function world(options: {
     hooksFor(w, options),
   );
   return w;
+}
+
+/** `./agentConsent` with a shorter wait, or no mock at all: the module has no `vscode` in it, so the real one is spread. */
+function consentMocks(timeoutMs: number | undefined): Record<string, unknown> {
+  return timeoutMs === undefined ? {} : { './agentConsent': { ...(require('../agentConsent') as object), CONSENT_TIMEOUT_MS: timeoutMs } };
 }
 
 /**

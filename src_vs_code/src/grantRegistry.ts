@@ -55,6 +55,15 @@ export interface Grant {
   readonly bridge?: BridgeGrant;
 }
 
+/** Eviction, in one ordered list so the registry never reaches a token while a call grant exists. */
+const EVICTION_ORDER: ReadonlyArray<(grant: Grant) => boolean> = [
+  (g) => g.scope === 'call' && g.status !== 'allowed', // refused or abandoned calls
+  (g) => g.scope === 'call', // allowed calls (silent MCP use)
+  (g) => g.status === 'denied', // tombstones (already capped at 64)
+  (g) => g.scope === 'token' && g.status === 'pending', // a token whose first dialog is open
+  (g) => g.scope === 'token', // the last resort, as before
+];
+
 /** @see Grant.scope */
 export type GrantScope = 'token' | 'call';
 
@@ -279,29 +288,23 @@ export class GrantRegistry {
   }
 
   /**
-   * The grant the cap should reclaim next, in three tiers.
+   * The grant the cap should reclaim next: the first tier of {@link EVICTION_ORDER} that has one, the oldest within it.
    *
-   * <p>First the oldest NON-allowed — a pending grant awaiting or abandoned by consent, which
-   * nobody holds. Then the oldest allowed **call** grant: one request's capability, whose secret
-   * was never in any response, so dropping it can cost nothing. Only when neither exists does it
-   * fall back to the oldest allowed TOKEN, which is the case the cap was originally written for —
-   * a window that has genuinely shared 256 credentials.</p>
-   *
-   * <p>The middle tier is issue #95's doing and the reason this is three tiers rather than two:
-   * silent MCP calls mint allowed grants at sixty a minute, so "every grant is allowed" stopped
-   * being the rare case and a live shared token became the first thing evicted, in about four
-   * minutes of unattended agent work.</p>
+   * <p>A list, so the registry never reaches a token while a call grant exists. The first tier is the calls nobody
+   * holds (refused or abandoned), then the allowed calls: one request's capability whose secret was never in any
+   * response (issue #95 — silent MCP use mints them at sixty a minute). Only then a denied tombstone, a token whose
+   * first dialog is open, and the last resort, the oldest token, which is the case the cap was originally written for.
+   * Amendment 2, B.1: a loop of calls refused before their dialog used to evict a pending token or a tombstone first,
+   * because the first tier was "anything not allowed".</p>
    */
   private oldestEvictable(): string | undefined {
-    return this.oldestWhere((grant) => grant.status !== 'allowed')
-      ?? this.oldestWhere((grant) => grant.scope === 'call')
-      ?? this.oldestWhere((grant) => grant.scope === 'token');
+    return EVICTION_ORDER.map((fits) => this.oldestWhere(fits)).find((victim) => victim !== undefined);
   }
 
   /**
-   * The oldest grant that fits, by insertion order — three cheap passes over at most 256 entries
-   * rather than one pass carrying three running answers, which the complexity ceiling refused and
-   * which read worse anyway: the tiers ARE the policy, and here they are three readable lines.
+   * The oldest grant that fits, by insertion order — one cheap pass per tier over at most 256 entries
+   * rather than one pass carrying a running answer for each, which the complexity ceiling refused and
+   * which read worse anyway: the tiers ARE the policy, and {@link EVICTION_ORDER} is where they are written.
    */
   private oldestWhere(fits: (grant: Grant) => boolean): string | undefined {
     for (const [secret, grant] of this.grants) {
@@ -310,6 +313,14 @@ export class GrantRegistry {
       }
     }
     return undefined;
+  }
+
+  /** Delete a `'call'` grant that is still `pending`: a call refused before anybody was asked. A token, or a settled grant, is never dropped. */
+  drop(secret: string): void {
+    const grant = this.grants.get(secret);
+    if (grant?.scope === 'call' && grant.status === 'pending') {
+      this.grants.delete(secret);
+    }
   }
 
   /** Only a pending grant settles; a settled one is never revisited. */

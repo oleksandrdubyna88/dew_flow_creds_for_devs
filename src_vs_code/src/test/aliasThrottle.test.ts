@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MAX_PROMPTS, OneInFlight, SILENT_CEILING, SlidingWindow, type Slot, TokenlessCeilings, WINDOW_MS, over } from '../aliasThrottle';
+import { ASKING_CEILING, type Holding, LOCAL_DOOR, MAX_PROMPTS, OneInFlight, SILENT_CEILING, SlidingWindow, type Slot, TokenlessCeilings, WINDOW_MS, over } from '../aliasThrottle';
 
 /**
  * The rate at which a caller with no token may make a window ask a human.
@@ -29,7 +29,7 @@ function admitted(c: TokenlessCeilings, prompts: boolean, at: number, what: stri
 }
 
 /** The refusal, or a failure that says the call was admitted — so no assertion reads `undefined`. */
-function refusal(c: TokenlessCeilings, prompts: boolean, at: number, door?: string): { message: string; report: boolean } {
+function refusal(c: TokenlessCeilings, prompts: boolean, at: number, door?: string): { message: string; report: boolean; via?: string } {
   const answer = c.admit(prompts, at, door).refusal;
   assert.notEqual(answer, undefined, `the call at ${at - NOW}ms was admitted, not refused`);
   return answer ?? { message: '', report: false };
@@ -39,6 +39,7 @@ function refusal(c: TokenlessCeilings, prompts: boolean, at: number, door?: stri
 function bridgeDialog(c: TokenlessCeilings, at: number, door: string, via: 'alias' | 'mcp' | 'token' = 'alias'): void {
   const slot = admitted(c, true, at, `a dialog on ${door}`, door);
   c.prompted(bridged(door), via, at);
+  c.dialogClosed(bridged(door), via);
   slot.release();
 }
 
@@ -46,6 +47,7 @@ function bridgeDialog(c: TokenlessCeilings, at: number, door: string, via: 'alia
 function dialog(c: TokenlessCeilings, at: number): void {
   const slot = admitted(c, true, at, 'a local dialog');
   c.prompted(local, 'alias', at);
+  c.dialogClosed(local, 'alias');
   slot.release();
 }
 
@@ -130,18 +132,21 @@ test('one in flight: the second hold is refused until the first is released', ()
   // A stack of modals is unusable long before any count is reached, and the person cannot
   // answer the first one while the second is covering it.
   const f = new OneInFlight();
-  assert.equal(f.hold(), true);
-  assert.equal(f.hold(), false);
-  f.release();
-  assert.equal(f.hold(), true, 'releasing lets the next one through');
+  const first = f.hold();
+  assert.notEqual(first, undefined);
+  assert.equal(f.hold(), undefined);
+  f.released(first as Holding);
+  assert.notEqual(f.hold(), undefined, 'releasing lets the next one through');
 });
 
 test('releasing more often than holding cannot bank free places', () => {
   const f = new OneInFlight();
-  f.release();
-  f.release();
-  assert.equal(f.hold(), true);
-  assert.equal(f.hold(), false, 'still exactly one in flight');
+  const first = f.hold() as Holding;
+  f.released(first);
+  f.released(first);
+  f.released(first);
+  assert.notEqual(f.hold(), undefined);
+  assert.equal(f.hold(), undefined, 'still exactly one in flight');
 });
 
 /* ---------------------------------------------------------------------------------------------------------------
@@ -155,6 +160,7 @@ test("the local door is today's modal budget to the byte: five dialogs, one in f
   const first = admitted(c, true, NOW, 'the first prompting call');
   c.prompted(local, 'alias', NOW);
   assert.equal(refusal(c, true, NOW).message, 'Another request is already waiting for the person to answer. Try again once they have.', 'serialized');
+  c.dialogClosed(local, 'alias');
   first.release();
   for (let i = 1; i < MAX_PROMPTS; i += 1) {
     dialog(c, NOW + i);
@@ -417,4 +423,250 @@ test('a door whose windows are idle is forgotten when another is, and the local 
   assert.equal(c.doorCount(), 1, 'A aged out and went with B; only the local door is left');
   c.forget('never-opened', NOW + 2 * WINDOW_MS);
   assert.equal(c.doorCount(), 1, 'the local door is idle by now and is still there: it is always there');
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Amendment 2, B.2 — the one place belongs to the DIALOG, and only a matching holding can free it
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('B.2: the holdings of one place are distinct, and a stale release cannot free a later holder', () => {
+  const f = new OneInFlight();
+  const first = f.hold() as Holding;
+  f.released(first);
+  const second = f.hold() as Holding;
+  assert.notEqual(second.id, first.id, 'every admission is its own holding');
+  f.released(first);
+  assert.equal(f.hold(), undefined, 'the first holder released late and freed nothing of the second');
+  f.released(second);
+  assert.notEqual(f.hold(), undefined);
+});
+
+test('B.2: while a dialog of the holding is on screen the place is the dialog\'s: the call ending frees nothing', () => {
+  const f = new OneInFlight();
+  const held = f.hold() as Holding;
+  f.prompted(held);
+  f.released(held);
+  assert.equal(f.hold(), undefined, 'the call is over but its dialog is still up');
+  f.dialogClosed(held);
+  assert.notEqual(f.hold(), undefined, 'the dialog closing frees the place');
+});
+
+test('B.2: a dialog closing frees the place whatever the call does next, and the call ending later frees nothing more', () => {
+  const f = new OneInFlight();
+  const first = f.hold() as Holding;
+  f.prompted(first);
+  f.dialogClosed(first);
+  const second = f.hold() as Holding;
+  f.released(first);
+  assert.equal(f.hold(), undefined, 'the first call ended after its dialog closed: the second holder keeps its place');
+  f.dialogClosed(first);
+  assert.equal(f.hold(), undefined, 'and a second close of the first dialog frees nothing of the second');
+  f.prompted(first);
+  f.released(second);
+  assert.notEqual(f.hold(), undefined, 'a late prompted of the first holding marks nothing of the second');
+});
+
+test('B.2: holder() names the holding that has the place now, and nothing while it is free', () => {
+  const f = new OneInFlight();
+  assert.equal(f.holder(), undefined);
+  const held = f.hold() as Holding;
+  assert.equal(f.holder()?.id, held.id);
+  f.released(held);
+  assert.equal(f.holder(), undefined);
+});
+
+test('B.2: through the coordinator, a call that ends during its dialog frees the place only when the dialog closes', () => {
+  const c = new TokenlessCeilings();
+  const slot = admitted(c, true, NOW, 'the call');
+  c.prompted(local, 'alias', NOW);
+  slot.release();
+  assert.match(refusal(c, true, NOW).message, /already waiting/, 'the client left; the dialog is still on screen');
+  c.dialogClosed(local, 'alias');
+  admitted(c, true, NOW, 'the next call, once the dialog is gone');
+});
+
+test('B.2: a dialog closing frees the place although its call is still running (a long action)', () => {
+  const c = new TokenlessCeilings();
+  const running = admitted(c, true, NOW, 'the call that will run for two minutes');
+  c.prompted(local, 'alias', NOW);
+  c.dialogClosed(local, 'alias');
+  const next = admitted(c, true, NOW + 1, 'another call while the first still runs');
+  running.release();
+  assert.match(refusal(c, true, NOW + 2).message, /already waiting/, 'the long call ending freed nothing of the next call\'s place');
+  next.release();
+});
+
+test('B.2: a local token call holds, stamps and closes nothing', () => {
+  const c = new TokenlessCeilings();
+  const holder = admitted(c, true, NOW, 'a call with a dialog to come');
+  c.prompted(local, 'token', NOW);
+  c.dialogClosed(local, 'token');
+  assert.match(refusal(c, true, NOW).message, /already waiting/, 'the token dialog and its close did not touch the place of another call');
+  c.dialogClosed(local, 'alias');
+  assert.match(refusal(c, true, NOW).message, /already waiting/, 'a close with no dialog open frees nothing');
+  holder.release();
+  admitted(c, true, NOW, 'the next call, once the holder ended');
+});
+
+test('B.2: a local token dialog closing frees nothing of the place a throttled dialog holds', () => {
+  const c = new TokenlessCeilings();
+  const holder = admitted(c, true, NOW, 'a call whose dialog is on screen');
+  c.prompted(local, 'alias', NOW);
+  c.dialogClosed(local, 'token'); // a local token dialog, which was never counted, closes meanwhile
+  assert.match(refusal(c, true, NOW).message, /already waiting/, 'the alias dialog is still on screen');
+  c.dialogClosed(local, 'alias');
+  holder.release();
+  admitted(c, true, NOW, 'the next call, once the alias dialog closed');
+});
+
+test('B.2: a close the coordinator never saw opened, or a second close, frees nothing of the next holder', () => {
+  const c = new TokenlessCeilings();
+  const first = admitted(c, true, NOW, 'the first');
+  c.prompted(local, 'alias', NOW);
+  c.dialogClosed(local, 'alias');
+  first.release();
+  const second = admitted(c, true, NOW + 1, 'the second');
+  c.dialogClosed(local, 'alias');
+  assert.match(refusal(c, true, NOW + 1).message, /already waiting/, 'a second close of the first dialog freed nothing of the second');
+  second.release();
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Amendment 2, B.1 — the asking ceiling: a call refused before any dialog is still a call
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('B.1: the asking ceiling is the silent ceiling\'s number', () => {
+  assert.equal(ASKING_CEILING, SILENT_CEILING);
+  assert.ok(ASKING_CEILING > MAX_PROMPTS, 'a ceiling at or below the dialog budget would refuse calls a dialog would have got');
+});
+
+test('B.1: sixty asking calls a minute per door, calls refused before any dialog included; the sixty-first is refused with its own sentence', () => {
+  const c = new TokenlessCeilings();
+  for (let i = 0; i < ASKING_CEILING; i += 1) {
+    admitted(c, true, NOW + i, `asking call ${i + 1}, refused before its dialog`).release();
+  }
+  const message = refusal(c, true, NOW + ASKING_CEILING).message;
+  assert.equal(message, 'Too many requests: a caller without a token may ask at most 60 times a minute, calls refused before any dialog included.');
+  assert.doesNotMatch(message, /prompt at most/, 'not the dialog budget\'s sentence: nothing was shown');
+  assert.equal(c.admit(true, NOW + WINDOW_MS + ASKING_CEILING).refusal, undefined, 'a minute later the window has slid');
+});
+
+test('B.1: on a bridge the asking sentence names the bridge', () => {
+  const c = new TokenlessCeilings();
+  for (let i = 0; i < ASKING_CEILING; i += 1) {
+    admitted(c, true, NOW + i, `asking call ${i + 1}`, A).release();
+  }
+  assert.equal(
+    refusal(c, true, NOW + ASKING_CEILING, A).message,
+    'Too many requests: this Remote Bridge may ask at most 60 times a minute, calls refused before any dialog included.',
+  );
+});
+
+test('B.1: an asking refusal holds nothing, so a call is not left busy by one that was refused', () => {
+  const c = new TokenlessCeilings();
+  for (let i = 0; i < ASKING_CEILING; i += 1) {
+    admitted(c, true, NOW + i, `asking call ${i + 1}`).release();
+  }
+  for (let i = 0; i < 5; i += 1) {
+    assert.match(refusal(c, true, NOW + ASKING_CEILING + i).message, /ask at most 60/, 'refused for the count, repeatedly, never for a place left held');
+  }
+  assert.equal(c.admit(true, NOW + WINDOW_MS + ASKING_CEILING + 10).refusal, undefined);
+});
+
+test('B.1: a refusal is a call: refusals stamp the asking window, so a loop does not get a fresh sixty each time the first sixty age out', () => {
+  const c = new TokenlessCeilings();
+  for (let i = 0; i < ASKING_CEILING; i += 1) {
+    admitted(c, true, NOW + i, `asking call ${i + 1}`).release();
+  }
+  const middle = NOW + 30_000;
+  for (let i = 0; i < ASKING_CEILING; i += 1) {
+    assert.notEqual(c.admit(true, middle + i).refusal, undefined, `refused call ${i + 1}`);
+  }
+  // 61 seconds after the first sixty, those have aged out; the sixty refusals have not, and each of them was a call.
+  assert.notEqual(c.admit(true, NOW + WINDOW_MS + ASKING_CEILING).refusal, undefined, 'the refused sixty still count');
+  assert.equal(c.admit(true, middle + WINDOW_MS + ASKING_CEILING).refusal, undefined, 'and they age out like any other');
+});
+
+test('B.1: a refusal for the dialog budget counts too; a busy answer, which did nothing, does not', () => {
+  const c = new TokenlessCeilings();
+  for (let i = 0; i < MAX_PROMPTS; i += 1) {
+    dialog(c, NOW + i);
+  }
+  const before = ASKING_CEILING - MAX_PROMPTS; // asking calls left in the minute
+  for (let i = 0; i < before; i += 1) {
+    assert.match(refusal(c, true, NOW + MAX_PROMPTS + i).message, /prompt at most 5/);
+  }
+  assert.match(refusal(c, true, NOW + MAX_PROMPTS + before).message, /ask at most 60/, 'the dialog-budget refusals were calls');
+  const d = new TokenlessCeilings();
+  const holder = admitted(d, true, NOW, 'the call in flight');
+  for (let i = 0; i < ASKING_CEILING * 2; i += 1) {
+    assert.match(refusal(d, true, NOW + i).message, /already waiting/, `busy ${i + 1}`);
+  }
+  holder.release();
+  admitted(d, true, NOW + ASKING_CEILING * 2, 'the call after the place was freed: busy answers were not counted');
+});
+
+test('B.1: the asking window is per door, and the silent path is unchanged by it', () => {
+  const c = new TokenlessCeilings();
+  for (let i = 0; i < ASKING_CEILING; i += 1) {
+    admitted(c, true, NOW + i, `asking call ${i + 1}`, A).release();
+  }
+  assert.notEqual(c.admit(true, NOW + ASKING_CEILING, A).refusal, undefined);
+  admitted(c, true, NOW + ASKING_CEILING, 'a call through B', B).release();
+  admitted(c, true, NOW + ASKING_CEILING, 'and a local call', LOCAL_DOOR).release();
+  for (let i = 0; i < SILENT_CEILING; i += 1) {
+    admitted(c, false, NOW + i, `silent call ${i + 1} on the door whose asking window is full`, A);
+  }
+});
+
+test('B.1: one journal line per door per window for an asking refusal, as for a silent one; none for busy or the dialog budget', () => {
+  const c = new TokenlessCeilings();
+  for (let i = 0; i < ASKING_CEILING; i += 1) {
+    admitted(c, true, NOW + i, `asking call ${i + 1}`).release();
+  }
+  assert.equal(refusal(c, true, NOW + ASKING_CEILING).report, true, 'the first asking refusal of the window is the one worth recording');
+  assert.equal(refusal(c, true, NOW + ASKING_CEILING + 1).report, false);
+  assert.equal(refusal(c, true, NOW + ASKING_CEILING + 100).report, false);
+  const busy = new TokenlessCeilings();
+  admitted(busy, true, NOW, 'the holder');
+  assert.equal(refusal(busy, true, NOW).report, false, 'busy answers are not journalled');
+  const budget = new TokenlessCeilings();
+  for (let i = 0; i < MAX_PROMPTS; i += 1) {
+    dialog(budget, NOW + i);
+  }
+  assert.equal(refusal(budget, true, NOW + MAX_PROMPTS).report, false, 'and the dialog budget\'s refusal still says nothing to the journal');
+});
+
+test('B.1: a refusal flood keeps the window\'s memory bounded: it stores no more than its cap', () => {
+  const w = new SlidingWindow(3, WINDOW_MS);
+  for (let i = 0; i < 50; i += 1) {
+    w.stamp(NOW + i);
+  }
+  assert.equal(w.stored(), 3, 'only the newest `max` stamps can decide whether the window is full');
+  assert.equal(w.full(NOW + 50), true);
+  assert.equal(w.full(NOW + WINDOW_MS + 46), true, 'and the answer is the same as with every stamp kept: the newest three, 47-49, are all inside until a minute after 47');
+  assert.equal(w.full(NOW + WINDOW_MS + 47), false);
+});
+
+test('B.1: a door whose only stamps are asking calls refused before their dialog is not forgotten while they count', () => {
+  const c = new TokenlessCeilings();
+  for (let i = 0; i < ASKING_CEILING; i += 1) {
+    admitted(c, true, NOW + i, `asking call ${i + 1}`, A).release();
+  }
+  c.forget(B, NOW + ASKING_CEILING); // another bridge closed: every idle door goes with it
+  assert.equal(c.doorCount(), 1, 'A has sixty stamps in its asking window and stays');
+  assert.notEqual(c.admit(true, NOW + ASKING_CEILING, A).refusal, undefined, 'and its count is intact');
+});
+
+test('B.1: the journal line of a refusal names the MCP door for the silent ceiling and no door for an asking call', () => {
+  const quiet = new TokenlessCeilings();
+  for (let i = 0; i < SILENT_CEILING; i += 1) {
+    quiet.admit(false, NOW + i);
+  }
+  assert.equal(refusal(quiet, false, NOW + SILENT_CEILING).via, 'mcp', 'only the MCP door has a policy that lets a call through without a prompt');
+  const asking = new TokenlessCeilings();
+  for (let i = 0; i < ASKING_CEILING; i += 1) {
+    admitted(asking, true, NOW + i, `asking call ${i + 1}`).release();
+  }
+  assert.equal(refusal(asking, true, NOW + ASKING_CEILING).via, undefined, 'an asking call can come by the alias route, a token or the MCP door');
 });

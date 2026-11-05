@@ -27,6 +27,13 @@ export const MAX_SCOPE_ENTRIES = 256;
 /** What a write made from an old copy is told. */
 export const SCOPE_STALE = 'The scope of this Remote Bridge changed in another window. Look at it again, then save.';
 
+/**
+ * The revision of a scope that is not there: no file, a file that does not parse, or one that is somebody else's. It is
+ * never written to a file, and a file that carries it is not a scope. A copy taken of the absent scope hands it back to
+ * `set`, which then lands only if the file is still absent.
+ */
+export const NO_SCOPE = 'absent';
+
 /** The file: what we wrote, and whose it is. */
 export interface ScopeFile {
   readonly v: 1;
@@ -34,8 +41,8 @@ export interface ScopeFile {
   readonly serverEntityId: string;
   readonly entries: readonly string[];
   readonly quiet: boolean;
-  /** 1 on the first write. */
-  readonly revision: number;
+  /** A fresh random id at every write — never a counter: a counter repeats after a Close (Amendment 2, B.5). */
+  readonly revision: string;
   readonly at: number;
 }
 
@@ -65,8 +72,8 @@ export interface ScopeFs {
 export interface Scope {
   readonly entries: ReadonlySet<string>;
   readonly quiet: boolean;
-  /** 0 when the file is absent or corrupt; what `set` must be handed back. */
-  readonly revision: number;
+  /** {@link NO_SCOPE} when the file is absent or corrupt; what `set` must be handed back. */
+  readonly revision: string;
   /** The account is part of the question: an entity id of another account is not in scope. */
   admits(accountId: string, entityId: string): boolean;
 }
@@ -75,7 +82,7 @@ function isIdList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((id) => typeof id === 'string');
 }
 
-const isRevision = (value: unknown): boolean => typeof value === 'number' && Number.isInteger(value) && value >= 1;
+const isRevision = (value: unknown): boolean => typeof value === 'string' && value !== '' && value !== NO_SCOPE;
 
 function hasIdentity(record: Record<string, unknown>): boolean {
   return record.v === 1 && typeof record.accountId === 'string' && typeof record.serverEntityId === 'string';
@@ -103,8 +110,8 @@ function parseScopeFile(text: string | undefined): ScopeFile | undefined {
   return record !== undefined && hasIdentity(record) && hasBody(record) ? (record as unknown as ScopeFile) : undefined;
 }
 
-/** What an absent or unreadable file reads as: nothing, not quiet, revision 0. */
-const EMPTY: Pick<ScopeFile, 'entries' | 'quiet' | 'revision'> = { entries: [], quiet: false, revision: 0 };
+/** What an absent or unreadable file reads as: nothing, not quiet, no revision. */
+const EMPTY: Pick<ScopeFile, 'entries' | 'quiet' | 'revision'> = { entries: [], quiet: false, revision: NO_SCOPE };
 
 function scopeOf(file: ScopeFile | undefined, accountId: string): Scope {
   const { entries: ids, quiet, revision } = file ?? EMPTY;
@@ -121,7 +128,7 @@ export interface ScopeWrites {
  * The scope of each server, per account: what its agent may reach, and whether it is asked each time.
  *
  * <p>Reads go to the file every time, synchronously, and read defensively: an absent, unparseable or foreign file is an
- * empty scope at revision 0 that is not quiet, which is "a new server starts empty" and also what a corrupted file
+ * empty scope at {@link NO_SCOPE} that is not quiet, which is "a new server starts empty" and also what a corrupted file
  * should mean. A file can be moved by hand, so a file that names another account or server than the one asked for is
  * empty too.</p>
  */
@@ -140,10 +147,10 @@ export class BridgeScopes {
   }
 
   /**
-   * Replace one server's scope, inside the lock: re-read, refuse a revision that is not `expectedRevision`, write
-   * revision + 1, prune to {@link MAX_SCOPES} by `at` (never this file). Answers the new revision.
+   * Replace one server's scope, inside the lock: re-read, refuse a revision that is not `expectedRevision`, write a
+   * fresh random revision, prune to {@link MAX_SCOPES} by `at` (never this file). Answers the new revision.
    */
-  set(accountId: string, serverEntityId: string, entries: readonly string[], quiet: boolean, expectedRevision: number): Promise<number> {
+  set(accountId: string, serverEntityId: string, entries: readonly string[], quiet: boolean, expectedRevision: string): Promise<string> {
     if (entries.length > MAX_SCOPE_ENTRIES) {
       return Promise.reject(new Error(`A Remote Bridge scope holds at most ${MAX_SCOPE_ENTRIES} entries.`));
     }
@@ -152,7 +159,7 @@ export class BridgeScopes {
       if (current.revision !== expectedRevision) {
         throw new Error(SCOPE_STALE);
       }
-      const written: ScopeFile = { v: 1, accountId, serverEntityId, entries: [...new Set(entries)], quiet, revision: current.revision + 1, at: this.now() };
+      const written: ScopeFile = { v: 1, accountId, serverEntityId, entries: [...new Set(entries)], quiet, revision: crypto.randomUUID(), at: this.now() };
       const file = this.pathOf(accountId, serverEntityId);
       await this.io.write(file, JSON.stringify(written));
       await this.prune(file);

@@ -6,6 +6,8 @@ import { sshOptionArgv } from './sshOptions';
 export interface SshExecOptions {
   jump?: string;
   knownHostsFile?: string;
+  /** A bridged call: never forward the agent, whatever a config file says (Amendment 2, B.3). */
+  noAgentForward?: boolean;
 }
 
 /**
@@ -95,8 +97,14 @@ export function buildSshExecArgv(
       : ['-o', 'StrictHostKeyChecking=yes', '-o', `UserKnownHostsFile=${options.knownHostsFile}`]),
     '-o', 'ConnectTimeout=10',
   );
-  // The same shared composer the human path uses — see `sshOptions.ts`.
-  argv.push(...sshOptionArgv(entity, options.jump));
+  // The same shared composer the human path uses — see `sshOptions.ts`. On a bridged call without the entry's own `-A`: ssh
+  // lets `-A` win over `-o ForwardAgent=no` in either order, so the option below cannot be trusted to undo it.
+  argv.push(...sshOptionArgv(options.noAgentForward === true ? { ...entity, agentForward: false } : entity, options.jump));
+  // A bridged call forwards nothing, whatever `Host * / ForwardAgent yes` in the laptop's ssh_config says: an option on the
+  // command line outranks every config file (ssh_config(5)), and the agent is forwarded only when ForwardAgent is yes.
+  if (options.noAgentForward === true) {
+    argv.push('-o', 'ForwardAgent=no');
+  }
   if (keyPath !== undefined && keyPath.length > 0) {
     argv.push('-i', keyPath);
   }

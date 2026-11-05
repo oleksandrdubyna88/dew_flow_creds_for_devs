@@ -15,7 +15,7 @@ import { NO_SUPPLIERS, SCOPES_TEST_DIR, loadBridgeModules, memoryScopeFs, memory
  */
 
 const M = loadBridgeModules();
-const { MAX_SCOPES, MAX_SCOPE_ENTRIES, SCOPE_STALE, scopeKey, OPEN_VIEW, CLOSED_VIEW, doorView } = M.scope;
+const { MAX_SCOPES, MAX_SCOPE_ENTRIES, NO_SCOPE, SCOPE_STALE, scopeKey, OPEN_VIEW, CLOSED_VIEW, doorView } = M.scope;
 
 const A1 = 'a1';
 const S1 = 'server1';
@@ -28,16 +28,16 @@ async function wallWith(entries: string[], quiet = false): Promise<BridgeWallSou
   return { scopes, storedTexts: () => [], refSource: { accounts: () => [], entities: () => [] }, ...NO_SUPPLIERS };
 }
 
-test('S17: a server with no file has an empty scope at revision 0 that admits nothing and is not quiet', () => {
+test('S17: a server with no file has an empty scope at NO_SCOPE that admits nothing and is not quiet', () => {
   const scope = memoryScopes(M).read(A1, S1);
   assert.equal(scope.entries.size, 0);
   assert.equal(scope.quiet, false);
-  assert.equal(scope.revision, 0);
+  assert.equal(scope.revision, NO_SCOPE);
   assert.equal(scope.admits(A1, 'e1'), false);
 });
 
 /** The file a well-behaved writer leaves for (a1, server1), as text. */
-const GOOD: ScopeFile = { v: 1, accountId: A1, serverEntityId: S1, entries: ['e1'], quiet: true, revision: 3, at: 1 };
+const GOOD: ScopeFile = { v: 1, accountId: A1, serverEntityId: S1, entries: ['e1'], quiet: true, revision: 'rev-3', at: 1 };
 
 /** The scopes over a disk holding `text` as the file of (a1, server1). */
 function holding(text: string): BridgeScopesT {
@@ -46,10 +46,10 @@ function holding(text: string): BridgeScopesT {
   return memoryScopes(M, () => 1, io);
 }
 
-test('S17: a malformed file, in any of its parts, is an empty scope at revision 0 with quiet off', () => {
+test('S17: a malformed file, in any of its parts, is an empty scope at NO_SCOPE with quiet off', () => {
   const bad: unknown[] = [
     'junk', 5, null, [], { ...GOOD, entries: 'e1' }, { ...GOOD, entries: [1, 2] }, { ...GOOD, entries: ['e1', 7] }, { ...GOOD, quiet: 'yes' },
-    { ...GOOD, at: 'now' }, { ...GOOD, v: 2 }, { ...GOOD, v: undefined }, { ...GOOD, revision: 'one' }, { ...GOOD, revision: 0 }, { ...GOOD, revision: 1.5 },
+    { ...GOOD, at: 'now' }, { ...GOOD, v: 2 }, { ...GOOD, v: undefined }, { ...GOOD, revision: 1 }, { ...GOOD, revision: '' }, { ...GOOD, revision: NO_SCOPE }, { ...GOOD, revision: undefined }, { ...GOOD, revision: null },
     { ...GOOD, accountId: undefined }, { ...GOOD, serverEntityId: 7 },
     { ...GOOD, accountId: 'a2' }, { ...GOOD, serverEntityId: 'server2' },
   ];
@@ -58,14 +58,14 @@ test('S17: a malformed file, in any of its parts, is an empty scope at revision 
       const scope = holding(text).read(A1, S1);
       assert.equal(scope.entries.size, 0, text);
       assert.equal(scope.quiet, false, text);
-      assert.equal(scope.revision, 0, text);
+      assert.equal(scope.revision, NO_SCOPE, text);
     }
   }
-  assert.equal(holding('').read(A1, S1).revision, 0, 'an empty file');
+  assert.equal(holding('').read(A1, S1).revision, NO_SCOPE, 'an empty file');
   const control = holding(JSON.stringify(GOOD)).read(A1, S1);
   assert.deepEqual([...control.entries], ['e1'], 'positive control: the well-formed file reads');
   assert.equal(control.quiet, true);
-  assert.equal(control.revision, 3);
+  assert.equal(control.revision, 'rev-3');
 });
 
 test('S17: a file moved by hand to another server\'s name admits nothing for that server (the file names whose it is)', () => {
@@ -73,7 +73,7 @@ test('S17: a file moved by hand to another server\'s name admits nothing for tha
   io.held.set(`${SCOPES_TEST_DIR}/${M.scope.scopeFileName(A1, 'server2')}`, JSON.stringify(GOOD));
   const scopes = memoryScopes(M, () => 1, io);
   assert.equal(scopes.read(A1, 'server2').entries.size, 0, 'GOOD names server1; at the name of server2 it is nobody\'s');
-  assert.equal(scopes.read(A1, 'server2').revision, 0);
+  assert.equal(scopes.read(A1, 'server2').revision, NO_SCOPE);
   io.held.set(`${SCOPES_TEST_DIR}/${M.scope.scopeFileName('a2', S1)}`, JSON.stringify(GOOD));
   assert.equal(scopes.read('a2', S1).entries.size, 0, 'and at another account\'s name');
 });
@@ -98,23 +98,37 @@ test('S17: scopeKey is injective across the colon, as stampKey is, and the file 
   assert.notEqual(M.scope.scopeFileName('a:b', 'c'), M.scope.scopeFileName('a', 'b:c'));
 });
 
-test('S17: set answers the revision it wrote: 0 -> 1 -> 2, and a copy at the wrong revision is refused with the one sentence and changes nothing', async () => {
+test('S17: set answers the revision it wrote, a fresh id every time, and a copy at the wrong revision is refused with the one sentence and changes nothing', async () => {
   const io = memoryScopeFs();
   const scopes = memoryScopes(M, () => 1, io);
-  assert.equal(await scopes.set(A1, S1, ['e1'], false, 0), 1);
-  assert.equal(await scopes.set(A1, S1, ['e1', 'e2'], true, 1), 2);
+  const first = await scopes.set(A1, S1, ['e1'], false, NO_SCOPE);
+  const second = await scopes.set(A1, S1, ['e1', 'e2'], true, first);
+  assert.match(first, /^[0-9a-f-]{36}$/, 'a random id, not a counter');
+  assert.notEqual(second, first);
+  assert.notEqual(first, NO_SCOPE);
   const before = [...io.held.entries()];
-  await assert.rejects(scopes.set(A1, S1, [], false, 0), { message: SCOPE_STALE });
-  await assert.rejects(scopes.set(A1, S1, [], false, 1), { message: SCOPE_STALE }, 'a copy one behind');
-  await assert.rejects(scopes.set(A1, S1, [], false, 3), { message: SCOPE_STALE }, 'and one ahead');
+  await assert.rejects(scopes.set(A1, S1, [], false, NO_SCOPE), { message: SCOPE_STALE }, 'a copy of the absent scope, on a scope that exists');
+  await assert.rejects(scopes.set(A1, S1, [], false, first), { message: SCOPE_STALE }, 'a copy one behind');
+  await assert.rejects(scopes.set(A1, S1, [], false, 'never-written'), { message: SCOPE_STALE }, 'and one that was never written');
   assert.deepEqual([...io.held.entries()], before, 'the file is as it was');
-  assert.equal(scopes.read(A1, S1).revision, 2);
+  assert.equal(scopes.read(A1, S1).revision, second);
   assert.match(SCOPE_STALE, /^The scope of this Remote Bridge changed in another window\. Look at it again, then save\.$/);
 });
 
-test('S17: a corrupt file at the name is replaced by a set that expects revision 0', async () => {
+test('S17: NO_SCOPE is never written to a file, and the revision on disk is the one set answered', async () => {
+  const io = memoryScopeFs();
+  const scopes = memoryScopes(M, () => 1, io);
+  const revision = await scopes.set(A1, S1, ['e1'], false, NO_SCOPE);
+  const stored = JSON.parse([...io.held.values()][0]) as { revision: string };
+  assert.equal(stored.revision, revision);
+  assert.notEqual(stored.revision, NO_SCOPE);
+  assert.equal(M.scope.NO_SCOPE, 'absent');
+});
+
+test('S17: a corrupt file at the name is replaced by a set that expects NO_SCOPE', async () => {
   const scopes = holding('{ not json');
-  assert.equal(await scopes.set(A1, S1, ['e1'], false, 0), 1);
+  const revision = await scopes.set(A1, S1, ['e1'], false, NO_SCOPE);
+  assert.equal(scopes.read(A1, S1).revision, revision);
   assert.deepEqual([...scopes.read(A1, S1).entries], ['e1']);
 });
 
@@ -137,7 +151,7 @@ test('S17: forget removes one file and leaves the others', async () => {
   await put(scopes, A1, 'server2', ['e2']);
   await scopes.forget(A1, S1);
   assert.equal(scopes.read(A1, S1).entries.size, 0);
-  assert.equal(scopes.read(A1, S1).revision, 0, 'a forgotten scope is at revision 0 again');
+  assert.equal(scopes.read(A1, S1).revision, NO_SCOPE, 'a forgotten scope is at NO_SCOPE again');
   assert.deepEqual([...scopes.read(A1, 'server2').entries], ['e2']);
   await scopes.forget(A1, S1);
 });
@@ -199,11 +213,11 @@ test('S17: a file that does not parse is the oldest of all, and a `.tmp` left be
 test('S17: a scope of 256 entries is written; 257 are refused and nothing is stored', async () => {
   const scopes = memoryScopes(M, () => 1);
   const ids = (n: number): string[] => Array.from({ length: n }, (_, i) => `e${i}`);
-  await put(scopes, A1, S1, ids(MAX_SCOPE_ENTRIES));
+  const written = await put(scopes, A1, S1, ids(MAX_SCOPE_ENTRIES));
   assert.equal(scopes.read(A1, S1).entries.size, MAX_SCOPE_ENTRIES);
   await assert.rejects(put(scopes, A1, S1, ids(MAX_SCOPE_ENTRIES + 1)), /256/);
   assert.equal(scopes.read(A1, S1).entries.size, MAX_SCOPE_ENTRIES, 'the refused write left the old file');
-  assert.equal(scopes.read(A1, S1).revision, 1, 'and its revision');
+  assert.equal(scopes.read(A1, S1).revision, written, 'and its revision');
 });
 
 test('S17: writes queue — three sets in flight at once all land, even when the disk answers late', async () => {

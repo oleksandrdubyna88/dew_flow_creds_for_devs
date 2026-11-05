@@ -86,7 +86,7 @@ export async function put(
   serverEntityId: string,
   entries: readonly string[],
   quiet = false,
-): Promise<number> {
+): Promise<string> {
   return scopes.set(accountId, serverEntityId, entries, quiet, scopes.read(accountId, serverEntityId).revision);
 }
 

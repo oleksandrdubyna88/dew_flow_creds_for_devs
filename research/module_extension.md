@@ -3321,7 +3321,10 @@ server entry, the ids a server's agent may reach and whether it is asked each ti
 fail to reach the window that owns the bridge, and a stale write could bring back what the owner removed. The file is read
 fresh and synchronously on every check; it carries `v`, `accountId`, `serverEntityId`, the ids, the switch, a `revision` and
 `at`, and a file that is absent, unparseable, not that shape, or names another account or server than the one asked for is an
-empty scope at revision 0. A write goes through the cross-window lock (`writes`, a `LeasedQueue` over a `WindowLock` at
+empty scope at the revision `NO_SCOPE` (`'absent'`). **The revision is a fresh random id (`crypto.randomUUID()`) at every
+write, never a counter** (Amendment 2, B.5): a counter that starts again at 1 after a Close lets a picker holding a copy from
+before the Close save over the scope picked after it. `NO_SCOPE` is never written to a file (a file that carries it is not a
+scope), and a `set` that expects it lands only while the file is still absent. A write goes through the cross-window lock (`writes`, a `LeasedQueue` over a `WindowLock` at
 `bridges/scopes.lock`; E2.2 builds it), re-reads inside it, is refused with `SCOPE_STALE` when the revision it was made from
 is no longer the file's, and is written temp-and-rename (the rename retried 3 times on EPERM/EBUSY, as on Windows when a
 reader holds the file); 64 files at most, the oldest `at` pruned inside the lock, and `forget` removes one on Close.
@@ -3334,11 +3337,17 @@ live or expired. **The listing and the snippet are per account**: `McpEntry` car
 an id across accounts, so a wall by id alone over the whole vault's listing would also list the other account's row. The
 bridged view reads them from `wall.listEntriesOf(accountId)` and `wall.visibleConfigOf(accountId, id)` (the real
 `visibleMcpEntries` / `visibleConfigDetails` over `accountOnlyVault(storage, accountId)`, in `mcpAccountVault.ts`, a carrier in
-`pinReaderBoundary.test.ts`: it hands the secret getters on and reads nothing), and reads the scope AFTER the
+`pinReaderBoundary.test.ts`: it hands the secret getters on and reads nothing). **Those four suppliers of the vault side of
+the wall (`storedTexts`, `listEntriesOf`, `visibleConfigOf`, `entryRefusal`) are one production function,
+`wallSuppliersOf(vault)` in `bridgeWallSource.ts`** (Amendment 2, B.6): E2 wires `{ scopes, refSource, ...wallSuppliersOf(storage) }`
+and the scenarios' wall world builds its wall from the same function, spying on it and defining none of the four, so a scenario
+about the listing or the snippet runs through what production runs. It reads the scope AFTER the
 listing's `await`, so a narrow that lands while the rows are being read is the scope they are cut by. The existing doors get
 `OPEN_VIEW`, which hands back the functions it was given. A token on a bridge
 only authenticates (`brokerBridgeToken.ts`): the call is minted as a grant of its own and asked every time, a Deny
 refuses that call and not the token, and the token's use count moves at the action boundary, before the call grant's.
+The token's status is read **after** the body (`bridgedTokenCall` is handed `() => status`, not a snapshot), so a Deny that
+lands between the token's lookup and the body's arrival is seen at once and not only at the launch gate.
 
 *What using an entry reaches, and what a bridge is told.* An ssh entry's linked key and jump chain are part of using it,
 not scope targets (`sshkey` can never be opened to MCP, the value stays on the laptop, the edit verbs are off the list), so
@@ -3349,8 +3358,15 @@ not run ssh` carry a path or argv, so on a bridge (`ctx.bridge` set) `sshUseActi
 agent journal. `ssh`'s own stderr is returned as it is and may carry a jump host's address (the plan's decision). An entry
 with `agentForward` is refused on a bridge, twice with one sentence (`AGENT_FORWARD_REFUSED`): before the dialog through
 `wall.entryRefusal` (inside `referenceRefusal`, so it is also the launch gate's word), and in the action against the live
-entity, before a key is written to disk. A reference refusal echoes nothing of the stored text: `REFERENCE_REFUSED(name)`
-takes no reference.
+entity, before a key is written to disk. **A bridged call also never forwards the agent through the laptop's own
+`ssh_config`** (Amendment 2, B.3): the action passes `noAgentForward` to `buildSshExecArgv`, which adds `-o ForwardAgent=no`
+after the composer's options (a command-line option outranks every config file, so `Host * / ForwardAgent yes` forwards
+nothing for a bridged call) and, with it, drops the composer's `-A` (ssh lets `-A` win over `-o ForwardAgent=no` in either
+order; no bridged argv carries `-A` anyway, since an entry with `agentForward` is refused). `SSH_AUTH_SOCK` is not cleared,
+because that would also change how the in-scope entry authenticates. The argv is pinned by tests; that it really stops
+forwarding is measured by section 8 of `scripts/ssh-agent-itest.cjs` (`itestForwardAgent.cjs`) on a runner with `sshd`, and
+on Windows OpenSSH it is the owner's M8. A reference refusal echoes nothing of the stored text: `REFERENCE_REFUSED(name)`
+takes no reference. A throw out of the credential read (`prepareAuth`) gives the exec slot back (it used to leak it).
 
 *When it is decided.* Once at the door, and again at the last synchronous step before an action starts
 (`brokerCall.answer`: the client is still there, then the scope and the references are read fresh, then the token and
@@ -3364,15 +3380,31 @@ refused `403 denied` with one sentence for every failure (no such account, no su
 before any dialog and again at launch. `scopedRefSource` is the seam an executor must resolve through (E3.3); nothing
 uses it yet.
 
-*Prompts per bridge.* Each bridge has its own sliding window of five dialogs a minute (and sixty silent calls), keyed by
-its `bridgeId` in `TokenlessCeilings` (`aliasThrottle.ts`: `SlidingWindow` the count, `OneInFlight` the single dialog, the
-coordinator the doors); the local door is the key `local`. One dialog at a time stays global, because the person is one
-person with one screen. The window counts **dialogs raised**, stamped by the consent gate (`prompted`, called in
-`ConsentGate.ask` immediately before the dialog is shown), not calls admitted: a call refused before its dialog spends
-nothing. That holds for the local alias and MCP doors too, which is a change for them: a call refused before its dialog
-(a validation failure, a reference the wall refuses) no longer spends one of the five; five dialogs a minute and one in
-flight hold exactly as before. A local token call raises dialogs that are not counted, as it was never throttled; on a
-bridge a token call is bridged and counted on its bridge, with the bridge's sentence
+*Prompts per bridge.* Each bridge has its own sliding windows, keyed by its `bridgeId` in `TokenlessCeilings`
+(`aliasThrottle.ts`: `SlidingWindow` the count, `OneInFlight` the single dialog, the coordinator the doors); the local door is
+the key `local`. Per door: five **dialogs** a minute, sixty silent calls a minute, and (Amendment 2, B.1) sixty **asking
+calls** a minute, **calls refused before any dialog included**. The dialog window counts dialogs raised, stamped by the consent
+gate (`prompted`, called in `ConsentGate.ask` immediately before the dialog is shown), not calls admitted: a call refused before
+its dialog spends no dialog. The asking window is the other half: such a call used to be admitted every time (a grant minted,
+two journal lines, no bound at all), so it is stamped at admission and at every refusal for the count (`a refusal is a call`;
+a `busy` answer, which did nothing, is not), refused with `Too many requests: <who> may ask at most 60 times a minute, calls
+refused before any dialog included.` (`<who>` is `a caller without a token` on the local door, `this Remote Bridge` on a
+bridge), written to the journal once a window per door without naming a door, and a window keeps its newest sixty stamps only,
+which decides everything it can. **What the local alias and MCP doors gain, exactly:** the same sixty-asking-calls bound
+(legitimate use is a person in a terminal or an agent that thinks between calls), and a call they refuse before its dialog no
+longer leaves a pending call grant in the registry (`credsAgentServer.usable` drops it: `GrantRegistry.drop` deletes a
+`'call'` grant that is still `pending`, and nothing else). No answer, status or sentence on either door changes below the
+ceiling; above it a `too_many_requests` appears where the call used to reach `usable`. The registry's cap evicts in the order
+of `EVICTION_ORDER`: calls nobody holds, allowed calls (silent MCP use), denied tombstones, a token whose first dialog is
+open, and the oldest token last, so an idle shared token, a tombstone or a token with an open dialog is never evicted while a
+call grant exists (today each of them could be). **One dialog at a time stays global** because the person is one person with
+one screen, and **the place belongs to the dialog, not to the call**: `OneInFlight` hands out a `Holding` per admission; once a
+dialog of a throttled door is on screen (`prompted`) the call ending frees nothing, and the place is freed when the dialog
+closes (`ConsentGate.ask` calls `dialogClosed` from a `finally`: the person's click, or the five-minute timeout, although VS
+Code cannot take the modal down), so a client that hangs up during its dialog does not let the next call raise a second modal on
+top of it, and a long action does not make every other door `busy`. A stale release or close (a different holding) frees nothing
+of a later holder's place. A local token call raises dialogs that are not counted, held or closed, as it was never throttled; on
+a bridge a token call is bridged and counted on its bridge, with the bridge's sentence
 (`Too many requests: this Remote Bridge may prompt at most 5 times a minute.`). `forget(door)` is for E2 on Close.
 
 **A signed envelope without its signature is tampered, not legacy** (`verifyEnvelopeMac`,

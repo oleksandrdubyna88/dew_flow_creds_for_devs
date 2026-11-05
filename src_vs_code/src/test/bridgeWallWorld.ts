@@ -1,5 +1,5 @@
 import * as fs from 'node:fs';
-import type * as http from 'node:http';
+import * as http from 'node:http';
 import * as os from 'node:os';
 import * as nodePath from 'node:path';
 import type { BridgeContext } from '../bridgeContext';
@@ -10,9 +10,8 @@ import type { BridgeListener } from '../brokerBridgeListeners';
 import type { McpFolderHooks } from '../brokerFolderDoor';
 import type { McpVaultSource } from '../mcpEntries';
 import type { EntityMetadata, TreeNode } from '../types';
-import { AGENT_FORWARD_REFUSED } from '../bridgeScope';
-import { accountOnlyVault } from '../mcpAccountVault';
-import { visibleConfigDetails, visibleMcpEntries } from '../mcpEntries';
+import { wallSuppliersOf } from '../bridgeWallSource';
+import { visibleMcpEntries } from '../mcpEntries';
 import { keyed, raw, Reply } from './bridgeDoorHarness';
 import { loadBridgeModules, put } from './bridgeModules';
 import { World, world } from './brokerWorld';
@@ -93,6 +92,14 @@ function xNodes(x: 'usable' | 'closed' | 'absent'): TreeNode[] {
   return x === 'absent' ? [] : [entity('x', 'hidden-x', x === 'usable' ? 'f1' : 'f-closed', config('hidden-x'))];
 }
 
+/**
+ * The world's vault, for a test that exercises the production suppliers over it (W1): `e1` ("prod") in a1 and a colliding
+ * `e1` ("foreign") in a2, which is listed first.
+ */
+export function collideVault(asked: string[] = []): McpVaultSource {
+  return vaultOf('absent', { collide: true, a1Config: true, agentForward: false }, asked);
+}
+
 /** The vault as the broker's collaborators see it, recording which accounts were asked about. */
 function vaultOf(x: 'usable' | 'closed' | 'absent', flavour: Flavour, asked: string[]): McpVaultSource {
   const nodes = nodesOf(x, flavour);
@@ -105,6 +112,31 @@ function vaultOf(x: 'usable' | 'closed' | 'absent', flavour: Flavour, asked: str
       return (nodes[accountId] ?? []).find((node) => node.id === id);
     },
     getPassword: none, getPrivateKey: none, getNotes: none, getTotp: none, getDbConnection: none,
+  };
+}
+
+/**
+ * What a scenario edits to change the stored command of `e1`: the entry's own `command` and `commandArgs`, which the
+ * production `storedTexts` reads back. Written to the vault's node, so the scenario and the wall see one thing.
+ */
+function storedTextsOf(vault: McpVaultSource, initial: readonly string[]): { current: readonly string[] } {
+  const holder = { current: initial };
+  const write = (texts: readonly string[]): void => {
+    const details = vault.getNode(ACCOUNT, 'e1')?.details;
+    if (details !== undefined) {
+      details.command = texts[0] ?? '';
+      details.commandArgs = texts.slice(1).map((value) => ({ value }));
+    }
+  };
+  write(initial);
+  return {
+    get current() {
+      return holder.current;
+    },
+    set current(texts: readonly string[]) {
+      holder.current = texts;
+      write(texts);
+    },
   };
 }
 
@@ -150,6 +182,8 @@ export interface WallOptions {
   oneUse?: boolean;
   maxCalls?: number;
   holdDialogs?: boolean;
+  /** The consent gate's wait, in place of five minutes (P3). */
+  consentTimeoutMs?: number;
   storedTexts?: readonly string[];
 }
 
@@ -216,26 +250,29 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
     () => 1_000,
   );
   await put(scopes, ACCOUNT, SERVER, o.scope, o.quiet);
-  const texts = { current: o.storedTexts };
+  const texts = storedTextsOf(vault, o.storedTexts);
+  // The suppliers are PRODUCTION's (`bridgeWallSource.ts`), over this vault. The spies only record what they were asked,
+  // hold the listing when a scenario asks them to, and switch the refusal off for the one scenario that needs the action
+  // to refuse alone; none of the four is defined here.
+  const real = wallSuppliersOf(vault);
   const wall: BridgeWallSource = {
     scopes,
-    storedTexts: () => texts.current,
     refSource: refSourceOf(vault),
-    // The per-account suppliers, built as E2.2 builds them: the real listing and the real snippet lookup over ONE account's vault.
+    storedTexts: real.storedTexts,
     listEntriesOf: async (accountId) => {
       listed.push(accountId);
       askedListing = true;
-      const rows = await visibleMcpEntries(accountOnlyVault(vault, accountId));
+      const rows = await real.listEntriesOf(accountId);
       await (o.holdListing ? listingGate : Promise.resolve());
       return rows;
     },
     visibleConfigOf: (accountId, entityId) => {
       configsAsked.push([accountId, entityId]);
-      return visibleConfigDetails(accountOnlyVault(vault, accountId), entityId);
+      return real.visibleConfigOf(accountId, entityId);
     },
     entryRefusal: (accountId, entityId) => {
       refusalsAsked.push([accountId, entityId]);
-      return o.entryRefusal === 'wired' ? agentForwardRefusal(vault.getNode(accountId, entityId)?.details) : undefined;
+      return o.entryRefusal === 'wired' ? real.entryRefusal(accountId, entityId) : undefined;
     },
   };
   const aliases = aliasesFor(o.x);
@@ -253,6 +290,7 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
     oneUse: options.oneUse,
     maxCalls: options.maxCalls,
     holdDialogs: options.holdDialogs,
+    consentTimeoutMs: options.consentTimeoutMs,
     trash: true,
     create: 'open',
     realActions: options.exec === undefined ? undefined : { exec: options.exec },
@@ -278,11 +316,6 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
       fs.rmSync(storage, { recursive: true, force: true });
     },
   };
-}
-
-/** What E2 wires as the wall's `entryRefusal`: an entry that forwards the laptop's SSH agent is refused, with its sentence. */
-function agentForwardRefusal(details: EntityMetadata | undefined): { code: 'denied'; message: string } | undefined {
-  return details?.agentForward === true ? { code: 'denied', message: AGENT_FORWARD_REFUSED(details.name) } : undefined;
 }
 
 function configOf(id: string): EntityMetadata {
@@ -328,6 +361,56 @@ export function send(door: Door, ask: Ask): Promise<Reply> {
   }
   const method = ask.method ?? 'POST';
   return raw(door.port, ask.path, headers, { method, body: ask.body === undefined ? undefined : JSON.stringify(ask.body) });
+}
+
+/**
+ * A request the test can hang up on (Amendment 2, P1): the client that posts and goes away while the person is
+ * still being asked. `reply` rejects when the hang-up is the answer.
+ */
+export function sendAbortable(door: Door, ask: Ask): { reply: Promise<Reply>; abort(): void } {
+  const headers: http.OutgoingHttpHeaders = { ...door.headers };
+  if (ask.token !== undefined) {
+    headers.Authorization = `Bearer ${ask.token}`;
+  }
+  const body = ask.body === undefined ? undefined : JSON.stringify(ask.body);
+  let request: http.ClientRequest | undefined;
+  const reply = new Promise<Reply>((resolve, reject) => {
+    request = http.request({ host: '127.0.0.1', port: door.port, path: ask.path, method: ask.method ?? 'POST', headers }, (response) => {
+      let text = '';
+      response.on('data', (chunk) => {
+        text += String(chunk);
+      });
+      response.on('end', () => resolve({ status: response.statusCode ?? 0, body: text, connection: response.headers.connection }));
+    });
+    request.on('error', reject);
+    request.end(body);
+  });
+  return { reply, abort: () => request?.destroy(new Error('the client hung up')) };
+}
+
+/**
+ * A request whose headers arrive now and whose body arrives when `bodyAfter` settles (Amendment 2, T1): the window in
+ * which the broker has looked at the token and has not yet read what it is asked to do.
+ */
+export function sendSlow(door: Door, ask: Ask, bodyAfter: Promise<void>): Promise<Reply> {
+  const headers: http.OutgoingHttpHeaders = { ...door.headers };
+  if (ask.token !== undefined) {
+    headers.Authorization = `Bearer ${ask.token}`;
+  }
+  const body = ask.body === undefined ? '' : JSON.stringify(ask.body);
+  headers['Content-Length'] = Buffer.byteLength(body);
+  return new Promise<Reply>((resolve, reject) => {
+    const request = http.request({ host: '127.0.0.1', port: door.port, path: ask.path, method: ask.method ?? 'POST', headers }, (response) => {
+      let text = '';
+      response.on('data', (chunk) => {
+        text += String(chunk);
+      });
+      response.on('end', () => resolve({ status: response.statusCode ?? 0, body: text, connection: response.headers.connection }));
+    });
+    request.on('error', reject);
+    request.flushHeaders();
+    void bodyAfter.then(() => request.end(body), reject);
+  });
 }
 
 /** The parts of an answer a scenario compares: the status and the body without the one field that is a clock. */

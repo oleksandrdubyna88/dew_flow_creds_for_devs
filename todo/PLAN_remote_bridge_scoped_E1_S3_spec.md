@@ -1498,3 +1498,164 @@ after `accountOnlyVault` moved to `mcpAccountVault.ts`.
 - E2.2 must build `writes` as `new LeasedQueue(new WindowLock(path.join(globalStorageUri, SCOPES_LOCK_DIR), nodeLockFs()))`, call
   `scopes.forget` and the broker's `ceilings.forget(bridgeId)` (private today; E2 needs a method or the tests' cast) on Close, and wire
   `listEntriesOf`, `visibleConfigOf` and `entryRefusal` from `accountOnlyVault(storage, accountId)` and `details.agentForward`.
+
+
+## S3.14 — As built, Amendment 2 (Sonnet, 2026-11-05)
+
+B.1-B.6 and B.8, built in the order of B.12. B.7 is E1.4's and was not built. `credsAgentServer.ts` is **789** lines (B.9's count, to the
+line), `extension.ts` 1003 and unchanged, `.claude/rules/shared` not bumped, R3 of the first epoch (`bridgeBoundary.r3.json`) untouched and green.
+Nothing in the spec changes what an agent on a bridge can reach. Where it was wrong or silent, below.
+
+### Differences from B.1-B.12
+
+1. **R7 cannot be caught through the broker; the unit tests catch it.** B.11 names P3 (second half) and P2 for "`released(held)` without the
+   holding id". Neither can: between an admission and its dialog there is no `await` (mint, `usable`, `summarize` and `consent` are one synchronous
+   run), so a stale release cannot arrive while the new holder has no dialog on screen, and once it has, the `dialog` flag keeps the place whatever
+   the id. The catcher is `aliasThrottle.test.ts` ("the holdings of one place are distinct, and a stale release cannot free a later holder", "a slot
+   released twice frees the place once"). P2 and P3 pin what they can (a long action frees nothing of another call's open dialog; a late click frees
+   nothing of the next dialog's place).
+2. **P3's "late click on the first -> `ignored`" does not happen.** `withTimeout` has already settled with `undefined` at the timeout, so the click
+   is read by nobody and writes no line. P3 asserts what matters: the click decides nothing (no `ALLOWED` line) and frees nothing of the second
+   dialog's place.
+3. **`-A` wins over `-o ForwardAgent=no`, in either order** (OpenSSH 10.2, `ssh -F <Host * / ForwardAgent yes> -G`: `-A -o ForwardAgent=no` and `-o
+   ForwardAgent=no -A` both report `forwardagent yes`; `-A` assigns the option unconditionally). B.3's "the option wins over the composer too" is
+   therefore false. It moves nothing on a bridge (an entry with `agentForward` is refused by the wall and again by the action, so no bridged argv
+   has `-A`), but a flag named `noAgentForward` that forwards when the entry says so is a trap, so `buildSshExecArgv` hands the composer the entry
+   with `agentForward` off when it is set (pinned: "with noAgentForward an entry that forwards the agent gets no -A either"). Position: the option
+   is pushed right after the composer's block, as specified.
+4. **The live check of B.3 could not be observed here.** There is no `sshd` on this machine. It is section 8 of `scripts/ssh-agent-itest.cjs`
+   (in `scripts/itestForwardAgent.cjs`, so that script stays at 767 lines): a real `ssh-agent`, `Host * / ForwardAgent yes` through `-F`, the
+   production `buildSshExecArgv`, `printenv SSH_AUTH_SOCK` on a real `sshd -d`, once without the option (must be non-empty: the control) and once with
+   it (must be empty). It skips without sshd and **fails under `CI=true` without it**. What was observed: the config-level precedence
+   (`ssh -G`, above) and the pieces (the agent starts, the argv is the production one). The run on a runner with sshd is unobserved, and so is M8.
+5. **`OneInFlight` has a `holder()`, and `TokenlessCeilings` closes the holding `prompted` marked** (a field `open`), not "the current one": a
+   second or late `dialogClosed` then names a holding that no longer has the place and frees nothing of the next holder. The id check inside
+   `OneInFlight` is what protects; the `open` field only says which holding a close is for. `Holding` is exported.
+6. **The asking window is stamped on every refusal for a count, both the asking ceiling and the dialog budget**, and not on `busy` (which did
+   nothing and writes no line). The journal line is written for the asking and silent ceilings only; the dialog budget's refusal stays unwritten
+   ("a refused PROMPT is answered but never written down" is unchanged).
+7. **`SlidingWindow` keeps its newest `max` stamps only** (not in B.1). With refusals stamped, a flood would otherwise grow the array, and
+   the cost of pruning it, with the request rate. A window is full exactly when its `max`-th newest stamp is inside it, so nothing it decides
+   changes ("a refusal flood keeps the window's memory bounded", `stored()`).
+8. **The journal line's door is the refusal's** (`Admission.refusal.via`: `mcp` for the silent ceiling, none for an asking call), not
+   `prompts ? undefined : 'mcp'` at `admitAliasCall`, which lifted that method over the complexity rule. The server line is still the same
+   line, with 0 added.
+9. **`drop` is in both branches of `usable`** (`not_supported` and the validation/reference refusal), as B.9 counts (+2). A1 has a test for each.
+10. **`collideVault` is exported from `bridgeWallWorld.ts`** for W1. `ww.texts.current` still edits the stored line, now by writing `e1`'s
+    `command` and `commandArgs` in the vault, which the production `storedTexts` reads back. The `entryRefusal: 'none'` option remains as a
+    wrapper that answers nothing (L4's second leg); the other three suppliers are only spied. W1 has more tests than B.10 names: the world's
+    four answer what `wallSuppliersOf` answers, a difference planted in `wallSuppliersOf` reaches the world's wall for each of the four
+    (R11), and `storedTexts` per account.
+11. **Existing tests that changed, and why.** `OneInFlight` takes `Holding`s (`hold`/`released`), so its two unit tests and the `dialog`/
+    `bridgeDialog` helpers of `aliasThrottle.test.ts` now close the dialog; revisions are strings, so every numeric revision in `bridgeScope.test.ts`/
+    `bridgeStore.test.ts` is `NO_SCOPE` or what `set` answered (and malformed-file cases for `NO_SCOPE`, an empty string and a number were added);
+    `put` in `bridgeModules.ts` returns a string. No test was weakened.
+12. **R2 through the broker** needed the clock: `A1: a refusal is a call` uses `mock.timers` for `Date` (60 refused at the start, 60 at the middle,
+    a call 61 s after the first sixty is still refused). The unit test also catches it.
+13. **Three equivalent mutants were found and the code removed**: `this.dialog = false` in `OneInFlight.hold`, `this.open = undefined` in
+    `dialogClosed` and the `given` flag in `holding()`. Each was redundant with the holding ids, so no test could fail for it.
+
+### The RED record (each watched failing, for the reason named, before the fix)
+
+- **A4**, `drop` as a no-op stub and the old eviction: `a token whose first dialog is open is not evicted while a call grant exists`
+  (`undefined !== 'pending'`); `allowed calls are tier two: an open token is not reached`; `a pending call grant is gone`.
+- **`aliasThrottle.test.ts`**, the new API with the old behaviour (14 failed, 35 passed): `the call at 60ms was admitted, not refused`
+  (the asking ceiling), `the first holder released late and freed nothing of the second`, `the call is over but its dialog is still up`,
+  `another call while the first still runs was refused: Another request is already waiting ...`, `only the newest max stamps can decide ...`.
+- **Through the broker, against the old throttle and registry** (10 failed): A1 `{ '400 invalid_request': 300 }` against 60/240 (the alias route the
+  same); **A1 (token) `{ '400 invalid_request': 256, '401 unauthorized': 44 }`: the shared token itself was evicted by the 256th mint, which
+  is B.1's HIGH**; A2 `the open dialog still decides its call`; A3 `mcp` and `the alias door spends the same sixty as the MCP door`;
+  P1 `the second call was not answered busy: it was let in behind the open dialog`; P2 `timed out waiting for the call through the other bridge
+  to run (it was told busy while the first action ran)` and `... the second dialog, raised while the first action runs`; T1 `[504, 'consent_timeout',
+  'The human did not allow this grant.']` against `[403, 'denied', ...]`. **P3 passed against the old code**, as B.10 says of its first half.
+- **V1** (numeric stub `NO_SCOPE = 0`): `the new file does not carry the old copy's revision`.
+- **W1**, a `wallSuppliersOf` that answers nothing (5 failed, deep-equal on every supplier).
+- **F1**: `a bridged call forwards nothing, whatever ~/.ssh/config says: -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10
+  -J hop@jump.corp.com -i ... -- deploy@prod.corp.com id`; the two `buildSshExecArgv` unit tests likewise.
+- **X1**: `the slot came back`.
+
+### Totals
+
+`npm run typecheck`, `lint` (0 problems) and `ratchet` clean; `npm test` 6258 tests, 6254 pass, 0 fail, 4 skipped; `itest:cli` all checks passed;
+`itest:ssh-agent` all checks passed (the live-sshd sections, 5, 7 and 8, skip: no sshd here); the .NET build of the solution 0 warnings,
+0 errors; `CredsBroker.Tests` 159 of 159; `plan-lifecycle` clean. Line counts: `credsAgentServer.ts` 789, `extension.ts` 1003, `aliasThrottle.ts` 449,
+`grantRegistry.ts` 341, `bridgeWallSource.ts` 31, `ssh-agent-itest.cjs` 767.
+
+### Break-its run (each mutation applied to one file, the suite file(s) named run, the file restored and its sha256 compared with the one taken before: all equal)
+
+Every mutation below was caught. A mutant's own type error (an unused variable, say) does not stop `tsc` emitting; the emitted file is what ran. B.11's
+R1-R12 are the rows named R*; the G rows are guards of this commit that no R names. Three guards no test caught on the first pass are the equivalent
+mutants of item 13 (code removed), and one (`storedTexts` reading account a1 whoever asks) got its test (W1, per account).
+
+| # | Mutation | Test that caught it (first) | Failing |
+|---|---|---|---|
+| R1 | `askingRefusal` without the asking window | B.1: sixty asking calls a minute per door, calls refused before any dialog included; the sixty-first is refused with its own sentence | 14 |
+| R2 | an asking refusal not stamped (stamp only on admission) | B.1: a refusal is a call: refusals stamp the asking window, so a loop does not get a fresh sixty each time the first sixty age out | 2 |
+| R5 | `released` frees while a dialog is open | B.2: while a dialog of the holding is on screen the place is the dialog's: the call ending frees nothing | 3 |
+| R7 | `released(held)` without the holding id | a slot released twice frees the place once: the second release cannot free the next call's | 4 |
+| R7b | `dialogClosed(held)` without the holding id | B.2: a dialog closing frees the place whatever the call does next, and the call ending later frees nothing more | 1 |
+| G-dialog-id-prompted | `prompted(held)` marks a dialog for any holding | B.2: a dialog closing frees the place whatever the call does next, and the call ending later frees nothing more | 1 |
+| G-ceil-open | `dialogClosed` closes whoever holds, not the holding `prompted` marked | B.2: a local token call holds, stamps and closes nothing | 2 |
+| G-door-cond | a local token dialog closing frees a throttled dialog's place | B.2: a local token dialog closing frees nothing of the place a throttled dialog holds | 1 |
+| G-prompted-nomark | `prompted` does not make the place the dialog's | B.2: through the coordinator, a call that ends during its dialog frees the place only when the dialog closes | 2 |
+| G-holder-undef | `holder()` answers nothing | B.2: holder() names the holding that has the place now, and nothing while it is free | 6 |
+| G-stamp-cap | the window keeps every stamp, not its newest `max` | B.1: a refusal flood keeps the window's memory bounded: it stores no more than its cap | 1 |
+| G-refusal-keeps-place | an asking refusal leaves the place held | the local door is today's modal budget to the byte: five dialogs, one in flight, those sentences | 17 |
+| G-busy-stamps | a `busy` answer is stamped in the asking window | B.1: a refusal for the dialog budget counts too; a busy answer, which did nothing, does not | 1 |
+| G-report-asking-off | an asking refusal is not written to the journal | B.1: one journal line per door per window for an asking refusal, as for a silent one; none for busy or the dialog budget | 2 |
+| G-report-modal-on | the dialog budget's refusal is written to the journal | a refused PROMPT is answered but never written down, which is unchanged and deliberate | 2 |
+| G-asking-sentence | the asking sentence says "prompt" | B.1: sixty asking calls a minute per door, calls refused before any dialog included; the sixty-first is refused with its own sentence | 9 |
+| G-asking-who | the asking sentence names the local caller on a bridge | on a bridge the sentences name the bridge, never a caller without a token | 7 |
+| G-asking-door | every door shares the local asking window | each door has its own windows: five dialogs on bridge A leave bridge B and the local door untouched | 12 |
+| G-ceiling-61 | `ASKING_CEILING` is 61 | B.1: the asking ceiling is the silent ceiling's number | 10 |
+| G-idle-asking | a door with only asking stamps is "idle" and forgotten | B.1: a door whose only stamps are asking calls refused before their dialog is not forgotten while they count | 1 |
+| G-silent-asking | the silent path is counted in the asking window | release on a silent admission is a no-op: it frees nothing and banks nothing | 2 |
+| G-modal-stamp-in-admit | the dialog window is stamped at admission again | the local door is today's modal budget to the byte: five dialogs, one in flight, those sentences | 32 |
+| R3 | `drop` deletes any grant | A4: drop deletes a call grant that is still pending, and nothing else | 1 |
+| R3-call-any | `drop` deletes any call grant, settled ones too | A4: drop deletes a call grant that is still pending, and nothing else | 1 |
+| R4 | `EVICTION_ORDER` as the old three tiers | A4: 300 pending calls evict only calls — every token and tombstone is still there | 3 |
+| R4-tombstone-after-open-token | tiers 3 and 4 swapped | A4: each tier of the eviction list is reached only when the ones before it are empty, whatever the insertion order | 1 |
+| R4-allowed-call-before-pending | tiers 1 and 2 swapped | A4: each tier of the eviction list is reached only when the ones before it are empty, whatever the insertion order | 1 |
+| R4-find-first-defined | `oldestEvictable` picks no victim that exists | and the window still bounds itself — the call grants are what went | 2 |
+| G-drop-validation | no `drop` at the validation refusal | A1: 300 refused-before-the-dialog calls through a bridge — 60 are refused for their command, 240 for the count; no grant is left and the jou | 4 |
+| G-drop-notsupported | no `drop` at the `not_supported` refusal | A1: an action the entry's kind does not have is refused without leaving a grant either | 1 |
+| G-via-always-mcp | every journalled refusal names `via mcp` | B.1: the journal line of a refusal names the MCP door for the silent ceiling and no door for an asking call | 2 |
+| G-via-never | the silent ceiling's line names no door | B.1: the journal line of a refusal names the MCP door for the silent ceiling and no door for an asking call | 1 |
+| G-via-wiring | the server forces `via: mcp` on the line | A1: 300 refused-before-the-dialog calls through a bridge — 60 are refused for their command, 240 for the count; no grant is left and the jou | 1 |
+| R6-wiring | `dialogClosed` not wired in `credsAgentServer` | S26: each bridge has its own five — the sixth through A is refused, a sixth through B is asked, and so is a local call | 12 |
+| R9-wiring | the server hands it `() => grant.status` (the snapshot) | T1: a token denied after the bridge looked it up and before its body arrived is refused — no dialog, no minted grant | 1 |
+| R9 | `bridgedTokenCall` tests the snapshot | T1: a token denied after the bridge looked it up and before its body arrived is refused — no dialog, no minted grant | 1 |
+| R6 | `dialogClosed` not called on the timeout | P3: an unanswered dialog times out, frees the place, and a late click frees nothing of the next dialog's | 1 |
+| G-closed-on-click-only-noanswer | `dialogClosed` never called | S26: each bridge has its own five — the sixth through A is refused, a sixth through B is asked, and so is a local call | 12 |
+| G-prompted-removed | `prompted` never called | S26: each bridge has its own five — the sixth through A is refused, a sixth through B is asked, and so is a local call | 14 |
+| R10 | revision a counter again | V1: forget, set again, and a copy from before the Close is stale — the revision is never reused | 1 |
+| G-isRevision-noscope | a file whose revision is `NO_SCOPE` reads as a scope | S17: a malformed file, in any of its parts, is an empty scope at NO_SCOPE with quiet off | 1 |
+| G-isRevision-empty | a file with an empty revision reads as a scope | S17: a malformed file, in any of its parts, is an empty scope at NO_SCOPE with quiet off | 1 |
+| G-stale-compare | `set` ignores the expected revision | S17: set answers the revision it wrote, a fresh id every time, and a copy at the wrong revision is refused with the one sentence and changes | 6 |
+| G-empty-revision | the absent scope's revision is not `NO_SCOPE` | S17: a server with no file has an empty scope at NO_SCOPE that admits nothing and is not quiet | 10 |
+| G-W-list-all-accounts | `listEntriesOf` lists every account | W1: listEntriesOf is one account's listing — a1 lists prod and not foreign, which holds the same id in the account searched first | 1 |
+| G-W-config-all-accounts | `visibleConfigOf` searches every account | W1: visibleConfigOf is asked of one account: a1's e1 is a1's and a2's is a2's, whichever is searched first | 1 |
+| G-W-forward-never | `entryRefusal` never refuses | W1: entryRefusal refuses an entry that forwards the agent with the sentence, and nothing else | 2 |
+| G-W-texts-wrong-account | `storedTexts` reads account a1 whoever asks | W1: storedTexts reads the entity of the account it is asked about, not another account's of the same id | 1 |
+| R11-texts | the wall world defines `storedTexts` itself | W1: the wall world's four suppliers answer what wallSuppliersOf answers over the world's own vault | 2 |
+| R11-list | ... `listEntriesOf` | W1: the wall world's four suppliers answer what wallSuppliersOf answers over the world's own vault | 1 |
+| R11-config | ... `visibleConfigOf` | W1: the wall world's four suppliers answer what wallSuppliersOf answers over the world's own vault | 1 |
+| R11-refusal | ... `entryRefusal` | W1: the wall world's four suppliers answer what wallSuppliersOf answers over the world's own vault | 2 |
+| R8-not-pushed | `-o ForwardAgent=no` not pushed | F1: through a bridge the argv says -o ForwardAgent=no, after the composer's jump; off a bridge it does not | 3 |
+| R8-before-composer | pushed before `sshOptionArgv` | F1: through a bridge the argv says -o ForwardAgent=no, after the composer's jump; off a bridge it does not | 2 |
+| G-A-kept | `-A` kept beside `-o ForwardAgent=no` | B.3: with noAgentForward an entry that forwards the agent gets no -A either — ssh lets -A win over -o ForwardAgent=no, in either order | 1 |
+| G-noagent-always | `ForwardAgent=no` sent whenever the option is present, even false | F1: through a bridge the argv says -o ForwardAgent=no, after the composer's jump; off a bridge it does not | 3 |
+| G-bridged-flag-false | the action never asks for `noAgentForward` | F1: through a bridge the argv says -o ForwardAgent=no, after the composer's jump; off a bridge it does not | 1 |
+| G-bridged-flag-always | the action always asks for it, bridged or not | L4: control — on the main port the same entry runs with -A | 3 |
+| G-callsite-bridge | the call site passes `false` | F1: through a bridge the argv says -o ForwardAgent=no, after the composer's jump; off a bridge it does not | 1 |
+| R12 | `.catch` dropped at `prepareAuth` | X1: a credential read that THROWS gives the slot back and fails the call — it neither leaks nor hangs | 1 |
+| R1/integration | R1/integration | A1: 300 refused-before-the-dialog calls through a bridge — 60 are refused for their command, 240 for the count; ... | 5 |
+| R2/integration | the same, through the broker with the clock moved | A1: a refusal is a call — sixty refused at the start of a minute and sixty at its middle keep the door closed ... | 1 |
+| R5/integration | the same, through the broker | P1: a client that posts and goes away does not free the place its dialog holds — ... | 1 |
+| G-refusal-keeps-place/integration | G-refusal-keeps-place/integration | S26: each bridge has its own five — ... | 8 |
+
+### Not verified
+
+- Section 8 of `ssh-agent-itest.cjs` on a runner with `sshd`, and M8 (the Windows OpenSSH 9.5 with `ForwardAgent yes` in the Windows ssh_config).
+- That a `Date`-mocked clock in `mock.timers` does not disturb other tests in the same file: the file's other tests passed in the full run, and
+  `mock.timers.reset()` is in a `finally`.

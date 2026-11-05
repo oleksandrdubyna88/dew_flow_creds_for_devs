@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   MAX_REMOTE_COMMAND_CHARS,
+  type SshExecOptions,
   buildSshExecArgv,
   validateRemoteCommand,
 } from '../sshExecCommand';
@@ -107,4 +108,38 @@ test('a host that reads as an option is refused outright, whatever -- would do',
   assert.equal(buildSshExecArgv(entity({ host: '-oProxyCommand=sh -c id' }), undefined, 'true', 'askpass'), undefined);
   assert.equal(buildSshExecArgv(entity({ host: 'a.com; id' }), undefined, 'true', 'askpass'), undefined);
   assert.equal(buildSshExecArgv(entity({ user: 'root; id' }), undefined, 'true', 'askpass'), undefined);
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Amendment 2, B.3 — a bridged call never forwards the agent, whatever ssh's config files say
+ * ------------------------------------------------------------------------------------------------------------- */
+
+const argvWith = (e: EntityMetadata, options: SshExecOptions, auth: 'key' | 'askpass' = 'key'): string[] => {
+  const argv = buildSshExecArgv(e, undefined, 'id', auth, options);
+  assert.notEqual(argv, undefined);
+  return argv as string[];
+};
+
+test('B.3: noAgentForward adds -o ForwardAgent=no after the composer\'s options and before the destination', () => {
+  const forwarding = entity({ portForwards: [{ kind: 'local', bindPort: 8080, host: 'db', hostPort: 5432 }] });
+  const bridged = argvWith(forwarding, { jump: 'hop@jump.corp.com', noAgentForward: true });
+  const at = bridged.findIndex((arg, i) => arg === '-o' && bridged[i + 1] === 'ForwardAgent=no');
+  assert.notEqual(at, -1, `the option is in the argv: ${bridged.join(' ')}`);
+  assert.ok(bridged.indexOf('-J') !== -1 && bridged.indexOf('-J') < at, 'after the jump the composer put there');
+  assert.ok(bridged.indexOf('-L') !== -1 && bridged.indexOf('-L') < at, 'and after the port forwards');
+  assert.ok(at < bridged.indexOf('--'), 'and before the destination');
+});
+
+test('B.3: without noAgentForward — absent or false — the option is not sent', () => {
+  for (const options of [{ jump: 'hop@jump.corp.com' }, { jump: 'hop@jump.corp.com', noAgentForward: false }]) {
+    const plain = argvWith(entity(), options);
+    assert.ok(!plain.some((arg) => arg.startsWith('ForwardAgent')), `not asked for, not sent: ${plain.join(' ')}`);
+  }
+});
+
+test('B.3: with noAgentForward an entry that forwards the agent gets no -A either — ssh lets -A win over -o ForwardAgent=no, in either order', () => {
+  const argv = argvWith(entity({ agentForward: true }), { noAgentForward: true });
+  assert.ok(!argv.includes('-A'), argv.join(' '));
+  assert.ok(argv.join(' ').includes('-o ForwardAgent=no'));
+  assert.ok(argvWith(entity({ agentForward: true }), {}).includes('-A'), 'control: off a bridge the entry\'s own flag still gives -A');
 });

@@ -201,3 +201,127 @@ test('a door that mints per call says so; everything else is a token by default'
   assert.equal(mint(registry).scope, 'token');
   assert.equal(mintForOneCall(registry).scope, 'call');
 });
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Amendment 2, B.1 — a call refused before anybody was asked holds nothing, and the cap reaches a token last (A4)
+ * ------------------------------------------------------------------------------------------------------------- */
+
+/** The status the registry holds for a grant, or `undefined` when it holds none (evicted). */
+const statusOf = (registry: GrantRegistry, grant: { secret: string }): string | undefined => registry.get(grant.secret)?.status;
+
+/** Assert, for each grant, the status the registry should still hold for it. */
+function assertStatuses(registry: GrantRegistry, expected: ReadonlyArray<readonly [{ secret: string }, string | undefined, string]>): void {
+  for (const [grant, status, why] of expected) {
+    assert.equal(statusOf(registry, grant), status, why);
+  }
+}
+
+/** A denied token: a tombstone. */
+function tombstone(registry: GrantRegistry): { secret: string } {
+  const grant = mint(registry);
+  registry.deny(grant.secret);
+  return grant;
+}
+
+/** An allowed token. */
+function allowedToken(registry: GrantRegistry): { secret: string } {
+  const grant = mint(registry);
+  registry.allow(grant.secret);
+  return grant;
+}
+
+test('A4: 300 pending calls evict only calls — every token and tombstone is still there', () => {
+  const registry = new GrantRegistry();
+  const idleToken = mint(registry);
+  const openToken = mint(registry); // a shared token whose first dialog is open: pending
+  const allowed = allowedToken(registry);
+  const tombstones = [tombstone(registry), tombstone(registry), tombstone(registry)];
+
+  for (let i = 0; i < 300; i += 1) {
+    mintForOneCall(registry); // a refused-before-the-dialog loop: pending call grants
+  }
+
+  assertStatuses(registry, [
+    [idleToken, 'pending', 'a token whose first dialog is open is not evicted while a call grant exists'],
+    [openToken, 'pending', 'nor another'],
+    [allowed, 'allowed', 'an allowed token stays'],
+    ...tombstones.map((grant) => [grant, 'denied', 'a denied tombstone still answers denied, not unknown'] as const),
+  ]);
+});
+
+test('A4: 300 allowed call grants (silent MCP use) evict only calls — a tombstone, an open token and an allowed token all stay', () => {
+  const registry = new GrantRegistry();
+  const open = mint(registry);
+  const dead = tombstone(registry);
+  const allowed = allowedToken(registry);
+  for (let i = 0; i < 300; i += 1) {
+    registry.allow(mintForOneCall(registry).secret);
+  }
+  assertStatuses(registry, [
+    [open, 'pending', 'allowed calls are tier two: an open token is not reached'],
+    [dead, 'denied', 'nor a tombstone'],
+    [allowed, 'allowed', 'nor an allowed token'],
+  ]);
+});
+
+test('A4: drop deletes a call grant that is still pending, and nothing else', () => {
+  const registry = new GrantRegistry();
+  const pendingCall = mintForOneCall(registry);
+  const allowedCall = mintForOneCall(registry);
+  registry.allow(allowedCall.secret);
+  const deniedCall = mintForOneCall(registry);
+  registry.deny(deniedCall.secret);
+  const pendingToken = mint(registry);
+  const allowed = allowedToken(registry);
+  const denied = tombstone(registry);
+
+  for (const grant of [pendingCall, allowedCall, deniedCall, pendingToken, allowed, denied, { secret: 'nobody-minted-this' }]) {
+    registry.drop(grant.secret);
+  }
+
+  assertStatuses(registry, [
+    [pendingCall, undefined, 'a pending call grant is gone'],
+    [allowedCall, 'allowed', 'an allowed call grant is not dropped'],
+    [deniedCall, 'denied', 'a denied call grant is not dropped'],
+    [pendingToken, 'pending', 'a token is never dropped, pending included'],
+    [allowed, 'allowed', 'an allowed token stays'],
+    [denied, 'denied', 'a denied token stays'],
+  ]);
+});
+
+test('A4: each tier of the eviction list is reached only when the ones before it are empty, whatever the insertion order', () => {
+  // Filler: allowed TOKENS, the last tier, so the map is full (256) and the next mint must evict exactly one grant.
+  // The grants under test are minted FIRST, so by insertion order the one the list should leave for last is the oldest.
+  const full = (...firstMinted: Array<(r: GrantRegistry) => string>): { registry: GrantRegistry; ids: string[] } => {
+    const registry = new GrantRegistry();
+    const ids = firstMinted.map((make) => make(registry));
+    while (ids.length < 256) {
+      const filler = mint(registry);
+      registry.allow(filler.secret);
+      ids.push(filler.secret);
+    }
+    return { registry, ids };
+  };
+  const anAllowedToken = (r: GrantRegistry): string => allowedToken(r).secret;
+  const openToken = (r: GrantRegistry): string => mint(r).secret;
+  const aTombstone = (r: GrantRegistry): string => tombstone(r).secret;
+  const allowedCall = (r: GrantRegistry): string => {
+    const g = mintForOneCall(r);
+    r.allow(g.secret);
+    return g.secret;
+  };
+  const pendingCall = (r: GrantRegistry): string => mintForOneCall(r).secret;
+
+  const cases: Array<[string, Array<(r: GrantRegistry) => string>, number]> = [
+    ['a pending call before an allowed call', [allowedCall, pendingCall], 1],
+    ['an allowed call before a tombstone', [aTombstone, allowedCall], 1],
+    ['a tombstone before an open token', [openToken, aTombstone], 1],
+    ['an open token before an allowed token', [anAllowedToken, openToken], 1],
+  ];
+  for (const [what, makers, victimAt] of cases) {
+    const { registry, ids } = full(...makers);
+    mintForOneCall(registry); // one more: the cap evicts one
+    const gone = ids.filter((id) => registry.get(id) === undefined);
+    assert.deepEqual(gone, [ids[victimAt]], what);
+  }
+});

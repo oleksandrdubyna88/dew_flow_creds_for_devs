@@ -183,8 +183,9 @@ function connectionArgvOptions(
   deps: SshUseDeps,
   entity: EntityMetadata,
   jump: string | undefined,
-): { jump?: string; knownHostsFile?: string } {
-  return { jump, knownHostsFile: materializeKnownHosts(deps.storageDir, entity) };
+  bridged: boolean,
+): { jump?: string; knownHostsFile?: string; noAgentForward: boolean } {
+  return { jump, knownHostsFile: materializeKnownHosts(deps.storageDir, entity), noAgentForward: bridged };
 }
 
 // eslint-disable-next-line max-lines-per-function
@@ -224,7 +225,7 @@ export function sshExecAction(deps: SshUseDeps): UseAction {
       if (release === undefined) {
         return fail('too_many_requests', 'Too many SSH commands are already running.');
       }
-      const prepared = await prepareAuth(deps, ctx, entity, refuse);
+      const prepared = await prepareAuth(deps, ctx, entity, refuse).catch((error: unknown) => { release(); throw error; });
       if (!prepared.ok) {
         release();
         return prepared.result;
@@ -239,7 +240,7 @@ export function sshExecAction(deps: SshUseDeps): UseAction {
           prepared.keyPath,
           String((body as { command: string }).command),
           prepared.auth,
-          connectionArgvOptions(deps, entity, chain.value),
+          connectionArgvOptions(deps, entity, chain.value, ctx.bridge !== undefined),
         ) as string[]; // the host was checked above
         const launch = agentAwareLaunch(deps, entity, prepared.env);
         const outcome = await runSshExec(argv, {
