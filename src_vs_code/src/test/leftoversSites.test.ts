@@ -88,6 +88,7 @@ test('the scan does not mistake a word in a comment or a string for a call', () 
 });
 
 test('no unit-test file names a folder in the legacy `agent` form: a name without the owner segment is never collected', () => {
+  // testsToDelete-exempt: legacy-name — this test's needle: it searches for the legacy form, and spelled whole the file would find itself
   const needle = 'testsTo' + 'Delete-agent-'; // spelled in two pieces: this file must not be the one it finds
   const files = fs.readdirSync(TESTS).filter((name) => name.endsWith('.ts'));
   const legacy = files.filter((name) => fs.readFileSync(path.join(TESTS, name), 'utf8').includes(needle));
