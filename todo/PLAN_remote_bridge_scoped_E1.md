@@ -596,3 +596,30 @@ that revision changes for this document; nothing is deleted. The parent's §4.9 
     a writer of the per-call file; absent, a bridged call is refused with `BRIDGE_USE_REFUSED` and the journal line *no per-call ssh_config
     yet: E1.6* before any spawn; `bridgeLinks.test.ts` L1 injects a stub that writes a file and asserts its shape, so it stays green; E1.6
     wires the real writer and removes the guard. The S3 spec's Amendment 5 carries both in its closing paragraph.
+
+## Amendment, epoch 5 (2026-11-06)
+
+The parent plan stopped a third time (changes 4.2 and 4.3, `51fdf30`) and was revised whole for epoch 5 (`78b3962` and the commit that
+writes this amendment) before the sort and the re-review. What that revision changes for this document; nothing above is deleted, and the
+parent's §4.10 (three lists), §7 (*Local doors at partial E1*), §2.1 Q7 and `## Epics` E1 are the authority where they and an earlier
+passage here differ.
+
+1. **The partial-E1 merge condition (item 2 of the epoch 4 amendment) is superseded.** R1, R4 and the pre-PR diff line still hold, and
+   two conditions join them (parent §2.1 Q7, §5 step 3): PR #303 is on `main` first, which is met since `08da93d` landed and was merged
+   into the branch at `045b2a3`; and every change the merge makes on the local doors meets its acceptance through the local doors, the
+   token and pre-consented calls included, with the owed tests of the parent's §7 written before the PR. The partial-E1 PR also carries the
+   list the parent's E1 *PR shape* names (the two `CHANGELOG.md` corrections, `research/module_extension.md`, the two comments, RS1 and RS2).
+2. **Item 11's list is widened**, because it named the consent-lifecycle changes alone. What partial E1 changes for a local user, at
+   `a04ca33`, is the parent's §4.10 *second list*: the items of item 11, **and** a throw inside a handler answered 500 where `main` left the
+   request hanging (D.8, every door); `GET //` answered `not_found` with no line where `main` hangs it (change 4.3, `requestUrl`); an agent's
+   `up` or `down` no longer postponing auto-lock (`vpnRun.ts`, `notePersonsAct`; an Allow or Deny click still counts); D.6's local half (a
+   key file whose removal fails and whose note throws no longer replaces a finished exec's 200); and the kept place after a local `create`,
+   `terminal` or `up` **through the alias or MCP door only**: a local token call is counted on no door (`doorOfDialog`), so it keeps nothing.
+   Not in the list, because no production door reaches them before E2: D.7 (`tokenStatusNow` runs on the bridged branch alone), the `exec`
+   guard (E1.6 removes it before a door exists), the read shape. Their release notes are E4.1's flip entry's, not E2.2b's and not this PR's.
+3. **The `CHANGELOG.md` entry is derived from the diff at the commit, never prescribed.** The S3 spec's F.6 quoted the entry verbatim and
+   one bullet was false (change 4.2); F.6's correction stands. From here the entry is checked bullet by bullet against the diff of the files
+   it names, and this document and the specs describe what the entry must cover (item 2 above), not its words.
+4. **Item 10's suite names stand**; the parent's §7 adds the local-door cases the fix-forward writes into `bridgePrompts.test.ts`,
+   `bridgeKeptPlace.test.ts` and `aliasThrottle.test.ts`, and E2.2b's failure-budget and one-answer cases (parent D21, D22) are E2's
+   document's to carry, not this one's.
