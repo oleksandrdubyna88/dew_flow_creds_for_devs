@@ -70,7 +70,18 @@ export interface SshUseDeps {
    * it is not invisible: the route refuses as `agent-has-no-key` while the agent is serving it.</p>
    */
   servesKeyForEntity?(entity: EntityMetadata): boolean;
+  /**
+   * E1.6's writer of the per-call ssh_config a bridged `ssh` runs under (parent §4.9). ABSENT on the partial-E1 tree, and that absence is the
+   * lock between partial E1 and E2 (`unguardedBridge`): a bridged call is refused before any slot, key or spawn. The parameter is E1.6's to
+   * widen (the legs and their keys go in); the result is §4.9's decided shape — `cwd`, a fresh folder per call that holds the file and nothing
+   * else, and `configFile`, the relative name `c.conf`. Nothing on this tree calls it: the argv carries no `-F` until E1.6 writes the file.
+   */
+  bridgedSshConfig?: BridgedSshConfigWriter;
 }
+
+export type BridgedSshConfigWriter = (call: { readonly callId: string }) => { readonly cwd: string; readonly configFile: string };
+/** The journal's reason while the writer is absent; the agent reads `BRIDGE_USE_REFUSED` and not this. */
+export const NO_BRIDGED_SSH_CONFIG = 'no per-call ssh_config yet: E1.6';
 
 /**
  * The program and environment that make `-A` more than a flag, plus one audit line when it
@@ -199,7 +210,11 @@ function removeKeyFile(deps: SshUseDeps, file: string | undefined): void {
       fs.rmSync(file, { force: true });
     }
   } catch (error) {
-    deps.note(`ssh:exec — the key file could not be removed: ${describeError(error)}`);
+    try {
+      deps.note(`ssh:exec — the key file could not be removed: ${describeError(error)}`);
+    } catch {
+      /* a journal that will not take the line costs neither the slot nor the result (Amendment 6, D.6) */
+    }
   }
 }
 
@@ -232,7 +247,7 @@ export function sshExecAction(deps: SshUseDeps): UseAction {
         return fail('not_found', `"${ctx.entityName}" no longer exists in the vault.`);
       }
       const refuse = bridgedRefusal(deps, ctx);
-      const unusable = unusableEntity(ctx, entity);
+      const unusable = unusableEntity(ctx, entity) ?? unguardedBridge(deps, ctx, refuse);
       if (unusable !== undefined) {
         return unusable;
       }
@@ -343,6 +358,11 @@ function openedMessage(entityName: string, entity: EntityMetadata): string {
  * <p>`remedyRunner(undefined)`: the broker has an entity and no tree row, so a refusal's *Add Key to
  * Agent* button says so plainly rather than opening a picker nobody asked for.</p>
  */
+/** A bridged call with no writer of the per-call file is refused before any slot, key or spawn: the generic sentence to the agent, this reason in the journal. Off a bridge, nothing. */
+function unguardedBridge(deps: SshUseDeps, ctx: UseActionContext, refuse: (code: ErrorCode, message: string) => UseActionResult): UseActionResult | undefined {
+  return ctx.bridge !== undefined && deps.bridgedSshConfig === undefined ? refuse('denied', NO_BRIDGED_SSH_CONFIG) : undefined;
+}
+
 function brokerWindow(deps: SshUseDeps): RemoteWindowDeps | undefined {
   return deps.relays === undefined ? undefined : remoteWindowDeps(deps.relays, remedyRunner(undefined));
 }

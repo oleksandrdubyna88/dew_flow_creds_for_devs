@@ -1,4 +1,5 @@
 import type { BridgeContext } from './bridgeContext';
+import { BRIDGE_ENTRY_FIELDS } from './bridgeScope';
 import { ALIAS_ROUTE_PREFIX, EXPORT_REFUSED, type ErrorCode } from './brokerProtocol';
 import type { Refusal } from './brokerRequests';
 
@@ -120,3 +121,17 @@ export function refusedOnBridge(
   respond(refusal.code, refusal.message);
   return true;
 }
+
+/**
+ * What each served read may carry, at EVERY depth of its body (Amendment 6, F.3). A served GET with no row here and none in
+ * {@link BRIDGE_BYTE_EQUAL_READS} fails the read-shape test: default deny, the same rule as the route table above.
+ */
+export const BRIDGE_READ_SHAPES: Readonly<Record<string, readonly string[]>> = {
+  '/v1/aliases': ['aliases', 'name', 'kind'],
+  '/v1/mcp/entries': ['entries', ...BRIDGE_ENTRY_FIELDS, 'use', 'edit', 'create', 'delete'],
+  '/v1/mcp/config-snippet': ['envVar', 'languages', 'snippet', 'error', 'id', 'label', 'variants', 'language', 'variant', 'code', 'where', 'does'],
+  '/v1/mcp/folders': ['folders'],
+};
+
+/** The served reads that carry the product's own text and no vault data: pinned byte-equal instead of by field. */
+export const BRIDGE_BYTE_EQUAL_READS: readonly string[] = ['/v1/health', '/v1/mcp/kinds', '/v1/mcp/kind-help'];

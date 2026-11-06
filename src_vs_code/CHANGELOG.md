@@ -19,6 +19,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The CLI help article says that `env` is refused there** and points to `run` and `script` instead, in all five
   languages. It does not describe the save warning.
 
+### Changed — the broker's one consent dialog: who holds its place, and for how long
+
+- **The place one dialog takes is the dialog's, given back when it closes** (`brokerConsent.ts`, `shown`), not when the call that raised it
+  ends: a client that hangs up during its dialog leaves the modal on screen and the place taken until you click it or five minutes pass.
+  Before, the place went back at the call's end and the next call could open a second modal over the first.
+- **A prompt is counted when it is shown, not when the call is admitted** (`aliasThrottle.ts`, `prompted`): a call refused before any dialog
+  no longer spends one of the five prompts a minute.
+- **A new ceiling: a caller without a token may ask at most 60 times a minute**, refusals before any dialog included (`ASKING_CEILING`), with
+  its own sentence and one journal line per minute.
+- **After you Allow a local `create`, `terminal` or `up`, the place stays taken until that call ends**, because those three may show a
+  prompt of their own next (a PIN box, a trust modal, OpenVPN Connect's question); another caller hears *busy* until then. `exec`, `query`,
+  `run` and `down` keep nothing once the dialog closes.
+- **A token that ran out between its header and its body is refused before any dialog**, 401 *Unknown or missing grant token.*, as the main
+  port has always answered it.
+- **A failure inside a request handler answers 500** with the generic sentence instead of leaving the request unanswered until the client
+  gives up; the reason goes to the agent journal.
+- The grant registry reclaims in tiers (denied calls, calls that ran, Allows not yet used, then calls whose dialog is open or whose client
+  left), and a call refused before anybody was asked leaves no grant behind.
+- **Unchanged, said here so nobody reads it as new:** a dialog nobody answers still times out after five minutes, still answers the caller
+  *The human did not allow this grant.*, and still gives the place back, so the next call raises a dialog while the old one may be on
+  screen. A later release changes this.
+
 ### Fixed — security — an agent's SQL can no longer reach the database client's own commands
 
 - **A stored mysql password could be sent to a host the agent named.** The `query` action's gate (`refuseQuery`) let

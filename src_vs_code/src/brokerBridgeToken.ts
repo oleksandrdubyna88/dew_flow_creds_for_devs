@@ -3,7 +3,8 @@ import type { CallerLabel } from './brokerCaller';
 import type { BrokerDoor } from './brokerMcpDoor';
 import type { ErrorCode } from './brokerProtocol';
 import { GRANT_NOT_ALLOWED, UNKNOWN_TOKEN } from './brokerRequests';
-import type { Grant, GrantStatus } from './grantRegistry';
+import { grantExpiry } from './grantRegistry';
+import type { Grant, GrantLimits, GrantRegistry, GrantStatus } from './grantRegistry';
 
 /** A token that cannot be used now: the person said no, or it is gone (evicted, expired) — answered as the main port would, `unknown`. */
 function tokenRefusal(status: GrantStatus | undefined): { code: ErrorCode; message: string; logged: boolean } | undefined {
@@ -11,6 +12,15 @@ function tokenRefusal(status: GrantStatus | undefined): { code: ErrorCode; messa
     return { code: 'denied', message: GRANT_NOT_ALLOWED, logged: true };
   }
   return status === undefined ? { code: 'unauthorized', message: UNKNOWN_TOKEN, logged: false } : undefined;
+}
+
+/**
+ * The token's status as a dialog may rely on it: `undefined` once it is gone or has run out (`grantExpiry`, pure: nothing pruned, nothing
+ * spent), its stored status otherwise — `denied` before any clock (Amendment 6, D.7).
+ */
+export function tokenStatusNow(registry: Pick<GrantRegistry, 'get'>, secret: string, now: number, limits: GrantLimits): GrantStatus | undefined {
+  const grant = registry.get(secret);
+  return grant === undefined || grantExpiry(grant, now, limits) !== undefined ? undefined : grant.status;
 }
 
 /**

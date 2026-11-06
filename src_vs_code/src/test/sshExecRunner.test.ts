@@ -67,6 +67,8 @@ test('a normal child returns its real exit code and output, untruncated', async 
   assert.equal(outcome.stdout, 'hello');
   assert.equal(outcome.stdoutTruncated, false);
   assert.equal(outcome.timedOut, false);
+  // `exec`'s body is the type's (`ExecResponseBody`) and nothing beyond it: a bridge serves it whole (Amendment 6, RS7).
+  assert.deepEqual(Object.keys(outcome).sort(), ['durationMs', 'exitCode', 'stderr', 'stderrTruncated', 'stdout', 'stdoutTruncated', 'timedOut']);
 });
 
 /**

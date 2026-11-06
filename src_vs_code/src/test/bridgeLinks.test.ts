@@ -7,6 +7,10 @@ import { code, message } from './bridgeDoorHarness';
 import { JUMP_NAME, KEY_BODY, KEY_NAME, LinksOptions, LinksWorld, STDERR_WITH_A_HOST, linksWorld } from './bridgeLinksWorld';
 import { loadBridgeModules } from './bridgeModules';
 import { Door, WallOptions, WallWorld, send, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
+import { memoryStorage } from './pinWorld';
+import { loadWithVscode } from './vscodeStub';
+import type { sshDepsFor as SshDepsFor } from '../sshUseActions';
+import { WslRelayManager } from '../wslRelayManager';
 
 /**
  * What a Remote Bridge may be told about the entries an in-scope entry LINKS to (E1.3 epoch 3, L1-L5, A.3.6).
@@ -55,6 +59,7 @@ test('L1: a linked key out of scope is part of using e1 — it works through the
     assert.equal(lw.materialised.length, 1);
     assert.ok(!fs.existsSync(lw.materialised[0]), 'and the materialised file is gone');
     assert.deepEqual(ww.w.dialogs.length, 1, 'asked once, for e1');
+    assert.equal(lw.configWrites, 0, 'the writer of the per-call ssh_config is there and nothing calls it on this tree: the argv has no -F (E1.6 turns this into an assertion about the file)');
   });
 });
 
@@ -214,4 +219,40 @@ test('F1: off a bridge, an entry that forwards the agent runs with -A as today a
     assert.ok(lw.runs[0].argv.includes('-A'), lw.runs[0].argv.join(' '));
     assert.equal(forwardAgentNoAt(lw.runs[0].argv), -1);
   });
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Amendment 6, F.4 — the lock between partial E1 and E2: a bridged exec with no writer of the per-call ssh_config is refused
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('G1: with no writer of the per-call ssh_config a bridged exec is refused generically before any key or spawn; the journal says why; the main port runs', async () => {
+  await both({ noConfigWriter: true }, {}, async ({ lw, ww }) => {
+    const reply = await body(viaBridge(ww.bridge), ww);
+    assert.deepEqual([reply.status, code(reply), message(reply)], [403, 'denied', BRIDGE_USE_REFUSED('prod')]);
+    for (const word of ['ssh_config', 'E1.6']) {
+      assert.ok(!reply.body.includes(word), `"${word}" is the journal's, not the agent's: ${reply.body}`);
+    }
+    assert.equal(lw.runs.length, 0, 'ssh was never started');
+    assert.equal(lw.materialised.length, 0, 'and no key was written for a call that was refused');
+    assert.equal(lw.notes.filter((note) => note.includes('no per-call ssh_config yet: E1.6')).length, 1, `one journal line: ${JSON.stringify(lw.notes)}`);
+    assert.equal(ww.w.dialogs.length, 1, 'the guard is in the action, so it answered after the Allow');
+  });
+  await both({ noConfigWriter: true }, {}, async ({ lw, ww }) => {
+    const control = await body(viaMain(ww), ww);
+    assert.equal(control.status, 200, control.body);
+    assert.ok(lw.runs[0].argv.includes('-i'), 'off a bridge nothing changed: the key is handed to ssh');
+  });
+});
+
+test('G2: production hands the actions no writer of the per-call ssh_config (E1.6 flips this line when it wires the real one)', () => {
+  const { sshDepsFor } = loadWithVscode<{ sshDepsFor: typeof SshDepsFor }>('../sshUseActions', { window: {} });
+  const signal = new AbortController().signal;
+  const parts: Parameters<typeof SshDepsFor>[0] = {
+    storage: memoryStorage({ window: {} }),
+    storageDir: '/unused',
+    agentServer: { signal, acquireExecSlot: () => undefined, note: () => undefined },
+    sshAgent: { socketPath: undefined, servesKeyForEntity: () => false },
+    relays: new WslRelayManager(() => { throw new Error('no relay is spawned here'); }, () => undefined),
+  };
+  assert.equal('bridgedSshConfig' in sshDepsFor(parts), false);
 });

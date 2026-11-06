@@ -332,6 +332,7 @@ test('A4: each tier of the eviction list is reached only when the ones before it
     ['a denied call before a call that ran', [usedAllowedCall, deniedCall], 1],
     ['a call that ran before a call whose dialog may be open (pending)', [pendingCall, usedAllowedCall], 1],
     ['a call that ran before an Allow not yet reserved', [unusedAllowedCall, usedAllowedCall], 1],
+    ['an Allow not yet reserved before a pending call (Amendment 6, D.5)', [pendingCall, unusedAllowedCall], 1],
     ['a pending call before a tombstone', [aTombstone, pendingCall], 1],
     ['an allowed, unreserved call before a tombstone', [aTombstone, unusedAllowedCall], 1],
     ['a tombstone before an open token', [openToken, aTombstone], 1],
@@ -370,5 +371,36 @@ test('A4 (Amendment 3, C.4): a live dialog pending call survives 300 calls that 
     ...tombstones.map((grant) => [grant, 'denied', 'nor a tombstone'] as const),
     ...ran.slice(0, 51).map((grant) => [grant, undefined, 'the oldest calls that ran go next'] as const),
     ...ran.slice(51).map((grant) => [grant, 'allowed', 'the newer calls that ran stay'] as const),
+  ]);
+});
+
+test('A4 (Amendment 6, D.5): a pending call outlives 300 calls that ran and 300 Allows never reserved; denied calls, then used calls, then unreserved ones go', () => {
+  const registry = new GrantRegistry();
+  const dialogOpen = mintForOneCall(registry); // the oldest grant of all: a dialog is on screen on this call
+  const denied = [deniedCallOf(registry), deniedCallOf(registry)];
+  const openToken = mint(registry);
+  const allowed = allowedToken(registry);
+  const tombstones = [tombstone(registry), tombstone(registry), tombstone(registry)];
+  const ran: Array<{ secret: string }> = [];
+  for (let i = 0; i < 300; i += 1) {
+    const call = allowedCall(registry);
+    registry.reserve(call.secret);
+    ran.push(call);
+  }
+  const unreserved: Array<{ secret: string }> = [];
+  for (let i = 0; i < 300; i += 1) {
+    unreserved.push(allowedCall(registry)); // dead pre-consented calls: refused in `usable`, never reserved, never dropped
+  }
+
+  // 8 + 600 grants went in against a cap of 256: 352 were evicted. The 2 denied calls first, the 300 used calls next, then the 50 oldest unreserved.
+  assertStatuses(registry, [
+    [dialogOpen, 'pending', 'a pending call is the last call tier: it outlives every Allow not yet reserved, though it is older than all of them'],
+    ...denied.map((grant) => [grant, undefined, 'a refused call goes first'] as const),
+    ...ran.map((grant) => [grant, undefined, 'a call that ran goes before any Allow not yet reserved'] as const),
+    ...unreserved.slice(0, 50).map((grant) => [grant, undefined, 'the oldest unreserved Allows go next'] as const),
+    ...unreserved.slice(50).map((grant) => [grant, 'allowed', 'the newer unreserved Allows stay'] as const),
+    [openToken, 'pending', 'no token while a call grant exists'],
+    [allowed, 'allowed', 'nor an allowed token'],
+    ...tombstones.map((grant) => [grant, 'denied', 'nor a tombstone'] as const),
   ]);
 });

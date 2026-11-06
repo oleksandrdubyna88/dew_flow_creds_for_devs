@@ -1,5 +1,6 @@
 import * as http from 'node:http';
-import { ErrorCode, MAX_REQUEST_BODY_BYTES, parseBearer, parseJsonObject } from './brokerProtocol';
+import { describeError } from './describeError';
+import { ErrorCode, INTERNAL_FAILURE, MAX_REQUEST_BODY_BYTES, parseBearer, parseJsonObject } from './brokerProtocol';
 import { Grant, GrantLimits, GrantLookup } from './grantRegistry';
 import { expiredMessage } from './grantWords';
 import { MCP_SWITCHES } from './mcpSwitches';
@@ -282,4 +283,20 @@ export function readBody(req: http.IncomingMessage): Promise<string> {
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
+}
+
+/**
+ * A handler threw: answer 500 with the generic sentence if nothing has been sent, and put the reason in the journal — never in the body
+ * (a bridge may be the reader). Amendment 6, D.8: without it the request stays unanswered until the client gives up.
+ */
+export function unanswered(
+  res: http.ServerResponse,
+  error: unknown,
+  respondError: (code: ErrorCode, message: string) => void,
+  log: (line: { grant: string; entityName: string; action: string; outcome: string; detail: string }) => void,
+): void {
+  log({ grant: '—', entityName: '', action: 'request', outcome: 'failed', detail: `a handler threw: ${describeError(error)}` });
+  if (!res.headersSent) {
+    respondError('internal', INTERNAL_FAILURE);
+  }
 }

@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
-import { Reply, code, message } from './bridgeDoorHarness';
+import { Reply, code, message, pause } from './bridgeDoorHarness';
+import { INTERNAL_FAILURE } from '../brokerProtocol';
 import { ACCOUNT, CONTEXT_1, Ask, WallWorld, answeredAtOnce, send, sendAbortable, settleAll, until, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
 
 /**
@@ -217,10 +218,10 @@ test('K8: the same action without the flag keeps nothing (P2) — a second door 
  * ------------------------------------------------------------------------------------------------------------- */
 
 /** 300 quiet local MCP calls, the clock moved a minute every sixty (the silent ceiling is sixty a minute per door): how each was answered. */
-async function quietLoop(ww: WallWorld): Promise<Record<string, number>> {
+async function quietLoop(ww: WallWorld, ask: Ask): Promise<Record<string, number>> {
   const tally: Record<string, number> = {};
   for (let call = 1; call <= 300; call += 1) {
-    const reply = await send(viaMain(ww), mcp());
+    const reply = await send(viaMain(ww), ask);
     tally[reply.status] = (tally[reply.status] ?? 0) + 1;
     if (call % 60 === 0) {
       mock.timers.tick(61_000);
@@ -235,12 +236,33 @@ test('Q1: 300 quiet local MCP calls while a bridged exec\'s dialog is open do no
   try {
     const exec = send(viaBridge(ww.bridge), alias());
     await until(() => ww.w.openDialogs.length === 1, 'the bridged exec\'s dialog');
-    assert.deepEqual(await quietLoop(ww), { 200: 300 }, 'every quiet call ran, without a dialog');
+    assert.deepEqual(await quietLoop(ww, mcp()), { 200: 300 }, 'every quiet call ran, without a dialog');
     assert.equal(ww.w.dialogs.length, 1, 'and nobody was asked but the bridge\'s dialog');
     ww.w.openDialogs[0]('Allow');
     const reply = await exec;
     assert.deepEqual([reply.status, reply.status === 200 ? '' : code(reply)], [200, ''], reply.body);
     assert.equal(ww.w.audit.filter((line) => line.includes('ALLOWED')).length, 1, 'one ALLOWED line, for a grant that still existed');
+  } finally {
+    mock.timers.reset();
+    settleAll(ww);
+    ww.dispose();
+  }
+});
+
+test('Q2 (Amendment 6, D.5): 300 quiet local MCP calls with an empty command, each refused after its pre-consent, do not evict a bridged exec\'s grant either', async () => {
+  const ww = await wallWorld({ holdDialogs: true, quietLocal: true });
+  mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  try {
+    const exec = send(viaBridge(ww.bridge), alias());
+    await until(() => ww.w.openDialogs.length === 1, 'the bridged exec\'s dialog');
+    const tally = await quietLoop(ww, mcp(''));
+    assert.equal(tally[200], undefined, `the empty command ran nowhere: ${JSON.stringify(tally)}`);
+    assert.equal(ww.w.dialogs.length, 1, 'and nobody was asked but the bridge\'s dialog');
+    ww.w.openDialogs[0]('Allow');
+    const reply = await exec;
+    assert.deepEqual([reply.status, reply.status === 200 ? '' : code(reply)], [200, ''], reply.body);
+    assert.equal(ww.w.audit.filter((line) => line.includes('ALLOWED')).length, 1, 'one ALLOWED line, for a grant that still existed');
+    assert.equal(ww.w.audit.some((line) => line.includes('unauthorized')), false, 'and no unauthorized line');
   } finally {
     mock.timers.reset();
     settleAll(ww);
@@ -314,43 +336,38 @@ function journalThrowsOnMint(ww: WallWorld): () => boolean {
   return () => threw;
 }
 
-/** One door: its journal throws right after admission, the failed request is dropped, and the next call must be asked, not told busy. */
-async function nextCallAfterJournalFailure(door: 'alias' | 'mcp' | 'token'): Promise<Reply> {
+/** One door: its journal throws right after admission, the failed request is answered, and the next call must be asked, not told busy. */
+async function afterJournalFailure(door: 'alias' | 'mcp' | 'token'): Promise<{ failed: Reply; next: Reply }> {
   const ww = await wallWorld();
   try {
     const ask = await askFor(ww, door);
     const threw = journalThrowsOnMint(ww);
-    const failed = sendAbortable(viaBridge(ww.bridge), ask);
-    failed.reply.catch(() => undefined);
-    await until(threw, `${door}: the minted line to be written and to throw`);
-    failed.abort();
-    return await answeredAtOnce(send(viaBridge(ww.bridge), ask), `${door}: the next call did not answer: the place was left held`);
+    const failed = await send(viaBridge(ww.bridge), ask);
+    assert.equal(threw(), true, `${door}: the minted line was written and threw`);
+    const next = await answeredAtOnce(send(viaBridge(ww.bridge), ask), `${door}: the next call did not answer: the place was left held`);
+    return { failed, next };
   } finally {
     ww.dispose();
   }
 }
 
-test('C.7: a journal append that throws right after admission gives the place back — on the alias, MCP and token doors', async () => {
-  // The throw escapes `handle` (a `void` in the listener), so the failed request is never answered: the test hangs up on it,
-  // and takes the unhandled rejection that is the throw itself (the runner's own handler would fail the test for it, so
-  // it is set aside for the length of this test and put back).
+test('C.7: a journal append that throws right after admission is answered 500 and gives the place back — on the alias, MCP and token doors', async () => {
+  // Amendment 6, D.8: the throw no longer escapes `handle`. The spy sits beside the runner's own handler (which would fail the test for an
+  // escape too), so `escaped.length === 0` is a count and not an absence of evidence.
   const escaped: unknown[] = [];
   const spy = (reason: unknown): void => {
     escaped.push(reason);
   };
-  const runners = process.listeners('unhandledRejection');
-  process.removeAllListeners('unhandledRejection');
   process.on('unhandledRejection', spy);
   try {
     for (const door of ['alias', 'mcp', 'token'] as const) {
-      const next = await nextCallAfterJournalFailure(door);
+      const { failed, next } = await afterJournalFailure(door);
+      assert.deepEqual([failed.status, code(failed), message(failed)], [500, 'internal', INTERNAL_FAILURE], `${door}: the failed request was answered, with the generic sentence`);
       assert.equal(next.status, 200, `${door}: the next call was asked and ran, not told busy: ${next.body}`);
     }
-    assert.equal(escaped.length, 3, 'the three throws were the only rejections that escaped');
+    await pause(20);
+    assert.equal(escaped.length, 0, 'no throw escaped as an unhandled rejection');
   } finally {
     process.off('unhandledRejection', spy);
-    for (const listener of runners) {
-      process.on('unhandledRejection', listener);
-    }
   }
 });

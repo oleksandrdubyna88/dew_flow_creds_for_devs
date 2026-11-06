@@ -68,6 +68,8 @@ interface Parts {
   connectRefuses?: boolean;
   /** The credential read itself fails (a keychain that errors): `prepareAuth` throws instead of answering (X1). */
   credentialThrows?: boolean;
+  /** The journal will not take a line: `deps.note` throws (X3). */
+  noteThrows?: boolean;
 }
 
 const ENTITY = {
@@ -165,6 +167,9 @@ function deps(w: World, parts: Parts): SshUseDeps {
       };
     },
     note: (m: string): void => {
+      if (parts.noteThrows === true) {
+        throw new Error('the journal could not be written');
+      }
       w.notes.push(m);
     },
     agentSocket: (): string | undefined => w.agentSocket,
@@ -290,6 +295,28 @@ test('X2: a key file that cannot be removed (a Windows lock) still gives the slo
     assert.equal(w.tally.slotsHeld, 0, 'and the slot came back');
     assert.ok(w.notes.some((note) => note.startsWith('ssh:exec — the key file could not be removed: ')), `the note names the removal failure: ${w.notes.join(' | ')}`);
     assert.ok(w.notes.every((note) => !note.includes('PRIVATE KEY BODY')), 'and not the key');
+  } finally {
+    refused.mock.restore();
+    cleanup(w);
+  }
+});
+
+test('X3 (Amendment 6, D.6): a key file that cannot be removed AND a journal that will not say so still give the slot back and keep the finished result', async () => {
+  const parts: Parts = { source: KEY_SOURCE, noteThrows: true };
+  const w = await world(parts);
+  const nodeFs = require('node:fs') as typeof fs;
+  const real = nodeFs.rmSync;
+  const refused = mock.method(nodeFs, 'rmSync', (target: fs.PathLike, options?: fs.RmOptions): void => {
+    if (String(target).endsWith('.key')) {
+      throw Object.assign(new Error(`EPERM: operation not permitted, unlink '${String(target)}'`), { code: 'EPERM' });
+    }
+    real(target, options);
+  });
+  try {
+    const result = await exec(w, parts);
+    assert.equal(result.status, 200, 'the finished exec is the answer, not the failed note');
+    assert.equal(refused.mock.callCount() > 0, true, 'the removal was attempted');
+    assert.equal(w.tally.slotsHeld, 0, 'and the slot came back');
   } finally {
     refused.mock.restore();
     cleanup(w);

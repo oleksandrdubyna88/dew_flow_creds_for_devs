@@ -1,5 +1,5 @@
 import * as assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { mock, test } from 'node:test';
 import { Reply, code, message, pause } from './bridgeDoorHarness';
 import { loadBridgeModules, present, put } from './bridgeModules';
 import { ACCOUNT, Ask, SERVER, WallWorld, registryOf, send, sendSlow, until, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
@@ -477,6 +477,81 @@ test('T2: a token evicted after the bridge looked it up and before its body arri
     assert.deepEqual(ww.w.audit.slice(journal), [], 'an unknown token writes no line, as on the main port');
     assert.deepEqual(ww.w.ran, [], 'nothing ran');
   } finally {
+    ww.dispose();
+  }
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Amendment 6, D.7 — a token that ran out between the header and the body is refused before the dialog (T3)
+ * ------------------------------------------------------------------------------------------------------------- */
+
+/** Start a token call whose body is held back: by the time `begin` resolves the header has been read and the token looked up. */
+async function slowTokenCall(ww: WallWorld, token: string): Promise<{ reply: Promise<Reply>; sendBody(): void }> {
+  let sendBody = (): void => undefined;
+  const bodyAfter = new Promise<void>((resolve) => {
+    sendBody = resolve;
+  });
+  const reply = sendSlow(viaBridge(ww.bridge), ASK_TOKEN(token), bodyAfter);
+  await pause(100);
+  return { reply, sendBody };
+}
+
+test('T3: a token idle past its limit between the header and the body is answered 401 unknown — no dialog, no line, nothing ran', async () => {
+  const ww = await wallWorld();
+  mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  try {
+    const token = await ww.tokenFor(ACCOUNT, 'e1', 'prod');
+    const slow = await slowTokenCall(ww, token);
+    mock.timers.tick(61 * 60_000); // the default idle limit is an hour
+    const dialogs = ww.w.dialogs.length;
+    const journal = ww.w.audit.length;
+    slow.sendBody();
+    const reply = await slow.reply;
+    assert.deepEqual([reply.status, code(reply), message(reply)], [401, 'unauthorized', UNKNOWN_TOKEN]);
+    assert.equal(ww.w.dialogs.length, dialogs, 'and nobody was asked');
+    assert.deepEqual(ww.w.audit.slice(journal), [], 'an expired token writes no line, as an evicted one does not');
+    assert.deepEqual(ww.w.ran, [], 'nothing ran');
+  } finally {
+    mock.timers.reset();
+    ww.dispose();
+  }
+});
+
+test('T3: a token whose call count was reached between the header and the body is answered 401 unknown the same way', async () => {
+  const ww = await wallWorld({ maxCalls: 1 });
+  try {
+    const token = await ww.tokenFor(ACCOUNT, 'e1', 'prod');
+    const slow = await slowTokenCall(ww, token);
+    assert.equal((await send(viaBridge(ww.bridge), ASK_TOKEN(token))).status, 200, 'another call spent the token\'s one use');
+    const dialogs = ww.w.dialogs.length;
+    const journal = ww.w.audit.length;
+    slow.sendBody();
+    const reply = await slow.reply;
+    assert.deepEqual([reply.status, code(reply), message(reply)], [401, 'unauthorized', UNKNOWN_TOKEN]);
+    assert.equal(ww.w.dialogs.length, dialogs, 'nobody was asked for the slow call');
+    assert.deepEqual(ww.w.audit.slice(journal), [], 'and it wrote no line');
+    assert.equal(ww.w.ran.length, 1, 'only the call that spent the use ran');
+  } finally {
+    ww.dispose();
+  }
+});
+
+test('T3: a token the person DENIED still answers 403 denied, with its line, whatever the clock says', async () => {
+  const ww = await wallWorld({ allows: 0 });
+  mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  try {
+    const token = await ww.tokenFor(ACCOUNT, 'e1', 'prod');
+    const slow = await slowTokenCall(ww, token);
+    ww.w.answers.push('Deny');
+    assert.equal((await send(viaMain(ww), ASK_TOKEN(token))).status, 403, 'a local dialog was answered Deny');
+    mock.timers.tick(61 * 60_000);
+    const journal = ww.w.audit.length;
+    slow.sendBody();
+    const reply = await slow.reply;
+    assert.deepEqual([reply.status, code(reply), message(reply)], [403, 'denied', GRANT_NOT_ALLOWED]);
+    assert.equal(ww.w.audit.slice(journal).some((line) => line.includes('denied')), true, 'a denied token is a call like any other: it has its line');
+  } finally {
+    mock.timers.reset();
     ww.dispose();
   }
 });

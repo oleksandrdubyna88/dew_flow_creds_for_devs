@@ -17,7 +17,7 @@ import type { BridgeContext } from './bridgeContext';
 import { BridgeListener, BridgeListeners } from './brokerBridgeListeners';
 import { refusedOnBridge } from './bridgeAllowList';
 import { DoorView, doorView, launchGate, referenceRefusal } from './bridgeScope';
-import { bridgedTokenCall } from './brokerBridgeToken';
+import { bridgedTokenCall, tokenStatusNow } from './brokerBridgeToken';
 import { doorsFor } from './brokerOrigin';
 import { CallSubject, performCall } from './brokerCall';
 import { OneUseLane, burnAndMark } from './oneUseLane';
@@ -29,7 +29,7 @@ import { abandonedWhenClosed } from './requestLife';
 import { recordConsent } from './brokerConsentMemory';
 import { McpFolderHooks } from './brokerFolderDoor';
 import { answerMcpRoute } from './brokerMcpRoutes';
-import { GRANT_NOT_ALLOWED, Refusal, aliasTarget, readBody, readNamedBody, validationRefusal } from './brokerRequests';
+import { GRANT_NOT_ALLOWED, Refusal, aliasTarget, readBody, readNamedBody, unanswered, validationRefusal } from './brokerRequests';
 import { CallerLabel, callerForAudit, callerFrom } from './brokerCaller';
 import { grantLimits } from './grantLimits';
 import { answerConfigRead } from './brokerConfigRoute';
@@ -492,7 +492,7 @@ export class CredsAgentServer implements vscode.Disposable {
     }
 
     const who: RequestWho = { via: 'token', caller: callerFrom(body), signal };
-    await (view.bridge === undefined ? this.perform(res, grant, action, body, who) : bridgedTokenCall(this.doorFor(signal, view, 'token', grant.secret), res, grant, action, body, who.caller, () => this.grants.get(grant.secret)?.status));
+    await (view.bridge === undefined ? this.perform(res, grant, action, body, who) : bridgedTokenCall(this.doorFor(signal, view, 'token', grant.secret), res, grant, action, body, who.caller, () => tokenStatusNow(this.grants, grant.secret, Date.now(), grantLimits())));
   }
 
   /**
@@ -694,7 +694,7 @@ export class CredsAgentServer implements vscode.Disposable {
 
   /** The router, behind one door per listener — see `brokerOrigin.ts` for why, and why two. */
   private readonly doors = doorsFor(
-    (req, res, bridge) => void this.handle(req, res, bridge),
+    (req, res, bridge) => void this.handle(req, res, bridge).catch((error: unknown) => unanswered(res, error, (code, message) => this.respondError(res, code, message), (line) => this.log(line))),
     () => this.port,
     (res, status, body) => this.respond(res, status, body),
     (message) => this.note(message),

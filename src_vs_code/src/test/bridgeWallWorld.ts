@@ -10,6 +10,7 @@ import type { BridgeListener } from '../brokerBridgeListeners';
 import type { McpFolderHooks } from '../brokerFolderDoor';
 import type { McpVaultSource } from '../mcpEntries';
 import type { EntityMetadata, TreeNode } from '../types';
+import { stored } from '../storedSecret';
 import { wallSuppliersOf } from '../bridgeWallSource';
 import { visibleMcpEntries } from '../mcpEntries';
 import * as assert from 'node:assert/strict';
@@ -58,7 +59,44 @@ function entity(id: string, name: string, parentId: string, extra: Partial<Entit
 /** What makes an entry a config an agent may be told how to read: the snippet route serves only these. */
 const config = (name: string): Partial<EntityMetadata> => ({ isConfig: true, configFormat: 'json', configFileName: `${name}.json` } as Partial<EntityMetadata>);
 
+/**
+ * The words `fullVault` plants (Amendment 6, F.3): a sentinel for each part of the four connection-string dialects the parent's D12
+ * measured, a folder's name, and a `creds://` reference to an entry that is in no scope. Test words, no shape of a real password.
+ */
+export const PLANTED = {
+  S1: 'zq-planted-s1', S2: 'zq-planted-s2', S3a: 'zq-planted-s3a', S3b: 'zq-planted-s3b', S4a: 'zq-planted-s4a', S4b: 'zq-planted-s4b',
+  FOLDER: 'zq-planted-folder', REFERENCE: 'creds://acct@example.test/outside/db/password',
+} as const;
+
+/** What `getDbConnection` answers for each entry `fullVault` adds, as the keychain would hold it. */
+const PLANTED_CONNECTIONS: Readonly<Record<string, string>> = {
+  'db-kv': `Server=db,1433;Database=d;User Id=u;Password=${PLANTED.S1}`,
+  'db-qs': `postgresql://u@h/d?password=${PLANTED.S2}`,
+  'db-slash': `postgresql://u:${PLANTED.S3a}/${PLANTED.S3b}@h/d`,
+  'db-at': `postgresql://u:${PLANTED.S4a}@${PLANTED.S4b}@h/d`,
+  'full-row': 'postgresql://u@h/d',
+};
+
+/** `fullVault`'s entries (all in a1): four db rows, a row with every optional field set, a terminal whose command names an entry out of scope, and one inside a named folder. */
+function plantedNodes(): TreeNode[] {
+  const db = (id: string): TreeNode => entity(id, id, 'f1', { kind: 'db', dbType: 'mssql', host: 'db.example.test' });
+  return [
+    { id: 'f-planted', name: PLANTED.FOLDER, type: 'folder', parentId: null, mcp: EVERYTHING },
+    db('db-kv'), db('db-qs'), db('db-slash'), db('db-at'),
+    entity('full-row', 'full-row', 'f1', {
+      kind: 'db', host: 'full.example.test', port: 5432, user: 'u', dbType: 'postgres', vpnType: 'openvpn', scriptLanguage: 'bash',
+      command: 'run it', isConfig: true, configKeyHash: 'hash', dependsOn: ['db-kv', 'e-out'],
+    }),
+    entity('tm-ref', 'tm-ref', 'f1', { kind: 'terminal', command: `deploy ${PLANTED.REFERENCE}` }),
+    entity('in-folder', 'in-folder', 'f-planted'),
+  ];
+}
+
+/** Every entry `fullVault` adds, for a scope that takes them all. */
+export const PLANTED_IDS: readonly string[] = ['db-kv', 'db-qs', 'db-slash', 'db-at', 'full-row', 'tm-ref', 'in-folder'];
+
 interface Flavour {
+  readonly fullVault: boolean;
   readonly collide: boolean;
   /** Whether a1's `e1` is a config. Off, with `collide`, only a2's `e1` is: the snippet must not be served from there. */
   readonly a1Config: boolean;
@@ -77,6 +115,7 @@ function nodesOf(x: 'usable' | 'closed' | 'absent', flavour: Flavour): Record<st
     entity('dup1', 'dup', 'f1'),
     entity('dup2', 'dup', 'f1'),
     ...xNodes(x),
+    ...(flavour.fullVault ? plantedNodes() : []),
   ];
   const a2: TreeNode[] = [folder('f1', EVERYTHING), entity('only-a2', 'only-a2-entry', 'f1')];
   // The same id as an entry of a1, in an account that is searched FIRST: what an unnarrowed lookup would find.
@@ -98,7 +137,7 @@ function xNodes(x: 'usable' | 'closed' | 'absent'): TreeNode[] {
  * `e1` ("foreign") in a2, which is listed first.
  */
 export function collideVault(asked: string[] = []): McpVaultSource {
-  return vaultOf('absent', { collide: true, a1Config: true, agentForward: false }, asked);
+  return vaultOf('absent', { fullVault: false, collide: true, a1Config: true, agentForward: false }, asked);
 }
 
 /** The vault as the broker's collaborators see it, recording which accounts were asked about. */
@@ -112,7 +151,8 @@ function vaultOf(x: 'usable' | 'closed' | 'absent', flavour: Flavour, asked: str
       asked.push(accountId);
       return (nodes[accountId] ?? []).find((node) => node.id === id);
     },
-    getPassword: none, getPrivateKey: none, getNotes: none, getTotp: none, getDbConnection: none,
+    getPassword: none, getPrivateKey: none, getNotes: none, getTotp: none,
+    getDbConnection: (accountId, id) => Promise.resolve(flavour.fullVault && accountId === ACCOUNT ? stored(PLANTED_CONNECTIONS[id]) : undefined),
   };
 }
 
@@ -156,6 +196,8 @@ function refSourceOf(vault: McpVaultSource): BridgeWallSource['refSource'] {
 }
 
 export interface WallOptions {
+  /** a1 also holds the entries of `PLANTED_IDS`: connection strings in four dialects, a terminal command with a reference out of scope, an entry in a named folder (Amendment 6, F.3). */
+  fullVault?: true;
   /** The entries in the scope of `server1`. Default: `e1`. */
   scope?: string[];
   quiet?: boolean;
@@ -240,7 +282,7 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
   const listed: string[] = [];
   const configsAsked: string[][] = [];
   const refusalsAsked: string[][] = [];
-  const vault = vaultOf(o.x, { collide: o.collide, a1Config: o.a1Config, agentForward: o.agentForward }, nodesAsked);
+  const vault = vaultOf(o.x, { fullVault: options.fullVault === true, collide: o.collide, a1Config: o.a1Config, agentForward: o.agentForward }, nodesAsked);
   let askedListing = false;
   let releaseListing: () => void = () => undefined;
   const listingGate = new Promise<void>((resolve) => {

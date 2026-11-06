@@ -3,9 +3,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { BRIDGE_NOT_SERVED, BRIDGE_ROUTES, bridgeRouteRefusal, refusedOnBridge } from '../bridgeAllowList';
+import { AgentUseDeps, dbQueryAction } from '../agentUseActions';
 import { BridgeContext } from '../bridgeContext';
 import { EXPORT_REFUSED, ErrorCode } from '../brokerProtocol';
+import type { SshUseDeps, sshExecAction as SshExecAction } from '../sshUseActions';
+import type { UseAction } from '../useActions';
 import { contractRoutes, strayRoutes, unnamedMessage, unnamedRoutes } from './contractRoutes';
+import { memoryStorage } from './pinWorld';
+import { loadWithVscode } from './vscodeStub';
 
 /**
  * The allow-list of a Remote Bridge (E1.2's table of one route, filled by E1.3): default deny, every contract
@@ -176,4 +181,46 @@ test('D14: Connection: close is set BEFORE the answer is written, so the answer 
   const res = { setHeader: () => void order.push('header') };
   refusedOnBridge(CONTEXT, 'GET', '/v1/mcp/future', res, () => void order.push('respond'));
   assert.deepEqual(order, ['header', 'respond']);
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Amendment 6, D.10 — no served bridge action asks after its Allow
+ * ------------------------------------------------------------------------------------------------------------- */
+
+/** The REAL action factories that can carry a served word, over stub deps: only construction is needed, nothing here runs an action. */
+function realServedActions(): UseAction[] {
+  const stub = { window: { showWarningMessage: (): Promise<undefined> => Promise.resolve(undefined), showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined) } };
+  const storage = memoryStorage(stub);
+  const signal = new AbortController().signal;
+  const sshDeps: SshUseDeps = { storage, storageDir: '/unused', signal, acquireExecSlot: () => (): void => undefined, note: () => undefined, agentSocket: () => undefined };
+  const agentDeps: AgentUseDeps & { onPath: (exe: string) => boolean } = {
+    storage,
+    storageDir: '/unused',
+    signal,
+    acquireExecSlot: () => (): void => undefined,
+    note: () => undefined,
+    trustStore: { get: () => [], update: () => Promise.resolve() },
+    applyEnv: () => Promise.resolve({ written: [], withheld: [] }),
+    onPath: () => false,
+  };
+  const { sshExecAction } = loadWithVscode<{ sshExecAction: typeof SshExecAction }>('../sshUseActions', stub);
+  return [sshExecAction(sshDeps), dbQueryAction(agentDeps)];
+}
+
+test('S1 (Amendment 6, D.10): no action a bridge serves asks after its Allow — a bridged action that does needs a decision about the kept place on a bridge', () => {
+  // The served words are DERIVED from the table, so this cannot drift from the allow-list; the actions are the real factories.
+  const served = new Set(BRIDGE_ROUTES.filter((route) => route.method === 'POST' && route.decision.served).map((route) => route.path.split('/').at(-1) ?? ''));
+  assert.deepEqual([...served].sort(), ['exec', 'query'], 'the served words are the ones this test knows how to find a real action for');
+  const actions = realServedActions();
+  for (const word of served) {
+    const carrying = actions.filter((action) => action.action === word);
+    assert.ok(carrying.length >= 1, `no real action carries the served word "${word}": an empty match would pass for ever`);
+    for (const action of carrying) {
+      assert.notEqual(
+        action.asksAfterConsent,
+        true,
+        `a bridged action that asks after the Allow needs a decision about the kept place on a bridge (Amendment 4, D.10) — this test is where E3 takes it: ${action.kind}/${action.action}`,
+      );
+    }
+  }
 });

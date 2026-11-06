@@ -3,7 +3,7 @@ import type { BridgeContext, BridgeGrant } from './bridgeContext';
 import type { ReadRouteSources } from './brokerReadRoutes';
 import { GRANT_NOT_ALLOWED, McpUseLookup, McpUseTarget, Refusal, UNKNOWN_TOKEN, aliasTarget, grantForToken, refusalFor } from './brokerRequests';
 import type { Grant, GrantLimits, GrantRegistry } from './grantRegistry';
-import type { McpEntry } from './mcpEntries';
+import type { McpCapabilities, McpEntry } from './mcpEntries';
 import type { EntityMetadata } from './types';
 import { planRefs } from './runPlan';
 import { RefSource, locateRef } from './secretRef';
@@ -117,16 +117,41 @@ function admitted(scope: Scope, target: McpUseTarget | undefined): McpUseTarget 
   return target !== undefined && scope.admits(target.accountId, target.entityId) ? target : undefined;
 }
 
-/** A row a bridge may list: what this door permits (`use` only), and no dependency on a row not listed. */
-function narrowed(row: McpEntry, kept: ReadonlySet<string>): McpEntry {
+/**
+ * A row as a bridge lists it (parent §4.2, D12): every field NAMED, none spread, so a field added to `McpEntry` later is not served
+ * here until somebody writes it into this type, this builder and `BRIDGE_ENTRY_FIELDS` — and the read-shape test fails until all three agree.
+ * `folder` is `''`: a folder is in no scope, and the inherited folder's name would be the one out-of-scope word still served (the
+ * client's `Folder` is non-null, `McpJsonContext.cs:54`). `connectionString` and `command` are booleans: the string is the secret
+ * (`withoutPassword` strips one dialect of four, parent D12) and a command carries `creds://` references that name an account and an
+ * out-of-scope entry; the agent runs a line by id and needs no text.
+ */
+export interface BridgeEntry {
+  readonly id: string; readonly name: string; readonly kind: string; readonly folder: '';
+  readonly host?: string; readonly port?: number; readonly user?: string; readonly dbType?: string; readonly vpnType?: string; readonly scriptLanguage?: string;
+  readonly hasConnectionString: boolean; readonly hasCommand: boolean;
+  readonly hasPassword: boolean; readonly hasPrivateKey: boolean; readonly hasNotes: boolean; readonly hasTotp: boolean;
+  readonly codeAccessEnabled?: boolean;
+  readonly dependsOn: string[];
+  readonly can: McpCapabilities;
+}
+/** The keys of `BridgeEntry`, written out: the read-shape test asserts a full row's served keys equal this list, and `BRIDGE_READ_SHAPES` names it. */
+export const BRIDGE_ENTRY_FIELDS: readonly (keyof BridgeEntry)[] = ['id', 'name', 'kind', 'folder', 'host', 'port', 'user', 'dbType', 'vpnType', 'scriptLanguage', 'hasConnectionString', 'hasCommand', 'hasPassword', 'hasPrivateKey', 'hasNotes', 'hasTotp', 'codeAccessEnabled', 'dependsOn', 'can'];
+
+/** A row a bridge may list, built field by field from the local row: what this door permits (`use` only), no dependency on a row not listed. */
+function narrowed(row: McpEntry, kept: ReadonlySet<string>): BridgeEntry {
   return {
-    ...row,
-    can: { use: row.can.use, edit: false, create: false, delete: false },
+    id: row.id, name: row.name, kind: row.kind, folder: '',
+    host: row.host, port: row.port, user: row.user, dbType: row.dbType, vpnType: row.vpnType, scriptLanguage: row.scriptLanguage,
+    hasConnectionString: row.connectionString !== undefined, // true exactly when the local row would have carried the stripped string
+    hasCommand: row.command !== undefined, // `blankToUndefined` (mcpEntries.ts) has already made a blank absent
+    hasPassword: row.hasPassword, hasPrivateKey: row.hasPrivateKey, hasNotes: row.hasNotes, hasTotp: row.hasTotp,
+    codeAccessEnabled: row.codeAccessEnabled,
     dependsOn: row.dependsOn.filter((name) => kept.has(name)),
+    can: { use: row.can.use, edit: false, create: false, delete: false },
   };
 }
 
-function entriesIn(scope: Scope, rows: readonly McpEntry[]): readonly McpEntry[] {
+function entriesIn(scope: Scope, rows: readonly McpEntry[]): readonly BridgeEntry[] {
   const kept = rows.filter((row) => scope.entries.has(row.id));
   const names = new Set(kept.map((row) => row.name));
   return kept.map((row) => narrowed(row, names));

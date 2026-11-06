@@ -33,6 +33,8 @@ export interface LinksOptions {
   readonly runFails?: boolean;
   /** Writing the key file fails, with a message that carries a path. */
   readonly writeFails?: boolean;
+  /** The deps carry no `bridgedSshConfig`, as production's do until E1.6 (Amendment 6, F.4): a bridged call is refused before any slot or key. */
+  readonly noConfigWriter?: true;
 }
 
 export interface Run {
@@ -48,6 +50,8 @@ export interface LinksWorld {
   readonly notes: string[];
   /** Every key file the run materialised. */
   readonly materialised: string[];
+  /** How many times the per-call ssh_config writer was called. Nothing calls it on the partial-E1 tree: the argv has no `-F` to name a file. */
+  readonly configWrites: number;
   readonly storageDir: string;
   cleanup(): void;
 }
@@ -66,6 +70,7 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
   const runs: Run[] = [];
   const notes: string[] = [];
   const materialised: string[] = [];
+  let configWrites = 0;
   const stub = { window: { showWarningMessage: (): Promise<undefined> => Promise.resolve(undefined), showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined) } };
   const mocks = {
     './keyInstaller': {
@@ -100,13 +105,31 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
     acquireExecSlot: () => (): void => undefined,
     note: (message) => void notes.push(message),
     agentSocket: () => undefined,
+    // E1.6's writer, stood in for: it records its calls and writes nothing, because on this tree no call is made (the argv has no `-F`).
+    ...(options.noConfigWriter === true ? {} : { bridgedSshConfig: () => {
+      configWrites += 1;
+      return { cwd: storageDir, configFile: 'c.conf' };
+    } }),
   };
-  return { exec: mod.sshExecAction(deps), runs, notes, materialised, storageDir, cleanup: () => fs.rmSync(storageDir, { recursive: true, force: true }) };
+  return {
+    exec: mod.sshExecAction(deps),
+    runs,
+    notes,
+    materialised,
+    get configWrites() {
+      return configWrites;
+    },
+    storageDir,
+    cleanup: () => fs.rmSync(storageDir, { recursive: true, force: true }),
+  };
 }
+
+/** The options with every default filled in; `noConfigWriter` is not one of them, it is read where the deps are built. */
+type Resolved = Required<Omit<LinksOptions, 'noConfigWriter'>>;
 
 type Storage = Parameters<typeof seedEntry>[0];
 
-async function seedVault(storage: Storage, o: Required<LinksOptions>): Promise<void> {
+async function seedVault(storage: Storage, o: Resolved): Promise<void> {
   await seedEntry(storage, ssh('e1', 'prod', linksOf(o)), {});
   await seedKey(storage, o.key);
   await seedJump(storage, o.jump);
@@ -119,12 +142,12 @@ const FORWARDS: PortForward[] = [
 ];
 
 /** Whether `e1` forwards the agent and its two ports. */
-function forwardingOf(o: Required<LinksOptions>): Partial<EntityMetadata> {
+function forwardingOf(o: Resolved): Partial<EntityMetadata> {
   return { ...(o.agentForward ? { agentForward: true } : {}), ...(o.forwards ? { portForwards: FORWARDS } : {}) };
 }
 
 /** `e1`'s own settings: the host, and the links to a key and a jump host as the options ask for them. */
-function linksOf(o: Required<LinksOptions>): Partial<EntityMetadata> {
+function linksOf(o: Resolved): Partial<EntityMetadata> {
   const key = o.key === 'none' ? {} : { sshKeyEntityId: 'k1' };
   const jump = o.jump === 'none' ? {} : { jumpHostEntityId: 'j1' };
   return { host: 'prod.corp.com', user: 'deploy', ...key, ...jump, ...forwardingOf(o) };

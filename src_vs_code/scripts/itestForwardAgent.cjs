@@ -52,6 +52,15 @@ const entityOn = (port) => ({ id: 'e-fwd', name: 'fwd', host: '127.0.0.1', user:
 
 const destination = `${os.userInfo().username}@127.0.0.1`;
 
+/** Resolves when `promise` has, or `ms` after this call — whichever is first; the timer does not outlive the race. */
+function settledAfter(promise, ms) {
+  let timer;
+  const bound = new Promise((resolve) => {
+    timer = setTimeout(resolve, ms);
+  });
+  return Promise.race([promise, bound]).finally(() => clearTimeout(timer));
+}
+
 /** A real ssh with `argv` under `config`, the agent in its environment; what it answered, and the sshd it spoke to. */
 async function runClient(rig, config, argv, started) {
   const client = launch('ssh', ['-F', config, ...argv], { env: { ...process.env, SSH_AUTH_SOCK: rig.agentSocket } });
@@ -61,6 +70,7 @@ async function runClient(rig, config, argv, started) {
       timer = setTimeout(resolve, 20_000, 'timeout');
     });
     const code = await Promise.race([client.done, timeout]);
+    await settledAfter(client.closed, 2000); // output that arrived between `exit` and `close`; bounded, a grandchild holding the pipe must not hang the leg
     return { code, stdout: client.stdout.trim(), detail: `${client.stderr.trim()}\n--- sshd -d, last lines ---\n${sshdTail(started)}` };
   } finally {
     clearTimeout(timer);
@@ -115,9 +125,10 @@ async function joiningLeg(check, rig, a, b) {
 /** Leg 4: the production argv for B under the same config: a fresh connection to B, with no agent. */
 async function bridgedLeg(check, rig, b) {
   const { buildSshExecArgv } = require(path.join(rig.out, 'sshExecCommand.js'));
-  const argv = buildSshExecArgv(entityOn(b.port), rig.userKey, 'printenv SSH_AUTH_SOCK', 'key', { knownHostsFile: b.knownHosts, bridged: true });
+  const argv = buildSshExecArgv(entityOn(b.port), rig.userKey, 'printenv SSH_AUTH_SOCK SSH_CONNECTION', 'key', { knownHostsFile: b.knownHosts, bridged: true });
   const result = await runClient(rig, rig.muxConfig, argv, b);
-  check('the production bridged argv joins no master: printenv answers 1 and prints nothing', result.code === 1 && result.stdout === '', JSON.stringify(result));
+  const lines = result.stdout.split(/\r?\n/);
+  check('the production bridged argv joins no master: printenv answers 1 (SSH_AUTH_SOCK unset) and prints exactly one line, the connection, ending in B\'s port', result.code === 1 && lines.length === 1 && lines[0].trim().endsWith(String(b.port)), JSON.stringify(result));
   check('and it reached B: sshd B saw the connection, so the empty answer is not a connection that never happened', REACHED_B.test(b.sshd.stderr), sshdTail(b));
 }
 
