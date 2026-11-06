@@ -1394,9 +1394,9 @@ configuration, a fault in `Build()`): those are still unhandled, and the plan na
 `CountingListener` (`src_service_defaults/tests/Support/StaleWindows.cs`, linked into the mcp, cli and broker test
 projects) is the loopback port the stale-window tests point dead announcements at: it counts every connection and
 answers a 404, so "skipped" is an observed zero rather than a timing. Its accept loop must end without throwing when
-`DisposeAsync` stops it — including right after it has counted a connection, when the next accept meets a stopped
-`TcpListener` and gets `InvalidOperationException("Not listening…")`. That exception is now a stop when, and only
-when, a stop was requested.
+`DisposeAsync` stops it — including right after it has counted a connection. Until 2026-11-06 the next accept could
+meet a stopped `TcpListener` and get `InvalidOperationException("Not listening…")`, and the loop treated that exception
+as a stop when, and only when, a stop was requested. The 2026-11-06 paragraph below replaces that catch.
 
 | test | what it proves |
 |---|---|
@@ -1404,8 +1404,24 @@ when, a stop was requested.
 
 **Watched RED** on a macOS CI leg (#234: the positive control `A_live_pid_on_a_port_that_is_not_ours_is_still_probed`
 failed in its dispose) and locally, 3 of 3 runs, rounds 15, 4 and 11, with the same message; green 5 of 5 after,
-and red again with the old helper. **Limit:** an `InvalidOperationException` raised before any stop is kept loud by
-the `when` filter, which is read, not tested.
+and red again with the old helper. **Limit at that time:** an `InvalidOperationException` raised before any stop was
+kept loud by the `when` filter, which was read, not tested.
+
+**2026-11-06, the race itself.** The catch above treated one symptom. PR #302 (Markdown only) went red on Linux CI at
+round 80 with a `NullReferenceException` in `TcpListener.AcceptSocketAsync`: the listener was stopped between that
+method's own "still listening" check and its use of the socket. `DisposeAsync` now cancels and waits for the loop, and
+the catch is gone. When the loop ends within the bound below, which is the only path seen so far, the listener stops
+after it and the two cannot meet. `AcceptAsync` no longer catches `InvalidOperationException`, so that exception is loud
+at any time, which supersedes the limit above.
+
+The wait has a 30-second bound in `DisposeAsync` itself, with the stop in a `finally`: an accept that cancelling did not
+end becomes a timeout for every caller, and the listener still stops, then with the loop possibly still running. The
+bound detects a hang; it does not measure speed. **Limit:** that path is read, not tested, because forcing it needs a seam in the helper for a case no platform
+has shown. The `NullReferenceException` was seen once, in CI (`ubuntu-latest`), and not reproduced locally.
+
+**Watched:** with the stop before the wait and no catch, red in 14 of 14 local Linux runs (8 before the fix, 6 with the
+stop put back), rounds 2 to 157, always "Not listening"; with the wait first, green in 30 of 30. Windows and macOS are
+seen only through CI.
 
 ## The public-hygiene guard (2026-10-12, [PLAN_public_repo_hygiene.md](PLAN_public_repo_hygiene.md))
 
