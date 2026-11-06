@@ -109,6 +109,32 @@ Narrowed: no — scope, the Definition of Done, the merge conditions and the rel
   (The first change of epoch 5; the plan goes on. In doubt it counts, and a row of the second list is a merge condition.)
 - 5.2 · 2026-11-06 · reviewer · contract — CodeRabbit on PR #307: an agent's `down` with no VPN client on the PATH reaches `noCli` (`vpnRun.ts:197-204`) and shows the install offer or OpenVPN Connect's question after its Allow, so §4.10's and C.3's `down keeps nothing` is false, and a second modal can open over that prompt, which `main` does not allow because every alias and MCP call keeps the place to its end
   (This second change stopped the plan. The fix is one flag, `asksAfterConsent`, but it contradicts a sentence of the contract, so it counts. PR #307 stays open and does not merge until epoch 6 opens.)
+  (Corrected by the re-review, the entry standing as written: OpenVPN Connect does not ask on a stop, `vpnRun.ts:206-208` only tells; the install offer is the one prompt of a `down`.)
+
+### Re-review for epoch 6
+
+Narrowed: no — scope, the Definition of Done, the merge conditions and the release lost nothing: `down`, `rotate` and a forwarding `exec` keep the place, which widens; the merge gains items, E2.2b the gate, and §8 records rejected findings that were never in scope; the 500's journal line carries a class and no message, a smaller diagnostic and not a smaller release, because the 500 still ships and `main` never had that line
+
+| Work | Where | Verdict | Action |
+|---|---|---|---|
+| PR #307 | open, unmerged | fits | stays open; no merge until epoch 6 opens, the items of E1's PR shape land and CI is green |
+| `main` work carried in by 2c8f601: a52fde1 (#305), 834c91b (#294) | merged to `main` | fits | kept; outside this plan |
+| Merge 2c8f601, and porting 403b675 | pushed, unmerged | fits | kept |
+| Epoch 5 opening 09c4a6a; plan commit 6ac1cf7 (change 5.1) | pushed, unmerged | fits | kept |
+| Fix-forward 6cde254, e057b5e, 1065e91: tests, RS teeth, comments, module text | pushed, unmerged | fits | kept; the sentences below are fixed forward |
+| `CHANGELOG.md` and `research/module_extension.md`: a long `down` frees the place (6cde254, e057b5e) | pushed, unmerged | cut | fix forward: per §4.10's contract |
+| `asksAfterConsent: action === 'up'` (235a5e4) and test C.3 | pushed, unmerged | cut | fix forward: the flag for both actions, `'vpn down'` flipped, §7's local `down` case |
+| The place freed at the dialog's close for `rotate` and for `exec` on an `agentForward` entry (5bfedf8, 235a5e4) | pushed, unmerged | cut | fix forward: `rotateAction` sets the flag; `asksAfterConsent` widens to take the target, for `exec` |
+| `unanswered`'s `describeError` line and its comment, the 500 bullet, the research sentence, four test assertions (88befcd, a04ca33) | pushed, unmerged | cut | fix forward: §4.1's classification and the sentinel test |
+| `BridgeScopes.set` reading through `read` (c58842e) | pushed, unmerged | cut | fix forward: §4.2, a strict read for `set`, `prune` skips what it cannot read |
+| `CHANGELOG.md` and help bullets on `creds env` (b26fb81) | pushed, unmerged | cut | fix forward: they hold for a token and the MCP door, not for `creds env <name>` |
+| `launchGate` (c58842e) | pushed, unmerged | fits | kept, unreachable before E2; E2.2b fixes it |
+| `BridgeListeners.turns` (547d9e9); `importWalk.ts` `withoutComments` (c58842e) | pushed, unmerged | fits | kept; fixed forward per E1's PR shape |
+| Closing commit 88befcd, otherwise | pushed, unmerged | fits | the epoch 5 row stands except for the 500 line and bullet above |
+| Stop commit fdcc55a | pushed, unmerged | fits | kept |
+| Revision 1f79e59, its text fixes 56eb116, and the E1 and E1.2 status lines | pushed, unmerged | fits | kept; step 4 of the full stop, no entry |
+| E1.4, c4b7add | pushed, unmerged, `wip/remote-bridge-e14-before-stop` | fits | kept; its action stands; conflicts are now three files, `module_extension.md` added; `auditGrantMark` on `unanswered`'s line beside §4.1's classification |
+| E1.5, E1.6, E2 and later | not built | — | build per the revised plan |
 
 ## Reading this plan: contracts, sketches and observations
 
