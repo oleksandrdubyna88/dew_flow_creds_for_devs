@@ -59,7 +59,7 @@ export interface Grant {
 const EVICTION_ORDER: ReadonlyArray<(grant: Grant) => boolean> = [
   (g) => g.scope === 'call' && g.status === 'denied', // a call the person refused: its secret is in no response, it answers nobody
   (g) => g.scope === 'call' && g.status === 'allowed' && g.uses > 0, // a call that ran (silent MCP use at sixty a minute lands here)
-  (g) => g.scope === 'call' && g.status === 'allowed', // an Allow not yet reserved: live for microseconds, or dead for good (refused or abandoned after a pre-consent) — oldest first
+  (g) => g.scope === 'call' && g.status === 'allowed', // an Allow not yet reserved: live while the call waits for its turn (the one-use lane, `remember`, `releaseWaiting`, the mask read), or dead for good (refused or abandoned after a pre-consent) — oldest first
   (g) => g.scope === 'call', // pending: a dialog open now, or a client that left during it — the last call to go
   (g) => g.status === 'denied', // tombstones (already capped at 64)
   (g) => g.scope === 'token' && g.status === 'pending', // a token whose first dialog is open
@@ -294,8 +294,8 @@ export class GrantRegistry {
    *
    * <p>A list, so the registry never reaches a token while a call grant exists. The first two tiers are the calls
    * that answer nobody: a call the person refused, and a call that ran (issue #95 — silent MCP use mints them at
-   * sixty a minute, allowed at once). The third is an Allow not yet reserved: a live one for the handful of awaits
-   * between the gate's `allow` and `reserve`, and otherwise a dead one for good — a pre-consented call refused in
+   * sixty a minute, allowed at once). The third is an Allow not yet reserved: a live one while the call waits
+   * between the gate's `allow` and `reserve` (the one-use lane, `remember`, `releaseWaiting`, the mask read — no dialog among them), and otherwise a dead one for good — a pre-consented call refused in
    * `usable`, or abandoned before `reservedNow`, stays `allowed, uses 0`, because {@link drop} deletes pending
    * grants only. The fourth is pending alone: a call whose dialog is open now (or whose client left during it).
    * Evicting that one loses a person's answer (Amendment 3, C.4; Amendment 6, D.5), so a loop of quiet calls that

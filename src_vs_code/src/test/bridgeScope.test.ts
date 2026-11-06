@@ -1,7 +1,8 @@
 import * as assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { mock, test } from 'node:test';
 import type { BridgeContext } from '../bridgeContext';
 import type { BridgeScopes as BridgeScopesT, BridgeWallSource, ScopeFile } from '../bridgeScope';
+import { readRouteBody } from '../brokerReadRoutes';
 import type { McpUseLookup } from '../brokerRequests';
 import { accountOnlyVault } from '../mcpAccountVault';
 import type { McpEntry } from '../mcpEntries';
@@ -430,6 +431,24 @@ test('sources.aliases: a name is listed only when it resolves to a target in sco
   assert.deepEqual(listed(view.sources(real, (name) => targets[name])), [{ name: 'mine', kind: 'ssh' }]);
   assert.deepEqual(listed(view.sources(real, undefined)), []);
   assert.deepEqual(listed(view.sources({}, (name) => targets[name])), []);
+});
+
+test('sources.aliases (Amendment 6 review): a row is built by name — a field planted on a hook row is not served, through doorView and readRouteBody', async () => {
+  const view = doorView(CTX, await wallWith(['in']));
+  const target: Target = { accountId: A1, entityId: 'in', entityName: 'in', kind: 'ssh' };
+  const planted = { name: 'mine', kind: 'ssh', entityId: 'in', keyPath: '/planted/zq-key' };
+  const body = await readRouteBody('/v1/aliases', view.sources({ aliases: () => [planted] }, () => target));
+  assert.equal(JSON.stringify(body), JSON.stringify({ aliases: [{ name: 'mine', kind: 'ssh' }] }));
+});
+
+test('sources.aliases (Amendment 6 review): a listing of several rows reads the scope once', async () => {
+  const wall = await wallWith(['in']);
+  const read = mock.method(wall.scopes, 'read');
+  const view = doorView(CTX, wall);
+  const target: Target = { accountId: A1, entityId: 'in', entityName: 'in', kind: 'ssh' };
+  const real = { aliases: () => ['a', 'b', 'c', 'd'].map((name) => ({ name, kind: 'ssh' })) };
+  assert.equal(present(view.sources(real, () => target).aliases, 'aliases')().length, 4);
+  assert.equal(read.mock.callCount(), 1, 'one scope read for the whole listing, so a narrow landing mid-listing cannot cut it in two');
 });
 
 test('sources.mcpEntries: kept rows are those in scope, can is narrowed to use, dependsOn names only kept rows', async () => {

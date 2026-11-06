@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 import { Reply, code, message, pause } from './bridgeDoorHarness';
-import { INTERNAL_FAILURE } from '../brokerProtocol';
+import { INTERNAL_FAILURE, statusForErrorCode } from '../brokerProtocol';
 import { ACCOUNT, CONTEXT_1, Ask, WallWorld, answeredAtOnce, send, sendAbortable, settleAll, until, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
 
 /**
@@ -322,6 +322,8 @@ async function askFor(ww: WallWorld, door: 'alias' | 'mcp' | 'token'): Promise<A
   return door === 'alias' ? alias() : mcp();
 }
 
+const JOURNAL_FAULT = 'the journal could not be written';
+
 /** The journal throws, once, on the first line that says a grant was minted; the returned function says whether it did. */
 function journalThrowsOnMint(ww: WallWorld): () => boolean {
   const append = ww.w.audit.push.bind(ww.w.audit);
@@ -329,7 +331,7 @@ function journalThrowsOnMint(ww: WallWorld): () => boolean {
   ww.w.audit.push = (...lines: string[]): number => {
     if (!threw && lines.some((line) => line.includes('minted'))) {
       threw = true;
-      throw new Error('the journal could not be written');
+      throw new Error(JOURNAL_FAULT);
     }
     return append(...lines);
   };
@@ -337,7 +339,7 @@ function journalThrowsOnMint(ww: WallWorld): () => boolean {
 }
 
 /** One door: its journal throws right after admission, the failed request is answered, and the next call must be asked, not told busy. */
-async function afterJournalFailure(door: 'alias' | 'mcp' | 'token'): Promise<{ failed: Reply; next: Reply }> {
+async function afterJournalFailure(door: 'alias' | 'mcp' | 'token'): Promise<{ failed: Reply; next: Reply; journal: string[] }> {
   const ww = await wallWorld();
   try {
     const ask = await askFor(ww, door);
@@ -345,7 +347,7 @@ async function afterJournalFailure(door: 'alias' | 'mcp' | 'token'): Promise<{ f
     const failed = await send(viaBridge(ww.bridge), ask);
     assert.equal(threw(), true, `${door}: the minted line was written and threw`);
     const next = await answeredAtOnce(send(viaBridge(ww.bridge), ask), `${door}: the next call did not answer: the place was left held`);
-    return { failed, next };
+    return { failed, next, journal: [...ww.w.audit] };
   } finally {
     ww.dispose();
   }
@@ -361,13 +363,58 @@ test('C.7: a journal append that throws right after admission is answered 500 an
   process.on('unhandledRejection', spy);
   try {
     for (const door of ['alias', 'mcp', 'token'] as const) {
-      const { failed, next } = await afterJournalFailure(door);
+      const { failed, next, journal } = await afterJournalFailure(door);
       assert.deepEqual([failed.status, code(failed), message(failed)], [500, 'internal', INTERNAL_FAILURE], `${door}: the failed request was answered, with the generic sentence`);
+      assert.equal(failed.body.includes(JOURNAL_FAULT), false, `${door}: the reason is not in the body`);
+      assert.ok(journal.some((line) => line.includes(`a handler threw: ${JOURNAL_FAULT}`)), `${door}: the reason is in the journal: ${JSON.stringify(journal)}`);
       assert.equal(next.status, 200, `${door}: the next call was asked and ran, not told busy: ${next.body}`);
     }
     await pause(20);
     assert.equal(escaped.length, 0, 'no throw escaped as an unhandled rejection');
   } finally {
     process.off('unhandledRejection', spy);
+  }
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Amendment 6 review — a request line `new URL` cannot parse is an unknown route, not a throw (and so not a journal line each)
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('a request target that does not parse (GET //) is refused like any unknown route on both doors — 200 requests, no 500, no journal line', async () => {
+  const ww = await wallWorld();
+  try {
+    const journal = ww.w.audit.length;
+    for (const [who, door, expected] of [['the bridge', viaBridge(ww.bridge), 'not_supported'], ['the main port', viaMain(ww), 'not_found']] as const) {
+      const seen = new Set<string>();
+      for (let call = 0; call < 200; call += 1) {
+        const reply = await send(door, { method: 'GET', path: '//' });
+        seen.add(`${reply.status} ${code(reply)}`);
+      }
+      assert.deepEqual([...seen], [`${statusForErrorCode(expected)} ${expected}`], `${who}: one answer for all 200`);
+    }
+    assert.equal(ww.w.audit.length, journal, 'and the journal grew by nothing');
+  } finally {
+    ww.dispose();
+  }
+});
+
+test('C.7 (Amendment 6 review): a journal that throws on EVERY line still answers the caller 500 — nothing escapes', async () => {
+  const escaped: unknown[] = [];
+  const spy = (reason: unknown): void => {
+    escaped.push(reason);
+  };
+  process.on('unhandledRejection', spy);
+  const ww = await wallWorld();
+  try {
+    ww.w.audit.push = (): number => {
+      throw new Error(JOURNAL_FAULT);
+    };
+    const reply = await answeredAtOnce(send(viaBridge(ww.bridge), alias()), 'the caller was left unanswered by a journal that throws on every line');
+    assert.deepEqual([reply.status, code(reply), message(reply)], [500, 'internal', INTERNAL_FAILURE]);
+    await pause(20);
+    assert.equal(escaped.length, 0, 'and the failure of the failure line escaped nowhere');
+  } finally {
+    process.off('unhandledRejection', spy);
+    ww.dispose();
   }
 });

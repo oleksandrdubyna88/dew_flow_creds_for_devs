@@ -29,7 +29,7 @@ import { abandonedWhenClosed } from './requestLife';
 import { recordConsent } from './brokerConsentMemory';
 import { McpFolderHooks } from './brokerFolderDoor';
 import { answerMcpRoute } from './brokerMcpRoutes';
-import { GRANT_NOT_ALLOWED, Refusal, aliasTarget, readBody, readNamedBody, unanswered, validationRefusal } from './brokerRequests';
+import { GRANT_NOT_ALLOWED, Refusal, aliasTarget, readBody, readNamedBody, requestUrl, unanswered, validationRefusal } from './brokerRequests';
 import { CallerLabel, callerForAudit, callerFrom } from './brokerCaller';
 import { grantLimits } from './grantLimits';
 import { answerConfigRead } from './brokerConfigRoute';
@@ -435,7 +435,7 @@ export class CredsAgentServer implements vscode.Disposable {
 
   // eslint-disable-next-line complexity
   private async handle(req: http.IncomingMessage, res: http.ServerResponse, bridge: BridgeContext | undefined): Promise<void> {
-    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    const url = requestUrl(req.url);
     // First, before anything awaits: a listener attached later could miss the client leaving.
     const signal = abandonedWhenClosed(res);
     if (refusedOnBridge(bridge, req.method, url.pathname, res, (code, message) => this.respondError(res, code, message))) {

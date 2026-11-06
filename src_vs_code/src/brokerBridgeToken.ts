@@ -6,7 +6,7 @@ import { GRANT_NOT_ALLOWED, UNKNOWN_TOKEN } from './brokerRequests';
 import { grantExpiry } from './grantRegistry';
 import type { Grant, GrantLimits, GrantRegistry, GrantStatus } from './grantRegistry';
 
-/** A token that cannot be used now: the person said no, or it is gone (evicted, expired) — answered as the main port would, `unknown`. */
+/** A token that cannot be used now: the person said no (`denied`, with its line), or it is gone — evicted, or run out by idle time or call count — and then `unknown`, with no line. The main port says which expiry it was; a bridge does not. */
 function tokenRefusal(status: GrantStatus | undefined): { code: ErrorCode; message: string; logged: boolean } | undefined {
   if (status === 'denied') {
     return { code: 'denied', message: GRANT_NOT_ALLOWED, logged: true };

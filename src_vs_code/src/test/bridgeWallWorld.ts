@@ -10,7 +10,7 @@ import type { BridgeListener } from '../brokerBridgeListeners';
 import type { McpFolderHooks } from '../brokerFolderDoor';
 import type { McpVaultSource } from '../mcpEntries';
 import type { EntityMetadata, TreeNode } from '../types';
-import { stored } from '../storedSecret';
+import { stored, type StoredSecret } from '../storedSecret';
 import { wallSuppliersOf } from '../bridgeWallSource';
 import { visibleMcpEntries } from '../mcpEntries';
 import * as assert from 'node:assert/strict';
@@ -89,13 +89,19 @@ function plantedNodes(): TreeNode[] {
     }),
     entity('tm-ref', 'tm-ref', 'f1', { kind: 'terminal', command: `deploy ${PLANTED.REFERENCE}` }),
     entity('in-folder', 'in-folder', 'f-planted'),
+    entity('all-secrets', 'all-secrets', 'f1'),
   ];
 }
 
 /** Every entry `fullVault` adds, for a scope that takes them all. */
-export const PLANTED_IDS: readonly string[] = ['db-kv', 'db-qs', 'db-slash', 'db-at', 'full-row', 'tm-ref', 'in-folder'];
+export const PLANTED_IDS: readonly string[] = ['db-kv', 'db-qs', 'db-slash', 'db-at', 'full-row', 'tm-ref', 'in-folder', 'all-secrets'];
+
+/** The entry that holds a password, a key, notes and a TOTP secret: the four `has*` flags are true locally and must be true on the wire. */
+const WITH_SECRETS = 'all-secrets';
 
 interface Flavour {
+  /** No node at all in either account (RS4's empty vault). */
+  readonly emptyVault: boolean;
   readonly fullVault: boolean;
   readonly collide: boolean;
   /** Whether a1's `e1` is a config. Off, with `collide`, only a2's `e1` is: the snippet must not be served from there. */
@@ -104,6 +110,9 @@ interface Flavour {
 }
 
 function nodesOf(x: 'usable' | 'closed' | 'absent', flavour: Flavour): Record<string, TreeNode[]> {
+  if (flavour.emptyVault) {
+    return {};
+  }
   const folder = (id: string, mcp: TreeNode['mcp']): TreeNode => ({ id, name: id === 'f1' ? 'Agents' : 'Closed', type: 'folder', parentId: null, mcp });
   const e1 = entity('e1', 'prod', 'f1', { dependsOn: ['e-out', 'e2'], ...e1Extras(flavour) });
   const a1: TreeNode[] = [
@@ -137,13 +146,17 @@ function xNodes(x: 'usable' | 'closed' | 'absent'): TreeNode[] {
  * `e1` ("foreign") in a2, which is listed first.
  */
 export function collideVault(asked: string[] = []): McpVaultSource {
-  return vaultOf('absent', { fullVault: false, collide: true, a1Config: true, agentForward: false }, asked);
+  return vaultOf('absent', { emptyVault: false, fullVault: false, collide: true, a1Config: true, agentForward: false }, asked);
+}
+
+/** A slot's read: a value for the `fullVault` entry that holds every secret, nothing for any other. */
+function heldBy(flavour: Flavour, value: string): (accountId: string, id: string) => Thenable<StoredSecret | undefined> {
+  return (accountId, id) => Promise.resolve(flavour.fullVault && accountId === ACCOUNT && id === WITH_SECRETS ? stored(value) : undefined);
 }
 
 /** The vault as the broker's collaborators see it, recording which accounts were asked about. */
 function vaultOf(x: 'usable' | 'closed' | 'absent', flavour: Flavour, asked: string[]): McpVaultSource {
   const nodes = nodesOf(x, flavour);
-  const none = (): Thenable<undefined> => Promise.resolve(undefined);
   return {
     getAccounts: () => [{ accountId: 'a2' }, { accountId: ACCOUNT }],
     getNodes: (accountId) => nodes[accountId] ?? [],
@@ -151,7 +164,7 @@ function vaultOf(x: 'usable' | 'closed' | 'absent', flavour: Flavour, asked: str
       asked.push(accountId);
       return (nodes[accountId] ?? []).find((node) => node.id === id);
     },
-    getPassword: none, getPrivateKey: none, getNotes: none, getTotp: none,
+    getPassword: heldBy(flavour, 'a password'), getPrivateKey: heldBy(flavour, 'a key'), getNotes: heldBy(flavour, 'notes'), getTotp: heldBy(flavour, 'a totp'),
     getDbConnection: (accountId, id) => Promise.resolve(flavour.fullVault && accountId === ACCOUNT ? stored(PLANTED_CONNECTIONS[id]) : undefined),
   };
 }
@@ -196,6 +209,8 @@ function refSourceOf(vault: McpVaultSource): BridgeWallSource['refSource'] {
 }
 
 export interface WallOptions {
+  /** The vault holds no node at all (Amendment 6 review, RS4): the product's own reads must read the same over it. */
+  emptyVault?: true;
   /** a1 also holds the entries of `PLANTED_IDS`: connection strings in four dialects, a terminal command with a reference out of scope, an entry in a named folder (Amendment 6, F.3). */
   fullVault?: true;
   /** The entries in the scope of `server1`. Default: `e1`. */
@@ -282,7 +297,7 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
   const listed: string[] = [];
   const configsAsked: string[][] = [];
   const refusalsAsked: string[][] = [];
-  const vault = vaultOf(o.x, { fullVault: options.fullVault === true, collide: o.collide, a1Config: o.a1Config, agentForward: o.agentForward }, nodesAsked);
+  const vault = vaultOf(o.x, { emptyVault: options.emptyVault === true, fullVault: options.fullVault === true, collide: o.collide, a1Config: o.a1Config, agentForward: o.agentForward }, nodesAsked);
   let askedListing = false;
   let releaseListing: () => void = () => undefined;
   const listingGate = new Promise<void>((resolve) => {

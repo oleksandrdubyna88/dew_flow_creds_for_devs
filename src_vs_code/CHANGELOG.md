@@ -31,12 +31,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **After you Allow a local `create`, `terminal` or `up`, the place stays taken until that call ends**, because those three may show a
   prompt of their own next (a PIN box, a trust modal, OpenVPN Connect's question); another caller hears *busy* until then. `exec`, `query`,
   `run` and `down` keep nothing once the dialog closes.
-- **A token that ran out between its header and its body is refused before any dialog**, 401 *Unknown or missing grant token.*, as the main
-  port has always answered it.
 - **A failure inside a request handler answers 500** with the generic sentence instead of leaving the request unanswered until the client
   gives up; the reason goes to the agent journal.
 - The grant registry reclaims in tiers (denied calls, calls that ran, Allows not yet used, then calls whose dialog is open or whose client
-  left), and a call refused before anybody was asked leaves no grant behind.
+  left), and a call refused before anybody was asked leaves no grant behind. The exception is a call a policy had already allowed: if it is
+  refused before it is reserved, it still leaves an allowed grant with no use, which the tiers now reclaim before a call whose dialog is open.
+- **An agent's `up` or `down` no longer postpones auto-lock** (`vpnRun.ts`, `notePersonsAct`): only your own Start or Stop counts as you being
+  at the keyboard.
 - **Unchanged, said here so nobody reads it as new:** a dialog nobody answers still times out after five minutes, still answers the caller
   *The human did not allow this grant.*, and still gives the place back, so the next call raises a dialog while the old one may be on
   screen. A later release changes this.

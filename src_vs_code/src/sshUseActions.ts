@@ -351,6 +351,11 @@ function openedMessage(entityName: string, entity: EntityMetadata): string {
   return `Claude Code opened an SSH terminal for "${entityName}"${target === undefined ? '' : ` (${target})`}.`;
 }
 
+/** A bridged call with no writer of the per-call file is refused before any slot, key or spawn: the generic sentence to the agent, this reason in the journal. Off a bridge, nothing. */
+function unguardedBridge(deps: SshUseDeps, ctx: UseActionContext, refuse: (code: ErrorCode, message: string) => UseActionResult): UseActionResult | undefined {
+  return ctx.bridge !== undefined && deps.bridgedSshConfig === undefined ? refuse('denied', NO_BRIDGED_SSH_CONFIG) : undefined;
+}
+
 /**
  * What the broker knows about this window — or `undefined` where it was given no relay manager,
  * which is every test and every caller predating remote windows.
@@ -358,11 +363,6 @@ function openedMessage(entityName: string, entity: EntityMetadata): string {
  * <p>`remedyRunner(undefined)`: the broker has an entity and no tree row, so a refusal's *Add Key to
  * Agent* button says so plainly rather than opening a picker nobody asked for.</p>
  */
-/** A bridged call with no writer of the per-call file is refused before any slot, key or spawn: the generic sentence to the agent, this reason in the journal. Off a bridge, nothing. */
-function unguardedBridge(deps: SshUseDeps, ctx: UseActionContext, refuse: (code: ErrorCode, message: string) => UseActionResult): UseActionResult | undefined {
-  return ctx.bridge !== undefined && deps.bridgedSshConfig === undefined ? refuse('denied', NO_BRIDGED_SSH_CONFIG) : undefined;
-}
-
 function brokerWindow(deps: SshUseDeps): RemoteWindowDeps | undefined {
   return deps.relays === undefined ? undefined : remoteWindowDeps(deps.relays, remedyRunner(undefined));
 }

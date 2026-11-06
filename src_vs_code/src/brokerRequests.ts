@@ -267,6 +267,22 @@ export function reservationRefused(refused: GrantLookup, limits: GrantLimits): s
     : UNKNOWN_TOKEN;
 }
 
+/** The path no route matches, which a request target `new URL` cannot parse (`//`, a bare host) is read as. */
+const UNPARSEABLE_TARGET = '/unparseable-request-target';
+
+/**
+ * The URL of a request, or one that no route matches when its target does not parse: `new URL('//', base)` throws, and a
+ * throw before any route or throttle would write one journal line per request with no ceiling (Amendment 6 review).
+ */
+export function requestUrl(target: string | undefined): URL {
+  const base = 'http://127.0.0.1';
+  try {
+    return new URL(target ?? '/', base);
+  } catch {
+    return new URL(UNPARSEABLE_TARGET, base);
+  }
+}
+
 export function readBody(req: http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -286,8 +302,8 @@ export function readBody(req: http.IncomingMessage): Promise<string> {
 }
 
 /**
- * A handler threw: answer 500 with the generic sentence if nothing has been sent, and put the reason in the journal — never in the body
- * (a bridge may be the reader). Amendment 6, D.8: without it the request stays unanswered until the client gives up.
+ * A handler threw: answer 500 with the generic sentence if nothing has been sent, THEN put the reason in the journal — never in the body
+ * (a bridge may be the reader) — in a `try`, so a journal that throws on every line still answers (Amendment 6, D.8 and its review).
  */
 export function unanswered(
   res: http.ServerResponse,
@@ -295,8 +311,12 @@ export function unanswered(
   respondError: (code: ErrorCode, message: string) => void,
   log: (line: { grant: string; entityName: string; action: string; outcome: string; detail: string }) => void,
 ): void {
-  log({ grant: '—', entityName: '', action: 'request', outcome: 'failed', detail: `a handler threw: ${describeError(error)}` });
   if (!res.headersSent) {
     respondError('internal', INTERNAL_FAILURE);
+  }
+  try {
+    log({ grant: '—', entityName: '', action: 'request', outcome: 'failed', detail: `a handler threw: ${describeError(error)}` });
+  } catch {
+    /* a journal that will not take the line has already cost the caller nothing: the answer went first */
   }
 }

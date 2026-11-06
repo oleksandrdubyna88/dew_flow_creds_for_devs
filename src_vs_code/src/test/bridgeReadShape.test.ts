@@ -67,19 +67,29 @@ async function servedRow(ww: WallWorld, id: string): Promise<Record<string, unkn
   return row;
 }
 
+/** The keys a served body carries, after asserting each is in its route's field list (a byte-equal route has none to check). */
+function keysWithinList(path: string, ask: string, text: string): string[] {
+  if (BRIDGE_BYTE_EQUAL_READS.includes(path)) {
+    return [];
+  }
+  const allowed = new Set(fieldsFor(path));
+  const keys = keysAt(JSON.parse(text));
+  assert.deepEqual([...new Set(keys.filter((key) => !allowed.has(key)))], [], `${ask} served keys its field list does not name`);
+  return keys;
+}
+
 test('RS1: every key at every depth of every served read is in that route\'s field list, or the route is pinned byte-equal', async () => {
   const ww = await wallWorld({ fullVault: true, scope: ALL_IN_SCOPE });
   try {
+    const seen = new Set<string>();
     for (const path of SERVED_READS) {
       for (const ask of asks(path)) {
-        const text = await bodyOf(ww, 'bridge', ask);
-        if (BRIDGE_BYTE_EQUAL_READS.includes(path)) {
-          continue;
-        }
-        const allowed = new Set(fieldsFor(path));
-        const stray = keysAt(JSON.parse(text)).filter((key) => !allowed.has(key));
-        assert.deepEqual([...new Set(stray)], [], `${ask} served keys its field list does not name`);
+        keysWithinList(path, ask, await bodyOf(ww, 'bridge', ask)).forEach((key) => seen.add(key));
       }
+    }
+    // Teeth: the walk saw what it is meant to check. A snippet that was never served, or an empty alias list, would pass for ever.
+    for (const key of ['snippet', 'code', 'where', 'name', 'kind', 'hasPassword', 'variants']) {
+      assert.ok(seen.has(key), `the walk never saw "${key}" in a served body`);
     }
   } finally {
     ww.dispose();
@@ -127,6 +137,25 @@ const SERVED_WHOLE_LOCALLY = [
   `"folder":"${PLANTED.FOLDER}"`,
 ];
 
+test('RS2: a row without a connection string or a command says false, and every has* flag is the local row\'s', async () => {
+  const ww = await wallWorld({ fullVault: true, scope: ['e1', 'all-secrets'] });
+  try {
+    const local = await visibleMcpEntries(ww.vault);
+    const plain = await servedRow(ww, 'e1');
+    assert.equal(plain.hasConnectionString, false);
+    assert.equal(plain.hasCommand, false);
+    const full = await servedRow(ww, 'all-secrets');
+    const mine = local.find((entry) => entry.id === 'all-secrets');
+    for (const flag of ['hasPassword', 'hasPrivateKey', 'hasNotes', 'hasTotp'] as const) {
+      assert.equal(mine?.[flag], true, `control: the local row has ${flag}`);
+      assert.equal(full[flag], true, `${flag} is the local row's`);
+      assert.equal(plain[flag], local.find((entry) => entry.id === 'e1')?.[flag], `${flag} of a row with none`);
+    }
+  } finally {
+    ww.dispose();
+  }
+});
+
 test('RS3: five strings through the wall — none crosses a bridge, and the main port is the control that shows the test can see them', async () => {
   const ww = await wallWorld({ fullVault: true, scope: ALL_IN_SCOPE });
   try {
@@ -148,7 +177,7 @@ test('RS3: five strings through the wall — none crosses a bridge, and the main
 });
 
 test('RS4: the product\'s own reads are byte-equal through a bridge over an empty scope, a bridge over the full vault, and the main port', async () => {
-  const empty = await wallWorld({ scope: [] });
+  const empty = await wallWorld({ emptyVault: true, scope: [] });
   const full = await wallWorld({ fullVault: true, scope: ALL_IN_SCOPE });
   try {
     for (const path of BRIDGE_BYTE_EQUAL_READS) {

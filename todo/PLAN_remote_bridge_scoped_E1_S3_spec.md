@@ -2616,6 +2616,10 @@ the person's own file in a folder only they can read (Amendment 3, C.6). Scenari
 `() => tokenStatusNow(this.grants, grant.secret, Date.now(), grantLimits())` in place. `tokenRefusal` (`brokerBridgeToken.ts:9-14`) then
 answers `unauthorized` / `UNKNOWN_TOKEN` with no line for a token that ran out, as it does for an evicted one. Scenario T3.
 
+*Added 2026-11-06 (the review of `88befcd`):* `tokenStatusNow` runs only on the bridged branch (`view.bridge === undefined ? this.perform(…) : bridgedTokenCall(…)`),
+which no production door reaches before E2. So the CHANGELOG bullet about a token that ran out between header and body is **not** shipped with partial E1
+(it is also not "as the main port has always answered it": the main port says which expiry it was). That bullet returns when a bridge door exists (E2).
+
 **D.8 A throw inside `handle` answers 500 — as written.** `credsAgentServer.ts:697` is `(req, res, bridge) => void this.handle(req, res, bridge),`;
 it gains the `.catch` of Amendment 4, in place. `unanswered` goes into `brokerRequests.ts` (285 → ≈297) with Amendment 4's body;
 `INTERNAL_FAILURE` is exported from `brokerProtocol.ts:95`, `describeError` from `./describeError`. `respondError` (`:712-731`) writes a
@@ -2845,6 +2849,14 @@ of this commit; the seventh is `EVICTION_ORDER` and `drop` (`grantRegistry.ts:59
 `finally` on a timeout. E1.1's entry already stands at `:9-21` (the export refusal, the `Set env` warning, the help); its warning is worded for
 the case it does reach and M4 is still owed by the person, as the E1 document's §M4 says; nothing of it is rewritten here. The parent's §4.10
 says why the list matters: an extension tag may ship between partial E1 and E1.5 for unrelated work, and this entry is what makes that honest.
+
+*Correction, 2026-11-06 (the Opus review and the `coai` gate of `88befcd`; the text above stands as written).* Two bullets of the entry changed in the commit
+that followed: (1) the bullet "A token that ran out between its header and its body is refused before any dialog" was **deleted**, because it is false for
+what ships: the main port does not answer that way (it names the expiry), and `tokenStatusNow` runs only on the bridged branch, which no production door
+reaches until E2 (see F.2's D.7); (2) the registry bullet's "a call refused before anybody was asked leaves no grant behind" now **excepts a call a policy had
+already allowed**: a pre-consented call refused before it is reserved still leaves an allowed grant with no use (`call/allowed/uses=0`), which the third tier
+reclaims. One bullet was **added**: an agent's `up` or `down` no longer postpones auto-lock (`vpnRun.ts`, `notePersonsAct`), the one change of this commit a local
+user can feel.
 
 #### F.7 Scenarios (each RED today, and why)
 

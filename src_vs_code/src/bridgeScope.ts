@@ -8,7 +8,7 @@ import type { EntityMetadata } from './types';
 import { planRefs } from './runPlan';
 import { RefSource, locateRef } from './secretRef';
 import { BridgeScopes, type Scope } from './bridgeScopeStore';
-import { parseBearer } from './brokerProtocol';
+import { parseBearer, type AliasListEntry } from './brokerProtocol';
 
 /**
  * The wall of a Remote Bridge: which entries a server's agent may reach, and the one place that decides it.
@@ -151,6 +151,11 @@ function narrowed(row: McpEntry, kept: ReadonlySet<string>): BridgeEntry {
   };
 }
 
+/** The names whose entries are in scope, the scope read ONCE for the listing, each row built by name: a field a hook row gains later is not served. */
+function aliasesIn(scope: Scope, rows: readonly AliasListEntry[], resolveAlias: AliasResolver | undefined): AliasListEntry[] {
+  return rows.filter((row) => admitted(scope, resolveAlias?.(row.name)) !== undefined).map(({ name, kind }) => ({ name, kind }));
+}
+
 function entriesIn(scope: Scope, rows: readonly McpEntry[]): readonly BridgeEntry[] {
   const kept = rows.filter((row) => scope.entries.has(row.id));
   const names = new Set(kept.map((row) => row.name));
@@ -181,7 +186,7 @@ function bridgedView(bridge: BridgeContext, wall: BridgeWallSource): DoorView {
   return {
     bridge,
     sources: (real, resolveAlias) => ({
-      aliases: () => (real.aliases?.() ?? []).filter((row) => admitted(scope(), resolveAlias?.(row.name)) !== undefined),
+      aliases: () => aliasesIn(scope(), real.aliases?.() ?? [], resolveAlias),
       // The scope is read AFTER the listing comes back: a narrow that lands while the rows are being read is the scope they are cut by.
       mcpEntries: async () => {
         const rows = await wall.listEntriesOf(bridge.accountId);
