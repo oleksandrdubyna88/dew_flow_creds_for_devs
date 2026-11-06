@@ -184,22 +184,31 @@ const DEFAULT_SYSTEM_ROOT = 'C:\\Windows';
  * zombie answers the signal but has ended, the same answer the runner's poll gives ([E2.1 review 8]); a `stat` that cannot be read keeps "alive".
  */
 export function isAlive(pid: number): boolean {
-  if (process.platform === 'win32') {
-    const tasklist = path.join(process.env.SystemRoot ?? DEFAULT_SYSTEM_ROOT, 'System32', 'tasklist.exe'); // by its full path, never a PATH lookup
-    const answer = execFileSync(tasklist, ['/FI', `PID eq ${pid}`, '/NH', '/FO', 'CSV'], { encoding: 'utf8', timeout: 30_000, killSignal: 'SIGKILL' });
-    return answer.includes(`"${pid}"`);
-  }
+  return process.platform === 'win32' ? isListedOnWindows(pid) : answersSignal(pid) && !isZombieOnLinux(pid);
+}
+
+function isListedOnWindows(pid: number): boolean {
+  const tasklist = path.join(process.env.SystemRoot ?? DEFAULT_SYSTEM_ROOT, 'System32', 'tasklist.exe'); // by its full path, never a PATH lookup
+  const answer = execFileSync(tasklist, ['/FI', `PID eq ${pid}`, '/NH', '/FO', 'CSV'], { encoding: 'utf8', timeout: 30_000, killSignal: 'SIGKILL' });
+  return answer.includes(`"${pid}"`);
+}
+
+function answersSignal(pid: number): boolean {
   try {
     process.kill(pid, 0);
+    return true;
   } catch {
     return false;
   }
-  if (process.platform !== 'linux') return true;
+}
+
+function isZombieOnLinux(pid: number): boolean {
+  if (process.platform !== 'linux') return false;
   try {
     const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
-    return !/^[ZXx]/.test(stat.slice(stat.lastIndexOf(')') + 2));
+    return /^[ZXx]/.test(stat.slice(stat.lastIndexOf(')') + 2));
   } catch {
-    return true;
+    return false;
   }
 }
 
