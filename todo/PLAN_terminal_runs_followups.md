@@ -13,7 +13,7 @@ with its place in the code, decided by nobody yet. An item is built when someone
 
 | Item | Who builds it | The folder run's part |
 |---|---|---|
-| Items 1 to 17 below | this plan, item by item | none: `PLAN_terminal_folder_run.md` §Not in this plan points here |
+| Items 1 to 16 below | this plan, item by item | none: `PLAN_terminal_folder_run.md` §Not in this plan points here |
 | The stale "not arriving from elsewhere" claim in `research/module_extension.md` | done, in its S1 | fixed there, not carried |
 | Forged rows in the chain's modal (`describeRunPlan`) | done, in its S5 | fixed there, not carried |
 
@@ -134,14 +134,6 @@ lands. When #294 lands, that test moves to its `ownedDir`. The test and this bra
 sequences replay as events, whether events reach this `ui` extension over Remote-SSH, how a native dialog shows a long question. **Fix to consider:**
 run them in a real Remote-SSH window. Two results change code: a start and end reaching the extension from a shell inside tmux adds a state after
 `Type It Anyway`, and no events over Remote-SSH means the tracker buys nothing and every click asks.
-
-### 17. The feature's first remote branch still carries the owner's real names
-
-**Symptom.** The remote branch `feat/terminal-folder-run` holds the first commits of this feature, which carried the owner's real session and folder
-names in a plan, in fixtures and in a docblock. Nothing on `main` does, and no pull request points at that branch; its deletion was refused by the session's
-permission classifier. **Fix:** the owner deletes it: `git push origin --delete feat/terminal-folder-run`. Also merged and safe to delete:
-`feat/terminal-folder-run-and-name`, `docs/changelog-1-17-0`. Then `git ls-remote origin feat/terminal-folder-run` prints nothing. GitHub can keep an unreachable commit
-readable by its id for a while, so this reduces exposure and does not erase it.
 
 ## Budget
 
