@@ -3,7 +3,7 @@ import { describeRemaining, hasLifetime } from './entityExpiry';
 import { clockUntil } from './requestTime';
 import type { ScopeWindows, WindowScope } from './allowWindows';
 import { normalizeTags } from './sshOptions';
-import { EntityMetadata, TreeNode } from './types';
+import { EntityMetadata, FolderType, TreeNode } from './types';
 import { canConnectSsh } from './entityKind';
 import { hostIsAField } from './agentKindFields';
 import { canStartVpn } from './vpnLauncher';
@@ -89,7 +89,10 @@ export function entityDescription(node: TreeNode, now: number, waitingDescriptio
   return [describeTarget(node), describeRemaining(node, now), waitingDescription, signWindow].filter(Boolean).join('  ·  ');
 }
 
-/** A folder row's context value: `folder`, or `folder:trashed` inside the Trash (Restore leads). */
+/**
+ * A folder row's context value: `folder`, or `folder:trashed` inside the Trash (Restore leads), and `:runall` last on a
+ * Terminal folder that is not in the Trash (the green arrow, `credSshManager.runFolder`).
+ */
 export function folderContextValue(
   trashed: boolean,
   asksForPin: boolean = false,
@@ -101,10 +104,19 @@ export function folderContextValue(
    * handler without a menu, so the refusal lives there too (`moveGate.refuseProjectFolderChange`).</p>
    */
   locked: boolean = false,
+  /**
+   * The folder's type, which decides `:runall`. The type rather than a boolean, so that which folders run is decided
+   * here, beside the other tokens. Optional with no default: a default value counts towards the complexity limit, and
+   * this function is at it.
+   *
+   * <p>Discoverability too: F2 and the palette reach the handler with no menu, so `folderTarget` refuses there as well.</p>
+   */
+  folderType?: FolderType,
 ): string {
   // One token per fact, in a fixed order, so `folder`, `folder:trashed` and `folder:asksforpin`
-  // stay byte-identical to what every `viewItem` clause in package.json already matches.
-  return ['folder', flag('trashed', trashed), flag('asksforpin', asksForPin), flag('locked', locked)]
+  // stay byte-identical to what every `viewItem` clause in package.json already matches. `:runall`
+  // is last, and the clauses that read a plain row exactly take `(:runall)?`, so a Terminal folder keeps every item of a plain one.
+  return ['folder', flag('trashed', trashed), flag('asksforpin', asksForPin), flag('locked', locked), flag('runall', folderType === 'terminal' && !trashed)]
     .filter((token) => token !== '')
     .join(':');
 }

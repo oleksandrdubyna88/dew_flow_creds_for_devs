@@ -264,6 +264,28 @@ test('the prompt for a terminal entry shows the whole line the person would run,
   assert.ok(summary.includes('How much of the plan is left.'), 'the note');
 });
 
+/** The consent for a terminal entry the agent names `name`: `{name}` is filled from the name it asked for. */
+function terminalConsent(name: string): string {
+  const target = { accountId: 'a1', folderId: 'f1', folderName: 'Commands' };
+  const request = { name, kind: 'terminal', fields: { command: 'tmux attach', args: [{ value: '-t {name}' }] } };
+  return summarizeCreate(request, target, 'terminal', valuesOf(planCreate(request, 'terminal')));
+}
+
+test('the_prompt_shows_the_line_with_the_requested_name', () => {
+  const summary = terminalConsent('alert');
+
+  assert.ok(summary.includes('Command: tmux attach -t alert'), summary);
+  assert.equal(summary.includes('will not run'), false, summary);
+});
+
+test('the_prompt_shows_the_template_and_why_for_a_refused_name', () => {
+  const summary = terminalConsent('a b');
+
+  assert.ok(summary.includes('Command: tmux attach -t {name}'), summary);
+  assert.match(summary, /^will not run: /m);
+  assert.equal(summary.includes('-t a b'), false, summary);
+});
+
 test('the prompt for a script shows the COMPLETE body, never a preview', () => {
   const target = { accountId: 'a1', folderId: 'f1', folderName: 'Ops' };
   const body = `${Array.from({ length: 40 }, (_, i) => `echo line ${i}`).join('\n')}\nrm -rf "$TARGET"\n`;

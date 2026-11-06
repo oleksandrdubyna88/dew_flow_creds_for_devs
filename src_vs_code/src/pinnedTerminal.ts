@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as vscode from 'vscode';
 import {
+  EntryShell,
   HostShell,
   ShellContext,
   ShellFamily,
@@ -19,7 +20,7 @@ import { onPath } from './installFlow';
  * their own typing — WSL bash, Git-bash, cmd — and says nothing about the syntax of a line composed
  * for this platform. Every terminal that runs a line the extension COMPOSES is opened here with the
  * host's native shell as `shellPath`, so `Start-Process` reaches PowerShell whatever the default is.
- * A Terminal entry's OWN line goes through `entryTerminal`, which asks `entryShell` instead.</p>
+ * A Terminal entry's OWN line goes through `findEntryTerminal` / `openEntryTerminal`, which ask `entryShell` instead.</p>
  */
 export type PinnedTerminal =
   | { ok: true; terminal: vscode.Terminal; shell: HostShell }
@@ -108,26 +109,75 @@ export type EntryTerminal =
   | { ok: true; terminal: vscode.Terminal; family: ShellFamily }
   | { ok: false; reason: string };
 
+export type EntryLookup =
+  | { ok: false; reason: string } // entryShell or pinned refusal
+  | { ok: true; terminal: vscode.Terminal | undefined; family: ShellFamily }; // the live terminal the line would go to today, or none
+
 /**
- * The terminal a Terminal ENTRY's own line runs in — see `entryShell` for the rule, and `family`
- * for the shell that will read what is typed (what `{config}` is quoted for).
+ * The terminal a Terminal ENTRY's line would be typed into, if one is LIVE — found, never created, never shown.
+ * Default road: the first live terminal of the entry's name. Pinned road: a live one of the name running the pinned
+ * shell (`reusableTerminal`'s rule). Live means `exitStatus === undefined` — a closed terminal still in the list is
+ * not a target. See `entryShell` for the rule, and `family` for the shell that will read what is typed (what
+ * `{config}` is quoted for).
  */
-export function entryTerminal(entryName: string, terminalOs: string | undefined): EntryTerminal {
-  const ctx = shellContext();
-  const choice = entryShell(entryName, terminalOs, ctx);
-  if (choice.kind === 'refused') {
-    return { ok: false, reason: choice.reason };
-  }
-  const name = `CredsForDevs: ${entryName}`;
-  const opened = choice.kind === 'pinned' ? pinnedTerminal(name) : defaultProfileTerminal(name);
-  return opened.ok ? { ok: true, terminal: opened.terminal, family: readerFamily(choice, pinnedShell(), ctx) } : opened;
+export function findEntryTerminal(entryName: string, terminalOs: string | undefined): EntryLookup {
+  const usable = usableEntryShell(entryName, terminalOs);
+  return usable.ok ? { ok: true, terminal: liveEntryTerminal(entryName, usable.choice), family: usable.family } : usable;
 }
 
-/** The behaviour before the field existed: the window's default profile, reused by name. */
-function defaultProfileTerminal(name: string): { ok: true; terminal: vscode.Terminal } {
-  const terminal = vscode.window.terminals.find((t) => t.name === name) ?? vscode.window.createTerminal({ name });
+/** A NEW terminal for the entry, shown — created, never found. The guard calls it only when `findEntryTerminal` answered none. */
+export function openEntryTerminal(entryName: string, terminalOs: string | undefined): EntryTerminal {
+  const usable = usableEntryShell(entryName, terminalOs);
+  if (!usable.ok) {
+    return usable;
+  }
+  const name = entryTerminalName(entryName);
+  const terminal = vscode.window.createTerminal(usable.choice.kind === 'pinned' ? { name, shellPath: pinnedShell().shellPath } : { name });
   terminal.show();
-  return { ok: true, terminal };
+  return { ok: true, terminal, family: usable.family };
+}
+
+/**
+ * Every LIVE terminal of the entry's name, ANY shell, in list order: found, never created, never shown. The folder run's
+ * reading. The pinned road's same-shell test (`liveEntryTerminal`) would miss one running another shell, and that
+ * terminal would then sit beside a second `tmux attach`, or survive a close the person asked for.
+ */
+export function liveTerminalsOfEntry(entryName: string): readonly vscode.Terminal[] {
+  const name = entryTerminalName(entryName);
+  return vscode.window.terminals.filter((t) => t.name === name && t.exitStatus === undefined);
+}
+
+/** Why `openEntryTerminal` would refuse this entry in this window, or `undefined`. Opens nothing. */
+export function entryOpenRefusal(entryName: string, terminalOs: string | undefined): string | undefined {
+  return entryRefusal(entryShell(entryName, terminalOs, shellContext()));
+}
+
+function entryTerminalName(entryName: string): string {
+  return `CredsForDevs: ${entryName}`;
+}
+
+/** Why the entry's shell cannot be had in this window — `entryShell`'s refusal, or a pinned shell's — or `undefined`. */
+function entryRefusal(choice: EntryShell): string | undefined {
+  if (choice.kind === 'refused') {
+    return choice.reason;
+  }
+  return choice.kind === 'pinned' ? pinnedRefusal() : undefined;
+}
+
+function liveEntryTerminal(entryName: string, choice: EntryShell): vscode.Terminal | undefined {
+  const live = liveTerminalsOfEntry(entryName);
+  return choice.kind === 'pinned' ? live.find((t) => shellPathOf(t) === pinnedShell().shellPath) : live[0];
+}
+
+/** The shell an entry's line goes to in this window and the family that reads it, or why there is none: `entryShell`'s rule, then the pinned shell's. */
+function usableEntryShell(
+  entryName: string,
+  terminalOs: string | undefined,
+): { ok: false; reason: string } | { ok: true; choice: EntryShell; family: ShellFamily } {
+  const ctx = shellContext();
+  const choice = entryShell(entryName, terminalOs, ctx);
+  const refusal = entryRefusal(choice);
+  return refusal === undefined ? { ok: true, choice, family: readerFamily(choice, pinnedShell(), ctx) } : { ok: false, reason: refusal };
 }
 
 function shellPathOf(terminal: vscode.Terminal): string | undefined {

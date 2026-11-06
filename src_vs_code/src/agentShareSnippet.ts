@@ -148,7 +148,8 @@ export function buildKindSnippet(
         'Run it:',
         `  ${cli} run ${t}`,
         '',
-        'It runs exactly as saved — you cannot change the line or pass arguments.',
+        'It runs as saved, {name} filled in from the entry\'s name — you cannot change',
+        'the line or pass arguments.',
         ...footer(t),
       ].join('\n');
     case 'credential':

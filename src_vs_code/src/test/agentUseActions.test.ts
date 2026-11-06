@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
+import { NAME_REFUSAL } from '../commandName';
 import { commandFingerprint } from '../commandTrust';
 import { lockSecret } from '../secretEnvelope';
 import {
@@ -286,4 +287,53 @@ test('vpnAction: a start that was sent before the client left answers as it alwa
   const result = await vpnAction(vpnDeps(true, [], () => request.abort()), 'down').run({ ...ctx, signal: request.signal }, {});
 
   assert.deepEqual(result, { status: 200, body: { opened: true } });
+});
+
+// `{name}` (parent PLAN_terminal_folder_run.md §1, story S2): the agent runs the line the Run button would type.
+
+/** A terminal entry named `name` holding `command`; `trusted` are the lines a person has run; `slots` counts exec slots taken. */
+function namedDeps(name: string, command: string, trusted: readonly string[], slots: { taken: number } = { taken: 0 }) {
+  const details = { id: 'e1', name, isTerminal: true, command };
+  return fakeDeps({
+    storage: { getNode: () => ({ details }) },
+    trustStore: { get: () => trusted.map((line) => commandFingerprint('e1', line)), update: async () => undefined },
+    acquireExecSlot: () => {
+      slots.taken += 1;
+      return () => undefined;
+    },
+  });
+}
+
+const echoName = hostOs === 'windows' ? 'Write-Output {name}' : 'echo {name}';
+const echoAlert = echoName.replace('{name}', 'alert');
+
+test('the_agent_runs_the_resolved_line', async () => {
+  const result = await terminalRunAction(namedDeps('alert', echoName, [echoAlert])).run(ctx, {});
+
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.match((result.body as { stdout?: string }).stdout ?? '', /alert/);
+});
+
+test('the_agent_is_not_trusted_by_a_vouched_template_or_an_old_name', async () => {
+  // A rename keeps an agent out until a person has run the new line.
+  const template = await terminalRunAction(namedDeps('alert', echoName, [echoName])).run(ctx, {});
+  assert.equal(code(template), 'no_credential', JSON.stringify(template.body));
+  const oldName = await terminalRunAction(namedDeps('alert', echoName, [echoName.replace('{name}', 'bravo')])).run(ctx, {});
+  assert.equal(code(oldName), 'no_credential', JSON.stringify(oldName.body));
+});
+
+test('a_refused_name_fails_not_supported_before_the_trust_check', async () => {
+  const slots = { taken: 0 };
+  const result = await terminalRunAction(namedDeps('a b', echoName, [echoName], slots)).run(ctx, {});
+
+  assert.equal(code(result), 'not_supported');
+  assert.ok(message(result).includes(NAME_REFUSAL), message(result));
+  assert.equal(slots.taken, 0, 'no exec slot was taken for a line that will not run');
+});
+
+test('the_summary_and_the_snippet_stop_saying_exactly_as_saved', () => {
+  const summary = terminalRunAction(fakeDeps()).summarize({});
+  assert.doesNotMatch(summary, /exactly as saved/);
+  // The script road is run exactly as saved, and still says so.
+  assert.match(scriptRunAction(fakeDeps()).summarize({}), /exactly as saved/);
 });

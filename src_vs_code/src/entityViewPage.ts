@@ -7,7 +7,7 @@ import { describeMcpSource } from './viewerOptions';
 import { mcpBarHtml } from './mcpSwitches';
 import { DbConnParts } from './dbConnString';
 import { CommandArg, EntityMetadata } from './types';
-import { buildCommandLine, commandRowLabel, normalizeArgs } from './commandLine';
+import { commandRefusal, commandRowLabel, normalizeArgs, shownCommandLine } from './commandLine';
 import { highlightScript, resolveScriptEnv } from './scriptRender';
 import { configCodePanel, highlightSnippet } from './configCodePanel';
 import {
@@ -507,11 +507,8 @@ export function renderEntityViewHtml(options: EntityViewOptions): string {
     row(commandRowLabel(d.terminalOs), 'command', d.isTerminal ? d.command : undefined),
     row('What it is for', 'commandNote', d.isTerminal ? d.commandNote : undefined),
     ...(d.isTerminal ? normalizeArgs(d.commandArgs).map((a, i) => argRow(a, i)) : []),
-    row(
-      'Full command',
-      'fullCommand',
-      d.isTerminal ? buildCommandLine(d.command ?? '', d.commandArgs) : undefined,
-    ),
+    row('Full command', 'fullCommand', d.isTerminal ? shownCommandLine(d) : undefined),
+    row('Will not run', 'commandRefusal', d.isTerminal ? commandRefusal(d) : undefined),
     row('VPN type', 'vpnType', d.isVpn ? (d.vpnType ?? 'other') : undefined),
     row(
       `VPN config${d.vpnConfigFileName ? ` (${d.vpnConfigFileName})` : ''}`,

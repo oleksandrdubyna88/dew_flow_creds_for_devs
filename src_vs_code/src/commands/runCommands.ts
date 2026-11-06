@@ -6,14 +6,17 @@ import { StorageManager } from '../storageManager';
 import { VaultKeys } from '../vaultKeys';
 import { nodeAt } from '../entityViewerCommands';
 import { asElement } from '../commandTargets';
-import { buildCommandLine } from '../commandLine';
+import { CommandParts, ResolvedCommand, resolveCommand } from '../commandLine';
 import { ScriptRunPlan, scriptRunPlan } from '../scriptRun';
 import { detectSecretPrints, resolveScriptEnv } from '../scriptRender';
 import { lockToOwner, materializedKeyPath, safeFileComponent } from '../materializedKeys';
 import { RefPlan, buildCommandLineWithRefs, planRefs, refField, rewriteScriptRefs } from '../runPlan';
 import { runInMaskedTerminal } from '../maskedTerminal';
 import { maskingBanner } from '../extension';
-import { entryTerminal, pinnedShell, pinnedTerminal, shellContext } from '../pinnedTerminal';
+import { pinnedShell, pinnedTerminal, shellContext } from '../pinnedTerminal';
+import { sendGuarded } from '../terminalGuard';
+import { registerFolderRun } from './folderRunCommand';
+import { trackTerminalActivity } from '../terminalActivityTracker';
 import { confirmTrusted } from '../trustPrompt';
 import { dependencyRequest, runDependenciesFirst } from '../dependencyRunHost';
 import { EntityMetadata } from '../types';
@@ -37,9 +40,11 @@ export interface RunCommandsHost {
  * closure each, over the size limits and carrying their own copies of the trust modal.</p>
  */
 export function registerRunCommands(host: RunCommandsHost): void {
+  host.context.subscriptions.push(trackTerminalActivity());
   host.register('credSshManager.runCommand', (target) => runCommand(host, target));
   host.register('credSshManager.runScript', (target) => runScript(host, target));
   host.register('credSshManager.runWithSecrets', (target) => runWithSecrets(host, target));
+  registerFolderRun(host);
 }
 
 interface Entry {
@@ -58,11 +63,6 @@ async function entryAt(host: RunCommandsHost, target: unknown): Promise<Entry | 
   return { accountId: element.accountId, id: element.node.id, name: element.node.name, details: element.node.details };
 }
 
-/** The stored command's line — disabled arguments left out. */
-function commandLineOf(details: EntityMetadata): string {
-  return buildCommandLine(details.command ?? '', details.commandArgs);
-}
-
 function scriptOf(details: EntityMetadata): string {
   return details.script ?? '';
 }
@@ -74,6 +74,12 @@ function languageOf(details: EntityMetadata): string {
 function warn(message: string): false {
   void vscode.window.showWarningMessage(message);
   return false;
+}
+
+/** Said, and nothing runs: the road's own words for no command, or the name's refusal. */
+function sayNotReady(entry: Entry, resolved: Exclude<ResolvedCommand, { kind: 'ready' }>, whenEmpty: string): undefined {
+  warn(resolved.kind === 'refused' ? `"${entry.name}" will not run: ${resolved.reason}` : whenEmpty);
+  return undefined;
 }
 
 /**
@@ -103,30 +109,34 @@ function windowRefusal(entry: Entry): string | undefined {
 
 async function runCommand(host: RunCommandsHost, target: unknown): Promise<void> {
   const entry = await entryAt(host, target);
-  if (entry === undefined) {
-    return;
-  }
-  const line = commandLineOf(entry.details);
-  if (line.length === 0) {
-    warn(`"${entry.name}" has no command yet — edit it and fill in the command.`);
-    return;
-  }
-  if (await passGates(host, entry, line, windowRefusal(entry))) {
-    typeIntoEntryTerminal(entry, line);
+  if (entry !== undefined) {
+    await runEntryLine(host, entry);
   }
 }
 
+async function runEntryLine(host: RunCommandsHost, entry: Entry): Promise<void> {
+  const line = arrowLine(entry);
+  if (line !== undefined && (await passGates(host, entry, line, windowRefusal(entry)))) {
+    await typeIntoEntryTerminal(entry, line);
+  }
+}
+
+/** The entry's resolved line, or `undefined` having said why, before anyone is asked anything. */
+function arrowLine(entry: Entry): string | undefined {
+  const resolved = resolveCommand(entry.details);
+  return resolved.kind === 'ready' ? resolved.line : sayNotReady(entry, resolved, `"${entry.name}" has no command yet — edit it and fill in the command.`);
+}
+
 /**
- * A dedicated terminal per entry, reused — `entryTerminal` decides whose shell (issue #103). The
- * line runs with Enter: the operator asked for the button to do the whole job, and `Copy Command`
- * remains for the times you want to edit before running.
+ * A dedicated terminal per entry, reused only when its last command is known to have finished — otherwise the person
+ * is shown the terminal and asked (`terminalGuard.ts`; parent decision B). The line runs with Enter: the operator asked
+ * for the button to do the whole job, and `Copy Command` remains for the times you want to edit before running. The title is
+ * `details.name`, as the folder run's and the launcher's are, so a share that split the names cannot part their terminals.
  */
-function typeIntoEntryTerminal(entry: Entry, line: string): void {
-  const opened = entryTerminal(entry.name, entry.details.terminalOs);
-  if (opened.ok) {
-    opened.terminal.sendText(line, true);
-  } else {
-    warn(opened.reason);
+async function typeIntoEntryTerminal(entry: Entry, line: string): Promise<void> {
+  const sent = await sendGuarded(entry.details.name, entry.details.terminalOs, () => line);
+  if (sent.kind === 'refused') {
+    warn(sent.reason);
   }
 }
 
@@ -252,15 +262,18 @@ async function runWithSecrets(host: RunCommandsHost, target: unknown): Promise<v
   }
 }
 
-interface SecretsJob {
+interface SecretsJobBase {
   readonly entry: Entry;
-  /** The exact text the trust record covers — the script body, or the command line. */
+  /** The exact text the trust record covers — the script body, or the resolved command line. */
   readonly body: string;
-  /** Present for a script; its interpreter, file extension and language. */
-  readonly script?: { plan: Extract<ScriptRunPlan, { kind: 'run' }>; language: string };
   /** The shell that reads the line — and that the reference rewrite spells its reads for. */
   readonly shell: string | undefined;
 }
+
+/** A script (its interpreter, file extension and language), or a command (its parts with `{name}` filled in). */
+type SecretsJob =
+  | (SecretsJobBase & { readonly script: { plan: Extract<ScriptRunPlan, { kind: 'run' }>; language: string }; readonly parts?: undefined })
+  | (SecretsJobBase & { readonly script?: undefined; readonly parts: CommandParts });
 
 async function secretsJobAt(host: RunCommandsHost, target: unknown): Promise<SecretsJob | undefined> {
   const entry = await entryAt(host, target);
@@ -284,11 +297,11 @@ function scriptJob(entry: Entry): SecretsJob | undefined {
 }
 
 function commandJob(entry: Entry): SecretsJob | undefined {
-  const body = commandLineOf(entry.details);
-  if (body.trim().length === 0) {
-    return void warn(`"${entry.name}" has nothing to run yet — open Edit and fill in the command.`);
+  const resolved = resolveCommand(entry.details);
+  if (resolved.kind !== 'ready') {
+    return sayNotReady(entry, resolved, `"${entry.name}" has nothing to run yet — open Edit and fill in the command.`);
   }
-  return { entry, body, shell: hasOs(entry.details.terminalOs) ? pinnedShell().shellPath : vscode.env.shell };
+  return { entry, body: resolved.line, parts: resolved.parts, shell: hasOs(entry.details.terminalOs) ? pinnedShell().shellPath : vscode.env.shell };
 }
 
 interface ResolvedRefs {
@@ -320,11 +333,12 @@ function scriptEnvOf(job: SecretsJob): ScriptEnv {
 /** Where references may be written: the body and every variable, or the command and every argument. */
 function searchedTexts(job: SecretsJob, scriptEnv: ScriptEnv): string[] {
   const d = job.entry.details;
-  return job.script === undefined ? commandTexts(d) : [scriptEnv.body, ...(d.scriptVars ?? []).map((v) => v.value)];
+  return job.script === undefined ? commandTexts(job.parts) : [scriptEnv.body, ...(d.scriptVars ?? []).map((v) => v.value)];
 }
 
-function commandTexts(d: EntityMetadata): string[] {
-  return [d.command ?? '', ...(d.commandArgs ?? []).map((a) => a.value)];
+/** The parts after `{name}`, so `creds://me/{name}/password` is a reference; disabled rows are scanned, as stored. */
+function commandTexts(parts: CommandParts): string[] {
+  return [parts.command, ...parts.args.map((a) => a.value)];
 }
 
 type ScriptEnv = { env: Record<string, string>; body: string };
@@ -362,10 +376,10 @@ function runMasked(host: RunCommandsHost, job: SecretsJob, refs: ResolvedRefs): 
 }
 
 function maskedCommandLine(host: RunCommandsHost, job: SecretsJob, refs: ResolvedRefs): string {
-  const d = job.entry.details;
   if (job.script === undefined) {
-    return buildCommandLineWithRefs(d.command ?? '', d.commandArgs, refs.plan, process.platform, job.shell);
+    return buildCommandLineWithRefs(job.parts, refs.plan, process.platform, job.shell);
   }
+  const d = job.entry.details;
   const body = rewriteScriptRefs(refs.scriptBody, refs.plan, job.script.language);
   const scriptPath = writeScriptFile(host.storageDir, `run-${d.id}${job.script.plan.extension}`, body);
   return [job.script.plan.command, ...job.script.plan.args, quoteFor(pinnedShell().family, scriptPath)].join(' ');

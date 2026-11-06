@@ -344,11 +344,12 @@ async function keptText(revision: Revision, gate: PinGate): Promise<Record<'note
 
 /** The page for one opened version — every value from the version, none from the live entry. */
 async function revisionViewOptions(node: TreeNode, revision: Revision, kept: KeptRead): Promise<EntityViewOptions> {
-  const details = revision.details;
+  // The version's own name, once, so its page and its Copy All fill `{name}` alike.
+  const details = { ...revision.details, name: revision.name };
   const { password, privateKey, vpnConfig, dbConnection } = revision.secrets;
   const text = await keptText(revision, kept.gate);
   return {
-    details: { ...details, name: revision.name },
+    details,
     // Its own line, not a suffix: glued to the name it read as part of it (owner, 2026-08-27).
     subtitle: `version replaced at ${new Date(revision.at).toLocaleString()}`,
     // Only if this version decided for itself; what its folder said back then is not kept.

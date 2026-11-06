@@ -33,7 +33,7 @@ test('the shell read follows the SHELL, not the OS — a Windows git-bash needs 
 
 test('a reference in a command line becomes a variable read — never the value in argv', () => {
   const plan = planRefs([`psql ${REF}`]);
-  const line = buildCommandLineWithRefs('psql', [{ value: REF }], plan, 'linux', '/bin/bash');
+  const line = buildCommandLineWithRefs({ command: 'psql', args: [{ value: REF }] }, plan, 'linux', '/bin/bash');
   assert.equal(line, 'psql "$CREDS_REF_1"');
   assert.equal(line.includes('creds://'), false, 'the reference itself is gone too');
 });
@@ -41,8 +41,7 @@ test('a reference in a command line becomes a variable read — never the value 
 test('a disabled argument stays out of the line, as it does without references', () => {
   const plan = planRefs([REF]);
   const line = buildCommandLineWithRefs(
-    'aws',
-    [{ value: '--debug', disabled: true }, { value: REF }],
+    { command: 'aws', args: [{ value: '--debug', disabled: true }, { value: REF }] },
     plan,
     'linux',
     '/bin/bash',
@@ -51,7 +50,7 @@ test('a disabled argument stays out of the line, as it does without references',
 });
 
 test('an empty command produces an empty line, whatever the arguments say', () => {
-  assert.equal(buildCommandLineWithRefs('   ', [{ value: REF }], planRefs([REF]), 'linux'), '');
+  assert.equal(buildCommandLineWithRefs({ command: '   ', args: [{ value: REF }] }, planRefs([REF]), 'linux'), '');
 });
 
 test('the same reference twice reads one variable both times', () => {

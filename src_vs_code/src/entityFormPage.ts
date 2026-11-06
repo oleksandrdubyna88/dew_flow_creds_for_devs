@@ -610,7 +610,8 @@ ${formHeaderHtml({
 
     <label for="commandPreview">Full command</label>
     <input id="commandPreview" type="text" readonly tabindex="-1">
-    <p class="hint">This is exactly what runs.</p>
+    <p class="hint">This is exactly what runs. <code>{name}</code> in the command or an argument is this entry's Name, so a rename follows it.</p>
+    <p class="hint" id="commandPreviewRefusal" hidden></p>
   </fieldset>
 
   ${openSection('dbSection')}
