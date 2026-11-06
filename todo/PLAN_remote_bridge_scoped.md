@@ -625,6 +625,7 @@ Cornerstones: 1 of 2 — E1.3 ([PLAN_remote_bridge_scoped_E1.md](PLAN_remote_bri
 
 ### E3 — Where a stored command or script runs
 
+- **Inherits from main's `{name}` (merged 2026-11-06):** a terminal line now runs as `resolveCommand(...)` resolves it, so the wall and the launch gate scan the resolved parts, not the template: `deploy creds://a@x/{name}/db/password` holds no reference until `{name}` is filled, and the reference rule of §4.2 must see what runs. `referenceTextsOf`'s docstring is to be corrected with it. E3 also decides whether a `terminal.run` whose `{name}` is refused answers `denied` rather than `not_supported`, since the CLI reads a 404 as "this window does not have the entry" and moves on.
 - **Order inside the epic.** `run` joins the allow-list at the end of E3, after both executors pass, not in E3.1: policy alone cannot make the laptop executor run on the server.
 - **Goal.** A script entry the agent runs, `vpn-up` as the agent's login among them, runs on the server after a consent on the laptop and returns exit code and output, with the interpreter chosen for the server's OS (`remoteOs`, `python3` on Ubuntu; §4.6); a script that injects a variable does not run on the server; a command with a password runs on the laptop with the value in the child's environment only and the agent sees masked output; a line whose reference would have to reach the server is refused.
 - **Scope.** §5 steps 7-8: §4.6 whole.
