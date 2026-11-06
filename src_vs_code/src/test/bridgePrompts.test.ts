@@ -1,6 +1,5 @@
 import * as assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
-import { CONSENT_TIMEOUT_MS } from '../agentConsent';
 import { code, message, pause } from './bridgeDoorHarness';
 import { ACCOUNT, CONTEXT_1, Ask, Door, WallWorld, answeredAtOnce, registryOf, send, sendAbortable, settleAll, until, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
 
@@ -476,17 +475,79 @@ test('P3 through the main port: an unanswered LOCAL dialog times out with the se
   }
 });
 
-test('P3 through the main port: main\'s behaviour is kept — after the timeout a second local modal is raised while the first is still on screen, and the timeout is five minutes', async () => {
-  assert.equal(CONSENT_TIMEOUT_MS, 5 * 60_000, 'the re-ask is five minutes after the first modal; the tests below shorten it to watch it in milliseconds');
-  const ww = await wallWorld({ holdDialogs: true, consentTimeoutMs: 200 });
+/** Wait for `done` on the event loop's immediates, which a mocked `setTimeout` leaves alone. */
+async function untilImmediate(done: () => boolean, what: string): Promise<void> {
+  for (let turn = 0; !done(); turn += 1) {
+    assert.ok(turn < 20_000, `timed out waiting for ${what}`);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+}
+
+test('P3 through the main port, the REAL path: no answer at 299 s, 504 at 300.1 s with main\'s sentence, and the next local call raises a second modal and runs', async () => {
+  const ww = await wallWorld({ holdDialogs: true });
+  mock.timers.enable({ apis: ['setTimeout'] });
   try {
-    const first = await send(viaMain(ww), mcp());
-    assert.equal(first.status, 504);
-    const second = send(viaMain(ww), mcp());
-    await until(() => ww.w.openDialogs.length === 2, 'the re-ask');
-    assert.equal(ww.w.dialogs.length, 2, 'two modals were raised, and the first was never answered');
+    let settled = false;
+    const first = send(viaMain(ww), alias()).then((reply) => {
+      settled = true;
+      return reply;
+    });
+    await untilImmediate(() => ww.w.openDialogs.length === 1, 'the first local dialog');
+    mock.timers.tick(299_000);
+    for (let turn = 0; turn < 300; turn += 1) {
+      await new Promise<void>((resolve) => setImmediate(resolve)); // long enough for an answer to cross the socket, if one were sent
+    }
+    assert.equal(settled, false, 'at 299 s nobody has been answered: the consent timeout is five minutes, not less');
+    mock.timers.tick(1_100);
+    const timedOut = await first;
+    assert.deepEqual([timedOut.status, code(timedOut), message(timedOut)], [504, 'consent_timeout', 'The human did not allow this grant.']);
+    const second = send(viaMain(ww), alias());
+    await untilImmediate(() => ww.w.openDialogs.length === 2, 'the re-ask: a second modal while the first was never answered');
+    assert.equal(ww.w.dialogs.length, 2);
     ww.w.openDialogs[1]('Allow');
     assert.equal((await second).status, 200);
+  } finally {
+    mock.timers.reset();
+    settleAll(ww);
+    ww.dispose();
+  }
+});
+
+test('P2 through the main port: a local alias exec that is running holds nothing — a second local alias call is asked and runs while it does', async () => {
+  const ww = await wallWorld();
+  let finish = (): void => undefined;
+  try {
+    const running = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    ww.w.hold = () => running;
+    const first = send(viaMain(ww), alias());
+    await until(() => ww.w.ran.length === 1, 'the first local exec to be inside its action');
+    const second = send(viaMain(ww), alias());
+    await until(() => ww.w.ran.length === 2, 'the second local call to be asked and to run (it was told busy: the first dialog kept the place)');
+    assert.equal(ww.w.dialogs.length, 2, 'both were asked');
+    finish();
+    assert.deepEqual((await Promise.all([first, second])).map((reply) => reply.status), [200, 200]);
+  } finally {
+    finish();
+    ww.dispose();
+  }
+});
+
+test('L8 through the main port: a token dialog that closes frees nothing of an alias dialog\'s place — the next alias call is still busy', async () => {
+  const ww = await wallWorld({ holdDialogs: true });
+  try {
+    const token = await ww.tokenFor(ACCOUNT, 'e1', 'prod');
+    const standing = send(viaMain(ww), alias());
+    await until(() => ww.w.openDialogs.length === 1, 'the alias dialog');
+    const denied = send(viaMain(ww), { path: '/v1/use/exec', token, body: { command: 'id' } });
+    await until(() => ww.w.openDialogs.length === 2, 'the token dialog, raised beside the alias one (a local token call takes no place)');
+    ww.w.openDialogs[1]('Deny');
+    assert.equal((await denied).status, 403);
+    const next = await answeredAtOnce(send(viaMain(ww), alias()), 'the next alias call was let in: the token dialog\'s close freed the alias dialog\'s place');
+    assert.deepEqual([next.status, message(next)], [429, BUSY]);
+    ww.w.openDialogs[0]('Allow');
+    assert.equal((await standing).status, 200);
   } finally {
     settleAll(ww);
     ww.dispose();

@@ -3581,7 +3581,7 @@ uses it yet.
 *Prompts per bridge.* Each bridge has its own sliding windows, keyed by its `bridgeId` in `TokenlessCeilings`
 (`aliasThrottle.ts`: `SlidingWindow` the count, `OneInFlight` the single dialog, the coordinator the doors); the local door is
 the key `local`. Per door: five **dialogs** a minute, sixty silent calls a minute, and (Amendment 2, B.1) sixty **asking
-calls** a minute, **calls refused before any dialog included**. The dialog window counts dialogs raised, stamped by the consent
+calls** a minute, **calls refused for their content or by the wall included** (a call is counted once it is admitted; an unknown alias, a missing field or a `busy` answer comes before that and is not). The dialog window counts dialogs raised, stamped by the consent
 gate (`prompted`, called in `ConsentGate.ask` immediately before the dialog is shown), not calls admitted: a call refused before
 its dialog spends no dialog. The asking window is the other half: such a call used to be admitted every time (a grant minted,
 two journal lines, no bound at all), so it is stamped at admission and at every refusal for the count (`a refusal is a call`;
@@ -3591,8 +3591,11 @@ bridge), written to the journal once a window per door without naming a door, an
 which decides everything it can. **What the local alias and MCP doors gain, exactly:** the same sixty-asking-calls bound
 (legitimate use is a person in a terminal or an agent that thinks between calls), and a call they refuse before its dialog no
 longer leaves a pending call grant in the registry (`credsAgentServer.usable` drops it: `GrantRegistry.drop` deletes a
-`'call'` grant that is still `pending`, and nothing else). No answer, status or sentence on either door changes below the
-ceiling; above it a `too_many_requests` appears where the call used to reach `usable`. The registry's cap evicts in the order
+`'call'` grant that is still `pending`, and nothing else). Below the ceiling no call is answered differently, with two
+exceptions about who hears *busy* (the place belongs to the dialog, below): a client that leaves during its dialog now leaves the
+place taken until the person clicks, so the next call is *busy* where `main` raised a second modal; and a running `exec`, `query`,
+`run` or `down` no longer makes the next call *busy*, where `main` answered it so. Above the ceiling a `too_many_requests` appears
+where the call used to reach `usable`. The registry's cap evicts in the order
 of `EVICTION_ORDER`: **denied calls** (the person refused them), **allowed calls that ran** (`uses > 0`: silent MCP use), **Allows not
 yet reserved** (`allowed`, `uses 0`: live while the call waits in the one-use lane, `remember`, `releaseWaiting` or the mask read, and
 dead for good when a pre-consented call was refused in `usable` or abandoned before it was reserved, because `drop` deletes pending
@@ -3629,9 +3632,10 @@ cannot parse** (`//`, `///`, `http://[`, `/\`; `example.com` parses, as a path) 
 (`requestUrl`, `brokerRequests.ts`) and is answered `not_found` on the main port and `not_supported` on a bridge, with no 500 and
 no journal line, where before D.8 it threw before any route or throttle; **a key file whose removal fails and whose journal note
 then throws** no longer replaces a finished exec's `200` or leaks the exec slot (`removeKeyFile`, `sshUseActions.ts`, an inner
-`try` around the note); and **an agent's `up` or `down` is not a person's act** (`notePersonsAct`, `vpnRun.ts`): only a call with
+`try` around the note); **a keychain read that throws** during an exec (`prepareAuth`) is answered `500 internal` with the reason in
+the journal and gives the exec slot back (`main` kept it); and **an agent's `up` or `down` is not a person's act** (`notePersonsAct`, `vpnRun.ts`): only a call with
 no start gate, which is the person's own Start or Stop, tells the vault a person is at the keyboard, so an agent's `up` or
-`down` no longer postpones auto-lock (an Allow or Deny click, and every command or click, still do).
+`down` no longer postpones auto-lock (an Allow or Deny click, and the other commands that already counted, still do).
 
 *Built, and reachable only through a bridge door, which no production code opens until E2* (R1, R4): the **read shape**. A
 bridged listing row is a `BridgeEntry` built field by field by `narrowed` (`bridgeScope.ts`), never a spread of the stored row:

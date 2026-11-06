@@ -82,7 +82,7 @@ function plantedNodes(): TreeNode[] {
   return [
     { id: 'f-planted', name: PLANTED.FOLDER, type: 'folder', parentId: null, mcp: EVERYTHING },
     db('db-kv'), db('db-qs'), db('db-slash'), db('db-at'),
-    entity('full-row', 'full-row', 'f1', {
+    entity('full-row', 'full row', 'f1', {
       kind: 'db', host: 'full.example.test', port: 5432, user: 'u', dbType: 'postgres', vpnType: 'openvpn', scriptLanguage: 'bash',
       command: 'run it', isConfig: true, configKeyHash: 'hash', dependsOn: ['db-kv', 'e-out'],
     }),
@@ -285,6 +285,11 @@ export interface WallWorld {
 
 const DEFAULTS = { scope: ['e1'], quiet: false, x: 'absent', collide: false, a1Config: true, agentForward: false, entryRefusal: 'wired', holdListing: false, allows: 60, storedTexts: NO_TEXTS, supports: ['exec', 'query'] } as const;
 
+/** The alias list the hook answers: `second` is of another kind than `ssh`, so a list that fixes the kind is told apart. */
+function aliasRows(aliases: Record<string, Target>): Array<{ name: string; kind: string }> {
+  return Object.keys(aliases).map((name) => ({ name, kind: name === 'second' ? 'db' : 'ssh' }));
+}
+
 /** The alias names the world knows, each to its target. `xalias` is there only when `x` is. */
 function aliasesFor(x: 'usable' | 'closed' | 'absent'): Record<string, Target> {
   const known: Record<string, Target> = { one: E1, leaky: E_OUT, second: E2, foreign: FOREIGN };
@@ -347,7 +352,7 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
     supports: [...o.supports],
     answers: Array.from({ length: o.allows }, () => 'Allow'),
     aliasMap: aliases,
-    aliasList: Object.keys(aliases).map((name) => ({ name, kind: 'ssh' })),
+    aliasList: aliasRows(aliases),
     mcpEntries: [...(await visibleMcpEntries(vault))] as unknown as Record<string, unknown>[],
     mcpResolve: (id, action, server) => {
       lookups.push([id, action, server]);

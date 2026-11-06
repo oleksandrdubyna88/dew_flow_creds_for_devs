@@ -35,6 +35,8 @@ export interface LinksOptions {
   readonly writeFails?: boolean;
   /** The deps carry no `bridgedSshConfig`, as production's do until E1.6 (Amendment 6, F.4): a bridged call is refused before any slot or key. */
   readonly noConfigWriter?: true;
+  /** The keychain read of the linked key rejects, as a keychain that errors does (a thrown read must answer, and give the slot back). */
+  readonly keyReadThrows?: true;
 }
 
 export interface Run {
@@ -52,6 +54,8 @@ export interface LinksWorld {
   readonly materialised: string[];
   /** How many times the per-call ssh_config writer was called. Nothing calls it on the partial-E1 tree: the argv has no `-F` to name a file. */
   readonly configWrites: number;
+  /** Exec slots taken and not yet given back. */
+  readonly slotsHeld: number;
   readonly storageDir: string;
   cleanup(): void;
 }
@@ -72,6 +76,7 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
   const notes: string[] = [];
   const materialised: string[] = [];
   let configWrites = 0;
+  let slotsHeld = 0;
   const stub = { window: { showWarningMessage: (): Promise<undefined> => Promise.resolve(undefined), showInformationMessage: (): Promise<undefined> => Promise.resolve(undefined) } };
   const mocks = {
     './keyInstaller': {
@@ -99,11 +104,19 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
   const mod = loadWithVscode<{ sshExecAction: typeof SshExecAction }>('../sshUseActions', stub, mocks);
   const storage = memoryStorage(stub);
   await seedVault(storage, o);
+  if (options.keyReadThrows === true) {
+    storage.getPrivateKey = () => Promise.reject(new Error('the keychain would not answer'));
+  }
   const deps: SshUseDeps = {
     storage,
     storageDir,
     signal: new AbortController().signal,
-    acquireExecSlot: () => (): void => undefined,
+    acquireExecSlot: () => {
+      slotsHeld += 1;
+      return (): void => {
+        slotsHeld -= 1;
+      };
+    },
     note: (message) => void notes.push(message),
     agentSocket: () => undefined,
     // E1.6's writer, stood in for: it records its calls and writes nothing, because on this tree no call is made (the argv has no `-F`).
@@ -120,13 +133,16 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
     get configWrites() {
       return configWrites;
     },
+    get slotsHeld() {
+      return slotsHeld;
+    },
     storageDir,
     cleanup: () => void owned.close(), // the folder is owned and claimed: closing the scope removes it
   };
 }
 
 /** The options with every default filled in; `noConfigWriter` is not one of them, it is read where the deps are built. */
-type Resolved = Required<Omit<LinksOptions, 'noConfigWriter'>>;
+type Resolved = Required<Omit<LinksOptions, 'noConfigWriter' | 'keyReadThrows'>>;
 
 type Storage = Parameters<typeof seedEntry>[0];
 

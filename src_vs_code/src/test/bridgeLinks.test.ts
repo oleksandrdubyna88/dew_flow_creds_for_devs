@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import { test } from 'node:test';
-import { statusForErrorCode } from '../brokerProtocol';
+import { mock, test } from 'node:test';
+import { INTERNAL_FAILURE, statusForErrorCode } from '../brokerProtocol';
 import { pinRefusalFor } from '../pinGate';
 import { code, message } from './bridgeDoorHarness';
 import { JUMP_NAME, KEY_BODY, KEY_NAME, LinksOptions, LinksWorld, STDERR_WITH_A_HOST, linksWorld } from './bridgeLinksWorld';
@@ -255,4 +255,42 @@ test('G2: production hands the actions no writer of the per-call ssh_config (E1.
     relays: new WslRelayManager(() => { throw new Error('no relay is spawned here'); }, () => undefined),
   };
   assert.equal('bridgedSshConfig' in sshDepsFor(parts), false);
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Partial E1 on the local doors (parent §7, change 5.1): the real action's failures, through the main port
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('M3: a key file that cannot be removed, through the main port — the finished exec answers 200, the slot is back, and one journal note says so', async () => {
+  const nodeFs = require('node:fs') as typeof fs;
+  const real = nodeFs.rmSync;
+  const refused = mock.method(nodeFs, 'rmSync', (target: fs.PathLike, options?: fs.RmOptions): void => {
+    if (String(target).endsWith('.key')) {
+      throw Object.assign(new Error(`EPERM: operation not permitted, unlink '${String(target)}'`), { code: 'EPERM' });
+    }
+    real(target, options);
+  });
+  try {
+    await both({}, {}, async ({ lw, ww }) => {
+      const reply = await body(viaMain(ww), ww);
+      assert.equal(reply.status, 200, reply.body);
+      assert.equal(refused.mock.callCount() > 0, true, 'the removal was attempted');
+      assert.equal(lw.slotsHeld, 0, 'the slot came back');
+      assert.equal(lw.notes.filter((note) => note.startsWith('ssh:exec — the key file could not be removed: ')).length, 1, JSON.stringify(lw.notes));
+    });
+  } finally {
+    refused.mock.restore();
+  }
+});
+
+test('M3: a credential read that throws, through the main port — the call is answered, the slot is back and nothing ran', async () => {
+  await both({ keyReadThrows: true }, {}, async ({ lw, ww }) => {
+    const reply = await body(viaMain(ww), ww);
+    assert.deepEqual([reply.status, code(reply), message(reply)], [500, 'internal', INTERNAL_FAILURE]);
+    assert.ok(ww.w.audit.some((line) => line.includes('the keychain would not answer')), 'and the reason is in the journal');
+    assert.equal(lw.slotsHeld, 0, 'the slot came back');
+    assert.deepEqual(lw.runs, [], 'and nothing ran');
+    const next = await body(viaMain(ww), ww);
+    assert.equal(next.status, reply.status, 'the next call is answered the same way: the pool is not exhausted');
+  });
 });

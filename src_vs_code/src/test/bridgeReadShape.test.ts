@@ -67,10 +67,16 @@ async function servedRow(ww: WallWorld, id: string): Promise<Record<string, unkn
   return row;
 }
 
-/** A served alias or entry list that is empty would pass every key check for ever: a route that serves nothing has no stray key. */
-function assertListNotEmpty(ask: string, body: Record<string, unknown>): void {
-  const rows = body.aliases ?? body.entries;
-  assert.ok(rows === undefined || (Array.isArray(rows) && rows.length > 0), `${ask} served an empty list`);
+/** The routes that serve a list, and the field it is in. */
+const LIST_FIELDS: Readonly<Record<string, string>> = { '/v1/aliases': 'aliases', '/v1/mcp/entries': 'entries' };
+
+/** A list route must carry its list field, as a non-empty array: a response with no field, or an empty one, has no stray key to find. */
+function assertListNotEmpty(path: string, ask: string, body: Record<string, unknown>): void {
+  const field = LIST_FIELDS[path];
+  if (field !== undefined) {
+    const rows = body[field];
+    assert.ok(Array.isArray(rows) && rows.length > 0, `${ask} has no non-empty "${field}" array`);
+  }
 }
 
 /** The keys a served body carries, after asserting each is in its route's field list (a byte-equal route has none to check). */
@@ -80,7 +86,7 @@ function keysWithinList(path: string, ask: string, text: string): string[] {
   }
   const allowed = new Set(fieldsFor(path));
   const body = JSON.parse(text) as Record<string, unknown>;
-  assertListNotEmpty(ask, body);
+  assertListNotEmpty(path, ask, body);
   const keys = keysAt(body);
   assert.deepEqual([...new Set(keys.filter((key) => !allowed.has(key)))], [], `${ask} served keys its field list does not name`);
   return keys;
@@ -146,7 +152,7 @@ const SERVED_WHOLE_LOCALLY = [
 ];
 
 const FLAGS = ['hasPassword', 'hasPrivateKey', 'hasNotes', 'hasTotp'] as const;
-const PLAIN_FIELDS = ['host', 'port', 'user', 'dbType', 'vpnType', 'scriptLanguage'] as const;
+const PLAIN_FIELDS = ['name', 'kind', 'host', 'port', 'user', 'dbType', 'vpnType', 'scriptLanguage', 'codeAccessEnabled'] as const;
 
 /** The plain fields of the row that sets them all: each served value is the local row's, and the control is that the local row sets it. */
 function assertPlainFields(served: Record<string, unknown>, local: McpEntry | undefined): void {
@@ -164,6 +170,15 @@ function assertFlags(id: string, own: string, served: Record<string, unknown>, l
   }
 }
 
+/** A row with no connection string or command says false; a config with no code-access key says false, which is not absent; the name is not the id. */
+function assertAbsentThings(plain: Record<string, unknown>, local: McpEntry | undefined, full: McpEntry | undefined): void {
+  assert.equal(plain.hasConnectionString, false);
+  assert.equal(plain.hasCommand, false);
+  assert.equal(local?.codeAccessEnabled, false, 'control: the local row says false');
+  assert.equal(plain.codeAccessEnabled, false);
+  assert.notEqual(full?.name, full?.id, 'control: the name is not the id');
+}
+
 test('RS2: every served value is the local row\'s — the plain fields on a row that sets them all, each flag on a row that holds that slot alone', async () => {
   const ww = await wallWorld({ fullVault: true, scope: ['e1', 'full-row', ...Object.keys(SECRET_SLOTS)] });
   try {
@@ -173,9 +188,19 @@ test('RS2: every served value is the local row\'s — the plain fields on a row 
     for (const [id, own] of Object.entries(SECRET_SLOTS)) {
       assertFlags(id, own, await servedRow(ww, id), localRow(id));
     }
-    const plain = await servedRow(ww, 'e1');
-    assert.equal(plain.hasConnectionString, false);
-    assert.equal(plain.hasCommand, false);
+    assertAbsentThings(await servedRow(ww, 'e1'), localRow('e1'), localRow('full-row'));
+  } finally {
+    ww.dispose();
+  }
+});
+
+test('RS2: every served alias row is the local one — a kind other than ssh survives', async () => {
+  const ww = await wallWorld({ fullVault: true, scope: ALL_IN_SCOPE });
+  try {
+    const served = (JSON.parse(await bodyOf(ww, 'bridge', '/v1/aliases')) as { aliases: Array<{ name: string; kind: string }> }).aliases;
+    const local = (JSON.parse(await bodyOf(ww, 'main', '/v1/aliases')) as { aliases: Array<{ name: string; kind: string }> }).aliases;
+    assert.ok(local.some((row) => row.kind !== 'ssh'), 'control: the local list has a row of another kind');
+    assert.deepEqual(served, local.filter((row) => row.name !== 'foreign'), 'the bridge lists the local rows whose entries are in scope, name and kind as they are');
   } finally {
     ww.dispose();
   }

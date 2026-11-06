@@ -24,27 +24,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The place one dialog takes is the dialog's, given back when it closes** (`brokerConsent.ts`, `shown`), not when the call that raised it
   ends: a client that hangs up during its dialog leaves the modal on screen and the place taken until you click it or five minutes pass.
   Before, the place went back at the call's end and the next call could open a second modal over the first. A local call that carries a
-  token takes no place at all (`doorOfDialog`), so it is not part of this.
+  token is not admitted at all (`credsAgentServer.ts` runs it without `admit`), so it takes no place, and its dialog closing frees nothing of
+  another call's place (`doorOfDialog`).
 - **A prompt is counted when it is shown, not when the call is admitted** (`aliasThrottle.ts`, `prompted`), on the alias and MCP doors: a
   call refused before any dialog no longer spends one of the five prompts a minute.
-- **A new ceiling: a caller without a token may ask at most 60 times a minute** on the alias and MCP doors, refusals before any dialog
-  included (`ASKING_CEILING`), with its own sentence and one journal line per minute. A call that carries a token is not counted.
-- **After you Allow a local `create`, `terminal` or `up` through the alias or MCP door, the place stays taken until that call ends**,
-  because those three may show a prompt of their own next (a PIN box, a trust modal, OpenVPN Connect's question); another caller hears
-  *busy* until then. A local call that carries a token keeps nothing, because a local token call is counted on no door. `exec`, `query`,
-  `run` and `down` keep nothing once the dialog closes.
+- **A new ceiling: a caller without a token may ask at most 60 times a minute** on the alias and MCP doors, calls refused for their
+  content or by the wall included (`ASKING_CEILING`), with its own sentence and one journal line per minute. What is refused before the call is
+  admitted is not counted (an unknown alias, a missing field, a call made while a dialog is standing), and neither is a call that carries a
+  token, which is not admitted at all.
+- **A long `exec`, `query`, `run` or `down` no longer makes every other alias and MCP call hear *busy*.** Before, every alias and MCP call
+  that could prompt kept the one place until the call ended, an `exec` for its whole run included; now only a call that may show a prompt of
+  its own after your Allow does: a local `create`, `terminal` or `up` (a PIN box, a trust modal, OpenVPN Connect's question) keeps the place
+  until that call ends, as before, and the others give it back when the dialog closes. A local call that carries a token keeps nothing: it is
+  not admitted at all (`credsAgentServer.ts` runs it without `admit`).
 - **A failure inside a request handler answers 500** with the generic sentence instead of leaving the request unanswered until the client
   gives up; the reason goes to the agent journal.
 - The grant registry reclaims in tiers (denied calls, calls that ran, Allows not yet used, then calls whose dialog is open or whose client
   left), and a call refused before anybody was asked leaves no grant behind. The exception is a call a policy had already allowed: if it is
   refused before it is reserved, it still leaves an allowed grant with no use, which the tiers now reclaim before a call whose dialog is open.
 - **An agent's `up` or `down` no longer postpones auto-lock** (`vpnRun.ts`, `notePersonsAct`): an agent's call is not a person's act. Your own
-  Start or Stop, an Allow or Deny click, and every other command or click still count as you being at the keyboard.
-- **A request line the server cannot parse, such as `GET //`, is answered `not_found`** with no journal line, instead of leaving the request
+  Start or Stop, an Allow or Deny click, and the other commands that already counted still count as you being at the keyboard.
+- **A request target the server cannot parse, such as `GET //`, is answered `not_found`** with no journal line, instead of leaving the request
   unanswered (`requestUrl`).
 - **A stored key file that cannot be removed after an SSH `exec`** (a lock on Windows) no longer replaces the finished result with an error or
   keeps one of the eight exec slots; the failure goes to the agent journal, and if the journal cannot take the line either, the result still
   stands (`removeKeyFile`).
+- **A keychain read that throws during an SSH `exec`** no longer keeps one of the eight exec slots (`sshUseActions.ts`, `prepareAuth`); the
+  call is answered 500 with the generic sentence and the reason goes to the agent journal.
 - **Unchanged, said here so nobody reads it as new:** a dialog nobody answers still times out after five minutes, still answers the caller
   *The human did not allow this grant.*, and still gives the place back, so the next call raises a dialog while the old one may be on
   screen. A later release changes this.
