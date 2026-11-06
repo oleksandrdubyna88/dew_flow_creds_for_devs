@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { GitError, GitRunner, GitTransport } from '../gitTransport';
 import { GIT_BASE_ARGS, VAULT_BRANCH, cloneDirName, fetchArgv, initArgv, resetArgv } from '../gitRemote';
 import { CURRENT_WRAPPED_VERSION } from '../cryptoUtils';
 import { StoredAccount } from '../types';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * The transport driven by a fake git, so the paths a real repository cannot be made to take
@@ -37,7 +41,7 @@ interface Fake {
 }
 
 function fake(root?: string): Fake {
-  const cloneRoot = root ?? fs.mkdtempSync(path.join(os.tmpdir(), 'creds-gitunit-'));
+  const cloneRoot = root ?? ownedDir(scope, 'gitunit');
   const calls: string[][] = [];
   const failures: { token: string; stderr: string }[] = [];
 
@@ -74,7 +78,7 @@ function fake(root?: string): Fake {
  * real directory to write into, since the fake runner does no filesystem work of its own.
  */
 function prepared(): Fake {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-gitunit-'));
+  const root = ownedDir(scope, 'gitunit');
   fs.mkdirSync(path.join(root, cloneDirName(REMOTE), '.git'), { recursive: true });
   return fake(root);
 }
@@ -145,7 +149,7 @@ test('a read fetches and hard-resets — the clone is a cache, never a source of
 });
 
 test('an unchanged file is not committed, so an idle cycle grows no history', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-gitunit-'));
+  const root = ownedDir(scope, 'gitunit');
   fs.mkdirSync(path.join(root, cloneDirName(REMOTE), '.git'), { recursive: true });
   const calls: string[][] = [];
   const run: GitRunner = (args) => {

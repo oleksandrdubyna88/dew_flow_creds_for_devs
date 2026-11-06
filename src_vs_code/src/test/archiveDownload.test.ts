@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { writeArchiveTo } from '../archiveDownload';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * The archive download's one property: what appears at the chosen path is the WHOLE archive or
@@ -16,7 +20,7 @@ import { writeArchiveTo } from '../archiveDownload';
  */
 
 function tempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'cvbk-download-'));
+  return ownedDir(scope, 'download');
 }
 
 function streamOf(...chunks: readonly (Uint8Array | Error)[]): ReadableStream<Uint8Array> {

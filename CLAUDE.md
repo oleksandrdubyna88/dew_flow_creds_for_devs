@@ -60,7 +60,7 @@ Vault__DataDir=/tmp/cv Vault__AllowedDomains=example.com \
 cd src_vs_code
 npm ci
 npm run typecheck
-npm test                    # node:test over out/test/*.test.js — 8 workers, lowered by scripts/lower-priority.mjs
+npm test                    # node:test over out/test/*.test.js — 8 workers, lowered by scripts/lower-priority.mjs; needs the shared-rules mount (the leftovers wrapper)
 npm run package             # builds the .vsix
 npm run icon                # regenerates media/icon.png from the same glyph as icon.svg
 

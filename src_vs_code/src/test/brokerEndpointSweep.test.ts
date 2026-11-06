@@ -1,11 +1,14 @@
 import * as assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { endpointDir, readEndpoints, writeEndpoint } from '../cliEndpoint';
 import { world } from './brokerWorld';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * The window retires the announcements of windows that crashed — when it is built, which in VS Code is once,
@@ -17,7 +20,7 @@ import { world } from './brokerWorld';
  */
 
 function storage(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'creds-sweep-'));
+  return ownedDir(scope, 'sweep');
 }
 
 /** The pid of a process this test started and that has exited — never a guessed number. */

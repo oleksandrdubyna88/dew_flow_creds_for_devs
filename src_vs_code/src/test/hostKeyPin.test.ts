@@ -2,9 +2,8 @@ import assert from 'node:assert/strict';
 import * as crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import { test } from 'node:test';
+import { ownedFile } from '../../scripts/lib/leftovers.cjs';
 import {
   formatHostKey,
   hostKeyFingerprint,
@@ -57,7 +56,7 @@ test('the stored form round-trips', () => {
   assert.equal(parseHostKey(undefined), undefined);
 });
 
-test('the fingerprint is the SHA256: string ssh-keygen prints for the same key', () => {
+test('the fingerprint is the SHA256: string ssh-keygen prints for the same key', (t) => {
   // Generated here and compared against the real tool, so this is not our own arithmetic
   // agreeing with itself. Skipped where ssh-keygen is absent rather than failing.
   const { publicKey } = crypto.generateKeyPairSync('ed25519');
@@ -71,15 +70,13 @@ test('the fingerprint is the SHA256: string ssh-keygen prints for the same key',
   ]);
   const key = { algorithm: 'ssh-ed25519', base64: blob.toString('base64') };
 
-  const file = path.join(os.tmpdir(), `creds-hostkey-${process.pid}.pub`);
+  const file = ownedFile(t, 'hostkey', 'host.pub');
   fs.writeFileSync(file, `${formatHostKey(key)} probe\n`);
   let printed: string;
   try {
     printed = execFileSync('ssh-keygen', ['-lf', file], { encoding: 'utf8' });
   } catch {
     return; // no ssh-keygen on this machine
-  } finally {
-    fs.rmSync(file, { force: true });
   }
 
   const expected = /(SHA256:[A-Za-z0-9+/]+)/.exec(printed)?.[1];

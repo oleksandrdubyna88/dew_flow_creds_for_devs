@@ -34,7 +34,7 @@ import { clickedSecret, outsidePinNote } from './pinClick';
  * function the human Start button calls, plus the request's start gate. `runVpn`'s own answer goes back, so a
  * refusal the person saw never reaches the agent as "opened".
  */
-export function agentVpnOpener(storage: StorageManager, storageDir: string, vaultKeys: VaultKeys, trust: TrustStore): VpnUseDeps['open'] {
+export function agentVpnOpener(storage: StorageManager, storageDir: string, vaultKeys: Pick<VaultKeys, 'noteUserActivity'>, trust: TrustStore): VpnUseDeps['open'] {
   return async (accountId, entityId, action, startGate) => {
     const node = storage.getNode(accountId, entityId);
     return node === undefined ? false : runVpn({ kind: 'node', accountId, node }, action, storage, storageDir, vaultKeys, trust, startGate);
@@ -75,7 +75,7 @@ export async function runVpn(
   action: 'start' | 'stop',
   storage: StorageManager,
   storageDir: string,
-  vaultKeys: VaultKeys,
+  vaultKeys: Pick<VaultKeys, 'noteUserActivity'>,
   trust: TrustStore,
   startGate: AbortSignal | undefined,
 ): Promise<boolean> {

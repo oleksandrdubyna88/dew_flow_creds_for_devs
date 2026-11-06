@@ -35,6 +35,14 @@ jobs:
         with:
           persist-credentials: false
 
+      # The tests make their scratch through scripts/lib/leftovers.cjs, a WRAPPER over the shared
+      # rules' test-leftovers reference, and `npm test` sweeps and audits through the same mount.
+      # No mount, no helper, no test: the wrapper refuses with this very command. Only that ONE
+      # submodule, as docs.yml does, and from the working directory of the repository root.
+      - name: Fetch the shared rules
+        working-directory: .
+        run: git submodule update --init --depth 1 .claude/rules/shared
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.x
@@ -174,3 +182,40 @@ jobs:
           name: extension-vsix
           path: src_vs_code/creds-for-devs-ci.vsix
           retention-days: 14
+
+  # The runner's kill path on Windows. `scripts/run-tests.mjs` ends the WHOLE tree of the `node --test` it started
+  # and proves it ended before its audit removes anything; on Windows that is the reference's job-object supervisor
+  # (PowerShell 7, preinstalled on the hosted image), a mechanism no Linux run can observe. The test files below
+  # are the wrapper's and the runner's own: the second starts a REAL `node --test` whose suite kills itself and leaves
+  # a descendant behind, then asserts the descendant is gone and its folder removed. The extension suite as a whole
+  # still runs on Ubuntu only (`build-test`).
+  runner-windows:
+    name: runner lifecycle · windows
+    runs-on: windows-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: src_vs_code
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch the shared rules
+        working-directory: .
+        run: git submodule update --init --depth 1 .claude/rules/shared
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: src_vs_code/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Compile
+        run: npm run compile
+
+      - name: Runner lifecycle (wrapper and runner scenarios)
+        run: node --test out/test/leftoversWrapper.test.js out/test/leftoversRunner.test.js out/test/leftoversRunnerGate.test.js out/test/leftoversRunnerHardening.test.js out/test/leftoversRunnerAudit.test.js out/test/leftoversRunnerSweep.test.js

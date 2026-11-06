@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { TestContext, test } from 'node:test';
 import { resolveCommand, shownCommandLine } from '../commandLine';
 import { substituteName } from '../commandName';
 import { EntityMetadata } from '../types';
 import { ACCEPTED, REFUSED, REFUSED_MORE } from './commandNameTable';
+import { ownedDir } from '../../scripts/lib/leftovers.cjs';
 
 /**
  * `{name}` against a REAL shell (parent `PLAN_terminal_folder_run.md` §1, story S2): no stub. An accepted name
@@ -15,22 +15,8 @@ import { ACCEPTED, REFUSED, REFUSED_MORE } from './commandNameTable';
  * hostile name, substituted without the guard, really creates a file.
  */
 
-/**
- * Until PR #294's helper lands: the inline form the existing tests use (`sshAgentServer.test.ts:71`), removed by this test on every
- * exit path. A sweep only LISTS a folder under this prefix; it removes nothing it cannot prove its own.
- */
-function shellDir(t: TestContext): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'testsToDelete-shell-'));
-  t.after(() => {
-    try {
-      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
-    } catch (error) {
-      // Left under its prefix, listed by the sweep; a teardown never fails a test, and never goes unsaid.
-      t.diagnostic(`left behind ${dir}: ${String(error)}`);
-    }
-  });
-  return dir;
-}
+/** A folder the test owns and claims; the test's own `after` removes it however the test ends. */
+const shellDir = (t: TestContext): string => ownedDir(t, 'shell');
 
 /** Every shell this suite starts is given this long: a hung one fails its test with `ETIMEDOUT` instead of the suite. */
 const SHELL_TIMEOUT_MS = 20_000;

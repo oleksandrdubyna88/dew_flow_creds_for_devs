@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { defaultProbe, openSshProgram, pathSshIsBuiltIn } from '../sshProgram';
 
 /**
@@ -23,25 +23,15 @@ import { defaultProbe, openSshProgram, pathSshIsBuiltIn } from '../sshProgram';
  * line it exists to cross.</p>
  */
 
-const made: string[] = [];
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end (one `ssh.exe` per run would pile up on a long-lived agent). */
+const scope = cleanupScope();
+after(() => scope.close());
 
-after(() => {
-  // The temp tree goes when the suite does. Left behind, these accumulate one `ssh.exe` per run on
-  // a long-lived agent — raised by two reviewers, and cheaper to fix than to argue about.
-  for (const dir of made) {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-function madeDir(prefix: string): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-  made.push(dir);
-  return dir;
-}
+const madeDir = (what: string): string => ownedDir(scope, what);
 
 /** A temp directory holding a file named `ssh.exe` — what `hasTool` looks for. */
 function dirWithSsh(): string {
-  const dir = madeDir('creds-ssh-probe-');
+  const dir = madeDir('ssh-probe');
   fs.writeFileSync(path.join(dir, 'ssh.exe'), '');
   return dir;
 }
@@ -75,7 +65,7 @@ test('the default probe reads PATH and finds the file — not merely "returns fa
     assert.ok(probe.pathDirs.includes(first), `PATH was read: ${probe.pathDirs.join(' | ')}`);
     assert.ok(probe.pathDirs.includes(later));
     assert.equal(probe.hasTool(first), true, 'and the file it looks for is the file that is there');
-    assert.equal(probe.hasTool(madeDir('creds-no-ssh-')), false);
+    assert.equal(probe.hasTool(madeDir('no-ssh')), false);
   });
 });
 
@@ -91,7 +81,7 @@ test('the delimiter follows the TARGET platform, not the host', () => {
 
 test('with NO ssh anywhere on PATH a forwarding connection gets the forced full path', () => {
   // End to end, with no probe passed: `defaultProbe` is what decides, over a PATH this test set.
-  withPath([madeDir('creds-no-ssh-')], () => {
+  withPath([madeDir('no-ssh')], () => {
     assert.equal(openSshProgram('ssh', true, 'win32', () => true), 'C:/Windows/System32/OpenSSH/ssh.exe');
   });
 });

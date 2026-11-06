@@ -1,14 +1,18 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { mock, test } from 'node:test';
+import { after, mock, test } from 'node:test';
 import { loadWithVscode } from './vscodeStub';
 import { memoryStorage, seedEntry } from './pinWorld';
 import { EntityMetadata } from '../types';
 import type { UseActionContext } from '../useActions';
 import type { SshUseDeps } from '../sshUseActions';
 import type { StorageManager } from '../storageManager';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * What an agent may actually do with an SSH grant (audit A3).
@@ -82,7 +86,7 @@ const ENTITY = {
 } as unknown as EntityMetadata;
 
 async function world(parts: Parts): Promise<World> {
-  const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-use-'));
+  const storageDir = ownedDir(scope, 'use');
   const log: Log = { materialised: [], runs: [], notes: [], warnings: [], tally: { slotsHeld: 0, connected: 0 } };
   const stub = {
     window: {
@@ -177,8 +181,6 @@ function deps(w: World, parts: Parts): SshUseDeps {
 }
 
 const CTX: UseActionContext = { accountId: 'a1', entityId: 'e1', entityName: 'prod', signal: new AbortController().signal };
-const cleanup = (w: World): void => fs.rmSync(w.storageDir, { recursive: true, force: true });
-
 const KEY_SOURCE = { kind: 'storedKey', keyEntityId: 'k1', content: 'PRIVATE KEY BODY' };
 
 /** Run the exec action once and hand back its result. */
@@ -191,14 +193,10 @@ test('an entity deleted since the grant was minted is not_found', async () => {
   // The entity is re-read on every call, never snapshotted at grant time.
   const parts: Parts = { source: KEY_SOURCE, entity: undefined };
   const w = await world(parts);
-  try {
-    const result = await exec(w, parts);
+  const result = await exec(w, parts);
 
-    assert.equal(result.status, 404);
-    assert.equal((result.body.error as { code: string }).code, 'not_found');
-  } finally {
-    cleanup(w);
-  }
+  assert.equal(result.status, 404);
+  assert.equal((result.body.error as { code: string }).code, 'not_found');
 });
 
 test('an entity whose HOST was cleared is refused BEFORE any key is written', async () => {
@@ -209,41 +207,29 @@ test('an entity whose HOST was cleared is refused BEFORE any key is written', as
     entity: { ...ENTITY, host: undefined } as unknown as EntityMetadata,
   };
   const w = await world(parts);
-  try {
-    const result = await exec(w, parts);
+  const result = await exec(w, parts);
 
-    assert.equal((result.body.error as { code: string }).code, 'no_credential');
-    assert.deepEqual(w.materialised, [], 'nothing was decrypted to disk');
-  } finally {
-    cleanup(w);
-  }
+  assert.equal((result.body.error as { code: string }).code, 'no_credential');
+  assert.deepEqual(w.materialised, [], 'nothing was decrypted to disk');
 });
 
 test('a runaway agent is refused a slot rather than allowed to pile up SSH processes', async () => {
   const parts: Parts = { source: KEY_SOURCE, noSlot: true };
   const w = await world(parts);
-  try {
-    const result = await exec(w, parts);
+  const result = await exec(w, parts);
 
-    assert.equal((result.body.error as { code: string }).code, 'too_many_requests');
-    assert.deepEqual(w.runs, [], 'and nothing ran');
-  } finally {
-    cleanup(w);
-  }
+  assert.equal((result.body.error as { code: string }).code, 'too_many_requests');
+  assert.deepEqual(w.runs, [], 'and nothing ran');
 });
 
 test('an entity with no credential left is refused, and the slot is given back', async () => {
   // A slot leaked on a refusal would let a handful of dead grants exhaust the pool.
   const parts: Parts = { source: { kind: 'none' } };
   const w = await world(parts);
-  try {
-    const result = await exec(w, parts);
+  const result = await exec(w, parts);
 
-    assert.equal((result.body.error as { code: string }).code, 'no_credential');
-    assert.equal(w.tally.slotsHeld, 0);
-  } finally {
-    cleanup(w);
-  }
+  assert.equal((result.body.error as { code: string }).code, 'no_credential');
+  assert.equal(w.tally.slotsHeld, 0);
 });
 
 test('X1: a credential read that THROWS gives the slot back and fails the call — it neither leaks nor hangs', async () => {
@@ -326,15 +312,11 @@ test('X3 (Amendment 6, D.6): a key file that cannot be removed AND a journal tha
 test('a stored key is written, used, and DELETED before the call returns', async () => {
   const parts: Parts = { source: KEY_SOURCE };
   const w = await world(parts);
-  try {
-    await exec(w, parts);
+  await exec(w, parts);
 
-    assert.equal(w.materialised.length, 1);
-    assert.equal(fs.existsSync(w.materialised[0]), false, 'the decrypted key is gone');
-    assert.ok(w.runs[0].argv.includes(w.materialised[0]), 'and it really was the key ssh was given');
-  } finally {
-    cleanup(w);
-  }
+  assert.equal(w.materialised.length, 1);
+  assert.equal(fs.existsSync(w.materialised[0]), false, 'the decrypted key is gone');
+  assert.ok(w.runs[0].argv.includes(w.materialised[0]), 'and it really was the key ssh was given');
 });
 
 test('the key is deleted even when ssh itself FAILS', async () => {
@@ -342,15 +324,11 @@ test('the key is deleted even when ssh itself FAILS', async () => {
   // decrypted key behind on exactly the runs someone is investigating.
   const parts: Parts = { source: KEY_SOURCE, runFails: true };
   const w = await world(parts);
-  try {
-    const result = await exec(w, parts);
+  const result = await exec(w, parts);
 
-    assert.equal((result.body.error as { code: string }).code, 'internal');
-    assert.equal(fs.existsSync(w.materialised[0]), false);
-    assert.equal(w.tally.slotsHeld, 0, 'and the slot came back too');
-  } finally {
-    cleanup(w);
-  }
+  assert.equal((result.body.error as { code: string }).code, 'internal');
+  assert.equal(fs.existsSync(w.materialised[0]), false);
+  assert.equal(w.tally.slotsHeld, 0, 'and the slot came back too');
 });
 
 test('two calls get two DIFFERENT key files — one name would break both', async () => {
@@ -358,28 +336,20 @@ test('two calls get two DIFFERENT key files — one name would break both', asyn
   // from under every other still authenticating with it, human terminals included.
   const parts: Parts = { source: KEY_SOURCE };
   const w = await world(parts);
-  try {
-    await exec(w, parts);
-    await exec(w, parts);
+  await exec(w, parts);
+  await exec(w, parts);
 
-    assert.equal(w.materialised.length, 2);
-    assert.notEqual(w.materialised[0], w.materialised[1]);
-  } finally {
-    cleanup(w);
-  }
+  assert.equal(w.materialised.length, 2);
+  assert.notEqual(w.materialised[0], w.materialised[1]);
 });
 
 test('a password goes into the spawned process ENVIRONMENT, never the argv', async () => {
   const parts: Parts = { source: { kind: 'password', password: 'hunter2' } };
   const w = await world(parts);
-  try {
-    await exec(w, parts);
+  await exec(w, parts);
 
-    assert.equal(w.runs[0].env.CREDS_PASSWORD, 'hunter2');
-    assert.ok(!w.runs[0].argv.join(' ').includes('hunter2'), w.runs[0].argv.join(' '));
-  } finally {
-    cleanup(w);
-  }
+  assert.equal(w.runs[0].env.CREDS_PASSWORD, 'hunter2');
+  assert.ok(!w.runs[0].argv.join(' ').includes('hunter2'), w.runs[0].argv.join(' '));
 });
 
 test('the spawned environment carries PATH — spawn REPLACES it rather than merging', async () => {
@@ -387,26 +357,18 @@ test('the spawned environment carries PATH — spawn REPLACES it rather than mer
   // like a broken credential rather than a missing variable.
   const parts: Parts = { source: { kind: 'password', password: 'hunter2' } };
   const w = await world(parts);
-  try {
-    await exec(w, parts);
+  await exec(w, parts);
 
-    const env = w.runs[0].env;
-    assert.ok(env.PATH !== undefined || env.Path !== undefined, Object.keys(env).slice(0, 10).join());
-  } finally {
-    cleanup(w);
-  }
+  const env = w.runs[0].env;
+  assert.ok(env.PATH !== undefined || env.Path !== undefined, Object.keys(env).slice(0, 10).join());
 });
 
 test('the secret never appears in what the action RETURNS', async () => {
   const parts: Parts = { source: { kind: 'password', password: 'hunter2' } };
   const w = await world(parts);
-  try {
-    const result = await exec(w, parts);
+  const result = await exec(w, parts);
 
-    assert.ok(!JSON.stringify(result).includes('hunter2'), JSON.stringify(result));
-  } finally {
-    cleanup(w);
-  }
+  assert.ok(!JSON.stringify(result).includes('hunter2'), JSON.stringify(result));
 });
 
 test('a credential warning reaches the AUDIT as well as the screen', async () => {
@@ -414,40 +376,28 @@ test('a credential warning reaches the AUDIT as well as the screen', async () =>
   // different key material than its configuration names and nobody is told.
   const parts: Parts = { source: { ...KEY_SOURCE, warning: 'the referenced key entity is gone' } };
   const w = await world(parts);
-  try {
-    await exec(w, parts);
+  await exec(w, parts);
 
-    assert.ok(w.notes.some((n) => /key entity is gone/.test(n)), w.notes.join(' | '));
-    assert.ok(w.warnings.some((n) => /key entity is gone/.test(n)));
-  } finally {
-    cleanup(w);
-  }
+  assert.ok(w.notes.some((n) => /key entity is gone/.test(n)), w.notes.join(' | '));
+  assert.ok(w.warnings.some((n) => /key entity is gone/.test(n)));
 });
 
 test('a command the validator rejects never reaches run()', async () => {
   const parts: Parts = { source: KEY_SOURCE };
   const w = await world(parts);
-  try {
-    const action = w.mod.sshExecAction(deps(w, parts));
+  const action = w.mod.sshExecAction(deps(w, parts));
 
-    assert.equal(action.validate({ command: '' }).ok, false, 'an empty command is not a command');
-    assert.equal(action.validate({ command: 'uptime' }).ok, true);
-  } finally {
-    cleanup(w);
-  }
+  assert.equal(action.validate({ command: '' }).ok, false, 'an empty command is not a command');
+  assert.equal(action.validate({ command: 'uptime' }).ok, true);
 });
 
 test('the outcome an audit line shows names the exit code, and says when it timed out', async () => {
   const parts: Parts = { source: KEY_SOURCE };
   const w = await world(parts);
-  try {
-    const action = w.mod.sshExecAction(deps(w, parts));
+  const action = w.mod.sshExecAction(deps(w, parts));
 
-    assert.match(action.describeOutcome({ status: 200, body: { exitCode: 7 } }), /exit 7/);
-    assert.match(action.describeOutcome({ status: 200, body: { timedOut: true } }), /timed out/);
-  } finally {
-    cleanup(w);
-  }
+  assert.match(action.describeOutcome({ status: 200, body: { exitCode: 7 } }), /exit 7/);
+  assert.match(action.describeOutcome({ status: 200, body: { timedOut: true } }), /timed out/);
 });
 
 test('the terminal action goes through the human Connect path, verbatim', async () => {
@@ -455,31 +405,23 @@ test('the terminal action goes through the human Connect path, verbatim', async 
   // the agent's terminal cannot drift from the one a person opens.
   const parts: Parts = { source: KEY_SOURCE };
   const w = await world(parts);
-  try {
-    const action = w.mod.sshTerminalAction(deps(w, parts));
+  const action = w.mod.sshTerminalAction(deps(w, parts));
 
-    const result = (await action.run(CTX, {})) as { status: number; body: { opened: boolean } };
+  const result = (await action.run(CTX, {})) as { status: number; body: { opened: boolean } };
 
-    assert.equal(w.tally.connected, 1);
-    assert.equal(result.body.opened, true);
-  } finally {
-    cleanup(w);
-  }
+  assert.equal(w.tally.connected, 1);
+  assert.equal(result.body.opened, true);
 });
 
 test('the terminal action refuses a deleted entity rather than opening an empty session', async () => {
   const parts: Parts = { source: KEY_SOURCE, entity: undefined };
   const w = await world(parts);
-  try {
-    const action = w.mod.sshTerminalAction(deps(w, parts));
+  const action = w.mod.sshTerminalAction(deps(w, parts));
 
-    const result = (await action.run(CTX, {})) as { status: number; body: Record<string, unknown> };
+  const result = (await action.run(CTX, {})) as { status: number; body: Record<string, unknown> };
 
-    assert.equal((result.body.error as { code: string }).code, 'not_found');
-    assert.equal(w.tally.connected, 0);
-  } finally {
-    cleanup(w);
-  }
+  assert.equal((result.body.error as { code: string }).code, 'not_found');
+  assert.equal(w.tally.connected, 0);
 });
 
 // --- agent forwarding is more than a flag in the argv (2026-08-26) -------------------------
@@ -494,19 +436,15 @@ test('a forwarding connection hands the child the agent socket', async () => {
   const parts: Parts = { source: KEY_SOURCE, entity: FORWARDING };
   const w = await world(parts);
   w.agentSocket = '/run/creds/agent.sock';
-  try {
-    await exec(w, parts);
+  await exec(w, parts);
 
-    assert.equal(w.runs.length, 1);
-    assert.ok(w.runs[0].argv.includes('-A'), 'the flag is still sent');
-    assert.equal(
-      w.runs[0].env.SSH_AUTH_SOCK,
-      '/run/creds/agent.sock',
-      'and now something can answer it',
-    );
-  } finally {
-    cleanup(w);
-  }
+  assert.equal(w.runs.length, 1);
+  assert.ok(w.runs[0].argv.includes('-A'), 'the flag is still sent');
+  assert.equal(
+    w.runs[0].env.SSH_AUTH_SOCK,
+    '/run/creds/agent.sock',
+    'and now something can answer it',
+  );
 });
 
 test('a connection that did not ask for the agent is left exactly as it was', async () => {
@@ -515,30 +453,22 @@ test('a connection that did not ask for the agent is left exactly as it was', as
   const parts: Parts = { source: KEY_SOURCE };
   const w = await world(parts);
   w.agentSocket = '/run/creds/agent.sock';
-  try {
-    await exec(w, parts);
+  await exec(w, parts);
 
-    assert.equal(w.runs[0].env.SSH_AUTH_SOCK, undefined);
-    assert.equal(w.runs[0].program, 'ssh');
-  } finally {
-    cleanup(w);
-  }
+  assert.equal(w.runs[0].env.SSH_AUTH_SOCK, undefined);
+  assert.equal(w.runs[0].program, 'ssh');
 });
 
 test('forwarding asked for with no agent loaded is SAID, not passed over in silence', async () => {
   const parts: Parts = { source: KEY_SOURCE, entity: FORWARDING };
   const w = await world(parts);
-  try {
-    await exec(w, parts);
+  await exec(w, parts);
 
-    assert.equal(w.runs[0].env.SSH_AUTH_SOCK, undefined);
-    assert.ok(
-      w.notes.some((n) => n.includes('nothing will be forwarded')),
-      `the audit channel said: ${JSON.stringify(w.notes)}`,
-    );
-  } finally {
-    cleanup(w);
-  }
+  assert.equal(w.runs[0].env.SSH_AUTH_SOCK, undefined);
+  assert.ok(
+    w.notes.some((n) => n.includes('nothing will be forwarded')),
+    `the audit channel said: ${JSON.stringify(w.notes)}`,
+  );
 });
 
 test('the terminal action does NOT report success when the window refused the connection', async () => {
@@ -547,17 +477,13 @@ test('the terminal action does NOT report success when the window refused the co
   // open then waits at one that is not there.
   const parts: Parts = { source: KEY_SOURCE, connectRefuses: true };
   const w = await world(parts);
-  try {
-    const action = w.mod.sshTerminalAction(deps(w, parts));
+  const action = w.mod.sshTerminalAction(deps(w, parts));
 
-    const result = (await action.run(CTX, {})) as { status: number; body: { opened?: boolean } };
+  const result = (await action.run(CTX, {})) as { status: number; body: { opened?: boolean } };
 
-    assert.equal(w.tally.connected, 1, 'it still went through the one connect path');
-    assert.notEqual(result.status, 200);
-    assert.notEqual(result.body.opened, true);
-  } finally {
-    cleanup(w);
-  }
+  assert.equal(w.tally.connected, 1, 'it still went through the one connect path');
+  assert.notEqual(result.status, 200);
+  assert.notEqual(result.body.opened, true);
 });
 
 test('the terminal action refused because its client left is that request’s abandonment, not an internal failure (E4.S3)', async () => {
@@ -565,13 +491,9 @@ test('the terminal action refused because its client left is that request’s ab
   // journal carried a failure nobody caused and a reply was written to a socket nobody reads.
   const parts: Parts = { source: KEY_SOURCE, connectRefuses: true };
   const w = await world(parts);
-  try {
-    const request = new AbortController();
-    request.abort();
-    const action = w.mod.sshTerminalAction(deps(w, parts));
+  const request = new AbortController();
+  request.abort();
+  const action = w.mod.sshTerminalAction(deps(w, parts));
 
-    await assert.rejects(action.run({ ...CTX, signal: request.signal }, {}), (error: Error) => error.name === 'AbortError');
-  } finally {
-    cleanup(w);
-  }
+  await assert.rejects(action.run({ ...CTX, signal: request.signal }, {}), (error: Error) => error.name === 'AbortError');
 });

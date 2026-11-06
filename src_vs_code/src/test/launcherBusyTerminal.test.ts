@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { World, noteOurSend, ownerChain, startVpn, terminalNamed, until, world } from './vpnWorld';
+import { cleanupScope } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * The VPN launcher takes the same busy-terminal guard as the green arrow (`terminalGuard.ts`): its line is typed
@@ -29,7 +34,7 @@ function busyWorld(ran: boolean): { w: World; shellEvents: () => void } {
 
 test('the_launcher_never_types_into_its_terminal_while_a_command_runs_there', async () => {
   const { w, shellEvents } = busyWorld(false);
-  const pending = startVpn(w, ownerChain(), { shellEvents });
+  const pending = startVpn(scope, w, ownerChain(), { shellEvents });
   await until(() => w.held.length === 1, 'the busy-terminal question');
   assert.match(w.held[0].text, /is still running a command/);
   w.held[0].answer(undefined);
@@ -45,7 +50,7 @@ test('the_launcher_never_types_into_its_terminal_while_a_command_runs_there', as
 
 test('a_finished_launcher_terminal_is_typed_into_as_today', async () => {
   const { w, shellEvents } = busyWorld(true);
-  const { started, dir } = await startVpn(w, ownerChain(), { shellEvents });
+  const { started, dir } = await startVpn(scope, w, ownerChain(), { shellEvents });
   try {
     assert.equal(started, true, w.warnings.join('\n'));
     const launcher = terminalNamed(w, S);
@@ -61,7 +66,7 @@ test('a_finished_launcher_terminal_is_typed_into_as_today', async () => {
 
 test('an_agent_served_start_refuses_a_busy_terminal_instead_of_asking', async () => {
   const { w, shellEvents } = busyWorld(false);
-  const { started, dir } = await startVpn(w, ownerChain(), { shellEvents, startGate: new AbortController().signal });
+  const { started, dir } = await startVpn(scope, w, ownerChain(), { shellEvents, startGate: new AbortController().signal });
   try {
     assert.equal(started, false);
     assert.deepEqual(w.held, [], 'no question for an agent');
@@ -74,7 +79,7 @@ test('an_agent_served_start_refuses_a_busy_terminal_instead_of_asking', async ()
 
 test('an_agent_served_start_types_into_a_finished_terminal_without_a_question', async () => {
   const { w, shellEvents } = busyWorld(true);
-  const { started, dir } = await startVpn(w, ownerChain(), { shellEvents, startGate: new AbortController().signal });
+  const { started, dir } = await startVpn(scope, w, ownerChain(), { shellEvents, startGate: new AbortController().signal });
   try {
     assert.equal(started, true, w.warnings.join('\n'));
     assert.equal(terminalNamed(w, S).sent.length, 1);
@@ -87,7 +92,7 @@ test('an_agent_served_start_types_into_a_finished_terminal_without_a_question', 
 test('a_start_and_end_with_no_send_of_ours_make_the_launcher_ask', async () => {
   const w = world({}, { preopened: [S], holdDialogs: QUESTION });
   const shellEvents = (): void => w.shell.end(w.live[S], w.shell.start(w.live[S]), 0);
-  const pending = startVpn(w, ownerChain(), { shellEvents });
+  const pending = startVpn(scope, w, ownerChain(), { shellEvents });
   const settled = { done: false };
   void pending.then(() => {
     settled.done = true;
@@ -107,7 +112,7 @@ test('a_start_and_end_with_no_send_of_ours_make_the_launcher_ask', async () => {
 test('a_start_and_end_with_no_send_of_ours_make_an_agent_served_start_refuse', async () => {
   const w = world({}, { preopened: [S] });
   const shellEvents = (): void => w.shell.end(w.live[S], w.shell.start(w.live[S]), 0);
-  const { started, dir } = await startVpn(w, ownerChain(), { shellEvents, startGate: new AbortController().signal });
+  const { started, dir } = await startVpn(scope, w, ownerChain(), { shellEvents, startGate: new AbortController().signal });
   try {
     assert.equal(started, false);
     assert.deepEqual(terminalNamed(w, S).sent, []);

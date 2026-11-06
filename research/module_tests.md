@@ -122,6 +122,66 @@ implied. Its assertions and CI status are read off the file; whether they still 
 until someone starts a server and runs it. That is the honest state, and it is why it sits last in
 `itest:all` with its prerequisite spelled out.
 
+## What the unit suite leaves behind (E2.1, 2026-11-02)
+
+`npm test` makes only folders that are **named, claimed, removed and collected** under
+`.claude/rules/shared/common/test-leftovers.md`: `testsToDelete-<owner>-creds-<what>-<id>`, with the claim in a
+sibling file `<folder>.owner` (never inside, because tests assert the exact content of their folders).
+
+- **The helper.** `src_vs_code/scripts/lib/leftovers.cjs` (types in `leftovers.d.cts`) is a WRAPPER over the mounted
+  reference `.claude/rules/shared/tools/lib/owned.mjs`. It binds the token `creds` once with `ownedFor` and re-exports
+  the reference's functions as they are (`ownedDir`, `cleanupScope`, `tempRoot`, `removeQuietly`, `readOwner`, …).
+  It adds three things: `shortSocketRoot()`, `ownedFile()` and `writeStub()`. Nothing of the reference is copied.
+  No mount, no helper: it refuses and names `git submodule update --init .claude/rules/shared`. CI fetches the mount in
+  every job that runs these tests: the extension job, its Windows runner job, the extension release job and the SonarCloud job
+  (its coverage run is `node --test` over the compiled folder). `workflowMount.test.ts` reads the workflows job by job and fails
+  a job that runs the unit tests without the step.
+- **A test makes its folder** with `ownedDir(t, '<what>')` (`t` is the test context) or, for a helper that many tests
+  call, with one module-level `const scope = cleanupScope(); after(() => scope.close());` in the file. A failing
+  assertion still removes the folder. Never at module load: a run that filters the file's tests away skips its hooks.
+- **Sockets** live in folders made under `shortSocketRoot()` (`/tmp` on Linux and macOS, the temp root on Windows),
+  with a `<what>` of at most five characters: macOS allows 103 bytes in a socket path and its temp root is about 49
+  characters long. `leftoversSites.test.ts` computes the longest path (owner `w` + 10 digits, ten-digit pid) through
+  the product's own `socketPathFor` and `agentSocketPath` and asserts it fits, on every OS.
+- **The runner** `scripts/run-tests.mjs`, in this order: loads the helper; sweeps both roots (see below); exports its
+  record once as `TESTSTODELETE_RUN=<record>`; starts `node --test` in a process tree of its own (a group on POSIX, the
+  reference's job-object supervisor on Windows); when the coordinator has exited, ends the WHOLE tree and confirms no
+  descendant is alive; then audits. The audit finds every owner-form folder and orphan claim of both roots whose claim
+  is EXACTLY the record the runner exported (a string, never recomputed), removes it, and turns a passing suite into
+  exit 1 with `this run left <n> folder(s) it claimed`. A folder claimed by any other record is never touched and never
+  counted; an unmarked folder is listed. If the tree cannot be confirmed ended, the audit removes nothing, fails the run
+  and says `(not removed: <n> descendant(s) still alive)` — or `could not be confirmed` when the check itself failed. A root
+  the audit cannot list (anything but "not there") is named (`unlisted: <root> (<code>)`) and fails a passing run; a claim it
+  cannot read is named (`unreadable:`) and left alone. The group probe is one `kill(-pgid, 0)`; only on Linux, and only when it
+  says "alive", `/proc/*/stat` is read once, and a group of zombies only is ended (a container with no init never reaps them). After the
+  group is killed the runner also looks for what LEFT the group (a grandchild that called `setsid`): on Linux every process
+  carrying the run's record as a whole environment entry, everywhere the parent-pid chain; the scan runs once after the group is
+  gone, survivors are ended and only those pids are polled. A claim file another user owns is listed and never read.
+  The wait is bounded: 60 minutes, `RUN_TESTS_TIMEOUT_MS` overrides it, and a timeout that fires is reported before the tree
+  is ended. One run at a time per process. **On Windows the audit removes nothing for now**: the reference's job supervisor
+  gives no acknowledgment that its job is empty, so the audit lists and fails a run that left a claimed folder (a passing run
+  with nothing claimed stays passing); **on macOS the survivor scan has no environment to read, so the audit removes nothing there: a run that claimed a folder lists it and fails, a run that claimed none leaves with the suite's own code** (and a chain-walk survivor there is not killed either: a survivor is signalled only with a start time bound, which is Linux's); where a record has no start time (macOS, Windows) only claims modified since the runner started, less two seconds of clock slack, count as this run's, and older ones are listed as `unproven:`; that choice removes nothing on those systems, where the audit does not remove at all.
+- **Where the collection guarantee holds.** `npm test` (and, with E2.2, `npm run itest:all`) sweep; a direct
+  `node --test out/test/<file>.test.js` makes and removes its own scratch but does not sweep old leftovers — the next
+  runner run, or the janitor, does. **On Windows the Node sweep collects nothing** until F16 closes: the reference lists
+  `unverified:` there. The collector on Windows is the C# sweep of the xUnit executables (E2.3) or the janitor.
+- **The start-of-run sweep (wired, F22, release `cc24f9e`).** The runner's default sweep is the MOUNTED reference's
+  `sweepLeftovers` from `.claude/rules/shared/tools/lib/leftovers-sweep.mjs`, called with this repository's token AFTER the
+  caller's options (a `token` in them cannot override it), over both roots. It is loaded fail-closed on its own: if the module
+  cannot be loaded the runner writes ONE line (`leftovers sweep not run (…)`), sweeps nothing and keeps the suite's exit code. A
+  sweep never changes the exit code. It collects a dead-owner, old, owner-form `creds` folder under the two keys; a live or
+  unknown owner, another token's folder and an unmarked folder survive (listed); on Windows it lists `unverified:` and removes
+  nothing (F16). Before F22 the mounted sweep ignored `creds` folders (it served the reference's own token only).
+- **Proofs.** `leftoversRunnerSweep.test.ts` (the real default sweep in private roots), `leftoversWrapper.test.ts` (binding, names, claim beside the folder, unwind, export list, refusal without
+  the mount), `leftoversRunner.test.ts` (the audit by record, the other record's folder untouched, the kill path with a
+  real `node --test` and a surviving descendant, the timeout, the refusal; `ci-extension.yml` job
+  `runner lifecycle · windows` runs the wrapper, runner, gate, hardening and sweep files on Windows (the sweep file's F16 `unverified:` scenario and the hardening file's win32 pid case run only there [E2.1 win jobs]); `leftoversRunnerGate.test.ts` and
+  `leftoversRunnerHardening.test.ts` carry the process-tree, macOS and bound scenarios; `leftoversRunnerAudit.test.ts` the root it cannot list and the claim it cannot read) and `leftoversSites.test.ts` (a syntax-tree scan for raw
+  temp calls in the migrated files, a call through a local alias of a named import included, with companions that keep the scan alive).
+- **Old names** (`creds-*`, `cvbk-*`, `arrival-lease-*`, `wsl-mcp-check-*`, `creds-life-*.sock`, the legacy
+  `testsToDelete-agent-*`) are not swept: `creds-` is not a registered token and other software uses such names. A
+  person removes the ones already on a machine by hand.
+
 ## Prerequisites, timeouts and cleanup
 
 A harness that leaves a socket, a port or a temp directory behind makes the NEXT run lie. Each of

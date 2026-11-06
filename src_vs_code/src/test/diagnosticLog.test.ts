@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import Module from 'node:module';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * The shared diagnostic channel (audit A6), and the one promise that makes it safe to send
@@ -60,7 +64,7 @@ function sink(): { lines: string[]; appendLine(l: string): void; show(): void; d
 }
 
 function tempDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'creds-log-'));
+  return ownedDir(scope, 'log');
 }
 
 const AT = new Date(Date.UTC(2026, 7, 26, 9, 5, 3));
@@ -94,7 +98,7 @@ test('an unwritable storage folder degrades to the channel — it never throws',
   const out = sink();
   const log = loaded.createDiagnosticLog({
     // A path under a FILE, so every mkdir/append fails on every platform.
-    storageDir: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'creds-ro-')), 'a-file', 'under-it'),
+    storageDir: path.join(ownedDir(scope, 'ro'), 'a-file', 'under-it'),
     sink: out,
     now: () => AT,
     pid: 3,
