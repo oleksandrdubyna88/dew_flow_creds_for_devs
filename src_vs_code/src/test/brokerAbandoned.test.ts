@@ -1,9 +1,6 @@
 import * as assert from 'node:assert/strict';
-import * as fs from 'node:fs';
 import * as http from 'node:http';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { VpnUseDeps, vpnAction } from '../agentUseActions';
 import { endedAfter } from '../requestLife';
 import * as sshProgram from '../sshProgram';
@@ -11,6 +8,11 @@ import type { SshUseDeps } from '../sshUseActions';
 import { World, call, share, world } from './brokerWorld';
 import { memoryStorage, seedEntry } from './pinWorld';
 import { loadWithVscode } from './vscodeStub';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * A request whose client is gone can authorise nothing (`PLAN_wsl_bridge_outlives_its_client.md` §2.3,
@@ -567,7 +569,7 @@ function sshTerminalWorld(): SshTerminalWorld {
     await seedEntry(storage, { id: 'e1', name: 'prod', isSshEnabled: true, kind: 'ssh', host: 'prod.example.com' }, {});
     return {
       storage,
-      storageDir: fs.mkdtempSync(path.join(os.tmpdir(), 'creds-abandoned-')),
+      storageDir: ownedDir(scope, 'abandoned'),
       signal: new AbortController().signal,
       acquireExecSlot: () => (): void => undefined,
       note: (): void => undefined,
@@ -598,6 +600,5 @@ test('an SSH terminal whose client left during the credential lookup is asked no
   } finally {
     ssh.log.releaseLookup();
     w.server.dispose();
-    fs.rmSync(deps.storageDir, { recursive: true, force: true });
   }
 });

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { NAME_REFUSAL } from '../commandName';
 import { commandFingerprint } from '../commandTrust';
 import { lockSecret } from '../secretEnvelope';
@@ -10,6 +10,11 @@ import {
   VpnUseDeps,
   vpnAction,
 } from '../agentUseActions';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * The broker's non-SSH capabilities. Every REFUSAL path here returns before any process is
@@ -169,13 +174,10 @@ test('a script action returns its child output RAW — masking belongs to the br
   // db:query and anything added later are covered without an action remembering to. Asserted
   // here so nobody re-adds a second masker that can disagree with the first — the end-to-end
   // guarantee is checked against the real socket in scripts/agent-broker-itest.cjs.
-  const os = require('node:os') as typeof import('node:os');
-  const fs = require('node:fs') as typeof import('node:fs');
-  const path = require('node:path') as typeof import('node:path');
   const { commandFingerprint } = require('../commandTrust') as typeof import('../commandTrust');
 
   const body = 'console.log("plain output")';
-  const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mask-'));
+  const storageDir = ownedDir(scope, 'mask');
   const deps = fakeDeps({
     storageDir,
     storage: {

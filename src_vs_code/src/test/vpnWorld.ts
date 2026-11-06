@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
 import { commandFingerprint } from '../commandTrust';
 import { loadWithVscode } from './vscodeStub';
 import { endedStage } from '../requestLife';
 import { EntityMetadata } from '../types';
+import { ownedDir, type Scope } from '../../scripts/lib/leftovers.cjs';
 
 /**
  * A VPN start under the `vscode` stub — the world `dependencyChain.test.ts` and
@@ -350,15 +349,18 @@ export interface StartOptions {
 }
 
 /**
- * Start (or stop) the VPN entry `vpn` of `nodes`, in a fresh storage directory.
+ * Start (or stop) the VPN entry `vpn` of `nodes`, in a fresh storage directory owned by `scope`.
+ *
+ * <p>The directory is made by `ownedDir` BEFORE anything can throw, and the scope removes it however the start ends: a start that
+ * rejects, or a caller that never reaches its own cleanup, no longer leaves it behind (it used to be handed back only on the
+ * paths that returned).</p>
  *
  * <p>`ended` is the request's end THROWN from inside the start — a chain that had typed a step when the
- * client left says so that way (E4.S4) — caught here so the directory is still handed back for cleanup.
- * ONLY that: any other failure is rethrown, so an unexpected storage or terminal error still fails the
- * test instead of hiding behind `started: false` (code round 2).</p>
+ * client left says so that way (E4.S4) — caught here and reported. ONLY that: any other failure is rethrown, so an
+ * unexpected storage or terminal error still fails the test instead of hiding behind `started: false` (code round 2).</p>
  */
-export async function startVpn(w: World, nodes: Record<string, EntityMetadata>, o: StartOptions = {}): Promise<{ started: boolean; dir: string; ended?: Error }> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-chain-'));
+export async function startVpn(scope: Scope, w: World, nodes: Record<string, EntityMetadata>, o: StartOptions = {}): Promise<{ started: boolean; dir: string; ended?: Error }> {
+  const dir = ownedDir(scope, 'chain');
   const { runVpn } = loadWithVscode<{ runVpn: RunVpn }>('../vpnRun', w.vscode, o.mocks);
   listenForShellEvents(o.shellEvents);
   const target = { kind: 'node', accountId: 'a1', node: { id: 'vpn', name: nodes.vpn.name, details: nodes.vpn } };

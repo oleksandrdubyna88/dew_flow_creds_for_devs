@@ -45,10 +45,7 @@ interface Runner {
   CAP: number;
   testConcurrency(threads?: number): number;
   testArgs(extra?: string[], threads?: number): string[];
-  runTests(
-    extra?: string[],
-    spawn?: (command: string, args: string[], options: object) => { status: number | null; signal: NodeJS.Signals | null; error?: Error },
-  ): number;
+  exitCodeOf(result: { status?: number | null; signal?: NodeJS.Signals | null; error?: Error }): number;
 }
 const runnerPath = path.join(extensionRoot, 'scripts', 'run-tests.mjs');
 // module: Node16 keeps a dynamic import() as one in the CommonJS output, so it can load the .mjs.
@@ -75,17 +72,11 @@ test('the runner caps node --test at min(8, CPUs - 1) — node\'s own default, n
 });
 
 test('the runner leaves with the child\'s code, 128 + the signal number, or 1 when the spawn failed', async () => {
-  const { runTests } = await runner();
-  const seen: string[][] = [];
-  const exit = (status: number | null, signal: NodeJS.Signals | null, error?: Error) =>
-    runTests(['x.test.js'], (_command, args) => {
-      seen.push(args);
-      return { status, signal, error };
-    });
-  assert.equal(exit(3, null), 3);
-  assert.equal(exit(null, 'SIGTERM'), 128 + 15);
-  assert.equal(exit(null, null, new Error('spawn ENOENT')), 1);
-  assert.equal(seen[0].at(-1), 'x.test.js', 'the pattern reaches node --test unchanged');
+  const { exitCodeOf } = await runner();
+  assert.equal(exitCodeOf({ status: 3, signal: null }), 3);
+  assert.equal(exitCodeOf({ status: null, signal: 'SIGTERM' }), 128 + 15);
+  assert.equal(exitCodeOf({ error: new Error('spawn ENOENT') }), 1);
+  assert.equal(exitCodeOf({ status: null, signal: null }), 1, 'no status and no signal is a failure, never a pass');
 });
 
 test('every scenario harness script runs through the same lowering preload', () => {

@@ -1,9 +1,13 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { lockToOwner, materializedKeysDir, safeFileComponent } from '../materializedKeys';
+import { cleanupScope, ownedDir, tempRoot } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * Where a materialized private key is written, and how it is locked down (audit A3).
@@ -38,20 +42,16 @@ test('locking a real file down does not throw and leaves it readable BY US', () 
   // Best effort by design: this is a hardening step over an already-restricted profile
   // directory, so a refused ACL must be a weaker file and never a broken feature. What must
   // not happen is the opposite mistake — locking ourselves out of a key we just wrote.
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-acl-'));
+  const dir = ownedDir(scope, 'acl');
   const file = path.join(dir, 'id_ed25519');
   fs.writeFileSync(file, 'PRIVATE KEY BYTES', 'utf8');
 
-  try {
-    assert.doesNotThrow(() => lockToOwner(file));
-    assert.equal(fs.readFileSync(file, 'utf8'), 'PRIVATE KEY BYTES', 'still ours to read');
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  assert.doesNotThrow(() => lockToOwner(file));
+  assert.equal(fs.readFileSync(file, 'utf8'), 'PRIVATE KEY BYTES', 'still ours to read');
 });
 
 test('locking a file that is not there is silent — a failed write must not mask itself', () => {
-  assert.doesNotThrow(() => lockToOwner(path.join(os.tmpdir(), 'creds-no-such-file-xyz')));
+  assert.doesNotThrow(() => lockToOwner(path.join(tempRoot(), 'creds-no-such-file-xyz')));
 });
 
 /**
@@ -90,7 +90,7 @@ test('a separator cannot survive into the name', () => {
 
 test('the result always stays inside the directory it is joined to', () => {
   // The property that actually matters, asserted the way the callers use it.
-  const base = path.join(os.tmpdir(), 'creds-base');
+  const base = path.join(tempRoot(), 'creds-base');
   for (const hostile of ['x/../../../../evil', '../../evil', '..', '.', '...', '/etc/passwd']) {
     const joined = path.join(base, safeFileComponent(hostile));
     assert.ok(path.resolve(joined).startsWith(path.resolve(base)), `${hostile} -> ${joined}`);

@@ -1,10 +1,14 @@
 import * as assert from 'node:assert/strict';
 import * as http from 'node:http';
 import * as net from 'node:net';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { NOT_LAUNCHED, abandonedWhenClosed, endedAfter, endedStage, notStarted } from '../requestLife';
+import { cleanupScope, ownedDir, shortSocketRoot } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * Whether `res` `close` with the response unfinished is a reliable "the client is gone"
@@ -27,10 +31,15 @@ interface Served {
 
 let pipes = 0;
 
+/**
+ * Where a unix socket (or a named pipe on Windows) of this file lives: inside an owned folder under the SHORT socket root, so the
+ * path stays under macOS's 103 bytes and the folder is claimed and removed like every other. It used to be a file named by pid
+ * directly in the temp root, which nothing removed.
+ */
 function pipePath(): string {
   pipes += 1;
-  const name = `creds-life-${process.pid}-${pipes}`;
-  return process.platform === 'win32' ? `\\\\.\\pipe\\${name}` : path.join(os.tmpdir(), `${name}.sock`);
+  if (process.platform === 'win32') return `\\\\.\\pipe\\creds-life-${process.pid}-${pipes}`;
+  return path.join(ownedDir(scope, 'life', { parent: shortSocketRoot() }), `life-${pipes}.sock`);
 }
 
 async function serve(over: 'port' | 'pipe'): Promise<Served> {

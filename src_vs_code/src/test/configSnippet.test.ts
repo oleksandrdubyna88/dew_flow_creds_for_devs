@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import {
   DEFAULT_SNIPPET_LANGUAGE,
   SNIPPET_LANGUAGES,
@@ -11,6 +10,11 @@ import {
   snippetLanguage,
 } from '../configSnippet';
 import { CONFIG_KEY_PREFIX, newConfigKey } from '../configKey';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * The twenty snippets the viewer offers, and the properties that make them safe to paste.
@@ -350,19 +354,15 @@ function childEnv(dir: string): NodeJS.ProcessEnv {
 
 /** Run the real PowerShell body under `shell` against the fake `creds`; the BYTES it wrote to the config file. */
 function writtenByPowerShell(shell: string): Buffer {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-pwsh-'));
-  try {
-    fakeCreds(dir);
-    const file = path.join(dir, 'written.json');
-    const script = path.join(dir, 'snippet.ps1');
-    fs.writeFileSync(script, snippetFor('powershell', 'default', { ...CONTEXT, fileName: file }).code);
+  const dir = ownedDir(scope, 'pwsh');
+  fakeCreds(dir);
+  const file = path.join(dir, 'written.json');
+  const script = path.join(dir, 'snippet.ps1');
+  fs.writeFileSync(script, snippetFor('powershell', 'default', { ...CONTEXT, fileName: file }).code);
 
-    execFileSync(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { env: childEnv(dir), stdio: 'pipe', timeout: SPAWN_TIMEOUT_MS });
+  execFileSync(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], { env: childEnv(dir), stdio: 'pipe', timeout: SPAWN_TIMEOUT_MS });
 
-    return fs.readFileSync(file);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  return fs.readFileSync(file);
 }
 
 const UTF8_BOM = [0xef, 0xbb, 0xbf];
@@ -407,24 +407,20 @@ test(
     // Whichever branch this host compiles — `_WIN32` on Windows, POSIX elsewhere — is built with a real
     // compiler and run against the fake `creds`, which exits 7 unless the key reached its environment.
     const compiler = cppCompiler() as string;
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-cpp-'));
-    try {
-      fakeCreds(dir);
-      const code = snippetFor('cpp', 'default', CONTEXT).code;
-      const tail = code.indexOf('const char* vaultKey');
-      assert.notEqual(tail, -1, 'the snippet no longer ends in the statements a main() would hold');
-      const program = `${code.slice(0, tail)}\nint main() {\n${code.slice(tail)}\n    std::fputs(readFromVault(vaultKey).c_str(), stdout);\n    return 0;\n}\n`;
-      const source = path.join(dir, 'snippet.cpp');
-      const binary = path.join(dir, process.platform === 'win32' ? 'snippet.exe' : 'snippet');
-      fs.writeFileSync(source, program);
-      execFileSync(compiler, ['-std=c++17', '-o', binary, source], { stdio: 'pipe', timeout: SPAWN_TIMEOUT_MS });
+    const dir = ownedDir(scope, 'cpp');
+    fakeCreds(dir);
+    const code = snippetFor('cpp', 'default', CONTEXT).code;
+    const tail = code.indexOf('const char* vaultKey');
+    assert.notEqual(tail, -1, 'the snippet no longer ends in the statements a main() would hold');
+    const program = `${code.slice(0, tail)}\nint main() {\n${code.slice(tail)}\n    std::fputs(readFromVault(vaultKey).c_str(), stdout);\n    return 0;\n}\n`;
+    const source = path.join(dir, 'snippet.cpp');
+    const binary = path.join(dir, process.platform === 'win32' ? 'snippet.exe' : 'snippet');
+    fs.writeFileSync(source, program);
+    execFileSync(compiler, ['-std=c++17', '-o', binary, source], { stdio: 'pipe', timeout: SPAWN_TIMEOUT_MS });
 
-      const printed = execFileSync(binary, [], { env: childEnv(dir), encoding: 'utf8', stdio: 'pipe', timeout: SPAWN_TIMEOUT_MS });
+    const printed = execFileSync(binary, [], { env: childEnv(dir), encoding: 'utf8', stdio: 'pipe', timeout: SPAWN_TIMEOUT_MS });
 
-      assert.deepEqual(printed.split(/\r?\n/).filter((line) => line !== ''), THREE_LINE_DOCUMENT, `the program printed:\n${printed}`);
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+    assert.deepEqual(printed.split(/\r?\n/).filter((line) => line !== ''), THREE_LINE_DOCUMENT, `the program printed:\n${printed}`);
   },
 );
 

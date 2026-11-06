@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
+import { ownedFile } from '../../scripts/lib/leftovers.cjs';
 import { runBounded } from '../sshExecRunner';
 import { MAX_STREAM_BYTES } from '../brokerProtocol';
 
@@ -75,16 +74,16 @@ test('a normal child returns its real exit code and output, untruncated', async 
  * client had left still started its child — and killed it a moment later, after it may have done its work.
  * A marker file is what the child would write, so "never launched" is observed rather than inferred.
  */
-function marker(): string {
-  return path.join(os.tmpdir(), `creds-runner-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+function marker(t: TestContext): string {
+  return ownedFile(t, 'runner', 'ran');
 }
 
 // The marker's path travels as an ARGUMENT (`process.argv[1]` under `node -e`), never spliced into the
 // script: code built from a path is code built from data (CodeQL js/bad-code-sanitization).
 const WRITES = "require('fs').writeFileSync(process.argv[1], 'ran')";
 
-test('an already-aborted signal launches nothing — the child is never spawned', async () => {
-  const file = marker();
+test('an already-aborted signal launches nothing — the child is never spawned', async (t) => {
+  const file = marker(t);
   const gone = new AbortController();
   gone.abort();
 
@@ -97,8 +96,8 @@ test('an already-aborted signal launches nothing — the child is never spawned'
   assert.equal(fs.existsSync(file), false, 'a child was launched for a caller already gone');
 });
 
-test('a fired start gate launches nothing either', async () => {
-  const file = marker();
+test('a fired start gate launches nothing either', async (t) => {
+  const file = marker(t);
   const gone = new AbortController();
   gone.abort();
 
@@ -111,10 +110,10 @@ test('a fired start gate launches nothing either', async () => {
   assert.equal(fs.existsSync(file), false);
 });
 
-test('a start gate that fires AFTER the launch does not kill the child — that is what it is for', async () => {
+test('a start gate that fires AFTER the launch does not kill the child — that is what it is for', async (t) => {
   // A rotation's statement: once it runs it may have changed the far side, so the request ending only
   // stops the start, never the run (`useActions.launchGuards`, finishOnceStarted).
-  const file = marker();
+  const file = marker(t);
   const gate = new AbortController();
   const p = runBounded(node, ['-e', `setTimeout(() => { ${WRITES}; process.exit(0) }, 400)`, file], false, {
     env: process.env,
@@ -127,5 +126,4 @@ test('a start gate that fires AFTER the launch does not kill the child — that 
 
   assert.equal(outcome.exitCode, 0, 'the started child was killed by the start gate');
   assert.equal(fs.existsSync(file), true);
-  fs.rmSync(file, { force: true });
 });

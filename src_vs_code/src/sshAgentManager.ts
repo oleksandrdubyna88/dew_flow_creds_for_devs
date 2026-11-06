@@ -137,7 +137,8 @@ export class SshAgentManager implements vscode.Disposable {
   constructor(
     private readonly storage: StorageManager,
     private readonly storageDir: string,
-    private readonly envCollection: vscode.GlobalEnvironmentVariableCollection,
+    /** What the manager does to the terminal environment: set and remove `SSH_AUTH_SOCK`, and say why. */
+    private readonly envCollection: Pick<vscode.GlobalEnvironmentVariableCollection, 'replace' | 'delete' | 'description'>,
     /** Called when a human answers a dialog — the one moment presence is provable. */
     private readonly onUserPresent: () => void,
     /**

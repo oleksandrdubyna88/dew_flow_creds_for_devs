@@ -1,12 +1,17 @@
 import * as assert from 'node:assert/strict';
-import { stored } from '../storedSecret';
+import { type StoredSecret, stored } from '../storedSecret';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { configStub, loadWithVscode } from './vscodeStub';
 import { StoredAccount, TreeNode } from '../types';
 import { lockSecret, plainSecret, readSecret } from '../secretEnvelope';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * Gathering what the health report weighs (audit A3).
@@ -25,6 +30,7 @@ import { lockSecret, plainSecret, readSecret } from '../secretEnvelope';
  */
 
 type Scan = typeof import('../hygieneScan');
+type ScanReads = import('../hygieneScan').ScanReads;
 
 interface World {
   mod: Scan;
@@ -39,7 +45,7 @@ function world(options: {
   answers?: (string | undefined)[];
   envFiles?: { path: string; content: string }[];
 }): World {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-hyg-'));
+  const home = ownedDir(scope, 'hyg');
   const w: World = {
     mod: undefined as never,
     home,
@@ -83,140 +89,101 @@ function sshDir(w: World): string {
   return dir;
 }
 
-const cleanup = (w: World): void => fs.rmSync(w.home, { recursive: true, force: true });
-
 const UNENCRYPTED = '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaA==\n-----END OPENSSH PRIVATE KEY-----\n';
 
 test('a home directory with no ~/.ssh at all is an ordinary state, not a failure', () => {
   const w = world({});
-  try {
-    assert.deepEqual(w.mod.readSshDirectory(w.home), []);
-  } finally {
-    cleanup(w);
-  }
+  assert.deepEqual(w.mod.readSshDirectory(w.home), []);
 });
 
 test('private-key candidates are read; public keys and housekeeping files are not', () => {
   // Reading known_hosts or authorized_keys would pull a list of every host the person
   // connects to into a report about passwords.
   const w = world({});
-  try {
-    const dir = sshDir(w);
-    fs.writeFileSync(path.join(dir, 'id_ed25519'), UNENCRYPTED);
-    fs.writeFileSync(path.join(dir, 'id_ed25519.pub'), 'ssh-ed25519 AAAA');
-    fs.writeFileSync(path.join(dir, 'known_hosts'), 'github.com ssh-rsa AAAA');
-    fs.writeFileSync(path.join(dir, 'config'), 'Host *');
-    fs.writeFileSync(path.join(dir, 'authorized_keys'), 'ssh-rsa AAAA');
+  const dir = sshDir(w);
+  fs.writeFileSync(path.join(dir, 'id_ed25519'), UNENCRYPTED);
+  fs.writeFileSync(path.join(dir, 'id_ed25519.pub'), 'ssh-ed25519 AAAA');
+  fs.writeFileSync(path.join(dir, 'known_hosts'), 'github.com ssh-rsa AAAA');
+  fs.writeFileSync(path.join(dir, 'config'), 'Host *');
+  fs.writeFileSync(path.join(dir, 'authorized_keys'), 'ssh-rsa AAAA');
 
-    const read = w.mod.readSshDirectory(w.home).map((k) => path.basename(k.path));
+  const read = w.mod.readSshDirectory(w.home).map((k) => path.basename(k.path));
 
-    assert.deepEqual(read, ['id_ed25519']);
-  } finally {
-    cleanup(w);
-  }
+  assert.deepEqual(read, ['id_ed25519']);
 });
 
 test('a file too large to be a private key is not pulled into memory', () => {
   // A private key is a few kilobytes. Anything bigger is somebody's data, and reading it
   // would be an arbitrary file read for no reason.
   const w = world({});
-  try {
-    const dir = sshDir(w);
-    fs.writeFileSync(path.join(dir, 'huge'), Buffer.alloc(70 * 1024, 0x41));
+  const dir = sshDir(w);
+  fs.writeFileSync(path.join(dir, 'huge'), Buffer.alloc(70 * 1024, 0x41));
 
-    assert.deepEqual(w.mod.readSshDirectory(w.home), []);
-  } finally {
-    cleanup(w);
-  }
+  assert.deepEqual(w.mod.readSshDirectory(w.home), []);
 });
 
 test('a dotfile in ~/.ssh is skipped', () => {
   const w = world({});
-  try {
-    fs.writeFileSync(path.join(sshDir(w), '.DS_Store'), 'junk');
+  fs.writeFileSync(path.join(sshDir(w), '.DS_Store'), 'junk');
 
-    assert.deepEqual(w.mod.readSshDirectory(w.home), []);
-  } finally {
-    cleanup(w);
-  }
+  assert.deepEqual(w.mod.readSshDirectory(w.home), []);
 });
 
 test('an unreadable .env file is skipped rather than failing the whole scan', async () => {
   const w = world({ envFiles: [] });
-  try {
-    // findFiles reports a file that readFile then refuses — a race, or a permission.
-    w.envFiles = [];
-    const found = await w.mod.readWorkspaceEnvFiles();
+  // findFiles reports a file that readFile then refuses — a race, or a permission.
+  w.envFiles = [];
+  const found = await w.mod.readWorkspaceEnvFiles();
 
-    assert.deepEqual(found, []);
-  } finally {
-    cleanup(w);
-  }
+  assert.deepEqual(found, []);
 });
 
 test('workspace .env files are read with the relative path the report will show', async () => {
   const w = world({ envFiles: [{ path: 'api/.env', content: 'AWS_SECRET_ACCESS_KEY=abc' }] });
-  try {
-    const found = await w.mod.readWorkspaceEnvFiles();
+  const found = await w.mod.readWorkspaceEnvFiles();
 
-    assert.deepEqual(found, [{ path: 'api/.env', content: 'AWS_SECRET_ACCESS_KEY=abc' }]);
-  } finally {
-    cleanup(w);
-  }
+  assert.deepEqual(found, [{ path: 'api/.env', content: 'AWS_SECRET_ACCESS_KEY=abc' }]);
 });
 
-function storageOf(entities: { id: string; name: string; password?: string; connection?: string }[]): unknown {
+/** A vault of entities that holds the given secrets: every field of every record is written out, and the secrets are minted as the keychain mints them. */
+function storageOf(entities: { id: string; name: string; password?: string; connection?: string }[]): ScanReads {
+  const account: StoredAccount = { accountId: 'a1', email: 'me@corp.com', provider: 'google' };
+  const secret = (read: (e: { password?: string; connection?: string }) => string | undefined) => (_account: string, id: string): Promise<StoredSecret | undefined> =>
+    Promise.resolve(stored(read(entities.find((e) => e.id === id) ?? {})));
   return {
-    getAccounts: (): StoredAccount[] => [
-      { accountId: 'a1', email: 'me@corp.com', provider: 'google' } as StoredAccount,
-    ],
-    getNodes: (): TreeNode[] =>
-      entities.map((e) => ({ id: e.id, name: e.name, type: 'entity' }) as TreeNode),
-    getPassword: (_a: string, id: string): Promise<string | undefined> =>
-      Promise.resolve(entities.find((e) => e.id === id)?.password),
-    getDbConnection: (_a: string, id: string): Promise<string | undefined> =>
-      Promise.resolve(entities.find((e) => e.id === id)?.connection),
+    getAccounts: (): StoredAccount[] => [account],
+    getNodes: (): TreeNode[] => entities.map((e): TreeNode => ({ id: e.id, name: e.name, type: 'entity' })),
+    getPassword: secret((e) => e.password),
+    getDbConnection: secret((e) => e.connection),
   };
 }
 
 test('every stored password is collected with the entity it belongs to', async () => {
   const w = world({});
-  try {
-    const collected = await w.mod.collectPasswords(
-      storageOf([{ id: 'e1', name: 'prod', password: 'hunter2' }]) as never,
-    );
+  const collected = await w.mod.collectPasswords(
+    storageOf([{ id: 'e1', name: 'prod', password: 'hunter2' }])
+  );
 
-    assert.deepEqual(collected, [
-      { entityName: 'prod', accountEmail: 'me@corp.com', field: 'password', value: 'hunter2' },
-    ]);
-  } finally {
-    cleanup(w);
-  }
+  assert.deepEqual(collected, [
+    { entityName: 'prod', accountEmail: 'me@corp.com', field: 'password', value: 'hunter2' },
+  ]);
 });
 
 test('a password inside a database connection string is weighed too', async () => {
   // It is a password like any other, and it is the one people forget is stored at all.
   const w = world({});
-  try {
-    const collected = await w.mod.collectPasswords(
-      storageOf([{ id: 'e1', name: 'db', connection: 'postgresql://me:hunter2@h:5432/app' }]) as never,
-    );
+  const collected = await w.mod.collectPasswords(
+    storageOf([{ id: 'e1', name: 'db', connection: 'postgresql://me:hunter2@h:5432/app' }])
+  );
 
-    assert.deepEqual(collected.map((c) => [c.field, c.value]), [['database password', 'hunter2']]);
-  } finally {
-    cleanup(w);
-  }
+  assert.deepEqual(collected.map((c) => [c.field, c.value]), [['database password', 'hunter2']]);
 });
 
 test('an entity with no secret contributes nothing to weigh', async () => {
   const w = world({});
-  try {
-    const collected = await w.mod.collectPasswords(storageOf([{ id: 'e1', name: 'empty' }]) as never);
+  const collected = await w.mod.collectPasswords(storageOf([{ id: 'e1', name: 'empty' }]));
 
-    assert.deepEqual(collected, []);
-  } finally {
-    cleanup(w);
-  }
+  assert.deepEqual(collected, []);
 });
 
 // A damaged wrap and a woven pair are what a sealed value is to this scan: text that is not the person's
@@ -226,15 +193,11 @@ test('a damaged wrap is not graded as a password by the health report', async ()
   const damaged = '{"v":1,"lock":{"wrap":';
   assert.equal(readSecret(stored(damaged)).kind, 'corrupt', 'the fixture is what the parser calls damaged');
   const w = world({});
-  try {
-    const collected = await w.mod.collectPasswords(
-      storageOf([{ id: 'e1', name: 'prod', password: damaged }, { id: 'e2', name: 'db', connection: damaged }]) as never,
-    );
+  const collected = await w.mod.collectPasswords(
+    storageOf([{ id: 'e1', name: 'prod', password: damaged }, { id: 'e2', name: 'db', connection: damaged }])
+  );
 
-    assert.deepEqual(collected.map((c) => [c.entityName, c.field]), [], 'a damaged wrap was graded as a password');
-  } finally {
-    cleanup(w);
-  }
+  assert.deepEqual(collected.map((c) => [c.entityName, c.field]), [], 'a damaged wrap was graded as a password');
 });
 
 test('a woven password is not graded as a strong, unique password', async () => {
@@ -242,15 +205,11 @@ test('a woven password is not graded as a strong, unique password', async () => 
   const read = readSecret(stored(woven));
   assert.equal(read.kind === 'value' && read.woven, true, 'the fixture is what the parser calls woven');
   const w = world({});
-  try {
-    const collected = await w.mod.collectPasswords(
-      storageOf([{ id: 'e1', name: 'woven', password: woven }, { id: 'e2', name: 'plain', password: 'hunter2' }]) as never,
-    );
+  const collected = await w.mod.collectPasswords(
+    storageOf([{ id: 'e1', name: 'woven', password: woven }, { id: 'e2', name: 'plain', password: 'hunter2' }])
+  );
 
-    assert.deepEqual(collected.map((c) => [c.entityName, c.value]), [['plain', 'hunter2']], 'a woven pair was graded as a password');
-  } finally {
-    cleanup(w);
-  }
+  assert.deepEqual(collected.map((c) => [c.entityName, c.value]), [['plain', 'hunter2']], 'a woven pair was graded as a password');
 });
 
 test('a connection string that is woven, sealed or damaged is never graded as a password — only a readable one is', async () => {
@@ -264,118 +223,86 @@ test('a connection string that is woven, sealed or damaged is never graded as a 
   const damaged = `{"v":1,"lock":{"wrap":"${conn}`;
   assert.deepEqual([readSecret(stored(woven)).kind, readSecret(stored(sealed)).kind, readSecret(stored(damaged)).kind], ['value', 'locked', 'corrupt'], 'the fixtures are what the parser calls them');
   const w = world({});
-  try {
-    const collected = await w.mod.collectPasswords(
-      storageOf([
-        { id: 'e1', name: 'woven', connection: woven },
-        { id: 'e2', name: 'sealed', connection: sealed },
-        { id: 'e3', name: 'damaged', connection: damaged },
-        { id: 'e4', name: 'readable', connection: 'postgresql://me:hunter2@h:5432/app' },
-      ]) as never,
-    );
+  const collected = await w.mod.collectPasswords(
+    storageOf([
+      { id: 'e1', name: 'woven', connection: woven },
+      { id: 'e2', name: 'sealed', connection: sealed },
+      { id: 'e3', name: 'damaged', connection: damaged },
+      { id: 'e4', name: 'readable', connection: 'postgresql://me:hunter2@h:5432/app' },
+    ])
+  );
 
-    assert.deepEqual(collected.map((c) => [c.entityName, c.field, c.value]), [['readable', 'database password', 'hunter2']], 'a connection string that is not a readable value was graded as a password');
-  } finally {
-    cleanup(w);
-  }
+  assert.deepEqual(collected.map((c) => [c.entityName, c.field, c.value]), [['readable', 'database password', 'hunter2']], 'a connection string that is not a readable value was graded as a password');
 });
 
 test('folders are not mistaken for entities', async () => {
   const w = world({});
-  try {
-    const storage = {
-      getAccounts: (): StoredAccount[] => [{ accountId: 'a1', email: 'me@corp.com' } as StoredAccount],
-      getNodes: (): TreeNode[] => [{ id: 'f1', name: 'Team', type: 'folder' } as TreeNode],
-      getPassword: (): Promise<undefined> => Promise.reject(new Error('never asked')),
-      getDbConnection: (): Promise<undefined> => Promise.reject(new Error('never asked')),
-    };
+  const storage: ScanReads = {
+    getAccounts: (): StoredAccount[] => [{ accountId: 'a1', email: 'me@corp.com', provider: 'google' }],
+    getNodes: (): TreeNode[] => [{ id: 'f1', name: 'Team', type: 'folder' }],
+    getPassword: (): Promise<undefined> => Promise.reject(new Error('never asked')),
+    getDbConnection: (): Promise<undefined> => Promise.reject(new Error('never asked')),
+  };
 
-    assert.deepEqual(await w.mod.collectPasswords(storage as never), []);
-  } finally {
-    cleanup(w);
-  }
+  assert.deepEqual(await w.mod.collectPasswords(storage), []);
 });
 
 test('the breach check is OFF unless the setting says otherwise — and asks nothing', async () => {
   // The README's "no network by default" is a promise about the product. A dialog appearing
   // here would already be a change of behaviour for someone who never opted in.
   const w = world({ settings: {}, answers: ['Check them'] });
-  try {
-    assert.equal(await w.mod.confirmBreachCheck(3), false);
-    assert.deepEqual(w.dialogs, [], 'not even a question');
-  } finally {
-    cleanup(w);
-  }
+  assert.equal(await w.mod.confirmBreachCheck(3), false);
+  assert.deepEqual(w.dialogs, [], 'not even a question');
 });
 
 test('with the setting ON it still asks, and DECLINING means no network', async () => {
   // The case that matters most: enabled once, months ago, and this run said no.
   const w = world({ settings: { breachCheck: true }, answers: [undefined] });
-  try {
-    assert.equal(await w.mod.confirmBreachCheck(3), false);
-    assert.equal(w.dialogs.length, 1);
-  } finally {
-    cleanup(w);
-  }
+  assert.equal(await w.mod.confirmBreachCheck(3), false);
+  assert.equal(w.dialogs.length, 1);
 });
 
 test('the modal states what actually leaves the machine, not just that something does', async () => {
   // "Send data to a third party?" is not a question anybody can answer. Five hex characters
   // out of a million-bucket space is.
   const w = world({ settings: { breachCheck: true }, answers: ['Check them'] });
-  try {
-    assert.equal(await w.mod.confirmBreachCheck(3), true);
+  assert.equal(await w.mod.confirmBreachCheck(3), true);
 
-    assert.match(w.dialogs[0], /FIRST FIVE characters/);
-    assert.match(w.dialogs[0], /never leave this machine/);
-    assert.match(w.dialogs[0], /only part of CredsForDevs that uses the network/);
-    assert.match(w.dialogs[0], /3 password/, 'and how many are involved');
-  } finally {
-    cleanup(w);
-  }
+  assert.match(w.dialogs[0], /FIRST FIVE characters/);
+  assert.match(w.dialogs[0], /never leave this machine/);
+  assert.match(w.dialogs[0], /only part of CredsForDevs that uses the network/);
+  assert.match(w.dialogs[0], /3 password/, 'and how many are involved');
 });
 
 test('a scan with no passwords never asks about breaches', async () => {
   // Nothing to check is not a decision to put in front of anybody.
   const w = world({ settings: { breachCheck: true }, answers: ['Check them'] });
-  try {
-    const result = await w.mod.runHygieneScan(storageOf([]) as never);
+  const result = await w.mod.runHygieneScan(storageOf([]));
 
-    assert.deepEqual(w.dialogs, []);
-    assert.ok(result.markdown.length > 0, 'and the report still renders');
-  } finally {
-    cleanup(w);
-  }
+  assert.deepEqual(w.dialogs, []);
+  assert.ok(result.markdown.length > 0, 'and the report still renders');
 });
 
 test('a full scan renders a report and finds the unencrypted key on disk', async () => {
   const w = world({ settings: {} });
-  try {
-    fs.writeFileSync(path.join(sshDir(w), 'id_ed25519'), UNENCRYPTED);
+  fs.writeFileSync(path.join(sshDir(w), 'id_ed25519'), UNENCRYPTED);
 
-    const result = await w.mod.runHygieneScan(
-      storageOf([{ id: 'e1', name: 'prod', password: 'password' }]) as never,
-    );
+  const result = await w.mod.runHygieneScan(
+    storageOf([{ id: 'e1', name: 'prod', password: 'password' }])
+  );
 
-    assert.ok(result.findings.length > 0, 'a weak password and a bare key are both findings');
-    assert.ok(result.markdown.includes('#'), 'the report is markdown');
-  } finally {
-    cleanup(w);
-  }
+  assert.ok(result.findings.length > 0, 'a weak password and a bare key are both findings');
+  assert.ok(result.markdown.includes('#'), 'the report is markdown');
 });
 
 test('a breach check that was never confirmed leaves the report saying so', async () => {
   // The report has to distinguish "checked, nothing found" from "not checked" — otherwise a
   // clean-looking report means two different things.
   const w = world({ settings: {} });
-  try {
-    const withPasswords = await w.mod.runHygieneScan(
-      storageOf([{ id: 'e1', name: 'prod', password: 'Tr0ub4dor&3xyz' }]) as never,
-    );
+  const withPasswords = await w.mod.runHygieneScan(
+    storageOf([{ id: 'e1', name: 'prod', password: 'Tr0ub4dor&3xyz' }])
+  );
 
-    assert.ok(withPasswords.markdown.length > 0);
-    assert.deepEqual(w.dialogs, []);
-  } finally {
-    cleanup(w);
-  }
+  assert.ok(withPasswords.markdown.length > 0);
+  assert.deepEqual(w.dialogs, []);
 });

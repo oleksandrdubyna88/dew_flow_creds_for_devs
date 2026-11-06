@@ -821,6 +821,12 @@ jobs:
         with:
           persist-credentials: false
 
+      # `npm test` below makes its scratch through the leftovers wrapper over the shared rules'
+      # mount and sweeps and audits through it; without the mount the wrapper refuses.
+      - name: Fetch the shared rules
+        working-directory: .
+        run: git submodule update --init --depth 1 .claude/rules/shared
+
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.x

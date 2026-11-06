@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { resolveCommand, shownCommandLine } from '../commandLine';
 import { NAME_REFUSAL, nameRefusal } from '../commandName';
 import { isCommandTrusted } from '../commandTrust';
@@ -9,6 +9,11 @@ import { shellRead } from '../runPlan';
 import { CommandArg, EntityMetadata } from '../types';
 import { arrowWorld } from './arrowWorld';
 import { memoryTrust, ownerChain, startVpn, terminalNamed, world } from './vpnWorld';
+import { cleanupScope } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * `{name}` on every road that runs an entry's line (parent `PLAN_terminal_folder_run.md` §1, story S2): the green
@@ -179,7 +184,7 @@ test('a_chain_step_runs_its_resolved_line', async () => {
   nodes.install = { ...nodes.install, name: 'install-openvpn', command: 'installer {name}' };
   const w = world({});
   const trust = memoryTrust();
-  const { dir } = await startVpn(w, nodes, { trust });
+  const { dir } = await startVpn(scope, w, nodes, { trust });
   try {
     assert.ok(w.warnings.some((t) => t.includes('install-openvpn: installer install-openvpn')), w.warnings.join('\n'));
     assert.deepEqual(terminalNamed(w, 'CredsForDevs: before ops relay stage').executed, ['installer install-openvpn']);
@@ -201,7 +206,7 @@ function launcherWorld(launcherName: string): Record<string, EntityMetadata> {
 test('the_launcher_fingerprint_keeps_config_and_fills_name', async () => {
   const w = world({});
   const trust = memoryTrust();
-  const { dir } = await startVpn(w, launcherWorld('start-openvpn'), { trust });
+  const { dir } = await startVpn(scope, w, launcherWorld('start-openvpn'), { trust });
   try {
     const line = 'openvpn --config {config} --remote start-openvpn';
     assert.ok(modals(w).some((t) => t.includes(`\n\n${line}\n\n`)), w.warnings.join('\n'));
@@ -216,7 +221,7 @@ test('a_refused_step_refuses_the_whole_chain', async () => {
   const nodes = ownerChain();
   nodes.install = { ...nodes.install, command: 'installer {name}' };
   const w = world({});
-  const { started, dir } = await startVpn(w, nodes);
+  const { started, dir } = await startVpn(scope, w, nodes);
   try {
     assert.equal(started, false);
     assert.deepEqual(
@@ -233,7 +238,7 @@ test('a_refused_step_refuses_the_whole_chain', async () => {
 
 test('a_refused_launcher_warns_and_starts_nothing', async () => {
   const w = world({});
-  const { started, dir } = await startVpn(w, launcherWorld('start openvpn'));
+  const { started, dir } = await startVpn(scope, w, launcherWorld('start openvpn'));
   try {
     assert.equal(started, false);
     assert.deepEqual(w.terminals, []);

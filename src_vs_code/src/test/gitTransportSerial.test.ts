@@ -1,12 +1,16 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { GitRunner, GitTransport } from '../gitTransport';
 import { cloneDirName } from '../gitRemote';
 import { SerialQueue } from '../serialQueue';
 import { StoredAccount } from '../types';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * Two callers, one working directory.
@@ -45,7 +49,7 @@ interface Model {
 }
 
 function gitModel(): Model {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-gitserial-'));
+  const root = ownedDir(scope, 'gitserial');
   const dir = path.join(root, cloneDirName(REMOTE));
   fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
   const file = path.join(dir, VAULT_FILE);
@@ -150,7 +154,7 @@ test('a read starting mid-write cannot discard the write, silently or otherwise'
 test('the first two syncs cannot both decide the clone is missing', async () => {
   // Two callers arriving together on a fresh location: `cloned` is false for both, so both
   // run ensureClone and two `git clone` processes race into the same target directory.
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-gitclone-'));
+  const root = ownedDir(scope, 'gitclone');
   const calls: string[][] = [];
   const run: GitRunner = async (args) => {
     calls.push([...args]);

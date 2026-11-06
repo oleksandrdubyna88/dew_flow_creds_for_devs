@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
-import * as os from 'node:os';
 import * as path from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { MAX_UNIX_SOCKET_PATH, socketPathFor, startExtraListener } from '../brokerListeners';
+import { cleanupScope, ownedDir, shortSocketRoot } from '../../scripts/lib/leftovers.cjs';
+
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
 
 /**
  * The second way in to the broker. What these pin is mostly that it behaves like the port —
@@ -48,7 +52,7 @@ test('a path that fits is returned as it is', () => {
 const posixOnly = process.platform === 'win32' ? { skip: 'unix sockets only' } : {};
 
 test('the socket answers exactly what the port would, from the same handler', posixOnly, async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-sock-'));
+  const dir = ownedDir(scope, 'sock', { parent: shortSocketRoot() });
   const handler: http.RequestListener = (_req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, service: 'creds-for-devs-agent' }));
@@ -76,7 +80,7 @@ test('the socket answers exactly what the port would, from the same handler', po
 });
 
 test('the socket is owner-only, which the loopback port never was', posixOnly, async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-sock-'));
+  const dir = ownedDir(scope, 'sock', { parent: shortSocketRoot() });
   const address = socketPathFor(dir, process.pid, process.platform) as string;
   const listener = await startExtraListener(() => {}, address, process.platform);
 
@@ -89,7 +93,7 @@ test('the socket is owner-only, which the loopback port never was', posixOnly, a
 });
 
 test('closing removes the socket, so the next window is not blocked by a corpse', posixOnly, async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-sock-'));
+  const dir = ownedDir(scope, 'sock', { parent: shortSocketRoot() });
   const address = socketPathFor(dir, process.pid, process.platform) as string;
   const listener = await startExtraListener(() => {}, address, process.platform);
   assert.equal(fs.existsSync(address), true);
@@ -101,7 +105,7 @@ test('closing removes the socket, so the next window is not blocked by a corpse'
 
 test('a socket left by a killed window does not stop the next one binding', posixOnly, async () => {
   // The path carries the pid, so anything already there belongs to a process that is gone.
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-sock-'));
+  const dir = ownedDir(scope, 'sock', { parent: shortSocketRoot() });
   const address = socketPathFor(dir, process.pid, process.platform) as string;
   fs.writeFileSync(address, 'a corpse from a killed window');
 

@@ -33,7 +33,8 @@ export interface EntityCommandsHost {
   readonly register: (command: string, handler: (...args: unknown[]) => unknown) => void;
   readonly storage: StorageManager;
   readonly storageDir: string;
-  readonly vaultKeys: VaultKeys;
+  /** Only the presence ping: what the commands of this file ask of the vault's keys. */
+  readonly vaultKeys: Pick<VaultKeys, 'noteUserActivity'>;
   readonly trust: TrustStore;
 }
 

@@ -17,7 +17,7 @@ import {
   hibpPrefix,
   renderReport,
 } from './hygiene';
-import { StorageManager } from './storageManager';
+import type { StorageManager } from './storageManager';
 import { parseDbConnectionString } from './dbConnString';
 
 /**
@@ -81,8 +81,11 @@ export async function readWorkspaceEnvFiles(): Promise<EnvFile[]> {
   return files;
 }
 
+/** What the scan reads of a vault — the four reads, so a test hands over exactly these and no cast. */
+export type ScanReads = Pick<StorageManager, 'getAccounts' | 'getNodes' | 'getPassword' | 'getDbConnection'>;
+
 /** Every stored password-shaped secret, with the entity it belongs to. */
-export async function collectPasswords(storage: StorageManager): Promise<PasswordEntry[]> {
+export async function collectPasswords(storage: ScanReads): Promise<PasswordEntry[]> {
   const entries: PasswordEntry[] = [];
   for (const account of storage.getAccounts()) {
     for (const node of storage.getNodes(account.accountId)) {
@@ -119,7 +122,7 @@ function present(
 }
 
 async function entryFor(
-  storage: StorageManager,
+  storage: ScanReads,
   accountId: string,
   accountEmail: string,
   entityId: string,
@@ -189,7 +192,7 @@ export interface Cancellable {
 }
 
 /** Run the whole scan and render the report. */
-export async function runHygieneScan(storage: StorageManager, token?: Cancellable): Promise<ScanResult> {
+export async function runHygieneScan(storage: ScanReads, token?: Cancellable): Promise<ScanResult> {
   const passwords = await collectPasswords(storage);
   const keyFiles = readSshDirectory();
   const envFiles = await readWorkspaceEnvFiles();
