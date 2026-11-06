@@ -1,6 +1,6 @@
 # PLAN — The `query` action refuses every road from an agent's SQL to the client's own commands
 
-> Status: **built, in review, 2026-11-06; approved the same day (epoch 1).** Built on `fix/query-refuses-client-commands`; the `coai` code round, the PR and the release are still to come. Scope:
+> Status: **built and reviewed, 2026-11-06; approved the same day (epoch 1).** Built on `fix/query-refuses-client-commands`, PR #303; the `coai` code round and CodeRabbit are done; the release is still to come and waits for the owner's word. Scope:
 > `src_vs_code/src/dbCliLauncher.ts`, its test, `src_vs_code/CHANGELOG.md`, `research/module_extension.md`,
 > `todo/README.md`. Extension only; every door (local MCP, alias, token) goes through the same function. Security fix
 > for a defect live on `main` and in every released version since 0.56.1. This text is the spec: a Sonnet coder builds
