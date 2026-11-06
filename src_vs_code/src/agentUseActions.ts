@@ -17,7 +17,7 @@ import { runBounded } from './sshExecRunner';
 import { notStarted } from './requestLife';
 import { resolveScriptEnv } from './scriptRender';
 import { scriptRunPlan } from './scriptRun';
-import { buildCommandLine } from './commandLine';
+import { resolveCommand } from './commandLine';
 import { capturedRun, hostShell, osMismatch, windowKind } from './hostShell';
 import { isCommandTrusted } from './commandTrust';
 import { lockToOwner, materializedKeyPath } from './materializedKeys';
@@ -181,8 +181,8 @@ export function scriptRunAction(deps: AgentUseDeps): UseAction {
  *
  * <p>This is the one caller that spawns through a shell, and it is safe for a specific
  * reason rather than by luck: the stored line is human-authored shell syntax — pipes,
- * chained commands — and is byte-for-byte what the human Run button already hands to a
- * shell. Nothing the agent sends contributes to it.</p>
+ * chained commands — with `{name}` filled from an allow-listed name by `resolveCommand`, and is
+ * byte-for-byte what the human Run button hands to a shell. Nothing the agent sends contributes to it.</p>
  */
 export function terminalRunAction(deps: AgentUseDeps & { onPath?: (exe: string) => boolean }): UseAction {
   return {
@@ -192,17 +192,21 @@ export function terminalRunAction(deps: AgentUseDeps & { onPath?: (exe: string) 
     verb: 'run the stored command of',
     describeOutcome: execOutcome,
     validate: () => ({ ok: true }),
-    summarize: () => 'the stored command, exactly as saved',
+    summarize: () => 'the stored command, as its Run button would type it',
     // eslint-disable-next-line complexity
     async run(ctx): Promise<UseActionResult> {
       const entity = entityFor(deps, ctx);
       if (entity === undefined) {
         return fail('not_found', `"${ctx.entityName}" no longer exists in the vault.`);
       }
-      const line = buildCommandLine(entity.command ?? '', entity.commandArgs);
-      if (line.trim().length === 0) {
+      const resolved = resolveCommand(entity);
+      if (resolved.kind === 'empty') {
         return fail('no_credential', `"${ctx.entityName}" has no command.`);
       }
+      if (resolved.kind === 'refused') {
+        return fail('not_supported', `"${ctx.entityName}" will not run: ${resolved.reason}`);
+      }
+      const { line } = resolved;
       // Issue #103: an entry written for another OS is refused here exactly as on the human path.
       const mismatch = osMismatch(ctx.entityName, entity.terminalOs, process.platform);
       if (mismatch !== undefined) {

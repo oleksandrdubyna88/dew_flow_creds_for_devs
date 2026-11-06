@@ -2062,7 +2062,8 @@ diagnostic file.
 
 A CLI invocation is stored as a verb plus **rows**, never as one string: `args: CommandArg[]`,
 each with its own value, its own note, and an enabled flag. `commandLine.ts` is `vscode`-free and
-holds the whole of the logic — `normalizeArgs`, `buildCommandLine`, `describeCommand`.
+holds the whole of the logic — `normalizeArgs`, `buildCommandLine`, `describeCommand`, and since S2
+of `PLAN_terminal_folder_run.md` `resolveCommand` and `shownCommandLine`, over the pure `commandName.ts`.
 
 The row shape is the feature. What is forgotten about `aws sso login --sso-session OD-org` a week
 later is never the verb; it is which value belongs to which environment and why, so every argument
@@ -2071,8 +2072,187 @@ without it reaching the command line — deleting it means retyping it from memo
 
 `Run in Terminal` sends the line **with** a newline: it executes. The first implementation stopped
 at the prompt and left Enter to the user; the operator overruled that, and it is theirs to
-overrule — these are commands the user wrote and saved, not commands arriving from elsewhere.
-`Copy Command` covers "let me edit it before it runs".
+overrule. The old justification — "these are commands the user wrote and saved, not commands arriving
+from elsewhere" — has been untrue since `commandTrust.ts`: sync and Accept Share both deliver commands, which
+is why the line passes the trust modal once per exact body before anything is typed. `Copy Command` covers
+"let me edit it before it runs".
+
+**A terminal that may be busy (`terminalGuard.ts`, `terminalActivity.ts`, `terminalActivityTracker.ts`).**
+`sendText` types keystrokes into whatever runs in the terminal — a `tmux attach` left open would receive the
+next entry's line as input to the program inside it. So the line is typed into an existing terminal of the
+entry's name only when the extension itself saw its last command finish: OUR OWN send, then shell integration's matched
+start and end, with an exit code (a non-zero one included — a failed `aws sso login` has still finished). A start and an end
+on a terminal the extension has not typed into this activation say nothing, because after a reload they could be a replay, or
+a shell inside a tmux client that still runs. No live terminal:
+one is opened and typed into. Anything else — the command is running, or nothing is known — and the terminal is
+shown and the person asked, `Type It Anyway`; the question shows the line verbatim, and a cancel types nothing.
+An end with no exit code (the sub-shell signature, e.g. tmux with an inner shell) leaves THAT terminal asking for
+its life. A terminal without shell integration never delivers an event, so it asks on EVERY click; if events do not reach this
+extension over Remote-SSH, every click asks too. After a window reload the first click asks, and silence returns once a person's
+`Type It Anyway` has been followed by a seen start and numeric end. A terminal the extension typed into repeats a finished
+command silently, as before the guard. Our own
+send arms the terminal (`noteSent` runs before `sendText`, so a late end cannot restore `finished`) — except over a RUNNING
+command: `Type It Anyway` into it poisons the terminal for life, so what ran there is not forgotten and an inner
+start and end can never read as the terminal finishing. A question open for a terminal also stops a second send
+to it, even one that reads `finished` meanwhile. A reused terminal is shown, as before. An agent-served VPN start (`startGate`) refuses instead of asking, with no await before the send.
+The verdict is about the terminal OBJECT, never its name, and an override types into the object that was asked
+about — if it closed meanwhile, nothing is typed. The VPN launcher takes the same guard. Between finding the
+terminal and sending, on the paths that type without asking, nothing is awaited.
+
+| state \ event | `start(e)` | `end(c, number)` | `end(c, undefined)` | `end(e ≠ c)` or an end with no start | our own send | reads |
+|---|---|---|---|---|---|---|
+| `unknown` (nothing recorded) | stays | stays | stays | stays | `armed` | `unknown` |
+| `armed` (we typed; no start yet) | `running(e)` | stays | stays | stays | `armed` | `unknown` |
+| `running(c)` | **`poisoned`** (a start before `c` ended: a sub-shell) | `finished` | `poisoned` | stays | **`poisoned`** (typed over a running command) | `running` |
+| `finished` | `running(e)` | stays | stays | stays | `armed` | `finished` |
+| `poisoned` | stays | stays | stays | stays | stays | `unknown` |
+
+Only `finished` types without asking; `armed` and `poisoned` read as `unknown`. The tracker is subscribed once, from
+`registerRunCommands`; its records live in a `WeakMap` keyed by the terminal object, so there is no close
+listener and nothing to cap. `running + start → poisoned` and `running + sent → poisoned` are there for the
+parent plan's hand check 4: tmux with an inner integrated shell must never read as finished while tmux runs.
+
+**What this does not close.** After `Type It Anyway` on a terminal in `unknown`, the state is `armed`, so a start and a
+numeric end reaching the extension from a shell inside tmux would read `finished` while tmux still runs. Measured on tmux 3.6,
+its OSC 633 does not pass outward (0 of 10 sequences, also with `allow-passthrough on`; the plan records it), so such a pair does
+not arrive. Not measured: through Remote-SSH, or on an older tmux. And a person pressing Enter on `tmux attach` and clicking
+before the start event arrives is typed over: no code can close that.
+The reducer also believes the first start after our send, so it can be a command that is not ours (a person's Enter arriving
+just before the click, or a line typed ahead), which reads `finished` for the moment between that command's end and our line's
+start; a second click in that gap would type. Measured nowhere; one prompt cycle plus event latency.
+
+**`{name}`: one road, refused rather than quoted (`commandName.ts`, `commandLine.ts`).** `{name}` in a terminal
+entry's command or in an enabled argument row is the entry's own name, so `tmux attach -t {name}` follows a rename.
+It is the sibling of `{config}`, and not `${name}`: that is live shell syntax and the form's own template literals
+interpolate it. The token is `/(?<![$#%{])\{name\}(?!\})/gu`, never `split().join()`, because `{name}` is a substring of
+`${name}`, `{{name}}`, `#{name}` and `%{name}`; a replacement FUNCTION fills it, so `$&` in a name means nothing, and a
+name is never scanned again. The allow-list is `^(?:\p{L}\p{M}*|\p{Nd}|_)(?:\p{L}\p{M}*|\p{Nd}|[._-])*$` (flag `u`), no
+`\p{Default_Ignorable_Code_Point}`, and `name === name.normalize('NFC')`: a name arrives unvalidated by share and sync, so
+`x; curl ...|sh` must not become shell syntax, and a typographic quote, a hangul filler or a right-to-left override must
+not look like a plain letter. Every other name is REFUSED and never quoted: `quoteFor` (`hostShell.ts`) has no literal form
+for `cmd.exe` and depends on the reader shell, which a display does not have; refusing gives one string on every road, as
+`isValidAlias` (`cliAliases.ts`) does. A name with a space is refused too, which is a stated limit. A name is judged only
+where it would be substituted: an entry whose line has no token runs under any name as before, and a DISABLED row neither
+refuses nor is filled (but is still scanned for `creds://` references, as stored).
+
+The name is `details.name`, the only one every road holds (`executableLine` and `entityText` have no node). A revision's
+page and its Copy All both overlay that version's own name (`revisionViewOptions`, once), because a share or a sync can
+leave `details.name` and the revision's name apart. Run, Copy and Show on a history row read `revision.details.name` (`nodeAt`, `entityViewerCommands.ts`), while the revision page and its Copy All overlay `revision.name`; the two differ only after a share or a sync has split the names, and what runs is still one allow-listed string or nothing runs.
+The arrow titles its terminal from `details.name` too (`typeIntoEntryTerminal`, S5), as the folder run and the launcher do, so the roads find each other's terminals after a split. On a history row that is `revision.details.name`: a version finds or opens the terminal of its own name, while `revision.name` still names it in the trust modal and the warnings.
+
+`resolveCommand(entry)` answers `empty`, `ready` (`line` plus `parts`, the pieces with `{name}` filled) or `refused`
+(`template` plus `reason`). `line` exists only after narrowing, so skipping a refusal does not compile (a typed fixture
+holds that). What is displayed, approved, fingerprinted and typed is that one string, on these roads:
+
+| Road | With an accepted name | With a refused name |
+|---|---|---|
+| Green arrow (`runCommands.ts` `arrowLine`) | modal, trust and terminal all hold the resolved line | warns `"x" will not run: ...`, no modal, nothing typed |
+| Run with Secrets (`commandJob`, `runPlan.ts` `buildCommandLineWithRefs(parts, ...)`) | the references are found AFTER filling, so `creds://me/{name}/password` is one | warns, nothing runs, no secret is read |
+| Dependency step (`executableLine`) | the resolved line | answers the TEMPLATE, never `undefined`, and `stepRefusal` refuses the whole chain |
+| VPN launcher (`launcherLine`) | the fingerprint is the line with `{name}` filled and `{config}` still literal | `The launcher "x" will not start: ...`, no trust modal |
+| Agent run (`terminalRunAction`) | trust is checked on the resolved line | `not_supported` before the trust check |
+| Viewer Full command, Show Command, Copy All, consent (`mcpCreate.ts`, with the requested name) | the resolved line | the template plus a `will not run: <reason>` row |
+| Copy Command, the viewer's Copy | the resolved line | the template; Copy Command (`entityCommands.ts`) also warns, while the viewer's Copy (`entityViewCopy.ts`) copies it without a warning and the viewer shows its Will not run row |
+| Form preview (`commandPreviewScript.ts`) | fills the live Name field | the template and the reason |
+| Raw stored rows (viewer rows, `mcpEntries`, `treeSearch`) | as stored | as stored |
+
+`executableLine` returns the template for a refused name because `undefined` already means three other things to its three
+readers: "an annotation" (`visitNode`), "no command" (`launcherLine`) and "not pickable" (`hasCommand`). A template never
+reaches a terminal, since each reader that could type one judges it first. A rename asks again, for a person and for an
+agent, because trust covers the resolved line (`commandTrust.ts` is unchanged); an old entry holding a literal `{name}`
+changes meaning on upgrade and is asked about once. `{config}` in a launcher stays literal in its fingerprint, so a start is
+not re-asked every session. The form's preview runs the same three patterns, handed over through `jsonForScript` and never
+retyped. A scan test allows `buildCommandLine(` only in `commandLine.ts`.
+
+**The literal form.** To keep a literal `{name}` write `{na''me}`: in bash 5.3.9 `echo {na''me}` prints `{name}` and the token
+does not match it, but only outside double quotes: `printf '%s' "{na''me}"` prints `{na''me}` (measured in the same bash); `{ name }` prints three words and does not keep it. `cmd.exe` (measured through WSL interop) prints
+`{na''me}` for that form and `{name}` for `{na^me}`. PowerShell was not measured.
+
+**The folder run (`folderRun.ts`, `commands/folderRunCommand.ts`, S3 of `PLAN_terminal_folder_run.md`).** `credSshManager.runFolder`
+brings a Terminal folder's DIRECT entries back, each into a NEW terminal, after one modal; subfolders are named in the modal
+and never run. The manifest hides it from the palette (`when: "false"`), and the arrow is told below. `folderRun.ts` is pure (no `vscode`, CLAUDE.md rule 3): it judges
+`storage.getChildren(account, folder)` in display order, one row per direct entry, first match wins in this order: not a
+Terminal entry; no command; `{name}` refused (`NAME_REFUSAL`); a name holding a control character (`escapeControl` would change it:
+VS Code draws a title without `\n`, `\r` and `\t`, read in its 1.93.0 source, and what `Terminal.name` keeps through a reload is not
+measured, so the open test is not trusted for it); `{config}` (only a VPN's *Started by* fills it); the shell's
+refusal (the entry's OS, or a pinned shell this window cannot reach, `entryOpenRefusal`); a duplicate name (counted only among
+rows that passed everything before it, since only those would share a terminal); then `open` when a live terminal of the name
+exists in ANY shell (`liveTerminalsOfEntry`, because the pinned road's same-shell find would call another shell's terminal
+free), else `run`. Names and lines come from `details.name` and `resolveCommand`, never `executableLine` or `.commandArgs`.
+The cap is 32 rows WITH a line, `run` plus `open`, because `Close Open Terminals and Run` can type all of them and the modal
+shows all of them; a question over 4,000 characters, counted as it would be shown (escapes and `(new)` included), is refused the
+same way, naming the count (`beforeAsking`). Both numbers are chosen, not measured: from memory a native dialog does not scroll,
+which is the parent's hand check 8. Rows with no line do not count, and a folder with nothing to type says so
+with no modal. **The modal is always shown** (decision C), however trusted every line is: it lists each line whole, `(new)`
+before the name for a line not approved before on this machine (not one never run: trust is saved at approval, before the chain, so a line whose chain is then declined loses it), the rows that will not run and why, the subfolders, and what each
+button does. Approving trusts each typed line, one at a time (`trustCommand` reads and rewrites the whole list, so a
+`Promise.all` loses all but one), BEFORE the chain; `confirmTrusted` is not called, which would be a second modal. What is
+typed is the string that was approved (`row.line`, resolved once at the plan), so an entry edited while the modal sits changes
+nothing. Every name, line, reason and folder name that is SHOWN, in the modal and in the report, goes through
+`escapeControl` (`transitSecretReport.ts`: a vault that sync and Accept Share fill can hold a newline in a name,
+and one click vouches for up to 32 lines, so a name must not draw a row of its own); what is typed is never escaped. It covers
+C0, DEL, C1, the line and paragraph separators and the bidi controls U+202A-E, U+2066-9, U+200E, U+200F and U+061C. It leaves `·` alone, which is legal and
+readable in a name with no `{name}`: the field separator is `logSafe`'s own addition, because only a log line has fields to forge.
+The chain's modal (`describeRunPlan`) takes the same escaper on every road, for the owner, each step and each line.
+
+*The chain.* `runDependenciesFirst(dependencyRequest(…, roots, folder.name, trust, plan.directIds))` with the details of the
+lines the chosen button types as roots and every direct entry as `exclude`. `planDependencyRun` keeps only roots with
+`runDependencies === true`, so a skipped (`open`, under `Run`) entry's dependencies do not run; an excluded entry is neither a
+step nor judged, so a sibling named under Depends on is not awaited and a refused sibling refuses nothing, but `visitNode`
+still follows an excluded entry's own edges when a typed line names it. With no root asking, the chain is `NO_CHAIN`: no modal,
+no terminal. A dependency that never exits holds the whole run, and no terminal has been opened for any line yet. The chain
+modal names the folder (`Before "<folder>", these run in …`); a folder has no Depends on of its own, so for its request
+(`ownerIsFolder`, one optional parameter of `describeRunPlan`) the missing-row note says to edit the entry that lists the row.
+The lines themselves do not wait for each other.
+
+*Opening, never finding.* Each line goes through `typeIntoNew` (`terminalGuard.ts`, now exported): `openEntryTerminal`
+(`entryShell`'s pinned-or-default choice) creates and disposes nothing, then `typed` calls `noteSent` before `sendText`. It is
+never `findEntryTerminal`, and never `pinnedTerminal(name, { fresh: true })`, which disposes by name.
+
+*`Close Open Terminals and Run`.* Authority to close is a SNAPSHOT of terminal OBJECTS taken in the same tick as the modal's
+text: for each `open` row, every live terminal of its name in any shell. `Run` authorises nothing. After the choice nothing is
+looked up by name in order to close it. Four cases: a snapshot terminal that exits while the modal sits is skipped
+(`exitStatus` is read before `dispose`) and its line is still typed; one that starts or ends a command while it sits is closed
+anyway (the modal said closing ends whatever runs there, and the tracker cannot say more after a reload); a terminal of the
+same name that is NOT in the snapshot stays open, its row becomes `open`, and the snapshot terminals of that row are then not
+closed either, since no line would replace them; and with only `open` rows the closing button is the only one offered. Under this
+button the `open` rows' lines are typed too, in row order, trusted first and roots of the chain, so each closed terminal is replaced
+by a new one running its line. Under `Run`, an `open` row whose terminal closed while the modal sat is `not run`, saying so, and
+never "already open" (`settleRow`). Closing
+happens per row, immediately before that row's new terminal, and only after the chain is ready, so a refused, declined or
+failed chain closes and types nothing.
+
+*One synchronous re-check.* From the chain's end to the last send nothing is awaited, so the rows are settled in one pass first
+(`settleRow`: a row with a live terminal that was not authorised moves to `open`, whichever button was pressed) and only then
+closed and typed; one pass is as fresh as one per line, and nothing reads `window.terminals` after a `dispose`, because a
+disposed terminal may still be listed. A failure to open or to type is that row's alone; there is no rollback once typing has
+begun, and a terminal closed for a line that then failed says that it was closed (`failedAfterClosing`). An in-flight mark per `account/folder` (a `Set`, checked and added before the first await, deleted in a `finally`)
+makes a second click while a modal or a chain is open say so and do nothing; another folder is not held up.
+
+*The report* says "Typed", never "started", because exits are not observed, and it says first what must not be lost, since a
+notification is cut at about 1,000 characters (VS Code source, not measured here): `Typed 3 of 5 in "<folder>". Not run: e — reason.
+Left alone, terminal already open: d. Typed: a, b, c.`, information when at least one line was typed and none failed, a warning
+otherwise. A chain that did not end ready says `Nothing was typed in "<folder>" and no entry's terminal was closed: the dependencies
+did not finish.`, because the chain disposes its own earlier terminal. `isTransient` on these terminals was rejected (parent §3).
+
+**The arrow on the folder row (`treeRowText.ts`, `package.json`).** `folderContextValue` adds `:runall`, last, to a folder whose
+`folderType` is `terminal` and which is not in the Trash; `treeDataProvider.ts` hands it the node's type, and the Trash itself stays
+`trashFolder`. `credSshManager.runFolder` sits on `inline@0`, beside `+` on `inline@1`, and on `2_actions@0`, both under
+`/^folder(:.*)?:runall$/`, so a folder with a PIN preference or a project lock keeps it. It stays hidden from the palette (`when: false`):
+it acts on a row, and a palette call arrives with no target. The token holds no `:cmd` and no `:vpnrun`, so no entry clause reads it.
+Six clauses read the plain row exactly (`addEntity` on `inline@1` and `1_create@2`, `addFolder` `1_create@1`, `changeFolderType` `1_create@3`,
+`folderUp` `0_order@1`, `folderDown` `0_order@2`) and take `(:runall)?`. They were found by evaluating every clause of the menu against
+every folder value with and without the token, and `folderMenu.test.ts` keeps doing that: a clause that stops matching takes its item
+away with no error. Prefix clauses needed nothing, and a `folder:asksforpin` or `folder:locked` row had no exact clause to lose. The token
+is discoverability: F2 and the palette reach the handler with no menu, so `folderTarget` re-reads and refuses there too.
+`folderContextValue`'s `folderType` is optional with no default, because a default value counts towards the complexity limit of 4 and the function is at it;
+`max-params` is not a rule here, so no options object was needed.
+
+**The words.** The folder run, `{name}`, the busy guard and the tmux suggestions are in the `basics` article (`usage` and
+`whatCanGoWrong`), in all five languages with UI labels in English (`CLAUDE.md` rule 7): that article is where a terminal entry and *Depends on*
+already live. `folderRunHelp.test.ts` holds the labels and commands byte for byte in every language, because `bodyFor` marks a missing
+translation and never a stale one. `helpCoverage` covers the title through the English text.
+The walkthrough did not change: it shows one credential used without retyping, and a folder run is for someone who already has a folder of sessions.
 
 **Runs on — the OS a command is written for (issue #103).** `terminalOs` (`windows` / `macos` /
 `linux`, a LOOSE string in the guard so a newer build's value never drops the entity) is set by the

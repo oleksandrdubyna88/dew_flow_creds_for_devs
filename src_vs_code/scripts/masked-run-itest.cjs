@@ -97,7 +97,7 @@ async function main() {
   const name = plan.names[REF];
   const read = shellRead(name, process.platform, shell);
   // The line a user would have stored, with the reference where the value would be.
-  const line = buildCommandLineWithRefs('echo', [{ value: REF }], plan, process.platform, shell);
+  const line = buildCommandLineWithRefs({ command: 'echo', args: [{ value: REF }] }, plan, process.platform, shell);
   check('the reference became a variable read, not the value', line === `echo ${read}`, line);
   check('the command line carries no secret and no reference', !line.includes(SECRET) && !line.includes('creds://'), line);
 

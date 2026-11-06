@@ -67,7 +67,9 @@ const GONE_ENTRY: TreeNode = {
   parentId: 'g',
   details: { id: 'e', name: 'www', isSshEnabled: false },
 };
-const NODES = [TRASH, LIVE, GONE_FOLDER, GONE_ENTRY];
+const LIVE_TERMINAL: TreeNode = { id: 'lt', name: 'claude sessions', type: 'folder', folderType: 'terminal', parentId: null };
+const GONE_TERMINAL: TreeNode = { id: 'gt', name: 'old sessions', type: 'folder', folderType: 'terminal', parentId: 't', trashedFrom: null };
+const NODES = [TRASH, LIVE, GONE_FOLDER, GONE_ENTRY, LIVE_TERMINAL, GONE_TERMINAL];
 
 function build(): Provider {
   const { CredTreeDataProvider } = loadWithVscode<{ CredTreeDataProvider: new (storage: unknown, uri: unknown) => Provider }>(
@@ -92,6 +94,13 @@ test('a folder in the Trash is folder:trashed; the Trash itself and a live folde
   assert.equal(tree.getTreeItem(element(GONE_FOLDER)).contextValue, 'folder:trashed');
   assert.equal(tree.getTreeItem(element(TRASH)).contextValue, 'trashFolder');
   assert.equal(tree.getTreeItem(element(LIVE)).contextValue, 'folder');
+});
+
+test('the row hands the folder its type: a live Terminal folder wears :runall, one in the Trash does not', () => {
+  const tree = build();
+  assert.equal(tree.getTreeItem(element(LIVE_TERMINAL)).contextValue, 'folder:runall');
+  assert.equal(tree.getTreeItem(element(GONE_TERMINAL)).contextValue, 'folder:trashed');
+  assert.equal(tree.getTreeItem(element({ ...TRASH, folderType: 'terminal' })).contextValue, 'trashFolder', 'the Trash itself stays what it was');
 });
 
 test('an entry under a trashed folder is in the Trash too — its value leads with entity:trashed', () => {

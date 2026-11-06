@@ -16,7 +16,7 @@
 
 | Tier | Where | Count | What it proves |
 |---|---|---|---|
-| Unit, extension | `src_vs_code/src/test/*.test.ts`, node:test | 5,607 (5 skipped; 2026-10-11) | logic, in-process, `vscode` stubbed |
+| Unit, extension | `src_vs_code/src/test/*.test.ts`, node:test | 5,607 (5 skipped; 2026-10-11) | logic, in-process, `vscode` stubbed; the busy-terminal guard (`terminalActivity`, `busyTerminalGuard`, `launcherBusyTerminal` suites) is under *The green arrow never types into a busy terminal* |
 | Unit, .NET | `src_minimalapi_server/tests`, `src_cli/tests`, `src_mcp/tests`, `src_broker_client/tests`, `src_service_defaults/tests` — xUnit | 1,351 (2026-10-14, after E6; pass counts, platform-specific process tests skipped off their platform) | server 809, cli 141, mcp 163, broker 157, service defaults 81. The cli and mcp suites include PROCESS tests since E1 of PLAN_wsl_bridge_outlives_its_client: the built binary run with a marker in argv, environment and protocol bodies, its log file grepped for it after positive controls (`ServingLogTests`, `RelayLogTests`; helper `src_service_defaults/tests/Support/HostProcess.cs`, linked into both). E2 added the lifetime ones: the built `creds-mcp` given a captured Claude Code 2.1.289 session start (`src_mcp/tests/fixtures/`) must exit within 10 s of stdin EOF with a `subscriptions/listen` open (`ServerEndsWithClientTests`, positive control the 2025-06-18 handshake); a stub broker holding a POST must see the connection close before `drain + deadline` with no forced exit (`ToolCancellationTests`, `Support/StubBroker.cs`); the server started through `cmd /c` / `sh -c` must exit when that intermediary is killed, and must not when relayed or switched off (`ParentWatchProcessTests`). Each has an in-process twin (`ServeOnTests`, `ServerLifetimeTests`, `ParentWatchTests`) for the coverage tool. E3 added the child holders' tier: the built `creds-mcp` on the pump path against a script standing in for the Windows half — SIGINT, SIGTERM and SIGHUP each end it with 128 + n and the child dead, after a `SigIgn` check from `/proc` (`WslPumpHostTests`); the built `creds relay` serving twenty connections leaves no `relay-pipe` child alive, and SIGTERM or SIGHUP stops a held connection's stubborn child and removes the socket (`AgentRelayHostTests`); both Linux and macOS only, where those halves run. Their in-process twins: `WslPumpTests` and `WslPumpRunTests`, `AgentRelayConnectionTests` (`CarryConnectionAsync` over fakes and the whole relay over a real socket), `ChildLifetimeTests`; the shared helpers (`FakeChild`, `Posix`, `TestStreams`) sit beside `HostProcess` and are linked, not copied. E6 (defect D, 2026-10-14) added, in `WslInteropTests`: the pure `WindowsBridge.WithParentDeath` argv shaping, the pure `ResolveSetpriv`/`GuardStatus` (kill switch, trusted-dir order, the real off-reason) and the pure `BinaryResolves` (path vs bare-name-on-PATH vs missing); and two `src_mcp` process tests on Linux (skipped without `setpriv`): `WslPumpHostTests.A_child_left_STOPPED_and_orphaned_still_dies_with_the_wrapper` (the pump's stubborn child SIGSTOPped, the wrapper SIGKILLed, the child must still die through `setpriv --pdeathsig KILL`) and `ParentDeathLauncherTests` (the thread-scope backstop — a guarded child forked through `StartPiped` on a thread that then exits must outlive it, else the kernel's thread-scoped pdeathsig would kill the Windows half when a pool worker retires; self-calibrating, skipped on a process-scoped kernel), plus the pure `Program.GuardLogLine` naming the real off-reason (`ProgramGuardLogTests`); `Posix` gained `Stop`. The 2026-10-14 pass counts are in this row's head |
 | HTTP contract | `http/http-run.mjs` over `http/*.http` | 82 requests, 9 files | the real server over HTTP, with a coverage report that refuses an unlisted route |
 | Scenario | `src_vs_code/scripts/*-itest.cjs` | 9 harnesses | a real process, a real socket, a real binary |
@@ -1103,6 +1103,244 @@ harness that started a REAL tunnel or installer is exactly what a test may never
 window sees a client leave at all — is level 8 of `creds-mcp-itest.cjs` (E4.S1). **What none of this proves:** a real
 VS Code modal or terminal, and a real tunnel; a command already typed, and a tunnel already up, are not revoked by
 design (plan §5.7, open tail).
+
+## The green arrow never types into a busy terminal (2026-11-05, S1 of PLAN_terminal_folder_run.md)
+
+The real `credSshManager.runCommand` handler, registered by the real `registerRunCommands` against a fake host
+(`src/test/arrowWorld.ts`; the one module stood in for is `../extension`), and the VPN launcher through `startVpn`, in
+the world of `vpnWorld.ts`. The world gained `preopened` (terminals that are LIVE before the flow starts, listed in
+`window.terminals`), `open`, `live` and `shell.start/end` (shell integration's two events, fired as VS Code delivers
+them) and `StartOptions.shellEvents` (events the terminals had already produced, delivered once the tracker listens).
+Until S5 terminals the flow creates stayed unlisted. Since S5 one is listed at once, as VS Code does (`createTerminalFromOptions` in
+`node/extHostTerminalService.ts`, read in 1.93.0), and every suite on this world stayed green with no option; `open` still makes an
+unlisted one for a test to `list` by hand. `noteOurSend` is the extension's own send, through the real tracker: `running` and `finished`
+both need it, so a test that starts from `preopened` calls it first.
+
+| Flow | Test | What it holds down |
+|---|---|---|
+| The transition table | `terminalActivity.test.ts` | every cell of the table, each its own test (`the_table_<state>_on_<event>_is_<state>`, `the_table_<state>_reads_<reading>`): a start and an end with no send of ours never read finished (`a_start_and_end_with_no_send_of_ours_never_read_finished`), after our send a numeric end finishes (non-zero included), a start after a finished command reads running with the new execution, an undefined end and a start-while-running poison for the terminal's life in either delivery order, a late or replayed end (a numeric or an undefined one) is ignored, our own send arms the terminal but over a running command poisons it (an inner start and end then never read finished), states are frozen values; the question texts |
+| The arrow | `busyTerminalGuard.test.ts` | a start and an end with no send of ours ask (`a_start_and_end_with_no_send_of_ours_never_read_finished`), and `Type It Anyway` then a seen start and end reads finished; a running command is never typed into (`the_arrow_never_types_into_a_terminal_whose_command_is_running`); finished (non-zero too) and no-terminal type as before, and a reused terminal is shown; a command started after a finished one asks; a question open for a terminal stops a second send to it even when the command ends meanwhile; no evidence asks and cancel types nothing; `Type It Anyway` types once into the SAME object even when another terminal now carries the name; a double click asks once and types at most once; a terminal closed meanwhile gets nothing; our own send makes the next click ask until a new start and numeric end; a sub-shell signature asks for the terminal's life; the tracker is subscribed through `registerRunCommands` and disposes |
+| The launcher | `launcherBusyTerminal.test.ts` | a busy launcher terminal asks and a cancel types nothing (the installer still ran before it); a finished one is typed into; an agent-served start refuses a busy terminal without a question and types into a finished one; a start and an end with no send of ours make it ask, and make an agent-served start refuse |
+
+**Teeth.** Test `the_arrow_never_types_into_a_terminal_whose_command_is_running` was written first and run against
+the code before the guard existed: `AssertionError [ERR_ASSERTION]: the arrow typed into a terminal whose command is
+running`, actual `['tmux attach -t alert']`, expected `[]`. Two mutations then each went red and were restored: the
+guard trusting everything (`const verdict: Activity = 'finished'`) fails eleven tests; `sent` leaving the evidence
+standing fails `a_double_click_on_a_finished_terminal_types_once_then_asks`, `after_our_send_with_no_new_evidence_the_next_click_asks`
+(and, in the pure `sent` row, `our_own_send_clears_the_evidence_and_a_late_end_cannot_restore_it`). The review round added: `onStart` answering the state unchanged for `finished` fails `a_start_after_a_finished_command_reads_running_with_the_new_execution` and `a_command_started_after_a_finished_one_makes_the_next_click_ask`; `an_open_question_stops_a_second_send_even_when_the_command_ends_meanwhile` and the `shown` count in `the_arrow_types_as_today_when_the_last_command_finished` were run red before their fixes.
+
+**Not covered, and why.** Driving a real terminal stays **not covered**: nothing here drives VS Code, so what a real
+window delivers (whether a reload replays old sequences, whether tmux passes an inner shell's sequences, the real
+order of the start and end events) is not observed; the parent plan's §Hand checks 2–5 are what covers it.
+
+## `{name}` in a terminal command: one road, refused rather than quoted (2026-11-05, S2 of PLAN_terminal_folder_run.md)
+
+The roads run through the real handlers: the green arrow and Run with Secrets through `registerRunCommands` in `arrowWorld.ts`
+(which gained `run(entry, nodeName)`, `runWithSecrets`, `trust`, `masked`, a `refSource` and a mock of `../maskedTerminal`), the
+dependency chain and the VPN launcher through `startVpn` (which gained `StartOptions.trust`), Copy Command and Show Command
+through the real `registerEntityCommands` (`commandLineHandlers.test.ts`), and the form's preview by running its real fragment
+under `miniDom.ts`. The accepted and refused names live in one list, `src/test/commandNameTable.ts`, so the pure table and the
+real-shell test read the same names. Run from `src_vs_code`: `npm run compile`, then
+`node --import ./scripts/lower-priority.mjs --test out/test/commandName.test.js out/test/resolveCommand.test.js out/test/commandNameRoads.test.js out/test/commandNameShell.test.js out/test/commandRoadScan.test.js out/test/commandPreviewScript.test.js`.
+
+| Flow | Test | What it holds down |
+|---|---|---|
+| Token and allow-list | `commandName.test.ts` | the token is only the bare name in braces (`${name}`, `$${name}`, `{{name}}`, `#{name}`, `%{name}`, `{name}}`, `{ name }`, `{na''me}`, `{NAME}` do not match); `$&`, `` $` `` and `$'` in a name mean nothing; a name is never scanned again; `usesNameToken` keeps no state (a `.test` on the `g` regex answers `true, false`); ten names pass and eighteen plus seven more are refused; a mark only after a letter; the refusal says why and `{na''me}` |
+| The one road | `resolveCommand.test.ts` | empty whatever the name; a name the line does not use is not judged; command and rows filled and `buildCommandLine(parts) === line`; a refusal carries the template and the reason and no `line`; a disabled row neither refuses nor is filled; shown, refusal and will-not-run lines; `{config}` stays literal and a name cannot smuggle it; a rename changes the fingerprint; `describeCommand` shows the line and the stored rows; nothing it is given is changed. The typed fixture `fixtures/typed/resolved_line_needs_narrowing.ts` holds that skipping a refusal does not compile |
+| Green arrow | `commandNameRoads.test.ts` | the modal, the trust store and the terminal hold one string; a refused name gives a warning, no modal, no terminal, an empty store; a rename asks again; the name and the terminal's title are both `details.name`; an empty command still says so; an old literal is asked about once |
+| Run with Secrets | `commandNameRoads.test.ts` | `creds://me/{name}/password` resolves after filling; a refused name runs nothing and reads no secret; the resolved line is approved, not the template; a disabled row holding the token is no reference, so it cannot refuse a run even with a refused name; a disabled plain reference is scanned as before; the token alone is no reference |
+| Dependency step | `commandNameRoads.test.ts`, `dependencyRun.test.ts` | a chain step runs its resolved line and is approved as it; a refused step refuses the whole chain with its reason before the chain's modal; `executableLine` answers the template, never `undefined`; an excluded entry is not judged as a step |
+| VPN launcher | `commandNameRoads.test.ts`, `commandTargetsLauncher.test.ts` | the fingerprint fills `{name}` and keeps `{config}`, and the typed line fills `{config}`; a refused launcher warns, starts nothing and shows no trust modal; a refused entry stays pickable |
+| Agent | `agentUseActions.test.ts`, `agentShareSnippet.test.ts` | the agent runs the resolved line (a real child); a template or another name's line is not trusted; a refused name fails `not_supported` before the trust check and takes no slot; the terminal summary and snippet stop saying "exactly as saved", the script ones keep it |
+| Consent | `mcpCreate.test.ts` | the prompt shows the line with the requested name, or the template and `will not run:` |
+| Displays and copies | `entityViewPage.test.ts`, `entityText.test.ts`, `revisionViewer.test.ts`, `commandLineHandlers.test.ts`, `mcpEntries.test.ts` | the viewer's Full command, its Will not run row and the two copies; the stored rows stay as stored; Copy All; a kept version fills the name it had on its page and in Copy All; Copy Command copies the line or the template and warns; an agent's entry and the search haystack stay raw |
+| Form | `commandPreviewScript.test.ts`, `entityFormPage.test.ts` | the preview agrees with `resolveCommand` for every name and token row; it reads the live Name field, trimmed, and listens to it; the pattern sources survive `jsonForScript`; the fragment has no backtick, `${` or script end tag; the page holds the hint and the wiring |
+| The scan | `commandRoadScan.test.ts` | `buildCommandLine(` is called only in `commandLine.ts` and imported nowhere; `commandArgs` is read only where a reason is written (a list keyed by file and exact line); the list has no stale entry; `executableLine` has only its three readers; the companion proves the patterns still find what they are about |
+| A real shell | `commandNameShell.test.ts` | bash receives every accepted name byte for byte and the folder stays empty; the CONTROL, a hostile name substituted without the guard, really creates its file; no refused name reaches bash; `{na''me}` prints `{name}`; `'={name}'` stays one word; `pwsh` and `cmd.exe` receive the accepted names (skipped where absent) |
+
+**Teeth.** Each mutation was applied alone, watched red, and restored. The arrow's trust check reading the template instead
+of the resolved line fails `the_arrow_displays_approves_fingerprints_and_types_one_string`, `a_rename_asks_again_and_types_the_new_line`
+and `a_literal_in_an_old_entry_is_asked_about_once`; the arrow typing the template fails four; Run with Secrets approving the
+template fails `a_reference_holding_the_token_resolves` and `secrets_approve_and_fingerprint_the_resolved_line`; the allow-list
+accepting a space fails eight (the table, the arrow, Run with Secrets, a chain step, a launcher, bash, the preview);
+`executableLine` answering `undefined` for a refused name fails five; `usesNameToken` using `.test` fails six; filling disabled
+rows fails `a_disabled_row_cannot_refuse_and_is_not_filled` and `a_disabled_row_holding_the_token_is_no_reference` (the refused-name
+disabled row of `a_refused_name_used_only_by_a_disabled_row_still_runs` stays green, because a name with a space breaks the
+reference at the space); Copy All reading the version's raw details fails `a_kept_version_fills_the_name_it_had_on_the_page_and_in_copy_all`;
+a stray `buildCommandLine(` in another file fails the scan; the control with its hostile name made harmless fails.
+
+**Not covered by a scenario harness, and why.** Driving a real terminal stays not covered, for the reason the section above
+gives: nothing here drives VS Code. The real-shell test runs bash directly through `spawnSync`, not through a terminal.
+`pwsh` and `cmd.exe` rows skip where the shell is absent (no `pwsh` on the machine they were written on, and the interop
+`cmd.exe` is excluded by the `win32` test), so CI is where `pwsh` first runs. `zsh`, `fish` and `LC_ALL=C` are the parent
+plan's hand checks 6 and 7.
+
+## The folder run (2026-11-05, S3 of PLAN_terminal_folder_run.md)
+
+The pure half, `folderRun.ts`, is tested by importing it with no `vscode` stub (`folderRun.test.ts`: importing it directly is the
+proof that it holds none). The command, `credSshManager.runFolder`, is the real handler of the real `registerRunCommands`,
+reached through `src/test/folderWorld.ts`: a fake host with a tree, a real display order (`siblingOrder`), the real trust store,
+guard, pinned-shell decision and dependency chain, in the world of `vpnWorld.ts`. The world gained `disposed` on every terminal
+record (a `dispose` COUNTS and closes nothing, so a terminal stays listed and live, the worst case VS Code allows), a settable
+`window.terminals` that counts the reads made after the first dispose (`listReadsAfterDispose`), `list` and `exit` (a terminal the
+person opened, and one that really ends), `open(name, shellPath)`, `modal: 'last'`, and `failCreate`, `failSend`, `onSend`; at S3
+terminals a flow creates stayed unlisted, so no older test changed meaning (`busyTerminalGuard`, `launcherBusyTerminal`, `dependencyChain`,
+`vpnGoneRequest` and `commandNameRoads` were run on it first and were unchanged), and since S5 one is listed at once, as VS Code does.
+Run from `src_vs_code`: `npm run compile`, then
+`node --import ./scripts/lower-priority.mjs --test out/test/folderRun.test.js out/test/folderRunCommand.test.js out/test/folderRunEdges.test.js`
+(22 + 49 tests at S3; 36 + 48 + 17 since S5, which split `folderRunEdges.test.ts` off at the 800-line limit).
+
+| Flow | Test | What it holds down |
+|---|---|---|
+| The plan | `folderRun.test.ts` | every reason in order, first match wins; an earlier reason beats `open`; a duplicate counts only among rows that could run; `open` comes from the fact only; `details.name` names the row and fills `{name}`; display order is kept and subfolders are named, not rows; a disabled row cannot refuse; the cap counts every row with a line (open ones too) and ignores the rest; no line reports with no modal, and an empty folder says so |
+| The modal | `folderRun.test.ts`, `folderRunCommand.test.ts` | the question holds every line whole (a 400-character line too), `(new)` before the name, the open rows, the rows not run, the subfolders and what each button does, and ends with the chain modal's own sentence; it drops what does not apply; it is shown even when every line is trusted; a dismissal runs nothing and trusts nothing, a trusted line included; approving trusts each typed line though the store rewrites its whole list; the typed line is the approved string even if the entry changed while the modal sat; a name with a control character is not run and draws no row (`a_name_with_a_newline_is_not_run_and_cannot_draw_a_row_in_the_folder_modal`), a line with one is shown escaped and typed unchanged, a `·` stays readable; a question over 4,000 characters, as it would be shown, is refused naming the count |
+| The report | `folderRun.test.ts`, `folderRunCommand.test.ts` | the exact sentence, what must not be lost first (`Not run`, then `Left alone`, then `Typed:`), reasons grouped with a closing full stop trimmed, "Typed" and never "started"; information when something was typed and nothing failed, a warning otherwise; a terminal closed for a line that failed says so; a stopped chain says no entry's terminal was closed |
+| Left alone, and the re-check | `folderRunCommand.test.ts` | `Run` leaves an open terminal alone and does not trust its line; the open test is ANY shell; a terminal that appeared while the modal sat or while the chain ran moves its row to open; an open row whose terminal closed under `Run` is not run, saying so, and never "already open"; a second click reads what the first typed into as open, and the arrow reads the object the folder run typed into (`folderRunEdges.test.ts`) |
+| `Close Open Terminals and Run` | `folderRunCommand.test.ts` | the only button when only open rows exist, both when both kinds do; it closes every live terminal of the name in any shell and types into a NEW one, never a find (`a_new_terminal_never_comes_from_find`); nothing reads the terminal list after a close; a terminal opened while the modal sat is not closed and its row is left alone; one that exited is not disposed and its line is typed; one that started a command is still closed; closing comes after the chain is ready; a refused or declined chain closes nothing |
+| The chain | `folderRunCommand.test.ts` | roots are only the lines to be typed; `Close` makes an open row a root; `runDependencies: false` opens no chain; a sibling named under Depends on is neither a step nor awaited, and a refused one refuses nothing; a sibling passes on its own dependencies when a typed line names it; a circle refuses and types nothing; a missing dependency with no step asks nothing more; a failed step the person stops types nothing; the chain modal names the folder, and its missing-row note says to edit the entry that lists the row (`dependencyRun.test.ts` holds the owner's wording unchanged) |
+| Refusals and overlap | `folderRunCommand.test.ts`, `folderRun.test.ts` | a non-folder, a non-Terminal folder, a folder in the Trash and no target are refused in code; a second click while a modal or a chain is open says so and does nothing; the next click asks again after a dismissal; another folder is not held up, not even one whose account and folder ids join to the same text with a slash; 33 lines refuse with no modal and 32 run |
+| Failures | `folderRunCommand.test.ts` | one failure at opening, or at typing, does not stop the rest and is named in the report; the tracker hears of the send before the keystrokes leave; a pinned entry opens with the pinned shell and a default one without |
+| The manifest | `folderRunCommand.test.ts` | the command's title and category, hidden from the palette (`when: "false"`) and on the folder menu |
+
+**Teeth.** Written first, in this order, and watched red for the right reason. The pure suite ran against a stub whose every
+function threw `not implemented`: 22 of 22 red. The command suite then ran against a handler that closes by name and at once,
+before the chain (the naive way): `closing_comes_after_the_chain_is_ready` failed with `[1] !== [0]` (the recorded `disposed` of
+`o` at the moment the chain's step ran), `a_chain_refusal_types_nothing_and_closes_nothing` and
+`a_declined_chain_types_nothing_and_closes_nothing` with `[ [ [], 1 ] ]` against `[ [ [], 0 ] ]`,
+`a_terminal_opened_while_the_modal_sat_stays_open_and_its_row_is_left_alone` (the newcomer closed: `[ [ [], 1 ], [ [], 1 ] ]`),
+and `nothing_reads_the_terminal_list_after_a_close` with `3 !== 0`. That handler closing the one terminal `findEntryTerminal`
+answers instead failed `close_closes_every_live_terminal_of_the_name_in_any_shell_and_types_into_a_new_one` (`disposed` `0`,
+`0` against `1`, `1`: the pinned road's find saw neither terminal). Then each mutation was applied alone, watched red,
+and restored (the source is clean of them):
+
+| # | Mutation | Red |
+|---|---|---|
+| M1 | `typeLine` asks `findEntryTerminal` first and types into what it finds | `a_new_terminal_never_comes_from_find`, `nothing_reads_the_terminal_list_after_a_close` |
+| M2 | `appeared` always false | `a_run_row_whose_terminal_appeared_while_the_modal_sat_moves_to_open`, `a_terminal_opened_while_the_chain_ran_moves_its_row_to_open`, `a_terminal_opened_while_the_modal_sat_stays_open_and_its_row_is_left_alone` |
+| M3 | every authorised terminal disposed before the chain | nine: the closing rows of the table above and `a_new_terminal_never_comes_from_find` |
+| M4 | the snapshot taken after the modal | `a_terminal_opened_while_the_modal_sat_stays_open_and_its_row_is_left_alone` |
+| M5 | the `catch` in `typeLine` rethrows | `one_failure_at_opening_does_not_stop_the_rest`, `one_failure_at_typing_does_not_stop_the_rest` |
+| M6 | roots are `linesToType(plan, true)` whichever button | `roots_are_only_the_lines_to_be_typed_a_skipped_entry_does_not_rerun_its_dependencies` |
+| M7 | `oneAtATime` ignores the mark | `a_second_click_while_the_modal_is_open_does_nothing`, `a_second_click_while_the_chain_runs_does_nothing` |
+| M8 | `isOpen` always false | ten, among them `nothing_reads_the_terminal_list_after_a_close` (which needed a positive assertion, that `o` WAS closed, to go red) |
+| M9 | `noteSent` after `sendText` | `the_tracker_hears_of_the_send_before_the_keystrokes_leave` |
+| M10 | no `plan.directIds` passed to the chain | the three sibling rows (`a_sibling_named_in_depends_on_is_not_a_step_and_not_awaited`, `a_refused_sibling_named_in_depends_on_does_not_refuse_the_chain`, `a_sibling_passes_on_its_own_dependencies_when_a_typed_line_names_it`) |
+| M11 | `trustEach` a `Promise.all` | `all_lines_are_trusted_though_the_store_rewrites_its_whole_list` |
+| M12 | `typeLine` closes by name instead of the snapshot | `nothing_reads_the_terminal_list_after_a_close` |
+| M13 | `liveTerminalsOfEntry` keeps only terminals with no `shellPath` | `the_open_test_is_any_shell`, `close_closes_every_live_terminal_of_the_name_in_any_shell_and_types_into_a_new_one` |
+| M14 | a dismissal runs when every line is trusted | `a_dismissed_modal_runs_nothing_and_trusts_nothing` |
+| M15 | `typeLine` disposes without reading `exitStatus` | `an_authorised_terminal_that_exits_while_the_modal_sat_is_not_disposed_and_its_line_is_typed` |
+
+M7 first HUNG the suite rather than failing it: the second click sat in a second held modal and the test awaited it. The test now
+answers any extra held modal before awaiting, so a broken mark fails the test and cannot stall the run.
+
+**Not covered, and why.** Driving a real terminal stays not covered, for the reason the sections above give: nothing here drives
+VS Code. What a real `dispose` does to `window.terminals`, and how long it takes, is not observed (the world models the worst
+case, a terminal that stays listed and live); how a native dialog shows 32 lines (the parent's hand check 8) is not observed;
+nothing here reaches the command from a menu: `folderMenu.test.ts` evaluates the menu's `when` clauses, and a menu is not clicked.
+
+## The re-review's fix forward (2026-11-05, S5 of PLAN_terminal_folder_run.md)
+
+The built code brought to §2 and §3 as revised for epoch 2. Run from `src_vs_code`: `npm run compile`, then
+`node --import ./scripts/lower-priority.mjs --test out/test/terminalActivity.test.js out/test/busyTerminalGuard.test.js out/test/launcherBusyTerminal.test.js out/test/commandNameRoads.test.js out/test/folderRun.test.js out/test/folderRunCommand.test.js out/test/folderRunEdges.test.js out/test/transitSecretReport.test.js out/test/dependencyRun.test.js out/test/shareDiagnostics.test.js out/test/dependencyChain.test.js`.
+
+| Flow | Test | What it holds down |
+|---|---|---|
+| `armed`, and evidence only after our own send | `terminalActivity.test.ts`, `busyTerminalGuard.test.ts`, `launcherBusyTerminal.test.ts` | every cell of §2's table; a start and an end with no send of ours never read finished, pure and in the stub world, on the arrow and the launcher; `Type It Anyway` then a seen start and end reads finished; `armed` reads unknown; a terminal the arrow opened asks while its command runs and repeats silently once it ended |
+| The escaper | `transitSecretReport.test.ts`, `dependencyRun.test.ts` | C0, DEL, C1, the separators and the bidi controls (U+202A-E, U+2066-9, U+200E, U+200F, U+061C) escaped at both ends of each range, and their neighbours not; `·` readable through `escapeControl` and escaped through `logSafe`, which measures its bound on the escaped field; the chain modal unchanged for clean inputs, and escaped for the owner, each step and each line |
+| What a flow creates is listed | `folderRunEdges.test.ts` | a second folder click reads what the first typed into as open; the arrow reads the object the folder run typed into, and types silently once its command is seen finished; after a split name the folder run and the arrow find the same terminal, in either order |
+| The closing button | `folderRunEdges.test.ts` | the `open` rows' lines are typed in row order, trusted first and roots of the chain; a closed terminal with no replacement says it was closed; a failure with nothing closed claims no close |
+| The title | `commandNameRoads.test.ts` | the arrow's title is `details.name`, not the node's; a history row titles its terminal from that version's `details.name` |
+| The in-flight mark | `folderRunEdges.test.ts` | a rejecting trust store: the click rejects, and a second click reaches the modal |
+
+**Teeth.** Every test was written first and run against the code of `4f567b5` (with only the new constant `MAX_QUESTION_CHARACTERS` added): 69 of the 274 tests of these eleven suites red for the right reason. The cornerstone, `a_start_and_end_with_no_send_of_ours_never_read_finished`, printed `end(c, 0)`, `'finished' !== 'unknown'` in the pure suite, and in the stub world `typed on a start and end the extension had no part in`, actual `['tmux attach -t alert']`, expected `[]`. Tests that pass on that code hold what was already right, and the mutations are their proof. Each mutation was then applied alone, watched red, and restored:
+
+| # | Mutation | Red |
+|---|---|---|
+| M1 | `terminalActivity.ts` `onStart`: delete the `if (state.kind === 'unknown')` block (the fix undone) | `a_start_and_end_with_no_send_of_ours_make_an_agent_served_start_refuse`, `a_start_and_end_with_no_send_of_ours_make_the_launcher_ask`, `a_start_and_end_with_no_send_of_ours_never_read_finished`, and 4 more |
+| M2 | `onSent`: `POISONED : UNKNOWN` for `POISONED : ARMED` | `a_command_started_after_a_finished_one_makes_the_next_click_ask`, `a_double_click_on_a_finished_terminal_types_once_then_asks`, `a_double_send_stays_armed`, and 48 more |
+| M3 | `READING`: `armed: 'finished'` | `a_double_click_on_a_finished_terminal_types_once_then_asks`, `a_start_before_our_send_and_its_end_after_it_stay_armed`, `after_a_split_name_the_folder_run_and_the_arrow_find_the_same_terminal`, and 13 more |
+| M4 | `onSent`: `return ARMED;` (typing over a running command no longer poisons) | `our_own_send_over_a_running_command_poisons_it_so_the_inner_pair_never_reads_finished`, `the_table_running_on_our own send_is_poisoned` |
+| M5 | `onStart`: `state.kind === 'finished' ? state : state.kind === 'running' ? POISONED : ...` (a start after a finished command is not seen) | `a_command_started_after_a_finished_one_makes_the_next_click_ask`, `a_start_after_a_finished_command_reads_running_with_the_new_execution`, `the_table_finished_on_start(e)_is_running` |
+| M6 | `CONTROL_RANGES`: `[0x007f, 0x007f]` for `[0x007f, 0x009f]` | `escapeControl_writes_u0080_as_a_visible_escape`, `escapeControl_writes_u0085_as_a_visible_escape`, `escapeControl_writes_u009f_as_a_visible_escape`, and 1 more |
+| M7 | `CONTROL_RANGES`: no `[0x202a, 0x202e]` | `escapeControl_writes_u202a_as_a_visible_escape`, `escapeControl_writes_u202e_as_a_visible_escape`, `every_control_character_class_in_a_name_is_not_run_and_a_clean_name_runs`, and 1 more |
+| M8 | `CONTROL_RANGES`: no `[0x2066, 0x2069]` | `escapeControl_writes_u2066_as_a_visible_escape`, `escapeControl_writes_u2069_as_a_visible_escape`, `every_control_character_class_in_a_name_is_not_run_and_a_clean_name_runs` |
+| M9 | `escapeControl`: `isControlCharacter(codePoint) \|\| codePoint === FIELD_SEPARATOR` | `a_middle_dot_in_a_name_stays_readable_in_the_question_and_the_report`, `a_middle_dot_in_a_step_or_an_owner_stays_readable_in_the_chain_modal`, `a_name_with_a_middle_dot_runs_and_stays_readable`, and 3 more |
+| M10 | `logSafe`: no `.replaceAll(...)` | `a forged entity name cannot become a second log line, or a second FIELD`, `logSafe_measures_its_bound_on_the_escaped_field`, `the_field_separator_is_the_log_lines_alone_and_a_modal_keeps_it_readable` |
+| M11 | `describeRunPlan`: `${step.name}` raw | `a_step_name_with_a_newline_cannot_draw_a_row_in_the_chain_modal`, `the_chain_modal_of_the_arrow_escapes_too`, `the_chain_modal_writes_the_owner_each_step_and_each_line_through_the_escaper` |
+| M12 | `describeRunPlan`: `${step.line}` raw | `a_step_name_with_a_newline_cannot_draw_a_row_in_the_chain_modal`, `the_chain_modal_writes_the_owner_each_step_and_each_line_through_the_escaper` |
+| M13 | `describeRunPlan`: `Before "${ownerName}"` raw | `the_chain_modal_writes_the_owner_each_step_and_each_line_through_the_escaper` |
+| M14 | `missingNote`: `edit "${ownerName}"` raw | `the_chain_modal_writes_the_owner_each_step_and_each_line_through_the_escaper` |
+| M15 | `lineRefusal`: no control-character test | `a_name_or_a_line_with_a_control_character_is_escaped_in_the_question_the_report_and_the_notices`, `a_name_with_a_control_character_is_no_duplicate_of_the_name_without_it`, `a_name_with_a_newline_is_not_run_and_cannot_draw_a_row_in_the_folder_modal`, and 3 more |
+| M16 | `judgedLine`: `facts.shellRefusal(...) ?? lineRefusal(...)` | `the_control_character_reason_comes_before_config_the_shell_open_and_a_duplicate` |
+| M17 | `sizeRefusal`: `count >= MAX_QUESTION_CHARACTERS` | `a_question_of_exactly_the_bound_is_asked_and_one_more_character_is_refused_naming_the_count`, `the_bound_counts_the_text_as_shown`, `the_bound_is_judged_on_the_question_as_it_will_be_shown_new_marks_included` |
+| M18 | `beforeAsking`: `const refusal = capRefusal(folderName, plan);` | `a_question_of_exactly_the_bound_is_asked_and_one_more_character_is_refused_naming_the_count`, `a_question_over_the_bound_refuses_with_no_modal_and_types_nothing`, `the_bound_counts_the_text_as_shown`, and 1 more |
+| M19 | `beforeAsking`: `sizeRefusal(...) ?? capRefusal(...)` | `the_row_cap_is_judged_before_the_character_bound` |
+| M20 | `planAndAsk`: `beforeAsking(folder.name, plan, () => false)` | `the_bound_is_judged_on_the_question_as_it_will_be_shown_new_marks_included` |
+| M21 | `sizeRefusal`: `count` is the sum of `row.line.length` | `a_question_of_exactly_the_bound_is_asked_and_one_more_character_is_refused_naming_the_count`, `a_question_over_the_bound_refuses_with_no_modal_and_types_nothing`, `the_bound_counts_the_text_as_shown`, and 1 more |
+| M22 | `folderReport`: `Left alone` before `Not run` | `the_report_is_the_exact_sentence`, `the_report_says_what_must_not_be_lost_first` |
+| M23 | `settleFree`: `{ kind: 'open', name: row.name }` for the `notRun(...)` | `an_open_row_closed_under_run_says_so_and_never_says_already_open`, `an_open_row_whose_terminal_closed_under_run_is_not_run_saying_so`, `settle_follows_the_button_and_what_is_live_now` |
+| M24 | `typeLine`: `failed(row, sent.reason)` | `a_closed_terminal_whose_replacement_was_refused_says_it_was_closed` |
+| M25 | `typeLine`'s `catch`: `failed(row, describeError(error))` | `a_closed_terminal_whose_replacement_took_no_line_says_it_was_closed`, `a_closed_terminal_with_no_replacement_says_it_was_closed` |
+| M26 | `typeLine`: `const live = toClose;`, filtering only for the `dispose` | `a_failure_with_nothing_closed_claims_no_close` |
+| M27 | `chainStopped`: `and no terminal was closed:` | `a_chain_refusal_types_nothing_and_closes_nothing`, `a_stopped_chain_says_nothing_was_typed_and_no_entrys_terminal_was_closed` |
+| M28 | `typeIntoEntryTerminal`: `sendGuarded(entry.name, ...)` | `a_history_row_titles_its_terminal_from_that_versions_details_name`, `after_a_split_name_the_folder_run_and_the_arrow_find_the_same_terminal`, `after_a_split_name_the_folder_run_reads_the_terminal_the_arrow_opened_as_open`, and 1 more |
+| M29 | `linesToType`: `row.kind === 'run' \|\| (closing && row.id === '')` | `a_chain_refusal_types_nothing_and_closes_nothing`, `a_declined_chain_types_nothing_and_closes_nothing`, `close_closes_every_live_terminal_of_the_name_in_any_shell_and_types_into_a_new_one`, and 4 more |
+| M30 | `runChosen`: `trustEach(trust, linesToType(plan, false))` | `close_closes_every_live_terminal_of_the_name_in_any_shell_and_types_into_a_new_one`, `under_the_closing_button_the_open_rows_are_typed_in_row_order_trusted_and_roots` |
+| M31 | `runChosen`: roots from `linesToType(plan, false)` | `a_chain_refusal_types_nothing_and_closes_nothing`, `a_declined_chain_types_nothing_and_closes_nothing`, `close_makes_an_open_row_a_root`, and 2 more |
+| M32 | `oneAtATime`: `await run(); inFlight.delete(key);` with no `try`/`finally` | `the_in_flight_mark_is_released_on_a_throw` |
+| M33 | `vpnWorld.ts` `createTerminal`: no `listed = [...listed, live[o.name]];` | `a_second_folder_click_reads_what_the_first_typed_into_as_open`, `a_terminal_the_arrow_opened_asks_while_its_command_runs_and_repeats_silently_once_it_ended`, `after_a_split_name_the_folder_run_and_the_arrow_find_the_same_terminal`, and 2 more |
+| M34 | `terminalGuard.ts` `typed`: no `noteSent(terminal);` | `a_double_click_on_a_finished_terminal_types_once_then_asks`, `a_terminal_the_arrow_opened_asks_while_its_command_runs_and_repeats_silently_once_it_ended`, `after_our_send_with_no_new_evidence_the_next_click_asks`, and 3 more |
+| M35 | `busyTerminalGuard.test.ts` `armed`: an empty body | 7 red: the seven marked red in §A.9 of `PLAN_terminal_folder_run_S5_brief.md` |
+| M36 | `beforeAsking`: no early return for a plan with no line | `another_folder_is_not_held_up`, `no_line_reports_with_no_modal_and_an_empty_folder_says_so`, `nothing_with_a_line_reports_with_no_modal`, and 1 more |
+| M37 | `onEnd`: `return FINISHED;` (an undefined code no longer poisons) | `a_start_while_running_poisons_in_either_delivery_order`, `a_sub_shell_signature_keeps_asking_for_the_terminals_life`, `an_end_with_undefined_code_on_the_current_execution_poisons_for_life`, and 9 more |
+| M38 | `describeRunPlan`: `, in order,` dropped from the first sentence | `the owner's chain: the installer runs and is AWAITED, then the launcher is typed with {config} filled in`, `the pre-run sentence lists every step in order with its line`, `the_chain_modal_text_is_unchanged_for_clean_inputs` |
+| M39 | `lineOrReason`: the control-character test before `resolveCommand` | `a_name_or_a_line_with_a_control_character_is_escaped_in_the_question_the_report_and_the_notices`, `a_refused_name_comes_before_the_control_character_reason` |
+| M40 | `folderReport`: the `Typed:` clause always | `a_closed_terminal_whose_replacement_took_no_line_says_it_was_closed`, `a_failure_with_nothing_closed_claims_no_close`, `an_open_row_closed_under_run_says_so_and_never_says_already_open`, and 3 more |
+| M41 | `failedAfterClosing`: `its terminal was closed` whatever the count | `a_failure_after_closing_says_what_was_closed` |
+| M42 | `lineSection`: `${row.line}` raw | `a_line_with_a_control_character_is_shown_escaped_and_typed_unchanged`, `a_name_or_a_line_with_a_control_character_is_escaped_in_the_question_the_report_and_the_notices`, `the_bound_counts_the_text_as_shown` |
+| M43 | `CONTROL_RANGES`: no `[0x200e, 0x200f]` | `escapeControl_writes_u200e_as_a_visible_escape`, `escapeControl_writes_u200f_as_a_visible_escape`, `every_control_character_class_in_a_name_is_not_run_and_a_clean_name_runs` |
+| M44 | `CONTROL_RANGES`: no `[0x061c, 0x061c]` | `escapeControl_writes_u061c_as_a_visible_escape`, `every_control_character_class_in_a_name_is_not_run_and_a_clean_name_runs` |
+
+**Not covered, and why.** As above: nothing here drives VS Code. That a created terminal is listed at once, and that `dispose` leaves
+it listed until the close arrives, were read in VS Code 1.93.0's source and not observed. Whether `Terminal.name` keeps a control character
+through a reload is not observed, which is why such a name is not run.
+
+## The arrow on the folder row, and the words (2026-11-05, S4 of PLAN_terminal_folder_run.md)
+
+A menu `when` clause is data nothing compiles, so the arrow is proved by evaluating every clause of the REAL `view/item/context` over every
+value `folderContextValue` produces. The evaluator reads the five forms the manifest uses, and throws on any other. Run from `src_vs_code`:
+`npm run compile`, then `node --import ./scripts/lower-priority.mjs --test out/test/folderMenu.test.js out/test/folderRunHelp.test.js out/test/treeProviderTrash.test.js`.
+
+| Flow | Test | What it holds down |
+|---|---|---|
+| The token | `folderMenu.test.ts` | the older values byte-identical, `:runall` last, present exactly for an untrashed `terminal` over every flag and every type |
+| The menu | `folderMenu.test.ts` | menu(`x:runall`) is menu(`x`) plus `runFolder` on `inline@0` and `2_actions@0`, for all four untrashed values; a companion that the scan found `addEntity`; the whole arrow clause pinned |
+| Nothing else | `folderMenu.test.ts` | no `runFolder` on a Terminal entry, `account`, `trashFolder`, `folder:trashed`, or a trashed Terminal folder; no `/:cmd/` or `/:vpnrun/` clause reads `:runall` |
+| The call site | `treeProviderTrash.test.ts` | the real `getTreeItem` hands the node's type over, and the Trash stays `trashFolder` |
+| The words | `folderRunHelp.test.ts` | every language holds the labels and the commands byte for byte, says the seven facts in its own words, and renders the headings; `helpCoverage` holds no excuse for the title |
+
+**Teeth.** Each mutation was applied alone, watched red, and restored; the suites run were the three of this story and the guards it can break (`manifest`, `commandsRegistered`, `helpCoverage`, `helpCatalog`, `helpContent`, `listingCoverage`, `readmeClaims`, `sizeRatchet`, `notForExportMenu`, `treeRowText`, `folderRunCommand`).
+
+| # | Mutation | Red |
+|---|---|---|
+| M1 | `folderContextValue`: `flag('runall', folderType === 'terminal')`, no `!trashed` | `the_row_value_is_the_tokens_in_their_fixed_order_and_runall_is_last`, `only_an_untrashed_terminal_folder_wears_runall`, `a_trashed_terminal_folder_is_any_trashed_folder`, and the `treeProviderTrash` test of the row's type |
+| M2 | `:runall` right after `folder`, not last | `the_row_value_is_the_tokens_in_their_fixed_order_and_runall_is_last`, `a_terminal_folder_keeps_every_item_and_gains_only_the_arrow` |
+| M3 | `addEntity` `inline@1` back to `/^folder$/` | `a_terminal_folder_keeps_every_item_and_gains_only_the_arrow`, `a_plain_terminal_folder_shows_the_arrow_and_the_plus_side_by_side` |
+| M4 | `folderUp` back to `viewItem == folder` | `a_terminal_folder_keeps_every_item_and_gains_only_the_arrow` |
+| M5 | `addFolder` back to `/^(account\|folder)$/` | `a_terminal_folder_keeps_every_item_and_gains_only_the_arrow` |
+| M6 | the arrow's clause `/^folder:runall$/` on both items | `a_terminal_folder_keeps_every_item_and_gains_only_the_arrow`, `a_plain_terminal_folder_shows_the_arrow_and_the_plus_side_by_side` |
+| M7 | the arrow's clause `/:runall/` on both items | `a_plain_terminal_folder_shows_the_arrow_and_the_plus_side_by_side`, `no_other_row_gets_the_arrow` |
+| M8 | `treeDataProvider.ts` stops passing `node.folderType` | the `treeProviderTrash` test of the row's type |
+| M9 | `holds` answers `true` where it throws | `the_evaluator_reads_every_form_the_manifest_uses_and_throws_on_another` |
+| M10 | S3's `SELF_EVIDENT` entry back | `the_title_is_covered_by_the_article_and_no_excuse_is_left` |
+| M11 | `Run All in Folder` translated in `helpDe.ts` | `every_language_holds_the_labels_and_the_commands_byte_for_byte`, `every_language_renders_the_two_headings_as_emphasis` |
+| M12 | the tmux paragraph of `helpUk.ts` deleted | the same two |
+| M13 | `Run All in Folder` gone from `helpEn.ts`'s heading | the same two, `the_title_is_covered_by_the_article_and_no_excuse_is_left`, and `helpCoverage`'s `every command in the manifest is described in the help, or declared self-evident` |
+
+**Not covered, and why.** Driving a real tree stays not covered, for the reason this file gives: nothing here drives VS Code. The clauses were
+read against VS Code's parser and evaluated by this suite's own, not VS Code's, so the arrow's place beside `+` is the parent plan's hand
+check 8. Translations are checked for facts, not for quality.
 
 ## A gone request reaches no SSH prompt (2026-10-10, E4.S4)
 

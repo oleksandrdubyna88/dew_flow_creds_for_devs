@@ -589,7 +589,7 @@ export class CredTreeDataProvider
       // and gains Restore, first (the owner, 2026-08-28).
       const inTrash = isInTrash(node, (id) => this.storage.getNode(accountId, id));
       const managed = refuseProjectFolderChange(node, this.orgPolicy.get(accountId)) !== '';
-      item.contextValue = trash ? 'trashFolder' : folderContextValue(inTrash, node.folderAsksForPin === true, managed);
+      item.contextValue = trash ? 'trashFolder' : folderContextValue(inTrash, node.folderAsksForPin === true, managed, node.folderType);
       item.iconPath = trash
         ? new vscode.ThemeIcon('trash', FOLDER_COLOR)
         : folderIcon(node.folderType);

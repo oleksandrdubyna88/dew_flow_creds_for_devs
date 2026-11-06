@@ -204,8 +204,19 @@ export function describeTransitSecret(value: string): string {
 /** How much of a caller-supplied field one log line may carry. */
 const MAX_FIELD = 120;
 
+/** What may not reach a log line or a modal as itself, each range inclusive. */
+const CONTROL_RANGES: readonly (readonly [number, number])[] = [
+  [0x0000, 0x001f], // C0
+  [0x007f, 0x009f], // DEL and C1
+  [0x061c, 0x061c], // the Arabic letter mark, a bidi control
+  [0x200e, 0x200f], // the left-to-right and right-to-left marks
+  [0x2028, 0x2029], // the line and paragraph separators
+  [0x202a, 0x202e], // bidi embeddings and overrides
+  [0x2066, 0x2069], // bidi isolates
+];
+
 function isControlCharacter(codePoint: number): boolean {
-  return codePoint < 0x20 || codePoint === 0x7f || codePoint === 0x2028 || codePoint === 0x2029;
+  return CONTROL_RANGES.some(([low, high]) => codePoint >= low && codePoint <= high);
 }
 
 /**
@@ -220,13 +231,21 @@ function isControlCharacter(codePoint: number): boolean {
  */
 const FIELD_SEPARATOR = 0x00b7;
 
-function escapeControl(value: string): string {
+function visibleEscape(codePoint: number): string {
+  return `\\u${codePoint.toString(16).padStart(4, '0')}`;
+}
+
+/**
+ * `value` with every control character, line separator and bidi control written as a visible `\uXXXX`, so a name or a
+ * line cannot end the row it sits in and draw another, nor turn its text around. Pure, and the repository's one such escaper: a
+ * diagnostic line uses it through {@link logSafe}, a modal that shows names and lines through the same function. It leaves `·`
+ * alone, which is legal and readable in a modal; only a log line has fields to forge, so {@link logSafe} adds that one.
+ */
+export function escapeControl(value: string): string {
   let escaped = '';
   for (const character of value) {
     const codePoint = codePointOf(character);
-    escaped += isControlCharacter(codePoint) || codePoint === FIELD_SEPARATOR
-      ? `\\u${codePoint.toString(16).padStart(4, '0')}`
-      : character;
+    escaped += isControlCharacter(codePoint) ? visibleEscape(codePoint) : character;
   }
   return escaped;
 }
@@ -241,6 +260,6 @@ function escapeControl(value: string): string {
  * is bounded so one enormous name cannot push the rest of the line out of view.</p>
  */
 export function logSafe(value: string): string {
-  const escaped = escapeControl(value);
+  const escaped = escapeControl(value).replaceAll(String.fromCodePoint(FIELD_SEPARATOR), visibleEscape(FIELD_SEPARATOR));
   return escaped.length <= MAX_FIELD ? escaped : `${escaped.slice(0, MAX_FIELD)}...(+${escaped.length - MAX_FIELD})`;
 }

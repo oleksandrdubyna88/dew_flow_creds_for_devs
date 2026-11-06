@@ -48,7 +48,7 @@ a folder to sync your own machines; add the optional self-hosted server when a t
 | **Keyboard and orientation** | `Ctrl+Alt+P` jumps to any credential by name, plus filter, copy, connect and lock bindings, a walkthrough, and a status-bar item that says whether the vault is open or locked |
 | **VPN** | OpenVPN / WireGuard / IKEv2 / L2TP / other, with host, login, port and a key or certificate. The config file is a secret like any other; *Start VPN* / *Stop VPN* bring the tunnel up and down through the OS's own elevation prompt |
 | **Databases** | postgres / mysql / mssql / mongodb, entered as a connection string **or** as fields that rebuild it in the right dialect. *Open in DB Extension* hands the connection to Database Client, MongoDB for VS Code or the SQL Server extension |
-| **Terminal commands** | `aws sso login --sso-session OD-org` is unfindable in shell history a week later, and the part you forgot is never the verb. So each argument is a **row** with its own note and a tick to keep a flag without using it. *Run in Terminal*, *Copy Command*, *Show Command and Notes* |
+| **Terminal commands** | `aws sso login --sso-session OD-org` is unfindable in shell history a week later, and the part you forgot is never the verb. So each argument is a **row** with its own note and a tick to keep a flag without using it. *Run in Terminal*, *Run All in Folder* for a whole Terminal folder, *Copy Command*, *Show Command and Notes* |
 | **Plain credentials** | Anything that is just a login and a password — plus a **login** and a **URL** stored encrypted like the password and shown in clear on the card — with notes that live in the keychain rather than in plaintext metadata |
 | **Attachments** | Every entity can carry one encrypted **file** (PDF, Office, text, archives — the executable family is refused, double extensions included) and one encrypted **image**, 4 MB each, shown as a zoomable preview |
 | **Environment variables** | Export a secret field into every new integrated terminal under a name you choose. The **name** syncs; the value is written only from the local keychain, so a binding arriving by sync is a name waiting for a value, never a secret in transit. A `✓?` button echoes it in a fresh terminal so you *see* it |
@@ -237,7 +237,11 @@ explanation underneath it, and a tick that keeps a flag without using it (`--deb
 you want back next week; deleting it means retyping it from memory). Rows can be added,
 removed and reordered, and a live preview shows exactly what will run.
 
-- **Run in Terminal** (the same green ▶ as *Connect SSH*) runs the assembled line.
+- **Run in Terminal** (the same green ▶ as *Connect SSH*) runs the assembled line. Into an entry's
+  open terminal it types only when the extension itself typed a line there and saw that command
+  finish; otherwise it shows that terminal and asks, *Type It Anyway*, rather than type into a
+  `tmux attach` that may be running. After a window reload it asks until a line let through with
+  *Type It Anyway* has been seen to start and end, and without shell integration every click asks.
 - **Copy Command** for the times you want to edit before running; **Show Command and Notes**
   prints the line with every argument's explanation.
 - **The notes can fill themselves in.** With `credSshManager.readCliHelp` on (default), pasting
@@ -255,6 +259,30 @@ before *Run in Terminal*, *Run Script*, *Run with Secrets* or *Start VPN*, its T
 dependencies run in order, each one awaited — "install openvpn", then "start openvpn", then the
 VPN. You read the chain before its first run; a step that fails asks whether to go on; a circular
 chain is refused. Waiting for a step needs VS Code **1.93** or newer.
+
+**`{name}` in the command or an enabled argument row is the entry's own name**, so
+`tmux attach -t {name}` needs the name once and follows a rename. The line with the name filled in
+is the one you see, approve and run, so a rename asks again. Only a name of letters, digits and
+`. _ -`, starting with a letter, a digit or `_`, can stand in for it, so that no name arriving by
+sync or share can become shell syntax; any other name, one with a space included, is refused with
+the reason and the line does not run. To keep a literal `{name}`, write `{na''me}` — in bash, outside double quotes.
+
+**Run All in Folder** is the same green ▶ on a folder of type *Terminal command*, beside its `+` and
+in its menu: one click types the line of each entry directly in the folder, each into a new terminal
+of its own. Subfolders are not run. It always asks first, listing every line in order, with `(new)`
+on one not approved before on this machine, not one never run (approving saves trust before the
+chain, so a line whose chain you then decline loses `(new)`), and the reason beside each entry that will not run. **Run** leaves
+alone an entry whose terminal is already open; **Close Open Terminals and Run**, offered when any is
+open, closes those terminals and types their lines too. Closing ends whatever runs there; a tmux
+client only detaches, and its session goes on. The lines do not wait for each other: something that
+has to finish first goes outside the folder, under *Depends on*, and a dependency that never exits
+holds the whole run. At most 32 lines and a 4000-character question, because it has to show every
+line; an entry whose name holds a control character is not run.
+
+For tmux sessions: `tmux new -A -s {name}` attaches to the session or creates it, so the entry still
+works after the machine has rebooted; `tmux attach -t '={name}'` matches the name exactly, because a
+bare `-t foo` also attaches `foobar`; and keep `.` and `:` out of a session's name, because tmux
+rewrites them (`a.b:c` becomes `a_b_c`). Checked on tmux 3.6.
 
 ## Environment variables in the terminal
 
@@ -1191,7 +1219,7 @@ also on the right-click menu where it applies.
   Passphrase… · Health Report · Import from ~/.ssh/config or another manager…
 - **VPN** — Start VPN · Stop VPN · Save VPN Config As…
 - **Databases** — Open in DB Extension · Copy Connection String
-- **Terminal commands** — Run in Terminal · Copy Command · Show Command and Notes
+- **Terminal commands** — Run in Terminal · Run All in Folder (on a terminal folder's row) · Copy Command · Show Command and Notes
 - **Scripts** — Run Script
 - **Agents** — Share with Claude Code…
 - **Sharing** — Share with… · Create Entity for… · Accept… · Decline · Accept All from Sender… ·

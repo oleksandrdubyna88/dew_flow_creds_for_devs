@@ -8,7 +8,8 @@ import {
 } from '../entityViewPage';
 import { cliCommandFor } from '../cliCommandText';
 import { EntityMetadata } from '../types';
-import { PAGE_MAX_WIDTH_PX, TWO_COLUMN_AT } from '../webviewHtml';
+import { NAME_REFUSAL } from '../commandName';
+import { PAGE_MAX_WIDTH_PX, TWO_COLUMN_AT, escapeHtml } from '../webviewHtml';
 import { snippetFor } from '../configSnippet';
 import { FORM_SECTIONS } from '../formSections';
 import { CONFIG_KEY_ENV } from '../configKey';
@@ -537,4 +538,46 @@ test('issue #122: a marked entry says so in Main; an unmarked one says nothing',
   const marked = renderEntityViewHtml(options({ details: metadata({ notForExport: true }) }));
   assert.match(marked, /<b>Not for export — on\.<\/b>/);
   assert.equal(renderEntityViewHtml(options()).includes('Not for export'), false);
+});
+
+// ---------- `{name}` in a terminal command (parent PLAN_terminal_folder_run.md §1, story S2) ----------
+
+/** A terminal entry named `name` whose one argument row holds `{name}`. */
+function named(name: string): EntityViewOptions {
+  return options({ details: metadata({ name, isTerminal: true, command: 'tmux attach', commandArgs: [{ value: '-t {name}' }] }) });
+}
+
+test('the_full_command_row_shows_the_resolved_line', () => {
+  const html = renderEntityViewHtml(named('alert'));
+
+  assert.match(html, /Full command[\s\S]*?<input readonly value="tmux attach -t alert">/);
+  assert.equal(/Will not run/.test(html), false, 'nothing refuses an accepted name');
+});
+
+test('a_refused_name_shows_the_template_and_a_will_not_run_row', () => {
+  const html = renderEntityViewHtml(named('a b'));
+
+  assert.match(html, /Full command[\s\S]*?<input readonly value="tmux attach -t \{name\}">/);
+  assert.match(html, /Will not run/);
+  assert.ok(html.includes(escapeHtml(NAME_REFUSAL)), 'the reason, HTML-escaped');
+});
+
+test('the_viewer_copies_the_line_or_the_template_and_the_reason', async () => {
+  const fine = named('alert');
+  const refused = named('a b');
+
+  assert.equal(await copyValueFor(fine, 'fullCommand'), 'tmux attach -t alert');
+  assert.equal(await copyValueFor(refused, 'fullCommand'), 'tmux attach -t {name}');
+  assert.equal(await copyValueFor(fine, 'commandRefusal'), undefined);
+  assert.equal(await copyValueFor(refused, 'commandRefusal'), NAME_REFUSAL);
+});
+
+test('stored_rows_stay_as_stored', async () => {
+  const fine = named('alert');
+  const html = renderEntityViewHtml(fine);
+
+  // The argument's own row is the stored text with its Copy button: a person edits and copies THAT.
+  assert.match(html, /<input readonly value="-t \{name\}">/);
+  assert.equal(await copyValueFor(fine, 'command'), 'tmux attach');
+  assert.equal(await copyValueFor(fine, 'arg0'), '-t {name}');
 });

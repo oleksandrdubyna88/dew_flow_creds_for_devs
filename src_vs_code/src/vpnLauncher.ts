@@ -15,6 +15,9 @@ import { isVpnStartable, vpnTunnelName } from './vpnCommand';
 /** Where the materialized config path goes in the launcher's command. */
 export const CONFIG_TOKEN = '{config}';
 
+/** Why a line that uses `{config}` cannot run anywhere but as a VPN's launcher; the reason of the folder run and of the dependency chain alike. */
+export const USES_CONFIG = `uses ${CONFIG_TOKEN}, which only a VPN's "Started by" fills in`;
+
 export function usesConfig(line: string): boolean {
   return line.includes(CONFIG_TOKEN);
 }

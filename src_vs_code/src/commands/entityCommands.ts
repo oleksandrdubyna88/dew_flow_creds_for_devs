@@ -5,8 +5,7 @@ import { VaultKeys } from '../vaultKeys';
 import { asElement } from '../commandTargets';
 import * as vscode from 'vscode';
 import { nodeAt } from '../entityViewerCommands';
-import { buildCommandLine } from '../commandLine';
-import { describeCommand } from '../commandLine';
+import { commandRefusal, describeCommand, shownCommandLine } from '../commandLine';
 import { openEntityViewer } from '../entityViewerCommands';
 import { copySecret } from '../secretClipboard';
 import { copiedMessage } from '../secretClipboard';
@@ -217,42 +216,49 @@ async function installSshKey(host: EntityCommandsHost, target: unknown): Promise
   }
 }
 
-/** A stored command line, copied or shown, the viewer and the site. Untouched since they moved out of extension.ts. */
+/** Copy Command: the resolved line; for a refused name the template, and it says so. */
+async function copyCommandLine(node: TreeNode): Promise<void> {
+  const entry = node.details ?? { name: node.name };
+  const line = shownCommandLine(entry);
+  if (line.length === 0) {
+    void vscode.window.showWarningMessage(`"${node.name}" has no command yet.`);
+    return;
+  }
+  const reason = commandRefusal(entry);
+  // Not a secret, so it does not expire the way a password copy does.
+  await vscode.env.clipboard.writeText(line);
+  void (reason === undefined
+    ? vscode.window.showInformationMessage(`Copied: ${line}`)
+    : vscode.window.showWarningMessage(`Copied the template: "${node.name}" will not run: ${reason}`));
+}
+
+async function showCommandText(node: TreeNode): Promise<void> {
+  const text = describeCommand(node.details ?? { name: node.name });
+  const document = await vscode.workspace.openTextDocument({
+    content: text.length > 0 ? text : 'This entry has no command yet.',
+    language: 'shellscript',
+  });
+  await vscode.window.showTextDocument(document, { preview: true });
+}
+
+/** A stored command line, copied or shown, the viewer and the site. */
 function registerCommandLines(host: EntityCommandsHost): void {
   const { doorsAt, register, storage, vaultKeys } = host;
 
-  // eslint-disable-next-line complexity -- moved verbatim (roadmap A1); split when next touched
   register('credSshManager.copyCommand', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = await nodeAt(asElement(target), storage);
-    if (element?.kind !== 'node') {
-      return;
+    if (element?.kind === 'node') {
+      await copyCommandLine(element.node);
     }
-    const d = element.node.details;
-    const line = buildCommandLine(d?.command ?? '', d?.commandArgs);
-    if (line.length === 0) {
-      void vscode.window.showWarningMessage(`"${element.node.name}" has no command yet.`);
-      return;
-    }
-    // Not a secret, so it does not expire the way a password copy does.
-    await vscode.env.clipboard.writeText(line);
-    void vscode.window.showInformationMessage(`Copied: ${line}`);
   });
 
-  // eslint-disable-next-line complexity -- moved verbatim (roadmap A1); split when next touched
   register('credSshManager.showCommand', async (target) => {
     vaultKeys.noteUserActivity(); // the user is here: postpone auto-lock
     const element = await nodeAt(asElement(target), storage);
-    if (element?.kind !== 'node') {
-      return;
+    if (element?.kind === 'node') {
+      await showCommandText(element.node);
     }
-    const d = element.node.details;
-    const text = describeCommand(d?.command ?? '', d?.commandArgs, d?.commandNote);
-    const document = await vscode.workspace.openTextDocument({
-      content: text.length > 0 ? text : 'This entry has no command yet.',
-      language: 'shellscript',
-    });
-    await vscode.window.showTextDocument(document, { preview: true });
   });
 
   register('credSshManager.viewDetails', async (target) => {
