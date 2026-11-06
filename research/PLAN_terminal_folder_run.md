@@ -422,6 +422,29 @@ Suggestions for the owner's own entries, in the help: `tmux new -A -s {name}` at
 reboot of the VM; `tmux attach -t '={name}'` matches exactly, since a bare `-t foo` also attaches `foobar`
 (measured); avoid `.` and `:` in a session's name, since tmux rewrites them (measured).
 
+### Results, 2026-11-06 (the owner, with extension 1.17.0)
+
+| check | Remote-SSH window on the VM | WSL window |
+|---|---|---|
+| 2, reload with tmux attached | asked, typed nothing | passed |
+| 3, detach, then the arrow | typed with no question, from a fresh terminal | passed |
+| 4, shell inside tmux, integration sourced by hand | asked, both straight after our send and after `Type It Anyway` then `ls` | asked after `Type It Anyway` then `ls` |
+| 4, nested `ssh` | skipped, no server to hand | not run |
+| 5, double click | not run | passed |
+| 8, the folder modal and the arrow's place | not run | passed |
+| 1, 6 | not run | not run |
+| 7, `{name}` on an old extension | bash only, see below | not run |
+
+Neither result that would change code came up: events do reach this `ui` extension over Remote-SSH, and a shell inside tmux
+did not read `finished`. The owner's reports are as given. That the first runs were in a WSL window is read from the shell
+prompt, the sessions on that machine and the `Runs on` default, not stated by the owner. The tmux version on the VM was not
+recorded.
+
+**A window that had not reloaded after the update.** The first Remote-SSH run typed the line with `{name}` unresolved and
+asked nothing, and tmux made a session literally named `{name}`. After `Developer: Reload Window` the name resolved. Every 1.17.0
+road resolves the name and asks unless `finished`, so that window most likely still ran the older version; the version
+was not read. So check 7 has an answer in bash, on that inference: an old extension types the token as it stands.
+
 ## Build order
 
 One branch, one pull request, one gate run over one commit, in the order of §Stories: S1 → S2 → S3 → S5 → S4. S1 went
