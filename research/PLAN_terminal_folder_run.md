@@ -445,6 +445,29 @@ asked nothing, and tmux made a session literally named `{name}`. After `Develope
 road resolves the name and asks unless `finished`, so that window most likely still ran the older version; the version
 was not read. So check 7 has an answer in bash, on that inference: an old extension types the token as it stands.
 
+### Measured here: `ssh` in the command, in a local Windows window (2026-11-06)
+
+This plan assumed a Remote-SSH window. The owner also reaches the VM from a local window, by `ssh` in PowerShell. In a local
+window `tmux new -A -s {name}` cannot work, because the arrow's terminal runs on Windows. The entry that fits is the command
+`ssh -t <host> tmux new -A -s {name}` with `Runs on` set to Windows. It was run in a real VS Code 1.145.0 on Windows, portable
+and with its own profile, using this repository's modules at tag `extension-v1.17.0`, the real `ssh.exe` 9.5, and tmux 3.6 behind a
+temporary sshd on loopback.
+
+| default profile | shell integration | while tmux runs | after a detach | after a dropped connection |
+|---|---|---|---|---|
+| PowerShell 7.6.9 (`pwsh`) | yes | not typed, `running` | typed, no question (exit 0) | typed, no question (exit 1); the session survived, its screen intact |
+| Windows PowerShell 5.1 | none seen | not typed, `unknown` | asks | asks |
+| Command Prompt | none seen | not typed, `unknown` | asks | asks |
+
+A command run inside tmux changed nothing in the `pwsh` row: still `running`, still not typed.
+
+**Limits.** The tree click and the modal were not driven: the run called `resolveCommand`, then `sendGuarded` with a `startGate`, which
+answers `refused` on the branch where a person would be asked. The line also carried `-F <config>`, so that the real `~/.ssh` stayed
+untouched. The connection was dropped by killing the server's process, so the client learned at once. A silent drop, such as a machine
+asleep overnight, can leave `ssh` waiting, and the terminal then reads `running` and asks; that was not measured. A first run
+under a default profile named `Windows PowerShell` fell back to `pwsh` without saying so, so it is not counted as the 5.1 row, which
+names the path of `powershell.exe` in its own profile.
+
 ## Build order
 
 One branch, one pull request, one gate run over one commit, in the order of §Stories: S1 → S2 → S3 → S5 → S4. S1 went
