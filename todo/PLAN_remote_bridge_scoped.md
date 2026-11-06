@@ -81,6 +81,28 @@ Narrowed: yes — a bridged ssh no longer uses the person's ssh_config, agent or
 - 4.3 · 2026-11-06 · reviewer · approach — D.8's `.catch` on `handle` opened a journal line with no ceiling, because `new URL` throws on `GET //` before any route or throttle: an unparseable target now reads as a path no route matches (`requestUrl`), so a bridge answers `not_supported` and the main port 404, with no line, where D.8 implied a 500; and `unanswered` answers first and writes its line inside a `try`, the reverse of the order D.8 gave
   (A cause independent of 4.2, so an entry of its own. Built in `a04ca33`, before the stop was recorded.)
 
+### Re-review for epoch 5
+
+Narrowed: no — scope, the Definition of Done, the merge conditions and the release lost nothing: D.7's code and its test stay in partial E1, only a false release bullet moved, to the first release in which it is true; the Definition of Done gains a line, the merge two conditions, E2.2b the reporter and the one-answer rule
+
+| Work | Where | Verdict | Action |
+|---|---|---|---|
+| PR #303, 08da93d, and the query-fix branch behind it (7e4e0a5, 8dce94a, f5cf875, 8ef136d, 4f3e6c6, 7cae16f, ff2754c, f3a1b25, c842c6b) | merged to `main`; on this branch by 46e7af0 and 045b2a3 | fits | kept; outside this plan, allowed during the stop; §4.11's scope and E1.6's flags sit on it |
+| Other `main` work carried in by the merges: e53ec8a (#301), 7d5e180 (#302), 55ad6c8 (#304) | merged to `main` | fits | kept; outside this plan |
+| Merge 46e7af0 (the fix branch into this branch) | pushed, unmerged | fits | kept |
+| Merge 045b2a3 (`main` after #303 landed) | pushed, unmerged | fits | kept; no content beyond what 46e7af0 brought for #303 |
+| Closing commit 88befcd: D.5, D.6, D.7's code, D.8, D.9, D.10, read shape, `exec` guard, `vpnRun.ts` guard, tests | pushed, unmerged | fits | kept; D.7's `tokenStatusNow` stays, unreachable until E2 (D22) |
+| `CHANGELOG.md` bullet on a token that ran out, in 88befcd | pushed, unmerged | cut | removed forward in a04ca33; stays out |
+| Fix commit a04ca33, production code and tests: `aliasesIn`, `requestUrl`, `unanswered`'s order, comments, teeth | pushed, unmerged | fits | kept; changes 4.2 and 4.3 record it; fix forward below |
+| `CHANGELOG.md` bullets on the kept place (88befcd) and the auto-lock (a04ca33) | pushed, unmerged | cut | fix forward: the first excepts the local token door; the second says an agent's call is not a person's act |
+| Comments `brokerBridgeToken.ts:9` and `brokerRequests.ts:270` | pushed, unmerged | cut | fix forward: the first is false of the header-time answer (D22); the second must drop "a bare host" |
+| The spec correction's "the one change of this commit a local user can feel", in a04ca33 | pushed, unmerged | cut | fix forward: a dated correction in the spec; the text above it stays |
+| Tests RS1 and RS2 | pushed, unmerged | fits | fix forward: RS1 asserts per route that `/v1/aliases` served a row; RS2 compares served values with the local row |
+| Stop commit 51fdf30 | pushed, unmerged | fits | kept |
+| Whole revision 78b3962, its text fixes 6d274ee, and status commit c007b45 | pushed, unmerged | fits | kept; step 4 of the full stop, no entry |
+| E1.4, c4b7add | pushed, unmerged, `wip/remote-bridge-e14-before-stop` | fits | kept; epoch 4's action stands, on the tree partial E1 leaves; also resolve the conflicts in `bridgeWallWorld.ts` and `grantRegistry.test.ts`, mark `unanswered`'s line with `auditGrantMark`, re-check the gate after `await remember()`, and its PR meets §9's new local-user line |
+| E1.5, E1.6, E2 and later | not built | — | build per the revised plan |
+
 ## Reading this plan: contracts, sketches and observations
 
 Three kinds of line stand in this document, and a reader must tell which is which before building against one or correcting one. The re-review for epoch 5, after the plan's third stop, read the drift as being in what the plan treated as authoritative, not in the epic split: a release-note sentence prescribed in two places was read as a contract and was false (change 4.2), and an implementation sketch (D.8's order) was built as written where its contract, *every request is answered and the journal is bounded*, was what mattered (change 4.3).
