@@ -556,7 +556,8 @@ that revision changes for this document; nothing is deleted. The parent's §4.9 
    it to 792). E1.5 and E1.6 add nothing there that a new module can hold: the place's ownership goes to `consentPlace.ts` if
    `aliasThrottle.ts` would need the room, and the file writer to `keyInstaller.ts` or a new `bridgedSshConfig.ts`. The ceiling is a
    size; the review judges the ownership, not the count.
-8. **M-list.** M8 is E1.6's entry condition and is done by the owner before E1.6's spec is written; M9 (the Windows environment list)
+8. **M-list.** M8 is E1.6's entry condition; (1)-(3) were run on 2026-11-05 by an Opus reviewer through WSL interop, not by the owner, and
+   (4)-(8) are the owner's, recorded before E1.6's spec is written (the parent's §7 M8 row); M9 (the Windows environment list)
    and M10 (Enter on a bridged modal) are recorded with E1.6 and E1.5. The M4 table above is unchanged and still owed.
 9. **E1.4's modal line is rewritten before E1.4 is finished** (the second pass of the revision, 2026-11-05). `bridgeModalLine`'s `laptop`
    sentence at `c4b7add` (`bridgeConsentText.ts`; §E1.4 item 6 above), *It runs on this computer, and only its output goes to that
@@ -567,7 +568,9 @@ that revision changes for this document; nothing is deleted. The parent's §4.9 
    scenarios that quote the line change with it, in E1.4's finishing commit.
 10. **The lock between partial E1 and E2 (parent §4.9).** The partial-E1 closing commit refuses every bridged `exec` with
     `BRIDGE_USE_REFUSED` and a journal line until E1.6 writes the per-call file, as a guard with a test; E1.6 removes the guard in the
-    commit that writes the file; the commit of E2.2 that removes scenario R1 asserts that the E1.5 and E1.6 test suites exist.
+    commit that writes the file; the commit of E2.2 that removes scenario R1 asserts that three suites exist, by the file names the parent's
+    §4.9 fixes: `src/test/consentContract.test.ts` (E1.5), `src/test/bridgedSshConfig.test.ts` with `scripts/bridged-ssh-itest.cjs` (E1.6),
+    and `src/test/bridgeReadShape.test.ts` (the read shape, item 14).
 11. **"Byte-for-byte unchanged" (§Binding constraints) means the doors' admission**: `admitsRequest` and the door table, scenario R3. What the
     branch changes on the local doors' consent lifecycle against `main` is listed in the parent's §4.10 (the place freed at the dialog's
     close, a leaving client keeping it, prompts counted when shown, `ASKING_CEILING`, the kept place for `create`, `terminal` and `up`,
@@ -578,3 +581,14 @@ that revision changes for this document; nothing is deleted. The parent's §4.9 
     Amendment 5 says so in one sentence.
 13. **The owner's entries (parent §2.2).** The entries the DoD rests on are imported `Host` blocks; the parent's M8 (6) records the check of
     the bridge's entry (`keyPath`, the path form, a key with no passphrase) before E1.6's spec is written.
+14. **Two more items of the partial-E1 closing commit, carried from the parent's third and fourth passes (2026-11-06) because the closing
+    commit builds from this document.** (a) **The read shape (parent §4.2, D12).** `narrowed()` (`bridgeScope.ts:121-127`) stops spreading
+    the stored row and builds the bridge's row field by field from the parent's named list: `id`, `name`, `kind`, `folder` served as `''`,
+    `host`, `port`, `user`, `dbType`, `vpnType`, `scriptLanguage`, `hasPassword`, `hasPrivateKey`, `hasNotes`, `hasTotp`, `codeAccessEnabled`,
+    `dependsOn` (kept names only), `can` with four keys; `connectionString` and `command` are dropped for `hasConnectionString` and
+    `hasCommand`; the other served reads keep the parent's lists, and `KindHelp`/`KindRefusal` are asserted byte-equal between an empty and a
+    full vault. The test is `src/test/bridgeReadShape.test.ts`, with the parent's §7 *Read shape* cases; the S3 spec's row 4 reads "the
+    named fields" where it says "the row". (b) **The guard's shape (parent §4.9).** `SshUseDeps.bridgedSshConfig?` (`sshUseActions.ts:42`),
+    a writer of the per-call file; absent, a bridged call is refused with `BRIDGE_USE_REFUSED` and the journal line *no per-call ssh_config
+    yet: E1.6* before any spawn; `bridgeLinks.test.ts` L1 injects a stub that writes a file and asserts its shape, so it stays green; E1.6
+    wires the real writer and removes the guard. The S3 spec's Amendment 5 carries both in its closing paragraph.

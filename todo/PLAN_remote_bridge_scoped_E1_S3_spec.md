@@ -2534,5 +2534,15 @@ hop name in the body: `BRIDGE_USE_REFUSED` to the agent, as `bridgedRefusal` doe
 because §4.10 raises no new prompt while one stands; its two recorded decisions (the `busy` sentence stays; the key-file leftover waits for E4) are in
 the parent's §4.10 and §8.
 
+**Carried from the parent's third and fourth passes (2026-11-06), because the closing commit builds from this spec.** Two items the parent
+names for the partial-E1 closing commit that this amendment had not: (a) **the read shape** (parent §4.2, D12): `narrowed()` builds the
+bridge's row field by field from the parent's named list instead of spreading the stored row, `folder` is served as `''`, `connectionString`
+and `command` are dropped for `hasConnectionString` and `hasCommand`, `can` keeps its four keys, `KindHelp` and `KindRefusal` are asserted
+byte-equal between an empty and a full vault, in `src/test/bridgeReadShape.test.ts` with the parent's §7 *Read shape* cases; §S3.3 row 4 and
+scenario S3 read "the named fields of the parent's §4.2" where they say "the row"; (b) **the guard** (parent §4.9): `SshUseDeps.bridgedSshConfig?`
+(`sshUseActions.ts:42`), absent on the closing commit, refuses every bridged `exec` with `BRIDGE_USE_REFUSED` and the journal line *no per-call
+ssh_config yet: E1.6* before any spawn; `bridgeLinks.test.ts` L1 injects a stub writer and asserts the file's shape; E1.6 wires the real writer
+and removes the guard. The E1 document's epoch 4 amendment, item 14, is the same text.
+
 The ledger decision is the parent's, not this section's; the parent is stopped and this amendment is part of the re-review's revision, which is
 not counted.
