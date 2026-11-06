@@ -1,6 +1,6 @@
 # PLAN — S1 spec: the busy-terminal guard (CORNERSTONE)
 
-> Status: **built, in review, 2026-11-05.** Parent: [PLAN_terminal_folder_run.md](PLAN_terminal_folder_run.md).
+> Status: **IMPLEMENTED, 2026-11-06.** Parent: [PLAN_terminal_folder_run.md](PLAN_terminal_folder_run.md).
 > Story S1 of the parent's `## Stories` (parent §Design 2 *A terminal that may be busy*, §Test plan, §Hand checks 2–5).
 > Written by Fable before any code; Sonnet codes from it, Opus reviews. Where this spec and the parent's §2 differ in a
 > detail, this spec decides and the parent's deviation is recorded at promotion.

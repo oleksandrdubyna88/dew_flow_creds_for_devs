@@ -1,6 +1,6 @@
 # PLAN — S3 scenarios and brief: the folder run
 
-> Status: **built, in review, 2026-11-05.** Parent: [PLAN_terminal_folder_run.md](PLAN_terminal_folder_run.md).
+> Status: **IMPLEMENTED, 2026-11-06.** Parent: [PLAN_terminal_folder_run.md](PLAN_terminal_folder_run.md).
 > Story S3 of the parent's `## Stories` (parent §Design 3, decisions A, B, C). Written by an Opus judge; Sonnet codes from
 > it and rediscovers nothing; Opus reviews. Scope: `src_vs_code` plus two research documents. No menu clause, no `:runall`,
 > no help article, no CHANGELOG (S4). `README.md` gets exactly one phrase and `helpCoverage.test.ts` one temporary entry (§B.8).

@@ -1,6 +1,6 @@
 # PLAN — S4 scenarios and brief: the arrow on the folder, and the words
 
-> Status: **built, in review, 2026-11-05.** Parent: [PLAN_terminal_folder_run.md](PLAN_terminal_folder_run.md).
+> Status: **IMPLEMENTED, 2026-11-06.** Parent: [PLAN_terminal_folder_run.md](PLAN_terminal_folder_run.md).
 > Story S4 of the parent's `## Stories` (parent §Design 3 *The menu*, §Not in this plan, §Hand checks). Written by an Opus judge;
 > Sonnet codes from it and rediscovers nothing; Opus reviews. Scope: `src_vs_code` (one token, eight menu clauses, tests, help in five
 > languages, the listing, the changelog), the root `README.md`, two research documents, one new todo plan.
