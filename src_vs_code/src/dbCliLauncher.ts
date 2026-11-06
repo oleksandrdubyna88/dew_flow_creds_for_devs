@@ -106,7 +106,12 @@ const POSTGRES_REFUSAL =
 const MYSQL_BACKSLASH_REFUSAL =
   'Refused: a backslash is a mysql client command wherever it appears (\\! runs a shell that holds the password). Send plain SQL without backslashes — use CHAR() for escapes.';
 const MSSQL_REFUSAL =
-  'Refused: a line starting with ":", "!!" or "ed" is a sqlcmd command, not SQL. Client commands run local programs with the password in their environment, so they are never accepted from an agent.';
+  'Refused: a line starting with ":", "!!" or "ed" is a sqlcmd command, not SQL. Client commands run local programs with the password in their environment, so they are never accepted from an agent. If "ed" is a name inside a SQL statement, keep it on the same line as the SQL before it: not first on a line and not after a comment.';
+const UNHANDLED_REFUSAL =
+  'Refused: this database type has no rule for its client\'s own commands, so no query is accepted for it.';
+/** The way forward for an over-refused name: only text that stays on one line after SQL passes. */
+const NAME_AS_SQL =
+  'If it is a name inside a SQL statement, keep it on the same line as the SQL before it: not first on a line, not after a ";" and not after a comment.';
 
 function refusePostgres(lines: string[]): string | undefined {
   return lines.some((line) => line.startsWith(BACKSLASH)) ? POSTGRES_REFUSAL : undefined;
@@ -127,7 +132,7 @@ function refuseMysql(text: string): string | undefined {
     .find((w) => w !== undefined);
   return word === undefined
     ? undefined
-    : `Refused: "${word}" is a mysql client command, not SQL. Client commands run local programs or open connections with the password in their environment, so they are never accepted from an agent.`;
+    : `Refused: "${word}" is a mysql client command, not SQL. Client commands run local programs or open connections with the password in their environment, so they are never accepted from an agent. ${NAME_AS_SQL}`;
 }
 
 function isMssqlCommandLine(line: string): boolean {
@@ -148,8 +153,17 @@ function refuseOnce(dbType: DbType, text: string): string | undefined {
     case 'mssql':
       return refuseMssql(lines);
     default:
-      return undefined;
+      return refuseUnhandled(dbType);
   }
+}
+
+/**
+ * A type the switch above has no rule for is refused, so a SQL client added to `DbType` later
+ * cannot let every client command through. mongodb alone is silent: it is not a SQL client, and
+ * `buildDbQueryLaunch` refuses it with the sentence an agent has always seen for it.
+ */
+function refuseUnhandled(dbType: DbType): string | undefined {
+  return dbType === 'mongodb' ? undefined : UNHANDLED_REFUSAL;
 }
 
 /**

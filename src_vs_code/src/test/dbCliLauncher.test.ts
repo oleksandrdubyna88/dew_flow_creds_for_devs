@@ -63,6 +63,9 @@ test('mssql uses its own environment variables', () => {
 });
 
 test('mongodb is refused rather than served insecurely', () => {
+  // refuseQuery stays silent for it on purpose: the caller then reaches buildDbQueryLaunch,
+  // whose refusal is the sentence an agent has always seen for mongodb.
+  assert.equal(refuseQuery('mongodb', 'db.x.find()'), undefined);
   // mongosh has no password environment variable, and its --eval runs in the same JS
   // interpreter that could read process.env — so an agent's "query" could print the
   // password back. Refusing beats a channel that leaks by design.
@@ -258,6 +261,13 @@ const MYSQL_COMMENT_HIDDEN: Array<[string, string]> = [
 ];
 const MYSQL_CR = [`select 1${CR}system ${SENT}`];
 const MYSQL_OVER_REFUSED = [`select a,${NL}connect${NL}from t`];
+const MYSQL_INSIDE_COMMENT = [
+  // Accepted over-refusal (plan 2.1): the split cuts at the end of a block comment and at every
+  // line break, so a refused word first on a line INSIDE a multi-line comment is refused. Both
+  // real clients would only run the comment and the select; the gate cannot tell a comment's
+  // inside from a statement start without parsing SQL, which it refuses to do.
+  `/*${NL}system maintenance notes${NL}*/${NL}select 1`,
+];
 const MYSQL_FOLDED = [`${FW_SYSTEM} ${SENT}`, `${FW_BS}! ${SENT}`];
 const MYSQL_ALREADY_REFUSED = [
   `${BOM}system ${SENT}`,
@@ -313,6 +323,7 @@ for (const [q, word] of MYSQL_COMMENT_HIDDEN) {
 }
 refuses('RED bare CR', 'mysql', MYSQL_CR, 'system');
 refuses('RED accepted over-refusal', 'mysql', MYSQL_OVER_REFUSED, 'connect');
+refuses('guard accepted over-refusal inside a comment', 'mysql', MYSQL_INSIDE_COMMENT, 'system');
 refuses('RED folded', 'mysql', MYSQL_FOLDED);
 refuses('guard', 'mysql', MYSQL_ALREADY_REFUSED);
 allows('guard', 'mysql', MYSQL_ALLOWED);
@@ -335,7 +346,7 @@ test('a refusal repeats nothing from the query: not the sentinel, not the host',
   const refused: Array<[DbType, string]> = [
     ...[...MYSQL_CONNECT, ...MYSQL_SSL_PRINT, ...MYSQL_DELIMITER, ...MYSQL_CR].map((q): [DbType, string] => ['mysql', q]),
     ...MYSQL_COMMENT_HIDDEN.map(([q]): [DbType, string] => ['mysql', q]),
-    ...[...MYSQL_OVER_REFUSED, ...MYSQL_FOLDED, ...MYSQL_ALREADY_REFUSED].map((q): [DbType, string] => ['mysql', q]),
+    ...[...MYSQL_OVER_REFUSED, ...MYSQL_INSIDE_COMMENT, ...MYSQL_FOLDED, ...MYSQL_ALREADY_REFUSED].map((q): [DbType, string] => ['mysql', q]),
     ...[...MSSQL_COMMAND_AFTER_CR, ...MSSQL_ED, ...MSSQL_ALREADY_REFUSED].map((q): [DbType, string] => ['mssql', q]),
     ...[...PG_CR_AND_FOLDED, ...PG_ALREADY_REFUSED].map((q): [DbType, string] => ['postgres', q]),
   ];
@@ -375,4 +386,25 @@ test('guard: the mssql argv is exactly what it was before the gate changed', () 
   const launch = buildDbQueryLaunch('mssql', MS, 'select 1');
   assert.deepEqual(launch?.args, ['-S', 'db,1433', '-d', 'orders', '-Q', 'select 1', '-b', '-x']);
   assert.deepEqual(launch?.env, { SQLCMDPASSWORD: 'hunter2', SQLCMDUSER: 'alice' });
+});
+
+test('fail closed: a database type with no rule is refused, not allowed', () => {
+  // A SQL client added to DbType later, with a password variable and no case in the gate,
+  // must not let every client command through.
+  const reason = refuseQuery('oracle' as DbType, 'select 1');
+  assert.notEqual(reason, undefined);
+  assert.equal(buildDbQueryLaunch('oracle' as DbType, 'oracle://u:p@h:1521/d', 'select 1'), undefined);
+});
+
+test('the over-refusal sentences say how to write the word as SQL, and that way passes', () => {
+  assert.ok((refuseQuery('mysql', `select a,${NL}connect${NL}from t`) ?? '').includes('same line'));
+  assert.ok((refuseQuery('mssql', `select 1${NL}ed`) ?? '').includes('same line'));
+  assert.equal(refuseQuery('mysql', 'select a, connect from t'), undefined);
+  assert.equal(refuseQuery('mysql', `select a,${NL}  b from t`), undefined);
+  assert.equal(refuseQuery('mssql', 'select a, ed from t'), undefined);
+  assert.equal(refuseQuery('mssql', 'select x ed from t'), undefined);
+  // The clause is only true for the cases it names: a ";" or a comment before the word still fires.
+  assert.notEqual(refuseQuery('mysql', 'select 1; connect x'), undefined);
+  assert.notEqual(refuseQuery('mysql', 'select a, /* c */ connect from t'), undefined);
+  assert.notEqual(refuseQuery('mssql', 'select a /* c */ ed from t'), undefined);
 });

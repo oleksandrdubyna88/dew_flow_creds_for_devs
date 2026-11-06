@@ -5068,7 +5068,11 @@ fragments on `/;|\r\n|\r|\n|\*\//` (the delimiter, every line break, the end of 
 first word, lower-cased and left-trimmed, is matched with `/^([a-z_]+)(?=\s|$|\/\*|#|--)/`. There is deliberately no
 comment-skipping helper: skipping comments inside a fragment is what D3 got through, because the split had already cut
 the comment in two. Over-refusals, accepted: the split ignores quotes (`select 'a; system b'` is refused), and a refused
-word alone on its own line inside a statement is refused. postgres and mssql split lines on `/\r\n|\r|\n|\*\//`; mssql also
+word alone on its own line inside a statement is refused, and so is one first on a line inside a multi-line block
+comment (`/*` NL `system maintenance notes` NL `*/` NL `select 1`; both real clients would only run the comment and the
+select). The mysql and mssql sentences end with the way forward (a name inside SQL stays on the same line as the SQL
+before it). A `dbType` the gate has no case for is refused with a generic sentence, so a SQL client added later fails
+closed; `mongodb` stays silent there and `buildDbQueryLaunch` refuses it. postgres and mssql split lines on `/\r\n|\r|\n|\*\//`; mssql also
 refuses a line `ed` (`/^ed(?:\s|$)/i`). Every check runs a second time on `query.normalize('NFKC')`, so `ｓｙｓｔｅｍ`, `＼`
 and `：` are refused as what they fold to; no code point is refused as such. That second pass is margin, not coverage: it
 helps against a client that folds its narrow `argv` and recognises what it folded to, none of which was run, and best-fit

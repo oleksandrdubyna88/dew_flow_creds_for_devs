@@ -14,6 +14,11 @@
   same time by the gate's own protocol, measured the plan against real clients. Both sets of findings are folded into
   the approved text below; nothing was built before it, so the epoch opens with no entries.)
 
+- 2026-11-06, after the code review of the build (three notes, no change to a rule's reach): (1) `refuseOnce` no
+  longer allows a `dbType` it has no case for; it refuses with a generic sentence, `mongodb` alone stays silent so
+  `buildDbQueryLaunch` keeps saying what an agent has always read for it (§2.1). (2) The mysql and mssql sentences end
+  with a clause on how to write the refused word as SQL (§2.1). (3) The comment-inside over-refusal is named in §2.1.
+
 ## 1. The defect
 
 `refuseQuery(dbType, query)` (`src_vs_code/src/dbCliLauncher.ts:88-117`) is the one gate between an agent's text and a
@@ -94,7 +99,16 @@ followed by whitespace, the end of the fragment, or the start of any comment, be
 `system#x`+NL and `system-- x`+NL all run. `[a-z_]` so that `ssl_session_data_print` is a word. A fragment whose word is
 in the list is refused with the sentence `Refused: "<word>" is a mysql client command, not SQL. Client commands run
 local programs or open connections with the password in their environment, so they are never accepted from an
-agent.`
+agent. If it is a name inside a SQL statement, keep it on the same line as the SQL before it: not first on a line, not
+after a ";" and not after a comment.` The mssql sentence ends with the same way forward for `ed` (`not first on a line
+and not after a comment`; a `;` does not matter to sqlcmd's line rule). Checked against the rule: `select a, connect from t`
+and `select a, ed from t` pass; `select a,`+NL+`connect`+NL+`from t`, `select 1; connect x` and
+`select a, /* c */ connect from t` do not. The clause names nothing from the query.
+
+**Fail closed.** `refuseOnce` refuses a `dbType` it has no case for, with `Refused: this database type has no rule for
+its client's own commands, so no query is accepted for it.`, so a SQL client added to `DbType` later with a password
+variable cannot let every client command through. `mongodb` is the one silent type: it is not a SQL client, and
+`buildDbQueryLaunch` refuses it with the sentence an agent reads today.
 
 This form had 0 misses across the same 2,900 fuzz runs in which the comment-skipping form missed 50 (§4.3): evidence,
 not proof, and the plan says so where it records it.
@@ -105,6 +119,10 @@ not proof, and the plan says so where it records it.
   on both clients (it goes to the server as one query) and will be refused. `select a, connect from t` on one line
   passes, and so does `` `connect` `` on its own line, because a backtick is not a letter. The sentence names the
   word, the person rewrites. Parsing SQL to be exact would be the sanitizing the file refuses to do.
+- A refused word first on a line inside a multi-line `/* */` comment is refused too:
+  `/*`+NL+`system maintenance notes`+NL+`*/`+NL+`select 1` (measured: both real clients only run the comment and the
+  select). The split cuts at every line break and at the end of a block comment, and the gate cannot tell the inside of
+  a comment from a statement start without parsing SQL. Pinned by a guard row in `dbCliLauncher.test.ts`.
 
 **Three pinned options on the launch.** `--named-commands` (`-G`) makes the long forms recognised at every line start;
 a `[mysql]` or `[client]` section of a `my.cnf` the agent never sees can turn it on, and `delimiter=//` in the same

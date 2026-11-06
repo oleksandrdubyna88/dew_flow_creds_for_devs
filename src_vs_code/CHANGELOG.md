@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   line break (a bare CR included) or the end of a `/* */` comment, so a word hidden behind a comment that holds a `;` or a
   newline, or followed directly by a comment, is found. `ssl_session_data_print` (an underscore) was invisible to the old
   word match. Multi-line SQL with `status`, `print`, `warnings` and the like alone on a line still runs.
+  A refused word that is really a name in SQL (a column called `connect`, an alias `ed`) is refused only first on a line,
+  after a `;` or after a comment; the refusal now says so and to keep it on the same line as the SQL before it. A
+  database type the gate has no rule for is refused rather than allowed.
 - **sqlcmd's `ed` and a bare CR.** A line that is `ed` (opens the editor, which inherits `SQLCMDPASSWORD`) is refused,
   and a bare CR, or the end of a block comment, now starts a new line for the `:` and `!!` rules, and for postgres's
   backslash rule, as for mysql.
