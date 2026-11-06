@@ -51,12 +51,106 @@ export function isSafePostgresUri(value: string): boolean {
 const BACKSLASH = String.fromCharCode(92);
 
 /**
- * mysql's long-form client commands. They run in the CLIENT — `system` spawns a shell that
- * inherits MYSQL_PWD — and are recognised at the start of a statement whenever named commands
- * are on (a `my.cnf` the agent never sees can turn them on). Short forms are all backslash
- * commands and are covered by the blanket backslash rule.
+ * The mysql client's long-form commands that DO something on the laptop or to the connection.
+ * They are recognised at the start of a statement whenever named commands are on (a `my.cnf`
+ * the agent never sees can turn them on). Short forms are all backslash commands and are
+ * covered by the blanket backslash rule.
+ *
+ * <ul>
+ *   <li>`system`, `edit`, `pager`, `nopager` run a local program that inherits MYSQL_PWD;</li>
+ *   <li>`source`, `tee`, `notee`, `ssl_session_data_print` read or write a laptop file;</li>
+ *   <li>`connect` opens a connection to a host the agent names, with the stored password;</li>
+ *   <li>`delimiter` moves where the client splits statements, so a later command would sit
+ *       where this gate sees the middle of one.</li>
+ * </ul>
+ *
+ * Judged harmless and left out on purpose, so nobody re-derives them: `charset`, `clear`,
+ * `ego`, `exit`, `go`, `nowarning`, `print`, `prompt`, `query_attributes`, `quit`, `rehash`,
+ * `resetconnection`, `status`, `warnings` format, print or end the client and run nothing,
+ * open nothing and read no file, while refusing them would refuse multi-line SQL that has
+ * `status` or `print` alone on a line; `use` sends COM_INIT_DB to the session's own host;
+ * `help` prints or sends `HELP 'x'` to the server.
  */
-const MYSQL_CLIENT_WORDS = ['system', 'source', 'tee', 'notee', 'pager', 'nopager', 'edit'];
+const MYSQL_CLIENT_WORDS = [
+  'system',
+  'edit',
+  'pager',
+  'nopager',
+  'source',
+  'tee',
+  'notee',
+  'ssl_session_data_print',
+  'connect',
+  'delimiter',
+];
+
+/**
+ * Where the mysql client's buffer is empty or holds only comments, and so where a command
+ * may start: the `-e` string's start, after the delimiter, after any line break, and after
+ * the end of a block comment. There is no comment-skipping helper: skipping comments inside a
+ * fragment is what left the road open, because the split had already cut the comment in two.
+ */
+const MYSQL_FRAGMENT_SPLIT = /;|\r\n|\r|\n|\*\//;
+
+/** Where a psql or sqlcmd line begins, a bare CR and the end of a block comment included. */
+const LINE_SPLIT = /\r\n|\r|\n|\*\//;
+
+/** A command word, followed by whitespace, the end, or the start of any comment shape. */
+const MYSQL_COMMAND_WORD = /^([a-z_]+)(?=\s|$|\/\*|#|--)/;
+
+/** sqlcmd's `ed` opens the editor the environment names; the lines are not lower-cased. */
+const MSSQL_EDIT = /^ed(?:\s|$)/i;
+
+const POSTGRES_REFUSAL =
+  'Refused: a line starting with a backslash is a psql meta-command. Meta-commands run in the client, where the password lives in the environment, so they are never accepted from an agent — send plain SQL.';
+const MYSQL_BACKSLASH_REFUSAL =
+  'Refused: a backslash is a mysql client command wherever it appears (\\! runs a shell that holds the password). Send plain SQL without backslashes — use CHAR() for escapes.';
+const MSSQL_REFUSAL =
+  'Refused: a line starting with ":", "!!" or "ed" is a sqlcmd command, not SQL. Client commands run local programs with the password in their environment, so they are never accepted from an agent.';
+
+function refusePostgres(lines: string[]): string | undefined {
+  return lines.some((line) => line.startsWith(BACKSLASH)) ? POSTGRES_REFUSAL : undefined;
+}
+
+function mysqlCommandWord(fragment: string): string | undefined {
+  const word = MYSQL_COMMAND_WORD.exec(fragment.trimStart().toLowerCase())?.[1];
+  return word !== undefined && MYSQL_CLIENT_WORDS.includes(word) ? word : undefined;
+}
+
+function refuseMysql(text: string): string | undefined {
+  if (text.includes(BACKSLASH)) {
+    return MYSQL_BACKSLASH_REFUSAL;
+  }
+  const word = text
+    .split(MYSQL_FRAGMENT_SPLIT)
+    .map(mysqlCommandWord)
+    .find((w) => w !== undefined);
+  return word === undefined
+    ? undefined
+    : `Refused: "${word}" is a mysql client command, not SQL. Client commands run local programs or open connections with the password in their environment, so they are never accepted from an agent.`;
+}
+
+function isMssqlCommandLine(line: string): boolean {
+  return line.startsWith(':') || line.startsWith('!!') || MSSQL_EDIT.test(line);
+}
+
+function refuseMssql(lines: string[]): string | undefined {
+  return lines.some(isMssqlCommandLine) ? MSSQL_REFUSAL : undefined;
+}
+
+function refuseOnce(dbType: DbType, text: string): string | undefined {
+  const lines = text.split(LINE_SPLIT).map((line) => line.trimStart());
+  switch (dbType) {
+    case 'postgres':
+      return refusePostgres(lines);
+    case 'mysql':
+      return refuseMysql(text);
+    case 'mssql':
+      return refuseMssql(lines);
+    default:
+      return undefined;
+  }
+}
 
 /**
  * Why a query is refused — or `undefined` when it may run.
@@ -74,46 +168,24 @@ const MYSQL_CLIENT_WORDS = ['system', 'source', 'tee', 'notee', 'pager', 'nopage
  * <p>Shape rules, not sanitizing — the same stance as `isSafePostgresUri` and `isSafeSshHost`:</p>
  * <ul>
  *   <li><b>postgres</b>: no line may begin with a backslash. psql treats a `-c` string as a
- *       meta-command when its first character is `\`; refusing it at any line start is one
- *       rule with margin instead of a rule matched to one version's parser.</li>
+ *       meta-command when its first character is `\`, and `buildDbQueryLaunch` puts one space
+ *       in front of it, which ends that road; the line rule is margin and a readable refusal.</li>
  *   <li><b>mysql</b>: no backslash anywhere. The mysql client executes `\!` wherever it appears
  *       outside a quoted string — `select 1 \! id` runs `id` — so the position rule psql allows
- *       is not enough here; and the long-form words are refused at a statement start.</li>
- *   <li><b>mssql</b>: no line may begin with `:` or `!!`; and `buildDbQueryLaunch` passes `-x`,
+ *       is not enough here; and the ten words of `MYSQL_CLIENT_WORDS` are refused at the start of
+ *       any fragment (split on the delimiter, every line break and the end of a block comment).</li>
+ *   <li><b>mssql</b>: no line may begin with `:`, `!!` or `ed`; and `buildDbQueryLaunch` passes `-x`,
  *       because sqlcmd resolves `$(NAME)` from its scripting variables and then from the
  *       ENVIRONMENT — `select '$(SQLCMDPASSWORD)'` would print the password as plain SQL.</li>
  * </ul>
+ *
+ * <p>Both rules run twice, on the text and on its NFKC form.</p>
  */
-// eslint-disable-next-line complexity
 export function refuseQuery(dbType: DbType, query: string): string | undefined {
-  const lines = query.split(/\r?\n/).map((line) => line.trimStart());
-  switch (dbType) {
-    case 'postgres':
-      return lines.some((line) => line.startsWith(BACKSLASH))
-        ? 'Refused: a line starting with a backslash is a psql meta-command. Meta-commands run in the client, where the password lives in the environment, so they are never accepted from an agent — send plain SQL.'
-        : undefined;
-    case 'mysql': {
-      if (query.includes(BACKSLASH)) {
-        return 'Refused: a backslash is a mysql client command wherever it appears (\\! runs a shell that holds the password). Send plain SQL without backslashes — use CHAR() for escapes.';
-      }
-      const statements = query
-        .split(/;|\r?\n/)
-        .map((s) => s.trimStart().toLowerCase())
-        .filter((s) => s.length > 0);
-      const word = statements
-        .map((s) => /^([a-z]+)(?:\s|$)/.exec(s)?.[1])
-        .find((w) => w !== undefined && MYSQL_CLIENT_WORDS.includes(w));
-      return word !== undefined
-        ? `Refused: "${word}" is a mysql client command, not SQL. Client commands run local programs with the password in their environment, so they are never accepted from an agent.`
-        : undefined;
-    }
-    case 'mssql':
-      return lines.some((line) => line.startsWith(':') || line.startsWith('!!'))
-        ? 'Refused: a line starting with ":" or "!!" is a sqlcmd command, not SQL. Client commands run local programs with the password in their environment, so they are never accepted from an agent.'
-        : undefined;
-    default:
-      return undefined;
-  }
+  // The second pass is margin against a client that folds its argv (fullwidth letters, a
+  // fullwidth backslash or colon) and recognises what it folded to; no code point is refused
+  // as such, so fullwidth text inside a string still passes.
+  return refuseOnce(dbType, query) ?? refuseOnce(dbType, query.normalize('NFKC'));
 }
 
 export function resolveDbCli(dbType: DbType, onPath: (exe: string) => boolean): DbCli | undefined {
@@ -175,7 +247,15 @@ export function buildDbQueryLaunch(
       // sslmode, application_name — survives; decomposing into flags would drop it. `-c`
       // and the query stay OPTIONS; the URI is a positional AFTER `--`, so even a value
       // beginning with `-` can never be parsed by psql's getopt as an option.
-      return { exe: cli.exe, args: ['-c', query, '--', withoutPassword(connectionString)], env };
+      // The ONE leading space on the -c string is a security measure, not formatting: psql
+      // reads a -c string as a meta-command only when its FIRST character is a backslash
+      // (startup.c), so a space in front sends the whole string to the server as SQL on every
+      // platform, whatever a later character folds to. Do not trim it.
+      return {
+        exe: cli.exe,
+        args: ['-c', ' ' + query, '--', withoutPassword(connectionString)],
+        env,
+      };
     case 'mysql': {
       const args = ['-h', parts.host ?? 'localhost'];
       if (parts.port !== undefined) {
@@ -187,7 +267,11 @@ export function buildDbQueryLaunch(
       if (parts.database !== undefined) {
         args.push('-D', parts.database);
       }
-      args.push('-e', query);
+      // Explicit options win over a my.cnf the agent never sees, and keep the person's other
+      // settings (ssl-ca, socket, login-path) that --no-defaults would drop: long-form commands
+      // only at a statement start, the split refuseQuery assumes, and no answer to a LOCAL INFILE
+      // request. Known gap: Oracle's load-data-local-dir in an option file survives the last one.
+      args.push('--skip-named-commands', '--delimiter=;', '--local-infile=0', '-e', query);
       return { exe: cli.exe, args, env };
     }
     case 'mssql': {

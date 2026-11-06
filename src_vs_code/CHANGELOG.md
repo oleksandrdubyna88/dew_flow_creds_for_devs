@@ -6,6 +6,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — security — an agent's SQL can no longer reach the database client's own commands
+
+- **A stored mysql password could be sent to a host the agent named.** The `query` action's gate (`refuseQuery`) let
+  mysql's `connect <db> <host>` through, and the client then connected to that host on the entry's port and, when the
+  server asked for it, sent `MYSQL_PWD` in plaintext. Measured on mysql 8.4.11 and mariadb 11.8.6 against a fake server on
+  loopback. Every release since 0.56.1, `extension-v1.17.0` included, carries it; update to the release that follows.
+  The gate now refuses ten mysql client words (`system`, `edit`, `pager`, `nopager`, `source`, `tee`, `notee`,
+  `ssl_session_data_print`, `connect`, `delimiter`) at the start of any fragment, where a fragment ends at a `;`, any
+  line break (a bare CR included) or the end of a `/* */` comment, so a word hidden behind a comment that holds a `;` or a
+  newline, or followed directly by a comment, is found. `ssl_session_data_print` (an underscore) was invisible to the old
+  word match. Multi-line SQL with `status`, `print`, `warnings` and the like alone on a line still runs.
+- **sqlcmd's `ed` and a bare CR.** A line that is `ed` (opens the editor, which inherits `SQLCMDPASSWORD`) is refused,
+  and a bare CR, or the end of a block comment, now starts a new line for the `:` and `!!` rules, and for postgres's
+  backslash rule, as for mysql.
+- **The same checks run a second time on the text's NFKC form**, so a fullwidth `ｓｙｓｔｅｍ`, `＼` or `：` is refused as
+  what it folds to. No character is refused as such: fullwidth text and `，（）` inside a string still pass.
+- **The launches pin what a `my.cnf` could otherwise change.** psql's `-c` string now begins with one space, which ends
+  psql's rule that a string starting with a backslash is a meta-command. mysql runs with `--skip-named-commands`,
+  `--delimiter=;` and `--local-infile=0`, after the connection flags and before `-e`: long-form commands only at a
+  statement start, the split the gate assumes, and no answer to a `LOAD DATA LOCAL INFILE` request (mariadb 11.8.6 sent
+  a file with no option at all). **Changed behaviour:** a query that relied on `LOAD DATA LOCAL INFILE` from the laptop
+  no longer works. Known residue: Oracle's client still honours `load-data-local-dir` from an option file under
+  `--local-infile=0`; closing it needs `--no-defaults`, which would drop the person's TLS and socket settings.
+
 ## [1.17.0] — 2026-11-05 — One arrow brings back a whole Terminal folder, and the green arrow no longer types into a busy terminal
 
 ### Added — one arrow brings back a whole Terminal folder, and `{name}` in a command

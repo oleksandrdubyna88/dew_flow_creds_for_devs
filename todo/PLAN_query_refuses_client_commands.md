@@ -1,6 +1,6 @@
 # PLAN — The `query` action refuses every road from an agent's SQL to the client's own commands
 
-> Status: **plan only, nothing implemented yet, 2026-11-06; approved the same day (epoch 1).** Scope:
+> Status: **built, in review, 2026-11-06; approved the same day (epoch 1).** Built on `fix/query-refuses-client-commands`; the `coai` code round, the PR and the release are still to come. Scope:
 > `src_vs_code/src/dbCliLauncher.ts`, its test, `src_vs_code/CHANGELOG.md`, `research/module_extension.md`,
 > `todo/README.md`. Extension only; every door (local MCP, alias, token) goes through the same function. Security fix
 > for a defect live on `main` and in every released version since 0.56.1. This text is the spec: a Sonnet coder builds
@@ -307,14 +307,14 @@ against a fake server (its §4.11, *MariaDB, decided*), and this plan does not d
 
 ## 6. Definition of Done
 
-- [ ] Every `RED` row of §4.1 was watched **failing** against the unchanged function, then passes; every `guard` row
+- [x] Every `RED` row of §4.1 was watched **failing** against the unchanged function, then passes; every `guard` row
       was watched passing before and after; the summary quotes one failure message and the pass.
-- [ ] Every mutation of §4.2 was tried and turned at least one test red.
-- [ ] `refuseQuery` carries no `eslint-disable` for complexity; there is no comment-skipping helper; `npm run typecheck`,
+- [x] Every mutation of §4.2 was tried and turned at least one test red.
+- [x] `refuseQuery` carries no `eslint-disable` for complexity; there is no comment-skipping helper; `npm run typecheck`,
       `npm test` and lint are green in `src_vs_code` at lowered priority.
-- [ ] psql's `-c` string begins with a space; mysql's argv carries `--skip-named-commands`, `--delimiter=;` and
+- [x] psql's `-c` string begins with a space; mysql's argv carries `--skip-named-commands`, `--delimiter=;` and
       `--local-infile=0` after the connection flags and before `-e`, and no `--no-defaults`; mssql's argv is unchanged.
-- [ ] `src_vs_code/CHANGELOG.md` has the `### Fixed — security` entry; `research/module_extension.md` records D1-D5, the
+- [x] `src_vs_code/CHANGELOG.md` has the `### Fixed — security` entry; `research/module_extension.md` records D1-D5, the
       rules, the versions and sources read, the fuzz record with its limits and the two residues; `todo/README.md`'s row
       matches; no real host, address or token anywhere in the diff.
 - [ ] `coai`: the `review_plan` round reached `proceed` before step 1 (done, 2026-11-06), a `review_code` round ran on
@@ -339,6 +339,17 @@ against a fake server (its §4.11, *MariaDB, decided*), and this plan does not d
   launch, which this plan does not add; the word list is vendor-free.
 - `load-data-local-dir` under `--local-infile=0` on Oracle's client (§2.1's matrix): the one road `--no-defaults`
   would close, left open on purpose.
+- **Filled by the coder, 2026-11-06.** Every `RED` and `guard` row of §4.1 behaved as marked against the unchanged
+  function (29 individual inputs went red, no guard row did). The mssql sentence now says `":", "!!" or "ed"`, because the
+  old sentence would have named a rule that is no longer the whole of it; it still names nothing from the query. `ed`
+  followed directly by a comment (`ed/*x*/`) is not refused by the `ed` rule and was checked against go-sqlcmd's
+  source: `batch.go` reads `/*` as a comment before it tries a command, and the `ED` regex needs whitespace or the end
+  after `ED`, so it is not a command there (source read, not run; the ODBC `sqlcmd.exe` was not looked at). The fuzz of
+  §4.3 was re-run on the finished tree through the compiled `refuseQuery`: 179 of 2,900 runs executed a command or
+  logged in at the second address, the function refused 179, and the pre-fix function let 98 of the same 179 through.
+- **Not observed:** psql and sqlcmd were not run against the finished tree (the launch is unit-tested for argv only); the
+  mutation of §4.2 "drop the `ed` rule" cannot be applied by deleting the line (an unused constant fails the compile), so
+  it was applied as `&& line === ''`.
 
 ## Epics
 

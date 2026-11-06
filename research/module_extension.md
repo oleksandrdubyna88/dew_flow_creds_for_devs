@@ -5040,6 +5040,67 @@ mid-line) and no client word at a statement start; mssql: no line starts with `:
 launch passes `-x` because sqlcmd resolves `$(NAME)` from the environment. `buildDbQueryLaunch`
 re-checks, so nothing that builds a launch can bypass the action's refusal.
 
+**The gate was open to the client's own commands (found 2026-11-06, fixed in the release after 1.17.0).** The shape
+rules above missed five roads, measured on 2026-11-06 with real clients (mysql 8.4.11, mariadb 11.8.6 client 15.2,
+psql 18.6; Linux) against a fake server on loopback; Windows and sqlcmd were not run, and what is said about them is a
+source read:
+
+- **D1** mysql `connect <db> <host>` was not in the word list. mysql 8.4.11 connected to the host the query named, on the
+  entry's port, accepted a `caching_sha2_password` full-authentication request and sent the stored password in plaintext.
+- **D2** `ssl_session_data_print <path>` (writes a laptop file): the word match `[a-z]+` stops at an underscore.
+- **D3** a word hidden by a comment: the split on `;` and newline ran before anything looked at comments, so
+  `/* ; */ connect …` or a comment holding a newline left the word in a fragment that began with `/*`, and `connect/*x*/ …`
+  defeated the "word then whitespace" test. Oracle (default options) connected on the first two shapes; MariaDB connected
+  on `connect/*x*/ …` and ran `system/*x*/ …`; Oracle with `skip-comments` in `my.cnf` ran `system/*x*/ id` too.
+- **D4** a bare CR is not a line break to `split(/\r?\n/)`, and sqlcmd's `ed` opens the editor the environment names. go-sqlcmd
+  matches `(?im)^[\t ]*?:?ED(?:[ \t]+(.*$)|$)` after stripping a trailing comment (`pkg/sqlcmd/commands.go`, read, not run).
+- **D5** `LOAD DATA LOCAL INFILE '<laptop file>'`: mariadb 11.8.6 with no option file shipped the file to a server that
+  asked for it, though its `--help` prints `local-infile FALSE`; Oracle's default refused, and both shipped under
+  `local-infile=1`.
+
+*The rules now.* mysql refuses ten client words (`system`, `edit`, `pager`, `nopager`, `source`, `tee`, `notee`,
+`ssl_session_data_print`, `connect`, `delimiter`): the ones that run a program, read or write a laptop file, open a
+connection, or move the statement boundary. `charset`, `clear`, `ego`, `exit`, `go`, `nowarning`, `print`, `prompt`,
+`query_attributes`, `quit`, `rehash`, `resetconnection`, `status`, `warnings`, `use` and `help` are left alone on
+purpose: they run nothing, open nothing and read no file, and the gate cannot tell a statement start from a line inside
+a statement, so refusing `status` would refuse `select *` NL `from jobs` NL `where` NL `  status = 3`. The query is split into
+fragments on `/;|\r\n|\r|\n|\*\//` (the delimiter, every line break, the end of a block comment) and each fragment's
+first word, lower-cased and left-trimmed, is matched with `/^([a-z_]+)(?=\s|$|\/\*|#|--)/`. There is deliberately no
+comment-skipping helper: skipping comments inside a fragment is what D3 got through, because the split had already cut
+the comment in two. Over-refusals, accepted: the split ignores quotes (`select 'a; system b'` is refused), and a refused
+word alone on its own line inside a statement is refused. postgres and mssql split lines on `/\r\n|\r|\n|\*\//`; mssql also
+refuses a line `ed` (`/^ed(?:\s|$)/i`). Every check runs a second time on `query.normalize('NFKC')`, so `ｓｙｓｔｅｍ`, `＼`
+and `：` are refused as what they fold to; no code point is refused as such. That second pass is margin, not coverage: it
+helps against a client that folds its narrow `argv` and recognises what it folded to, none of which was run, and best-fit
+folds characters NFKC leaves alone (U+2216, `¥` under code page 932).
+
+*The launch.* psql's `-c` string gets one leading space: psql reads a `-c` string as a meta-command only when its first
+character is a backslash (`startup.c`), and on 18.6 `\!`, `;` NL `\!`, `\copy … to program`, `\g` and a CR or tab first all
+reached the server as text behind the space. mysql gets `--skip-named-commands`, `--delimiter=;` and `--local-infile=0`
+after the connection flags and before `-e`: explicit options beat the person's `my.cnf` (`named-commands` and
+`delimiter=//` in it ran a command without the pins, not with them, on both clients) and keep the settings that
+`--no-defaults` would drop (`ssl-ca`, `ssl-mode`, socket, `login-path`). `--local-infile=0` changes the shipped local
+contract: a query that relied on `LOAD DATA LOCAL INFILE` from the laptop no longer works, because the mariadb default
+decides it. mssql's argv is unchanged; `-X` is not added, because on go-sqlcmd any `-X` makes `SQLCMDPASSWORD` and
+`SQLCMDUSER` unread from the environment (`cmd/sqlcmd/sqlcmd.go:92-93`, `:748-749`, read, not run), which would stop the
+launch authenticating.
+
+*The record and its limits.* Before the fix, a reviewer's harness (2,900 runs across both clients and four `my.cnf`
+variants: none, `skip-comments`, `comments`, `named-commands`; inputs built from comment shapes, delimiters, line
+breaks, a BOM and quotes around `system` and `connect`) found about 187 runs that executed a command or logged in at a
+second loopback address, and a gate that skipped comments per fragment missed 50 of them. On the finished tree the
+same generator was re-run (seed 7, 2,900 runs, mysql 8.4.11 and mariadb 11.8.6, the three pinned options on): 179 runs
+executed a command or logged in at the second address, and the compiled `refuseQuery` refused all 179; the pre-fix
+function, as a control, let 98 of the same 179 through. That is evidence, not proof: a sampled space, one version of
+each client, Linux, the generator's own shapes (`system` and `connect` only). Unit tests (`dbCliLauncher.test.ts`)
+prove the gate's answer per input and the argv; what a client does with a string is proved only by the live record
+above, for those versions, on Linux. Not run: Windows (every client), sqlcmd of any version, psql.exe.
+
+*Two named residues.* (1) On Oracle's client, `load-data-local-dir` in an option file still lets a file under that
+folder ship under `--local-infile=0` (measured); closing it needs `--no-defaults`, which would drop the person's TLS and
+socket settings, so it is left open. (2) A narrow-`argv` client this extension does not install (the ODBC `sqlcmd.exe`,
+MariaDB before 10.6, anything installed another way) was not observed; the NFKC pass is margin there.
+
 ## The SSH agent — a key that is used without existing as a file (0.57.0)
 
 Until this, using a stored key meant writing it out: `materializePrivateKey` puts it in
