@@ -2546,3 +2546,428 @@ and removes the guard. The E1 document's epoch 4 amendment, item 14, is the same
 
 The ledger decision is the parent's, not this section's; the parent is stopped and this amendment is part of the re-review's revision, which is
 not counted.
+
+### Amendment 6 (Fable, 2026-11-06) — the partial-E1 closing commit
+
+One commit, the last of E1.3. Every `file:line` below is at `a68b47e`, re-read for this amendment; the coder starts from **the tree that
+commit leaves after `main` with PR #303 (`fix/query-refuses-client-commands`) has been merged into the branch**, which the reviewer does when
+the PR lands. That merge touches `dbCliLauncher.ts`, its test, `research/module_extension.md`, `todo/README.md` and `CHANGELOG.md`
+(a `### Fixed — security` entry under `## [Unreleased]`, beside E1.1's `### Changed`), none of which this commit edits except `CHANGELOG.md`,
+where this commit's entry goes under the same heading; nothing below moves with that merge. Amendment 4's preamble counted
+`credsAgentServer.ts` as 791 because it was to be coded on E1.4's tree; E1.4 is not on this tree, the file is **789** and **stays 789**
+(every edit to it is in place); `extension.ts` is 1003, its ratchet baseline, and gains nothing. Where this amendment differs from Amendments
+4 and 5, this amendment wins; nothing above is deleted. A Sonnet coder builds from this section alone; the order is in F.9.
+
+**What this commit closes, said once.** E1.3 has four amendments behind it: `a91e981` built the allow-list, the note schema and the wall;
+`c58842e` (Amendment 1, A.1-A.9) moved the store to a file, made the refusals generic, put the gate before `releaseWaiting`; `5bfedf8`
+(Amendment 2, B.1-B.12) bounded the journal and gave the place to the dialog; `235a5e4` (Amendment 3, C.1-C.12) made a bridged exec one
+fresh connection and kept the place through a follow-up prompt. This commit builds what Amendment 5 left standing of Amendment 4 (D.5-D.10),
+the read shape the parent's D12 named (§4.2), the lock between partial E1 and E2 (§4.9's guard), the one agent path to `noteUserActivity()`
+(§2.1 Q9), and the CHANGELOG entry §4.10 requires. **After it, E1.3 is finished**: nothing of the story is owed, and what the parent's sort cut
+from `5bfedf8` (the timeout freeing the place, the timeout's sentence) is E1.5's fix forward, not E1.3's. D.3 is E1.5's (F.1). E1.4 is then
+finished on this tree; E1.5 and E1.6 follow as their own PRs.
+
+#### F.1 D.3 goes to E1.5, not here
+
+Amendment 5 left the placement to "E1.5's spec … or the closing commit"; this amendment decides **E1.5**, for three reasons that stand alone.
+(1) The partial-E1 merge's claim, in the parent's `## Epics` E1 and §4.10, is that it *changes the doors' admission by nothing*; D.3 changes
+`TokenlessCeilings.admit` (`aliasThrottle.ts:329-332`) so that a quiet local `up` or `terminal` takes the place and a later asking call on any
+local door hears `busy` where today it is asked — an admission change on the local doors, which the merge must not carry. (2) D.3 is a row of
+§4.10's table ("a quiet call that may prompt again … the call, for its length") and its test (K10) belongs in `src/test/consentContract.test.ts`,
+the suite E2.2 asserts exists before R1 goes; writing K10 elsewhere now and moving it later is two commits for one fact. (3) At partial E1 no
+bridge door exists in production (R1), so the attack D.3 closes, a bridge's modal landing on a quiet local follow-up prompt with Enter on Allow,
+has no bridge to come from; the local-only variant (a local alias call's modal over a quiet local `up`'s trust modal) is `main`'s today and is
+not made worse. So `brokerMcpDoor.ts` and `credsAgentServer.ts` are not touched for it, and `credsAgentServer.ts` stays 789.
+
+#### F.2 D.5-D.10, as they stand on this tree
+
+Each item is Amendment 4's, restated where a line moved or a shape had to change, referenced where it did not.
+
+**D.5 Pending calls are the last call tier — as written.** `EVICTION_ORDER` is `grantRegistry.ts:59-66`; the third tier (`:62`) is still
+`g.scope === 'call'` and holds an Allow not yet reserved together with a pending call. It becomes the four call tiers of Amendment 4's
+block (denied; allowed with uses; allowed; pending), then the three that were there. The doc comment at `:291-302` says that the fourth tier is
+pending alone and why (a dead pre-consented call, refused in `usable` or abandoned before `reservedNow`, `brokerCall.ts:171`, stays
+`allowed, uses 0` for good, because `drop` at `:321-327` deletes pending grants only). Scenarios A4 (revised) and Q2.
+
+**D.6 The key file's note cannot cost the slot — the shape changes, the intent does not.** `removeKeyFile` (`sshUseActions.ts:196-204`)
+calls `deps.note` in its `catch`; a `note` that throws escapes `run`'s `finally` (`:271-274`) before `release()`. Amendment 4's shape,
+`try { removeKeyFile } finally { release() }`, gives the slot back and **still replaces the finished 200 with a rejection** (a throw from a
+`finally` propagates after it), which contradicts X3's expected "the result is the finished exec's 200". So the second `try` wraps the note
+instead, inside `removeKeyFile`, and `run`'s `finally` is unchanged:
+
+```ts
+// sshUseActions.ts:196-204, in place
+function removeKeyFile(deps: SshUseDeps, file: string | undefined): void {
+  try {
+    if (file !== undefined) { fs.rmSync(file, { force: true }); }
+  } catch (error) {
+    try { deps.note(`ssh:exec — the key file could not be removed: ${describeError(error)}`); } catch { /* a journal that will not take the line costs neither the slot nor the result */ }
+  }
+}
+```
+
+Complexity 4 (`if`, `catch`, `catch`). The finished result stands, `release()` runs at `:273` as today, and a key left on disk is still
+the person's own file in a folder only they can read (Amendment 3, C.6). Scenario X3.
+
+**D.7 An expired token is refused before the dialog — as written.** `credsAgentServer.ts:495` still reads
+`() => this.grants.get(grant.secret)?.status`; `GrantRegistry.get` (`grantRegistry.ts:179`) applies no expiry; `grantExpiry`
+(`grantRegistry.ts:118-123`) is exported and pure; `grantLimits()` is already imported at `:474`. `tokenStatusNow` goes into
+`brokerBridgeToken.ts` (63 → ≈73) with Amendment 4's body, and `:495` becomes
+`() => tokenStatusNow(this.grants, grant.secret, Date.now(), grantLimits())` in place. `tokenRefusal` (`brokerBridgeToken.ts:9-14`) then
+answers `unauthorized` / `UNKNOWN_TOKEN` with no line for a token that ran out, as it does for an evicted one. Scenario T3.
+
+**D.8 A throw inside `handle` answers 500 — as written.** `credsAgentServer.ts:697` is `(req, res, bridge) => void this.handle(req, res, bridge),`;
+it gains the `.catch` of Amendment 4, in place. `unanswered` goes into `brokerRequests.ts` (285 → ≈297) with Amendment 4's body;
+`INTERNAL_FAILURE` is exported from `brokerProtocol.ts:95`, `describeError` from `./describeError`. `respondError` (`:712-731`) writes a
+journal line only when it is given a grant, so `unanswered` writes its own line through `log` and passes none; `log`'s parameter
+(`:748`) takes `{ grant, entityName, action, outcome, detail }` with `via` and `caller` optional, which is the shape the amendment gives.
+`res.headersSent` guards a handler that threw after answering. The C.7 test (`bridgeKeptPlace.test.ts:333-355`, moved from `:337-349`)
+changes as Amendment 4 says: `escaped.length === 0`, each of the three requests answered 500 `internal` with `INTERNAL_FAILURE`, the place
+still given back, and the `unhandledRejection` swap removed.
+
+**D.9 The itest reads a client's output after `close` — as written.** `launch` is `itestSshd.cjs:15-36` and resolves `done` at `exit`;
+`runClient` is `itestForwardAgent.cjs:56-69` and reads `stdout` right after. `launch` gains `closed` (a promise of `close`); `runClient`
+awaits it raced with 2 s after `done`. Leg 4 (`:115-118`) runs `printenv SSH_AUTH_SOCK` today; it becomes
+`printenv SSH_AUTH_SOCK SSH_CONNECTION` with `code === 1`, exactly one line of stdout ending in B's port, and `REACHED_B` (`:26`) kept.
+CI's, with the harness `sshd`; not watchable RED here.
+
+**D.10 No served bridge action asks after its Allow — as written, with the actions real.** The test goes in `bridgeAllowList.test.ts`:
+the served actions are **derived from the table**, `BRIDGE_ROUTES` (`bridgeAllowList.ts:82-87`) filtered to `method === 'POST'` and
+`decision.served`, the last path segment of each (today `exec` and `query`), so the test cannot drift from the allow-list; the actions are the
+**real factories**, `sshExecAction` (`sshUseActions.ts:207`, loaded through `loadWithVscode` as `bridgeLinksWorld.ts` loads it) and
+`dbQueryAction` (`agentUseActions.ts:296`, as `agentUseActions.test.ts` loads it), with stub deps; for each served action and each real action
+that carries it, `asksAfterConsent !== true`, with Amendment 4's sentence. Teeth: the test asserts it found at least one real action per
+served word (an empty match would pass for ever). `brokerWorld.ts`'s registry (`:261-265`) is a stub and is not used for this.
+
+#### F.3 The read shape (parent §4.2, D12)
+
+**The walk of every served read, from the route to its builder.** A GET on a bridge door passes `refusedOnBridge`
+(`credsAgentServer.ts:441`), then `readRouteBody(url.pathname, view.sources(this.readSources(), this.hooks.resolveAlias), …)` at `:449`.
+`readRouteBody` (`brokerReadRoutes.ts:55-78`) is the only consumer of `ReadRouteSources`; the served GET routes of the table
+(`bridgeAllowList.ts:64-72`) and where each body is built:
+
+| Route | Body built at | Through the wall | Fields the bridge serves |
+|---|---|---|---|
+| `/v1/health` | `brokerReadRoutes.ts:61` | no (`walled: false`) | `ok`, `service`: the product's own; byte-equal, below |
+| `/v1/mcp/kinds` | `:73`, `agentKinds()` | no | the catalogue; byte-equal |
+| `/v1/mcp/kind-help` | `:74`, `kindHelpBody` `:95-103` | no | `KindHelp` or `KindRefusal`; byte-equal |
+| `/v1/aliases` | `:62`, `aliasesFrom` `:124-126` over `bridgedView.sources.aliases` (`bridgeScope.ts:159`, a filter over the real rows) | yes | per row `name`, `kind` (`AliasListEntry`, `brokerProtocol.ts:270-273`) |
+| `/v1/mcp/entries` | `:64`, `entriesFrom` `:128-130` over `bridgedView.sources.mcpEntries` (`bridgeScope.ts:161-164`) → `entriesIn` (`:129-133`) → **`narrowed` (`:121-127`)** | yes | the named list below |
+| `/v1/mcp/config-snippet` | `:63`, `snippetBody` `:109-116` → `configSnippetResult` (`mcpSnippetRoute.ts:77-86`), field by field, never a spread of `details` | yes (`bridgeScope.ts:165`) | `envVar`, `languages`, `snippet`, `error` (`ConfigSnippetBody`, `mcpSnippetRoute.ts:41-59`); inside: `languages[]` `id`, `label`, `variants[]` `id`, `label`; `snippet` `language`, `variant`, `code`, `where`, `does` |
+| `/v1/mcp/folders` | `:70`, `foldersFrom` over `bridgedView.sources.folders` (`bridgeScope.ts:166`, `() => []`) | yes | an empty list |
+
+**The single choke point is `narrowed`.** It is the one function every bridged listing row passes (reached only from `entriesIn`, reached
+only from `bridgedView.sources.mcpEntries`), and today it spreads the stored row (`...row`, `bridgeScope.ts:123`), so `connectionString` and
+`command` cross as `mcpEntryFor` built them (`mcpEntries.ts:139-158`: `connectionString: shownConnection(…)` at `:150`, `command` through
+`visibleFields` at `:180`). The other served reads already name their fields (the table). So the change is one function and one type:
+
+```ts
+// bridgeScope.ts (pure)
+import type { McpCapabilities, McpEntry } from './mcpEntries';
+
+/**
+ * A row as a bridge lists it (parent §4.2, D12): every field NAMED, none spread, so a field added to `McpEntry` later is not served
+ * here until somebody writes it into this type, this builder and `BRIDGE_ENTRY_FIELDS` — and the read-shape test fails until all three agree.
+ * `folder` is `''`: a folder is in no scope, and the inherited folder's name would be the one out-of-scope word still served (the
+ * client's `Folder` is non-null, `McpJsonContext.cs:54`). `connectionString` and `command` are booleans: the string is the secret
+ * (`withoutPassword` strips one dialect of four, parent D12) and a command carries `creds://` references that name an account and an
+ * out-of-scope entry; the agent runs a line by id and needs no text.
+ */
+export interface BridgeEntry {
+  readonly id: string; readonly name: string; readonly kind: string; readonly folder: '';
+  readonly host?: string; readonly port?: number; readonly user?: string; readonly dbType?: string; readonly vpnType?: string; readonly scriptLanguage?: string;
+  readonly hasConnectionString: boolean; readonly hasCommand: boolean;
+  readonly hasPassword: boolean; readonly hasPrivateKey: boolean; readonly hasNotes: boolean; readonly hasTotp: boolean;
+  readonly codeAccessEnabled?: boolean;
+  readonly dependsOn: string[];
+  readonly can: McpCapabilities;
+}
+/** The keys of `BridgeEntry`, written out: the read-shape test asserts a full row's served keys equal this list, and `BRIDGE_READ_SHAPES` names it. */
+export const BRIDGE_ENTRY_FIELDS: readonly (keyof BridgeEntry)[] = ['id', 'name', 'kind', 'folder', 'host', 'port', 'user', 'dbType', 'vpnType', 'scriptLanguage', 'hasConnectionString', 'hasCommand', 'hasPassword', 'hasPrivateKey', 'hasNotes', 'hasTotp', 'codeAccessEnabled', 'dependsOn', 'can'];
+
+/** A row a bridge may list, built field by field from the local row: what this door permits (`use` only), no dependency on a row not listed. */
+function narrowed(row: McpEntry, kept: ReadonlySet<string>): BridgeEntry {
+  return {
+    id: row.id, name: row.name, kind: row.kind, folder: '',
+    host: row.host, port: row.port, user: row.user, dbType: row.dbType, vpnType: row.vpnType, scriptLanguage: row.scriptLanguage,
+    hasConnectionString: row.connectionString !== undefined,   // true exactly when the local row would have carried the stripped string
+    hasCommand: row.command !== undefined,                     // `blankToUndefined` (mcpEntries.ts:188-190) has already made a blank absent
+    hasPassword: row.hasPassword, hasPrivateKey: row.hasPrivateKey, hasNotes: row.hasNotes, hasTotp: row.hasTotp,
+    codeAccessEnabled: row.codeAccessEnabled,
+    dependsOn: row.dependsOn.filter((name) => kept.has(name)),
+    can: { use: row.can.use, edit: false, create: false, delete: false },
+  };
+}
+// entriesIn (:129-133) returns readonly BridgeEntry[]; `bridgedView.sources.mcpEntries` keeps its `ReadRouteSources` type, because a
+// BridgeEntry is assignable to McpEntry (the two dropped fields are optional there; the two added ones are extra properties of a non-literal).
+
+// bridgeAllowList.ts (pure), beside READS: what each served read may carry, at EVERY depth of its body. A served GET with no row here fails
+// the read-shape test (default deny, the same rule as the route table). `kinds`, `kind-help` and `health` carry the product's own text and are
+// pinned byte-equal instead of by field.
+export const BRIDGE_READ_SHAPES: Readonly<Record<string, readonly string[]>> = {
+  '/v1/aliases': ['aliases', 'name', 'kind'],
+  '/v1/mcp/entries': ['entries', ...BRIDGE_ENTRY_FIELDS, 'use', 'edit', 'create', 'delete'],
+  '/v1/mcp/config-snippet': ['envVar', 'languages', 'snippet', 'error', 'id', 'label', 'variants', 'language', 'variant', 'code', 'where', 'does'],
+  '/v1/mcp/folders': ['folders'],
+};
+export const BRIDGE_BYTE_EQUAL_READS: readonly string[] = ['/v1/health', '/v1/mcp/kinds', '/v1/mcp/kind-help'];
+```
+
+An optional field set to `undefined` in the literal (`host` of an entry with none) is a key in the object and absent on the wire
+(`JSON.stringify` drops it), exactly as `visibleFields` behaves today; the test walks the **served JSON**, not the object.
+
+**How a field added later is refused by construction, not by memory.** Three things have to agree before a new field crosses a bridge:
+the `BridgeEntry` type (a literal with an extra key is a compile error; a spread is gone, so a field added to `McpEntry` does not arrive by
+itself), the `narrowed` literal, and `BRIDGE_ENTRY_FIELDS`, which `BRIDGE_READ_SHAPES` includes. The read-shape test asserts (i) every key at
+every depth of every served body is in its route's row, (ii) a full row's served keys equal `BRIDGE_ENTRY_FIELDS` as a set, and (iii) every
+served GET route of `BRIDGE_ROUTES` is either in `BRIDGE_READ_SHAPES` or in `BRIDGE_BYTE_EQUAL_READS`. Adding a field to the type and the
+builder without the list fails (ii); adding it to the list without the builder fails (ii) the other way; adding a served read without a row
+fails (iii); a route whose builder gains a nested key fails (i). None of it depends on anyone remembering D12.
+
+**The wire, and the clients that read it.** A bridge row drops `connectionString` and `command` and adds `hasConnectionString` and
+`hasCommand`. The released `creds-mcp` reads `McpEntry` through a source-generated context that **drops a property it does not know**
+(`McpJsonContext.cs:46-49`, the remark; `ConnectionString` and `Command` are nullable, `:58,60`; `Folder` is non-null, `:54`, and gets `''`),
+so an old client lists a bridge row with those two null and no error; E2.1 adds the two booleans to the record. No client changes here, which
+is what the pre-PR diff line (F.9) pins. **The local door is byte for byte today's**: `OPEN_VIEW.sources` is the identity (`bridgeScope.ts:89`),
+`mcpEntryFor` is untouched, and `visibleMcpEntries` (`mcpEntries.ts:219`) is what the main port still serves; R3's recorded answers do not
+move, and RS3 compares the main-port listing with `visibleMcpEntries` over the same vault.
+
+**The five strings, through the wall world.** `bridgeWallWorld.ts`'s vault answers `getDbConnection: none` (`:115`) and seeds no terminal
+command with a reference; `WallOptions` (`:158-183`) gains `fullVault?: true`, which seeds, in a1 and in the scope of `server1`:
+`db-kv` with `Server=db,1433;Database=d;User Id=u;Password=<S1>`, `db-qs` with `postgresql://u@h/d?password=<S2>`, `db-slash` with
+`postgresql://u:<S3a>/<S3b>@h/d`, `db-at` with `postgresql://u:<S4a>@<S4b>@h/d` (each through `stored(raw)` of `storedSecret.ts:25`, the form
+`plainText` reads), a terminal entry `tm-ref` with `command: 'deploy creds://acct@example.test/outside/db/password'` naming an entry that
+is **not** in the scope, and `in-folder` inside a folder named `<F>`. The sentinels are test words, no shape of a real password. Through the
+bridge, the raw text of every served body carries none of `<S1>`-`<S4b>`, `creds://`, `Password=`, `?password`, `<F>`; the four db rows
+carry `hasConnectionString: true`, `tm-ref` carries `hasCommand: true`, `in-folder` carries `folder: ''`. Through the main port the same
+vault lists `withoutPassword`'s answers as the parent's D12 measured them (`dbConnString.ts:148-153`: S1 whole, S2 whole, S3 whole, S4 as
+`postgresql://u@<S4b>@h/d`), the `command` whole and `folder: '<F>'`: the control that the test can see what it looks for, and the pin that
+the local door did not move.
+
+#### F.4 The bridged-exec guard (parent §4.9): the lock between partial E1 and E2
+
+```ts
+// sshUseActions.ts — SshUseDeps (:42-73) gains one optional field
+/**
+ * E1.6's writer of the per-call ssh_config a bridged `ssh` runs under (parent §4.9). ABSENT on the partial-E1 tree, and that absence is the
+ * lock between partial E1 and E2 (`unguardedBridge`): a bridged call is refused before any slot, key or spawn. The parameter is E1.6's to
+ * widen (the legs and their keys go in); the result is §4.9's decided shape — `cwd`, a fresh folder per call that holds the file and nothing
+ * else, and `configFile`, the relative name `c.conf`. Nothing on this tree calls it: the argv carries no `-F` until E1.6 writes the file.
+ */
+bridgedSshConfig?: BridgedSshConfigWriter;
+
+export type BridgedSshConfigWriter = (call: { readonly callId: string }) => { readonly cwd: string; readonly configFile: string };
+/** The journal's reason while the writer is absent; the agent reads `BRIDGE_USE_REFUSED` and not this. */
+export const NO_BRIDGED_SSH_CONFIG = 'no per-call ssh_config yet: E1.6';
+
+/** A bridged call with no writer of the per-call file is refused before any slot, key or spawn: the generic sentence to the agent, this reason in the journal. Off a bridge, nothing. */
+function unguardedBridge(deps: SshUseDeps, ctx: UseActionContext, refuse: (code: ErrorCode, message: string) => UseActionResult): UseActionResult | undefined {
+  return ctx.bridge !== undefined && deps.bridgedSshConfig === undefined ? refuse('denied', NO_BRIDGED_SSH_CONFIG) : undefined;
+}
+// run, :235 in place:   const unusable = unusableEntity(ctx, entity) ?? unguardedBridge(deps, ctx, refuse);
+```
+
+`refuse` is `bridgedRefusal(deps, ctx)` (`:113-121`, built at `:234`, before this line), so the journal line reads
+`<entry>: no per-call ssh_config yet: E1.6 (a Remote Bridge was told only that it could not be used)` and the body is
+`BRIDGE_USE_REFUSED(<entry>)` with the code `denied` (403; `not_supported` is a 404 the CLI reads as "this window does not have the entry" and
+moves on). The guard sits after `unusableEntity` (`:129-134`: no host, and `agentForward` on a bridge, which keeps its own sentence and
+its L4 tests) and **before** `acquireExecSlot` (`:239`) and `prepareAuth` (`:243`): no slot is taken and no key is written for a call that is
+refused. Complexity 3; `run` keeps its line count (the edit is in place), `unusableEntity` is untouched. `sshDepsFor` (`:358-380`), the
+production wiring, sets no `bridgedSshConfig`, so **every bridged exec in production is refused** until E1.6 adds the writer there and
+removes `unguardedBridge` in the commit that writes the file; `extension.ts` is not touched.
+
+**The tests, and what shifts.** `bridgeLinksWorld.ts` builds the real action with `SshUseDeps` at `:103-110`; every bridged scenario of
+`bridgeLinks.test.ts` that reaches past `unusableEntity` (L1 at `:44`, L2 both legs, L3 all three, L5, F1 through the bridge) would be
+refused by the guard and go red. So `linksWorld` injects a stub writer by default and `LinksOptions` gains `noConfigWriter?: true` for the
+guard's own scenario. The stub records its calls (`lw.configWrites`, a counter) and writes nothing: **on this tree nothing calls the writer**,
+because the argv has no `-F` to name a file (F1 pins the bridged argv byte for byte, `bridgeLinks.test.ts:185`), and a file nothing reads would
+be a leftover. Amendment 5's "a stub that writes a file and asserts its shape" is therefore E1.6's reading of the same stub: E1.6 makes the
+call, rewrites F1, and turns G1's `configWrites === 0` into an assertion about the file. No expectation of L1-L5 or F1 changes; L4's two bridged
+legs hold with or without the stub, since `agentForward` is refused first. `sshUseActions.test.ts` passes no `bridge` in its context and is
+untouched; `brokerWorld.ts` and `bridgeWallWorld.ts` run a stub exec, not the real action, and are untouched. The guard is in the action, so it
+answers after the Allow; at partial E1 no production bridge door exists, so no person is asked for a call the guard then refuses.
+
+#### F.5 An agent's `up` or `down` is never a person's act (parent §2.1 Q9, §4.7)
+
+`runVpn` (`vpnRun.ts:66-84`) calls `vaultKeys.noteUserActivity()` at `:75` first, for the person's Start and Stop (`entityCommands.ts:199-200`,
+`startGate` undefined) and for the agent's `up` and `down` alike (`agentVpnOpener`, `:37-42`, hands `vpnAction`'s `ctx.signal`, which
+`UseActionContext.signal` makes REQUIRED, `useActions.ts:28`). That is the one agent path to the idle clock: every other caller is a
+command or a click (`extension.ts:512,705,812`, `agentCommands.ts`, `treeMutationCommands.ts:147`), and the consent gate counts a click
+only (`brokerConsent.ts:137-139`). `runVpn` is at complexity 4 (`||`, `if`, the ternary), so the guard is a helper:
+
+```ts
+// vpnRun.ts
+/** The person's own Start or Stop postpones auto-lock; an agent's `up` or `down` (`startGate` set) is not a person at the keyboard (parent §2.1 Q9). */
+function notePersonsAct(vaultKeys: Pick<VaultKeys, 'noteUserActivity'>, startGate: AbortSignal | undefined): void {
+  if (startGate === undefined) { vaultKeys.noteUserActivity(); }
+}
+// :75 in place:  notePersonsAct(vaultKeys, startGate);
+```
+
+`vpnWorld.ts:367` passes `{ noteUserActivity: () => undefined }`; it counts instead (`w.activity`). Scenarios V1, V2.
+
+#### F.6 The `CHANGELOG.md` entry (parent §4.10)
+
+Under `## [Unreleased]`, after E1.1's `### Changed` entry (`CHANGELOG.md:9-21`) and beside the fix's `### Fixed — security`, one entry, each
+line checked against the diff of `aliasThrottle.ts`, `brokerConsent.ts`, `grantRegistry.ts` and `credsAgentServer.ts` against `origin/main`:
+
+```markdown
+### Changed — the broker's one consent dialog: who holds its place, and for how long
+
+- **The place one dialog takes is the dialog's, given back when it closes** (`brokerConsent.ts`, `shown`), not when the call that raised it
+  ends: a client that hangs up during its dialog leaves the modal on screen and the place taken until you click it or five minutes pass.
+  Before, the place went back at the call's end and the next call could open a second modal over the first.
+- **A prompt is counted when it is shown, not when the call is admitted** (`aliasThrottle.ts`, `prompted`): a call refused before any dialog
+  no longer spends one of the five prompts a minute.
+- **A new ceiling: a caller without a token may ask at most 60 times a minute**, refusals before any dialog included (`ASKING_CEILING`), with
+  its own sentence and one journal line per minute.
+- **After you Allow a local `create`, `terminal` or `up`, the place stays taken until that call ends**, because those three may show a
+  prompt of their own next (a PIN box, a trust modal, OpenVPN Connect's question); another caller hears *busy* until then. `exec`, `query`,
+  `run` and `down` keep nothing once the dialog closes.
+- **A token that ran out between its header and its body is refused before any dialog**, 401 *Unknown or missing grant token.*, as the main
+  port has always answered it.
+- **A failure inside a request handler answers 500** with the generic sentence instead of leaving the request unanswered until the client
+  gives up; the reason goes to the agent journal.
+- The grant registry reclaims in tiers (denied calls, calls that ran, Allows not yet used, then calls whose dialog is open or whose client
+  left), and a call refused before anybody was asked leaves no grant behind.
+- **Unchanged, said here so nobody reads it as new:** a dialog nobody answers still times out after five minutes, still answers the caller
+  *The human did not allow this grant.*, and still gives the place back, so the next call raises a dialog while the old one may be on
+  screen. A later release changes this.
+```
+
+The claims and the code: the first is `shown`'s `finally` (`brokerConsent.ts:113-128`; on `main` the place was released at the route's
+`finally`, `aliasThrottle.ts` `release()` at `main`'s `:111`) and P1 (`bridgePrompts.test.ts:362`); the second is `prompted`
+(`aliasThrottle.ts:368-378`) and the S26 consequence (`bridgePrompts.test.ts:144`); the third is `ASKING_CEILING` (`:85`), its sentence
+(`:440`) and `firstThisWindow` (`:453-459`), A1 and A3; the fourth is `asksAfterConsent` on `sshTerminalAction` (`sshUseActions.ts:284`),
+`vpnAction` (`agentUseActions.ts:405`) and `create`'s `true` at the door (`brokerMcpDoor.ts:481`), K1-K8; the fifth and sixth are D.7 and D.8
+of this commit; the seventh is `EVICTION_ORDER` and `drop` (`grantRegistry.ts:59-66,321-327`); the last is `notAllowed`
+(`credsAgentServer.ts:636-648`, `GRANT_NOT_ALLOWED` on `consent_timeout`, the same sentence `main` spells inline at its `:625`) and `shown`'s
+`finally` on a timeout. E1.1's entry already stands at `:9-21` (the export refusal, the `Set env` warning, the help); its warning is worded for
+the case it does reach and M4 is still owed by the person, as the E1 document's §M4 says; nothing of it is rewritten here. The parent's §4.10
+says why the list matters: an extension tag may ship between partial E1 and E1.5 for unrelated work, and this entry is what makes that honest.
+
+#### F.7 Scenarios (each RED today, and why)
+
+Files: `test/grantRegistry.test.ts` (A4 revised), `test/bridgeKeptPlace.test.ts` (Q2, C.7 revised), `test/sshUseActions.test.ts` (X3),
+`test/bridgeTransitive.test.ts` (T3), `test/bridgeAllowList.test.ts` (S1, RS6), **new** `test/bridgeReadShape.test.ts` (RS1-RS5),
+`test/bridgeLinks.test.ts` (G1, G2), `test/vpnGoneRequest.test.ts` (V1, V2), `test/sshExecRunner.test.ts` (RS7), `test/bridgeWallWorld.ts`
+(`fullVault`), `test/bridgeLinksWorld.ts` (the stub writer, `noConfigWriter`, `configWrites`), `test/vpnWorld.ts` (`activity`).
+
+| # | Scenario | Expected | RED today, because |
+|---|---|---|---|
+| A4 (rev.) | Tiers | one pending call + 300 allowed calls `uses 0` + 300 allowed calls `uses 1` + 2 denied calls + the token set of C.10's A4: after the mints the denied calls go first, then used calls, then unreserved calls; the pending call and every token remain | tier three holds pending and unreserved together, oldest first |
+| Q2 | Eviction by dead pre-consented calls | `holdDialogs`; a bridged `exec`'s dialog open; 300 quiet local MCP calls with an EMPTY `command` (refused in `usable`, each leaving `allowed, uses 0`); Allow: the exec runs (200), one `ALLOWED` line, no `unauthorized` | the pending call is the oldest of tier three |
+| X3 | The note throws | `fs.rmSync` throws `EPERM` and `deps.note` throws on that line: the result is the finished exec's 200, `tally.slotsHeld` is 0, X2 still passes | the throw escapes `removeKeyFile` and replaces the result |
+| T3 | A token run out between header and body | `sendSlow` with `idleMs` elapsed after the header was read: 401 `unauthorized`, `UNKNOWN_TOKEN`, no dialog, no line; the same with `maxUses` reached; a token the person DENIED still answers 403 `denied` with its line | `:495` reads the stored status |
+| C.7 (rev.) | A throw after admission is answered | the three throwing requests each answer 500 `internal` with `INTERNAL_FAILURE`, `escaped.length === 0`, the next call is asked | the throw escapes `handle` |
+| S1 | Served actions ask nothing after the Allow | for every served POST word of `BRIDGE_ROUTES` and every real action carrying it (`sshExecAction`, `dbQueryAction`), `asksAfterConsent !== true`; at least one real action per word was found | green today, pinned (D.10) |
+| RS1 | The walk | through a bridge over the full vault with every entry in scope, every served GET route of `BRIDGE_ROUTES` (`kind-help` with `kind=ssh`, `kind=db`, `kind=nonsense`): every key at every depth of the parsed body is in `BRIDGE_READ_SHAPES[path]`, or the path is in `BRIDGE_BYTE_EQUAL_READS`; a served GET in neither fails with "a served read with no field list: default deny" | `connectionString` and `command` are keys of the listing's rows |
+| RS2 | The row, exactly | a db entry in scope with every optional field set: the served row's key set equals `BRIDGE_ENTRY_FIELDS` as a set; `can` has exactly `use`, `edit`, `create`, `delete` with `use` as resolved and the rest `false`; `dependsOn` names kept rows only | `hasConnectionString` and `hasCommand` are not keys |
+| RS3 | The five strings | the `fullVault` of F.3 through the bridge: no served body's raw text contains `<S1>`, `<S2>`, `<S3a>`, `<S3b>`, `<S4a>`, `<S4b>`, `creds://`, `Password=`, `?password` or `<F>`; the four db rows `hasConnectionString: true`, `tm-ref` `hasCommand: true`, `in-folder` `folder: ''`. Control through the main port: the listing body equals `JSON.stringify({ entries: await visibleMcpEntries(vault) })` and contains S1, S2 and S3 whole, `postgresql://u@<S4b>@h/d`, the whole `command` and `folder: '<F>'` | S1-S3 cross whole, S4's tail crosses, `creds://…/outside/…` and `<F>` cross |
+| RS4 | Byte-equal | for each path of `BRIDGE_BYTE_EQUAL_READS` (and the three `kind` queries): the body text through a bridge over an empty vault and empty scope equals the body text through a bridge over the full vault, and equals the main port's | green today, pinned (a `KindHelp` has no field list of its own) |
+| RS5 | The listing's shape is the wall's | `OPEN_VIEW.sources(real)` is `real` (identity, pinned already at `bridgeScope.test.ts:238`); `bridgedView.sources(...).mcpEntries()` over a row carrying an extra key planted on the stored row (`(row as Record<string, unknown>).leak = '<S5>'`) serves no `leak` and no `<S5>` | `...row` carries the planted key |
+| RS6 | Default deny has teeth | `BRIDGE_READ_SHAPES` and `BRIDGE_BYTE_EQUAL_READS` together name exactly the served GET paths of `BRIDGE_ROUTES`, no more and no fewer | the constants do not exist |
+| RS7 | `exec`'s body is the type's | in `sshExecRunner.test.ts:63` ("a normal child"): the resolved object's keys are exactly `exitCode`, `stdout`, `stderr`, `stdoutTruncated`, `stderrTruncated`, `timedOut`, `durationMs` (`ExecResponseBody`, `brokerProtocol.ts:147-155`; built at `sshExecRunner.ts:191-201`) | green today, pinned |
+| G1 | The guard | `linksWorld({ noConfigWriter: true })`, through the bridge: 403 `denied`, the body is `BRIDGE_USE_REFUSED('prod')` and contains neither `ssh_config` nor `E1.6`; `lw.runs.length === 0`, `lw.materialised.length === 0` (no key written), `lw.notes` has one line containing `no per-call ssh_config yet: E1.6`; `ww.w.dialogs.length === 1`. Control: the same world through the main port is 200 with `-i` in the argv. And in L1 as it stands: `lw.configWrites === 0` (the writer is present and nothing calls it on this tree) | there is no guard: the bridged call runs |
+| G2 | Production hands no writer | `sshDepsFor(parts)` with stub parts: `'bridgedSshConfig' in deps` is `false` (E1.6 flips this line when it wires the real writer) | green today, pinned |
+| V1 | An agent's `up` is not a person | `vpnWorld` with `startGate` set, `up` through the world: `w.activity === 0`; the same for `down` | `:75` counts every call |
+| V2 | The person's Start is | `vpnWorld` with no `startGate`: `w.activity === 1` | green today, pinned |
+
+#### F.8 Break-its (mutate, watch the named case fail, restore; both outputs in the PR)
+
+- `narrowed`: restore `...row` in the literal → RS1, RS3, RS5. Drop `hasCommand` from the literal → RS2. Add `leak: row.name` to the literal
+  (and to the type) without the list → RS2; add `'leak'` to `BRIDGE_ENTRY_FIELDS` alone → RS2 the other way. Set `folder: row.folder` → RS3.
+- `BRIDGE_READ_SHAPES`: remove the `/v1/aliases` row → RS1 ("default deny") and RS6; add a `'/v1/nothing'` row → RS6.
+- `EVICTION_ORDER`: merge the third and fourth call tiers back → A4, Q2.
+- `removeKeyFile`: remove the inner `try` → X3.
+- `:495`: restore `this.grants.get(grant.secret)?.status` → T3.
+- `:697`: remove the `.catch` → C.7 (rev.).
+- `unguardedBridge`: return `undefined` always → G1. Move its call to after `prepareAuth` → G1 (`materialised.length === 1`: a key was written
+  for a call that was then refused).
+- `sshDepsFor`: add `bridgedSshConfig: () => ({ cwd: '', configFile: '' })` → G2.
+- `notePersonsAct`: drop the `if` → V1. Invert it → V2.
+- S1: set `asksAfterConsent: true` on `dbQueryAction` → S1.
+
+#### F.9 Order, counts, gates, the merge conditions and the PR
+
+Order: D.5 (`EVICTION_ORDER`, A4, Q2) → D.7 (T3) → D.8 (C.7 revised) → D.6 (X3) → D.9 (`itestSshd.cjs`, `itestForwardAgent.cjs`; CI's) →
+D.10 (S1) → the read shape (`BridgeEntry`, `BRIDGE_ENTRY_FIELDS`, `narrowed`; `BRIDGE_READ_SHAPES`, `BRIDGE_BYTE_EQUAL_READS`; `fullVault`;
+RS1-RS7) → the guard (`SshUseDeps`, `unguardedBridge`; the stub writer and `noConfigWriter`; G1, G2) → `notePersonsAct` (V1, V2) → the
+CHANGELOG entry → lint, `wc -l`, ratchet, the pre-PR block. Every RED row is watched failing first, in the order above, and its failure
+message kept for the PR.
+
+| File | Today (`a68b47e`) | After |
+|---|---|---|
+| `credsAgentServer.ts` | 789 | **789** (`:495`, `:697` in place) |
+| `extension.ts` | 1003 | 1003 (the ratchet baseline) |
+| `bridgeScope.ts` | 345 | ≈ 395 |
+| `bridgeAllowList.ts` | 122 | ≈ 140 |
+| `sshUseActions.ts` | 380 | ≈ 398 |
+| `grantRegistry.ts` | 344 | ≈ 346 |
+| `brokerBridgeToken.ts` | 63 | ≈ 73 |
+| `brokerRequests.ts` | 285 | ≈ 297 |
+| `vpnRun.ts` | 262 | ≈ 268 |
+| `itestSshd.cjs` | 184 | ≈ 190 |
+| `itestForwardAgent.cjs` | 194 | ≈ 200 |
+| `test/bridgeLinksWorld.ts` | 149 | ≈ 160 |
+| `test/bridgeWallWorld.ts` | 464 | ≈ 510 |
+| `test/bridgeReadShape.test.ts` | — | ≈ 220 (new) |
+
+Every function stays under the complexity limit of 4 without a new disable comment: `narrowed` 1, `removeKeyFile` 4, `unguardedBridge` 3,
+`notePersonsAct` 2, `tokenStatusNow` 3, `unanswered` 2; `run` is already exempt and its line count does not grow (both edits are in place).
+No file nears 800 (`eslint.config.mjs:30`); test files are under the same ceiling and the largest touched is `bridgeWallWorld.ts` at ≈ 510.
+
+The commands, from the E1 document's §The commands, at lowered priority: `npm run typecheck`, `npm run lint`, `npm run ratchet`, `npm test`,
+then the pre-PR block whole:
+
+```bash
+cd "$(git rev-parse --show-toplevel)"
+LP=$PWD/.claude/rules/shared/tools/low-priority.mjs
+node $LP dotnet build dew_flow_creds_for_devs.slnx -c Debug -m:4 --disable-build-servers
+node $LP ./src_broker_client/tests/bin/Debug/net10.0/CredsBroker.Tests
+cd src_vs_code && npm test && npm run itest:agent && npm run itest:cli && npm run itest:mcp && npm run itest:ssh-agent
+cd .. && git fetch https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs.git main:refs/remotes/origin/main
+git diff --exit-code origin/main -- src_vs_code/scripts/creds-cli-itest.cjs src_cli src_mcp src_broker_client install.sh && echo "clients pinned"
+node .claude/rules/shared/tools/plan-lifecycle.mjs && node .claude/rules/shared/tools/pin-check.mjs
+```
+
+The fetch is over HTTPS because `origin` is an SSH remote and SSH to GitHub times out from this machine; `origin/main` is then the merge
+base the diff is taken against, not a local `main` branch that may be stale.
+
+**The partial-E1 merge conditions (parent §2.1 Q7, `## Epics` E1):** R1 green (`bridgeBoundary.test.ts:155`: nothing in `extension.ts` or
+`commands/*.ts` names `openBridgeListener` or `bridgeWall`, and `package.json` has no bridge command), R4 green (`:234`: a broker with no wall
+cannot open a bridge and binds nothing), and the diff line above printing `clients pinned`, so the clients, the CLI itest and `install.sh` are
+byte for byte `main`'s. Together they are the reachability proof the parent asks for: no production code opens a bridge door, no released
+client changed, and a bridged exec, were a door to exist, is refused by F.4's guard before any spawn.
+
+**The PR body states, in this order:** (1) that this is partial E1 (E1.1-E1.3 with Amendments 2-3 and this closing commit) under Q7, and that
+E1.4, E1.5 and E1.6 follow as one PR each; (2) R1 and R4 by test name and the diff line's output; (3) that every bridged `exec` is refused by
+the §4.9 guard until E1.6, with G1's body and journal line quoted; (4) the CHANGELOG list of F.6, and that the timeout sentence it carries is
+`main`'s own until E1.5; (5) each RED row's failure message and its pass, and the break-its with both outputs; (6) that D.3 went to E1.5 and
+why (F.1), that M4 is still owed by the person (E1.1), and that the local MCP door still serves `connectionString` and `command` to a local
+agent (the parent's §8 todo, not this PR); (7) the `coai` code round's verdicts and how many reviewers answered, every finding resolved;
+(8) that E1.3 is finished with this commit and what remains of E1 is the three stories.
+
+#### F.10 Opus checklist, added to §S3.9
+
+`narrowed` has no spread and returns `BridgeEntry`; `BRIDGE_ENTRY_FIELDS` has nineteen entries and the row test compares sets, not order;
+`BRIDGE_READ_SHAPES` names the four walled reads and `BRIDGE_BYTE_EQUAL_READS` the three unwalled ones, and RS6 pins that they cover the
+served GET routes exactly; the read-shape test parses the served JSON, never the in-process object; `hasConnectionString` is read from the
+local row's stripped string, never from the keychain; the main-port listing is compared with `visibleMcpEntries` over the same vault; `mcpEntries.ts`
+is untouched; `unguardedBridge` is called before `acquireExecSlot` and `prepareAuth` and after `unusableEntity`, and goes through `bridgedRefusal`;
+the guard's code is `denied`; `sshDepsFor` hands no writer; the stub writer in `linksWorld` is never called on this tree and G1 says so; the
+pending-call tier is the last call tier; `tokenStatusNow` calls `get`, never `lookup` or `reserve`; `unanswered` puts nothing of the error in
+the body and writes its line through `log`, not `respondError`; the inner `try` of `removeKeyFile` wraps the note only, and `release()` stays
+last in `run`'s `finally`; `notePersonsAct` is the only call of `noteUserActivity` in `vpnRun.ts`; S1 derives its words from `BRIDGE_ROUTES` and
+loads the real factories; the CHANGELOG entry's last bullet says the timeout sentence is unchanged; `credsAgentServer.ts` is 789 and
+`extension.ts` 1003 after the commit; the pre-PR diff line printed `clients pinned`.
+
+#### F.11 Not verified by this spec
+
+That ESLint's `complexity` counts a `catch` clause as this spec does (if it does not, `removeKeyFile` is 3 and nothing changes); that the
+released `creds-mcp` drops the two new booleans and reads `Folder: ''` as its remark says (`McpJsonContext.cs:46-49`; read, not run against a
+bridge, which no released client can reach before E2); the CHANGELOG merge with `main`'s `### Fixed — security` entry (both go under
+`## [Unreleased]`; a textual conflict there is resolved by keeping both); D.9's two legs against a live `sshd` (CI's); whether `stored(raw)` is the
+right mint for the wall world's `getDbConnection` or `plainText` wants another form (the coder reads `storedSecret.ts` and
+`agentUseActions.test.ts:37`, which seeds one); that `BridgedSshConfigWriter`'s parameter is the one E1.6 wants (it is E1.6's to widen, and
+nothing on this tree calls it, so a change there costs one type).

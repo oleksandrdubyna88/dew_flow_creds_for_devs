@@ -571,6 +571,10 @@ that revision changes for this document; nothing is deleted. The parent's §4.9 
     commit that writes the file; the commit of E2.2 that removes scenario R1 asserts that three suites exist, by the file names the parent's
     §4.9 fixes: `src/test/consentContract.test.ts` (E1.5), `src/test/bridgedSshConfig.test.ts` with `scripts/bridged-ssh-itest.cjs` (E1.6),
     and `src/test/bridgeReadShape.test.ts` (the read shape, item 14).
+    **The closing commit's buildable spec is the S3 spec's Amendment 6 (Fable, 2026-11-06)**: D.5-D.10 as they stand on the tree, the
+    read shape with `narrowed()` as its one choke point, the guard as `SshUseDeps.bridgedSshConfig?`, the `vpnRun.ts:75` guard of the
+    parent's Q9, and the CHANGELOG entry of item 11; it decides that D.3 is E1.5's, because D.3 changes the local doors' admission, which the
+    partial-E1 merge must not. The coder starts from the tree after `main` with PR #303 is merged (the parent's change 4.1).
 11. **"Byte-for-byte unchanged" (§Binding constraints) means the doors' admission**: `admitsRequest` and the door table, scenario R3. What the
     branch changes on the local doors' consent lifecycle against `main` is listed in the parent's §4.10 (the place freed at the dialog's
     close, a leaving client keeping it, prompts counted when shown, `ASKING_CEILING`, the kept place for `create`, `terminal` and `up`,
