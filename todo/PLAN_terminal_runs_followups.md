@@ -1,7 +1,7 @@
 # PLAN — Terminal runs: what the folder run left open
 
 > Status: **plan only, nothing implemented yet, 2026-11-05.** Scope: the VS Code extension's terminal roads, and one repository-level
-> item. Recorded by S4 of [PLAN_terminal_folder_run.md](PLAN_terminal_folder_run.md), which built none of it. No item is scheduled.
+> item. Recorded by S4 of [PLAN_terminal_folder_run.md](../research/PLAN_terminal_folder_run.md), which built none of it. No item is scheduled.
 
 ## Goal
 
@@ -13,7 +13,7 @@ with its place in the code, decided by nobody yet. An item is built when someone
 
 | Item | Who builds it | The folder run's part |
 |---|---|---|
-| Items 1 to 15 below | this plan, item by item | none: `PLAN_terminal_folder_run.md` §Not in this plan points here |
+| Items 1 to 16 below | this plan, item by item | none: `PLAN_terminal_folder_run.md` §Not in this plan points here |
 | The stale "not arriving from elsewhere" claim in `research/module_extension.md` | done, in its S1 | fixed there, not carried |
 | Forged rows in the chain's modal (`describeRunPlan`) | done, in its S5 | fixed there, not carried |
 
@@ -126,6 +126,14 @@ question names what already ran.
 
 **Symptom.** `src/test/commandNameShell.test.ts` makes its folder inline (`testsToDelete-shell-`), as the existing tests do, until PR #294's helper
 lands. When #294 lands, that test moves to its `ownedDir`. The test and this branch must be reconciled in whichever lands second.
+
+### 16. The owner's hand checks have not run
+
+**Symptom.** A real VS Code could not be started where this was built, so §Hand checks of
+[PLAN_terminal_folder_run.md](../research/PLAN_terminal_folder_run.md) is unmeasured: what a revived terminal holds after a restart, whether old
+sequences replay as events, whether events reach this `ui` extension over Remote-SSH, how a native dialog shows a long question. **Fix to consider:**
+run them in a real Remote-SSH window. Two results change code: a start and end reaching the extension from a shell inside tmux adds a state after
+`Type It Anyway`, and no events over Remote-SSH means the tracker buys nothing and every click asks.
 
 ## Budget
 

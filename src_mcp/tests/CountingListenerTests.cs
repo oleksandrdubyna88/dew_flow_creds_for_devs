@@ -7,16 +7,19 @@ namespace CredsMcp.Tests;
 
 /// <summary>
 /// The test helper that counts probes must stop cleanly at any moment — including the one right after it has counted
-/// a connection, when its accept loop is about to ask a listener that <see cref="CountingListener.DisposeAsync"/> has
-/// just stopped.
+/// a connection, when its accept loop is on its way to the next accept.
 /// </summary>
 /// <remarks>
-/// <para>Measured on a macOS CI leg (#234): <c>A_live_pid_on_a_port_that_is_not_ours_is_still_probed</c> failed in its
-/// dispose with <c>InvalidOperationException: Not listening. You must call the Start() method</c> — the accept loop
-/// caught only cancellation, disposal and socket errors, and a stopped <c>TcpListener</c> answers with none of them.</para>
-/// <para>What this proves is exactly that: a REQUESTED stop never throws. It does not exercise an
-/// <c>InvalidOperationException</c> raised before any stop — the helper's <c>when</c> filter is what keeps that one
-/// loud, and it is read, not tested.</para>
+/// <para>Measured twice. On a macOS CI leg (#234) <c>A_live_pid_on_a_port_that_is_not_ours_is_still_probed</c> failed in
+/// its dispose with <c>InvalidOperationException: Not listening. You must call the Start() method</c>, and a catch was
+/// added for it. On a Linux CI job (#302) this test failed at round 80 with a <c>NullReferenceException</c> inside
+/// <c>TcpListener.AcceptSocketAsync</c>. Both were one race: <see cref="CountingListener.DisposeAsync"/> stopped the
+/// listener while the loop was still running.</para>
+/// <para>The helper now ends the loop first and has no catch for either exception, so any meeting with a stopped
+/// listener fails this test. With the stop before the wait it went red in 14 of 14 local Linux runs, at rounds from 2 to
+/// 157; with the wait first, green in 30 of 30.</para>
+/// <para>Not tested: an accept that cancelling does not end. The helper's bound on that wait is read, because forcing it
+/// would need a seam in the helper for a case no platform has shown.</para>
 /// </remarks>
 public sealed class CountingListenerTests
 {
