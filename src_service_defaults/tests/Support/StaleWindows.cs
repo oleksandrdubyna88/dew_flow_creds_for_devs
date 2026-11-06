@@ -57,6 +57,8 @@ internal static class StaleWindows
 /// </summary>
 internal sealed class CountingListener : IAsyncDisposable
 {
+    private static readonly TimeSpan StoppedWithin = TimeSpan.FromSeconds(30);
+
     private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _accepting;
@@ -87,11 +89,6 @@ internal sealed class CountingListener : IAsyncDisposable
         {
             // Stopped.
         }
-        catch (InvalidOperationException) when (_stop.IsCancellationRequested)
-        {
-            // Stopped between two accepts: the next accept met a listener DisposeAsync had already stopped, and a stopped
-            // TcpListener says "Not listening" rather than any of the above (measured on a macOS CI leg, #234).
-        }
     }
 
     private static async Task AnswerAsync(TcpClient peer)
@@ -113,9 +110,18 @@ internal sealed class CountingListener : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await _stop.CancelAsync();
-        _listener.Stop();
-        _listener.Dispose();
-        await _accepting;
-        _stop.Dispose();
+        try
+        {
+            // The loop ends first: a TcpListener stopped under a running accept answers "Not listening" or, between its
+            // own check and its use of the socket, a NullReferenceException (#234, #302). The bound turns an accept that
+            // cancelling did not end into a loud timeout for every caller, not a job dying silently at its time limit.
+            await _accepting.WaitAsync(StoppedWithin);
+        }
+        finally
+        {
+            _listener.Stop();
+            _listener.Dispose();
+            _stop.Dispose();
+        }
     }
 }
