@@ -5101,8 +5101,9 @@ prove the gate's answer per input and the argv; what a client does with a string
 above, for those versions, on Linux. Not run: Windows (every client), sqlcmd of any version, psql.exe.
 
 *Two named residues.* (1) On Oracle's client, `load-data-local-dir` in an option file still lets a file under that
-folder ship under `--local-infile=0` (measured); closing it needs `--no-defaults`, which would drop the person's TLS and
-socket settings, so it is left open. (2) A narrow-`argv` client this extension does not install (the ODBC `sqlcmd.exe`,
+folder ship under `--local-infile=0` (measured); `--no-defaults` would close it but would drop the person's TLS and
+socket settings, so it is left open. Not measured, a candidate for a later change: `--loose-load-data-local-dir=<a path
+that does not exist>`, which should override the option file on Oracle's client and only warn on MariaDB's. (2) A narrow-`argv` client this extension does not install (the ODBC `sqlcmd.exe`,
 MariaDB before 10.6, anything installed another way) was not observed; the NFKC pass is margin there.
 
 ## The SSH agent — a key that is used without existing as a file (0.57.0)

@@ -326,6 +326,9 @@ refuses('RED accepted over-refusal', 'mysql', MYSQL_OVER_REFUSED, 'connect');
 refuses('guard accepted over-refusal inside a comment', 'mysql', MYSQL_INSIDE_COMMENT, 'system');
 refuses('RED folded', 'mysql', MYSQL_FOLDED);
 refuses('guard', 'mysql', MYSQL_ALREADY_REFUSED);
+refuses('guard', 'mysql', ['edit', '/*x*/edit'], 'edit');
+refuses('guard fullwidth backslash inside a string', 'mysql', [`select '${FW_BS}'`]);
+allows('guard fullwidth backslash inside a string', 'postgres', [`select '${FW_BS}'`]);
 allows('guard', 'mysql', MYSQL_ALLOWED);
 for (const dbType of ['postgres', 'mysql', 'mssql'] as const) {
   allows('guard non-ASCII data', dbType, NON_ASCII_DATA);

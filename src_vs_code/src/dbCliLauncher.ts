@@ -197,8 +197,9 @@ function refuseUnhandled(dbType: DbType): string | undefined {
  */
 export function refuseQuery(dbType: DbType, query: string): string | undefined {
   // The second pass is margin against a client that folds its argv (fullwidth letters, a
-  // fullwidth backslash or colon) and recognises what it folded to; no code point is refused
-  // as such, so fullwidth text inside a string still passes.
+  // fullwidth backslash or colon) and recognises what it folded to. Fullwidth text inside a
+  // string still passes, except a fullwidth backslash for mysql: it folds to the one character
+  // mysql's rule refuses anywhere.
   return refuseOnce(dbType, query) ?? refuseOnce(dbType, query.normalize('NFKC'));
 }
 
