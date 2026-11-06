@@ -1,5 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
+import { CONSENT_TIMEOUT_MS } from '../agentConsent';
 import { code, message, pause } from './bridgeDoorHarness';
 import { ACCOUNT, CONTEXT_1, Ask, Door, WallWorld, answeredAtOnce, registryOf, send, sendAbortable, settleAll, until, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
 
@@ -384,6 +385,33 @@ test('P1: a client that posts and goes away does not free the place its dialog h
   }
 });
 
+test('P1 through the main port: a local client that posts and goes away does not free the place its dialog holds — local and bridged calls are busy until it is answered', async () => {
+  const ww = await wallWorld({ holdDialogs: true });
+  try {
+    const first = sendAbortable(viaMain(ww), alias());
+    first.reply.catch(() => undefined);
+    await until(() => ww.w.openDialogs.length === 1, 'the first dialog');
+    first.abort();
+    await until(() => ww.w.audit.some((line) => line.includes('ABANDONED')), 'the broker to learn the client left');
+
+    for (const [who, door] of [['a local alias call', viaMain(ww)], ['a call through a bridge', viaBridge(ww.bridge)]] as const) {
+      const refused = await answeredAtOnce(send(door, alias()), `${who} was let in behind the open dialog`);
+      assert.deepEqual([refused.status, message(refused)], [429, BUSY], who);
+    }
+    assert.equal(ww.w.dialogs.length, 1, 'one modal on screen');
+
+    ww.w.openDialogs[0]('Allow');
+    await until(() => ww.w.audit.some((line) => line.includes('ignored')), 'the click on a dialog nobody waits for to be applied to nothing');
+    const next = send(viaMain(ww), alias());
+    await until(() => ww.w.openDialogs.length === 2, 'the next local call to be asked once the first dialog was clicked');
+    ww.w.openDialogs[1]('Allow');
+    assert.equal((await next).status, 200);
+  } finally {
+    settleAll(ww);
+    ww.dispose();
+  }
+});
+
 test('P2: a long action does not hold the place — while one runs, a call through another bridge and a local call are both asked', async () => {
   const ww = await wallWorld();
   try {
@@ -425,6 +453,38 @@ test('P2: an action that ends while ANOTHER call\'s dialog is open frees nothing
     assert.equal((await first).status, 200, 'the first action ended, with the second dialog open');
     const third = await answeredAtOnce(send(viaMain(ww), alias()), 'the third call was let in: the first call ending freed the second dialog\'s place');
     assert.deepEqual([third.status, message(third)], [429, BUSY]);
+    ww.w.openDialogs[1]('Allow');
+    assert.equal((await second).status, 200);
+  } finally {
+    settleAll(ww);
+    ww.dispose();
+  }
+});
+
+test('P3 through the main port: an unanswered LOCAL dialog times out with the sentence main spells, and the next LOCAL call is asked', async () => {
+  const ww = await wallWorld({ holdDialogs: true, consentTimeoutMs: 300 });
+  try {
+    const first = await send(viaMain(ww), alias());
+    assert.deepEqual([first.status, code(first), message(first)], [504, 'consent_timeout', 'The human did not allow this grant.']);
+    const second = send(viaMain(ww), alias());
+    await until(() => ww.w.openDialogs.length === 2, 'the next local call to be asked: the timeout freed the place');
+    ww.w.openDialogs[1]('Allow');
+    assert.equal((await second).status, 200);
+  } finally {
+    settleAll(ww);
+    ww.dispose();
+  }
+});
+
+test('P3 through the main port: main\'s behaviour is kept — after the timeout a second local modal is raised while the first is still on screen, and the timeout is five minutes', async () => {
+  assert.equal(CONSENT_TIMEOUT_MS, 5 * 60_000, 'the re-ask is five minutes after the first modal; the tests below shorten it to watch it in milliseconds');
+  const ww = await wallWorld({ holdDialogs: true, consentTimeoutMs: 200 });
+  try {
+    const first = await send(viaMain(ww), mcp());
+    assert.equal(first.status, 504);
+    const second = send(viaMain(ww), mcp());
+    await until(() => ww.w.openDialogs.length === 2, 'the re-ask');
+    assert.equal(ww.w.dialogs.length, 2, 'two modals were raised, and the first was never answered');
     ww.w.openDialogs[1]('Allow');
     assert.equal((await second).status, 200);
   } finally {

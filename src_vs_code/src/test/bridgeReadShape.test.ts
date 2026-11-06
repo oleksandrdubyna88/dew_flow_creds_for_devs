@@ -3,9 +3,9 @@ import { test } from 'node:test';
 import { BRIDGE_BYTE_EQUAL_READS, BRIDGE_READ_SHAPES, BRIDGE_ROUTES } from '../bridgeAllowList';
 import { BRIDGE_ENTRY_FIELDS } from '../bridgeScope';
 import type { ReadRouteSources } from '../brokerReadRoutes';
-import { visibleMcpEntries } from '../mcpEntries';
+import { visibleMcpEntries, type McpEntry } from '../mcpEntries';
 import { loadBridgeModules } from './bridgeModules';
-import { ACCOUNT, CONTEXT_1, PLANTED, PLANTED_IDS, WallWorld, send, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
+import { ACCOUNT, CONTEXT_1, PLANTED, PLANTED_IDS, SECRET_SLOTS, WallWorld, send, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
 
 /**
  * What a bridge may SAY about the entries in its scope (Amendment 6, F.3; the parent's §4.2, D12): every served read, walked
@@ -67,13 +67,21 @@ async function servedRow(ww: WallWorld, id: string): Promise<Record<string, unkn
   return row;
 }
 
+/** A served alias or entry list that is empty would pass every key check for ever: a route that serves nothing has no stray key. */
+function assertListNotEmpty(ask: string, body: Record<string, unknown>): void {
+  const rows = body.aliases ?? body.entries;
+  assert.ok(rows === undefined || (Array.isArray(rows) && rows.length > 0), `${ask} served an empty list`);
+}
+
 /** The keys a served body carries, after asserting each is in its route's field list (a byte-equal route has none to check). */
 function keysWithinList(path: string, ask: string, text: string): string[] {
   if (BRIDGE_BYTE_EQUAL_READS.includes(path)) {
     return [];
   }
   const allowed = new Set(fieldsFor(path));
-  const keys = keysAt(JSON.parse(text));
+  const body = JSON.parse(text) as Record<string, unknown>;
+  assertListNotEmpty(ask, body);
+  const keys = keysAt(body);
   assert.deepEqual([...new Set(keys.filter((key) => !allowed.has(key)))], [], `${ask} served keys its field list does not name`);
   return keys;
 }
@@ -137,20 +145,37 @@ const SERVED_WHOLE_LOCALLY = [
   `"folder":"${PLANTED.FOLDER}"`,
 ];
 
-test('RS2: a row without a connection string or a command says false, and every has* flag is the local row\'s', async () => {
-  const ww = await wallWorld({ fullVault: true, scope: ['e1', 'all-secrets'] });
+const FLAGS = ['hasPassword', 'hasPrivateKey', 'hasNotes', 'hasTotp'] as const;
+const PLAIN_FIELDS = ['host', 'port', 'user', 'dbType', 'vpnType', 'scriptLanguage'] as const;
+
+/** The plain fields of the row that sets them all: each served value is the local row's, and the control is that the local row sets it. */
+function assertPlainFields(served: Record<string, unknown>, local: McpEntry | undefined): void {
+  for (const field of PLAIN_FIELDS) {
+    assert.notEqual(local?.[field], undefined, `control: the local row sets ${field}`);
+    assert.equal(served[field], local?.[field], `${field} is the local row's`);
+  }
+}
+
+/** One row that holds one slot alone: every flag is the local row's, and the local row has exactly that one. */
+function assertFlags(id: string, own: string, served: Record<string, unknown>, local: McpEntry | undefined): void {
+  for (const flag of FLAGS) {
+    assert.equal(local?.[flag], flag === own, `control: the local row ${id} holds ${own} alone`);
+    assert.equal(served[flag], local?.[flag], `${id}: ${flag} is the local row's`);
+  }
+}
+
+test('RS2: every served value is the local row\'s — the plain fields on a row that sets them all, each flag on a row that holds that slot alone', async () => {
+  const ww = await wallWorld({ fullVault: true, scope: ['e1', 'full-row', ...Object.keys(SECRET_SLOTS)] });
   try {
     const local = await visibleMcpEntries(ww.vault);
+    const localRow = (id: string): McpEntry | undefined => local.find((entry) => entry.id === id);
+    assertPlainFields(await servedRow(ww, 'full-row'), localRow('full-row'));
+    for (const [id, own] of Object.entries(SECRET_SLOTS)) {
+      assertFlags(id, own, await servedRow(ww, id), localRow(id));
+    }
     const plain = await servedRow(ww, 'e1');
     assert.equal(plain.hasConnectionString, false);
     assert.equal(plain.hasCommand, false);
-    const full = await servedRow(ww, 'all-secrets');
-    const mine = local.find((entry) => entry.id === 'all-secrets');
-    for (const flag of ['hasPassword', 'hasPrivateKey', 'hasNotes', 'hasTotp'] as const) {
-      assert.equal(mine?.[flag], true, `control: the local row has ${flag}`);
-      assert.equal(full[flag], true, `${flag} is the local row's`);
-      assert.equal(plain[flag], local.find((entry) => entry.id === 'e1')?.[flag], `${flag} of a row with none`);
-    }
   } finally {
     ww.dispose();
   }

@@ -6,7 +6,11 @@ import { GRANT_NOT_ALLOWED, UNKNOWN_TOKEN } from './brokerRequests';
 import { grantExpiry } from './grantRegistry';
 import type { Grant, GrantLimits, GrantRegistry, GrantStatus } from './grantRegistry';
 
-/** A token that cannot be used now: the person said no (`denied`, with its line), or it is gone — evicted, or run out by idle time or call count — and then `unknown`, with no line. The main port says which expiry it was; a bridge does not. */
+/**
+ * A token that cannot be used NOW, read after the body arrived: the person said no (`denied`, with its line), or it is gone — evicted, or
+ * run out by idle time or call count — and then `unknown`, with no line (D22). Only this after-body answer is unknown: the header-time
+ * `lookup` (`bridgedToken`, `grantForToken`) still names which expiry it was, for a token that had already run out when the header came.
+ */
 function tokenRefusal(status: GrantStatus | undefined): { code: ErrorCode; message: string; logged: boolean } | undefined {
   if (status === 'denied') {
     return { code: 'denied', message: GRANT_NOT_ALLOWED, logged: true };

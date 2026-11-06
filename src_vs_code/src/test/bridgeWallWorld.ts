@@ -89,15 +89,18 @@ function plantedNodes(): TreeNode[] {
     }),
     entity('tm-ref', 'tm-ref', 'f1', { kind: 'terminal', command: `deploy ${PLANTED.REFERENCE}` }),
     entity('in-folder', 'in-folder', 'f-planted'),
-    entity('all-secrets', 'all-secrets', 'f1'),
+    ...Object.keys(SECRET_SLOTS).map((id) => entity(id, id, 'f1')),
   ];
 }
 
-/** Every entry `fullVault` adds, for a scope that takes them all. */
-export const PLANTED_IDS: readonly string[] = ['db-kv', 'db-qs', 'db-slash', 'db-at', 'full-row', 'tm-ref', 'in-folder', 'all-secrets'];
+/** One entry for each slot, holding that slot alone: each `has*` flag is true on exactly one row, so a flag read from another field cannot pass. */
+export const SECRET_SLOTS: Readonly<Record<string, 'hasPassword' | 'hasPrivateKey' | 'hasNotes' | 'hasTotp'>> = {
+  'only-password': 'hasPassword', 'only-key': 'hasPrivateKey', 'only-notes': 'hasNotes', 'only-totp': 'hasTotp',
+};
 
-/** The entry that holds a password, a key, notes and a TOTP secret: the four `has*` flags are true locally and must be true on the wire. */
-const WITH_SECRETS = 'all-secrets';
+/** Every entry `fullVault` adds, for a scope that takes them all. */
+export const PLANTED_IDS: readonly string[] = ['db-kv', 'db-qs', 'db-slash', 'db-at', 'full-row', 'tm-ref', 'in-folder', ...Object.keys(SECRET_SLOTS)];
+
 
 interface Flavour {
   /** No node at all in either account (RS4's empty vault). */
@@ -149,9 +152,9 @@ export function collideVault(asked: string[] = []): McpVaultSource {
   return vaultOf('absent', { emptyVault: false, fullVault: false, collide: true, a1Config: true, agentForward: false }, asked);
 }
 
-/** A slot's read: a value for the `fullVault` entry that holds every secret, nothing for any other. */
-function heldBy(flavour: Flavour, value: string): (accountId: string, id: string) => Thenable<StoredSecret | undefined> {
-  return (accountId, id) => Promise.resolve(flavour.fullVault && accountId === ACCOUNT && id === WITH_SECRETS ? stored(value) : undefined);
+/** A slot's read: a value for the `fullVault` entry that holds that slot, nothing for any other. */
+function heldBy(flavour: Flavour, slot: (typeof SECRET_SLOTS)[string], value: string): (accountId: string, id: string) => Thenable<StoredSecret | undefined> {
+  return (accountId, id) => Promise.resolve(flavour.fullVault && accountId === ACCOUNT && SECRET_SLOTS[id] === slot ? stored(value) : undefined);
 }
 
 /** The vault as the broker's collaborators see it, recording which accounts were asked about. */
@@ -164,7 +167,7 @@ function vaultOf(x: 'usable' | 'closed' | 'absent', flavour: Flavour, asked: str
       asked.push(accountId);
       return (nodes[accountId] ?? []).find((node) => node.id === id);
     },
-    getPassword: heldBy(flavour, 'a password'), getPrivateKey: heldBy(flavour, 'a key'), getNotes: heldBy(flavour, 'notes'), getTotp: heldBy(flavour, 'a totp'),
+    getPassword: heldBy(flavour, 'hasPassword', 'a password'), getPrivateKey: heldBy(flavour, 'hasPrivateKey', 'a key'), getNotes: heldBy(flavour, 'hasNotes', 'notes'), getTotp: heldBy(flavour, 'hasTotp', 'a totp'),
     getDbConnection: (accountId, id) => Promise.resolve(flavour.fullVault && accountId === ACCOUNT ? stored(PLANTED_CONNECTIONS[id]) : undefined),
   };
 }
@@ -209,6 +212,8 @@ function refSourceOf(vault: McpVaultSource): BridgeWallSource['refSource'] {
 }
 
 export interface WallOptions {
+  /** The actions the scripted entry serves (default `exec` and `query`): a local-door test of `terminal` needs the route to exist. */
+  supports?: string[];
   /** The vault holds no node at all (Amendment 6 review, RS4): the product's own reads must read the same over it. */
   emptyVault?: true;
   /** a1 also holds the entries of `PLANTED_IDS`: connection strings in four dialects, a terminal command with a reference out of scope, an entry in a named folder (Amendment 6, F.3). */
@@ -279,7 +284,7 @@ export interface WallWorld {
   dispose(): void;
 }
 
-const DEFAULTS = { scope: ['e1'], quiet: false, x: 'absent', collide: false, a1Config: true, agentForward: false, entryRefusal: 'wired', holdListing: false, allows: 60, storedTexts: NO_TEXTS } as const;
+const DEFAULTS = { scope: ['e1'], quiet: false, x: 'absent', collide: false, a1Config: true, agentForward: false, entryRefusal: 'wired', holdListing: false, allows: 60, storedTexts: NO_TEXTS, supports: ['exec', 'query'] } as const;
 
 /** The alias names the world knows, each to its target. `xalias` is there only when `x` is. */
 function aliasesFor(x: 'usable' | 'closed' | 'absent'): Record<string, Target> {
@@ -339,7 +344,7 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
   };
   const aliases = aliasesFor(o.x);
   const w = world({
-    supports: ['exec', 'query'],
+    supports: [...o.supports],
     answers: Array.from({ length: o.allows }, () => 'Allow'),
     aliasMap: aliases,
     aliasList: Object.keys(aliases).map((name) => ({ name, kind: 'ssh' })),

@@ -267,7 +267,7 @@ export function reservationRefused(refused: GrantLookup, limits: GrantLimits): s
     : UNKNOWN_TOKEN;
 }
 
-/** The path no route matches, which a request target `new URL` cannot parse (`//`, a bare host) is read as. */
+/** The path no route matches, which a request target `new URL` cannot parse (`//`, `///`, `http://[`, `/\`) is read as. A bare host such as `example.com` parses, as a path. */
 const UNPARSEABLE_TARGET = '/unparseable-request-target';
 
 /**

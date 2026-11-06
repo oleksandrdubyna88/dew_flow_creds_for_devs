@@ -2858,6 +2858,8 @@ already allowed**: a pre-consented call refused before it is reserved still leav
 reclaims. One bullet was **added**: an agent's `up` or `down` no longer postpones auto-lock (`vpnRun.ts`, `notePersonsAct`), the one change of this commit a local
 user can feel.
 
+*Correction, 2026-11-06 (epoch 5, the fix-forward before the partial-E1 PR).* "The one change of this commit a local user can feel" above is an overstatement: D.8's 500 on a throw, the eviction tier order and the unparseable-target answer are felt on the local doors too (the parent's §4.10, second list).
+
 #### F.7 Scenarios (each RED today, and why)
 
 Files: `test/grantRegistry.test.ts` (A4 revised), `test/bridgeKeptPlace.test.ts` (Q2, C.7 revised), `test/sshUseActions.test.ts` (X3),

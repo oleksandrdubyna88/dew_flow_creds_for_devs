@@ -3531,8 +3531,8 @@ lands between the token's lookup and the body's arrival is seen at once and not 
 inside the slot, after `admit`** (Amendment 3, C.5): a token the person denied is an asking call like any other, so a loop of
 posts with it is counted (sixty a minute answer `403 denied` with a line each, the rest `429` with one line per window, and
 `busy` while another dialog is open) and not one journal line and one queued append per request with nothing counting them. A
-token that is gone by then (evicted, or expired while its body arrived; `status()` is `undefined`) is answered `401 unauthorized`
-with the main port's sentence and no line, instead of being asked about and refused at `spentToken`. Neither mints a grant.
+token that is gone by then (evicted, or run out by idle time or call count while its body arrived; `status()` is `tokenStatusNow`, which
+is `undefined` for it) is answered `401 unauthorized` with the unknown-token sentence and no line, instead of being asked about and refused at `spentToken`. Neither mints a grant.
 
 *What using an entry reaches, and what a bridge is told.* An ssh entry's linked key and jump chain are part of using it,
 not scope targets (`sshkey` can never be opened to MCP, the value stays on the laptop, the edit verbs are off the list), so
@@ -3593,9 +3593,11 @@ which decides everything it can. **What the local alias and MCP doors gain, exac
 longer leaves a pending call grant in the registry (`credsAgentServer.usable` drops it: `GrantRegistry.drop` deletes a
 `'call'` grant that is still `pending`, and nothing else). No answer, status or sentence on either door changes below the
 ceiling; above it a `too_many_requests` appears where the call used to reach `usable`. The registry's cap evicts in the order
-of `EVICTION_ORDER`: **denied calls** (the person refused them), **allowed calls that ran** (`uses > 0`: silent MCP use), the rest
-of the calls oldest first (a pending call is, after `drop`, one whose dialog is open now or whose client left during it, and an Allow
-not yet reserved has no use yet; Amendment 3, C.4), denied tombstones, a token whose first dialog is open, and the oldest token last,
+of `EVICTION_ORDER`: **denied calls** (the person refused them), **allowed calls that ran** (`uses > 0`: silent MCP use), **Allows not
+yet reserved** (`allowed`, `uses 0`: live while the call waits in the one-use lane, `remember`, `releaseWaiting` or the mask read, and
+dead for good when a pre-consented call was refused in `usable` or abandoned before it was reserved, because `drop` deletes pending
+grants only), and last of the calls **pending ones** (a dialog is open now, or the client left during it; Amendment 3, C.4 and
+Amendment 6, D.5: a loop of dead pre-consented calls used to reach the pending call first), denied tombstones, a token whose first dialog is open, and the oldest token last,
 so an idle shared token, a tombstone or a token with an open dialog is never evicted while a call grant exists (today each of them
 could be), and a quiet loop at sixty calls a minute can no longer evict the call grant of a dialog on screen (it used to at the 256th
 mint, inside the dialog's five minutes: the person's answer was lost and the journal said `ALLOWED` for a grant that no longer existed). **One dialog at a time stays global** because the person is one person with
@@ -3614,6 +3616,43 @@ more, and every Allow of an action without the flag (`exec`, `query`: the only a
 dialog's close as above. A local token call raises dialogs that are not counted, held or closed, as it was never throttled; on
 a bridge a token call is bridged and counted on its bridge, with the bridge's sentence
 (`Too many requests: this Remote Bridge may prompt at most 5 times a minute.`). `forget(door)` is for E2 on Close.
+
+**The partial-E1 closing commit** (E1.3's last, `88befcd`, and its fix commit `a04ca33`; Amendment 6 of the E1.3 spec). What it
+builds, and what a person can and cannot reach with it today.
+
+*Reachable now, on the local doors* (no bridge needed): the four-tier eviction order above; **a throw inside a handler is answered
+`500 internal`** with `INTERNAL_FAILURE` on every door, where the request used to hang until the client gave up
+(`unanswered`, `brokerRequests.ts`: it **answers first**, only if `res.headersSent` is false, and then writes its one journal line
+inside a `try`, so a journal that throws on every line still answers; the line carries the reason and the body never does, and
+**that line has no ceiling** — one per throwing request — until E2.2b's failure reporter bounds it); **a request target `new URL`
+cannot parse** (`//`, `///`, `http://[`, `/\`; `example.com` parses, as a path) is read as a path no route matches
+(`requestUrl`, `brokerRequests.ts`) and is answered `not_found` on the main port and `not_supported` on a bridge, with no 500 and
+no journal line, where before D.8 it threw before any route or throttle; **a key file whose removal fails and whose journal note
+then throws** no longer replaces a finished exec's `200` or leaks the exec slot (`removeKeyFile`, `sshUseActions.ts`, an inner
+`try` around the note); and **an agent's `up` or `down` is not a person's act** (`notePersonsAct`, `vpnRun.ts`): only a call with
+no start gate, which is the person's own Start or Stop, tells the vault a person is at the keyboard, so an agent's `up` or
+`down` no longer postpones auto-lock (an Allow or Deny click, and every command or click, still do).
+
+*Built, and reachable only through a bridge door, which no production code opens until E2* (R1, R4): the **read shape**. A
+bridged listing row is a `BridgeEntry` built field by field by `narrowed` (`bridgeScope.ts`), never a spread of the stored row:
+`connectionString` and `command` become the booleans `hasConnectionString` and `hasCommand`, `folder` is `''`, `can` is `use` as
+resolved and `false` for the rest, and `dependsOn` names listed rows only. The type, `BRIDGE_ENTRY_FIELDS` and the literal must
+agree, and `BRIDGE_READ_SHAPES` (every key at every depth of every walled read) and `BRIDGE_BYTE_EQUAL_READS` (the three reads
+that carry the product's own text) together must name exactly the served GET routes, which `bridgeReadShape.test.ts` walks over
+the served JSON. The alias listing is built by `aliasesIn`: the scope is read **once per listing** and each row is `{ name, kind }`
+only. The local doors keep `visibleMcpEntries` and `OPEN_VIEW` as they were. **The `exec` guard** (`unguardedBridge`,
+`sshUseActions.ts`): a bridged `exec` with no `bridgedSshConfig` writer is refused `403 denied` with `BRIDGE_USE_REFUSED` and the
+journal reason `no per-call ssh_config yet: E1.6`, before any slot, key or spawn; production's `sshDepsFor` sets no writer, so every
+bridged exec is refused until E1.6 removes the guard in the commit that writes the file. **`tokenStatusNow`**
+(`brokerBridgeToken.ts`) runs on the bridged branch of the token route alone: a token that ran out between its header and its
+body is answered `401 unauthorized` with the unknown-token sentence and no line (D22), while the header-time `lookup` still names
+which expiry it was; the main port is unchanged. D.7 is therefore unreachable before E2, and so is every bridged-only item
+above: none of them has a release note before the flip entry of E4.1.
+
+*Known gap, local and older than this work.* `POST /v1/config/read` writes one journal line per refused request, with no
+authentication and no ceiling (`brokerConfigRoute.ts` notes `unknown key` for any bearer, the empty one included, and
+`credsAgentServer.ts` logs every outcome). Found by the re-review by reading, and confirmed by a probe: 50 requests, 50 lines. A
+bridge refuses the route. The plan records it as a todo (§8 of the scoped remote bridge plan), not as part of E1.
 
 **A signed envelope without its signature is tampered, not legacy** (`verifyEnvelopeMac`,
 `requireIntactEnvelope`). The envelope MAC exists for one threat, named where it is computed: on a

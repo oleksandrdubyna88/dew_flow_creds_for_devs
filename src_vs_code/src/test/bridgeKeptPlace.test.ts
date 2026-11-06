@@ -418,3 +418,97 @@ test('C.7 (Amendment 6 review): a journal that throws on EVERY line still answer
     ww.dispose();
   }
 });
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Partial E1 on the local doors (parent §7): a throw inside a handler is answered 500 through the main port, on all three doors
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('C.7 through the main port: a journal that throws on its first line is answered 500 on the alias, MCP and token doors, and the next call is asked', async () => {
+  const escaped: unknown[] = [];
+  const spy = (reason: unknown): void => {
+    escaped.push(reason);
+  };
+  process.on('unhandledRejection', spy);
+  try {
+    for (const door of ['alias', 'mcp', 'token'] as const) {
+      const ww = await wallWorld();
+      try {
+        const ask = await askFor(ww, door);
+        const append = ww.w.audit.push.bind(ww.w.audit);
+        let threw = false;
+        ww.w.audit.push = (...lines: string[]): number => {
+          if (!threw) {
+            threw = true;
+            throw new Error(JOURNAL_FAULT);
+          }
+          return append(...lines);
+        };
+        const failed = await answeredAtOnce(send(viaMain(ww), ask), `${door}: the local request was left unanswered`);
+        assert.deepEqual([failed.status, code(failed), message(failed)], [500, 'internal', INTERNAL_FAILURE], `${door}: ${failed.body}`);
+        assert.equal(failed.body.includes(JOURNAL_FAULT), false, `${door}: the reason is not in the body`);
+        assert.ok(ww.w.audit.some((line) => line.includes(`a handler threw: ${JOURNAL_FAULT}`)), `${door}: the reason is in the journal`);
+        const next = await answeredAtOnce(send(viaMain(ww), ask), `${door}: the next call did not answer`);
+        assert.equal(next.status, 200, `${door}: the next local call was asked and ran: ${next.body}`);
+      } finally {
+        ww.dispose();
+      }
+    }
+    await pause(20);
+    assert.equal(escaped.length, 0, 'nothing escaped as an unhandled rejection');
+  } finally {
+    process.off('unhandledRejection', spy);
+  }
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Partial E1 on the local doors (parent §7): the kept place after a local `terminal` through the alias door, and none through the token door
+ * ------------------------------------------------------------------------------------------------------------- */
+
+const terminalByAlias = (): Ask => ({ path: '/v1/alias/terminal', body: { alias: 'one' } });
+
+test('K8 through the alias door: an Allowed local `terminal` keeps the place until it ends — a local alias call and a bridge are busy, asked once it is over', async () => {
+  const ww = await wallWorld({ asksAfterConsent: true, supports: ['exec', 'terminal'] });
+  let finish = (): void => undefined;
+  try {
+    const running = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    ww.w.hold = () => running;
+    const first = send(viaMain(ww), terminalByAlias());
+    first.catch(() => undefined);
+    await until(() => ww.w.ran.length === 1, 'the terminal to be inside its action');
+    for (const [who, door] of [['a local alias call', viaMain(ww)], ['a bridge', viaBridge(ww.bridge)]] as const) {
+      const refused = await answeredAtOnce(send(door, alias()), `${who} was let in while the terminal's own prompt may be up`);
+      assert.deepEqual([refused.status, message(refused)], [429, BUSY], who);
+    }
+    assert.equal(ww.w.ran.length, 1, 'and ran nothing');
+    finish();
+    assert.equal((await first).status, 200);
+    assert.equal((await send(viaMain(ww), alias())).status, 200, 'the place came back when the terminal ended');
+  } finally {
+    finish();
+    ww.dispose();
+  }
+});
+
+test('K8 through the local token door: the same call keeps NO place — a local alias call is asked while it runs (a local token call is counted on no door)', async () => {
+  const ww = await wallWorld({ asksAfterConsent: true, supports: ['exec', 'terminal'] });
+  let finish = (): void => undefined;
+  try {
+    const token = await ww.tokenFor(ACCOUNT, 'e1', 'prod');
+    const running = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    ww.w.hold = () => running;
+    const first = send(viaMain(ww), { path: '/v1/use/terminal', token, body: {} });
+    first.catch(() => undefined);
+    await until(() => ww.w.ran.length === 1, 'the token call to be inside its action');
+    const second = send(viaMain(ww), alias());
+    await until(() => ww.w.ran.length === 2, 'the local alias call to be asked and to run (it was told busy: the token call kept a place)');
+    finish();
+    assert.deepEqual((await Promise.all([first, second])).map((reply) => reply.status), [200, 200]);
+  } finally {
+    finish();
+    ww.dispose();
+  }
+});
