@@ -643,3 +643,11 @@ Nothing above is deleted; the parent's §4.10, §4.1, §4.2, §7 and `## Epics` 
    `withoutComments`, the CI and hygiene items, and the status lines of this document and the E1.2 spec (corrected in this commit).
 6. **Process:** E1.4, E1.5 and E1.6 each open their PR when first buildable and read CodeRabbit before their behavioural inventory is called
    complete; a sentence about one action's behaviour is written only with the test that pins it (the parent's *Reading this plan*).
+7. **After the Opus audit of every prompt site (172 sites, 2026-11-06), item 1 above is widened and corrected.** `rotate` prompts after its
+   Allow too (`rotationStore.ts:202,220`; `pinPrompt.ts:64,85`, `pinOnCreate.ts:243,291`) and keeps the place by the flag; `exec` on an
+   entry with `agentForward` and the agent socket up prompts through the socket (`sshSignPrompt.ts:43,115`) and keeps the place per entity
+   (`asksAfterConsent` widens to `boolean | ((target) => boolean)`, read at `credsAgentServer.ts:531`). So the sentence reads **`query`,
+   `run` and a non-forwarding `exec` keep nothing**, not "`exec`, `query` and `run`". The exact-set test of item 1 is replaced by the
+   prompt-site ledger test the parent's §7 describes (`src/test/promptSites.test.ts`, `src/test/promptSiteLedger.ts`), with its limits said.
+   Also from the sort: E1.1's refusal is reached by the token and MCP roads only; `creds env <name>` never reaches it (item 13 above; the
+   parent's §4.8), and the CHANGELOG and help bullets say so; the handler-failure line's route comes from `BRIDGE_ROUTES` or reads `other`.
