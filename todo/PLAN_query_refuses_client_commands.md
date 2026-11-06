@@ -14,10 +14,7 @@
   same time by the gate's own protocol, measured the plan against real clients. Both sets of findings are folded into
   the approved text below; nothing was built before it, so the epoch opens with no entries.)
 
-- 2026-11-06, after the code review of the build (three notes, no change to a rule's reach): (1) `refuseOnce` no
-  longer allows a `dbType` it has no case for; it refuses with a generic sentence, `mongodb` alone stays silent so
-  `buildDbQueryLaunch` keeps saying what an agent has always read for it (§2.1). (2) The mysql and mssql sentences end
-  with a clause on how to write the refused word as SQL (§2.1). (3) The comment-inside over-refusal is named in §2.1.
+- 1.1 · 2026-11-06 · agent · approach — the code review of the build: an unhandled `dbType` is refused (mongodb stays silent), the mysql and mssql sentences gain a way-forward clause, and the comment-inside over-refusal is named (all §2.1)
 
 ## 1. The defect
 
