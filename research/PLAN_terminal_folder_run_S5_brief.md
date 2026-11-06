@@ -1,6 +1,6 @@
 # PLAN — S5 scenarios and brief: the re-review's fix forward
 
-> Status: **built, in review, 2026-11-05.** Parent: [PLAN_terminal_folder_run.md](PLAN_terminal_folder_run.md).
+> Status: **IMPLEMENTED, 2026-11-06.** Parent: [PLAN_terminal_folder_run.md](PLAN_terminal_folder_run.md).
 > Story S5 of the parent's `## Stories` (parent §2 and §3 as revised for epoch 2, which override the S1 spec and the S3 brief where they
 > differ). Written by an Opus judge; Sonnet codes from it and rediscovers nothing; Opus reviews. Scope: `src_vs_code` and two research
 > documents. Nothing here is a new requirement: a defect you find is reported in your summary, never fixed here, because the epoch's change budget is one.

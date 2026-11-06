@@ -1,6 +1,6 @@
 # PLAN — S2 scenarios and brief: `{name}`, one road, refused rather than quoted
 
-> Status: **built, in review, 2026-11-05.** Parent: [PLAN_terminal_folder_run.md](PLAN_terminal_folder_run.md).
+> Status: **IMPLEMENTED, 2026-11-06.** Parent: [PLAN_terminal_folder_run.md](PLAN_terminal_folder_run.md).
 > Story S2 of the parent's `## Stories` (parent §Design 1 and its road table). Written by an Opus judge; Sonnet codes
 > from it and rediscovers nothing; Opus reviews. Scope: `src_vs_code` plus two research documents. No help, README or
 > CHANGELOG (S4), no folder run (S3). `commandTrust.ts` is not edited.

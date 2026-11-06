@@ -1,8 +1,9 @@
 # PLAN — Run a whole terminal folder, and `{name}` in a terminal command
 
-> Status: **epoch 2 approved 2026-11-05 after a re-review, document round `proceed` (2 of 4 reviewers answered, both codex); all stories coded, under review, not merged.** Scope: the VS Code
+> Status: **IMPLEMENTED, 2026-11-06.** Extension 1.17.0, pull requests #298, #300 and #299, tag `extension-v1.17.0`, `release.yml` run 42195956137. Scope: the VS Code
 > extension (`src_vs_code`): the terminal-entry run roads, the folder row's menu, the viewer and form, help in five
-> languages. No server, no contract, no change to stored data.
+> languages. No server, no contract, no change to stored data. The rest of the work is in
+> [PLAN_terminal_runs_followups.md](../todo/PLAN_terminal_runs_followups.md).
 
 ## Plan changes
 
@@ -37,10 +38,42 @@ Narrowed: no — nothing left the scope or the Definition of Done; story S5 and 
   The consultant, codex-2 gpt-6-astra, advised deferring the closing button; rejected on the quoted documentation. Its
   points on the narrower guarantee and on modal visibility were taken: see §2 and §3.)
 
-> Epoch 2 · approved 2026-11-05 · by reviewers · state: open
+> Epoch 2 · approved 2026-11-05 · by reviewers · state: closed
 
 - 2.1 · 2026-11-05 · agent · approach — the real-shell test's folder uses the inline testsToDelete- form, since the helper §Test plan named does not exist on this branch
   (PR 294 brings the helper; the follow-ups file holds the reconciliation.)
+
+## Deviations
+
+What shipped differently from what was first approved. Sections above read as revised for epoch 2, so this names the path.
+
+- **The reducer changed twice, and the second time it was wrong before it was right.** The first table let any start and
+  numeric end read `finished`. Two reviewers refined it; a judge sorting the done work found that after a reload it still
+  typed without asking, which is what decision B forbids. `finished` now needs our own send first (`armed`). Every story
+  reviewer before that judge had passed it.
+- **The stop came late.** Entry 1.2's first half was accepted in the split commit and its second half in S1's review
+  fixes; the stop was written only after S2 and S3 had been built past it. The judge found their content fits, so nothing
+  was cut, but the rule's "no code followed" did not hold, and that is recorded here rather than tidied.
+- **Added at the re-review, story S5:** the display escaper on the folder's modal and report and on every chain modal, widened to
+  C1 and bidi controls; a `not run` row for a name holding a control character; a 4,000-character bound on the question,
+  because a row count does not bound a long line; the report's order, so failures survive a truncated notification; the
+  arrow's title from `details.name`; a closed terminal with no replacement named in the report.
+- **`Close Open Terminals and Run` was not in the owner's decisions.** It came from the finding that a skip-if-open run could
+  empty the morning, and it stayed against a consultant's advice to defer it, on VS Code's documentation: a restart relaunches
+  the process, a reload reconnects to it.
+- **Build order.** Three commits by rebase became four, then five stories on one branch by the gate operator's command, merged
+  as one squash commit (#298). The heading of the changelog went first in #300, as #282 did for 1.16.0.
+- **The real-shell test's folder** uses the inline `testsToDelete-` form, not a helper (entry 2.1); PR #294 brings the helper.
+- **Real names.** The first commits on this feature's first branch carried the owner's real session and folder names in the plan,
+  fixtures and a docblock; a conventions reviewer found them and `public-hygiene.mjs` confirmed one. They were replaced before the pull
+  request, which came from a fresh branch. Deleting that first remote branch was refused by the session's permission
+  classifier, so it stayed for the owner to delete.
+- **Reviewer coverage was thin:** only codex answered in every gate round, antigravity being rate limited throughout (1 of 2,
+  2 of 4, 4 of 8, 4 of 8). CodeRabbit read the first head of #298; its eight comments are answered there, five by a recorded reason.
+
+**Checked, not assumed:** tmux 3.6 passes no OSC 633 outward, on this distro, not through Remote-SSH. A real VS Code could not be
+started here (no `libnss3`, no Xvfb, and installing packages was not this task's to do), so §Hand checks has not run; PowerShell, cmd.exe, zsh and fish were not run
+locally. What each could cost is in §2 and §3.
 
 ## Goal
 
@@ -303,7 +336,7 @@ found `addEntity`.
 
 ## Not in this plan (todos)
 
-Recorded in [PLAN_terminal_runs_followups.md](PLAN_terminal_runs_followups.md) by this plan's last commit, not built:
+Recorded in [PLAN_terminal_runs_followups.md](../todo/PLAN_terminal_runs_followups.md) by this plan's last commit, not built:
 
 - The folder-level command template (decision D).
 - `sendPinned` (`pinnedTerminal.ts`, used by `vpnRun.ts` and `toolEnsure.ts`) can type into a reused
