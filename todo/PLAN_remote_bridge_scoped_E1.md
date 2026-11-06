@@ -1,6 +1,6 @@
 # PLAN — The scoped remote bridge, E1: the authorization boundary. Nothing reaches a person.
 
-> Status: **in progress on `feat/remote-bridge-e1`, unmerged, 2026-11-05: E1.1-E1.3 built (with the S3 spec's Amendments 2-3), E1.4 saved unfinished on `wip/remote-bridge-e14-before-stop`, E1.5 and E1.6 added by the parent's revision for epoch 4 (the amendment at the end); the parent is stopped for re-review and epoch 4 opened on 2026-11-06, so E1.4 is finished and the closing commit built next.** Stories of epic E1 of [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) (§4.1, §4.2, §4.3 schema only, §4.8, §4.9 for the exec legs, §4.10, §5 steps 1-3 and 3a-3c, §7, `## Epics` E1).
+> Status: **in progress on `feat/remote-bridge-e1`, unmerged, 2026-11-05: E1.1-E1.3 built (with the S3 spec's Amendments 2-3), E1.4 saved unfinished on `wip/remote-bridge-e14-before-stop`, E1.5 and E1.6 added by the parent's revision for epoch 4 (the amendment at the end); the parent is stopped for re-review and epoch 4 opened on 2026-11-06, so E1.4 is finished and the closing commit built next.** **As of 2026-11-06 (epoch 6's re-review): E1.3's closing commit `88befcd`, its fix `a04ca33` and the fix-forward (`6cde254`, `e057b5e`, `1065e91`) are built and pushed, unmerged, as PR #307 (partial E1), which waits for epoch 6 to open; E1.4 stays on its wip branch; E1.5 and E1.6 are not started; the amendments for epochs 5 and 6 are at the end.** Stories of epic E1 of [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) (§4.1, §4.2, §4.3 schema only, §4.8, §4.9 for the exec legs, §4.10, §5 steps 1-3 and 3a-3c, §7, `## Epics` E1).
 > Scope: `src_vs_code/src` (new modules, the broker, one wiring argument), `src_vs_code/scripts/emit-contract.mjs`, `contract/broker-v1.json`, `src_vs_code/scripts/itestForwardAgent.cjs` and `itestSshd.cjs` (E1.6). No client, no UI, no publisher, no server change. Branch `feat/remote-bridge-e1`; the PR shape is the epoch 4 amendment's, not "one PR".
 
 Every path below is relative to `src_vs_code/src/` unless it says otherwise. Every `file:line` was opened on commit c6800b8.
@@ -623,3 +623,23 @@ passage here differ.
 4. **Item 10's suite names stand**; the parent's §7 adds the local-door cases the fix-forward writes into `bridgePrompts.test.ts`,
    `bridgeKeptPlace.test.ts` and `aliasThrottle.test.ts`, and E2.2b's failure-budget and one-answer cases (parent D21, D22) are E2's
    document's to carry, not this one's.
+
+## Amendment, epoch 6 (2026-11-06)
+
+The parent plan stopped a fourth time (changes 5.1 and 5.2, `fdcc55a`) and was revised whole for epoch 6 before the sort and the re-review.
+Nothing above is deleted; the parent's §4.10, §4.1, §4.2, §7 and `## Epics` E1 are the authority where they and an earlier passage here differ.
+
+1. **`down` declares a follow-up.** `vpnAction` sets `asksAfterConsent` for `up` alone (`agentUseActions.ts:405`); with no VPN client on the
+   PATH a stop reaches `noCli` → `offerToInstall` (`vpnRun.ts:197-204`, `toolEnsure.ts:17-26`), a modal, so `down` keeps the place like `up`.
+   OpenVPN Connect asks nothing on a stop (`vpnRun.ts:206-208` only tells). The epoch 5 amendment's item 2 and every "`exec`, `query`, `run`
+   and `down` keep nothing" read "`exec`, `query` and `run`". The parent's §4.10 states the whole prompt inventory with its file:line, and a
+   test derives the flag's owners from the real factories and pins the set `create`, `terminal`, `up`, `down`.
+2. **The handler-failure journal line is a classification.** `unanswered` writes no `describeError` text: a built-in class name, a code of a
+   strict shape, the matched route's name and the headers flag (parent §4.1); the CHANGELOG's 500 bullet says so instead of "the reason".
+3. **The scope store treats only ENOENT as absent** in `set` (`bridgeScopeStore.ts:159,222-228`; parent §4.2), with its test.
+4. **E1.4 also owns the token sentence** `Allowing covers every later call on this token` (`brokerConsent.ts:186`; the S4 spec's H5 and C11
+   already replace it on a bridged grant), with a test that distinguishes the bridged and the local text.
+5. **The fix-forward list grows**, as the parent's E1 *PR shape* items (6)-(12) say: `BridgeListeners.turns`, `importWalk.ts`'s
+   `withoutComments`, the CI and hygiene items, and the status lines of this document and the E1.2 spec (corrected in this commit).
+6. **Process:** E1.4, E1.5 and E1.6 each open their PR when first buildable and read CodeRabbit before their behavioural inventory is called
+   complete; a sentence about one action's behaviour is written only with the test that pins it (the parent's *Reading this plan*).

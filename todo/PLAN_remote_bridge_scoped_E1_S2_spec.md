@@ -1,6 +1,6 @@
 # PLAN — E1.2 spec: the per-bridge listener, the third door, the key, `BridgeContext`
 
-> Status: **plan only, nothing implemented yet, 2026-11-04 — security spec by Fable (authentication: the key), written before its code.**
+> Status: **built on `feat/remote-bridge-e1` (E1.2, commits 547d9e9 and 52cb8a5), pushed, unmerged in PR #307 (partial E1); 2026-11-06.** Written 2026-11-04 as a security spec by Fable (authentication: the key), before its code; the parent's sort for epoch 4 marked E1.2 `fits`, kept. The line above said "plan only" until epoch 6's re-review corrected it.
 > Story E1.2 of [PLAN_remote_bridge_scoped_E1.md](PLAN_remote_bridge_scoped_E1.md) (parent [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) §4.1).
 > Shorter than the E1.3 spec on purpose: the E1 document settles E1.2's door order, sentences, door table and scenarios D1–D11, and
 > this file repeats none of it. It carries what E1 left open, what it overturns, and the exact shapes a Sonnet coder needs.
