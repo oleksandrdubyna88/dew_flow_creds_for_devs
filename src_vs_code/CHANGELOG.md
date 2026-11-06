@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.17.0] — 2026-11-05 — One arrow brings back a whole Terminal folder, and the green arrow no longer types into a busy terminal
+
 ### Added — one arrow brings back a whole Terminal folder, and `{name}` in a command
 
 - **A folder of type *Terminal command* has a green arrow, *Run All in Folder*, beside its `+` and in its menu.** One
