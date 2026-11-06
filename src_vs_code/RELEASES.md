@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.16.0...extension-v1.17.0) (2026-11-05)
+
+
+### Features
+
+* **extension:** Run All in Folder, {name} in a terminal command, and no typing into a busy terminal ([#298](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/issues/298)) ([344e54b](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/commit/344e54be3b6ced32b1e76e3a49500a078e35efaa))
+
 ## [1.16.0](https://github.com/oleksandrdubyna88/dew_flow_creds_for_devs/compare/extension-v1.15.1...extension-v1.16.0) (2026-10-22)
 
 
