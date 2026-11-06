@@ -29,10 +29,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A prompt is counted when it is shown, not when the call is admitted** (`aliasThrottle.ts`, `prompted`), on the alias and MCP doors: a
   call refused before any dialog no longer spends one of the five prompts a minute.
 - **A new ceiling: a caller without a token may ask at most 60 times a minute** on the alias and MCP doors, calls refused for their
-  content or by the wall included (`ASKING_CEILING`), with its own sentence and one journal line per minute. What is refused before the call is
+  content included (`ASKING_CEILING`), with its own sentence and one journal line per minute. What is refused before the call is
   admitted is not counted (an unknown alias, a missing field, a call made while a dialog is standing), and neither is a call that carries a
   token, which is not admitted at all.
-- **A long `exec`, `query`, `run` or `down` no longer makes every other alias and MCP call hear *busy*.** Before, every alias and MCP call
+- **A long `exec`, `query`, `run` or `down` no longer makes every other asking alias and MCP call hear *busy*.** Before, every alias and MCP call
   that could prompt kept the one place until the call ended, an `exec` for its whole run included; now only a call that may show a prompt of
   its own after your Allow does: a local `create`, `terminal` or `up` (a PIN box, a trust modal, OpenVPN Connect's question) keeps the place
   until that call ends, as before, and the others give it back when the dialog closes. A local call that carries a token keeps nothing: it is
