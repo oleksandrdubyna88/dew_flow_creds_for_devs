@@ -131,7 +131,7 @@ lands. When #294 lands, that test moves to its `ownedDir`. The test and this bra
 
 **Symptom.** The owner ran most of §Hand checks of [PLAN_terminal_folder_run.md](../research/PLAN_terminal_folder_run.md) on 2026-11-06; the
 results are recorded there. Neither result that would change code came up. Still unmeasured: what a revived terminal holds after an overnight
-disconnect (1), a nested `ssh` (4), bash with `LC_ALL=C` and a Cyrillic name (6), `{name}` on an old extension in zsh and fish (7), and the double
+disconnect (1), a detach in a terminal that survived a reload over Remote-SSH (the second half of 3), a nested `ssh` (4), bash with `LC_ALL=C` and a Cyrillic name (6), `{name}` on an old extension in zsh and fish (7), and the double
 click and the folder modal in a Remote-SSH window rather than a WSL one (5, 8). **Fix to consider:** run them when convenient. A line typed without
 a question under a nested `ssh` would change code.
 
