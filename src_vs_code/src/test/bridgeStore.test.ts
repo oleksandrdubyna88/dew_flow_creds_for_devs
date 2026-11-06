@@ -1,9 +1,9 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as nodePath from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { LeasedQueue } from '../leasedQueue';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { WindowLock, nodeLockFs } from '../windowLock';
 import { loadBridgeModules, put } from './bridgeModules';
 
@@ -30,17 +30,17 @@ interface Windows {
   readonly fileOf: (account: string, server: string) => string;
 }
 
-/** Two windows over one storage folder; the folder is removed whatever the scenario did. */
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
+
+/** Two windows over one storage folder; the folder is owned, so it is removed whatever the scenario did. */
 async function twoWindows(scenario: (w: Windows) => Promise<void>): Promise<void> {
-  const dir = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'creds-store-'));
+  const dir = ownedDir(scope, 'store');
   const scopesDir = nodePath.join(dir, SCOPES_DIR);
   const window = (): import('../bridgeScope').BridgeScopes =>
     new M.scope.BridgeScopes(scopesDir, nodeScopeFs(), new LeasedQueue(new WindowLock(nodePath.join(dir, SCOPES_LOCK_DIR), nodeLockFs())), () => 1_000);
-  try {
-    await scenario({ dir, scopesDir, a: window(), b: window(), fileOf: (account, server) => nodePath.join(scopesDir, scopeFileName(account, server)) });
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
+  await scenario({ dir, scopesDir, a: window(), b: window(), fileOf: (account, server) => nodePath.join(scopesDir, scopeFileName(account, server)) });
 }
 
 test('S25: a scope narrowed in one window is the next read in another, with no reconnect', async () => {

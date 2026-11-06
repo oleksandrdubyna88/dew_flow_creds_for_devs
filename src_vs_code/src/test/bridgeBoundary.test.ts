@@ -1,10 +1,10 @@
 import * as assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { socketPathFor } from '../brokerListeners';
+import { cleanupScope, ownedDir, shortSocketRoot } from '../../scripts/lib/leftovers.cjs';
 import { CONTEXT } from './bridgeDoorHarness';
 import { chainToEditor, closureOf } from './importWalk';
 import { share, world } from './brokerWorld';
@@ -92,8 +92,12 @@ function contractRequests(): readonly string[] {
   ];
 }
 
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
+
 test('R3: the two existing doors answer as they did before the third existed', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-r3-'));
+  const dir = ownedDir(scope, 'r3', { parent: shortSocketRoot() });
   const w = world({ storageDir: dir });
   try {
     const { port } = await share(w);
@@ -113,7 +117,6 @@ test('R3: the two existing doors answer as they did before the third existed', a
     assert.deepEqual(seen, recorded);
   } finally {
     w.server.dispose();
-    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 

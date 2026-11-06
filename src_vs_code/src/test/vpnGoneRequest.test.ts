@@ -400,23 +400,15 @@ test('the agent VPN opener hands its gate to the start: a request already gone s
 test('V1: an agent\'s up and down (a start gate behind them) do not tell the vault a person is here', async () => {
   for (const action of ['start', 'stop'] as const) {
     const w = world({});
-    const { dir } = await startVpn(w, wireguard(), { action, startGate: new AbortController().signal, mocks: CLI });
-    try {
-      assert.equal(w.userActivity, 0, `an agent's ${action} postponed auto-lock`);
-    } finally {
-      cleanup(dir);
-    }
+    await startVpn(scope, w, wireguard(), { action, startGate: new AbortController().signal, mocks: CLI });
+    assert.equal(w.userActivity, 0, `an agent's ${action} postponed auto-lock`);
   }
 });
 
 test('V2: the person\'s own Start and Stop (no start gate) do', async () => {
   for (const action of ['start', 'stop'] as const) {
     const w = world({});
-    const { dir } = await startVpn(w, wireguard(), { action, mocks: CLI });
-    try {
-      assert.equal(w.userActivity, 1, `the person's ${action} did not postpone auto-lock`);
-    } finally {
-      cleanup(dir);
-    }
+    await startVpn(scope, w, wireguard(), { action, mocks: CLI });
+    assert.equal(w.userActivity, 1, `the person's ${action} did not postpone auto-lock`);
   }
 });

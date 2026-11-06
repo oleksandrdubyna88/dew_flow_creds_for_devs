@@ -1,6 +1,4 @@
-import * as fs from 'node:fs';
 import * as http from 'node:http';
-import * as os from 'node:os';
 import * as nodePath from 'node:path';
 import type { BridgeContext } from '../bridgeContext';
 import type { BridgeScopes, BridgeWallSource } from '../bridgeScope';
@@ -14,6 +12,7 @@ import { stored, type StoredSecret } from '../storedSecret';
 import { wallSuppliersOf } from '../bridgeWallSource';
 import { visibleMcpEntries } from '../mcpEntries';
 import * as assert from 'node:assert/strict';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { keyed, pause, raw, Reply } from './bridgeDoorHarness';
 import { loadBridgeModules, put } from './bridgeModules';
 import { World, world } from './brokerWorld';
@@ -309,7 +308,8 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
     releaseListing = resolve;
   });
   // A real directory and a real lock, as production has them: the scope is a file, and a test that narrows it narrows a file.
-  const storage = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'creds-wall-'));
+  const owned = cleanupScope();
+  const storage = ownedDir(owned, 'wall');
   const scopes = new modules.scope.BridgeScopes(
     nodePath.join(storage, modules.scope.SCOPES_DIR),
     modules.scope.nodeScopeFs(),
@@ -381,7 +381,7 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
     },
     dispose: () => {
       w.server.dispose();
-      fs.rmSync(storage, { recursive: true, force: true });
+      void owned.close(); // the folder is owned and claimed: closing the scope removes it
     },
   };
 }

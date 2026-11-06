@@ -1,9 +1,9 @@
 import * as fs from 'node:fs';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import type { SshUseDeps, sshExecAction as SshExecAction } from '../sshUseActions';
 import type { EntityMetadata, PortForward } from '../types';
 import type { UseAction } from '../useActions';
+import { cleanupScope, ownedDir } from '../../scripts/lib/leftovers.cjs';
 import { ACCOUNT, locked, memoryStorage, seedEntry } from './pinWorld';
 import { loadWithVscode } from './vscodeStub';
 
@@ -66,7 +66,8 @@ const ssh = (id: string, name: string, extra: Partial<EntityMetadata>): EntityMe
 
 export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld> {
   const o = { key: 'plain', jump: 'none', agentForward: false, forwards: false, stderr: '', runFails: false, writeFails: false, ...options } as const;
-  const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-links-'));
+  const owned = cleanupScope();
+  const storageDir = ownedDir(owned, 'links');
   const runs: Run[] = [];
   const notes: string[] = [];
   const materialised: string[] = [];
@@ -120,7 +121,7 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
       return configWrites;
     },
     storageDir,
-    cleanup: () => fs.rmSync(storageDir, { recursive: true, force: true }),
+    cleanup: () => void owned.close(), // the folder is owned and claimed: closing the scope removes it
   };
 }
 

@@ -2,12 +2,11 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as net from 'node:net';
-import * as os from 'node:os';
-import * as path from 'node:path';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
 import { BridgeContext } from '../bridgeContext';
 import { BRIDGE_NOT_SERVED } from '../bridgeAllowList';
 import { socketPathFor } from '../brokerListeners';
+import { cleanupScope, ownedDir, shortSocketRoot } from '../../scripts/lib/leftovers.cjs';
 import { CONTEXT, OTHER, Reply, code, emptyWall, keyed, message, pause, raw, refuses } from './bridgeDoorHarness';
 import { call, share, world } from './brokerWorld';
 
@@ -93,8 +92,12 @@ test('D3: the key header changes nothing on the main port', async () => {
   }
 });
 
+/** Every folder this file makes is owned and claimed, and removed when the file's tests end. */
+const scope = cleanupScope();
+after(() => scope.close());
+
 test('D3: the key header changes nothing on the socket door either', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-d3-'));
+  const dir = ownedDir(scope, 'd3', { parent: shortSocketRoot() });
   const w = world({ aliasList: [{ name: 'prod', kind: 'ssh' }], storageDir: dir, hooks: emptyWall() });
   try {
     await share(w);
@@ -109,7 +112,6 @@ test('D3: the key header changes nothing on the socket door either', async () =>
     assert.deepEqual([wrong.status, wrong.body], [plain.status, plain.body]);
   } finally {
     w.server.dispose();
-    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
@@ -187,7 +189,7 @@ test('K10: a refused route is answered before its body arrives — Content-Lengt
 });
 
 test('openBridgeListener after dispose refuses before it starts anything — no main port, no note, no output channel', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-late-'));
+  const dir = ownedDir(scope, 'late', { parent: shortSocketRoot() });
   const w = world({ storageDir: dir, hooks: emptyWall() });
   try {
     w.server.dispose();
@@ -200,7 +202,6 @@ test('openBridgeListener after dispose refuses before it starts anything — no 
     assert.deepEqual(w.audit, []);
   } finally {
     w.server.dispose();
-    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 

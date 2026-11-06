@@ -237,27 +237,19 @@ test('X1: a credential read that THROWS gives the slot back and fails the call â
   // leave the slot held for ever, and a handful of such calls would have exhausted the pool.
   const parts: Parts = { source: KEY_SOURCE, credentialThrows: true };
   const w = await world(parts);
-  try {
-    await assert.rejects(exec(w, parts), { message: 'the keychain would not answer' });
-    assert.equal(w.tally.slotsHeld, 0, 'the slot came back');
-    assert.deepEqual(w.runs, [], 'and nothing ran');
-    parts.credentialThrows = false; // the mock reads the world's own parts
-    const result = await exec(w, parts);
-    assert.equal(result.status, 200, 'the next call is served');
-  } finally {
-    cleanup(w);
-  }
+  await assert.rejects(exec(w, parts), { message: 'the keychain would not answer' });
+  assert.equal(w.tally.slotsHeld, 0, 'the slot came back');
+  assert.deepEqual(w.runs, [], 'and nothing ran');
+  parts.credentialThrows = false; // the mock reads the world's own parts
+  const result = await exec(w, parts);
+  assert.equal(result.status, 200, 'the next call is served');
 });
 
 test('C.3: asksAfterConsent is set on the terminal action (a remote window\'s refusal modal can follow the Allow) and not on exec', async () => {
   const parts: Parts = { source: KEY_SOURCE };
   const w = await world(parts);
-  try {
-    assert.equal(w.mod.sshTerminalAction(deps(w, parts)).asksAfterConsent, true);
-    assert.equal(w.mod.sshExecAction(deps(w, parts)).asksAfterConsent, undefined, 'exec never prompts after the Allow: P2, a long exec holds nothing');
-  } finally {
-    cleanup(w);
-  }
+  assert.equal(w.mod.sshTerminalAction(deps(w, parts)).asksAfterConsent, true);
+  assert.equal(w.mod.sshExecAction(deps(w, parts)).asksAfterConsent, undefined, 'exec never prompts after the Allow: P2, a long exec holds nothing');
 });
 
 test('X2: a key file that cannot be removed (a Windows lock) still gives the slot back, keeps the finished result and says so in the journal', async () => {
@@ -283,7 +275,6 @@ test('X2: a key file that cannot be removed (a Windows lock) still gives the slo
     assert.ok(w.notes.every((note) => !note.includes('PRIVATE KEY BODY')), 'and not the key');
   } finally {
     refused.mock.restore();
-    cleanup(w);
   }
 });
 
@@ -305,7 +296,6 @@ test('X3 (Amendment 6, D.6): a key file that cannot be removed AND a journal tha
     assert.equal(w.tally.slotsHeld, 0, 'and the slot came back');
   } finally {
     refused.mock.restore();
-    cleanup(w);
   }
 });
 
