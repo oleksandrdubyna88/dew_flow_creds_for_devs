@@ -14,7 +14,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import { formatOwner, ownedDir, readOwner, thisOwner } from '../../scripts/lib/leftovers.cjs';
 import {
-  ENDED, RECORD, SRC_VS_CODE, WITHOUT_TEST_CONTEXT, WRAPPER, auditRemoves, exists, isAlive, lines, me, nothingSwept, ownerWith, plant, privateRoot, runner, suite,
+  ENDED, NO_SURVIVORS, RECORD, SRC_VS_CODE, WITHOUT_TEST_CONTEXT, WRAPPER, auditRemoves, exists, isAlive, lines, me, nothingSwept, ownerWith, plant, privateRoot, runner, suite,
   type Spawn, withEnv,
 } from './runnerWorld';
 
@@ -49,7 +49,7 @@ test('a suite that passed and left a folder it claimed fails with exit 1, names 
   const root = privateRoot(t);
   const log = lines();
   let left = '';
-  const code = await runWithAudit([], { spawn: suite(0, () => { left = plant(root, 'left', RECORD); }), roots: [root], confirm: ENDED, sweep: nothingSwept, write: log.write });
+  const code = await runWithAudit([], { spawn: suite(0, () => { left = plant(root, 'left', RECORD); }), roots: [root], confirm: ENDED, survivors: NO_SURVIVORS, sweep: nothingSwept, write: log.write });
 
   assert.equal(code, 1);
   assert.ok(left.length > 0 && !exists(left) && !exists(`${left}.owner`), 'the folder and its claim are removed');
@@ -90,7 +90,7 @@ test('a suite that failed keeps its own code, the list is printed, and the run\'
   const root = privateRoot(t);
   const log = lines();
   let left = '';
-  const code = await runWithAudit([], { spawn: suite(5, () => { left = plant(root, 'failed', RECORD); }), roots: [root], confirm: ENDED, sweep: nothingSwept, write: log.write });
+  const code = await runWithAudit([], { spawn: suite(5, () => { left = plant(root, 'failed', RECORD); }), roots: [root], confirm: ENDED, survivors: NO_SURVIVORS, sweep: nothingSwept, write: log.write });
 
   assert.equal(code, 5);
   assert.ok(!exists(left));
@@ -101,7 +101,7 @@ test('an orphan claim of this run is removed too, and counts', async (t) => {
   const { runWithAudit } = await runner();
   const root = privateRoot(t);
   const orphan = path.join(root, `testsToDelete-${me}-creds-orphan-abc123.owner`);
-  const code = await runWithAudit([], { spawn: suite(0, () => fs.writeFileSync(orphan, `${RECORD}\n`)), roots: [root], confirm: ENDED, sweep: nothingSwept, write: lines().write });
+  const code = await runWithAudit([], { spawn: suite(0, () => fs.writeFileSync(orphan, `${RECORD}\n`)), roots: [root], confirm: ENDED, survivors: NO_SURVIVORS, sweep: nothingSwept, write: lines().write });
 
   assert.equal(code, 1);
   assert.equal(exists(orphan), false);

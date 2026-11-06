@@ -4,12 +4,13 @@
 //
 // Same rules as the other runner files: private roots through the `roots` seam, no real sweep, seams for what cannot be had.
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
 import { formatOwner, ownedDir } from '../../scripts/lib/leftovers.cjs';
-import { ENDED, RECORD, auditRemoves, exists, lines, nothingSwept, ownerWith, plant, privateRoot, processTree, runner, suite, tableOf, withEnv } from './runnerWorld';
+import { ENDED, NO_SURVIVORS, RECORD, auditRemoves, exists, lines, nothingSwept, ownerWith, plant, privateRoot, processTree, runner, suite, tableOf, withEnv } from './runnerWorld';
 
 const posixOnly = process.platform === 'win32' ? { skip: 'POSIX: a fake ps script' } : {};
 
@@ -119,6 +120,7 @@ test('[E2.1 Opus 2] where the record has no start time, a claim older than this 
     record: noStart,
     sweep: nothingSwept,
     confirm: ENDED,
+    survivors: NO_SURVIVORS,
     write: log.write,
   });
 
@@ -387,4 +389,40 @@ test('[E2.1 code4 12] a survivor whose start time was bound IS killed, and polle
 
   assert.ok(killed.length >= 1 && killed.every((pid) => pid === 4_194_305), 'signalled (again at each poll while it lives)');
   assert.equal(ended.ended, true);
+});
+
+/** A real zombie and the live parent that does not reap it: the shell starts a child, then becomes `sleep`, which waits for nobody. */
+async function zombieOfALiveParent(t: { after: (fn: () => void) => void }): Promise<{ zombie: number; parent: number }> {
+  const parent = spawn('sh', ['-c', 'sleep 0 & echo $!; exec sleep 30'], { stdio: ['ignore', 'pipe', 'ignore'] });
+  t.after(() => { parent.kill('SIGKILL'); });
+  const zombie = await new Promise<number>((resolve, reject) => {
+    parent.stdout.once('data', (chunk: Buffer) => { resolve(Number(String(chunk).trim())); });
+    parent.once('error', reject);
+  });
+  const state = (): string => {
+    try {
+      const stat = fs.readFileSync(`/proc/${zombie}/stat`, 'utf8');
+      return stat.slice(stat.lastIndexOf(')') + 2, stat.lastIndexOf(')') + 3);
+    } catch {
+      return '';
+    }
+  };
+  for (let attempt = 0; attempt < 200 && state() !== 'Z'; attempt += 1) await new Promise((resolve) => { setTimeout(resolve, 10); });
+  assert.equal(state(), 'Z', 'the premise: the child is a zombie');
+  return { zombie, parent: parent.pid as number };
+}
+
+const linuxOnly = process.platform === 'linux' ? {} : { skip: 'Linux: a zombie is read from /proc' };
+
+test('[E2.1 review 8] a survivor that is a zombie has ended: the default check does not hold the run open for it, while a live process still does', linuxOnly, async (t) => {
+  const tree = await processTree();
+  const { zombie, parent } = await zombieOfALiveParent(t);
+  const options = { confirm: ENDED, record: RECORD, platform: 'linux', kill: () => undefined, settleTimeoutMs: 60 };
+
+  const ofTheZombie = await tree.endTree(new EventEmitter(), { ...options, survivors: () => ({ pids: [zombie], unverified: [] }) });
+  const ofTheLive = await tree.endTree(new EventEmitter(), { ...options, survivors: () => ({ pids: [parent], unverified: [] }) });
+
+  assert.deepEqual(ofTheZombie, { ended: true, alive: 0 });
+  assert.equal(ofTheLive.ended, false, 'the check still sees a live process: it is not a check that says "ended" for everything');
+  assert.equal(ofTheLive.alive, 1);
 });

@@ -342,11 +342,14 @@ function killPid(pid) {
   }
 }
 
-/** Is `pid` a process? `ESRCH` says no; a refusal (`EPERM`) says there is one. */
+/**
+ * Is `pid` a live process? `ESRCH` says no; a refusal (`EPERM`) says there is one. On Linux a zombie answers the signal but runs nothing, so it
+ * has ended, as in `groupAlive` and `readEnviron`; a `stat` that cannot be read keeps "alive" [E2.1 review 8].
+ */
 function pidAliveDefault(pid) {
   try {
     process.kill(pid, 0);
-    return true;
+    return !(process.platform === 'linux' && isDefunct('/proc', String(pid)));
   } catch (error) {
     return error?.code === 'EPERM';
   }

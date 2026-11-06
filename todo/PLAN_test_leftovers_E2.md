@@ -1542,6 +1542,16 @@ REFINED, as the rows say. Suite after: **6054 tests, 6049 pass, 0 fail, 5 skippe
 The Windows job `runner lifecycle · windows` now also runs `leftoversRunnerAudit.test.ts` (the missing-root and unreadable-claim scenarios run
 there; the two POSIX root scenarios skip). That file was not run on Windows by the coder: the next CI run is its first.
 
+### E2.1 build record, part 9 — CodeRabbit's second review of PR #294 (2026-11-06, at `2bb6ec3`)
+
+| Mark | Result |
+|---|---|
+| **[E2.1 review 8]** zombies in the poll, **refines `[E2.1 code3 10]`**. CodeRabbit's comment on `processTree.mjs:353` | The group check and the environment read treated a zombie as ended (`[E2.1 review 2]`), but `settle`'s default check did not: `kill(pid, 0)` answers for a zombie, so one found by the parent-pid chain kept the run at "not ended" until the deadline, and the run failed. Now `pidAliveDefault` asks `isDefunct` on Linux. A `stat` that cannot be read keeps "alive". The test uses a real zombie of a live parent, and checks that a live process still counts |
+| **[E2.1 review 9]** the module's text. CodeRabbit's comment on `research/module_tests.md:163` | The sentence said old-enough claims "are removed" on macOS and Windows, where the audit removes nothing. It now says the age chooses what counts as this run's. No code |
+| **[E2.1 review 10]** tests on macOS. CodeRabbit's comment on this document's line 1535 | CodeRabbit named three tests that plant their outcome with `confirm: ENDED` and expect a removal; on macOS the real scan would keep the folder. Telling the runner tests `darwin` by a preload on Linux found six such tests. All six now pass `NO_SURVIVORS` from `runnerWorld.ts`. **Not run on macOS:** there is no macOS machine and `ci-extension.yml` has no macOS job. Two more failed under the preload, `the audit matches the record the runner EXPORTED` and `the kill path`. They start real children, which the preload does not reach, and they ask `auditRemoves()` already, so this method cannot judge them |
+
+**Where the REDs were seen** (Linux): 8 `actual: { ended: false, alive: 1 }, expected: { ended: true, alive: 0 }`, on the code before the fix and again with the fix taken out; 10 eight failures under the preload before the change, two after it. Merge of main at `d32a557` (`08da93d`, no conflict).
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's

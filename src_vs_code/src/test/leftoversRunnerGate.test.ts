@@ -12,7 +12,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import { ownedDir, processProbe, tempRoot, thisOwner } from '../../scripts/lib/leftovers.cjs';
 import {
-  ENDED, RECORD, WRAPPER, exists, isAlive, lines, me, nothingSwept, plant, privateRoot, processTree, runner, suite, tableOf, withEnv,
+  ENDED, NO_SURVIVORS, RECORD, WRAPPER, exists, isAlive, lines, me, nothingSwept, plant, privateRoot, processTree, runner, suite, tableOf, withEnv,
 } from './runnerWorld';
 
 const posixOnly = process.platform === 'win32' ? { skip: 'process groups and sessions are POSIX; Windows has the job-object supervisor' } : {};
@@ -342,7 +342,7 @@ test('a timeout that fires is reported, the whole tree is ended, and the audit s
   };
 
   const code = await withEnv({ RUN_TESTS_TIMEOUT_MS: '40' }, () =>
-    runWithAudit([], { spawn: hanging, roots: [root], sweep: nothingSwept, confirm: ENDED, write: log.write }),
+    runWithAudit([], { spawn: hanging, roots: [root], sweep: nothingSwept, confirm: ENDED, survivors: NO_SURVIVORS, write: log.write }),
   );
 
   assert.ok(log.seen.some((line) => line.includes('timeout of 40 ms') && line.includes('ending the whole process tree')), log.seen.join(' | '));
@@ -471,7 +471,7 @@ test('[E2.1 code2 3] a root that is a symlink to another root is one root, not t
   const log = lines();
   let dir = '';
 
-  const code = await runWithAudit([], { spawn: suite(0, () => { dir = plant(real, 'twice', RECORD); }), roots: [real, link], sweep: nothingSwept, confirm: ENDED, write: log.write });
+  const code = await runWithAudit([], { spawn: suite(0, () => { dir = plant(real, 'twice', RECORD); }), roots: [real, link], sweep: nothingSwept, confirm: ENDED, survivors: NO_SURVIVORS, write: log.write });
 
   assert.equal(code, 1);
   assert.ok(!exists(dir));

@@ -126,6 +126,12 @@ export const RECORD = formatOwner(thisOwner());
  */
 export const auditRemoves = (platform: string = process.platform): boolean => platform === 'linux';
 
+/**
+ * A scan that found nothing. A test that plants its own outcome with `confirm: ENDED` and expects a removal passes this too: without it the
+ * REAL scan runs, and on a POSIX that is not Linux that scan alone keeps the folder, whatever the test means to prove [E2.1 review 10].
+ */
+export const NO_SURVIVORS = (): { pids: number[]; unverified: string[] } => ({ pids: [], unverified: [] });
+
 /** A private root for one scenario: the folders the scenario makes and counts are the only ones in it. */
 export const privateRoot = (scope: Scope): string => ownedDir(scope, 'aud');
 
