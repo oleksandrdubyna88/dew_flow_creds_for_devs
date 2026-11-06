@@ -179,7 +179,10 @@ export const exists = (target: string): boolean => fs.existsSync(target);
 /** Windows' own folder when `SystemRoot` is not in the environment (Windows sets it; this is only the documented default). */
 const DEFAULT_SYSTEM_ROOT = 'C:\\Windows';
 
-/** Is `pid` a process right now? `process.kill(pid, 0)` on POSIX; `tasklist` on Windows, where signal 0 is not a probe everywhere. */
+/**
+ * Is `pid` a live process right now? `process.kill(pid, 0)` on POSIX; `tasklist` on Windows, where signal 0 is not a probe everywhere. On Linux a
+ * zombie answers the signal but has ended, the same answer the runner's poll gives ([E2.1 review 8]); a `stat` that cannot be read keeps "alive".
+ */
 export function isAlive(pid: number): boolean {
   if (process.platform === 'win32') {
     const tasklist = path.join(process.env.SystemRoot ?? DEFAULT_SYSTEM_ROOT, 'System32', 'tasklist.exe'); // by its full path, never a PATH lookup
@@ -188,9 +191,15 @@ export function isAlive(pid: number): boolean {
   }
   try {
     process.kill(pid, 0);
-    return true;
   } catch {
     return false;
+  }
+  if (process.platform !== 'linux') return true;
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+    return !/^[ZXx]/.test(stat.slice(stat.lastIndexOf(')') + 2));
+  } catch {
+    return true;
   }
 }
 
