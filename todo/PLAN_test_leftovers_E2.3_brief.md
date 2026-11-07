@@ -389,6 +389,7 @@ full stop.**
   mount path, helper paths and folders, `RepositoryIdentity.Row` — and the edits each story lists; an exclusion or an
   added allowance is a creds addition, so it lands with the story that lists it. Not a change: each item lands where the
   stories put it.
+  *2026-11-07, at S1's build: the second helper folder (two ops in `LeftoversGuard.cs`: the `HelperFolders` array and `InHelperFolder`) is E2.3's after all: it is the rewrite of the two constants of `LeftoversGuard.cs` that S3's Files list names, fitted to D1's two folders, and the copied guard test needs it; E2.5.S1's list does not name a second folder. The `docker.yml` exclusion and the wrapper allowance stay E2.5.S1's.*
 - **Q5 — temp paths of `HostProcess` children** (F13). *Recommended:* measure first (§ 3.2); build the hand-over only if
   the RED shows an entry. Not a change: rule §2's "a child that makes temp paths gets an owned folder" binds already, and
   the stories' goal is "no xUnit test here leaves a folder or file in either root on any path".
@@ -439,6 +440,7 @@ Every answer below is the brief's recommendation, chosen so that E2.3 makes no p
   the two constants of `LeftoversGuard.cs`, as path ops, with the path ops the copied tests need (T:LeftoversGuardTests.cs:652).
   The `docker.yml` exclusion, the wrapper as a folding allowance (its op on the pin at `:651`) and a second helper folder
   are E2.5.S1's, by E2.5.S1's own list and the parent's op rule. Not a change.
+  *2026-11-07, at S1's build: the second helper folder (two ops in `LeftoversGuard.cs`: the `HelperFolders` array and `InHelperFolder`) is E2.3's after all: it is the rewrite of the two constants of `LeftoversGuard.cs` that S3's Files list names, fitted to D1's two folders, and the copied guard test needs it; E2.5.S1's list does not name a second folder. The `docker.yml` exclusion and the wrapper allowance stay E2.5.S1's.*
 - **Q5–Q13:** yes, as recommended. Q13's release-runner row stays unmapped for the PR.
 
 ## 7. Integration findings
