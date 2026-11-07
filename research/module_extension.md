@@ -3659,6 +3659,19 @@ body is answered `401 unauthorized` with the unknown-token sentence and no line 
 which expiry it was; the main port is unchanged. D.7 is therefore unreachable before E2, and so is every bridged-only item
 above: none of them has a release note before the flip entry of E4.1.
 
+*Also built in the epoch 6 fix-forward, reachable only through a bridge door* (R1, R4): the scope store reads **strictly in `set`
+alone** (`bridgeScopeStore.ts`): only ENOENT is an absent file, a read that fails (EACCES, EIO) or a file that exists and is not this
+server's record is refused with `SCOPE_UNREADABLE` and zero writes, so a record that was not read is never written over, and *Close*
+(`forget`) is the road that removes such a file; public `read` keeps its catch and answers no scope (a check fails closed), and `prune`
+skips a neighbour it cannot read instead of ranking it first for removal. `BridgeListeners.turns` drops an id's chain entry when its
+last turn settles (it kept one per distinct bridge id for ever); a newer open of the same id keeps the entry it owns.
+
+*The prompt ledger.* `src/test/promptSiteLedger.ts` classes every place the extension can ask a person something (172 sites, found
+by a syntactic scan, `file#TopSymbol#kind#ordinal`), `promptSites.test.ts` holds it exact in both directions, fails a `person-only` row
+that a reference walk from the broker's roots (derived from `extension.ts`) can reach, and requires every action an `after-allow` row
+names to carry the follow-up flag on its real factory. It proves that a new site gets classed, not that its class is right: the walk
+sees no IPC (the signing modal arrives through the agent socket), no `executeCommand` by string and no timer or event hop.
+
 *Known gap, local and older than this work.* `POST /v1/config/read` writes one journal line per refused request, with no
 authentication and no ceiling (`brokerConfigRoute.ts` notes `unknown key` for any bearer, the empty one included, and
 `credsAgentServer.ts` logs every outcome). Found by the re-review by reading, and confirmed by a probe: 50 requests, 50 lines. A
