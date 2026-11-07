@@ -68,6 +68,18 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.x
+      # E2.3: the test-leftovers tests in CredsForDevs.ServiceDefaults.Tests read the mounted shared rules (the owner vectors, the `## Tokens` table,
+      # the janitor) and a missing file FAILS them: an uninitialised submodule is a broken setup, not a clean one. Only that ONE submodule, as
+      # ci-server.yml does. workflowMount.test.ts keeps every job that runs a C# test executable honest.
+      - name: Fetch the shared rules
+        run: git submodule update --init --depth 1 .claude/rules/shared
+      # The same executable starts `node` (the guard's script classifier, the Windows handoff test), and the extension's wrapper loads the shared
+      # rules' reference, an ES module, with require(): Node 20.19 or 22.12 and later do that. The same pin as ci-server.yml, so the image's own Node does not decide.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.x
+      - name: Node version
+        run: node --version
       # The release smoke of `creds-mcp` is a script (E5.S2); this is the script's own test, against a stand-in
       # server, on the same three operating systems the release runs it on — so the check that guards a release
       # is itself checked by every pull request, not first discovered broken on a tag.
@@ -95,6 +107,29 @@ jobs:
       # the first time on a tag, mid-matrix (own review of E5).
       - name: Smoke the built creds-mcp with the release script
         run: .github/scripts/mcp-listen-smoke.sh ./src_mcp/src/bin/Release/net10.0/creds-mcp${{ runner.os == 'Windows' && '.exe' || '' }}
+      # E2.3, macOS only: the Darwin half of the test-leftovers helper (its own `lstat` layout, `renamex_np` with RENAME_EXCL, the FIFO-safe claim read
+      # and the `kill` probe call libSystem directly) is proved by nothing on Linux or Windows. `macos-latest` is Arm64, and ONLY Arm64 is measured here:
+      # the x86-64 entry points (`lstat$INODE64`) never run in a pull request. The three steps run bare (CI has no low-priority wrapper), through the test
+      # EXECUTABLE and never `dotnet test`. Order: who the runner is; the layout self-test (its values are printed as test warnings, and every sweep and audit
+      # test fails loudly if the layout does not hold); the Leftovers namespace; then the four executables as on the other legs.
+      - name: The runner is Arm64 (uid and system printed)
+        if: runner.os == 'macOS'
+        run: |
+          arch="$(uname -m)"
+          echo "uname -m: $arch; uid: $(id -u); gid: $(id -g); $(sw_vers -productName) $(sw_vers -productVersion)"
+          [ "$arch" = "arm64" ] || { echo "this runner is $arch, not arm64: the Darwin layout was measured on Arm64 only, and the x86-64 entry points were never run"; exit 1; }
+      # The grep proves the values were PRINTED and that the uid read is the shell's.
+      - name: The stat layout self-test
+        if: runner.os == 'macOS'
+        run: |
+          set -o pipefail
+          ./src_service_defaults/tests/bin/Release/net10.0/CredsForDevs.ServiceDefaults.Tests --filter-class "*DarwinLayoutTests" 2>&1 | tee layout.log
+          grep -Eq "darwin layout: arch=Arm64" layout.log || { echo "the self-test did not report ProcessArchitecture Arm64"; exit 1; }
+          grep -Eq "darwin layout: getuid=$(id -u)\$" layout.log || { echo "the self-test did not report the shell's uid $(id -u)"; exit 1; }
+          grep -Eq "darwin layout: file: dev=" layout.log || { echo "the self-test did not print the values it read"; exit 1; }
+      - name: Leftovers
+        if: runner.os == 'macOS'
+        run: ./src_service_defaults/tests/bin/Release/net10.0/CredsForDevs.ServiceDefaults.Tests --filter-namespace "CredsForDevs.Tests.Leftovers"
       # xUnit v3 on Microsoft Testing Platform: each test project is its own runner executable, and
       # `dotnet test` has no VSTest host here — it would abort with a tooling error, not a test result.
       # The executable is named by <AssemblyName>, which for the broker client is CredsBroker.Tests.
@@ -106,6 +141,74 @@ jobs:
         run: ./src_broker_client/tests/bin/Release/net10.0/CredsBroker.Tests${{ runner.os == 'Windows' && '.exe' || '' }}
       - name: Test the shared logging
         run: ./src_service_defaults/tests/bin/Release/net10.0/CredsForDevs.ServiceDefaults.Tests${{ runner.os == 'Windows' && '.exe' || '' }}
+      # E2.3: the end-of-run audit has teeth, in EACH of the four executables (every one links the helper; one missed link would leave that executable
+      # with no audit). LeftoversSelfTest leaks a folder on purpose, and ONLY when CREDS_LEFTOVERS_SELFTEST is set; this step sets it, AFTER the normal
+      # steps above, and is green only on a NON-zero exit that carries the audit's first line (the counts and the case's own group word, no path), names
+      # the folder on a line of its own under that word, and leaves the temp root without it. A listing error is red, never ignored. If xUnit did not fail the
+      # run on an assembly-fixture cleanup exception this step would be red on its first run: the audit must never become a warning silently.
+      # bash 3.2 and BSD grep and find on macOS: the commands are the portable subset.
+      - name: The audit fails a run that leaves a claimed folder
+        if: runner.os != 'Windows'
+        run: |
+          set -o pipefail
+          owner="u$(id -u)"
+          for exe in ./src_cli/tests/bin/Release/net10.0/CredsCli.Tests ./src_mcp/tests/bin/Release/net10.0/CredsMcp.Tests ./src_broker_client/tests/bin/Release/net10.0/CredsBroker.Tests ./src_service_defaults/tests/bin/Release/net10.0/CredsForDevs.ServiceDefaults.Tests; do
+            for entry in "1:never disposed:selftest" "failed-dispose:disposed but not removed:selftest-failed"; do
+              IFS=: read -r value words what <<< "$entry"
+              if CREDS_LEFTOVERS_SELFTEST="$value" "$exe" --filter-class "*LeftoversSelfTest" 2>&1 | tee selftest.log; then
+                echo "the end-of-run audit did not fail the run ($exe, $value)"; exit 1; fi
+              # (a) the audit's FIRST line: the counts and the group summary, and no path on it ...
+              first=$(grep -E "(^|[[:space:]]:[[:space:]])creds tests: this run left [0-9]+ folder\(s\) it claimed.*[0-9]+ $words" selftest.log | grep -v "testsToDelete-[uw][0-9]" || true)
+              [ -n "$first" ] || { echo "the run failed, but not with the audit's first line (counts and '$words', no path) ($exe, $value)"; exit 1; }
+              # (b) ... and the folder named on its own per-folder line, under the case's own group word.
+              grep -Eq "^[[:space:]]+$words: .*/testsToDelete-[uw][0-9]{1,10}-creds-$what-[A-Za-z0-9]{6}" selftest.log \
+                || { echo "the audit's message does not name the folder on a line of its own under '$words' ($exe, $value)"; exit 1; }
+              left=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -iname "teststodelete-${owner}-creds-$what-*") \
+                || { echo "the temp root could not be listed"; exit 1; }
+              [ -z "$left" ] || { echo "the audit left the folder behind: $left"; exit 1; }
+            done
+          done
+      # The same teeth in PowerShell on Windows. The runner executes as an administrator, so what its tests make is likely owned by BUILTIN\Administrators:
+      # the claim scan is blind there (F31) and the audit works through its registry half only, which is what the `1` and `failed-dispose` cases are. The step is
+      # green only on a NON-zero exit that carries the audit's first line, names the folder under the case's own words, and on a temp root that holds nothing of
+      # the case afterwards. Both values; a listing error is red, never ignored.
+      - name: The audit fails a run that leaves a claimed folder (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $exes = @(
+            './src_cli/tests/bin/Release/net10.0/CredsCli.Tests.exe',
+            './src_mcp/tests/bin/Release/net10.0/CredsMcp.Tests.exe',
+            './src_broker_client/tests/bin/Release/net10.0/CredsBroker.Tests.exe',
+            './src_service_defaults/tests/bin/Release/net10.0/CredsForDevs.ServiceDefaults.Tests.exe'
+          )
+          $cases = @(
+            @{ Value = '1'; Words = 'never disposed'; What = 'selftest' },
+            @{ Value = 'failed-dispose'; Words = 'disposed but not removed'; What = 'selftest-failed' }
+          )
+          foreach ($exe in $exes) {
+            foreach ($case in $cases) {
+              $env:CREDS_LEFTOVERS_SELFTEST = $case.Value
+              $log = (& $exe --filter-class '*LeftoversSelfTest' 2>&1 | Out-String)
+              $code = $LASTEXITCODE
+              Remove-Item Env:CREDS_LEFTOVERS_SELFTEST
+              Write-Host $log
+              if ($code -eq 0) { throw "the end-of-run audit did not fail the run ($exe, $($case.Value))" }
+              # (a) the audit's FIRST line: the counts and the group summary, and no path on it ...
+              $firstLines = @($log -split "`r?`n" | Where-Object { $_ -match ('creds tests: this run left \d+ folder\(s\) it claimed.*\d+ ' + [regex]::Escape($case.Words)) -and $_ -notmatch 'testsToDelete-[uw]\d' })
+              if ($firstLines.Count -eq 0) { throw "the run failed, but not with the audit's first line (counts and '$($case.Words)', no path) ($exe, $($case.Value))" }
+              $what = [regex]::Escape($case.What)
+              $named = '(?m)^\s*' + [regex]::Escape($case.Words) + ': .*[\\/]testsToDelete-[uw][0-9]{1,10}-creds-' + $what + '-[A-Za-z0-9]{6}\s*$'
+              # (b) ... and the folder named on its own per-folder line, under the case's own group word.
+              if ($log -notmatch $named) { throw "the audit's message does not name the folder on a line of its own under '$($case.Words)' ($exe, $($case.Value))" }
+              $left = @(Get-ChildItem -Force -LiteralPath $env:TMP -ErrorAction Stop | Where-Object { $_.Name -match ('^testsToDelete-[uw][0-9]{1,10}-creds-' + $what + '-') })
+              if ($left.Count -gt 0) { throw "the audit left the folder behind: $($left.FullName -join ', ')" }
+            }
+          }
+          # Actions appends `exit $LASTEXITCODE` to a pwsh step: the self-test's EXPECTED non-zero exit would leak out as the step's result
+          # (measured on dew_flow_mcp PR #58, 2026-10-31). Every check above throws on failure, so reaching here is green.
+          exit 0
       # The stamp, end to end, on every pull request and all three operating systems: both binaries built once
       # more with -p:Version — the property release.yml passes — into their OWN folder, and the version each one
       # reports must be exactly that. Until 2026-10-11 the release passed no version and every binary said 1.0.0;

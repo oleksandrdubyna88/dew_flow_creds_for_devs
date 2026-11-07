@@ -34,6 +34,13 @@ jobs:
       # submodule, as ci-extension.yml does; workflowMount.test.ts keeps every job that runs the tests honest.
       - name: Fetch the shared rules
         run: git submodule update --init --depth 1 .claude/rules/shared
+      # E2.3: CredsForDevs.ServiceDefaults.Tests starts `node` (the guard's script classifier, the Windows handoff test), and the wrapper loads the shared
+      # rules' reference, an ES module, with require(): Node 20.19 or 22.12 and later do that. The same pin as ci-server.yml, so the image's own Node does not decide.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.x
+      - name: Node version
+        run: node --version
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: zulu
