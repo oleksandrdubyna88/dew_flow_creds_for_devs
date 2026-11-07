@@ -34,7 +34,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFile } = require('node:child_process');
-const { SSHD, startSshd, launch, endChild, lastLines, login } = require('./itestSshd.cjs');
+const { SSHD, setChildTemp, startSshd, launch, endChild, lastLines, login } = require('./itestSshd.cjs');
+const { ownedDir, shortSocketRoot } = require('./lib/leftovers.cjs');
+const harnessScope = require('./lib/harnessScope.cjs');
 
 const OUT = path.join(__dirname, '..', 'out');
 const { SshAgentServer, agentSocketPath } = require(path.join(OUT, 'sshAgentServer.js'));
@@ -62,18 +64,24 @@ function check(name, ok, detail) {
   }
 }
 
+/** The owned folder every child gets as its `TMPDIR`, `TEMP` and `TMP`; set in `main`. */
+let childTemp;
+
 function run(exe, args, options = {}) {
   return new Promise((resolve) => {
-    execFile(exe, args, { timeout: 15_000, ...options }, (error, stdout, stderr) => {
+    execFile(exe, args, { timeout: 15_000, ...options, env: harnessScope.tempEnv(childTemp, options.env) }, (error, stdout, stderr) => {
       resolve({ code: error ? (error.code ?? 1) : 0, stdout: String(stdout), stderr: String(stderr) });
     });
   });
 }
 
-async function main() {
+async function main(scope) {
   // Short on purpose: the manager's socket is <dir>/<m|l>/keys/<pid>/agent.sock, and a unix socket
-  // path may not pass ~104 bytes (macOS). `testsToDelete-` is the sweep's prefix for leftovers.
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'testsToDelete-ait-'));
+  // path may not pass ~104 bytes (macOS). So `what` is short and the folder is under the short socket root.
+  // The owned name `testsToDelete-<owner>-creds-ait-<id>` is the sweep's, and the scope removes it on every way out.
+  const dir = ownedDir(scope, 'ait', { parent: shortSocketRoot() });
+  childTemp = dir;
+  setChildTemp(dir);
   const socketPath = isWindows
     ? `\\\\.\\pipe\\creds-for-devs-agent-itest-${process.pid}`
     : path.join(dir, 'agent.sock');
@@ -86,7 +94,7 @@ async function main() {
   const parsed = parseSshPrivateKey(pem, 'itest key');
   check('the generated key parses', parsed.ok === true, parsed.ok ? '' : parsed.reason);
   if (!parsed.ok) {
-    process.exit(1);
+    return 1;
   }
 
   let asked = 0;
@@ -243,14 +251,8 @@ async function main() {
   const afterDispose = await run(tools.sshAdd, ['-l'], { env });
   check('after dispose the agent answers nothing', afterDispose.code !== 0, `exit ${afterDispose.code}`);
 
-  try {
-    fs.rmSync(dir, { recursive: true, force: true });
-  } catch {
-    // a socket the OS still holds; the temp directory is swept by the OS
-  }
-
   console.log(failures === 0 ? '\nall agent integration checks passed' : `\n${failures} check(s) failed`);
-  process.exit(failures === 0 ? 0 : 1);
+  return failures === 0 ? 0 : 1;
 }
 
 /**
@@ -480,7 +482,9 @@ async function liveHostBoundLogin(pem, publicPath, dir) {
     }
     return;
   }
-  const sshdDir = fs.mkdtempSync(path.join(os.tmpdir(), 'testsToDelete-sshd-'));
+  // Its own scope, registered in the module scope at once (a signal in this section closes it too), closed in the `finally` below.
+  const section = harnessScope.sectionScope();
+  const sshdDir = ownedDir(section, 'sshd');
   let sshd;
   let client;
   let manager;
@@ -570,11 +574,7 @@ async function liveHostBoundLogin(pem, publicPath, dir) {
       await endChild(sshd);
     }
     manager?.dispose();
-    try {
-      fs.rmSync(sshdDir, { recursive: true, force: true });
-    } catch {
-      // a file the OS still holds; a cleanup failure must never replace the real error above
-    }
+    await section.close(); // never throws: a folder sshd still holds is retried, then left claimed with one warning
   }
 }
 
@@ -592,13 +592,14 @@ async function liveLoginWindow(pem, dir) {
   if (loginWindowSkipped()) {
     return;
   }
-  const sshdDir = fs.mkdtempSync(path.join(os.tmpdir(), 'testsToDelete-sshd-'));
+  const section = harnessScope.sectionScope();
+  const sshdDir = ownedDir(section, 'sshd');
   const began = Date.now();
   try {
     await loginLegs(pem, dir, sshdDir);
     console.log(`info  live login window: six sshd runs, ${Date.now() - began} ms`);
   } finally {
-    removeFolder(sshdDir);
+    await section.close();
   }
 }
 
@@ -617,15 +618,6 @@ function loginWindowSkipped() {
     console.log('skip  live login window — sshd not installed');
   }
   return true;
-}
-
-/** A cleanup failure (a file the OS still holds) must never replace the real error above it. */
-function removeFolder(folder) {
-  try {
-    fs.rmSync(folder, { recursive: true, force: true });
-  } catch {
-    // swept by the OS
-  }
 }
 
 /** The two legs, sharing one throwaway host key: Ed25519 first, then RSA, whose sshd also accepts `ssh-rsa` (SHA-1). */
@@ -754,7 +746,4 @@ async function rsaScenario(rig) {
   check('RSA: and, answered once, the SHA-1 login still succeeds (exit 0): SHA-1 stays signable, it only never gets a long window (owner, 2026-10-21)', sha1.code === 0, sha1.detail);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+harnessScope.run(main);

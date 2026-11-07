@@ -6,14 +6,25 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const harnessScope = require('./lib/harnessScope.cjs');
 const net = require('node:net');
 const { spawn } = require('node:child_process');
 
 const SSHD = '/usr/sbin/sshd';
 
+/** The owned folder every child started here gets as its `TMPDIR`, `TEMP` and `TMP`; the harness sets it once, in `main`. */
+let childTemp;
+function setChildTemp(dir) {
+  childTemp = dir;
+}
+
 /** Spawns a child and collects its output — unlike `run`, the caller holds the pid and can end it. */
 function launch(exe, args, options = {}) {
-  const child = spawn(exe, args, { stdio: ['ignore', 'pipe', 'pipe'], ...options });
+  const child = spawn(exe, args, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    ...options,
+    ...(childTemp === undefined ? {} : { env: harnessScope.tempEnv(childTemp, options.env) }),
+  });
   const result = { child, stdout: '', stderr: '', exited: false };
   child.stdout.on('data', (chunk) => {
     result.stdout += chunk;
@@ -181,4 +192,4 @@ async function login(rig, given) {
   }
 }
 
-module.exports = { SSHD, launch, startSshd, endChild, lastLines, login };
+module.exports = { SSHD, setChildTemp, launch, startSshd, endChild, lastLines, login };
