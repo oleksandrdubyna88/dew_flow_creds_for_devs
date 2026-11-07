@@ -181,8 +181,8 @@ for (const run of [
       assert.equal(w.ran.length, 1, 'the person\'s Allow still runs THIS call');
       assert.equal(stamp(), undefined, 'the write was refused');
       assert.equal(state.held.size, 0, 'nothing was stored');
-      assert.ok(w.dialogs[0].includes(WINDOW_TAIL), w.dialogs[0]);
       assert.ok(w.dialogs[0].includes(WINDOW_CONDITION), `the clause that failed (${run.halves}) is missing from: ${w.dialogs[0]}`);
+      assert.ok(w.dialogs[0].includes(WINDOW_TAIL), w.dialogs[0]);
 
       const second = call(port, '/v1/mcp/use/exec', { body: USE });
       await until(() => w.openDialogs.length === 1, 'the second consent modal');
