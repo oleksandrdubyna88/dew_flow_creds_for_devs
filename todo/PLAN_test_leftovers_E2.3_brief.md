@@ -9,6 +9,9 @@
 > (row 15). **F29 was read before this brief** (§ 3.0). **Epoch 7 of the parent has used its one change (entry 7.1). The
 > next accepted change is the seventh full stop.** So § 6 marks each question whose "yes" would be a change, and § 7 marks
 > each finding that would be one if it were accepted. With the recommended answers, this brief makes **no** change.
+> **Revised 2026-11-07 after the plan gate (coai `f78f1c4f`: G1, G2, G5), the risk consult on S2 (C1–C4) and an
+> independent Opus review (R1–R9), all accepted by the coordinator.** Each fix makes E2.3 do what the stories document
+> says; none is a plan change (each says which stories text it carries out).
 
 **The epic's goal (E2.3, unchanged).** E3's helper, with its Darwin path, runs in all five xUnit executables on Linux,
 Windows and macOS. Every C# site is owned. Each executable sweeps both roots at start and fails a run that left something
@@ -44,22 +47,22 @@ decision (§ 6), raised before the plan gate.
 | 1 | **E2 (c)** — the barrier is open on every machine that runs these tests | `dew_flow_conventions · research/security/machines.md`: the WSL machine (conventions #136: none found, 266 files read); the owner's Windows machine by his statement (#124) | the operator's WSL machine; hosted runners need no record | Met. On the PR head: `node .claude/rules/shared/tools/sweeper-scan.mjs --root .` → `none found`. Measured by this brief at `bf59e4f`: `none found (1540 file(s) read)` | The rescan reads this checkout only. It does not prove that no sweeper appeared elsewhere on the machine after the owner's scan |
 | 2 | **E2 (d)** and **Done-when 3** — the hand clean-up of the C# old names, per machine | A person's record on the PR, in the shape of `[E2.1 byhand 4]`. Names: `cred-vault-tests`, `cred-vault-backup-run`, `cred-vault-backup-store`, `cred-vault-backup`, `cred-vault-backup-cli`, `cred-vault-key-file`, `cred-vault-aot-kit`, `cred-vault-guards-*`, `cred-vault-refusal-*`, `creds-endpoints-*`, `creds-title-*`, `creds-relay-*`, `creds-dead-agent-*`, `creds-cli-stale-*`, `creds-mcp-*`, `creds-logsink-*`, `creds-retention-*`, `creds-log-tests-*`, `creds-corpse-*.sock`, `cr-*.sock` (the sites of § 3) | the WSL machine; the owner's Windows machine "not cleaned, not needed" (it does not test creds, 2026-11-04); CI VMs end with the job | `find <root> -mindepth 1 -maxdepth 1 -name '<pattern>'` over `/tmp`, `/var/tmp`, `/dev/shm`, `$XDG_RUNTIME_DIR`, before and after. A search by this brief's author (2026-11-07 13:57, read-only): **0** entries of these names | A search by name at one moment, not a proof (§ *Epoch 6* 8.1). It does not see a root that another `TMPDIR` named. `dotnet-diagnostic-*` sockets are not on the list: a killed child's socket cannot be told from another process's (F13) |
 | 3 | **Parent E2.3 row** and **sc. 5** — the copy is an ADAPTED copy; its diff check fails on one unexplained byte | NEW `src_service_defaults/tests/Support/Leftovers/template-manifest.json` (52 entries: the template's 51 files but `LeftoversRepositoryGuardTests.cs`, plus `DirectoryLinks.cs` and `RepositoryRoot.cs`, F4); NEW `src_service_defaults/tests/Leftovers/TheAdaptedCopyTests.cs` in coai's form; `.gitattributes` `-text` per copied file (F6) | `CredsForDevs.ServiceDefaults.Tests` on three legs, `sonarcloud.yml`, `release.yml` | S1.1–S1.3 green on the head; by hand once: one byte changed in a copied file → red, naming the file | The check proves the bytes. It does not prove that the template is right: F29 and F31 are copied with it (rows 15, 17). It does not prove the ops are minimal; a reviewer reads each op's `reason` |
-| 4 | **sc. 1** — every executable sweeps at its start | `Support/Leftovers/LeftoversSweepFixture.cs` (`[assembly: AssemblyFixture]`, T:LeftoversSweepFixture.cs:3), linked into all five by ONE wildcard each; NEW `Support/Leftovers/SweepRanTests.cs` | the five executables, every invocation of § 2 | S1.4: `LastRun` is not null in each of the five; the socket-root fixture ran over `/tmp` where the roots differ, and skipped where they are one (Q6) | It proves that the fixture ran. It does not prove what it collected; S2.4 and S2.7 do that on prepared folders |
+| 4 | **sc. 1** — every executable sweeps at its start | `Support/Leftovers/LeftoversSweepFixture.cs` (`[assembly: AssemblyFixture]`, T:LeftoversSweepFixture.cs:3), linked into all five by ONE wildcard each; NEW `Support/Leftovers/SweepRanTests.cs` | the five executables, every invocation of § 2 | S1.4: `LastRun` is not null in each of the five. The socket-root half (S2.8): `/tmp` was swept exactly once in each of the five (R5) | It proves that the fixture ran. It does not prove what it collected; S2.4 and S2.7 do that on prepared folders |
 | 5 | **sc. 2, leaks** — what leaked stops leaking | § 3.3–3.5; the scan test S3.0 | `CredVaultServer.Tests`, `CredsBroker.Tests` and the other three | By hand, RED first: one run of each executable with `TMPDIR` at a private SHORT folder, new entries counted before and after. Expected RED from reading: ≈ 190 folders and the six parents plus the kit (the stories); **the exact N to be measured by the coder's RED**. After: 0 old-form and 0 owner-form entries. S3.0, S4.0, S5.0 automate the site count | A private `TMPDIR` stands in for the machine's temp root. It does not show a run in the real root, where other runs write at the same time. The `/tmp` socket folders are counted in `/tmp` itself. Linux only for the server executable (row 20) |
-| 6 | **sc. 2, `HostProcess`** — a removal that gives up is loud, prefixed and claimed; the registry is left | `src_service_defaults/tests/Support/HostProcess.cs:148-167` → the registry-correct adapter (§ 3.2) | the 14 callers (cli 5, mcp 8, server 1) | S2.1–S2.3 | A held handle (Windows) or a read-only parent (POSIX) stands in for a child that still writes. It does not prove that a real child has ended before `Remove`; the dispose order of § 3.3 is read in review |
+| 6 | **sc. 2, `HostProcess`** — a removal that gives up is loud, prefixed and claimed; the registry is left | `src_service_defaults/tests/Support/HostProcess.cs:148-167` and the `Reaper` `:104-119` → the registry-correct adapter that removes only after the child's end is confirmed (§ 3.2) | the 14 callers (cli 5, mcp 8, server 1) | S2.1–S2.3, S2.9 (the child confirmed ended first, C1), S2.10 (parallel and duplicate removals, C2) | A held handle (Windows) or a read-only parent (POSIX) stands in for a removal that gives up. S2.9 uses a fixture child, not a real binary. A child that product code starts (for example `WslPump.RunAsync` with `FakeChild.Stubborn(_root)`, `WslPumpRunTests.cs:57`) is not started through `HostProcess.Start`, so the adapter cannot wait for it; its end stays the product's |
 | 7 | **sc. 2, sockets** — socket folders are owned, under the short root, and short enough | `OwnedCreds.ShortSocketRoot`; `AgentRelayHostTests.cs:34`, `AgentRelayConnectionTests.cs:162`, `RelayLogTests.cs:84`, `AgentRelayTests.cs:121` | `CredsCli.Tests` on Linux and macOS (required legs) | S3.2: each socket's parent matches `Owned.Pattern`; its UTF-8 byte length is ≤ `AgentRelay.MaxSocketPathBytes`, computed for macOS's real roots too | The length is computed for the longest owner token. The socket path of a CHILD's runtime (F13) is not covered |
-| 8 | **sc. 2, second root** — a killed run's socket folder is collected | NEW `Support/Leftovers/LeftoversSocketRootSweepFixture.cs`, `OwnedCreds.cs` | the five executables where the two roots differ (macOS by default; Linux with `TMPDIR` set) | S2.4, S2.5 | A private pair of roots and a dead-claimed folder (unmatchable pid, clock seam) stand in for a killed run. Ownership trace (§ *Epoch 7* 8.1): S2.4(c) makes one folder the natural way (`OwnedScope.Dir("sock", root)`) and reads it through the real sweep with the real `Scope.IsMine`, the record live → `live` |
+| 8 | **sc. 2, second root** — a killed run's socket folder is collected | NEW `Support/Leftovers/LeftoversSocketRootSweepFixture.cs`, `OwnedCreds.cs` | the five executables where the two roots differ (macOS by default; Linux with `TMPDIR` set) | S2.4, S2.5, S2.8 | A private pair of roots and a dead-claimed folder (unmatchable pid, clock seam) stand in for a killed run. Ownership trace (§ *Epoch 7* 8.1): S2.4(c) has a SEPARATE live process make one folder the natural way, ages it past the 10-minute floor by the clock seam only, and reads it through the real sweep with real liveness and the real `Scope.IsMine`: folder and claim survive (`live`; `foreign-uid` on an elevated Windows process) |
 | 9 | **sc. 3** — the audit has teeth on three OSes | `Support/Leftovers/LeftoversSelfTest.cs` (`CREDS_LEFTOVERS_SELFTEST`, values `1` and `failed-dispose`); NEW steps in `ci-clients.yml` (after `:108`) and `ci-server.yml` (after `:86`), in the form of T-ci `ci.yml:54-71` (bash), `:106-134` (pwsh) | all five executables (Q7) on ubuntu; the four client executables on macOS and Windows | Each step green only on a NON-zero exit that carries the audit's first line, names the folder under the case's words, and leaves the temp root without it | The self-test leaks on purpose; a real leak is not this. On Windows the step proves the registry half only: the claim scan is blind there (F31). The pwsh step ends with `exit 0` and checks each run's own `$LASTEXITCODE`, or it passes for the wrong reason (the epoch-7 judge's note on coai's probe) |
 | 10 | **sc. 4** — nothing leaks after a full run (by hand) | the five executables in sequence | WSL: by hand. Windows: **—, unmapped** (Q10) | WSL: the old names and `testsToDelete-<owner>-creds-*` listed before and after the five; the RED count, then 0 new | A by-hand count is a search. The owner's Windows machine does not test creds; nothing runs the five there by hand |
 | 11 | **sc. 6** — the macOS leg is green with the layout self-test first; the Windows runner's owner is in the log | `ci-clients.yml` matrix leg `macos-latest` (`:54`), four new steps with `if: runner.os == 'macOS'` (the form of T-ci `ci.yml:158-188`); `RunnerFactsTests` in `CredsForDevs.ServiceDefaults.Tests` | `clients · build · test (macos-latest)` (required); the Windows leg | The log carries `darwin layout: arch=Arm64` and `getuid=<the shell's uid>`; `--filter-namespace "CredsForDevs.Tests.Leftovers"` runs before the whole executable; both run URLs on the PR (D9 #6) | `macos-latest` is Arm64 only; the x86-64 entry points never run in a PR. `release.yml`'s `osx-x64` is built on the Arm64 image too |
 | 12 | **D9 #1** — the real audit is built with `Owner.This`, never the run's record | `LeftoversSweepFixture.RealAudit` (T:LeftoversSweepFixture.cs:74-75), copied unchanged | all five | Row 3's check: the fixture file differs from the template only by its listed ops, and no op touches `RealAudit`'s body | A byte check, not a behaviour test. The copied `LeftoversAuditTests` hold the behaviour |
 | 13 | **Revision row 9** — the audit order on creds' own tree | No run folder exists in any creds C# suite: no `IClassFixture`, `ICollectionFixture`, `AssemblyFixture` or `IAsyncLifetime` today (`git grep`: 0); `ServerCollection.cs:9` holds no fixture. So no fixture removes a folder before the audit reads it (§ 4) | all five | S2.6: with both assembly fixtures, in BOTH disposal orders, a never-disposed folder turns the run red and is named | The fixture seam stands in for xUnit's order. If a creds suite gains a run folder later, its brief plants an orphan claim inside it and shows the RED (row 9 of the revision) |
-| 14 | **Revision row 11** — a test that says "collected" on Windows re-owns its fixture first | S2.7(b), the copied `LeftoversSweepTests` collection cases (they re-own or pass an owner seam) | the Windows leg | The test calls `WindowsOwnership.OwnedByCaller` on the folder AND its claim before the sweep, and asserts `Scope.IsMine` of both | It proves collection of a prepared entry. A real entry of an elevated run reads as a stranger's (row 15) |
-| 15 | **E2.3.S2, the Windows handoff** `[cadence e2d20eab 2]`, and **revision row 10** (F31) | NEW `src_service_defaults/tests/Leftovers/WindowsHandoffTests.cs`; `node` + the mounted reference + `src_vs_code/scripts/lib/leftovers.cjs`; `src_vs_code/scripts/run-tests.mjs:121` (`loadReferenceSweep`) | `windows-latest` (not a required check, F12) | S2.7 (a)–(d) | (a)–(c) prepare the entry: a re-owned folder, a fixed clock, a pid no process has. **They do not prove that a real folder of an elevated run is collected: it is not; it waits for a person.** (d) is the natural trace: a folder made by the Node child, not re-owned, is kept as `foreign-uid` on the elevated runner, so the limit is a fact a run checks |
-| 16 | **Done-when 2** — the C# guard's scan over the tree run by hand, its list recorded | the copied `LeftoversGuard.Scan` with creds' discovery (`LeftoversGuardFiles.cs`, the two path constants, D7; Q4) | the whole tree | **—, unmapped** until Q11 is answered: the repository test is E2.5's | A by-hand scan is a search, recorded with the classes it looked for. Shell and docker findings are expected until E2.4 |
+| 14 | **Revision row 11** — a test that says "collected" on Windows re-owns its fixture first | S2.4(a), S2.7(b), the copied `LeftoversSweepTests` collection cases (they re-own, T:LeftoversSweepTests.cs:597, or pass an owner seam) | the Windows leg | The test calls `WindowsOwnership.OwnedByCaller` on the folder AND its claim before the sweep, and asserts `Scope.IsMine` of both | It proves collection of a prepared entry. A real entry of an elevated run reads as a stranger's (rows 8, 15) |
+| 15 | **E2.3.S2, the Windows handoff** `[cadence e2d20eab 2]`, and **revision row 10** (F31) | NEW `src_service_defaults/tests/Leftovers/WindowsHandoffTests.cs`; `node` + the mounted reference + `src_vs_code/scripts/lib/leftovers.cjs`; `src_vs_code/scripts/run-tests.mjs:121` (`loadReferenceSweep`) | `windows-latest` (not a required check, F12) | S2.7 (a)–(e) | **It proves interoperability on PREPARED ownership**: a Node-made folder and claim are read by the C# sweep under both keys. (a)–(d) prepare the entry (re-owned or made foreign, a fixed clock, a pid no process has). **They do not prove that a real folder of an elevated run is collected: it is not; it waits for a person.** (e) is the natural trace: a Node-made folder, not re-owned, is preserved as `foreign-uid` on the elevated runner, so the limit is a fact a run checks |
+| 16 | **Done-when 2** — the C# guard's scan over the tree run by hand, its list recorded | the copied `LeftoversGuard.Scan` with the discovery S3 names for E2.3 (`LeftoversGuardFiles.cs`, the two path constants of `LeftoversGuard.cs`, as path ops; Q4) | the whole tree | **—, unmapped** until Q11 is answered: the repository test is E2.5's | A by-hand scan is a search, recorded with the classes it looked for. Shell and docker findings are expected until E2.4 |
 | 17 | **Revision row 4** — F29 read before the copy | § 3.0; the manifest's `about`; `research/module_tests.md` | the Windows leg | **—, unmapped**: no test (Q2) | Two creds sweeps at once on one Windows machine can report a removal they did not do, or restore a folder without its claim. No PR job runs two at once (§ 3.0) |
-| 18 | **DoD** — `AllowUnsafeBlocks` in all five | `BrokerClient.Tests.csproj` and `CredVaultServer.Tests.csproj` gain it (the other three have it: `CredsCli.Tests.csproj:9`, `CredsMcp.Tests.csproj:9`, `CredsForDevs.ServiceDefaults.Tests.csproj:9`) | all five builds | the build at 0 warnings | A build proves the generator ran. Nothing more |
-| 19 | **The mount and Node where the copy runs** | the fetch step `git submodule update --init --depth 1 .claude/rules/shared` in `ci-clients.yml` `build-test` (before `:87`), `release.yml` `cli-binaries` (before `:370`) and `mcp-binaries` (before `:627`); `actions/setup-node` 22.x in `ci-clients.yml` (Q8) | every job of § 2 | S1.5: `workflowMount.test.ts` extended: a job that runs a C# test executable fetches the mount before it. RED today: `ci-clients.yml:build-test`, `release.yml:cli-binaries`, `release.yml:mcp-binaries` | A text test of the workflow; it proves the step's place, not that the job ran. `release.yml` runs only on a tag, so its first real run is the next release (testing.md: a check that only runs during a release has never run) |
+| 18 | **DoD** — `AllowUnsafeBlocks` in all five (each links the copy, whose `Native.cs` uses `[LibraryImport]`, T:Native.cs:445-462) | per project at `bf59e4f`: `CredsCli.Tests.csproj:9` **yes**; `CredsMcp.Tests.csproj:9` **yes**; `CredsForDevs.ServiceDefaults.Tests.csproj:9` **yes**; `BrokerClient.Tests.csproj` **no** (gains it); `CredVaultServer.Tests.csproj` **no** (gains it) | all five builds | each of the five projects built by name at 0 warnings (§ 9) | A build proves the generator ran. Nothing more |
+| 19 | **The mount and Node where the copy runs** | the fetch step `git submodule update --init --depth 1 .claude/rules/shared` in `ci-clients.yml` `build-test` (before `:87`), `release.yml` `cli-binaries` (before `:370`) and `mcp-binaries` (before `:627`); `actions/setup-node` 22.x in `ci-clients.yml`, in both `release.yml` jobs and in `sonarcloud.yml` (none has it today; `leftovers.cjs` needs Node 20.19 or 22.12+, `ci-server.yml:63-67`) (Q8, R4) | every job of § 2 | S1.5: `workflowMount.test.ts` extended: a job that runs a C# test executable fetches the mount before it, and a job that runs `CredsForDevs.ServiceDefaults.Tests` sets up Node 22 before it. RED today: `ci-clients.yml:build-test`, `release.yml:cli-binaries`, `release.yml:mcp-binaries` (both halves) | A text test of the workflow; it proves the step's place, not that the job ran. `release.yml` runs only on a tag, so its first real run is the next release (testing.md: a check that only runs during a release has never run) |
 | 20 | **Suite × OS: Linux** | `ci-server.yml` `build-test` (`:45-86`): `CredVaultServer.Tests`; `ci-clients.yml` `build-test` ubuntu: the other four (`:102-108`); `sonarcloud.yml:140-144`: all five | all five | The required checks `build · test`, `clients · build · test (ubuntu-latest)`, `SonarCloud Scan` green on the head | Green proves the success path on Ubuntu. The server executable runs on Linux ONLY (F14) |
 | 21 | **Suite × OS: macOS** | `ci-clients.yml` leg `macos-latest`: the four client executables | four of five | `clients · build · test (macos-latest)` (required) green, with row 11's steps | The server executable never runs on macOS (F14). The two roots differ on macOS, so S2's second-root fixture runs for real only here in a PR |
 | 22 | **Suite × OS: Windows** | `ci-clients.yml` leg `windows-latest`: the four client executables | four of five | That leg green on the head; read by hand, because it is not a required check (F12) | The runner is elevated: the claim scan sees nothing, a real killed-run folder is kept (F31). The server executable never runs on Windows. The owner said on 2026-11-04 "temporarily we do not test on Windows" for his own machine |
@@ -120,7 +123,8 @@ at once can each sweep the same root; then one can report a removal it did not d
 `DirectoryLinks.cs` and `RepositoryRoot.cs`, F4; `template-manifest.json`; creds' own `SweepRanTests.cs`); NEW
 `src_service_defaults/tests/Leftovers/` (the 17 test files of the template but `LeftoversRepositoryGuardTests.cs`; creds'
 own `TheAdaptedCopyTests.cs`); the five `.csproj` files; `.gitattributes`; `.github/workflows/ci-clients.yml`,
-`ci-server.yml`, `release.yml`; `src_vs_code/src/test/workflowMount.test.ts`.
+`ci-server.yml`, `release.yml`, `sonarcloud.yml` (Q12); `src_vs_code/src/test/workflowMount.test.ts`;
+`research/module_tests.md` (`:20` and the commands `:2106-2115`).
 
 **What changes.**
 
@@ -131,13 +135,20 @@ own `TheAdaptedCopyTests.cs`); the five `.csproj` files; `.gitattributes`; `.git
    - `namespace Mcp.Tests.Leftovers;` → `namespace CredsForDevs.Tests.Leftovers;` in every file; `namespace Mcp.Tests;` →
      `namespace CredsForDevs.Tests;` in `DirectoryLinks.cs` and `RepositoryRoot.cs`;
    - `OwnedToken.cs`: `RepoToken = "creds"`, `RepoRow = "the developer-credentials server and extension"`;
-   - the token in text and fixtures: `mcp tests:` (six in `LeftoversAuditTests.cs`, two in `LeftoversAuditException.cs`),
+   - the token in text and fixtures: `mcp tests:` (six in `LeftoversAuditTests.cs`; once in `LeftoversAuditException.cs:4`,
+     a doc comment — the message itself is built from `OwnedToken.RepoToken`, T:LeftoversAuditException.cs:31),
      `--token mcp`, `-mcp-pg-` (`OwnedTests.cs`), `MCP_LEFTOVERS_SELFTEST` → `CREDS_LEFTOVERS_SELFTEST`,
-     `MCP_DARWIN_FIFO_CHILD` → `CREDS_DARWIN_FIFO_CHILD`, `typeof(Mcp.Tests.Leftovers.LeftoversSweepFixture)`;
-   - the helper paths and folders (D7, Q4): `HelperFile`, `HelperFolder` → two folders, `FoldingAllowances`, `TokenFile`
-     (T:LeftoversGuard.cs:47-48, :63-65; T:LeftoversGuardTokens.cs; the fixture paths of `LeftoversGuardTests.cs`), and
-     `LeftoversGuardFiles.cs`'s roots for this tree; `RepositoryIdentity.Row` → `OwnedToken.RepoRow`
-     (T:LeftoversGuardTests.cs:394);
+     `typeof(Mcp.Tests.Leftovers.LeftoversSweepFixture)`. `MCP_DARWIN_FIFO_CHILD` (T:DarwinFifoChild.cs:14) stays: it is a
+     private handshake between a test and its own child, not a token;
+   - the helper PATHS, and only what S3's Files list names for E2.3 (Q4): `LeftoversGuardFiles.cs`'s roots for this tree
+     (D7's folders) and the two constants of `LeftoversGuard.cs`, `HelperFile` and `HelperFolder` (T:LeftoversGuard.cs:47-48,
+     one folder: `src_service_defaults/tests/Support/Leftovers/`); and the path ops the copied tests need to stay true:
+     the four `FoldingAllowances` entries (T:LeftoversGuard.cs:63-65) and the pin's `folder` (T:LeftoversGuardTests.cs:649)
+     re-pointed to where each file now lies, so `:651`'s list keeps its four entries and `:652` (every one exists) holds;
+     `TokenFile` (T:LeftoversGuardTokens.cs; `LeftoversGuardTests.cs:621`); the fixture paths of `LeftoversGuardTests.cs`;
+     `RepositoryIdentity.Row` → `OwnedToken.RepoRow` (T:LeftoversGuardTests.cs:394). **Not in E2.3** (E2.5.S1's own list):
+     the `docker.yml` exclusion, the wrapper as a fifth folding allowance (with its op on the pin at `:651`), and a second
+     helper folder;
    - **no op for the mount path**: creds mounts at `.claude/rules/shared`, as the template does.
    The ownership, liveness and deletion code gets no op (the parent's 3.1). The manifest's `about` carries § 3.0's sentence.
 2. **The test first**, then the files: `TheAdaptedCopyTests.cs` in coai's shape (`TheManifest_IsWellFormed`;
@@ -155,9 +166,15 @@ own `TheAdaptedCopyTests.cs`); the five `.csproj` files; `.gitattributes`; `.git
    set `JsonSerializerIsReflectionEnabledByDefault`; the three client projects set it to false
    (`BrokerClient.Tests.csproj:13`, `CredsCli.Tests.csproj:14`, `CredsMcp.Tests.csproj:15`), and
    T:LeftoversGuardScriptsTests.cs:24 serialises an anonymous type, so it must not move there.
-5. **CI** (Q7, Q8): the mount fetch and `setup-node` 22.x in `ci-clients.yml`; the mount fetch in `release.yml`'s two
-   binary jobs; the teeth steps (row 9); the macOS steps (row 11): the Arm64 check with uid and system printed, the layout
-   self-test with its three greps, `--filter-namespace "CredsForDevs.Tests.Leftovers"` before the whole executable.
+5. **CI** (Q7, Q8, R4): the mount fetch and `setup-node` 22.x in `ci-clients.yml` and in `release.yml`'s two binary jobs;
+   the teeth steps (row 9); the macOS steps (row 11): the Arm64 check with uid and system printed, the layout self-test
+   with its three greps, `--filter-namespace "CredsForDevs.Tests.Leftovers"` before the whole executable. Every job builds
+   EACH test project it runs by name, before it runs it (G1/G5): the solution holds three of the five
+   (`dew_flow_creds_for_devs.slnx`: server, mcp, service-defaults tests), so `ci-server.yml:79`'s solution build is enough
+   only for `CredVaultServer.Tests`; `ci-clients.yml:89-92`, `sonarcloud.yml:133-136` and `release.yml:372-376`,
+   `:629-633` already build theirs by name. GitHub runs a `bash` step with `-e`, so a failed build stops the job
+   before any executable runs, and the job starts from a fresh checkout with no `bin/`: an executable it runs exists
+   only because that step built it. § 9 says the local check.
 6. **The first build** measures one thing the copy cannot fix by editing (F16): the template files say `using Xunit;`, and
    all five projects add a global `<Using Include="Xunit" />`. If that warns under `TreatWarningsAsErrors`
    (`Directory.Build.props:8`), the answer is project-level (a `NoWarn` of that one id in the five `.csproj`, with the
@@ -168,10 +185,10 @@ own `TheAdaptedCopyTests.cs`); the five `.csproj` files; `.gitattributes`; `.git
 | # | Assertion | Premise it checks | RED today |
 |---|---|---|---|
 | S1.1 | every manifest entry's target equals the template blob under its listed ops | the manifest names `197cc76` and 52 entries | every target is missing |
-| S1.2 | every `.cs` file of the two folders is a manifest target or on creds' own list | the scan finds more than 50 files | the folders do not exist; by hand after GREEN: one new unlisted file → red |
+| S1.2 | every `.cs` file of the two folders is a manifest target or on creds' own list; `sonarcloud.yml`'s `sonar.exclusions` names exactly the manifest's targets (Q12) | the scan finds more than 50 files | the folders do not exist; by hand after GREEN: one new unlisted file → red |
 | S1.3 | by hand, recorded: one byte changed in a copied file (and, once, one op's count lowered) → S1.1 red, naming the file and the op | the file is a manifest target | — (a mutation, run once) |
-| S1.4 | `SweepRanTests`, in each of the five: the fixture's `LastRun` is not null; where the canonical roots differ, the socket-root fixture's `LastRun` names `/tmp`; where they are one, it says so (Q6) | the test class takes the fixture through its constructor | with the `[assembly: AssemblyFixture]` line removed (the fixture file without that op), xUnit refuses the constructor: "did not have matching fixture data" |
-| S1.5 | `workflowMount.test.ts`: a job that runs a C# test executable (`tests/bin/(Debug|Release)/`) fetches the mount before it; its companion still finds `ci-server.yml:build-test` and the SonarCloud job | the companion finds ≥ 2 jobs | `ci-clients.yml:build-test`, `release.yml:cli-binaries`, `release.yml:mcp-binaries` |
+| S1.4 | `SweepRanTests`, in each of the five: `LeftoversSweepFixture.LastRun` is not null. (Its socket-root half is S2.8: S1's commit must compile without S2's fixture, R6.) | the test class takes the fixture through its constructor | with the `[assembly: AssemblyFixture]` line removed (the fixture file without that op), xUnit refuses the constructor: "did not have matching fixture data" |
+| S1.5 | `workflowMount.test.ts`: (a) a job that runs a C# test executable (`tests/bin/(Debug|Release)/`) fetches the mount before it; (b) a job that runs `CredsForDevs.ServiceDefaults.Tests` runs `actions/setup-node` with `22.x` before it; the companion still finds `ci-server.yml:build-test` and the SonarCloud job as C#-running jobs | the companion finds ≥ 2 jobs | (a) and (b): `ci-clients.yml:build-test`, `release.yml:cli-binaries`, `release.yml:mcp-binaries`; (b) also `sonarcloud.yml`'s job, which today runs on the image's own Node (no `setup-node` there): it gains the step too |
 | S1.6 | the teeth (row 9), by hand once on Linux: the audit made a no-op by a temporary edit of the fixture → the bash step's script prints "did not fail the run"; file restored | the self-test case ran (its folder exists before the end) | — (the step does not exist) |
 
 **Exit paths.** The assembly fixture's constructor never throws (a sweep error is one line); its disposal is the audit,
@@ -182,48 +199,69 @@ sweep and no audit removal, one line.
 ### 3.2 E2.3.S2 — the socket root, the `HostProcess` adapter, the Windows handoff (Opus · Sonnet · Opus; owns sc. 2's `Remove` and second-root parts)
 
 **Files.** NEW `Support/Leftovers/OwnedCreds.cs`, `Support/Leftovers/LeftoversSocketRootSweepFixture.cs`;
-`src_service_defaults/tests/Support/HostProcess.cs:148-167`; NEW tests in `src_service_defaults/tests/Leftovers/`
-(`SocketRootSweepTests.cs`, `HostProcessAdapterTests.cs`, `WindowsHandoffTests.cs`).
+`src_service_defaults/tests/Support/HostProcess.cs` (`Start` `:27`, the `Reaper` `:104-119`, `TempDirectory`/`Remove`
+`:148-167`); NEW tests in `src_service_defaults/tests/Leftovers/` (`SocketRootSweepTests.cs`, `HostProcessAdapterTests.cs`,
+`WindowsHandoffTests.cs`) and the socket-root half of `Support/Leftovers/SweepRanTests.cs`.
 
 **What changes.**
 
 - `OwnedCreds.ShortSocketRoot`: `"/tmp"` on Linux and macOS, `Owned.TempRoot()` on Windows; the one `"/tmp"` under an
-  inline `raw-temp` exemption marker.
-- `LeftoversSocketRootSweepFixture` (its own `[assembly: AssemblyFixture]`): when the CANONICAL roots differ, it runs the
-  copied `LeftoversSweep.Run` over `ShortSocketRoot` through `LeftoversSweepFixture.GuardedSweep` at start, and
-  `LeftoversSweepFixture.RealAudit(ShortSocketRoot, OwnedDir.Unreclaimed())` through `GuardedAudit` at the end (D9 #9).
-  When the roots are one (Windows; Linux with no `TMPDIR`), it does nothing and says so in `LastRun` (Q6, F10). A seam
-  constructor takes the roots, the sweep, the report and the audit, as the template's fixture does
-  (T:LeftoversSweepFixture.cs:26).
-- `HostProcess.TempDirectory(what)` calls `OwnedDir.Create(what)` and keeps the `OwnedDir` in a static
-  `ConcurrentDictionary<string, OwnedDir>` keyed by its path; it returns the path. `HostProcess.Remove(path)` takes the
-  entry out and calls `Dispose()`: never `Removal.Quietly`, never `Directory.Delete`. A refused removal is one warning
-  (through an internal warn seam), the folder stays prefixed and claimed, and the entry stays in the helper's registry as
-  `DisposeAttempted`. A path that `TempDirectory` did not give is one warning and nothing removed.
-- Children (Q5, F13): **to be measured by the coder's RED first** — one run of `CredsMcp.Tests` and `CredsCli.Tests` with
-  a private short `TMPDIR`, new entries listed. If a killed child leaves `dotnet-diagnostic-*` or `clr-debug-pipe-*`
-  there, `HostProcess.Start` (`:27`) hands `TMPDIR`, `TEMP` and `TMP` = an owned folder under `ShortSocketRoot` to the
-  child (rule §2). If nothing appears, nothing is built.
+  inline `raw-temp` exemption marker. `OwnedCreds.Canonical(path)`: the path with EVERY link of every component followed
+  (realpath(3) on POSIX; the template's `Native.FinalPathOfFollowing` on Windows, T:Native.cs:261). Not
+  `Path.GetFullPath`, which follows no link: on macOS `/tmp` is a link to `/private/tmp`, and `$TMPDIR` lies under `/var`,
+  a link to `/private/var`.
+- `LeftoversSocketRootSweepFixture` (its own `[assembly: AssemblyFixture]`): when `Canonical(ShortSocketRoot)` differs
+  from `Canonical(Owned.TempRoot())`, it runs the copied `LeftoversSweep.Run` over `ShortSocketRoot` through
+  `LeftoversSweepFixture.GuardedSweep` at start, and `LeftoversSweepFixture.RealAudit(ShortSocketRoot,
+  OwnedDir.Unreclaimed())` through `GuardedAudit` at the end (D9 #9). When the two are one, the main fixture's sweep IS the
+  sweep of that root, and this fixture runs none; `LastRun` records which. A seam constructor takes the roots, the sweep,
+  the report and the audit, as the template's fixture does (T:LeftoversSweepFixture.cs:26).
+- **The adapter, the map (C2).** `HostProcess.TempDirectory(what, warn = null)` calls `OwnedDir.Create(what, null, warn)`
+  (T:OwnedDir.cs:35): the warning sink travels with that one folder, so no static, shared warning delegate exists for
+  parallel tests to race on. It keeps the `OwnedDir` in a static `ConcurrentDictionary<string, OwnedDir>` keyed by its
+  path and returns the path. `HostProcess.Remove(path, warn = null)` takes the entry out with ONE atomic `TryRemove`; only
+  the call that won it calls `Dispose()`. A second `Remove` of the same path, or of a path `TempDirectory` did not give, is
+  one warning and nothing removed. Never `Removal.Quietly` on the path, never `Directory.Delete`. A dispose that gives up
+  keeps the `OwnedDir` in the helper's own registry as `DisposeAttempted` (T:OwnedDir.cs:62-72: the entry leaves only when
+  folder AND claim are gone), so the end-of-run audit fails the run.
+- **The child ends first (C1).** Today the `Reaper` (`:104-119`) calls `Kill(entireProcessTree: true)` and returns at once,
+  so the class's `Dispose` can remove the folder while the child still writes in it. The stories say the child "is a
+  `using` inside the test, so it is gone before xUnit disposes the class and its scope" (S3, the dispose-order sentence);
+  this makes "gone" true. `Start` ties the child to each registered folder that one of its arguments or environment
+  values names or lies under (the callers pass the folder, for example `VersionTests.cs:96`, `AgentRelayHostTests.cs:50`).
+  The `Reaper` kills the tree, then waits with a bound (`WaitForExit(TimeSpan)`, which does not wait for the pipes). If the
+  exit is confirmed, the tie ends. If not, the tie stays, and the `Reaper` throws one exception naming the pid and the
+  folder: the test fails visibly. `Remove` of a folder with a tie still open keeps it (one warning; it stays registered,
+  so the audit is red too).
+- Children's temp paths (Q5, F13): **to be measured by the coder's RED first** — one run of `CredsMcp.Tests` and
+  `CredsCli.Tests` with a private short `TMPDIR`, new entries listed. If a killed child leaves `dotnet-diagnostic-*` or
+  `clr-debug-pipe-*` there, `Start` hands `TMPDIR`, `TEMP` and `TMP` = an owned folder under `ShortSocketRoot` to the child
+  (rule §2). If nothing appears, nothing is built.
 
 **RED-first tests.**
 
 | # | Assertion | Premise it checks | RED today |
 |---|---|---|---|
 | S2.1 | after `TempDirectory("mcp-pump")`: the folder matches `Owned.Pattern` and its claim exists; after `Remove`: the folder is gone and `OwnedDir.Unreclaimed()` has no entry with that path | the folder existed and was registered (asserted between the two calls) | the name is `mcp-pump-<guid>`, unprefixed, no claim. By hand after GREEN: `Remove` through `Removal.Quietly(path)` instead of `Dispose()` → the registry assertion red (D9 #18; F19) |
-| S2.2 | a file under a `TempDirectory` folder held with `FileShare.None` (Windows) or a read-only subfolder (POSIX; skipped as root, saying why) → `Remove` returns, the warn seam got ONE line, the folder still matches the pattern and keeps its claim, the entry is `DisposeAttempted`; then made removable, and the test's own clean-up disposes it | the removal really failed (the folder exists after `Remove`) | `main` swallows the failure: no line, an unclaimed, unprefixed folder |
+| S2.2 | a file under a `TempDirectory` folder held with `FileShare.None` (Windows) or a read-only subfolder (POSIX; skipped as root, saying why) → `Remove` returns, the test's OWN warn sink got ONE line, the folder still matches the pattern and keeps its claim, the entry is `DisposeAttempted`, and `LeftoversAudit.Run` over a private root with that registry throws, naming it under `disposed but not removed`; then made removable and disposed by the test | the removal really failed (the folder exists after `Remove`) | `main` swallows the failure: no line, an unclaimed, unprefixed folder, nothing for an audit to see |
 | S2.3 | `Remove` of a path `TempDirectory` did not give → one warning, the path untouched | the path exists before and after | `main` deletes it |
-| S2.4 | with a private pair of roots that differ: (a) a dead-claimed `testsToDelete-<owner>-creds-sock-*` folder (unmatchable pid, clock 11 minutes on) in the SECOND root is removed by the socket-root fixture; (b) the main fixture's sweep alone keeps it (it reads the other root); (c) one folder made the natural way with `OwnedScope.Dir("sock", root2)` and a live record is kept as `live` by the real sweep with the real `Scope.IsMine` (§ *Epoch 7* 8.1) | each folder and its claim exist before (asserted); without the clock seam (c) would read `young` (asserted once) | the fixture does not exist |
+| S2.4 | with a private pair of roots that differ: (a) a dead-claimed `testsToDelete-<owner>-creds-sock-*` folder (unmatchable pid, clock 11 minutes on) in the SECOND root is removed by the socket-root fixture — on Windows only after `WindowsOwnership.OwnedByCaller` on the folder and its claim (revision row 11; T:LeftoversSweepTests.cs:597); (b) the main fixture's sweep alone keeps it (it reads the other root); (c) a SEPARATE process, still alive, makes one folder the natural way (`OwnedScope.Dir("sock", root2)`); the sweep's clock is set 11 minutes on, so the age is past the floor, and liveness is real: folder AND claim survive as `live`; on an elevated Windows process the reason is `foreign-uid` (the owner is asked before liveness, T:LeftoversSweep.cs:273), asserted as such (§ *Epoch 7* 8.1) | each folder and its claim exist before (asserted); the producer's pid is alive at the sweep (asserted); without the clock seam (c) would read `young` (asserted once) | the fixture does not exist |
 | S2.5 | the socket-root fixture with a layout seam that throws: no sweep runs, one report line, no audit removal (D9 #9) | the seam was called | the fixture does not exist |
 | S2.6 | both fixtures over a private pair of roots, disposed in BOTH orders: a never-disposed folder makes the run fail, and the message names it under `never disposed` | the folder is registered before the disposals | the fixture does not exist |
-| S2.7 | **Windows only** (skipped elsewhere, saying why): (a) a `node -e` child loads `leftovers.cjs` and makes `ownedDir` in a private root handed as `TEMP`/`TMP`; the claim's pid is rewritten in place to `UnmatchablePid`; the Node sweep, loaded through `loadReferenceSweep` and called with `{ tmp, token: 'creds', now: <11 minutes on> }`, keeps it and lists `unverified: <path>`; (b) the folder and its claim re-owned with `WindowsOwnership.OwnedByCaller`, `Scope.IsMine` of both asserted, the C# sweep with `Now` 11 minutes on removes it; (c) a twin made foreign with `ForeignToCaller` is kept as `foreign-uid` and listed `foreign:`; (d) a twin NOT re-owned, on an elevated process (`WindowsPrincipal.IsInRole(Administrator)`; skipped when not elevated, saying why): kept as `foreign-uid` | (a) the `unverified:` line names THIS folder, so the Node sweep saw it as its own token's, not as `other` (F9); (b), (c) the fixture branch is printed (`LastForeignBranch`) | the test file does not exist; by hand after GREEN: (b) without the re-owning → red with `foreign-uid` on the elevated runner, which is (d)'s fact |
+| S2.7 | **Windows only** (skipped elsewhere, saying why). A `node -e` child loads `leftovers.cjs` and makes `ownedDir` in a private root handed as `TEMP`/`TMP`; the claim's pid is rewritten in place to `UnmatchablePid`; clocks 11 minutes on. (a) the Node sweep, loaded through `loadReferenceSweep` and called with `{ tmp, token: 'creds', now }`, keeps it and lists `unverified: <path>`. The C# sweep then judges four twins: (b) both keys right — folder and claim re-owned with `OwnedByCaller`, inside the profile → collected; (c) the claim's owner SID foreign only (`ForeignToCaller` on the claim, its SID branch) → kept, listed; (d) outside the profile (`CommonDocuments`) with the caller's SID on both → kept, listed; (e) the natural output, NOT re-owned, on an elevated process (`WindowsPrincipal.IsInRole(Administrator)`; skipped when not elevated, saying why) → preserved as `foreign-uid` | (a) the `unverified:` line names THIS folder, so the Node sweep read it as its own token's, not `other` (F9); (b) `Scope.IsMine` of folder and claim asserted true; (c) the branch printed (`LastForeignBranch` is the SID one; skipped, saying why, if the token may not own `Administrators`); (d) the path is outside the profile and the SIDs are the caller's (asserted) | the test file does not exist; by hand after GREEN: (b) without the re-owning → kept as `foreign-uid` on the elevated runner, which is (e)'s fact |
+| S2.8 | `SweepRanTests`' socket-root half, in each of the five: where the canonical roots are one, `/tmp` (the temp root) was swept exactly once and the socket-root fixture ran no second sweep; where they differ, the socket-root fixture's `LastRun` names `/tmp`. A unit test of `Canonical`: on macOS `/tmp` and `/private/tmp` give ONE sweep; macOS's `$TMPDIR` and `/tmp` give TWO | the two roots and their canonical forms are printed | the fixture does not exist |
+| S2.9 | C1: a fixture child started through `HostProcess.Start` holds a file open in its `TempDirectory` folder; the test's assertion fails inside the `using` of its `KillOnDispose`; the class disposes. The folder goes only AFTER the child's exit (its exit time, from the `Process`, is before the folder's removal, recorded by a removal hook). Where the OS allows (Linux), a surviving-descendant case: the child starts a grandchild that holds the file and outlives a kill of the child alone; the folder stays until the tree is confirmed ended, or stays claimed with the `Reaper`'s exception | the child was alive and held the file when the assertion failed (asserted by its printed pid and an open handle) | `main`'s `Reaper` does not wait: the removal can come before the exit (seen as the order of the two times, or on Windows as a refused delete) |
+| S2.10 | C2: (a) many independent `TempDirectory`/`Remove` pairs on parallel tasks, each with its own warn sink: each folder removed once, each sink holds only its own lines; (b) `Remove` twice on one path: one `Dispose()` (a counting hook), the second call one warning; (c) a failed dispose (S2.2's set-up) → the audit over that registry is red | the tasks really overlap (a barrier) | (a) the shared-path folders are unprefixed; (b) `main` deletes twice silently; (c) as S2.2 |
 
-The stories say the SID-refusal case is kept as `unknown`. The template keeps it as `foreign-uid` (T:LeftoversSweep.cs:273,
-listed at :299). S2.7(c) asserts the template's reason (F8).
+**What the stories call `unknown` (R5).** E2.3.S2 says: "the same folder with its claim's owner SID set to another
+account's … → the C# sweep keeps it as `unknown`, listed." The template's label for that case is `foreign-uid`
+(T:LeftoversSweep.cs:273; listed as `foreign:` at :299). The stories' word is a wrong name for it, not another behaviour:
+S2.7(c) asserts what the stories mean — kept, listed, not collected — and records the label `foreign-uid`.
 
-**Exit paths.** `Remove` never throws. A class whose constructor throws after its field initializer called
-`TempDirectory` is never disposed; its folder stays registered and the audit names it (a red run, as it should be). A
-child that outlives its test keeps a file open: on Windows the removal gives up after five tries, one warning, and the audit
-names it under `disposed but not removed`.
+**Exit paths.** `Remove` never throws; the `Reaper` throws only when the child's end is not confirmed. A class whose
+constructor throws after its field initializer called `TempDirectory` is never disposed; its folder stays registered and
+the audit names it (a red run, as it should be). A child that outlives its test keeps its folder: the `Reaper`'s exception
+fails the test, and the audit names the folder.
 
 ### 3.3 E2.3.S3 — the client, process and socket sites (Opus · Sonnet · Opus)
 
@@ -246,13 +284,13 @@ each test, passed or failed. A `what` is the old leaf without its `creds-`/`cred
 
 | # | Assertion | Premise it checks | RED today |
 |---|---|---|---|
-| S3.0 | a scan test over `src_cli/tests`, `src_mcp/tests`, `src_broker_client/tests`, `src_service_defaults/tests` (helper folders excluded) with the copied guard's `raw-temp` reading: 0 findings outside a marker (Q11) | the scan reads more than 50 `.cs` files (56 in these trees today) and finds the sanctioned line in `OwnedCreds.cs` (testing.md: a scan gets a companion) | the count, **to be measured by the coder's RED**; by `git grep` in these four trees: 13 API lines (`HostProcess.cs:151` among them) + 3 `/tmp` socket lines |
+| S3.0 | a scan test over `src_cli/tests`, `src_mcp/tests`, `src_broker_client/tests`, `src_service_defaults/tests` (helper folder excluded) with the copied guard's `raw-temp` reading (it flags the API calls and a `/tmp` or `/var/tmp` path literal, T:LeftoversGuard.cs:132): the findings outside a marker EQUAL an exact expected list — the four lines that create nothing and stay for E2.5's guard: `AgentRelayTests.cs:33`, `:34`, `:278`, `CallerIdentityTests.cs:196` (Q11). Not zero: a zero would be red until E2.5 | the scan reads more than 50 `.cs` files (56 in these trees today) and finds the sanctioned line in `OwnedCreds.cs` (testing.md: a scan gets a companion) | by `git grep` in these four trees, 20 lines: 13 API lines (`HostProcess.cs:151` among them), 3 `/tmp` socket lines, the 4 lines of the list; the guard's own count **to be measured by the coder's RED**, and the expected list corrected to the guard's reading only if the RED shows the guard reads one of the four otherwise (said on the PR) |
 | S3.1 | each of the 14 callers' folders matches `Owned.Pattern` (one test through `HostProcess`, S2.1, plus the scan) | — | covered by S2.1 and S3.0 |
 | S3.2 | the four socket paths: parent matches `Owned.Pattern`; UTF-8 bytes ≤ `MaxSocketPathBytes`; on Linux AND macOS | the socket was bound (the test's own assertion still runs) | the parent is `/tmp` itself |
 
 **Exit paths.** A failed assertion: xUnit disposes the class, the scope removes. A child still running: `KillOnDispose`
-(`HostProcess.cs:102`) is a `using` inside the test, so the child ends before the class's `Dispose` (read in review, per
-file). A held file on Windows: one warning, the folder kept claimed, the audit red.
+(`HostProcess.cs:102`) is a `using` inside the test; after S2 it waits for the confirmed end, so the child has ended before
+the class's `Dispose`, or the folder stays (S2.9). A held file on Windows: one warning, the folder kept claimed, the audit red.
 
 ### 3.4 E2.3.S4 — the server factories, `VaultServer`, the store tests (Opus · Sonnet · Opus)
 
@@ -271,7 +309,7 @@ disposes its scope. The listing assertions (`StartupGuardsTests.cs:48`, `BackupA
 because the claim is a SIBLING, never inside.
 
 **RED-first tests.** S4.0: the scan of S3.0 extended to `src_minimalapi_server/tests` (24 API lines there by `git grep`; the
-guard's count **to be measured**). S4.1: one `using (new VaultServer())`: its `DataDir` matches `Owned.Pattern`; after the
+guard's count **to be measured**); the expected list stays the four lines of S3.0. S4.1: one `using (new VaultServer())`: its `DataDir` matches `Owned.Pattern`; after the
 dispose, the folder is gone and the registry has no entry; no `cred-vault-tests` folder was made (RED on `main`: the parent
 exists and the name is a GUID).
 
@@ -287,10 +325,13 @@ else, F14); `Corp.Undeletable` (`Corp.cs:219`) is a `using` inside its tests (`L
 | `BackupKeyFileTests.cs:92` (nothing created) | `Owned.TempRoot()` under the marker |
 | `BackupArchiveCommandTests.cs:143` (`cred-vault-aot-kit`, a FIXED leaf, the commands in the comment `:139-140`) | `_owned.Dir("aot-kit")`; the test prints the kit's path and the two command lines; `CREDS_AOT_KIT_DIR` names a person's own folder (never set in CI) |
 
-**RED-first tests.** S5.0: the scan of S4.0 over these files. S5.1: the kit test prints a
+**RED-first tests.** S5.0: the scan of S4.0 over these files. S5.1, **POSIX and WSL only** (the server executable runs on
+Linux only, F14, and two executables at once on Windows meet F29): the kit test prints a
 `testsToDelete-<owner>-creds-aot-kit-<id>` path that is gone after the run; two executables started at once print two
-different paths and both pass (RED on `main`: one fixed path, overwritten). S5.2 by hand: sc. 2's counts (row 5) and
-sc. 4 (row 10), before and after.
+different paths and both pass. The RED, said honestly: on `main` two runs overwrite the one fixed folder and both still
+pass, so the overlap does not fail; the RED is the printed path — on `main` it is not owner-form
+(`cred-vault-aot-kit`) and it is still there after the run. S5.2 by hand: sc. 2's counts (row 5) and sc. 4 (row 10),
+before and after.
 
 **The proofs to record on the PR.** sc. 2's counts per executable; sc. 4 on WSL; the hand clean-up (row 2); the barrier
 rescan (row 1); the Node guard (row 24); the C# guard list (row 16); the run URLs of rows 9, 11, 15, 22.
@@ -338,23 +379,33 @@ full stop.**
   must compile in all five: T:DarwinLayout.cs:130 calls `DirectoryLinks.Run`, T:OwnerVectors.cs:11 reads
   `RepositoryRoot.Path`), namespace op `Mcp.Tests` → `CredsForDevs.Tests`. Not a change: the parent's 3.1 manifest lists
   them, and revision row 3 adopts 3.1.
-- **Q4 — the guard's discovery, E2.3 or E2.5.** S3's Files list (E2.3's scope) rewrites `LeftoversGuardFiles.cs` and the
-  two constants for D7; E2.5.S1's text names the same file. The copied `LeftoversGuardTests` pin `FoldingAllowances` and
-  the helper paths, so they must be creds' in E2.3. *Recommended:* E2.3 writes the whole D7 discovery (the folders, the
-  `docker.yml` exclusion, the wrapper as the second folding allowance) as manifest ops; E2.5.S1 adds the two repository
-  tests over a clean tree. In my reading not a change (E2.3's scope line is "S3 whole"); in doubt, the coordinator decides.
+- **Q4 — the guard's discovery, E2.3 or E2.5** (revised after the Opus review, R3). *Answer:* E2.3 makes only what S3's
+  Files list names: "`LeftoversGuardFiles.cs` and the two constants of `LeftoversGuard.cs` rewritten for D7", as PATH ops,
+  plus the path ops the copied tests need to stay true (`FoldingAllowances`' four entries and the pin's `folder`,
+  T:LeftoversGuardTests.cs:649-652, so `:652`'s "all of them exist" holds). The `docker.yml` exclusion, the wrapper as a
+  folding allowance (and its op on the pin at `:651`), and a second helper folder are E2.5.S1's: its own list reads "the
+  `docker.yml` exclusion and the wrapper's folding allowance pinned, `LeftoversRepositoryGuardTests` over a clean tree,
+  `LeftoversGuardCredsTests`". The parent's op rule (§ *Epoch 4* item 4) permits ops of named kinds — namespace, token,
+  mount path, helper paths and folders, `RepositoryIdentity.Row` — and the edits each story lists; an exclusion or an
+  added allowance is a creds addition, so it lands with the story that lists it. Not a change: each item lands where the
+  stories put it.
 - **Q5 — temp paths of `HostProcess` children** (F13). *Recommended:* measure first (§ 3.2); build the hand-over only if
   the RED shows an entry. Not a change: rule §2's "a child that makes temp paths gets an owned folder" binds already, and
   the stories' goal is "no xUnit test here leaves a folder or file in either root on any path".
-- **Q6 — the socket-root fixture when the roots are one** (F10). *Recommended:* it does nothing on any OS when the
-  canonical roots are one (Linux with no `TMPDIR`, Windows), as D4 says ("when they differ") and as Node's `rootsOf` does
-  (`run-tests.mjs:113-115`); `SweepRanTests` asserts the `/tmp` run only where the roots differ. Not a change.
+- **Q6 — the socket-root fixture when the roots are one** (F10, R5, C3). *Answer:* "differ" is decided on CANONICAL paths
+  (every link followed, `OwnedCreds.Canonical`; not `Path.GetFullPath`), as D4 says ("when they differ") and as Node's
+  `rootsOf` does (`run-tests.mjs:113-115`). Where they are one, the main fixture's sweep is the run over that root and the
+  socket-root fixture runs none. Sc. 1 says "on Linux and macOS it takes `LeftoversSocketRootSweepFixture` too and asserts
+  its run over `/tmp`." That holds on Linux too: with one canonical root (`/tmp`), the one sweep IS the run over `/tmp`, and
+  S2.8 asserts that `/tmp` was swept exactly once (no second sweep); on macOS it asserts the second fixture's run over
+  `/tmp`. Proof of the canonical rule: `/tmp` and `/private/tmp` give one sweep; macOS's `$TMPDIR` and `/tmp` give two
+  (S2.8). Not a change.
 - **Q7 — the teeth: which executables, which shell.** *Recommended:* every executable the job runs (five on ubuntu, four
   on macOS and Windows): the fixture is linked into each, and one missed link would leave that executable with no audit.
   bash on Linux and macOS, `pwsh` on Windows (a step with `if: runner.os == 'Windows'` and `shell: pwsh`), checking each
   run's own `$LASTEXITCODE` and ending `exit 0`, as T-ci `ci.yml:106-134`. Not a change.
 - **Q8 — the mount and Node in more jobs** (F7, F11). *Recommended:* yes, as § 3.1 item 5 and row 19; `setup-node` 22.x in
-  `ci-clients.yml` with `node --version` printed once. Not a change: E2.1 did the same for `release.yml`'s extension job
+  `ci-clients.yml`, in `release.yml`'s two binary jobs (R4) and in `sonarcloud.yml`, with `node --version` printed once. Not a change: E2.1 did the same for `release.yml`'s extension job
   (E2.1 deviation 8).
 - **Q9 — raw bytes on Windows** (F6). *Recommended:* `-text` per copied file in `.gitattributes`, coai's form. Not a change.
 - **Q10 — sc. 4 on Windows.** *Recommended:* one recorded hosted run on a throwaway branch, in the shape of E2.1's
@@ -366,8 +417,10 @@ full stop.**
   as a search with the classes it read; (b) S3.0/S4.0/S5.0 are one committed scan test (the copied guard's reading,
   `raw-temp` only, the five test trees), the automated RED of the site stories, in the role `leftoversSites.test.ts` had in
   E2.1. Not a change: a test that proves a Done-when item.
-- **Q12 — SonarCloud and the copy.** A copied file cannot be edited to answer a Sonar issue. *Recommended:* add the two
-  folders to `sonar.exclusions` (`sonarcloud.yml:115`), as coai excludes `src_mcp/tests_leftovers/**`. Not a change.
+- **Q12 — SonarCloud and the copy.** A copied file cannot be edited to answer a Sonar issue. *Answer (R9):* add the 52
+  copied files to `sonar.exclusions` (`sonarcloud.yml:115`) BY NAME, never a folder glob, so creds' own files in the same
+  two folders (`OwnedCreds.cs`, the fixtures, the tests) stay analysed; the manifest's target list is the source of the
+  names, and S1.2 asserts that the exclusion names exactly the manifest's targets. Not a change.
 - **Q13 — the release runners** (row 23). No PR job runs `linux-arm64`, `windows-11-arm` or `osx-x64`. *Recommended:*
   accept the row as unmapped for the PR: S1.5 pins the mount step in both release jobs, and the first release after E2.3
   records `RunnerFactsTests` (is `windows-11-arm` elevated?) in the stories' build record. A throwaway dispatch of the two
@@ -382,10 +435,10 @@ Every answer below is the brief's recommendation, chosen so that E2.3 makes no p
 - **Q2:** (A): copy `LeftoversSweep.cs` with no mutex op; record F29's limit in the manifest, `module_tests.md` and the PR;
   tell the parent that the template's fix did not happen before E2.3 (F15).
 - **Q3:** yes, copy both files.
-- **Q4:** E2.3 writes the D7 discovery. Read against the stories document: S3's Files list (E2.3's scope, "S3 whole") says
-  `LeftoversGuardFiles.cs` and the two constants of `LeftoversGuard.cs` are "rewritten for D7", and only
-  `LeftoversRepositoryGuardTests.cs` is excluded for E2.5. E2.5.S1 names the same file; it then adds the repository tests
-  over this discovery. Doing what S3 says is the plan as written, so this is not a change.
+- **Q4 (reversed after the Opus review, R3):** E2.3 makes only what S3's Files list names — `LeftoversGuardFiles.cs` and
+  the two constants of `LeftoversGuard.cs`, as path ops, with the path ops the copied tests need (T:LeftoversGuardTests.cs:652).
+  The `docker.yml` exclusion, the wrapper as a folding allowance (its op on the pin at `:651`) and a second helper folder
+  are E2.5.S1's, by E2.5.S1's own list and the parent's op rule. Not a change.
 - **Q5–Q13:** yes, as recommended. Q13's release-runner row stays unmapped for the PR.
 
 ## 7. Integration findings
@@ -413,14 +466,15 @@ none is.
 - **F7 — jobs that will run the copy without the mount**: `ci-clients.yml` `build-test` (three legs); `release.yml`
   `cli-binaries` and `mcp-binaries` (six runners each). S3's Files list names only `ci-clients.yml` and `ci-server.yml`;
   `ci-server.yml` fetches it since E2.2 (`:56-57`) (Q8).
-- **F8 — `unknown` vs `foreign-uid`**: E2.3.S2 says the SID-refusal case is kept as `unknown`; the template keeps it as
-  `foreign-uid` (T:LeftoversSweep.cs:273), and the owner is asked before liveness. S2.7(c) asserts the template's reason.
+- **F8 — `unknown` vs `foreign-uid`**: a wrong name in the stories, not another behaviour; written once, in § 3.2 *What the
+  stories call `unknown`*. Not a change.
 - **F9 — the Node half of the handoff needs the token**: `sweepLeftovers({ tmp })` alone collects the reference's own token
   and calls a `creds` folder `other`, so it lists nothing; the call needs `token: 'creds'` (F22). The wrapper does not
   export `sweepLeftovers` (`leftovers.cjs:68-89`); `run-tests.mjs:121` loads it.
-- **F10 — on Linux the two roots are one by default** (`/tmp`): sc. 1's "on Linux and macOS it asserts its run over /tmp"
-  and D4's "when they differ" disagree (Q6).
-- **F11 — no Node set up in `ci-clients.yml`**: the handoff test and the guard's script tests need it; the runners'
+- **F10 — on Linux the two roots are one by default** (`/tmp`). Sc. 1 and D4 agree once "the run over `/tmp`" is read as
+  the one sweep of that root: written once, in Q6. Not a change.
+- **F11 — no Node set up in `ci-clients.yml`, `release.yml`'s two binary jobs or `sonarcloud.yml`**: the handoff test and
+  the guard's script tests need it (Q8, R4); the runners'
   own Node versions are not measured here.
 - **F12 — the Windows leg is not a required check** (`branch-protection.json:19-31` lists ubuntu and macOS): "green on the
   three legs" is read by hand on the PR.
@@ -441,8 +495,8 @@ none is.
 - **F19 — D9 #18's RED as written cannot go red on `main`**: `main`'s `TempDirectory` registers nothing, so "the registry
   is empty after `Remove`" passes there. S2.1's premise (owner-form, claimed) is the RED; the revert of `Dispose()` is the
   by-hand check (testing.md: revert the line the behaviour depends on).
-- **F20 — the F31 acceptance of 2026-11-07** is not yet written in F31 at conventions `a3a02fa`; the parent's record should
-  carry it.
+- **F20 — the F31 acceptance of 2026-11-07** was not in F31 at conventions `a3a02fa`; the coordinator records it in
+  conventions.
 
 ## 8. Risks
 
@@ -450,8 +504,9 @@ none is.
    only a project-level answer. The first build and the first Windows run show them; S1.1 makes each one red, never silent.
 2. **The adapter makes old silent failures loud.** `HostProcess.Remove` swallowed `IOException` before; now a child that
    still holds a file at the class's `Dispose` makes the audit red (`disposed but not removed`). On the Windows leg the
-   process tests (`ServerEndsWithClientTests`, `ParentWatchProcessTests`) may meet this first. The removal tries five times;
-   the dispose order of § 3.3 is read per file.
+   process tests (`ServerEndsWithClientTests`, `ParentWatchProcessTests`) may meet this first. The `Reaper` now waits for a
+   confirmed end (C1), and a child it cannot confirm fails its test; children that product code starts are outside its
+   reach (row 6).
 3. **Windows proves less than it seems** (F12, F31, F29). The leg is not required, the runner is elevated, so the claim scan
    is blind and every "collected" test re-owns its entry; two sweeps at once are not coordinated. Rows 9, 14, 15, 17 say so.
 
@@ -459,9 +514,16 @@ none is.
 
 ```bash
 LP=.claude/rules/shared/tools/low-priority.mjs
-node $LP dotnet build dew_flow_creds_for_devs.slnx -m:4 --disable-build-servers
-node $LP dotnet build src_cli/tests/CredsCli.Tests.csproj -m:4 --disable-build-servers
-node $LP dotnet build src_broker_client/tests/BrokerClient.Tests.csproj -m:4 --disable-build-servers
+# EACH of the five test projects built by name before it runs (the .slnx holds three of five); a failed build ends here
+node $LP dotnet build src_minimalapi_server/tests/CredVaultServer.Tests.csproj -m:4 --disable-build-servers || exit 1
+node $LP dotnet build src_cli/tests/CredsCli.Tests.csproj -m:4 --disable-build-servers || exit 1
+node $LP dotnet build src_mcp/tests/CredsMcp.Tests.csproj -m:4 --disable-build-servers || exit 1
+node $LP dotnet build src_broker_client/tests/BrokerClient.Tests.csproj -m:4 --disable-build-servers || exit 1
+node $LP dotnet build src_service_defaults/tests/CredsForDevs.ServiceDefaults.Tests.csproj -m:4 --disable-build-servers || exit 1
+# the binaries are the ones just built (testing.md): each test DLL is newer than HEAD's commit AND than every changed source
+newest=$( { git log -1 --format=%ct; git ls-files -m -o --exclude-standard -- '*.cs' '*.csproj' | xargs -r stat -c %Y; } | sort -n | tail -1 )
+for d in src_*/tests/bin/Debug/net10.0/*.Tests.dll; do [ "$(stat -c %Y "$d")" -gt "$newest" ] || echo "STALE: $d"; done
+# any STALE line: rebuild; a suite result over a stale binary is no result
 # one executable at a time; the Leftovers namespace first (Linux/WSL: no .exe)
 node $LP ./src_service_defaults/tests/bin/Debug/net10.0/CredsForDevs.ServiceDefaults.Tests --filter-namespace "CredsForDevs.Tests.Leftovers"
 node $LP ./src_service_defaults/tests/bin/Debug/net10.0/CredsForDevs.ServiceDefaults.Tests
@@ -477,8 +539,9 @@ node .claude/rules/shared/tools/leftovers-check.mjs --repo . --profile node --to
 ```
 
 - [ ] Rows 1–26 of § 1 each have their evidence line on the PR; the unmapped rows carry § 6's answers.
-- [ ] S1.1–S1.6, S2.1–S2.7, S3.0–S3.2, S4.0–S4.1, S5.0–S5.2 RED then GREEN, each RED seen once and quoted; the by-hand
-      reverts (S1.3, S2.1, S2.7) recorded.
+- [ ] S1.1–S1.6, S2.1–S2.10, S3.0–S3.2, S4.0–S4.1, S5.0–S5.2 RED then GREEN, each RED seen once and quoted; the by-hand
+      reverts (S1.3, S2.1, S2.7) recorded; each run's binaries shown newer than the head (§ 9's check, locally; a fresh
+      checkout and a `-e` build step in CI).
 - [ ] `TheAdaptedCopyTests` green on three legs; every op beyond namespace and token has a `reason`; no op touches the
       ownership, liveness or deletion code.
 - [ ] The teeth steps green on three OSes for each executable the job runs; the macOS log lines and the Windows
