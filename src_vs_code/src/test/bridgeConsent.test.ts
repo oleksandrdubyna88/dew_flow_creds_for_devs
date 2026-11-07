@@ -24,8 +24,8 @@ const OFF = 'Allowing covers this call only.';
 const ON = "Allowing follows this entry's own consent setting, for this server only: not for another server, and not for this computer.";
 const TOKEN_TAIL = 'Allowing covers every later call on this token';
 const EXEC_LINE = 'Through the Remote Bridge of "prod server". The connection starts on this computer; the command runs on "prod", and its output goes back to that server.';
-const QUERY_LINE = 'Through the Remote Bridge of "prod server". It runs on this computer, and only its output goes to that server.';
-const FALSE_FOR_EXEC = 'It runs on this computer';
+const QUERY_LINE = 'Through the Remote Bridge of "prod server". The database client runs on this computer, using the connection stored in "prod". Its output goes back to the agent on that server.';
+const SAVED_FALSE = 'only its output goes to that server';
 const SILENT_SENTENCE = 'Too many requests: this Remote Bridge may make at most 60 silent calls a minute — ones a consent policy lets through without a prompt.';
 
 const mcp = (command = 'id'): Ask => ({ path: '/v1/mcp/use/exec', body: { entry: 'e1', command } });
@@ -462,9 +462,9 @@ test('C10: the modal line follows the request time and names the context\'s serv
 
 test('C10: every door says where each action runs — an exec starts the connection here and runs on the destination, a query runs here — and an exec never says it runs on this computer', async () => {
   // Three doors a world, because a bridge may prompt five times a minute.
-  const said = { exec: { command: 'id', line: EXEC_LINE, falseHere: false }, query: { command: 'select 1', line: QUERY_LINE, falseHere: true } } as const;
+  const said = { exec: { command: 'id', line: EXEC_LINE }, query: { command: 'select 1', line: QUERY_LINE } } as const;
   for (const action of ['exec', 'query'] as const) {
-    const { command, line, falseHere } = said[action];
+    const { command, line } = said[action];
     const c = await consenting('always', false);
     try {
       const token = await c.ww.tokenFor(ACCOUNT, 'e1', 'prod');
@@ -475,7 +475,7 @@ test('C10: every door says where each action runs — an exec starts the connect
       ['mcp', 'alias', 'token'].forEach((door, index) => {
         const dialog = c.ww.w.dialogs[index];
         assert.equal(dialog.split('\n')[2], line, `${action} through ${door}: the line after the request time`);
-        assert.equal(dialog.includes(FALSE_FOR_EXEC), falseHere, `${action} through ${door}: "${FALSE_FOR_EXEC}" is for a query alone`);
+        assert.equal(dialog.includes(SAVED_FALSE), false, `${action} through ${door}: the saved sentence, false for both actions, is gone`);
       });
     } finally {
       c.ww.dispose();

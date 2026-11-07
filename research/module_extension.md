@@ -3713,9 +3713,12 @@ server with it on.
 *What the person reads and what the journal says.* On a bridged grant the dialog has one more line, directly after the request time,
 and **it is true for the action** (`bridgeRunSite(action)`, `bridgeModalLine`, `bridgeConsentText.ts`, pure). For an `exec`:
 `Through the Remote Bridge of "<server>". The connection starts on this computer; the command runs on "<entry>", and its output goes back to that server.`
-For a `query`: `Through the Remote Bridge of "<server>". It runs on this computer, and only its output goes to that server.` The saved
-first draft said the second sentence for both, which is false for an `exec`, whose command runs on the entry's host. A third sentence,
-`It runs on that server.`, is for E3.1 (`decideRunSite`), and an action with no site (nothing but `exec` and `query` reaches a bridge's
+For a `query` (since change 6.2): `Through the Remote Bridge of "<server>". The database client runs on this computer, using the connection stored in "<entry>". Its output goes back to the agent on that server.`
+The saved first draft said *It runs on this computer, and only its output goes to that server.* for both actions: false for an `exec`, whose command runs on the entry's host, and for a `query`,
+where only the database client runs here and the SQL runs on the database the stored connection names (which may be the bridge's own server, so "only" is false too). The sentences are keyed by
+action and site (`SENTENCES` in `bridgeConsentText.ts`: `exec:destination`, `query:laptop`, E3's `run:server`), and each is tested beside the launch it describes (`bridgeRunSites.test.ts`: the
+database client spawned here with the entry's connection, the body its output alone; ssh spawned here for the entry's host, the output going back as the body). A `run` sentence is E3's, chosen from each
+`decideRunSite` result and never from the action's name: `It runs on that server.`, is for E3.1, and an action with no site (nothing but `exec` and `query` reaches a bridge's
 dialog) names the bridge and claims no place. The token sentence (`Allowing covers every later call on this token…`), which is false on
 a bridge, is replaced there by `Allowing covers this call only.`, or, with `quiet` on and only on the MCP door,
 `Allowing follows this entry's own consent setting, for this server only: not for another server, and not for this computer.`; off a

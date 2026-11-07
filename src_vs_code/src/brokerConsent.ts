@@ -210,7 +210,7 @@ function shownName(grant: Grant): string {
 
 /** Through a Remote Bridge, the line after the request time says which server, where THIS action runs and what goes back; the context's words and the call's own action, never the caller's. */
 function bridgeLine({ grant, action }: ConsentQuestion): string {
-  return grant.bridge === undefined ? '' : `\n${bridgeModalLine(grant.bridge.context, bridgeRunSite(action), grant.entityName)}`;
+  return grant.bridge === undefined ? '' : `\n${bridgeModalLine(grant.bridge.context, action, bridgeRunSite(action), grant.entityName)}`;
 }
 
 /**

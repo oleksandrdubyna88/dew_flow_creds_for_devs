@@ -250,6 +250,8 @@ export interface WallOptions {
   holdListing?: boolean;
   /** The `exec` action the world runs for real, in place of the script (L1-L5). */
   exec?: unknown;
+  /** The `query` action the world runs for real, in place of the script (change 6.2: the launch is observed beside the words). */
+  query?: unknown;
   /** The hook the broker calls before it reads the mask table (S27). */
   releaseWaiting?: (accountId: string, entityId: string) => Promise<unknown>;
   /** How many `Allow` answers a dialog gets before it is dismissed. Default 60. */
@@ -386,7 +388,7 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
     consentTimeoutMs: options.consentTimeoutMs,
     trash: true,
     create: 'open',
-    realActions: options.exec === undefined ? undefined : { exec: options.exec },
+    realActions: realActionsOf(options),
     hooks: { bridgeWall: wall, configRoute: configSpy(forbidden), ...(options.releaseWaiting === undefined ? {} : { releaseWaiting: options.releaseWaiting }) },
   });
   w.server.setFolderHooks(folderSpy(forbidden));
@@ -409,6 +411,12 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
       void owned.close(); // the folder is owned and claimed: closing the scope removes it
     },
   };
+}
+
+/** The actions a test runs for real, by name; every other action is the script. */
+function realActionsOf(o: WallOptions): Record<string, unknown> | undefined {
+  const real = { ...(o.exec === undefined ? {} : { exec: o.exec }), ...(o.query === undefined ? {} : { query: o.query }) };
+  return Object.keys(real).length === 0 ? undefined : real;
 }
 
 /** What the world's vault is built from: the options that change its nodes, and the folder's consent policy when the world has a store. */

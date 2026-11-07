@@ -12,8 +12,8 @@ import { cleanCallerField } from './brokerCaller';
 
 /**
  * Where a bridged action's work is done, said to the person who authorises it: at the DESTINATION a stored entry names, after a
- * connection that starts on this computer (`exec`); on this computer, with only its output sent on (`query`); or on the server
- * that asked (E3's `run`, not built).
+ * connection that starts on this computer (`exec`); on this computer, which for `query` is the database CLIENT alone (the SQL runs on the
+ * database the stored connection names); or on the server that asked (E3's `run`, not built).
  */
 export type RunSite = 'destination' | 'laptop' | 'server';
 
@@ -26,7 +26,8 @@ const RUN_SITES: ReadonlyMap<string, RunSite> = new Map<string, RunSite>([
 /**
  * The site of one action, or `undefined` for an action that has none. A line is true per action, because the modal is the
  * authorisation (parent §4.2): `exec` is not `query`, and a sentence that guessed for a third action would be a guess a person
- * authorises. Nothing but `exec` and `query` reaches a bridge's dialog; E3.1 replaces this with `decideRunSite` and keeps every sentence.
+ * authorises. Nothing but `exec` and `query` reaches a bridge's dialog. E3.1 replaces this with `decideRunSite` and chooses each `run`
+ * sentence from that result, never from the action's name.
  */
 export function bridgeRunSite(action: string): RunSite | undefined {
   return RUN_SITES.get(action);
@@ -41,20 +42,27 @@ export function bridgeQuotedName(name: string): string {
   return cleanCallerField(name).replaceAll('"', "'");
 }
 
-/** What each site says. The entry's name is a person's text inside a security dialog and is shown through `bridgeQuotedName`. */
-const SITE_SENTENCES: Readonly<Record<RunSite, (entryName: string) => string>> = {
-  destination: (entryName) => `The connection starts on this computer; the command runs on "${bridgeQuotedName(entryName)}", and its output goes back to that server.`,
-  laptop: () => 'It runs on this computer, and only its output goes to that server.',
-  server: () => 'It runs on that server.',
-};
+/**
+ * What each ACTION says at each SITE (parent §4.2, change 6.2). Keyed by both, because the same site means different things for different
+ * actions: `exec` at `destination` spawns `ssh` here for the entry's host; `query` at `laptop` spawns the database client here, and what
+ * the client talks to is the database the stored connection names, which the sentence deliberately does not name (mysql's `use` and
+ * sqlcmd's context switch can leave it behind). Neither says "only its output": the destination, or the database, may be the bridge's own
+ * server (Q4, Q11). E3 adds `run`'s `laptop` sentence beside its spawn observation. The entry's name is shown through `bridgeQuotedName`.
+ */
+const SENTENCES: ReadonlyMap<string, (entryName: string) => string> = new Map<string, (entryName: string) => string>([
+  ['exec:destination', (entry) => `The connection starts on this computer; the command runs on "${bridgeQuotedName(entry)}", and its output goes back to that server.`],
+  ['query:laptop', (entry) => `The database client runs on this computer, using the connection stored in "${bridgeQuotedName(entry)}". Its output goes back to the agent on that server.`],
+  ['run:server', () => 'It runs on that server.'],
+]);
 
 /**
- * The line after the request time: through which server, and, true for the action, where it runs and what goes back. Both names
- * pass the sanitiser of a caller label. An action with no site names the bridge and claims no place.
+ * The line after the request time: through which server, and, true for the action at its site, where it runs and what goes back. The
+ * server's name and the entry's pass `bridgeQuotedName`. An action at a site with no sentence names the bridge and claims no place.
  */
-export function bridgeModalLine(bridge: BridgeContext, site: RunSite | undefined, entryName: string): string {
+export function bridgeModalLine(bridge: BridgeContext, action: string, site: RunSite | undefined, entryName: string): string {
   const through = `Through the Remote Bridge of "${bridgeQuotedName(bridge.serverName)}".`;
-  return site === undefined ? through : `${through} ${SITE_SENTENCES[site](entryName)}`;
+  const sentence = site === undefined ? undefined : SENTENCES.get(`${action}:${site}`);
+  return sentence === undefined ? through : `${through} ${sentence(entryName)}`;
 }
 
 /**

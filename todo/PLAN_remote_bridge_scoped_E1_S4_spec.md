@@ -334,6 +334,17 @@ all, each caught by the case named, the file restored and its hash compared:
 | N10 | a local answer carries a server key | C4 |
 | Q1-Q15, G1-G22, G24 | as in the saved list | the case that list names (Q11, the Forget case, is now caught by `forgetAgentConsents.test.ts`) |
 
+**Fix-forward for epoch 7 (change 6.2; E1's PR shape item 13; built 2026-11-08; the text of item 1 above is kept as it was written).** The `query` sentence is the parent's §4.2 sentence:
+*The database client runs on this computer, using the connection stored in "<entry>". Its output goes back to the agent on that server.* (the entry's name through `bridgeQuotedName`); the saved
+*It runs on this computer, and only its output goes to that server.* is false for a `query` (only the client runs here; the SQL runs on the database the stored connection names) and the "only" is
+false whenever that database, or an `exec`'s destination, is the bridge's own server (Q4, Q11). `SITE_SENTENCES` is re-keyed per action and site (`SENTENCES`, keys `exec:destination`, `query:laptop`,
+`run:server`), `bridgeModalLine(bridge, action, site, entryName)` takes both, and E3 adds `run`'s laptop sentence beside its own spawn observation. Each sentence is asserted beside the launch it
+describes (`bridgeRunSites.test.ts`, the parent's §7 *Destination and recipient*): through the MCP, alias and token doors, the REAL `dbQueryAction` with only `runBounded` replaced by a recorder
+shows one spawn on this computer of `psql`, `mysql` and `sqlcmd` (never a shell), pointed at the entry's own connection (the stored URI without its password after `--`; `-h`/`-P`; `-S`), the
+agent's SQL as an argument, no password in any argument, and a body equal to the client's output; and C10's `exec` runs the REAL `sshExecAction` of `bridgeLinksWorld` and records that the
+destination after `--` is the entry's (its stored user and host) and that the output comes back as the body. The F4 test now demands a sentence, not just a site, for every served action.
+**C11's local literal is untouched** (item 4 of the coordinator's brief): `main`'s per-door fix of the token-wide sentence has not landed, and C11 follows it when it does.
+
 **Gaps filled (not in the plan or the spec; for a reader to confirm).** (a) An action that has no site (nothing but `exec` and `query` reaches a bridge's dialog) names the bridge and claims
 no place, rather than guessing or throwing: a throw inside `wording` would leave the place taken. (b) The exec sentence names the entry (`grant.entityName`), which is what the E1 document's
 item 9 writes as `"<entry>"`. (c) The server-key record is built by a function in `brokerConsentMemory.ts` so that `credsAgentServer.ts` ends below the ceiling.
