@@ -92,7 +92,6 @@ public sealed class StartupGuardsTests : IDisposable
     public void An_unwritable_data_dir_is_refused_with_its_message_and_keeps_the_cause()
     {
         // A FILE where the directory should be: CreateDirectory fails with an IOException on every platform.
-        Directory.CreateDirectory(_root);
         var blocker = Path.Combine(_root, "not-a-directory");
         File.WriteAllText(blocker, "x");
 

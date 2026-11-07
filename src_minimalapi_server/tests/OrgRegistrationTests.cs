@@ -58,7 +58,7 @@ public sealed class OrgRegistrationTests
 
         public HookWorld()
         {
-            Dir = _owned.Dir("hook");
+            Dir = _owned.Dir("org-reg-hook");
             Deps = new OrgEndpointDeps(
                 RequireCaller: _ => null,
                 // The hook never reaches a gate; a delegate that refuses everything says so.

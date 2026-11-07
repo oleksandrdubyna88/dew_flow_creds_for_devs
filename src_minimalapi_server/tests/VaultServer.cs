@@ -30,6 +30,8 @@ internal sealed class VaultServer : WebApplicationFactory<Program>
 
     private readonly Action<IServiceCollection>? _services;
 
+    private bool _ended;
+
     /// <summary>The data folder: owned (claimed first, named for what it holds, in the temp root itself), removed by <see cref="Dispose(bool)"/> AFTER the host has ended.</summary>
     private readonly OwnedDir _folder = OwnedDir.Create("vault");
 
@@ -100,10 +102,13 @@ internal sealed class VaultServer : WebApplicationFactory<Program>
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
-        if (!disposing)
+        // WebApplicationFactory.Dispose(true) reaches DisposeAsync, which reaches Dispose(true) again: the rest runs ONCE, so a removal that gives up is one warning.
+        if (!disposing || _ended)
         {
             return;
         }
+
+        _ended = true;
 
         foreach (var (key, value) in _restore)
         {
