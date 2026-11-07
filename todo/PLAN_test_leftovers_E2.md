@@ -1692,6 +1692,19 @@ Also corrected: part 1 said `node-compile-cache` is "made by `npm` itself"; it a
 `node scripts/run-itests.mjs masked-run` run too). It is not a harness entry, and the counts leave it out. A by-hand re-run of
 `run-itests.mjs masked-run` after the fixes passed and left only that entry. Not run: the Windows job and the `win32` branch against a real job (no push).
 
+### E2.2 build record, part 3 — CodeRabbit and SonarCloud on PR #310 (2026-11-07)
+
+Commits: the REDs (tests), then one fix commit, then the docs. Each fix was watched red, then green, then taken out again and seen red.
+- **A (CodeRabbit)** a SIGTERM in an `sshd` section stopped the folder's removal from waiting for the processes. `itestSshd.cjs` keeps the children `launch` started and exports `endRunning()`; both `sshd` sections register it in their section scope AFTER the folder, so a close ends the client, then `sshd`, then removes the folder. RED: S2.2 `a SIGTERM during a section stops the section's process BEFORE its folder is removed` — `it was told to stop while the folder was still there` (the process was never told; it was left running). Out again: `endRunning` made a no-op: the same text.
+- **B** a signal during the server probe still started `server`. `runOne` checks `run.signal` after the probe and starts nothing. RED: S1.19 `the server harness never started`. Out again: red.
+- **C** a signal during a helper load that then fails returned 1 with no summary. It now prints the summary and leaves with 128 + n. RED: S1.20 `did not match /===== summary =====/`. Out again: red.
+- **D (docs)** `module_tests.md` no longer says the tree scan ends a descendant that holds the pipe after a normal exit: the runner waits at most 30 s, reports it, stops reading, and does neither scan nor end it without a timeout. The brief's status line and the `todo/README.md` row say it is built (PR #310) and point here; the brief's goal names SIGKILL as the exception; § 5 records the two rejections (the WSL run-folder race — out of scope; the SKIP-marker mismatch — pre-existing).
+- **E (Sonar S4036)** `git-transport-itest.cjs` found `git` through the caller's `PATH`. It now looks in fixed directories (`/usr/bin`, `/usr/local/bin`, `/bin`, `/opt/homebrew/bin`; the two Git for Windows folders), or at the file `CREDS_ITEST_GIT` names. A missing git is the same SKIP, now naming the directories. By hand: the harness passes; `CREDS_ITEST_GIT=/nonexistent` gives the SKIP and leaves nothing.
+- **F (S9383)** `harnessScope.run`'s async block has a last-resort `.catch(() => process.exit(1))`.
+- **G (S3358, S4624)** the nested ternary and the nested template in `run-itests.mjs` are the helpers `exitFailure` and `leftOf`.
+- **H (S3776, `creds-mcp-itest.cjs`)** not raised by E2.2: `git diff ccf2e9f HEAD` over that file adds no `if`, loop, `catch` or logical operator inside the big async function (the `if (!fs.existsSync(EXE))` skip was there before; the only changes are `process.exitCode = fails === 0 ? 0 : 1` becoming `return fails === 0 ? 0 : 1`, one removed `rmSync` and the moved `require`s). Left as it is.
+- **I (S9382)** the `await` in the harness loop is intended; a comment says so.
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's

@@ -1,6 +1,6 @@
 # PLAN — Test leftovers, E2.2 brief: the Node harness lifecycle
 
-> Status: **brief only, nothing built yet, 2026-11-07; the coordinator's answers to Q1–Q9 are in § 6.** Scope: the build brief of epic E2.2 of
+> Status: **built on branch `feat/test-leftovers-e2.2` (PR #310), 2026-11-07; what was built, the RED list and the by-hand counts are in the [E2.2 build record](PLAN_test_leftovers_E2.md) (parts 1–3). The text below is the brief as it was written; the coordinator's answers to Q1–Q9 are in § 6.** Scope: the build brief of epic E2.2 of
 > [PLAN_test_leftovers_E2.md](PLAN_test_leftovers_E2.md) (§ *Epics* → E2.2, § S2's harness half). Branch
 > `feat/test-leftovers-e2.2`, cut from `main` `ccf2e9f`; E2.1 is merged as #294 at `834c91b`; the mount is release
 > `37b9aa5`. Brief by Opus; code by a Sonnet coder; review by Opus. Plan gate: coai session `d5517833`, `proceed`
@@ -13,6 +13,8 @@
 **The epic's goal (E2.2, unchanged).** `npm run itest:all` and every harness, the server's included, make only owned
 folders and stubs. Each harness removes them on every exit path. The `itest:all` runner sweeps both roots at start and
 propagates the run's record. There is NO harness-wide end audit, because a harness's children may still be ending (D4).
+The exception to "every exit path" is SIGKILL (and a power cut): it cannot be handled, so the folder stays claimed; the next sweep
+collects it on POSIX after 10 minutes, and on Windows the Node sweep only lists it.
 
 Sources, read for this brief: the stories document (§ *Revision* rows 7–9, § *Goal*, D1–D9, S2, § *Test plan*, § *DoD*,
 § *E2.1 build record* parts 1–9, § *Epics* E2.2); the parent `dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`
@@ -285,7 +287,7 @@ plants an orphan claim inside it and shows the RED, as row 9 says.
   `creds-mcp:738`, `git:38` print `SKIP  ` and `backup:101` prints `SKIP:`, so those skips count as passes; `ssh-agent`
   carries `windows: true` (`run-itests.mjs:55`) although CI runs it on Ubuntu; `server-transport` has no `.catch`; the
   runner does not end a harness's tree after a normal exit; D4 and E2.2.S1 limit the tree end to the timeout (gate,
-  rejected for E2.2, kept as a follow-up). *(2026-11-07, code round 2: the same holds when a harness exits 0 while a descendant still holds its output pipe. The runner writes that line and stops reading after its bound, and the run still counts as passed. Turning it into a FAIL, or ending that descendant, is the same follow-up.)*
+  rejected for E2.2, kept as a follow-up). *(2026-11-07, round 3, CodeRabbit, rejected with no change: the race between a signal and the WSL harnesses' run folders in `creds-mcp-wsl-itest.cjs`, because those folders are out of E2.2's scope (§ 5, above); and the SKIP-marker mismatch above, which is pre-existing and stays a follow-up.)* *(2026-11-07, code round 2: the same holds when a harness exits 0 while a descendant still holds its output pipe. The runner writes that line and stops reading after its bound, and the run still counts as passed. Turning it into a FAIL, or ending that descendant, is the same follow-up.)*
 
 ## 6. Open questions, each with a recommended answer
 

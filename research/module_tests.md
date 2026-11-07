@@ -247,8 +247,10 @@ The runner has a lifecycle of its own (E2.2, `common/test-leftovers.md`), in thi
 - **A signal stops the run**, from the moment the runner starts (also during the helpers, the sweep and the compile). SIGINT, SIGTERM or
   SIGHUP goes to the running compile or harness, no further harness starts, the summary is printed and the exit code is 128 + the
   signal's number.
-- **A harness that exits but leaves a descendant holding its output** is waited for 30 seconds, not for ever; the runner says so and the
-  tree scan ends that descendant if it carries the run's record. On Windows a line before each harness says its output is held until it ends.
+- **A harness that exits but leaves a descendant holding its output pipe** is waited for at most 30 seconds, not for ever. The runner then
+  says so, stops reading, and counts the harness by its exit code. Without a timeout it does not scan for that descendant and does not end
+  it (the tree end runs only after a timeout; that is a recorded follow-up). On Windows a line before each harness says its output is held
+  until it ends.
 - **There is no harness-wide end audit**, unlike `npm test`: a harness's children may still be ending when it exits, and a removal
   by the run's record would remove a folder they use. Each harness removes its own folders through its scope; what a kill leaves is
   the next sweep's.
