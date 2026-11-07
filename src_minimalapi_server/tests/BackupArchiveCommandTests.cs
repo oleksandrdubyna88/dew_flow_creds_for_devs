@@ -142,6 +142,7 @@ public class BackupArchiveCommandTests
         // Overwritten on every run, so it is never a stale artefact pretending to be a fresh one.
         var kit = Path.Combine(Path.GetTempPath(), "cred-vault-aot-kit");
         Directory.CreateDirectory(kit);
+        TestContext.Current.AddWarning($"aot-kit folder: {kit}");
         var key = NewKey();
         var archive = Path.Combine(kit, "archive.cvbk");
         File.Delete(archive);
