@@ -675,3 +675,13 @@ differ. E1.4 is built on `feat/remote-bridge-e14` (PR #312, stacked on #307), wi
    the person's screen and keeps this window's shared dialog place until they answer it. This request did not run.*, and the `busy` sentence
    *Another request holds this window's dialog place.* with its recovery help, which changes `main`'s shipped sentence and is listed among
    E1.5's local effects. 6.1's Allow-time evaluation of the follow-up flag and its residuals stand.
+6. **After the epoch 7 sort (2026-11-08).** (a) Item 3's reference is `brokerConsent.ts:225` on `feat/remote-bridge-e14` (`:153` on `main`), and
+   the token-wide sentence is false on the local alias and MCP doors too (each call raises its own dialog; verified by running on `main`): a
+   live defect on `main`, fixed there in its own PR with one sentence per door (token: today's; alias: this call only; MCP: what the entry's
+   own consent setting means). Item 3 and the parent's §4.10 inherit that fix; PR #312's C11 literal follows `main` once it lands; #312's claim
+   that nothing changes for a local user stays true, because the change is `main`'s. (b) C10 records the argv through `bridgeLinksWorld`'s
+   stub beside the `exec` sentence, and `SITE_SENTENCES` is re-keyed per action and site, both on #312 (the parent's (13)); E3 writes `run`'s
+   own laptop sentence with its spawn observation. (c) The timeout sentence of item 5 is per door: a local token call hears it without the
+   place clause, since its dialog takes no place. (d) The conditional stored-text wording of item 4 is E2.2b's, where the pick first exists;
+   nothing on #307 carries such a sentence. (e) Q11, the owner's decision of 2026-11-08: a bridged query to a database on the agent's own
+   server is allowed with a warning at scope selection (the parent's §2.1 Q11, E2.2b, §7); it narrows the parent's §9 and is the owner's.
