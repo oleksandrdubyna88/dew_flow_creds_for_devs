@@ -64,8 +64,17 @@ function onSignal(name) {
   };
 }
 
-function listenForSignals() {
+/** Listen for the three signals. `run` does it; a harness that has its own exit (the WSL one) calls it once at the start. */
+function handleSignals() {
   for (const name of SIGNALS) process.on(name, onSignal(name));
+}
+
+/**
+ * The environment for a child process that may make temp paths: ours, with `TMPDIR`, `TEMP` and `TMP` set to `dir`, an owned folder of the
+ * harness (rule section 2). Whatever the child makes then lands inside a folder the scope removes.
+ */
+function tempEnv(dir, env = process.env) {
+  return { ...env, TMPDIR: dir, TEMP: dir, TMP: dir };
 }
 
 /** What `main` left as its exit code: a returned whole number, else 0. */
@@ -73,7 +82,7 @@ const codeOf = (returned) => (Number.isInteger(returned) ? returned : 0);
 
 /** Run `main(scope)`, then `finish`. The body never calls `process.exit`: it returns its code. */
 function run(main) {
-  listenForSignals();
+  handleSignals();
   (async () => {
     let code;
     try {
@@ -86,4 +95,4 @@ function run(main) {
   })();
 }
 
-module.exports = { scope, run, finish, sectionScope };
+module.exports = { scope, run, finish, handleSignals, sectionScope, tempEnv };

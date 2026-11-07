@@ -9,17 +9,16 @@
 // which is the point — the shell that executes the line and the syntax the reference was
 // rewritten into have to agree on both.
 const path = require('path');
-const os = require('os');
-const fs = require('fs');
 const Module = require('module');
+const { ownedDir, writeStub } = require('./lib/leftovers.cjs');
+const harnessScope = require('./lib/harnessScope.cjs');
 
 // ---- vscode stub: an EventEmitter and a createTerminal that runs the pty -----------------
 const written = [];
 let closedWith;
-const stub = path.join(os.tmpdir(), `creds-masked-vscode-stub-${process.pid}.cjs`);
-fs.writeFileSync(
-  stub,
-  `class EventEmitter {
+// Written into an owned folder inside `main` (never at load), and removed by the scope on every way out.
+let cwdFolder; // the owned folder the shell runs in, and its temp folder; set in `main`
+const STUB_SOURCE = `class EventEmitter {
      constructor() { this.listeners = []; }
      event = (listener) => { this.listeners.push(listener); return { dispose() {} }; };
      fire(value) { for (const l of this.listeners) { l(value); } }
@@ -33,17 +32,16 @@ fs.writeFileSync(
        },
      },
      workspace: { workspaceFolders: undefined },
-   };`,
-);
+   };`;
 const originalResolve = Module._resolveFilename;
-Module._resolveFilename = (request, ...rest) =>
-  request === 'vscode' ? stub : originalResolve.call(Module, request, ...rest);
 
 const OUT = path.join(__dirname, '..', 'out');
-const { runInMaskedTerminal } = require(path.join(OUT, 'maskedTerminal.js'));
-const { planRefs, buildCommandLineWithRefs, shellRead } = require(path.join(OUT, 'runPlan.js'));
-// The placeholder comes from the shared masker, so the check follows it rather than a literal.
-const { MASK } = require(path.join(OUT, 'outputMask.js'));
+// Loaded in `main`, after the stub is written and `vscode` resolves to it.
+let runInMaskedTerminal;
+let planRefs;
+let buildCommandLineWithRefs;
+let shellRead;
+let MASK;
 
 let failures = 0;
 function check(name, ok, detail) {
@@ -73,10 +71,10 @@ function runOnce(commandLine, env, secrets, shell) {
     runInMaskedTerminal({
       name: 'itest',
       commandLine,
-      env,
+      env: { ...env, ...harnessScope.tempEnv(cwdFolder, {}) }, // the shell and its children make temp paths in an owned folder
       secrets,
       shell,
-      cwd: os.tmpdir(),
+      cwd: cwdFolder,
       banner: 'itest banner',
     });
     const pty = global.__CREDS_PTY__;
@@ -89,7 +87,15 @@ function runOnce(commandLine, env, secrets, shell) {
   });
 }
 
-async function main() {
+async function main(scope) {
+  const stub = writeStub(scope, 'masked-stub', STUB_SOURCE);
+  cwdFolder = ownedDir(scope, 'mrun');
+  Module._resolveFilename = (request, ...rest) =>
+    request === 'vscode' ? stub : originalResolve.call(Module, request, ...rest);
+  ({ runInMaskedTerminal } = require(path.join(OUT, 'maskedTerminal.js')));
+  ({ planRefs, buildCommandLineWithRefs, shellRead } = require(path.join(OUT, 'runPlan.js')));
+  // The placeholder comes from the shared masker, so the check follows it rather than a literal.
+  ({ MASK } = require(path.join(OUT, 'outputMask.js')));
   const shell = shellFor();
 
   // ---- 1. a command that ECHOES its own secret gets masked -------------------------------
@@ -145,16 +151,8 @@ async function main() {
     JSON.stringify(plain.output),
   );
 
-  try {
-    fs.rmSync(stub, { force: true });
-  } catch {
-    // nothing to do
-  }
   console.log(failures === 0 ? '\nall masked-run integration checks passed' : `\n${failures} check(s) failed`);
-  process.exit(failures === 0 ? 0 : 1);
+  return failures === 0 ? 0 : 1;
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+harnessScope.run(main);

@@ -14,19 +14,14 @@
 //   npm run compile && node scripts/server-transport-itest.cjs
 const path = require('path');
 const crypto = require('crypto');
-const os = require('os');
-const fs = require('fs');
 const Module = require('module');
+const { writeStub } = require('./lib/leftovers.cjs');
+const harnessScope = require('./lib/harnessScope.cjs');
 const orig = Module._resolveFilename;
-// The transport imports `vscode` for config/Uri only — stub it out.
-const stub = path.join(os.tmpdir(), 'cred-ssh-vscode-stub.cjs');
-fs.writeFileSync(stub, 'module.exports = { workspace: { onDidChangeConfiguration(){}, getConfiguration: () => ({ get: (_k, d) => d }) }, Uri: { file: (p) => ({ fsPath: p }) } };');
-Module._resolveFilename = (req, ...a) => (req === 'vscode' ? stub : orig.call(Module, req, ...a));
+// The transport imports `vscode` for config/Uri only — stub it out. Written into an owned folder inside `main` (never at load).
+const STUB_SOURCE = 'module.exports = { workspace: { onDidChangeConfiguration(){}, getConfiguration: () => ({ get: (_k, d) => d }) }, Uri: { file: (p) => ({ fsPath: p }) } };';
 
 const EXT = path.join(__dirname, '..', 'out');
-const { ServerTransport } = require(path.join(EXT, 'serverTransport.js'));
-const { OrgEventsClient } = require(path.join(EXT, 'orgEventsClient.js'));
-const { sealShare, openShare, resolveShares } = require(path.join(EXT, 'shareFormat.js'));
 // The recipient's own build. Past LEGACY_SHARES_UNTIL an unbound FOLDER share is refused, so
 // running this at 0.0.0 would hide exactly the refusal the user hit.
 const EXT_VERSION = require(path.join(__dirname, '..', 'package.json')).version;
@@ -56,12 +51,18 @@ const tokens = { 'a-1': jwt(alice.email, 'Alice'), 'b-1': jwt(bob.email, 'Bob') 
 // deliberately — so this is exactly the constraint a real user faces.
 const BASE_URL = process.argv[2] || process.env.VAULT_URL || 'http://127.0.0.1:5113';
 console.log(`target: ${BASE_URL}\n`);
-const t = new ServerTransport(BASE_URL, (acc) => Promise.resolve(tokens[acc.accountId]));
 
 let fails = 0;
 const check = (what, ok) => { console.log(`${ok ? '  ok' : 'FAIL'}  ${what}`); if (!ok) fails++; };
 
-(async () => {
+// A rejection is exit 1 and the scope still removes the stub (the old IIFE had no `.catch`).
+harnessScope.run(async (scope) => {
+  const stub = writeStub(scope, 'srv-stub', STUB_SOURCE);
+  Module._resolveFilename = (req, ...a) => (req === 'vscode' ? stub : orig.call(Module, req, ...a));
+  const { ServerTransport } = require(path.join(EXT, 'serverTransport.js'));
+  const { OrgEventsClient } = require(path.join(EXT, 'orgEventsClient.js'));
+  const { sealShare, openShare, resolveShares } = require(path.join(EXT, 'shareFormat.js'));
+  const t = new ServerTransport(BASE_URL, (acc) => Promise.resolve(tokens[acc.accountId]));
   check('empty vault reads as undefined', (await t.readVault(alice)) === undefined);
   const vault = JSON.stringify({ format: 'cred-ssh-manager-backup', data: 'ciphertext-A' });
   await t.writeVault(alice, vault, []);
@@ -146,5 +147,5 @@ const check = (what, ok) => { console.log(`${ok ? '  ok' : 'FAIL'}  ${what}`); i
   }
 
   console.log(fails === 0 ? '\nALL TRANSPORT CHECKS PASSED' : `\n${fails} FAILED`);
-  process.exit(fails === 0 ? 0 : 1);
-})();
+  return fails === 0 ? 0 : 1;
+});

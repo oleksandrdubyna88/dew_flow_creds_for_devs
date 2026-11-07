@@ -180,3 +180,13 @@ test('[S2.2] pin: after SIGKILL the folder and its claim remain — the next swe
   const dir = dirOf(done.out);
   assert.ok(fs.existsSync(dir) && fs.existsSync(`${dir}.owner`), 'SIGKILL cannot be handled: nothing removed it');
 });
+
+test('[S2.2] tempEnv gives a child the owned folder as TMPDIR, TEMP and TMP and keeps the rest of the environment', async (t) => {
+  const root = privateRootOf(t);
+  const body = "console.log('ENV=' + JSON.stringify(harnessScope.tempEnv('/owned/dir', { KEEP: 'yes', TMPDIR: '/old' })));";
+
+  const done = await runChild(fixture(root, body));
+
+  const env = JSON.parse(/ENV=(.*)/.exec(done.out)?.[1] ?? 'null') as Record<string, string> | null;
+  assert.deepEqual(env, { KEEP: 'yes', TMPDIR: '/owned/dir', TEMP: '/owned/dir', TMP: '/owned/dir' });
+});
