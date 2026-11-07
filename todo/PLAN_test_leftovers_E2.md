@@ -2099,6 +2099,23 @@ list and were not run here. The skip-count of `CredsMcp.Tests` varies by one bet
 4. **"about 190 folders"** (the brief's row 5) is 956 entries on `main` here, as above.
 5. **Done-when 2's list is recorded here, not on a PR**; the scratch test file was deleted.
 
+### E2.3 build record, part 5b — the final fix round (2026-11-07, branch `feat/test-leftovers-e2.3`, not pushed, not merged)
+
+From the coai code gate (G0, G3, G5) and the Opus review of S5 (four minors). Four commits, then this record. Builds Release, `-m:4 --disable-build-servers`, 0 warnings; `dotnet format` whitespace and style clean on the server, mcp and service-defaults test projects.
+- **G0.** `ParentWatchProcessTests.Dispose` no longer skips everything while the host runs: `EndHostThenRemove(pid, remove, killAndWait)` kills the host's tree through `HostProcess.KillOnDispose` (bounded wait), and only then removes the log and temp folders. When
+  the end is not confirmed the Reaper's exception goes up and the folders are NOT removed (claimed and registered, so the audit names them). Pinned by `ParentWatchDisposeTests` with a fixture child (`sleep`; Windows skipped, saying why), so it runs where the real
+  host cannot (this machine's WSL path): host running -> ended, THEN removed; end not confirmed (seam returns false) -> throws, nothing removed; already ended -> removed. RED, the fix taken out (the old "running: return"): `Expected running to be equal to {False} ... but found empty collection.`
+  and `Expected a <System.InvalidOperationException> to be thrown, but no exception was thrown.`
+- **G3.** There was no 100 ms sleep before a first check at `HostProcess.cs:403` in this tree: the group wait (`Child.TryEnd`) already checks first and then sleeps 25 ms. What changed: the pause now backs off 5, 10, 25, 50, 100 ms (last repeats), the bound unchanged. No behaviour change, no RED.
+- **G5.** `ci-clients.yml`: one line before each audit self-test run, in bash and in pwsh, naming the executable and the case (`audit self-test: CredsCli.Tests, case '1'`). A line, not a `::group::`, so a failure's reason is never inside a collapsed group.
+- **S5 minors.** (1) `AotKitFolderTests` asserts the children's `TMPDIR` is EMPTY. (2) The commands warning of the kit test says it is removed when the test ends and `CREDS_AOT_KIT_DIR` keeps a kit. (3) The printed-folder regex is `aot-kit folder: (?<path>.+?)\s*$`, multiline (a temp root with a space).
+  (4) `VaultServerFolderTests`' give-up test creates the server inside the `try`, and its `finally` uses `SingleOrDefault(...)?.Dispose()`.
+
+**Follow-ups.** The copied `LeftoversSweep.cs` enumerates every entry of the temp root and filters in managed code; a search pattern at the API level is the template's change (`dew_flow_mcp`). `VaultServer` sets no `Logging__Directory` (part 5).
+
+**Totals** (Release, one at a time, private `TMPDIR`): `CredVaultServer.Tests` 830 / 0 / 827 / 3; `CredsCli.Tests` 156 / 0 / 153 / 3; `CredsMcp.Tests` 177 / 2 / 172 / 3 (+3 `ParentWatchDisposeTests`; the two WSL `ParentWatchProcessTests` as before); `CredsBroker.Tests` 164 / 0 / 161 / 3;
+`CredsForDevs.ServiceDefaults.Tests` 606 / 0 / 581 / 25. Total 1,933. Private-`TMPDIR` entries after: 0 in each; old-name and owner-form entries in the four roots: 0.
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
