@@ -21,6 +21,8 @@ const os = require('os');
 const path = require('path');
 const { execFile } = require('node:child_process');
 const { SSHD, launch, startSshd, endChild } = require('./itestSshd.cjs');
+const { ownedDir, shortSocketRoot } = require('./lib/leftovers.cjs');
+const harnessScope = require('./lib/harnessScope.cjs');
 
 /** What a connection to B leaves in `sshd -d`'s stderr: the key was accepted, or at least the connection arrived. */
 const REACHED_B = /Accepted publickey|Connection from 127\.0\.0\.1/;
@@ -64,7 +66,7 @@ function settledAfter(promise, ms) {
 
 /** A real ssh with `argv` under `config`, the agent in its environment; what it answered, and the sshd it spoke to. */
 async function runClient(rig, config, argv, started) {
-  const client = launch('ssh', ['-F', config, ...argv], { env: { ...process.env, SSH_AUTH_SOCK: rig.agentSocket } });
+  const client = launch(rig.scope, 'ssh', ['-F', config, ...argv], { env: { ...process.env, SSH_AUTH_SOCK: rig.agentSocket } });
   let timer;
   try {
     const timeout = new Promise((resolve) => {
@@ -83,7 +85,7 @@ async function runClient(rig, config, argv, started) {
 function sshdIn(rig, name) {
   const dir = path.join(rig.dir, name);
   fs.mkdirSync(dir);
-  return startSshd(dir, rig.hostKey, rig.authorizedKeys);
+  return startSshd(rig.scope, dir, rig.hostKey, rig.authorizedKeys);
 }
 
 /** One leg: a real ssh runs `printenv SSH_AUTH_SOCK` on its own sshd, with or without the bridged options; what the remote printed. */
@@ -110,7 +112,7 @@ function agentLegs(check, control, bridged) {
 /** The master: a connection to A whose session asked for agent forwarding, held open until the pair is over. */
 async function startMaster(rig, a) {
   const argv = ['-o', 'StrictHostKeyChecking=yes', '-o', `UserKnownHostsFile=${a.knownHosts}`, '-i', rig.userKey, '-p', String(a.port), destination, 'sleep 30'];
-  const master = launch('ssh', ['-F', rig.muxConfig, ...argv], { env: { ...process.env, SSH_AUTH_SOCK: rig.agentSocket } });
+  const master = launch(rig.scope, 'ssh', ['-F', rig.muxConfig, ...argv], { env: { ...process.env, SSH_AUTH_SOCK: rig.agentSocket } });
   return { master, up: await socketAppears(rig.muxSocket, Date.now() + 15_000) };
 }
 
@@ -173,11 +175,14 @@ async function liveNoAgentForward(check, out) {
     }
     return;
   }
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'testsToDelete-fwd-'));
+  // Its own scope, registered in the module scope at once (a signal in this section closes it too), closed in the `finally` below. The folder
+  // holds unix sockets, so it is made under the short socket root.
+  const section = harnessScope.sectionScope();
+  const dir = ownedDir(section, 'fwd', { parent: shortSocketRoot() });
   let agent;
   try {
     const rig = {
-      dir, out, hostKey: path.join(dir, 'host_key'), userKey: path.join(dir, 'user_key'), authorizedKeys: path.join(dir, 'authorized_keys'),
+      dir, scope: section, out, hostKey: path.join(dir, 'host_key'), userKey: path.join(dir, 'user_key'), authorizedKeys: path.join(dir, 'authorized_keys'),
       config: path.join(dir, 'ssh_config'), muxConfig: path.join(dir, 'ssh_config_mux'), muxSocket: path.join(dir, 'mux.sock'), agentSocket: path.join(dir, 'a.sock'),
     };
     const failed = (await keygen(rig.hostKey)) ?? (await keygen(rig.userKey));
@@ -186,7 +191,7 @@ async function liveNoAgentForward(check, out) {
     fs.writeFileSync(rig.config, 'Host *\n  ForwardAgent yes\n');
     // A FIXED control path: whichever port the argv names, a client joins the master that holds this file (the sharpest form of C.1).
     fs.writeFileSync(rig.muxConfig, `Host *\n  ForwardAgent yes\n  ControlMaster auto\n  ControlPath ${rig.muxSocket}\n`);
-    agent = launch('ssh-agent', ['-D', '-a', rig.agentSocket]);
+    agent = launch(section, 'ssh-agent', ['-D', '-a', rig.agentSocket]);
     check('a real ssh-agent is listening, to be forwarded', await socketAppears(rig.agentSocket, Date.now() + 5_000), agent.stderr.trim());
 
     agentLegs(check, await oneLeg(rig, false), await oneLeg(rig, true));
@@ -195,11 +200,7 @@ async function liveNoAgentForward(check, out) {
     if (agent !== undefined) {
       await endChild(agent);
     }
-    try {
-      fs.rmSync(dir, { recursive: true, force: true });
-    } catch {
-      // a file the OS still holds; a cleanup failure must never replace the real error above
-    }
+    await section.close(); // the folder goes last: the children hold files in it, and the section ended them first
   }
 }
 
