@@ -245,11 +245,23 @@ test('X1: a credential read that THROWS gives the slot back and fails the call â
   assert.equal(result.status, 200, 'the next call is served');
 });
 
-test('C.3: asksAfterConsent is set on the terminal action (a remote window\'s refusal modal can follow the Allow) and not on exec', async () => {
+test('C.3: asksAfterConsent is true on the terminal action (a remote window\'s refusal modal can follow the Allow); on exec it is per entity â€” only a forwarding entry with the agent socket up', async () => {
+  const forwarding = { ...ENTITY, agentForward: true } as unknown as EntityMetadata;
+  const asked = async (entity: EntityMetadata, socket: string | undefined): Promise<unknown> => {
+    const parts: Parts = { source: KEY_SOURCE, entity };
+    const w = await world(parts);
+    w.agentSocket = socket;
+    const flag = w.mod.sshExecAction(deps(w, parts)).asksAfterConsent;
+    return typeof flag === 'function' ? flag({ accountId: 'a1', entityId: 'e1', entityName: 'prod' }) : flag;
+  };
   const parts: Parts = { source: KEY_SOURCE };
   const w = await world(parts);
   assert.equal(w.mod.sshTerminalAction(deps(w, parts)).asksAfterConsent, true);
-  assert.equal(w.mod.sshExecAction(deps(w, parts)).asksAfterConsent, undefined, 'exec never prompts after the Allow: P2, a long exec holds nothing');
+  assert.deepEqual(
+    [await asked(forwarding, '/run/agent.sock'), await asked(forwarding, undefined), await asked(ENTITY, '/run/agent.sock'), await asked(ENTITY, undefined)],
+    [true, false, false, false],
+    'forwarding+socket, forwarding without the socket, plain with the socket, plain without',
+  );
 });
 
 test('X2: a key file that cannot be removed (a Windows lock) still gives the slot back, keeps the finished result and says so in the journal', async () => {

@@ -344,7 +344,7 @@ test('X2: undefined, empty and wsl admit; every other window refuses with exactl
   }
 });
 
-test('C.3: asksAfterConsent is set on the VPN start and on no other action of this module — the launcher\'s trust modal, a PIN and an install offer can follow the Allow', () => {
+test('C.3: asksAfterConsent is set on the VPN start and stop (the launcher\'s trust modal, a PIN and an install offer can follow the Allow) and on no other action of this module', () => {
   const flags = {
     'vpn up': vpnAction(fakeDeps(), 'up').asksAfterConsent,
     'vpn down': vpnAction(fakeDeps(), 'down').asksAfterConsent,
@@ -353,7 +353,7 @@ test('C.3: asksAfterConsent is set on the VPN start and on no other action of th
     exportEnv: credentialExportEnvAction(fakeDeps()).asksAfterConsent,
     dbQuery: dbQueryAction(fakeDeps()).asksAfterConsent,
   };
-  assert.deepEqual(flags, { 'vpn up': true, 'vpn down': false, scriptRun: undefined, terminalRun: undefined, exportEnv: undefined, dbQuery: undefined });
+  assert.deepEqual(flags, { 'vpn up': true, 'vpn down': true, scriptRun: undefined, terminalRun: undefined, exportEnv: undefined, dbQuery: undefined });
 });
 
 // `{name}` (parent PLAN_terminal_folder_run.md §1, story S2): the agent runs the line the Run button would type.

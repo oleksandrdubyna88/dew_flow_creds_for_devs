@@ -402,7 +402,7 @@ export function vpnAction(deps: VpnUseDeps, action: 'up' | 'down'): UseAction {
     kind: 'vpn',
     action,
     mutatesSecrets: false,
-    asksAfterConsent: action === 'up',
+    asksAfterConsent: true, // `up`: the launcher's trust modal, a PIN, an install offer, OpenVPN Connect's question; `down`: the install offer when no client is on the PATH
     verb: action === 'up' ? 'start the VPN tunnel of' : 'stop the VPN tunnel of',
     describeOutcome(result) {
       return (result.body as { opened?: boolean }).opened === true ? 'opened' : 'refused';

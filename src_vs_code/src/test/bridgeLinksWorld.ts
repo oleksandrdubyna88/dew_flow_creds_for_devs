@@ -37,6 +37,8 @@ export interface LinksOptions {
   readonly noConfigWriter?: true;
   /** The keychain read of the linked key rejects, as a keychain that errors does (a thrown read must answer, and give the slot back). */
   readonly keyReadThrows?: true;
+  /** The SSH agent's socket is up (a path): with `agentForward`, a signing prompt may follow the Allow. No real socket exists here, so the run itself stands in for the prompt (`hold`). */
+  readonly agentSocket?: string;
 }
 
 export interface Run {
@@ -54,6 +56,8 @@ export interface LinksWorld {
   readonly materialised: string[];
   /** How many times the per-call ssh_config writer was called. Nothing calls it on the partial-E1 tree: the argv has no `-F` to name a file. */
   readonly configWrites: number;
+  /** Awaited inside the pretended `ssh`, before it answers: a test sets it to stand for a signing prompt that is open. */
+  hold?: () => Promise<void>;
   /** Exec slots taken and not yet given back. */
   readonly slotsHeld: number;
   readonly storageDir: string;
@@ -93,8 +97,9 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
     },
     './hostKeyTrust': { materializeKnownHosts: (): string | undefined => undefined },
     './sshExecRunner': {
-      runSshExec: (argv: string[], run: { env: NodeJS.ProcessEnv; program?: string }): Promise<unknown> => {
+      runSshExec: async (argv: string[], run: { env: NodeJS.ProcessEnv; program?: string }): Promise<unknown> => {
         runs.push({ argv, program: run.program, env: run.env });
+        await world.hold?.();
         return o.runFails
           ? Promise.reject(new Error(`spawn ssh ENOENT at ${storageDir}`))
           : Promise.resolve({ exitCode: 0, stdout: 'ok\n', stderr: o.stderr, timedOut: false });
@@ -118,14 +123,14 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
       };
     },
     note: (message) => void notes.push(message),
-    agentSocket: () => undefined,
+    agentSocket: () => options.agentSocket,
     // E1.6's writer, stood in for: it records its calls and writes nothing, because on this tree no call is made (the argv has no `-F`).
     ...(options.noConfigWriter === true ? {} : { bridgedSshConfig: () => {
       configWrites += 1;
       return { cwd: storageDir, configFile: 'c.conf' };
     } }),
   };
-  return {
+  const world: LinksWorld = {
     exec: mod.sshExecAction(deps),
     runs,
     notes,
@@ -139,10 +144,11 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
     storageDir,
     cleanup: () => void owned.close(), // the folder is owned and claimed: closing the scope removes it
   };
+  return world;
 }
 
 /** The options with every default filled in; `noConfigWriter` is not one of them, it is read where the deps are built. */
-type Resolved = Required<Omit<LinksOptions, 'noConfigWriter' | 'keyReadThrows'>>;
+type Resolved = Required<Omit<LinksOptions, 'noConfigWriter' | 'keyReadThrows' | 'agentSocket'>>;
 
 type Storage = Parameters<typeof seedEntry>[0];
 

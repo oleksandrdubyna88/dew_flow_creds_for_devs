@@ -34,7 +34,7 @@ import { CallerLabel, callerForAudit, callerFrom } from './brokerCaller';
 import { grantLimits } from './grantLimits';
 import { answerConfigRead } from './brokerConfigRoute';
 import { Grant, GrantRegistry } from './grantRegistry';
-import { UseAction, UseActionRegistry } from './useActions';
+import { UseAction, UseActionRegistry, asksAfter } from './useActions';
 import { formatToken } from './grantToken';
 import { AuditDoor, AuditEntry, formatAuditLine } from './agentAuditLog';
 import { BrokerAuditWriter } from './brokerAuditWriter';
@@ -528,7 +528,7 @@ export class CredsAgentServer implements vscode.Disposable {
     // that raised no modal must not slide this entry's quiet window forward — that is how "once
     // every twelve hours" quietly becomes "once, ever".
     const asked = this.grants.get(grant.secret)?.status !== 'allowed';
-    const consent = await this.gate.consent({ grant, action, verb: useAction.verb, summary, caller: who.caller, via: who.via, followUp: useAction.asksAfterConsent === true }, who.signal);
+    const consent = await this.gate.consent({ grant, action, verb: useAction.verb, summary, caller: who.caller, via: who.via, followUp: asksAfter(useAction, grant) }, who.signal);
     if (consent !== 'allowed') {
       this.notAllowed(res, consent, { grant, action, summary }, who);
       return;

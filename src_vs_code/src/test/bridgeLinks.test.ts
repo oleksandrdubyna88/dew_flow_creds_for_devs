@@ -6,7 +6,7 @@ import { pinRefusalFor } from '../pinGate';
 import { code, message } from './bridgeDoorHarness';
 import { JUMP_NAME, KEY_BODY, KEY_NAME, LinksOptions, LinksWorld, STDERR_WITH_A_HOST, linksWorld } from './bridgeLinksWorld';
 import { loadBridgeModules } from './bridgeModules';
-import { Door, WallOptions, WallWorld, send, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
+import { Door, WallOptions, WallWorld, send, until, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
 import { memoryStorage } from './pinWorld';
 import { loadWithVscode } from './vscodeStub';
 import type { sshDepsFor as SshDepsFor } from '../sshUseActions';
@@ -293,4 +293,49 @@ test('M3: a credential read that throws, through the main port — the call is a
     const next = await body(viaMain(ww), ww);
     assert.equal(next.status, reply.status, 'the next call is answered the same way: the pool is not exhausted');
   });
+});
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * The follow-up contract (parent §4.10): an `exec` on a forwarding entry keeps the place while its signing prompt may stand.
+ * There is no real agent socket in CI: the pretended `ssh` holds (`lw.hold`) where the socket's signing modal would be open.
+ * ------------------------------------------------------------------------------------------------------------- */
+
+const BUSY_SENTENCE = 'Another request is already waiting for the person to answer. Try again once they have.';
+const ALIAS_EXEC = { path: '/v1/alias/exec', body: { alias: 'one', command: 'id' } };
+
+/** An exec held inside the pretended `ssh` (a signing prompt open), a second local call, and what became of it. */
+async function secondCallDuringHeldExec(links: LinksOptions): Promise<{ busy: boolean; ran: number }> {
+  let busy = false;
+  let ran = 0;
+  await both(links, { agentForward: links.agentForward === true }, async ({ lw, ww }) => {
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    lw.hold = () => gate;
+    const first = send(viaMain(ww), ALIAS_EXEC);
+    await until(() => lw.runs.length === 1, 'the first exec to be inside ssh (its signing prompt open)');
+    const second = send(viaMain(ww), ALIAS_EXEC);
+    const raced = await Promise.race([second, new Promise<string>((resolve) => setTimeout(resolve, 600, 'waiting'))]);
+    busy = typeof raced !== 'string' && raced.status === 429 && message(raced) === BUSY_SENTENCE;
+    ran = lw.runs.length;
+    release();
+    await Promise.all([first, second]);
+  });
+  return { busy, ran };
+}
+
+test('exec on a forwarding entry with the agent socket up keeps the place while its signing prompt may stand — a second local call is told busy (prompt mocked: no real socket here)', async () => {
+  const held = await secondCallDuringHeldExec({ agentForward: true, agentSocket: '/run/agent.sock' });
+  assert.deepEqual(held, { busy: true, ran: 1 });
+});
+
+test('exec on a non-forwarding entry frees the place at the dialog\'s close — a second local call is asked and runs while the first runs', async () => {
+  const held = await secondCallDuringHeldExec({ agentSocket: '/run/agent.sock' });
+  assert.deepEqual(held, { busy: false, ran: 2 });
+});
+
+test('exec on a forwarding entry with the agent socket DOWN frees the place: no signing prompt can come through a socket that is not there', async () => {
+  const held = await secondCallDuringHeldExec({ agentForward: true });
+  assert.deepEqual(held, { busy: false, ran: 2 });
 });

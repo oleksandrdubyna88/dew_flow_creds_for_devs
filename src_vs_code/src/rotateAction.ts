@@ -99,6 +99,8 @@ export function rotateAction(
     action: 'rotate',
     // The one action here that writes a stored secret while it runs — see `UseAction.mutatesSecrets`.
     mutatesSecrets: true,
+    // The store may open the entry's PIN modal, the copy offer or the first-PIN box after the Allow (`rotationStore.ts`, `pinPrompt.ts`).
+    asksAfterConsent: true,
     verb: 'change the stored secret of',
     describeOutcome: (result) => describeRotation(result),
     validate: (body) => validateBody(body, underlying.kind),

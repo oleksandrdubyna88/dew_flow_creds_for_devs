@@ -10,7 +10,7 @@ import {
   statusForErrorCode,
 } from './brokerProtocol';
 import { StorageManager } from './storageManager';
-import { UseAction, UseActionContext, UseActionResult, launchGuards } from './useActions';
+import { CallTarget, UseAction, UseActionContext, UseActionResult, launchGuards } from './useActions';
 import { SshExecAuth, buildSshExecArgv, validateRemoteCommand } from './sshExecCommand';
 import { resolveJumpChain } from './sshOptions';
 import { materializeKnownHosts } from './hostKeyTrust';
@@ -145,7 +145,7 @@ function unusableEntity(ctx: UseActionContext, entity: EntityMetadata): UseActio
 }
 
 /** The live entity behind a grant, re-read on every call — never a snapshot. */
-function entityFor(deps: SshUseDeps, ctx: UseActionContext): EntityMetadata | undefined {
+function entityFor(deps: SshUseDeps, ctx: CallTarget): EntityMetadata | undefined {
   return deps.storage.getNode(ctx.accountId, ctx.entityId)?.details;
 }
 
@@ -224,6 +224,8 @@ export function sshExecAction(deps: SshUseDeps): UseAction {
     kind: 'ssh',
     action: 'exec',
     mutatesSecrets: false,
+    // The signing prompt of a forwarded agent arrives through the socket, by no static path: only an entry that forwards it, while it is up.
+    asksAfterConsent: (target) => entityFor(deps, target)?.agentForward === true && deps.agentSocket() !== undefined,
     verb: 'run a command on',
     describeOutcome(result) {
       const body = result.body as ExecResponseBody;

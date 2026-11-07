@@ -13,6 +13,18 @@
 import type { BridgeContext } from './bridgeContext';
 import type { ErrorCode } from './brokerProtocol';
 
+/** What a call is aimed at, as a grant names it: enough to read the live entity. */
+export type CallTarget = Pick<UseActionContext, 'accountId' | 'entityId' | 'entityName'>;
+
+/** Whether an action may prompt after the Allow: always, never, or by the call's target. */
+export type FollowUp = boolean | ((target: CallTarget) => boolean);
+
+/** The flag read for one call: a boolean as it is, a function asked with the target. */
+export function asksAfter(action: Pick<UseAction, 'asksAfterConsent'>, target: CallTarget): boolean {
+  const flag = action.asksAfterConsent;
+  return typeof flag === 'function' ? flag(target) : flag === true;
+}
+
 /** Where in the vault the grant points; the live entity is re-read per call. */
 export interface UseActionContext {
   readonly accountId: string;
@@ -96,11 +108,14 @@ export interface UseAction {
    */
   readonly mutatesSecrets: boolean;
   /**
-   * This action may put a prompt of its own on screen after the person's Allow (a PIN box, a trust modal, a remedy picker).
-   * Absent = no. The broker then keeps the one dialog place until the call ends, so no second modal opens over that
-   * prompt (Amendment 3, C.3).
+   * This action may put a prompt of its own on screen after the person's Allow (a PIN box, a trust modal, an install offer, a
+   * signing modal). Absent = no. The broker then keeps the one dialog place until the call ends, so no second modal opens over that
+   * prompt (Amendment 3, C.3; the parent's §4.10, the follow-up contract). A boolean for an action that always may
+   * (`create`, `terminal`, `up`, `down`, `rotate`); a function of the call's target for one that may on some entries only: `exec`,
+   * on an entry that forwards the agent while the agent socket is up (the signing prompt arrives through the socket).
+   * `query`, `run` and a non-forwarding `exec` keep nothing once the dialog closes.
    */
-  readonly asksAfterConsent?: boolean;
+  readonly asksAfterConsent?: FollowUp;
 
   /**
    * `code` is the error code the refusal answers with; absent, it is `invalid_request` — a malformed
