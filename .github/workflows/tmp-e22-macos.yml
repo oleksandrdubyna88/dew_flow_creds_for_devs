@@ -1,0 +1,126 @@
+name: tmp · e22 macos
+
+# THROWAWAY. One recorded run of creds' Node harnesses on a GitHub-hosted macOS runner: the by-hand
+# macOS record of E2.2 (todo/PLAN_test_leftovers_E2.2_brief.md section 6, Q7; rows 15 and 16).
+# Lives only on the branch tmp/e22-macos. Never merged.
+on:
+  push:
+    branches: [tmp/e22-macos]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos-harnesses:
+    name: harnesses · macos
+    runs-on: macos-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: src_vs_code
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fetch the shared rules
+        working-directory: .
+        run: git submodule update --init --depth 1 .claude/rules/shared
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: src_vs_code/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Build the CLI
+        run: dotnet build ../src_cli/src/CredsCli.csproj
+
+      - name: Build the MCP server
+        run: dotnet build ../src_mcp/src/CredsMcp.csproj
+
+      - name: Build the server (for backup-archive)
+        run: dotnet build ../src_minimalapi_server/src/CredVaultServer.csproj
+
+      - name: Machine
+        run: |
+          git rev-parse HEAD; echo "GITHUB_SHA=$GITHUB_SHA"
+          sw_vers; uname -a; uname -m; node --version; dotnet --version
+          command -v ssh ssh-add ssh-keygen sshd /usr/sbin/sshd || true
+          ssh -V || true
+          echo "os.tmpdir() before override: $(node -p 'require("os").tmpdir()')"
+          echo "TMPDIR before override: ${TMPDIR:-unset}"
+
+      - name: Private temp folder
+        run: |
+          mkdir -p "$RUNNER_TEMP/e22-private-tmp"
+          {
+            echo "TMPDIR=$RUNNER_TEMP/e22-private-tmp"
+            echo "TEMP=$RUNNER_TEMP/e22-private-tmp"
+            echo "TMP=$RUNNER_TEMP/e22-private-tmp"
+          } >> "$GITHUB_ENV"
+          echo "private temp: $RUNNER_TEMP/e22-private-tmp"
+
+      - name: Listing BEFORE
+        continue-on-error: true
+        run: |
+          echo "TMPDIR=$TMPDIR TEMP=$TEMP TMP=$TMP"
+          echo "os.tmpdir(): $(node -p 'require("os").tmpdir()')"
+          { echo "--- private folder $TMPDIR (all entries)"; ls -la "$TMPDIR"; } | tee /dev/stderr >/dev/null
+          echo "--- /tmp (testsToDelete-*, creds-*, cvbk-*, cred-ssh-*)"
+          find /tmp -mindepth 1 -maxdepth 1 \( -name 'testsToDelete-*' -o -name 'creds-*' -o -name 'cvbk-*' -o -name 'cred-ssh-*' \) | sort | tee "$RUNNER_TEMP/before-tmp.txt"
+          find "$TMPDIR" -mindepth 1 -maxdepth 1 | sort > "$RUNNER_TEMP/before-private.txt"
+          echo "entries in /tmp: $(wc -l < "$RUNNER_TEMP/before-tmp.txt"), in private folder: $(wc -l < "$RUNNER_TEMP/before-private.txt")"
+
+      - name: Harnesses (npm run itest:all)
+        run: npm run itest:all
+
+      - name: Harness (npm run itest:ssh-agent)
+        if: always()
+        run: npm run itest:ssh-agent
+
+      - name: Listing AFTER and the difference
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "--- private folder $TMPDIR (all entries)"; ls -la "$TMPDIR"
+          echo "--- /tmp (testsToDelete-*, creds-*, cvbk-*, cred-ssh-*)"
+          find /tmp -mindepth 1 -maxdepth 1 \( -name 'testsToDelete-*' -o -name 'creds-*' -o -name 'cvbk-*' -o -name 'cred-ssh-*' \) | sort | tee "$RUNNER_TEMP/after-tmp.txt"
+          find "$TMPDIR" -mindepth 1 -maxdepth 1 | sort > "$RUNNER_TEMP/after-private.txt"
+          echo "entries in /tmp: $(wc -l < "$RUNNER_TEMP/after-tmp.txt"), in private folder: $(wc -l < "$RUNNER_TEMP/after-private.txt")"
+          echo "=== DIFFERENCE /tmp (< before only, > after only)"; diff "$RUNNER_TEMP/before-tmp.txt" "$RUNNER_TEMP/after-tmp.txt" && echo "(none)"
+          echo "=== DIFFERENCE private folder (< before only, > after only)"; diff "$RUNNER_TEMP/before-private.txt" "$RUNNER_TEMP/after-private.txt" && echo "(none)"
+
+      - name: Longest socket path
+        if: always()
+        run: |
+          node -e '
+            const L = require("./scripts/lib/leftovers.cjs");
+            const path = require("node:path");
+            const root = L.shortSocketRoot();
+            const pid = "99999"; // macOS pids stop at 99998
+            const rows = [];
+            for (const what of ["agent", "cli", "mcp", "ait"]) {
+              const dir = path.join(root, L.ownedName(what));
+              rows.push([what + " broker", path.join(dir, "broker-" + pid + ".sock")]);
+              rows.push([what + " key agent", path.join(dir, "keys", pid, "agent.sock")]);
+            }
+            const ait = path.join(root, L.ownedName("ait"));
+            rows.push(["ait harness socket", path.join(ait, "agent.sock")]);
+            rows.push(["ait manager socket", path.join(ait, "m", "keys", pid, "agent.sock")]);
+            rows.sort((a, b) => Buffer.byteLength(b[1]) - Buffer.byteLength(a[1]));
+            console.log("shortSocketRoot():", root, "| os.tmpdir():", require("os").tmpdir());
+            for (const [label, p] of rows) console.log(String(Buffer.byteLength(p)).padStart(4), "bytes", label.padEnd(20), p);
+            const [label, p] = rows[0];
+            const n = Buffer.byteLength(p);
+            console.log("LONGEST:", label, p, n, "bytes against 103:", n < 103 ? "fits" : "TOO LONG");
+            if (n >= 103) process.exit(1);
+          '
