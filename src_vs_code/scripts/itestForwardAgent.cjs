@@ -27,8 +27,8 @@ const REACHED_B = /Accepted publickey|Connection from 127\.0\.0\.1/;
 
 function keygen(file) {
   return new Promise((resolve) => {
-    // NOSONAR — this is a CI rig that needs the OpenSSH client and server installed, as `ssh-agent-itest.cjs` does for the same tool: the PATH's `ssh-keygen` IS the thing under test, and pinning a path would test another one.
-    execFile('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', file], { timeout: 15_000 }, (error, _out, stderr) => {
+    // The PATH lookup below is on purpose: this is a CI rig that needs the OpenSSH client and server installed, as `ssh-agent-itest.cjs` does for the same tool: the PATH's `ssh-keygen` IS the thing under test, and pinning a path would test another one.
+    execFile('ssh-keygen', ['-q', '-t', 'ed25519', '-N', '', '-f', file], { timeout: 15_000 }, (error, _out, stderr) => { // NOSONAR: a CI rig, the PATH's ssh-keygen is the tool under test (see above)
       resolve(error ? String(stderr).trim() || String(error) : undefined);
     });
   });
