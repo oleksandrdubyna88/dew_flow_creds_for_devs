@@ -23,7 +23,7 @@ public sealed class StaleWindowsProcessTests : IDisposable
 
     private static readonly TimeSpan Bound = TimeSpan.FromSeconds(60);
 
-    private readonly string _root = HostProcess.TempDirectory("creds-cli-stale");
+    private readonly string _root = HostProcess.TempDirectory("cli-stale");
 
     public void Dispose() => HostProcess.Remove(_root);
 

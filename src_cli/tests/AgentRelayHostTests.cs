@@ -6,6 +6,7 @@ using CredsBroker;
 using CredsCli;
 using CredsForDevs.ServiceDefaults;
 using CredsForDevs.ServiceDefaults.Tests.Support;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 
 namespace CredsCli.Tests;
@@ -26,12 +27,17 @@ public sealed class AgentRelayHostTests : IDisposable
 {
     private static readonly TimeSpan Bound = TimeSpan.FromSeconds(10);
 
-    private readonly string _root = HostProcess.TempDirectory("creds-relay-e3");
+    private readonly string _root = HostProcess.TempDirectory("relay-e3");
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
 
-    public void Dispose() => HostProcess.Remove(_root);
+    public void Dispose()
+    {
+        HostProcess.Remove(_root);
+        _owned.Dispose();
+    }
 
-    /// <summary>Short, under /tmp: a unix socket path is capped near a hundred bytes, and macOS's temp folder is long.</summary>
-    private static string SocketPath() => Path.Combine("/tmp", $"cr-{Guid.NewGuid():N}"[..12] + ".sock");
+    /// <summary>Short, in an owned folder under the short root: a unix socket path is capped near a hundred bytes, and macOS's temp folder is long.</summary>
+    private string SocketPath() => SocketSites.Path(_owned, "sock", "cr.sock");
 
     private Dictionary<string, string> Env(string windowsHalf, string socket) => new()
     {

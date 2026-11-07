@@ -11,7 +11,7 @@ internal static class SocketSites
 {
     /// <summary>The path <paramref name="file"/> inside a new owned folder for <paramref name="what"/>; the scope removes the folder, and the socket in it.</summary>
     internal static string Path(OwnedScope owned, string what, string file) =>
-        System.IO.Path.Combine("/tmp", $"cr-{Guid.NewGuid():N}"[..12] + ".sock");
+        System.IO.Path.Combine(owned.Dir(what, OwnedCreds.ShortSocketRoot), file);
 
     internal static int Bytes(string path) => Encoding.UTF8.GetByteCount(path);
 

@@ -41,6 +41,7 @@ public sealed class SocketSitesTests : IDisposable
     {
         const int macOs = 103, linux = 107;
         // /tmp on Linux and macOS; /private/tmp is what macOS's /tmp is a link to (a path may be given either way).
+        // testsToDelete-exempt: raw-temp — the two roots are only measured as strings: nothing is created under them
         foreach (var root in new[] { "/tmp", "/private/tmp" })
         {
             SocketSites.Bytes(SocketSites.Longest(root, what, file)).Should().BeLessThanOrEqualTo(macOs - 35, $"{root} holds the longest {what} socket with 35 bytes to spare on macOS ({linux} on Linux)");
