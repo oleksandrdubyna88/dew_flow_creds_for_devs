@@ -116,7 +116,7 @@ test('S9: a storedTexts that throws is the same refusal, not a 500', async () =>
   const ww = await wallWorld();
   try {
     ww.wall.storedTexts = (): never => {
-      throw new Error('C:\\Users\\person\\vault.json is locked');
+      throw new Error('C:\\Users\\me\\vault.json is locked');
     };
     const reply = await send(viaBridge(ww.bridge), { path: '/v1/mcp/use/exec', body: { entry: 'e1', command: 'id' } });
     assert.deepEqual([reply.status, code(reply), message(reply)], [403, 'denied', sentence()]);

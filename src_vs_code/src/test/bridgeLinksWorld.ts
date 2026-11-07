@@ -67,7 +67,7 @@ export interface LinksWorld {
 export const KEY_BODY = 'PRIVATE KEY BODY';
 export const KEY_NAME = 'deploy-key';
 export const JUMP_NAME = 'jump';
-export const STDERR_WITH_A_HOST = 'kex_exchange_identification: jump.corp.com';
+export const STDERR_WITH_A_HOST = 'kex_exchange_identification: jump.example.com';
 
 const ssh = (id: string, name: string, extra: Partial<EntityMetadata>): EntityMetadata =>
   ({ id, name, kind: 'ssh', isSshEnabled: true, ...extra }) as EntityMetadata;
@@ -188,7 +188,7 @@ async function seedKey(storage: Storage, key: NonNullable<LinksOptions['key']>):
 
 async function seedJump(storage: Storage, jump: NonNullable<LinksOptions['jump']>): Promise<void> {
   if (jump !== 'none') {
-    await seedEntry(storage, ssh('j1', JUMP_NAME, { host: jump === 'valid' ? 'jump.corp.com' : 'bad host!', user: 'hop' }), {});
+    await seedEntry(storage, ssh('j1', JUMP_NAME, { host: jump === 'valid' ? 'jump.example.com' : 'bad host!', user: 'hop' }), {});
   }
 }
 

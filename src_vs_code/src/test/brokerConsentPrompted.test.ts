@@ -141,6 +141,13 @@ test('K7: an unanswered dialog (the five-minute timeout) frees the place althoug
   const closed: boolean[] = [];
   const { ConsentGate } = loadWithVscode<Gate>('../brokerConsent', stub, { './agentConsent': { ...(require('../agentConsent') as object), CONSENT_TIMEOUT_MS: 30 } });
   const gate = new ConsentGate({ grants: registry('pending') as never, actions: { actionsFor: () => [] } as never, onUserPresent: () => undefined, log: () => undefined, dialogClosed: (_q, keep) => void closed.push(keep) });
-  assert.equal(await gate.consent({ ...question('mcp'), followUp: true }, never), 'timeout');
-  assert.deepEqual(closed, [false]);
+  // The gate's timer is `unref`'d on purpose (the HTTP server keeps a real process alive; the timer need not), so on a runner whose only
+  // pending work is this wait the loop would end and the test be cancelled. A referenced keep-alive holds it open, and is cleared in `finally`.
+  const keepAlive = setInterval(() => undefined, 1_000);
+  try {
+    assert.equal(await gate.consent({ ...question('mcp'), followUp: true }, never), 'timeout');
+    assert.deepEqual(closed, [false]);
+  } finally {
+    clearInterval(keepAlive);
+  }
 });

@@ -1001,7 +1001,7 @@ in `action()` (`:229`), so one route can be real while the others stay scripted.
 `./sshExecRunner` (records argv, program, env), `./keyInstaller` (real files, as there) and `./hostKeyTrust` substituted, the REAL
 `./sshCredential` — over `memoryStorage(stub)` from `test/pinWorld.ts:214` seeded with `e1` (ssh, `host: 'prod.corp.com'`, `user: 'deploy'`,
 `sshKeyEntityId: 'k1'`, optionally `jumpHostEntityId: 'j1'`, `agentForward`), `k1` (an `sshkey` holding `PRIVATE KEY BODY`, optionally
-`pinProtected: true` with a sealed value) and `j1` (ssh, `host: 'jump.corp.com'`, `user: 'hop'`, or the invalid host `'bad host!'`), all in
+`pinProtected: true` with a sealed value) and `j1` (ssh, `host: 'jump.example.com'`, `user: 'hop'`, or the invalid host `'bad host!'`), all in
 `a1`; the scope is `['e1']`. The action reads `memoryStorage`; the lookups read the wall world's tree — two sources, by the same ids, said here
 so nobody "fixes" it.
 
@@ -1018,9 +1018,9 @@ so nobody "fixes" it.
 | S29 | `REFERENCE_REFUSED` echoes nothing (S9 extended) | A stored argument `creds://a@x.test/Other/db/password`: the body contains no `creds://`, no `Other`, no `db`; the same sentence for every failure | the sentence carries `<ref>` |
 | L1 | A linked key out of scope is part of using `e1` (real action) | Through the bridge, Allow: 200; `runs[0].argv` has `-i <path under storageDir>`; the body carries no key material, no `k1`, no key name; the materialised file is gone | the wall world has no real action: the file does not compile |
 | L2 | A protected linked key refuses generically | `k1` sealed (`pinProtected`): bridge → 409 `no_credential`, body exactly `BRIDGE_USE_REFUSED('prod')`, no `k1` or its name; `deps.note` got the real sentence; main port → today's sentence naming the key entity (control) | the body names the key entity |
-| L3 | A jump host out of scope | `j1` valid: bridge → 200, argv has `-J hop@jump.corp.com`, the body does not carry `jump.corp.com`'s entry name. `j1` with `'bad host!'`: bridge → generic body; main → `The jump host "jump" cannot be used…` (control) | the body names the jump host |
+| L3 | A jump host out of scope | `j1` valid: bridge → 200, argv has `-J hop@jump.example.com`, the body does not carry `jump.example.com`'s entry name. `j1` with `'bad host!'`: bridge → generic body; main → `The jump host "jump" cannot be used…` (control) | the body names the jump host |
 | L4 | `agentForward` refused twice | `e1.agentForward: true`: bridge → 403 `denied`, `AGENT_FORWARD_REFUSED('prod')`, `w.dialogs` empty (the wall refused first), `runSshExec` never called. The same with `entryRefusal` stubbed to answer `undefined`: a dialog, then the action refuses with the same sentence. Main port: runs with `-A` (control) | runs with `-A` through the bridge |
-| L5 | `ssh`'s stderr stays | The runner stub answers `stderr: 'kex_exchange_identification: jump.corp.com'`: the body carries it, through the bridge too (the decision, pinned) | compiles with L1 |
+| L5 | `ssh`'s stderr stays | The runner stub answers `stderr: 'kex_exchange_identification: jump.example.com'`: the body carries it, through the bridge too (the decision, pinned) | compiles with L1 |
 | R2 | Transitive purity | Walking imports from the seven modules reaches no `vscode`; a planted `import * as v from 'vscode'` in a copied `grantWords.ts` is reported with its chain | `bridgeScope → brokerRequests → grantLimits → vscode` |
 
 ### A.6 Break-its (mutate, watch the named case fail, restore; both outputs in the PR)
@@ -1571,7 +1571,7 @@ Nothing in the spec changes what an agent on a bridge can reach. Where it was wr
 - **V1** (numeric stub `NO_SCOPE = 0`): `the new file does not carry the old copy's revision`.
 - **W1**, a `wallSuppliersOf` that answers nothing (5 failed, deep-equal on every supplier).
 - **F1**: `a bridged call forwards nothing, whatever ~/.ssh/config says: -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10
-  -J hop@jump.corp.com -i ... -- deploy@prod.corp.com id`; the two `buildSshExecArgv` unit tests likewise.
+  -J hop@jump.example.com -i ... -- deploy@prod.example.com id`; the two `buildSshExecArgv` unit tests likewise.
 - **X1**: `the slot came back`.
 
 ### Totals
@@ -2058,8 +2058,8 @@ a bridge can reach beyond what C.1–C.5 say; where it was silent or wrong, belo
   "message":"Unknown or missing grant token."}}`, `[401, 'unauthorized']` against `[200, '']` — the pending call was evicted at the 256th mint.
 - **D1**: `{ '403 denied': 300 }` against `{ '403 denied': 60, '429 too_many_requests': 240 }`.
 - **T2**: `[504, 'consent_timeout', 'The human did not allow this grant.']` against `[401, 'unauthorized', 'Unknown or missing grant token.']` (the call was asked; see difference 4).
-- **F1** through the action: `-L is not sent on a bridge: -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -J hop@jump.corp.com -L 8080:db:5432 -R 9000:intranet.example:443 -o ForwardAgent=no -i … -- deploy@prod.corp.com id`;
-  the unit F1: `-A is not sent on a bridge: -o BatchMode=yes … -J hop@jump.corp.com -A -L 8080:db:5432 -R 9000:intranet.example:443 -i /tmp/k.key -- deploy@example.com id`;
+- **F1** through the action: `-L is not sent on a bridge: -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -J hop@jump.example.com -L 8080:db:5432 -R 9000:intranet.example:443 -o ForwardAgent=no -i … -- deploy@prod.example.com id`;
+  the unit F1: `-A is not sent on a bridge: -o BatchMode=yes … -J hop@jump.example.com -A -L 8080:db:5432 -R 9000:intranet.example:443 -i /tmp/k.key -- deploy@example.com id`;
   C.1: `sshExecCommand_1.BRIDGED_SSH_OPTIONS is not iterable`; the two-authentication-branch case failed on `key` (nothing of the six was sent).
 - **X2**: the action rejected with `Error: EPERM: operation not permitted, unlink '/tmp/creds-use-…/k1-….key'` instead of answering the finished exec's 200.
 - **F2** can only fail by not compiling (`noAgentForward` was the field); at runtime it passes against the old code. **Passed against the old code, as C.10 says:** K2, K3, K4, K5, K6 (pinned), and K7's "a call that ended during its dialog frees the place" and "`dialogClosed(held)` frees as before".

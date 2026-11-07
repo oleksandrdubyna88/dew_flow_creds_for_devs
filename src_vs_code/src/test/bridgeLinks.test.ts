@@ -106,8 +106,8 @@ test('L3: a jump host out of scope works through the bridge and its name is not 
     const reply = await body(viaBridge(ww.bridge), ww);
     assert.equal(reply.status, 200, reply.body);
     const argv = lw.runs[0].argv;
-    assert.equal(argv[argv.indexOf('-J') + 1], 'hop@jump.corp.com', `the chain is used: ${argv.join(' ')}`);
-    assert.ok(!reply.body.includes(JUMP_NAME) && !reply.body.includes('jump.corp.com'), 'and the body carries nothing of it');
+    assert.equal(argv[argv.indexOf('-J') + 1], 'hop@jump.example.com', `the chain is used: ${argv.join(' ')}`);
+    assert.doesNotMatch(reply.body, new RegExp(JUMP_NAME, 'i'), 'and the body carries nothing of it: neither the entry\'s name nor its host (both read jump)');
   });
 });
 

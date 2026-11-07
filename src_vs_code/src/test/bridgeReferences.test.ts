@@ -112,7 +112,7 @@ test('S9: one reference that cannot be served refuses the call, and references i
 test('S9: a storedTexts or a vault that THROWS is the same refusal, never an exception', async () => {
   const wall = await wallOf(['e1']);
   const thrown = (): never => {
-    throw new Error('C:\\Users\\person\\vault.json is locked');
+    throw new Error('C:\\Users\\me\\vault.json is locked');
   };
   const unreadable = referenceRefusal(grantOf(), { ...wall, storedTexts: thrown });
   assert.deepEqual(unreadable, denied());
@@ -187,7 +187,7 @@ test('locateRef: parsed and located, or `ok: false` with no reason; never an exc
   for (const raw of ['creds://nobody@x.test/Mine/db/password', 'creds://a@x.test/Nope/password', 'creds://a@x.test/db/password', 'creds://x', 'hello', '']) {
     assert.deepEqual(locateRef(raw, refSource()), { ok: false }, raw);
   }
-  const throwing: RefSource = { ...refSource(), accounts: () => { throw new Error('/home/person/.vault'); } };
+  const throwing: RefSource = { ...refSource(), accounts: () => { throw new Error('/home/me/.vault'); } };
   assert.deepEqual(locateRef('creds://a@x.test/Mine/solo/notes', throwing), { ok: false });
 });
 
@@ -350,7 +350,7 @@ test('A.3.2: an entry the wall does not bar is checked for references as before,
   const broken = {
     ...quiet,
     entryRefusal: (): never => {
-      throw new Error('C:\\Users\\person\\vault.json is locked');
+      throw new Error('C:\\Users\\me\\vault.json is locked');
     },
   };
   assert.deepEqual(referenceRefusal(grantOf(), broken), denied(), 'refused with the generic sentence, not an exception');
