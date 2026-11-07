@@ -1,6 +1,6 @@
 # PLAN — The consent dialog says, per door, what an Allow covers
 
-> Status: **plan approved, nothing implemented yet, 2026-11-08 (epoch 1).** The `coai` plan round on `c655038` answered
+> Status: **built on `fix/consent-coverage-per-door`, 2026-11-08 (epoch 1 open, 0 changes); the `coai` code round, the PR and the owner's look at one real dialog per tail are still to do.** The `coai` plan round on `c655038` answered
 > `proceed`, 2 of 2 reviewers. The four accepted findings are folded into the text below as the approved baseline; the
 > one rejected finding (*Deleting still asks* to go) is recorded at the gate with its reason — `mayBeQuiet` excludes a
 > delete under every policy, and C4 asserts it. On `fix/consent-coverage-per-door` from `main` `f8a42f9`. Scope:
@@ -285,7 +285,26 @@ recorded in §7. They do not run the `.cjs` harnesses, which show no dialog text
 
 ## 7. Found along the way (filled by the coder; opened here)
 
-- (nothing yet)
+- **C4 and C5 need `delete: 'any'` on folder `f1`.** §4's fixture `mcp: { use: true, ask }` makes `/v1/mcp/delete` answer
+  403 *not open to agents for that* (`mcpAccess.ts:539-541`, `mayDelete`), so the delete the two cases drive never reaches
+  a dialog. The test's folder is `{ use: true, delete: 'any', ask }` in C4 and C5; the claim is unchanged.
+- **M1 does not turn C5 red, and M4 does not turn C3 red, as §4.2 says they would.** C5's dialogs are delete dialogs,
+  which `doorFor`'s `consent` states as the literal `'call'` (`credsAgentServer.ts:293`), so `coverageOf` is not on their
+  path; M1 turns C2, C3, C6 (alias, mcp use), C4, C4b and C7 red. C3 runs through the real lookup, which always sets
+  `remembers` (false under `always`), so the `usableRead` fail-closed reading of a missing field is reached only by the
+  stubbed lookup: M4 turns C6 (mcp use) red alone. The mutation that does reach C5 and the other three C6 rows is the
+  literal itself: M1b, `coverage: 'call'` set to `'token'` in `doorFor`'s `consent` → C4, C5 and C6 (delete, create,
+  folder verb) red. Kept in the build record.
+- **`perform` takes `remembers?: boolean`, read as `remembers === true`, not `remembers = false`** (§2.3). A default
+  parameter is a branch for the complexity rule, and `perform` was at four.
+- **The §6 greps read slightly wider than written.** `grep -n "coverage" credsAgentServer.ts` finds three lines: the two
+  question sites and the `import` of `coverageOf`. `grep -n "12" brokerConsent.ts` finds no numeric twelve; it finds the
+  identifier `every12h` and the word in a doc comment.
+- **A lookup built without a stamp store says `remembers` under `every12h`.** `mcpUseLookup(source, id, action)` with no
+  `stamps` (the store-less call, `mcpHooks.ts:154`) reports `remembers: true` from the policy alone, while nothing it
+  reads or writes is remembered. Production always passes a store (`mcpUseHooks`, wired by `extension.ts`; `mcpHooks.test.ts:251`
+  guards that), so no dialog can say it today; a future caller of the store-less form would show the window tail for an
+  Allow that opens none. Not changed here: §2.3 says `remembers` is `remembersFor(found.access)`.
 
 ## Epics
 

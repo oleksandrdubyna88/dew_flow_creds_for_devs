@@ -35,6 +35,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no longer works. Known residue: Oracle's client still honours `load-data-local-dir` from an option file under
   `--local-infile=0`; `--no-defaults` would close it but would drop the person's TLS and socket settings.
 
+### Fixed — security — the consent dialog no longer claims an Allow covers more than it does
+
+- **The dialog said *Allowing covers every later call on this token* on every door, and that is true on one.** On the
+  token route one Allow does cover every later call. On the alias route and the MCP routes each call is its own grant, so
+  an Allow covers that call only, and the next call asks again. The dialog now says *Allowing covers this call only, not
+  any later one* there. Under *Ask once every 12 hours* an Allow also opens a twelve-hour window on this machine, and the
+  dialog now says so: for up to 12 hours, every later call on that entry without asking, while the entry stays set to
+  that choice and its agent switches are not changed, and deleting still asks. The hours in that sentence come from the
+  window's own constant. Nothing about what an Allow DOES changed: the grants, the stamp and the policies are as they
+  were, and the token door's sentence is as it was, word for word. Every release since the alias route (0.61.0) and the
+  MCP door (0.69.0) carries the old sentence; update to the release that follows.
+
 ## [1.17.0] — 2026-11-05 — One arrow brings back a whole Terminal folder, and the green arrow no longer types into a busy terminal
 
 ### Added — one arrow brings back a whole Terminal folder, and `{name}` in a command

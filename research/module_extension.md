@@ -4359,6 +4359,28 @@ renders the SAME label for the Agent Access journal, title included. That is the
 AI title summarises a private conversation and the journal is durable): the journal is where "which
 session did this" is asked afterwards, and the tab title is the name the person knows it by.
 
+**The dialog's last paragraph is chosen per door, because an Allow does not reach as far on every door.** The
+sentence *Allowing covers every later call on this token* was once fixed text, and it is true on the token door
+only. `ConsentQuestion` now carries a REQUIRED `coverage` (`token`, `call` or `every12h`), so a door added later does
+not compile until it says what its Allow covers, and `brokerConsent.ts` picks the tail from it. `token` is the old
+sentence, byte for byte. `call` is *Allowing covers this call only, not any later one.* — the alias route, the MCP
+delete, create and folder routes, and an MCP use call under *Ask every time*, where each request is its own `'call'`
+grant and nothing is written. It does not promise that the next call asks, because under *Never ask* the next USE call
+is quiet by policy and not by this Allow. `every12h` is *Allowing covers this call and, for up to 12 hours on this
+machine, every later call on "<entry>" without asking — while this entry stays set to "Ask once every 12 hours" and its
+agent switches are not changed. Deleting still asks.* — the 12 is `ASK_WINDOW_MS / 3_600_000`, never typed, and the
+`consentCoverage.test.ts` case C8 pins it to the switch label. The choice is `coverageOf(grant.scope, remembers)`:
+a token grant is always `token`, and a call grant is `every12h` only when `remembers` is true. `remembers` rides beside
+`preConsented` from the MCP lookup (`mcpUseLookup`, from `remembersFor(access)`, the same expression
+`worthRemembering` writes a stamp by), through `readMcpUse` and `BrokerDoor.perform` to `perform`; a lookup that does
+not say reads as `call`, the narrower sentence. The `every12h` tail is conditional on purpose: the text cannot change
+after the dialog is shown, and `rememberMcpConsent` re-reads the entry at the click, so a policy flipped or a switch
+turned on while the modal is open writes no stamp — the clause *while this entry stays set to … and its agent switches
+are not changed* is the condition that failed, and the same clause covers the window's other early ends (a switch turned
+on afterwards, the Forget command, a clock set back). "Up to" says the window is never longer than twelve hours. Words
+only: no admission, grant, stamp or policy changed (security fix, 2026-11-08). The tests stand each tail beside the
+fact it states — whether the next call asked, whether a stamp was written.
+
 **The entry's ask policy does not reach this door, and that is a decision** (issue #95, owner
 decision D1). The cadence an entry carries — *ask every time*, *ask once every 12 hours*, *never
 ask* — governs `/v1/mcp/use/*` and nothing else, because `preConsent` is wired into `mcpDoor` and
@@ -4371,7 +4393,8 @@ route `handleAlias` mints a *fresh* grant per call and hands it to `perform`, so
 it allowed and `consent` asks — every time, for every entry, whatever its policy says. A never-ask
 entry is therefore still asked on `creds ssh <alias>`, which is exactly what the doors footer's CLI
 row now says, sitting as it does under a row telling the same person an agent may use this entry
-without being asked.
+without being asked. The alias dialog says so
+in its own words: *Allowing covers this call only, not any later one.*
 
 **Auto-lock sees the human, not the agent.** Only the Allow click calls `noteUserActivity()`. A long
 unattended run of agent calls is exactly what the idle window exists to catch, so agent traffic must
