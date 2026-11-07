@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
+using System.Security.Principal;
 
 namespace CredsForDevs.Tests.Leftovers;
 
@@ -36,6 +38,23 @@ internal static partial class OwnedCreds
             missing.Push(Path.GetFileName(current));
             current = parent;
         }
+    }
+
+    /// <summary>
+    /// Whose an entry is, in words a test can print: on Windows the owner SID's kind (the caller, BUILTIN\Administrators, another account); on POSIX whether the uid is
+    /// the caller's. A test on an elevated runner must not ASSUME who owns a new folder: runners differ (E2.3, run 42388598855), so it measures and says.
+    /// </summary>
+    internal static string OwnerKind(string path) =>
+        OperatingSystem.IsWindows() ? WindowsOwnerKind(path) : Scope.IsMine(path) ? "the caller (uid)" : "another uid";
+
+    [SupportedOSPlatform("windows")]
+    private static string WindowsOwnerKind(string path)
+    {
+        var entry = Native.WindowsEntryOf(path);
+        if (entry is null) return "unreadable";
+        using var caller = WindowsIdentity.GetCurrent();
+        if (caller.User is not null && entry.Owner.Equals(caller.User)) return "the caller";
+        return entry.Owner.IsWellKnown(WellKnownSidType.BuiltinAdministratorsSid) ? "BUILTIN\\Administrators" : "another account";
     }
 
     private static string TrimEnd(string path) => Path.TrimEndingDirectorySeparator(path);

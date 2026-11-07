@@ -156,7 +156,10 @@ public sealed class SocketRootSweepTests : IDisposable
 
             var sockets = new LeftoversSocketRootSweepFixture(socket, temp, () => { }, root => SweepAt(root, DateTimeOffset.UtcNow + Old), _ => { });
 
-            var expected = IsElevatedWindows() ? "foreign-uid" : "live";
+            // MEASURED, never assumed: who owns the producer's new folder differs by runner (windows-latest, run 42388598855: the caller's own, though elevated).
+            var mine = Scope.IsMine(folder) && Scope.IsMine(folder + ".owner");
+            TestContext.Current.AddWarning($"live producer's folder: elevated={IsElevatedWindows()}; owned by {OwnedCreds.OwnerKind(folder)}, its claim by {OwnedCreds.OwnerKind(folder + ".owner")}; outcome: {(mine ? "live" : "foreign-uid")}");
+            var expected = mine ? "live" : "foreign-uid";
             ReasonOf(sockets.LastRun!, folder).Should().Be(expected, "the owner is asked before liveness; a live process keeps its folder");
             sockets.LastRun!.Removed.Should().BeEmpty();
             Directory.Exists(folder).Should().BeTrue();

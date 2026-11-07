@@ -17,7 +17,8 @@ namespace CredsForDevs.Tests.Leftovers;
 /// pid no process has and the clocks are set 11 minutes on, so the entry is old and dead; cases (b) to (d) then say whose the folder is, because on an
 /// elevated runner a new file is owned by <c>BUILTIN\Administrators</c> and would read as a stranger's (revision row 11).</para>
 /// <para><b>What it does not prove.</b> That a real folder of an elevated run is collected: it is not. It waits for a person (F31). Case (e) is the natural
-/// trace of that limit: the Node output, not re-owned, is preserved as <c>foreign-uid</c> on an elevated process.</para>
+/// trace, MEASURED: the Node output, not re-owned, is collected when its owner is the caller and preserved as <c>foreign-uid</c> when it is another SID, and the test says which this
+/// runner gave (on windows-latest, run 42388598855, it was the caller's own, elevated or not).</para>
 /// <para>The template's word for the stories' <c>unknown</c> (R5) is <c>foreign-uid</c> (T:LeftoversSweep.cs:273, listed as <c>foreign:</c>); case (c) asserts what the
 /// stories mean - kept, listed, not collected - and the label the code gives.</para>
 /// </remarks>
@@ -212,20 +213,30 @@ public sealed class WindowsHandoffTests : IDisposable
     // ---- (e) -----------------------------------------------------------------------------------------------------
 
     [Fact]
-    public async Task The_natural_node_output_not_re_owned_is_preserved_as_foreign_uid_on_an_elevated_process()
+    public async Task The_natural_node_output_not_re_owned_is_judged_by_its_real_owner_and_the_runner_says_which_outcome_it_gave()
     {
         RequireWindows();
-        Assert.SkipUnless(Elevated(), "the process is not elevated, so a new folder is owned by the caller and would be collected: the limit F31 describes does not show here");
         var ct = TestContext.Current.CancellationToken;
         var root = _owned.Dir("handoff-root");
         var dir = await MadeByNodeAsync(root, ct);
-        Scope.IsMine(dir).Should().BeFalse("premise: a new folder of an elevated run is owned by BUILTIN\\Administrators, which is not the caller's SID");
+        // MEASURED, never assumed: on an elevated runner a new folder was expected to be owned by BUILTIN\Administrators (F31), and on windows-latest (run 42388598855) it was the caller's own.
+        var mine = Scope.IsMine(dir) && Scope.IsMine(dir + ".owner");
+        TestContext.Current.AddWarning($"windows ownership: elevated={Elevated()}; a new folder of this run is owned by {OwnedCreds.OwnerKind(dir)}, its claim by {OwnedCreds.OwnerKind(dir + ".owner")}; outcome: {(mine ? "collected" : "foreign-uid, kept (F31)")}");
 
         var result = CSharpSweep(root);
 
-        ReasonOf(result, dir).Should().Be("foreign-uid", "F31: what an elevated run leaves waits for a person");
-        result.Removed.Should().BeEmpty();
-        Directory.Exists(dir).Should().BeTrue();
-        File.Exists(dir + ".owner").Should().BeTrue();
+        if (mine)
+        {
+            result.Removed.Should().Equal(dir, "both keys are the caller's, so the old, dead folder is collected");
+            Directory.Exists(dir).Should().BeFalse();
+            File.Exists(dir + ".owner").Should().BeFalse();
+        }
+        else
+        {
+            ReasonOf(result, dir).Should().Be("foreign-uid", "F31: what an elevated run leaves, owned by another SID, waits for a person");
+            result.Removed.Should().BeEmpty();
+            Directory.Exists(dir).Should().BeTrue();
+            File.Exists(dir + ".owner").Should().BeTrue();
+        }
     }
 }

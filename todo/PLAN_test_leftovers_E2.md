@@ -2116,6 +2116,15 @@ From the coai code gate (G0, G3, G5) and the Opus review of S5 (four minors). Fo
 **Totals** (Release, one at a time, private `TMPDIR`): `CredVaultServer.Tests` 830 / 0 / 827 / 3; `CredsCli.Tests` 156 / 0 / 153 / 3; `CredsMcp.Tests` 177 / 2 / 172 / 3 (+3 `ParentWatchDisposeTests`; the two WSL `ParentWatchProcessTests` as before); `CredsBroker.Tests` 164 / 0 / 161 / 3;
 `CredsForDevs.ServiceDefaults.Tests` 606 / 0 / 581 / 25. Total 1,933. Private-`TMPDIR` entries after: 0 in each; old-name and owner-form entries in the four roots: 0.
 
+### E2.3 build record, part 5c — the Windows leg of PR #311 (2026-11-07, branch `feat/test-leftovers-e2.3`)
+
+**Measured fact:** on `windows-latest` (run 42388598855) a Node-made folder of the test process was the caller's own, not `BUILTIN\Administrators`', although the process is elevated. Two tests had assumed the other owner and failed:
+`WindowsHandoffTests.The_natural_node_output_not_re_owned_is_preserved_as_foreign_uid_on_an_elevated_process` (`Expected Scope.IsMine(dir) to be False because premise: a new folder of an elevated run is owned by BUILTIN\Administrators ... but found True`) and
+`SocketRootSweepTests.A_folder_a_live_process_made_survives_...` (actual `"live"`, expected `"foreign-uid"`). The stories (E2.3.S2) say the test "says which outcome the runner's own files gave"; it must not assert the premise. **Fix (one commit):** both tests now measure
+`Scope.IsMine` of the folder and of its claim and assert the branch that implies (caller-owned: collected, resp. `live`; another SID: `foreign-uid`, kept), and each writes one test-output line (`windows ownership: elevated=...; a new folder of this run is owned by ...; outcome: ...`). `OwnedCreds.OwnerKind(path)`
+names the owner (the caller, `BUILTIN\Administrators`, another account; on POSIX the uid). The cases with a re-owned or foreign fixture are unchanged. The first test is renamed `The_natural_node_output_not_re_owned_is_judged_by_its_real_owner_and_the_runner_says_which_outcome_it_gave` and is no longer skipped on a non-elevated runner.
+Checked on Linux only (`CredsForDevs.ServiceDefaults.Tests` 606 / 0 failed / 581 / 25; the Windows case is skipped there, the socket test takes the `live` branch); the Windows legs are CI's. F31's text stands as a limit that MAY show on a runner; this runner did not show it.
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
