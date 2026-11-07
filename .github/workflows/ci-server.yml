@@ -26,6 +26,10 @@ on:
       # The contract job starts the server through this script and runs its self-test.
       - '.github/scripts/start-server-and-wait.sh'
       - '.github/scripts/start-server-and-wait.test.sh'
+      # The backup harness makes its scratch through the extension's leftovers wrapper and the mounted shared rules (E2.2), so a
+      # change to either re-runs this pipeline.
+      - 'src_vs_code/scripts/lib/**'
+      - '.claude/rules/shared'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -47,9 +51,23 @@ jobs:
         with:
           persist-credentials: false
 
+      # The backup harness below makes its scratch through src_vs_code/scripts/lib/leftovers.cjs, a WRAPPER over the shared rules'
+      # test-leftovers reference. No mount, no helper, no harness: the wrapper refuses with this very command.
+      - name: Fetch the shared rules
+        run: git submodule update --init --depth 1 .claude/rules/shared
+
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.x
+
+      # The wrapper loads the reference, an ES module, with require(): Node 20.19 or 22.12 and later do that. The same pin as
+      # ci-extension.yml, so the image's own Node does not decide.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.x
+
+      - name: Node version
+        run: node --version
 
       # BEFORE the build: a formatting complaint is cheaper to read than a build log, and it
       # costs seconds. `--verify-no-changes` REPORTS and never rewrites — CI must not push a
@@ -75,7 +93,7 @@ jobs:
       # /v1/use/exportEnv unreachable in every released build while both sides' tests were green.
       #
       # It lives in THIS pipeline, on the server's own path filter, because it is the server's flow:
-      # a server-only change must be what re-runs it. Node built-ins only, so no setup step.
+      # a server-only change must be what re-runs it. Node 22 and the mounted rules, set up above.
       # Catalogued in research/module_tests.md.
       - name: Integration test (backup archive through the server binary)
         run: node src_minimalapi_server/scripts/backup-archive-itest.cjs

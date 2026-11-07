@@ -61,6 +61,7 @@ const itests = async (): Promise<Itests> => (await import(pathToFileURL(ITESTS).
 
 const posixOnly = process.platform === 'win32' ? { skip: 'the signal reaches a harness through its process group; Windows stops the job' } : {};
 const winOnly = process.platform === 'win32' ? {} : { skip: 'Windows lists `unverified:` and removes nothing' };
+const sweepsHere = process.platform === 'win32' ? { skip: 'Windows lists `unverified:` and removes nothing (F16): the Windows scenario' } : {};
 
 /** A fixture harness: the script the test wrote, listed the way the runner lists a real one. */
 function harness(dir: string, name: string, body: string): Harness {
@@ -94,6 +95,9 @@ function planted(root: string, token: string, what: string, record: string): str
   fs.writeFileSync(`${dir}.owner`, `${record}\n`);
   return dir;
 }
+
+const anyOf = (folder: string): boolean => fs.existsSync(folder) || fs.existsSync(`${folder}.owner`);
+const bothOf = (folder: string): boolean => fs.existsSync(folder) && fs.existsSync(`${folder}.owner`);
 
 /** Run with the ambient `TESTSTODELETE_RUN` set to `value`, or removed when `undefined`. */
 async function withAmbient<T>(value: string | undefined, body: () => Promise<T>): Promise<T> {
@@ -186,7 +190,7 @@ test('[S1.3] a sweep that throws is one `run-itests:` line and the harnesses\' o
   assert.deepEqual(old.seen.filter((line) => line.includes('sweep')), ['run-tests: leftovers sweep failed (boom)']);
 });
 
-test('[S1.4] the REAL sweep, in a private root: a dead, old creds folder is collected; a live one and a conventions one stay', { skip: process.platform === 'win32' ? 'Windows: the next scenario' : false }, async (t) => {
+test('[S1.4] the REAL sweep, in a private root: a dead, old creds folder is collected; a live one and a conventions one stay', sweepsHere, async (t) => {
   const { runHarnesses } = await itests();
   const dir = ownedDir(t, 'itest');
   const root = fs.realpathSync(privateRoot(t));
@@ -200,9 +204,9 @@ test('[S1.4] the REAL sweep, in a private root: a dead, old creds folder is coll
   const code = await runHarnesses([], { ...seams, roots: [root], harnesses: [harness(dir, 'quiet', 'process.exit(0);')], sweepOptions: { probe, now: elevenMinutesOn() } });
 
   assert.equal(code, 0);
-  assert.equal(fs.existsSync(dead) || fs.existsSync(`${dead}.owner`), false, 'the dead folder and its claim are collected');
-  assert.ok(fs.existsSync(live) && fs.existsSync(`${live}.owner`), 'a live run\'s folder stays');
-  assert.ok(fs.existsSync(other) && fs.existsSync(`${other}.owner`), 'another token\'s folder is not this repository\'s business');
+  assert.equal(anyOf(dead), false, 'the dead folder and its claim are collected');
+  assert.ok(bothOf(live), 'a live run\'s folder stays');
+  assert.ok(bothOf(other), 'another token\'s folder is not this repository\'s business');
 });
 
 test('[S1.4] on Windows the sweep lists `unverified:` and removes nothing (F16)', winOnly, async (t) => {
@@ -220,6 +224,9 @@ test('[S1.4] on Windows the sweep lists `unverified:` and removes nothing (F16)'
   assert.ok(text.join('').includes('unverified:'), text.join(''));
 });
 
+/** The reason the sweep gave for keeping `dir`, or `undefined`. */
+const reasonFor = (preserved: Array<{ path: string; reason: string }> | undefined, dir: string): string | undefined => preserved?.find((entry) => entry.path === dir)?.reason;
+
 interface SweepResult {
   removed: string[];
   preserved: Array<{ path: string; reason: string }>;
@@ -236,7 +243,7 @@ function naturalFolder(root: string, record: string): Promise<{ dir: string; sto
   });
 }
 
-test('[S1.5] ownership trace: a folder made the natural way under the run\'s record is read by the real sweep, and kept as `live`', { skip: process.platform === 'win32' ? 'Windows lists `unverified:` (F16)' : false }, async (t) => {
+test('[S1.5] ownership trace: a folder made the natural way under the run\'s record is read by the real sweep, and kept as `live`', sweepsHere, async (t) => {
   const { runHarnesses } = await itests();
   const { loadReferenceSweep } = (await import(pathToFileURL(path.join(SRC_VS_CODE, 'scripts', 'run-tests.mjs')).href)) as { loadReferenceSweep(helper: unknown): Promise<ReferenceSweep> };
   const helper = await import('../../scripts/lib/leftovers.cjs');
@@ -256,11 +263,10 @@ test('[S1.5] ownership trace: a folder made the natural way under the run\'s rec
   };
 
   await runHarnesses([], { ...base(t, []), roots: [root], harnesses: [harness(dir, 'quiet', 'process.exit(0);')], sweep: spy(undefined) });
-  assert.equal(reasons.at(0)?.find((entry) => entry.path === natural.dir)?.reason, 'young', 'premise: without `now` the folder is kept only for its age');
+  assert.equal(reasonFor(reasons.at(0), natural.dir), 'young', 'premise: without `now` the folder is kept only for its age');
   await runHarnesses([], { ...base(t, []), roots: [root], harnesses: [harness(dir, 'quiet', 'process.exit(0);')], sweep: spy(elevenMinutesOn()) });
 
-  const kept = reasons.at(-1)?.find((entry) => entry.path === natural.dir);
-  assert.equal(kept?.reason, 'live', 'the runner\'s sweep read the folder, asked the real probe, and kept it');
+  assert.equal(reasonFor(reasons.at(-1), natural.dir), 'live', 'the runner\'s sweep read the folder, asked the real probe, and kept it');
   assert.ok(fs.existsSync(natural.dir) && fs.existsSync(claim));
 });
 
@@ -272,37 +278,46 @@ const HANGS_WITH_GRANDCHILD = [
   'setInterval(() => {}, 1000);',
 ].join('\n');
 
+/** Remember the grandchild's pid the first time it is printed, and whether it was alive at that moment (Windows prints at the end: there the pid is taken as alive). */
+function noteGrandchild(chunk: string, seen: { pid: number; aliveAtPrint: boolean }): void {
+  const printed = /GRANDCHILD=(\d+)/.exec(chunk)?.[1];
+  if (printed === undefined || seen.pid !== 0) return;
+  seen.pid = Number(printed);
+  seen.aliveAtPrint = aliveOrUnknown(seen.pid);
+}
+
+/** Windows prints the pid at the end of the run, so there it cannot be asked whether the process was alive earlier: taken as alive. */
+const aliveOrUnknown = (pid: number): boolean => process.platform === 'win32' || isAlive(pid);
+
+function killQuietly(pid: number): void {
+  if (pid <= 0) return;
+  try {
+    process.kill(pid, 'SIGKILL');
+  } catch {
+    // already gone
+  }
+}
+
 test('[S1.6] a timeout ends the harness\'s WHOLE tree: the grandchild is dead and the summary says `killed`', async (t) => {
   const { runHarnesses } = await itests();
   const dir = ownedDir(t, 'itest');
   const text: string[] = [];
-  let pid = 0;
-  let aliveAtPrint = false;
+  const seen = { pid: 0, aliveAtPrint: false };
   const seams = base(t, text);
   seams.write = (chunk) => {
     text.push(chunk);
-    const printed = /GRANDCHILD=(\d+)/.exec(chunk)?.[1];
-    if (printed !== undefined && pid === 0) {
-      pid = Number(printed);
-      aliveAtPrint = process.platform === 'win32' || isAlive(pid);
-    }
+    noteGrandchild(chunk, seen);
   };
 
   try {
     await runHarnesses([], { ...seams, harnesses: [harness(dir, 'hang', HANGS_WITH_GRANDCHILD)], timeoutMs: process.platform === 'win32' ? 20_000 : 2000 });
 
-    assert.ok(pid > 0, `premise: the harness printed its grandchild's pid (${text.join('')})`);
-    assert.ok(aliveAtPrint, 'premise: the grandchild was alive when its pid was printed');
-    assert.equal(isAlive(pid), false, 'the grandchild is dead after the runner returned');
+    assert.ok(seen.pid > 0, `premise: the harness printed its grandchild's pid (${text.join('')})`);
+    assert.ok(seen.aliveAtPrint, 'premise: the grandchild was alive when its pid was printed');
+    assert.equal(isAlive(seen.pid), false, 'the grandchild is dead after the runner returned');
     assert.match(text.join(''), /^FAIL\s+itest:hang\s+hang: no exit within .* — killed/m);
   } finally {
-    if (pid > 0) {
-      try {
-        process.kill(pid, 'SIGKILL');
-      } catch {
-        // already gone
-      }
-    }
+    killQuietly(seen.pid);
   }
 });
 
