@@ -94,6 +94,30 @@ test('`window` read any way but a direct member access fails BY NAME, one regres
   }
 });
 
+test('more ways to hide a prompt fail BY NAME too: a spread call, a cast require, a hop through globalThis, a dynamic import', () => {
+  const forms: Array<[WindowRead['form'], string]> = [
+    ['spread-call', "import * as vscode from 'vscode';\nconst args: [string] = ['x'];\nvoid vscode.window.showWarningMessage(...args);"],
+    ['require-cast', "import type * as vscode from 'vscode';\nconst editor = require('vscode') as typeof vscode;\nvoid editor.window.showQuickPick([]);"],
+    ['global-hop', "void (globalThis as { vscode?: { window: { showQuickPick(items: string[]): void } } }).vscode?.window.showQuickPick([]);\nvoid globalThis.window;"],
+    ['dynamic-import', "async function ask(): Promise<void> {\n  const editor = await import('vscode');\n  void editor.window.showQuickPick([]);\n}\nvoid ask;"],
+  ];
+  for (const [form, source] of forms) {
+    const { windowReads } = scanSource(source, 'planted.ts');
+    assert.ok(windowReads.some((read) => read.form === form), `${form}: ${source} gave ${JSON.stringify(windowReads.map((read) => read.form))}`);
+  }
+});
+
+test('a spread that leaves the count known is a site, not a hidden one: `showWarningMessage(text, ...buttons)` has two arguments', () => {
+  const source = "import * as vscode from 'vscode';\nexport const ask = (buttons: string[]) => vscode.window.showWarningMessage('text', ...buttons);";
+  const scanned = scanSource(source, 'planted.ts');
+  assert.deepEqual([scanned.sites.map((site) => site.id), scanned.windowReads], [['planted.ts#ask#showWarningMessage#1'], []]);
+});
+
+test('a require of the editor, cast or not, is still followed: its sites are found', () => {
+  const source = ["import type * as vscode from 'vscode';", "const editor = require('vscode') as typeof vscode;", 'export const ask = () => editor.window.showQuickPick([]);', "export const direct = () => require('vscode').window.showInputBox();"].join('\n');
+  assert.deepEqual(scanSource(source, 'planted.ts').sites.map((site) => site.id), ['planted.ts#ask#showQuickPick#1', 'planted.ts#direct#showInputBox#1']);
+});
+
 test('a variable or a property that is merely named `window` is not the editor\'s window', () => {
   const source = ["import * as vscode from 'vscode';", 'const [scope, window] = entry;', 'const { window: covering } = book;', 'covering.window.until = 1;', 'void vscode.workspace;'].join('\n');
   assert.deepEqual(scanSource(source, 'planted.ts'), { sites: [], windowReads: [] });

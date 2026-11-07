@@ -11,8 +11,10 @@ import * as ts from 'typescript';
  *
  * <p>The scan finds sites by their SPELLING, `<editor>.window.<name>`, so a `window` that is read any other way hides them: an alias
  * (`const w = vscode.window`), a destructure (`const { window } = vscode`, `const { showQuickPick } = vscode.window`), a named import
- * (`import { window } from 'vscode'`) or an element access (`vscode['window']`). Each is reported BY NAME (a {@link WindowRead}) and fails
- * the test, rather than being followed. A variable or a property that is merely called `window` is not the editor's.</p>
+ * (`import { window } from 'vscode'`), an element access (`vscode['window']`), a message call whose only argument is a spread (`showWarningMessage(...args)`: how many
+ * arguments it has is hidden), a cast `require('vscode') as typeof vscode`, a hop through `globalThis`, or a dynamic `import('vscode')`. Each is reported BY NAME (a {@link WindowRead}) and fails
+ * the test, rather than being followed. A variable or a property that is merely called `window` is not the editor's. NOT seen, and said so: a member name computed at run time
+ * (`window[name]`), `eval`, and a module that re-exports the editor under another name.</p>
  *
  * <p>Not named `*.test.ts`, so the runner never treats it as a suite.</p>
  */
@@ -33,7 +35,7 @@ export interface PromptSite {
 export interface WindowRead {
   readonly file: string;
   readonly line: number;
-  readonly form: 'alias' | 'destructure' | 'named-import' | 'element-access';
+  readonly form: 'alias' | 'destructure' | 'named-import' | 'element-access' | 'spread-call' | 'require-cast' | 'global-hop' | 'dynamic-import';
 }
 
 type Editor = ReadonlySet<string>;
@@ -55,7 +57,17 @@ const namespaceName = (bindings: ts.NamedImportBindings | undefined): ts.Identif
 
 const clauseNames = (clause: ts.ImportClause | undefined): ts.Identifier[] => (clause === undefined ? [] : [clause.name, namespaceName(clause.namedBindings)].filter(isDefined));
 
-const initializerText = (declaration: ts.VariableDeclaration): string => declaration.initializer?.getText() ?? '';
+const WRAPPERS = [ts.isParenthesizedExpression, ts.isAsExpression, ts.isTypeAssertionExpression, ts.isNonNullExpression];
+
+/** An expression without the wrappers that change nothing at run time: parentheses, `as`, `<T>`, `!`. */
+function unwrapped(node: ts.Node): ts.Node {
+  return WRAPPERS.some((is) => is(node)) ? unwrapped((node as ts.ParenthesizedExpression).expression) : node;
+}
+
+/** `require('vscode')`, however it is wrapped. */
+const isRequireVscode = (node: ts.Node): boolean => VSCODE_REQUIRE.test(unwrapped(node).getText());
+
+const initializerText = (declaration: ts.VariableDeclaration): string => (declaration.initializer === undefined ? '' : unwrapped(declaration.initializer).getText());
 
 const requiredAs = (node: ts.Node): ts.Identifier[] => (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && VSCODE_REQUIRE.test(initializerText(node)) ? [node.name] : []);
 
@@ -71,7 +83,8 @@ function editorNames(tree: ts.SourceFile): Editor {
   return names;
 }
 
-const isEditorIdentifier = (node: ts.Node, editor: Editor): boolean => ts.isIdentifier(node) && editor.has(node.text);
+/** The editor's module as an expression: a name the file gave it, or a `require('vscode')` written in place. */
+const isEditorIdentifier = (node: ts.Node, editor: Editor): boolean => (ts.isIdentifier(node) && editor.has(node.text)) || isRequireVscode(node);
 
 /** `<editor>.<name>`: `vscode.window`, `vscode.authentication`. */
 const isEditorMember = (node: ts.Node, name: string, editor: Editor): node is ts.PropertyAccessExpression =>
@@ -222,15 +235,38 @@ const importedWindow = (specifier: ts.ImportSpecifier): WindowRead['form'] | und
 
 const indexedWindow = (node: ts.Node, editor: Editor): WindowRead['form'] | undefined => (ts.isElementAccessExpression(node) && indexesWindow(node, editor) ? 'element-access' : undefined);
 
-function formOfOther(node: ts.Node, editor: Editor): WindowRead['form'] | undefined {
-  if (ts.isBindingElement(node)) {
-    return destructuredWindow(node, editor);
-  }
-  return ts.isImportSpecifier(node) ? importedWindow(node) : indexedWindow(node, editor);
-}
+/** The arguments of a message call are only counted by their number: a lone spread (`show…Message(...args)`) hides how many there are. */
+const hasLoneSpread = (call: ts.CallExpression): boolean => call.arguments.length < 2 && call.arguments.some(ts.isSpreadElement);
+
+const isMessageOn = (callee: ts.LeftHandSideExpression, editor: Editor): boolean =>
+  ts.isPropertyAccessExpression(callee) && isEditorMember(callee.expression, 'window', editor) && MESSAGES.has(callee.name.text);
+
+const spreadsAMessage = (node: ts.Node, editor: Editor): boolean => ts.isCallExpression(node) && isMessageOn(node.expression, editor) && hasLoneSpread(node);
+
+const castsRequire = (node: ts.Node): boolean => (ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)) && isRequireVscode(node.expression);
+
+const isGlobalThis = (node: ts.Node): boolean => ts.isIdentifier(node) && node.text === 'globalThis';
+
+const hopsThroughGlobal = (node: ts.Node): boolean => ts.isPropertyAccessExpression(node) && isGlobalThis(node.expression) && ['window', 'vscode'].includes(node.name.text);
+
+const namesEditor = (argument: ts.Node | undefined): boolean => argument !== undefined && ts.isStringLiteralLike(argument) && argument.text === 'vscode';
+
+const importsDynamically = (node: ts.Node): boolean => ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && namesEditor(node.arguments[0]);
+
+/** Each way the editor's window can be read that the scan cannot follow, tried in turn. */
+const DETECTORS: ReadonlyArray<(node: ts.Node, editor: Editor) => WindowRead['form'] | undefined> = [
+  (node, editor) => (ts.isPropertyAccessExpression(node) ? formOfPropertyRead(node, editor) : undefined),
+  (node, editor) => (ts.isBindingElement(node) ? destructuredWindow(node, editor) : undefined),
+  (node) => (ts.isImportSpecifier(node) ? importedWindow(node) : undefined),
+  (node, editor) => indexedWindow(node, editor),
+  (node, editor) => (spreadsAMessage(node, editor) ? 'spread-call' : undefined),
+  (node) => (castsRequire(node) ? 'require-cast' : undefined),
+  (node) => (hopsThroughGlobal(node) ? 'global-hop' : undefined),
+  (node) => (importsDynamically(node) ? 'dynamic-import' : undefined),
+];
 
 function formOf(node: ts.Node, editor: Editor): WindowRead['form'] | undefined {
-  return ts.isPropertyAccessExpression(node) ? formOfPropertyRead(node, editor) : formOfOther(node, editor);
+  return DETECTORS.map((detect) => detect(node, editor)).find(isDefined);
 }
 
 /* ----------------------------------------------------------------------------------------------------------------
