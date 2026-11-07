@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 
 namespace CredVaultServer.Tests;
@@ -14,8 +15,12 @@ namespace CredVaultServer.Tests;
 /// exactly that file — or the sender never learns why their share vanished.
 /// </summary>
 [Collection(ServerCollection.Name)]
-public sealed class OrgBlockingWithdrawalTests
+public sealed class OrgBlockingWithdrawalTests : IDisposable
 {
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+
+    public void Dispose() => _owned.Dispose();
+
     private static string Alice => $"alice@{VaultServer.Domain}";
 
     private static string Bob => $"bob@{VaultServer.Domain}";
@@ -48,12 +53,7 @@ public sealed class OrgBlockingWithdrawalTests
     private static string ReceiptPath(string dataDir, string sender, string id) =>
         Path.Combine(dataDir, "sent", VaultStore.KeyFor(sender), id + ".json");
 
-    private static string TempDir()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "cred-vault-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
+    private string TempDir() => _owned.Dir("withdrawal");
 
     [Fact]
     public async Task AShareToABlockedPersonLeavesTheirInboxAndTheSenderIsToldWhy()

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -47,7 +48,9 @@ public sealed class OrgRegistrationTests
     /// </summary>
     private sealed class HookWorld : IDisposable
     {
-        public string Dir { get; } = Path.Combine(Path.GetTempPath(), "cred-vault-tests", Guid.NewGuid().ToString("N"));
+        private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+
+        public string Dir { get; }
 
         public CapturingLogger<OrgEndpointDeps> Log { get; } = new();
 
@@ -55,7 +58,7 @@ public sealed class OrgRegistrationTests
 
         public HookWorld()
         {
-            Directory.CreateDirectory(Dir);
+            Dir = _owned.Dir("org-reg-hook");
             Deps = new OrgEndpointDeps(
                 RequireCaller: _ => null,
                 // The hook never reaches a gate; a delegate that refuses everything says so.
@@ -108,17 +111,7 @@ public sealed class OrgRegistrationTests
                 : 0;
         }
 
-        public void Dispose()
-        {
-            try
-            {
-                Directory.Delete(Dir, recursive: true);
-            }
-            catch (IOException)
-            {
-                // A handle not yet released; the temp sweeper gets it.
-            }
-        }
+        public void Dispose() => _owned.Dispose();
     }
 
     [Fact]

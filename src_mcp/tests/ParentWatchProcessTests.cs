@@ -2,6 +2,7 @@ using System.Diagnostics;
 using CredsBroker;
 using CredsForDevs.ServiceDefaults;
 using CredsForDevs.ServiceDefaults.Tests.Support;
+using CredsForDevs.Tests.Leftovers;
 using CredsMcp;
 using FluentAssertions;
 
@@ -21,9 +22,51 @@ namespace CredsMcp.Tests;
 /// </remarks>
 public sealed class ParentWatchProcessTests : IDisposable
 {
-    private readonly string _root = HostProcess.TempDirectory("creds-mcp-e2s4");
+    private readonly string _root = HostProcess.TempDirectory("mcp-e2s4");
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
 
-    public void Dispose() => HostProcess.Remove(_root);
+    private string? _childTemp;
+    private int _serverPid;
+
+    public void Dispose() => EndHostThenRemove(_serverPid, () =>
+    {
+        HostProcess.Remove(_root);
+        _owned.Dispose();
+    });
+
+    /// <summary>
+    /// The host was started here, not through HostProcess.Start, so nothing ties it to its folders: a host that is still running at the end of the test is ended FIRST
+    /// (the tree killed, the end waited for within a bound), and only then are its log folder and temp folder removed. When its end cannot be confirmed the exception goes
+    /// up and <paramref name="remove"/> does not run: the folders stay claimed and registered, and the end-of-run audit names them.
+    /// </summary>
+    internal static void EndHostThenRemove(int serverPid, Action remove, Func<Process, TimeSpan, bool>? killAndWait = null)
+    {
+        if (serverPid != 0 && Running(serverPid) is { } server)
+        {
+            using (server)
+            using (HostProcess.KillOnDispose(server, killAndWait))
+            {
+                // the Reaper ends the host when this scope closes, and throws when the end is not confirmed
+            }
+        }
+
+        remove();
+    }
+
+    private static Process? Running(int pid)
+    {
+        try
+        {
+            var server = Process.GetProcessById(pid);
+            if (!server.HasExited) return server;
+            server.Dispose();
+            return null;
+        }
+        catch (Exception e) when (e is ArgumentException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
 
     [Fact]
     public async Task The_server_ends_when_its_parent_is_killed_while_stdin_stays_open()
@@ -72,6 +115,13 @@ public sealed class ParentWatchProcessTests : IDisposable
         start.CreateNoWindow = true;
         start.Environment[CredsLogging.DirectoryVariable] = _root;
         start.Environment[Endpoints.DirectoryOverrideVariable] = Path.Combine(_root, "no-windows");
+        // This test starts its host by itself (not through HostProcess.Start), so it hands the runtime an owned temp folder itself: a killed host leaves its
+        // diagnostic socket and debug pipes in TMPDIR (rule 2). The scope removes the folder after the test's `using`s have ended the host.
+        _childTemp = _owned.Dir("child-tmp", OwnedCreds.ShortSocketRoot);
+        foreach (var name in new[] { "TMPDIR", "TEMP", "TMP" })
+        {
+            start.Environment[name] = _childTemp;
+        }
         foreach (var (name, value) in extra)
         {
             start.Environment[name] = value;
@@ -91,13 +141,31 @@ public sealed class ParentWatchProcessTests : IDisposable
             var files = Directory.GetFiles(_root, $"{Program.AppName}-*.log", SearchOption.AllDirectories);
             if (files.Length == 1 && HostProcess.Read(files[0]).Contains("started:", StringComparison.Ordinal))
             {
-                await WatchDecidedAsync(files[0], ct);
                 var name = Path.GetFileNameWithoutExtension(files[0]);
-                return Process.GetProcessById(int.Parse(name[(name.LastIndexOf('-') + 1)..], System.Globalization.CultureInfo.InvariantCulture));
+                var pid = int.Parse(name[(name.LastIndexOf('-') + 1)..], System.Globalization.CultureInfo.InvariantCulture);
+                _serverPid = pid;
+                AssertTempWasHandedOver(pid);
+                await WatchDecidedAsync(files[0], ct);
+                return Process.GetProcessById(pid);
             }
             await Task.Delay(100, ct);
         }
         throw new TimeoutException("the server never wrote its log file");
+    }
+
+    /// <summary>
+    /// The hand-over is CHECKED, not assumed: a live .NET host keeps <c>clr-debug-pipe-&lt;pid&gt;-*</c> in the temp folder it was given, so they are in the owned folder and not in the
+    /// shared temp root. A host that already ended took its pipes with it, which says nothing either way (the Windows pipes are not files).
+    /// </summary>
+    private void AssertTempWasHandedOver(int pid)
+    {
+        if (OperatingSystem.IsWindows()) return;
+        var pipes = Directory.GetFileSystemEntries(_childTemp!, $"clr-debug-pipe-{pid}-*");
+        if (pipes.Length == 0 && Running(pid) is { } live)
+        {
+            live.Dispose();
+            pipes.Should().NotBeEmpty("the live host's debug pipes are in the owned folder it was handed as TMPDIR, not in the shared temp root");
+        }
     }
 
     /// <summary>

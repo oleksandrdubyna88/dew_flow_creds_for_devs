@@ -1,3 +1,4 @@
+using CredsForDevs.Tests.Leftovers;
 using Microsoft.Extensions.Logging.Abstractions;
 using FluentAssertions;
 
@@ -10,14 +11,17 @@ namespace CredVaultServer.Tests;
 /// the part least worth testing and the hardest to test quickly, while the decision — which
 /// invites are too old — is the part that can be wrong.</para>
 /// </summary>
-public sealed class OrgRecoveryMaintenanceTests
+public sealed class OrgRecoveryMaintenanceTests : IDisposable
 {
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+
+    public void Dispose() => _owned.Dispose();
+
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private static (OrgRecoveryStore Store, string Dir) NewStore()
+    private (OrgRecoveryStore Store, string Dir) NewStore()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "cred-vault-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
+        var dir = _owned.Dir("recovery");
         return (new OrgRecoveryStore(dir), dir);
     }
 

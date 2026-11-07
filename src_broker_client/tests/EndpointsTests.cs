@@ -1,6 +1,7 @@
 using System.Text.Json;
 using CredsBroker;
 using CredsForDevs.ServiceDefaults.Tests.Support;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 
 namespace CredsBroker.Tests;
@@ -9,14 +10,13 @@ namespace CredsBroker.Tests;
 /// Finding a window by its announcement, and the alias grammar that decides whether the second
 /// argument is a name or a token.
 /// </summary>
-public class EndpointsTests
+public sealed class EndpointsTests : IDisposable
 {
-    private static string Temp()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "creds-endpoints-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+
+    public void Dispose() => _owned.Dispose();
+
+    private string Temp() => _owned.Dir("endpoints");
 
     private static void Write(string dir, int pid, int port, string startedAt, string? socket = null)
     {
@@ -77,7 +77,8 @@ public class EndpointsTests
     [Fact]
     public void A_missing_directory_is_an_empty_list_rather_than_a_crash()
     {
-        Endpoints.Read(Path.Combine(Path.GetTempPath(), "does-not-exist-" + Guid.NewGuid())).Should().BeEmpty();
+        // testsToDelete-exempt: raw-temp — a folder nothing creates: the test asks for one that is absent on purpose
+        Endpoints.Read(Path.Combine(Owned.TempRoot(), "does-not-exist-" + Guid.NewGuid())).Should().BeEmpty();
         Endpoints.Read(null).Should().BeEmpty();
     }
 

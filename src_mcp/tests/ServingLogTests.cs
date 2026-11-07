@@ -25,7 +25,7 @@ namespace CredsMcp.Tests;
 /// </remarks>
 public sealed class ServingLogTests : IDisposable
 {
-    private readonly string _root = HostProcess.TempDirectory("creds-mcp-log");
+    private readonly string _root = HostProcess.TempDirectory("mcp-log");
     private readonly string _marker = "MARKER" + Guid.NewGuid().ToString("N");
 
     public void Dispose() => HostProcess.Remove(_root);

@@ -1,5 +1,6 @@
 using System.Text;
 using CredsBroker;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 
 namespace CredsBroker.Tests;
@@ -19,11 +20,12 @@ public sealed class SessionTitleTests : IDisposable
     private const string Session = "52d1b29a-c2e7-486f-95c4-04dff314ff37";
     private const string Pid = "4242";
 
-    private readonly string _home = Path.Combine(Path.GetTempPath(), "creds-title-" + Guid.NewGuid().ToString("N"));
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+    private readonly string _home;
 
-    public SessionTitleTests() => Directory.CreateDirectory(_home);
+    public SessionTitleTests() => _home = _owned.Dir("title");
 
-    public void Dispose() => Directory.Delete(_home, recursive: true);
+    public void Dispose() => _owned.Dispose();
 
     private string Cwd => Path.Combine(_home, "work", "my repo");
 

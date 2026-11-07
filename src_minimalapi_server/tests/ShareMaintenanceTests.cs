@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 
 namespace CredVaultServer.Tests;
@@ -16,16 +17,15 @@ namespace CredVaultServer.Tests;
 /// exactly like one that does.</para>
 /// </remarks>
 [Collection(ServerCollection.Name)]
-public sealed class ShareMaintenanceTests
+public sealed class ShareMaintenanceTests : IDisposable
 {
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+
+    public void Dispose() => _owned.Dispose();
+
     private static string Bob => $"bob@{VaultServer.Domain}";
 
-    private static string TempDir()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "cred-vault-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
+    private string TempDir() => _owned.Dir("share-maint");
 
     /// <summary>Put a share on disk with an age of our choosing, bypassing the API.</summary>
     private static string WriteShare(string dataDir, string recipient, int daysOld, string name = "old thing")

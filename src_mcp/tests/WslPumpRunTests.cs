@@ -24,7 +24,7 @@ public sealed class WslPumpRunTests : IDisposable
     private static readonly TimeSpan Bound = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan Hour = TimeSpan.FromHours(1);
 
-    private readonly string _root = HostProcess.TempDirectory("creds-mcp-pump");
+    private readonly string _root = HostProcess.TempDirectory("mcp-pump");
     private readonly TaskCompletionSource<PosixSignal> _signal = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource _parent = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly CollectingSink _sink = new();

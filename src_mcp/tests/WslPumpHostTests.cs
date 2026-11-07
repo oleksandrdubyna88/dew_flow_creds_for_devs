@@ -27,7 +27,7 @@ public sealed class WslPumpHostTests : IDisposable
 {
     private static readonly TimeSpan Bound = TimeSpan.FromSeconds(10);
 
-    private readonly string _root = HostProcess.TempDirectory("creds-mcp-e3");
+    private readonly string _root = HostProcess.TempDirectory("mcp-e3");
 
     public void Dispose() => HostProcess.Remove(_root);
 
