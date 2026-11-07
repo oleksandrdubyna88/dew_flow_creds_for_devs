@@ -155,6 +155,7 @@ jobs:
           for exe in ./src_cli/tests/bin/Release/net10.0/CredsCli.Tests ./src_mcp/tests/bin/Release/net10.0/CredsMcp.Tests ./src_broker_client/tests/bin/Release/net10.0/CredsBroker.Tests ./src_service_defaults/tests/bin/Release/net10.0/CredsForDevs.ServiceDefaults.Tests; do
             for entry in "1:never disposed:selftest" "failed-dispose:disposed but not removed:selftest-failed"; do
               IFS=: read -r value words what <<< "$entry"
+              echo "audit self-test: $(basename "$exe"), case '$value'"
               if CREDS_LEFTOVERS_SELFTEST="$value" "$exe" --filter-class "*LeftoversSelfTest" 2>&1 | tee selftest.log; then
                 echo "the end-of-run audit did not fail the run ($exe, $value)"; exit 1; fi
               # (a) the audit's FIRST line: the counts and the group summary, and no path on it ...
@@ -189,6 +190,7 @@ jobs:
           )
           foreach ($exe in $exes) {
             foreach ($case in $cases) {
+              Write-Host "audit self-test: $(Split-Path -Leaf $exe), case '$($case.Value)'"
               $env:CREDS_LEFTOVERS_SELFTEST = $case.Value
               $log = (& $exe --filter-class '*LeftoversSelfTest' 2>&1 | Out-String)
               $code = $LASTEXITCODE
