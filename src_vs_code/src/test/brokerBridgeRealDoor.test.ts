@@ -4,7 +4,7 @@ import * as http from 'node:http';
 import * as net from 'node:net';
 import { after, test } from 'node:test';
 import { BridgeContext } from '../bridgeContext';
-import { BRIDGE_NOT_SERVED } from '../bridgeAllowList';
+import { BRIDGE_NOT_SERVED, BRIDGE_ROUTES, BRIDGE_UNKNOWN_PATH } from '../bridgeAllowList';
 import { socketPathFor } from '../brokerListeners';
 import { cleanupScope, ownedDir, shortSocketRoot } from '../../scripts/lib/leftovers.cjs';
 import { CONTEXT, OTHER, Reply, code, emptyWall, keyed, message, pause, raw, refuses } from './bridgeDoorHarness';
@@ -16,6 +16,9 @@ import { call, share, world } from './brokerWorld';
  * <p>`brokerBridgeListeners.test.ts` puts a spy where the router would be; here nothing is replaced, so what
  * these show is what `handle`, the guard and `dispose` really do behind the door.</p>
  */
+
+/** The sentence the table gives: the person's for a route it names and refuses, the one that promises nothing for a path it does not know. */
+const sentenceFor = (method: string, route: string): string => (BRIDGE_ROUTES.some((row) => row.method === method && row.path === route) ? BRIDGE_NOT_SERVED : BRIDGE_UNKNOWN_PATH);
 
 test('D9: the real router — health is served, a route the table does not serve is a not_supported with Connection: close', async () => {
   const w = world({ aliasList: [{ name: 'prod', kind: 'ssh' }], hooks: emptyWall() });
@@ -29,19 +32,23 @@ test('D9: the real router — health is served, a route the table does not serve
 
     // E1.2 served health alone; from E1.3 the table serves more (`bridgeAllowList.test.ts` pins exactly what),
     // so what is asked here is a route it does not.
+    // A route the table names and refuses answers the person sentence; a path it does not know promises nothing. Each is asked through the
+    // real broker, and nothing ran and nobody was asked either way: the route is refused, not just worded.
     const refused: [string, string][] = [
       ['POST', '/v1/use/run'],
       ['POST', '/v1/config/read'],
       ['GET', '/v1/nope'],
       ['POST', '/v1/mcp/delete'],
+      ['POST', '/v1/use/future'],
     ];
     for (const [method, route] of refused) {
       const reply = await raw(l.port, route, keyed(l), { method, body: method === 'POST' ? '{"command":"id"}' : undefined });
       assert.equal(reply.status, 404, `${method} ${route}`);
       assert.equal(code(reply), 'not_supported', `${method} ${route}`);
-      assert.equal(message(reply), BRIDGE_NOT_SERVED, `${method} ${route}`);
+      assert.equal(message(reply), sentenceFor(method, route), `${method} ${route}`);
       assert.equal(reply.connection, 'close', `${method} ${route}`);
     }
+    assert.equal(BRIDGE_ROUTES.some((route) => route.path === '/v1/nope' || route.path === '/v1/use/future'), false, 'the two unknown paths are really unknown');
     assert.deepEqual(w.ran, []);
     assert.deepEqual(w.dialogs, []);
     assert.equal((await call(main, '/v1/aliases', { method: 'GET' })).status, 200, 'the main port still serves what the bridge does not');

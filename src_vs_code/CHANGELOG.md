@@ -41,8 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   running when you click Allow (its signing prompt), all keep it until that call ends, as before; `query`, `run` and any other `exec` (an entry that does not forward, or an agent that is not running at that moment) give it back when the
   dialog closes. A local call that carries a token keeps nothing: it is not admitted at all (`credsAgentServer.ts` runs it without `admit`).
 - **A failure inside a request handler answers 500** with its own sentence instead of leaving the request unanswered until the client
-  gives up. The agent journal records that it failed and where, never why: one line with the kind of error, the route or `other`, and whether
-  the answer had already started. It carries no message, so nothing a request put into the error reaches the journal.
+  gives up. The agent journal records that it failed and where, with the kind of error but never its message: one line with the error's class, a
+  system error name such as `ENOENT` when it has one, the route or `other`, and whether the answer had already started. It carries no
+  message, so nothing a request put into the error reaches the journal.
 - The grant registry reclaims in tiers (denied calls, calls that ran, Allows not yet used, then calls whose dialog is open or whose client
   left), and a call refused before anybody was asked leaves no grant behind. The exception is a call a policy had already allowed: if it is
   refused before it is reserved, it still leaves an allowed grant with no use, which the tiers now reclaim before a call whose dialog is open.

@@ -3488,9 +3488,11 @@ a door with no wall cannot exist). Three things stand behind the third door.
 so a route that is in neither table is refused at run time and turns `bridgeAllowList.test.ts` red until somebody
 decides about it. Served: the reads (`health`, `kinds`, `kind-help` as they are; `aliases`, `entries`,
 `config-snippet`, `folders` through the wall), and `exec` and `query` on the token, alias and MCP prefixes. Refused
-`403 denied` with the export sentence: `exportEnv`. Refused `404 not_supported` with the bridge's sentence: `run`
+`403 denied` with the export sentence: `exportEnv`. Refused `404 not_supported` with `BRIDGE_NOT_SERVED` (*A person can do it in the VS Code window.*, kept for the rows that exist): `run`
 (until E3 decides where a stored command runs), `terminal`, `up`, `down`, `rotate`, delete, create, the folder verbs
-and the config read. The note a bridge publishes (`bridgeNote.ts`) is six fields, and `contract/broker-v1.json`
+and the config read. A path the table does not know at all (an unlisted method and path, `rotate` on the token or alias prefix, a route added later)
+answers `404 not_supported` with `BRIDGE_UNKNOWN_PATH`, *A Remote Bridge does not serve this request.*, which promises nothing: there is no
+row for a person to do it from. The note a bridge publishes (`bridgeNote.ts`) is six fields, and `contract/broker-v1.json`
 carries them (`bridge.noteFields`) with the header and the directory, and the alias prefix (`aliasPrefix`), all
 additive, `version` still 1.
 
@@ -3627,7 +3629,7 @@ a bridge a token call is bridged and counted on its bridge, with the bridge's se
 builds, and what a person can and cannot reach with it today.
 
 *Reachable now, on the local doors* (no bridge needed): the four-tier eviction order above; **a throw inside a handler is answered
-`500 internal`** with `UNANSWERED_FAILURE` (its own sentence: the journal records that the request failed and where, not why;
+`500 internal`** with `UNANSWERED_FAILURE` (its own sentence: the journal records that the request failed and where, with the kind of error but never its message;
 `INTERNAL_FAILURE` stays for the handlers that do journal a reason) on every door, where the request used to hang until the client
 gave up (`unanswered`, `brokerRequests.ts`: it reads `res.headersSent` first, **answers first** if nothing has gone out, and then
 writes its one journal line inside a `try`, so a journal that throws on every line still answers. **The line is a classification, never
