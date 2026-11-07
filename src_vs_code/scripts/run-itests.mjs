@@ -19,8 +19,9 @@
 import { spawn } from 'node:child_process';
 import { connect } from 'node:net';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve as pathResolve } from 'node:path';
 import { platform, argv, stdout, exit, execPath } from 'node:process';
+import * as fs from 'node:fs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -68,19 +69,6 @@ const HARNESSES = [
   },
 ];
 
-const args = argv.slice(2);
-const withServer = args.includes('--with-server');
-const selectors = args.filter((a) => !a.startsWith('-'));
-
-/** An unknown name is refused by NAME, because a typo that runs nothing must not exit 0. */
-const unknown = selectors.filter((s) => !HARNESSES.some((h) => h.name === s));
-if (unknown.length > 0) {
-  stdout.write(
-    `unknown harness: ${unknown.join(', ')}\nlegal names: ${HARNESSES.map((h) => h.name).join(', ')}\n`,
-  );
-  exit(2);
-}
-
 /** Is something listening? Used only to tell "no server" from "the harness is broken". */
 function reachable({ host, port }) {
   return new Promise((resolve) => {
@@ -96,6 +84,11 @@ function reachable({ host, port }) {
   });
 }
 
+/** A span of time as the kill line says it: whole minutes when it is, else seconds. */
+function spanOf(ms) {
+  return ms % 60000 === 0 ? `${ms / 60000} minutes` : `${ms / 1000} seconds`;
+}
+
 /**
  * One harness, streamed and bounded.
  *
@@ -109,9 +102,9 @@ function reachable({ host, port }) {
  * refuses to spawn a `.cmd` without a shell, and `npm` on Windows IS `npm.cmd`. Measured here before
  * this comment was written. Naming the script directly avoids the shell and the alias together.</p>
  */
-function runNode(args, label) {
+function runNode(args, label, run) {
   return new Promise((resolve) => {
-    const child = spawn(execPath, args, {
+    const child = run.spawn(execPath, args, {
       cwd: join(HERE, '..'),
       stdio: ['ignore', 'pipe', 'pipe'],
       shell: false,
@@ -120,7 +113,7 @@ function runNode(args, label) {
     let killedAt = '';
     const collect = (chunk) => {
       text += chunk;
-      stdout.write(chunk);
+      run.write(chunk);
     };
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
@@ -128,9 +121,9 @@ function runNode(args, label) {
     child.stderr.on('data', collect);
 
     const timer = setTimeout(() => {
-      killedAt = `${label}: no exit within ${TIMEOUT_MS / 60000} minutes — killed`;
+      killedAt = `${label}: no exit within ${spanOf(run.timeoutMs)} — killed`;
       child.kill();
-    }, TIMEOUT_MS);
+    }, run.timeoutMs);
 
     // `error` fires instead of `close` when the command itself cannot be spawned, and then `status`
     // is null. Checking only the status reported that as a harness failure and lost the reason.
@@ -160,45 +153,93 @@ function verdictOf(text, failure) {
   return failure === '' ? { state: 'pass', detail: '' } : { state: 'FAIL', detail: failure };
 }
 
-// Once, not once per harness: every `itest:*` alias begins with `npm run compile`, so nine of them
-// compile the same tree nine times. This calls the compiler itself, then the scripts.
-stdout.write('===== compile =====\n');
-const TSC = join(HERE, '..', 'node_modules', 'typescript', 'bin', 'tsc');
-const compiled = await runNode([TSC, '-p', './'], 'compile');
-if (compiled.failure !== '') {
-  stdout.write(`\ncompile FAILED — ${compiled.failure}\n`);
-  exit(1);
+/** The harnesses this call wants: the named ones, or the default set (the opt-in ones only with `--with-server`). */
+function wantedOf(harnesses, args) {
+  const withServer = args.includes('--with-server');
+  const selectors = args.filter((a) => !a.startsWith('-'));
+  return harnesses.filter((h) => (selectors.length === 0 ? !h.optIn || withServer : selectors.includes(h.name)));
 }
 
-const wanted = HARNESSES.filter(
-  (h) => (selectors.length === 0 ? !h.optIn || withServer : selectors.includes(h.name)),
-);
-const results = [];
+/** An unknown name is refused by NAME, because a typo that runs nothing must not exit 0. The line to write, or `undefined`. */
+function refusalOf(harnesses, args) {
+  const unknown = args.filter((a) => !a.startsWith('-')).filter((s) => !harnesses.some((h) => h.name === s));
+  if (unknown.length === 0) return undefined;
+  return `unknown harness: ${unknown.join(', ')}\nlegal names: ${harnesses.map((h) => h.name).join(', ')}\n`;
+}
 
-for (const harness of wanted) {
-  if (harness.windows && platform !== 'win32') {
-    results.push({ ...harness, state: 'not-here', detail: `Windows only — ${harness.needs}` });
-    continue;
+/** Once, not once per harness: every `itest:*` alias begins with `npm run compile`, so nine of them compile the same tree nine times. This calls the compiler itself, then the scripts. */
+async function compile(run) {
+  run.write('===== compile =====\n');
+  const tsc = join(HERE, '..', 'node_modules', 'typescript', 'bin', 'tsc');
+  const compiled = await runNode([tsc, '-p', './'], 'compile', run);
+  if (compiled.failure === '') return true;
+  run.write(`\ncompile FAILED — ${compiled.failure}\n`);
+  return false;
+}
+
+/** One harness: its result row. A harness that cannot run here, or whose server is not there, is a row without a start. */
+async function runOne(harness, run) {
+  if (harness.windows && run.platform !== 'win32') {
+    return { ...harness, state: 'not-here', detail: `Windows only — ${harness.needs}` };
   }
-  if (harness.probe !== undefined && !(await reachable(harness.probe))) {
-    results.push({ ...harness, state: 'skipped', detail: `nothing on ${harness.probe.port} — ${harness.needs}` });
-    continue;
+  if (harness.probe !== undefined && !(await run.reachable(harness.probe))) {
+    return { ...harness, state: 'skipped', detail: `nothing on ${harness.probe.port} — ${harness.needs}` };
   }
-  stdout.write(`\n===== itest:${harness.name} =====\n`);
-  const { text, failure } = await runNode([join(HERE, harness.script)], harness.name);
-  results.push({ ...harness, ...verdictOf(text, failure) });
+  run.write(`\n===== itest:${harness.name} =====\n`);
+  const { text, failure } = await runNode([pathResolve(HERE, harness.script)], harness.name, run);
+  return { ...harness, ...verdictOf(text, failure) };
 }
 
-stdout.write('\n===== summary =====\n');
-for (const r of results) {
-  stdout.write(`${r.state.padEnd(9)} itest:${r.name.padEnd(12)} ${r.detail}\n`);
+/** The summary, and the code to leave with. */
+function summarize(results, write) {
+  write('\n===== summary =====\n');
+  for (const r of results) {
+    write(`${r.state.padEnd(9)} itest:${r.name.padEnd(12)} ${r.detail}\n`);
+  }
+  const failed = results.filter((r) => r.state === 'FAIL');
+  const count = (state) => results.filter((r) => r.state === state).length;
+  write(
+    failed.length === 0
+      ? `\n${count('pass')} passed, ${count('skipped')} skipped, ${count('not-here')} not runnable here\n`
+      : `\n${failed.length} harness(es) FAILED: ${failed.map((r) => r.name).join(', ')}\n` +
+          'their output is above, streamed as it ran — research/module_tests.md has the cleanup for each\n',
+  );
+  return failed.length === 0 ? 0 : 1;
 }
-const failed = results.filter((r) => r.state === 'FAIL');
-const count = (state) => results.filter((r) => r.state === state).length;
-stdout.write(
-  failed.length === 0
-    ? `\n${count('pass')} passed, ${count('skipped')} skipped, ${count('not-here')} not runnable here\n`
-    : `\n${failed.length} harness(es) FAILED: ${failed.map((r) => r.name).join(', ')}\n` +
-        'their output is above, streamed as it ran — research/module_tests.md has the cleanup for each\n',
-);
-exit(failed.length === 0 ? 0 : 1);
+
+/**
+ * Run the harnesses `args` name and return the code to leave with. The seams are for tests: `spawn` (starts a child),
+ * `write` (one chunk of text), `platform`, `timeoutMs`, `harnesses` (the catalogue), `compile` (`false` skips the compile).
+ */
+export async function runHarnesses(args, seams = {}) {
+  const harnesses = seams.harnesses ?? HARNESSES;
+  const write = seams.write ?? ((text) => stdout.write(text));
+  const refusal = refusalOf(harnesses, args);
+  if (refusal !== undefined) {
+    write(refusal);
+    return 2;
+  }
+  const run = {
+    spawn: seams.spawn ?? spawn,
+    write,
+    platform: seams.platform ?? platform,
+    timeoutMs: seams.timeoutMs ?? TIMEOUT_MS,
+    reachable: seams.reachable ?? reachable,
+  };
+  if (seams.compile !== false && !(await compile(run))) return 1;
+  const results = [];
+  for (const harness of wantedOf(harnesses, args)) results.push(await runOne(harness, run));
+  return summarize(results, write);
+}
+
+const invokedDirectly = (() => {
+  try {
+    return Boolean(argv[1]) && fs.realpathSync(argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+})();
+
+if (invokedDirectly) {
+  exit(await runHarnesses(argv.slice(2)));
+}
