@@ -96,7 +96,7 @@ test('D15: it is a copy — the caller keeps an object it can still change, the 
 
 test('C14: the audit name has no whitespace, parenthesis or arrow — a run of them is one underscore', () => {
   assert.equal(bridgeAuditName('prod (eu) → db'), 'prod_eu_db');
-  assert.equal(bridgeAuditName('ai-runner1'), 'ai-runner1', 'a plain name is untouched');
+  assert.equal(bridgeAuditName('build-server'), 'build-server', 'a plain name is untouched');
   assert.equal(bridgeAuditName('a\tb\nc  d'), 'a_b_c_d');
   assert.equal(bridgeAuditName('x)(y'), 'x_y', 'the two parentheses are one run');
   assert.equal(bridgeAuditName('→→'), '_', 'a name of nothing but separators is still a name, and not empty');
@@ -121,6 +121,6 @@ test('C14: the audit name is at most 40 code points, cut by code point', () => {
 
 test('C13: the grant mark is a dash off a bridge and a dash and the name on one', () => {
   assert.equal(auditGrantMark(undefined), '—');
-  assert.equal(auditGrantMark({ ...FULL, serverName: 'ai-runner1' }), '— bridge=ai-runner1');
+  assert.equal(auditGrantMark({ ...FULL, serverName: 'build-server' }), '— bridge=build-server');
   assert.equal(auditGrantMark({ ...FULL, serverName: 'prod (eu)' }), '— bridge=prod_eu_');
 });

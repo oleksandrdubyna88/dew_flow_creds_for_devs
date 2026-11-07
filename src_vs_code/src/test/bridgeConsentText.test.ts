@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { BridgeContext } from '../bridgeContext';
+import { SERVED_ACTIONS } from '../bridgeAllowList';
 import { bridgeCoverageLine, bridgeModalLine, bridgeRunSite } from '../bridgeConsentText';
 
 /**
@@ -9,9 +10,9 @@ import { bridgeCoverageLine, bridgeModalLine, bridgeRunSite } from '../bridgeCon
  * reads the same is how "this call only" turns into "this server, for good" without a test noticing.
  */
 
-const CONTEXT: BridgeContext = { bridgeId: 'b1', accountId: 'a1', serverEntityId: 's1', serverName: 'ai-runner1', target: 'me@host:22', remoteOs: 'linux' };
+const CONTEXT: BridgeContext = { bridgeId: 'b1', accountId: 'a1', serverEntityId: 's1', serverName: 'build-server', target: 'me@host:22', remoteOs: 'linux' };
 
-const THROUGH = 'Through the Remote Bridge of "ai-runner1".';
+const THROUGH = 'Through the Remote Bridge of "build-server".';
 
 test('C10: an exec says the connection starts on this computer, the command runs on the named destination, and its output goes back to that server', () => {
   assert.equal(
@@ -45,6 +46,13 @@ test('C10: each served action has its own site, and an action with none claims n
   assert.equal(bridgeRunSite('terminal'), undefined, 'nothing but exec and query is served on a bridge; a line must not guess for another');
   assert.equal(bridgeRunSite('constructor'), undefined, 'and a name off the object\'s prototype is no action');
   assert.equal(bridgeModalLine(CONTEXT, bridgeRunSite('terminal'), 'orders-db'), THROUGH);
+});
+
+test('F4: every action the allow-list serves has a run site, so the dialog of a newly served action can never claim nothing', () => {
+  assert.ok(SERVED_ACTIONS.size > 0, 'the set under test is not empty');
+  for (const action of SERVED_ACTIONS) {
+    assert.notEqual(bridgeRunSite(action), undefined, `"${action}" is served on a bridge and has no entry in RUN_SITES`);
+  }
 });
 
 test('C10: the destination is an entry name too, cleaned like a caller label', () => {

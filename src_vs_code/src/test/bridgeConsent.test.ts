@@ -394,7 +394,10 @@ test('C24: a client that leaves while its stamp is being written is abandoned th
       c.ww.w.openDialogs[0]('Allow');
       await until(() => writing, 'the stamp write, held');
       left.abort();
-      await new Promise<void>((resolve) => setTimeout(resolve, 50)); // the server hears the hang-up while the write is still out
+      // No handshake here, on purpose: the request's life (`requestLife.ts`) is private to the server and production offers no seam that says it has heard a
+      // hang-up, so the one thing to wait for cannot be observed from outside. The write is held by this test, so the wait cannot make the test pass by accident:
+      // if the hang-up is slow, the ABANDONED line below is missing and the test fails, it never passes on a race.
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
       finish();
       await until(() => c.journal().some((line) => line.includes('ABANDONED')), `${where}: the abandoned line`);
       assert.ok(c.journal().some((line) => line.includes('the client left after consent')), `${where}: ${JSON.stringify(c.journal())}`);
@@ -402,6 +405,32 @@ test('C24: a client that leaves while its stamp is being written is abandoned th
       assert.deepEqual(c.ww.w.ran, [], `${where}: and nothing ran`);
     } finally {
       finish();
+      settleAll(c.ww);
+      c.ww.dispose();
+    }
+  }
+});
+
+test('C25: quiet is read once per bridged MCP call — a scope write between the lookup and the mint changes neither what the dialog says nor what an Allow writes', async () => {
+  // The scope is flipped right after the lookup read it, which is the only moment a second read would see something else.
+  for (const [lookupSaw, sentence, stamps] of [[true, ON, 1], [false, OFF, 0]] as const) {
+    const c = await consenting('every12h', lookupSaw, { holdDialogs: true });
+    try {
+      const read = c.ww.scopes.read.bind(c.ww.scopes);
+      let reads = 0;
+      c.ww.scopes.read = (account, server) => {
+        reads += 1;
+        const found = read(account, server);
+        return reads === 1 ? found : { ...found, quiet: !lookupSaw };
+      };
+      const pending = send(A(c), mcp());
+      await until(() => c.ww.w.openDialogs.length === 1, 'the dialog');
+      assert.ok(reads > 1, 'the scope was read again after the lookup, so the flip happened where it could matter');
+      assert.ok(c.ww.w.dialogs[0].includes(`${sentence} Each call`), `the dialog says what the lookup decided (quiet ${lookupSaw}): ${c.ww.w.dialogs[0]}`);
+      c.ww.w.openDialogs[0]('Allow');
+      assert.equal((await pending).status, 200);
+      assert.equal(c.keys().length, stamps, `an Allow writes ${stamps} stamp(s), as the sentence the person read promised`);
+    } finally {
       settleAll(c.ww);
       c.ww.dispose();
     }
@@ -484,7 +513,7 @@ test('C11: the two texts differ in exactly two places — a bridged dialog adds 
     const head = 'An agent wants to run a command on "prod" using its stored credential.\nREQUESTED';
     const body = '\n\nid\n\nIdentity as reported by the caller \u2014 a label, not a check.\n\n';
     const log = ' Each call is logged in the "CredsForDevs: Agent Access" output panel.';
-    // The local text, spelled out: nothing a bridge adds may reach it.
+    // The local text, spelled out: nothing a bridge adds may reach it. ("run a command on, or run a command on": the fake registry of `brokerWorld.ts:245` gives every action the same verb.)
     assert.equal(
       local,
       `${head}${body}Allowing covers every later call on this token, not just this one: with it the agent can run a command on, or run a command on "prod" until it goes unused for 60 minutes, and never past this window closing.${log}`,

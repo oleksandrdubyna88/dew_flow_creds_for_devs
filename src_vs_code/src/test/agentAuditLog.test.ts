@@ -165,8 +165,8 @@ test('C14: a bridged grant\'s line round-trips — name `prod (eu) → db`, the 
 });
 
 test('C14: the grant-less line reads back with its mark, and a line written before the mark still parses', () => {
-  const grantless = readBack(formatAuditLine({ at, grant: '— bridge=ai-runner1', entityName: '', action: 'request', outcome: 'too_many_requests', detail: 'Too many requests', via: 'mcp' }));
-  assert.deepEqual([grantless.grant, grantless.outcome], ['— bridge=ai-runner1', 'too_many_requests']);
+  const grantless = readBack(formatAuditLine({ at, grant: '— bridge=build-server', entityName: '', action: 'request', outcome: 'too_many_requests', detail: 'Too many requests', via: 'mcp' }));
+  assert.deepEqual([grantless.grant, grantless.outcome], ['— bridge=build-server', 'too_many_requests']);
   const old = readBack('[09:05:03Z] #3 exec orders-db (tok…f2) via mcp by Claude Code 2.1.268 → exit 0  uptime');
   assert.deepEqual([old.grant, old.caller], ['tok…f2', 'Claude Code 2.1.268']);
 });

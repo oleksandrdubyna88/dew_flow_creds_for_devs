@@ -348,13 +348,13 @@ test('resolveUse: a usable answer is never quiet on a bridge, whatever the vault
   const view = doorView(CTX, await wallWith(['in']));
   const found = present(view.resolveUse(scriptedLookup().real), 'a resolver')('in', 'exec');
   assert.equal(found?.kind, 'usable');
-  assert.deepEqual(found, { kind: 'usable', target: { accountId: A1, entityId: 'in', entityName: 'in', kind: 'ssh' }, preConsented: false, rungs: '' });
+  assert.deepEqual(found, { kind: 'usable', target: { accountId: A1, entityId: 'in', entityName: 'in', kind: 'ssh' }, preConsented: false, rungs: '', quiet: false });
 });
 
 test('E1.4 resolveUse: with the server\'s quiet switch on the real answer stands — the policy\'s verdict and the fingerprint a stamp is recorded under', async () => {
   const view = doorView(CTX, await wallWith(['in', 'closed-in'], true));
   const resolve = present(view.resolveUse(scriptedLookup().real), 'a resolver');
-  assert.deepEqual(resolve('in', 'exec'), { kind: 'usable', target: { accountId: A1, entityId: 'in', entityName: 'in', kind: 'ssh' }, preConsented: true, rungs: 'quiet' });
+  assert.deepEqual(resolve('in', 'exec'), { kind: 'usable', target: { accountId: A1, entityId: 'in', entityName: 'in', kind: 'ssh' }, preConsented: true, rungs: 'quiet', quiet: true });
   assert.equal(kindOf(resolve('closed-in', 'exec')), 'closed', 'and a closed entry is as it was');
   assert.equal(kindOf(resolve('out', 'exec')), 'nothing', 'quiet does not widen the scope: an entry out of it is not found, and not silent');
 });
@@ -365,7 +365,7 @@ test('E1.4 resolveUse: quiet is read from the scope at each call — turning it 
   const quietOf = (): unknown => (resolve('in', 'exec') as { preConsented?: boolean; rungs?: string } | undefined);
   assert.equal((quietOf() as { preConsented: boolean }).preConsented, true);
   await put(wall.scopes, A1, S1, ['in'], false);
-  assert.deepEqual(quietOf(), { kind: 'usable', target: { accountId: A1, entityId: 'in', entityName: 'in', kind: 'ssh' }, preConsented: false, rungs: '' }, 'off: not pre-consented and no fingerprint to record a stamp under');
+  assert.deepEqual(quietOf(), { kind: 'usable', target: { accountId: A1, entityId: 'in', entityName: 'in', kind: 'ssh' }, preConsented: false, rungs: '', quiet: false }, 'off: not pre-consented and no fingerprint to record a stamp under');
   await put(wall.scopes, A1, S1, ['in'], true);
   assert.equal((quietOf() as { preConsented: boolean }).preConsented, true);
 });
@@ -409,6 +409,16 @@ test('grantFor: the context and the scope\'s switch as it is NOW', async () => {
   await put(wall.scopes, A1, S1, ['in'], true);
   assert.deepEqual(view.grantFor(), { context: CTX, quiet: true });
   assert.equal(present(view.grantFor(), 'a grant').context, CTX, 'the very context the door handed over');
+});
+
+test('F5: a grant minted for a lookup carries the switch THAT lookup read, whatever the scope says by the time it is minted', async () => {
+  const wall = await wallWith(['in'], true);
+  const view = doorView(CTX, wall);
+  const lookedUp = present(view.resolveUse(scriptedLookup().real), 'a resolver')('in', 'exec') as { quiet?: boolean };
+  await put(wall.scopes, A1, S1, ['in'], false);
+  assert.equal(lookedUp.quiet, true, 'the lookup reports the switch it read');
+  assert.deepEqual(view.grantFor(lookedUp.quiet), { context: CTX, quiet: true }, 'the snapshot, not a second read');
+  assert.deepEqual(view.grantFor(), { context: CTX, quiet: false }, 'with nothing to snapshot (the alias and token roads, which no policy speaks for) the switch is read at mint');
 });
 
 test('grantForToken: an out-of-scope token is unknown, live or expired, and is not looked up', async () => {

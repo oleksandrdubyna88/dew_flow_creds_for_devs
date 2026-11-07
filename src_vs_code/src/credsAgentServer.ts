@@ -276,7 +276,7 @@ export class CredsAgentServer implements vscode.Disposable {
       preConsent: (grant) => this.grants.allow((grant as Grant).secret),
       // `'call'`: this door mints per REQUEST and the secret is in no response body, so the cap
       // must reclaim these before any token somebody is holding — see `Grant.scope`.
-      mint: (t) => this.grants.mint(t.accountId, t.entityId, t.entityName, t.kind, Date.now(), 'call', view.grantFor()),
+      mint: (t, quiet) => this.grants.mint(t.accountId, t.entityId, t.entityName, t.kind, Date.now(), 'call', view.grantFor(quiet)),
       describe: (grant) => GrantRegistry.describe(grant as Grant),
       note: (entry) => this.log(entry),
       perform: (res, grant, action, body, caller, rungs) =>

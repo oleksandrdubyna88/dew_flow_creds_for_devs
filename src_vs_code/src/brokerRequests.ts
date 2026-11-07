@@ -77,7 +77,7 @@ function names(body: Record<string, unknown> | undefined, field: string): body i
  * exactly the moment it is working as designed.</p>
  */
 export type McpUseLookup =
-  | { kind: 'usable'; target: McpUseTarget; preConsented?: boolean; rungs?: string }
+  | { kind: 'usable'; target: McpUseTarget; preConsented?: boolean; rungs?: string; quiet?: boolean }
   | { kind: 'closed'; entityName: string; needed: NeededSwitch }
   | undefined;
 
@@ -130,7 +130,7 @@ export async function readMcpUse(
  * which calls the same `readMcpUse`, simply never does.</p>
  */
 export type UseRead =
-  | { ok: true; body: Record<string, unknown>; target: McpUseTarget; preConsented: boolean; rungs: string }
+  | { ok: true; body: Record<string, unknown>; target: McpUseTarget; preConsented: boolean; rungs: string; quiet?: boolean }
   | { ok: false; code: ErrorCode; message: string };
 
 function usable(
@@ -152,7 +152,7 @@ function usable(
  */
 function usableRead(
   body: Record<string, unknown>,
-  found: { target: McpUseTarget; preConsented?: boolean; rungs?: string },
+  found: { target: McpUseTarget; preConsented?: boolean; rungs?: string; quiet?: boolean },
 ): UseRead {
   return {
     ok: true,
@@ -160,6 +160,7 @@ function usableRead(
     target: found.target,
     preConsented: found.preConsented === true,
     rungs: found.rungs ?? '',
+    ...(found.quiet === undefined ? {} : { quiet: found.quiet }),
   };
 }
 
