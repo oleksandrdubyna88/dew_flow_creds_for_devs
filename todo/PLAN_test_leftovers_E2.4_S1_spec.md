@@ -8,6 +8,16 @@
 > spec makes the stories document's own decisions true and changes none of them. Where the stories text cannot be made
 > true, both texts are quoted and the document's own decision is followed (§ 10); what needs a new decision is an open
 > question for the coordinator (§ 11) and is not decided here.
+>
+> **Revised 2026-11-07 for the parent's epoch 8** (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md` § *Epoch 8*,
+> approved by reviewers, `Narrowed: no`; epoch 8 is open with no change used). Its judge cut this spec's § 3 sentence "No
+> start, no namespace" (`:86`); it is fixed forward here by a new commit, never a rewrite: **on Linux `owned_owner` writes
+> `:<start>:<ns>`** (row E2.4-e, item 4.3.1: the released contract wins, the stories' § *Order*), and T2, T13, T15, T16
+> are made consistent with it. § 11's questions are settled by its item 4.3: Q1, Q2, Q3, Q6, Q7 as recommended (4.3.3);
+> Q4 — if bash 3.2 does not show the parent's trap inside `$( )`, the coder stops and reports, and the recommended shape
+> is the trap text written to a file beside the claim and read back (4.3.4). Q5 is not named in item 4.3; its row E2.4-g reads sc. 3 on Windows as T14, which is Q5's
+> recommended reading, and the coordinator confirms. The stories document's D3
+> is corrected on creds branch `docs/e2-epoch8` (`d32dcd5`, not yet merged); this spec cites it until `main` carries it.
 
 Sources, read for this spec: the stories document (§ *Revision* rows 5, 7, 8; § *Goal*; D1, D3; § S4; sc. 3; § *Plan-gate
 round 2*; § *Epics* E2.4; § *Risk items*); the shared rule `common/test-leftovers.md` (§1–§4) and `test-leftovers-detail.md`
@@ -41,7 +51,7 @@ E2.4's pull request that S1 carries. `T<n>` is a case of § 6.
 | # | Condition | Implementation (file:line at HEAD) | Invocations covered | Executable acceptance check | What the check prepares or substitutes, and what real-run behaviour it does not prove |
 |---|---|---|---|---|---|
 | 1 | **sc. 3, the name** — `owned_dir d x` names `^testsToDelete-[uw][0-9]{1,10}-creds-x-[0-9a-f]{8}$` under the root; its owner segment equals the mounted `thisOwnerToken()` on the same machine | NEW `owned.sh`: `owned_token`, `owned_dir` (§ 3) | the self-test step, three OSes | T1 | The one cross-helper check. A private root stands in for the machine's temp root. It does not prove the name under a real `TMPDIR` of a developer's machine |
-| 2 | **sc. 3, the record** — `d.owner` is one line of the grammar `<owner>:<host>@<os>:<pid>`; on Windows the pid is the Windows pid and `tasklist` lists it while the script runs | `owned_owner` (§ 3); D3 (`/proc/$$/winpid`) | three OSes | T2, T3 | It proves the pid of a live child. It does not prove that a Node, C# or janitor reader judges the record (the owner vectors of the mount do that; the handoff on real records is row 10) |
+| 2 | **sc. 3, the record** — `d.owner` is one line of the grammar `<owner>:<host>@<os>:<pid>[:<start>:<ns>]`, with `:<start>:<ns>` on Linux and on Linux only (2026-11-07, row E2.4-e); on Windows the pid is the Windows pid and `tasklist` lists it while the script runs | `owned_owner` (§ 3); D3 (`/proc/$$/winpid`; the Linux start and namespace, corrected 2026-11-07) | three OSes | T2, T3 | It proves the pid of a live child. It does not prove that a Node, C# or janitor reader judges the record (the owner vectors of the mount do that; the handoff on real records is row 10) |
 | 3 | **sc. 3, the order** — the claim exists before the folder; an existing claim at the drawn name is kept and another name is drawn | `owned_dir` steps 1–3 (§ 4) | three OSes | T4, T5 | The seams `OWNED_HOOK_AFTER_CLAIM` and `OWNED_TEST_IDS` (§ 3) stand in for timing and chance. A race of two live scripts on one name is not run; the exclusive create of the OS is what the test exercises, once per OS |
 | 4 | **sc. 3, the refusals** — a bad `what`, `owned_remove ""`, `owned_remove /tmp/other`, a name of another owner | `owned_dir`, `owned_remove` (§ 3) | three OSes | T6, T9 | The refused paths are planted. It does not prove the refusal of every bad path a caller can build |
 | 5 | **sc. 3, the trap** — a script with a foreign EXIT trap gets a refusal: non-zero, the own claim removed, nothing created; a script with no trap gets `owned_cleanup`; a script registered through `owned_trap` is accepted | `owned_trap`, the check in `owned_dir` (§ 3, § 10 point 2) | three OSes | T7a–T7c | T7a's premise, that this bash shows the parent's traps to `trap -p` inside a command substitution, is asserted in the test (§ 10 point 3: bash 3.2 is unmeasured). A trap set AFTER the first `owned_dir` is not detected: it replaces `owned_cleanup`, and the caller's contract (§ 3) forbids it |
@@ -66,7 +76,8 @@ bash 3.2 or later. No `set -e`, `set -u` or `set -o pipefail` of its own; every 
 them. No `declare -A`, `mapfile`, `local -n`, `${var,,}`, `&>>`, no `touch -d`, `stat`, `cmp`, `readlink -f`, `date -d`,
 `date -v`, `sha256sum`; `[[ =~ ]]` only with the pattern in a variable (bash 3.2 quoting). The word `mktemp` appears
 nowhere in the two files, not in a comment (the guard's `raw-temp` for `.sh` is `\bmktemp\b`). The one external program a
-real run needs beyond coreutils is `hostname`; on Windows also `node` (once). Every function returns, never `exit`s, and
+real run needs beyond coreutils is `hostname`; on Windows also `node` (once); **on Linux also `getconf` and `readlink`,
+once each per script (2026-11-07, row E2.4-e)**. Every function returns, never `exit`s, and
 never changes the caller's `$?` through the EXIT trap (bash keeps the status across an EXIT trap that does not `exit`).
 
 ```bash
@@ -79,11 +90,20 @@ owned_token             # prints the caller's owner token and caches it in OWNED
                         #   .claude/rules/shared/tools/lib/owned.mjs, resolved from this file's own folder). Its answer must
                         #   match ^w[0-9]{1,10}$; no node on PATH, a non-zero exit, no mount, or a wrong shape → ONE stderr
                         #   line "owned: cannot learn the owner token (<why>) — nothing is made", return 1.
-owned_owner             # prints <token>:<host>@<os>:<pid>, cached in OWNED_OWNER (R:102). host: `hostname`, each run of
+owned_owner             # prints <token>:<host>@<os>:<pid>[:<start>:<ns>], cached in OWNED_OWNER (R:102). host: `hostname`, each run of
                         #   [@:[:space:]] → one '-'; under WSL (WSL_DISTRO_NAME set) '~' and the distro name, normalised alike.
                         #   os: linux | macos (Darwin) | windows (MINGW*/MSYS*/CYGWIN*); any other uname → one line, return 1.
                         #   pid: on Windows the content of /proc/$$/winpid (a `read` builtin, no child; D3); else $$.
-                        #   No start, no namespace: bash never writes them (D3). One LF line, well under 512 bytes.
+                        #   ~~No start, no namespace: bash never writes them (D3).~~ On Linux ONLY, then :<start>:<ns> (R:102,
+                        #   formatOwner's order: <ns> only together with <start>): <start> from /proc/$$/stat (field 22, read
+                        #   with `read`) and the boot time of /proc/stat, in the seconds the reference's startFromProcStat
+                        #   gives, with ONE `getconf CLK_TCK` per script; <ns> from ONE `readlink /proc/self/ns/pid` per
+                        #   script, the number in its `pid:[<n>]` (rule §3: "ONE child per script … to learn a constant of
+                        #   the host"). If either cannot be read, neither is written (the record stays judgeable as
+                        #   `unknown`, never wrong). macOS and Windows write neither. One LF line, well under 512 bytes.
+                        #   [2026-11-07, the parent's epoch 8, row E2.4-e: "No start, no namespace" is corrected. Without
+                        #   <ns> every Linux reader answers `unknown` (rule §3; janitor.sh:649; owned.mjs:564), so T13, T15
+                        #   and T16 could not go green on Linux. The stories' D3 is corrected with it (d32dcd5).]
 owned_trap <function>   # the ONE way a caller sets its own EXIT trap: installs `trap '<function>; owned_cleanup' EXIT`
                         #   and sets OWNED_TRAP_SET=1. <function> must be a defined function (`declare -F`), else one line,
                         #   return 1. Called BEFORE the first owned_dir. owned_cleanup is idempotent, so a <function> that
@@ -187,7 +207,7 @@ not set (T8), the flag not read (T7a).
 | # | Assertion | Premise it checks | RED today / by hand |
 |---|---|---|---|
 | T1 | the folder's basename matches `^testsToDelete-[uw][0-9]{1,10}-creds-x-[0-9a-f]{8}$`; its owner segment equals `node -e` `thisOwnerToken()` of the mount (a file URL import) | `node --version` runs; the mount's `owned.mjs` exists | no helper |
-| T2 | `d.owner` is ONE LF line, `^[uw][0-9]{1,10}:[^@:[:space:]]+@(linux|macos|windows):[1-9][0-9]*$`; its owner equals the name's; `@os` matches `uname -s`'s class; on Linux the host equals `hostname` normalised (and `~$WSL_DISTRO_NAME` when set) | the record was read as one line (a second `read` fails) | no helper |
+| T2 | `d.owner` is ONE LF line, `^[uw][0-9]{1,10}:[^@:[:space:]]+@(linux|macos|windows):[1-9][0-9]*` followed, **on Linux only, by `:<start>:<ns>`** and then the end of the line (on macOS and Windows the line ends after the pid); its owner equals the name's; `@os` matches `uname -s`'s class; on Linux the host equals `hostname` normalised (and `~$WSL_DISTRO_NAME` when set). **On Linux (added 2026-11-07, row E2.4-e): the mounted `parseOwner()` through `node -e` reads `start` and `ns`; `ns` equals the mounted `readPidNamespace()` on the same machine; `start` is within `START_TOLERANCE_S` (2 s) of the mounted `startFromProcStat()` for the child's own `/proc/<pid>/stat`** | the record was read as one line (a second `read` fails); on Linux, `/proc/self/ns/pid` is readable | no helper; **by hand, Linux: `owned_owner` without the two fields → the `parseOwner` half fails (quoted)** |
 | T3 | Windows only: the record's pid equals `/proc/$!/winpid` of the running child, and `tasklist //NH //FO CSV //FI "PID eq <pid>"` lists it while the child sleeps | the child is alive (`kill -0 $!`) | no helper |
 | T4 | the claim is older than the folder: with `OWNED_HOOK_AFTER_CLAIM` set to a function that records `[ -e "$1.owner" ] && [ ! -e "$1" ]`, the record is true; informative only: `[ "$d.owner" -ot "$d" ] || [ ! "$d.owner" -nt "$d" ]` | the hook ran (its marker file exists) | by hand: steps 1 and 3 swapped → the record is false |
 | T5 | with `OWNED_TEST_IDS="aaaaaaaa bbbbbbbb"` and a claim of foreign content planted at `…-x-aaaaaaaa.owner`: the folder is `…-x-bbbbbbbb`, the planted claim's bytes are unchanged, no `…-x-aaaaaaaa` folder exists | the planted claim exists before the call | no helper; proves the exclusive create of each OS in a real child |
@@ -200,10 +220,10 @@ not set (T8), the flag not read (T7a).
 | T10 | `owned_remove "$d"` on a folder the child made: folder and claim gone, return 0; a second call returns 1 (the path no longer exists — a refusal, not a removal) | `$d` existed | no helper |
 | T11 | POSIX: `chmod a-w "$parent"`, `owned_remove` → return 0, ONE stderr line, folder and claim remain; `chmod u+w` restores | `id -u` ≠ 0 and `[ ! -w "$parent" ]` | no helper |
 | T12 | Windows: `PATH=/usr/bin bash -c 'source owned.sh; owned_token'` → return 1, one line, nothing in the root | `command -v node` fails in that child | no helper |
-| T13 | **the kill between the two steps:** a child sources `owned.sh` with `OWNED_HOOK_AFTER_CLAIM=die` (`die() { kill -9 $$; }`) and calls `owned_dir d x`; the child dies by signal 9 (`wait` returns 137); the root holds exactly ONE entry, `…-x-<id>.owner`, and no folder; `kill -0 <pid>` fails; the claim is aged by `touch -t 200001010000`; Linux and macOS: `JANITOR_MIN_AGE_MINUTES=10 bash .claude/rules/shared/tools/janitor.sh --token creds` with `TMPDIR="$ROOT2"` (a second private root holding only this claim) exits 0 or 3 and the root is EMPTY; a third root with the same shape fed to the mounted `sweepLeftovers({ tmp, token: "creds", repo })` through `node -e` is empty afterwards, `result.removed` names the claim | the child was killed between the steps (the hook's marker exists; the claim exists; the folder does not) | **by hand, RED:** steps 1 and 3 swapped → an UNCLAIMED folder that both sweeps list (`unmarked:`) and keep |
+| T13 | **the kill between the two steps:** a child sources `owned.sh` with `OWNED_HOOK_AFTER_CLAIM=die` (`die() { kill -9 $$; }`) and calls `owned_dir d x`; the child dies by signal 9 (`wait` returns 137); the root holds exactly ONE entry, `…-x-<id>.owner`, and no folder; `kill -0 <pid>` fails; the claim is aged by `touch -t 200001010000`; Linux and macOS: `JANITOR_MIN_AGE_MINUTES=10 bash .claude/rules/shared/tools/janitor.sh --token creds` with `TMPDIR="$ROOT2"` (a second private root holding only this claim) exits 0 or 3 and the root is EMPTY; a third root with the same shape fed to the mounted `sweepLeftovers({ tmp, token: "creds", repo })` through `node -e` is empty afterwards, `result.removed` names the claim | the child was killed between the steps (the hook's marker exists; the claim exists; the folder does not); **on Linux the claim's record ends in `:<start>:<ns>` (T2's check, asserted here before the sweep; 2026-11-07, row E2.4-e)** | **by hand, RED:** steps 1 and 3 swapped → an UNCLAIMED folder that both sweeps list (`unmarked:`) and keep |
 | T14 | Windows, the same kill: ONE claim, no folder; the janitor (not armed) prints its dry-run line on stderr; when `[ -O "$claim" ]` is true its stdout holds `would run: rm -f -- <claim>`, when false the claim is listed as not the caller's and the test prints `F31: the claim belongs to another owner on this runner`; the mounted Node sweep lists `unverified: <claim> — the owner SID is not read on Windows (F16)`, `removed` is empty, the claim remains | `JANITOR_WINDOWS_E2E_GREEN` is unset | no helper (§ 10 point 4) |
-| T15 | a kill AFTER the `mkdir` (`kill -9 $$` from a child of the script): folder AND claim remain with the dead pid; aged with `touch -t` (both); Linux and macOS: the janitor removes both (root empty); Windows: as T14 | the folder exists before the kill | no helper |
-| T16 | `OWNED_KEEP=1 owned_dir d x` in a child: after the exit folder and claim remain; the claim names the child's pid; aged, the janitor collects both on Linux and macOS | the child exited 0 | no helper |
+| T15 | a kill AFTER the `mkdir` (`kill -9 $$` from a child of the script): folder AND claim remain with the dead pid; aged with `touch -t` (both); Linux and macOS: the janitor removes both (root empty); Windows: as T14 | the folder exists before the kill; **on Linux the claim's record ends in `:<start>:<ns>` (2026-11-07, row E2.4-e)** | no helper |
+| T16 | `OWNED_KEEP=1 owned_dir d x` in a child: after the exit folder and claim remain; the claim names the child's pid; aged, the janitor collects both on Linux and macOS | the child exited 0; **on Linux the claim's record ends in `:<start>:<ns>` (2026-11-07, row E2.4-e)** | no helper; **by hand, Linux, once (2026-11-07): the same case with the record cut after the pid → the janitor keeps both (`unknown`), quoted — the counterexample of the parent's item 8.1** |
 | T17 | by hand on the head: `node .claude/rules/shared/tools/leftovers-check.mjs --repo . --profile node --token creds --identity "the developer-credentials server and extension"` lists no finding under `.github/scripts/lib/`; `git grep -n REPO_TOKEN -- .github/scripts/lib` is one line | the guard reads `.sh` files (the 9 `raw-temp` findings of E2.3's run are still present or are E2.4.S2's) | no helper |
 | T18 | a child that calls `owned_dir` then `exit 3`: the parent sees status 3 and the root is empty afterwards | — | no helper |
 
