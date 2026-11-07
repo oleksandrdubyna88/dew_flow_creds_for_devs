@@ -190,7 +190,10 @@ every exit path the process can handle: a return, a failure count, a throw (also
 callback, and SIGINT, SIGTERM and SIGHUP (exit 128 + the signal; a second signal during the close is ignored). A harness never calls `process.exit` in its
 body; it returns its code. A child that may make temp paths (the `creds-mcp` and CLI binaries, `git`, the server in the backup
 harness, the shell of the masked run, `ssh`, `sshd`) gets an owned folder as `TMPDIR`, `TEMP` and `TMP`. A folder that holds
-a Unix socket is made under the short socket root (`/tmp` on Linux and macOS) with a short name.
+a Unix socket is made under the short socket root (`/tmp` on Linux and macOS) with a short name. A process a harness starts
+through `itestSshd.cjs` (`ssh`, `sshd`) belongs to the scope it was launched in: `launch(scope, …)` and `startSshd(scope, …)`
+register its end in that scope right after the spawn, so closing a section ends its own processes and waits for their exit
+before it removes the section's folder (registered earlier), and never ends a process of another scope.
 
 What stays after a kill is therefore **nothing the next sweep does not collect**. SIGKILL (and a power cut) cannot be handled:
 the folder and its claim stay, and the next `npm test` or `npm run itest:all`, or the janitor, collects them. The limits of that
