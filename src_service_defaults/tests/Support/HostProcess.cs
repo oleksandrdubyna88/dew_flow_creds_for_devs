@@ -88,6 +88,9 @@ internal static partial class HostProcess
     /// <summary>How long the child's own exit, or a <c>Remove</c>, waits for the rest of its group to be gone before the tie stays.</summary>
     private static readonly TimeSpan GroupWait = TimeSpan.FromMilliseconds(1500);
 
+    /// <summary>The pauses between the checks of a group that has not emptied yet, in milliseconds; the last one repeats until the bound.</summary>
+    private static readonly int[] GroupBackoffMs = [5, 10, 25, 50, 100];
+
     /// <summary>
     /// On Linux and macOS the child is started through <c>perl</c>, which makes itself a session leader (<c>setsid</c>) and then <c>exec</c>s the real file: the pid
     /// is the same, and the pid is the group's id, so every descendant that does not leave the group is a member of it (a double fork keeps the group; only its own
@@ -243,10 +246,11 @@ internal static partial class HostProcess
         {
             if (!_exited) return false;
             var waited = Stopwatch.StartNew();
+            var step = 0;
             while (!GroupGone())
             {
                 if (waited.Elapsed >= groupWait) return false;
-                Thread.Sleep(25);
+                Thread.Sleep(GroupBackoffMs[Math.Min(step++, GroupBackoffMs.Length - 1)]); // the first check came before any sleep; a group that empties fast is seen fast
             }
 
             lock (_gate)
