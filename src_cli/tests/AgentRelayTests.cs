@@ -124,7 +124,7 @@ public sealed class AgentRelayTests : IDisposable
         // under macOS's temporary directory came to 105 characters, one over that platform's cap,
         // so the endpoint's constructor threw before the question was ever asked. It failed on both
         // macOS legs of the 1.7.0 release and blocked the CLI from publishing.
-        var path = SocketSites.Path(_owned, "corpse", "c.sock");
+        var path = SocketSites.Path(_owned, SocketSites.Corpse);
         SocketSites.Bytes(path).Should().BeLessThanOrEqualTo(
             AgentRelay.MaxSocketPathBytes,
             "this test is about a corpse, not about the path limit — see APathTooLongForASocketIsNotStale (UTF-8 bytes, on this platform)");

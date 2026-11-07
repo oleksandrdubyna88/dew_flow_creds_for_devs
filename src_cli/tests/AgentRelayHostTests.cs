@@ -28,16 +28,17 @@ public sealed class AgentRelayHostTests : IDisposable
     private static readonly TimeSpan Bound = TimeSpan.FromSeconds(10);
 
     private readonly string _root = HostProcess.TempDirectory("relay-e3");
-    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+    private readonly string _socketFolder = SocketSites.Folder(SocketSites.Relay);
 
     public void Dispose()
     {
+        // Both are HostProcess folders: while a relay started with them in its environment has not been confirmed ended, they stay (and the audit names them).
+        HostProcess.Remove(_socketFolder);
         HostProcess.Remove(_root);
-        _owned.Dispose();
     }
 
     /// <summary>Short, in an owned folder under the short root: a unix socket path is capped near a hundred bytes, and macOS's temp folder is long.</summary>
-    private string SocketPath() => SocketSites.Path(_owned, "sock", "cr.sock");
+    private string SocketPath() => Path.Combine(_socketFolder, SocketSites.Relay.File);
 
     private Dictionary<string, string> Env(string windowsHalf, string socket) => new()
     {

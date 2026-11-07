@@ -1,5 +1,6 @@
 using CredsCli;
 using CredsForDevs.Tests.Leftovers;
+using CredsForDevs.ServiceDefaults.Tests.Support;
 using FluentAssertions;
 
 namespace CredsCli.Tests;
@@ -10,8 +11,8 @@ namespace CredsCli.Tests;
 /// </summary>
 public sealed class SocketSitesTests : IDisposable
 {
-    /// <summary>The sites: the folder's <c>what</c> and the socket's file name, as the four tests spell them.</summary>
-    public static TheoryData<string, string> Sites() => new() { { "sock", "cr.sock" }, { "corpse", "c.sock" } };
+    /// <summary>The sites: the two constants of <see cref="SocketSites"/> that the tests use, not a retyped pair.</summary>
+    public static TheoryData<string, string> Sites() => new() { { SocketSites.Relay.What, SocketSites.Relay.File }, { SocketSites.Corpse.What, SocketSites.Corpse.File } };
 
     /// <summary>macOS's per-user temp root as the OS gives it (<c>$TMPDIR</c>): measured on the macOS runners at 49 to 50 bytes.</summary>
     private const string MacTempRoot = "/var/folders/zz/zyxvpxvq6csfxvn_n0000000000000/T";
@@ -24,15 +25,41 @@ public sealed class SocketSitesTests : IDisposable
     [MemberData(nameof(Sites))]
     public void A_socket_site_binds_inside_an_owned_folder_under_the_short_root_and_the_path_fits(string what, string file)
     {
-        var path = SocketSites.Path(_owned, what, file);
+        var path = SocketSites.Path(_owned, (what, file));
 
         var folder = System.IO.Path.GetDirectoryName(path)!;
         Directory.Exists(folder).Should().BeTrue("premise: the folder exists before anything binds");
         System.IO.Path.GetFileName(path).Should().Be(file);
         Owned.Pattern().IsMatch(System.IO.Path.GetFileName(folder)).Should().BeTrue("the socket's parent is an owned folder, not the short root itself");
         File.Exists(folder + ".owner").Should().BeTrue("its claim is beside it, claimed first");
+        // This line bites only where the roots differ: on macOS an owned folder under the temp root fails it, on Linux CI the temp root IS /tmp and nothing could.
         OwnedCreds.Canonical(System.IO.Path.GetDirectoryName(folder)!).Should().Be(OwnedCreds.Canonical(OwnedCreds.ShortSocketRoot));
         SocketSites.Bytes(path).Should().BeLessThanOrEqualTo(AgentRelay.MaxSocketPathBytes, "UTF-8 bytes, on this platform");
+    }
+
+    [Fact]
+    public void The_folder_of_a_socket_a_child_uses_is_tied_to_that_child_so_it_stays_while_the_child_lives()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "the fixture child is a POSIX shell; the relay sites are Unix only");
+        var folder = SocketSites.Folder(SocketSites.Relay);
+        using var child = HostProcess.StartFile("/bin/sh", ["-c", "read line", System.IO.Path.Combine(folder, SocketSites.Relay.File)], new Dictionary<string, string>());
+        try
+        {
+            HostProcess.TiedFolders(child).Should().Equal([folder], "the socket path in the child's arguments names the folder");
+
+            HostProcess.Remove(folder, _ => { });
+
+            Directory.Exists(folder).Should().BeTrue("a folder under a live child stays; the audit names it if the end is never confirmed");
+        }
+        finally
+        {
+            using (HostProcess.KillOnDispose(child))
+            {
+                // the end is confirmed here
+            }
+
+            HostProcess.Remove(folder);
+        }
     }
 
     [Theory]

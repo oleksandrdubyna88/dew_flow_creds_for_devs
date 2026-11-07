@@ -162,7 +162,7 @@ public sealed class AgentRelayConnectionTests : IDisposable
         // and the lifetime's signal task completed by hand. Unix only, as the relay is.
         Assert.SkipWhen(OperatingSystem.IsWindows(), "the relay runs inside WSL by design and refuses Windows");
         var ct = TestContext.Current.CancellationToken;
-        var socket = SocketSites.Path(_owned, "sock", "cr.sock");
+        var socket = SocketSites.Path(_owned, SocketSites.Relay);
         using var lifetime = Lifetime();
         var serving = AgentRelay.ListenAsync(socket, BrokerContract.Current, new WindowsBridge(FakeChild.Echo(_root), "CREDS_E3_TEST_UNSET"), lifetime, _log);
         await WaitUntilAsync(() => _sink.Messages.Any(m => m.StartsWith("relay listening on ", StringComparison.Ordinal)), ct);

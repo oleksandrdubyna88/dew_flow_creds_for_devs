@@ -15,13 +15,13 @@ namespace CredsCli.Tests;
 public sealed partial class RelayLogTests : IDisposable
 {
     private readonly string _root = HostProcess.TempDirectory("relay-log");
-    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+    private string? _socketFolder;
     private readonly string _marker = "MARKER" + Guid.NewGuid().ToString("N");
 
     public void Dispose()
     {
+        if (_socketFolder is not null) HostProcess.Remove(_socketFolder); // a HostProcess folder: kept while the relay that was started with it has not ended
         HostProcess.Remove(_root);
-        _owned.Dispose();
     }
 
     /// <summary><c>socketFromBusyLine</c> in wslRelay.ts, verbatim.</summary>
@@ -87,7 +87,8 @@ public sealed partial class RelayLogTests : IDisposable
         }
         var ct = TestContext.Current.CancellationToken;
         // Short: a unix socket path is capped near a hundred bytes, and macOS's temp folder is long.
-        var socket = SocketSites.Path(_owned, "sock", "cr.sock");
+        _socketFolder = SocketSites.Folder(SocketSites.Relay);
+        var socket = Path.Combine(_socketFolder, SocketSites.Relay.File);
         var env = Env((AgentRelay.SocketOverrideVariable, socket));
         using var first = HostProcess.Start("creds", ["relay"], env);
         try
