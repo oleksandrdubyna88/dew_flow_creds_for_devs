@@ -1666,6 +1666,30 @@ harness entry; it is left out of the counts. Entries in `/tmp` itself (the socke
 5. `forwardSignals` takes `{ signals, onSignal }` options (default: the process), for the runner test's `signals` seam; the runner's own persistent listener records the signal, so a signal between two harnesses is not lost.
 6. Side findings, not built (todos): **`tree-perf-bench.cjs` fails at HEAD** with `TypeError: vscode.Uri.from is not a function` (its stub lacks `Uri.from`; `depDecorations.js:61`), so the "bench run once" evidence is a failing run, before and after, and the bench's numbers cannot be had until the stub is fixed. `run-itests.mjs` still reads a skip only as `SKIP — ` (brief § 5). `node-compile-cache` appears in `TMPDIR` for every `npm run` (npm's, not ours).
 
+### E2.2 build record, part 2 — the fix round after the code gate and the Opus review (2026-11-07)
+
+Commits: `e9e0469` the REDs (tests); `4092455` runner fixes; `37d528f` `harnessScope.cjs` and the WSL harness; `d3a14bc` docs. Suite at `d3a14bc`:
+**6478 tests, 6470 passed, 0 failed, 8 skipped** (`nice -n 19 npm test`); `npm run lint` (complexity 4) and `npm run typecheck` clean. Each fix was
+watched red, then green, then taken out again (a temporary edit of the one line) and seen red; the file was restored each time.
+
+| # | Fix | RED text (before the fix) | Taken out again |
+|---|---|---|---|
+| Opus 1 | S1.2 and S1.8 are pinned to `platform: 'linux'` (the `spawn` seam is the POSIX branch); each has a `win32` twin that counts starts in the `run` seam | The old S1.2 with `platform: 'win32'`: deepEqual, actual `[ 'sweep …', 'sweep …' ]`, expected the same plus `'start'`; the old S1.8 with `platform: 'win32'` PASSED, which is the reviewer's point (it counted nothing). Done by a temporary edit of the compiled test; the twins pass on the fixed tests | not applicable (a test fix) |
+| Opus 2 | after `exit` the runner waits `closeBoundMs` (default `HARD_BOUND_MS`, 30 s) for `close`; it writes `<label>: its output was still open <n> ms after it exited — not waited for`, adds the same phrase to a killed harness's FAIL line, destroys the pipes, then runs `endTree` (whose scan ends a holder carrying the record) | S1.16: `the runner did not return within 15 s` (a detached grandchild holding the stdout pipe) | `exit` handler disabled: same text |
+| Opus 3 | `harnessScope.cjs` listens for `uncaughtException` (an unhandled rejection arrives there), writes the error, `finish(1)` | S2.2 uncaught: `the folder and its claim are gone` failed; unhandled rejection: falsy `gone` | listener removed: both red |
+| Opus 4 | `watchSignals` is registered at the start of `runHarnesses`, before the helpers load and the sweep; the header and `module_tests.md` say so | S1.17: `no harness started after the signal` | `watchSignals` made a no-op: S1.17 and S1.18 red |
+| G10 | a signal during (or before) the compile skips the harnesses, still prints the summary, keeps 128 + n; new seam `compileArgs` | S1.18: `no harness ran` (the real compile ran to its end; with the seam in place and the old early return the text was `did not match /===== summary =====/`) | the early `return code 1` restored: red with the summary text |
+| Opus 5 | `cancelled` reads `<label>: stopped by <signal>`; a start failure reads `could not start the harness (<reason>)` on both branches | S1.14: `did not match /^FAIL\s+itest:first\s+first: stopped by SIGTERM/m`; S1.11 and S1.15: `did not match … could not start the harness (…)` | each string put back: red |
+| Opus 6 | `harnessScope.closeOnce()` is one memoised close (`closed ??= scope.close()`), shared by `finish` and by `creds-mcp-wsl-itest.cjs`'s `finish` | the first version of the test: `did not match /AFTER closes=1 gone=true/` (`closeOnce` was not a function). The test was then made to await only the SECOND call and to read a `slowDone` flag, because the first version also passed with an unguarded close | `closed = scope.close()`: red (`did not match /SECOND-RETURNED closes=1 slowDone=true gone=true/`) |
+| Opus 7 | header: "A HARNESS makes and removes its own scratch"; `forwardSignals` loses its unused `onSignal` option (its doc says `signals` is for tests and for `run-itests.mjs`). **Correction to part 1, difference 5:** `forwardSignals` takes only `{ signals }`; the runner's own listener records the signal and nothing is passed through `forwardSignals` for that | — (wording) | — |
+| Opus 8 | S1.6 gives the POSIX fixture 5 s (was 2 s) | — | — |
+| G6 | on Windows one line before each harness: `itest:<name> started — on Windows its output is held under the job until it ends` | S1.11: `one line says the harness started and that its output is held until it ends [G6]` | line disabled: red |
+| G9 | `research/architecture.md` says the backup harness requires the extension's wrapper and `harnessScope.cjs`, so `ci · server` fetches the mount and sets up Node 22 and its path filter lists `src_vs_code/scripts/lib/**` and `.claude/rules/shared`. No Mermaid diagram there shows this edge (the one pipeline drawing is plain text), so none was re-rendered | — | — |
+
+Also corrected: part 1 said `node-compile-cache` is "made by `npm` itself"; it appears in `TMPDIR` whenever Node runs the compile (it showed in a direct
+`node scripts/run-itests.mjs masked-run` run too). It is not a harness entry, and the counts leave it out. A by-hand re-run of
+`run-itests.mjs masked-run` after the fixes passed and left only that entry. Not run: the Windows job and the `win32` branch against a real job (no push).
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
