@@ -21,16 +21,25 @@ public sealed class SweepRanTests(LeftoversSweepFixture sweep, LeftoversSocketRo
     [Fact]
     public void TheShortSocketRoot_WasSweptExactlyOnce_ByTheMainFixtureWhereTheRootsAreOne_AndByTheSocketRootFixtureWhereTheyDiffer()
     {
-        var temp = OwnedCreds.Canonical(Owned.TempRoot());
-        var socket = OwnedCreds.Canonical(OwnedCreds.ShortSocketRoot);
-        var swept = new List<string> { temp }; // the main fixture's sweep is over the temp root (its LastRun is asserted above)
-        if (sockets.OwnsASweep) swept.Add(OwnedCreds.Canonical(sockets.SweptRoot!));
-        TestContext.Current.AddWarning($"socket roots: temp root {temp}, short socket root {socket}; swept by the two fixtures: {string.Join(", ", swept)}");
+        // What each fixture did is read from its OWN record, not from this test's idea of the roots: the second fixture keeps the two roots it was given and the root it swept.
+        sweep.LastRun.Should().NotBeNull("the main fixture swept (the copy sweeps Owned.TempRoot(), byte for byte)");
+        sockets.TempRootSeen.Should().Be(OwnedCreds.Canonical(Owned.TempRoot()), "the second fixture was told the root the main fixture sweeps");
+        var swept = new List<string> { sockets.TempRootSeen };
+        if (sockets.OwnsASweep)
+        {
+            sockets.LastRun.Should().NotBeNull("the second fixture's run over the short root is recorded");
+            swept.Add(OwnedCreds.Canonical(sockets.SweptRoot!));
+        }
+        else
+        {
+            sockets.LastRun.Should().BeNull("where the roots are one the second fixture runs no sweep");
+        }
 
-        sockets.OwnsASweep.Should().Be(OwnedCreds.RootsDiffer(Owned.TempRoot(), OwnedCreds.ShortSocketRoot), "the second fixture sweeps exactly where the canonical roots differ");
+        TestContext.Current.AddWarning($"socket roots: temp root {sockets.TempRootSeen}, short socket root {sockets.SocketRootSeen}; swept by the two fixtures: {string.Join(", ", swept)}");
+
+        sockets.OwnsASweep.Should().Be(sockets.SocketRootSeen != sockets.TempRootSeen, "the second fixture sweeps exactly where the canonical roots it recorded differ");
         swept.Should().OnlyHaveUniqueItems("no root is swept twice");
-        swept.Count(root => root == socket).Should().Be(1, "the short socket root was swept exactly once");
-        if (sockets.OwnsASweep) sockets.LastRun.Should().NotBeNull("the second fixture's run over the short root is recorded");
-        else sockets.LastRun.Should().BeNull("where the roots are one the second fixture runs no sweep");
+        swept.Count(root => root == sockets.SocketRootSeen).Should().Be(1, "the short socket root was swept exactly once, by the fixture whose record says so");
+        sockets.SocketRootSeen.Should().Be(OwnedCreds.Canonical(OwnedCreds.ShortSocketRoot));
     }
 }

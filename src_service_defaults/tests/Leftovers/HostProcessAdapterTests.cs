@@ -336,6 +336,128 @@ public sealed class HostProcessAdapterTests
         }
     }
 
+    // ---- the fix round (S2 review) ---------------------------------------------------------------------------------
+
+    [Fact]
+    public async Task A_grandchild_that_outlives_the_killed_child_keeps_the_folder_and_the_child_temp_until_the_group_is_empty()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "the fixture child is a POSIX shell script; on Windows the OS refuses to delete a folder a descendant holds open, and the Reaper's tree kill is what ends the descendants it can find");
+        var ct = TestContext.Current.CancellationToken;
+        var sink = new Sink();
+        var folder = HostProcess.TempDirectory("host-orphan", sink.Warn);
+        var (child, childPid, grandchildPid) = await StartHoldingChildAsync(folder, ct);
+        var temp = HostProcess.TempOf(child);
+        try
+        {
+            temp.Should().NotBeNull("premise: the child was given an owned temp folder");
+            child.Kill(entireProcessTree: false); // the direct child alone: the grandchild lives on, reparented
+            await child.WaitForExitAsync(ct).WaitAsync(Bound, ct);
+            Posix.Alive(grandchildPid).Should().BeTrue("premise: the grandchild survived the child");
+
+            HostProcess.Remove(folder, sink.Warn);
+
+            Directory.Exists(folder).Should().BeTrue("the grandchild still holds a file of the folder: the folder stays");
+            sink.Lines.Should().ContainSingle().Which.Should().Contain(folder);
+            Directory.Exists(temp!).Should().BeTrue("and the child's own temp folder stays with it");
+
+            using (HostProcess.KillOnDispose(child))
+            {
+                // the Reaper ends what is left of the child's group
+            }
+
+            (await Posix.GoneWithinAsync(grandchildPid, Bound, ct)).Should().BeTrue("the Reaper ended the whole group, the grandchild with it");
+            HostProcess.Remove(folder, sink.Warn);
+            Directory.Exists(folder).Should().BeFalse("once the group is empty the folder goes");
+            Directory.Exists(temp!).Should().BeFalse("and the child's temp folder with it");
+        }
+        finally
+        {
+            Posix.KillHard(grandchildPid);
+            Posix.KillHard(childPid);
+            child.Dispose();
+            Clean(folder);
+        }
+    }
+
+    [Fact]
+    public async Task The_call_that_loses_the_end_waits_for_the_one_that_wins_it()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "the fixture child is a POSIX shell");
+        var ct = TestContext.Current.CancellationToken;
+        var sink = new Sink();
+        var folder = HostProcess.TempDirectory("host-race", sink.Warn);
+        using var entered = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        using var child = HostProcess.StartFile("/bin/sh", ["-c", "exit 0", folder], new Dictionary<string, string>(), duringEnd: () =>
+        {
+            entered.Set();
+            release.Wait(Bound);
+        });
+        try
+        {
+            entered.Wait(Bound, ct).Should().BeTrue("premise: the child's own exit began the end on another thread, and it is still in it");
+            var reaper = HostProcess.KillOnDispose(child);
+
+            var loser = Task.Run(reaper.Dispose, ct);
+            await Task.Delay(400, ct);
+
+            loser.IsCompleted.Should().BeFalse("the loser must not return while the winner is still ending: the folder would still be tied");
+            release.Set();
+            await loser.WaitAsync(Bound, ct);
+            HostProcess.Remove(folder, sink.Warn);
+            Directory.Exists(folder).Should().BeFalse("after the end the folder goes at once");
+            sink.Lines.Should().BeEmpty();
+        }
+        finally
+        {
+            release.Set();
+            Clean(folder);
+        }
+    }
+
+    [Fact]
+    public async Task A_child_started_between_the_tie_check_and_the_take_out_is_never_left_tied_to_a_disposed_folder()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "the fixture child is a POSIX shell");
+        var ct = TestContext.Current.CancellationToken;
+        var sink = new Sink();
+        var folder = HostProcess.TempDirectory("host-between", sink.Warn);
+        using var checkedNotTied = new ManualResetEventSlim();
+        using var started = new ManualResetEventSlim();
+        var remover = Task.Run(() => HostProcess.Remove(folder, sink.Warn, afterTieCheck: () =>
+        {
+            checkedNotTied.Set();
+            started.Wait(TimeSpan.FromMilliseconds(600)); // a start that would tie the folder now gets its chance
+        }), ct);
+        Process? child = null;
+        try
+        {
+            checkedNotTied.Wait(Bound, ct).Should().BeTrue("premise: the removal looked at the ties and found none");
+            child = await Task.Run(() =>
+            {
+                var started1 = HostProcess.StartFile("/bin/sh", ["-c", "read line", folder], new Dictionary<string, string>());
+                started.Set();
+                return started1;
+            }, ct);
+            await remover.WaitAsync(Bound, ct);
+
+            var tied = HostProcess.TiedFolders(child).Contains(folder);
+            (tied && !Directory.Exists(folder)).Should().BeFalse("a folder is never disposed while a running child is tied to it: the check and the take-out are one step");
+        }
+        finally
+        {
+            started.Set();
+            if (child is not null)
+            {
+                Posix.KillHard(child.Id);
+                child.WaitForExit(5000);
+                child.Dispose();
+            }
+
+            Clean(folder);
+        }
+    }
+
     // ---- the child's own temp folder (Q5, F13) ---------------------------------------------------------------------
 
     private const string TempEchoingChild = "#!/bin/sh\nprintf '%s\\n%s\\n%s\\n' \"$TMPDIR\" \"$TEMP\" \"$TMP\"\nread line\n";
@@ -358,7 +480,8 @@ public sealed class HostProcessAdapterTests
             temp.Distinct().Should().ContainSingle("TMPDIR, TEMP and TMP are one folder");
             var given = temp[0];
             Owned.Pattern().IsMatch(Path.GetFileName(given)).Should().BeTrue("the child's temp folder is owned: prefixed and claimed");
-            Path.GetDirectoryName(given).Should().Be(OwnedCreds.Canonical(OwnedCreds.ShortSocketRoot), "it lies under the short socket root");
+            OwnedCreds.Canonical(Path.GetDirectoryName(given)!).Should().Be(OwnedCreds.Canonical(OwnedCreds.ShortSocketRoot), "it lies under the short socket root (compared as canonical paths: /tmp is /private/tmp on macOS)");
+            HostProcess.TempOf(child).Should().Be(given, "the adapter records the folder it gave this child");
             Directory.Exists(given).Should().BeTrue("premise: it exists while the child runs");
             File.Exists(ClaimOf(given)).Should().BeTrue();
         }
@@ -381,14 +504,13 @@ public sealed class HostProcessAdapterTests
         var script = Path.Combine(scratch.Path, "child.sh");
         File.WriteAllText(script, TempEchoingChild);
         var asked = new Dictionary<string, string> { ["TMPDIR"] = scratch.Path, ["TEMP"] = scratch.Path, ["TMP"] = scratch.Path };
-        var before = OwnedDir.Unreclaimed().Count;
         using var child = HostProcess.StartFile("/bin/sh", [script], asked);
         using var reaper = HostProcess.KillOnDispose(child);
 
         var first = await child.StandardOutput.ReadLineAsync(ct).AsTask().WaitAsync(Bound, ct);
 
         first.Should().Be(scratch.Path);
-        OwnedDir.Unreclaimed().Count.Should().BeLessThanOrEqualTo(before, "no extra temp folder was made for a child that was given its own");
+        HostProcess.TempOf(child).Should().BeNull("no temp folder was made for THIS child: it was given its own (a per-process answer; the process-wide registry holds other tests' folders)");
     }
 
     // ---- the refusal ---------------------------------------------------------------------------------------------

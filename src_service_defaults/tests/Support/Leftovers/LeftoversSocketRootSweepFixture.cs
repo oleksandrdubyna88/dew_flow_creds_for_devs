@@ -41,6 +41,12 @@ public sealed class LeftoversSocketRootSweepFixture : IAsyncDisposable
     /// <summary>The roots differ, so this fixture's run IS the sweep of the short root. False: the main fixture swept it.</summary>
     public bool OwnsASweep => _run is not null;
 
+    /// <summary>RED stub: the canonical temp root this fixture was given.</summary>
+    public string TempRootSeen => string.Empty;
+
+    /// <summary>RED stub: the canonical short root this fixture was given.</summary>
+    public string SocketRootSeen => string.Empty;
+
     /// <summary>The root this fixture swept; null where it swept none.</summary>
     public string? SweptRoot { get; }
 

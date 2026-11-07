@@ -31,7 +31,7 @@ internal static class HostProcess
         StartFile(Binary(assemblyName), args, env);
 
     /// <summary>The same for any executable file (a host binary, or a fixture child a test wrote).</summary>
-    internal static Process StartFile(string file, IReadOnlyList<string> args, IReadOnlyDictionary<string, string> env)
+    internal static Process StartFile(string file, IReadOnlyList<string> args, IReadOnlyDictionary<string, string> env, Action? duringEnd = null)
     {
         var tied = FoldersNamedBy(args, env);
         var temp = ChildTemp(env);
@@ -69,7 +69,7 @@ internal static class HostProcess
             throw;
         }
 
-        var child = new Child(process, tied, temp);
+        var child = new Child(process, tied, temp, duringEnd);
         Children.Add(process, child);
         // The child's own exit is a confirmed end of the child too (a test may kill and await it by its own handle, with no Reaper): the OS reaped it.
         process.EnableRaisingEvents = true;
@@ -144,7 +144,7 @@ internal static class HostProcess
     private static readonly TimeSpan EndBound = TimeSpan.FromSeconds(15);
 
     /// <summary>The state of a child started here: the registered folders its arguments or environment name (each is kept until the child's end is confirmed).</summary>
-    private sealed class Child(Process process, IReadOnlyList<Folder> tied, OwnedDir? temp)
+    private sealed class Child(Process process, IReadOnlyList<Folder> tied, OwnedDir? temp, Action? duringEnd)
     {
         private int _ended;
 
@@ -152,10 +152,13 @@ internal static class HostProcess
 
         public IReadOnlyList<Folder> Tied => tied;
 
+        public string? TempPath => temp?.Path;
+
         /// <summary>The confirmed end: the folders are free to go. Once.</summary>
         public void End()
         {
             if (Interlocked.Exchange(ref _ended, 1) != 0) return;
+            duringEnd?.Invoke();
             foreach (var folder in tied) folder.Untie();
             temp?.Dispose(); // never throws; a removal that gives up stays in the helper's registry, so the audit names it
         }
@@ -216,6 +219,13 @@ internal static class HostProcess
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
     }
+
+    /// <summary>The owned temp folder a child was given (<c>TMPDIR</c>, <c>TEMP</c>, <c>TMP</c>), or null when it named its own or was not started here.</summary>
+    internal static string? TempOf(Process process) => Children.TryGetValue(process, out var child) ? child.TempPath : null;
+
+    /// <summary>The registered folders a child is tied to (a test's view of the ties).</summary>
+    internal static IReadOnlyList<string> TiedFolders(Process process) =>
+        Children.TryGetValue(process, out var child) ? [.. child.Tied.Select(f => f.Path)] : [];
 
     /// <summary>The variables a child's runtime reads for its temp folder: <c>TMPDIR</c> on Linux and macOS, <c>TEMP</c> and <c>TMP</c> on Windows.</summary>
     private static readonly string[] TempVariables = ["TMPDIR", "TEMP", "TMP"];
@@ -283,7 +293,7 @@ internal static class HostProcess
     /// whose child has not ended are each ONE warning and nothing removed. A disposal that gives up is warned about by the folder itself, keeps
     /// folder and claim, and stays in the helper's registry, so the end-of-run audit fails the run. <paramref name="onDispose"/> sees the path
     /// of each disposal just before it starts (a test's counting and ordering hook).</summary>
-    internal static void Remove(string path, Action<string>? warn = null, Action<string>? onDispose = null)
+    internal static void Remove(string path, Action<string>? warn = null, Action<string>? onDispose = null, Action? afterTieCheck = null)
     {
         warn ??= Owned.DefaultWarn;
         if (Folders.TryGetValue(path, out var folder) && folder.IsTied)
@@ -292,6 +302,7 @@ internal static class HostProcess
             return;
         }
 
+        afterTieCheck?.Invoke();
         if (!Folders.TryRemove(path, out folder))
         {
             warn($"host-process: {path} was not given by TempDirectory, or was already removed - left alone");
