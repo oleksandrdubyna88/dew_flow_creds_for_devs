@@ -121,6 +121,11 @@ function scopeOf(file: ScopeFile | undefined, accountId: string): Scope {
   return { entries, quiet, revision, admits: (account, entityId) => account === accountId && entries.has(entityId) };
 }
 
+/** The record only when it names this account and this server: a file can be moved by hand. */
+function ownRecord(file: ScopeFile | undefined, accountId: string, serverEntityId: string): ScopeFile | undefined {
+  return file?.accountId === accountId && file.serverEntityId === serverEntityId ? file : undefined;
+}
+
 /** What `set` and `forget` run inside: one writer at a time, across windows. */
 export interface ScopeWrites {
   run<T>(work: () => Promise<T>): Promise<T>;
@@ -185,25 +190,28 @@ export class BridgeScopes {
    * server's record, is refused, because `read` answers no scope for both and a write would go over a record that was not read.
    */
   private revisionForSet(accountId: string, serverEntityId: string): string {
-    let text: string | undefined;
-    try {
-      text = this.io.readSync(this.pathOf(accountId, serverEntityId));
-    } catch {
-      throw new Error(SCOPE_UNREADABLE);
-    }
+    const text = this.strictText(accountId, serverEntityId);
     if (text === undefined) {
       return NO_SCOPE;
     }
-    const file = parseScopeFile(text);
-    if (file?.accountId !== accountId || file.serverEntityId !== serverEntityId) {
+    const file = ownRecord(parseScopeFile(text), accountId, serverEntityId);
+    if (file === undefined) {
       throw new Error(SCOPE_UNREADABLE);
     }
     return file.revision;
   }
 
+  /** The file's text, `undefined` only when it is absent; a read that fails is refused. */
+  private strictText(accountId: string, serverEntityId: string): string | undefined {
+    try {
+      return this.io.readSync(this.pathOf(accountId, serverEntityId));
+    } catch {
+      throw new Error(SCOPE_UNREADABLE);
+    }
+  }
+
   private fileOf(accountId: string, serverEntityId: string): ScopeFile | undefined {
-    const file = parseScopeFile(this.io.readSync(this.pathOf(accountId, serverEntityId)));
-    return file?.accountId === accountId && file.serverEntityId === serverEntityId ? file : undefined;
+    return ownRecord(parseScopeFile(this.io.readSync(this.pathOf(accountId, serverEntityId))), accountId, serverEntityId);
   }
 
   /**
