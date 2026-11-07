@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { mock, test } from 'node:test';
-import { INTERNAL_FAILURE, statusForErrorCode } from '../brokerProtocol';
+import { INTERNAL_FAILURE, MAX_EXEC_TIMEOUT_MS, statusForErrorCode } from '../brokerProtocol';
 import { pinRefusalFor } from '../pinGate';
 import { code, message } from './bridgeDoorHarness';
 import { JUMP_NAME, KEY_BODY, KEY_NAME, LinksOptions, LinksWorld, STDERR_WITH_A_HOST, linksWorld } from './bridgeLinksWorld';
@@ -394,3 +394,36 @@ for (const door of ['alias', 'mcp'] as const) {
     assert.deepEqual(await momentOfTheFlag(door, false, false), { busy: false, asked: true });
   });
 }
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * The follow-up contract through the doors (the epoch 6 review): a quiet forwarding exec holds nothing, and the hold is bounded
+ * ------------------------------------------------------------------------------------------------------------- */
+
+test('a quiet (pre-consented) forwarding exec holds nothing — no dialog, no place: a second call is not told busy while it runs', async () => {
+  await both({ agentForward: true, agentSocket: '/run/agent.sock' }, { agentForward: true, quietLocal: true }, async ({ lw, ww }) => {
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    lw.hold = () => gate;
+    try {
+      const first = send(viaMain(ww), ASK_BY.mcp);
+      await until(() => lw.runs.length === 1, 'the quiet exec to be inside ssh');
+      const second = send(viaMain(ww), ASK_BY.mcp);
+      await until(() => lw.runs.length === 2, 'the second quiet call to run (it was told busy: the quiet call held the place)');
+      assert.equal(ww.w.dialogs.length, 0, 'nobody was asked: the entry\'s policy answered');
+      release();
+      assert.deepEqual((await Promise.all([first, second])).map((reply) => reply.status), [200, 200]);
+    } finally {
+      release();
+    }
+  });
+});
+
+test('the hold of a forwarding exec is bounded by the exec timeout: through a door the runner is handed at most MAX_EXEC_TIMEOUT_MS, however long the body asks (the runner ends at that bound: sshExecRunner.test.ts, "a hung child is killed at the timeout")', async () => {
+  await both({}, {}, async ({ lw, ww }) => {
+    const reply = await send(viaMain(ww), { path: '/v1/alias/exec', body: { alias: 'one', command: 'id', timeoutMs: 10_000_000 } });
+    assert.equal(reply.status, 200, reply.body);
+    assert.equal(lw.runs[0].timeoutMs, MAX_EXEC_TIMEOUT_MS);
+  });
+});

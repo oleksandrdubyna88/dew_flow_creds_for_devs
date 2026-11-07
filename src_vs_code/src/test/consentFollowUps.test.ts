@@ -68,38 +68,40 @@ async function assertBusyOnBothDoors(port: number, action: string, dialogs: () =
   assert.equal(dialogs(), 1, `${what}: no second modal opened`);
 }
 
-test('down: with no VPN client the install offer follows the Allow — it keeps the place, a client leaving frees nothing, and the click does', async () => {
-  const vw = vpnWorld({}, { holdDialogs: /is not installed\. Install it\?/ });
-  const mocks = {
-    './vpnExec': { resolveVpnLauncher: () => ({ kind: 'missing', looked: [] }) },
-    './toolCheck': { installRecipe: () => ({ display: 'WireGuard', command: 'install-wireguard', note: '' }) },
-  };
-  const { agentVpnOpener } = loadWithVscode<{ agentVpnOpener: (...args: unknown[]) => VpnUseDeps['open'] }>('../vpnRun', vw.vscode, mocks);
-  const open = agentVpnOpener(storageOf({ vpn: { id: 'vpn', name: 'ops relay stage', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' } as EntityMetadata }), ownedDir(scope, 'down'), { noteUserActivity: () => undefined }, memoryTrust());
-  const deps: VpnUseDeps = { storage: { getNode: () => ({ id: 'e1', name: 'prod', type: 'entity', details: { id: 'e1', name: 'prod', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' } }) }, open: (accountId, _entityId, verb, gate) => open(accountId, 'vpn', verb, gate) };
-  const bw = brokerWorld({ kind: 'vpn', holdDialogs: true, supports: ['down'], realActions: { down: vpnAction(deps, 'down') }, aliasMap: { one: TARGET('vpn') }, mcpUse: 'usable' });
-  try {
-    const { port } = await share(bw);
-    const first = sendAbortable(door(port), { path: '/v1/alias/down', body: { alias: 'one' } });
-    first.reply.catch(() => undefined);
-    await until(() => bw.openDialogs.length === 1, 'the consent dialog of the down');
-    bw.openDialogs[0]('Allow');
-    await until(() => vw.held.length === 1, 'the install offer, after the Allow');
+for (const verb of ['up', 'down'] as const) {
+  test(`${verb}: with no VPN client the install offer follows the Allow — real factory, real runVpn: it keeps the place, a client leaving frees nothing, and the click does`, async () => {
+    const vw = vpnWorld({}, { holdDialogs: /is not installed\. Install it\?/ });
+    const mocks = {
+      './vpnExec': { resolveVpnLauncher: () => ({ kind: 'missing', looked: [] }) },
+      './toolCheck': { installRecipe: () => ({ display: 'WireGuard', command: 'install-wireguard', note: '' }) },
+    };
+    const { agentVpnOpener } = loadWithVscode<{ agentVpnOpener: (...args: unknown[]) => VpnUseDeps['open'] }>('../vpnRun', vw.vscode, mocks);
+    const open = agentVpnOpener(storageOf({ vpn: { id: 'vpn', name: 'ops relay stage', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' } as EntityMetadata }), ownedDir(scope, 'down'), { noteUserActivity: () => undefined }, memoryTrust());
+    const deps: VpnUseDeps = { storage: { getNode: () => ({ id: 'e1', name: 'prod', type: 'entity', details: { id: 'e1', name: 'prod', isSshEnabled: false, isVpn: true, vpnType: 'wireguard' } }) }, open: (accountId, _entityId, act, gate) => open(accountId, 'vpn', act, gate) };
+    const bw = brokerWorld({ kind: 'vpn', holdDialogs: true, supports: [verb], realActions: { [verb]: vpnAction(deps, verb) }, aliasMap: { one: TARGET('vpn') }, mcpUse: 'usable' });
+    try {
+      const { port } = await share(bw);
+      const first = sendAbortable(door(port), { path: `/v1/alias/${verb}`, body: { alias: 'one' } });
+      first.reply.catch(() => undefined);
+      await until(() => bw.openDialogs.length === 1, 'the consent dialog of the ' + verb);
+      bw.openDialogs[0]('Allow');
+      await until(() => vw.held.length === 1, 'the install offer, after the Allow');
 
-    await assertBusyOnBothDoors(port, 'down', () => bw.dialogs.length, 'while the offer stands');
-    first.abort();
-    await pause(300); // long enough for the broker to see the socket close; the call itself has not ended: it waits on the offer
-    await assertBusyOnBothDoors(port, 'down', () => bw.dialogs.length, 'after the client left: the offer is still on screen');
+      await assertBusyOnBothDoors(port, verb, () => bw.dialogs.length, 'while the offer stands');
+      first.abort();
+      await pause(300); // long enough for the broker to see the socket close; the call itself has not ended: it waits on the offer
+      await assertBusyOnBothDoors(port, verb, () => bw.dialogs.length, 'after the client left: the offer is still on screen');
 
-    vw.held[0].answer(undefined);
-    const next = send(door(port), { path: '/v1/alias/down', body: { alias: 'one' } });
-    await until(() => bw.openDialogs.length === 2, 'the next call to be asked once the offer was answered');
-    bw.openDialogs[1](undefined);
-    await next.catch(() => undefined);
-  } finally {
-    settle(bw, () => vw.held.forEach((held) => held.answer(undefined)));
-  }
-});
+      vw.held[0].answer(undefined);
+      const next = send(door(port), { path: `/v1/alias/${verb}`, body: { alias: 'one' } });
+      await until(() => bw.openDialogs.length === 2, 'the next call to be asked once the offer was answered');
+      bw.openDialogs[1](undefined);
+      await next.catch(() => undefined);
+    } finally {
+      settle(bw, () => vw.held.forEach((held) => held.answer(undefined)));
+    }
+  });
+}
 
 /** The real `rotate` wrapper over a scripted statement, whose store awaits the three prompts of its awaited roads in turn. */
 function rotating(prompts: ReturnType<typeof heldPrompt>[]): UseAction {

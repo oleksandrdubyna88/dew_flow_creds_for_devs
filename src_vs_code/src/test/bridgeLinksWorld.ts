@@ -45,6 +45,8 @@ export interface Run {
   readonly argv: string[];
   readonly program?: string;
   readonly env: NodeJS.ProcessEnv;
+  /** The bound the action handed the runner: the exec ends at it. */
+  readonly timeoutMs?: number;
 }
 
 export interface LinksWorld {
@@ -99,8 +101,8 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
     },
     './hostKeyTrust': { materializeKnownHosts: (): string | undefined => undefined },
     './sshExecRunner': {
-      runSshExec: async (argv: string[], run: { env: NodeJS.ProcessEnv; program?: string }): Promise<unknown> => {
-        runs.push({ argv, program: run.program, env: run.env });
+      runSshExec: async (argv: string[], run: { env: NodeJS.ProcessEnv; program?: string; timeoutMs?: number }): Promise<unknown> => {
+        runs.push({ argv, program: run.program, env: run.env, timeoutMs: run.timeoutMs });
         await world.hold?.();
         return o.runFails
           ? Promise.reject(new Error(`spawn ssh ENOENT at ${storageDir}`))
