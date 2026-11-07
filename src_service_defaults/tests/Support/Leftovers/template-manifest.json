@@ -1,0 +1,775 @@
+{
+  "about": "E2.3.S1: the adapted copy of dew_flow_mcp tests/Mcp.Tests/Leftovers (D1), at one commit. Per file: upstream path, target path, upstream git blob SHA, ordered exact-replace operations with their match counts and, beyond the namespace line, a reason. The check undoes them in reverse on the raw bytes and compares the git blob SHA. Limits copied with the template: F29 - on Windows two creds test executables started at once can each sweep the same root; then one can report a removal it did not do, or restore a folder without its claim. Run them one at a time. F31 - what a run in an elevated Windows process leaves is owned by BUILTIN\\Administrators: no sweep removes it and the audit's claim scan does not see it; it waits for a person.",
+  "repository": "dew_flow_mcp",
+  "commit": "197cc76af7c3c1d28f50e57533fa99d34682466d",
+  "entries": [
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/DarwinLayoutTests.cs",
+      "target": "src_service_defaults/tests/Leftovers/DarwinLayoutTests.cs",
+      "blob": "a455747067aae209fd1af9e5dde49fd4341fe45b",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/DarwinNativeTests.cs",
+      "target": "src_service_defaults/tests/Leftovers/DarwinNativeTests.cs",
+      "blob": "9c256e29dddf7a832c515c708f59f74479d40c45",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/ErrnoTests.cs",
+      "target": "src_service_defaults/tests/Leftovers/ErrnoTests.cs",
+      "blob": "ba55b2a11ac6d1f2990ccf4fc46df43b7ee7d64a",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LayoutGateTests.cs",
+      "target": "src_service_defaults/tests/Leftovers/LayoutGateTests.cs",
+      "blob": "b4815f784f95c648e6191d258b70642a4109fd79",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversAuditTests.cs",
+      "target": "src_service_defaults/tests/Leftovers/LeftoversAuditTests.cs",
+      "blob": "72d421d227bd667fb230bdb0ecd3b67897148db0",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        },
+        {
+          "old": "mcp tests:",
+          "new": "creds tests:",
+          "count": 6,
+          "reason": "the audit message starts with the token of this repository"
+        },
+        {
+          "old": "--token mcp --dry-run",
+          "new": "--token creds --dry-run",
+          "count": 1,
+          "reason": "the remedy line names the token of this repository"
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversGuardScriptsTests.cs",
+      "target": "src_service_defaults/tests/Leftovers/LeftoversGuardScriptsTests.cs",
+      "blob": "9726f4fe8eef95bc865fa220a69024b70ac26f77",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversGuardTests.cs",
+      "target": "src_service_defaults/tests/Leftovers/LeftoversGuardTests.cs",
+      "blob": "943e36d598ff4e3c1defead061baa9d9a63293f3",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        },
+        {
+          "old": "\"tests/Mcp.Tests/Leftovers/Owned.cs\"",
+          "new": "\"src_service_defaults/tests/Support/Leftovers/Owned.cs\"",
+          "count": 2,
+          "reason": "the fixture path of the helper file (the guard exempts it by path)"
+        },
+        {
+          "old": "\"tests/Mcp.Tests/Leftovers/X.cs\"",
+          "new": "\"src_service_defaults/tests/Support/Leftovers/X.cs\"",
+          "count": 2,
+          "reason": "the fixture path of a file in the helper folder"
+        },
+        {
+          "old": "\"tests/Mcp.Tests/Leftovers/LeftoversSweep.cs\"",
+          "new": "\"src_service_defaults/tests/Support/Leftovers/LeftoversSweep.cs\"",
+          "count": 1,
+          "reason": "the fixture path of a third file of the helper folder"
+        },
+        {
+          "old": "\"tests/Mcp.Tests/Leftovers/LeftoversGuard.cs\"",
+          "new": "\"src_service_defaults/tests/Support/Leftovers/LeftoversGuard.cs\"",
+          "count": 1,
+          "reason": "the real guard file, where it lies here"
+        },
+        {
+          "old": "\"tests/Mcp.Tests/Leftovers/LeftoversGuardTests.cs\"",
+          "new": "\"src_service_defaults/tests/Leftovers/LeftoversGuardTests.cs\"",
+          "count": 2,
+          "reason": "the real file of the guard's tests, where it lies here"
+        },
+        {
+          "old": "TokenFile = \"tests/Mcp.Tests/Leftovers/OwnedToken.cs\"",
+          "new": "TokenFile = \"src_service_defaults/tests/Support/Leftovers/OwnedToken.cs\"",
+          "count": 1,
+          "reason": "the token file, where it lies here"
+        },
+        {
+          "old": "RepositoryIdentity.Row",
+          "new": "OwnedToken.RepoRow",
+          "count": 1,
+          "reason": "the identity row is the helper's own constant here (F4)"
+        },
+        {
+          "old": "        const string folder = \"tests/Mcp.Tests/Leftovers/\";\n\n        LeftoversGuard.FoldingAllowances.Should().Equal(folder + \"Owned.cs\", folder + \"LeftoversGuard.cs\", folder + \"LeftoversGuardTests.cs\", folder + \"LeftoversGuardScriptsTests.cs\");",
+          "new": "        const string helper = \"src_service_defaults/tests/Support/Leftovers/\";\n        const string tests = \"src_service_defaults/tests/Leftovers/\";\n\n        LeftoversGuard.FoldingAllowances.Should().Equal(helper + \"Owned.cs\", helper + \"LeftoversGuard.cs\", tests + \"LeftoversGuardTests.cs\", tests + \"LeftoversGuardScriptsTests.cs\");",
+          "count": 1,
+          "reason": "the pin keeps its four entries; two of them lie in the folder of the tests here"
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversJanitorTests.cs",
+      "target": "src_service_defaults/tests/Leftovers/LeftoversJanitorTests.cs",
+      "blob": "f5ec23b2ccdf729ac08189866421f91345a6b8ea",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversSweepTests.cs",
+      "target": "src_service_defaults/tests/Leftovers/LeftoversSweepTests.cs",
+      "blob": "2caec6fbe79d8b4c0a75a96e9ed60af589e43bb2",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LivenessStateTests.cs",
+      "target": "src_service_defaults/tests/Leftovers/LivenessStateTests.cs",
+      "blob": "874e529db1e462d13688429c316ce2b247710696",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LivenessTests.cs",
+      "target": "src_service_defaults/tests/Leftovers/LivenessTests.cs",
+      "blob": "746e0ac3f20527537449448bc933c4248ba2bfe6",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/NativeDarwinTests.cs",
+      "target": "src_service_defaults/tests/Leftovers/NativeDarwinTests.cs",
+      "blob": "5193b5aa776a7ffffa0f987381223c6a6d588f65",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/NativeTests.cs",
+      "target": "src_service_defaults/tests/Leftovers/NativeTests.cs",
+      "blob": "7b6e3134db9b838defb75efb25c4c1178a5e3028",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/OwnedTests.cs",
+      "target": "src_service_defaults/tests/Leftovers/OwnedTests.cs",
+      "blob": "20a0a2130720da0ea45faa1b4289ec859ace8fd8",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        },
+        {
+          "old": "-mcp-pg-",
+          "new": "-creds-pg-",
+          "count": 1,
+          "reason": "the name the test builds carries the token of this repository"
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/OwnerTests.cs",
+      "target": "src_service_defaults/tests/Leftovers/OwnerTests.cs",
+      "blob": "2795792ff24fd04aaba76e8dce01f0fc5b2cac01",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/RunnerFactsTests.cs",
+      "target": "src_service_defaults/tests/Leftovers/RunnerFactsTests.cs",
+      "blob": "6ea7e39efa4815a17e715f821fa13eddebfbf366",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/ScopeTests.cs",
+      "target": "src_service_defaults/tests/Leftovers/ScopeTests.cs",
+      "blob": "9e583a1cd8365f319ab2c0fefb0125d2f22cf5d5",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/DarwinFifoChild.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/DarwinFifoChild.cs",
+      "blob": "126a03cf095176dceb026a753c30c33c7c9c57d3",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/DarwinLayout.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/DarwinLayout.cs",
+      "blob": "79e9cffd9a847f26710498122fb483867ba894a8",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/DirectoryLinks.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/DirectoryLinks.cs",
+      "blob": "5512b98eef7ff431aaecc82c305667decd2c8933",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests;",
+          "new": "namespace CredsForDevs.Tests;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/Errno.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/Errno.cs",
+      "blob": "7e489851e47b909263529726ce3f1069c91f7705",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversAudit.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/LeftoversAudit.cs",
+      "blob": "f1a93747b118936746aca9cffc6c8a981a297d79",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversAuditException.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/LeftoversAuditException.cs",
+      "blob": "05d7ed3f7779ca6a56cf6e50e92b1ed8ec78af1b",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        },
+        {
+          "old": "mcp tests:",
+          "new": "creds tests:",
+          "count": 1,
+          "reason": "the doc comment names the first line of the audit message; the message itself is built from OwnedToken.RepoToken"
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversGuard.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/LeftoversGuard.cs",
+      "blob": "8a92a79b032c5d1849d30048c49115f5bcfc0612",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        },
+        {
+          "old": "    private const string HelperFile = \"tests/Mcp.Tests/Leftovers/Owned.cs\";",
+          "new": "    private const string HelperFile = \"src_service_defaults/tests/Support/Leftovers/Owned.cs\";",
+          "count": 1,
+          "reason": "S3 helper path: where Owned.cs lies in this repository"
+        },
+        {
+          "old": "    private const string HelperFolder = \"tests/Mcp.Tests/Leftovers/\";",
+          "new": "    private static readonly string[] HelperFolders = [\"src_service_defaults/tests/Support/Leftovers/\", \"src_service_defaults/tests/Leftovers/\"];",
+          "count": 1,
+          "reason": "S3 helper paths: the template's one helper folder is two here (D1: the helper and its tests lie in two folders); the copied tests spell Owned.Prefix and Owned.TempRoot in their fixtures, as the template's own did inside its folder"
+        },
+        {
+          "old": "source.Relative.StartsWith(HelperFolder, StringComparison.Ordinal)",
+          "new": "HelperFolders.Any(folder => source.Relative.StartsWith(folder, StringComparison.Ordinal))",
+          "count": 1,
+          "reason": "the folder test follows the two helper folders"
+        },
+        {
+          "old": "        \"tests/Mcp.Tests/Leftovers/LeftoversGuard.cs\",\n        \"tests/Mcp.Tests/Leftovers/LeftoversGuardTests.cs\",\n        \"tests/Mcp.Tests/Leftovers/LeftoversGuardScriptsTests.cs\",",
+          "new": "        \"src_service_defaults/tests/Support/Leftovers/LeftoversGuard.cs\",\n        \"src_service_defaults/tests/Leftovers/LeftoversGuardTests.cs\",\n        \"src_service_defaults/tests/Leftovers/LeftoversGuardScriptsTests.cs\",",
+          "count": 1,
+          "reason": "the four folding allowances re-pointed to where each file lies here (the pin of LeftoversGuardTests keeps its four entries)"
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversGuardDocker.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/LeftoversGuardDocker.cs",
+      "blob": "4c686d18a1a1f0f6410a8083549a4d82f3ce6483",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversGuardExemptions.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/LeftoversGuardExemptions.cs",
+      "blob": "156fe549cf1012b626e7e8a78149671b18df0f5b",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversGuardFiles.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/LeftoversGuardFiles.cs",
+      "blob": "bd5549c5420b934f9b015d291b656a824a8c3566",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        },
+        {
+          "old": "    private static readonly string[] ScriptFolders = [\".github/scripts/\", \"http/\"];",
+          "new": "    private static readonly string[] ScriptFolders = [\".github/scripts/\", \"http/\", \"src_vs_code/scripts/\", \"src_minimalapi_server/scripts/\"];\n    private static readonly string[] TestRoots =\n        [\"tests/\", \"src_service_defaults/tests/\", \"src_cli/tests/\", \"src_mcp/tests/\", \"src_broker_client/tests/\", \"src_minimalapi_server/tests/\"];\n    private static readonly string[] SourceRoots =\n        [\"src/\", \"src_service_defaults/src/\", \"src_cli/src/\", \"src_mcp/src/\", \"src_broker_client/src/\", \"src_minimalapi_server/src/\"];",
+          "count": 1,
+          "reason": "S3 discovery for this tree (D7): script folders and the test and source roots of the five projects; the template roots stay for the guard tests' own trees"
+        },
+        {
+          "old": "relative.StartsWith(\"tests/\", StringComparison.Ordinal) ? SourceKind.Tests : relative.StartsWith(\"src/\", StringComparison.Ordinal) ? SourceKind.Source : null;",
+          "new": "TestRoots.Any(root => relative.StartsWith(root, StringComparison.Ordinal)) ? SourceKind.Tests : SourceRoots.Any(root => relative.StartsWith(root, StringComparison.Ordinal)) ? SourceKind.Source : null;",
+          "count": 1,
+          "reason": "S3 discovery for this tree (D7): a file under any test root is a test, under any source root is source"
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversGuardLiterals.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/LeftoversGuardLiterals.cs",
+      "blob": "f1df96b7d192b676cb945f2a1e77c558176a7069",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversGuardScripts.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/LeftoversGuardScripts.cs",
+      "blob": "c8b3340af5d9f99fb351e2a0ccfee0467d1700e8",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversGuardText.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/LeftoversGuardText.cs",
+      "blob": "85de20435e978094c49a009b266f4f509d4dd86d",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversGuardTokens.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/LeftoversGuardTokens.cs",
+      "blob": "0691387bc91feb81228623e4fbefeb2147708a38",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        },
+        {
+          "old": "TokenFile = \"tests/Mcp.Tests/Leftovers/OwnedToken.cs\"",
+          "new": "TokenFile = \"src_service_defaults/tests/Support/Leftovers/OwnedToken.cs\"",
+          "count": 1,
+          "reason": "the token file lies in the helper folder of this repository"
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversSelfTest.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/LeftoversSelfTest.cs",
+      "blob": "b1ebd5592ad3da828f1dae58d444b73ff2580c79",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        },
+        {
+          "old": "MCP_LEFTOVERS_SELFTEST",
+          "new": "CREDS_LEFTOVERS_SELFTEST",
+          "count": 2,
+          "reason": "the variable the CI teeth steps set is named for this repository"
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversSweep.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/LeftoversSweep.cs",
+      "blob": "64f97f5f7c8ba2b6f6cd1660c67df9f09a34de53",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/LeftoversSweepFixture.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/LeftoversSweepFixture.cs",
+      "blob": "797d7457806e79653f9204d7c73a525fe2b8ccc8",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        },
+        {
+          "old": "typeof(Mcp.Tests.Leftovers.LeftoversSweepFixture)",
+          "new": "typeof(CredsForDevs.Tests.Leftovers.LeftoversSweepFixture)",
+          "count": 1,
+          "reason": "the fixture type moves with the namespace"
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/Liveness.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/Liveness.cs",
+      "blob": "348bcdb264152eb14759bbe9e6a1881f21be1548",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/Native.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/Native.cs",
+      "blob": "dd6c86803b5a40d210b836a50ca029f96af8c5b4",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/NativeDarwin.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/NativeDarwin.cs",
+      "blob": "f4ca33c778c89a807aa1dbffa67bb2113fb2cb36",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/Owned.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/Owned.cs",
+      "blob": "ea29fb8da398d2e690761fa9636cea98c14ff8ad",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        },
+        {
+          "old": "[-_]&lt;owner&gt;[-_]mcp[-_]</c>",
+          "new": "[-_]{owner}[-_]creds[-_]</c>",
+          "count": 1,
+          "reason": "a doc comment, no code: the shipped barrier scan (tools/sweeper-scan.mjs) reads the escaped placeholder as no owner segment and reports this line as owner-blind, and the repository must pass that scan (the old text of this op leaves the prefix word out, so the manifest is not a finding either); {owner} is a placeholder it accepts. The line also names this repository's token"
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/OwnedDir.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/OwnedDir.cs",
+      "blob": "8e1620d8905acca8e1aee617836bbc80896bbc8b",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/OwnedScope.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/OwnedScope.cs",
+      "blob": "aafadabde2cd9618e8dc262b5da3588bc3c0457c",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/OwnedToken.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/OwnedToken.cs",
+      "blob": "578314eec4f89b06ca0e2f8d29d671a15e1c28e4",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        },
+        {
+          "old": "    public const string RepoToken = \"mcp\"; // rule §1 — the ONLY place the token is written",
+          "new": "    public const string RepoToken = \"creds\"; // rule §1 — the ONLY place the token is written",
+          "count": 1,
+          "reason": "the repository token (rule section 1; the creds row of the mounted Tokens table)"
+        },
+        {
+          "old": "    public const string RepoRow = \"the MCP server\"; // the `repository` column of the `mcp` row: the guard's identity check",
+          "new": "    public const string RepoRow = \"the developer-credentials server and extension\"; // the `repository` column of the `creds` row: the guard's identity check",
+          "count": 1,
+          "reason": "the repository column of the creds row of the mounted Tokens table"
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/Owner.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/Owner.cs",
+      "blob": "a3998b4d8210009fe570f4fd9f77f55ee66f504d",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/OwnerFixtures.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/OwnerFixtures.cs",
+      "blob": "787aca662988775bf32c1f22a4403d84c6f0b843",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/OwnerToken.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/OwnerToken.cs",
+      "blob": "657b11fa8c4b9b4adcc23a231a72642f45110910",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/OwnerVectors.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/OwnerVectors.cs",
+      "blob": "a5158ea0c91522dc43197d1bb7c1d81aa59f913a",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/PosixFifo.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/PosixFifo.cs",
+      "blob": "c63b7c6115f26f96b3983b0e03e3ac2e0d6503e2",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/Removal.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/Removal.cs",
+      "blob": "05e58fb5f9f5e6ca327e1bcebd901e38d551cb5e",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/RepositoryRoot.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/RepositoryRoot.cs",
+      "blob": "2884381afb26dc5add708aefd9f7998e1eaffc11",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests;",
+          "new": "namespace CredsForDevs.Tests;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/Scope.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/Scope.cs",
+      "blob": "37a95bd4cf63730e2eb80bbd739557a35ae8f9ed",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/UnmatchablePid.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/UnmatchablePid.cs",
+      "blob": "fe0bba44fc627039b30a20151f6650eb3afebfcf",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/Unremovable.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/Unremovable.cs",
+      "blob": "f32eebe6438a37d7cb888282ab73435db4f23685",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "upstream": "tests/Mcp.Tests/Leftovers/WindowsOwnership.cs",
+      "target": "src_service_defaults/tests/Support/Leftovers/WindowsOwnership.cs",
+      "blob": "4f4e241960aa8f4e769e2f11fd9f147fdb262d13",
+      "replace": [
+        {
+          "old": "namespace Mcp.Tests.Leftovers;",
+          "new": "namespace CredsForDevs.Tests.Leftovers;",
+          "count": 1
+        }
+      ]
+    }
+  ]
+}

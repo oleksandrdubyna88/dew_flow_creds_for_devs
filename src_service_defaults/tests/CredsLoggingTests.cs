@@ -1,5 +1,6 @@
 using System.Globalization;
 using CredsForDevs.ServiceDefaults;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 using Serilog.Events;
 
@@ -11,15 +12,12 @@ namespace CredsForDevs.ServiceDefaults.Tests;
 /// </summary>
 public sealed class CredsLoggingTests : IDisposable
 {
-    private readonly string _root = Path.Combine(Path.GetTempPath(), "creds-log-tests-" + Guid.NewGuid().ToString("N"));
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+    private readonly string _root;
 
-    public void Dispose()
-    {
-        if (Directory.Exists(_root))
-        {
-            Directory.Delete(_root, recursive: true);
-        }
-    }
+    public CredsLoggingTests() => _root = _owned.Dir("log-tests");
+
+    public void Dispose() => _owned.Dispose();
 
     private Func<string, string?> Env(params (string Name, string Value)[] extra)
     {

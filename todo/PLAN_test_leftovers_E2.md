@@ -1710,6 +1710,421 @@ Commits: the REDs (tests), then one fix commit, then the docs. Each fix was watc
 - **`CREDS_ITEST_GIT` missing file:** the SKIP names the variable and the path; the fixed-directory message stays for the unset case (by hand).
 - **Comment** about running harnesses one after another removed from `run-itests.mjs`.
 
+### E2.3 build record, part 1 — S1 (2026-11-07, branch `feat/test-leftovers-e2.3`, not pushed, not merged)
+
+Built by a Sonnet coder from [PLAN_test_leftovers_E2.3_brief.md](PLAN_test_leftovers_E2.3_brief.md) § 3.1, test first. Commits, oldest
+first: `a6938ad` S1.5 RED (`workflowMount.test.ts`); `aa86b90` S1.1 and S1.2 RED (the manifest, `TheAdaptedCopyTests`, `.gitattributes`,
+`RepositoryRoot.cs`); `68fd74a` the copy, the links, `SweepRanTests`; `f96bfb1` the Sonar exclusions; `069446a` the CI changes;
+`96a6204` `module_tests.md`; `df61446` one manifest op for the barrier scan (difference 3); this record. Builds: each of the five test
+projects by name, `nice -n 19 dotnet build <project> -c Release -m:4 --disable-build-servers`, 0 warnings, 0 errors, every time.
+
+**What was built.**
+- **The copy.** 52 files of `dew_flow_mcp` `tests/Mcp.Tests` at `197cc76`, each the template's raw bytes plus the manifest's ops: 33 helper files + `DirectoryLinks.cs`
+  + `RepositoryRoot.cs` in `src_service_defaults/tests/Support/Leftovers/`, 17 test files in `src_service_defaults/tests/Leftovers/`. A generator (kept out of the
+  repository) read each file with `git show 197cc76:<path>`, applied the ops, checked each count and the upstream blob SHA, and wrote the manifest.
+  `template-manifest.json`: **52 entries, 76 ops** (52 namespace lines and 24 more, each with a `reason`): `OwnedToken.cs` (token, row), `LeftoversAuditException.cs`
+  (doc comment), `LeftoversAuditTests.cs` (`mcp tests:` x6, `--token mcp`), `OwnedTests.cs`, `LeftoversSelfTest.cs` (`CREDS_LEFTOVERS_SELFTEST` x2), `LeftoversSweepFixture.cs` (`typeof`),
+  `Owned.cs` (one doc line), `LeftoversGuard.cs` (`HelperFile`, the helper folders, the four folding allowances), `LeftoversGuardFiles.cs` (script folders, test and source roots), `LeftoversGuardTokens.cs`
+  (`TokenFile`), `LeftoversGuardTests.cs` (eight path and identity ops, the pin). No op touches ownership, liveness or deletion code. `about` carries the F29 and F31 sentences.
+- **Links.** One wildcard `Compile Include` per other project; `AllowUnsafeBlocks` in `BrokerClient.Tests` and `CredVaultServer.Tests`. F16 measured: the template's `using Xunit;` against the
+  global `<Using Include="Xunit" />` gives **no warning** in any of the five, so no `NoWarn` was added.
+- **`SweepRanTests`** (in `Support/Leftovers`, so linked into all five): the class asks for `LeftoversSweepFixture` in its constructor and asserts `LastRun` is not null.
+- **`TheAdaptedCopyTests`** (coai's form): well-formed manifest (commit, 52 entries, unique targets); every op beyond the namespace line has a reason; the `about` text names F29 and F31; the theory over 52
+  targets; every `.cs` file of the two folders is a target or on `CredsOwn` (premise: more than 50 files found); `sonar.exclusions` names exactly the targets; the count-below case; a one-byte case.
+  `CREDS_TEMPLATE_REPO` names the first differing line.
+- **`.gitattributes`:** 52 `-text` lines, no glob. **Sonar:** the 52 targets added to `sonar.exclusions` by name.
+- **CI.** `ci-clients.yml`: mount fetch and `setup-node` 22.x (+ `node --version`) after `setup-dotnet`; three macOS-only steps (Arm64 check with uid and system printed, layout self-test with its three
+  greps, `--filter-namespace "CredsForDevs.Tests.Leftovers"`) before the four executables; the teeth in one bash step (ubuntu, macOS) and one pwsh step (Windows) that loop over the four client executables.
+  `ci-server.yml`: the teeth (bash) for `CredVaultServer.Tests`. `release.yml` `cli-binaries` and `mcp-binaries`: mount fetch and Node 22. `sonarcloud.yml`: Node 22 (the mount was there).
+  `workflowMount.test.ts`: S1.5. `research/module_tests.md`: the .NET row and the commands.
+
+**The RED list** (the failing assertion; each seen before its code):
+1. S1.5 (a), `workflowMount.test.ts`: actual `[ 'ci-clients.yml:build-test', 'release.yml:cli-binaries', 'release.yml:mcp-binaries' ]`, expected `[]`. (b): the same three and `'sonarcloud.yml:sonar'`.
+2. S1.1, 51 of 52 theory rows (the 52nd is `RepositoryRoot.cs`, which the RED commit already holds because the check reads the root through it): `System.IO.FileNotFoundException : Could not find file '.../Support/Leftovers/OwnedDir.cs'`.
+3. S1.2: `Expected value to be greater than 50 because the premise: the scan sees the folders ..., but found 2 (difference of -48)`; Sonar: `Expected named to be a collection with 52 item(s) because the exclusion names exactly the copied files ..., but found an empty collection`.
+4. S1.4, the `[assembly: AssemblyFixture]` line removed: at compile time `error xUnit1041: Fixture argument 'sweep' does not have a fixture source` (the analyzer is earlier than the brief's text); with that one id silenced (`-p:NoWarn=xUnit1041`)
+   at run time `The following constructor parameters did not have matching fixture data: LeftoversSweepFixture sweep`. File restored (blob checked by the theory).
+5. S1.3, by hand, each reverted: one byte in `Errno.cs` -> `Errno.cs: with the listed replaces undone, the git blob is 6b18974741ad...; the manifest says 7e489851e47b...`; one count lowered (`mcp tests:` 6 to 5) ->
+   `LeftoversAuditTests.cs: operation 2 of 3 ('mcp tests:' -> 'creds tests:') expected 5 occurrence(s) of the new text, found 6 at line(s) 220, 229, 230, 247, 268, 273`. S1.2 by hand: a new `Stray.cs` ->
+   `... found at least one item {"src_service_defaults/tests/Leftovers/Stray.cs"}`.
+6. S1.6 on Linux: with `_audit();` commented out in the fixture, the bash script of the `ci-clients.yml` step ended `the end-of-run audit did not fail the run (./src_cli/tests/bin/Release/net10.0/CredsCli.Tests, 1)`, exit 1
+   (its leaked self-test folder was removed by hand). File restored; the same script with the fixture whole: exit 0 for the four executables, both cases. The `ci-server.yml` script: exit 0 for the server executable.
+7. Found by the first full run of the copy (not in the brief): `LeftoversGuardTests.No_file_is_excluded_and_the_guards_own_tests_are_scanned_clean` red with `owner-blind` and `raw-temp` findings at `LeftoversGuardTests.cs:128-131, 136, 178-180` (difference 1).
+8. Found by `sweeper-scan.mjs --root .`: `Owned.cs:84 — owner-blind` (difference 3).
+
+**Test totals** (Release, `nice -n 19`, one executable at a time, after the last commit's rebuild; "base" is `bf59e4f` built in a scratch worktree):
+
+| Executable | total | failed | succeeded | skipped | base |
+|---|---|---|---|---|---|
+| `CredsForDevs.ServiceDefaults.Tests` | 569 | 0 | 551 | 18 | 82 total |
+| `CredsForDevs.ServiceDefaults.Tests --filter-namespace CredsForDevs.Tests.Leftovers` | 487 | 0 | 470 | 17 | — |
+| `CredVaultServer.Tests` | 824 | 0 | 821 | 3 | 820 |
+| `CredsCli.Tests` | 150 | 0 | 147 | 3 | 146 |
+| `CredsMcp.Tests` | 173 | 2 | 168 | 3 | 169 (2 failed) |
+| `CredsBroker.Tests` | 163 | 0 | 160 | 3 | 159 |
+
+The 2 `CredsMcp.Tests` failures (`ParentWatchProcessTests.The_server_ends_when_its_parent_is_killed_while_stdin_stays_open`, `...The_server_keeps_serving_when_the_watch_is_off`) fail the same way on `bf59e4f`: this WSL
+machine "looks like WSL" and `creds-mcp.exe` cannot start (`windowsHalfMissing`). One run of `CredsMcp.Tests` showed 167 passed and 4 skipped, the next two 168 and 3: a skip of an existing test that flickers. `npm test`: 6486 tests, 6478 passed, 0 failed, 8 skipped (the real runner, so it also swept both roots).
+Filtered runs build the fixture: `--filter-class "*SweepRanTests"` and `--filter-class "*LeftoversSelfTest"` (whose audit failed the run) and `--filter-namespace` all ran the sweep and the audit (brief § 2's measurement).
+`sweeper-scan.mjs --root .` at the head: `none found (1595 file(s) read)`. `dotnet format whitespace` and `style --verify-no-changes --no-restore`: exit 0.
+
+**Not run, and why.**
+- **No CI.** The macOS steps, the pwsh teeth, the Windows leg, `release.yml` (runs on a tag only) and `sonarcloud.yml` have not run. The bash teeth script was run by hand on Linux only. `actionlint` and `pwsh` are not installed here: the four workflows were parsed with PyYAML, nothing more.
+- **`dotnet format dew_flow_creds_for_devs.slnx --verify-no-changes --no-restore` as one command** prints 113 `IL2026`/`IL3050` errors in `src_minimalapi_server/src` once the projects have been built. The same 113 appear on `bf59e4f` after a build, so this is the machine and the AOT analyzers, not the copy. The two subcommands that read the copy are clean (above).
+- **Rows 2, 5, 10, 16, 24 and S2–S5's tests** are other stories' (the hand clean-up, the leak counts, sc. 4, the hand-run C# guard, the shipped Node guard run). `leftovers-check.mjs` needs a scratch copy with `yaml@2` and was not run.
+- S1.4's Windows and macOS runs, and the helper's Windows- and Darwin-only tests (the 17 skips above are those, on Linux).
+
+**Differences from the brief.**
+1. **The guard's helper folder is two folders (two ops in `LeftoversGuard.cs`), which the brief puts in E2.5.** The copied `LeftoversGuardTests.No_file_is_excluded_and_the_guards_own_tests_are_scanned_clean`
+   scans `LeftoversGuardTests.cs` as it lies; the file names `Owned.Prefix` and `Owned.TempRoot` in its fixtures, which the guard allows inside the helper folder only. With one folder (`Support/Leftovers/`) that copied test is red.
+   The two ops are coai's form (`HelperFolders` array, `Any`) and change no ownership code. E2.5.S1's own list in this document (§ *E2.5*) does not name a second helper folder, so the brief's "E2.5.S1's own list" does not hold
+   for it. **For the coordinator:** keep the two ops, or take them out and decide how that one test is made true; either way creds' own tests in `tests/Leftovers` (S2) will name `Owned.*` and meet the same rule.
+2. **Fewer token ops than the brief expects.** The 58 `mcp` words in `LeftoversGuardTests.cs` are fixture tokens passed to the guard as arguments (`McpRow`, `"mcp"`, `-mcp-x-`); they are self-consistent, the tests pass with them, so no op was made. `MCP_DARWIN_FIFO_CHILD` stays, as the brief said. The doc comments in `Owned.cs`
+   (`:77`) and `OwnedDir.cs` (`:6`) that say `mcp` are untouched.
+3. **One op on a doc line of `Owned.cs` (`:84`).** `tools/sweeper-scan.mjs` reads `&lt;owner&gt;` as no owner segment and reports the line as owner-blind, which breaks row 1 on the PR head (coai's copy has the same finding). The op writes
+   `{owner}` and `creds`; its old text leaves the prefix word out, so the manifest is no finding either. It is a comment, but it is in the ownership file: a reviewer should read it. The template owner could fix it upstream instead.
+4. **`LeftoversGuardFiles.cs` ops:** `ScriptFolders` gains `src_vs_code/scripts/` and `src_minimalapi_server/scripts/`; two new arrays `TestRoots` and `SourceRoots` (the template's `tests/` and `src/` stay, because the guard's own fixtures use them, plus the five projects' roots). The `.ts` helpers of `src_vs_code/src/test/` are not read by the guard (no `.ts` kind): E2.5.
+5. **Reasons:** every op beyond the namespace line has one (the brief asked it beyond namespace and token). The tests check that.
+6. **CI shape:** one teeth step loops over the executables (bash for ubuntu and macOS, pwsh for Windows) instead of a step per executable; the macOS-only steps are three, the fourth of row 11 is the shared bash teeth step. The macOS steps have no `if: !cancelled()` (a `bash -e` step stops the job).
+   `ci-clients.yml` sets up Node on all three legs; `sonarcloud.yml`'s extension coverage now runs under Node 22 too.
+7. **Order and builds:** `RepositoryRoot.cs` is in the RED commit (the check needs it to compile). Release, not Debug, and `nice -n 19` in place of `low-priority.mjs`, as the coder's instructions said; § 9's stale-binary check shows no STALE line after the final rebuild.
+8. **`CLAUDE.md`'s command lines and `.vscode/tasks.json`** were not touched (not in § 3.1's file list); they still build the solution and name the `.exe` form.
+
+### E2.3 build record, part 2 — S2 (2026-11-07, branch `feat/test-leftovers-e2.3`, not pushed, not merged)
+
+Built by a Sonnet coder from [PLAN_test_leftovers_E2.3_brief.md](PLAN_test_leftovers_E2.3_brief.md) § 3.2, test first. Commits, oldest first: `12fbf95` S2.1-S2.3, S2.9, S2.10 RED (the tests, with
+signature-only stubs in `HostProcess.cs` that keep main's behaviour); the adapter GREEN; the socket-root RED (stub fixture, stub `OwnedCreds`); the socket-root GREEN; the Q5 child-temp GREEN; S2.7; this record
+and `module_tests.md` (the exact hashes are in `git log`). Builds: each of the five test projects by name, `nice -n 19 dotnet build <project> -c Release -m:4 --disable-build-servers`, 0 warnings, 0 errors.
+
+**What was built.**
+- **`HostProcess` (the adapter).** `TempDirectory(what, warn)` is an `OwnedDir` (claim first, prefixed, registered) kept in a static `ConcurrentDictionary<string, Folder>`; its warning sink travels with that one
+  folder. `Remove(path, warn, onDispose)` takes the entry out with ONE `TryRemove`; only the winner calls `Dispose()`; a path not given, or already taken, is one warning; a failed dispose stays in `OwnedDir`'s
+  registry (the audit's `disposed but not removed`). `Start` ties the child to each registered folder that an argument or an environment value contains (names are unique per run); `KillOnDispose` kills the
+  tree, waits with a 15 s bound (`WaitForExit(TimeSpan)`, not for the pipes), and ends the ties, or throws ONE exception naming the pid and the folders; `Remove` keeps a folder with an open tie (one warning,
+  still registered). `StartFile` starts any executable (a fixture child) the same way.
+- **Q5 (children's temp paths).** MEASURED FIRST, RED: `CredsMcp.Tests` and `CredsCli.Tests`, each run on the built Release binaries with `TMPDIR=/tmp/c23q5` (private, short): **6 entries each**
+  (`dotnet-diagnostic-<pid>-<n>-socket`, `clr-debug-pipe-<pid>-<n>-in` and `-out`, for two killed hosts). So `Start` hands `TMPDIR`, `TEMP` and `TMP` = an owned folder (`child-tmp`) under
+  `OwnedCreds.ShortSocketRoot` to a child that names none of the three; it goes with the confirmed end. After: **`CredsCli.Tests` 0 entries**, `CredsMcp.Tests` **3** (one host). Those three come from
+  `ParentWatchProcessTests`, which start the host by their own `Process.Start` (a site of S3), not through `HostProcess.Start`.
+- **`OwnedCreds.cs`** (creds' own, in `Support/Leftovers/`): `ShortSocketRoot`, `Canonical` (realpath(3) through `[LibraryImport]`; `Native.FinalPathOfFollowing` on Windows; a missing path is its nearest
+  existing folder plus the missing names), `RootsDiffer`. The one `"/tmp"` carries a `raw-temp` marker with its reason.
+- **`LeftoversSocketRootSweepFixture.cs`** (its own `[assembly: AssemblyFixture]`): where the canonical roots differ it runs the copied sweep over the short root at the start and `RealAudit(root,
+  OwnedDir.Unreclaimed())` at the end, both behind `GuardedSweep`/`GuardedAudit`; where they are one it does nothing. It builds the main fixture's own seam constructor for the run and the report, so both say the
+  same things; each line starts with `[socket root <root>]`. `OwnsASweep`, `SweptRoot`, `LastRun` (null where it ran none).
+- **Tests** (`src_service_defaults/tests/Leftovers/` unless noted): `HostProcessAdapterTests` (10: S2.1, S2.2, S2.3, S2.9 twice, S2.10 three times, the child's temp folder twice); `SocketRootSweepTests` (12, of
+  which 3 skip off their OS and 1 is the producer half of S2.4(c)); `SweepRanTests` (`Support/Leftovers/`, linked into all five; now 2 tests); `WindowsHandoffTests` (4, Windows only).
+
+**The RED list** (the failing assertion; each seen before its code; `main` behaviour behind signature-only stubs):
+1. S2.1: `Expected OwnedDir.Unreclaimed().Select(d => d.Path) {empty} to contain "/tmp/mcp-pump-<guid>" because premise: it is registered between the two calls.`
+2. S2.2: `Expected sink.Lines to contain a single item because the one line names the folder that was kept, but the collection is empty.`
+3. S2.3: `Expected Directory.Exists(foreign.Path) to be True because the path exists after, but found False.`
+4. S2.10 (a): `Expected Owned.Pattern().IsMatch(Path.GetFileName(paths[i])) to be True because folder 0 is prefixed, but found False.` (b): `Expected disposals to be 1 because only the call that won the atomic take-out disposes, but found 2.`
+   (c): `Expected disposals to be 1, but found 4.`
+5. S2.9: unconfirmed end: `Expected type to be System.InvalidOperationException because the Reaper fails the test when it cannot confirm the end, but found <null>.` The folder with a running child:
+   `Expected early to be 0 because a folder with a running child tied to it is not disposed, but found 1 (difference of 1).` **The order assertion alone passed on `main`, 8 runs of 8, on Linux** (difference 1).
+6. Q5: `Expected Owned.Pattern().IsMatch(Path.GetFileName(given)) to be True because the child's temp folder is owned: prefixed and claimed, but found False.`
+7. S2.4, S2.5, S2.6, S2.8 (stub fixture owns no sweep; stub `Canonical` is `Path.GetFullPath`): `Expected sockets.OwnsASweep to be True because (a) the roots differ ... but found False.`;
+   SweepRanTests: the stub read `/tmp/` and `/tmp` as two roots (`temp root /tmp/, short socket root /tmp; swept by the two fixtures: /tmp/`): `Expected sockets.OwnsASweep to be True because the second fixture
+   sweeps exactly where the canonical roots differ, but found False.`; S2.5: `Expected layoutCalls to be greater than 0 because premise: the seam was called, but found 0.`; S2.6 with the socket fixture first:
+   `Expected a <LeftoversAuditException> to be thrown, but no exception was thrown.`; S2.4(c): `System.NullReferenceException` (the stub's `LastRun` is null); the `Canonical` unit test: `... a link in the middle of
+   a path is followed, but they differ at index 48: ".../first/sub" and ".../real/sub"`; the link twin: `Expected other.OwnsASweep to be True, but found False.`
+8. By hand after GREEN (S2.1, D9 #18): `Remove` through `Removal.Quietly(path, warn)` instead of `Dispose()` -> `Expected OwnedDir.Unreclaimed().Select(d => d.Path) {"/tmp/testsToDelete-u1000-creds-mcp-pump-7SPtIi"} to
+   not contain ... because a disposed and removed folder leaves the registry.`, and S2.2 `Expected entry!.DisposeAttempted to be True, but found False.`; the end-of-run audit failed that run too. Restored.
+9. S2.7: no RED seen: the file did not exist, and the four tests run on Windows only. By hand on Linux: the maker script made `testsToDelete-u1000-creds-handoff-<id>` and its claim in a private `TMPDIR`; the sweep script
+   (loaded through `run-tests.mjs`'s `loadReferenceSweep`, with `platform: 'win32'` added for the check) answered `preserved: unverified`, `listed: unverified: <path> - the owner SID is not read on Windows (F16)`.
+
+**Test totals** (Release, `nice -n 19`, one executable at a time, after the last code commit's rebuild; no `STALE` line from § 9's check):
+
+| Executable | total | failed | succeeded | skipped | after S1 |
+|---|---|---|---|---|---|
+| `CredsForDevs.ServiceDefaults.Tests` | 596 | 0 | 571 | 25 | 569 |
+| `CredVaultServer.Tests` | 825 | 0 | 822 | 3 | 824 |
+| `CredsCli.Tests` | 151 | 0 | 148 | 3 | 150 |
+| `CredsMcp.Tests` | 174 | 2 | 168 | 4 | 173 |
+| `CredsBroker.Tests` | 164 | 0 | 161 | 3 | 163 |
+
+The 2 `CredsMcp.Tests` failures are the two `ParentWatchProcessTests` named in part 1 (they fail the same way on `bf59e4f`). `dotnet format whitespace` and `style --verify-no-changes --no-restore` on the
+service-defaults test project: clean. `sweeper-scan.mjs --root .`: `none found (1600 file(s) read)`.
+
+**Not run, and why.**
+- **`WindowsHandoffTests` (S2.7 a-e)**, **the Windows branches of S2.2 (a held handle), S2.4(a) (re-owning), S2.4(c) (`foreign-uid` on an elevated process), S2.8's `On_Windows_the_short_socket_root_is_the_temp_root`**,
+  and **the macOS cases** (`On_macOS_tmp_and_private_tmp_...`, the layout gate with a real failure): no Windows or macOS machine here; they run on the CI legs. Off their OS they skip, saying why.
+- S2.9 on Windows is not built (the fixture child is a POSIX shell script); the Windows twin of "a child holds a file" is S2.2's held handle.
+- The reaping of a child that product code starts (`WslPump.RunAsync` and `FakeChild.Stubborn`, row 6) stays the product's, as the brief says.
+
+**Differences from the brief.**
+1. **S2.9's order assertion is not red on Linux.** `Kill(entireProcessTree: true)` is followed by a reaped child before the next statement, 8 of 8 runs on `main`. The RED of S2.9 is the tie (a folder whose child still runs is
+   disposed on `main`) and the unconfirmed end. The order assertion stays as the regression guard. Not a plan change: a test's premise.
+2. **The Reaper's seam is the whole kill-and-wait** (`Func<Process, TimeSpan, bool>`), so the "end cannot be confirmed" case kills nothing and the child really still runs (deterministic). A fixture child that holds a file
+   and has a grandchild is killed as a tree; the grandchild is gone within the bound.
+3. **A child's own exit also ends its tie** (the `Exited` event). The brief ends it only on the Reaper's confirmation. `RelayLogTests` kills and awaits its first relay by its own handle, with no Reaper; without the event the
+   `CredsCli.Tests` run was red with `never disposed: ...creds-relay-log` and `child-tmp`. A process the OS reaped has ended. *(Corrected in part 2b: the sentence went on "a surviving descendant is still the Reaper's concern", which was false - the event ended the tie, the Reaper then neither killed nor waited, and the folder went while a grandchild used it. The tie now ends only with the group.)*
+4. **S2.4(c)'s producer is the test executable itself** (`Environment.ProcessPath`, `--filter-method` to a producer test that skips unless `CREDS_SOCKET_PRODUCER_ROOT` is set). `HostProcess` takes `WSL_DISTRO_NAME` out of a child's
+   environment, and the host id of a claim carries it, so the first run read the producer's folder as `foreign host`; the test hands the variable on.
+5. **S2.7's "twins"** are separate Node-made folders, one per case ((a) and (b) share one: the Node sweep first, then the re-owning and the C# sweep). (c) and (d) skip, saying why, where the token may not own `Administrators` or the public
+   documents folder is not writable.
+6. **The fixture reuses `LeftoversSweepFixture`'s seam constructor** for the run, the report and the audit. Its constructor takes the audit of one root as an optional seam (a test passes a no-op; the default is the real audit).
+7. **`SweepRanTests`** is creds' own (it is on `CredsOwn`); its doc comment now says "lost its `AssemblyFixture` line" (the coordinator's item 3b) and it asks for both fixtures.
+8. The callers of `HostProcess.TempDirectory` still pass `creds-...` names (`creds-mcp-pump`), so their folders read `testsToDelete-u<uid>-creds-creds-mcp-pump-<id>`. S3 renames the sites.
+
+### E2.3 build record, part 2b — S2 fix round (2026-11-07, branch `feat/test-leftovers-e2.3`, not pushed, not merged)
+
+An Opus review of S2 found defects 1-11 (all accepted). Commits: `e739c92` RED (seams in `HostProcess`: `duringEnd`, `afterTieCheck`, `TempOf`, `TiedFolders`; two stub properties on the socket-root fixture; the new tests); `4719db4` the
+`HostProcess` fix (1, 4, 8); `72a4805` the fixture record, the producer, the Node report (7, 9, 10); this record with `module_tests.md` (11). Builds Release, `-m:4 --disable-build-servers`, 0 warnings.
+
+**What changed, by defect.**
+1. **A surviving descendant keeps the folder and the child's temp.** On POSIX `StartFile` starts the child through `perl -MPOSIX -e 'setsid; exec ...'` (same pid; the pid is the group id; .NET cannot put a child in a group, and a parent cannot
+   after the exec). The tie ends in one place, `Child.TryEnd`: the direct child has exited AND no live member of its group is left (Linux: `/proc/*/stat`, zombies skipped; macOS: `kill(-group, 0)`). The Reaper kills the tree, then
+   `kill(-group, SIGKILL)`, then waits for the exit and the empty group. The child's temp folder goes in the same step. Without `perl`, and on Windows, there is no group and the tie ends with the direct child's confirmed exit.
+   **On Windows what holds** is the Reaper's tree kill (`Kill(entireProcessTree)` finds descendants by parent link) and the OS refusing to delete a folder with an open file (the refusal is S2.2's warning and an audit line); **what does not**
+   is a descendant that left its parent's tree and holds no open file there. A Windows job object would close that and is not built.
+2. **`A_test_that_names_the_temp_variables_itself...`** asserts `HostProcess.TempOf(child)` is null, per process, in place of a count of the process-wide registry. 3. The temp-folder test compares `Canonical(GetDirectoryName(given))` with
+   `Canonical(ShortSocketRoot)` (macOS: `/tmp` is `/private/tmp`); not reproducible on Linux, fixed by reading.
+4. `TryEnd` runs its body under the child's lock; the call that loses waits for the winner. 8. `Remove` decides the tie and the take-out under the folder's gate, and a start ties a folder under that same gate (and not a folder taken out
+   meanwhile). 5. See below. 7. The producer gets `TESTSTODELETE_RUN=""`, its stdout and stderr are read to the end, and the test says its roots differ so it sweeps the real `/tmp`. 9. The socket-root fixture keeps `TempRootSeen` and
+   `SocketRootSeen` (canonical); `SweepRanTests` reads the roots and the swept root from the fixtures' own record. 10. `WindowsHandoffTests` parses the Node report and asserts exactly one `unverified: <path>` line naming the folder.
+   11. The sentence of part 2's difference 3 is corrected in place; `module_tests.md` now says when the child's temp folder goes and what holds on each OS.
+
+**The RED list.** (1) `Expected Directory.Exists(folder) to be True because the grandchild still holds a file of the folder: the folder stays, but found False.` (4) `Expected loser.IsCompleted to be False because the loser must not return while
+the winner is still ending ..., but found True.` (8) `Expected (tied && !Directory.Exists(folder)) to be False because a folder is never disposed while a running child is tied to it ..., but found True.` (9) `Expected sockets.TempRootSeen to be "/tmp" ... but "" has a
+length of 0`. (7), by hand: with `TESTSTODELETE_RUN` set to the record of a live Node process, `Expected value to be 1001087L because the claim is the producer's own record, made the natural way, but found 1000920L`. By hand after GREEN, each fix taken out: (1) `GroupGone()` returning
+true -> the (1) message; (4) the ended flag set before the body, outside the lock -> the (4) message; (8) the tie taken without the folder's gate -> the (8) message. (2) was a flake (9 of 25 full runs, the review): after the fix the full service-defaults suite ran 20 times
+in a row with 0 failures (7 s each), and twice more in the totals below. (3) and (10) have no RED here (macOS and Windows).
+
+**Defect 5 (the C1 wait has no RED) - recorded as unpinned.** `process.WaitForExit(bound)` after `Kill(entireProcessTree)` cannot be made to matter on Linux: .NET's `Kill` returns only after the child is reaped (a probe of 300 kill-then-check
+rounds: `HasExited` false right after the kill in 0, the pid alive in 0). A deterministic check would need a child that stays alive after SIGKILL, which POSIX does not give (an uninterruptible sleep is not portable). What IS pinned is the wait for the group
+(test 1 fails without it) and the "end cannot be confirmed" path (a seam that kills nothing). On Windows `TerminateProcess` is asynchronous, so the wait matters there; no Windows run has shown it.
+
+**Totals** (Release, one at a time, after the last code commit): `CredsForDevs.ServiceDefaults.Tests` 603 total, 0 failed, 578 passed, 25 skipped (run twice, identical); `CredVaultServer.Tests` 825 / 0 / 822 / 3; `CredsCli.Tests` 155 / 0 / 152 / 3;
+`CredsMcp.Tests` 174 / 2 / 169 / 3 (the two WSL `ParentWatchProcessTests`, as before); `CredsBroker.Tests` 164 / 0 / 161 / 3. `dotnet format whitespace` and `style`: clean; `sweeper-scan`: none found.
+
+**Stays unproven.** Windows: everything in `WindowsHandoffTests`, the held-handle branches, and the descendant case above. macOS: the `perl` wrapper (the macOS system perl is assumed at `/usr/bin/perl`), `kill(-group, 0)` as the group test, the Canonical comparison. A pid reused by a
+stranger between the group's emptying and a late `kill(-group)` would be signalled: the Reaper signals once, before the wait, so the window is the kill itself. A machine without `perl` runs the old, weaker tie (no group) without a message.
+
+### E2.3 build record, part 3 — S3 (2026-11-07, branch `feat/test-leftovers-e2.3`, not pushed, not merged)
+
+Built by a Sonnet coder from [PLAN_test_leftovers_E2.3_brief.md](PLAN_test_leftovers_E2.3_brief.md) § 3.3, test first. Commits, oldest first: `8ba2963` S3.0 and S3.2 RED (the scan, the old-name scan, `SocketSitesTests`, a
+stub `SocketSites.Path` with main's `/tmp` behaviour); `4dce994` GREEN, cli; `dd3ccd4` GREEN, broker client and service defaults; `903749a` GREEN, mcp (the eight renames and `ParentWatchProcessTests`);
+`2a8afa8` the scan keyed on file and a line fragment, three expected lines; `062e8eb` `module_tests.md`; this record. Builds: each of the five test projects by name, `nice -n 19 dotnet build <project> -c Release -m:4
+--disable-build-servers`, 0 warnings, 0 errors. `HostProcess.cs` and the S2 test files are untouched. `TheAdaptedCopyTests.cs` (S1) gained one name on `CredsOwn` (`ClientSitesScanTests.cs`).
+
+**What was built.**
+- **`ClientSitesScanTests`** (creds' own, `tests/Leftovers/`): S3.0. A scratch copy of the `.cs` files of the four client trees (helper folders left out) is read by the copied `LeftoversGuard.Scan`; the `raw-temp` findings
+  must be exactly three lines (below). Companions: more than 50 files; a planted file with four sites is found (teeth); `OwnedCreds.cs` is clean with its marker and one finding without it (the sanctioned line);
+  no `TempDirectory(`/`.Dir(` call passes a `creds-` or `cred-vault-` name.
+- **`SocketSites`** (`src_cli/tests/`): `Path(owned, what, file)` = a file in `owned.Dir(what, OwnedCreds.ShortSocketRoot)`; `Longest(root, what, file)` for the longest owner token. The four socket sites use it
+  (`sock`/`cr.sock` three times, `corpse`/`c.sock`). `SocketSitesTests` (S3.2): the parent matches `Owned.Pattern()`, has its claim, lies under the short root, UTF-8 bytes <= `MaxSocketPathBytes`; with the longest owner
+  (`u4294967295`) `/tmp` and `/private/tmp` leave 35 bytes or more on macOS's 103; macOS's own `$TMPDIR` shape leaves under 10.
+- **Sites moved:** `AgentRelayHostTests`, `AgentRelayConnectionTests`, `RelayLogTests` (socket and class name); `AgentRelayTests` (now `IDisposable`: corpse, `relay-long`, `relay-logs`; `:105` under a marker);
+  `RelayPipeEndingTests`, `StaleWindowsProcessTests` (names, `:41` under a marker); `EndpointsTests`, `SessionTitleTests`, `CredsLoggingTests` (`_owned.Dir`, hand-written deletes gone); `LogRootTests` (three
+  paths under markers); the eight `src_mcp` callers (names). The 13 `TempDirectory` callers of the four trees now pass short names (the 14th is the server's, S4).
+- **Row for the S2 review, finding 6 (coordinator's message): `ParentWatchProcessTests`.** `StartThroughIntermediary` starts the host with its own `Process.Start`; it now sets `TMPDIR`, `TEMP` and `TMP` to
+  `_owned.Dir("child-tmp", OwnedCreds.ShortSocketRoot)` (the same hand-over `HostProcess` makes; the scope removes it after the test's `using`s ended the host). RED, measured first: `CredsMcp.Tests` with
+  `TMPDIR=/tmp/c23s3` (private, short): **3 entries** (`clr-debug-pipe-<pid>-<n>-in`, `-out`, `dotnet-diagnostic-<pid>-<n>-socket`). After: **0**. `CredsCli.Tests`: 0 before and after S3 (S2 closed it).
+  Private-`TMPDIR` count after S3: `CredsMcp.Tests` **0** (S2 left 3), `CredsCli.Tests` **0**.
+
+**The RED list** (failing text, each seen before its code):
+1. S3.0 scan: `Expected RawTempLines(Scratch(sources)) to be equal to {...} ... contains 14 item(s) too many.` The 18 findings: `EndpointsTests.cs:16`, `:80`; `SessionTitleTests.cs:22`; `AgentRelayConnectionTests.cs:162`; `AgentRelayHostTests.cs:34`;
+   `AgentRelayTests.cs:33`, `:34`, `:105`, `:121`, `:153`, `:275`, `:278`; `RelayLogTests.cs:84`; `RelayPipeEndingTests.cs:41`; `CredsLoggingTests.cs:14`; `LogRootTests.cs:17`, `:18`, `:44`.
+2. Old names: `Expected sources.Where(...) to be empty because a folder is named for what it holds ... but found at least one item {"src_cli/tests/AgentRelayHostTests.cs" ...`.
+3. S3.2: `Expected string to be the same string, but they differ at index 2` (the stub's file name is not `cr.sock`; its parent is `/tmp` itself). The pattern assertion is behind it.
+4. By hand, after GREEN: the marker of `LogRootTests` `state` removed -> the scan is red (`... contains 1 item(s) too many`, naming the line); restored. `GetTempPath()` under a marker stays exempt, as the guard says.
+5. `ParentWatchProcessTests`: 3 entries before, 0 after (above). Taking the hand-over out gives the 3 back by the same count.
+
+**Test totals** (Release, `nice -n 19`, one executable at a time, after the last code change):
+
+| Executable | total | failed | succeeded | skipped | after S2 |
+|---|---|---|---|---|---|
+| `CredsForDevs.ServiceDefaults.Tests` | 600 | 0 | 575 | 25 | 596 |
+| `CredVaultServer.Tests` | 825 | 0 | 822 | 3 | 825 |
+| `CredsCli.Tests` | 155 | 0 | 152 | 3 | 151 |
+| `CredsMcp.Tests` | 174 | 2 | 169 | 3 | 174 |
+| `CredsBroker.Tests` | 164 | 0 | 161 | 3 | 164 |
+
+The 2 `CredsMcp.Tests` failures are the two `ParentWatchProcessTests` of parts 1 and 2 (the host takes the WSL pump path here; same on `bf59e4f`). Release binaries were built by name just before each run, so § 9's Debug
+`STALE` loop does not apply to them. `dotnet format whitespace` and `style --verify-no-changes --no-restore` on the cli, broker, service-defaults and mcp test projects: clean (one pre-existing trailing-space line in
+`AgentRelayTests.cs` went with the edit). `dotnet format dew_flow_creds_for_devs.slnx --verify-no-changes --no-restore` stops on the server project's IL2026/IL3050 messages in this local Release setup (not in a file S3
+touched); not a result.
+
+**Not run, and why.** Windows and macOS legs (no such machine here): `SocketSitesTests` and the socket sites on macOS (the macOS byte counts are computed, not measured on a Mac), every test class's use of
+`DarwinLayout.FreshOwnedScope()` there, and the Windows paths of the moved log and endpoint folders. They run on the CI legs.
+
+**Differences from the brief.**
+1. **The expected list has three lines, not four.** `CallerIdentityTests.cs:196` holds `/tmp` inside a RAW string literal (`"""..."""`); the copied guard's folded reading does not see raw strings, so it is not a finding. *(Corrected in part 3b: the guard DOES read a one-line raw string; it misses a `/tmp` inside a raw string that also holds a `"`, as `"""{"a":"/tmp/p"}"""` does.)* The
+   brief allows correcting the list to the guard's reading when the RED shows it (said on the PR). Not a plan change.
+2. **The list is keyed on file and a fragment of the line, not on the line number.** The migration adds lines above the literals (`AgentRelayTests.cs:33` and `:34` became `:38` and `:39`; `:278` held by chance); a number would be red for no reason.
+3. **The scan reads a scratch copy** of the trees, not the trees: the guard's `Scan(root)` keys on relative paths, and a copy starts no script classifier (no `node`). Both helper folders are left out, as the brief says "helper
+   folder excluded"; their own `/tmp` strings (`SocketRootSweepTests`) are E2.5's to judge.
+4. **`SocketSites` is one small helper for the four sites** (the brief writes the `Path.Combine` inline four times); S3.2 then tests the helper and its worst case, and the sites share one line.
+5. **The macOS temp root is not "too long" with an owned folder in it.** With the shortest sensible names the path under `/var/folders/.../T` is 101 bytes against 103; the old `creds-corpse-<pid>.sock` was 105. The test says
+   what is true (under ten bytes to spare against 35 or more) and does not claim the root alone overflows. The short root stays because the brief and rule §2 say so and the margin is the point.
+6. **`ParentWatchProcessTests` keep their own `Process.Start`** and take the owned `TMPDIR` from their own scope. Routing them through `HostProcess.StartFile` would end the tie and remove the folder when the launcher (not
+   the host) exits, while the host still runs; and `HostProcess.Native` would set the relayed marker on WSL, which turns the watch off. Neither is S3's.
+
+### E2.3 build record, part 3b — review rounds on S2 and S3 (2026-11-07, branch `feat/test-leftovers-e2.3`, not pushed, not merged)
+
+Commits, oldest first: the site scan and the old-name pattern (items 1, 2, 7); the perl RED; the perl and `TempDirectory(parent)` fix; the relay sites and `SocketSites` (3, 5, 6); `ParentWatchProcessTests` (3, 4); this record.
+Builds Release, `-m:4 --disable-build-servers`, 0 warnings; `dotnet format whitespace` and `style` clean on the service-defaults, cli and mcp test projects; `sweeper-scan`: none found.
+
+**What changed.**
+- **A. No perl is not silent.** `InItsOwnGroup` writes one test-output line per start without perl: no process group, a surviving descendant is NOT seen, the tie ends with the direct child's exit, install perl. The test
+  `Perl_is_on_the_path_of_every_machine_that_runs_these_tests...` fails on Linux and macOS when `HostProcess.PerlPath` is null, so a runner image without perl goes red instead of weaker. RED: `Expected sink.Lines to contain a single item
+  because the fallback is not silent, but the collection is empty.`; by hand, `PerlPath` returning null -> `Expected HostProcess.PerlPath not to be <null> because the adapter starts each child as a session leader through perl ...`.
+- **S3 1.** `ClientSitesScanTests` leaves out only the manifest's targets (read from `template-manifest.json`) and scans creds' own files in the helper folders. RED: four message strings that name `/tmp`
+  (`ClientSitesScanTests`, `HostProcessAdapterTests`, `SocketRootSweepTests` twice) appeared as `UNEXPECTED`; they were reworded (no `/tmp` in a message), so the list stays the three lines that create nothing.
+- **S3 2.** The comment in the test and the sentence of part 3's difference 1 are corrected: the guard reads a one-line raw string and misses a `/tmp` inside one that holds a `"`. **Follow-up: the template guard's raw-string reading (E3 / E2.5).**
+- **S3 3.** `HostProcess.TempDirectory(what, warn, parent)`; `SocketSites.Folder(site)` makes the relay tests' socket folder through it under the short root, so a relay started with the socket path is TIED to the folder (`AgentRelayHostTests`, `RelayLogTests`).
+  `AgentRelayConnectionTests` and `AgentRelayTests` bind in this process and keep the scope. RED by hand: `Folder` made with `OwnedDir.Create` -> `Expected HostProcess.TiedFolders(child) to be equal to {<folder>} ... but found empty collection.`
+  `ParentWatchProcessTests` keeps the host's pid and removes neither its log folder nor its temp folder while that host has not ended (the audit then names them); not RED-tested (the Reaper ends the host first in every case).
+- **S3 4.** After the host's log shows `started:`, the test asserts the live host's `clr-debug-pipe-<pid>-*` are in the folder it was handed (skipped on Windows, and when the host has already ended). RED by hand, the host handed the shared temp root:
+  `Expected pipes not to be empty because the live host's debug pipes are in the owned folder it was handed as TMPDIR, not in the shared temp root.` (on the two WSL-failing cases too: the host is reached before they fail).
+- **S3 5.** `SocketSitesTests` says its canonical-root line bites only where the roots differ (macOS; Linux CI cannot). **S3 6.** `SocketSites.Relay` and `SocketSites.Corpse` are the two constants the sites and the theory use.
+  **S3 7.** The old-name pattern covers `OwnedDir.Create`; RED: `Expected old.IsMatch("OwnedDir.Create(...)") to be True because premise: and the direct call of the helper, but found False.`
+
+**Totals** (Release, one at a time, after the last code commit): `CredsForDevs.ServiceDefaults.Tests` 606 / 0 failed / 581 passed / 25 skipped; `CredVaultServer.Tests` 825 / 0 / 822 / 3; `CredsCli.Tests` 156 / 0 / 153 / 3;
+`CredsMcp.Tests` 174 / 2 / 168 / 4 (the two WSL `ParentWatchProcessTests`, as before); `CredsBroker.Tests` 164 / 0 / 161 / 3.
+
+**Not run / unproven.** macOS and Windows. The perl pin was not seen red on a real image without perl, only with the finder returning null. The `ParentWatchProcessTests` skip-while-running branch has no test of its own.
+
+### E2.3 build record, part 4 — S4 (2026-11-07, branch `feat/test-leftovers-e2.3`, not pushed, not merged)
+
+Built by a Sonnet coder from [PLAN_test_leftovers_E2.3_brief.md](PLAN_test_leftovers_E2.3_brief.md) § 3.4, test first. Commits, oldest first: S4 RED (the scan extended to the server's tests, `VaultServerFolderTests`); GREEN, `VaultServer`;
+GREEN, the store and maintenance tests; GREEN, the logging-sink, startup-guard and refusal tests; this record. Builds: each of the five test projects by name, `nice -n 19 dotnet build <project> -c Release -m:4 --disable-build-servers`,
+0 warnings, 0 errors. `dotnet format whitespace` and `style --verify-no-changes` on the server and service-defaults test projects: clean. `sweeper-scan`: none found. No copied helper file was edited.
+
+**What was built.**
+- **S4.0 — `ClientSitesScanTests`** now reads `src_minimalapi_server/tests` as a fifth tree (same scratch copy, same guard reading, same keying on file and a line fragment). The expected list is two arrays: `StaysForE25` (the three
+  lines of S3, unchanged) and `OwnedByS5` (the seven backup sites of § 3.5, still on `GetTempPath()` after S4; S5's RED removes them one by one and the array goes with the last). The server's files in the old-name test too.
+- **S4.1 — `VaultServerFolderTests`** (server project, in the server collection): (1) a `VaultServer`'s `DataDir` matches `Owned.Pattern()`, has its claim beside it and a registry entry while the server lives, and has all three gone after
+  the dispose; (2) its parent is the temp root itself, not `cred-vault-tests`, and its name is not a bare GUID; (3) the ORDER: a hosted service built by a factory (so the host's container owns and disposes it) looks at the data folder in
+  `StopAsync` and in `Dispose`; it must find the folder there in every step it is called, and the test fails when it was called never.
+- **`VaultServer`:** `DataDir` is the path of an `OwnedDir.Create("vault")` held in a field. `Dispose(bool)` runs `base.Dispose` (the host and its container end), restores the environment, then disposes the folder. The hand-written
+  `Directory.Delete` with its two `catch` blocks went (a handle that is not released is now one warning, a claimed folder and a red audit).
+- **Sites moved (17 API lines and the old name):** `LoginKeyStoreTests`, `OrgBlockingWithdrawalTests`, `OrgProjectsStoreTests`, `ShareMaintenanceTests`, `OrgRecoveryMaintenanceTests` (the factories became instance methods over `_owned.Dir`, `what`
+  `login-keys`, `withdrawal`, `projects`, `share-maint`, `recovery`); `OrgEventLogQueryTests`, `OrgEventLogTests`, `OrgMembersStoreTests`, `OrgSettingsStoreTests` (`_dir` set in the constructor from `_owned.Dir`; the hand-written `Dispose`
+  bodies went); `OrgRegistrationTests.HookWorld` (its own `OwnedScope`); `StartupGuardsTests` (`guards`); `LoggingSinkTests` (`logsink` twice, `retention`; the three `try/finally` deletes and the last-statement delete went);
+  `StartupGuardTests` (`guard-logs`, and `guard-file` for the `not-a-directory` file); `StartupRefusalProcessTests` (`HostProcess.TempDirectory("vault-refusal")`; the `Remove` call stays).
+
+**The RED list** (failing text, each seen before its code):
+1. Scan: `Expected Named(RawTempFindings(Scratch(sources))) to be equal to {...} ... contains 17 item(s) too many.` The 17 findings: `LoggingSinkTests.cs:69`, `:101`, `:153`; `LoginKeyStoreTests.cs:21`; `OrgBlockingWithdrawalTests.cs:53`;
+   `OrgEventLogQueryTests.cs:24`; `OrgEventLogTests.cs:19`; `OrgMembersStoreTests.cs:25`; `OrgProjectsStoreTests.cs:16`; `OrgRecoveryMaintenanceTests.cs:19`; `OrgRegistrationTests.cs:50`; `OrgSettingsStoreTests.cs:16`;
+   `ShareMaintenanceTests.cs:25`; `StartupGuardTests.cs:29`, `:165`; `StartupGuardsTests.cs:11`; `VaultServer.cs:45`. (Brief: 24 API lines in the tree; 17 + the 7 of S5.)
+2. Old name: `Expected sources.Where(...) to be empty because a folder is named for what it holds ... but found at least one item {"src_minimalapi_server/tests/StartupRefusalProcessTests.cs"}.`
+3. S4.1: `Expected string not to be "cred-vault-tests" because the shared parent of the old form is gone` and `Expected Owned.Pattern().IsMatch(Path.GetFileName(dir)) to be True because the name is an owned name`.
+4. The order test is NOT red on `main` (main also removed the folder after `base.Dispose`); it is a pin. By hand, `_folder.Dispose()` moved before `base.Dispose`: `Expected probe.Seen to contain only items matching seen.Item2 because every step of ending
+   the host saw the data folder; it is removed after them, never before`. Put back.
+5. Two of the RED's own mistakes, seen and fixed before the commit: a fragment of the expected list that held `GetTempPath()` was itself a finding (the guard reads string literals), and `Owned.TempRoot()` in the new test needed its marker.
+
+**Private-`TMPDIR` count, `CredVaultServer.Tests`** (a fresh short folder `/tmp/c23s4`, the Release executable, whole suite, entries at the top level): **before 7** (`cred-vault-tests` with 31 children, 121 entries below it, and the six
+backup parents `cred-vault-aot-kit`, `-backup`, `-backup-cli`, `-backup-run`, `-backup-store`, `-key-file`; 920 entries in all). **After 6**: only the six backup parents (S5's). `cred-vault-tests`: gone. Owner-form entries left: 0. The 31 children were the folders of the store tests that never removed theirs; the logging-sink, guard and refusal folders were removed by hand before as well, and now by the scope. The remaining 6 are exactly the `OwnedByS5` list.
+
+**Test totals** (Release, one at a time, after the last code commit): `CredVaultServer.Tests` 828 / 0 failed / 825 passed / 3 skipped (825 before: three new tests); `CredsCli.Tests` 156 / 0 / 153 / 3; `CredsMcp.Tests` 174 / 2 / 169 / 3 (the two WSL
+`ParentWatchProcessTests`, as in part 3); `CredsBroker.Tests` 164 / 0 / 161 / 3; `CredsForDevs.ServiceDefaults.Tests` 606 / 0 / 581 / 25. Total 1,928.
+
+**Not run / unproven.** Windows and macOS legs: `VaultServer`'s folder and the moved classes there (the Windows case of a handle the host has not released is one warning and a red audit, not tried). The dispose order of the live-host
+tests that hold a folder of their own (`ShareMaintenanceTests`: the host is a `using` in the test, the folder is in the class's scope) rests on the language, not on a test of its own; the order that CAN be tested, `VaultServer`'s, is.
+`Corp.Undeletable` is a `using` inside its tests, so it ends before the class disposes (unchanged).
+
+**Differences from the brief.**
+1. **The expected list is not the four (three) lines alone.** S5 has not run, so the seven backup sites are in the tree; they are listed in a second array, `OwnedByS5`, that S5 empties. After S5 the list is the three lines of S3.
+2. **`StartupGuardsTests` changed one assertion.** `Directory.Exists(_root).Should().BeFalse(...)` said "the probe never created the folder"; the owned folder now exists from the start, so it reads `Directory.GetFileSystemEntries(_root)` empty. The
+   claim of the test (nothing was written) is the same.
+3. **`what` values are closer than `tests`** (the brief allows it): one per class, short, so a leftover names its class.
+4. **The scan test keeps the name `ClientSitesScanTests`** (the manifest-copy test lists the file by name); its doc, method name and trees say the server is in it.
+
+### E2.3 build record, part 5 — S5 (2026-11-07, branch `feat/test-leftovers-e2.3`, not pushed, not merged)
+
+Built by a Sonnet coder from [PLAN_test_leftovers_E2.3_brief.md](PLAN_test_leftovers_E2.3_brief.md) § 3.5, test first, after the S4 commits (not rewritten). Commits, oldest first: S5 RED (the scan expects only the three E2.5 lines, `AotKitFolderTests`, the
+kit test prints its folder); GREEN, the kit and the CLI test paths; GREEN, the archive, key-file, runner and store tests; the three minors of the S4 review (one commit, below); this record. Builds: each of the five test projects by name,
+`nice -n 19 dotnet build <project> -c Release -m:4 --disable-build-servers`, 0 warnings, 0 errors. `dotnet format whitespace` and `style --verify-no-changes` on the server and service-defaults test projects: clean; `sweeper-scan`: none found.
+**Correction to part 4:** it lists FOUR differences from the brief (the coordinator's report said five; the record is right).
+
+**What was built.**
+- **S5.0 — the scan.** `OwnedByS5` is gone; the expected list is the three lines of S3 (`AgentRelayTests`: the default socket path twice, the refused-path literal) and nothing else, over the five test trees.
+- **S5.1 — `AotKitFolderTests`** (server project, in the server collection; **POSIX and WSL only**, skipped on Windows saying why: the server executable runs on Linux only, F14, and two executables at once on Windows meet F29). It starts THIS executable twice at once
+  through `HostProcess.Start`, each running only `BackupArchiveCommandTests.ItLeavesAKit...`, both with one private `TMPDIR` that the test holds (so what they leave is still there to be read), and `CREDS_AOT_KIT_DIR` set empty. It asserts both exit 0, each printed an
+  `aot-kit folder:` line, the two folders differ, each is an owned name in the given `TMPDIR`, each is gone with its claim after both have ended, and no `aot-kit` entry is left in the `TMPDIR`.
+- **The kit test** now prints `aot-kit folder: <path>` and one line with the two commands. By default the folder is `_owned.Dir("aot-kit")` (per run, removed with the test). `CREDS_AOT_KIT_DIR` names a folder of the person's own: made if missing, overwritten, never removed (never set in CI).
+  The test is renamed `ItLeavesAKitInAFolderOfItsOwnSoTheNativeBinaryCanBeCheckedByHand` (nothing else names it but the new test's filter).
+- **Sites moved:** `BackupArchiveCommandTests` (`backup-cli`, parent of `item`), `BackupArchiveTests` (`backup`: the owned folder IS the unique parent, so the listing assertions of the staging folder still read only this test's entries; the claim is a sibling), `BackupKeyFileTests`
+  (`key-file`; `:92` is `Owned.TempRoot()` under a marker: a path nothing creates), `BackupRunnerTests` (`backup-run`), `BackupStoreTests` (`backup-store`). Helpers that call the factories became instance methods; the classes are `IDisposable` over an `OwnedScope`.
+
+**The RED list** (failing text, each seen before its code):
+1. Scan: `... contains 7 item(s) too many.` with `UNEXPECTED` for `BackupArchiveCommandTests.cs:143` and `:277`, `BackupArchiveTests.cs:484`, `BackupKeyFileTests.cs:92` and `:148`, `BackupRunnerTests.cs:784`, `BackupStoreTests.cs:482`.
+2. S5.1, said honestly: on the pre-S5 code, with only the print line added, the two overlapping runs BOTH PASSED (as the brief says: two runs write one fixed folder). What fails is what they printed: `Expected paths[0] not to be
+   "/tmp/c23s5/testsToDelete-u1000-creds-kit-tmp-tknGWe/cred-vault-aot-kit" because two runs at once do not share a folder.` (the same path twice; it is not an owned name; it is still there afterwards).
+3. By hand, after GREEN: the kit class's `Dispose` made empty -> `Expected first.ExitCode to be 0 because the kit test passes: WARNING: [...] aot-kit folder: ...` (the child's own end-of-run audit names the leftover). Put back.
+
+**Counts, sc. 2 (a private short `TMPDIR` per executable, whole suite, top-level entries / all entries below)**, measured on a worktree of `main` (`b1cf565`, built Release the same way) and on this branch after S5:
+
+| Executable | `main` | after S5 |
+|---|---|---|
+| `CredVaultServer.Tests` | 7 / 920 (`cred-vault-tests` and the six backup parents) | **0 / 0** |
+| `CredsCli.Tests` | 6 / 6 (`clr-debug-pipe-*` x4, `dotnet-diagnostic-*` x2: a killed host's) | **0 / 0** |
+| `CredsMcp.Tests` | 6 / 6 (the same shapes) | **0 / 0** |
+| `CredsBroker.Tests` | 7 / 24 (`creds-endpoints-*`) | **0 / 0** |
+| `CredsForDevs.ServiceDefaults.Tests` | 0 / 0 (82 tests then) | **0 / 0** |
+
+Total on `main`: 26 top-level entries, 956 below them; after: 0 old-form and 0 owner-form. The brief's "about 190 folders" is not what this machine shows: the server's 920 is mostly the contents of the backup parents (the parents hold the 31 + 56 + 37 + 36 + 25 + 17 + 2 folders, many with files).
+The socket folders were counted in `/tmp` itself (the real root): nothing new there after a full pass of the five.
+
+**Counts, sc. 4 and the hand clean-up (row 2, E2 (d)), this WSL machine, over `/tmp`, `/var/tmp`, `/dev/shm` and `$XDG_RUNTIME_DIR` (`/run/user/1000`), by `find <root> -mindepth 1 -maxdepth 1 -name <pattern>`, for the brief's twenty names:**
+- Before: **42** entries, all in `/tmp`, none in the other three roots: `cred-vault-tests`, `cred-vault-backup-run`, `-backup-store`, `-backup`, `-backup-cli`, `-key-file`, `-aot-kit` (one each: 7) and 35 `creds-endpoints-*`; 0 owner-form. All owned by this user, made on 2026-11-07
+  (by test runs of earlier builds of this branch and of `main`; the brief's author found 0 at 13:57), and 9,119 entries including their contents. Checked immediately before removing: no process had any of them as its working directory or an open file, and none was newer than two minutes.
+- Removed: those 42 (by those names, this user's, older than two minutes, held by nobody), and nothing else. After: **0**, and after the full pass of the five executables with the real temp root: **0** old-name and **0** owner-form entries in all four roots.
+- A search by name at one moment, not a proof; it does not see a root another `TMPDIR` named (the private runs above cover that). `dotnet-diagnostic-*` sockets are not on the list (F13).
+
+**Done-when 2, the C# guard by hand (Q11 (a); NOT committed).** The template's `LeftoversRepositoryGuardTests` at `dew_flow_mcp` `197cc76`, with the manifest's one operation (the namespace line), as a scratch file in `src_service_defaults/tests/Leftovers/`, run against this tree with
+`LeftoversGuard.Scan(repoRoot, repoRoot)`; then deleted. It read the classes `raw-temp`, `raw-worktree`, `docker-name`, `docker-run`, `shared-store`, `ryuk-off`, `owner-blind`, `legacy-name` (and the exemption and token checks). **18 findings, in three groups:**
+- shell, `raw-temp` `mktemp` (9, E2.4's): `.github/scripts/mcp-listen-smoke.test.sh:19`, `start-server-and-wait.sh:107`, `start-server-and-wait.test.sh:28`, `version-smoke.test.sh:14`; `deploy/restore-archive-itest.sh:45`, `restore-archive.sh:61`, `restore.sh:102`; `install.sh:63`, `:76`.
+- docker (6, E2.4's): `.github/workflows/docker.yml:78` (`docker-name` for `cv`, and `docker-run` without the remove flag), `:101` and `:102` (`docker-name` for the volumes `cv-refused-data`, `cv-refused-logs`), `:105` (`docker-name` for `cv-refused`, and `docker-run`).
+- C# (3, E2.5's): `src_cli/tests/AgentRelayTests.cs:38`, `:39`, `:278` (`raw-temp`, the `/tmp` literals that create nothing; the same three the scan test lists). No other C# file. `CallerIdentityTests.cs:196` is not a finding (a `/tmp` inside a raw string that holds a quote; the guard misses it, S3's follow-up).
+
+**The three minors of the S4 review** (one commit). (1) `VaultServer.Dispose(bool)`: `WebApplicationFactory.Dispose(true)` reaches `DisposeAsync`, which reaches `Dispose(true)` again, so the body ran twice and a removal that gave up warned twice (rule 2: one). A `_ended` flag after
+`base.Dispose` makes the rest run once. RED first, a locked subfolder standing in for a removal that gives up: `Expected collection to contain a single item because one removal that gave up is one warning, not one per run of the dispose body, but found {"owned: could not remove ... ", "owned: could not remove ...` (two). GREEN: one.
+(2) `OrgRegistrationTests.HookWorld`'s `what` is `org-reg-hook`. (3) The dead `Directory.CreateDirectory(_root)` in `StartupGuardsTests` is gone.
+
+**Follow-up (todo, not built):** `VaultServer` sets no `Logging__Directory`, so each test host writes a per-run log under `tests/bin/Release/net10.0/logs/` (gitignored, pruned by the product's 14-day retention); an owned log folder per server is a todo.
+
+**Totals** (Release, one at a time, after the last code commit; the private-`TMPDIR` pass, the real-root pass gave the same but `CredsMcp.Tests` 174 / 2 / 168 / 4): `CredVaultServer.Tests` 830 / 0 failed / 827 passed / 3 skipped (828 after S4; +1 `AotKitFolderTests`, +1 the dispose-once test);
+`CredsCli.Tests` 156 / 0 / 153 / 3; `CredsMcp.Tests` 174 / 2 / 169 / 3 (the two WSL `ParentWatchProcessTests`); `CredsBroker.Tests` 164 / 0 / 161 / 3; `CredsForDevs.ServiceDefaults.Tests` 606 / 0 / 581 / 25. Total 1,930.
+
+**Not run / unproven.** Windows and macOS legs: `AotKitFolderTests` is skipped on Windows by design (F29); the macOS run of the moved backup classes; the Windows "not cleaned, not needed" machine. sc. 4 on Windows is Q10's. The row-24 Node guard and the barrier rescan (row 1) are not this story's by-hand
+list and were not run here. The skip-count of `CredsMcp.Tests` varies by one between runs (3 or 4), as in part 3b.
+
+**Differences from the brief.**
+1. **S5.1's RED is the printed path, as the brief says**, and in this build it also fails on "two runs print one path" (the fixed folder is the same string), which the brief did not expect; the overlap itself still passes on `main`.
+2. **The children get a `TMPDIR` the test holds**, not `HostProcess`'s hand-over (which removes its folder when the child ends and would hide the leftover): the test names all three variables, so the hand-over does not apply.
+3. **The kit test also prints the two commands** in one warning line (the test output has no other channel that survives a passing test); the person who wants the kit sets `CREDS_AOT_KIT_DIR`.
+4. **"about 190 folders"** (the brief's row 5) is 956 entries on `main` here, as above.
+5. **Done-when 2's list is recorded here, not on a PR**; the scratch test file was deleted.
+
+### E2.3 build record, part 5b — the final fix round (2026-11-07, branch `feat/test-leftovers-e2.3`, not pushed, not merged)
+
+From the coai code gate (G0, G3, G5) and the Opus review of S5 (four minors). Four commits, then this record. Builds Release, `-m:4 --disable-build-servers`, 0 warnings; `dotnet format` whitespace and style clean on the server, mcp and service-defaults test projects.
+- **G0.** `ParentWatchProcessTests.Dispose` no longer skips everything while the host runs: `EndHostThenRemove(pid, remove, killAndWait)` kills the host's tree through `HostProcess.KillOnDispose` (bounded wait), and only then removes the log and temp folders. When
+  the end is not confirmed the Reaper's exception goes up and the folders are NOT removed (claimed and registered, so the audit names them). Pinned by `ParentWatchDisposeTests` with a fixture child (`sleep`; Windows skipped, saying why), so it runs where the real
+  host cannot (this machine's WSL path): host running -> ended, THEN removed; end not confirmed (seam returns false) -> throws, nothing removed; already ended -> removed. RED, the fix taken out (the old "running: return"): `Expected running to be equal to {False} ... but found empty collection.`
+  and `Expected a <System.InvalidOperationException> to be thrown, but no exception was thrown.`
+- **G3.** There was no 100 ms sleep before a first check at `HostProcess.cs:403` in this tree: the group wait (`Child.TryEnd`) already checks first and then sleeps 25 ms. What changed: the pause now backs off 5, 10, 25, 50, 100 ms (last repeats), the bound unchanged. No behaviour change, no RED.
+- **G5.** `ci-clients.yml`: one line before each audit self-test run, in bash and in pwsh, naming the executable and the case (`audit self-test: CredsCli.Tests, case '1'`). A line, not a `::group::`, so a failure's reason is never inside a collapsed group.
+- **S5 minors.** (1) `AotKitFolderTests` asserts the children's `TMPDIR` is EMPTY. (2) The commands warning of the kit test says it is removed when the test ends and `CREDS_AOT_KIT_DIR` keeps a kit. (3) The printed-folder regex is `aot-kit folder: (?<path>.+?)\s*$`, multiline (a temp root with a space).
+  (4) `VaultServerFolderTests`' give-up test creates the server inside the `try`, and its `finally` uses `SingleOrDefault(...)?.Dispose()`.
+
+**Follow-ups.** The copied `LeftoversSweep.cs` enumerates every entry of the temp root and filters in managed code; a search pattern at the API level is the template's change (`dew_flow_mcp`). `VaultServer` sets no `Logging__Directory` (part 5).
+
+**Totals** (Release, one at a time, private `TMPDIR`): `CredVaultServer.Tests` 830 / 0 / 827 / 3; `CredsCli.Tests` 156 / 0 / 153 / 3; `CredsMcp.Tests` 177 / 2 / 172 / 3 (+3 `ParentWatchDisposeTests`; the two WSL `ParentWatchProcessTests` as before); `CredsBroker.Tests` 164 / 0 / 161 / 3;
+`CredsForDevs.ServiceDefaults.Tests` 606 / 0 / 581 / 25. Total 1,933. Private-`TMPDIR` entries after: 0 in each; old-name and owner-form entries in the four roots: 0.
+
+### E2.3 build record, part 5c — the Windows leg of PR #311 (2026-11-07, branch `feat/test-leftovers-e2.3`)
+
+**Measured fact:** on `windows-latest` (run 42388598855) a Node-made folder of the test process was the caller's own, not `BUILTIN\Administrators`', although the process is elevated. Two tests had assumed the other owner and failed:
+`WindowsHandoffTests.The_natural_node_output_not_re_owned_is_preserved_as_foreign_uid_on_an_elevated_process` (`Expected Scope.IsMine(dir) to be False because premise: a new folder of an elevated run is owned by BUILTIN\Administrators ... but found True`) and
+`SocketRootSweepTests.A_folder_a_live_process_made_survives_...` (actual `"live"`, expected `"foreign-uid"`). The stories (E2.3.S2) say the test "says which outcome the runner's own files gave"; it must not assert the premise. **Fix (one commit):** both tests now measure
+`Scope.IsMine` of the folder and of its claim and assert the branch that implies (caller-owned: collected, resp. `live`; another SID: `foreign-uid`, kept), and each writes one test-output line (`windows ownership: elevated=...; a new folder of this run is owned by ...; outcome: ...`). `OwnedCreds.OwnerKind(path)`
+names the owner (the caller, `BUILTIN\Administrators`, another account; on POSIX the uid). The cases with a re-owned or foreign fixture are unchanged. The first test is renamed `The_natural_node_output_not_re_owned_is_judged_by_its_real_owner_and_the_runner_says_which_outcome_it_gave` and is no longer skipped on a non-elevated runner.
+Checked on Linux only (`CredsForDevs.ServiceDefaults.Tests` 606 / 0 failed / 581 / 25; the Windows case is skipped there, the socket test takes the `live` branch); the Windows legs are CI's. F31's text stands as a limit that MAY show on a runner; this runner did not show it.
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's

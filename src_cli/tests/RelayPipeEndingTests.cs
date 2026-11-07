@@ -2,6 +2,7 @@ using CredsBroker;
 using CredsCli;
 using CredsForDevs.ServiceDefaults;
 using CredsForDevs.ServiceDefaults.Tests.Support;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 
 namespace CredsCli.Tests;
@@ -38,7 +39,8 @@ public sealed class RelayPipeEndingTests
         // In-process, unlike RelayLogTests' process run, so the coverage of this path is visible.
         var sink = new CollectingSink();
         using var log = sink.Logger();
-        var none = Path.Combine(Path.GetTempPath(), "creds-no-endpoints-" + Guid.NewGuid().ToString("N"));
+        // testsToDelete-exempt: raw-temp — a folder nothing creates: the endpoints folder is absent on purpose, and the run must answer for that
+        var none = Path.Combine(Owned.TempRoot(), "no-endpoints-" + Guid.NewGuid().ToString("N"));
 
         var code = await RelayPipe.RunAsync(BrokerContract.Current, none, log);
 
@@ -52,7 +54,7 @@ public sealed class RelayPipeEndingTests
     {
         var sink = new CollectingSink();
         using var log = sink.Logger();
-        var dir = HostProcess.TempDirectory("creds-dead-agent");
+        var dir = HostProcess.TempDirectory("dead-agent");
         try
         {
             // A window that announced an agent and died: the file outlives the socket.

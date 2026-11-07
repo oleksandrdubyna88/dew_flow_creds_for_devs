@@ -1,3 +1,4 @@
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 
@@ -7,18 +8,17 @@ namespace CredVaultServer.Tests;
 /// The project store on its own: what it writes, what it refuses to overwrite, and the one thing it
 /// must never do — treat a file it cannot read as a project that is not there.
 /// </summary>
-public sealed class OrgProjectsStoreTests
+public sealed class OrgProjectsStoreTests : IDisposable
 {
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+
+    public void Dispose() => _owned.Dispose();
+
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private static string TempDir()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "cred-vault-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
+    private string TempDir() => _owned.Dir("projects");
 
-    private static (OrgProjectsStore Store, CapturingLogger<OrgProjectsStore> Log, string Dir) StoreIn(string? dir = null)
+    private (OrgProjectsStore Store, CapturingLogger<OrgProjectsStore> Log, string Dir) StoreIn(string? dir = null)
     {
         var root = dir ?? TempDir();
         var log = new CapturingLogger<OrgProjectsStore>();

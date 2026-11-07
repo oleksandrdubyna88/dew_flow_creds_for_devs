@@ -85,6 +85,31 @@ jobs:
       - name: Test
         run: ./src_minimalapi_server/tests/bin/Release/net10.0/CredVaultServer.Tests
 
+      # E2.3: the end-of-run audit has teeth in the server's executable too (it links the same helper). LeftoversSelfTest leaks a folder on purpose, and ONLY when
+      # CREDS_LEFTOVERS_SELFTEST is set; this step sets it, AFTER the normal Test step, and is green only on a NON-zero exit that carries the audit's first line (the
+      # counts and the case's own group word, no path), names the folder on a line of its own under that word, and leaves the temp root without it. A listing error is
+      # red, never ignored. If xUnit did not fail the run on an assembly-fixture cleanup exception this step would be red on its first run: the audit must never
+      # become a warning silently. This executable runs on Linux only (it is deployed to Linux containers), so there is one bash step and no other leg.
+      - name: The audit fails a run that leaves a claimed folder
+        run: |
+          set -o pipefail
+          owner="u$(id -u)"
+          exe=./src_minimalapi_server/tests/bin/Release/net10.0/CredVaultServer.Tests
+          for entry in "1:never disposed:selftest" "failed-dispose:disposed but not removed:selftest-failed"; do
+            IFS=: read -r value words what <<< "$entry"
+            if CREDS_LEFTOVERS_SELFTEST="$value" "$exe" --filter-class "*LeftoversSelfTest" 2>&1 | tee selftest.log; then
+              echo "the end-of-run audit did not fail the run ($value)"; exit 1; fi
+            # (a) the audit's FIRST line: the counts and the group summary, and no path on it ...
+            first=$(grep -E "(^|[[:space:]]:[[:space:]])creds tests: this run left [0-9]+ folder\(s\) it claimed.*[0-9]+ $words" selftest.log | grep -v "testsToDelete-[uw][0-9]" || true)
+            [ -n "$first" ] || { echo "the run failed, but not with the audit's first line (counts and '$words', no path) ($value)"; exit 1; }
+            # (b) ... and the folder named on its own per-folder line, under the case's own group word.
+            grep -Eq "^[[:space:]]+$words: .*/testsToDelete-[uw][0-9]{1,10}-creds-$what-[A-Za-z0-9]{6}" selftest.log \
+              || { echo "the audit's message does not name the folder on a line of its own under '$words' ($value)"; exit 1; }
+            left=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -iname "teststodelete-${owner}-creds-$what-*") \
+              || { echo "the temp root could not be listed"; exit 1; }
+            [ -z "$left" ] || { echo "the audit left the folder behind: $left"; exit 1; }
+          done
+
       # The tier the unit suite cannot reach: the archive verbs run as a PROGRAM. Seal a tree,
       # verify it, open it elsewhere, compare every file byte for byte, then damage the archive in
       # each way that must be refused. These verbs are the recovery kit - the moment anybody needs

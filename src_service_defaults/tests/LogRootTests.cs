@@ -1,4 +1,5 @@
 using CredsForDevs.ServiceDefaults;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 
 namespace CredsForDevs.ServiceDefaults.Tests;
@@ -14,8 +15,10 @@ public sealed class LogRootTests
             _ => null,
         };
 
-    private static readonly string Home = Path.Combine(Path.GetTempPath(), "home");
-    private static readonly string Local = Path.Combine(Path.GetTempPath(), "local");
+    // testsToDelete-exempt: raw-temp — a path nothing creates: it is only compared with what the function returns
+    private static readonly string Home = Path.Combine(Owned.TempRoot(), "home");
+    // testsToDelete-exempt: raw-temp — a path nothing creates: it is only compared with what the function returns
+    private static readonly string Local = Path.Combine(Owned.TempRoot(), "local");
 
     [Theory]
     [InlineData(LogPlatform.Windows)]
@@ -41,7 +44,8 @@ public sealed class LogRootTests
     [Fact]
     public void Linux_uses_an_absolute_xdg_state_home_and_otherwise_the_default_under_home()
     {
-        var state = Path.Combine(Path.GetTempPath(), "state");
+        // testsToDelete-exempt: raw-temp — a path nothing creates: it is only compared with what the function returns
+        var state = Path.Combine(Owned.TempRoot(), "state");
         LogRoot.For(LogPlatform.Linux, Env(stateHome: state), Home, Local)
             .Should().Be(Path.Combine(state, "creds-for-devs", "logs"));
         LogRoot.For(LogPlatform.Linux, Env(), Home, Local)

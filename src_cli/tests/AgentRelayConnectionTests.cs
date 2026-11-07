@@ -6,6 +6,7 @@ using CredsBroker;
 using CredsCli;
 using CredsForDevs.ServiceDefaults;
 using CredsForDevs.ServiceDefaults.Tests.Support;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 
 namespace CredsCli.Tests;
@@ -20,7 +21,8 @@ public sealed class AgentRelayConnectionTests : IDisposable
     private static readonly TimeSpan Bound = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan Hour = TimeSpan.FromHours(1);
 
-    private readonly string _root = HostProcess.TempDirectory("creds-relay-carry");
+    private readonly string _root = HostProcess.TempDirectory("relay-carry");
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
     private readonly TaskCompletionSource<PosixSignal> _signal = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource _parent = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly CollectingSink _sink = new();
@@ -32,6 +34,7 @@ public sealed class AgentRelayConnectionTests : IDisposable
     {
         _log.Dispose();
         HostProcess.Remove(_root);
+        _owned.Dispose();
     }
 
     /// <summary>A child that remembers what it was asked, and leaves when its stdin closes.</summary>
@@ -159,7 +162,7 @@ public sealed class AgentRelayConnectionTests : IDisposable
         // and the lifetime's signal task completed by hand. Unix only, as the relay is.
         Assert.SkipWhen(OperatingSystem.IsWindows(), "the relay runs inside WSL by design and refuses Windows");
         var ct = TestContext.Current.CancellationToken;
-        var socket = Path.Combine("/tmp", $"cr-{Guid.NewGuid():N}"[..12] + ".sock");
+        var socket = SocketSites.Path(_owned, SocketSites.Relay);
         using var lifetime = Lifetime();
         var serving = AgentRelay.ListenAsync(socket, BrokerContract.Current, new WindowsBridge(FakeChild.Echo(_root), "CREDS_E3_TEST_UNSET"), lifetime, _log);
         await WaitUntilAsync(() => _sink.Messages.Any(m => m.StartsWith("relay listening on ", StringComparison.Ordinal)), ct);

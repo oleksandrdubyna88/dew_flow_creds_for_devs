@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -12,8 +13,12 @@ namespace CredVaultServer.Tests;
 /// over a first, a key sealed to words nobody saw, a KEK that changed under an existing key, and the
 /// key travelling inside the archive it opens.
 /// </remarks>
-public class BackupStoreTests
+public class BackupStoreTests : IDisposable
 {
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+
+    public void Dispose() => _owned.Dispose();
+
     private static readonly CancellationToken Ct = CancellationToken.None;
 
     [Fact]
@@ -477,10 +482,5 @@ public class BackupStoreTests
         return new BackupStore(dir, kek, NullLogger<BackupStore>.Instance);
     }
 
-    private static string TempDir()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "cred-vault-backup-store", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
+    private string TempDir() => _owned.Dir("backup-store");
 }

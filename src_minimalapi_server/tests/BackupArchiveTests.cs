@@ -1,6 +1,7 @@
 using System.Formats.Tar;
 using System.Security.Cryptography;
 using System.Text;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 
 namespace CredVaultServer.Tests;
@@ -14,8 +15,12 @@ namespace CredVaultServer.Tests;
 /// direction — an archive is a list of names somebody else chose, and extraction is where that
 /// becomes a path on this disk.</para>
 /// </remarks>
-public class BackupArchiveTests
+public class BackupArchiveTests : IDisposable
 {
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+
+    public void Dispose() => _owned.Dispose();
+
     private const int SmallChunk = 1024;
 
     private static readonly DateTimeOffset Noon = DateTimeOffset.Parse("2026-09-07T12:00:00Z");
@@ -401,7 +406,7 @@ public class BackupArchiveTests
         BackupArchive.Verify(path, key).Files.Should().Be(1);
     }
 
-    private static string Seal(string sourceDir, byte[] key, int chunkSize = BackupFormat.DefaultChunkSize)
+    private string Seal(string sourceDir, byte[] key, int chunkSize = BackupFormat.DefaultChunkSize)
     {
         var path = NewPath();
         using var output = File.Create(path);
@@ -409,7 +414,7 @@ public class BackupArchiveTests
         return path;
     }
 
-    private static string SealTar(byte[] tarBytes, byte[] key)
+    private string SealTar(byte[] tarBytes, byte[] key)
     {
         var path = NewPath();
         using (var output = File.Create(path))
@@ -479,14 +484,9 @@ public class BackupArchiveTests
     /// asserted on by listing that parent, and a shared one would read another test's staging as this
     /// test's leak.
     /// </summary>
-    private static string NewPath()
-    {
-        var parent = Path.Combine(Path.GetTempPath(), "cred-vault-backup", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(parent);
-        return Path.Combine(parent, "target");
-    }
+    private string NewPath() => Path.Combine(_owned.Dir("backup"), "target");
 
-    private static string NewDir()
+    private string NewDir()
     {
         var dir = NewPath();
         Directory.CreateDirectory(dir);
@@ -512,7 +512,7 @@ public class BackupArchiveTests
         return files;
     }
 
-    private static string TreeOfOneFile()
+    private string TreeOfOneFile()
     {
         var dir = NewDir();
         WriteFile(dir, "vaults/alice.json", "one file is enough");
@@ -520,7 +520,7 @@ public class BackupArchiveTests
     }
 
     /// <summary>Enough incompressible bytes that a small chunk size produces many chunks.</summary>
-    private static string BigTree()
+    private string BigTree()
     {
         var dir = NewDir();
         var path = Path.Combine(dir, "big.bin");

@@ -651,3 +651,37 @@ Nothing above is deleted; the parent's §4.10, §4.1, §4.2, §7 and `## Epics` 
    prompt-site ledger test the parent's §7 describes (`src/test/promptSites.test.ts`, `src/test/promptSiteLedger.ts`), with its limits said.
    Also from the sort: E1.1's refusal is reached by the token and MCP roads only; `creds env <name>` never reaches it (item 13 above; the
    parent's §4.8), and the CHANGELOG and help bullets say so; the handler-failure line's route comes from `BRIDGE_ROUTES` or reads `other`.
+
+## Amendment, epoch 7 (2026-11-07)
+
+The parent plan stopped a fifth time (changes 6.1 and 6.2, `f55585a`) and was revised whole for epoch 7. Nothing above is deleted; the
+parent's §4.2 (the run-site sentences), §4.6, §4.10 and §7 *Destination and recipient* are the authority where they and an earlier passage here
+differ. E1.4 is built on `feat/remote-bridge-e14` (PR #312, stacked on #307), with its As-built in the S4 spec's S4.12 on that branch.
+
+1. **E1.4's `query` line (item 6's `laptop` sentence, and item 9 of the epoch 4 amendment) is false and is corrected on PR #312 before it
+   merges.** *It runs on this computer, and only its output goes to that server.* reads as if the SQL ran here; only the database client does
+   (`agentUseActions.ts:372`), and the SQL runs on the database the stored connection names (`dbCliLauncher.ts:271,275,296`). The line
+   becomes the parent's §4.2 sentence: *The database client runs on this computer, using the connection stored in "<entry>". Its output goes
+   back to the agent on that server.*, the entry's name through the same one-line cleaner as `exec`'s. `exec`'s sentence stands as the
+   initial destination, with "output goes back" and no "only" (Q4). Scenario C10 and the S4 spec's quoted texts change with it.
+2. **The test observes the launch beside the words** (the parent's *Reading this plan*, change 6.2): the dialog's sentence, and the
+   spawner stub's record that the client was spawned on this computer with the connection from the entry, and the body holding the client's
+   output alone. An exact-string assertion alone is not accepted for a sentence about where something runs or who receives data.
+3. **The coverage lines of item 6 stand** (*Allowing covers this call only*; the quiet-on sentence), and the token-wide sentence at
+   `brokerConsent.ts:199` stays local-only, as item 7 says.
+4. **The scope pick's sentence on stored text is conditional**: *when run on the server, the stored command or script text goes there as
+   written* (the parent's §4.6; E2.2b's pick rows and E3.1's text), since the Windows rows run on the laptop and refused rows launch nothing.
+5. **E1.5 builds from the parent's reworded sentences:** the timeout answer *Nobody answered within five minutes. The question is still on
+   the person's screen and keeps this window's shared dialog place until they answer it. This request did not run.*, and the `busy` sentence
+   *Another request holds this window's dialog place.* with its recovery help, which changes `main`'s shipped sentence and is listed among
+   E1.5's local effects. 6.1's Allow-time evaluation of the follow-up flag and its residuals stand.
+6. **After the epoch 7 sort (2026-11-08).** (a) Item 3's reference is `brokerConsent.ts:225` on `feat/remote-bridge-e14` (`:153` on `main`), and
+   the token-wide sentence is false on the local alias and MCP doors too (each call raises its own dialog; verified by running on `main`): a
+   live defect on `main`, fixed there in its own PR with one sentence per door (token: today's; alias: this call only; MCP: what the entry's
+   own consent setting means). Item 3 and the parent's §4.10 inherit that fix; PR #312's C11 literal follows `main` once it lands; #312's claim
+   that nothing changes for a local user stays true, because the change is `main`'s. (b) C10 records the argv through `bridgeLinksWorld`'s
+   stub beside the `exec` sentence, and `SITE_SENTENCES` is re-keyed per action and site, both on #312 (the parent's (13)); E3 writes `run`'s
+   own laptop sentence with its spawn observation. (c) The timeout sentence of item 5 is per door: a local token call hears it without the
+   place clause, since its dialog takes no place. (d) The conditional stored-text wording of item 4 is E2.2b's, where the pick first exists;
+   nothing on #307 carries such a sentence. (e) Q11, the owner's decision of 2026-11-08: a bridged query to a database on the agent's own
+   server is allowed with a warning at scope selection (the parent's §2.1 Q11, E2.2b, §7); it narrows the parent's §9 and is the owner's.

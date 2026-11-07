@@ -6,6 +6,7 @@ using CredsBroker;
 using CredsCli;
 using CredsForDevs.ServiceDefaults;
 using CredsForDevs.ServiceDefaults.Tests.Support;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 
 namespace CredsCli.Tests;
@@ -26,12 +27,18 @@ public sealed class AgentRelayHostTests : IDisposable
 {
     private static readonly TimeSpan Bound = TimeSpan.FromSeconds(10);
 
-    private readonly string _root = HostProcess.TempDirectory("creds-relay-e3");
+    private readonly string _root = HostProcess.TempDirectory("relay-e3");
+    private readonly string _socketFolder = SocketSites.Folder(SocketSites.Relay);
 
-    public void Dispose() => HostProcess.Remove(_root);
+    public void Dispose()
+    {
+        // Both are HostProcess folders: while a relay started with them in its environment has not been confirmed ended, they stay (and the audit names them).
+        HostProcess.Remove(_socketFolder);
+        HostProcess.Remove(_root);
+    }
 
-    /// <summary>Short, under /tmp: a unix socket path is capped near a hundred bytes, and macOS's temp folder is long.</summary>
-    private static string SocketPath() => Path.Combine("/tmp", $"cr-{Guid.NewGuid():N}"[..12] + ".sock");
+    /// <summary>Short, in an owned folder under the short root: a unix socket path is capped near a hundred bytes, and macOS's temp folder is long.</summary>
+    private string SocketPath() => Path.Combine(_socketFolder, SocketSites.Relay.File);
 
     private Dictionary<string, string> Env(string windowsHalf, string socket) => new()
     {

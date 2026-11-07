@@ -1,5 +1,6 @@
 using System.Net;
 using System.Security.Cryptography;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -15,8 +16,12 @@ namespace CredVaultServer.Tests;
 /// never happened and said nothing, a page stuck on a spinner for a run that died, two runs over one
 /// data directory, and a retention pass that deleted everything.
 /// </remarks>
-public class BackupRunnerTests
+public class BackupRunnerTests : IDisposable
 {
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+
+    public void Dispose() => _owned.Dispose();
+
     private static readonly CancellationToken Ct = CancellationToken.None;
 
     private static readonly DateTimeOffset Noon = DateTimeOffset.Parse("2026-09-07T12:00:00Z").ToUniversalTime();
@@ -689,7 +694,7 @@ public class BackupRunnerTests
     private sealed record Deployment(
         string Dir, BackupStore Backups, BackupRunner Runner, string Words, BackupTargets Targets);
 
-    private static Deployment World(bool withLog = false, StubTransport? transport = null)
+    private Deployment World(bool withLog = false, StubTransport? transport = null)
     {
         var dir = TempDir();
         var kek = RandomNumberGenerator.GetBytes(Key32.Bytes);
@@ -709,7 +714,7 @@ public class BackupRunnerTests
     }
 
     /// <summary>A deployment with a key somebody has written down, and one vault to archive.</summary>
-    private static async Task<Deployment> Ready(bool withLog = false, StubTransport? transport = null)
+    private async Task<Deployment> Ready(bool withLog = false, StubTransport? transport = null)
     {
         var world = World(withLog, transport);
         var minted = await world.Backups.MintKeyAsync(Ct);
@@ -779,12 +784,7 @@ public class BackupRunnerTests
             .Where(line => line.Contains($"\"kind\":\"{kind}\"", StringComparison.Ordinal)),
     ];
 
-    private static string TempDir()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "cred-vault-backup-run", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
+    private string TempDir() => _owned.Dir("backup-run");
 
     /// <summary>
     /// A configuration whose reads throw — a provider backed by something that has gone away.

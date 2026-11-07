@@ -1,3 +1,4 @@
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 
@@ -20,25 +21,15 @@ public sealed class OrgEventLogQueryTests : IDisposable
 
     private const string Boris = "boris@example.com";
 
-    private readonly string _dir =
-        Path.Combine(Path.GetTempPath(), "cred-vault-tests", Guid.NewGuid().ToString("N"));
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+    private readonly string _dir;
 
     private readonly CapturingLogger<OrgEventLog> _log = new();
     private DateTimeOffset _now = Noon;
 
-    public OrgEventLogQueryTests() => Directory.CreateDirectory(_dir);
+    public OrgEventLogQueryTests() => _dir = _owned.Dir("org-events-query");
 
-    public void Dispose()
-    {
-        try
-        {
-            Directory.Delete(_dir, recursive: true);
-        }
-        catch (IOException)
-        {
-            // A handle not yet released; the temp sweeper gets it.
-        }
-    }
+    public void Dispose() => _owned.Dispose();
 
     private OrgEventLog NewLog() => new(_dir, _log, () => _now);
 

@@ -1,3 +1,4 @@
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 
@@ -8,20 +9,19 @@ namespace CredVaultServer.Tests;
 /// cannot read is never replaced, that two processes on one volume cannot mint two keys for one person,
 /// and that nothing about the key material ever reaches a log line.
 /// </summary>
-public sealed class LoginKeyStoreTests
+public sealed class LoginKeyStoreTests : IDisposable
 {
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+
+    public void Dispose() => _owned.Dispose();
+
     private const string Alice = "alice@example.com";
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private static byte[] Kek(byte seed) => [.. Enumerable.Range(0, LoginKeyStore.KeyBytes).Select(i => (byte)(i + seed))];
 
-    private static string TempDir()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "cred-vault-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
+    private string TempDir() => _owned.Dir("login-keys");
 
     private static string PathFor(string dir, string email) =>
         Path.Combine(dir, "org", "login-keys", VaultStore.KeyFor(email) + ".bin");

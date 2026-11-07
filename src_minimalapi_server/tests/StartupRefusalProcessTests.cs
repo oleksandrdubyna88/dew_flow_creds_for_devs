@@ -30,7 +30,7 @@ public sealed class StartupRefusalProcessTests : IDisposable
 
     private const string AppName = "cred-vault-server";
 
-    private readonly string _root = HostProcess.TempDirectory("cred-vault-refusal");
+    private readonly string _root = HostProcess.TempDirectory("vault-refusal");
 
     public void Dispose() => HostProcess.Remove(_root);
 
