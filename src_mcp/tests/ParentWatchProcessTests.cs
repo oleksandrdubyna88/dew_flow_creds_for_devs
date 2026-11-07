@@ -28,26 +28,43 @@ public sealed class ParentWatchProcessTests : IDisposable
     private string? _childTemp;
     private int _serverPid;
 
-    public void Dispose()
+    public void Dispose() => EndHostThenRemove(_serverPid, () =>
     {
-        // The host was started here, not through HostProcess.Start, so nothing ties it to its folders: while it has not ended, its log folder and its temp folder are NOT
-        // removed under it. They stay claimed and registered, and the end-of-run audit names them.
-        if (ServerRunning()) return;
         HostProcess.Remove(_root);
         _owned.Dispose();
+    });
+
+    /// <summary>
+    /// The host was started here, not through HostProcess.Start, so nothing ties it to its folders: a host that is still running at the end of the test is ended FIRST
+    /// (the tree killed, the end waited for within a bound), and only then are its log folder and temp folder removed. When its end cannot be confirmed the exception goes
+    /// up and <paramref name="remove"/> does not run: the folders stay claimed and registered, and the end-of-run audit names them.
+    /// </summary>
+    internal static void EndHostThenRemove(int serverPid, Action remove, Func<Process, TimeSpan, bool>? killAndWait = null)
+    {
+        if (serverPid != 0 && Running(serverPid) is { } server)
+        {
+            using (server)
+            using (HostProcess.KillOnDispose(server, killAndWait))
+            {
+                // the Reaper ends the host when this scope closes, and throws when the end is not confirmed
+            }
+        }
+
+        remove();
     }
 
-    private bool ServerRunning()
+    private static Process? Running(int pid)
     {
-        if (_serverPid == 0) return false;
         try
         {
-            using var server = Process.GetProcessById(_serverPid);
-            return !server.HasExited;
+            var server = Process.GetProcessById(pid);
+            if (!server.HasExited) return server;
+            server.Dispose();
+            return null;
         }
         catch (Exception e) when (e is ArgumentException or InvalidOperationException)
         {
-            return false;
+            return null;
         }
     }
 
@@ -144,8 +161,9 @@ public sealed class ParentWatchProcessTests : IDisposable
     {
         if (OperatingSystem.IsWindows()) return;
         var pipes = Directory.GetFileSystemEntries(_childTemp!, $"clr-debug-pipe-{pid}-*");
-        if (pipes.Length == 0 && ServerRunning())
+        if (pipes.Length == 0 && Running(pid) is { } live)
         {
+            live.Dispose();
             pipes.Should().NotBeEmpty("the live host's debug pipes are in the owned folder it was handed as TMPDIR, not in the shared temp root");
         }
     }
