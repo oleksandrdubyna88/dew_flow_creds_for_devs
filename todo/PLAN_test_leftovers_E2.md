@@ -1950,7 +1950,7 @@ touched); not a result.
 `DarwinLayout.FreshOwnedScope()` there, and the Windows paths of the moved log and endpoint folders. They run on the CI legs.
 
 **Differences from the brief.**
-1. **The expected list has three lines, not four.** `CallerIdentityTests.cs:196` holds `/tmp` inside a RAW string literal (`"""..."""`); the copied guard's folded reading does not see raw strings, so it is not a finding. The
+1. **The expected list has three lines, not four.** `CallerIdentityTests.cs:196` holds `/tmp` inside a RAW string literal (`"""..."""`); the copied guard's folded reading does not see raw strings, so it is not a finding. *(Corrected in part 3b: the guard DOES read a one-line raw string; it misses a `/tmp` inside a raw string that also holds a `"`, as `"""{"a":"/tmp/p"}"""` does.)* The
    brief allows correcting the list to the guard's reading when the RED shows it (said on the PR). Not a plan change.
 2. **The list is keyed on file and a fragment of the line, not on the line number.** The migration adds lines above the literals (`AgentRelayTests.cs:33` and `:34` became `:38` and `:39`; `:278` held by chance); a number would be red for no reason.
 3. **The scan reads a scratch copy** of the trees, not the trees: the guard's `Scan(root)` keys on relative paths, and a copy starts no script classifier (no `node`). Both helper folders are left out, as the brief says "helper
@@ -1960,6 +1960,31 @@ touched); not a result.
    what is true (under ten bytes to spare against 35 or more) and does not claim the root alone overflows. The short root stays because the brief and rule §2 say so and the margin is the point.
 6. **`ParentWatchProcessTests` keep their own `Process.Start`** and take the owned `TMPDIR` from their own scope. Routing them through `HostProcess.StartFile` would end the tie and remove the folder when the launcher (not
    the host) exits, while the host still runs; and `HostProcess.Native` would set the relayed marker on WSL, which turns the watch off. Neither is S3's.
+
+### E2.3 build record, part 3b — review rounds on S2 and S3 (2026-11-07, branch `feat/test-leftovers-e2.3`, not pushed, not merged)
+
+Commits, oldest first: the site scan and the old-name pattern (items 1, 2, 7); the perl RED; the perl and `TempDirectory(parent)` fix; the relay sites and `SocketSites` (3, 5, 6); `ParentWatchProcessTests` (3, 4); this record.
+Builds Release, `-m:4 --disable-build-servers`, 0 warnings; `dotnet format whitespace` and `style` clean on the service-defaults, cli and mcp test projects; `sweeper-scan`: none found.
+
+**What changed.**
+- **A. No perl is not silent.** `InItsOwnGroup` writes one test-output line per start without perl: no process group, a surviving descendant is NOT seen, the tie ends with the direct child's exit, install perl. The test
+  `Perl_is_on_the_path_of_every_machine_that_runs_these_tests...` fails on Linux and macOS when `HostProcess.PerlPath` is null, so a runner image without perl goes red instead of weaker. RED: `Expected sink.Lines to contain a single item
+  because the fallback is not silent, but the collection is empty.`; by hand, `PerlPath` returning null -> `Expected HostProcess.PerlPath not to be <null> because the adapter starts each child as a session leader through perl ...`.
+- **S3 1.** `ClientSitesScanTests` leaves out only the manifest's targets (read from `template-manifest.json`) and scans creds' own files in the helper folders. RED: four message strings that name `/tmp`
+  (`ClientSitesScanTests`, `HostProcessAdapterTests`, `SocketRootSweepTests` twice) appeared as `UNEXPECTED`; they were reworded (no `/tmp` in a message), so the list stays the three lines that create nothing.
+- **S3 2.** The comment in the test and the sentence of part 3's difference 1 are corrected: the guard reads a one-line raw string and misses a `/tmp` inside one that holds a `"`. **Follow-up: the template guard's raw-string reading (E3 / E2.5).**
+- **S3 3.** `HostProcess.TempDirectory(what, warn, parent)`; `SocketSites.Folder(site)` makes the relay tests' socket folder through it under the short root, so a relay started with the socket path is TIED to the folder (`AgentRelayHostTests`, `RelayLogTests`).
+  `AgentRelayConnectionTests` and `AgentRelayTests` bind in this process and keep the scope. RED by hand: `Folder` made with `OwnedDir.Create` -> `Expected HostProcess.TiedFolders(child) to be equal to {<folder>} ... but found empty collection.`
+  `ParentWatchProcessTests` keeps the host's pid and removes neither its log folder nor its temp folder while that host has not ended (the audit then names them); not RED-tested (the Reaper ends the host first in every case).
+- **S3 4.** After the host's log shows `started:`, the test asserts the live host's `clr-debug-pipe-<pid>-*` are in the folder it was handed (skipped on Windows, and when the host has already ended). RED by hand, the host handed the shared temp root:
+  `Expected pipes not to be empty because the live host's debug pipes are in the owned folder it was handed as TMPDIR, not in the shared temp root.` (on the two WSL-failing cases too: the host is reached before they fail).
+- **S3 5.** `SocketSitesTests` says its canonical-root line bites only where the roots differ (macOS; Linux CI cannot). **S3 6.** `SocketSites.Relay` and `SocketSites.Corpse` are the two constants the sites and the theory use.
+  **S3 7.** The old-name pattern covers `OwnedDir.Create`; RED: `Expected old.IsMatch("OwnedDir.Create(...)") to be True because premise: and the direct call of the helper, but found False.`
+
+**Totals** (Release, one at a time, after the last code commit): `CredsForDevs.ServiceDefaults.Tests` 606 / 0 failed / 581 passed / 25 skipped; `CredVaultServer.Tests` 825 / 0 / 822 / 3; `CredsCli.Tests` 156 / 0 / 153 / 3;
+`CredsMcp.Tests` 174 / 2 / 168 / 4 (the two WSL `ParentWatchProcessTests`, as before); `CredsBroker.Tests` 164 / 0 / 161 / 3.
+
+**Not run / unproven.** macOS and Windows. The perl pin was not seen red on a real image without perl, only with the finder returning null. The `ParentWatchProcessTests` skip-while-running branch has no test of its own.
 
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
