@@ -1,4 +1,7 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using CredsForDevs.Tests.Leftovers;
 using Serilog.Core;
 using Serilog.Events;
 
@@ -30,6 +33,7 @@ internal static class HostProcess
     /// <summary>The same for any executable file (a host binary, or a fixture child a test wrote).</summary>
     internal static Process StartFile(string file, IReadOnlyList<string> args, IReadOnlyDictionary<string, string> env)
     {
+        var tied = FoldersNamedBy(args, env);
         var start = new ProcessStartInfo(file)
         {
             RedirectStandardInput = true,
@@ -47,7 +51,19 @@ internal static class HostProcess
             start.Environment[name] = value;
         }
         Native(start.Environment, env, InsideWsl(ReadProcVersion()));
-        return Process.Start(start) ?? throw new InvalidOperationException($"{file} did not start");
+        Process process;
+        try
+        {
+            process = Process.Start(start) ?? throw new InvalidOperationException($"{file} did not start");
+        }
+        catch
+        {
+            foreach (var folder in tied) folder.Untie();
+            throw;
+        }
+
+        Children.Add(process, new Child(process, tied));
+        return process;
     }
 
     /// <summary>Set by WSL in every distribution — <c>WslInterop</c>'s first signal for the pump path.</summary>
@@ -103,23 +119,57 @@ internal static class HostProcess
     /// out while waiting never leaves the binary it started running. Only the process this test started, by
     /// its own handle; never anything found by name.
     /// </summary>
-    internal static IDisposable KillOnDispose(Process process, Func<Process, TimeSpan, bool>? waitForExit = null) => new Reaper(process);
+    internal static IDisposable KillOnDispose(Process process, Func<Process, TimeSpan, bool>? waitForExit = null) =>
+        new Reaper(process, Children.TryGetValue(process, out var child) ? child : null, waitForExit ?? ((p, bound) => p.WaitForExit(bound)));
 
-    private sealed class Reaper(Process process) : IDisposable
+    /// <summary>How long the <see cref="Reaper"/> waits for a killed tree to end before it gives up and fails the test.</summary>
+    private static readonly TimeSpan EndBound = TimeSpan.FromSeconds(15);
+
+    /// <summary>The state of a child started here: the registered folders its arguments or environment name (each is kept until the child's end is confirmed).</summary>
+    private sealed class Child(Process process, IReadOnlyList<Folder> tied)
     {
+        private int _ended;
+
+        public int Pid { get; } = process.Id;
+
+        public IReadOnlyList<Folder> Tied => tied;
+
+        /// <summary>The confirmed end: the folders are free to go. Once.</summary>
+        public void End()
+        {
+            if (Interlocked.Exchange(ref _ended, 1) != 0) return;
+            foreach (var folder in tied) folder.Untie();
+        }
+    }
+
+    private sealed class Reaper(Process process, Child? child, Func<Process, TimeSpan, bool> waitForExit) : IDisposable
+    {
+        /// <summary>Kill the tree, then wait (bounded, not for the pipes) for the child's exit. Confirmed: the tie ends. Not confirmed: the tie stays and
+        /// ONE exception names the pid and the folders, so the test fails visibly and the audit names the folders.</summary>
         public void Dispose()
         {
+            var confirmed = true;
             try
             {
                 if (!process.HasExited)
                 {
                     process.Kill(entireProcessTree: true);
+                    confirmed = waitForExit(process, EndBound);
                 }
             }
             catch (InvalidOperationException)
             {
-                // It exited between the check and the kill — the ordinary race, nothing to do.
+                // It exited (or its handle is gone) between the check and the kill - the ordinary race; the end is a fact.
             }
+
+            if (!confirmed)
+            {
+                throw new InvalidOperationException(
+                    $"host-process: the end of process {child?.Pid ?? process.Id} was not confirmed within {EndBound.TotalSeconds:0} s of the kill"
+                    + (child is { Tied.Count: > 0 } ? $"; its folder(s) stay: {string.Join(", ", child.Tied.Select(f => f.Path))}" : string.Empty));
+            }
+
+            child?.End();
         }
     }
 
@@ -149,26 +199,78 @@ internal static class HostProcess
         return reader.ReadToEnd();
     }
 
-    /// <summary>A fresh, empty temporary directory.</summary>
-    internal static string TempDirectory(string prefix, Action<string>? warn = null)
+    /// <summary>A registered folder, with the number of children still tied to it.</summary>
+    private sealed class Folder(OwnedDir dir)
     {
-        var path = Path.Combine(Path.GetTempPath(), $"{prefix}-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(path);
-        return path;
+        private int _tied;
+
+        public OwnedDir Dir { get; } = dir;
+
+        public string Path => Dir.Path;
+
+        public bool IsTied => Volatile.Read(ref _tied) > 0;
+
+        public void Tie() => Interlocked.Increment(ref _tied);
+
+        public void Untie() => Interlocked.Decrement(ref _tied);
     }
 
-    /// <summary>Delete a temporary directory, best effort — a child that is still exiting may hold a file.</summary>
+    /// <summary>Every folder <see cref="TempDirectory"/> made and <see cref="Remove"/> has not yet taken out, by path. The take-out is ONE atomic
+    /// <c>TryRemove</c>: only the call that won it disposes. A disposal that gives up stays in <see cref="OwnedDir"/>'s own registry, where the audit sees it.</summary>
+    private static readonly ConcurrentDictionary<string, Folder> Folders = new(PathComparer);
+
+    private static readonly ConditionalWeakTable<Process, Child> Children = [];
+
+    private static StringComparer PathComparer => OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
+    /// <summary>The registered folders that an argument or an environment value names or lies under (the callers pass the folder itself, or a path in it);
+    /// each is tied to the child that is about to start.</summary>
+    private static List<Folder> FoldersNamedBy(IReadOnlyList<string> args, IReadOnlyDictionary<string, string> env)
+    {
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        var values = args.Concat(env.Values).ToList();
+        var tied = new List<Folder>();
+        foreach (var folder in Folders.Values)
+        {
+            // Names are unique per run (a random id ends each one), so containment cannot name a folder by accident.
+            if (!values.Any(value => value.Contains(folder.Path, comparison))) continue;
+            folder.Tie();
+            tied.Add(folder);
+        }
+
+        return tied;
+    }
+
+    /// <summary>A fresh, empty temporary directory: an <see cref="OwnedDir"/> (claimed first, prefixed, registered), whose warning sink is
+    /// <paramref name="warn"/> - the sink travels with that one folder, so no shared delegate exists for parallel tests to race on.</summary>
+    internal static string TempDirectory(string what, Action<string>? warn = null)
+    {
+        var dir = OwnedDir.Create(what, null, warn);
+        Folders[dir.Path] = new Folder(dir);
+        return dir.Path;
+    }
+
+    /// <summary>Remove a folder <see cref="TempDirectory"/> gave. Never throws. A path it did not give, a path already taken out, and a folder
+    /// whose child has not ended are each ONE warning and nothing removed. A disposal that gives up is warned about by the folder itself, keeps
+    /// folder and claim, and stays in the helper's registry, so the end-of-run audit fails the run. <paramref name="onDispose"/> sees the path
+    /// of each disposal just before it starts (a test's counting and ordering hook).</summary>
     internal static void Remove(string path, Action<string>? warn = null, Action<string>? onDispose = null)
     {
+        warn ??= Owned.DefaultWarn;
+        if (Folders.TryGetValue(path, out var folder) && folder.IsTied)
+        {
+            warn($"host-process: {path} is kept - a child started with it has not ended; it stays registered, so the audit names it");
+            return;
+        }
+
+        if (!Folders.TryRemove(path, out folder))
+        {
+            warn($"host-process: {path} was not given by TempDirectory, or was already removed - left alone");
+            return;
+        }
+
         onDispose?.Invoke(path);
-        try
-        {
-            Directory.Delete(path, recursive: true);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            // Left for the OS's temp sweep; a test must not fail on its own cleanup.
-        }
+        folder.Dir.Dispose();
     }
 }
 
