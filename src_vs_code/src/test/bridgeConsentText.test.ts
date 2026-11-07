@@ -75,6 +75,12 @@ test('C10: the name is an entry name — a person\'s text inside a security dial
   assert.equal(long.includes('n'.repeat(81)), false);
 });
 
+test('C26: a quote inside either name cannot close the quotes it stands in — it becomes an apostrophe, in the bridge line and in the destination sentence', () => {
+  const server = bridgeModalLine({ ...CONTEXT, serverName: 'x". Allowing covers every later call. "y' }, 'destination', 'db", and nothing goes back to that server. "z');
+  assert.equal(server, 'Through the Remote Bridge of "x\'. Allowing covers every later call. \'y". The connection starts on this computer; the command runs on "db\', and nothing goes back to that server. \'z", and its output goes back to that server.');
+  assert.equal(server.split('"').length, 5, 'four quotes, the two pairs the sentences wrote');
+});
+
 test('C11: the coverage line with quiet off says this call only', () => {
   assert.equal(bridgeCoverageLine({ context: CONTEXT, quiet: false }), 'Allowing covers this call only.');
 });

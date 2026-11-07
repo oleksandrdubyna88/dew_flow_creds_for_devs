@@ -32,9 +32,18 @@ export function bridgeRunSite(action: string): RunSite | undefined {
   return RUN_SITES.get(action);
 }
 
-/** What each site says. The entry's name is a person's text inside a security dialog and passes the sanitiser of a caller label. */
+/**
+ * A name as a bridged dialog shows it between quotes: one line, at most eighty code points (the sanitiser of a caller label), and no `"` of
+ * its own, so a name cannot close the quotes it stands in and carry on as a sentence of the dialog. Only a bridged dialog uses it; a local
+ * dialog shows the entry's name as it always did.
+ */
+export function bridgeQuotedName(name: string): string {
+  return cleanCallerField(name).replaceAll('"', "'");
+}
+
+/** What each site says. The entry's name is a person's text inside a security dialog and is shown through `bridgeQuotedName`. */
 const SITE_SENTENCES: Readonly<Record<RunSite, (entryName: string) => string>> = {
-  destination: (entryName) => `The connection starts on this computer; the command runs on "${cleanCallerField(entryName)}", and its output goes back to that server.`,
+  destination: (entryName) => `The connection starts on this computer; the command runs on "${bridgeQuotedName(entryName)}", and its output goes back to that server.`,
   laptop: () => 'It runs on this computer, and only its output goes to that server.',
   server: () => 'It runs on that server.',
 };
@@ -44,7 +53,7 @@ const SITE_SENTENCES: Readonly<Record<RunSite, (entryName: string) => string>> =
  * pass the sanitiser of a caller label. An action with no site names the bridge and claims no place.
  */
 export function bridgeModalLine(bridge: BridgeContext, site: RunSite | undefined, entryName: string): string {
-  const through = `Through the Remote Bridge of "${cleanCallerField(bridge.serverName)}".`;
+  const through = `Through the Remote Bridge of "${bridgeQuotedName(bridge.serverName)}".`;
   return site === undefined ? through : `${through} ${SITE_SENTENCES[site](entryName)}`;
 }
 

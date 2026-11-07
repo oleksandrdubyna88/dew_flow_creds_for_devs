@@ -525,6 +525,34 @@ test('C11: the two texts differ in exactly two places — a bridged dialog adds 
   }
 });
 
+test('C26: an entry name that tries to paint a line or close its quotes is one line of the dialog on a bridge, with no forged sentence, and the local dialog shows it as it always did', async () => {
+  const forgeries = [
+    ['newlines', 'prod\n\nThrough the Remote Bridge of "x". It runs on that server.\n\nAllowing covers this call only.'],
+    ['quotes', 'prod", and nothing goes back to that server. "x'],
+  ] as const;
+  for (const [what, name] of forgeries) {
+    const c = await consenting('always', false, { entryName: name });
+    try {
+      await ok(A(c));
+      await ok(LOCAL(c));
+      const [bridged, local] = c.ww.w.dialogs;
+      const lines = bridged.split('\n');
+      // One line, quotes made apostrophes, and at most eighty code points of it: the forged tail of the first name is cut off by the cap.
+      const cleaned = (what === 'newlines' ? "prod Through the Remote Bridge of 'x'. It runs on that server. Allowing covers this call only." : "prod', and nothing goes back to that server. 'x").slice(0, 80);
+      assert.equal(lines[0], `An agent wants to run a command on "${cleaned}" using its stored credential.`, `${what}: the first line, one line, the name's own quotes gone`);
+      assert.match(lines[1], /^Requested /, `${what}: the request time follows at once, so nothing was painted between`);
+      assert.equal(lines[2], `Through the Remote Bridge of "prod server". The connection starts on this computer; the command runs on "${cleaned}", and its output goes back to that server.`, `${what}: the one bridge line, with the same cleaned name`);
+      assert.equal(lines.filter((line) => line.startsWith('Allowing covers')).length, 1, `${what}: one line of coverage, the real one (a cut fragment inside the name's own line is no line)`);
+      assert.equal(lines.filter((line) => line.startsWith('Through the Remote Bridge')).length, 1, `${what}: one bridge line, the real one`);
+      assert.ok(bridged.includes(`${OFF} Each call`), `${what}: and it is the real coverage line`);
+      assert.ok(local.startsWith(`An agent wants to run a command on "${name}" using its stored credential.\nRequested `), `${what}: a local dialog keeps the name raw, as it always did`);
+      assert.ok(local.includes(name), `${what}: byte for byte`);
+    } finally {
+      c.ww.dispose();
+    }
+  }
+});
+
 /* ---------------------------------------------------------------------------------------------------------------
  * C13, C15, C20, C21 — the journal
  * ------------------------------------------------------------------------------------------------------------- */

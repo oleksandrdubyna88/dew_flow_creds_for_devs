@@ -176,9 +176,14 @@ test('E1.4: the server an answer was given through is handed to the write, and a
   assert.deepEqual(seen, [['e1', 'server-A'], ['e1', undefined]]);
 });
 
+/** A whole grant with real defaults, the shape `GrantRegistry.mint` makes; a test overrides what it is about. */
+function grantOf(over: Partial<Grant> = {}): Grant {
+  return { secret: 's', accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh', status: 'pending', mintedAt: 0, lastUsedAt: 0, uses: 0, scope: 'call', ...over };
+}
+
 test('E1.4: the record names the server from the grant\'s context alone, and off a bridge it carries no server key at all', () => {
-  const base = { accountId: 'a1', entityId: 'e1', entityName: 'prod', secret: 's' } as unknown as Grant;
-  const bridged = { ...base, bridge: { context: { bridgeId: 'b1', accountId: 'a1', serverEntityId: 'srv-1', serverName: 'x', target: '', remoteOs: undefined }, quiet: true } } as unknown as Grant;
+  const base = grantOf();
+  const bridged = grantOf({ bridge: { context: { bridgeId: 'b1', accountId: 'a1', serverEntityId: 'srv-1', serverName: 'x', target: '', remoteOs: undefined }, quiet: true } });
   const answer = { via: 'mcp' as const, asked: true, rungs: RUNGS };
   const noted = (): void => undefined;
   const written = consentRecordOf(bridged, answer, undefined, noted);

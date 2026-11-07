@@ -3721,7 +3721,7 @@ a bridge, is replaced there by `Allowing covers this call only.`, or, with `quie
 `Allowing follows this entry's own consent setting, for this server only: not for another server, and not for this computer.`; off a
 bridge the dialog is byte for byte what it was, and a test spells the local text out and the bridged one as its two differences
 (`bridgeConsent.test.ts`, C11). The server's name is the context's and the entry's is the grant's, both through the sanitiser of a caller
-label; the caller's label stays a label. `GrantRegistry.describe` appends ` bridge=<name>` inside the line's
+label with every `"` made `'` (`bridgeQuotedName`), in the bridge line and, on a bridged grant, in the dialog's first line too, so a name cannot paint a line of its own or close its quotes; a local dialog shows the entry's name as it always did; the caller's label stays a label. `GrantRegistry.describe` appends ` bridge=<name>` inside the line's
 grant group, where `bridgeAuditName` (`bridgeContext.ts`) has taken out whitespace, parentheses, `→` and control and format
 characters (one `_` for a run, forty code points at most), so every line about a bridged call says which server it was for and
 `LINE`, `formatAuditLine` and `parseAuditLine` are unchanged; the two lines written with no grant, the `too_many_requests` of a

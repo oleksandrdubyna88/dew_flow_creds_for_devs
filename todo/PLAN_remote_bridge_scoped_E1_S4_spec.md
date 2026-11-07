@@ -291,7 +291,9 @@ later work won wherever it contradicted the saved work.
    **Residual, stated.** The write has already happened when the second check refuses, so a stamp written during a narrow stays under the server key. It is inert while the entry is out of
    scope, and it speaks again if the entry is put back within twelve hours with `quiet` on. The person did Allow it through that server (§S4.1 item 7 is the same decision).
 4. **C11's split of the token sentence** was already in the saved work (`coverageTail`). It now has a test that spells the local dialog out as a literal and the bridged one as
-   its two differences (the bridge line, the coverage line), so the two texts are told apart by an exact comparison, not by a substring.
+   its two differences (the bridge line, the coverage line), so the two texts are told apart by an exact comparison, not by a substring. **A third difference, for a name that needs it:**
+   on a bridged grant the first line shows the entry's name cleaned (one line, eighty code points, `"` made `'`); for an ordinary name it is the same bytes, so C11's literal stands, and C26 pins the
+   hostile ones (see the paragraph on the dialog's entry name below).
 5. `remember`'s record moved to `brokerConsentMemory.consentRecordOf` (the file's own docblock: *everything here is about the RECORD of a consent*). The server key is
    read from the grant's context only, and absent, not `undefined`, off a bridge.
 6. `research/module_extension.md`: the modal sentence rewritten per action, the gate re-check, and `unanswered`'s mark.
@@ -336,9 +338,13 @@ all, each caught by the case named, the file restored and its hash compared:
 no place, rather than guessing or throwing: a throw inside `wording` would leave the place taken. (b) The exec sentence names the entry (`grant.entityName`), which is what the E1 document's
 item 9 writes as `"<entry>"`. (c) The server-key record is built by a function in `brokerConsentMemory.ts` so that `credsAgentServer.ts` ends below the ceiling.
 
-**Known residual, for E1.5's dialog rewrite (review finding F3; recorded, not changed).** The dialog's first line shows the raw entry name (`brokerConsent.ts`, `"${grant.entityName}" using its
-stored credential`), as `main` does: a name holding newlines or quotes can paint lines of its own in a dialog that is the authorisation. The bridge line sanitises both names it adds; the first line is
-left as it was, off a bridge and on one, and E1.5 owns the dialog's wording.
+**The dialog's entry name (review finding F3, first recorded here as a residual for E1.5, now built, from the coai code round).** `wording`'s first line showed the raw entry name, as
+`main` does, so a name holding newlines could paint a forged *Allowing covers…* paragraph and one holding quotes could end where the name ends. **On a bridged grant only**, the first line's
+name and the two names the bridge line carries (the server's, and the entry's in the `exec` sentence) go through `bridgeQuotedName` (`bridgeConsentText.ts`): the caller-label sanitiser
+(one line, no control or format character, eighty code points) and every `"` in the cleaned name made `'`. The local dialog is untouched, byte for byte (C11's literal is green with no edit).
+C26 gives an entry the two names of the review (one with `\n\nThrough the Remote Bridge of "x". It runs on that server.\n\nAllowing covers this call only.`, one with `prod", and nothing goes back to that
+server. "x`) and asserts, on a bridge, one first line, the request time right after it, one bridge line and one coverage line, and, off a bridge, the raw name as it always was; a pure case covers the
+quotes in both names of the bridge line. RED first (the first line showed the forged text); mutations E1-E6, all caught. The one cost: a very long name is cut at eighty code points on a bridge.
 
 **Not edited, by the stop rule.** The S4 spec's C10, C12 and §S4.10 item 5, and the E1 document's §E1.4 item 6, still quote the saved `laptop` sentence; item 9 of the epoch 4 amendment says
 they change in E1.4's finishing commit. They are left as written, and this section is the record of the sentences as built.

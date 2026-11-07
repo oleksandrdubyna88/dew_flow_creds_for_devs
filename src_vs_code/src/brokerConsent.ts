@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { CONSENT_TIMEOUT_MS } from './agentConsent';
 import type { AuditDoor, AuditEntry } from './agentAuditLog';
-import { bridgeCoverageLine, bridgeModalLine, bridgeRunSite } from './bridgeConsentText';
+import { bridgeCoverageLine, bridgeModalLine, bridgeQuotedName, bridgeRunSite } from './bridgeConsentText';
 import { CALLER_DISCLAIMER, CallerLabel, callerLine } from './brokerCaller';
 import type { ConsentOutcome } from './brokerMcpDoor';
 import { describeLimits, grantLimits } from './grantLimits';
@@ -195,12 +195,17 @@ export class ConsentGate {
     return (
       `${callerLine(caller)} wants to ${verb} ` +
       // WHEN (#131): fixed as the dialog is raised, so one left waiting keeps the time it was asked.
-      `"${grant.entityName}" using its stored credential.\n${localRequestTimeLine(new Date())}${bridgeLine(question)}\n\n${summary}\n\n` +
+      `"${shownName(grant)}" using its stored credential.\n${localRequestTimeLine(new Date())}${bridgeLine(question)}\n\n${summary}\n\n` +
       `${CALLER_DISCLAIMER}\n\n` +
       `${coverageTail(question, everything)} ` +
       'Each call is logged in the "CredsForDevs: Agent Access" output panel.'
     );
   }
+}
+
+/** The entry's name in the dialog's first line: as it always was off a bridge, one cleaned line without quotes of its own through one. */
+function shownName(grant: Grant): string {
+  return grant.bridge === undefined ? grant.entityName : bridgeQuotedName(grant.entityName);
 }
 
 /** Through a Remote Bridge, the line after the request time says which server, where THIS action runs and what goes back; the context's words and the call's own action, never the caller's. */
