@@ -557,9 +557,8 @@ test('[S1.15] a harness that cannot be started reads `could not start the harnes
     harnesses: [harness(dir, 'nostart', 'process.exit(0);')],
     platform: 'linux',
     spawn: () => {
-      const child = new EventEmitter() as EventEmitter & { stdout: PassThrough; stderr: PassThrough };
-      child.stdout = new PassThrough();
-      child.stderr = new PassThrough();
+      // No cast: the fake child is built with the two streams the runner reads, so the compiler checks its shape.
+      const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough() });
       setImmediate(() => child.emit('error', new Error('spawn node ENOENT')));
       return child;
     },
