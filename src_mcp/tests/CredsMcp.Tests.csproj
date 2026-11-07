@@ -37,6 +37,10 @@
     <!-- A crashed window's announcement and a port that counts connections - the same definition the CLI and the
          broker-client tests use (PLAN_stale_endpoint_files_slow_every_refusal.md). -->
     <Compile Include="..\..\src_service_defaults\tests\Support\StaleWindows.cs" Link="Support\StaleWindows.cs" />
+    <!-- E2.3: the test-leftovers helper (an adapted copy of dew_flow_mcp's, src_service_defaults/tests/Support/Leftovers/template-manifest.json
+         lists every change): the owned scratch folders, the start-of-run sweep and the end-of-run audit. ONE wildcard, so a file added to the folder
+         reaches all five executables - a missed link would leave one of them with no sweep and no audit. -->
+    <Compile Include="..\..\src_service_defaults\tests\Support\Leftovers\*.cs" Link="Support\Leftovers\%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

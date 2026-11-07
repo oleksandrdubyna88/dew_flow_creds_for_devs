@@ -369,9 +369,15 @@
         },
         {
           "old": "    private const string HelperFolder = \"tests/Mcp.Tests/Leftovers/\";",
-          "new": "    private const string HelperFolder = \"src_service_defaults/tests/Support/Leftovers/\";",
+          "new": "    private static readonly string[] HelperFolders = [\"src_service_defaults/tests/Support/Leftovers/\", \"src_service_defaults/tests/Leftovers/\"];",
           "count": 1,
-          "reason": "S3 helper path: the one helper folder of this repository"
+          "reason": "S3 helper paths: the template's one helper folder is two here (D1: the helper and its tests lie in two folders); the copied tests spell Owned.Prefix and Owned.TempRoot in their fixtures, as the template's own did inside its folder"
+        },
+        {
+          "old": "source.Relative.StartsWith(HelperFolder, StringComparison.Ordinal)",
+          "new": "HelperFolders.Any(folder => source.Relative.StartsWith(folder, StringComparison.Ordinal))",
+          "count": 1,
+          "reason": "the folder test follows the two helper folders"
         },
         {
           "old": "        \"tests/Mcp.Tests/Leftovers/LeftoversGuard.cs\",\n        \"tests/Mcp.Tests/Leftovers/LeftoversGuardTests.cs\",\n        \"tests/Mcp.Tests/Leftovers/LeftoversGuardScriptsTests.cs\",",

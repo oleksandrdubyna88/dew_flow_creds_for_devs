@@ -5,6 +5,8 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <!-- Support/Leftovers/Native.cs uses [LibraryImport] (the source generator needs this), as the shared library does. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>CredsBroker.Tests</AssemblyName>
     <RootNamespace>CredsBroker.Tests</RootNamespace>
     <!-- The library forbids reflection-based JSON so AOT failures surface at compile time. The
@@ -27,6 +29,10 @@
     <!-- A crashed window's announcement and a port that counts connections, linked from src_service_defaults the way
          the CLI and MCP test projects link it, so the three walks share one definition. -->
     <Compile Include="..\..\src_service_defaults\tests\Support\StaleWindows.cs" Link="Support\StaleWindows.cs" />
+    <!-- E2.3: the test-leftovers helper (an adapted copy of dew_flow_mcp's, src_service_defaults/tests/Support/Leftovers/template-manifest.json
+         lists every change): the owned scratch folders, the start-of-run sweep and the end-of-run audit. ONE wildcard, so a file added to the folder
+         reaches all five executables - a missed link would leave one of them with no sweep and no audit. -->
+    <Compile Include="..\..\src_service_defaults\tests\Support\Leftovers\*.cs" Link="Support\Leftovers\%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
