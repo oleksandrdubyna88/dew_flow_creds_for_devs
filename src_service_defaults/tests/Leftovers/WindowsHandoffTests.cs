@@ -227,7 +227,7 @@ public sealed class WindowsHandoffTests : IDisposable
 
         if (mine)
         {
-            result.Removed.Should().Equal(dir, "both keys are the caller's, so the old, dead folder is collected");
+            result.Removed.Should().Equal([dir], "both keys are the caller's, so the old, dead folder is collected");
             Directory.Exists(dir).Should().BeFalse();
             File.Exists(dir + ".owner").Should().BeFalse();
         }
