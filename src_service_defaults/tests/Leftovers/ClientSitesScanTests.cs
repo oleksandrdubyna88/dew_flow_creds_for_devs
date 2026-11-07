@@ -4,15 +4,16 @@ using Xunit;
 namespace CredsForDevs.Tests.Leftovers;
 
 /// <summary>
-/// The automated RED of the client, process and socket sites (E2.3.S3, S3.0): the copied guard's <c>raw-temp</c> reading over the four client test trees. A
-/// temp-path API call, <c>Owned.TempRoot</c> outside the helper's folders and a <c>/tmp</c> or <c>/var/tmp</c> literal are findings, unless a marker on the line
-/// (or the line above) carries them. The findings that remain are EXACTLY three lines that create nothing and stay for E2.5's guard: the product's default
-/// socket path (twice) and a refused-path literal. A list of zero would be red until E2.5; a list that grows is a new site.
+/// The automated RED of the client, process, socket and server sites (E2.3.S3, S3.0; E2.3.S4, S4.0): the copied guard's <c>raw-temp</c> reading over the four client
+/// test trees and the server's. A temp-path API call, <c>Owned.TempRoot</c> outside the helper's folders and a <c>/tmp</c> or <c>/var/tmp</c> literal are findings, unless a marker on the line
+/// (or the line above) carries them. The findings that remain are EXACTLY three lines that create nothing and stay for E2.5's guard (the product's default
+/// socket path twice and a refused-path literal), and the seven backup sites that are E2.3.S5's and fall off the second list when S5 moves them. A list of zero
+/// would be red until E2.5; a list that grows is a new site.
 /// The scan reads a COPY of the trees in a scratch root, so the guard's own discovery (which keys on relative paths) runs unchanged and starts no script classifier.
 /// </summary>
 public sealed class ClientSitesScanTests : IDisposable
 {
-    private static readonly string[] Trees = ["src_cli/tests/", "src_mcp/tests/", "src_broker_client/tests/", "src_service_defaults/tests/"];
+    private static readonly string[] Trees = ["src_cli/tests/", "src_mcp/tests/", "src_broker_client/tests/", "src_service_defaults/tests/", "src_minimalapi_server/tests/"];
 
     /// <summary>The helper's COPIED files (the manifest's targets) are left out: S3.0 judges creds' own code, and a copied file cannot be edited. Creds' own files in the same
     /// folders (<c>OwnedCreds.cs</c>, the fixtures, the tests) ARE scanned. The list is read from <c>template-manifest.json</c>, never retyped.</summary>
@@ -34,12 +35,29 @@ public sealed class ClientSitesScanTests : IDisposable
     /// <c>/tmp</c> inside one that contains a quote, so that line is not a finding and not on this list - the guard's own reading decides (the brief says so for exactly this case).
     /// A follow-up: the template guard's raw-string reading (E3 / E2.5).
     /// </summary>
-    private static readonly (string File, string Fragment)[] Expected =
+    private static readonly (string File, string Fragment)[] StaysForE25 =
     [
         ("src_cli/tests/AgentRelayTests.cs", "DefaultSocketPath(null, \"dev\")"),
         ("src_cli/tests/AgentRelayTests.cs", "DefaultSocketPath(\"   \", \"dev\")"),
         ("src_cli/tests/AgentRelayTests.cs", "new string('x', AgentRelay.MaxSocketPathBytes)"),
     ];
+
+    /// <summary>
+    /// The backup sites of the server tests: E2.3.S5's (the brief's § 3.5), still on <c>GetTempPath()</c> after S4. S5's RED removes them from this list one by one, and the list
+    /// is gone with the last. The first, <c>BackupKeyFileTests</c> line 92, creates nothing (S5 puts it under a marker); the others make a folder.
+    /// </summary>
+    private static readonly (string File, string Fragment)[] OwnedByS5 =
+    [
+        ("src_minimalapi_server/tests/BackupArchiveCommandTests.cs", "\"cred-vault-aot-kit\""),
+        ("src_minimalapi_server/tests/BackupArchiveCommandTests.cs", "\"cred-vault-backup-cli\""),
+        ("src_minimalapi_server/tests/BackupArchiveTests.cs", "\"cred-vault-backup\""),
+        ("src_minimalapi_server/tests/BackupKeyFileTests.cs", "BackupKeyFile.Read(Path.Combine("),
+        ("src_minimalapi_server/tests/BackupKeyFileTests.cs", "\"cred-vault-key-file\""),
+        ("src_minimalapi_server/tests/BackupRunnerTests.cs", "\"cred-vault-backup-run\""),
+        ("src_minimalapi_server/tests/BackupStoreTests.cs", "\"cred-vault-backup-store\""),
+    ];
+
+    private static readonly (string File, string Fragment)[] Expected = [.. StaysForE25, .. OwnedByS5];
 
     private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
 
@@ -80,16 +98,17 @@ public sealed class ClientSitesScanTests : IDisposable
             ?? $"UNEXPECTED {f.File}:{f.Line} {f.Text}").Order(StringComparer.Ordinal)];
 
     [Fact]
-    public void TheClientTrees_HoldNoUnmarkedTempSiteButTheThreeLinesThatCreateNothing()
+    public void TheTestTrees_HoldNoUnmarkedTempSiteButTheThreeLinesThatCreateNothingAndS5sBackupSites()
     {
         var sources = TestSources().Where(relative => !Copied.Contains(relative)).ToList();
-        sources.Count.Should().BeGreaterThan(50, "premise: the scan sees the trees (56 files when this was written)");
+        sources.Count.Should().BeGreaterThan(50, "premise: the scan sees the trees (about 125 files with the server's when this was written)");
         sources.Should().Contain(["src_service_defaults/tests/Support/Leftovers/OwnedCreds.cs", "src_service_defaults/tests/Leftovers/SocketRootSweepTests.cs"], "premise: creds' own files in the helper folders are scanned");
+        sources.Should().Contain("src_minimalapi_server/tests/VaultServer.cs", "premise: the server's tests are in the scan (E2.3.S4)");
         sources.Should().NotContain(Copied, "premise: the copied files are not");
 
         Named(RawTempFindings(Scratch(sources))).Should().Equal(
             [.. Expected.Select(e => $"{e.File} | {e.Fragment}").Order(StringComparer.Ordinal)],
-            "every temp site is a helper call or carries a marker; the three literals that create nothing stay for E2.5's guard");
+            "every temp site is a helper call or carries a marker; the three literals that create nothing stay for E2.5's guard, and the backup sites wait for S5");
     }
 
     /// <summary>The callers pass the short <c>what</c>; the helper adds the owner, the repository token and the id, so a leading <c>creds-</c> reads as <c>creds-creds-</c>.</summary>
