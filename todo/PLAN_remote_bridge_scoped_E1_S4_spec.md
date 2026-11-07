@@ -1,6 +1,6 @@
 # PLAN — E1.4 spec: per-server consent, the modal line, the audit line
 
-> Status: **plan only, nothing implemented yet, 2026-11-04 — security spec by Fable (authorisation: what silences a prompt), written before its code.**
+> Status: **built on `feat/remote-bridge-e14`, unmerged, 2026-11-07 (§S4.12 is the As built); written 2026-11-04 as a security spec by Fable (authorisation: what silences a prompt), before its code. Where §S4.2-§S4.10 differ from §S4.12 on the modal sentences, §S4.12 and the E1 document's epoch 4 amendment, item 9, win.**
 > Story E1.4 of [PLAN_remote_bridge_scoped_E1.md](PLAN_remote_bridge_scoped_E1.md) (parent [PLAN_remote_bridge_scoped.md](PLAN_remote_bridge_scoped.md) §4.2
 > *"Never ask" and "every 12 hours"*, *Modal and journal*). Shorter on purpose: the E1 document settles the `stampKey` tag, the four
 > sentences, `bridgeAuditName`, and scenarios C1–C15; this file carries what E1 left open, the exact interplay with E1.3's
@@ -104,6 +104,8 @@ export function bridgeCoverageLine(bridge: BridgeGrant): string;                
 //   :338  this.admitAliasCall(res, true, view.bridge?.serverName)
 ```
 
+> *Superseded 2026-11-07 by §S4.12 and the E1 document's epoch 4 amendment, item 9: the modal line is true per action (`bridgeRunSite(action)`, `bridgeModalLine(bridge, site, entryName)`); the text above is kept as it was written.*
+
 **What `quiet` may and may not do, stated once.** `quiet` is read from a fresh `Scope` at the lookup (`view.resolveUse`) and snapshotted
 onto the grant at mint (`view.grantFor()`) for the modal's coverage line. Nothing in a request body, header or query can set it. It is
 consulted on `POST /v1/mcp/use/*` only; `/v1/alias/*` and `/v1/use/*` (token) mint per call and ask every time. With quiet off no
@@ -116,6 +118,7 @@ stamp never silences the bridge, a bridge stamp never silences local use or anot
 The four modal sentences and the key note are the E1 document's (§E1.4 item 6), verbatim; `<serverName>` is `cleanCallerField(context.serverName)`.
 The audit mark is ` bridge=<bridgeAuditName(serverName)>` appended inside the grant's parentheses; the grant-less line's field is
 `— bridge=<name>`. No new error sentence: this story refuses nothing new.
+> *Superseded 2026-11-07 by §S4.12 and the E1 document's epoch 4 amendment, item 9: the modal line is true per action (`bridgeRunSite(action)`, `bridgeModalLine(bridge, site, entryName)`); the text above is kept as it was written.*
 
 ## S4.4 — Every file, and what changes
 
@@ -140,6 +143,8 @@ The audit mark is ` bridge=<bridgeAuditName(serverName)>` appended inside the gr
 ## S4.5 — Scenarios
 
 C1–C15 of the E1 document, as written, with every `grant.bridge?.serverEntityId` read as `grant.bridge?.context.serverEntityId`
+
+> *Superseded 2026-11-07 by §S4.12 and the E1 document's epoch 4 amendment, item 9: the modal line is true per action (`bridgeRunSite(action)`, `bridgeModalLine(bridge, site, entryName)`); C10's and C12's sentences (in the E1 document) and the text above is kept as it was written.*
 (`test/bridgeConsent.test.ts`, `test/mcpConsentPolicy.test.ts`, `test/brokerConsentText.test.ts`, `test/agentAuditLog.test.ts`). Added:
 
 | # | Scenario | Expected | RED first, because |
@@ -193,6 +198,7 @@ Commands: E1's common block with `<name>` = `bridgeConsent`, `mcpConsentPolicy`,
 3. A stamp given with quiet on is inert while quiet is off and speaks again when quiet is turned on inside its window (C16).
 4. A Deny or a timeout through a bridge writes no stamp and does not tombstone a token (E1.3 §S3.1 item 4).
 5. `bridgeRunSite()` answers `'laptop'` in E1; E3.1 replaces the call with `decideRunSite` and keeps both sentences.
+   *Superseded 2026-11-07 by §S4.12 and the E1 document's epoch 4 amendment, item 9: `bridgeRunSite(action)` answers `destination` for `exec` and `laptop` for `query`; the text above is kept as written.*
 
 ## S4.9 — Not verified by this spec
 
@@ -219,6 +225,8 @@ nothing is deleted, and where this section differs from §S4.2, §S4.4, §S4.7 a
 3. **C20 revised.** Six calls at once through bridge A: the second to sixth are `busy` while the first's dialog is open, and the
    `too_many_requests` lines' grant field reads `— bridge=<A's name>`; six through B at the same moment behave the same with B's name;
    six off a bridge read `—`. Five dialogs answered on A then a sixth: `too_many_requests` with the bridge sentence and `— bridge=<A>`.
+
+*Reconciled 2026-11-07 (§S4.12): the ceiling is 800 (ESLint `max-lines`); `credsAgentServer.ts` is **786** after `consentRecordOf` moved to `brokerConsentMemory.ts`; the 788 and 791 below are history, what the saved work and the epoch 3 plan expected.*
 
 Budget: the fix-forward leaves `credsAgentServer.ts` at 787; E1.4 adds one line (`remember`'s `serverEntityId`) → 788. `extension.ts`
 stays at 1003. Nothing else in §S4.2–§S4.8 moves. Break-it added: **Q13** — `auditGrantMark` reads the body's `serverName` or the caller
@@ -277,13 +285,30 @@ later work won wherever it contradicted the saved work.
 2. **`auditGrantMark` on `unanswered`'s line.** `unanswered(res, error, route, bridge, respondError, log)` takes the context `handle` was handed (the one the door set) and writes
    `grant: auditGrantMark(bridge)` beside §4.1's classification, which does not move. The call site passes `bridge` in place (0 lines).
 3. **The gate is asked again after `await remember()`** (`stamped`, `credsAgentServer.ts`): gate, stamp, gate; both checks read `after consent`, the stage `main`'s one check
-   read after its own write, so a local client leaving during the write is written as it always was. A client that leaves, a scope narrowed or a token gone while the write is
-   pending promotes no waiting rotation and runs nothing (C23, C24).
+   read after its own write, so a local client leaving during the write is written as it always was. A client that leaves, or a scope narrowed or a token denied while the write is
+   pending, promotes no waiting rotation and runs nothing (C23, C24). A token that is *gone* (expired or evicted) is not refused here: `launchGate` reads only `denied`, and E2.2b
+   makes it refuse a gone one (the parent's §4.2); no token write is ever pending on the token door, so the case needs no test today.
+   **Residual, stated.** The write has already happened when the second check refuses, so a stamp written during a narrow stays under the server key. It is inert while the entry is out of
+   scope, and it speaks again if the entry is put back within twelve hours with `quiet` on. The person did Allow it through that server (§S4.1 item 7 is the same decision).
 4. **C11's split of the token sentence** was already in the saved work (`coverageTail`). It now has a test that spells the local dialog out as a literal and the bridged one as
    its two differences (the bridge line, the coverage line), so the two texts are told apart by an exact comparison, not by a substring.
 5. `remember`'s record moved to `brokerConsentMemory.consentRecordOf` (the file's own docblock: *everything here is about the RECORD of a consent*). The server key is
    read from the grant's context only, and absent, not `undefined`, off a bridge.
 6. `research/module_extension.md`: the modal sentence rewritten per action, the gate re-check, and `unanswered`'s mark.
+7. **`quiet` is read once per bridged MCP call (review finding F5; §S4.2's "snapshotted at mint").** Before, the lookup (`usableIn`) read the scope and `grantFor()` read it again at mint, so a
+   scope write between the two could make the dialog say *Allowing covers this call only* while an Allow wrote a server stamp, or the reverse. The lookup now carries the switch it read
+   (`quiet` on the usable answer, `UseRead` and `BrokerDoor.mint(target, quiet)`) and `grantFor(quiet)` snapshots from it; the alias and token roads, which no policy speaks for, still read at mint.
+   C25 (`bridgeConsent.test.ts`) flips the scope right after the lookup, in both directions, and asserts the sentence and the number of stamps an Allow writes agree; `bridgeScope.test.ts` pins the
+   snapshot itself. RED first: the dialog said the other sentence.
+8. **Review fixes.** The test name of the owner's real host is replaced by `build-server` everywhere. `SERVED_ACTIONS` is exported and a test (F4) fails an action that the allow-list serves
+   and `RUN_SITES` does not name. C11's exact literal says why the fake registry reads "run a command on, or run a command on". C24 keeps a 50 ms wait, which is not a handshake: the request's life
+   is private to the server and production has no seam that says it heard a hang-up; the write is held by the test, so a slow hang-up fails the test (no ABANDONED line) and never passes it.
+
+**C24, defined.** *Start:* an MCP use call of `exec` on `e1` (every12h; through bridge A with `quiet` on, and, in the second pass, through the main port), the dialog open and held, the stamp store's
+`update` replaced by one the test holds. *Transition:* the person clicks Allow; the write begins and stays pending; the client's socket is destroyed (`abort()`); the test waits for the server to hear it,
+then releases the write. *Expected:* no response is read (the client is gone); the journal holds an `ABANDONED` line whose detail is `the client left after consent`; `releaseWaiting` was never called (no
+waiting rotation promoted); the scripted action's `ran` list is empty (nothing executed). C23 is the same start with the scope narrowed to nothing instead of the hang-up: the reply is the route's own
+`not_found` sentence, `releaseWaiting` is not called and nothing ran; its control, the same without the narrow, answers 200 and calls `releaseWaiting` once.
 
 **Tests, RED first, then GREEN, then broken on purpose.** New or changed: `bridgeConsentText.test.ts` (C10 per action, C12, the entry-name sanitiser, the no-site case),
 `bridgeConsent.test.ts` (C10 through the MCP, alias and token doors for `exec` and `query`; C11 exact; C23; C24), `brokerUnanswered.test.ts` (the mark; every call updated to the new
@@ -310,6 +335,10 @@ all, each caught by the case named, the file restored and its hash compared:
 **Gaps filled (not in the plan or the spec; for a reader to confirm).** (a) An action that has no site (nothing but `exec` and `query` reaches a bridge's dialog) names the bridge and claims
 no place, rather than guessing or throwing: a throw inside `wording` would leave the place taken. (b) The exec sentence names the entry (`grant.entityName`), which is what the E1 document's
 item 9 writes as `"<entry>"`. (c) The server-key record is built by a function in `brokerConsentMemory.ts` so that `credsAgentServer.ts` ends below the ceiling.
+
+**Known residual, for E1.5's dialog rewrite (review finding F3; recorded, not changed).** The dialog's first line shows the raw entry name (`brokerConsent.ts`, `"${grant.entityName}" using its
+stored credential`), as `main` does: a name holding newlines or quotes can paint lines of its own in a dialog that is the authorisation. The bridge line sanitises both names it adds; the first line is
+left as it was, off a bridge and on one, and E1.5 owns the dialog's wording.
 
 **Not edited, by the stop rule.** The S4 spec's C10, C12 and §S4.10 item 5, and the E1 document's §E1.4 item 6, still quote the saved `laptop` sentence; item 9 of the epoch 4 amendment says
 they change in E1.4's finishing commit. They are left as written, and this section is the record of the sentences as built.

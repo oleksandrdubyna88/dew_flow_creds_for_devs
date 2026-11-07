@@ -3702,8 +3702,11 @@ silences A's later calls on that entry and neither server B's nor local use; a l
 an abandoned dialog write nothing. **The write happens behind the launch gate** (`prepared` takes it as `remember()` and runs it
 after `stopped` answers false, and the gate is asked **again** right after the write, before `releaseWaiting`, since the write is an
 await): an Allow given while the scope was being narrowed, or the line edited, persists no stamp for an entry the gate then refuses,
-and a client that leaves, a scope narrowed or a token gone while the stamp is being written promotes no waiting rotation and runs
-nothing (the second check reads `after consent`, as the one check of `main` did). A stamp given with quiet on survives quiet being turned off, inert (the view
+and a client that leaves, or a scope narrowed or a token denied while the stamp is being written, promotes no waiting rotation and runs
+nothing (the second check reads `after consent`, as the one check of `main` did; `launchGate` refuses only a `denied` token today, and E2.2b makes it refuse a gone one).
+The stamp is already written when the second check refuses: a stamp written during a narrow stays under the server key, inert while the entry is out of scope, and it speaks again if the entry
+is put back within twelve hours with `quiet` on. `quiet` is read once per bridged MCP call: the lookup carries the switch it read and the grant is snapshotted from it, so the coverage line
+and what an Allow writes cannot come from two reads. A stamp given with quiet on survives quiet being turned off, inert (the view
 forces `preConsented: false`), and speaks again if it is turned on inside the twelve hours: the answer was given through that very
 server with it on.
 
