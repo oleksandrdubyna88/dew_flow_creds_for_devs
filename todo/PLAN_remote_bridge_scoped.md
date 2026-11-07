@@ -143,6 +143,26 @@ Narrowed: no — scope, the Definition of Done, the merge conditions and the rel
 - 6.2 · 2026-11-07 · reviewer · contract — the Opus review of E1.4 and CodeRabbit on PR #312: the bridged `query` dialog says *It runs on this computer, and only its output goes to that server*, which reads as if the SQL ran on this computer, while only the database client does and the SQL runs on the database the entry names; the same shape as the `exec` sentence corrected in epoch 4; two consultants (two of two) advise rewording before it ships
   (This second change stopped the plan. PR #307 and PR #312 do not merge until epoch 7 opens.)
 
+### Re-review for epoch 7
+
+Narrowed: yes — §9's database line: a bridged query's password never crosses the bridge to the agent, and at login only the database the entry names receives it, which may stand on the agent's own server with Q11's warning (the owner's decision, 2026-11-08, after two of two consultants)
+
+| Work | Where | Verdict | Action |
+|---|---|---|---|
+| Epoch 6 opening 01b9505 | pushed, in PR #307 | fits | kept |
+| Fix-forward d20febf..1797b3a, c80131b, 2367a82, 83749c2 (flags, classified line, ENOENT, `turns`, import walk, CI, ledger, module text) | pushed, in PR #307 | fits | kept |
+| 6.1, bf1055f, and its build ba798b8..d7c790d | pushed, in PR #307 | fits | kept |
+| `main` carried in: 93621dd, f5bc613, b462923 | merged to `main` | fits | kept; outside this plan |
+| a7af39d, the ForwardAgent itest on the new harness | pushed, in PR #307 | fits | kept |
+| Stop f55585a; revision 74787f3 and its text fixes 014d471 | pushed | fits | kept; step 4 of the full stop, no entry |
+| `UNANSWERED_FAILURE`'s "not why" and `BRIDGE_NOT_SERVED`'s promise | pushed, in PR #307 | cut | fix forward (14) on #307 |
+| PR #307 | open, green, waiting on review threads | fits | no merge until epoch 7 opens; then (14) first |
+| E1.4 af61326..5a4d7d0, with merge 618052f (supersedes c4b7add's row) | pushed, PR #312 stacked on #307 | fits | kept, except the rows below |
+| The `query` run-site line and its echoes in tests, module text and the S4 spec on that branch | pushed, PR #312 | cut | fix forward (13): §4.2's sentence, with a test that observes the launch |
+| `SITE_SENTENCES` keyed by site; C10 asserting words with a stub action | pushed, PR #312 | cut | fix forward (13): sentences per action and site; C10 records the argv |
+| PR #312 base | open | — | merge #307's head into it first |
+| The local token-wide coverage sentence on the alias and MCP doors | `main` | — | outside this plan: fixed on `main` in its own PR; this plan inherits it |
+
 ## Reading this plan: contracts, sketches and observations
 
 Three kinds of line stand in this document, and a reader must tell which is which before building against one or correcting one. The re-review for epoch 5, after the plan's third stop, read the drift as being in what the plan treated as authoritative, not in the epic split: a release-note sentence prescribed in two places was read as a contract and was false (change 4.2), and an implementation sketch (D.8's order) was built as written where its contract, *every request is answered and the journal is bounded*, was what mattered (change 4.3).
