@@ -1,3 +1,4 @@
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 
 namespace CredVaultServer.Tests;
@@ -17,44 +18,41 @@ namespace CredVaultServer.Tests;
 /// Safe because every server test runs in the one non-parallel <see cref="ServerCollection"/>.</para>
 /// </remarks>
 [Collection(ServerCollection.Name)]
-public sealed class StartupGuardTests
+public sealed class StartupGuardTests : IDisposable
 {
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+
+    public void Dispose() => _owned.Dispose();
+
     /// <summary>
     /// The Fatal lines this start wrote to its own log file, or null when it wrote none — and then the host
     /// really started: a start that failed WITHOUT a Fatal line rethrows, so an accepted case cannot pass on a
     /// host that broke for some other reason.
     /// </summary>
-    private static string? StartupFailure(IReadOnlyDictionary<string, string?> overrides)
+    private string? StartupFailure(IReadOnlyDictionary<string, string?> overrides)
     {
-        var logs = Path.Combine(Path.GetTempPath(), "cred-vault-tests", "logs-" + Guid.NewGuid().ToString("N"));
-        try
+        var logs = _owned.Dir("guard-logs");
+        InvalidOperationException? notStarted = null;
+        using (var server = new VaultServer(new Dictionary<string, string?>(overrides) { ["Logging__Directory"] = logs }))
         {
-            InvalidOperationException? notStarted = null;
-            using (var server = new VaultServer(new Dictionary<string, string?>(overrides) { ["Logging__Directory"] = logs }))
+            try
             {
-                try
-                {
-                    // The host is built lazily; this is what actually runs Program.cs.
-                    using var client = server.CreateClient();
-                }
-                catch (InvalidOperationException e)
-                {
-                    // A refused start returns before Build(), which the factory reports as "the entry point
-                    // exited without ever building an IHost". The reason is in the file, read below.
-                    notStarted = e;
-                }
+                // The host is built lazily; this is what actually runs Program.cs.
+                using var client = server.CreateClient();
             }
-            var fatal = FatalLines(logs);
-            if (fatal is null && notStarted is not null)
+            catch (InvalidOperationException e)
             {
-                throw new InvalidOperationException("the host did not start, and its log says nothing at Fatal", notStarted);
+                // A refused start returns before Build(), which the factory reports as "the entry point
+                // exited without ever building an IHost". The reason is in the file, read below.
+                notStarted = e;
             }
-            return fatal;
         }
-        finally
+        var fatal = FatalLines(logs);
+        if (fatal is null && notStarted is not null)
         {
-            DeleteQuietly(logs);
+            throw new InvalidOperationException("the host did not start, and its log says nothing at Fatal", notStarted);
         }
+        return fatal;
     }
 
     private static string? FatalLines(string logs)
@@ -76,18 +74,6 @@ public sealed class StartupGuardTests
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
-    }
-
-    private static void DeleteQuietly(string path)
-    {
-        try
-        {
-            Directory.Delete(path, recursive: true);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            // Left for the temp sweep; a test must not fail on its own cleanup.
-        }
     }
 
     [Fact]
@@ -162,23 +148,15 @@ public sealed class StartupGuardTests
     {
         // A FILE where the data directory should be: the writable probe fails on every platform, and the
         // refusal carries its cause into the same Fatal line.
-        var blocker = Path.Combine(Path.GetTempPath(), "cred-vault-tests", "not-a-directory-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(Path.GetDirectoryName(blocker)!);
+        var blocker = Path.Combine(_owned.Dir("guard-file"), "not-a-directory");
         File.WriteAllText(blocker, "x");
-        try
+        var failure = StartupFailure(new Dictionary<string, string?>
         {
-            var failure = StartupFailure(new Dictionary<string, string?>
-            {
-                ["Vault__DataDir"] = blocker,
-            });
+            ["Vault__DataDir"] = blocker,
+        });
 
-            failure.Should().NotBeNull();
-            failure.Should().Contain($"DataDir '{blocker}' is not writable");
-        }
-        finally
-        {
-            File.Delete(blocker);
-        }
+        failure.Should().NotBeNull();
+        failure.Should().Contain($"DataDir '{blocker}' is not writable");
     }
 
     [Fact]

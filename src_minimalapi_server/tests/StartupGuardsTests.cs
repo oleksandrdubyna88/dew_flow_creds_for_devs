@@ -1,3 +1,4 @@
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 
 namespace CredVaultServer.Tests;
@@ -8,19 +9,13 @@ namespace CredVaultServer.Tests;
 /// </summary>
 public sealed class StartupGuardsTests : IDisposable
 {
-    private readonly string _root = Path.Combine(Path.GetTempPath(), "cred-vault-guards-" + Guid.NewGuid().ToString("N"));
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+    private readonly string _root;
 
-    public void Dispose()
-    {
-        try
-        {
-            Directory.Delete(_root, recursive: true);
-        }
-        catch (DirectoryNotFoundException)
-        {
-            // Nothing was created — the point of several tests here.
-        }
-    }
+    /// <summary>The owned folder exists from the start; what several tests here pin is that the guards created NOTHING inside it.</summary>
+    public StartupGuardsTests() => _root = _owned.Dir("guards");
+
+    public void Dispose() => _owned.Dispose();
 
     private StartupSettings Startable() => new(
         DataDir: Path.Combine(_root, "data"),
@@ -118,6 +113,6 @@ public sealed class StartupGuardsTests : IDisposable
         RefusalOf(settings).Should().StartWith("No authentication scheme configured");
         RefusalOf(settings with { DataDir = "//nas.invalid/vault" })
             .Should().StartWith("No authentication scheme configured", "the pure checks run first, so their message wins");
-        Directory.Exists(_root).Should().BeFalse("the writable probe — the only check that writes — never ran");
+        Directory.GetFileSystemEntries(_root).Should().BeEmpty("the writable probe - the only check that writes - never ran: the test's own folder holds nothing");
     }
 }
