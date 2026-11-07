@@ -339,3 +339,58 @@ test('exec on a forwarding entry with the agent socket DOWN frees the place: no 
   const held = await secondCallDuringHeldExec({ agentForward: true });
   assert.deepEqual(held, { busy: false, ran: 2 });
 });
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * Change 6.1: `exec`'s follow-up flag is read when the dialog CLOSES on an Allow, not at the gate: a socket that comes up while the
+ * dialog is open is seen (the signing prompt can then come), and one that went down is seen too.
+ * ------------------------------------------------------------------------------------------------------------- */
+
+const ASK_BY: Record<'alias' | 'mcp', { path: string; body: Record<string, unknown> }> = {
+  alias: { path: '/v1/alias/exec', body: { alias: 'one', command: 'id' } },
+  mcp: { path: '/v1/mcp/use/exec', body: { entry: 'e1', command: 'id' } },
+};
+
+/** A forwarding entry's exec whose agent socket is up or down when its dialog opens and up or down at the Allow: what a second call finds. */
+async function momentOfTheFlag(door: 'alias' | 'mcp', upAtGate: boolean, upAtAllow: boolean): Promise<{ busy: boolean; asked: boolean }> {
+  const SOCKET = '/run/agent.sock';
+  let outcome = { busy: false, asked: false };
+  await both({ agentForward: true, agentSocket: upAtGate ? SOCKET : undefined }, { agentForward: true, holdDialogs: true }, async ({ lw, ww }) => {
+    let release = (): void => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    lw.hold = () => gate;
+    try {
+      const first = send(viaMain(ww), ASK_BY[door]);
+      await until(() => ww.w.openDialogs.length === 1, 'the first dialog');
+      lw.socket = upAtAllow ? SOCKET : undefined;
+      ww.w.openDialogs[0]('Allow');
+      await until(() => lw.runs.length === 1, 'the exec to be inside ssh');
+      const second = send(viaMain(ww), ASK_BY[door]);
+      const raced = await Promise.race([second, new Promise<string>((resolve) => setTimeout(resolve, 600, 'waiting'))]);
+      outcome = { busy: typeof raced !== 'string' && raced.status === 429 && message(raced) === BUSY_SENTENCE, asked: ww.w.openDialogs.length === 2 };
+      release();
+      ww.w.openDialogs.slice(1).forEach((answer) => answer('Allow'));
+      await Promise.all([first, second]);
+    } finally {
+      release();
+      ww.w.openDialogs.forEach((answer) => answer('Deny'));
+    }
+  });
+  return outcome;
+}
+
+for (const door of ['alias', 'mcp'] as const) {
+  test(`6.1 through the ${door} door: a socket down when the dialog opens and up at the Allow keeps the place — a second call is busy, no second modal`, async () => {
+    assert.deepEqual(await momentOfTheFlag(door, false, true), { busy: true, asked: false });
+  });
+
+  test(`6.1 through the ${door} door: a socket up when the dialog opens and down at the Allow frees the place — a second call is asked`, async () => {
+    assert.deepEqual(await momentOfTheFlag(door, true, false), { busy: false, asked: true });
+  });
+
+  test(`6.1 through the ${door} door: up at both moments holds, down at both frees (the controls)`, async () => {
+    assert.deepEqual(await momentOfTheFlag(door, true, true), { busy: true, asked: false });
+    assert.deepEqual(await momentOfTheFlag(door, false, false), { busy: false, asked: true });
+  });
+}

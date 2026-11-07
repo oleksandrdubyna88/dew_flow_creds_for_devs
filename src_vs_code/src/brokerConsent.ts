@@ -55,8 +55,21 @@ export interface ConsentQuestion {
   readonly caller: CallerLabel | undefined;
   /** The door the call came in by: a local token call raises dialogs that are not throttled, a bridged one is counted on its bridge. */
   readonly via: AuditDoor;
-  /** The call may show a prompt of its own after an Allow (a PIN box, a trust modal): the place is kept until the call ends. */
-  readonly followUp?: boolean;
+  /**
+   * The call may show a prompt of its own after an Allow (a PIN box, a trust modal): the place is kept until the call ends. A function is
+   * asked WHEN THE DIALOG CLOSES on an Allow, not before it opens (change 6.1): what decides it may change while the dialog is open
+   * (the agent's socket coming up).
+   */
+  readonly followUp?: boolean | (() => boolean);
+}
+
+/** Whether the question's call may prompt again, read now. A flag that cannot be read keeps nothing: the place is not held on a guess. */
+function followsUp(question: ConsentQuestion): boolean {
+  try {
+    return typeof question.followUp === 'function' ? question.followUp() : question.followUp === true;
+  } catch {
+    return false;
+  }
 }
 
 export class ConsentGate {
@@ -123,7 +136,7 @@ export class ConsentGate {
       return choice;
     } finally {
       // A timeout leaves `choice` undefined: freed. Only an Allow of a call that may ask again keeps the place.
-      this.deps.dialogClosed?.(question, choice === 'Allow' && question.followUp === true);
+      this.deps.dialogClosed?.(question, choice === 'Allow' && followsUp(question));
     }
   }
 

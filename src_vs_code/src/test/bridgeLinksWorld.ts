@@ -58,6 +58,8 @@ export interface LinksWorld {
   readonly configWrites: number;
   /** Awaited inside the pretended `ssh`, before it answers: a test sets it to stand for a signing prompt that is open. */
   hold?: () => Promise<void>;
+  /** The agent's socket as the action sees it NOW: a test brings it up or takes it down between a dialog's opening and its Allow. */
+  socket: string | undefined;
   /** Exec slots taken and not yet given back. */
   readonly slotsHeld: number;
   readonly storageDir: string;
@@ -123,7 +125,7 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
       };
     },
     note: (message) => void notes.push(message),
-    agentSocket: () => options.agentSocket,
+    agentSocket: () => world.socket,
     // E1.6's writer, stood in for: it records its calls and writes nothing, because on this tree no call is made (the argv has no `-F`).
     ...(options.noConfigWriter === true ? {} : { bridgedSshConfig: () => {
       configWrites += 1;
@@ -132,6 +134,7 @@ export async function linksWorld(options: LinksOptions = {}): Promise<LinksWorld
   };
   const world: LinksWorld = {
     exec: mod.sshExecAction(deps),
+    socket: options.agentSocket,
     runs,
     notes,
     materialised,

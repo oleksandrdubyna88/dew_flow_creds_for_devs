@@ -528,7 +528,7 @@ export class CredsAgentServer implements vscode.Disposable {
     // that raised no modal must not slide this entry's quiet window forward — that is how "once
     // every twelve hours" quietly becomes "once, ever".
     const asked = this.grants.get(grant.secret)?.status !== 'allowed';
-    const consent = await this.gate.consent({ grant, action, verb: useAction.verb, summary, caller: who.caller, via: who.via, followUp: asksAfter(useAction, grant) }, who.signal);
+    const consent = await this.gate.consent({ grant, action, verb: useAction.verb, summary, caller: who.caller, via: who.via, followUp: () => asksAfter(useAction, grant) }, who.signal);
     if (consent !== 'allowed') {
       this.notAllowed(res, consent, { grant, action, summary }, who);
       return;

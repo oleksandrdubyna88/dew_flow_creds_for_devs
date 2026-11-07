@@ -136,6 +136,29 @@ test('K7: dialogClosed is told to keep the place for an Allow of a call that dec
   assert.deepEqual(await keepFor(undefined, true), [false], 'a dismissed dialog frees it');
 });
 
+test('K7 (change 6.1): a follow-up given as a function is asked when the dialog closes on an Allow — never before it opens, never for a Deny or a dismissal, and a throw keeps nothing', async () => {
+  const asked: string[] = [];
+  let up = false;
+  const flag = (): boolean => (asked.push(up ? 'up' : 'down'), up);
+  const closed = async (choice: string | undefined, followUp: () => boolean): Promise<boolean[]> => {
+    const { gate, seen, answer } = gateOver(registry('pending'));
+    const outcome = gate.consent({ ...question('mcp'), followUp }, never);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.deepEqual(asked, [], 'not asked while the dialog is open');
+    up = true; // what the flag reads changes while the dialog is on screen
+    answer(choice);
+    await outcome;
+    return seen.closed;
+  };
+  assert.deepEqual(await closed('Allow', flag), [true], 'Allow: read at the close, and it reads the state of THEN');
+  assert.deepEqual(asked, ['up']);
+  asked.length = 0;
+  assert.deepEqual(await closed('Deny', flag), [false]);
+  assert.deepEqual(await closed(undefined, flag), [false]);
+  assert.deepEqual(asked, [], 'a Deny or a dismissal never asks it');
+  assert.deepEqual(await closed('Allow', () => { throw new Error('the flag could not be read'); }), [false], 'a flag that throws keeps nothing and the place is still given back');
+});
+
 test('K7: an unanswered dialog (the five-minute timeout) frees the place although the call declares a follow-up', async () => {
   const stub = { window: { showWarningMessage: (): Promise<string | undefined> => new Promise(() => undefined) }, workspace: { getConfiguration: () => ({ get: (_key: string, fallback: unknown) => fallback }) } };
   const closed: boolean[] = [];
