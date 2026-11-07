@@ -458,6 +458,64 @@ public sealed class HostProcessAdapterTests
         }
     }
 
+    // ---- the fix round 3: perl, and a folder under another root --------------------------------------------------
+
+    [Fact]
+    public void A_machine_without_perl_starts_the_child_without_a_group_and_says_so_in_the_test_output()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows has no process group here: the child always starts without one");
+        var sink = new Sink();
+
+        var (program, args, ownGroup) = HostProcess.InItsOwnGroup("/bin/sh", ["-c", "exit 0"], () => null, sink.Warn);
+
+        ownGroup.Should().BeFalse("no perl, no session leader, no group to ask about");
+        program.Should().Be("/bin/sh");
+        args.Should().Equal("-c", "exit 0");
+        sink.Lines.Should().ContainSingle("the fallback is not silent").Which.Should().Contain("perl").And.Contain("descendant", "it names what is lost: a surviving descendant is not seen");
+    }
+
+    [Fact]
+    public void Perl_is_on_the_path_of_every_machine_that_runs_these_tests_so_a_runner_image_without_it_goes_red_not_weaker()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows starts children without a group by design; the Reaper's tree kill is what holds there");
+
+        HostProcess.PerlPath.Should().NotBeNull("the adapter starts each child as a session leader through perl; without it a surviving grandchild is not seen, and the runner image must get perl");
+    }
+
+    [Fact]
+    public async Task A_folder_made_under_another_root_is_a_registered_folder_and_the_child_that_names_it_is_tied_to_it()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "the fixture child is a POSIX shell");
+        var ct = TestContext.Current.CancellationToken;
+        var sink = new Sink();
+        using var root = OwnedDir.Create("other-root");
+        var folder = HostProcess.TempDirectory("sock", sink.Warn, root.Path);
+        using var child = HostProcess.StartFile("/bin/sh", ["-c", "read line", Path.Combine(folder, "cr.sock")], new Dictionary<string, string>());
+        try
+        {
+            Path.GetDirectoryName(folder).Should().Be(root.Path, "the folder lies under the root it was asked for");
+            Owned.Pattern().IsMatch(Path.GetFileName(folder)).Should().BeTrue();
+            HostProcess.TiedFolders(child).Should().Equal(folder, "the socket path in the child's arguments names the folder");
+
+            HostProcess.Remove(folder, sink.Warn);
+
+            Directory.Exists(folder).Should().BeTrue("a folder of a running child stays, whatever root it lies under");
+            using (HostProcess.KillOnDispose(child))
+            {
+                // the end is confirmed here
+            }
+
+            HostProcess.Remove(folder, sink.Warn);
+            Directory.Exists(folder).Should().BeFalse();
+            await Task.CompletedTask;
+        }
+        finally
+        {
+            _ = Record.Exception(() => HostProcess.KillOnDispose(child).Dispose()); // the child's temp folder goes with its confirmed end
+            Clean(folder);
+        }
+    }
+
     // ---- the child's own temp folder (Q5, F13) ---------------------------------------------------------------------
 
     private const string TempEchoingChild = "#!/bin/sh\nprintf '%s\\n%s\\n%s\\n' \"$TMPDIR\" \"$TEMP\" \"$TMP\"\nread line\n";

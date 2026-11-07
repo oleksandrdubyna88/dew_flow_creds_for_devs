@@ -94,12 +94,15 @@ internal static partial class HostProcess
     /// <c>setsid</c> leaves). .NET offers no way to put a child in a group of its own, and the parent cannot do it after the exec (EACCES). Where no <c>perl</c> is on the
     /// path, or on Windows, the child starts as it did: no group, and the tie ends with the direct child's confirmed exit.
     /// </summary>
-    private static (string Program, IReadOnlyList<string> Args, bool OwnGroup) InItsOwnGroup(string file, IReadOnlyList<string> args)
+    internal static (string Program, IReadOnlyList<string> Args, bool OwnGroup) InItsOwnGroup(string file, IReadOnlyList<string> args, Func<string?>? findPerl = null, Action<string>? warn = null)
     {
-        if (OperatingSystem.IsWindows() || FindPerl() is not { } perl) return (file, args, false);
+        if (OperatingSystem.IsWindows() || (findPerl ?? FindPerl)() is not { } perl) return (file, args, false);
         const string Script = "POSIX::setsid() or die qq(setsid: $!); exec { $ARGV[0] } @ARGV or die qq(exec: $!);";
         return (perl, ["-MPOSIX", "-e", Script, "--", file, .. args], true);
     }
+
+    /// <summary>The <c>perl</c> the group wrapper needs, or null.</summary>
+    internal static string? PerlPath => FindPerl();
 
     private static string? FindPerl() =>
         (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
@@ -411,7 +414,7 @@ internal static partial class HostProcess
 
     /// <summary>A fresh, empty temporary directory: an <see cref="OwnedDir"/> (claimed first, prefixed, registered), whose warning sink is
     /// <paramref name="warn"/> - the sink travels with that one folder, so no shared delegate exists for parallel tests to race on.</summary>
-    internal static string TempDirectory(string what, Action<string>? warn = null)
+    internal static string TempDirectory(string what, Action<string>? warn = null, string? parent = null)
     {
         var dir = OwnedDir.Create(what, null, warn);
         Folders[dir.Path] = new Folder(dir);
