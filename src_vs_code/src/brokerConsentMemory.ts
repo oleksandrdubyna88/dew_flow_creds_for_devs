@@ -1,6 +1,7 @@
 import { withTimeout } from './withTimeout';
 import type { AuditDoor } from './agentAuditLog';
 import { describeError } from './describeError';
+import type { Grant } from './grantRegistry';
 
 /**
  * What happens to a person's answer after they give it — and what must not happen to their call.
@@ -57,6 +58,25 @@ export interface ConsentRecord {
    * suite somebody eventually stops running.
    */
   timeoutMs?: number;
+}
+
+/** The answer to one dialog, as the broker knows it: which door asked, whether a modal was shown, the ladder the lookup resolved. */
+export interface ConsentAnswer {
+  via: AuditDoor;
+  asked: boolean;
+  rungs: string | undefined;
+}
+
+/**
+ * The record of one answer, from the grant it was given for (E1.4).
+ *
+ * <p>The server the answer was given through is read from the grant's CONTEXT, which the door set, and from nowhere in a request:
+ * a stamp is keyed by it, so an answer through server A cannot silence server B or local use. Off a bridge the record has no
+ * `serverEntityId` at all (the key is absent, not `undefined`), so a local answer writes the key it always did.</p>
+ */
+export function consentRecordOf(grant: Grant, answer: ConsentAnswer, remember: ConsentRecord['remember'], note: ConsentRecord['note']): ConsentRecord {
+  const server = grant.bridge?.context.serverEntityId;
+  return { remember, accountId: grant.accountId, entityId: grant.entityId, ...(server === undefined ? {} : { serverEntityId: server }), entityName: grant.entityName, ...answer, note };
 }
 
 /**

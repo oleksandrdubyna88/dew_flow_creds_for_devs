@@ -23,7 +23,9 @@ const NOT_FOUND = 'No such entry, or this window does not serve it.';
 const OFF = 'Allowing covers this call only.';
 const ON = "Allowing follows this entry's own consent setting, for this server only: not for another server, and not for this computer.";
 const TOKEN_TAIL = 'Allowing covers every later call on this token';
-const LAPTOP = 'Through the Remote Bridge of "prod server". It runs on this computer, and only its output goes to that server.';
+const EXEC_LINE = 'Through the Remote Bridge of "prod server". The connection starts on this computer; the command runs on "prod", and its output goes back to that server.';
+const QUERY_LINE = 'Through the Remote Bridge of "prod server". It runs on this computer, and only its output goes to that server.';
+const FALSE_FOR_EXEC = 'It runs on this computer';
 const SILENT_SENTENCE = 'Too many requests: this Remote Bridge may make at most 60 silent calls a minute — ones a consent policy lets through without a prompt.';
 
 const mcp = (command = 'id'): Ask => ({ path: '/v1/mcp/use/exec', body: { entry: 'e1', command } });
@@ -331,6 +333,81 @@ test('C22: the stamp is written behind the launch gate — an Allow given while 
   }
 });
 
+test('C23: the launch gate is asked again after the stamp is written — a scope narrowed while the write is pending promotes no waiting rotation and runs nothing', async () => {
+  for (const narrow of [true, false]) {
+    const promoted: string[] = [];
+    const c = await consenting('every12h', true, { holdDialogs: true, releaseWaiting: (account, entity) => (promoted.push(`${account}/${entity}`), Promise.resolve()) });
+    let finish: () => void = () => undefined;
+    try {
+      const slowStore = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      let writing = false;
+      const update = c.state.update.bind(c.state);
+      c.state.update = (key, value): Thenable<void> => {
+        writing = true;
+        return slowStore.then(() => update(key, value));
+      };
+      const pending = send(A(c), mcp());
+      await until(() => c.ww.w.openDialogs.length === 1, 'the dialog');
+      c.ww.w.openDialogs[0]('Allow');
+      await until(() => writing, 'the stamp write, held');
+      if (narrow) {
+        await put(c.ww.scopes, ACCOUNT, SERVER, [], true);
+      }
+      finish();
+      const reply = await pending;
+      if (narrow) {
+        assert.deepEqual([reply.status, code(reply), message(reply)], [404, 'not_found', NOT_FOUND], 'the route\'s own sentence');
+        assert.deepEqual(promoted, [], 'no waiting rotation was promoted for an entry the gate now refuses');
+        assert.deepEqual(c.ww.w.ran, [], 'and nothing ran');
+      } else {
+        assert.equal(reply.status, 200, reply.body);
+        assert.deepEqual(promoted, [`${ACCOUNT}/e1`], 'the control: with the scope intact the rotation is promoted, so the spy sees what it is meant to');
+      }
+    } finally {
+      finish();
+      settleAll(c.ww);
+      c.ww.dispose();
+    }
+  }
+});
+
+test('C24: a client that leaves while its stamp is being written is abandoned there, on a bridge and off one, and nothing an Allow triggers runs', async () => {
+  for (const [where, door] of [['through a bridge', A], ['off a bridge', LOCAL]] as const) {
+    const promoted: string[] = [];
+    const c = await consenting('every12h', where === 'through a bridge', { holdDialogs: true, releaseWaiting: (account, entity) => (promoted.push(`${account}/${entity}`), Promise.resolve()) });
+    let finish: () => void = () => undefined;
+    try {
+      const slowStore = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      let writing = false;
+      const update = c.state.update.bind(c.state);
+      c.state.update = (key, value): Thenable<void> => {
+        writing = true;
+        return slowStore.then(() => update(key, value));
+      };
+      const left = sendAbortable(door(c), mcp());
+      left.reply.catch(() => undefined);
+      await until(() => c.ww.w.openDialogs.length === 1, 'the dialog');
+      c.ww.w.openDialogs[0]('Allow');
+      await until(() => writing, 'the stamp write, held');
+      left.abort();
+      await new Promise<void>((resolve) => setTimeout(resolve, 50)); // the server hears the hang-up while the write is still out
+      finish();
+      await until(() => c.journal().some((line) => line.includes('ABANDONED')), `${where}: the abandoned line`);
+      assert.ok(c.journal().some((line) => line.includes('the client left after consent')), `${where}: ${JSON.stringify(c.journal())}`);
+      assert.deepEqual(promoted, [], `${where}: no waiting rotation was promoted for a client that is gone`);
+      assert.deepEqual(c.ww.w.ran, [], `${where}: and nothing ran`);
+    } finally {
+      finish();
+      settleAll(c.ww);
+      c.ww.dispose();
+    }
+  }
+});
+
 /* ---------------------------------------------------------------------------------------------------------------
  * C10, C11, C15 — the dialog
  * ------------------------------------------------------------------------------------------------------------- */
@@ -346,11 +423,32 @@ test('C10: the modal line follows the request time and names the context\'s serv
     const lines = c.ww.w.dialogs[0].split('\n');
     assert.ok(lines[0].startsWith('evil wants to run a command on "prod"'), 'the caller line shows the claim, as a label');
     assert.match(lines[1], /^Requested \d{4}-\d\d-\d\d /, 'the request-time line');
-    assert.equal(lines[2], LAPTOP, 'and the bridge line comes right after it');
+    assert.equal(lines[2], EXEC_LINE, 'and the bridge line comes right after it');
     assert.equal(c.ww.w.dialogs[0].includes('of "evil"'), false, 'the server is not the caller\'s to name');
     assert.ok(c.ww.w.dialogs[0].includes('Identity as reported by the caller — a label, not a check.'), 'the disclaimer stays');
   } finally {
     c.ww.dispose();
+  }
+});
+
+test('C10: every door says where each action runs — an exec starts the connection here and runs on the destination, a query runs here — and an exec never says it runs on this computer', async () => {
+  // Three doors a world, because a bridge may prompt five times a minute.
+  for (const action of ['exec', 'query'] as const) {
+    const c = await consenting('always', false);
+    try {
+      const token = await c.ww.tokenFor(ACCOUNT, 'e1', 'prod');
+      const command = action === 'exec' ? 'id' : 'select 1';
+      await ok(A(c), { path: `/v1/mcp/use/${action}`, body: { entry: 'e1', command } });
+      await ok(A(c), { path: `/v1/alias/${action}`, body: { alias: 'one', command } });
+      await ok(A(c), { path: `/v1/use/${action}`, token, body: { command } });
+      assert.equal(c.ww.w.dialogs.length, 3, `${action}: a dialog on each door`);
+      for (const [door, dialog] of ['mcp', 'alias', 'token'].map((name, index) => [name, c.ww.w.dialogs[index]])) {
+        assert.equal(dialog.split('\n')[2], action === 'exec' ? EXEC_LINE : QUERY_LINE, `${action} through ${door}: the line after the request time`);
+        assert.equal(dialog.includes(FALSE_FOR_EXEC), action === 'query', `${action} through ${door}: "${FALSE_FOR_EXEC}" is for a query alone`);
+      }
+    } finally {
+      c.ww.dispose();
+    }
   }
 });
 
@@ -370,6 +468,27 @@ test('C11: the coverage line — quiet off and quiet on say their exact sentence
     await ok(LOCAL(c));
     assert.ok(c.ww.w.dialogs[2].includes(TOKEN_TAIL), 'off a bridge the dialog still says what it always did');
     assert.equal(c.ww.w.dialogs[2].includes('Remote Bridge'), false, 'and nothing about a bridge');
+  } finally {
+    c.ww.dispose();
+  }
+});
+
+test('C11: the two texts differ in exactly two places — a bridged dialog adds the bridge line and swaps the token sentence for the coverage line, and the local dialog is byte for byte what it was', async () => {
+  const c = await consenting('always', false);
+  try {
+    await ok(LOCAL(c));
+    await ok(A(c));
+    const [local, bridged] = c.ww.w.dialogs.map((dialog) => dialog.replace(/\nRequested [^\n]*/, '\nREQUESTED'));
+    const head = 'An agent wants to run a command on "prod" using its stored credential.\nREQUESTED';
+    const body = '\n\nid\n\nIdentity as reported by the caller \u2014 a label, not a check.\n\n';
+    const log = ' Each call is logged in the "CredsForDevs: Agent Access" output panel.';
+    // The local text, spelled out: nothing a bridge adds may reach it.
+    assert.equal(
+      local,
+      `${head}${body}Allowing covers every later call on this token, not just this one: with it the agent can run a command on, or run a command on "prod" until it goes unused for 60 minutes, and never past this window closing.${log}`,
+    );
+    assert.equal(bridged, `${head}\n${EXEC_LINE}${body}${OFF}${log}`);
+    assert.notEqual(local, bridged);
   } finally {
     c.ww.dispose();
   }

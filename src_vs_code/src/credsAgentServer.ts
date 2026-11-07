@@ -26,7 +26,7 @@ import { describeError } from './describeError';
 import { BrokerDoor, ConsentOutcome, DURING_CONSENT, mcpDoor } from './brokerMcpDoor';
 import { ConsentGate } from './brokerConsent';
 import { abandonedWhenClosed } from './requestLife';
-import { recordConsent } from './brokerConsentMemory';
+import { consentRecordOf, recordConsent } from './brokerConsentMemory';
 import { McpFolderHooks } from './brokerFolderDoor';
 import { answerMcpRoute } from './brokerMcpRoutes';
 import { GRANT_NOT_ALLOWED, Refusal, aliasTarget, readBody, readNamedBody, requestUrl, unanswered, validationRefusal } from './brokerRequests';
@@ -564,8 +564,9 @@ export class CredsAgentServer implements vscode.Disposable {
   }
 
   /**
-   * After consent: the answer remembered (behind the launch gate, so a refused call leaves no stamp), the waiting rotation
-   * released and the mask table read, each only for a client still there to be answered, then the call. Every await is followed by a check.
+   * After consent: the launch gate, the answer remembered (behind the gate, so a call it refuses leaves no stamp), the gate again (the
+   * write is an await), the waiting rotation released and the mask table read, each only for a client still there to be answered,
+   * then the call. Every await is followed by a check.
    */
   private async prepared(res: http.ServerResponse, call: Omit<CallSubject, 'table'>, remember: () => Promise<void>): Promise<void> {
     const { grant, action, summary, via, caller } = call;
@@ -574,6 +575,10 @@ export class CredsAgentServer implements vscode.Disposable {
       return;
     }
     await remember();
+    // The write is an await: the client can leave, and the scope or the token can change, inside it. Asked again, as `main` asked once after its own write.
+    if (this.stopped(res, call, 'after consent', atLaunch)) {
+      return;
+    }
     await this.releaseWaiting(grant);
     if (this.gone(call, 'before its values were read')) {
       return;
@@ -647,25 +652,9 @@ export class CredsAgentServer implements vscode.Disposable {
     this.respondError(res, code, GRANT_NOT_ALLOWED, where.grant, where.action, where.summary, who.via, who.caller);
   }
 
-  /**
-   * A person answered a dialog for an MCP use call: let the vault remember it.
-   *
-   * <p>Which answers count, what a failed or slow write costs, and why neither may cost somebody
-   * their call are all in `brokerConsentMemory.ts`. This hands it the four facts only the broker
-   * holds.</p>
-   */
+  /** A person answered a dialog for an MCP use call: let the vault remember it. Which answers count, and what a slow or failed write costs, are `brokerConsentMemory.ts`'s. */
   private remember(via: AuditDoor, grant: Grant, asked: boolean, rungs: string | undefined): Promise<void> {
-    return recordConsent({
-      remember: this.hooks.rememberMcpConsent,
-      accountId: grant.accountId,
-      entityId: grant.entityId,
-      serverEntityId: grant.bridge?.context.serverEntityId,
-      entityName: grant.entityName,
-      via,
-      asked,
-      rungs,
-      note: (entry) => this.log({ ...entry, grant: GrantRegistry.describe(grant) }),
-    });
+    return recordConsent(consentRecordOf(grant, { via, asked, rungs }, this.hooks.rememberMcpConsent, (entry) => this.log({ ...entry, grant: GrantRegistry.describe(grant) })));
   }
 
   /** The sequence is `brokerCall.performCall`; this binds it to one request. */
@@ -695,7 +684,7 @@ export class CredsAgentServer implements vscode.Disposable {
 
   /** The router, behind one door per listener — see `brokerOrigin.ts` for why, and why two. */
   private readonly doors = doorsFor(
-    (req, res, bridge) => void this.handle(req, res, bridge).catch((error: unknown) => unanswered(res, error, routeNameOf(req.method, requestUrl(req.url).pathname), (code, message) => this.respondError(res, code, message), (line) => this.log(line))),
+    (req, res, bridge) => void this.handle(req, res, bridge).catch((error: unknown) => unanswered(res, error, routeNameOf(req.method, requestUrl(req.url).pathname), bridge, (code, message) => this.respondError(res, code, message), (line) => this.log(line))),
     () => this.port,
     (res, status, body) => this.respond(res, status, body),
     (message) => this.note(message),

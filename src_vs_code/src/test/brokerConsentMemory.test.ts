@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { spawnSync } from 'node:child_process';
 import * as path from 'node:path';
-import { REMEMBER_TIMEOUT_MS, answeredHere, recordConsent } from '../brokerConsentMemory';
+import type { Grant } from '../grantRegistry';
+import { REMEMBER_TIMEOUT_MS, answeredHere, consentRecordOf, recordConsent } from '../brokerConsentMemory';
 
 /**
  * What happens to a person's answer after they give it — and what must not happen to their call.
@@ -173,4 +174,16 @@ test('E1.4: the server an answer was given through is handed to the write, and a
   await recordConsent(record({ remember }).args);
 
   assert.deepEqual(seen, [['e1', 'server-A'], ['e1', undefined]]);
+});
+
+test('E1.4: the record names the server from the grant\'s context alone, and off a bridge it carries no server key at all', () => {
+  const base = { accountId: 'a1', entityId: 'e1', entityName: 'prod', secret: 's' } as unknown as Grant;
+  const bridged = { ...base, bridge: { context: { bridgeId: 'b1', accountId: 'a1', serverEntityId: 'srv-1', serverName: 'x', target: '', remoteOs: undefined }, quiet: true } } as unknown as Grant;
+  const answer = { via: 'mcp' as const, asked: true, rungs: RUNGS };
+  const noted = (): void => undefined;
+  const written = consentRecordOf(bridged, answer, undefined, noted);
+  assert.equal(written.serverEntityId, 'srv-1');
+  assert.deepEqual([written.accountId, written.entityId, written.entityName, written.via, written.asked, written.rungs], ['a1', 'e1', 'prod', 'mcp', true, RUNGS]);
+  const local = consentRecordOf(base, answer, undefined, noted);
+  assert.equal('serverEntityId' in local, false, 'a local answer writes the key it always did');
 });

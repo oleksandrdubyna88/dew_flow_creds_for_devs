@@ -3,6 +3,7 @@ import * as http from 'node:http';
 import * as net from 'node:net';
 import { test } from 'node:test';
 import { INTERNAL_FAILURE, UNANSWERED_FAILURE } from '../brokerProtocol';
+import type { BridgeContext } from '../bridgeContext';
 import { loadBridgeModules } from './bridgeModules';
 
 /**
@@ -26,10 +27,17 @@ const SENTINEL_JSON = 'zq-sentinel-json';
 
 /** What `unanswered` was given to write, and what it answered, for one thrown value. */
 function unanswer(error: unknown, route: string, sent = false): { answers: string[]; lines: string[] } {
+  const { answers, lines } = unanswerFor(undefined, error, route, sent);
+  return { answers, lines };
+}
+
+/** The same, through a door: which bridge's context the request came in by, and the grant field the line was written with. */
+function unanswerFor(bridge: BridgeContext | undefined, error: unknown, route: string, sent = false): { answers: string[]; lines: string[]; grants: string[] } {
   const answers: string[] = [];
   const lines: string[] = [];
-  unanswered(response(sent), error, route, (code, text) => void answers.push(`${code} ${text}`), (line) => void lines.push(line.detail));
-  return { answers, lines };
+  const grants: string[] = [];
+  unanswered(response(sent), error, route, bridge, (code, text) => void answers.push(`${code} ${text}`), (line) => void (lines.push(line.detail), grants.push(line.grant)));
+  return { answers, lines, grants };
 }
 
 /** The SyntaxError a `JSON.parse` of text holding a sentinel really throws (its message quotes the input on some Nodes). */
@@ -48,6 +56,7 @@ test('unanswered: the caller is answered before the journal is written, with its
     response(false),
     new Error(SENTINEL),
     'GET /v1/mcp/entries',
+    undefined,
     (code, message) => void order.push(`answer ${code} ${message}`),
     () => {
       order.push('journal');
@@ -103,4 +112,14 @@ test('the sentinel: neither a thrown message nor the fragment a JSON.parse Synta
     assert.equal([...answers, ...lines].some((text) => text.includes(word)), false, `${what}: "${word}" reached the body or the journal`);
     assert.equal([...answers, ...lines].some((text) => text.includes(String(error.message))), false, `${what}: the message reached the body or the journal`);
   }
+});
+
+const CONTEXT: BridgeContext = { bridgeId: 'b1', accountId: 'a1', serverEntityId: 's1', serverName: 'prod (eu) \u2192 db', target: '', remoteOs: undefined };
+
+test('unanswered (E1.4, Q13): the line says which bridge the request came in by — the context the door handed, in the grant field — and off a bridge it says nothing', () => {
+  const bridged = unanswerFor(CONTEXT, new Error(SENTINEL), 'POST /v1/alias/exec');
+  assert.deepEqual(bridged.grants, ['\u2014 bridge=prod_eu_db'], 'the mark, as auditGrantMark writes it for a line with no grant');
+  assert.deepEqual(bridged.lines, ['a handler failed: Error on POST /v1/alias/exec; headers not sent'], 'beside the classification, which does not move');
+  assert.deepEqual(unanswerFor(undefined, new Error(SENTINEL), 'POST /v1/alias/exec').grants, ['\u2014'], 'off a bridge the field is what it was');
+  assert.deepEqual(unanswerFor(CONTEXT, new Error(SENTINEL), 'other', true).answers, [], 'and the headers rule is unchanged');
 });
