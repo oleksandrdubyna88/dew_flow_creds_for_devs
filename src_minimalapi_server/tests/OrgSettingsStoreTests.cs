@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 
 namespace CredVaultServer.Tests;
@@ -12,29 +13,19 @@ public sealed class OrgSettingsStoreTests : IDisposable
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
-    private readonly string _dir =
-        Path.Combine(Path.GetTempPath(), "cred-vault-tests", Guid.NewGuid().ToString("N"));
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+    private readonly string _dir;
 
     private readonly CapturingLogger<OrgSettingsStore> _log = new();
     private readonly OrgSettingsStore _store;
 
     public OrgSettingsStoreTests()
     {
-        Directory.CreateDirectory(_dir);
+        _dir = _owned.Dir("org-settings");
         _store = new OrgSettingsStore(_dir, _log);
     }
 
-    public void Dispose()
-    {
-        try
-        {
-            Directory.Delete(_dir, recursive: true);
-        }
-        catch (IOException)
-        {
-            // A handle not yet released; the temp sweeper gets it.
-        }
-    }
+    public void Dispose() => _owned.Dispose();
 
     private string OrgDir => Path.Combine(_dir, "org");
 

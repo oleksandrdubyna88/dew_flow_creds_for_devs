@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -15,28 +16,18 @@ public sealed class OrgEventLogTests : IDisposable
 
     private static readonly DateTimeOffset Noon = new(2026, 3, 1, 12, 0, 0, TimeSpan.Zero);
 
-    private readonly string _dir =
-        Path.Combine(Path.GetTempPath(), "cred-vault-tests", Guid.NewGuid().ToString("N"));
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+    private readonly string _dir;
 
     private readonly CapturingLogger<OrgEventLog> _log = new();
     private DateTimeOffset _now = Noon;
 
     public OrgEventLogTests()
     {
-        Directory.CreateDirectory(_dir);
+        _dir = _owned.Dir("org-events");
     }
 
-    public void Dispose()
-    {
-        try
-        {
-            Directory.Delete(_dir, recursive: true);
-        }
-        catch (IOException)
-        {
-            // A handle not yet released; the temp sweeper gets it.
-        }
-    }
+    public void Dispose() => _owned.Dispose();
 
     private OrgEventLog NewLog(TimeSpan? lockWait = null) => new(_dir, _log, () => _now, lockWait);
 
