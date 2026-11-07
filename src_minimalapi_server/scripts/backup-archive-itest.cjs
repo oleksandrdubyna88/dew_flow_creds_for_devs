@@ -15,10 +15,13 @@
 // compare what came out byte for byte, and then damage the archive in each of the ways that must be
 // refused. Nothing is stubbed; the only thing faked is the tree.
 const path = require('path');
-const os = require('os');
 const fs = require('fs');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
+// The extension's leftovers wrapper (a layer over the mounted shared rules) and its exit module: every folder is an owned folder,
+// removed on every way out. Both are required by path from the extension's tree (D1: one wrapper, no copy).
+const { ownedDir } = require('../../src_vs_code/scripts/lib/leftovers.cjs');
+const harnessScope = require('../../src_vs_code/scripts/lib/harnessScope.cjs');
 
 // In the SERVER's tree, not the extension's: this is the server's flow, and the pipeline that must
 // re-run it is the one a server-only change triggers. It is still in `run-itests.mjs` and still has
@@ -35,11 +38,12 @@ function check(what, ok, detail) {
   }
 }
 
-function tempDir(tag) {
-  const dir = path.join(os.tmpdir(), `cvbk-itest-${tag}-${crypto.randomBytes(4).toString('hex')}`);
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
+function tempDir(scope, tag) {
+  return ownedDir(scope, `backup-${tag}`);
 }
+
+/** The owned folder a server child gets as its `TMPDIR`, `TEMP` and `TMP`; set in `main`. */
+let childTemp;
 
 // ---- how the binary is reached ---------------------------------------------
 // A published AOT binary when one is named or lying about, otherwise the framework-dependent dll
@@ -68,7 +72,7 @@ function serverCommand() {
 
 function run(cmd, args) {
   return new Promise((resolve) => {
-    execFile(cmd.exe, [...cmd.lead, ...args], { timeout: 120000 }, (error, stdout, stderr) =>
+    execFile(cmd.exe, [...cmd.lead, ...args], { timeout: 120000, env: harnessScope.tempEnv(childTemp) }, (error, stdout, stderr) =>
       resolve({ code: error && typeof error.code === 'number' ? error.code : error ? 1 : 0, stdout, stderr }));
   });
 }
@@ -95,21 +99,21 @@ function plant(root, files) {
   }
 }
 
-(async () => {
+harnessScope.run(async (scope) => {
   const cmd = serverCommand();
   if (!cmd) {
     console.log('SKIP: no CredVaultServer build found. Build it first:');
     console.log('  dotnet build src_minimalapi_server/src/CredVaultServer.csproj');
     console.log('  (or set CVBK_SERVER to a published binary)');
-    process.exitCode = 0;
-    return;
+    return 0;
   }
   console.log(`server: ${cmd.exe}${cmd.lead.length ? ' ' + cmd.lead[0] : ''}\n`);
 
-  const source = tempDir('source');
+  const source = tempDir(scope, 'source');
   plant(source, FILES);
   plant(source, NEVER);
-  const work = tempDir('work');
+  const work = tempDir(scope, 'work');
+  childTemp = work;
   const archive = path.join(work, 'archive.cvbk');
   const keyFile = path.join(work, 'key.b64');
   fs.writeFileSync(keyFile, crypto.randomBytes(32).toString('base64'));
@@ -184,7 +188,7 @@ function plant(root, files) {
   check('a mistyped printable key is refused', wrongChecksum.code === 1, `code ${wrongChecksum.code}`);
   check('...as a CHECKSUM failure, not as "that is not a key"', /checksum/.test(wrongChecksum.stderr), wrongChecksum.stderr);
 
-  const occupied = tempDir('occupied');
+  const occupied = tempDir(scope, 'occupied');
   fs.writeFileSync(path.join(occupied, 'someone-elses.json'), 'already here');
   const refused = await run(cmd, ['--decrypt-archive', archive, occupied, keyFile]);
   check('an occupied destination is refused', refused.code === 1, `code ${refused.code}`);
@@ -195,8 +199,5 @@ function plant(root, files) {
   check('...listing all three verbs', /--create-archive/.test(usage.stderr), usage.stderr);
 
   console.log(fails === 0 ? '\nall checks passed' : `\n${fails} check(s) failed`);
-  process.exitCode = fails === 0 ? 0 : 1;
-})().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
+  return fails === 0 ? 0 : 1;
 });

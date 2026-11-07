@@ -24,11 +24,16 @@
 // Skipped LOUDLY, never silently: no Windows, no WSL, no Windows binary, no .NET SDK, node or python3
 // inside the distribution, or a Linux build that would not build — each prints the command that fixes it.
 const path = require('node:path');
-const os = require('node:os');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 const Module = require('node:module');
 const readline = require('node:readline');
+const { writeStub } = require('./lib/leftovers.cjs');
+const harnessScope = require('./lib/harnessScope.cjs');
+
+// A signal closes the module scope (the stub, and the Windows run directory once it exists) and exits 128 + n. The normal exit is
+// `runAndSweep`'s, below, and its `finish` closes the same scope.
+harnessScope.handleSignals();
 
 // ---- vscode stub -----------------------------------------------------------
 // The same shape creds-mcp-itest.cjs uses: the broker under test is the real one, and it imports
@@ -36,10 +41,8 @@ const readline = require('node:readline');
 // across the kernel boundary, not the gate, which its sibling covers in full.
 const consent = { answers: [], asked: 0 };
 global.__CREDS_MCP_WSL_CONSENT__ = consent;
-const stub = path.join(os.tmpdir(), 'creds-mcp-wsl-itest-vscode-stub.cjs');
-fs.writeFileSync(
-  stub,
-  `module.exports = {
+// Written into an owned folder at the start of `main` (never at load), and removed by the scope on every way out.
+const STUB_SOURCE = `module.exports = {
      window: {
        showWarningMessage: () => {
          const c = global.__CREDS_MCP_WSL_CONSENT__;
@@ -52,11 +55,8 @@ fs.writeFileSync(
      },
      workspace: { getConfiguration: () => ({ get: (_k, d) => d }) },
      Uri: { file: (p) => ({ fsPath: p }) },
-   };`,
-);
+   };`;
 const originalResolve = Module._resolveFilename;
-Module._resolveFilename = (request, ...rest) =>
-  request === 'vscode' ? stub : originalResolve.call(Module, request, ...rest);
 
 const OUT = path.join(__dirname, '..', 'out');
 const { runAndSweep, started, watchLinuxPids, watchWindowsPids } = require('./wslStrays.cjs');
@@ -209,6 +209,8 @@ async function preconditions() {
 /** This run's copies: the Windows binary into the Windows run directory, the Linux build into the Linux one. */
 async function prepareBinaries() {
   dirs = await runDirectories();
+  // The Windows run directory is removed by its exact name in `finishRun`; registered in the module scope, so a signal does it too.
+  harnessScope.scope.after(() => finishRun(dirs));
   windowsMcp = copyWindowsBinary(dirs, { kind: 'mcp', project: 'src_mcp', exe: 'creds-mcp.exe' });
   linuxMcp = await linuxBinary(dirs, {
     kind: 'mcp',
@@ -462,6 +464,9 @@ async function endedBy({ word, exit }, endpointDir, windowsHalves, linuxSide) {
 }
 
 async function main() {
+  const stub = writeStub(harnessScope.scope, 'wsl-stub', STUB_SOURCE);
+  Module._resolveFilename = (request, ...rest) =>
+    request === 'vscode' ? stub : originalResolve.call(Module, request, ...rest);
   await preconditions();
   await prepareBinaries();
   // Linux side first: the sweep walks them in this order, and a wrapper still alive could start one more Windows half.
@@ -494,6 +499,6 @@ runAndSweep({
   main,
   strays: () => watches,
   failures: () => failures,
-  finish: () => (dirs === undefined ? Promise.resolve() : finishRun(dirs)),
+  finish: () => harnessScope.closeOnce(),
   label: 'WSL MCP',
 });

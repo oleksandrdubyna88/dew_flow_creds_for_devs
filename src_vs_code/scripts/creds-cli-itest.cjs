@@ -15,17 +15,16 @@
 // Actions are test-only stubs rather than real ssh: what is under test is the wire between the
 // binary and the broker, not what an action does once it is reached.
 const path = require('path');
-const os = require('os');
 const fs = require('fs');
 const { execFile } = require('child_process');
 const Module = require('module');
+const { ownedDir, shortSocketRoot, writeStub } = require('./lib/leftovers.cjs');
+const harnessScope = require('./lib/harnessScope.cjs');
 
 // ---- vscode stub, with a controllable modal --------------------------------
+// Written into an owned folder inside `main` (never at load), and removed by the scope on every way out.
 const answers = { next: 'Allow', asked: 0, log: [] };
-const stub = path.join(os.tmpdir(), 'creds-cli-itest-vscode-stub.cjs');
-fs.writeFileSync(
-  stub,
-  `const answers = global.__CREDS_CLI_ANSWERS__;
+const STUB_SOURCE = `const answers = global.__CREDS_CLI_ANSWERS__;
    module.exports = {
      window: {
        showWarningMessage: (message) => { answers.asked += 1; return Promise.resolve(answers.next); },
@@ -38,16 +37,11 @@ fs.writeFileSync(
      },
      workspace: { getConfiguration: () => ({ get: (_k, d) => d }) },
      Uri: { file: (p) => ({ fsPath: p }) },
-   };`,
-);
+   };`;
 global.__CREDS_CLI_ANSWERS__ = answers;
 const orig = Module._resolveFilename;
-Module._resolveFilename = (req, ...a) => (req === 'vscode' ? stub : orig.call(Module, req, ...a));
 
 const OUT = path.join(__dirname, '..', 'out');
-const { CredsAgentServer } = require(path.join(OUT, 'credsAgentServer.js'));
-const { UseActionRegistry } = require(path.join(OUT, 'useActions.js'));
-const { parseToken } = require(path.join(OUT, 'grantToken.js'));
 
 let fails = 0;
 const check = (what, ok, extra) => {
@@ -70,6 +64,9 @@ const EXE = path.join(
   process.platform === 'win32' ? 'creds.exe' : 'creds',
 );
 
+/** The owned folder a child gets as its `TMPDIR`, `TEMP` and `TMP`; set in `main`. */
+let childTemp;
+
 function runCli(args, env = {}) {
   return new Promise((resolve) => {
     execFile(
@@ -77,7 +74,7 @@ function runCli(args, env = {}) {
       args,
       // Never relay to Windows from inside this test: the binary under test is the one built
       // here, and an interop hop would silently exercise a different file.
-      { env: { ...process.env, CREDS_RELAYED_FROM_WSL: '1', ...env } },
+      { env: harnessScope.tempEnv(childTemp, { ...process.env, CREDS_RELAYED_FROM_WSL: '1', ...env }) },
       (error, stdout, stderr) => {
         resolve({ code: error && typeof error.code === 'number' ? error.code : 0, stdout, stderr });
       },
@@ -86,8 +83,6 @@ function runCli(args, env = {}) {
 }
 
 // ---- fakes -----------------------------------------------------------------
-const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-cli-itest-'));
-
 const ENTITY = { id: 'e-1', name: 'itest-entry', host: '127.0.0.1', user: 'nobody' };
 const storage = {
   getNode: () => ({ id: ENTITY.id, name: ENTITY.name, type: 'entity', details: ENTITY }),
@@ -105,13 +100,23 @@ const action = (kind, verb, run) => ({
   run,
 });
 
-(async () => {
+harnessScope.run(async (scope) => {
+  // The SKIP comes before any folder: a machine without the CLI leaves nothing.
   if (!fs.existsSync(EXE)) {
     console.log(`SKIP  the CLI is not built at ${EXE}`);
     console.log('      run: dotnet build src_cli/src/CredsCli.csproj');
-    return;
+    return 0;
   }
 
+  // The stub first, then the requires of `out/` that resolve `vscode` through it.
+  const stub = writeStub(scope, 'cli-stub', STUB_SOURCE);
+  Module._resolveFilename = (req, ...a) => (req === 'vscode' ? stub : orig.call(Module, req, ...a));
+  const { CredsAgentServer } = require(path.join(OUT, 'credsAgentServer.js'));
+  const { UseActionRegistry } = require(path.join(OUT, 'useActions.js'));
+  const { parseToken } = require(path.join(OUT, 'grantToken.js'));
+  // `:211` below checks the broker's socket in this folder, so it is under the short socket root (a macOS temp root is too long).
+  const storageDir = ownedDir(scope, 'cli', { parent: shortSocketRoot() });
+  childTemp = ownedDir(scope, 'ctmp'); // the CLI child's own temp folder
   const actions = new UseActionRegistry();
   actions.register(
     action('ssh', 'exec', async () => ({
@@ -251,8 +256,5 @@ const action = (kind, verb, run) => ({
   check('closing the window removes its announcement', fs.readdirSync(endpointDir).length === 0);
 
   console.log(fails === 0 ? '\nall checks passed' : `\n${fails} check(s) failed`);
-  process.exitCode = fails === 0 ? 0 : 1;
-})().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
+  return fails === 0 ? 0 : 1;
 });

@@ -16,16 +16,14 @@
 // The vault: one account, 10 folders, 1000 entities — 300 of them in the first folder, the
 // rest spread over the other nine. Half the entities have a password.
 const path = require('path');
-const os = require('os');
-const fs = require('fs');
 const Module = require('module');
+const { writeStub } = require('./lib/leftovers.cjs');
+const harnessScope = require('./lib/harnessScope.cjs');
 
 // ---- vscode stub -------------------------------------------------------------
+// Written into an owned folder inside `main` (never at load), and removed by the scope on every way out.
 const emitterFires = { count: 0 };
-const stub = path.join(os.tmpdir(), 'creds-tree-bench-vscode-stub.cjs');
-fs.writeFileSync(
-  stub,
-  `const fires = global.__CREDS_BENCH_FIRES__;
+const STUB_SOURCE = `const fires = global.__CREDS_BENCH_FIRES__;
    class TreeItem { constructor(label, collapsibleState) { this.label = label; this.collapsibleState = collapsibleState; } }
    class ThemeIcon { constructor(id, color) { this.id = id; this.color = color; } }
    class ThemeColor { constructor(id) { this.id = id; } }
@@ -37,15 +35,14 @@ fs.writeFileSync(
      Uri: { joinPath: (...parts) => ({ parts }), file: (p) => ({ fsPath: p }) },
      workspace: { getConfiguration: () => ({ get: (_k, d) => d }) },
      window: { showWarningMessage: () => Promise.resolve(undefined) },
-   };`,
-);
+   };`;
 global.__CREDS_BENCH_FIRES__ = emitterFires;
 const orig = Module._resolveFilename;
-Module._resolveFilename = (req, ...a) => (req === 'vscode' ? stub : orig.call(Module, req, ...a));
 
 const OUT = process.env.BENCH_OUT ? path.resolve(process.env.BENCH_OUT) : path.join(__dirname, '..', 'out');
-const { StorageManager } = require(path.join(OUT, 'storageManager.js'));
-const { CredTreeDataProvider } = require(path.join(OUT, 'treeDataProvider.js'));
+// Loaded in `main`, after the stub is written and `vscode` resolves to it.
+let StorageManager;
+let CredTreeDataProvider;
 
 // ---- counting fakes ------------------------------------------------------------
 function memento() {
@@ -168,7 +165,11 @@ async function renderPass(provider) {
   }
 }
 
-async function main() {
+async function main(scope) {
+  const stub = writeStub(scope, 'bench-stub', STUB_SOURCE);
+  Module._resolveFilename = (req, ...a) => (req === 'vscode' ? stub : orig.call(Module, req, ...a));
+  ({ StorageManager } = require(path.join(OUT, 'storageManager.js')));
+  ({ CredTreeDataProvider } = require(path.join(OUT, 'treeDataProvider.js')));
   const gs = memento();
   const ss = secrets();
   const nodes = buildVault(gs, ss);
@@ -301,7 +302,4 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+harnessScope.run(main);

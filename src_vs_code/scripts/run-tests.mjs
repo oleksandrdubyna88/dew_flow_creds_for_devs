@@ -118,24 +118,27 @@ export function rootsOf(helper) {
  * The mounted reference's sweep, loaded on its own so that a failure to load it is ONE line and no sweep, never a failed run and
  * never a fall back to anything else. `import()` by file URL: the runner itself imports nothing from the mount at load time.
  */
-async function loadReferenceSweep(helper) {
+export async function loadReferenceSweep(helper) {
   const file = path.join(helper.REFERENCE_LIB, 'leftovers-sweep.mjs'); // the mount's location is the wrapper's, written once there [E2.1 code6 1]
   const { sweepLeftovers } = await import(pathToFileURL(file).href);
   if (typeof sweepLeftovers !== 'function') throw new Error(`${file} exports no sweepLeftovers`);
   return sweepLeftovers;
 }
 
-/** One report line only when the sweep found something; a thrown sweep is one line; never the exit code. */
-function sweepAll({ sweep, options, roots, write }) {
+/**
+ * One report line only when the sweep found something; a thrown sweep is one line; never the exit code. `label` is the runner's name
+ * in each line: `run-tests` here, `run-itests` for the harness runner, which imports this function.
+ */
+export function sweepAll({ sweep, options, roots, write, label = 'run-tests' }) {
   for (const tmp of roots) {
     try {
       const { removed = [], preserved = [], errors = [], listed = [] } = sweep({ ...options, repo: REPO_ROOT, tmp });
       if (removed.length + preserved.length + errors.length + listed.length === 0) continue;
-      write(`run-tests: leftovers in ${tmp} — removed ${removed.length}, preserved ${preserved.length}`);
-      for (const line of listed) write(`run-tests: ${line}`);
-      for (const error of errors) write(`run-tests: leftovers error: ${error}`);
+      write(`${label}: leftovers in ${tmp} — removed ${removed.length}, preserved ${preserved.length}`);
+      for (const line of listed) write(`${label}: ${line}`);
+      for (const error of errors) write(`${label}: leftovers error: ${error}`);
     } catch (error) {
-      write(`run-tests: leftovers sweep failed (${error?.message ?? error})`);
+      write(`${label}: leftovers sweep failed (${error?.message ?? error})`);
     }
   }
 }
@@ -302,8 +305,11 @@ function wait(child, { timeoutMs, hardBoundMs, tree, write }) {
   });
 }
 
-/** Forward a terminal's interrupt to the child's tree: it is in a group of its own, so the terminal no longer reaches it. Only a positive whole pid is ever signalled. */
-function forwardSignals(child) {
+/**
+ * Forward a terminal's interrupt to the child's tree: it is in a group of its own, so the terminal no longer reaches it. Only a positive whole pid is ever signalled.
+ * `signals` (the process by default) is a seam for a test, and for `run-itests.mjs`, which has its own listener for the same signals.
+ */
+export function forwardSignals(child, { signals = process } = {}) {
   if (process.platform === 'win32' || !Number.isSafeInteger(child.pid) || child.pid <= 0) return () => undefined;
   const handlers = ['SIGINT', 'SIGTERM', 'SIGHUP'].map((signal) => [signal, () => {
     try {
@@ -312,9 +318,9 @@ function forwardSignals(child) {
       // gone already
     }
   }]);
-  for (const [signal, handler] of handlers) process.on(signal, handler);
+  for (const [signal, handler] of handlers) signals.on(signal, handler);
   return () => {
-    for (const [signal, handler] of handlers) process.removeListener(signal, handler);
+    for (const [signal, handler] of handlers) signals.removeListener(signal, handler);
   };
 }
 
@@ -341,14 +347,17 @@ export async function runWithAudit(extra = [], seams = {}) {
   }
 }
 
-/** The start-of-run sweep: the seam, or the reference's with this repository's token AFTER the caller's options. `undefined` (with one line) when it cannot be loaded. */
-async function sweepFor(seams, helper, write) {
+/**
+ * The start-of-run sweep: the seam, or the reference's with this repository's token AFTER the caller's options. `undefined` (with one line) when it cannot be loaded.
+ * `label` is the runner's name in the line (`run-tests` by default).
+ */
+export async function sweepFor(seams, helper, write, label = 'run-tests') {
   if (seams.sweep !== undefined) return seams.sweep;
   try {
     const reference = await (seams.loadSweep ?? loadReferenceSweep)(helper);
     return (options) => reference({ ...options, token: helper.REPO_TOKEN });
   } catch (error) {
-    write(`run-tests: leftovers sweep not run (${String(error?.message ?? error).split('\n')[0]})`);
+    write(`${label}: leftovers sweep not run (${String(error?.message ?? error).split('\n')[0]})`);
     return undefined;
   }
 }

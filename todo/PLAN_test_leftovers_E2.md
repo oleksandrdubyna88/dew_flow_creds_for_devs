@@ -1556,6 +1556,160 @@ there; the two POSIX root scenarios skip). That file was not run on Windows by t
 
 **Where the REDs were seen** (Linux): 8 `actual: { ended: false, alive: 1 }, expected: { ended: true, alive: 0 }`, on the code before the fix and again with the fix taken out; 10 eight failures under the preload before the change, two after it. Merge of main at `d32a557` (`08da93d`, no conflict).
 
+## E2.2 build record (2026-11-07, branch `feat/test-leftovers-e2.2`, not pushed, not merged)
+
+Built by a Sonnet coder from [PLAN_test_leftovers_E2.2_brief.md](PLAN_test_leftovers_E2.2_brief.md), test first. Commits, oldest
+first: `8b095bd` refactor of `run-itests.mjs` into `runHarnesses(args, seams)` (behaviour kept); `75a110c` `run-tests.mjs` exports
+`sweepFor`, `sweepAll` (with `label`), `loadReferenceSweep`, `forwardSignals` (Q4; E2.1's 79 runner tests green); `583d37c` S1.1–S1.13
+and S1.9 RED; `846bdc9` S1 code, the CI changes; `d7ca645` S2.2 RED; `ab66a75` `harnessScope.cjs`; `f2a41f4` S2.1 and S3.1 RED;
+`dfda5c4` the eight extension harnesses; `a8e6e20` `ssh-agent`, `itestSshd`, `backup-archive`; `890aa6d` `module_tests.md`; this record.
+Suite at `890aa6d`: **6468 tests, 6460 passed, 0 failed, 8 skipped** (`npm test`, which is the real runner, so it also swept both roots);
+`npm run typecheck` and `npm run lint` clean.
+
+**What was built, per story.**
+- **S1** (`run-itests.mjs`): the helpers load dynamically and fail-closed (no mount: one `run-itests:` line naming
+  `git submodule update --init .claude/rules/shared`, no harness, exit 1); the start-of-run sweep of both roots through `sweepFor`/`sweepAll`
+  with `label: 'run-itests'`; the record held once and exported to every harness (`env: { ...process.env, TESTSTODELETE_RUN: record }`); POSIX
+  harnesses start through `startInOwnTree`, a timeout calls `killWholeTree` and then `endTree`, a tree not confirmed ended adds
+  `; the end of its process tree is not confirmed (<n> still alive | <reason>)` to that harness's FAIL line; Windows runs each harness through
+  the reference's `run` (`containTree: true`, `timeoutMs`, `maxOutputBytes` 32 MiB, an abort signal), writes `out` + `err` at its end and reads
+  the verdict from them (overflow, `spawnFailed` and timeout map to FAIL reasons); SIGINT/SIGTERM/SIGHUP are listened for, forwarded to the
+  running harness's group (`forwardSignals`) or aborted (Windows), no further harness starts, the summary prints and the exit is 128 + n.
+  The summary names each harness's output size (`(<n> bytes of output)`). No audit; the header says why. `ci-server.yml` `build-test` now fetches
+  the mount, sets up Node 22 and prints `node --version`, and its push filter adds `src_vs_code/scripts/lib/**` and `.claude/rules/shared`; the new
+  runner test is in the `runner lifecycle · windows` step; `workflowMount.test.ts` covers jobs that run a harness (with a companion that finds
+  `ci-extension.yml:build-test` and `ci-server.yml:build-test`).
+- **S2** (`scripts/lib/harnessScope.cjs`, plan change 7.1): one module-level scope; `run(main)` (a returned integer is the exit code, a throw
+  is code 1 with the stack on stderr); `finish(code)` (sets `closing`, awaits `scope.close()`, then `process.exit`; a second call does nothing);
+  `process.on` — not `once` — for SIGINT, SIGTERM and SIGHUP (exit 130, 143, 129; a signal during the close is ignored); `sectionScope()`
+  (a scope whose close is registered in the module scope at once); `tempEnv(dir, env)` (the child's `TMPDIR`, `TEMP`, `TMP`);
+  `handleSignals()` (for a harness with its own exit). Eight harnesses use it. Each writes its stub inside `main` through `writeStub`, then the
+  `out/` requires (module-level `let` plus a load step where the file's helper functions need the modules); folders that hold a socket are
+  under `shortSocketRoot()` with a `what` of at most five characters (`agent`, `cli`, `mcp`); children get an owned folder as their temp folder.
+  The three SKIPs (`cli`, `mcp`, `git`) now come before any folder or stub. `mcp-wsl` keeps `runAndSweep`'s exit; its `finish` closes the module
+  scope, in which the stub and `finishRun(dirs)` are registered, so a signal removes the same things.
+- **S3**: `ait` is `ownedDir(scope, 'ait', { parent: shortSocketRoot() })`; each `sshd` section makes `sectionScope()` and `ownedDir(section, 'sshd')`
+  and closes it in the same `finally`, after the client and `sshd` have ended; `itestSshd.launch` gives its children the temp folder
+  (`setChildTemp`). `backup-archive-itest.cjs` requires the wrapper and the exit module by path from `src_vs_code/scripts/lib/`; `tempDir(scope, tag)`
+  is `ownedDir(scope, 'backup-<tag>')`; its server child gets the `work` folder as temp folder. `module_tests.md` and the `run-itests.mjs` header are updated.
+
+**The RED list** (the failing assertion; S1 against the refactor commit `75a110c`, which has the Q4 exports but no runner change):
+1. S1.1 `(a) the ambient key was cleared, so only the runner can have set it` — actual `'undefined'`, expected the held record. (b) was not reached; the
+   ambient foreign record is passed on by the old code, and the test now holds both halves.
+2. S1.2 deepEqual — actual `[ 'start' ]`, expected `[ 'sweep <root A>', 'sweep <root B>', 'start' ]`.
+3. S1.3 deepEqual — actual `[]`, expected `[ 'run-itests: leftovers sweep failed (boom)' ]`.
+4. S1.4 `the dead folder and its claim are collected` — `true !== false`.
+5. S1.5 `premise: without \`now\` the folder is kept only for its age` — actual `undefined`, expected `'young'` (nothing was swept).
+6. S1.6 `the grandchild is dead after the runner returned` — `true !== false`.
+7. S1.7 (a pin) `premise: the claim text equals the record` — the claim held the fixture's own record, because the runner did not export one yet. It is green once S1.1 is.
+8. S1.8 `0 !== 1` — the harness ran with unloadable helpers.
+9. S1.9 `workflowMount.test.ts`: the list of jobs without the mount was `[ 'ci-server.yml:build-test' ]`.
+10. S1.10 `the running harness got the SIGTERM` — `false`, and the second harness started.
+11. S1.11 `premise: the seam is called once per harness` — `0 !== 5`.
+12. S1.12 `The input did not match /^pass\s+itest:loud\s+\(100 bytes of output\)/m`.
+13. S1.13 no `; the end of its process tree is not confirmed (2 still alive)` phrase in the FAIL line.
+14. S2.2 (nine cases): `premise: the folder and its claim existed before the exit ()` — the module did not exist, the fixture printed nothing. (Two cases fail on other premises: `a SIGINT is exit 130 and a SIGHUP is exit 129` on the code list, `a section scope` on `premise: the section folder was made`.)
+15. S2.1 — 23 sites, the same 23 as `git grep` (`agent` 2, `cli` 2, `mcp` 8, `mcp-wsl` 1, `git` 2, `masked` 2, `server` 1, `ssh-agent` 3, `bench` 1, `backup` 1).
+16. S3.1 — `[ 'ssh-agent-itest.cjs' ]` (three spellings in that file).
+S3.2 and S3.3 are by hand, below.
+
+**RED checked again with the fix taken out** (a temporary edit, then the file restored): `envOf` removed — S1.1 red with the same text; the sweep call removed —
+S1.2, S1.3, S1.4, S1.5 red; the signal `break` removed — S1.10 red (`the second harness never started`); the `run`-branch dispatch removed — S1.11 red;
+`loadHelpers` seam ignored — S1.8 red; `treeNote` removed — S1.13 red. S1.6: removing only `killWholeTree` (using `child.kill()`) kept the test green, because `endTree`
+then kills the group as its second line; removing `killWholeTree` AND `endTree` made it red (`the grandchild is dead after the runner returned`). The S1.12 mutation edit
+did not match its text and was not applied, so S1.12's RED is the one on the refactor commit only. In `harnessScope.cjs`: `process.once` instead of `process.on` — S2.2's
+second-SIGTERM case red (`premise: the second signal came inside the close, and the close went on`); the `scope.after(() => section.close())` line removed — the section case red
+(`the section folder and its claim are gone`).
+
+**By-hand counts** (Linux/WSL, `TMPDIR`, `TEMP` and `TMP` at the private empty folder `/tmp/ce22p`, listed before and after; BEFORE = the harness files of `75a110c`
+with the new runner; AFTER = `890aa6d`). `node-compile-cache` is made by `npm` itself in `TMPDIR` on every `npm run` (a direct `node` run does not make it) and is not a
+harness entry; it is left out of the counts. Entries in `/tmp` itself (the socket root): 0 new harness entries in every run, before and after; the owner-form
+`arrival-lease-*` and `pinclick-*` entries seen in `/tmp` during the AFTER runs are another session's `npm test` (their `what` is not one of ours).
+
+| Invocation | BEFORE (new entries in the private folder) | AFTER |
+|---|---|---|
+| `npm run itest:all` (default set: agent git cli mcp masked-run backup-archive) | **15**: 4 stubs (`agent`, `cli`, `git`, `mcp`), `creds-cli-itest-*` 1, `creds-mcp-gone/-itest/-empty/-folders-*` 4, `cvbk-itest-*` 3, and 3 made by the `creds-mcp` child (`clr-debug-pipe-<pid>-…-in`, `-out`, `dotnet-diagnostic-<pid>-…-socket`) | **0** |
+| `npm run itest:agent` | 1 (stub; the `storageDir` is removed on success) | 0 |
+| `npm run itest:git` | 1 (stub) | 0 |
+| `npm run itest:cli` | 2 (stub, `creds-cli-itest-*`) | 0 |
+| `npm run itest:mcp` | 8 (stub, 4 folders, the 3 child entries) | 0 |
+| `npm run itest:masked-run` | 0 | 0 |
+| `npm run itest:backup-archive` | 3 (`cvbk-itest-source/-work/-occupied-*`) | 0 |
+| `npm run itest:server` (no server; exit 1 as before) | 1 (stub) | 0 |
+| `npm run itest:ssh-agent` (Linux; no `sshd` on this machine, sections 5 and 7 skipped) | 0 | 0 |
+| `tree-perf-bench.cjs` direct (exit 1 both times, see side findings) | 1 (stub) | 0 |
+| natural triggers: CLI binary moved aside / `PATH` without `git` / `BENCH_OUT` at an empty folder | 2 (stub, folder) / 1 (stub) / 1 (stub) | 0 / 0 / 0 |
+| S3.3: `ssh-agent` with `PATH` holding only `node` (13 FAIL lines, exit 1) | not run before (by reading: the old code removed `dir` on a counted failure) | 0 |
+
+**Each Linux harness's output size** (the summary of the AFTER `itest:all`; the Windows budget, G1, is 32 MiB): `agent` 1737 bytes, `git` 420, `cli` 1560,
+`mcp` 6389, `masked-run` 543, `backup-archive` 1240. `ssh-agent`, `mcp-wsl` and `wsl-relay` are Windows-only in `itest:all`; `server` is opt-in. The budget is five orders of magnitude above these.
+
+**S1.8 by hand** (as `[E2.1 byhand 3]`): `owned.mjs` moved aside, `npm run itest:all` printed one line,
+`run-itests: leftovers: the shared rules are not mounted (…/owned.mjs is missing) — run: git submodule update --init .claude/rules/shared`, started no harness, exit 1; the file was put back.
+
+**The proofs of the table.** Row 1: `sweeper-scan.mjs --root .` → `none found (1540 file(s) read) — the barrier is open for this scope`. Row 5: the guard evidence run, `leftovers-check.mjs --repo . --profile node --token creds
+--identity "the developer-credentials server and extension"` → **16 findings, exit 1**: the same 16 as before (9 `raw-temp` in shell, 6 in `docker.yml`, `commandParse.test.ts:40`). It proves nothing about the harness files; rows 9 and 10 do. Row 2
+(the hand clean-up of the old names): not done by this branch; it is a person's record on the PR, and the brief's search found 0 entries in the four roots.
+
+**Not run, and why.**
+- `itest:mcp-wsl`, `itest:wsl-relay`: Windows with WSL interop; the brief's row 16 says no harness runs on Windows during E2.2. The `creds-mcp-wsl-itest.cjs` edit is therefore **untested beyond `node --check`**.
+- The `sshd` sections of `ssh-agent-itest.cjs` (sections 5 and 7): there is no `/usr/sbin/sshd` here, so the `ownedDir(section, 'sshd')` path and the close after `sshd` ended were not run. S2.2 proves the section scope and `sectionScope()` on a fixture.
+- The `runner lifecycle · windows` job, and S1.6 / S1.4's Windows branch through the real job: only on a pushed branch (no push was asked for).
+- Row 15 and the macOS cell (Q7): one recorded hosted macOS run on a throwaway branch; not started (no push).
+- Both required CI checks on a PR head, the `review_code` round and the Opus review: not started (no PR).
+
+**Differences from the brief, and findings.**
+1. Extra seams on `runHarnesses`: `harnesses`, `compile`, `reachable`, `confirm`, `survivors`. Without a catalogue seam and `compile: false` no test could drive it without a real compile and real harnesses.
+2. Extra tests: S1.12 (the output size), S1.13 (the unconfirmed tree phrase), `tempEnv`, S2.1's and S3.1's companions.
+3. The three SKIPs now precede the folder and the stub (the brief put them after, `cli:109-113`); the observable result is 0 entries instead of a folder and a stub. `git`'s SKIP check was already before its folder.
+4. `harnessScope.cjs` also exports `handleSignals` and `tempEnv`; `itestSshd.cjs` gains `setChildTemp`. `mcp-wsl` registers `finishRun(dirs)` in the module scope instead of calling it in `finish`, so a signal removes the run directory too.
+5. `forwardSignals` takes `{ signals, onSignal }` options (default: the process), for the runner test's `signals` seam; the runner's own persistent listener records the signal, so a signal between two harnesses is not lost.
+6. Side findings, not built (todos): **`tree-perf-bench.cjs` fails at HEAD** with `TypeError: vscode.Uri.from is not a function` (its stub lacks `Uri.from`; `depDecorations.js:61`), so the "bench run once" evidence is a failing run, before and after, and the bench's numbers cannot be had until the stub is fixed. `run-itests.mjs` still reads a skip only as `SKIP — ` (brief § 5). `node-compile-cache` appears in `TMPDIR` for every `npm run` (npm's, not ours).
+
+### E2.2 build record, part 2 — the fix round after the code gate and the Opus review (2026-11-07)
+
+Commits: `e9e0469` the REDs (tests); `4092455` runner fixes; `37d528f` `harnessScope.cjs` and the WSL harness; `d3a14bc` docs. Suite at `d3a14bc`:
+**6478 tests, 6470 passed, 0 failed, 8 skipped** (`nice -n 19 npm test`); `npm run lint` (complexity 4) and `npm run typecheck` clean. Each fix was
+watched red, then green, then taken out again (a temporary edit of the one line) and seen red; the file was restored each time.
+
+| # | Fix | RED text (before the fix) | Taken out again |
+|---|---|---|---|
+| Opus 1 | S1.2 and S1.8 are pinned to `platform: 'linux'` (the `spawn` seam is the POSIX branch); each has a `win32` twin that counts starts in the `run` seam | The old S1.2 with `platform: 'win32'`: deepEqual, actual `[ 'sweep …', 'sweep …' ]`, expected the same plus `'start'`; the old S1.8 with `platform: 'win32'` PASSED, which is the reviewer's point (it counted nothing). Done by a temporary edit of the compiled test; the twins pass on the fixed tests | not applicable (a test fix) |
+| Opus 2 | after `exit` the runner waits `closeBoundMs` (default `HARD_BOUND_MS`, 30 s) for `close`; it writes `<label>: its output was still open <n> ms after it exited — not waited for`, adds the same phrase to a killed harness's FAIL line, destroys the pipes, then runs `endTree` (whose scan ends a holder carrying the record) | S1.16: `the runner did not return within 15 s` (a detached grandchild holding the stdout pipe) | `exit` handler disabled: same text |
+| Opus 3 | `harnessScope.cjs` listens for `uncaughtException` (an unhandled rejection arrives there), writes the error, `finish(1)` | S2.2 uncaught: `the folder and its claim are gone` failed; unhandled rejection: falsy `gone` | listener removed: both red |
+| Opus 4 | `watchSignals` is registered at the start of `runHarnesses`, before the helpers load and the sweep; the header and `module_tests.md` say so | S1.17: `no harness started after the signal` | `watchSignals` made a no-op: S1.17 and S1.18 red |
+| G10 | a signal during (or before) the compile skips the harnesses, still prints the summary, keeps 128 + n; new seam `compileArgs` | S1.18: `no harness ran` (the real compile ran to its end; with the seam in place and the old early return the text was `did not match /===== summary =====/`) | the early `return code 1` restored: red with the summary text |
+| Opus 5 | `cancelled` reads `<label>: stopped by <signal>`; a start failure reads `could not start the harness (<reason>)` on both branches | S1.14: `did not match /^FAIL\s+itest:first\s+first: stopped by SIGTERM/m`; S1.11 and S1.15: `did not match … could not start the harness (…)` | each string put back: red |
+| Opus 6 | `harnessScope.closeOnce()` is one memoised close (`closed ??= scope.close()`), shared by `finish` and by `creds-mcp-wsl-itest.cjs`'s `finish` | the first version of the test: `did not match /AFTER closes=1 gone=true/` (`closeOnce` was not a function). The test was then made to await only the SECOND call and to read a `slowDone` flag, because the first version also passed with an unguarded close | `closed = scope.close()`: red (`did not match /SECOND-RETURNED closes=1 slowDone=true gone=true/`) |
+| Opus 7 | header: "A HARNESS makes and removes its own scratch"; `forwardSignals` loses its unused `onSignal` option (its doc says `signals` is for tests and for `run-itests.mjs`). **Correction to part 1, difference 5:** `forwardSignals` takes only `{ signals }`; the runner's own listener records the signal and nothing is passed through `forwardSignals` for that | — (wording) | — |
+| Opus 8 | S1.6 gives the POSIX fixture 5 s (was 2 s) | — | — |
+| G6 | on Windows one line before each harness: `itest:<name> started — on Windows its output is held under the job until it ends` | S1.11: `one line says the harness started and that its output is held until it ends [G6]` | line disabled: red |
+| G9 | `research/architecture.md` says the backup harness requires the extension's wrapper and `harnessScope.cjs`, so `ci · server` fetches the mount and sets up Node 22 and its path filter lists `src_vs_code/scripts/lib/**` and `.claude/rules/shared`. No Mermaid diagram there shows this edge (the one pipeline drawing is plain text), so none was re-rendered | — | — |
+
+CodeQL `js/bad-code-sanitization` on PR #310: the fixture sources of `itestRunner.test.ts` and `harnessScope.test.ts` are constants now; the wrapper, exit module, root and marks folder reach them as `FIXTURE_WRAPPER`, `FIXTURE_HARNESS_SCOPE`, `FIXTURE_ROOT` and `FIXTURE_MARKS` in the child's environment (`withEnv` for the runner tests, the spawn's `env` for the others), and no value is spliced into fixture code. The guards S1.10, S1.5 and the S2.2 section case were taken out again and are still red.
+
+Also corrected: part 1 said `node-compile-cache` is "made by `npm` itself"; it appears in `TMPDIR` whenever Node runs the compile (it showed in a direct
+`node scripts/run-itests.mjs masked-run` run too). It is not a harness entry, and the counts leave it out. A by-hand re-run of
+`run-itests.mjs masked-run` after the fixes passed and left only that entry. Not run: the Windows job and the `win32` branch against a real job (no push).
+
+### E2.2 build record, part 3 — CodeRabbit and SonarCloud on PR #310 (2026-11-07)
+
+Commits: the REDs (tests), then one fix commit, then the docs. Each fix was watched red, then green, then taken out again and seen red.
+- **A (CodeRabbit)** a SIGTERM in an `sshd` section stopped the folder's removal from waiting for the processes. `itestSshd.cjs` keeps the children `launch` started and exports `endRunning()`; both `sshd` sections register it in their section scope AFTER the folder, so a close ends the client, then `sshd`, then removes the folder. RED: S2.2 `a SIGTERM during a section stops the section's process BEFORE its folder is removed` — `it was told to stop while the folder was still there` (the process was never told; it was left running). Out again: `endRunning` made a no-op: the same text.
+- **B** a signal during the server probe still started `server`. `runOne` checks `run.signal` after the probe and starts nothing. RED: S1.19 `the server harness never started`. Out again: red.
+- **C** a signal during a helper load that then fails returned 1 with no summary. It now prints the summary and leaves with 128 + n. RED: S1.20 `did not match /===== summary =====/`. Out again: red.
+- **D (docs)** `module_tests.md` no longer says the tree scan ends a descendant that holds the pipe after a normal exit: the runner waits at most 30 s, reports it, stops reading, and does neither scan nor end it without a timeout. The brief's status line and the `todo/README.md` row say it is built (PR #310) and point here; the brief's goal names SIGKILL as the exception; § 5 records the two rejections (the WSL run-folder race — out of scope; the SKIP-marker mismatch — pre-existing).
+- **E (Sonar S4036)** `git-transport-itest.cjs` found `git` through the caller's `PATH`. It now looks in fixed directories (`/usr/bin`, `/usr/local/bin`, `/bin`, `/opt/homebrew/bin`; the two Git for Windows folders), or at the file `CREDS_ITEST_GIT` names. A missing git is the same SKIP, now naming the directories. By hand: the harness passes; `CREDS_ITEST_GIT=/nonexistent` gives the SKIP and leaves nothing.
+- **F (S9383)** `harnessScope.run`'s async block has a last-resort `.catch(() => process.exit(1))`.
+- **G (S3358, S4624)** the nested ternary and the nested template in `run-itests.mjs` are the helpers `exitFailure` and `leftOf`.
+- **H (S3776, `creds-mcp-itest.cjs`)** not raised by E2.2: `git diff ccf2e9f HEAD` over that file adds no `if`, loop, `catch` or logical operator inside the big async function (the `if (!fs.existsSync(EXE))` skip was there before; the only changes are `process.exitCode = fails === 0 ? 0 : 1` becoming `return fails === 0 ? 0 : 1`, one removed `rmSync` and the moved `require`s). Left as it is.
+- **I (S9382)** the `await` in the harness loop is intended; a comment says so.
+
+### E2.2 build record, part 4 — code gate round 3 (2026-11-07)
+- **Process ownership.** `itestSshd.cjs` lost its global `running` set and `endRunning()`. `launch(scope, …)` and `startSshd(scope, …)` take the owning scope and register `endChild(result)` in it right after the spawn, so a close ends the processes (the client before `sshd`) before the section folder, which was registered earlier. `ssh-agent-itest.cjs` passes the section scope (and `loginLegs` hands it to the rigs). RED (against the old module, API now taking a scope): S2.2 `premise: the section started its process`, and the new `closing one section ends only its own processes, not a process launched in another scope`: `closing the first section ended its own process and left the other one running`. Out again (`scope.after` line commented): both red (`it was told to stop while the folder was still there`, the same text as above). A test bug found on the way: `killQuietly(0)` would have signalled the test's own process group; it now returns for a pid of 0 or less.
+- **`CREDS_ITEST_GIT` missing file:** the SKIP names the variable and the path; the fixed-directory message stays for the unset case (by hand).
+- **Comment** about running harnesses one after another removed from `run-itests.mjs`.
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
