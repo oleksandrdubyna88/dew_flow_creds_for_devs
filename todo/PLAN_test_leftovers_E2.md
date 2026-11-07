@@ -1867,6 +1867,66 @@ service-defaults test project: clean. `sweeper-scan.mjs --root .`: `none found (
 7. **`SweepRanTests`** is creds' own (it is on `CredsOwn`); its doc comment now says "lost its `AssemblyFixture` line" (the coordinator's item 3b) and it asks for both fixtures.
 8. The callers of `HostProcess.TempDirectory` still pass `creds-...` names (`creds-mcp-pump`), so their folders read `testsToDelete-u<uid>-creds-creds-mcp-pump-<id>`. S3 renames the sites.
 
+### E2.3 build record, part 3 — S3 (2026-11-07, branch `feat/test-leftovers-e2.3`, not pushed, not merged)
+
+Built by a Sonnet coder from [PLAN_test_leftovers_E2.3_brief.md](PLAN_test_leftovers_E2.3_brief.md) § 3.3, test first. Commits, oldest first: `8ba2963` S3.0 and S3.2 RED (the scan, the old-name scan, `SocketSitesTests`, a
+stub `SocketSites.Path` with main's `/tmp` behaviour); `4dce994` GREEN, cli; `dd3ccd4` GREEN, broker client and service defaults; `903749a` GREEN, mcp (the eight renames and `ParentWatchProcessTests`);
+`2a8afa8` the scan keyed on file and a line fragment, three expected lines; `062e8eb` `module_tests.md`; this record. Builds: each of the five test projects by name, `nice -n 19 dotnet build <project> -c Release -m:4
+--disable-build-servers`, 0 warnings, 0 errors. `HostProcess.cs` and the S2 test files are untouched. `TheAdaptedCopyTests.cs` (S1) gained one name on `CredsOwn` (`ClientSitesScanTests.cs`).
+
+**What was built.**
+- **`ClientSitesScanTests`** (creds' own, `tests/Leftovers/`): S3.0. A scratch copy of the `.cs` files of the four client trees (helper folders left out) is read by the copied `LeftoversGuard.Scan`; the `raw-temp` findings
+  must be exactly three lines (below). Companions: more than 50 files; a planted file with four sites is found (teeth); `OwnedCreds.cs` is clean with its marker and one finding without it (the sanctioned line);
+  no `TempDirectory(`/`.Dir(` call passes a `creds-` or `cred-vault-` name.
+- **`SocketSites`** (`src_cli/tests/`): `Path(owned, what, file)` = a file in `owned.Dir(what, OwnedCreds.ShortSocketRoot)`; `Longest(root, what, file)` for the longest owner token. The four socket sites use it
+  (`sock`/`cr.sock` three times, `corpse`/`c.sock`). `SocketSitesTests` (S3.2): the parent matches `Owned.Pattern()`, has its claim, lies under the short root, UTF-8 bytes <= `MaxSocketPathBytes`; with the longest owner
+  (`u4294967295`) `/tmp` and `/private/tmp` leave 35 bytes or more on macOS's 103; macOS's own `$TMPDIR` shape leaves under 10.
+- **Sites moved:** `AgentRelayHostTests`, `AgentRelayConnectionTests`, `RelayLogTests` (socket and class name); `AgentRelayTests` (now `IDisposable`: corpse, `relay-long`, `relay-logs`; `:105` under a marker);
+  `RelayPipeEndingTests`, `StaleWindowsProcessTests` (names, `:41` under a marker); `EndpointsTests`, `SessionTitleTests`, `CredsLoggingTests` (`_owned.Dir`, hand-written deletes gone); `LogRootTests` (three
+  paths under markers); the eight `src_mcp` callers (names). The 13 `TempDirectory` callers of the four trees now pass short names (the 14th is the server's, S4).
+- **Row for the S2 review, finding 6 (coordinator's message): `ParentWatchProcessTests`.** `StartThroughIntermediary` starts the host with its own `Process.Start`; it now sets `TMPDIR`, `TEMP` and `TMP` to
+  `_owned.Dir("child-tmp", OwnedCreds.ShortSocketRoot)` (the same hand-over `HostProcess` makes; the scope removes it after the test's `using`s ended the host). RED, measured first: `CredsMcp.Tests` with
+  `TMPDIR=/tmp/c23s3` (private, short): **3 entries** (`clr-debug-pipe-<pid>-<n>-in`, `-out`, `dotnet-diagnostic-<pid>-<n>-socket`). After: **0**. `CredsCli.Tests`: 0 before and after S3 (S2 closed it).
+  Private-`TMPDIR` count after S3: `CredsMcp.Tests` **0** (S2 left 3), `CredsCli.Tests` **0**.
+
+**The RED list** (failing text, each seen before its code):
+1. S3.0 scan: `Expected RawTempLines(Scratch(sources)) to be equal to {...} ... contains 14 item(s) too many.` The 18 findings: `EndpointsTests.cs:16`, `:80`; `SessionTitleTests.cs:22`; `AgentRelayConnectionTests.cs:162`; `AgentRelayHostTests.cs:34`;
+   `AgentRelayTests.cs:33`, `:34`, `:105`, `:121`, `:153`, `:275`, `:278`; `RelayLogTests.cs:84`; `RelayPipeEndingTests.cs:41`; `CredsLoggingTests.cs:14`; `LogRootTests.cs:17`, `:18`, `:44`.
+2. Old names: `Expected sources.Where(...) to be empty because a folder is named for what it holds ... but found at least one item {"src_cli/tests/AgentRelayHostTests.cs" ...`.
+3. S3.2: `Expected string to be the same string, but they differ at index 2` (the stub's file name is not `cr.sock`; its parent is `/tmp` itself). The pattern assertion is behind it.
+4. By hand, after GREEN: the marker of `LogRootTests` `state` removed -> the scan is red (`... contains 1 item(s) too many`, naming the line); restored. `GetTempPath()` under a marker stays exempt, as the guard says.
+5. `ParentWatchProcessTests`: 3 entries before, 0 after (above). Taking the hand-over out gives the 3 back by the same count.
+
+**Test totals** (Release, `nice -n 19`, one executable at a time, after the last code change):
+
+| Executable | total | failed | succeeded | skipped | after S2 |
+|---|---|---|---|---|---|
+| `CredsForDevs.ServiceDefaults.Tests` | 600 | 0 | 575 | 25 | 596 |
+| `CredVaultServer.Tests` | 825 | 0 | 822 | 3 | 825 |
+| `CredsCli.Tests` | 155 | 0 | 152 | 3 | 151 |
+| `CredsMcp.Tests` | 174 | 2 | 169 | 3 | 174 |
+| `CredsBroker.Tests` | 164 | 0 | 161 | 3 | 164 |
+
+The 2 `CredsMcp.Tests` failures are the two `ParentWatchProcessTests` of parts 1 and 2 (the host takes the WSL pump path here; same on `bf59e4f`). Release binaries were built by name just before each run, so § 9's Debug
+`STALE` loop does not apply to them. `dotnet format whitespace` and `style --verify-no-changes --no-restore` on the cli, broker, service-defaults and mcp test projects: clean (one pre-existing trailing-space line in
+`AgentRelayTests.cs` went with the edit). `dotnet format dew_flow_creds_for_devs.slnx --verify-no-changes --no-restore` stops on the server project's IL2026/IL3050 messages in this local Release setup (not in a file S3
+touched); not a result.
+
+**Not run, and why.** Windows and macOS legs (no such machine here): `SocketSitesTests` and the socket sites on macOS (the macOS byte counts are computed, not measured on a Mac), every test class's use of
+`DarwinLayout.FreshOwnedScope()` there, and the Windows paths of the moved log and endpoint folders. They run on the CI legs.
+
+**Differences from the brief.**
+1. **The expected list has three lines, not four.** `CallerIdentityTests.cs:196` holds `/tmp` inside a RAW string literal (`"""..."""`); the copied guard's folded reading does not see raw strings, so it is not a finding. The
+   brief allows correcting the list to the guard's reading when the RED shows it (said on the PR). Not a plan change.
+2. **The list is keyed on file and a fragment of the line, not on the line number.** The migration adds lines above the literals (`AgentRelayTests.cs:33, :34, :278` became `:38, :39, :283`); a number would be red for no reason.
+3. **The scan reads a scratch copy** of the trees, not the trees: the guard's `Scan(root)` keys on relative paths, and a copy starts no script classifier (no `node`). Both helper folders are left out, as the brief says "helper
+   folder excluded"; their own `/tmp` strings (`SocketRootSweepTests`) are E2.5's to judge.
+4. **`SocketSites` is one small helper for the four sites** (the brief writes the `Path.Combine` inline four times); S3.2 then tests the helper and its worst case, and the sites share one line.
+5. **The macOS temp root is not "too long" with an owned folder in it.** With the shortest sensible names the path under `/var/folders/.../T` is 101 bytes against 103; the old `creds-corpse-<pid>.sock` was 105. The test says
+   what is true (under ten bytes to spare against 35 or more) and does not claim the root alone overflows. The short root stays because the brief and rule §2 say so and the margin is the point.
+6. **`ParentWatchProcessTests` keep their own `Process.Start`** and take the owned `TMPDIR` from their own scope. Routing them through `HostProcess.StartFile` would end the tie and remove the folder when the launcher (not
+   the host) exits, while the host still runs; and `HostProcess.Native` would set the relayed marker on WSL, which turns the watch off. Neither is S3's.
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
