@@ -480,7 +480,7 @@ public sealed class HostProcessAdapterTests
             temp.Distinct().Should().ContainSingle("TMPDIR, TEMP and TMP are one folder");
             var given = temp[0];
             Owned.Pattern().IsMatch(Path.GetFileName(given)).Should().BeTrue("the child's temp folder is owned: prefixed and claimed");
-            OwnedCreds.Canonical(Path.GetDirectoryName(given)!).Should().Be(OwnedCreds.Canonical(OwnedCreds.ShortSocketRoot), "it lies under the short socket root (compared as canonical paths: /tmp is /private/tmp on macOS)");
+            OwnedCreds.Canonical(Path.GetDirectoryName(given)!).Should().Be(OwnedCreds.Canonical(OwnedCreds.ShortSocketRoot), "it lies under the short socket root (compared as canonical paths: on macOS the short root is a link)");
             HostProcess.TempOf(child).Should().Be(given, "the adapter records the folder it gave this child");
             Directory.Exists(given).Should().BeTrue("premise: it exists while the child runs");
             File.Exists(ClaimOf(given)).Should().BeTrue();

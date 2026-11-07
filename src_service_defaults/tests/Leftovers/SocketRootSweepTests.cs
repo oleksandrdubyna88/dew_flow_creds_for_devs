@@ -292,7 +292,7 @@ public sealed class SocketRootSweepTests : IDisposable
     [Fact]
     public void On_macOS_tmp_and_private_tmp_are_one_root_and_the_per_user_temp_root_and_tmp_are_two()
     {
-        Assert.SkipUnless(OperatingSystem.IsMacOS(), "/tmp is a link to /private/tmp and $TMPDIR lies under /var (a link to /private/var) on macOS only");
+        Assert.SkipUnless(OperatingSystem.IsMacOS(), "the short root is a link to /private and the per-user temp root lies under another link, on macOS only");
         var temp = OwnedCreds.Canonical(Owned.TempRoot());
         TestContext.Current.AddWarning($"socket roots: the short root -> {OwnedCreds.Canonical(OwnedCreds.ShortSocketRoot)}, temp root {Owned.TempRoot()} -> {temp}");
 
@@ -313,7 +313,7 @@ public sealed class SocketRootSweepTests : IDisposable
     [Fact]
     public void On_Linux_and_macOS_the_short_socket_root_is_tmp()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "the short root is /tmp on Linux and macOS only");
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "the short root is a fixed path on Linux and macOS only");
 
         // testsToDelete-exempt: raw-temp — the constant under test: the short root's one spelling
         OwnedCreds.ShortSocketRoot.Should().Be("/tmp");

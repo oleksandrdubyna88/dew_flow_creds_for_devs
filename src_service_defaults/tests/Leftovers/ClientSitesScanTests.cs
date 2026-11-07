@@ -14,16 +14,25 @@ public sealed class ClientSitesScanTests : IDisposable
 {
     private static readonly string[] Trees = ["src_cli/tests/", "src_mcp/tests/", "src_broker_client/tests/", "src_service_defaults/tests/"];
 
-    /// <summary>Folders of the helper: the guard lets them name the temp root, and S3.0 leaves them out (S2 and E2.5 judge them).</summary>
-    private static readonly string[] HelperFolders = ["src_service_defaults/tests/Support/Leftovers/", "src_service_defaults/tests/Leftovers/"];
+    /// <summary>The helper's COPIED files (the manifest's targets) are left out: S3.0 judges creds' own code, and a copied file cannot be edited. Creds' own files in the same
+    /// folders (<c>OwnedCreds.cs</c>, the fixtures, the tests) ARE scanned. The list is read from <c>template-manifest.json</c>, never retyped.</summary>
+    private static readonly HashSet<string> Copied = ManifestTargets();
+
+    private static HashSet<string> ManifestTargets()
+    {
+        var path = Path.Combine(RepositoryRoot.Path, "src_service_defaults", "tests", "Support", "Leftovers", "template-manifest.json");
+        using var manifest = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));
+        return [.. manifest.RootElement.GetProperty("entries").EnumerateArray().Select(entry => entry.GetProperty("target").GetString()!)];
+    }
 
     private const string SanctionedFile = "src_service_defaults/tests/Support/Leftovers/OwnedCreds.cs";
 
     /// <summary>
     /// The lines that create nothing (string literals), left for E2.5's guard: the file and a fragment of the line. The fragment, not the number, is the key, because
     /// a line moves when a test above it gains a field (at HEAD of S3 they were AgentRelayTests.cs:33, :34 and :278). The brief lists a fourth,
-    /// CallerIdentityTests.cs:196 (a <c>/tmp</c> inside a RAW string literal, which holds a fixture); the guard's reading does not see a raw string, so it is not a finding
-    /// and not on this list - the guard's own reading decides (the brief says so for exactly this case).
+    /// CallerIdentityTests.cs:196 (a <c>/tmp</c> inside a RAW string literal that also holds a <c>"</c>: <c>"""{"a":"/tmp/p"}"""</c>). The guard DOES read a one-line raw string; it misses a
+    /// <c>/tmp</c> inside one that contains a quote, so that line is not a finding and not on this list - the guard's own reading decides (the brief says so for exactly this case).
+    /// A follow-up: the template guard's raw-string reading (E3 / E2.5).
     /// </summary>
     private static readonly (string File, string Fragment)[] Expected =
     [
@@ -73,8 +82,10 @@ public sealed class ClientSitesScanTests : IDisposable
     [Fact]
     public void TheClientTrees_HoldNoUnmarkedTempSiteButTheThreeLinesThatCreateNothing()
     {
-        var sources = TestSources().Where(relative => !HelperFolders.Any(folder => relative.StartsWith(folder, StringComparison.Ordinal))).ToList();
+        var sources = TestSources().Where(relative => !Copied.Contains(relative)).ToList();
         sources.Count.Should().BeGreaterThan(50, "premise: the scan sees the trees (56 files when this was written)");
+        sources.Should().Contain(["src_service_defaults/tests/Support/Leftovers/OwnedCreds.cs", "src_service_defaults/tests/Leftovers/SocketRootSweepTests.cs"], "premise: creds' own files in the helper folders are scanned");
+        sources.Should().NotContain(Copied, "premise: the copied files are not");
 
         Named(RawTempFindings(Scratch(sources))).Should().Equal(
             [.. Expected.Select(e => $"{e.File} | {e.Fragment}").Order(StringComparer.Ordinal)],
@@ -87,11 +98,12 @@ public sealed class ClientSitesScanTests : IDisposable
     {
         var sources = TestSources().ToList();
         sources.Count.Should().BeGreaterThan(50, "premise: the scan sees the trees");
-        var old = new System.Text.RegularExpressions.Regex("""(?:TempDirectory|\.Dir)\(\s*"(?:creds|cred-vault)-""", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        var old = new System.Text.RegularExpressions.Regex("""(?:TempDirectory|\.Dir|OwnedDir\.Create)\(\s*"(?:creds|cred-vault)-""", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
 
         sources.Where(relative => File.ReadAllLines(Path.Combine(RepositoryRoot.Path, relative)).Any(line => old.IsMatch(line)))
             .Should().BeEmpty("a folder is named for what it holds (`mcp-pump`), without the old `creds-` lead");
         old.IsMatch("HostProcess.TempDirectory(\"creds" + "-mcp-pump\")").Should().BeTrue("premise: the pattern reads the old spelling");
+        old.IsMatch("OwnedDir.Create(\"creds" + "-x\")").Should().BeTrue("premise: and the direct call of the helper");
     }
 
     [Fact]
@@ -120,7 +132,7 @@ public sealed class ClientSitesScanTests : IDisposable
     public void TheSanctionedLine_OfOwnedCreds_IsCarriedByItsMarkerAndIsAFindingWithoutIt()
     {
         var marked = Scratch([SanctionedFile]);
-        RawTempLines(marked).Should().BeEmpty("premise: the one /tmp of the short socket root is carried by its marker");
+        RawTempLines(marked).Should().BeEmpty("premise: the one short-root literal is carried by its marker");
 
         var bare = Scratch([SanctionedFile], relative =>
             string.Join('\n', File.ReadAllLines(Path.Combine(RepositoryRoot.Path, relative)).Where(line => !line.Contains("exempt: raw-temp", StringComparison.Ordinal))));
