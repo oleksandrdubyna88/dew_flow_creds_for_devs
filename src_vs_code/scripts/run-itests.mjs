@@ -24,7 +24,7 @@
 //      mount: one line naming `git submodule update --init .claude/rules/shared`, no harness started, exit 1;
 //   2. sweeps what a KILLED earlier run left, in BOTH roots (the temp root and the short socket root), through the wiring of
 //      `run-tests.mjs`. It reports and never changes the exit code (its lines start `run-itests:`). It is a start-of-run sweep: a
-//      single `itest:*` alias, or a harness started directly, does NOT sweep. It makes and removes its own scratch through
+//      single `itest:*` alias, or a harness started directly, does NOT sweep. A HARNESS makes and removes its own scratch through
 //      `scripts/lib/harnessScope.cjs`, and the next runner run (`npm test`, `npm run itest:all`) or the janitor collects what a kill left.
 //      On Windows the Node sweep COLLECTS NOTHING until F16 closes: it lists `unverified:` there;
 //   3. exports the run's record ONCE as `TESTSTODELETE_RUN=<record>` to every harness, whatever the ambient environment held. A
@@ -33,8 +33,11 @@
 //      own and `endTree` asks whether the group and every process with this run's record are gone; a tree not confirmed ended is one
 //      more phrase in that harness's FAIL line. Windows: the harness runs through the reference's `run` with `containTree`, and the
 //      timeout closes its job. A harness that writes more than 32 MiB there is ended and fails;
-//   5. a SIGINT, SIGTERM or SIGHUP stops the run: the signal goes to the running harness's group, no further harness starts, the
-//      summary is printed, and the exit code is 128 + the signal's number.
+//   5. a SIGINT, SIGTERM or SIGHUP stops the run, from the moment the runner starts (before the helpers load and the sweep): the signal goes
+//      to the running compile or harness (its group, or its job on Windows), no further harness starts, the summary is printed (also when the
+//      signal came during the compile), and the exit code is 128 + the signal's number. A harness that exits but leaves a descendant holding
+//      its output is waited for 30 seconds, not for ever. On Windows the runner prints one line before each harness that its output is held
+//      until it ends.
 //
 // There is NO harness-wide end audit here, unlike `npm test`. A harness's children may still be ending when it exits, and a removal
 // by the run's record would remove a folder they use (D4). The summary names each harness's output size in bytes.
@@ -45,7 +48,7 @@ import { constants } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join, resolve as pathResolve } from 'node:path';
 import { platform, argv, stdout, exit, execPath } from 'node:process';
-import { canonicalRoots, forwardSignals, rootsOf, sweepAll, sweepFor } from './run-tests.mjs';
+import { HARD_BOUND_MS, canonicalRoots, forwardSignals, rootsOf, sweepAll, sweepFor } from './run-tests.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -168,17 +171,36 @@ function runInGroup(args, label, run) {
 
     // `error` fires instead of `close` when the command itself cannot be spawned, and then `status`
     // is null. Checking only the status reported that as a harness failure and lost the reason.
-    child.once('error', (error) => {
+    let settled = false;
+    let bound;
+    const settle = async (code, openAfterMs) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
+      clearTimeout(bound);
       stopForwarding();
-      resolve({ text, failure: `could not start node: ${error.message}` });
-    });
-    child.once('close', async (code) => {
-      clearTimeout(timer);
-      stopForwarding();
-      const failure = killedAt === '' ? (code === 0 ? '' : `exit ${code}`) : killedAt + (await treeNote(child, run));
+      if (openAfterMs !== undefined) {
+        child.stdout.destroy(); // nothing more is read from a pipe the runner has given up on
+        child.stderr.destroy();
+      }
+      if (openAfterMs !== undefined) run.write(`${label}: its output was still open ${openAfterMs} ms after it exited — not waited for\n`);
+      const note = openAfterMs === undefined ? '' : `; its output was still open ${openAfterMs} ms after it exited`;
+      const failure = killedAt === '' ? (code === 0 ? '' : `exit ${code}`) : killedAt + note + (await treeNote(child, run));
       resolve({ text, failure });
+    };
+    child.once('error', (error) => {
+      settled = true;
+      clearTimeout(timer);
+      clearTimeout(bound);
+      stopForwarding();
+      resolve({ text, failure: `could not start the harness (${error.message})` });
     });
+    // The verdict is decided on `exit`. `close` also needs every holder of the output pipes to let go, and a descendant that left the
+    // group can hold them for ever: so after `exit` the runner waits a bounded time for `close`, as `run-tests.mjs` does.
+    child.once('exit', (code) => {
+      bound = setTimeout(() => settle(code, run.closeBoundMs), run.closeBoundMs);
+    });
+    child.once('close', (code) => settle(code));
   });
 }
 
@@ -189,9 +211,10 @@ async function treeNote(child, run) {
   return `; the end of its process tree is not confirmed (${ended.alive > 0 ? `${ended.alive} still alive` : (ended.reason ?? 'unknown')})`;
 }
 
-/** The failure line of a contained run that did not end well: a start that failed, an overflow, the timeout, or the exit code. */
+/** The failure line of a contained run that did not end well: a start that failed, a stop by a signal, an overflow, the timeout, or the exit code. */
 function containedFailure(answer, label, run) {
-  if (answer.spawnFailed) return `could not start node: ${answer.spawnError}`;
+  if (answer.spawnFailed) return `could not start the harness (${answer.spawnError})`;
+  if (answer.cancelled) return `${label}: stopped by ${run.signal ?? 'a signal'}`;
   if (answer.overflow) return `${label}: wrote more than ${WINDOWS_OUTPUT_BUDGET_BYTES} bytes — the tree was ended`;
   if (answer.timedOut) return `${label}: no exit within ${spanOf(run.timeoutMs)} — killed`;
   return answer.code === 0 ? '' : `exit ${answer.code}`;
@@ -254,7 +277,7 @@ function refusalOf(harnesses, args) {
 async function compile(run) {
   run.write('===== compile =====\n');
   const tsc = join(HERE, '..', 'node_modules', 'typescript', 'bin', 'tsc');
-  const compiled = await runNode([tsc, '-p', './'], 'compile', run);
+  const compiled = await runNode(run.compileArgs ?? [tsc, '-p', './'], 'compile', run);
   if (compiled.failure === '') return true;
   run.write(`\ncompile FAILED — ${compiled.failure}\n`);
   return false;
@@ -269,6 +292,7 @@ async function runOne(harness, run) {
     return { ...harness, state: 'skipped', detail: `nothing on ${harness.probe.port} — ${harness.needs}` };
   }
   run.write(`\n===== itest:${harness.name} =====\n`);
+  if (run.platform === 'win32') run.write(`itest:${harness.name} started — on Windows its output is held under the job until it ends\n`);
   const { text, failure } = await runNode([pathResolve(HERE, harness.script)], harness.name, run);
   const verdict = verdictOf(text, failure);
   return { ...harness, ...verdict, detail: `${verdict.detail}${verdict.detail === '' ? '' : ' '}(${Buffer.byteLength(text)} bytes of output)` };
@@ -326,9 +350,12 @@ async function sweepRoots(seams, helper, write) {
   if (sweep !== undefined) sweepAll({ sweep, options: seams.sweepOptions, roots, write: line, label: 'run-itests' });
 }
 
-/** The compile and then each wanted harness, in order; nothing more is started once a signal came. */
+/**
+ * The compile and then each wanted harness, in order. Once a signal came nothing more is started, and the summary is still printed
+ * (with the harnesses that ran, if any), so a stopped run says what it did. A compile that failed for another reason ends the run at once.
+ */
 async function runAll(harnesses, args, run, seams) {
-  if (seams.compile !== false && !(await compile(run))) return { results: [], code: 1 };
+  if (run.signal === undefined && seams.compile !== false && !(await compile(run)) && run.signal === undefined) return { results: [], code: 1 };
   const results = [];
   for (const harness of wantedOf(harnesses, args)) {
     if (run.signal !== undefined) break;
@@ -341,7 +368,7 @@ async function runAll(harnesses, args, run, seams) {
  * Run the harnesses `args` name and return the code to leave with. The seams are for tests: `spawn` (starts a child on POSIX), `run`
  * (the reference's `run`, on Windows), `loadHelpers`, `sweep`, `sweepOptions`, `roots`, `record`, `timeoutMs`, `write` (one chunk of text),
  * `signals` (what the runner listens on; the process by default), `platform`, `harnesses` (the catalogue), `compile` (`false` skips it),
- * `reachable`, and `confirm` and `survivors` (the tree end's seams).
+ * `reachable`, `compileArgs` (the compiler's arguments), `closeBoundMs` (how long to wait for the output pipes after a harness exits), and `confirm` and `survivors` (the tree end's seams).
  */
 export async function runHarnesses(args, seams = {}) {
   const harnesses = seams.harnesses ?? HARNESSES;
@@ -351,36 +378,44 @@ export async function runHarnesses(args, seams = {}) {
     write(refusal);
     return 2;
   }
-  let helpers;
-  try {
-    helpers = await (seams.loadHelpers ?? loadHelpers)();
-  } catch (error) {
-    write(`run-itests: ${String(error?.message ?? error).split('\n')[0]}\n`);
-    return 1;
-  }
-  await sweepRoots(seams, helpers.helper, write);
   const run = {
-    tree: helpers.tree,
-    proc: seams.run === undefined ? helpers.proc : { run: seams.run },
     spawn: seams.spawn,
     write,
     platform: seams.platform ?? platform,
     timeoutMs: seams.timeoutMs ?? TIMEOUT_MS,
+    closeBoundMs: seams.closeBoundMs ?? HARD_BOUND_MS,
+    compileArgs: seams.compileArgs,
     reachable: seams.reachable ?? reachable,
     signals: seams.signals ?? process,
-    record: seams.record ?? helpers.helper.formatOwner(helpers.helper.thisOwner()), // held ONCE: every child gets this string
     confirm: seams.confirm,
     survivors: seams.survivors,
     signal: undefined,
     abort: undefined,
   };
+  // Listening starts here, before the helpers load and before the sweep: a signal at any later point is remembered, and nothing starts after it.
   const unwatch = watchSignals(run.signals, run);
   try {
-    const { results, code } = await runAll(harnesses, args, run, seams);
-    return codeOf(run, code ?? summarize(results, write));
+    return await runWith(harnesses, args, run, seams);
   } finally {
     unwatch();
   }
+}
+
+/** The part of a run that needs the helpers: load them, sweep, then the compile and the harnesses. */
+async function runWith(harnesses, args, run, seams) {
+  let helpers;
+  try {
+    helpers = await (seams.loadHelpers ?? loadHelpers)();
+  } catch (error) {
+    run.write(`run-itests: ${String(error?.message ?? error).split('\n')[0]}\n`);
+    return 1;
+  }
+  await sweepRoots(seams, helpers.helper, run.write);
+  run.tree = helpers.tree;
+  run.proc = seams.run === undefined ? helpers.proc : { run: seams.run };
+  run.record = seams.record ?? helpers.helper.formatOwner(helpers.helper.thisOwner()); // held ONCE: every child gets this string
+  const { results, code } = await runAll(harnesses, args, run, seams);
+  return codeOf(run, code ?? summarize(results, run.write));
 }
 
 const invokedDirectly = (() => {

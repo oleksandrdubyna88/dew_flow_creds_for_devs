@@ -307,12 +307,11 @@ function wait(child, { timeoutMs, hardBoundMs, tree, write }) {
 
 /**
  * Forward a terminal's interrupt to the child's tree: it is in a group of its own, so the terminal no longer reaches it. Only a positive whole pid is ever signalled.
- * `signals` (the process by default) and `onSignal` (called with the signal's name before it is forwarded) are for a runner that must also stop: `run-itests.mjs`.
+ * `signals` (the process by default) is a seam for a test, and for `run-itests.mjs`, which has its own listener for the same signals.
  */
-export function forwardSignals(child, { signals = process, onSignal } = {}) {
+export function forwardSignals(child, { signals = process } = {}) {
   if (process.platform === 'win32' || !Number.isSafeInteger(child.pid) || child.pid <= 0) return () => undefined;
   const handlers = ['SIGINT', 'SIGTERM', 'SIGHUP'].map((signal) => [signal, () => {
-    onSignal?.(signal);
     try {
       process.kill(-child.pid, signal);
     } catch {
