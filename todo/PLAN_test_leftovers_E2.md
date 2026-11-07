@@ -26,6 +26,10 @@
 > `[cadence e2d20eab n]` (the consult for epics 1–3), and listed in § *Plan-gate round 3 and the cadence consult*.
 >
 > **Revised 2026-11-05 for the parent's epochs 6 and 7** (§ *Revision for the rollout's epochs 6 and 7*, below). E2.1's code does not change. No epic moves.
+>
+> **Revised 2026-11-07 for the parent's epoch 8** (§ *Revision for the rollout's epoch 8*, below): the lines of D3, D5, D6,
+> § S4 and S5 sc. 2 that the parent's judge cut are corrected in place, each with a dated note. No merged code changes. No
+> epic moves.
 
 **Committed together with this document** (one commit, the shared `common/planning-docs.md` § *A plan split into
 epics and stories*): its row in `todo/README.md` under *Currently open*, as the first row of the table —
@@ -74,6 +78,39 @@ The parent's § *Epoch 6* item 8.3 and § *Epoch 7* item 8.3 (`dew_flow_conventi
 
 **Prerequisites for E2.1's merge:** condition (c), the owner's administrator scan on the WSL machine, is still open. The parent's § *Epoch 6* row "E2.1" records that E2.1 is built and waits for it.
 *[2026-11-06: met. The owner ran the scan (none found, 266 files read; conventions #136), and E2.1 merged as #294 at `834c91b`.]*
+
+## Revision for the rollout's epoch 8 (2026-11-07)
+
+The parent's § *Epoch 8* (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, approved 2026-11-07 by reviewers,
+`Narrowed: no`) settles entry 7.2 by option (B) (its item 4.2) and acme's state (its item 4.3.2). Its judge cut the lines of
+this document that said otherwise (§ *Plan changes* → *Re-review for epoch 8*, the row "creds
+`todo/PLAN_test_leftovers_E2.md` on main"). This section is the cut's correction, in a new pull request; #253 is not
+reverted. The corrections are not entries of the parent's ledger: they are the baseline epoch 8 is approved on. Where an
+older line says otherwise, the line is corrected and marked with a dated note, and this section wins.
+
+The parent's item 3 table rows that E2 must carry (the parent's text is the source; each row's observed result is there):
+
+| Row | What it asks | What this document now says | Where |
+|---|---|---|---|
+| E2.4-a | `docker.yml`'s names are owner-form and the carve-out is complete, in the guard's reading | the names spell the literal owner `u1001`; the remover's names are unquoted; a `-v` argument is unquoted or quoted WHOLE, never the source alone in quotes; the shipped guard on the head gives 0 findings for `docker.yml` | D5; § S4 |
+| E2.4-b | every remover command runs on every path | the remover has `shell: bash`, `if: always()`, `continue-on-error: true`, and `\|\| true` on each of the four removals; a creds test runs its body with a stub `docker` whose first removal fails and sees all four called (RED: one line without `\|\| true`) | D5; § S4 sc. 8 |
+| E2.4-k | nothing of the smoke is left after the remover, or the job is red | a check step after the remover (`if: always()`, `shell: bash`, no `continue-on-error`) lists the two containers and the two volumes by exact name and exits 1 when one is left; it never uses a reader verb; the same creds test runs it with the stub | D5; § S4 sc. 8 |
+| E2.4-c | the owner segment is the runner's uid, checked before any resource exists | the naming step's FIRST command is `[ "$(id -u)" = 1001 ] \|\| exit 1`, and the step comes before *Build*; a creds test pins both (RED: the check removed, or the step after *Build*) | D5; § S4 sc. 8 |
+| E2.4-d | a failed smoke stays failed, the remover ran, NOTHING is left, `Publish` skipped | each hosted run quotes the check step's result, not only "the remover ran" | § S4 sc. 1, 2 |
+| E2.4-e | a bash record is judged on Linux | `owned_owner` writes `:<start>:<ns>` on Linux; macOS writes neither. The released contract wins (§ *Order*) | D3; § S4 |
+| E2.4-f | acme killed mid-issuance leaves nothing after the next run | acme's state is in labelled NAMED volumes of the owned compose project, no bind mount; observed on a hosted throwaway before E2.4's plan gate | D6; § S4 sc. 6 |
+| E2.4-g | sc. 3 on Windows | S1's T14 (no change here) | § S4 sc. 3 |
+| E2.4-h | acme's compose project is the owned folder's name, never a fixed one | `PROJECT` comes from `$STATE`'s basename, lower-cased, and from nothing else; a creds test pins it (RED: `PROJECT=acme`) | D6; § S4 sc. 9 |
+| E2.4-i | `owned.sh` claims first; a kill between claim and folder leaves only a claim a sweep judges | as written (§ S4, sc. 3) | § S4 |
+| E2.4-j | S2's scripts set their trap before their first fallible step | as written (§ *Revision* row 5; § S4 sc. 4) | § S4 |
+| E2-d | the hand clean-up of E2's old names is recorded per machine | as written (D8); each E2 PR records its own | D8 |
+| E2.5-a | the Node guard at `37b9aa5` leaves only the inventory's exemptions | after E2.4, 5 findings remain. S5 sc. 2's `.cjs` and `.sh` plants of a split spelling are `legacy-name` findings at `37b9aa5`; the PR pins each as a positive test. Row 2 of § *Revision for the rollout's epochs 6 and 7* is read with this | S5 sc. 2 |
+| E2.5-b | the `.sh` temp paths the guard cannot see | migrated by E2.4 (`mcp-listen-smoke.sh:35`, `version-smoke.sh:30`); `git grep` for the old leaf names → 0 | E2.4.S2 |
+| E2.5-c | the C# guard over `.cs` | the copied folded reading; the Node guard does not fold `.cs` | S5 sc. 2 |
+
+The goal's Windows exception (§ *Goal*) is stated in the parent by its true condition from epoch 8 on: a Windows process
+whose NEW files and folders are owned by `BUILTIN\Administrators` (pwsh on `windows-latest`), not "an elevated process"
+(elevated Git Bash makes the caller's files; coai #962). This document's § *Goal* is read with that.
 
 ## What changed from the October version, and why
 
@@ -390,7 +427,11 @@ other site.
 `<host>` the DNS host name (Node `os.hostname()`; C# `Dns.GetHostName()`, never `Environment.MachineName`; bash
 `hostname`), each run of `@`, `:` or whitespace written as one `-`, under WSL `~<distro>` appended, compared
 case-insensitively by every reader. Start and namespace: Node writes them on Linux only (`/proc`, no spawn; O:291-320),
-C# the same (E3's `Owner.This`), bash never. **bash on Windows writes the WINDOWS pid** — `/proc/$$/winpid` (a `read`
+C# the same (E3's `Owner.This`), bash ~~never~~ **the same on Linux: `owned_owner` writes `:<start>:<ns>`, the start from
+`/proc/$$/stat` with ONE `getconf CLK_TCK` per script, the namespace from ONE `readlink /proc/self/ns/pid` per script;
+macOS writes neither** *[2026-11-07, the parent's epoch 8: "bash never" is corrected. Without `<ns>` every Linux reader
+answers `unknown` for a bash record (rule §3; `janitor.sh:649`, `owned.mjs:564`), so nothing `owned.sh` makes on Linux
+would ever be collected. The released contract wins (§ *Order*). The parent's row E2.4-e and item 4.3.1.]*. **bash on Windows writes the WINDOWS pid** — `/proc/$$/winpid` (a `read`
 builtin, no spawn) — because the Node sweep, the C# sweep and the janitor all judge Windows pids; an MSYS `$$` there
 reads as a dead or a stranger's process (R:116-118). Folders: the sibling `<folder>.owner` — never inside (R:135; the
 listing assertions of the facts). Containers and volumes: `--label testsToDelete.owner=<record>` (R:138). Compose: the
@@ -467,21 +508,46 @@ the five executables (E2.3) or the janitor once armed — the handoff E2.3.S2 pr
 **D5 — The CI smoke under the carve-out (rule §5, R:207-225).** Both containers stay WITHOUT `--rm` — `cv`'s logs are
 what a failed health wait prints (`:85`, `:88`), `cv-refused` is read after it exits (`:110-115`). One id per job;
 names spelled with the literal prefix in every command (the guard compares the text), the owner segment from the
-runner's uid: `testsToDelete-${OWNER}-creds-cv-${SMOKE_ID}`, `testsToDelete-${OWNER}-creds-refused-${SMOKE_ID}`,
-`testsToDelete-${OWNER}-creds-refused-data-${SMOKE_ID}`, `testsToDelete-${OWNER}-creds-refused-logs-${SMOKE_ID}`
-(≤ 53 characters with `u1001`). The owner segment is written as `${OWNER}` right after the prefix, never `"$OWNER"` with
-a quote between prefix and segment: the shipped classifier reads `<prefix>-"$OWNER"-…` as **broad** and `<prefix>-${OWNER}-…`
-as owner-aware (E3's S4 deviations, measured with `sweeper-scan.mjs`). The inline removals (`:92`, `:111`'s `docker rm
+runner's uid, written as a LITERAL: `testsToDelete-u1001-creds-cv-${SMOKE_ID}`, `testsToDelete-u1001-creds-refused-${SMOKE_ID}`,
+`testsToDelete-u1001-creds-refused-data-${SMOKE_ID}`, `testsToDelete-u1001-creds-refused-logs-${SMOKE_ID}`
+(≤ 53 characters). `u1001` is the uid of the hosted `ubuntu-latest` runner, and `docker.yml` runs only there (D4). **The
+first command of the naming step** (before *Build*, before any image, container or volume exists) is
+`[ "$(id -u)" = 1001 ] || exit 1`: on any other runner the job fails at once, with nothing made. The remover's names are
+written UNQUOTED (the guard builds `docker rm -f -v <name>` from the run's unquoted token). A `-v` argument is written
+unquoted or quoted WHOLE (`-v "testsToDelete-u1001-creds-refused-data-${SMOKE_ID}:/data"`), never with the source alone
+in quotes. *[2026-11-07, the parent's epoch 8: this sentence said "`testsToDelete-${OWNER}-creds-cv-${SMOKE_ID}` … The
+owner segment is written as `${OWNER}` right after the prefix, never `"$OWNER"`". Measured with the released guard
+(`37b9aa5`) on the whole workflow: that spelling gives 6 findings (4 `docker-name`, 2 `docker-run`), because the guard
+wants literal digits in the owner segment (`leftovers-shell.mjs:7`) and does not match a quoted remover. Option (B), with
+seven counterexamples red, gives 0. The parent's item 4.2 and rows E2.4-a, E2.4-c.]* The inline removals (`:92`, `:111`'s `docker rm
 -f`, `:116-117`) go: ONE remover step, placed after "Smoke-test a refused start" (the last reader) and before "Log in",
-`if: always()`, `continue-on-error: true`, each command `|| true`, and it ends by LISTING what is left (`docker ps -a
---filter label=testsToDelete.owner`, `docker volume ls --filter label=testsToDelete.owner`) — the in-job observation
-the parent's proof asks for. It never decides the verdict: its own exit is always 0, and `Publish`'s implicit
-`success()` reads the smoke steps' failure, not its.
+`shell: bash`, `if: always()`, `continue-on-error: true`, each of the four removals `|| true`, and it ends by LISTING what
+is left (`docker ps -a --filter label=testsToDelete.owner`, `docker volume ls --filter label=testsToDelete.owner`). It
+never decides the verdict: its own exit is always 0, and `Publish`'s implicit `success()` reads the smoke steps' failure,
+not its. **After the remover, a check step** (`if: always()`, `shell: bash`, NO `continue-on-error`) asks for each of the
+two containers (`docker ps -a -q --filter "name=^<name>$"`) and the two volumes (`docker volume ls -q --filter
+"name=^<name>$"`) by exact name; any answer → one line naming it, exit 1. It can only turn the job red, never green. It
+never uses a reader verb (`docker inspect` there is a reader after the remover: 1 `docker-run`). This check is the in-job
+observation the parent's proof asks for. *[2026-11-07, the parent's epoch 8: `|| true` lets a failed removal pass while
+its resource stays, and the listing alone decides nothing. `shell: bash` makes the step run as `bash --noprofile --norc
+-eo pipefail {0}`, under which `|| true` is what lets every later removal run. The parent's rows E2.4-b and E2.4-k; a creds
+test pins both (§ S4 sc. 8).]*
 
 **D6 — acme-test is a probe, so its containers are leftovers too** (rule §1's first sentence; the parent named only
-`state/`). The compose project becomes `teststodelete-<owner>-creds-acme-<id>`; every service and the network carry the
-owner label; `state/` moves out of the checkout into an owned temp folder `testsToDelete-<owner>-creds-acme-<id>` (same
-id), removed at the end through a container (root and uid-10001 files, Facts) and then by `owned_remove`. The owner
+`state/`). The compose project becomes `teststodelete-<owner>-creds-acme-<id>`, the name of the owned folder
+`testsToDelete-<owner>-creds-acme-<id>` that `owned_dir STATE acme` made, lower-cased, and from nothing else; every
+service and the network carry the owner label. ~~`state/` moves out of the checkout into an owned temp folder
+`testsToDelete-<owner>-creds-acme-<id>` (same id), removed at the end through a container (root and uid-10001 files,
+Facts) and then by `owned_remove`.~~ **The containers' state (`certs`, `data`, `logs`) lives in NAMED volumes of that
+compose project, each with the owner label (`labels: { testsToDelete.owner: "${TESTS_TO_DELETE_OWNER:?}" }`); compose
+names them `<project>_<name>`, so they carry the project's owner-form name. No bind mount. `run.sh` reads the few files it
+needs through a one-shot container (`docker run --rm -v <volume>:/s:ro …`) into the owned folder, which holds only those
+copies and is removed by `owned_cleanup`. `compose -p "$PROJECT" down -v` removes the volumes with the containers and the
+network on every exit; after a kill, the janitor removes them by name and label (`docker volume rm`), whatever the owners
+of the files inside. The container-side wipe is no longer needed.** *[2026-11-07, the parent's epoch 8: a bind mount
+holds root- and uid-10001-owned files after a kill, and a janitor that runs as the user cannot remove them; "a person
+removes it" is not an outcome of the plan. With named volumes the owned project, its labels, its state and its teardown
+are still one, and more tightly. The parent's item 4.3.2 and rows E2.4-f, E2.4-h.]* The owner
 record is exported and `trap cleanup EXIT` (plus `INT` and `TERM`) is registered at the VERY TOP of `run.sh`, right
 after sourcing `owned.sh` — before the sweep, before any `docker compose` call and before `owned_dir` — and `cleanup`
 tolerates what is not made yet (an unset `STATE`/`PROJECT` is skipped). The start-of-run sweep needs three-valued
@@ -581,7 +647,7 @@ test on every unwinding path; a killed run's are collected by the next start-of-
 owner is gone; a machine that stops running these tests is cleaned by the janitor (`bash
 .claude/rules/shared/tools/janitor.sh`, one hour). A teardown that gives up leaves the folder prefixed and claimed
 by a pid that dies with the run, so the next sweep collects it. A claim is one line of at most 512 bytes (R:121-123).
-CI: nothing survives the hosted job. acme: one stack of four containers, one network, one state folder of < 1 MB, per run.
+CI: nothing survives the hosted job. acme: one stack of four containers, one network, ~~one state folder of < 1 MB~~ **three named volumes of < 1 MB together and one owned folder of the copied files** *[2026-11-07, the parent's epoch 8, item 4.3.2]*, per run.
 Quarantines (`.<name>.teststodelete-quarantine-<pid>-<hex>`) exist only between a sweep's rename and its removal; a
 killed sweep's are restored or listed by the next (R:194).
 
@@ -935,8 +1001,10 @@ carried and any that were not, with why. Then, for this repository:
 REPO_TOKEN="creds"                                     # rule §1 — the ONLY place the shell token is written (the guard's constant shape)
 owned_token   # prints the caller's owner token: u$(id -u) on Linux/macOS; on MINGW*/MSYS*/CYGWIN* the w<digits> form read ONCE
               # from the mounted reference through node (D1); no node → one line on stderr, return 1 (every caller exits)
-owned_owner   # prints <token>:<host>@<linux|macos|windows>:<pid> — host from `hostname` with [@:[:space:]] runs → '-', the WSL
-              # ~distro suffix when WSL_DISTRO_NAME is set; os from `uname -s`; pid: on Windows read from /proc/$$/winpid, else $$
+owned_owner   # prints <token>:<host>@<linux|macos|windows>:<pid>[:<start>:<ns>] — host from `hostname` with [@:[:space:]] runs → '-', the WSL
+              # ~distro suffix when WSL_DISTRO_NAME is set; os from `uname -s`; pid: on Windows read from /proc/$$/winpid, else $$;
+              # on Linux ONLY also :<start>:<ns> — start from /proc/$$/stat and ONE `getconf CLK_TCK`, ns from ONE
+              # `readlink /proc/self/ns/pid` (D3, corrected 2026-11-07: the parent's row E2.4-e); macOS and Windows write neither
 owned_dir <var> <what>   # sets the caller's variable with printf -v — NO command substitution, so it runs in the caller's shell and
                          # the trap it checks is the caller's. Validates what (non-empty, no / \ control, no leading -, ≤ 22 for the 8-hex id). Then, in
                          # rule §2's order, up to three draws of dir="${TMPDIR:-/tmp}/testsToDelete-$(owned_token)-${REPO_TOKEN}-<what>-<8 hex>":
@@ -980,43 +1048,85 @@ the next sweep collects it once that shell is gone, and the test (`start-server-
       # Printed once, so the first run shows which process that is.
       - name: Name the smoke's resources
         run: |
+          [ "$(id -u)" = 1001 ] || exit 1
+          echo "runner uid: $(id -u)"
           {
-            echo "OWNER=u$(id -u)"
             echo "SMOKE_ID=$(openssl rand -hex 4)"
-            echo "SMOKE_OWNER=u$(id -u):$(hostname | tr -s '@: \t' '-')@linux:$PPID"
+            echo "SMOKE_OWNER=u1001:$(hostname | sed -E 's/[@:[:space:]]+/-/g')@linux:$PPID"
           } >> "$GITHUB_ENV"
           ps -o pid=,comm= -p "$PPID" || true
 ```
 
-Every `cv`/`cv-refused`/volume occurrence in `:78-117` becomes the literal prefixed name of D5 (`${OWNER}` right after
-the prefix); `docker run` and both `docker volume create` gain `--label "testsToDelete.owner=$SMOKE_OWNER"`; `:92`,
+*[2026-11-07, the parent's epoch 8: the step wrote `OWNER=u$(id -u)` for the names and normalised the host with
+`tr -s '@: \t' '-'`. Now its FIRST command checks the uid the names spell, before *Build* and before any resource
+(row E2.4-c); no `OWNER` variable is written; the host is normalised with `sed -E 's/[@:[:space:]]+/-/g'`, because `tr -s`
+also squeezes a `--` that is part of the host name, and rule §3 changes only runs of `@`, `:` and white space (the E2.4
+brief's I19; the parent's item 4.2).]*
+
+Every `cv`/`cv-refused`/volume occurrence in `:78-117` becomes the literal prefixed name of D5 (the literal owner
+segment `u1001` right after the prefix; a `-v` argument unquoted or quoted whole, never the source alone in quotes);
+`docker run` and both `docker volume create` gain `--label "testsToDelete.owner=$SMOKE_OWNER"`; `:92`,
 `:111`'s `docker rm -f`, `:116-117` go. After *Smoke-test a refused start*:
 
 ```yaml
       # The carve-out's remover (common/test-leftovers.md §5): after every step that reads the two containers, on
       # every path, by exact name — and it never decides the verdict: continue-on-error, `|| true`, exit 0.
+      # shell: bash runs the body as `bash --noprofile --norc -eo pipefail {0}`: without `|| true` the first failed
+      # removal would end the step, and the later removals would not run (row E2.4-b).
       - name: Remove the smoke's containers and volumes
         if: always()
         continue-on-error: true
+        shell: bash
         run: |
           [ -n "${SMOKE_ID:-}" ] || { echo "no smoke id: nothing was named, nothing to remove"; exit 0; }
-          docker rm -f -v "testsToDelete-${OWNER}-creds-cv-${SMOKE_ID}" || true
-          docker rm -f -v "testsToDelete-${OWNER}-creds-refused-${SMOKE_ID}" || true
-          docker volume rm "testsToDelete-${OWNER}-creds-refused-data-${SMOKE_ID}" || true
-          docker volume rm "testsToDelete-${OWNER}-creds-refused-logs-${SMOKE_ID}" || true
+          docker rm -f -v testsToDelete-u1001-creds-cv-${SMOKE_ID} || true
+          docker rm -f -v testsToDelete-u1001-creds-refused-${SMOKE_ID} || true
+          docker volume rm testsToDelete-u1001-creds-refused-data-${SMOKE_ID} || true
+          docker volume rm testsToDelete-u1001-creds-refused-logs-${SMOKE_ID} || true
           echo "left after removal:"
           docker ps -a --filter label=testsToDelete.owner --format '{{.Names}}' || true
           docker volume ls --filter label=testsToDelete.owner --format '{{.Name}}' || true
+
+      # Nothing of the smoke is left, or the job is red (row E2.4-k). No continue-on-error: it can only turn the job red.
+      # Filters only, never a reader verb after the remover.
+      - name: Check that nothing of the smoke is left
+        if: always()
+        shell: bash
+        run: |
+          [ -n "${SMOKE_ID:-}" ] || exit 0
+          left=""
+          [ -z "$(docker ps -a -q --filter "name=^testsToDelete-u1001-creds-cv-${SMOKE_ID}$")" ] || left="$left cv"
+          [ -z "$(docker ps -a -q --filter "name=^testsToDelete-u1001-creds-refused-${SMOKE_ID}$")" ] || left="$left refused"
+          [ -z "$(docker volume ls -q --filter "name=^testsToDelete-u1001-creds-refused-data-${SMOKE_ID}$")" ] || left="$left refused-data"
+          [ -z "$(docker volume ls -q --filter "name=^testsToDelete-u1001-creds-refused-logs-${SMOKE_ID}$")" ] || left="$left refused-logs"
+          [ -z "$left" ] || { echo "left after removal:$left"; exit 1; }
 ```
+
+*[2026-11-07, the parent's epoch 8: the remover's names were written in double quotes with `${OWNER}`; the guard does not
+match a quoted remover (2 `docker-run`), so they are unquoted now, with the literal owner. `shell: bash` and the check step
+are new (rows E2.4-a, E2.4-b, E2.4-k). Each name in the check is written as a literal, not through a loop variable: then a
+reader verb added there is a guard finding. Measured 2026-11-07 with `scanText` of the guard at `37b9aa5` on the whole
+`docker.yml` of `0ae0211` with this naming step, these names, this remover and this check: **0 findings**; the same file
+with the remover's names quoted: 2 `docker-run`; with a `-v` source alone in quotes: 1 `docker-run`; with one check line
+written as `docker inspect <name>`: 1 `docker-run`; with that reader written through a loop variable (`docker inspect
+"$n"`): 0 — so a loop would hide it. The guard on the whole head decides the final text (the brief's S3.0), and sc. 8 pins
+its behaviour.]*
 
 `Log in` and `Publish` are untouched. The owner pid is the runner's worker, `$PPID` of the step's shell — the
 contract's rule for a CI job (R:112-116, N11 settled); the `ps` line records which process that was in the first run's
-log. The shipped guard's `docker-name` class accepts a literal whose expansions are `${OWNER}`/`${SMOKE_ID}` after the
-owner form's prefix; S5 sc. 2 pins that this exact text passes and that `"$OWNER"` right after the prefix is `owner-blind`.
+log. ~~The shipped guard's `docker-name` class accepts a literal whose expansions are `${OWNER}`/`${SMOKE_ID}` after the
+owner form's prefix; S5 sc. 2 pins that this exact text passes and that `"$OWNER"` right after the prefix is `owner-blind`.~~
+**The shipped guard at `37b9aa5` reads this whole workflow with 0 findings (the parent's row E2.4-a, measured on the whole
+file); it wants literal digits in the owner segment and an unquoted remover. It does NOT check `|| true`, the uid check or
+the step order before *Build*: sc. 8 does.** *[2026-11-07, the parent's epoch 8: the struck sentence was wrong — the
+released guard reads `${OWNER}` after the prefix as no owner segment (6 findings). The parent's item 4.2.]*
 
 **The change — acme-test** (D6). `docker-compose.acme-test.yml`: drop `name:` (`:19`); an `x-owned: &owned` block
 `labels: { testsToDelete.owner: "${TESTS_TO_DELETE_OWNER:?}" }` merged into each service (`<<: *owned`) and set on
-`networks.edge.labels`; every `./state/…` source (`:47-48`, `:68-69`, `:97-98`) → `${ACME_STATE:?}/…`. `run.sh`, in
+`networks.edge.labels`; ~~every `./state/…` source (`:47-48`, `:68-69`, `:97-98`) → `${ACME_STATE:?}/…`~~ **every
+`./state/…` source (`:47-48`, `:68-69`, `:97-98`) → a NAMED volume of the project (`certs`, `data`, `logs`), declared
+under `volumes:` with the same `labels: { testsToDelete.owner: "${TESTS_TO_DELETE_OWNER:?}" }`; compose names them
+`<project>_<name>`. No bind mount of the state** *[2026-11-07, the parent's epoch 8, item 4.3.2, row E2.4-f]*. `run.sh`, in
 this order:
 
 1. **The very top**, right after `set -euo pipefail` and sourcing `../../.github/scripts/lib/owned.sh` — before any
@@ -1024,18 +1134,29 @@ this order:
    (`owned_token` having refused already if it cannot be had); `STATE=""`, `PROJECT=""`; `trap cleanup EXIT` and `trap
    'exit 130' INT` / `trap 'exit 143' TERM` (so an interrupt runs the EXIT trap once). `cleanup` skips each step whose
    input is not made yet: when `PROJECT` is set, `docker compose -p "$PROJECT" -f docker-compose.acme-test.yml down -v
-   --remove-orphans || true`; when `STATE` is set, `docker run --rm -v "$STATE":/s alpine sh -c 'rm -rf /s/certs /s/data
-   /s/logs' || true`, then `owned_cleanup` (`owned_remove` on `$STATE`) — so the EXIT trap's body names `owned_cleanup`, as
-   `owned_dir` requires (its check); the trap is set before the first `owned_dir`.
+   --remove-orphans || true` (it removes the named volumes with the containers and the network); ~~when `STATE` is set,
+   `docker run --rm -v "$STATE":/s alpine sh -c 'rm -rf /s/certs /s/data /s/logs' || true`, then~~ when `STATE` is set,
+   `owned_cleanup` (`owned_remove` on `$STATE`, which holds only the files `run.sh` copied out) — so the EXIT trap's body
+   names `owned_cleanup`, as `owned_dir` requires (its check); the trap is set before the first `owned_dir`.
+   *[2026-11-07, the parent's epoch 8: the container-side wipe goes; the state is in named volumes (item 4.3.2).]*
 2. The start-of-run sweep of D6: `JANITOR_MIN_AGE_MINUTES=10 bash ../../.claude/rules/shared/tools/janitor.sh --token
    creds` (exit 0 and 3 fine; any other code one line, the run goes on; on Windows a dry run until armed).
-3. `owned_dir STATE acme || exit 1` (claim, register, create, in the caller's shell); `id` = its six-character suffix lowercased;
-   `PROJECT="teststodelete-$(owned_token)-creds-acme-$id"`, `COMPOSE=(docker compose -p "$PROJECT" -f
-   docker-compose.acme-test.yml)`; `export ACME_STATE="$STATE"`.
+3. `owned_dir STATE acme || exit 1` (claim, register, create, in the caller's shell); ~~`id` = its six-character suffix lowercased;
+   `PROJECT="teststodelete-$(owned_token)-creds-acme-$id"`~~ **`PROJECT` = the basename of `$STATE`, lower-cased through
+   `tr` (bash 3.2 has no `${x,,}`): `teststodelete-<owner>-creds-acme-<8 hex>`, from `$STATE` and from nothing else**,
+   `COMPOSE=(docker compose -p "$PROJECT" -f docker-compose.acme-test.yml)`. *[2026-11-07, the parent's epoch 8, row
+   E2.4-h: the project is the owned folder's name; the guard cannot see this (the value is wholly an expansion), so sc. 9
+   pins it. `-p teststodelete-${OWNER}-creds-acme-$id` is a `docker-name` finding at `37b9aa5`; `-p "$PROJECT"` is clean.
+   The id is the folder's own 8-hex suffix (the E2.4 brief's I9). `ACME_STATE` is no longer exported: no bind mount reads it.]*
 
-The fixed-name `cleanup` at `:53` and the `rm -rf state` at `:54` go (`mkdir -p` the four subfolders under
+The fixed-name `cleanup` at `:53` and the `rm -rf state` at `:54` go. ~~(`mkdir -p` the four subfolders under
 `$STATE`); `:56`'s chown mounts `$STATE`. Every `state/…` path in the checks (`:83`, `:86`) reads `$STATE/…`. On Git Bash the
-`-v "$STATE":/s` form is whatever today's `"$(pwd)/state":/s` proves to work — verified by scenario 6, not assumed.
+`-v "$STATE":/s` form is whatever today's `"$(pwd)/state":/s` proves to work — verified by scenario 6, not assumed.~~
+**`:56`'s chown runs on the `data` and `logs` volumes; the checks at `:83`, `:86` read the certificate from the `certs`
+volume through a one-shot container (`docker run --rm -v "${PROJECT}_certs":/s:ro …`), and a file `run.sh` needs is
+copied into `$STATE`.** *[2026-11-07, the parent's epoch 8, item 4.3.2. How compose makes and names the volumes, and when
+the chown can run, the hosted throwaway of row E2.4-f observes before E2.4's plan gate (the parent's item 8.2 names both as
+likely surprises); the E2.4 brief writes the exact lines.]*
 
 **Scenarios** (RED first where a leak exists today):
 
@@ -1047,9 +1168,10 @@ The fixed-name `cleanup` at `:53` and the `rm -rf state` at `:54` go (`mkdir -p`
    **GREEN, on the new shape**: the job FAILED, *Remove the smoke's containers and volumes* RAN and its "left after
    removal" listing is EMPTY, `Publish` is reported **skipped**. Then the same branch with the `cv-refused` half
    sabotaged (an image that exits 0) — FAILED, remover ran, listing empty, `Publish` skipped. Run URLs in the PR; the
-   branch deleted.
+   branch deleted. **In each run the result of *Check that nothing of the smoke is left* is quoted (green), not only "the
+   remover ran"** *[2026-11-07, the parent's epoch 8, row E2.4-d: "the remover ran" alone proves no removal]*.
 2. **The happy path on the real shape** — `gh workflow run docker.yml --ref <the PR branch>`: green, the remover's
-   listing empty, `Log in`/`Publish` skipped by their own `if:` (not main). `actionlint` green (`ci-server.yml:294-332`).
+   listing empty, **the check step green**, `Log in`/`Publish` skipped by their own `if:` (not main). `actionlint` green (`ci-server.yml:294-332`).
 3. **`owned.sh` keeps rule §1–§3** (new `.github/scripts/lib/owned.test.sh`, run from `ci-clients.yml` beside the two
    smoke self-tests, three OSes, in a PRIVATE root handed as `TMPDIR`): `owned_dir d x` → `d` matches
    `^testsToDelete-[uw][0-9]{1,10}-creds-x-[0-9a-f]{8}$` under that root, its owner segment equal to what `node -e` prints
@@ -1080,25 +1202,48 @@ The fixed-name `cleanup` at `:53` and the `rm -rf state` at `:54` go (`mkdir -p`
    hand, recorded): RED on `main`: after a green `./run.sh`, `deploy/acme-test/state/` exists; on Linux the second run
    stops at `:54` (if it does, that is the reasoning of the facts measured). GREEN: after a green AND after a failing
    run (`VAULT_IMAGE=busybox`), no `state/`, no `testsToDelete-<owner>-creds-acme-*` folder or claim, `docker ps -a
-   --filter label=testsToDelete.owner` shows no acme container, `docker network ls` no acme network.
+   --filter label=testsToDelete.owner` shows no acme container, `docker network ls` no acme network, **`docker volume ls
+   --filter label=com.docker.compose.project=<project>` no acme volume** *[2026-11-07, the parent's epoch 8, item 4.3.2]*.
 6. **acme survives its own kill and is collected** — `./run.sh` killed with `kill -9` (Windows: `taskkill /F /PID
-   <winpid>`) mid-issuance: the project, the network and the state folder remain, labelled/claimed with that pid; the
+   <winpid>`) mid-issuance: the project, the network and ~~the state folder~~ **the project's named volumes and the owned
+   folder** remain, labelled/claimed with that pid; the
    next `./run.sh`, more than 10 minutes later, removes them before starting through `janitor.sh --token creds` (the
-   project, its network and the state folder gone, the run green) — on Linux; on Windows the janitor's dry run LISTS
+   project, its network and ~~the state folder~~ **its volumes** gone, the run green) — on Linux; on Windows the janitor's dry run LISTS
    them and the record says so (D6's limit), and they are removed by hand. A second `./run.sh` started while the first
    is LIVE: the first one's stack is untouched (the old `:53` tore it down) — the janitor reads the live owner and keeps it.
+   **The Linux half, observed on a hosted `ubuntu-latest` throwaway job before E2.4's plan gate (never merged):** before
+   the kill, the run lists the project's volumes and asserts that each carries the `testsToDelete.owner` label (an
+   unlabelled one would be kept by the janitor as `unmarked`); after the kill, 11 minutes and the next run, `docker volume
+   ls`, `docker ps -a` and `docker network ls`, each filtered by the compose PROJECT (`--filter
+   label=com.docker.compose.project=<project>`, never by the owner label, which an unlabelled volume would not carry), are
+   empty, and the owned folder and its claim are gone. "A person removes it" is not an outcome on Linux.
+   *[2026-11-07, the parent's epoch 8: the state folder was a bind mount, and after a kill its root- and uid-10001-owned
+   files could not be removed by a janitor that runs as the user. Item 4.3.2 and row E2.4-f.]*
 7. **An interrupt at any point still cleans up** (RED first on `main`: Ctrl-C during the first `compose up` leaves
    `deploy/acme-test/state/` in the checkout — `cleanup` at `:49` never touches it): SIGINT to `run.sh` (a) during the
    janitor call, before `owned_dir` → exit non-zero, nothing made, no error from `cleanup`; (b) during `compose up` →
-   the project, its network and the state folder are gone when the script returns; (c) SIGTERM, same as (b).
+   the project, its network, **its volumes** and the ~~state~~ **owned** folder are gone when the script returns; (c) SIGTERM, same as (b).
+8. **The remover, the uid check and the check step, pinned by a creds test** *[added 2026-11-07, the parent's epoch 8,
+   rows E2.4-b, E2.4-c, E2.4-k]* (in E2.4.S3, beside the guard fixtures of `leftoversGuardFixtures.test.ts`; it reads
+   `docker.yml`): (a) the remover step has `shell: bash`; its body RUNS under `bash --noprofile --norc -eo pipefail` with
+   a stub `docker` first on `PATH` whose first removal fails → all four removals are called. RED: one removal without
+   `|| true` (1 removal called, exit 1). (b) The check step's body runs with the stub: a stub that still lists
+   `…-creds-cv-…` after the removal → exit 1 and one line naming it, RED; nothing listed → exit 0. (c) The naming step's
+   FIRST command is the `id -u` check, and the step comes before *Build*. RED: the check removed, or the step moved after
+   *Build*. The guard sees none of (a)–(c): the parent measured 0 findings with no `|| true` and with the uid check removed.
+9. **Acme's project is the owned folder's name** *[added 2026-11-07, the parent's epoch 8, row E2.4-h]* (in E2.4.S4, a
+   creds test over `deploy/acme-test/run.sh`): `PROJECT` is assigned from `$STATE`'s basename and from nothing else. RED:
+   `PROJECT=acme`. The guard cannot see it: the value is wholly an expansion.
 
 - **Commands.** `.github/scripts/lib/owned.test.sh`; the three `.test.sh`; `bash deploy/restore-archive-itest.sh`;
   `docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 <every changed .sh>`; `actionlint`; the
   dispatches of sc. 1–2; `cd deploy/acme-test && ./run.sh`; `JANITOR_MIN_AGE_MINUTES=10 bash
   .claude/rules/shared/tools/janitor.sh --token creds --dry-run`.
 - **DoD.** Sc. 1 observed RED then GREEN with run URLs; sc. 2 green; sc. 3–4 RED then GREEN; 5–7 recorded on at least
-  one machine, the other OS stated as not run; `architecture.md:363` says the smoke's containers are named in the owner
-  form, labelled and removed by one always-run step that never decides the verdict.
+  one machine, the other OS stated as not run; **sc. 8–9 RED then GREEN (added 2026-11-07, the parent's epoch 8)**;
+  `architecture.md:363` says the smoke's containers are named in the owner
+  form, labelled and removed by one always-run step that never decides the verdict, **and a check step after it fails the
+  job while a named container or volume is left**.
 
 ## S5 — The two guards' CI steps, the exemptions, and the docs
 
@@ -1128,12 +1273,18 @@ The fixed-name `cleanup` at `:53` and the `rm -rf state` at `:54` go (`mkdir -p`
    (copied) plus this repository's additions in `LeftoversGuardCredsTests.cs`: a planted `fs.mkdtempSync(` in
    `src_vs_code/scripts/x.cjs` and in `src_vs_code/src/test/xWorld.ts` ⇒ 1 `raw-temp` each; `Path.GetTempPath()` in
    `src_cli/tests/X.cs` ⇒ 1; `"testsTo" + "Delete-"` in a `.cs` ⇒ 1 `legacy-name`/`owner-blind`
-   (D9 #2; **revised, § *Revision* row 2:** a whole legacy literal in a `.cjs` and in a `.sh` ⇒ 1 each through the shipped guard, and no row asserts that a split spelling is not found); `Owned.Prefix` referenced from `src_mcp/tests/X.cs` ⇒ 1 `owner-blind` (D9 #14); `docker compose -p
-   cred-vault-acme-test up` in `deploy/acme-test/run.sh` ⇒ 1 `docker-name`, with `-p teststodelete-${OWNER}-creds-acme-$id`
-   ⇒ 0; `.github/workflows/docker.yml` ⇒ no docker finding from the C# guard (the pinned exclusion) — and, for the shipped
+   (D9 #2; **revised, § *Revision* row 2:** a whole legacy literal in a `.cjs` and in a `.sh` ⇒ 1 each through the shipped guard, and no row asserts that a split spelling is not found); **[2026-11-07, the parent's epoch 8, row E2.5-a: read row 2 with this — at `37b9aa5` the F30 reader makes the split plants findings again: `"testsTo" + "Delete-"` in a `.cjs` and in a `.sh`, and `"testsTo""Delete-"` in a `.sh`, are each `legacy-name` (measured by the parent). The PR pins each as a positive test, "RED by hand once against a copy of the guard with the plant's line removed" (the parent's words).]** `Owned.Prefix` referenced from `src_mcp/tests/X.cs` ⇒ 1 `owner-blind` (D9 #14); `docker compose -p
+   cred-vault-acme-test up` in `deploy/acme-test/run.sh` ⇒ 1 `docker-name`, with ~~`-p teststodelete-${OWNER}-creds-acme-$id`
+   ⇒ 0~~ **`-p "$PROJECT"` ⇒ 0 (and a literal `-p teststodelete-u1001-creds-acme-…` ⇒ 0)** *[2026-11-07, the parent's
+   epoch 8: `-p teststodelete-${OWNER}-creds-acme-$id` is one `docker-name` finding of the shipped guard at `37b9aa5`, and
+   `-p "$PROJECT"` is clean (the parent's judge, a text scan). What the C# copy reads on the same lines is E2.5.S1's to
+   observe.]*; `.github/workflows/docker.yml` ⇒ no docker finding from the C# guard (the pinned exclusion) — and, for the shipped
    Node guard (no new tests here: its own suite covers the classes), three facts pinned by running it over fixture
    workflows in `leftoversGuardFixtures.test.ts`: the D5 remover AFTER the reader ⇒ 0; the remover BEFORE the `docker
-   logs` step ⇒ 1 `docker-run`; `"$OWNER"` right after the prefix in the remover ⇒ `owner-blind`, `${OWNER}` ⇒ 0.
+   logs` step ⇒ 1 `docker-run`; ~~`"$OWNER"` right after the prefix in the remover ⇒ `owner-blind`, `${OWNER}` ⇒ 0~~
+   **the remover's names in double quotes ⇒ 2 `docker-run`, and a `-v` source alone in quotes ⇒ 1 `docker-run`; D5's
+   workflow as written (option B) ⇒ 0** *[2026-11-07, the parent's epoch 8, row E2.4-a: the released guard reads no
+   `${OWNER}` as an owner segment, so the struck fact cannot hold; the new facts are the parent's measured counterexamples]*.
 3. **A scan of nothing is red** — the C# guard over an empty folder ⇒ `FilesScanned == 0` and the one sentence (copied
    test); the shipped guard with `--repo <empty git repository>` ⇒ exit 2 — an AUTOMATED fixture test, not a one-time
    observation `[E2.1 plan gate 2]`: a step of the required `docs.yml` job makes an empty `git init` repository under an
@@ -1164,7 +1315,7 @@ The fixed-name `cleanup` at `:53` and the `rm -rf state` at `:54` go (`mkdir -p`
 
 | The parent's "proven by" | Where |
 |---|---|
-| A failure test of the workflow: the job ends FAILED, the always-run cleanup ran and removed by exact name (observed in the job), `Publish` SKIPPED | S4 sc. 1 (both halves of the smoke), with the RED on the old shape |
+| A failure test of the workflow: the job ends FAILED, the always-run cleanup ran and removed by exact name (observed in the job **by the check step, green; 2026-11-07, the parent's row E2.4-d**), `Publish` SKIPPED | S4 sc. 1 (both halves of the smoke), with the RED on the old shape; **sc. 8 for the remover's and the check's bodies** |
 | The guard's break-it on a `docker run` without `--rm` and without an always-run remover | S5 sc. 2 (the remover-before-reader variant through the shipped guard), sc. 6 |
 | RED-GREEN per no-cleanup temp file class | Node unit tests: S2 sc. 10 (counted); harnesses and stubs: S2 sc. 10; C#: S3 sc. 2–4; shell: S4 sc. 4; acme: S4 sc. 5; and S5 sc. 1 for all of them at once |
 | Unwind test for the helper | S2 sc. 4–5 (the wrapper), S3 (E3's set, copied), S4 sc. 3 (bash) |
@@ -1192,8 +1343,11 @@ The fixed-name `cleanup` at `:53` and the `rm -rf state` at `:54` go (`mkdir -p`
 - [ ] E3's helper is ~~a byte copy save the five named files~~ **an adapted copy with a pinned manifest and a diff check (§ *Revision* row 3)**, with its Darwin path, green on Linux, Windows and macOS, **read with § *Goal*'s elevated Windows exception**;
       `AllowUnsafeBlocks` in all five test projects (S3).
 - [ ] `docker.yml`'s two containers and two volumes are prefixed in the owner form, labelled, removed by one always-run
-      exact-name step after the diagnostics, and a failed smoke was observed FAILED with `Publish` skipped (S4).
-- [ ] acme leaves no `state/`, folder, container or network after a green or a failed run (S4).
+      exact-name step after the diagnostics, **followed by a check step that fails the job while a named container or
+      volume is left (2026-11-07, the parent's epoch 8, row E2.4-k)**, and a failed smoke was observed FAILED with `Publish` skipped (S4).
+- [ ] acme leaves no `state/`, folder, container, **volume** or network after a green or a failed run (S4); **after a kill,
+      the next run's janitor removes its containers, network and named volumes on Linux (2026-11-07, the parent's epoch 8,
+      row E2.4-f)**.
 - [ ] The shipped Node guard (`--profile node`) and the C# guard are red on every class that can occur here, on an
       unregistered or disagreeing token and on a scan of nothing, and green on `main` — the first in the required
       `docs.yml` job, the second on the three OS legs (S5).
@@ -2270,7 +2424,7 @@ detailed briefs are S2–S5 above; a story names the scenarios it owns.
   owner form; a failed smoke stays failed and never publishes; acme's project, labels, state and teardown are one.
 - **Scope.** S4 whole.
 - **Depends on.** E2.3 merged; the second consultation (once per three epics; before this group).
-- **Done when.** S4 sc. 1–7 green or recorded; the guard evidence run shows only `commandParse.test.ts:40` and the
+- **Done when.** S4 sc. 1–7 green or recorded, **sc. 8–9 green (2026-11-07, the parent's epoch 8)**; the guard evidence run shows only `commandParse.test.ts:40` and the
   product scripts (the exemptions of E2.5).
 - **Stories.**
   - **E2.4.S1 — `owned.sh`, claim-first, and its self-test** — **CORNERSTONE, spec by Fable**, code by Sonnet, review by
@@ -2282,11 +2436,13 @@ detailed briefs are S2–S5 above; a story names the scenarios it owns.
   - **E2.4.S2 — the shell scripts** (Opus · Sonnet · Opus): the two smoke self-tests, `start-server-and-wait.{sh,test.sh}`,
     `restore-archive-itest.sh`'s nine worlds, the two smoke scripts off CI; shellcheck. Owns sc. 4.
   - **E2.4.S3 — the Docker smoke carve-out** (Opus · Sonnet · Opus): the names, labels, the runner-worker record, ONE
-    always-run remover; the throwaway-branch failure evidence (FAILED and `Publish` skipped) and the happy path. Owns
-    sc. 1, 2.
+    always-run remover, **the uid check as the naming step's first command, the post-cleanup check step and their creds
+    test**; the throwaway-branch failure evidence (FAILED and `Publish` skipped) and the happy path. Owns
+    sc. 1, 2, **8 (2026-11-07, the parent's epoch 8)**.
   - **E2.4.S4 — acme: project identity, labels, state and teardown together** (Opus · Sonnet · Opus): D6 whole — the
-    owned project and state, the top-of-script trap, the janitor `--token creds` sweep, the kill and interrupt cases,
-    `.gitignore`, `deploy/README.md`, `architecture.md:363`. Owns sc. 5, 6, 7.
+    owned project and state (**the state in labelled named volumes of the project, 2026-11-07, the parent's item 4.3.2**),
+    the top-of-script trap, the janitor `--token creds` sweep, the kill and interrupt cases,
+    `.gitignore`, `deploy/README.md`, `architecture.md:363`. Owns sc. 5, 6, 7, **9 (2026-11-07)**.
 - **Cornerstone area:** the bash helper (S4).
 
 ### E2.5 — Repository-wide enforcement
