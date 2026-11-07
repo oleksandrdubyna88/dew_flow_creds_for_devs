@@ -81,7 +81,7 @@ public static partial class Owned
     /// never truncated.</summary>
     public static int Room => MaxName - NameBase.Length - 1 - IdLength;
 
-    /// <summary>What this repository's sweep matches for ONE owner: <c>^teststodelete[-_]&lt;owner&gt;[-_]mcp[-_]</c>, every
+    /// <summary>What this repository's sweep matches for ONE owner: <c>^teststodelete[-_]{owner}[-_]creds[-_]</c>, every
     /// spelling, case-insensitive (rule §1, §4).</summary>
     public static Regex Pattern(string? owner = null)
     {

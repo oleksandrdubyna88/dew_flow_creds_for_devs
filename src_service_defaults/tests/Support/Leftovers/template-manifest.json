@@ -582,6 +582,12 @@
           "old": "namespace Mcp.Tests.Leftovers;",
           "new": "namespace CredsForDevs.Tests.Leftovers;",
           "count": 1
+        },
+        {
+          "old": "[-_]&lt;owner&gt;[-_]mcp[-_]</c>",
+          "new": "[-_]{owner}[-_]creds[-_]</c>",
+          "count": 1,
+          "reason": "a doc comment, no code: the shipped barrier scan (tools/sweeper-scan.mjs) reads the escaped placeholder as no owner segment and reports this line as owner-blind, and the repository must pass that scan (the old text of this op leaves the prefix word out, so the manifest is not a finding either); {owner} is a placeholder it accepts. The line also names this repository's token"
         }
       ]
     },
