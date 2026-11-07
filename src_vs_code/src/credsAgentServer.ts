@@ -571,12 +571,7 @@ export class CredsAgentServer implements vscode.Disposable {
   private async prepared(res: http.ServerResponse, call: Omit<CallSubject, 'table'>, remember: () => Promise<void>): Promise<void> {
     const { grant, action, summary, via, caller } = call;
     const atLaunch = launchGate(this.grants, this.hooks.bridgeWall, call);
-    if (this.stopped(res, call, 'after consent', atLaunch)) {
-      return;
-    }
-    await remember();
-    // The write is an await: the client can leave, and the scope or the token can change, inside it. Asked again, as `main` asked once after its own write.
-    if (this.stopped(res, call, 'after consent', atLaunch)) {
+    if (!(await this.stamped(res, call, atLaunch, remember))) {
       return;
     }
     await this.releaseWaiting(grant);
@@ -592,6 +587,18 @@ export class CredsAgentServer implements vscode.Disposable {
     }
     // The check after THIS await is `brokerCall.ts`'s, made in the same step that starts the action.
     await this.runAndDeliver(res, { ...call, table }, atLaunch);
+  }
+
+  /**
+   * The gate, the stamp, the gate again; whether the call may go on. The write is an await: the client can leave, and the scope or the
+   * token can change, inside it, so the gate is asked again, as `main` asked once after its own write. Both read `after consent`.
+   */
+  private async stamped(res: http.ServerResponse, call: Omit<CallSubject, 'table'>, atLaunch: () => Refusal | undefined, remember: () => Promise<void>): Promise<boolean> {
+    if (this.stopped(res, call, 'after consent', atLaunch)) {
+      return false;
+    }
+    await remember();
+    return !this.stopped(res, call, 'after consent', atLaunch);
   }
 
   /** Whether this call goes no further, asked before anything an Allow triggers (`releaseWaiting`): its client has gone, or the scope wall refuses it now. */

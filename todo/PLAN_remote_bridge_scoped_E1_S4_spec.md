@@ -255,3 +255,67 @@ goes as its own PR. Nothing in §S4.0-§S4.10 changes. Three things are **not** 
 (superseded, never built), the button order of a bridged modal (`Deny`, `Allow`; parent §4.10, Q5) and the 504 sentence of an expired call — all
 E1.5's. C17's "a timed-out dialog → 504, no key" stands as written: the stamp is still not written on a timeout; what E1.5 changes is that the timeout
 no longer frees the place, which C17 does not assert.
+
+## S4.12 — As built (Sonnet, 2026-11-07)
+
+E1.4 finished on the partial-E1 tree (`a7af39d`, the head of PR #307). The saved work `c4b7add` (`wip/remote-bridge-e14-before-stop`) was merged in as its own
+commit; its As built draft (§S4.11 of the saved branch: differences 1-8) still describes what it built and is not repeated. This section records what was
+done after the merge. It states what was built; it makes no decision the plan or this spec had not made, except the three gaps named under *Gaps filled*,
+which a reader should look at first.
+
+**Merge.** Conflicts in `bridgeWallWorld.ts` (the saved `flavourOf` now carries the closing commit's `emptyVault` and `fullVault`; `nodesOf`'s folder policy moved to
+`agentsFolderPolicy` to stay at complexity 4), `grantRegistry.test.ts` (both tests kept) and `research/module_extension.md` (both paragraphs kept). The tree's
+later work won wherever it contradicted the saved work.
+
+**Built after the merge.**
+
+1. **The modal line is true per action** (the E1 document's epoch 4 amendment, item 9; parent §4.2's *Modal and journal*). `bridgeRunSite(action)` answers
+   `destination` for `exec`, `laptop` for `query`, `undefined` for any other word; `bridgeModalLine(bridge, site, entryName)` says, for `exec`,
+   *The connection starts on this computer; the command runs on "<entry>", and its output goes back to that server.*, for `query` *It runs on this computer, and
+   only its output goes to that server.*, for E3's `server` *It runs on that server.* `wording` hands it the question's own `action` (set by the route, never read from a body)
+   and the grant's entry name; both names pass `cleanCallerField`.
+2. **`auditGrantMark` on `unanswered`'s line.** `unanswered(res, error, route, bridge, respondError, log)` takes the context `handle` was handed (the one the door set) and writes
+   `grant: auditGrantMark(bridge)` beside §4.1's classification, which does not move. The call site passes `bridge` in place (0 lines).
+3. **The gate is asked again after `await remember()`** (`stamped`, `credsAgentServer.ts`): gate, stamp, gate; both checks read `after consent`, the stage `main`'s one check
+   read after its own write, so a local client leaving during the write is written as it always was. A client that leaves, a scope narrowed or a token gone while the write is
+   pending promotes no waiting rotation and runs nothing (C23, C24).
+4. **C11's split of the token sentence** was already in the saved work (`coverageTail`). It now has a test that spells the local dialog out as a literal and the bridged one as
+   its two differences (the bridge line, the coverage line), so the two texts are told apart by an exact comparison, not by a substring.
+5. `remember`'s record moved to `brokerConsentMemory.consentRecordOf` (the file's own docblock: *everything here is about the RECORD of a consent*). The server key is
+   read from the grant's context only, and absent, not `undefined`, off a bridge.
+6. `research/module_extension.md`: the modal sentence rewritten per action, the gate re-check, and `unanswered`'s mark.
+
+**Tests, RED first, then GREEN, then broken on purpose.** New or changed: `bridgeConsentText.test.ts` (C10 per action, C12, the entry-name sanitiser, the no-site case),
+`bridgeConsent.test.ts` (C10 through the MCP, alias and token doors for `exec` and `query`; C11 exact; C23; C24), `brokerUnanswered.test.ts` (the mark; every call updated to the new
+signature), `bridgeKeptPlace.test.ts` (the journal line through a bridge and through the main port), `brokerConsentMemory.test.ts` (`consentRecordOf`). RED seen before each change:
+C10 (the saved sentence on an `exec` dialog), C23 (`no waiting rotation was promoted for an entry the gate now refuses`), the bridged `unanswered` line (`and the line says which bridge it came in by`);
+`brokerUnanswered.test.ts` went red for every test at once, because its calls take a new argument. C24 was written against the final code and watched RED by the mutation N4 below.
+The mutation run: every saved mutation of Q1-Q15 and G1-G24 (G23 removed with `bridgeRunSite()`'s old constant; Q1, G5, G7, G8, G10, Q6 and Q8 re-aimed at the moved code) and ten new ones, 51 in
+all, each caught by the case named, the file restored and its hash compared:
+
+| # | Mutation | First red case |
+|---|---|---|
+| N1 | `exec` is said to run on this computer (the saved sentence) | C10 |
+| N2 | `query` is said to start a connection and run on the entry | C10 (every door) |
+| N3 | `unanswered` writes a plain dash | C.7 (`bridgeKeptPlace`), Q13 |
+| N4 | no second gate check after the stamp | C23, C24 |
+| N5 | the modal line reads `'exec'` for every call | C10 (every door) |
+| N6 | the entry's name in the exec line is not sanitised | C10 (entry name) |
+| N7 | an action with no site is guessed to run on this computer | C10 (no site) |
+| N8 | a bridged dialog keeps the local token sentence | C9, C11 |
+| N9 | the local token sentence is edited by one word | C11 (exact local text) |
+| N10 | a local answer carries a server key | C4 |
+| Q1-Q15, G1-G22, G24 | as in the saved list | the case that list names (Q11, the Forget case, is now caught by `forgetAgentConsents.test.ts`) |
+
+**Gaps filled (not in the plan or the spec; for a reader to confirm).** (a) An action that has no site (nothing but `exec` and `query` reaches a bridge's dialog) names the bridge and claims
+no place, rather than guessing or throwing: a throw inside `wording` would leave the place taken. (b) The exec sentence names the entry (`grant.entityName`), which is what the E1 document's
+item 9 writes as `"<entry>"`. (c) The server-key record is built by a function in `brokerConsentMemory.ts` so that `credsAgentServer.ts` ends below the ceiling.
+
+**Not edited, by the stop rule.** The S4 spec's C10, C12 and §S4.10 item 5, and the E1 document's §E1.4 item 6, still quote the saved `laptop` sentence; item 9 of the epoch 4 amendment says
+they change in E1.4's finishing commit. They are left as written, and this section is the record of the sentences as built.
+
+**What this changes for a local user, from the diff (parent §9).** Nothing observable off a bridge: the local dialog is byte for byte what it was (C11 spells it out), a local stamp has the key
+it always had, the local journal lines are the ones they were (`—` in the grant field of `unanswered`'s line), and the second gate check restores `main`'s own order of effects around the write.
+Every other change is behind a bridge door that no production code opens before E2 (R1, R4). So E1.4 owes no `CHANGELOG.md` bullet.
+
+**Counts.** `credsAgentServer.ts` 786 lines (the saved work was 790; the plan's ceiling is 800, the brief's 789); `extension.ts` 1003, unchanged; no file over 800.

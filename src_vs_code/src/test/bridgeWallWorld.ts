@@ -122,7 +122,7 @@ function nodesOf(x: 'usable' | 'closed' | 'absent', flavour: Flavour): Record<st
   const folder = (id: string, mcp: TreeNode['mcp']): TreeNode => ({ id, name: id === 'f1' ? 'Agents' : 'Closed', type: 'folder', parentId: null, mcp });
   const e1 = entity('e1', 'prod', 'f1', { dependsOn: ['e-out', 'e2'], ...e1Extras(flavour) });
   const a1: TreeNode[] = [
-    folder('f1', flavour.ask === undefined ? EVERYTHING : { ...EVERYTHING, ask: flavour.ask }),
+    folder('f1', agentsFolderPolicy(flavour)),
     folder('f-closed', { view: true }),
     e1,
     entity('e-out', 'leak-target', 'f1', config('leak-target')),
@@ -135,6 +135,11 @@ function nodesOf(x: 'usable' | 'closed' | 'absent', flavour: Flavour): Record<st
   const a2: TreeNode[] = [folder('f1', EVERYTHING), entity('only-a2', 'only-a2-entry', 'f1')];
   // The same id as an entry of a1, in an account that is searched FIRST: what an unnarrowed lookup would find.
   return { a2: flavour.collide ? [...a2, entity('e1', 'foreign', 'f1', config('foreign'))] : a2, a1 };
+}
+
+/** The consent policy of the folder `e1` lives in: everything open, asking `flavour.ask` when the world has a consent store. */
+function agentsFolderPolicy(flavour: Flavour): NonNullable<TreeNode['mcp']> {
+  return flavour.ask === undefined ? EVERYTHING : { ...EVERYTHING, ask: flavour.ask };
 }
 
 /** What `e1` has beyond its name: a config of its own (unless the world says a1's is not), and the agent forwarding some scenarios turn on. */

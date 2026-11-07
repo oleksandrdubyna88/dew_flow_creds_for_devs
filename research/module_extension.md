@@ -3700,23 +3700,31 @@ tombstone drops a late write of either, and a downgrade ignores `s…` keys, whi
 through `recordConsent`'s record and the hook's fourth parameter, and from nowhere in a request. So an answer given through server A
 silences A's later calls on that entry and neither server B's nor local use; a local answer silences no bridge; a Deny, a timeout and
 an abandoned dialog write nothing. **The write happens behind the launch gate** (`prepared` takes it as `remember()` and runs it
-after `stopped` answers false and before `releaseWaiting`): an Allow given while the scope was being narrowed, or the line edited,
-persists no stamp for an entry the gate then refuses. A stamp given with quiet on survives quiet being turned off, inert (the view
+after `stopped` answers false, and the gate is asked **again** right after the write, before `releaseWaiting`, since the write is an
+await): an Allow given while the scope was being narrowed, or the line edited, persists no stamp for an entry the gate then refuses,
+and a client that leaves, a scope narrowed or a token gone while the stamp is being written promotes no waiting rotation and runs
+nothing (the second check reads `after consent`, as the one check of `main` did). A stamp given with quiet on survives quiet being turned off, inert (the view
 forces `preConsented: false`), and speaks again if it is turned on inside the twelve hours: the answer was given through that very
 server with it on.
 
-*What the person reads and what the journal says.* On a bridged grant the dialog has one more line, directly after the request time:
-`Through the Remote Bridge of "<server>". It runs on this computer, and only its output goes to that server.` (the other sentence,
-`It runs on that server.`, is for E3.1: `bridgeRunSite()` answers `laptop`), and the token sentence (`Allowing covers every later call
-on this token…`), which is false there, is replaced by `Allowing covers this call only.`, or, with `quiet` on and only on the MCP door,
-`Allowing follows this entry's own consent setting, for this server only: not for another server, and not for this computer.`
-(`bridgeConsentText.ts`, pure). The server name is the context's, through the sanitiser of a caller label; the caller's label stays
-a label. Off a bridge the dialog is byte for byte what it was. `GrantRegistry.describe` appends ` bridge=<name>` inside the line's
+*What the person reads and what the journal says.* On a bridged grant the dialog has one more line, directly after the request time,
+and **it is true for the action** (`bridgeRunSite(action)`, `bridgeModalLine`, `bridgeConsentText.ts`, pure). For an `exec`:
+`Through the Remote Bridge of "<server>". The connection starts on this computer; the command runs on "<entry>", and its output goes back to that server.`
+For a `query`: `Through the Remote Bridge of "<server>". It runs on this computer, and only its output goes to that server.` The saved
+first draft said the second sentence for both, which is false for an `exec`, whose command runs on the entry's host. A third sentence,
+`It runs on that server.`, is for E3.1 (`decideRunSite`), and an action with no site (nothing but `exec` and `query` reaches a bridge's
+dialog) names the bridge and claims no place. The token sentence (`Allowing covers every later call on this token…`), which is false on
+a bridge, is replaced there by `Allowing covers this call only.`, or, with `quiet` on and only on the MCP door,
+`Allowing follows this entry's own consent setting, for this server only: not for another server, and not for this computer.`; off a
+bridge the dialog is byte for byte what it was, and a test spells the local text out and the bridged one as its two differences
+(`bridgeConsent.test.ts`, C11). The server's name is the context's and the entry's is the grant's, both through the sanitiser of a caller
+label; the caller's label stays a label. `GrantRegistry.describe` appends ` bridge=<name>` inside the line's
 grant group, where `bridgeAuditName` (`bridgeContext.ts`) has taken out whitespace, parentheses, `→` and control and format
 characters (one `_` for a run, forty code points at most), so every line about a bridged call says which server it was for and
-`LINE`, `formatAuditLine` and `parseAuditLine` are unchanged; the one line written with no grant, the `too_many_requests` of a
-ceiling that means a loop (`asking` and `silent`; a `busy` answer and the dialog budget write no line), reads `— bridge=<name>`
-from `auditGrantMark(bridge)` with the same context that keys the window it was refused in, and `—` off a bridge.
+`LINE`, `formatAuditLine` and `parseAuditLine` are unchanged; the two lines written with no grant, the `too_many_requests` of a
+ceiling that means a loop (`asking` and `silent`; a `busy` answer and the dialog budget write no line) and the handler-failure line of
+`unanswered`, read `— bridge=<name>` from `auditGrantMark(bridge)` with the context the door handed `handle` (the one that keys the
+window the first was refused in), and `—` off a bridge; the handler-failure line's classification does not move.
 
 **A signed envelope without its signature is tampered, not legacy** (`verifyEnvelopeMac`,
 `requireIntactEnvelope`). The envelope MAC exists for one threat, named where it is computed: on a

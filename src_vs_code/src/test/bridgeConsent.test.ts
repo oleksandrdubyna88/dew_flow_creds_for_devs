@@ -433,19 +433,21 @@ test('C10: the modal line follows the request time and names the context\'s serv
 
 test('C10: every door says where each action runs — an exec starts the connection here and runs on the destination, a query runs here — and an exec never says it runs on this computer', async () => {
   // Three doors a world, because a bridge may prompt five times a minute.
+  const said = { exec: { command: 'id', line: EXEC_LINE, falseHere: false }, query: { command: 'select 1', line: QUERY_LINE, falseHere: true } } as const;
   for (const action of ['exec', 'query'] as const) {
+    const { command, line, falseHere } = said[action];
     const c = await consenting('always', false);
     try {
       const token = await c.ww.tokenFor(ACCOUNT, 'e1', 'prod');
-      const command = action === 'exec' ? 'id' : 'select 1';
       await ok(A(c), { path: `/v1/mcp/use/${action}`, body: { entry: 'e1', command } });
       await ok(A(c), { path: `/v1/alias/${action}`, body: { alias: 'one', command } });
       await ok(A(c), { path: `/v1/use/${action}`, token, body: { command } });
       assert.equal(c.ww.w.dialogs.length, 3, `${action}: a dialog on each door`);
-      for (const [door, dialog] of ['mcp', 'alias', 'token'].map((name, index) => [name, c.ww.w.dialogs[index]])) {
-        assert.equal(dialog.split('\n')[2], action === 'exec' ? EXEC_LINE : QUERY_LINE, `${action} through ${door}: the line after the request time`);
-        assert.equal(dialog.includes(FALSE_FOR_EXEC), action === 'query', `${action} through ${door}: "${FALSE_FOR_EXEC}" is for a query alone`);
-      }
+      ['mcp', 'alias', 'token'].forEach((door, index) => {
+        const dialog = c.ww.w.dialogs[index];
+        assert.equal(dialog.split('\n')[2], line, `${action} through ${door}: the line after the request time`);
+        assert.equal(dialog.includes(FALSE_FOR_EXEC), falseHere, `${action} through ${door}: "${FALSE_FOR_EXEC}" is for a query alone`);
+      });
     } finally {
       c.ww.dispose();
     }
