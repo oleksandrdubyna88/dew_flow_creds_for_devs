@@ -130,6 +130,8 @@ public sealed class SocketRootSweepTests : IDisposable
         var (temp, socket) = PrivatePair();
         var handshake = Path.Combine(_owned.Dir("handshake"), "folder.txt");
         var env = new Dictionary<string, string> { [ProducerRoot] = socket, [ProducerHandshake] = handshake };
+        // The host id of a claim carries the WSL distribution (Owner.HostId); HostProcess takes that variable out of a child's environment unless the test names it.
+        if (Environment.GetEnvironmentVariable(HostProcess.DistroVariable) is { Length: > 0 } distro) env[HostProcess.DistroVariable] = distro;
         using var producer = HostProcess.StartFile(Environment.ProcessPath!, ["--filter-method", "*The_producer_side_of_the_live_folder_test*"], env);
         var reaper = HostProcess.KillOnDispose(producer);
         try
@@ -214,8 +216,8 @@ public sealed class SocketRootSweepTests : IDisposable
         DirectoryLinks.CreateOrSkip(link, temp);
         var swept = 0;
 
-        var same = new LeftoversSocketRootSweepFixture(link, temp, () => { }, _ => { swept++; return SweepResult.Empty; }, _ => { });
-        var other = new LeftoversSocketRootSweepFixture(socket, temp, () => { }, _ => { swept++; return SweepResult.Empty; }, _ => { });
+        var same = new LeftoversSocketRootSweepFixture(link, temp, () => { }, _ => { swept++; return SweepResult.Empty; }, _ => { }, _ => { });
+        var other = new LeftoversSocketRootSweepFixture(socket, temp, () => { }, _ => { swept++; return SweepResult.Empty; }, _ => { }, _ => { });
         await same.DisposeAsync();
         await other.DisposeAsync();
 
