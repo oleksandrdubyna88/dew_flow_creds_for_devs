@@ -185,7 +185,7 @@ const REQUIRES_VSCODE = /require\(\s*['"]vscode['"]/;
 const reachesVscode = (source: string): boolean => IMPORTS_VSCODE.test(source) || REQUIRES_VSCODE.test(source);
 
 /** The modules the bridge's boundary is made of, and everything they load at run time must be free of the editor too. */
-const PURE_ROOTS = ['bridgeContext', 'bridgeNote', 'bridgeAllowList', 'bridgeScope', 'brokerBridgeToken', 'brokerBridgeListeners', 'brokerOrigin', 'grantWords'];
+const PURE_ROOTS = ['bridgeContext', 'bridgeConsentText', 'bridgeNote', 'bridgeAllowList', 'bridgeScope', 'brokerBridgeToken', 'brokerBridgeListeners', 'brokerOrigin', 'grantWords'];
 
 const readSource = (name: string): string | undefined => {
   const file = path.join(sourceDir, `${name}.ts`);

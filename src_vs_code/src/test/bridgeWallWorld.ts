@@ -1,12 +1,14 @@
 import * as http from 'node:http';
 import * as nodePath from 'node:path';
 import type { BridgeContext } from '../bridgeContext';
-import type { BridgeScopes, BridgeWallSource } from '../bridgeScope';
+import type { BridgeScopes, BridgeWallSource, ResolveUse } from '../bridgeScope';
 import { LeasedQueue } from '../leasedQueue';
 import { WindowLock, nodeLockFs } from '../windowLock';
 import type { BridgeListener } from '../brokerBridgeListeners';
 import type { McpFolderHooks } from '../brokerFolderDoor';
 import type { McpVaultSource } from '../mcpEntries';
+import type { McpAskPolicy } from '../mcpAccess';
+import type { ConsentStampStore } from '../mcpConsentPolicy';
 import type { EntityMetadata, TreeNode } from '../types';
 import { stored, type StoredSecret } from '../storedSecret';
 import { wallSuppliersOf } from '../bridgeWallSource';
@@ -109,6 +111,8 @@ interface Flavour {
   /** Whether a1's `e1` is a config. Off, with `collide`, only a2's `e1` is: the snippet must not be served from there. */
   readonly a1Config: boolean;
   readonly agentForward: boolean;
+  /** The consent policy of the folder `e1` and its neighbours live in: absent leaves the folder setting none (every call asks). */
+  readonly ask?: McpAskPolicy;
 }
 
 function nodesOf(x: 'usable' | 'closed' | 'absent', flavour: Flavour): Record<string, TreeNode[]> {
@@ -118,7 +122,7 @@ function nodesOf(x: 'usable' | 'closed' | 'absent', flavour: Flavour): Record<st
   const folder = (id: string, mcp: TreeNode['mcp']): TreeNode => ({ id, name: id === 'f1' ? 'Agents' : 'Closed', type: 'folder', parentId: null, mcp });
   const e1 = entity('e1', 'prod', 'f1', { dependsOn: ['e-out', 'e2'], ...e1Extras(flavour) });
   const a1: TreeNode[] = [
-    folder('f1', EVERYTHING),
+    folder('f1', flavour.ask === undefined ? EVERYTHING : { ...EVERYTHING, ask: flavour.ask }),
     folder('f-closed', { view: true }),
     e1,
     entity('e-out', 'leak-target', 'f1', config('leak-target')),
@@ -244,6 +248,12 @@ export interface WallOptions {
   oneUse?: boolean;
   maxCalls?: number;
   holdDialogs?: boolean;
+  /**
+   * The REAL consent hooks, over the real vault: the folder's policy is `ask`, the stamps live in `state`, and the stamp
+   * clock is `now` (E1.4). The local MCP door and every bridge read and write the same store, as in a window. Without it the
+   * lookup is the real one with no store, so every call asks.
+   */
+  consent?: { ask: McpAskPolicy; state: ConsentStampStore; now: () => number };
   /** The scripted actions may put a prompt of their own on screen after the Allow (Amendment 3, K8). */
   asksAfterConsent?: boolean;
   /** The local MCP door's calls are pre-consented (a `never` consent policy): they raise no dialog and mint a grant allowed at once (Q1). A bridge's calls are not touched. */
@@ -299,14 +309,14 @@ function aliasesFor(x: 'usable' | 'closed' | 'absent'): Record<string, Target> {
 export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
   const o = { ...DEFAULTS, ...options };
   const modules = loadBridgeModules();
-  const { mcpUseLookup } = loadWithVscode<{ mcpUseLookup: typeof import('../mcpHooks').mcpUseLookup }>('../mcpHooks', { window: {} });
   const nodesAsked: string[] = [];
   const lookups: unknown[][] = [];
   const forbidden: string[] = [];
   const listed: string[] = [];
   const configsAsked: string[][] = [];
   const refusalsAsked: string[][] = [];
-  const vault = vaultOf(o.x, { emptyVault: options.emptyVault === true, fullVault: options.fullVault === true, collide: o.collide, a1Config: o.a1Config, agentForward: o.agentForward }, nodesAsked);
+  const vault = vaultOf(o.x, flavourOf(options, o), nodesAsked);
+  const mcpHooks = mcpHooksOf(options, vault);
   let askedListing = false;
   let releaseListing: () => void = () => undefined;
   const listingGate = new Promise<void>((resolve) => {
@@ -356,8 +366,9 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
     mcpEntries: [...(await visibleMcpEntries(vault))] as unknown as Record<string, unknown>[],
     mcpResolve: (id, action, server) => {
       lookups.push([id, action, server]);
-      return quietened(mcpUseLookup(vault, id, action, undefined, Date.now(), server), o.quietLocal === true && server === undefined);
+      return mcpHooks.resolve(id, action, server);
     },
+    mcpRemember: mcpHooks.remember,
     visibleConfig: (id) => (['e1', 'e-out', 'x'].includes(id) ? configOf(id) : undefined),
     oneUse: options.oneUse,
     maxCalls: options.maxCalls,
@@ -389,6 +400,25 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
       void owned.close(); // the folder is owned and claimed: closing the scope removes it
     },
   };
+}
+
+/** What the world's vault is built from: the options that change its nodes, and the folder's consent policy when the world has a store. */
+function flavourOf(options: WallOptions, o: { collide: boolean; a1Config: boolean; agentForward: boolean }): Flavour {
+  return { emptyVault: options.emptyVault === true, fullVault: options.fullVault === true, collide: o.collide, a1Config: o.a1Config, agentForward: o.agentForward, ask: options.consent?.ask };
+}
+
+/**
+ * The MCP door's lookup and its write. With a consent store, production's own `mcpUseHooks` over `vault` (the local door and
+ * every bridge share the store, as in a window); without one, the real lookup with no store, so every call asks, and with
+ * `quietLocal` the local door's answers are already given.
+ */
+function mcpHooksOf(o: WallOptions, vault: McpVaultSource): { resolve: ResolveUse; remember?: (accountId: string, entityId: string, rungs: string, serverEntityId?: string) => Promise<void> } {
+  const { mcpUseLookup, mcpUseHooks } = loadWithVscode<{ mcpUseLookup: typeof import('../mcpHooks').mcpUseLookup; mcpUseHooks: typeof import('../mcpHooks').mcpUseHooks }>('../mcpHooks', { window: {} });
+  if (o.consent !== undefined) {
+    const hooks = mcpUseHooks(vault, o.consent.state, o.consent.now);
+    return { resolve: hooks.resolveMcpUse, remember: hooks.rememberMcpConsent };
+  }
+  return { resolve: (id, action, server) => quietened(mcpUseLookup(vault, id, action, undefined, Date.now(), server), o.quietLocal === true && server === undefined) };
 }
 
 /** A usable lookup, said to be answered already by the entry's policy when `quiet`: the call asks nobody. */

@@ -40,9 +40,11 @@ export function answeredHere(via: AuditDoor, asked: boolean, rungs: string | und
 
 /** What `recordConsent` needs: the hook, who it is about, and somewhere to say it did not work. */
 export interface ConsentRecord {
-  remember?: (accountId: string, entityId: string, rungs: string) => Promise<void>;
+  remember?: (accountId: string, entityId: string, rungs: string, serverEntityId?: string) => Promise<void>;
   accountId: string;
   entityId: string;
+  /** The Remote Bridge's server the answer was given through, from its context; absent off a bridge (E1.4). */
+  serverEntityId?: string;
   entityName: string;
   via: AuditDoor;
   /** Whether a modal was actually shown for this call. */
@@ -98,7 +100,7 @@ function reportUnlessWritten(record: ConsentRecord, outcome: string | undefined,
  */
 async function attempt(record: ConsentRecord, rungs: string): Promise<string> {
   try {
-    await record.remember?.(record.accountId, record.entityId, rungs);
+    await record.remember?.(record.accountId, record.entityId, rungs, record.serverEntityId);
     return 'written';
   } catch (error) {
     return describeError(error);

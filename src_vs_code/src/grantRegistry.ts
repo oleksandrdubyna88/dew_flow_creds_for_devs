@@ -1,4 +1,4 @@
-import type { BridgeGrant } from './bridgeContext';
+import { bridgeAuditName, type BridgeGrant } from './bridgeContext';
 import { describeSecret, newSecret } from './grantToken';
 
 /**
@@ -340,8 +340,13 @@ export class GrantRegistry {
     return next;
   }
 
-  /** Log-safe identifier for a grant's secret. */
+  /**
+   * Log-safe identifier for a grant's secret, and — for a call that came through a Remote Bridge — the bridge's name from
+   * the CONTEXT, so every line the funnel writes about the call says which server it was for (E1.4). It sits inside the
+   * parentheses of the line's grant group, which is why `bridgeAuditName` has no `)`.
+   */
   static describe(grant: Grant): string {
-    return describeSecret(grant.secret);
+    const label = describeSecret(grant.secret);
+    return grant.bridge === undefined ? label : `${label} bridge=${bridgeAuditName(grant.bridge.context.serverName)}`;
   }
 }

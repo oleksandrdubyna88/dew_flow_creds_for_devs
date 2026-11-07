@@ -32,8 +32,8 @@ const E1 = 'e1';
 const E2 = 'e2';
 
 interface Hooks {
-  resolveMcpUse: (entryId: string, action: string) => McpUseLookup;
-  rememberMcpConsent: (accountId: string, entityId: string, rungs: string) => Promise<void>;
+  resolveMcpUse: (entryId: string, action: string, server?: { accountId: string; serverEntityId: string }) => McpUseLookup;
+  rememberMcpConsent: (accountId: string, entityId: string, rungs: string, serverEntityId?: string) => Promise<void>;
 }
 
 interface Factory {
@@ -270,3 +270,52 @@ function codeOf(file: string): string[] {
   const source = fs.readFileSync(path.join(__dirname, '..', '..', 'src', file), 'utf8');
   return source.split('\n').map((line) => (/^\s*(\/\/|\*|\/\*)/.test(line) ? '' : line));
 }
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * E1.4 — a stamp given through a Remote Bridge is that server's alone (C6, Q1, Q2)
+ * ------------------------------------------------------------------------------------------------------------- */
+
+const SERVER_A = { accountId: A1, serverEntityId: 'server-A' };
+const SERVER_B = { accountId: A1, serverEntityId: 'server-B' };
+
+test('C6: a consent remembered for server A lands under A\'s key, and under no other', async () => {
+  const state = memento();
+  const hooks = factory().mcpUseHooks(vault('every12h'), state, () => NOW);
+
+  await hooks.rememberMcpConsent(A1, E1, rungsOf(hooks), 'server-A');
+
+  const stamps = new ConsentStamps(state);
+  assert.notEqual(stamps.get(stampKey(A1, E1, 'server-A'), NOW), undefined, 'under the server key');
+  assert.equal(stamps.get(stampKey(A1, E1), NOW), undefined, 'and not under the local one');
+  assert.equal(stamps.get(stampKey(A1, E1, 'server-B'), NOW), undefined, 'nor another server\'s');
+});
+
+test('C6: the lookup reads the stamp of the server it is given — A is quiet after A\'s answer, B and the local door ask', async () => {
+  const state = memento();
+  const hooks = factory().mcpUseHooks(vault('every12h'), state, () => NOW);
+  await hooks.rememberMcpConsent(A1, E1, rungsOf(hooks), 'server-A');
+
+  assert.equal(usable(hooks.resolveMcpUse(E1, 'exec', SERVER_A)).preConsented, true, 'A was answered');
+  assert.equal(usable(hooks.resolveMcpUse(E1, 'exec', SERVER_B)).preConsented, false, 'B was not');
+  assert.equal(usable(hooks.resolveMcpUse(E1, 'exec')).preConsented, false, 'and neither was local use');
+});
+
+test('C6, reversed: a local answer silences neither server', async () => {
+  const state = memento();
+  const hooks = factory().mcpUseHooks(vault('every12h'), state, () => NOW);
+  await hooks.rememberMcpConsent(A1, E1, rungsOf(hooks));
+
+  assert.equal(usable(hooks.resolveMcpUse(E1, 'exec')).preConsented, true, 'the fixture: local use is quiet');
+  assert.equal(usable(hooks.resolveMcpUse(E1, 'exec', SERVER_A)).preConsented, false, 'server A still asks');
+  assert.equal(usable(hooks.resolveMcpUse(E1, 'exec', SERVER_B)).preConsented, false, 'and so does B');
+});
+
+test('C16: a server stamp ages out on the same clock as a local one', async () => {
+  const state = memento();
+  await factory().mcpUseHooks(vault('every12h'), state, () => NOW).rememberMcpConsent(A1, E1, rungsOf(factory().mcpUseHooks(vault('every12h'), state, () => NOW)), 'server-A');
+
+  const inside = factory().mcpUseHooks(vault('every12h'), state, () => NOW + ASK_WINDOW_MS - 1);
+  const past = factory().mcpUseHooks(vault('every12h'), state, () => NOW + ASK_WINDOW_MS + 1);
+  assert.equal(usable(inside.resolveMcpUse(E1, 'exec', SERVER_A)).preConsented, true);
+  assert.equal(usable(past.resolveMcpUse(E1, 'exec', SERVER_A)).preConsented, false);
+});

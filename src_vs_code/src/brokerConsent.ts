@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { CONSENT_TIMEOUT_MS } from './agentConsent';
 import type { AuditDoor, AuditEntry } from './agentAuditLog';
+import { bridgeCoverageLine, bridgeModalLine, bridgeRunSite } from './bridgeConsentText';
 import { CALLER_DISCLAIMER, CallerLabel, callerLine } from './brokerCaller';
 import type { ConsentOutcome } from './brokerMcpDoor';
 import { describeLimits, grantLimits } from './grantLimits';
@@ -194,13 +195,33 @@ export class ConsentGate {
     return (
       `${callerLine(caller)} wants to ${verb} ` +
       // WHEN (#131): fixed as the dialog is raised, so one left waiting keeps the time it was asked.
-      `"${grant.entityName}" using its stored credential.\n${localRequestTimeLine(new Date())}\n\n${summary}\n\n` +
+      `"${grant.entityName}" using its stored credential.\n${localRequestTimeLine(new Date())}${bridgeLine(grant)}\n\n${summary}\n\n` +
       `${CALLER_DISCLAIMER}\n\n` +
-      `Allowing covers every later call on this token, not just this one: with it the agent can ${everything} "${grant.entityName}" ` +
-      `${describeLimits(grantLimits())}. ` +
+      `${coverageTail(question, everything)} ` +
       'Each call is logged in the "CredsForDevs: Agent Access" output panel.'
     );
   }
+}
+
+/** Through a Remote Bridge, the line after the request time says which server, where the command runs and what goes back; the context's words, never the caller's. */
+function bridgeLine(grant: Grant): string {
+  return grant.bridge === undefined ? '' : `\n${bridgeModalLine(grant.bridge.context, bridgeRunSite())}`;
+}
+
+/**
+ * How far an Allow reaches. Off a bridge, a token: every later call on it. Through one, a call is its own capability and the
+ * token sentence is false there, so the bridge's coverage line replaces it — and it follows the entry's own setting
+ * ("quiet") only on the MCP door, the one door a consent policy speaks for; the alias and token routes ask every call.
+ */
+function coverageTail(question: ConsentQuestion, everything: string): string {
+  const { grant, via } = question;
+  if (grant.bridge === undefined) {
+    return (
+      `Allowing covers every later call on this token, not just this one: with it the agent can ${everything} "${grant.entityName}" ` +
+      `${describeLimits(grantLimits())}.`
+    );
+  }
+  return bridgeCoverageLine({ ...grant.bridge, quiet: grant.bridge.quiet && via === 'mcp' });
 }
 
 /** An answer that settled nothing on the grant: Allow that was not recorded reads as allowed, the rest as a timeout. */

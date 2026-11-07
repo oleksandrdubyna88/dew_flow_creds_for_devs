@@ -164,3 +164,13 @@ test('a window with no vault to remember into is not a failure', async () => {
 
   assert.deepEqual(notes, [], 'there was nothing to write and nothing went wrong');
 });
+
+test('E1.4: the server an answer was given through is handed to the write, and an answer given off a bridge hands none', async () => {
+  const seen: (string | undefined)[][] = [];
+  const remember = (_a: string, entityId: string, _rungs: string, serverEntityId?: string): Promise<void> => Promise.resolve(void seen.push([entityId, serverEntityId]));
+
+  await recordConsent(record({ remember, serverEntityId: 'server-A' }).args);
+  await recordConsent(record({ remember }).args);
+
+  assert.deepEqual(seen, [['e1', 'server-A'], ['e1', undefined]]);
+});

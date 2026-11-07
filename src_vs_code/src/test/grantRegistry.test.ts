@@ -404,3 +404,26 @@ test('A4 (Amendment 6, D.5): a pending call outlives 300 calls that ran and 300 
     ...tombstones.map((grant) => [grant, 'denied', 'nor a tombstone'] as const),
   ]);
 });
+
+/* ---------------------------------------------------------------------------------------------------------------
+ * E1.4 — the journal says which bridge (C13, C14, Q9)
+ * ------------------------------------------------------------------------------------------------------------- */
+
+const CONTEXT = { bridgeId: 'b1', accountId: 'acct-1', serverEntityId: 'srv-1', serverName: 'prod (eu) → db', target: '', remoteOs: undefined } as const;
+
+test('C13: describe is the six characters and a dot off a bridge, with nothing appended', () => {
+  const registry = new GrantRegistry();
+  const grant = mintForOneCall(registry);
+
+  assert.equal(GrantRegistry.describe(grant), `${grant.secret.slice(0, 6)}…`);
+  assert.doesNotMatch(GrantRegistry.describe(grant), /bridge/);
+});
+
+test('C13: describe on a bridged grant carries the context\'s audit name, and the secret is still not in it', () => {
+  const registry = new GrantRegistry();
+  const grant = registry.mint('acct-1', 'entity-1', 'prod-db', 'ssh', Date.now(), 'call', { context: CONTEXT, quiet: false });
+
+  assert.equal(GrantRegistry.describe(grant), `${grant.secret.slice(0, 6)}… bridge=prod_eu_db`);
+  assert.equal(GrantRegistry.describe(grant).includes(grant.secret), false);
+  assert.doesNotMatch(GrantRegistry.describe(grant), /[()→]/, 'nothing in the mark can end the parenthesised group of a line');
+});

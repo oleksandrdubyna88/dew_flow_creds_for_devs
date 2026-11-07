@@ -56,7 +56,7 @@ function registry(status: string): { get(secret: string): { status: string } | u
   return { get: () => state, allow: () => void (state.status = 'allowed'), deny: () => void (state.status = 'denied') };
 }
 
-const grant = { secret: 's', accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh', status: 'pending', bridge: { context: { bridgeId: 'b1' }, quiet: false } };
+const grant = { secret: 's', accountId: 'a1', entityId: 'e1', entityName: 'prod', kind: 'ssh', status: 'pending', bridge: { context: { bridgeId: 'b1', accountId: 'a1', serverEntityId: 's1', serverName: 'prod server', target: '', remoteOs: undefined }, quiet: false } };
 const question = (via: ConsentQuestion['via']): ConsentQuestion => ({ grant: grant as never, action: 'exec', verb: 'run a command on', summary: 'id', caller: undefined, via });
 const never = new AbortController().signal;
 

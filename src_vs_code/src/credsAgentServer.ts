@@ -13,7 +13,7 @@ import {
   statusForErrorCode,
 } from './brokerProtocol';
 import { BrokerHooks, checkedHooks } from './brokerHooks';
-import type { BridgeContext } from './bridgeContext';
+import { auditGrantMark, type BridgeContext } from './bridgeContext';
 import { BridgeListener, BridgeListeners } from './brokerBridgeListeners';
 import { refusedOnBridge, routeNameOf } from './bridgeAllowList';
 import { DoorView, doorView, launchGate, referenceRefusal } from './bridgeScope';
@@ -225,7 +225,7 @@ export class CredsAgentServer implements vscode.Disposable {
       // runaway loop, or a process working through the entries a policy opened, exists, and a rate
       // limit nobody can see having fired is one nobody can diagnose. The door is the refusal's own (`aliasThrottle.ts`):
       // `mcp` is a fact for the silent ceiling, which only the MCP door has a policy to reach, and an asking call names none.
-      this.log({ grant: '—', entityName: '', action: 'request', outcome: 'too_many_requests', detail: refused.message, via: refused.via });
+      this.log({ grant: auditGrantMark(bridge), entityName: '', action: 'request', outcome: 'too_many_requests', detail: refused.message, via: refused.via });
     }
     this.respondError(res, 'too_many_requests', refused.message);
     return undefined;
@@ -533,10 +533,9 @@ export class CredsAgentServer implements vscode.Disposable {
       this.notAllowed(res, consent, { grant, action, summary }, who);
       return;
     }
-    // Only an `allowed` from a request still there reaches this line — the gate checked after its own
-    // wait — so a consent nobody is waiting for is never remembered.
-    await this.remember(who.via, grant, asked, rungs);
-    await this.prepared(res, { grant, useAction, action, body, via: who.via, caller: who.caller, summary, signal: who.signal, spend: who.spend });
+    // Only an `allowed` from a request still there gets here; `prepared` writes the answer down after the launch gate has
+    // let the call through, so an Allow the gate then refuses (a scope narrowed meanwhile) stamps nothing.
+    await this.prepared(res, { grant, useAction, action, body, via: who.via, caller: who.caller, summary, signal: who.signal, spend: who.spend }, () => this.remember(who.via, grant, asked, rungs));
   }
 
   /** The capability check and the body's validation — both before anybody is asked anything. */
@@ -565,15 +564,16 @@ export class CredsAgentServer implements vscode.Disposable {
   }
 
   /**
-   * After consent: the waiting rotation released and the mask table read — each only for a client still
-   * there to be answered — and then the call. Every await on this path is followed by a check.
+   * After consent: the answer remembered (behind the launch gate, so a refused call leaves no stamp), the waiting rotation
+   * released and the mask table read, each only for a client still there to be answered, then the call. Every await is followed by a check.
    */
-  private async prepared(res: http.ServerResponse, call: Omit<CallSubject, 'table'>): Promise<void> {
+  private async prepared(res: http.ServerResponse, call: Omit<CallSubject, 'table'>, remember: () => Promise<void>): Promise<void> {
     const { grant, action, summary, via, caller } = call;
     const atLaunch = launchGate(this.grants, this.hooks.bridgeWall, call);
     if (this.stopped(res, call, 'after consent', atLaunch)) {
       return;
     }
+    await remember();
     await this.releaseWaiting(grant);
     if (this.gone(call, 'before its values were read')) {
       return;
@@ -659,6 +659,7 @@ export class CredsAgentServer implements vscode.Disposable {
       remember: this.hooks.rememberMcpConsent,
       accountId: grant.accountId,
       entityId: grant.entityId,
+      serverEntityId: grant.bridge?.context.serverEntityId,
       entityName: grant.entityName,
       via,
       asked,
