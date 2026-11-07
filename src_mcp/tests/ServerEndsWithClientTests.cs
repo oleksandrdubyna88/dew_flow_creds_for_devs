@@ -21,7 +21,7 @@ public sealed class ServerEndsWithClientTests : IDisposable
 {
     private static readonly TimeSpan Bound = TimeSpan.FromSeconds(10);
 
-    private readonly string _root = HostProcess.TempDirectory("creds-mcp-e2");
+    private readonly string _root = HostProcess.TempDirectory("mcp-e2");
 
     public void Dispose() => HostProcess.Remove(_root);
 

@@ -26,7 +26,7 @@ public sealed class ToolCancellationTests : IDisposable
 {
     private static readonly TimeSpan DrainPlusDeadline = LifetimeTimings.Default.Drain + LifetimeTimings.Default.Deadline;
 
-    private readonly string _root = HostProcess.TempDirectory("creds-mcp-e2s3");
+    private readonly string _root = HostProcess.TempDirectory("mcp-e2s3");
 
     public void Dispose() => HostProcess.Remove(_root);
 

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using CredsBroker;
 using CredsForDevs.ServiceDefaults;
 using CredsForDevs.ServiceDefaults.Tests.Support;
+using CredsForDevs.Tests.Leftovers;
 using CredsMcp;
 using FluentAssertions;
 
@@ -21,9 +22,14 @@ namespace CredsMcp.Tests;
 /// </remarks>
 public sealed class ParentWatchProcessTests : IDisposable
 {
-    private readonly string _root = HostProcess.TempDirectory("creds-mcp-e2s4");
+    private readonly string _root = HostProcess.TempDirectory("mcp-e2s4");
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
 
-    public void Dispose() => HostProcess.Remove(_root);
+    public void Dispose()
+    {
+        HostProcess.Remove(_root);
+        _owned.Dispose();
+    }
 
     [Fact]
     public async Task The_server_ends_when_its_parent_is_killed_while_stdin_stays_open()
@@ -72,6 +78,13 @@ public sealed class ParentWatchProcessTests : IDisposable
         start.CreateNoWindow = true;
         start.Environment[CredsLogging.DirectoryVariable] = _root;
         start.Environment[Endpoints.DirectoryOverrideVariable] = Path.Combine(_root, "no-windows");
+        // This test starts its host by itself (not through HostProcess.Start), so it hands the runtime an owned temp folder itself: a killed host leaves its
+        // diagnostic socket and debug pipes in TMPDIR (rule 2). The scope removes the folder after the test's `using`s have ended the host.
+        var childTemp = _owned.Dir("child-tmp", OwnedCreds.ShortSocketRoot);
+        foreach (var name in new[] { "TMPDIR", "TEMP", "TMP" })
+        {
+            start.Environment[name] = childTemp;
+        }
         foreach (var (name, value) in extra)
         {
             start.Environment[name] = value;

@@ -12,7 +12,7 @@ namespace CredsMcp.Tests;
 /// </summary>
 public sealed class VersionTests : IDisposable
 {
-    private readonly string _root = HostProcess.TempDirectory("creds-mcp-version");
+    private readonly string _root = HostProcess.TempDirectory("mcp-version");
 
     public void Dispose() => HostProcess.Remove(_root);
 
