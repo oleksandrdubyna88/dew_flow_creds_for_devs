@@ -304,22 +304,20 @@ export function readBody(req: http.IncomingMessage): Promise<string> {
 /** The built-in error classes a journal line may name; any other class (one of our own, a thrown string) reads `Error`. */
 const BUILT_IN_CLASSES: ReadonlySet<string> = new Set(['Error', 'TypeError', 'RangeError', 'SyntaxError', 'URIError', 'ReferenceError', 'EvalError', 'AggregateError']);
 
-/**
- * A Node `code` is named only when it is Node's own: a system errno name of this platform (`ENOENT`, `ECONNRESET`: the table the
- * runtime itself exposes) or `ERR_` and capitals (Node's own error codes). A planted all-caps word is neither, and a journal line
- * never carries a word a request chose.
- */
-const NODE_CODE_SHAPE = /^ERR_[A-Z0-9_]{2,60}$/;
-const SYSTEM_ERRNO_NAMES: ReadonlySet<string> = new Set(Object.keys(os.constants.errno));
-
 function errorClassOf(error: unknown): string {
   const name = error instanceof Error ? error.constructor.name : '';
   return BUILT_IN_CLASSES.has(name) ? name : 'Error';
 }
 
-const isNodeCode = (code: unknown): code is string => typeof code === 'string' && (SYSTEM_ERRNO_NAMES.has(code) || NODE_CODE_SHAPE.test(code));
+/**
+ * A `code` is named only when it is a system errno name of this platform (`ENOENT`, `ECONNRESET`: the table the runtime itself exposes).
+ * Nothing else: an `ERR_` word is a shape a request can fill with its own text, and a journal line never carries a word a request chose.
+ */
+const SYSTEM_ERRNO_NAMES: ReadonlySet<string> = new Set(Object.keys(os.constants.errno));
 
-/** The code an `Error` carries, if it is Node's own; a thrown plain object or string has none to read. */
+const isNodeCode = (code: unknown): code is string => typeof code === 'string' && SYSTEM_ERRNO_NAMES.has(code);
+
+/** The code an `Error` carries, if it is a system errno; a thrown plain object or string has none to read. */
 function errorCodeOf(error: unknown): string {
   const code: unknown = error instanceof Error ? (error as { code?: unknown }).code : undefined;
   return isNodeCode(code) ? ` ${code}` : '';
@@ -329,7 +327,7 @@ function errorCodeOf(error: unknown): string {
  * A handler threw: answer 500 with its own sentence if nothing has been sent, THEN write one journal line in a `try`, so a journal that
  * throws on every line still answers (Amendment 6, D.8 and its review).
  *
- * <p>The line is a classification and never the error: the built-in class name, a code of the strict shape or none, the route (the
+ * <p>The line is a classification and never the error: the built-in class name, a system errno name or none, the route (the
  * name of the table's route or `other`, handed in: `brokerRequests` cannot import the table, which imports it back) and whether the
  * headers had already gone out, read BEFORE the answer is written. Never `message`, never a stack, a path, a header or a body: a Node
  * `JSON.parse` message quotes its input (parent §4.1).</p>

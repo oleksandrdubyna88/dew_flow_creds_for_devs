@@ -77,15 +77,16 @@ test('unanswered: the line is a classification — a built-in class name, a code
   assert.deepEqual(unanswer(undefined, 'other').lines, ['a handler failed: Error on other; headers not sent']);
 });
 
-test('unanswered: a `code` is named only when it is one of Node\'s own (a system errno name, or ERR_ plus capitals) and only an Error carries it — a planted all-caps word does not', () => {
+test('unanswered: a `code` is named only when it is a system errno of this platform, and only an Error carries it — no ERR_ word, no planted all-caps word', () => {
   const PLANTED = 'ZQPLANTEDSECRETVALUE';
   const line = (error: unknown): string => unanswer(error, 'other').lines[0];
   assert.equal(line(Object.assign(new Error('x'), { code: 'ENOENT' })), 'a handler failed: Error ENOENT on other; headers not sent');
-  assert.equal(line(Object.assign(new Error('x'), { code: 'ERR_INVALID_ARG_TYPE' })), 'a handler failed: Error ERR_INVALID_ARG_TYPE on other; headers not sent');
+  assert.equal(line(Object.assign(new Error('x'), { code: 'ECONNRESET' })), 'a handler failed: Error ECONNRESET on other; headers not sent');
   for (const [what, error] of [
+    ['an ERR_ word with a planted value', Object.assign(new Error('x'), { code: `ERR_${PLANTED}` })],
+    ['one of Node\'s own ERR_ codes (left out: only errno names are named)', Object.assign(new Error('x'), { code: 'ERR_INVALID_ARG_TYPE' })],
     ['an all-caps word on an Error', Object.assign(new Error('x'), { code: PLANTED })],
     ['an E-prefixed word that is no errno', Object.assign(new Error('x'), { code: `E${PLANTED}` })],
-    ['an ERR_ word with free text', Object.assign(new Error('x'), { code: `ERR_${PLANTED} x` })],
     ['an all-caps word on a thrown plain object', { code: PLANTED }],
     ['a real errno name on a thrown plain object', { code: 'ECONNRESET' }],
     ['a real errno name on a thrown string', 'ECONNRESET'],

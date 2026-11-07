@@ -3631,7 +3631,7 @@ builds, and what a person can and cannot reach with it today.
 `INTERNAL_FAILURE` stays for the handlers that do journal a reason) on every door, where the request used to hang until the client
 gave up (`unanswered`, `brokerRequests.ts`: it reads `res.headersSent` first, **answers first** if nothing has gone out, and then
 writes its one journal line inside a `try`, so a journal that throws on every line still answers. **The line is a classification, never
-the error:** the built-in class name, a Node code only of the shape `^[A-Z][A-Z0-9_]{1,40}$`, the route's name from `BRIDGE_ROUTES` or
+the error:** the built-in class name, a code only when it is a system errno name of the platform (`os.constants.errno`; an `ERR_` word is not named, since a request can fill that shape with its own text), the route's name from `BRIDGE_ROUTES` or
 `other` (`routeNameOf`, `bridgeAllowList.ts`, handed in as an argument because `brokerRequests` cannot import the table) and whether the
 headers had gone out; no message, since a `JSON.parse` message quotes its input. **That line has no ceiling** — one per throwing request — until E2.2b's failure reporter bounds it); **a request target `new URL`
 cannot parse** (`//`, `///`, `http://[`, `/\`; `example.com` parses, as a path) is read as a path no route matches
