@@ -112,7 +112,7 @@ interface Flavour {
   readonly a1Config: boolean;
   readonly agentForward: boolean;
   /** What `e1` is called (default `prod`): a test of the dialog gives it a hostile name. */
-  readonly entryName?: string;
+  readonly entryName: string;
   /** The consent policy of the folder `e1` and its neighbours live in: absent leaves the folder setting none (every call asks). */
   readonly ask?: McpAskPolicy;
 }
@@ -122,7 +122,7 @@ function nodesOf(x: 'usable' | 'closed' | 'absent', flavour: Flavour): Record<st
     return {};
   }
   const folder = (id: string, mcp: TreeNode['mcp']): TreeNode => ({ id, name: id === 'f1' ? 'Agents' : 'Closed', type: 'folder', parentId: null, mcp });
-  const e1 = entity('e1', flavour.entryName ?? 'prod', 'f1', { dependsOn: ['e-out', 'e2'], ...e1Extras(flavour) });
+  const e1 = entity('e1', flavour.entryName, 'f1', { dependsOn: ['e-out', 'e2'], ...e1Extras(flavour) });
   const a1: TreeNode[] = [
     folder('f1', agentsFolderPolicy(flavour)),
     folder('f-closed', { view: true }),
@@ -159,7 +159,7 @@ function xNodes(x: 'usable' | 'closed' | 'absent'): TreeNode[] {
  * `e1` ("foreign") in a2, which is listed first.
  */
 export function collideVault(asked: string[] = []): McpVaultSource {
-  return vaultOf('absent', { emptyVault: false, fullVault: false, collide: true, a1Config: true, agentForward: false }, asked);
+  return vaultOf('absent', { emptyVault: false, fullVault: false, collide: true, a1Config: true, agentForward: false, entryName: 'prod' }, asked);
 }
 
 /** A slot's read: a value for the `fullVault` entry that holds that slot, nothing for any other. */
@@ -413,7 +413,7 @@ export async function wallWorld(options: WallOptions = {}): Promise<WallWorld> {
 
 /** What the world's vault is built from: the options that change its nodes, and the folder's consent policy when the world has a store. */
 function flavourOf(options: WallOptions, o: { collide: boolean; a1Config: boolean; agentForward: boolean }): Flavour {
-  return { emptyVault: options.emptyVault === true, fullVault: options.fullVault === true, collide: o.collide, a1Config: o.a1Config, agentForward: o.agentForward, ask: options.consent?.ask, entryName: options.entryName };
+  return { emptyVault: options.emptyVault === true, fullVault: options.fullVault === true, collide: o.collide, a1Config: o.a1Config, agentForward: o.agentForward, ask: options.consent?.ask, entryName: options.entryName ?? 'prod' };
 }
 
 /**
