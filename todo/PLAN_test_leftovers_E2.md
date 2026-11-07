@@ -1986,6 +1986,52 @@ Builds Release, `-m:4 --disable-build-servers`, 0 warnings; `dotnet format white
 
 **Not run / unproven.** macOS and Windows. The perl pin was not seen red on a real image without perl, only with the finder returning null. The `ParentWatchProcessTests` skip-while-running branch has no test of its own.
 
+### E2.3 build record, part 4 — S4 (2026-11-07, branch `feat/test-leftovers-e2.3`, not pushed, not merged)
+
+Built by a Sonnet coder from [PLAN_test_leftovers_E2.3_brief.md](PLAN_test_leftovers_E2.3_brief.md) § 3.4, test first. Commits, oldest first: S4 RED (the scan extended to the server's tests, `VaultServerFolderTests`); GREEN, `VaultServer`;
+GREEN, the store and maintenance tests; GREEN, the logging-sink, startup-guard and refusal tests; this record. Builds: each of the five test projects by name, `nice -n 19 dotnet build <project> -c Release -m:4 --disable-build-servers`,
+0 warnings, 0 errors. `dotnet format whitespace` and `style --verify-no-changes` on the server and service-defaults test projects: clean. `sweeper-scan`: none found. No copied helper file was edited.
+
+**What was built.**
+- **S4.0 — `ClientSitesScanTests`** now reads `src_minimalapi_server/tests` as a fifth tree (same scratch copy, same guard reading, same keying on file and a line fragment). The expected list is two arrays: `StaysForE25` (the three
+  lines of S3, unchanged) and `OwnedByS5` (the seven backup sites of § 3.5, still on `GetTempPath()` after S4; S5's RED removes them one by one and the array goes with the last). The server's files in the old-name test too.
+- **S4.1 — `VaultServerFolderTests`** (server project, in the server collection): (1) a `VaultServer`'s `DataDir` matches `Owned.Pattern()`, has its claim beside it and a registry entry while the server lives, and has all three gone after
+  the dispose; (2) its parent is the temp root itself, not `cred-vault-tests`, and its name is not a bare GUID; (3) the ORDER: a hosted service built by a factory (so the host's container owns and disposes it) looks at the data folder in
+  `StopAsync` and in `Dispose`; it must find the folder there in every step it is called, and the test fails when it was called never.
+- **`VaultServer`:** `DataDir` is the path of an `OwnedDir.Create("vault")` held in a field. `Dispose(bool)` runs `base.Dispose` (the host and its container end), restores the environment, then disposes the folder. The hand-written
+  `Directory.Delete` with its two `catch` blocks went (a handle that is not released is now one warning, a claimed folder and a red audit).
+- **Sites moved (17 API lines and the old name):** `LoginKeyStoreTests`, `OrgBlockingWithdrawalTests`, `OrgProjectsStoreTests`, `ShareMaintenanceTests`, `OrgRecoveryMaintenanceTests` (the factories became instance methods over `_owned.Dir`, `what`
+  `login-keys`, `withdrawal`, `projects`, `share-maint`, `recovery`); `OrgEventLogQueryTests`, `OrgEventLogTests`, `OrgMembersStoreTests`, `OrgSettingsStoreTests` (`_dir` set in the constructor from `_owned.Dir`; the hand-written `Dispose`
+  bodies went); `OrgRegistrationTests.HookWorld` (its own `OwnedScope`); `StartupGuardsTests` (`guards`); `LoggingSinkTests` (`logsink` twice, `retention`; the three `try/finally` deletes and the last-statement delete went);
+  `StartupGuardTests` (`guard-logs`, and `guard-file` for the `not-a-directory` file); `StartupRefusalProcessTests` (`HostProcess.TempDirectory("vault-refusal")`; the `Remove` call stays).
+
+**The RED list** (failing text, each seen before its code):
+1. Scan: `Expected Named(RawTempFindings(Scratch(sources))) to be equal to {...} ... contains 17 item(s) too many.` The 17 findings: `LoggingSinkTests.cs:69`, `:101`, `:153`; `LoginKeyStoreTests.cs:21`; `OrgBlockingWithdrawalTests.cs:53`;
+   `OrgEventLogQueryTests.cs:24`; `OrgEventLogTests.cs:19`; `OrgMembersStoreTests.cs:25`; `OrgProjectsStoreTests.cs:16`; `OrgRecoveryMaintenanceTests.cs:19`; `OrgRegistrationTests.cs:50`; `OrgSettingsStoreTests.cs:16`;
+   `ShareMaintenanceTests.cs:25`; `StartupGuardTests.cs:29`, `:165`; `StartupGuardsTests.cs:11`; `VaultServer.cs:45`. (Brief: 24 API lines in the tree; 17 + the 7 of S5.)
+2. Old name: `Expected sources.Where(...) to be empty because a folder is named for what it holds ... but found at least one item {"src_minimalapi_server/tests/StartupRefusalProcessTests.cs"}.`
+3. S4.1: `Expected string not to be "cred-vault-tests" because the shared parent of the old form is gone` and `Expected Owned.Pattern().IsMatch(Path.GetFileName(dir)) to be True because the name is an owned name`.
+4. The order test is NOT red on `main` (main also removed the folder after `base.Dispose`); it is a pin. By hand, `_folder.Dispose()` moved before `base.Dispose`: `Expected probe.Seen to contain only items matching seen.Item2 because every step of ending
+   the host saw the data folder; it is removed after them, never before`. Put back.
+5. Two of the RED's own mistakes, seen and fixed before the commit: a fragment of the expected list that held `GetTempPath()` was itself a finding (the guard reads string literals), and `Owned.TempRoot()` in the new test needed its marker.
+
+**Private-`TMPDIR` count, `CredVaultServer.Tests`** (a fresh short folder `/tmp/c23s4`, the Release executable, whole suite, entries at the top level): **before 7** (`cred-vault-tests` with 31 children, 121 entries below it, and the six
+backup parents `cred-vault-aot-kit`, `-backup`, `-backup-cli`, `-backup-run`, `-backup-store`, `-key-file`; 920 entries in all). **After 6**: only the six backup parents (S5's). `cred-vault-tests`: gone. Owner-form entries left: 0. The 31 children were the folders of the store tests that never removed theirs; the logging-sink, guard and refusal folders were removed by hand before as well, and now by the scope. The remaining 6 are exactly the `OwnedByS5` list.
+
+**Test totals** (Release, one at a time, after the last code commit): `CredVaultServer.Tests` 828 / 0 failed / 825 passed / 3 skipped (825 before: three new tests); `CredsCli.Tests` 156 / 0 / 153 / 3; `CredsMcp.Tests` 174 / 2 / 169 / 3 (the two WSL
+`ParentWatchProcessTests`, as in part 3); `CredsBroker.Tests` 164 / 0 / 161 / 3; `CredsForDevs.ServiceDefaults.Tests` 606 / 0 / 581 / 25. Total 1,928.
+
+**Not run / unproven.** Windows and macOS legs: `VaultServer`'s folder and the moved classes there (the Windows case of a handle the host has not released is one warning and a red audit, not tried). The dispose order of the live-host
+tests that hold a folder of their own (`ShareMaintenanceTests`: the host is a `using` in the test, the folder is in the class's scope) rests on the language, not on a test of its own; the order that CAN be tested, `VaultServer`'s, is.
+`Corp.Undeletable` is a `using` inside its tests, so it ends before the class disposes (unchanged).
+
+**Differences from the brief.**
+1. **The expected list is not the four (three) lines alone.** S5 has not run, so the seven backup sites are in the tree; they are listed in a second array, `OwnedByS5`, that S5 empties. After S5 the list is the three lines of S3.
+2. **`StartupGuardsTests` changed one assertion.** `Directory.Exists(_root).Should().BeFalse(...)` said "the probe never created the folder"; the owned folder now exists from the start, so it reads `Directory.GetFileSystemEntries(_root)` empty. The
+   claim of the test (nothing was written) is the same.
+3. **`what` values are closer than `tests`** (the brief allows it): one per class, short, so a leftover names its class.
+4. **The scan test keeps the name `ClientSitesScanTests`** (the manifest-copy test lists the file by name); its doc, method name and trees say the server is in it.
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's
