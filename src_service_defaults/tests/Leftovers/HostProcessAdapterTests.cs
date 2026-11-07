@@ -495,7 +495,7 @@ public sealed class HostProcessAdapterTests
         {
             Path.GetDirectoryName(folder).Should().Be(root.Path, "the folder lies under the root it was asked for");
             Owned.Pattern().IsMatch(Path.GetFileName(folder)).Should().BeTrue();
-            HostProcess.TiedFolders(child).Should().Equal(folder, "the socket path in the child's arguments names the folder");
+            HostProcess.TiedFolders(child).Should().Equal([folder], "the socket path in the child's arguments names the folder");
 
             HostProcess.Remove(folder, sink.Warn);
 

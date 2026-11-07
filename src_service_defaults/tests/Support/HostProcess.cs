@@ -96,7 +96,14 @@ internal static partial class HostProcess
     /// </summary>
     internal static (string Program, IReadOnlyList<string> Args, bool OwnGroup) InItsOwnGroup(string file, IReadOnlyList<string> args, Func<string?>? findPerl = null, Action<string>? warn = null)
     {
-        if (OperatingSystem.IsWindows() || (findPerl ?? FindPerl)() is not { } perl) return (file, args, false);
+        if (OperatingSystem.IsWindows()) return (file, args, false);
+        if ((findPerl ?? FindPerl)() is not { } perl)
+        {
+            // Not silent: a machine without perl runs the weaker tie, and the test output must say what that loses.
+            (warn ?? Owned.DefaultWarn)($"host-process: no perl on the path, so {file} starts without a process group of its own: a descendant that outlives it is NOT seen, and its folder can be removed under it (the tie ends with the direct child's exit); install perl");
+            return (file, args, false);
+        }
+
         const string Script = "POSIX::setsid() or die qq(setsid: $!); exec { $ARGV[0] } @ARGV or die qq(exec: $!);";
         return (perl, ["-MPOSIX", "-e", Script, "--", file, .. args], true);
     }
@@ -413,10 +420,11 @@ internal static partial class HostProcess
     }
 
     /// <summary>A fresh, empty temporary directory: an <see cref="OwnedDir"/> (claimed first, prefixed, registered), whose warning sink is
-    /// <paramref name="warn"/> - the sink travels with that one folder, so no shared delegate exists for parallel tests to race on.</summary>
+    /// <paramref name="warn"/> - the sink travels with that one folder, so no shared delegate exists for parallel tests to race on. <paramref name="parent"/> is the root it
+    /// lies under (default: the temp root; a socket folder passes the short socket root), so a folder under any root is registered and tied to the children that name it.</summary>
     internal static string TempDirectory(string what, Action<string>? warn = null, string? parent = null)
     {
-        var dir = OwnedDir.Create(what, null, warn);
+        var dir = OwnedDir.Create(what, parent, warn);
         Folders[dir.Path] = new Folder(dir);
         return dir.Path;
     }
