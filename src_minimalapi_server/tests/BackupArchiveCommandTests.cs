@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 
 namespace CredVaultServer.Tests;
@@ -11,8 +12,12 @@ namespace CredVaultServer.Tests;
 /// this is restoring a server that is gone, usually at a bad hour, and "exit 1" tells them nothing
 /// about whether to go and find a different copy of the archive or a different copy of the key.
 /// </remarks>
-public class BackupArchiveCommandTests
+public class BackupArchiveCommandTests : IDisposable
 {
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+
+    public void Dispose() => _owned.Dispose();
+
     private static readonly DateTimeOffset Noon = DateTimeOffset.Parse("2026-09-07T12:00:00Z");
 
     [Fact]
@@ -129,20 +134,21 @@ public class BackupArchiveCommandTests
     }
 
     [Fact]
-    public void ItLeavesAKitAtAKnownPathSoTheNativeBinaryCanBeCheckedByHand()
+    public void ItLeavesAKitInAFolderOfItsOwnSoTheNativeBinaryCanBeCheckedByHand()
     {
-        // An ordinary round-trip test that happens to write where somebody can find it. The trim and
+        // An ordinary round-trip test that happens to leave a kit somebody can point the published binary at. The trim and
         // AOT analysers run on every build, but they prove a pattern is legal, not that it WORKS: tar
-        // and gzip under Native AOT are exactly the pair worth watching a real binary do. So this
-        // leaves an archive and its key at a fixed path, and the published binary is pointed at them:
+        // and gzip under Native AOT are exactly the pair worth watching a real binary do. The test prints the kit's folder
+        // and the two commands for it. By default the folder is this run's own (owned, claimed, removed with the test), so two
+        // runs never share one and nothing stale is left; to KEEP a kit for a check by hand, set CREDS_AOT_KIT_DIR to a folder
+        // of your own (never set in CI): that folder is made if it is missing, overwritten on every run, and never removed:
         //
-        //   CredVaultServer --verify-archive  <temp>/cred-vault-aot-kit/archive.cvbk <temp>/cred-vault-aot-kit/key.b64
-        //   CredVaultServer --decrypt-archive <temp>/cred-vault-aot-kit/archive.cvbk <out> <...>/key.b64
-        //
-        // Overwritten on every run, so it is never a stale artefact pretending to be a fresh one.
-        var kit = Path.Combine(Path.GetTempPath(), "cred-vault-aot-kit");
-        Directory.CreateDirectory(kit);
+        //   CredVaultServer --verify-archive  <kit>/archive.cvbk <kit>/key.b64
+        //   CredVaultServer --decrypt-archive <kit>/archive.cvbk <out> <kit>/key.b64
+        var mine = Environment.GetEnvironmentVariable("CREDS_AOT_KIT_DIR");
+        var kit = string.IsNullOrWhiteSpace(mine) ? _owned.Dir("aot-kit") : Directory.CreateDirectory(mine).FullName;
         TestContext.Current.AddWarning($"aot-kit folder: {kit}");
+        TestContext.Current.AddWarning($"aot-kit commands: CredVaultServer --verify-archive {Path.Combine(kit, "archive.cvbk")} {Path.Combine(kit, "key.b64")} | CredVaultServer --decrypt-archive {Path.Combine(kit, "archive.cvbk")} <out> {Path.Combine(kit, "key.b64")}");
         var key = NewKey();
         var archive = Path.Combine(kit, "archive.cvbk");
         File.Delete(archive);
@@ -245,7 +251,7 @@ public class BackupArchiveCommandTests
         return (code, output.ToString(), error.ToString());
     }
 
-    private static string ArchiveOf(string sourceDir, byte[] key)
+    private string ArchiveOf(string sourceDir, byte[] key)
     {
         var path = NewPath();
         using var stream = File.Create(path);
@@ -253,14 +259,14 @@ public class BackupArchiveCommandTests
         return path;
     }
 
-    private static string KeyFile(byte[] key)
+    private string KeyFile(byte[] key)
     {
         var path = NewPath();
         File.WriteAllText(path, Convert.ToBase64String(key));
         return path;
     }
 
-    private static string TreeWithTwoFiles()
+    private string TreeWithTwoFiles()
     {
         var dir = NewPath();
         Directory.CreateDirectory(Path.Combine(dir, "vaults"));
@@ -272,10 +278,5 @@ public class BackupArchiveCommandTests
     private static byte[] NewKey() => RandomNumberGenerator.GetBytes(Key32.Bytes);
 
     /// <summary>A fresh path whose parent exists, so a file can be created at it straight away.</summary>
-    private static string NewPath()
-    {
-        var parent = Path.Combine(Path.GetTempPath(), "cred-vault-backup-cli", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(parent);
-        return Path.Combine(parent, "item");
-    }
+    private string NewPath() => Path.Combine(_owned.Dir("backup-cli"), "item");
 }
