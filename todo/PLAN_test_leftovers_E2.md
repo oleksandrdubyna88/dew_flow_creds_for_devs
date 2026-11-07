@@ -1858,7 +1858,7 @@ service-defaults test project: clean. `sweeper-scan.mjs --root .`: `none found (
 2. **The Reaper's seam is the whole kill-and-wait** (`Func<Process, TimeSpan, bool>`), so the "end cannot be confirmed" case kills nothing and the child really still runs (deterministic). A fixture child that holds a file
    and has a grandchild is killed as a tree; the grandchild is gone within the bound.
 3. **A child's own exit also ends its tie** (the `Exited` event). The brief ends it only on the Reaper's confirmation. `RelayLogTests` kills and awaits its first relay by its own handle, with no Reaper; without the event the
-   `CredsCli.Tests` run was red with `never disposed: ...creds-relay-log` and `child-tmp`. A process the OS reaped has ended; a surviving descendant is still the Reaper's concern.
+   `CredsCli.Tests` run was red with `never disposed: ...creds-relay-log` and `child-tmp`. A process the OS reaped has ended. *(Corrected in part 2b: the sentence went on "a surviving descendant is still the Reaper's concern", which was false - the event ended the tie, the Reaper then neither killed nor waited, and the folder went while a grandchild used it. The tie now ends only with the group.)*
 4. **S2.4(c)'s producer is the test executable itself** (`Environment.ProcessPath`, `--filter-method` to a producer test that skips unless `CREDS_SOCKET_PRODUCER_ROOT` is set). `HostProcess` takes `WSL_DISTRO_NAME` out of a child's
    environment, and the host id of a claim carries it, so the first run read the producer's folder as `foreign host`; the test hands the variable on.
 5. **S2.7's "twins"** are separate Node-made folders, one per case ((a) and (b) share one: the Node sweep first, then the re-owning and the C# sweep). (c) and (d) skip, saying why, where the token may not own `Administrators` or the public
@@ -1866,6 +1866,40 @@ service-defaults test project: clean. `sweeper-scan.mjs --root .`: `none found (
 6. **The fixture reuses `LeftoversSweepFixture`'s seam constructor** for the run, the report and the audit. Its constructor takes the audit of one root as an optional seam (a test passes a no-op; the default is the real audit).
 7. **`SweepRanTests`** is creds' own (it is on `CredsOwn`); its doc comment now says "lost its `AssemblyFixture` line" (the coordinator's item 3b) and it asks for both fixtures.
 8. The callers of `HostProcess.TempDirectory` still pass `creds-...` names (`creds-mcp-pump`), so their folders read `testsToDelete-u<uid>-creds-creds-mcp-pump-<id>`. S3 renames the sites.
+
+### E2.3 build record, part 2b — S2 fix round (2026-11-07, branch `feat/test-leftovers-e2.3`, not pushed, not merged)
+
+An Opus review of S2 found defects 1-11 (all accepted). Commits: `e739c92` RED (seams in `HostProcess`: `duringEnd`, `afterTieCheck`, `TempOf`, `TiedFolders`; two stub properties on the socket-root fixture; the new tests); `4719db4` the
+`HostProcess` fix (1, 4, 8); `72a4805` the fixture record, the producer, the Node report (7, 9, 10); this record with `module_tests.md` (11). Builds Release, `-m:4 --disable-build-servers`, 0 warnings.
+
+**What changed, by defect.**
+1. **A surviving descendant keeps the folder and the child's temp.** On POSIX `StartFile` starts the child through `perl -MPOSIX -e 'setsid; exec ...'` (same pid; the pid is the group id; .NET cannot put a child in a group, and a parent cannot
+   after the exec). The tie ends in one place, `Child.TryEnd`: the direct child has exited AND no live member of its group is left (Linux: `/proc/*/stat`, zombies skipped; macOS: `kill(-group, 0)`). The Reaper kills the tree, then
+   `kill(-group, SIGKILL)`, then waits for the exit and the empty group. The child's temp folder goes in the same step. Without `perl`, and on Windows, there is no group and the tie ends with the direct child's confirmed exit.
+   **On Windows what holds** is the Reaper's tree kill (`Kill(entireProcessTree)` finds descendants by parent link) and the OS refusing to delete a folder with an open file (the refusal is S2.2's warning and an audit line); **what does not**
+   is a descendant that left its parent's tree and holds no open file there. A Windows job object would close that and is not built.
+2. **`A_test_that_names_the_temp_variables_itself...`** asserts `HostProcess.TempOf(child)` is null, per process, in place of a count of the process-wide registry. 3. The temp-folder test compares `Canonical(GetDirectoryName(given))` with
+   `Canonical(ShortSocketRoot)` (macOS: `/tmp` is `/private/tmp`); not reproducible on Linux, fixed by reading.
+4. `TryEnd` runs its body under the child's lock; the call that loses waits for the winner. 8. `Remove` decides the tie and the take-out under the folder's gate, and a start ties a folder under that same gate (and not a folder taken out
+   meanwhile). 5. See below. 7. The producer gets `TESTSTODELETE_RUN=""`, its stdout and stderr are read to the end, and the test says its roots differ so it sweeps the real `/tmp`. 9. The socket-root fixture keeps `TempRootSeen` and
+   `SocketRootSeen` (canonical); `SweepRanTests` reads the roots and the swept root from the fixtures' own record. 10. `WindowsHandoffTests` parses the Node report and asserts exactly one `unverified: <path>` line naming the folder.
+   11. The sentence of part 2's difference 3 is corrected in place; `module_tests.md` now says when the child's temp folder goes and what holds on each OS.
+
+**The RED list.** (1) `Expected Directory.Exists(folder) to be True because the grandchild still holds a file of the folder: the folder stays, but found False.` (4) `Expected loser.IsCompleted to be False because the loser must not return while
+the winner is still ending ..., but found True.` (8) `Expected (tied && !Directory.Exists(folder)) to be False because a folder is never disposed while a running child is tied to it ..., but found True.` (9) `Expected sockets.TempRootSeen to be "/tmp" ... but "" has a
+length of 0`. (7), by hand: with `TESTSTODELETE_RUN` set to the record of a live Node process, `Expected value to be 1001087L because the claim is the producer's own record, made the natural way, but found 1000920L`. By hand after GREEN, each fix taken out: (1) `GroupGone()` returning
+true -> the (1) message; (4) the ended flag set before the body, outside the lock -> the (4) message; (8) the tie taken without the folder's gate -> the (8) message. (2) was a flake (9 of 25 full runs, the review): after the fix the full service-defaults suite ran 20 times
+in a row with 0 failures (7 s each), and twice more in the totals below. (3) and (10) have no RED here (macOS and Windows).
+
+**Defect 5 (the C1 wait has no RED) - recorded as unpinned.** `process.WaitForExit(bound)` after `Kill(entireProcessTree)` cannot be made to matter on Linux: .NET's `Kill` returns only after the child is reaped (a probe of 300 kill-then-check
+rounds: `HasExited` false right after the kill in 0, the pid alive in 0). A deterministic check would need a child that stays alive after SIGKILL, which POSIX does not give (an uninterruptible sleep is not portable). What IS pinned is the wait for the group
+(test 1 fails without it) and the "end cannot be confirmed" path (a seam that kills nothing). On Windows `TerminateProcess` is asynchronous, so the wait matters there; no Windows run has shown it.
+
+**Totals** (Release, one at a time, after the last code commit): `CredsForDevs.ServiceDefaults.Tests` 603 total, 0 failed, 578 passed, 25 skipped (run twice, identical); `CredVaultServer.Tests` 825 / 0 / 822 / 3; `CredsCli.Tests` 155 / 0 / 152 / 3;
+`CredsMcp.Tests` 174 / 2 / 169 / 3 (the two WSL `ParentWatchProcessTests`, as before); `CredsBroker.Tests` 164 / 0 / 161 / 3. `dotnet format whitespace` and `style`: clean; `sweeper-scan`: none found.
+
+**Stays unproven.** Windows: everything in `WindowsHandoffTests`, the held-handle branches, and the descendant case above. macOS: the `perl` wrapper (the macOS system perl is assumed at `/usr/bin/perl`), `kill(-group, 0)` as the group test, the Canonical comparison. A pid reused by a
+stranger between the group's emptying and a late `kill(-group)` would be signalled: the Reaper signals once, before the wait, so the window is the kill itself. A machine without `perl` runs the old, weaker tie (no group) without a message.
 
 ### E2.3 build record, part 3 — S3 (2026-11-07, branch `feat/test-leftovers-e2.3`, not pushed, not merged)
 
