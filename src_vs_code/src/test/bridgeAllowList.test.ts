@@ -2,7 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { test } from 'node:test';
-import { BRIDGE_NOT_SERVED, BRIDGE_ROUTES, bridgeRouteRefusal, refusedOnBridge } from '../bridgeAllowList';
+import { BRIDGE_NOT_SERVED, BRIDGE_ROUTES, bridgeRouteRefusal, refusedOnBridge, routeNameOf } from '../bridgeAllowList';
 import { AgentUseDeps, dbQueryAction } from '../agentUseActions';
 import { BridgeContext } from '../bridgeContext';
 import { EXPORT_REFUSED, ErrorCode } from '../brokerProtocol';
@@ -223,4 +223,14 @@ test('S1 (Amendment 6, D.10): no action a bridge serves asks after its Allow —
       );
     }
   }
+});
+
+test('routeNameOf: the name of a route of the table, as method and path, and `other` for anything else — a real route outside the table included, a raw path never', () => {
+  assert.equal(routeNameOf('GET', '/v1/mcp/entries'), 'GET /v1/mcp/entries');
+  assert.equal(routeNameOf('POST', '/v1/alias/exec'), 'POST /v1/alias/exec');
+  assert.equal(routeNameOf('POST', '/v1/config/read'), 'POST /v1/config/read', 'a route the bridge refuses is still in the table');
+  assert.equal(routeNameOf('POST', '/v1/alias/env'), 'other', 'an alias action the table does not name');
+  assert.equal(routeNameOf('GET', '/v1/mcp/entries/zq-planted-path'), 'other');
+  assert.equal(routeNameOf('DELETE', '/v1/mcp/entries'), 'other');
+  assert.equal(routeNameOf(undefined, '/unparseable-request-target'), 'other');
 });

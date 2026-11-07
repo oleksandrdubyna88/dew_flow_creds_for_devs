@@ -1,6 +1,5 @@
 import * as http from 'node:http';
-import { describeError } from './describeError';
-import { ErrorCode, INTERNAL_FAILURE, MAX_REQUEST_BODY_BYTES, parseBearer, parseJsonObject } from './brokerProtocol';
+import { ErrorCode, MAX_REQUEST_BODY_BYTES, UNANSWERED_FAILURE, parseBearer, parseJsonObject } from './brokerProtocol';
 import { Grant, GrantLimits, GrantLookup } from './grantRegistry';
 import { expiredMessage } from './grantWords';
 import { MCP_SWITCHES } from './mcpSwitches';
@@ -301,21 +300,44 @@ export function readBody(req: http.IncomingMessage): Promise<string> {
   });
 }
 
+/** The built-in error classes a journal line may name; any other class (one of our own, a thrown string) reads `Error`. */
+const BUILT_IN_CLASSES: ReadonlySet<string> = new Set(['Error', 'TypeError', 'RangeError', 'SyntaxError', 'URIError', 'ReferenceError', 'EvalError', 'AggregateError']);
+
+/** A Node `code` is named only when it has the shape of one: it is never free text. */
+const NODE_CODE_SHAPE = /^[A-Z][A-Z0-9_]{1,40}$/;
+
+function errorClassOf(error: unknown): string {
+  const name = error instanceof Error ? error.constructor.name : '';
+  return BUILT_IN_CLASSES.has(name) ? name : 'Error';
+}
+
+function errorCodeOf(error: unknown): string {
+  const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
+  return typeof code === 'string' && NODE_CODE_SHAPE.test(code) ? ` ${code}` : '';
+}
+
 /**
- * A handler threw: answer 500 with the generic sentence if nothing has been sent, THEN put the reason in the journal — never in the body
- * (a bridge may be the reader) — in a `try`, so a journal that throws on every line still answers (Amendment 6, D.8 and its review).
+ * A handler threw: answer 500 with its own sentence if nothing has been sent, THEN write one journal line in a `try`, so a journal that
+ * throws on every line still answers (Amendment 6, D.8 and its review).
+ *
+ * <p>The line is a classification and never the error: the built-in class name, a code of the strict shape or none, the route (the
+ * name of the table's route or `other`, handed in: `brokerRequests` cannot import the table, which imports it back) and whether the
+ * headers had already gone out, read BEFORE the answer is written. Never `message`, never a stack, a path, a header or a body: a Node
+ * `JSON.parse` message quotes its input (parent §4.1).</p>
  */
 export function unanswered(
   res: http.ServerResponse,
   error: unknown,
+  route: string,
   respondError: (code: ErrorCode, message: string) => void,
   log: (line: { grant: string; entityName: string; action: string; outcome: string; detail: string }) => void,
 ): void {
-  if (!res.headersSent) {
-    respondError('internal', INTERNAL_FAILURE);
+  const sent = res.headersSent;
+  if (!sent) {
+    respondError('internal', UNANSWERED_FAILURE);
   }
   try {
-    log({ grant: '—', entityName: '', action: 'request', outcome: 'failed', detail: `a handler threw: ${describeError(error)}` });
+    log({ grant: '—', entityName: '', action: 'request', outcome: 'failed', detail: `a handler failed: ${errorClassOf(error)}${errorCodeOf(error)} on ${route}; headers ${sent ? 'sent' : 'not sent'}` });
   } catch {
     /* a journal that will not take the line has already cost the caller nothing: the answer went first */
   }

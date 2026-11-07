@@ -15,7 +15,7 @@ import {
 import { BrokerHooks, checkedHooks } from './brokerHooks';
 import type { BridgeContext } from './bridgeContext';
 import { BridgeListener, BridgeListeners } from './brokerBridgeListeners';
-import { refusedOnBridge } from './bridgeAllowList';
+import { refusedOnBridge, routeNameOf } from './bridgeAllowList';
 import { DoorView, doorView, launchGate, referenceRefusal } from './bridgeScope';
 import { bridgedTokenCall, tokenStatusNow } from './brokerBridgeToken';
 import { doorsFor } from './brokerOrigin';
@@ -694,7 +694,7 @@ export class CredsAgentServer implements vscode.Disposable {
 
   /** The router, behind one door per listener — see `brokerOrigin.ts` for why, and why two. */
   private readonly doors = doorsFor(
-    (req, res, bridge) => void this.handle(req, res, bridge).catch((error: unknown) => unanswered(res, error, (code, message) => this.respondError(res, code, message), (line) => this.log(line))),
+    (req, res, bridge) => void this.handle(req, res, bridge).catch((error: unknown) => unanswered(res, error, routeNameOf(req.method, requestUrl(req.url).pathname), (code, message) => this.respondError(res, code, message), (line) => this.log(line))),
     () => this.port,
     (res, status, body) => this.respond(res, status, body),
     (message) => this.note(message),

@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 import { Reply, code, message, pause } from './bridgeDoorHarness';
-import { INTERNAL_FAILURE, statusForErrorCode } from '../brokerProtocol';
+import { UNANSWERED_FAILURE, statusForErrorCode } from '../brokerProtocol';
 import { ACCOUNT, CONTEXT_1, Ask, WallWorld, answeredAtOnce, send, sendAbortable, settleAll, until, viaBridge, viaMain, wallWorld } from './bridgeWallWorld';
 
 /**
@@ -324,6 +324,9 @@ async function askFor(ww: WallWorld, door: 'alias' | 'mcp' | 'token'): Promise<A
 
 const JOURNAL_FAULT = 'the journal could not be written';
 
+/** The journal line of a handler failure: the class, the route of the table or `other`, the headers flag (parent §4.1). */
+const CLASSIFIED = /a handler failed: Error on (POST \/v1\/alias\/exec|POST \/v1\/mcp\/use\/exec|POST \/v1\/use\/exec); headers not sent/;
+
 /** The journal throws, once, on the first line that says a grant was minted; the returned function says whether it did. */
 function journalThrowsOnMint(ww: WallWorld): () => boolean {
   const append = ww.w.audit.push.bind(ww.w.audit);
@@ -364,9 +367,10 @@ test('C.7: a journal append that throws right after admission is answered 500 an
   try {
     for (const door of ['alias', 'mcp', 'token'] as const) {
       const { failed, next, journal } = await afterJournalFailure(door);
-      assert.deepEqual([failed.status, code(failed), message(failed)], [500, 'internal', INTERNAL_FAILURE], `${door}: the failed request was answered, with the generic sentence`);
+      assert.deepEqual([failed.status, code(failed), message(failed)], [500, 'internal', UNANSWERED_FAILURE], `${door}: the failed request was answered, with the generic sentence`);
       assert.equal(failed.body.includes(JOURNAL_FAULT), false, `${door}: the reason is not in the body`);
-      assert.ok(journal.some((line) => line.includes(`a handler threw: ${JOURNAL_FAULT}`)), `${door}: the reason is in the journal: ${JSON.stringify(journal)}`);
+      assert.ok(journal.some((line) => CLASSIFIED.test(line)), `${door}: the failure is in the journal as a classification: ${JSON.stringify(journal)}`);
+      assert.equal(journal.some((line) => line.includes(JOURNAL_FAULT)), false, `${door}: the message is in no journal line`);
       assert.equal(next.status, 200, `${door}: the next call was asked and ran, not told busy: ${next.body}`);
     }
     await pause(20);
@@ -410,7 +414,7 @@ test('C.7 (Amendment 6 review): a journal that throws on EVERY line still answer
       throw new Error(JOURNAL_FAULT);
     };
     const reply = await answeredAtOnce(send(viaBridge(ww.bridge), alias()), 'the caller was left unanswered by a journal that throws on every line');
-    assert.deepEqual([reply.status, code(reply), message(reply)], [500, 'internal', INTERNAL_FAILURE]);
+    assert.deepEqual([reply.status, code(reply), message(reply)], [500, 'internal', UNANSWERED_FAILURE]);
     await pause(20);
     assert.equal(escaped.length, 0, 'and the failure of the failure line escaped nowhere');
   } finally {
@@ -444,9 +448,10 @@ test('C.7 through the main port: a journal that throws on its first line is answ
           return append(...lines);
         };
         const failed = await answeredAtOnce(send(viaMain(ww), ask), `${door}: the local request was left unanswered`);
-        assert.deepEqual([failed.status, code(failed), message(failed)], [500, 'internal', INTERNAL_FAILURE], `${door}: ${failed.body}`);
+        assert.deepEqual([failed.status, code(failed), message(failed)], [500, 'internal', UNANSWERED_FAILURE], `${door}: ${failed.body}`);
         assert.equal(failed.body.includes(JOURNAL_FAULT), false, `${door}: the reason is not in the body`);
-        assert.ok(ww.w.audit.some((line) => line.includes(`a handler threw: ${JOURNAL_FAULT}`)), `${door}: the reason is in the journal`);
+        assert.ok(ww.w.audit.some((line) => CLASSIFIED.test(line)), `${door}: the failure is in the journal as a classification`);
+        assert.equal(ww.w.audit.some((line) => line.includes(JOURNAL_FAULT)), false, `${door}: the message is in no journal line`);
         const next = await answeredAtOnce(send(viaMain(ww), ask), `${door}: the next call did not answer`);
         assert.equal(next.status, 200, `${door}: the next local call was asked and ran: ${next.body}`);
       } finally {

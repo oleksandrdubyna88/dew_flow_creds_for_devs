@@ -99,6 +99,12 @@ export function bridgeRouteRefusal(method: string | undefined, pathname: string)
   return decision.served ? undefined : { code: decision.code, message: decision.message };
 }
 
+/** The name of the table's route a request matched, as `METHOD path`, or `other`: never the raw path (a journal line names this and nothing the client chose). */
+export function routeNameOf(method: string | undefined, pathname: string): string {
+  const route = BRIDGE_ROUTES.find((candidate) => candidate.method === method && candidate.path === pathname);
+  return route === undefined ? 'other' : `${route.method} ${route.path}`;
+}
+
 /**
  * The guard `handle` calls first. Off a bridge: `false`, nothing called, `res` untouched. On a bridge:
  * `false` when the route is served; else `Connection: close`, the answer, and `true`.
