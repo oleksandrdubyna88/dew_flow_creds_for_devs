@@ -34,12 +34,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   content included (`ASKING_CEILING`), with its own sentence and one journal line per minute. What is refused before the call is
   admitted is not counted (an unknown alias, a missing field, a call made while a dialog is standing), and neither is a call that carries a
   token, which is not admitted at all.
-- **A long `query`, `run` or `exec` no longer makes every other alias and MCP call hear *busy*.** Before, every alias and MCP call that
+- **A long `query`, `run` or `exec` no longer makes every other asking alias and MCP call hear *busy*.** Before, every alias and MCP call that
   could prompt kept the one place until the call ended, an `exec` for its whole run included. Now a call keeps it past your Allow only if it
   may show a prompt of its own next: a local `create` (the folder's PIN box), `terminal`, `up` and `down` (the install offer when no VPN
-  client is on the PATH), `rotate` (the PIN and copy prompts), and an `exec` on an entry that forwards your SSH agent while the agent is
-  running (its signing prompt) all keep it until that call ends, as before; `query`, `run` and any other `exec` give it back when the dialog
-  closes. A local call that carries a token keeps nothing: it is not admitted at all (`credsAgentServer.ts` runs it without `admit`).
+  client is on the PATH), `rotate` (the PIN and copy prompts), and an `exec` on an entry that forwards your SSH agent, if the agent is
+  running when you click Allow (its signing prompt), all keep it until that call ends, as before; `query`, `run` and any other `exec` (an entry that does not forward, or an agent that is not running at that moment) give it back when the
+  dialog closes. A local call that carries a token keeps nothing: it is not admitted at all (`credsAgentServer.ts` runs it without `admit`).
 - **A failure inside a request handler answers 500** with its own sentence instead of leaving the request unanswered until the client
   gives up. The agent journal records that it failed and where, never why: one line with the kind of error, the route or `other`, and whether
   the answer had already started. It carries no message, so nothing a request put into the error reaches the journal.

@@ -112,7 +112,8 @@ export interface UseAction {
    * signing modal). Absent = no. The broker then keeps the one dialog place until the call ends, so no second modal opens over that
    * prompt (Amendment 3, C.3; the parent's §4.10, the follow-up contract). A boolean for an action that always may
    * (`create`, `terminal`, `up`, `down`, `rotate`); a function of the call's target for one that may on some entries only: `exec`,
-   * on an entry that forwards the agent while the agent socket is up (the signing prompt arrives through the socket).
+   * on an entry that forwards the agent while the agent socket is up (the signing prompt arrives through the socket), read when the dialog
+   * closes on an Allow (`ConsentQuestion.followUp`), not before it opens: the socket may come up or go down while the dialog is on screen.
    * `query`, `run` and a non-forwarding `exec` keep nothing once the dialog closes.
    */
   readonly asksAfterConsent?: FollowUp;

@@ -3594,7 +3594,7 @@ longer leaves a pending call grant in the registry (`credsAgentServer.usable` dr
 `'call'` grant that is still `pending`, and nothing else). Below the ceiling no call is answered differently, with two
 exceptions about who hears *busy* (the place belongs to the dialog, below): a client that leaves during its dialog now leaves the
 place taken until the person clicks, so the next call is *busy* where `main` raised a second modal; and a running `query`, `run` or
-`exec` on an entry that does not forward the agent no longer makes the next call *busy*, where `main` answered it so. Above the ceiling a `too_many_requests` appears
+`exec` on an entry that does not forward the agent, or while the agent socket is down at the Allow, no longer makes the next call *busy*, where `main` answered it so. Above the ceiling a `too_many_requests` appears
 where the call used to reach `usable`. The registry's cap evicts in the order
 of `EVICTION_ORDER`: **denied calls** (the person refused them), **allowed calls that ran** (`uses > 0`: silent MCP use), **Allows not
 yet reserved** (`allowed`, `uses 0`: live while the call waits in the one-use lane, `remember`, `releaseWaiting` or the mask read, and
@@ -3614,8 +3614,8 @@ the dialog's close, until the call's own `release` when the call declares that i
 Allow — `UseAction.asksAfterConsent`: `terminal`, `up` and `down` of the VPN (the install offer), `rotate` (the PIN and copy prompts of
 `rotationStore.ts`), and `exec` **per entity**, a function `(target) => boolean` true for an entry with `agentForward` while the agent
 socket is up (the signing modal arrives through the socket, `sshSignPrompt.ts`, by no static path; `asksAfter` in `useActions.ts` reads
-either form at the gate), and `create` at the door (the folder PIN box and the "count taken" modal) — so a second modal cannot open over that prompt and be answered by the Enter that was meant for it. `ConsentQuestion.followUp`
-carries it, `ConsentGate.shown` passes `keep = Allow && followUp` to `dialogClosed`, and `OneInFlight` remembers (`endedId`) a holding
+either form, when the dialog closes on an Allow), and `create` at the door (the folder PIN box and the "count taken" modal) — so a second modal cannot open over that prompt and be answered by the Enter that was meant for it. `ConsentQuestion.followUp`
+carries it, `ConsentGate.shown` passes `keep = Allow && followUp` to `dialogClosed` — a `followUp` that is a function (`exec`'s) is asked THERE, when the dialog closes on an Allow, not before it opens (change 6.1: a socket that comes up while the dialog is on screen is seen; one that went down is too) — and `OneInFlight` remembers (`endedId`) a holding
 whose call ended while its dialog was up, so a kept place dies with its call. A Deny, a timeout, a dialog nobody waits for any
 more, and every Allow of an action without the flag (`query`, `run`, and an `exec` on an entry that does not forward the agent, or
 while the socket is down; a bridge serves `exec` and `query` and refuses a forwarding entry, so no bridged action keeps one) free the
