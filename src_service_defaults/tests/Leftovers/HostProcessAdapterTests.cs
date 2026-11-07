@@ -285,6 +285,7 @@ public sealed class HostProcessAdapterTests
         finally
         {
             Posix.KillHard(grandchildPid);
+            Posix.KillHard(childPid);
             child.Dispose();
             Clean(folder);
         }
@@ -301,7 +302,7 @@ public sealed class HostProcessAdapterTests
         var removals = 0;
         try
         {
-            var unconfirmed = HostProcess.KillOnDispose(child, (_, _) => false);
+            var unconfirmed = HostProcess.KillOnDispose(child, (_, _) => false); // the end cannot be confirmed: nothing is killed, the child still runs
 
             var thrown = Record.Exception(unconfirmed.Dispose);
 
@@ -329,6 +330,7 @@ public sealed class HostProcessAdapterTests
         finally
         {
             Posix.KillHard(grandchildPid);
+            Posix.KillHard(childPid);
             child.Dispose();
             Clean(folder);
         }

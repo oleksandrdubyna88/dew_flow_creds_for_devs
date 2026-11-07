@@ -34,6 +34,7 @@ internal static class HostProcess
     internal static Process StartFile(string file, IReadOnlyList<string> args, IReadOnlyDictionary<string, string> env)
     {
         var tied = FoldersNamedBy(args, env);
+        var temp = ChildTemp(env);
         var start = new ProcessStartInfo(file)
         {
             RedirectStandardInput = true,
@@ -51,6 +52,11 @@ internal static class HostProcess
             start.Environment[name] = value;
         }
         Native(start.Environment, env, InsideWsl(ReadProcVersion()));
+        if (temp is not null)
+        {
+            foreach (var name in TempVariables) start.Environment[name] = temp.Path;
+        }
+
         Process process;
         try
         {
@@ -59,10 +65,15 @@ internal static class HostProcess
         catch
         {
             foreach (var folder in tied) folder.Untie();
+            temp?.Dispose();
             throw;
         }
 
-        Children.Add(process, new Child(process, tied));
+        var child = new Child(process, tied, temp);
+        Children.Add(process, child);
+        // The child's own exit is a confirmed end of the child too (a test may kill and await it by its own handle, with no Reaper): the OS reaped it.
+        process.EnableRaisingEvents = true;
+        process.Exited += (_, _) => child.End();
         return process;
     }
 
@@ -119,14 +130,21 @@ internal static class HostProcess
     /// out while waiting never leaves the binary it started running. Only the process this test started, by
     /// its own handle; never anything found by name.
     /// </summary>
-    internal static IDisposable KillOnDispose(Process process, Func<Process, TimeSpan, bool>? waitForExit = null) =>
-        new Reaper(process, Children.TryGetValue(process, out var child) ? child : null, waitForExit ?? ((p, bound) => p.WaitForExit(bound)));
+    internal static IDisposable KillOnDispose(Process process, Func<Process, TimeSpan, bool>? killAndWait = null) =>
+        new Reaper(process, Children.TryGetValue(process, out var child) ? child : null, killAndWait ?? KillTreeAndWait);
+
+    /// <summary>Kill the whole tree, then wait for the child's exit, at most <paramref name="bound"/>; the wait does not wait for the pipes. True when it ended.</summary>
+    private static bool KillTreeAndWait(Process process, TimeSpan bound)
+    {
+        process.Kill(entireProcessTree: true);
+        return process.WaitForExit(bound);
+    }
 
     /// <summary>How long the <see cref="Reaper"/> waits for a killed tree to end before it gives up and fails the test.</summary>
     private static readonly TimeSpan EndBound = TimeSpan.FromSeconds(15);
 
     /// <summary>The state of a child started here: the registered folders its arguments or environment name (each is kept until the child's end is confirmed).</summary>
-    private sealed class Child(Process process, IReadOnlyList<Folder> tied)
+    private sealed class Child(Process process, IReadOnlyList<Folder> tied, OwnedDir? temp)
     {
         private int _ended;
 
@@ -139,10 +157,11 @@ internal static class HostProcess
         {
             if (Interlocked.Exchange(ref _ended, 1) != 0) return;
             foreach (var folder in tied) folder.Untie();
+            temp?.Dispose(); // never throws; a removal that gives up stays in the helper's registry, so the audit names it
         }
     }
 
-    private sealed class Reaper(Process process, Child? child, Func<Process, TimeSpan, bool> waitForExit) : IDisposable
+    private sealed class Reaper(Process process, Child? child, Func<Process, TimeSpan, bool> killAndWait) : IDisposable
     {
         /// <summary>Kill the tree, then wait (bounded, not for the pipes) for the child's exit. Confirmed: the tie ends. Not confirmed: the tie stays and
         /// ONE exception names the pid and the folders, so the test fails visibly and the audit names the folders.</summary>
@@ -153,8 +172,7 @@ internal static class HostProcess
             {
                 if (!process.HasExited)
                 {
-                    process.Kill(entireProcessTree: true);
-                    confirmed = waitForExit(process, EndBound);
+                    confirmed = killAndWait(process, EndBound);
                 }
             }
             catch (InvalidOperationException)
@@ -198,6 +216,17 @@ internal static class HostProcess
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();
     }
+
+    /// <summary>The variables a child's runtime reads for its temp folder: <c>TMPDIR</c> on Linux and macOS, <c>TEMP</c> and <c>TMP</c> on Windows.</summary>
+    private static readonly string[] TempVariables = ["TMPDIR", "TEMP", "TMP"];
+
+    /// <summary>
+    /// A killed .NET child leaves <c>dotnet-diagnostic-*</c> and <c>clr-debug-pipe-*</c> in its temp folder (measured for E2.3: two killed hosts, six entries,
+    /// in <c>CredsMcp.Tests</c> and in <c>CredsCli.Tests</c> alike). So a child gets an OWNED folder under the short root as <c>TMPDIR</c>, <c>TEMP</c> and
+    /// <c>TMP</c> (rule §2), which goes with its confirmed end. A test that names one of the variables itself gets exactly what it asked for.
+    /// </summary>
+    private static OwnedDir? ChildTemp(IReadOnlyDictionary<string, string> asked) =>
+        TempVariables.Any(asked.ContainsKey) ? null : OwnedDir.Create("child-tmp", OwnedCreds.ShortSocketRoot);
 
     /// <summary>A registered folder, with the number of children still tied to it.</summary>
     private sealed class Folder(OwnedDir dir)
