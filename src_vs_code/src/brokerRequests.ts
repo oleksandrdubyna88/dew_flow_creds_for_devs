@@ -1,4 +1,5 @@
 import * as http from 'node:http';
+import * as os from 'node:os';
 import { ErrorCode, MAX_REQUEST_BODY_BYTES, UNANSWERED_FAILURE, parseBearer, parseJsonObject } from './brokerProtocol';
 import { Grant, GrantLimits, GrantLookup } from './grantRegistry';
 import { expiredMessage } from './grantWords';
@@ -303,17 +304,25 @@ export function readBody(req: http.IncomingMessage): Promise<string> {
 /** The built-in error classes a journal line may name; any other class (one of our own, a thrown string) reads `Error`. */
 const BUILT_IN_CLASSES: ReadonlySet<string> = new Set(['Error', 'TypeError', 'RangeError', 'SyntaxError', 'URIError', 'ReferenceError', 'EvalError', 'AggregateError']);
 
-/** A Node `code` is named only when it has the shape of one: it is never free text. */
-const NODE_CODE_SHAPE = /^[A-Z][A-Z0-9_]{1,40}$/;
+/**
+ * A Node `code` is named only when it is Node's own: a system errno name of this platform (`ENOENT`, `ECONNRESET`: the table the
+ * runtime itself exposes) or `ERR_` and capitals (Node's own error codes). A planted all-caps word is neither, and a journal line
+ * never carries a word a request chose.
+ */
+const NODE_CODE_SHAPE = /^ERR_[A-Z0-9_]{2,60}$/;
+const SYSTEM_ERRNO_NAMES: ReadonlySet<string> = new Set(Object.keys(os.constants.errno));
 
 function errorClassOf(error: unknown): string {
   const name = error instanceof Error ? error.constructor.name : '';
   return BUILT_IN_CLASSES.has(name) ? name : 'Error';
 }
 
+const isNodeCode = (code: unknown): code is string => typeof code === 'string' && (SYSTEM_ERRNO_NAMES.has(code) || NODE_CODE_SHAPE.test(code));
+
+/** The code an `Error` carries, if it is Node's own; a thrown plain object or string has none to read. */
 function errorCodeOf(error: unknown): string {
-  const code: unknown = Object(error).code; // `Object(...)`: undefined and null have no code, and a string has none either
-  return typeof code === 'string' && NODE_CODE_SHAPE.test(code) ? ` ${code}` : '';
+  const code: unknown = error instanceof Error ? (error as { code?: unknown }).code : undefined;
+  return isNodeCode(code) ? ` ${code}` : '';
 }
 
 /**

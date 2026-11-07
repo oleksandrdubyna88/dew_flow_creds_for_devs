@@ -77,6 +77,24 @@ test('unanswered: the line is a classification — a built-in class name, a code
   assert.deepEqual(unanswer(undefined, 'other').lines, ['a handler failed: Error on other; headers not sent']);
 });
 
+test('unanswered: a `code` is named only when it is one of Node\'s own (a system errno name, or ERR_ plus capitals) and only an Error carries it — a planted all-caps word does not', () => {
+  const PLANTED = 'ZQPLANTEDSECRETVALUE';
+  const line = (error: unknown): string => unanswer(error, 'other').lines[0];
+  assert.equal(line(Object.assign(new Error('x'), { code: 'ENOENT' })), 'a handler failed: Error ENOENT on other; headers not sent');
+  assert.equal(line(Object.assign(new Error('x'), { code: 'ERR_INVALID_ARG_TYPE' })), 'a handler failed: Error ERR_INVALID_ARG_TYPE on other; headers not sent');
+  for (const [what, error] of [
+    ['an all-caps word on an Error', Object.assign(new Error('x'), { code: PLANTED })],
+    ['an E-prefixed word that is no errno', Object.assign(new Error('x'), { code: `E${PLANTED}` })],
+    ['an ERR_ word with free text', Object.assign(new Error('x'), { code: `ERR_${PLANTED} x` })],
+    ['an all-caps word on a thrown plain object', { code: PLANTED }],
+    ['a real errno name on a thrown plain object', { code: 'ECONNRESET' }],
+    ['a real errno name on a thrown string', 'ECONNRESET'],
+  ] as const) {
+    assert.equal(line(error), 'a handler failed: Error on other; headers not sent', what);
+    assert.equal(line(error).includes(PLANTED), false, what);
+  }
+});
+
 test('the sentinel: neither a thrown message nor the fragment a JSON.parse SyntaxError quotes reaches the body or the journal line', () => {
   for (const [what, error, word] of [['a handler\'s message', new Error(SENTINEL), SENTINEL], ['a JSON.parse SyntaxError', jsonSyntaxError(), SENTINEL_JSON]] as const) {
     assert.ok(error instanceof Error, `${what}: the injected throw is a real error`);
