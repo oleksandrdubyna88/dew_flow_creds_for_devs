@@ -3593,8 +3593,8 @@ which decides everything it can. **What the local alias and MCP doors gain, exac
 longer leaves a pending call grant in the registry (`credsAgentServer.usable` drops it: `GrantRegistry.drop` deletes a
 `'call'` grant that is still `pending`, and nothing else). Below the ceiling no call is answered differently, with two
 exceptions about who hears *busy* (the place belongs to the dialog, below): a client that leaves during its dialog now leaves the
-place taken until the person clicks, so the next call is *busy* where `main` raised a second modal; and a running `exec`, `query`,
-`run` or `down` no longer makes the next call *busy*, where `main` answered it so. Above the ceiling a `too_many_requests` appears
+place taken until the person clicks, so the next call is *busy* where `main` raised a second modal; and a running `query`, `run` or
+`exec` on an entry that does not forward the agent no longer makes the next call *busy*, where `main` answered it so. Above the ceiling a `too_many_requests` appears
 where the call used to reach `usable`. The registry's cap evicts in the order
 of `EVICTION_ORDER`: **denied calls** (the person refused them), **allowed calls that ran** (`uses > 0`: silent MCP use), **Allows not
 yet reserved** (`allowed`, `uses 0`: live while the call waits in the one-use lane, `remember`, `releaseWaiting` or the mask read, and
@@ -3611,12 +3611,15 @@ Code cannot take the modal down), so a client that hangs up during its dialog do
 top of it, and a long action does not make every other door `busy`. A stale release or close (a different holding) frees nothing
 of a later holder's place. **The one exception is the call that may ask again** (Amendment 3, C.3): an Allow keeps the place, past
 the dialog's close, until the call's own `release` when the call declares that it may put a prompt of its own on screen after the
-Allow — `UseAction.asksAfterConsent` (`terminal`, and `up` of the VPN), and `create` at the door (the folder PIN box and the "count
-taken" modal) — so a second modal cannot open over that prompt and be answered by the Enter that was meant for it. `ConsentQuestion.followUp`
+Allow — `UseAction.asksAfterConsent`: `terminal`, `up` and `down` of the VPN (the install offer), `rotate` (the PIN and copy prompts of
+`rotationStore.ts`), and `exec` **per entity**, a function `(target) => boolean` true for an entry with `agentForward` while the agent
+socket is up (the signing modal arrives through the socket, `sshSignPrompt.ts`, by no static path; `asksAfter` in `useActions.ts` reads
+either form at the gate), and `create` at the door (the folder PIN box and the "count taken" modal) — so a second modal cannot open over that prompt and be answered by the Enter that was meant for it. `ConsentQuestion.followUp`
 carries it, `ConsentGate.shown` passes `keep = Allow && followUp` to `dialogClosed`, and `OneInFlight` remembers (`endedId`) a holding
 whose call ended while its dialog was up, so a kept place dies with its call. A Deny, a timeout, a dialog nobody waits for any
-more, and every Allow of an action without the flag (`exec`, `query`: the only actions a bridge serves) free the place at the
-dialog's close as above. A local token call raises dialogs that are not counted, held or closed, as it was never throttled; on
+more, and every Allow of an action without the flag (`query`, `run`, and an `exec` on an entry that does not forward the agent, or
+while the socket is down; a bridge serves `exec` and `query` and refuses a forwarding entry, so no bridged action keeps one) free the
+place at the dialog's close as above. A local token call raises dialogs that are not counted, held or closed, as it was never throttled; on
 a bridge a token call is bridged and counted on its bridge, with the bridge's sentence
 (`Too many requests: this Remote Bridge may prompt at most 5 times a minute.`). `forget(door)` is for E2 on Close.
 
@@ -3624,10 +3627,13 @@ a bridge a token call is bridged and counted on its bridge, with the bridge's se
 builds, and what a person can and cannot reach with it today.
 
 *Reachable now, on the local doors* (no bridge needed): the four-tier eviction order above; **a throw inside a handler is answered
-`500 internal`** with `INTERNAL_FAILURE` on every door, where the request used to hang until the client gave up
-(`unanswered`, `brokerRequests.ts`: it **answers first**, only if `res.headersSent` is false, and then writes its one journal line
-inside a `try`, so a journal that throws on every line still answers; the line carries the reason and the body never does, and
-**that line has no ceiling** — one per throwing request — until E2.2b's failure reporter bounds it); **a request target `new URL`
+`500 internal`** with `UNANSWERED_FAILURE` (its own sentence: the journal records that the request failed and where, not why;
+`INTERNAL_FAILURE` stays for the handlers that do journal a reason) on every door, where the request used to hang until the client
+gave up (`unanswered`, `brokerRequests.ts`: it reads `res.headersSent` first, **answers first** if nothing has gone out, and then
+writes its one journal line inside a `try`, so a journal that throws on every line still answers. **The line is a classification, never
+the error:** the built-in class name, a Node code only of the shape `^[A-Z][A-Z0-9_]{1,40}$`, the route's name from `BRIDGE_ROUTES` or
+`other` (`routeNameOf`, `bridgeAllowList.ts`, handed in as an argument because `brokerRequests` cannot import the table) and whether the
+headers had gone out; no message, since a `JSON.parse` message quotes its input. **That line has no ceiling** — one per throwing request — until E2.2b's failure reporter bounds it); **a request target `new URL`
 cannot parse** (`//`, `///`, `http://[`, `/\`; `example.com` parses, as a path) is read as a path no route matches
 (`requestUrl`, `brokerRequests.ts`) and is answered `not_found` on the main port and `not_supported` on a bridge, with no 500 and
 no journal line, where before D.8 it threw before any route or throttle; **a key file whose removal fails and whose journal note

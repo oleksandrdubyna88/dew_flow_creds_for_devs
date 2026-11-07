@@ -173,3 +173,14 @@ test('the manifest carries the help command in the title bar and the help-only l
   assert.equal(view?.name, 'CredsForDevs', 'the view must not repeat the product name as a second word');
   assert.deepEqual(manifest.contributes.configuration.properties['credSshManager.helpLanguage'].enum, [...HELP_LANGUAGES]);
 });
+
+test('the CLI article says, in all five languages, that only `creds env <token>` reaches the refusal — `creds env <name>` is served by no window (parent §4.8)', () => {
+  const cli = helpArticle('cli');
+  assert.ok(cli !== undefined, 'the cli article exists');
+  for (const language of HELP_LANGUAGES) {
+    const { body, fallback } = bodyFor(cli, language);
+    assert.equal(fallback, false, `${language}: the article is translated`);
+    assert.ok(body.usage.includes('`creds env <token>`'), `${language}: the usage names the road that reaches the refusal`);
+    assert.ok(body.usage.includes('`creds env <name>`'), `${language}: and the one that never did`);
+  }
+});

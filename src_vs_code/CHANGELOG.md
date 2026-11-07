@@ -8,16 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed — an agent cannot export a secret into another computer's terminals
 
-- **`creds env` (an agent's `exportEnv`) is refused in a Remote-SSH or container window**, with one stable
-  sentence and the code `denied`, before any prompt: the value would land in the terminals of another computer.
-  Where you have stored a command for the job, an agent can run that instead; it then gets only the output. A
-  local or WSL window is unchanged.
+- **`creds env <token>` and the MCP door's `exportEnv` (an agent's export) are refused in a Remote-SSH or container
+  window**, with one stable sentence and the code `denied`, before any prompt: the value would land in the terminals
+  of another computer. Where you have stored a command for the job, an agent can run that instead; it then gets only
+  the output. A local or WSL window is unchanged. `creds env <name>` never reached the refusal and does not now: no
+  window serves that road (the CLI posts a route the broker does not register, and reports that no window has the name
+  enabled), in any window, as before.
 - **Saving an entry with an environment binding in such a window now warns** that the new terminals of the window
   run on another computer, where any process running under your login can read the value; that the value stays
   until you remove the binding through Edit in this window; and that deleting the entry does not remove it. The
   value is still written.
-- **The CLI help article says that `env` is refused there** and points to `run` and `script` instead, in all five
-  languages. It does not describe the save warning.
+- **The CLI help article says that only `creds env <token>` is refused there** (and that `creds env <name>` is served
+  by no window) and points to `run` and `script` instead, in all five languages. It does not describe the save warning.
 
 ### Changed — the broker's one consent dialog: who holds its place, and for how long
 
@@ -32,13 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   content included (`ASKING_CEILING`), with its own sentence and one journal line per minute. What is refused before the call is
   admitted is not counted (an unknown alias, a missing field, a call made while a dialog is standing), and neither is a call that carries a
   token, which is not admitted at all.
-- **A long `exec`, `query`, `run` or `down` no longer makes every other asking alias and MCP call hear *busy*.** Before, every alias and MCP call
-  that could prompt kept the one place until the call ended, an `exec` for its whole run included; now only a call that may show a prompt of
-  its own after your Allow does: a local `create`, `terminal` or `up` (a PIN box, a trust modal, OpenVPN Connect's question) keeps the place
-  until that call ends, as before, and the others give it back when the dialog closes. A local call that carries a token keeps nothing: it is
-  not admitted at all (`credsAgentServer.ts` runs it without `admit`).
-- **A failure inside a request handler answers 500** with the generic sentence instead of leaving the request unanswered until the client
-  gives up; the reason goes to the agent journal.
+- **A long `query`, `run` or `exec` no longer makes every other alias and MCP call hear *busy*.** Before, every alias and MCP call that
+  could prompt kept the one place until the call ended, an `exec` for its whole run included. Now a call keeps it past your Allow only if it
+  may show a prompt of its own next: a local `create` (the folder's PIN box), `terminal`, `up` and `down` (the install offer when no VPN
+  client is on the PATH), `rotate` (the PIN and copy prompts), and an `exec` on an entry that forwards your SSH agent while the agent is
+  running (its signing prompt) all keep it until that call ends, as before; `query`, `run` and any other `exec` give it back when the dialog
+  closes. A local call that carries a token keeps nothing: it is not admitted at all (`credsAgentServer.ts` runs it without `admit`).
+- **A failure inside a request handler answers 500** with its own sentence instead of leaving the request unanswered until the client
+  gives up. The agent journal records that it failed and where, never why: one line with the kind of error, the route or `other`, and whether
+  the answer had already started. It carries no message, so nothing a request put into the error reaches the journal.
 - The grant registry reclaims in tiers (denied calls, calls that ran, Allows not yet used, then calls whose dialog is open or whose client
   left), and a call refused before anybody was asked leaves no grant behind. The exception is a call a policy had already allowed: if it is
   refused before it is reserved, it still leaves an allowed grant with no use, which the tiers now reclaim before a call whose dialog is open.

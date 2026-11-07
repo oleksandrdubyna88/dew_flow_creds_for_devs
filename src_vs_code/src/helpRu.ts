@@ -193,7 +193,7 @@ export const RU_BODIES: Readonly<Record<string, HelpBody>> = {
     whatItIs: "Нативный бинарь, использующий учётку из сейфа в любом терминале — `creds ssh prod-db -- uname -a` — никогда её не получая. Действие выполняет окно-владелец и возвращает только вывод.",
     why: "Не всё происходит в VS Code, а вставка токенов в шелл — ровно то, что этот продукт должен прекратить.",
     setup: "Install… → Install `creds`. На записи: «Enable CLI Access…» выпускает имя, которое вы будете печатать.",
-    usage: "Глаголы: ssh, terminal, run, script, db, env, config, vpn-up, vpn-down, ls — и `creds relay` внутри WSL для SSH-агента. Вьюер записи показывает её имена с готовой командой для копирования. `env` отклоняется в окне Remote-SSH или контейнера: значение попало бы на другой компьютер. Вместо этого используйте сохранённую команду (`run`, `script`).",
+    usage: "Глаголы: ssh, terminal, run, script, db, env, config, vpn-up, vpn-down, ls — и `creds relay` внутри WSL для SSH-агента. Вьюер записи показывает её имена с готовой командой для копирования. `creds env <token>` отклоняется в окне Remote-SSH или контейнера: значение попало бы на другой компьютер. (`creds env <name>` не обслуживает ни одно окно, как и раньше.) Вместо этого используйте сохранённую команду (`run`, `script`).",
     whatCanGoWrong: "Первый вызов спрашивает человека в VS Code — это дизайн, не зависание. «No open window»: запустите VS Code или проверьте CLI-доступ записи. На Remote-SSH хосте нужен ещё и мост (см. Remote Bridge).",
   },
   'remote-bridge': {

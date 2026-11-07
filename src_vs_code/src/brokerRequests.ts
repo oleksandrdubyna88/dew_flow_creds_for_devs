@@ -312,7 +312,7 @@ function errorClassOf(error: unknown): string {
 }
 
 function errorCodeOf(error: unknown): string {
-  const code = typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
+  const code: unknown = Object(error).code; // `Object(...)`: undefined and null have no code, and a string has none either
   return typeof code === 'string' && NODE_CODE_SHAPE.test(code) ? ` ${code}` : '';
 }
 

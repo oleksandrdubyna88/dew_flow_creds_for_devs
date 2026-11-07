@@ -2860,6 +2860,8 @@ user can feel.
 
 *Correction, 2026-11-06 (epoch 5, the fix-forward before the partial-E1 PR).* "The one change of this commit a local user can feel" above is an overstatement: D.8's 500 on a throw, the eviction tier order and the unparseable-target answer are felt on the local doors too (the parent's §4.10, second list).
 
+*Correction, 2026-11-07 (epoch 6, the follow-up contract of the parent's §4.10).* The sentence "`exec`, `query`, `run` and `down` keep nothing once the dialog closes" (C.3, and F.6's kept-place bullet above) is overturned: `down` (the install offer), `rotate` (the PIN and copy prompts) and an `exec` on an entry that forwards the agent while the agent socket is up (its signing prompt) keep the place until the call ends, so `query`, `run` and a non-forwarding `exec` are the actions that keep nothing. `asksAfterConsent` is `boolean | ((target) => boolean)`, read by `asksAfter` at the consent gate. F.6's text stands as written; the CHANGELOG entry carries the corrected bullet.
+
 #### F.7 Scenarios (each RED today, and why)
 
 Files: `test/grantRegistry.test.ts` (A4 revised), `test/bridgeKeptPlace.test.ts` (Q2, C.7 revised), `test/sshUseActions.test.ts` (X3),
