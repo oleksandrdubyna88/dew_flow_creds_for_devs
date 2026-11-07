@@ -1,3 +1,4 @@
+using CredsForDevs.Tests.Leftovers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -29,6 +30,11 @@ internal sealed class VaultServer : WebApplicationFactory<Program>
 
     private readonly Action<IServiceCollection>? _services;
 
+    private bool _ended;
+
+    /// <summary>The data folder: owned (claimed first, named for what it holds, in the temp root itself), removed by <see cref="Dispose(bool)"/> AFTER the host has ended.</summary>
+    private readonly OwnedDir _folder = OwnedDir.Create("vault");
+
     public string DataDir { get; }
 
     /// <param name="overrides">Configuration, as environment variables — see the type's remarks.</param>
@@ -41,9 +47,7 @@ internal sealed class VaultServer : WebApplicationFactory<Program>
     public VaultServer(IDictionary<string, string?>? overrides = null, Action<IServiceCollection>? services = null)
     {
         _services = services;
-        DataDir = Path.Combine(
-            Path.GetTempPath(), "cred-vault-tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(DataDir);
+        DataDir = _folder.Path;
 
         var settings = new Dictionary<string, string?>
         {
@@ -98,27 +102,21 @@ internal sealed class VaultServer : WebApplicationFactory<Program>
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
-        if (!disposing)
+        // WebApplicationFactory.Dispose(true) reaches DisposeAsync, which reaches Dispose(true) again: the rest runs ONCE, so a removal that gives up is one warning.
+        if (!disposing || _ended)
         {
             return;
         }
+
+        _ended = true;
 
         foreach (var (key, value) in _restore)
         {
             Environment.SetEnvironmentVariable(key, value);
         }
 
-        try
-        {
-            Directory.Delete(DataDir, recursive: true);
-        }
-        catch (IOException)
-        {
-            // A handle the host has not released yet; the temp sweeper gets it.
-        }
-        catch (UnauthorizedAccessException)
-        {
-            // Same.
-        }
+        // Last, after the host and its container have ended: a folder removed under a running host fails in ways that look like the
+        // product's own faults. A handle the host has not released is warned about, the folder stays claimed, and the audit names it.
+        _folder.Dispose();
     }
 }

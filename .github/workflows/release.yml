@@ -356,6 +356,22 @@ jobs:
         with:
           global-json-file: global.json
 
+      # E2.3: the test-leftovers tests in CredsForDevs.ServiceDefaults.Tests read the mounted shared rules (the owner vectors, the `## Tokens` table, the
+      # janitor) and a missing file FAILS them: an uninitialised submodule is a broken setup, not a clean one. Only that ONE submodule, as ci-server.yml does.
+      # workflowMount.test.ts keeps every job that runs a C# test executable honest. (A release runs only on a tag: the first real run of this step is the
+      # next release - testing.md: a check that only runs during a release has never run. The text test above is the check a pull request has.)
+      - name: Fetch the shared rules
+        run: git submodule update --init --depth 1 .claude/rules/shared
+
+      # The same executable starts `node` (the guard's script classifier, the Windows handoff test), and the shared rules' reference is an ES module loaded
+      # with require(): Node 20.19 or 22.12 and later do that. The same pin as ci-server.yml, so the image's own Node does not decide.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.x
+
+      - name: Node version
+        run: node --version
+
       - name: Toolchain (linux)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang zlib1g-dev
@@ -617,6 +633,22 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
+
+      # E2.3: the test-leftovers tests in CredsForDevs.ServiceDefaults.Tests read the mounted shared rules (the owner vectors, the `## Tokens` table, the
+      # janitor) and a missing file FAILS them: an uninitialised submodule is a broken setup, not a clean one. Only that ONE submodule, as ci-server.yml does.
+      # workflowMount.test.ts keeps every job that runs a C# test executable honest. (A release runs only on a tag: the first real run of this step is the
+      # next release - testing.md: a check that only runs during a release has never run. The text test above is the check a pull request has.)
+      - name: Fetch the shared rules
+        run: git submodule update --init --depth 1 .claude/rules/shared
+
+      # The same executable starts `node` (the guard's script classifier, the Windows handoff test), and the shared rules' reference is an ES module loaded
+      # with require(): Node 20.19 or 22.12 and later do that. The same pin as ci-server.yml, so the image's own Node does not decide.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.x
+
+      - name: Node version
+        run: node --version
 
       - name: Toolchain (linux)
         if: runner.os == 'Linux'

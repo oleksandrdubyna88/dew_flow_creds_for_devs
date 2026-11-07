@@ -3,6 +3,7 @@ using System.Text;
 
 using CredsBroker;
 using CredsCli;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 
 namespace CredsCli.Tests;
@@ -17,8 +18,12 @@ namespace CredsCli.Tests;
 /// was. It is covered by <c>scripts/wsl-agent-relay-itest.cjs</c>, which drives the real
 /// <c>ssh-add</c> and <c>ssh-keygen -Y sign</c> inside WSL against the real agent.
 /// </remarks>
-public class AgentRelayTests
+public sealed class AgentRelayTests : IDisposable
 {
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+
+    public void Dispose() => _owned.Dispose();
+
     [Fact]
     public void TheRuntimeDirectoryIsPreferredWhenTheDistributionProvidesOne()
     {
@@ -102,7 +107,8 @@ public class AgentRelayTests
     {
         // Nothing to reclaim, and File.Delete on a missing path would be a needless syscall in
         // the ordinary first-run case.
-        var path = Path.Combine(Path.GetTempPath(), $"creds-relay-absent-{Guid.NewGuid():N}.sock");
+        // testsToDelete-exempt: raw-temp — a path nothing creates: it names a file that must not exist, so no folder is made for it
+        var path = Path.Combine(Owned.TempRoot(), $"relay-absent-{Guid.NewGuid():N}.sock");
 
         (await AgentRelay.IsStaleAsync(path)).Should().BeFalse();
     }
@@ -118,10 +124,10 @@ public class AgentRelayTests
         // under macOS's temporary directory came to 105 characters, one over that platform's cap,
         // so the endpoint's constructor threw before the question was ever asked. It failed on both
         // macOS legs of the 1.7.0 release and blocked the CLI from publishing.
-        var path = Path.Combine(Path.GetTempPath(), $"creds-corpse-{Environment.ProcessId}.sock");
-        path.Length.Should().BeLessThanOrEqualTo(
+        var path = SocketSites.Path(_owned, SocketSites.Corpse);
+        SocketSites.Bytes(path).Should().BeLessThanOrEqualTo(
             AgentRelay.MaxSocketPathBytes,
-            "this test is about a corpse, not about the path limit — see APathTooLongForASocketIsNotStale");
+            "this test is about a corpse, not about the path limit — see APathTooLongForASocketIsNotStale (UTF-8 bytes, on this platform)");
         await File.WriteAllTextAsync(path, string.Empty, TestContext.Current.CancellationToken);
         try
         {
@@ -132,7 +138,7 @@ public class AgentRelayTests
             File.Delete(path);
         }
     }
-    
+
     /// <summary>
     /// A path too long to BE a domain socket is answered, not thrown at.
     /// </summary>
@@ -150,18 +156,12 @@ public class AgentRelayTests
     [Fact]
     public async Task APathTooLongForASocketIsNotStale()
     {
-        var directory = Directory.CreateTempSubdirectory("creds-relay-long");
-        var path = Path.Combine(directory.FullName, new string('n', 200) + ".sock");
+        var directory = _owned.Dir("relay-long");
+        var path = Path.Combine(directory, new string('n', 200) + ".sock");
         await File.WriteAllTextAsync(path, string.Empty, TestContext.Current.CancellationToken);
-        try
-        {
-            path.Length.Should().BeGreaterThan(AgentRelay.MaxSocketPathBytes);
-            (await AgentRelay.IsStaleAsync(path)).Should().BeFalse();
-        }
-        finally
-        {
-            Directory.Delete(directory.FullName, recursive: true);
-        }
+
+        path.Length.Should().BeGreaterThan(AgentRelay.MaxSocketPathBytes);
+        (await AgentRelay.IsStaleAsync(path)).Should().BeFalse();
     }
 
     [Fact]
@@ -272,7 +272,7 @@ public class AgentRelayTests
         // The relay logs its run since 2026-10-09; a test's run goes to a temporary folder, never into
         // the log folder of whoever runs the suite.
         var logsBefore = Environment.GetEnvironmentVariable(CredsForDevs.ServiceDefaults.CredsLogging.DirectoryVariable);
-        var logs = Path.Combine(Path.GetTempPath(), "creds-relay-refusal-" + Guid.NewGuid().ToString("N"));
+        var logs = _owned.Dir("relay-logs");
         Environment.SetEnvironmentVariable(
             AgentRelay.SocketOverrideVariable,
             "/tmp/" + new string('x', AgentRelay.MaxSocketPathBytes) + ".sock");
@@ -287,10 +287,6 @@ public class AgentRelayTests
         {
             Environment.SetEnvironmentVariable(AgentRelay.SocketOverrideVariable, before);
             Environment.SetEnvironmentVariable(CredsForDevs.ServiceDefaults.CredsLogging.DirectoryVariable, logsBefore);
-            if (Directory.Exists(logs))
-            {
-                Directory.Delete(logs, recursive: true);
-            }
         }
     }
 }

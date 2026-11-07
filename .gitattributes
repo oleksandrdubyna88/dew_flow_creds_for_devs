@@ -19,3 +19,59 @@
 # as the rule above: two named files, not a directory glob that would pull in whatever lands there.
 contract/mcp-tools-v1.json text eol=lf
 contract/broker-v1.json text eol=lf
+
+# E2.3 S1: the adapted copy of the leftovers helper is compared with the template as RAW bytes
+# (src_service_defaults/tests/Support/Leftovers/template-manifest.json, TheAdaptedCopyTests): no line-ending change on
+# checkout or commit, or a Windows checkout with core.autocrlf turns the check red (F6). One line per copied file, never a glob.
+src_service_defaults/tests/Leftovers/DarwinLayoutTests.cs -text
+src_service_defaults/tests/Leftovers/DarwinNativeTests.cs -text
+src_service_defaults/tests/Leftovers/ErrnoTests.cs -text
+src_service_defaults/tests/Leftovers/LayoutGateTests.cs -text
+src_service_defaults/tests/Leftovers/LeftoversAuditTests.cs -text
+src_service_defaults/tests/Leftovers/LeftoversGuardScriptsTests.cs -text
+src_service_defaults/tests/Leftovers/LeftoversGuardTests.cs -text
+src_service_defaults/tests/Leftovers/LeftoversJanitorTests.cs -text
+src_service_defaults/tests/Leftovers/LeftoversSweepTests.cs -text
+src_service_defaults/tests/Leftovers/LivenessStateTests.cs -text
+src_service_defaults/tests/Leftovers/LivenessTests.cs -text
+src_service_defaults/tests/Leftovers/NativeDarwinTests.cs -text
+src_service_defaults/tests/Leftovers/NativeTests.cs -text
+src_service_defaults/tests/Leftovers/OwnedTests.cs -text
+src_service_defaults/tests/Leftovers/OwnerTests.cs -text
+src_service_defaults/tests/Leftovers/RunnerFactsTests.cs -text
+src_service_defaults/tests/Leftovers/ScopeTests.cs -text
+src_service_defaults/tests/Support/Leftovers/DarwinFifoChild.cs -text
+src_service_defaults/tests/Support/Leftovers/DarwinLayout.cs -text
+src_service_defaults/tests/Support/Leftovers/DirectoryLinks.cs -text
+src_service_defaults/tests/Support/Leftovers/Errno.cs -text
+src_service_defaults/tests/Support/Leftovers/LeftoversAudit.cs -text
+src_service_defaults/tests/Support/Leftovers/LeftoversAuditException.cs -text
+src_service_defaults/tests/Support/Leftovers/LeftoversGuard.cs -text
+src_service_defaults/tests/Support/Leftovers/LeftoversGuardDocker.cs -text
+src_service_defaults/tests/Support/Leftovers/LeftoversGuardExemptions.cs -text
+src_service_defaults/tests/Support/Leftovers/LeftoversGuardFiles.cs -text
+src_service_defaults/tests/Support/Leftovers/LeftoversGuardLiterals.cs -text
+src_service_defaults/tests/Support/Leftovers/LeftoversGuardScripts.cs -text
+src_service_defaults/tests/Support/Leftovers/LeftoversGuardText.cs -text
+src_service_defaults/tests/Support/Leftovers/LeftoversGuardTokens.cs -text
+src_service_defaults/tests/Support/Leftovers/LeftoversSelfTest.cs -text
+src_service_defaults/tests/Support/Leftovers/LeftoversSweep.cs -text
+src_service_defaults/tests/Support/Leftovers/LeftoversSweepFixture.cs -text
+src_service_defaults/tests/Support/Leftovers/Liveness.cs -text
+src_service_defaults/tests/Support/Leftovers/Native.cs -text
+src_service_defaults/tests/Support/Leftovers/NativeDarwin.cs -text
+src_service_defaults/tests/Support/Leftovers/Owned.cs -text
+src_service_defaults/tests/Support/Leftovers/OwnedDir.cs -text
+src_service_defaults/tests/Support/Leftovers/OwnedScope.cs -text
+src_service_defaults/tests/Support/Leftovers/OwnedToken.cs -text
+src_service_defaults/tests/Support/Leftovers/Owner.cs -text
+src_service_defaults/tests/Support/Leftovers/OwnerFixtures.cs -text
+src_service_defaults/tests/Support/Leftovers/OwnerToken.cs -text
+src_service_defaults/tests/Support/Leftovers/OwnerVectors.cs -text
+src_service_defaults/tests/Support/Leftovers/PosixFifo.cs -text
+src_service_defaults/tests/Support/Leftovers/Removal.cs -text
+src_service_defaults/tests/Support/Leftovers/RepositoryRoot.cs -text
+src_service_defaults/tests/Support/Leftovers/Scope.cs -text
+src_service_defaults/tests/Support/Leftovers/UnmatchablePid.cs -text
+src_service_defaults/tests/Support/Leftovers/Unremovable.cs -text
+src_service_defaults/tests/Support/Leftovers/WindowsOwnership.cs -text

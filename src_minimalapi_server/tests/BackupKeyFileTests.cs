@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using CredsForDevs.Tests.Leftovers;
 using FluentAssertions;
 
 namespace CredVaultServer.Tests;
@@ -12,8 +13,12 @@ namespace CredVaultServer.Tests;
 /// GUESSING: the printable form folds <c>O</c> to <c>0</c> and <c>I</c>/<c>L</c> to <c>1</c>, which is
 /// right for Crockford Base32 and would silently corrupt base64.
 /// </remarks>
-public class BackupKeyFileTests
+public class BackupKeyFileTests : IDisposable
 {
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+
+    public void Dispose() => _owned.Dispose();
+
     [Fact]
     public void ThePrintableFormAndTheBase64FormOfOneKeyReadAsTheSameBytes()
     {
@@ -89,7 +94,8 @@ public class BackupKeyFileTests
     [Fact]
     public void AKeyFileThatIsNotThereIsASentence()
     {
-        Refusal(() => BackupKeyFile.Read(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))))
+        // testsToDelete-exempt: raw-temp — a path nothing creates: the key file must not exist, so no folder is made for it
+        Refusal(() => BackupKeyFile.Read(Path.Combine(Owned.TempRoot(), Guid.NewGuid().ToString("N"))))
             .Message.Should().Contain("key file").And.Contain("does not exist");
     }
 
@@ -136,17 +142,12 @@ public class BackupKeyFileTests
     private static BackupArchiveException Refusal(Action act) =>
         act.Should().Throw<BackupArchiveException>().Which;
 
-    private static string FileOf(string content)
+    private string FileOf(string content)
     {
         var path = Path.Combine(TempDir(), "key.txt");
         File.WriteAllText(path, content);
         return path;
     }
 
-    private static string TempDir()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "cred-vault-key-file", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
+    private string TempDir() => _owned.Dir("key-file");
 }

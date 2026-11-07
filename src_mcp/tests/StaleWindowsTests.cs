@@ -20,7 +20,7 @@ public sealed class StaleWindowsTests : IDisposable
 {
     private const int DeadWindows = 6;
 
-    private readonly string _root = HostProcess.TempDirectory("creds-mcp-stale");
+    private readonly string _root = HostProcess.TempDirectory("mcp-stale");
 
     public void Dispose() => HostProcess.Remove(_root);
 

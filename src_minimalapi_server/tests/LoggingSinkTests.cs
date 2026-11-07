@@ -1,4 +1,5 @@
 using System.Globalization;
+using CredsForDevs.Tests.Leftovers;
 using Serilog.Events;
 using Serilog.Parsing;
 
@@ -13,8 +14,12 @@ namespace CredVaultServer.Tests;
 /// could pass against a pipeline that strips them. The control is what makes the number mean
 /// something.</para>
 /// </summary>
-public class LoggingSinkTests
+public class LoggingSinkTests : IDisposable
 {
+    private readonly OwnedScope _owned = DarwinLayout.FreshOwnedScope();
+
+    public void Dispose() => _owned.Dispose();
+
     private static LogEvent Event(DateTimeOffset at, LogEventLevel level, string message) =>
         new(
             at,
@@ -66,58 +71,38 @@ public class LoggingSinkTests
     [Fact]
     public void RunFile_SegmentsAtUtcMidnight_SamePidNextDayFolder()
     {
-        var root = Path.Combine(Path.GetTempPath(), "creds-logsink-" + Guid.NewGuid().ToString("N"));
-        try
-        {
-            var started = new DateTime(2026, 08, 27, 23, 59, 58, DateTimeKind.Utc);
-            using var sink = new DailyRunFileSink(root, "cred-vault-server", "{Message:lj}{NewLine}", started);
+        var root = _owned.Dir("logsink");
+        var started = new DateTime(2026, 08, 27, 23, 59, 58, DateTimeKind.Utc);
+        using var sink = new DailyRunFileSink(root, "cred-vault-server", "{Message:lj}{NewLine}", started);
 
-            var firstPath = sink.CurrentPath;
-            sink.Emit(Event(new DateTimeOffset(started), LogEventLevel.Information, "before midnight"));
+        var firstPath = sink.CurrentPath;
+        sink.Emit(Event(new DateTimeOffset(started), LogEventLevel.Information, "before midnight"));
 
-            // The clock crosses the boundary: the next event lands in tomorrow's folder as a
-            // 00-00-00 segment with the SAME pid — the run stays identifiable.
-            var after = new DateTime(2026, 08, 28, 00, 00, 02, DateTimeKind.Utc);
-            sink.Emit(Event(new DateTimeOffset(after), LogEventLevel.Information, "after midnight"));
-            var secondPath = sink.CurrentPath;
+        // The clock crosses the boundary: the next event lands in tomorrow's folder as a
+        // 00-00-00 segment with the SAME pid — the run stays identifiable.
+        var after = new DateTime(2026, 08, 28, 00, 00, 02, DateTimeKind.Utc);
+        sink.Emit(Event(new DateTimeOffset(after), LogEventLevel.Information, "after midnight"));
+        var secondPath = sink.CurrentPath;
 
-            Assert.Contains(Path.Combine("2026-08-27"), firstPath, StringComparison.Ordinal);
-            Assert.Contains("23-59-58", firstPath, StringComparison.Ordinal);
-            Assert.Contains(Path.Combine("2026-08-28"), secondPath, StringComparison.Ordinal);
-            Assert.Contains($"00-00-00-{Environment.ProcessId}.log", secondPath, StringComparison.Ordinal);
-        }
-        finally
-        {
-            if (Directory.Exists(root))
-            {
-                Directory.Delete(root, recursive: true);
-            }
-        }
+        Assert.Contains(Path.Combine("2026-08-27"), firstPath, StringComparison.Ordinal);
+        Assert.Contains("23-59-58", firstPath, StringComparison.Ordinal);
+        Assert.Contains(Path.Combine("2026-08-28"), secondPath, StringComparison.Ordinal);
+        Assert.Contains($"00-00-00-{Environment.ProcessId}.log", secondPath, StringComparison.Ordinal);
     }
 
     [Fact]
     public void RunFile_NeverRollsBackward_OnAClockCorrection()
     {
-        var root = Path.Combine(Path.GetTempPath(), "creds-logsink-" + Guid.NewGuid().ToString("N"));
-        try
-        {
-            var started = new DateTime(2026, 08, 28, 00, 00, 05, DateTimeKind.Utc);
-            using var sink = new DailyRunFileSink(root, "app", "{Message:lj}{NewLine}", started);
-            var path = sink.CurrentPath;
+        var root = _owned.Dir("logsink");
+        var started = new DateTime(2026, 08, 28, 00, 00, 05, DateTimeKind.Utc);
+        using var sink = new DailyRunFileSink(root, "app", "{Message:lj}{NewLine}", started);
+        var path = sink.CurrentPath;
 
-            // An event stamped YESTERDAY (queued line, clock correction) stays in the open file.
-            var yesterday = new DateTime(2026, 08, 27, 23, 59, 59, DateTimeKind.Utc);
-            sink.Emit(Event(new DateTimeOffset(yesterday), LogEventLevel.Information, "late line"));
+        // An event stamped YESTERDAY (queued line, clock correction) stays in the open file.
+        var yesterday = new DateTime(2026, 08, 27, 23, 59, 59, DateTimeKind.Utc);
+        sink.Emit(Event(new DateTimeOffset(yesterday), LogEventLevel.Information, "late line"));
 
-            Assert.Equal(path, sink.CurrentPath);
-        }
-        finally
-        {
-            if (Directory.Exists(root))
-            {
-                Directory.Delete(root, recursive: true);
-            }
-        }
+        Assert.Equal(path, sink.CurrentPath);
     }
 
     // ---------------------------------------------------------------- LogRetention
@@ -150,7 +135,7 @@ public class LoggingSinkTests
     [Fact]
     public void Retention_PruneOnDisk_RemovesTheFolder_AndSurvivesAMissingRoot()
     {
-        var root = Path.Combine(Path.GetTempPath(), "creds-retention-" + Guid.NewGuid().ToString("N"));
+        var root = _owned.Dir("retention");
         Directory.CreateDirectory(Path.Combine(root, "2026-01-01"));
         Directory.CreateDirectory(Path.Combine(root, "2026-08-27"));
         File.WriteAllText(Path.Combine(root, "2026-01-01", "app-10-00-00-1.log"), "old");
@@ -159,7 +144,6 @@ public class LoggingSinkTests
 
         Assert.False(Directory.Exists(Path.Combine(root, "2026-01-01")), "the expired day survived");
         Assert.True(Directory.Exists(Path.Combine(root, "2026-08-27")), "today was deleted");
-        Directory.Delete(root, recursive: true);
 
         // A missing root is a no-op, not an exception — retention must never stop a start.
         LogRetention.PruneAtStartup(Path.Combine(root, "missing"), new DateOnly(2026, 08, 27), 14);
