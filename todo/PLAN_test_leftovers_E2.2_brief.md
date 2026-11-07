@@ -285,7 +285,7 @@ plants an orphan claim inside it and shows the RED, as row 9 says.
   `creds-mcp:738`, `git:38` print `SKIP  ` and `backup:101` prints `SKIP:`, so those skips count as passes; `ssh-agent`
   carries `windows: true` (`run-itests.mjs:55`) although CI runs it on Ubuntu; `server-transport` has no `.catch`; the
   runner does not end a harness's tree after a normal exit; D4 and E2.2.S1 limit the tree end to the timeout (gate,
-  rejected for E2.2, kept as a follow-up).
+  rejected for E2.2, kept as a follow-up). *(2026-11-07, code round 2: the same holds when a harness exits 0 while a descendant still holds its output pipe. The runner writes that line and stops reading after its bound, and the run still counts as passed. Turning it into a FAIL, or ending that descendant, is the same follow-up.)*
 
 ## 6. Open questions, each with a recommended answer
 
