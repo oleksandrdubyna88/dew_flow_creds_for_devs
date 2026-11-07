@@ -6,4 +6,6 @@ internal static class OwnedCreds
     internal static string ShortSocketRoot => "/tmp";
 
     internal static string Canonical(string path) => Path.GetFullPath(path);
+
+    internal static bool RootsDiffer(string first, string second) => Canonical(first) != Canonical(second);
 }
