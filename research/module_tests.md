@@ -186,8 +186,8 @@ sibling file `<folder>.owner` (never inside, because tests assert the exact cont
 
 Since E2.2 every harness makes only **owned** folders and stubs: `testsToDelete-<owner>-creds-<what>-<id>` with the claim
 in a sibling `<folder>.owner`, made through `scripts/lib/leftovers.cjs`, and removed by `scripts/lib/harnessScope.cjs` on
-every exit path the process can handle: a return, a failure count, a throw (also at load), `.catch`, and SIGINT, SIGTERM and
-SIGHUP (exit 128 + the signal; a second signal during the close is ignored). A harness never calls `process.exit` in its
+every exit path the process can handle: a return, a failure count, a throw (also at load), `.catch`, an uncaught error from a
+callback, and SIGINT, SIGTERM and SIGHUP (exit 128 + the signal; a second signal during the close is ignored). A harness never calls `process.exit` in its
 body; it returns its code. A child that may make temp paths (the `creds-mcp` and CLI binaries, `git`, the server in the backup
 harness, the shell of the masked run, `ssh`, `sshd`) gets an owned folder as `TMPDIR`, `TEMP` and `TMP`. A folder that holds
 a Unix socket is made under the short socket root (`/tmp` on Linux and macOS) with a short name.
@@ -244,8 +244,11 @@ The runner has a lifecycle of its own (E2.2, `common/test-leftovers.md`), in thi
 - **It exports its record once** as `TESTSTODELETE_RUN=<record>` to every harness, whatever the ambient environment held.
 - **A timeout ends the harness's whole tree**: a process group and `endTree` on POSIX, the reference's job object on Windows. A
   tree not confirmed ended is one more phrase in that harness's FAIL line.
-- **A signal stops the run.** SIGINT, SIGTERM or SIGHUP goes to the running harness, no further harness starts, the summary is
-  printed and the exit code is 128 + the signal's number.
+- **A signal stops the run**, from the moment the runner starts (also during the helpers, the sweep and the compile). SIGINT, SIGTERM or
+  SIGHUP goes to the running compile or harness, no further harness starts, the summary is printed and the exit code is 128 + the
+  signal's number.
+- **A harness that exits but leaves a descendant holding its output** is waited for 30 seconds, not for ever; the runner says so and the
+  tree scan ends that descendant if it carries the run's record. On Windows a line before each harness says its output is held until it ends.
 - **There is no harness-wide end audit**, unlike `npm test`: a harness's children may still be ending when it exits, and a removal
   by the run's record would remove a folder they use. Each harness removes its own folders through its scope; what a kill leaves is
   the next sweep's.
