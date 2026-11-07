@@ -127,13 +127,13 @@ question names what already ran.
 **Symptom.** `src/test/commandNameShell.test.ts` makes its folder inline (`testsToDelete-shell-`), as the existing tests do, until PR #294's helper
 lands. When #294 lands, that test moves to its `ownedDir`. The test and this branch must be reconciled in whichever lands second.
 
-### 16. The owner's hand checks have not run
+### 16. The rest of the owner's hand checks
 
-**Symptom.** A real VS Code could not be started where this was built, so §Hand checks of
-[PLAN_terminal_folder_run.md](../research/PLAN_terminal_folder_run.md) is unmeasured: what a revived terminal holds after a restart, whether old
-sequences replay as events, whether events reach this `ui` extension over Remote-SSH, how a native dialog shows a long question. **Fix to consider:**
-run them in a real Remote-SSH window. Two results change code: a start and end reaching the extension from a shell inside tmux adds a state after
-`Type It Anyway`, and no events over Remote-SSH means the tracker buys nothing and every click asks.
+**Symptom.** The owner ran most of §Hand checks of [PLAN_terminal_folder_run.md](../research/PLAN_terminal_folder_run.md) on 2026-11-06; the
+results are recorded there. Neither result that would change code came up. Still unmeasured: what a revived terminal holds after an overnight
+disconnect (1), a detach in a terminal that survived a reload over Remote-SSH (the second half of 3), a nested `ssh` (4), bash with `LC_ALL=C` and a Cyrillic name (6), `{name}` on an old extension in zsh and fish (7), and the double
+click and the folder modal in a Remote-SSH window rather than a WSL one (5, 8). **Fix to consider:** run them when convenient. A line typed without
+a question under a nested `ssh` would change code.
 
 ## Budget
 

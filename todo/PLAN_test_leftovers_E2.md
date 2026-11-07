@@ -67,9 +67,13 @@ The parent's § *Epoch 6* item 8.3 and § *Epoch 7* item 8.3 (`dew_flow_conventi
 | 10 | The elevated Windows exception (§ *Epoch 7*) | The goal's exception below. The Windows handoff proof of E2.3.S2 keeps its fixture and says what it does not prove. **Before E2.3 starts, F31 is raised with the owner: it is reviewed, and either fixed or accepted again, at the first of E2.3's start, a persistent Windows machine, or 2026-12-05** | § *Goal*; D3; E2.3 |
 | 11 | Any test in the copy that says "collected" on Windows | It re-owns its fixture first, and its row in the table says so | E2.3 |
 
+*[2026-11-07: F30 shipped in conventions release `37b9aa5` (promoted 2026-11-06), and this repository pins it (#306). Rows 1 and 6 now read "zero for the guard's listed spellings", not "zero whole literals, F30 open". The guard at that release, run over main at `85b5a67` (`--profile node --token creds`): **0 `legacy-name` findings**; 16 other findings, the same as at `834c91b` (9 `raw-temp`, 5 `docker-name`, 2 `docker-run`), which belong to E2.2–E2.5. Row 6's deadline is met.]*
+
 **The one sentence for E2.5's PR, from E5's:** "The shipped Node guard finds a whole legacy literal and, on the lines F30 names, a bare-word glob or an anchored regex over the word; it does not find a word split over `+`, `.concat`, `.join('')`, a template hole, a `\u` or `\x` escape, a one-character class or half of the word; the count depends on the line (F30's note), so this repository's zero for `legacy-name` and `owner-blind` is zero WHOLE literals, F30 open."
+*[2026-11-07: F30 shipped in conventions release `37b9aa5`, so this sentence is out of date and E2.5 must not copy it. Its end, "zero WHOLE literals, F30 open", now reads "zero for the guard's listed spellings". Its list of what the guard does not find is mostly no longer true: the guard now reads the joins, decodings and crossing pieces that table D2 of conventions `todo/PLAN_F30_folding_reader.md` lists, by file kind. E2.5 writes its sentence from D2 at its own pin, with what D2 says is not joined.]*
 
 **Prerequisites for E2.1's merge:** condition (c), the owner's administrator scan on the WSL machine, is still open. The parent's § *Epoch 6* row "E2.1" records that E2.1 is built and waits for it.
+*[2026-11-06: met. The owner ran the scan (none found, 266 files read; conventions #136), and E2.1 merged as #294 at `834c91b`.]*
 
 ## What changed from the October version, and why
 
