@@ -572,3 +572,11 @@ gh workflow run docker.yml --ref feat/test-leftovers-e2.4  # S3.2
       (2026-11-07); before the plan gate, the hosted throwaway observations of row 24 (uid `1001`) and row 15 (the kill on
       the named-volume shape)**; a `review_plan` round reached `proceed` before the
       first code commit; a `review_code` round and an Opus review before the merge.
+
+## Observations before the plan gate (2026-11-08, the parent's epoch 8, rows "to observe before E2.4's plan gate")
+
+Hosted throwaway branch `tmp/e24-observe` (creds, from main `f8a42f9`, never merged), runs 42415388093 (`59e1fac`) and 42416565709 (`6258f3e`); runner image ubuntu26 (20261101.186.1), Docker server 29.4.2, bash 5.3.9, janitor pin `37b9aa5`.
+
+- **E2.4-c, the runner's uid — matches.** `uid=1001(runner) gid=1001(runner) groups=…113(docker)…`; `[ "$(id -u)" = 1001 ]` true; `$PPID` stable for the whole job. The literal owner `u1001` is right for this runner.
+- **E2.4-f, acme killed mid-issuance, state in labelled named volumes — matches.** Before the kill: 4 project volumes (`certs-conf`, `certs-www`, `data`, `logs`), each carrying `testsToDelete.owner`; the record `u1001:<host>@linux:<pid>:<start>:<ns>`. `kill -9` at the first issuance line (status 137). After 660 s the janitor's dry run listed 4 containers, 4 volumes, the network, the folder and the claim; the next run's janitor call removed each (`janitor exit code: 0`). Then `docker volume ls`, `docker ps -a` and `docker network ls`, each filtered by `label=com.docker.compose.project=<project>`, were empty, and the folder and its claim were gone. Nothing waited for a person; the janitor removed the root-owned volumes as the job's user.
+- **Found, not part of E2.4's leftovers: acme's own green path fails on this runner image.** In both runs the next run failed `nginx opened 443 … expected 200, got 000`, `unexpected issuer: none`, `… expected 401, got 000`, `port 80 redirects … expected 301, got 503`. The control step, the UNCHANGED `deploy/acme-test/run.sh` with bind mounts, fails the same four lines on the same runner (run 42416565709, step "Control"), so the cause is the runner image or the acme flow on it, not the named-volume shape. Until it is fixed, E2.4's "the next run is green" (sc. 6, sc. 7) cannot be observed on hosted ubuntu26; it is reported to the parent and to creds as its own defect.
