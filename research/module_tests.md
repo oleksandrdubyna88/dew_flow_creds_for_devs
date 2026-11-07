@@ -184,20 +184,36 @@ sibling file `<folder>.owner` (never inside, because tests assert the exact cont
 
 ## Prerequisites, timeouts and cleanup
 
-A harness that leaves a socket, a port or a temp directory behind makes the NEXT run lie. Each of
-these cleans up after itself on a normal exit; what follows is what to remove after one is killed.
+Since E2.2 every harness makes only **owned** folders and stubs: `testsToDelete-<owner>-creds-<what>-<id>` with the claim
+in a sibling `<folder>.owner`, made through `scripts/lib/leftovers.cjs`, and removed by `scripts/lib/harnessScope.cjs` on
+every exit path the process can handle: a return, a failure count, a throw (also at load), `.catch`, an uncaught error from a
+callback, and SIGINT, SIGTERM and SIGHUP (exit 128 + the signal; a second signal during the close is ignored). A harness never calls `process.exit` in its
+body; it returns its code. A child that may make temp paths (the `creds-mcp` and CLI binaries, `git`, the server in the backup
+harness, the shell of the masked run, `ssh`, `sshd`) gets an owned folder as `TMPDIR`, `TEMP` and `TMP`. A folder that holds
+a Unix socket is made under the short socket root (`/tmp` on Linux and macOS) with a short name. A process a harness starts
+through `itestSshd.cjs` (`ssh`, `sshd`) belongs to the scope it was launched in: `launch(scope, …)` and `startSshd(scope, …)`
+register its end in that scope right after the spawn, so closing a section ends its own processes and waits for their exit
+before it removes the section's folder (registered earlier), and never ends a process of another scope.
 
-| Harness | Needs | Leaves behind if killed |
+What stays after a kill is therefore **nothing the next sweep does not collect**. SIGKILL (and a power cut) cannot be handled:
+the folder and its claim stay, and the next `npm test` or `npm run itest:all`, or the janitor, collects them. The limits of that
+sweep: POSIX only (on Windows the Node sweep only lists `unverified:`, F16, so a Windows leftover waits for E2.3's C# sweep or a
+person), a folder younger than 10 minutes is left alone, and a folder whose owner is not provably dead is kept. A harness started
+alone (`npm run itest:<name>`, or `node scripts/<name>.cjs`) does not sweep.
+
+| Harness | Needs | Leaves behind if killed (SIGKILL; any other end removes its folders) |
 |---|---|---|
-| `src_vs_code/scripts/agent-broker-itest.cjs` | nothing | a loopback listener and an endpoint file under the temp dir it names |
-| `src_vs_code/scripts/git-transport-itest.cjs` | `git` | a temp directory holding a bare repository |
-| `src_vs_code/scripts/creds-cli-itest.cjs` | `dotnet build src_cli/src/CredsCli.csproj` | a broker listener, an endpoint file |
-| `src_vs_code/scripts/creds-mcp-itest.cjs` | `dotnet build src_mcp/src/CredsMcp.csproj` | a `creds-mcp` child on stdio |
-| `src_vs_code/scripts/masked-run-itest.cjs` | nothing | nothing — the child dies with the pty |
-| `src_vs_code/scripts/ssh-agent-itest.cjs` | OpenSSH (`ssh-add`, `ssh-keygen`) — built-in on Windows, on PATH elsewhere; CI runs it on Ubuntu | a named pipe or socket freed when the process exits, a `testsToDelete-ait-*` temp dir (key, stub, the managers' storage `m`, `l`, `w`, `w2` and `w3`) and — only on a run that reaches the live login (section 5; section 7 makes its own) — a `testsToDelete-sshd-*` dir (host key, `authorized_keys`, `known_hosts`, `sshd_config`, and section 7's per-leg `*.pub` and `*.authorized_keys`). under `-d` sshd neither daemonises nor forks per connection, but its privilege separation and the session still fork children that exit when the connection closes — which is why the run ends the ssh client FIRST, then sshd, by their own pids; each is awaited (5 s bound) and, if it did not exit, killed with SIGKILL and awaited again; only then is the folder removed, and a failure of that removal never replaces the real error |
-| `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | WSL + the .NET SDK, node and python3 inside it | nothing it started — the sweep stops the run's own processes by pid on both sides; `${XDG_CACHE_HOME:-~/.cache}/creds-itest/` (a build per changed set of inputs, a directory per run) stays by design, a few MB each, until the person clears it |
-| `src_vs_code/scripts/wsl-agent-relay-itest.cjs` | the same, plus OpenSSH inside it | the same; a run's sockets and scratch files are under its own `…/creds-itest/<run>/` |
-| `src_vs_code/scripts/server-transport-itest.cjs` | a Cred Vault Server on `127.0.0.1:5113`, Local auth | nothing of its own |
+| `src_vs_code/scripts/agent-broker-itest.cjs` | nothing | a loopback listener ends with the process; owned `agent-stub` and `agent` folders (the broker's endpoint file and socket are inside) |
+| `src_vs_code/scripts/git-transport-itest.cjs` | `git` | owned `git-stub` and `git` folders (a bare repository and the clones) |
+| `src_vs_code/scripts/creds-cli-itest.cjs` | the CLI built (`src_cli/src/CredsCli.csproj`) | owned `cli-stub`, `cli` (broker) and `ctmp` folders |
+| `src_vs_code/scripts/creds-mcp-itest.cjs` | `creds-mcp` built (`src_mcp/src/CredsMcp.csproj`) | a `creds-mcp` child on stdio ends when its stdin closes; owned `mcp-stub`, `ctmp`, `empty`, `old` and `mcp` (one per broker window) folders |
+| `src_vs_code/scripts/masked-run-itest.cjs` | nothing | owned `masked-stub` and `mrun` folders; the child dies with the pty |
+| `src_vs_code/scripts/ssh-agent-itest.cjs` | OpenSSH (`ssh-add`, `ssh-keygen`) — built-in on Windows, on PATH elsewhere; CI runs it on Ubuntu | an owned `ait` folder (under the short socket root; key, stub, the managers' storage `m`, `l`, `w`, `w2` and `w3`) and — only on a run that reaches the live login (section 5; section 7 makes its own) — an owned `sshd` folder (host key, `authorized_keys`, `known_hosts`, `sshd_config`, and section 7's per-leg files). Under `-d` sshd neither daemonises nor forks per connection, but its privilege separation and the session still fork children that exit when the connection closes — which is why the run ends the ssh client FIRST, then sshd, by their own pids; each is awaited (5 s bound) and, if it did not exit, killed with SIGKILL and awaited again; only then is the `sshd` section's scope closed, and a folder sshd still holds is retried and then left claimed with one warning |
+| `src_vs_code/scripts/creds-mcp-wsl-itest.cjs` | WSL + the .NET SDK, node and python3 inside it | nothing it started — the sweep stops the run's own processes by pid on both sides; an owned `wsl-stub` folder; `${XDG_CACHE_HOME:-~/.cache}/creds-itest/` (a build per changed set of inputs, a directory per run) stays by design, a few MB each, until the person clears it. Its run directory (`%LOCALAPPDATA%\creds-itest\creds-itest-<run>`) is not an owned folder and is removed by its exact name in `finishRun`. Windows-only, not run in E2.2 |
+| `src_vs_code/scripts/wsl-agent-relay-itest.cjs` | the same, plus OpenSSH inside it | the same; a run's sockets and scratch files are under its own `…/creds-itest/<run>/`; it has no temp-root site and E2.2 did not change it |
+| `src_vs_code/scripts/server-transport-itest.cjs` | a Cred Vault Server on `127.0.0.1:5113`, Local auth | an owned `srv-stub` folder |
+| `src_minimalapi_server/scripts/backup-archive-itest.cjs` | the server built (`src_minimalapi_server/src/CredVaultServer.csproj`), or `CVBK_SERVER` | owned `backup-source`, `backup-work` and `backup-occupied` folders (the server child's `TMPDIR` is `backup-work`). CI runs it in `ci-server.yml`, which sets up Node 22 and the mount first |
+| `src_vs_code/scripts/tree-perf-bench.cjs` | `npm run compile`; started by hand: `node --import ./scripts/lower-priority.mjs scripts/tree-perf-bench.cjs` (`BENCH_OUT` names another `out/`) | an owned `bench-stub` folder |
 
 Every harness carries its own timeout on the child processes it spawns; none of them waits for ever,
 and each prints the command that would fix a missing prerequisite instead of hanging on it. Re-running
@@ -214,10 +230,33 @@ npm run itest:all -- --with-server              # plus the one needing a server 
 ```
 
 `src_vs_code/scripts/run-itests.mjs` compiles once — the nine `itest:*` aliases each begin with their
-own `npm run compile` — then runs each harness, streaming its output as it arrives rather than
+own `npm run compile` — then runs each harness. On Linux and macOS it streams the output as it arrives rather than
 holding it until the child exits, because a harness waiting on a socket looks identical to a hung one
-when its output is held back. It prints a summary separating **pass**, **skipped** (a prerequisite is
-missing and the harness said so) and **not runnable here** (Windows-only, on a non-Windows machine).
+when its output is held back; **on Windows the output appears when the harness ends** (the reference's `run` holds it so that
+it can end the whole job, and a harness that writes more than 32 MiB there is ended and fails). It prints a summary separating
+**pass**, **skipped** (a prerequisite is missing and the harness said so) and **not runnable here** (Windows-only, on a
+non-Windows machine), and it names each harness's output size in bytes.
+
+The runner has a lifecycle of its own (E2.2, `common/test-leftovers.md`), in this order:
+
+- **It loads its helpers fail-closed.** No mount: one line naming `git submodule update --init .claude/rules/shared`, no
+  harness started, exit 1.
+- **It sweeps both roots at the start** (the temp root and the short socket root), through the same wiring as `npm test`. The
+  lines start `run-itests:`; a sweep never changes the exit code. A single `itest:*` alias does not sweep. On Windows the sweep
+  only lists `unverified:` (F16).
+- **It exports its record once** as `TESTSTODELETE_RUN=<record>` to every harness, whatever the ambient environment held.
+- **A timeout ends the harness's whole tree**: a process group and `endTree` on POSIX, the reference's job object on Windows. A
+  tree not confirmed ended is one more phrase in that harness's FAIL line.
+- **A signal stops the run**, from the moment the runner starts (also during the helpers, the sweep and the compile). SIGINT, SIGTERM or
+  SIGHUP goes to the running compile or harness, no further harness starts, the summary is printed and the exit code is 128 + the
+  signal's number.
+- **A harness that exits but leaves a descendant holding its output pipe** is waited for at most 30 seconds, not for ever. The runner then
+  says so, stops reading, and counts the harness by its exit code. Without a timeout it does not scan for that descendant and does not end
+  it (the tree end runs only after a timeout; that is a recorded follow-up). On Windows a line before each harness says its output is held
+  until it ends.
+- **There is no harness-wide end audit**, unlike `npm test`: a harness's children may still be ending when it exits, and a removal
+  by the run's record would remove a folder they use. Each harness removes its own folders through its scope; what a kill leaves is
+  the next sweep's.
 
 Three details are there because a review round asked for them, and one because Windows refused the
 obvious answer:

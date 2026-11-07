@@ -10,18 +10,17 @@
 // No SSH server is required — the exec cases target an address that refuses or
 // blackholes, which exercises spawn/capture/timeout without needing a host.
 const path = require('path');
-const os = require('os');
 const fs = require('fs');
 const http = require('http');
 const { execFile } = require('child_process');
 const Module = require('module');
+const { ownedDir, shortSocketRoot, writeStub } = require('./lib/leftovers.cjs');
+const harnessScope = require('./lib/harnessScope.cjs');
 
 // ---- vscode stub, with a controllable modal --------------------------------
+// Written into an owned folder inside `main` (never at load), and removed by the scope on every way out.
 const answers = { next: 'Allow', asked: 0, lastMessage: '' };
-const stub = path.join(os.tmpdir(), 'creds-agent-vscode-stub.cjs');
-fs.writeFileSync(
-  stub,
-  `const answers = global.__CREDS_ANSWERS__;
+const STUB_SOURCE = `const answers = global.__CREDS_ANSWERS__;
    module.exports = {
      window: {
        showWarningMessage: (message) => {
@@ -38,18 +37,12 @@ fs.writeFileSync(
      },
      workspace: { getConfiguration: () => ({ get: (_k, d) => d }) },
      Uri: { file: (p) => ({ fsPath: p }) },
-   };`,
-);
+   };`;
 answers.log = [];
 global.__CREDS_ANSWERS__ = answers;
 const orig = Module._resolveFilename;
-Module._resolveFilename = (req, ...a) => (req === 'vscode' ? stub : orig.call(Module, req, ...a));
 
 const OUT = path.join(__dirname, '..', 'out');
-const { CredsAgentServer } = require(path.join(OUT, 'credsAgentServer.js'));
-const { UseActionRegistry } = require(path.join(OUT, 'useActions.js'));
-const { sshExecAction, sshTerminalAction } = require(path.join(OUT, 'sshUseActions.js'));
-const { parseToken } = require(path.join(OUT, 'grantToken.js'));
 
 // ---- fakes -----------------------------------------------------------------
 const ENTITY = {
@@ -75,14 +68,13 @@ const storage = {
     return this.password;
   },
 };
-const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-itest-'));
 // Recursive on purpose. Materialized keys live in `keys/<pid>/`, not `keys/` — each window
 // owns a subdirectory so one window's purge can never delete another's in-use file. This
 // helper read only the top level, so it returned [] no matter what was on disk: the
 // concurrent-key check could never pass, and the two checks either side of it — "leaves no
 // decrypted key on disk" and "no key material is left" — passed without ever looking at a
 // file. A test that cannot fail is worse than one that cannot pass; both were untrue here.
-const keyFiles = () => {
+const keyFilesIn = (storageDir) => {
   const walk = (dir) => {
     let entries;
     try {
@@ -138,15 +130,27 @@ function call(port, pathname, token, body, method = 'POST') {
   });
 }
 
-function runCli(args) {
+function runCliWith(args, env) {
   return new Promise((resolve) => {
-    execFile(process.execPath, [path.join(OUT, 'agentCli.js'), ...args], (error, stdout, stderr) => {
+    execFile(process.execPath, [path.join(OUT, 'agentCli.js'), ...args], { env }, (error, stdout, stderr) => {
       resolve({ code: error && typeof error.code === 'number' ? error.code : 0, stdout, stderr });
     });
   });
 }
 
-(async () => {
+harnessScope.run(async (scope) => {
+  // The stub first, then the requires of `out/` that resolve `vscode` through it. A throw here (an `out/` that was not compiled)
+  // happens inside main, so the scope still removes the stub.
+  const stub = writeStub(scope, 'agent-stub', STUB_SOURCE);
+  Module._resolveFilename = (req, ...a) => (req === 'vscode' ? stub : orig.call(Module, req, ...a));
+  const { CredsAgentServer } = require(path.join(OUT, 'credsAgentServer.js'));
+  const { UseActionRegistry } = require(path.join(OUT, 'useActions.js'));
+  const { sshExecAction, sshTerminalAction } = require(path.join(OUT, 'sshUseActions.js'));
+  const { parseToken } = require(path.join(OUT, 'grantToken.js'));
+  // The broker binds a Unix socket in this folder: it goes under the short socket root, with a short `what`.
+  const storageDir = ownedDir(scope, 'agent', { parent: shortSocketRoot() });
+  const keyFiles = () => keyFilesIn(storageDir);
+  const runCli = (args) => runCliWith(args, harnessScope.tempEnv(storageDir)); // a child that makes temp paths gets an owned folder
   const actions = new UseActionRegistry();
   // The masking provider the extension supplies in real life. Here it is one known value, so
   // the check below proves the whole path — action output, through respond(), out to the
@@ -340,10 +344,6 @@ function runCli(args) {
   const afterDispose = await runCli(['ssh', token, '--', 'true']);
   check('once the window is gone the CLI says so (90)', afterDispose.code === 90, `exit ${afterDispose.code}`);
 
-  fs.rmSync(storageDir, { recursive: true, force: true });
   console.log(`\n${fails === 0 ? 'all checks passed' : `${fails} FAILED`}`);
-  process.exit(fails === 0 ? 0 : 1);
-})().catch((error) => {
-  console.error(error);
-  process.exit(1);
+  return fails === 0 ? 0 : 1;
 });

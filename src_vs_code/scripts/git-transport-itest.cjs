@@ -15,29 +15,16 @@
 // Skips itself, loudly, when `git` is missing: a test that quietly passes without the thing it
 // tests is worse than one that says why it did nothing.
 const path = require('path');
-const os = require('os');
 const fs = require('fs');
 const { execFile, execFileSync } = require('child_process');
 const Module = require('module');
+const { ownedDir, writeStub } = require('./lib/leftovers.cjs');
+const harnessScope = require('./lib/harnessScope.cjs');
 
-const stub = path.join(os.tmpdir(), 'creds-git-vscode-stub.cjs');
-fs.writeFileSync(
-  stub,
-  'module.exports = { workspace: { getConfiguration: () => ({ get: (_k, d) => d }) }, Uri: { file: (p) => ({ fsPath: p }) } };',
-);
+const STUB_SOURCE =
+  'module.exports = { workspace: { getConfiguration: () => ({ get: (_k, d) => d }) }, Uri: { file: (p) => ({ fsPath: p }) } };';
 const orig = Module._resolveFilename;
-Module._resolveFilename = (req, ...a) => (req === 'vscode' ? stub : orig.call(Module, req, ...a));
-
 const OUT = path.join(__dirname, '..', 'out');
-const { GitTransport } = require(path.join(OUT, 'gitTransport.js'));
-const { VAULT_BRANCH } = require(path.join(OUT, 'gitRemote.js'));
-
-try {
-  execFileSync('git', ['--version'], { stdio: 'ignore' });
-} catch {
-  console.log('SKIP  git is not on PATH — this transport requires it, so nothing was tested.');
-  process.exit(0);
-}
 
 let fails = 0;
 const check = (what, ok, extra) => {
@@ -45,15 +32,31 @@ const check = (what, ok, extra) => {
   if (!ok) fails += 1;
 };
 
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-git-itest-'));
-const bare = path.join(root, 'origin.git');
-execFileSync('git', ['init', '--bare', '--initial-branch', VAULT_BRANCH, bare], { stdio: 'ignore' });
+/**
+ * Where `git` is looked for: FIXED directories only, never the `PATH` of the caller (a writeable directory early on `PATH` could hand this
+ * harness another program). `CREDS_ITEST_GIT` names the binary outright (a person's choice; a missing file there is the SKIP).
+ */
+const GIT_DIRS = process.platform === 'win32' ? ['C:\\Program Files\\Git\\cmd', 'C:\\Program Files\\Git\\bin'] : ['/usr/bin', '/usr/local/bin', '/bin', '/opt/homebrew/bin'];
+function findGit() {
+  const named = process.env.CREDS_ITEST_GIT;
+  if (named !== undefined && named !== '') return fs.existsSync(named) ? named : undefined;
+  const file = process.platform === 'win32' ? 'git.exe' : 'git';
+  return GIT_DIRS.map((dir) => path.join(dir, file)).find((candidate) => fs.existsSync(candidate));
+}
+/** The git this run uses; set in `main`. */
+let GIT;
+
+// Set in `main`: the owned folder that holds the bare origin and the clones. Every `git` child gets it as its temp folder.
+let root;
+let bare;
+let VAULT_BRANCH;
+let GitTransport;
 
 const ACCOUNT = { accountId: 'acct-11112222', email: 'alice@example.com', provider: 'microsoft' };
 
 const run = (args, options) =>
   new Promise((resolve) => {
-    execFile('git', args, { cwd: options.cwd, env: options.env }, (error, stdout, stderr) => {
+    execFile(GIT, args, { cwd: options.cwd, env: harnessScope.tempEnv(root, options.env) }, (error, stdout, stderr) => {
       resolve({
         exitCode: error && typeof error.code === 'number' ? error.code : error ? 1 : 0,
         stdout: String(stdout),
@@ -91,7 +94,23 @@ function envelope(marker) {
   );
 }
 
-(async () => {
+harnessScope.run(async (scope) => {
+  // The SKIP comes before any folder or stub: a machine without git leaves nothing.
+  GIT = findGit();
+  if (GIT === undefined) {
+    const named = process.env.CREDS_ITEST_GIT;
+    const where = named === undefined || named === '' ? `git was not found in ${GIT_DIRS.join(', ')}` : `CREDS_ITEST_GIT names ${named} and it does not exist`;
+    console.log(`SKIP  ${where} — this transport requires git, so nothing was tested.`);
+    return 0;
+  }
+  const stub = writeStub(scope, 'git-stub', STUB_SOURCE);
+  Module._resolveFilename = (req, ...a) => (req === 'vscode' ? stub : orig.call(Module, req, ...a));
+  ({ GitTransport } = require(path.join(OUT, 'gitTransport.js')));
+  ({ VAULT_BRANCH } = require(path.join(OUT, 'gitRemote.js')));
+  root = ownedDir(scope, 'git');
+  bare = path.join(root, 'origin.git');
+  execFileSync(GIT, ['init', '--bare', '--initial-branch', VAULT_BRANCH, bare], { stdio: 'ignore', env: harnessScope.tempEnv(root) });
+
   const a = machine('machine-a');
   const b = machine('machine-b');
 
@@ -124,16 +143,12 @@ function envelope(marker) {
   await a.deleteVault(ACCOUNT);
   check('a deleted vault is absent from a fresh clone', (await machine('machine-c').readVault(ACCOUNT)) === undefined);
 
-  fs.rmSync(root, { recursive: true, force: true });
   console.log(fails === 0 ? '\nall checks passed' : `\n${fails} FAILED`);
-  process.exit(fails === 0 ? 0 : 1);
-})().catch((error) => {
-  console.error(error);
-  process.exit(1);
+  return fails === 0 ? 0 : 1;
 });
 
 function commitCount() {
   return Number(
-    execFileSync('git', ['rev-list', '--count', VAULT_BRANCH], { cwd: bare, encoding: 'utf8' }).trim(),
+    execFileSync(GIT, ['rev-list', '--count', VAULT_BRANCH], { cwd: bare, encoding: 'utf8', env: harnessScope.tempEnv(root) }).trim(),
   );
 }

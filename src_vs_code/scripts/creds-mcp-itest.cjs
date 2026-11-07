@@ -16,10 +16,18 @@
 // server shut down mid-flight and the replies never appear, which cost an hour on 2026-08-27
 // while it looked exactly like a broken handshake.
 const path = require('path');
-const os = require('os');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const Module = require('module');
+const { ownedDir, shortSocketRoot, writeStub } = require('./lib/leftovers.cjs');
+const harnessScope = require('./lib/harnessScope.cjs');
+
+/** The folder a broker's sockets live in goes under the short socket root, with a short `what` (a macOS temp root is too long for a socket path). */
+const brokerDir = () => ownedDir(harnessScope.scope, 'mcp', { parent: shortSocketRoot() });
+/** An owned folder with no socket in it: under the temp root. */
+const plainDir = (what) => ownedDir(harnessScope.scope, what);
+/** The owned folder every child (the binary) gets as its `TMPDIR`, `TEMP` and `TMP`; made in `main`. */
+let childTemp;
 
 /**
  * Consent answers the fake window gives, in order, how often it was asked — and the text of every
@@ -41,10 +49,8 @@ global.__CREDS_MCP_AUDIT__ = audit;
 // ---- vscode stub -----------------------------------------------------------
 // The modal is real here: an MCP use call raises one, and whether it does — and how often — is
 // half of what the level-2 checks below are about.
-const stub = path.join(os.tmpdir(), 'creds-mcp-itest-vscode-stub.cjs');
-fs.writeFileSync(
-  stub,
-  `module.exports = {
+// Written into an owned folder inside `main` (never at load), and removed by the scope on every way out.
+const STUB_SOURCE = `module.exports = {
      window: {
        showWarningMessage: (message) => {
          const c = global.__CREDS_MCP_CONSENT__;
@@ -59,29 +65,47 @@ fs.writeFileSync(
      },
      workspace: { getConfiguration: () => ({ get: (_k, d) => d }) },
      Uri: { file: (p) => ({ fsPath: p }) },
-   };`,
-);
+   };`;
 const orig = Module._resolveFilename;
-Module._resolveFilename = (req, ...a) => (req === 'vscode' ? stub : orig.call(Module, req, ...a));
 
 const OUT = path.join(__dirname, '..', 'out');
-const { CredsAgentServer } = require(path.join(OUT, 'credsAgentServer.js'));
-const { UseActionRegistry } = require(path.join(OUT, 'useActions.js'));
-const { rotateAction } = require(path.join(OUT, 'rotateAction.js'));
+// Loaded in `loadOut`, called from `main` after the stub is written and `vscode` resolves to it.
+let CredsAgentServer;
+let UseActionRegistry;
+let rotateAction;
+let StorageManager;
+let folderHooks;
+let mcpCreateHooks;
+let mcpUseHooks;
+let moveEntryToTrash;
+let consentStampsFor;
+let stampKey;
+let ladderKey;
+let normalizeMcpAccess;
+let folderFieldsFor;
+let ENTITY_KINDS;
+let SERVICE_NAME;
+
+function loadOut(stub) {
+  Module._resolveFilename = (req, ...a) => (req === 'vscode' ? stub : orig.call(Module, req, ...a));
+  ({ CredsAgentServer } = require(path.join(OUT, 'credsAgentServer.js')));
+  ({ UseActionRegistry } = require(path.join(OUT, 'useActions.js')));
+  ({ rotateAction } = require(path.join(OUT, 'rotateAction.js')));
 // The folder level runs against the REAL hooks over a REAL StorageManager, not a stub. A stub
 // would prove the wire and nothing else, and the one check here with teeth — that `mcp` in a
 // request body cannot reach the tree — lives inside `readEdit`, which a stub never calls.
-const { StorageManager } = require(path.join(OUT, 'storageManager.js'));
-const { folderHooks } = require(path.join(OUT, 'mcpFolderHooks.js'));
+  ({ StorageManager } = require(path.join(OUT, 'storageManager.js')));
+  ({ folderHooks } = require(path.join(OUT, 'mcpFolderHooks.js')));
 // The REAL lookup for the quiet leg (#95): the policy resolved through a tree and a stamp store,
 // not a stub answering `preConsented: true`. A stub would prove the door forwards a flag.
-const { mcpCreateHooks, mcpUseHooks, moveEntryToTrash } = require(path.join(OUT, 'mcpHooks.js'));
-const { consentStampsFor, stampKey } = require(path.join(OUT, 'mcpConsentPolicy.js'));
-const { ladderKey, normalizeMcpAccess } = require(path.join(OUT, 'mcpAccess.js'));
-// The kinds leg's expectations, read off the window's own table rather than retyped here.
-const { folderFieldsFor } = require(path.join(OUT, 'agentKindFields.js'));
-const { ENTITY_KINDS } = require(path.join(OUT, 'types.js'));
-const { SERVICE_NAME } = require(path.join(OUT, 'brokerProtocol.js'));
+  ({ mcpCreateHooks, mcpUseHooks, moveEntryToTrash } = require(path.join(OUT, 'mcpHooks.js')));
+  ({ consentStampsFor, stampKey } = require(path.join(OUT, 'mcpConsentPolicy.js')));
+  ({ ladderKey, normalizeMcpAccess } = require(path.join(OUT, 'mcpAccess.js')));
+  // The kinds leg's expectations, read off the window's own table rather than retyped here.
+  ({ folderFieldsFor } = require(path.join(OUT, 'agentKindFields.js')));
+  ({ ENTITY_KINDS } = require(path.join(OUT, 'types.js')));
+  ({ SERVICE_NAME } = require(path.join(OUT, 'brokerProtocol.js')));
+}
 
 /** An in-memory Memento and SecretStorage — the two things a StorageManager needs. */
 /** One POST at the broker, bypassing the binary — what a local process can do unaided. */
@@ -217,7 +241,7 @@ function claudeHomeWithTitle(root, session, title) {
  */
 function speak(env, requests, settleMs = 3000) {
   return new Promise((resolve) => {
-    const child = spawn(EXE, [], { env: { ...process.env, CREDS_RELAYED_FROM_WSL: '1', ...env } });
+    const child = spawn(EXE, [], { env: harnessScope.tempEnv(childTemp, { ...process.env, CREDS_RELAYED_FROM_WSL: '1', ...env }) });
     let out = '';
     let err = '';
     child.stdout.on('data', (d) => {
@@ -298,7 +322,7 @@ function eventually(ready, ms) {
  */
 async function goneMidConsentLeg() {
   const before = checksRun;
-  const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mcp-gone-'));
+  const storageDir = brokerDir();
   const ran = [];
   const server = goneLegWindow(storageDir, ran);
   const auditFrom = audit.length;
@@ -358,7 +382,7 @@ function goneLegWindow(storageDir, ran) {
 
 /** The real binary, handshaken, with one `creds_query` sent and its stdin held open — mid-call. */
 async function binaryAskingToQuery(endpointDir) {
-  const child = spawn(EXE, [], { env: { ...process.env, CREDS_RELAYED_FROM_WSL: '1', CREDS_ENDPOINT_DIR: endpointDir } });
+  const child = spawn(EXE, [], { env: harnessScope.tempEnv(childTemp, { ...process.env, CREDS_RELAYED_FROM_WSL: '1', CREDS_ENDPOINT_DIR: endpointDir }) });
   child.stdout.resume();
   child.stderr.resume();
   // One message every 150 ms, in order — a chain rather than an await in a loop.
@@ -449,7 +473,7 @@ async function quietLeg() {
     describeOutcome: () => 'done',
     run: (_ctx, body) => Promise.resolve({ status: 200, body: { exitCode: 0, rows: 1, stdout: String(body.query ?? '') } }),
   });
-  const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mcp-itest-quiet-'));
+  const storageDir = brokerDir();
   const hooks = mcpUseHooks(storage, stampState, () => clock);
   const quietServer = new CredsAgentServer(actions, () => {}, {
     storageDir,
@@ -550,7 +574,6 @@ async function quietLeg() {
     // Before any assertion can throw past it. A listener left open keeps Node alive, and a crashed
     // check then looks exactly like a hung test.
     quietServer.dispose();
-    fs.rmSync(storageDir, { recursive: true, force: true });
   }
 
   check(
@@ -597,7 +620,7 @@ async function kindsLeg() {
     id: 'f-cmd', name: 'Commands', type: 'folder', parentId: null, folderType: 'terminal',
     mcp: { view: true, create: true },
   });
-  const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mcp-itest-kinds-'));
+  const storageDir = brokerDir();
   const kindsServer = new CredsAgentServer(new UseActionRegistry(), () => {}, {
     storageDir,
     mcpCreate: mcpCreateHooks(storage, () => {}),
@@ -610,7 +633,6 @@ async function kindsLeg() {
     await createChecks(env, storage);
   } finally {
     kindsServer.dispose();
-    fs.rmSync(storageDir, { recursive: true, force: true });
   }
 
   check(
@@ -713,7 +735,7 @@ async function oldWindowLeg() {
     res.end(healthy ? JSON.stringify({ ok: true, service: SERVICE_NAME }) : '{"error":{"code":"not_found","message":"no such route"}}');
   });
   await new Promise((resolve) => fake.listen(0, '127.0.0.1', resolve));
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mcp-itest-old-'));
+  const dir = plainDir('old'); // an endpoint folder: no listener, so the temp root
   fs.writeFileSync(
     path.join(dir, 'window-old.json'),
     JSON.stringify({ pid: process.pid, port: fake.address().port, socket: null, startedAt: new Date().toISOString() }),
@@ -729,18 +751,20 @@ async function oldWindowLeg() {
     check('and the old window was sent nothing to create', posts.length === 0, JSON.stringify(posts));
   } finally {
     fake.close();
-    fs.rmSync(dir, { recursive: true, force: true });
   }
 }
 
-(async () => {
+harnessScope.run(async (scope) => {
+  // The SKIP comes before any folder: a machine without the binary leaves nothing.
   if (!fs.existsSync(EXE)) {
     console.log(`SKIP  the MCP server is not built at ${EXE}`);
     console.log('      run: dotnet build src_mcp/src/CredsMcp.csproj');
-    return;
+    return 0;
   }
 
-  const storageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mcp-itest-'));
+  loadOut(writeStub(scope, 'mcp-stub', STUB_SOURCE));
+  childTemp = plainDir('ctmp'); // the binary's own temp folder
+  const storageDir = brokerDir();
   /** Every statement the far side was actually handed — the proof that substitution happened. */
   const ranQueries = [];
   /** Entity ids an agent moved to the Trash. */
@@ -932,7 +956,7 @@ async function oldWindowLeg() {
   // ---- no window -----------------------------------------------------------
   // The failure that will actually happen. "No window is open" and "nothing has been opened to
   // you" call for opposite next moves, so the answer must be able to say which.
-  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mcp-itest-empty-'));
+  const empty = plainDir('empty'); // an endpoint folder with nothing in it: no listener, so the temp root
   const alone = await speak({ CREDS_ENDPOINT_DIR: empty }, [
     ...HANDSHAKE,
     { jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'creds_list', arguments: {} } },
@@ -1024,7 +1048,6 @@ async function oldWindowLeg() {
       byLine.includes(`session "${ITEST_TAB_TITLE}" (98bf9f23)`),
       byLine,
     );
-    fs.rmSync(titleHome, { recursive: true, force: true });
   }
 
   consent.answers = ['Allow'];
@@ -1283,7 +1306,7 @@ async function oldWindowLeg() {
   // levels above have already spent that budget. A second window has its own, which is exactly
   // what a person opening one would get. Raising the limit for the test would have deleted the
   // property being relied on everywhere else in this file.
-  const folderStorageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'creds-mcp-itest-folders-'));
+  const folderStorageDir = brokerDir();
   const folderServer = new CredsAgentServer(new UseActionRegistry(), () => {}, { storageDir: folderStorageDir });
   folderServer.setFolderHooks(folderHooks(storage, () => {}));
   await folderServer.ensureStarted();
@@ -1489,12 +1512,5 @@ async function oldWindowLeg() {
   server.dispose();
   console.log(`\n${checksRun} checks run`);
   console.log(fails === 0 ? 'all checks passed' : `${fails} check(s) failed`);
-  process.exitCode = fails === 0 ? 0 : 1;
-})().catch((error) => {
-  // Dispose before reporting. A throw used to leave both brokers listening, and a Node process
-  // with an open server never exits — so a crashed check looked exactly like a hung test, which
-  // is four minutes of watching nothing before anyone reads the stack.
-  console.error(error);
-  process.exitCode = 1;
-  process.exit(1);
+  return fails === 0 ? 0 : 1;
 });

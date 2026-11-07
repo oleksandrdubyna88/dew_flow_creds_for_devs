@@ -372,6 +372,11 @@ release             tag-driven: server-v* -> image, extension-v* -> Marketplace,
 `deploy/**` sits in the server's path filter deliberately: the compose stack is how this server is
 delivered, so a change to it re-runs the server pipeline and therefore the image pipeline.
 
+The server's backup harness (`src_minimalapi_server/scripts/backup-archive-itest.cjs`) makes its scratch folders through the
+extension's leftovers wrapper and exit module (`src_vs_code/scripts/lib/leftovers.cjs` and `harnessScope.cjs`), which load the
+mounted shared rules. So `ci · server` fetches the `.claude/rules/shared` mount and sets up Node 22 before that step, and its path
+filter includes `src_vs_code/scripts/lib/**` and `.claude/rules/shared`. No diagram in this file shows that edge, so none is re-rendered.
+
 The image pipeline is **chained rather than parallel** — an image is not worth building from code
 whose tests have not passed. `workflow_run` has two traps and both are handled: it fires on
 completion regardless of outcome (so the job checks `conclusion == 'success'` itself), and it runs

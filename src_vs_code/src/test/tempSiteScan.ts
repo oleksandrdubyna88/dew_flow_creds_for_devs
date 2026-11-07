@@ -55,11 +55,11 @@ const isTempCall = (callee: ts.Expression, aliases: ReadonlySet<string>): boolea
   TEMP_CALLS.has(calleeName(callee)) || (ts.isIdentifier(callee) && aliases.has(callee.text));
 
 /**
- * Every `.ts` file under `root`, as paths relative to it (with `/`), minus the exclusions: an entry of `excluded` is a file's
- * relative path or a folder's, and takes everything below the folder. A new test file is read the day it is written, with no
- * list to extend [E2.1 code 11].
+ * Every file under `root` that ends in one of `extensions` (`.ts` by default; the harness scripts are `.cjs` and `.mjs`), as paths
+ * relative to it (with `/`), minus the exclusions: an entry of `excluded` is a file's relative path or a folder's, and takes
+ * everything below the folder. A new test file is read the day it is written, with no list to extend [E2.1 code 11].
  */
-export function discoverSources(root: string, excluded: ReadonlyMap<string, string>): string[] {
+export function discoverSources(root: string, excluded: ReadonlyMap<string, string>, extensions: readonly string[] = ['.ts']): string[] {
   const found: string[] = [];
   const walk = (relative: string): void => {
     for (const entry of fs.readdirSync(path.join(root, relative), { withFileTypes: true })) {
@@ -69,7 +69,7 @@ export function discoverSources(root: string, excluded: ReadonlyMap<string, stri
   const visit = (child: string, entry: fs.Dirent): void => {
     if (excluded.has(child)) return;
     if (entry.isDirectory()) walk(child);
-    else if (entry.name.endsWith('.ts')) found.push(child);
+    else if (extensions.some((extension) => entry.name.endsWith(extension))) found.push(child);
   };
   walk('');
   return found.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)); // code-unit order, the same on every machine (a locale order is not)
