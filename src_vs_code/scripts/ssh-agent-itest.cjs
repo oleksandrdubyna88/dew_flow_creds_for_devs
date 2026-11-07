@@ -34,7 +34,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execFile } = require('node:child_process');
-const { SSHD, setChildTemp, startSshd, launch, endChild, endRunning, lastLines, login } = require('./itestSshd.cjs');
+const { SSHD, setChildTemp, startSshd, launch, endChild, lastLines, login } = require('./itestSshd.cjs');
 const { ownedDir, shortSocketRoot } = require('./lib/leftovers.cjs');
 const harnessScope = require('./lib/harnessScope.cjs');
 
@@ -485,7 +485,6 @@ async function liveHostBoundLogin(pem, publicPath, dir) {
   // Its own scope, registered in the module scope at once (a signal in this section closes it too), closed in the `finally` below.
   const section = harnessScope.sectionScope();
   const sshdDir = ownedDir(section, 'sshd');
-  section.after(endRunning); // after the folder: a close ends the client and sshd first, then removes the folder they hold files in
   let sshd;
   let client;
   let manager;
@@ -499,11 +498,11 @@ async function liveHostBoundLogin(pem, publicPath, dir) {
     const authorizedKeys = path.join(sshdDir, 'authorized_keys');
     fs.writeFileSync(authorizedKeys, `${fs.readFileSync(publicPath, 'utf8').trim()}\n`);
 
-    let started = await startSshd(sshdDir, hostKeyPath, authorizedKeys);
+    let started = await startSshd(section, sshdDir, hostKeyPath, authorizedKeys);
     if (started.failure !== undefined && /Address already in use/i.test(started.sshd.stderr)) {
       // The free-port race: someone took the port between the probe and sshd's bind. Once, fresh port.
       await endChild(started.sshd);
-      started = await startSshd(sshdDir, hostKeyPath, authorizedKeys);
+      started = await startSshd(section, sshdDir, hostKeyPath, authorizedKeys);
     }
     sshd = started.sshd;
     check('sshd -d is listening on loopback', started.failure === undefined, started.failure);
@@ -537,7 +536,7 @@ async function liveHostBoundLogin(pem, publicPath, dir) {
 
     global.__AGENT_DIALOGS__.length = 0;
     global.__AGENT_ANSWER__ = ALLOW_ONCE;
-    client = launch('ssh', [
+    client = launch(section, 'ssh', [
       '-F', '/dev/null',
       '-o', `IdentityAgent=${socket}`,
       '-o', 'IdentitiesOnly=yes',
@@ -595,10 +594,9 @@ async function liveLoginWindow(pem, dir) {
   }
   const section = harnessScope.sectionScope();
   const sshdDir = ownedDir(section, 'sshd');
-  section.after(endRunning);
   const began = Date.now();
   try {
-    await loginLegs(pem, dir, sshdDir);
+    await loginLegs(pem, dir, sshdDir, section);
     console.log(`info  live login window: six sshd runs, ${Date.now() - began} ms`);
   } finally {
     await section.close();
@@ -623,14 +621,14 @@ function loginWindowSkipped() {
 }
 
 /** The two legs, sharing one throwaway host key: Ed25519 first, then RSA, whose sshd also accepts `ssh-rsa` (SHA-1). */
-async function loginLegs(pem, dir, sshdDir) {
+async function loginLegs(pem, dir, sshdDir, scope) {
   const hostKey = path.join(sshdDir, 'host_key');
   const generated = await run(tools.sshKeygen, ['-q', '-t', 'ed25519', '-N', '', '-f', hostKey]);
   check('a throwaway sshd host key was generated for the login window', generated.code === 0, generated.stderr.trim());
   if (generated.code !== 0) {
     return;
   }
-  const base = { dir, sshdDir, hostKey };
+  const base = { dir, sshdDir, hostKey, scope };
   await windowLeg({ ...base, label: 'Ed25519', pem, folder: 'w2', extraConfig: [] }, edScenario);
   const rsa = crypto.generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
   await windowLeg({ ...base, label: 'RSA', pem: rsa.privateKey.toString(), folder: 'w3', extraConfig: ['PubkeyAcceptedAlgorithms +ssh-rsa'] }, rsaScenario);

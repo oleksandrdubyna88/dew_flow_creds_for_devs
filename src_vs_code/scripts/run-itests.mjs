@@ -372,7 +372,6 @@ async function runAll(harnesses, args, run, seams) {
   const results = [];
   for (const harness of wantedOf(harnesses, args)) {
     if (run.signal !== undefined) break;
-    // One harness after another on purpose: they share the machine's ports and files, so they must not overlap.
     const row = await runOne(harness, run);
     if (row !== undefined) results.push(row);
   }

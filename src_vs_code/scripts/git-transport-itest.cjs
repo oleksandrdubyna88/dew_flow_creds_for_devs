@@ -98,7 +98,9 @@ harnessScope.run(async (scope) => {
   // The SKIP comes before any folder or stub: a machine without git leaves nothing.
   GIT = findGit();
   if (GIT === undefined) {
-    console.log(`SKIP  git was not found in ${GIT_DIRS.join(', ')} (or CREDS_ITEST_GIT) — this transport requires it, so nothing was tested.`);
+    const named = process.env.CREDS_ITEST_GIT;
+    const where = named === undefined || named === '' ? `git was not found in ${GIT_DIRS.join(', ')}` : `CREDS_ITEST_GIT names ${named} and it does not exist`;
+    console.log(`SKIP  ${where} — this transport requires git, so nothing was tested.`);
     return 0;
   }
   const stub = writeStub(scope, 'git-stub', STUB_SOURCE);

@@ -1705,6 +1705,11 @@ Commits: the REDs (tests), then one fix commit, then the docs. Each fix was watc
 - **H (S3776, `creds-mcp-itest.cjs`)** not raised by E2.2: `git diff ccf2e9f HEAD` over that file adds no `if`, loop, `catch` or logical operator inside the big async function (the `if (!fs.existsSync(EXE))` skip was there before; the only changes are `process.exitCode = fails === 0 ? 0 : 1` becoming `return fails === 0 ? 0 : 1`, one removed `rmSync` and the moved `require`s). Left as it is.
 - **I (S9382)** the `await` in the harness loop is intended; a comment says so.
 
+### E2.2 build record, part 4 — code gate round 3 (2026-11-07)
+- **Process ownership.** `itestSshd.cjs` lost its global `running` set and `endRunning()`. `launch(scope, …)` and `startSshd(scope, …)` take the owning scope and register `endChild(result)` in it right after the spawn, so a close ends the processes (the client before `sshd`) before the section folder, which was registered earlier. `ssh-agent-itest.cjs` passes the section scope (and `loginLegs` hands it to the rigs). RED (against the old module, API now taking a scope): S2.2 `premise: the section started its process`, and the new `closing one section ends only its own processes, not a process launched in another scope`: `closing the first section ended its own process and left the other one running`. Out again (`scope.after` line commented): both red (`it was told to stop while the folder was still there`, the same text as above). A test bug found on the way: `killQuietly(0)` would have signalled the test's own process group; it now returns for a pid of 0 or less.
+- **`CREDS_ITEST_GIT` missing file:** the SKIP names the variable and the path; the fixed-directory message stays for the unset case (by hand).
+- **Comment** about running harnesses one after another removed from `run-itests.mjs`.
+
 ## Notes for the parent (`dew_flow_conventions · todo/PLAN_test_leftovers_rollout.md`, E2 entry)
 
 Opus, 2026-10-16, against `origin/main` a7b3ecf2 of this repository, the E1 branch of the shared rules and E3's

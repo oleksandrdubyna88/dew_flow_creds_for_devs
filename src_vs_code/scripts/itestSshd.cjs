@@ -18,18 +18,19 @@ function setChildTemp(dir) {
   childTemp = dir;
 }
 
-/** The children `launch` started that have not exited yet, oldest first: what `endRunning` stops. */
-const running = new Set();
-
-/** Spawns a child and collects its output — unlike `run`, the caller holds the pid and can end it. */
-function launch(exe, args, options = {}) {
+/**
+ * Spawns a child and collects its output — unlike `run`, the caller holds the pid and can end it. The child belongs to `scope`: its end is
+ * registered there at once, AFTER whatever the scope registered before (the folder the child holds files in), so a close ends the child,
+ * and waits for it, before that folder is removed. A later child is ended before an earlier one (the client before `sshd`).
+ */
+function launch(scope, exe, args, options = {}) {
   const child = spawn(exe, args, {
     stdio: ['ignore', 'pipe', 'pipe'],
     ...options,
     ...(childTemp === undefined ? {} : { env: harnessScope.tempEnv(childTemp, options.env) }),
   });
   const result = { child, stdout: '', stderr: '', exited: false };
-  running.add(result);
+  scope.after(() => endChild(result)); // right after the spawn, so nothing can start between the child and its end
   child.stdout.on('data', (chunk) => {
     result.stdout += chunk;
   });
@@ -39,13 +40,11 @@ function launch(exe, args, options = {}) {
   result.done = new Promise((resolve) => {
     child.once('exit', (code) => {
       result.exited = true;
-      running.delete(result);
       resolve(code);
     });
     child.once('error', (error) => {
       result.stderr += String(error);
       result.exited = true;
-      running.delete(result);
       resolve(-1);
     });
   });
@@ -82,7 +81,7 @@ function freePort() {
  * because a masked failure here is exactly how a live section turns into a green that proves
  * nothing. `extraConfig` is more `sshd_config` lines — section 7's RSA leg adds `PubkeyAcceptedAlgorithms +ssh-rsa`.</p>
  */
-async function startSshd(sshdDir, hostKeyPath, authorizedKeys, extraConfig = []) {
+async function startSshd(scope, sshdDir, hostKeyPath, authorizedKeys, extraConfig = []) {
   const port = await freePort();
   const knownHosts = path.join(sshdDir, 'known_hosts');
   const hostPublic = fs.readFileSync(`${hostKeyPath}.pub`, 'utf8').trim().split(/\s+/).slice(0, 2).join(' ');
@@ -104,7 +103,7 @@ async function startSshd(sshdDir, hostKeyPath, authorizedKeys, extraConfig = [])
       '',
     ].join('\n'),
   );
-  const sshd = launch(SSHD, ['-d', '-e', '-f', config]);
+  const sshd = launch(scope, SSHD, ['-d', '-e', '-f', config]);
   const listening = new RegExp(String.raw`Server listening on 127\.0\.0\.1 port ${port}`);
   const failure = await listeningFailure(sshd, listening, Date.now() + 10_000);
   return failure === undefined ? { sshd, port, knownHosts } : { sshd, failure };
@@ -145,14 +144,6 @@ async function endChild(result) {
   }
 }
 
-/**
- * End every child still running, newest first (the client before `sshd`), and wait for each to exit. A section registers this in its
- * scope AFTER its folder, so a close ends the processes before it removes the folder they hold files in — also on a signal.
- */
-async function endRunning() {
-  for (const result of [...running].reverse()) await endChild(result);
-}
-
 /** The last `count` lines of a child's output — what it said just before the failure. */
 function lastLines(text, count) {
   return text.trim().split(/\r?\n/).slice(-count).join('\n');
@@ -160,10 +151,10 @@ function lastLines(text, count) {
 
 /** Starts this leg's sshd; once more on a fresh port when someone took the probed one (section 5's retry). */
 async function startOneSshd(rig) {
-  let started = await startSshd(rig.sshdDir, rig.hostKey, rig.authorizedKeys, rig.extraConfig);
+  let started = await startSshd(rig.scope, rig.sshdDir, rig.hostKey, rig.authorizedKeys, rig.extraConfig);
   if (started.failure !== undefined && /Address already in use/i.test(started.sshd.stderr)) {
     await endChild(started.sshd);
-    started = await startSshd(rig.sshdDir, rig.hostKey, rig.authorizedKeys, rig.extraConfig);
+    started = await startSshd(rig.scope, rig.sshdDir, rig.hostKey, rig.authorizedKeys, rig.extraConfig);
   }
   return started;
 }
@@ -181,7 +172,7 @@ async function login(rig, given) {
     await endChild(started.sshd);
     return { code: 'no sshd', detail: started.failure };
   }
-  const client = launch('ssh', [
+  const client = launch(rig.scope, 'ssh', [
     '-F', '/dev/null',
     '-o', `IdentityAgent=${rig.socket}`,
     '-o', 'IdentitiesOnly=yes',
@@ -206,4 +197,4 @@ async function login(rig, given) {
   }
 }
 
-module.exports = { SSHD, setChildTemp, launch, startSshd, endChild, endRunning, lastLines, login };
+module.exports = { SSHD, setChildTemp, launch, startSshd, endChild, lastLines, login };
