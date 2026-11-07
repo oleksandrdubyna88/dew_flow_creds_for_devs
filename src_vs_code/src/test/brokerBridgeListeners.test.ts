@@ -523,3 +523,52 @@ test('the listener hands the router a context that is a frozen copy, not the cal
     s.listeners.closeAll();
   }
 });
+
+test('turns: the chain entry of a bridge id is dropped when its turn settles — opens for many distinct ids leave nothing behind, a failed open included', async () => {
+  const spied = new Spied();
+  try {
+    for (const id of ['t-a', 't-b', 't-c']) {
+      await spied.listeners.open({ ...CONTEXT, bridgeId: id });
+    }
+    await assert.rejects(spied.listeners.open({ ...CONTEXT, bridgeId: 't-d' }, () => Promise.reject(new Error('the broker would not start'))));
+    assert.equal(spied.listeners.pendingTurns(), 0, 'one entry per distinct bridge id, for ever, is a leak');
+  } finally {
+    spied.listeners.closeAll();
+  }
+});
+
+test('turns: overlapping opens of ONE id still run one after another, and the first settling does not drop the entry the second still owns', async () => {
+  const spied = new Spied();
+  const order: string[] = [];
+  const gate = (): { wait: Promise<void>; release(): void } => {
+    let release = (): void => undefined;
+    return { wait: new Promise<void>((resolve) => { release = resolve; }), release: () => release() };
+  };
+  const [one, two] = [gate(), gate()];
+  try {
+    const first = spied.listeners.open({ ...CONTEXT, bridgeId: 't-same' }, async () => {
+      order.push('first starts');
+      await one.wait;
+      order.push('first ends');
+    });
+    const second = spied.listeners.open({ ...CONTEXT, bridgeId: 't-same' }, async () => {
+      order.push('second starts');
+      await two.wait;
+    });
+    await pause(30);
+    assert.deepEqual(order, ['first starts'], 'the second waits for the first');
+    one.release();
+    await first;
+    await pause(30);
+    assert.deepEqual(order, ['first starts', 'first ends', 'second starts']);
+    assert.equal(spied.listeners.pendingTurns(), 1, 'the first settled; the second still owns the entry');
+    two.release();
+    await second;
+    await pause(30);
+    assert.equal(spied.listeners.pendingTurns(), 0, 'and the last to settle drops it');
+  } finally {
+    one.release();
+    two.release();
+    spied.listeners.closeAll();
+  }
+});

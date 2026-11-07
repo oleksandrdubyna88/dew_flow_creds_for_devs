@@ -60,14 +60,24 @@ export class BridgeListeners {
       () => this.openNow(context, prepare),
       () => this.openNow(context, prepare),
     );
-    this.turns.set(
-      id,
-      turn.then(
-        () => undefined,
-        () => undefined,
-      ),
+    const tail: Promise<unknown> = turn.then(
+      () => this.settled(id, tail),
+      () => this.settled(id, tail),
     );
+    this.turns.set(id, tail);
     return turn;
+  }
+
+  /** The entry of an id whose last turn has settled goes: a later open of that id starts a new chain. An entry a newer open owns stays. */
+  private settled(id: string, tail: Promise<unknown>): void {
+    if (this.turns.get(id) === tail) {
+      this.turns.delete(id);
+    }
+  }
+
+  /** How many bridge ids have a turn in flight, for tests: it must fall back to nothing. */
+  pendingTurns(): number {
+    return this.turns.size;
   }
 
   /** Every live listener is closed, synchronously, and later opens reject. */
